@@ -415,6 +415,175 @@ transitions, shadows, meshes/materials and multiple instances. Then prove
 exclusive draw ownership and compare legacy-vs-Strata pixels on real GPU
 before even considering using compacted ranges in an indirect path.
 
+## Stage 8.2 — asynchronous readback, CPU oracle and real Metal parity runner
+
+The owner ran the **previous Stage 8 code** on Mac Studio on 2026-11-19.
+`aiverse_strata_gpu_culling_tests` built, and all five focused CTests
+(`strata_builder`, `strata_model_adapter`, `strata_view`,
+`strata_gpu_scene`, `strata_gpu_culling`) **passed (5/5, 1.19 s)**.
+That evidence proves the prior native C++ tests, **not** actual Metal shader
+execution or the new Stage 8.2 code.
+
+Stage 8.2 adds a bounded, asynchronous diagnostics API:
+
+```cpp
+render::strata::GpuSelectionSubmission selected;
+if (scene.dispatchStrataGpuView(device, sourceKey, pass,
+                                device.frameSerial(), selected)) {
+    scene.requestStrataGpuReadback(device, selected,
+        [&](render::strata::GpuSelectionReadback readback) {
+            // Device owner thread at a subsequent beginFrame.
+            // Incomplete/overflow/invalid results may NEVER be drawn.
+            if (!readback.valid()) return;
+            // Verify against CPU planView before considering rendering.
+        });
+}
+```
+
+`GpuClusterCulling::requestReadback` submits two independent RHI
+`Device::readBufferAsync` requests (GPU counters and selected ranges).
+The existing Metal backend limits each request to 64 KiB, so requests
+with `GpuSelectionSubmission::capacity > 2048` are rejected instead of
+publishing an apparently complete prefix. Callbacks run later on the
+**device owner thread**, not synchronously with the GPU dispatch.
+The output is a `GpuSelectionReadback` containing counters and a status
+(`Valid`, `Overflow`, `Invalid`, `ReadbackFailed`). It never allocates
+new GPU geometry or submits draw commands. Do not retain pointers to an
+unloaded `GeometryScene` in readback callbacks; manage observer lifetime
+explicitly. On rejected readback scheduling, the callback reports failure.
+
+`strata::compareGpuSelection(source, instances, pass, pooledFirstIndex,
+readback, error)` is the CPU/GPU oracle. It independently projects each
+instance via `cpuReferenceView()` and `planView()`, converts each local
+range into absolute shared-pool index/node addresses, sorts CPU/GPU records
+by their stable record fields, and requires exact equality. It rejects
+malformed instances, duplicate/zero enabled tokens, output overflow and
+invalid GPU status. GPU atomic ordering is explicitly not significant.
+The pooledFirstIndex must be the original v2 sidecar binding base from the
+same source/revision. This comparison is **diagnostic**, never an authority
+for production draw submission.
+
+A separate **real Metal GPU** executable was added at
+`tests/render/strata_metal_parity.cpp`, gated by the CMake option
+`AIVERSE_STRATA_METAL_GPU_TESTS=ON` (default OFF, macOS only).
+It uses the real `platform::run` + CAMetalLayer, actual
+`GlobalGeometryPool` source upload, Strata metadata v2, diagnostic compute
+and asynchronous GPU readback. It executes five cases: fine LOD with
+two instances (four leaves), coarse LOD (two parents), frustum rejection,
+a disabled instance, and deliberate output overflow. It reports the
+result of each GPU/CPU comparison on the console and exits nonzero on
+failure. It enables only the old **CPU shared pool admission**
+(`AIVERSE_METAL_CPU_MDI=1`) locally for the fixture; it does not submit
+ICB or Strata draws.
+
+Mac Studio commands:
+
+```sh
+cd ~/Projects/AIVERSE-strata-stage8
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata \
+  --target aiverse_strata_gpu_culling_tests aiverse_strata_metal_parity \
+  --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)
+- **One scene/instance truth**: `GeometryScene` owns static render instances
+  and HLOD; do not create separate Strata transforms or introduce gameplay
+  entities solely for rendering.
+- **One grouping authority**: indirect draw grouping/material binding stays
+  in the existing renderer, with a future Strata adapter supplying visible
+  cluster ranges. Never double-submit the same primitives.
+- **GPU capability negotiation**: GLES3/WebGL2 should retain traditional
+  indexing paths. Metal/Vulkan/D3D future paths must gate compute, indirect
+  count, storage resources and synchronization independently.
+- **Multi-world**: geometry assets can be shared by handle across worlds,
+  while scene-resident instance tables and render budgets are per world/view.
+- **Dynamic terrain**: TerraWeave owns chunk geometry and versions; Strata
+  consumes immutable snapshots and schedules deferred release. PHYSIS owns
+  simulation/events, not GPU buffers.
+- **Pass separation**: main-camera, shadows, reflections and portals may
+  require distinct culling/error metrics and shadow caster inclusion.
+
+## Known shortcomings / next steps
+
+1. Compile and execute focused tests on a native project checkout:
+   ```sh
+   cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests aiverse_strata_gpu_culling_tests -j 8
+   ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene) --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. The existing `GlobalGeometryPool` now reserves auxiliary Strata index
+   spans without creating a new page, and version-2 metadata maps primitive
+   bases to their actual pooled GPU offsets. Verify on Mac Metal and Vulkan:
+   shared-buffer writes, reupload/revision invalidation, in-flight retirement,
+   surrounding rigid models, and all original fallback paths before enabling
+   submission. Default staging remains OFF.
+5. Stage 8.2 adds asynchronous Metal diagnostic readback, an exact
+   CPU/GPU comparison oracle and a manual real Metal GPU parity runner.
+   Execute the new fixture and randomized camera/LOD/material variants
+   before accepting output; previous mock/CPU test passes do not prove GPU parity.
+6. Add mutually exclusive Renderer3D selected-range submission only after
+   GPU/CPU selection AND screenshot parity. Preserve legacy fallback on all
+   unsupported devices; then pursue Hi-Z, streaming and independent CPU/GPU
+   benchmarks.
+
+## Verification policy
+
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
+ --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. Extend **existing** `GlobalGeometryPool` to safely allocate an auxiliary
+   Strata index stream on an existing pooled page, with explicit scene/
+   model revision checks, upload failure rollback, frame-fenced retirement
+   and shared-buffer synchronization. Do not add a second geometry VB/IB pool.
+   All current Strata metadata offsets remain source-local, not drawable.
+5. Build a capability-gated GPU scene/cluster selection path using the
+   CPU planner as a correctness oracle. Submit visible ranges through one
+   existing `Renderer3D` batching/MDI owner, or fall back to normal models.
+6. Benchmark CPU and GPU time separately, validate view-dependent shadows,
+   reflection views and multi-world lifetime, then pursue streaming.
+
+## Verification policy
+
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
+ \
+  --output-on-failure
+build/strata/aiverse_strata_metal_parity
+```
+
+**Validation distinction:** The previous five CPU/mock CTests were
+owner-confirmed PASS. The new Stage 8.2 changes, real MSL shader compile,
+GPU dispatch, asynchronous readback, Metal GPU-vs-CPU selection parity and
+image parity are **NOT RUN** as of this documentation entry. The real
+runner is intentionally not an unattended CTest; it creates a macOS window.
+Do not infer speedup or complete rendering from a valid diagnostic selection.
+
+Remaining mandatory gate before enabling draw submission:
+native Stage 8.2 tests, genuine Metal shader compilation, mismatched/overflow
+handling, camera thresholds and geometry quality, explicit GPU/CPU parity
+over randomized transformations and materials, per-pass shadows/reflections,
+and a one-owner, non-double-submitted Renderer3D integration. Vulkan compute,
+Hi-Z and streaming remain future work.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
