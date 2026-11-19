@@ -61,7 +61,8 @@ public:
     // on safe buffer update points; CPU fallback plays an authored effect.
     bool begin(gfx::Device& device,ParticleSystem& cpu,Config config,
                float3 origin={0,0,0},float3 direction={0,1,0},
-               SpectraFxGpuBillboardRenderer* sharedRenderer=nullptr) {
+               SpectraFxGpuBillboardRenderer* sharedRenderer=nullptr,
+               gfx::ComputeHandle sharedEvolution={}) {
         stop();
         // Configure before allocating GPU resources: failed settings do not
         // replace or partially initialize any backend.
@@ -83,7 +84,8 @@ public:
         }
         if(decision_.backend==SpectraFxExecutionBackend::Gpu) {
             if(slots_.init(device,config_.backend.particles,
-                           config_.environment.reportImpacts) &&
+                           config_.environment.reportImpacts,
+                           sharedEvolution) &&
                (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 gpuDevice_=&device;
