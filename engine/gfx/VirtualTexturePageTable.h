@@ -69,44 +69,50 @@ public:
         return result;
     }
 
-    // Optional indexed virtual mips: one physical page-table array layer
-    // for EACH requested virtual mip and logical layer. This supports
-    // choosing floor/ceil(virtualLod) in shaders without changing legacy
-    // page-table ABI (selectors_=1 by default). Arrays are strictly capped
-    // to 32 MiB of CPU-side encoded mappings.
+    // Rebuild only if the resident/pending mapping changed, not on every
+    // draw/frame. Touch/pin operations do not alter page-table entries.
+    // For each mip-zero tile, scan resident parents COARSE to FINE once,
+    // carrying forward the nearest resident ancestor for each selected mip.
+    // Complexity is O(baseCells * mipLevels) rather than O(baseCells * mipLevels^2).
     size_t rebuild(const VirtualTexturePageCache& cache) {
-        if (pixels_.empty() || cache.baseTilesX() != width_ ||
-            cache.baseTilesY() != height_ ||
-            cache.mipLevels() != levels_ || cache.virtualLayers() != layers_)
+        if (pixels_.empty() || cache.baseTilesX()!=width_ ||
+            cache.baseTilesY()!=height_ ||
+            cache.mipLevels()!=levels_ || cache.virtualLayers()!=layers_)
             return 0;
+        if (lastRevision_==cache.mappingRevision()) return 0;
         size_t changed=0;
         for(int logicalLayer=0;logicalLayer<layers_;++logicalLayer)
-          for(int selectedMip=0;selectedMip<selectors_;++selectedMip) {
-            const int tableLayer=logicalLayer*selectors_+selectedMip;
-            for(int y=0;y<height_;++y)
-              for(int x=0;x<width_;++x) {
-                VirtualPageAllocation resolved;
+          for(int y=0;y<height_;++y)
+            for(int x=0;x<width_;++x) {
+                VirtualPageAllocation nearest;
                 int residentMip=0;
-                for(int mip=selectedMip;mip<levels_;++mip) {
-                    resolved=cache.resolve({mip,x>>mip,y>>mip,logicalLayer});
-                    if(resolved.valid()){residentMip=mip;break;}
+                for(int requestedMip=levels_-1;requestedMip>=0;--requestedMip) {
+                    const auto candidate=cache.resolve({
+                        requestedMip,x>>requestedMip,y>>requestedMip,logicalLayer});
+                    if(candidate.valid()) {
+                        nearest=candidate;
+                        residentMip=requestedMip;
+                    }
+                    if(requestedMip>=selectors_) continue;
+                    const int physicalTableLayer=logicalLayer*selectors_+requestedMip;
+                    std::array<uint8_t,4> value{};
+                    if(nearest.valid() && nearest.physicalSlice<65536) {
+                        value[0]=uint8_t(nearest.physicalSlice&255);
+                        value[1]=uint8_t((nearest.physicalSlice>>8)&255);
+                        value[2]=uint8_t(residentMip);
+                        value[3]=255;
+                    }
+                    const size_t row=size_t(physicalTableLayer)*size_t(height_)+
+                                     size_t(y);
+                    const size_t offset=(row*size_t(width_)+size_t(x))*4u;
+                    if(std::memcmp(pixels_.data()+offset,value.data(),4)!=0) {
+                        std::memcpy(pixels_.data()+offset,value.data(),4);
+                        dirtyRows_[row]=1;
+                        ++changed;
+                    }
                 }
-                std::array<uint8_t,4> value{};
-                if(resolved.valid() && resolved.physicalSlice<65536) {
-                    value[0]=uint8_t(resolved.physicalSlice&255);
-                    value[1]=uint8_t((resolved.physicalSlice>>8)&255);
-                    value[2]=uint8_t(residentMip);
-                    value[3]=255;
-                }
-                const size_t row=size_t(tableLayer)*size_t(height_)+size_t(y);
-                const size_t offset=(row*size_t(width_)+size_t(x))*4u;
-                if(std::memcmp(pixels_.data()+offset,value.data(),4)!=0) {
-                    std::memcpy(pixels_.data()+offset,value.data(),4);
-                    dirtyRows_[row]=1;
-                    ++changed;
-                }
-              }
-          }
+            }
+        lastRevision_=cache.mappingRevision();
         return changed;
     }
 
@@ -202,12 +208,14 @@ public:
         dirtyRows_.clear();
         width_ = height_ = levels_ = layers_ = tableLayers_ = 0;
         selectors_ = 1;
+        lastRevision_=std::numeric_limits<uint64_t>::max();
         error_.clear();
     }
 
 private:
     int width_ = 0, height_ = 0, levels_ = 0, layers_ = 0;
     int selectors_ = 1, tableLayers_ = 0;
+    uint64_t lastRevision_=std::numeric_limits<uint64_t>::max();
     std::vector<uint8_t> pixels_;
     std::vector<uint8_t> dirtyRows_;
     std::string error_;

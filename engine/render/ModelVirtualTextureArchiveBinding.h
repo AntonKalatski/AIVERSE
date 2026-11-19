@@ -18,7 +18,7 @@ inline bool makeModelVirtualTextureArchiveBinding(
     if(!archive.valid() || !streamer.ready() ||
        !std::isfinite(mipBias) ||
        logicalLayer<0 || logicalLayer>=archive.virtualLayers ||
-       archive.gutter<0 || archive.gutter*2>=archive.pageSize)
+       archive.gutter<0 || int64_t(archive.gutter)*2>=archive.pageSize)
         return false;
     const auto& cfg=streamer.configuration();
     if(cfg.tilesX!=archive.baseTilesX || cfg.tilesY!=archive.baseTilesY ||

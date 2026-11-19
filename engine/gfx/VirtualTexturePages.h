@@ -111,6 +111,7 @@ public:
         s.generation = ++nextGeneration_;
         s.lastUsed = tick();
         mappings_.emplace(key, slot);
+        ++mappingRevision_;
         return {slot, s.generation, false, true};
     }
 
@@ -130,6 +131,7 @@ public:
             s = Slot{};
             mappings_.erase(it);
         }
+        ++mappingRevision_;
         return true;
     }
 
@@ -163,6 +165,7 @@ public:
         s = Slot{};
         mappings_.erase(it);
         ++evictions_;
+        ++mappingRevision_;
         return true;
     }
 
@@ -192,6 +195,7 @@ public:
     int baseTilesY() const { return tilesY_; }
     int mipLevels() const { return levels_; }
     int virtualLayers() const { return layers_; }
+    uint64_t mappingRevision() const { return mappingRevision_; }
 
     VirtualPageStats stats() const {
         VirtualPageStats s;
@@ -214,6 +218,7 @@ public:
         tilesX_ = tilesY_ = levels_ = layers_ = 0;
         clock_ = 0;
         evictions_ = 0;
+        ++mappingRevision_;
     }
 
 private:
@@ -256,6 +261,7 @@ private:
 
     int tilesX_ = 0, tilesY_ = 0, levels_ = 0, layers_ = 0;
     uint64_t clock_ = 0, nextGeneration_ = 0, evictions_ = 0;
+    uint64_t mappingRevision_ = 0; // map changes only; touches/pins do not dirty GPU rows
     std::vector<Slot> slots_;
     std::map<VirtualPageKey, int> mappings_;
 };
