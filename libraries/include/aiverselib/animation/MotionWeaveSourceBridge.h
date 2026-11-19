@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <functional>
+#include <string>
+#include <vector>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -40,6 +43,8 @@ struct AnimationSourceFrame {
 struct AnimationBridgeStats {
     size_t created=0, updated=0, restarted=0, removed=0;
     size_t assetEpochRestarts=0;
+    size_t playbackCaptured=0; // safe named state+clip handoff accepted
+    size_t playbackDeclined=0; // identity or rig not compatible
 };
 
 // One bridge per presentation World / view. Hosts own an independent
@@ -55,6 +60,11 @@ public:
                               std::span<const AnimationSourceFrame> sources,
                               bool removeAbsent=true) {
         std::set<uint64_t> keys;
+        // Preflight fresh immutable node-name/parent signatures before any
+        // presentation World mutation. One allocation per distinct Model
+        // publication per sync, not per actor sharing that Model.
+        std::map<uint64_t,std::shared_ptr<const RigHierarchy>> incomingRigs;
+        std::map<RigKey,std::shared_ptr<const RigHierarchy>,RigKeyLess> distinctRigs;
         for(const auto& input:sources) {
             if(!keys.insert(input.sourceId).second)
                 throw std::invalid_argument("MotionWeave bridge: duplicate source ID");
@@ -64,21 +74,34 @@ public:
             // A Model mutated/reimported in place cannot keep using its old
             // compiled graph, even when the C++ Model address is unchanged.
             // Validate before any World structural changes are made.
-            if(input.modelPublicationGeneration!=0) {
-                const auto it=links_.find(input.sourceId);
-                if(it!=links_.end() && presentation.alive(it->second)) {
-                    const auto& previous=presentation.get<
-                        AnimationSourceLinkComponent>(it->second);
-                    const auto& asset=presentation.get<
-                        AnimationAssetComponent>(it->second);
-                    if(previous.modelPublicationGeneration!=0 &&
-                       previous.modelPublicationGeneration!=
-                           input.modelPublicationGeneration &&
-                       asset.model==input.model &&
-                       asset.graph==input.graph)
-                        throw std::invalid_argument(
-                            "MotionWeave bridge: Model asset epoch changed without recompiling AnimationGraph");
-                }
+            const auto it=links_.find(input.sourceId);
+            bool changed=it==links_.end() ||
+                         !presentation.alive(it->second);
+            if(!changed) {
+                const auto& previous=presentation.get<
+                    AnimationSourceLinkComponent>(it->second);
+                const auto& asset=presentation.get<
+                    AnimationAssetComponent>(it->second);
+                changed=previous.generation!=input.generation ||
+                    previous.modelPublicationGeneration!=
+                        input.modelPublicationGeneration ||
+                    asset.model!=input.model || asset.graph!=input.graph;
+                if(input.modelPublicationGeneration!=0 &&
+                   previous.modelPublicationGeneration!=0 &&
+                   previous.modelPublicationGeneration!=
+                       input.modelPublicationGeneration &&
+                   asset.model==input.model &&
+                   asset.graph==input.graph)
+                    throw std::invalid_argument(
+                        "MotionWeave bridge: Model asset epoch changed without recompiling AnimationGraph");
+            }
+            if(changed) {
+                const RigKey key{input.model,input.modelPublicationGeneration};
+                auto found=distinctRigs.find(key);
+                if(found==distinctRigs.end())
+                    found=distinctRigs.emplace(
+                        key,captureHierarchy(*input.model)).first;
+                incomingRigs.emplace(input.sourceId,found->second);
             }
         }
         AnimationBridgeStats stats;
@@ -101,6 +124,8 @@ public:
                 presentation.add<AnimationPoseComponent>(entity);
                 presentation.add<AnimationBudgetComponent>(entity);
                 presentation.add<AnimationDiagnosticsComponent>(entity);
+                sourceRigs_.insert_or_assign(
+                    source.sourceId,incomingRigs.at(source.sourceId));
                 ++stats.created;
             } else {
                 entity=existing->second;
@@ -114,20 +139,43 @@ public:
                    asset.graph!=source.graph) {
                     auto& player=presentation.get<AnimationPlayerComponent>(entity);
                     player.pendingPlayback.reset();
-                    // Only presentation phases survive a compatible resource
-                    // replacement of the SAME logical source generation.
-                    // Respawns, changed skeleton hierarchies and unhealthy
-                    // graph instances restart from authored defaults.
-                    if(link.generation==source.generation &&
-                       !assetEpochChanged && asset.model && asset.graph &&
-                       compatibleHierarchy(*asset.model,*source.model) &&
-                       !player.restart && player.instance &&
-                       player.active==asset.graph &&
-                       player.instance->graph()==asset.graph.get()) {
-                        auto snapshot=player.instance->snapshotPlayback();
-                        if(!snapshot.state.empty())
-                            player.pendingPlayback=std::move(snapshot);
-                    }
+                    // Compare COPIED node hierarchies, never dereference a
+                    // potentially retired previous Model just to compare
+                    // its bones. A same-address in-place GPU reimport may
+                    // have invalidated the old graph's clip metadata, so
+                    // allow cross-epoch carryover only for distinct Models
+                    // with two explicit nonzero publication generations.
+                    const auto oldRig=sourceRigs_.find(source.sourceId);
+                    const auto newRig=incomingRigs.find(source.sourceId);
+                    const bool rigMatches=oldRig!=sourceRigs_.end() &&
+                        newRig!=incomingRigs.end() && oldRig->second &&
+                        newRig->second && *oldRig->second==*newRig->second;
+                    const bool epochSafe=!assetEpochChanged ||
+                        (link.modelPublicationGeneration!=0 &&
+                         source.modelPublicationGeneration!=0 &&
+                         asset.model!=source.model);
+                    const bool eligible=link.generation==source.generation &&
+                        rigMatches && epochSafe && asset.model && asset.graph &&
+                        !player.restart && player.instance &&
+                        player.active==asset.graph &&
+                        player.instance->graph()==asset.graph.get();
+                    if(eligible) {
+                        try {
+                            // The host must keep the old compiled Model
+                            // CPU-readable until this synchronous sync()
+                            // returns. This snapshots only state and phases,
+                            // not prior native rig/pose/contact/notify data.
+                            auto snapshot=player.instance->snapshotPlayback();
+                            if(!snapshot.state.empty()) {
+                                player.pendingPlayback=std::move(snapshot);
+                                ++stats.playbackCaptured;
+                            } else ++stats.playbackDeclined;
+                        }catch(...) {
+                            // Optional cosmetic continuity must not fail
+                            // a valid new asset publication.
+                            ++stats.playbackDeclined;
+                        }
+                    } else ++stats.playbackDeclined;
                     player.restart=true;
                     if(auto* overlays=presentation.tryGet<AnimationMontageSlotsComponent>(entity)) {
                         overlays->players.clear();
@@ -143,6 +191,9 @@ public:
                     source.modelPublicationGeneration;
                 asset.model=source.model;
                 asset.graph=source.graph;
+                if(auto rig=incomingRigs.find(source.sourceId);
+                   rig!=incomingRigs.end())
+                    sourceRigs_.insert_or_assign(source.sourceId,rig->second);
                 ++stats.updated;
             }
             presentation.get<AnimationInputsComponent>(entity).overrides=
@@ -153,6 +204,7 @@ public:
                 if(keys.count(it->first)) {++it;continue;}
                 if(presentation.alive(it->second))
                     presentation.destroy(it->second);
+                sourceRigs_.erase(it->first);
                 it=links_.erase(it);
                 ++stats.removed;
             }
@@ -173,6 +225,7 @@ public:
             auto it=links_.find(id);
             if(it==links_.end())continue;
             if(presentation.alive(it->second))presentation.destroy(it->second);
+            sourceRigs_.erase(id);
             links_.erase(it);
             ++removed;
         }
@@ -184,17 +237,34 @@ public:
             if(presentation.alive(entity))presentation.destroy(entity);
         }
         links_.clear();
+        sourceRigs_.clear();
     }
 private:
-    static bool compatibleHierarchy(const render::Model& a,
-                                    const render::Model& b) {
-        if(a.nodes.size()!=b.nodes.size())return false;
-        for(size_t i=0;i<a.nodes.size();++i) {
-            if(a.nodes[i].name!=b.nodes[i].name ||
-               a.nodes[i].parent!=b.nodes[i].parent)return false;
+    // Immutable source rig identity, shared by every actor using the same
+    // Model within one sync. Exact name and parent comparisons (no hash
+    // collisions); contains no borrowed Model, Bone or native Device ptr.
+    using RigHierarchy=std::vector<std::pair<std::string,int>>;
+    struct RigKey {
+        const render::Model* model=nullptr;
+        uint64_t publication=0;
+    };
+    struct RigKeyLess {
+        bool operator()(const RigKey& a,const RigKey& b) const noexcept {
+            const auto less=std::less<const render::Model*>{};
+            if(less(a.model,b.model))return true;
+            if(less(b.model,a.model))return false;
+            return a.publication<b.publication;
         }
-        return true;
+    };
+    static std::shared_ptr<const RigHierarchy> captureHierarchy(
+            const render::Model& model) {
+        auto nodes=std::make_shared<RigHierarchy>();
+        nodes->reserve(model.nodes.size());
+        for(const auto& node:model.nodes)
+            nodes->emplace_back(node.name,node.parent);
+        return nodes;
     }
     std::map<uint64_t,Entity> links_;
+    std::map<uint64_t,std::shared_ptr<const RigHierarchy>> sourceRigs_;
 };
 } // namespace aiverse::lib::animation
