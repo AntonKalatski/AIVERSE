@@ -132,12 +132,58 @@ No CMake/native compile, CTest or Metal/GL/Vulkan screenshots were run;
 verify motion, transparency, silhouettes and subpixel stability before
 production. See `docs/handoffs/prisma-stage-43.md`.
 
+## Experimental temporal upscaling (Stage 44)
+
+The **canonical** Prisma owner now has a host-controlled split between the
+internal 3D scene resolution and the final output target. It is strictly
+opt-in: author `temporalResolve` with `renderScale` in **[0.5,1]** (default
+1), choose HDR/High, then set all three environment flags
+`AIVERSE_PRISMA_TEMPORAL=1`, `AIVERSE_PRISMA_JITTER=1` and
+`AIVERSE_PRISMA_UPSCALE=1`. A 1.0 renderScale or missing flag retains the
+original 1:1 render size. The scale is quantized to 1/16 steps to avoid
+continuous transient-texture churn across camera volumes.
+
+```cpp
+prisma.setViewId(stableViewId);
+prisma.applyCameraVolumes(volumes, originalCamera.eye());
+auto [renderW, renderH] = prisma.renderSizeForOutput(outputW, outputH);
+auto renderCamera = prisma.jitteredCamera(originalCamera, renderW, renderH);
+renderer.beginScene(renderCamera, renderW, renderH);
+// Draw 3D and particle/reactive data in renderW x renderH.
+renderer.render(fullOutputPass, &prisma); // still a full-size output target
+drawVfxInto3DScene();
+renderer.resolvePrisma();
+prisma.clearCameraVolumes();
+// Draw HUD and overlays at outputW x outputH with originalCamera.
+```
+
+The existing GameClient and editor Scene/Game implementations follow this
+contract; renderer projection/jitter, scene depth, motion vectors, camera
+blur and other HDR passes operate at the internal size. Before the final
+tonemap/composite, the temporal shader writes an **output-size RGBA16F**
+per-view history; it uses normalized signed motion vectors independent of
+the two resolutions, current RGB/depth at native scene UVs, separately
+depth-validated history taps at output pixel spacing and mild compressed-HDR
+reconstruction controlled by `reconstructionSharpness` (0..0.5, default
+0.15). The final image and UI retain full output resolution. If the
+temporal pass fails, the full-output composite can sample the low-res
+current frame with ordinary bilinear filtering, but temporary jitter
+instability is possible until the next frame.
+
+This is a first experimental **fixed-scale temporal upscaling** path,
+NOT a shipping FSR/TSR/DLSS substitute and NOT automatic dynamic
+resolution. It is uncompiled and GPU-unverified: evaluate motion
+reprojection, thin details, foliage, silhouettes, bloom and transparency,
+over/under-allocation, scaling ratios and Metal/GL/Vulkan shader validity.
+See `docs/handoffs/prisma-stage-44.md`. Do not enable by default or infer
+improved frame rate from source code.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
 - Temporal/screen-space: `PrismaScreenLighting.{h,cpp}`, `PrismaScreenLightingShaders.h`.
 - Legacy `PostFx*.h`, `ScreenLighting.h` and old ops header are compatibility-only; legacy .cpp shims have no definitions. New engine changes MUST go in PRISMA files.
-- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur and Stages 42–43 temporal resolve/jitter. RenderGraph execution is partially opt-in and temporal upscaling is **not** implemented. Builds and GPU parity tests have not been run for these stages; never label them verified or production-ready.
+- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur, Stages 42–43 native temporal resolve/jitter, and Stage 44 fixed-scale temporal upscaling. RenderGraph execution is partially opt-in; automatic dynamic resolution and production-grade TSR/FSR are **not** implemented. Native builds and GPU parity tests remain unrun for these stages; never label them verified or production-ready.
 
 ## Mandatory validation and handoff
 
