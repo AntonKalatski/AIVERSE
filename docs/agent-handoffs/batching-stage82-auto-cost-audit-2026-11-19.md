@@ -504,3 +504,56 @@ Require native build, 38 CPU checks, actual MDI `changed_channels=0`, final pixe
 ### Next
 
 Analyze `[metal-icb-slow]` lines from frames >=120 together with Stage 90 `-frames.csv` for frame-level CPU backend/other costs. If warmed `alloc` dominates during slow MDI intervals, investigate pool growth, uniform allocation/reuse, `resetWithRange` cost or driver scheduling without removing explicit bindings. If `encode` dominates, investigate CPU command setup overhead and validated alternatives. If measured backend is fast but overall CPU slow, profile renderer setup/visibility/grouping and OS scheduler. Only make changes with clear evidence, confirm pixel parity and repeated low-variance performance afterward. Keep PR #39 Draft/default opt-ins OFF.
+
+
+---
+
+## Stage 91 — warm Metal ICB encode dominates; isolate reset vs uniforms (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, Draft PR #39.
+**Source commit:** `de9892f6ac6bb33ea1b37f10427697d8e0da4b1f` in `engine/gfx/metal/GfxMetal.mm`. Handoff recorded in a separate commit.
+**Correctness:** No change to Metal commands, pipeline, buffer reuse, synchronization, engine defaults or the AUTO selector. Added only one clock reading per *submitted CPU ICB* and two diagnostic values on a slow-trace opt-in. Stage 91 code has NOT been compiled or executed on Mac.
+
+### Owner's actual Stage 90 Mac Studio evidence
+
+The owner successfully compiled the prior Stage 90 code and executed real Metal forced CPU MDI for 1,024 unique primitives with `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=120`, `_SLOT=0`, `_MS=0.08`. All 38 CPU checks PASS, real MDI pixel parity on frame 100 `changed_channels=0`, final capture `changed_channels=0`, exit 0, 81/81 measured forced MDI frames and 810 actual MDI submissions. Full batched phase `renderer.render()` median **1.4087ms**, P95 **1.9296ms**, late-frame median **1.5407ms**. This is another slow forced-MDI run, showing that mode selection is not the root cause.
+
+24 filtered warm `slot=0`, `commands=227` samples from frames 120..162 had `encode` generally ~0.085..0.113ms, a high sample 0.13658ms on frame 140, `alloc` generally 0.009..0.016ms, `residency_execute` ~0.010..0.027ms, and negligible `args`. E.g. frame 120 total 0.12400ms, encode 0.09287ms, alloc 0.01333ms, residency-execute 0.01771ms, args 0.00008ms. This *selected submission* has ~75% encode CPU cost. The first cold frames from Stage 89 had been alloc/reset-dominated. **Do not attribute the entire ~1.5ms per-frame CPU render duration solely to ICB encoding:** a frame has ten submissions and model prep, and the trace sampled only slot 0. CPU time is not GPU completion/FPS.
+
+### Stage 91 diagnostic refinement
+
+The existing Metal CPU ICB `alloc` metric spans:
+(a) creation/resize/reset of `MTLIndirectCommandBuffer` and
+(b) private-to-submission uniform-buffer allocations, copy and active binding-table preparation. Those are distinct sources of cost. Stage 91 inserts a timestamp `afterIcbReset` immediately after `[icb resetWithRange:...]` and **only in the opt-in diagnostic output** splits the existing `alloc` interval into `icb_reset` and `uniforms`, both ms. The output remains capped at 24 slow submissions, and the preceding aggregate `AIVERSE_ICB_PROFILE` remains unchanged. The exact same ICB resource binding and lifetime logic remains. This helps determine whether allocation/reset or CPU uniforms work dominates when reproducing slow frames. There is still no per-frame cross-slot aggregate and no GPU timestamps; those require separate work.
+
+### Next owner Mac run
+
+Prefer a new isolated worktree because previous project worktrees had unresolved rebase state. Do not remove or reset them. Clone just a detached worktree from the new branch tip, then compile a focused fixture:
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage91
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$ROOT" worktree add --detach "$WT" origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake -S "$WT" -B "$WT/build/batching-stage91" -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_TESTS=OFF -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build "$WT/build/batching-stage91" --target aiverse_material_batches --parallel 8 || exit 1
+cd "$WT" || exit 1
+mkdir -p build/batching-stage91/captures
+set -o pipefail
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_STRESS_POLICY=mdi \
+AIVERSE_METAL_CPU_MDI=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_FRAME_TIMELINE=1 \
+AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+AIVERSE_ICB_SLOW_TRACE=1 \
+AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=120 \
+AIVERSE_ICB_SLOW_TRACE_SLOT=0 \
+AIVERSE_ICB_SLOW_TRACE_MS=0.08 \
+build/batching-stage91/aiverse_material_batches unused.obj \
+  build/batching-stage91/captures/stage91-mdi-1k 2>&1 | tee build/batching-stage91/stage91-mdi.log
+echo "Stage 91 exit=$?"
+```
+
+Pass criteria: native build succeeds; `material palette CPU checks=38 result=passed`; `actual MDI pixel parity ... changed_channels=0`; final `changed_channels=0`; 81 MDI measured frames with nonzero commands, no backend failure, and exit 0. Inspect `[metal-icb-slow]` lines for **`icb_reset` vs `uniforms`**, alongside `encode`; collect per-frame CSV to correlate late CPU times. Slow-trace output is sampled and potentially perturbs later frames: performance decisions require separate untraced repeated controls. Preserve Draft PR #39 until native verification and external cross-platform tests.
