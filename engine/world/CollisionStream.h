@@ -1,5 +1,6 @@
 #pragma once
 #include "WorldAssets.h"
+#include <cstdint>
 
 namespace aiverse::world {
 
