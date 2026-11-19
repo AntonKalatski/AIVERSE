@@ -1194,3 +1194,12 @@ test suite. PHYSIS stress system code is unchanged.
 Prioritize macOS build of `aiverse_physis_nereid_contacts_test`
 and `aiverse_physis_nature_stress_test` and actual CTest output.
 See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
+
+### PHYSIS Stage 80 — native macOS recovery after const World fix (2026-11-19)
+
+- Initial user-native AppleClang compile FAILED in `tests/physis_nereid_nature_contacts_test.cpp:103–104` with two `no matching member function for call to 'get'` errors. Test bound `const auto& world=sim->world()`, while `World::get<T>(Entity)` in `engine/core/ECS.h` is non-const.
+- Implementation commit `4d9c1adb94f88c7aefef58e3320afda9297e0b48`: replace two reads with `world.tryGetConst<T>(entity)`, check both pointers, copy their component values. Existing mutable test setup continues using `get<T>`. No runtime ECS, PHYSIS, NEREID, Box3D, save schema or renderer changes.
+- **Post-fix user-reported macOS native monitor: `AIVERSE: PASS`, 00:00:20, 0 warnings, 0 errors**. Report: `build/physis-nereid-validation/aiverse-reports/20261119-181448-67558`. The pasted output contains no CTest per-test lines: exact number of tests completed must be retrieved from this report's `ctest.log`/`summary.json`.
+- Prior combined PHYSIS/NEREID/SpectraFX 40/40 was on older source. Full current-branch repository-wide tests, interactive editor, Box3D/TerraWeave fracture handoff and CI are not verified. PR #25 stays Draft.
+- Standalone handoff: `docs/agent-handoffs/physis-stage80-const-world-native-2026-11-19.md`.
+

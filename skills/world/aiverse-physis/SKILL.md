@@ -1137,3 +1137,13 @@ do not pass an untyped `{}` as an argument. Use
 The Stage79 test's 12 occurrences were fixed in commit
 `146013f2e27cdefe24d6f224c6e30bad88c22251`.
 This is an API source inspection, NOT native compile or CTest.
+
+### Stage 80 — const World API in PHYSIS/NEREID tests
+
+For `const World&`, use `tryGetConst<T>(Entity)` with a null check;
+`World::get<T>(Entity)` is mutable-only. Both Stage78 same-World test
+reads were fixed at `4d9c1adb94f88c7aefef58e3320afda9297e0b48`.
+Owner then reported `AIVERSE: PASS` (20s, zero warnings/errors).
+Inspect the actual report's `ctest.log` for per-test results.
+Handoff: `docs/agent-handoffs/physis-stage80-const-world-native-2026-11-19.md`.
+
