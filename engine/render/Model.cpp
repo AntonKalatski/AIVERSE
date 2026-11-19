@@ -388,6 +388,56 @@ gfx::PixelFormat gpuFormat(const CompressedImage& c) {
 
 void uploadImage(gfx::Device& dev, Image& img) {
     if (img.tex.valid()) return;
+    // Virtualized base-colour images can retain a small fallback *instead*
+    // of uploading their full-resolution source. This must be configured
+    // before upload; never replace shared/cached GPU texture handles.
+    // Exact alpha cutouts and image reuse are checked by the opt-in
+    // ModelVirtualTextureFallback.h asset policy.
+    if (img.virtualFallbackMaxDimension > 0) {
+        const auto& pixels = img.sharedRgba ? *img.sharedRgba : img.rgba;
+        const size_t w0 = img.width > 0 ? size_t(img.width) : 0;
+        const size_t h0 = img.height > 0 ? size_t(img.height) : 0;
+        if (!w0 || !h0 || w0 > std::numeric_limits<size_t>::max()/h0 ||
+            w0*h0 > std::numeric_limits<size_t>::max()/4u ||
+            pixels.size() != w0*h0*4u)
+            return; // No silent full-resolution upload on an invalid VT source.
+        std::vector<uint8_t> coarse(pixels.begin(),pixels.end());
+        int width = img.width, height = img.height;
+        while (std::max(width,height) > img.virtualFallbackMaxDimension) {
+            const int nextW = std::max(1,(width+1)/2);
+            const int nextH = std::max(1,(height+1)/2);
+            std::vector<uint8_t> reduced(size_t(nextW)*size_t(nextH)*4u);
+            for (int y = 0; y < nextH; ++y)
+                for (int x = 0; x < nextW; ++x) {
+                    uint32_t channel[4] = {};
+                    for (int dy = 0; dy < 2; ++dy)
+                        for (int dx = 0; dx < 2; ++dx) {
+                            const int sx = std::min(width-1,x*2+dx);
+                            const int sy = std::min(height-1,y*2+dy);
+                            const size_t pos = (size_t(sy)*size_t(width)+size_t(sx))*4u;
+                            for (int c = 0; c < 4; ++c)
+                                channel[c] += coarse[pos+size_t(c)];
+                        }
+                    const size_t dst = (size_t(y)*size_t(nextW)+size_t(x))*4u;
+                    for (int c = 0; c < 4; ++c)
+                        reduced[dst+size_t(c)] = uint8_t((channel[c]+2u)/4u);
+                }
+            coarse.swap(reduced);
+            width = nextW;
+            height = nextH;
+        }
+        gfx::TextureDesc td;
+        td.width = width; td.height = height;
+        td.format = gfx::PixelFormat::RGBA8;
+        td.filter = img.nearest ? gfx::Filter::Nearest : gfx::Filter::Linear;
+        td.repeat = img.repeat;
+        td.mipmaps = !img.nearest;
+        td.data = coarse.data();
+        td.label = img.name.c_str();
+        img.tex = dev.createTexture(td);
+        img.gpuCompressed = false;
+        return;
+    }
     if (img.compressed && !img.compressed->levels.empty()) {
         // keep KTX2 blocks compressed in VRAM when the GPU samples them (shaders decode sRGB themselves)
         const CompressedImage& c = *img.compressed;
@@ -569,7 +619,12 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         }
     }
     for (auto& img : m.images) {
-        if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
+        // Virtual-image fallback sizing is intentionally per Model::Image.
+        // Never reuse a full-resolution ModelTextureCache entry under the
+        // same texture key; the reduced resource is owned by this model.
+        if (img.virtualFallbackMaxDimension > 0) uploadImage(dev,img);
+        else if (img.textureCache) img.textureCache->upload(dev, img);
+        else uploadImage(dev, img);
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
