@@ -899,3 +899,10 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - Test status: **NOT RUN** (implementation-first request). Source code and test cases have been authored but no native Mac C++ compilation, Metal Creator GUI validation, CI result or end-to-end LOD render has been verified. Historic 5J 11/11 passes do not apply to the new code.
 - Remaining: true bind pose / skin rebinding and inverse-bind authoring; persisted project-owned rig corrections rather than standalone sidecar; automatically deriving accurate source→LOD correspondence; editor LOD mapping UI and GPU LOD switch; high quality skin/eye/hair shading and groom self-collision; release acceptance. The existing engine's auto-LOD generator is not a guaranteed morph-preserving source vertex map, and must not be treated as one.
 - Next: implement a bounded LOD correspondence authoring utility with geometry support/strict tolerance and editor import/export; integrate correct local/world skin spaces; then one `bash tools/vivid-validate.sh --full` on Mac after features are complete, fixing the first observed compiler errors.
+
+
+## Stage 6Z follow-up — strict geometric LOD correspondence
+
+- Code commits: `4c72c0684fd4f857741e21db7f2d81816421ed3e` added `MorphLodTransfer::matchPositions(source,lod,tolerance)`; `8cc8287aec2e8c54c464147420467e9fa0229e74` caps diagnostic O(source×LOD) search to 32K vertices per side; `cea5928bb4c18b0447567d99182889b4bceb6886` added an authored exact-coordinate mapping regression.
+- This is a **fail-closed reference matcher** for identical/near-identical vertex positions, not a production LOD baking/reprojection algorithm. It rejects no match, ambiguous source match, nonfinite coordinates and excessively large inputs. It can only transfer sparse facial morphs between meshes sharing actual source positions; arbitrary decimated LODs with different vertex positions need barycentric surface correspondence.
+- Tests **NOT RUN** (source assertions only). Next: implement explicit surface projection correspondence and GPU pipeline validation after the larger functional roadmap.
