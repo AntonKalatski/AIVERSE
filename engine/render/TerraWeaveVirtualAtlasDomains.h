@@ -80,6 +80,19 @@ public:
         return d->session->prepare(next,d->options.physicalPages,
                                    d->options.bufferedDiskPages);
     }
+    // Import a Python/native immutable page archive into this specific
+    // domain. The active atlas is untouched until explicit promote().
+    // On failure inspect session(id)->lastError().
+    bool prepareFromArchiveDirectory(
+        DomainId id, const std::filesystem::path& directory,
+        uint64_t importedRevision = 0,
+        size_t maxArchiveBytes = size_t(512) << 20,
+        size_t maxPages = 262144) {
+        Domain* d=find(id);
+        return d && d->session->prepareFromArchiveDirectory(
+            directory,d->options.physicalPages,d->options.bufferedDiskPages,
+            importedRevision,maxArchiveBytes,maxPages);
+    }
     size_t pumpCandidate(DomainId id,size_t maxNewGpuPages=8) {
         Domain* d=find(id);
         return d ? d->session->pumpCandidate(maxNewGpuPages) : 0;
