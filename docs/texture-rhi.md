@@ -1002,15 +1002,15 @@ change is possible. The non-VT image loading path is unchanged.
 `releaseModel()` destroys the model-owned coarse image like any
 other uploaded texture.
 
-**Important alpha limitation:** existing Terra Horizon forest
-cluster atlases and many Arbor impostors use `AlphaMode::Mask`
-for silhouette clipping. They are deliberately NOT downsampled
-by this stage: a coarse alpha mask would alter the visible
-silhouette in the scene and shadow passes. Supporting them
-without keeping full RGBA8 in VRAM requires a separate native
-full-resolution alpha-only mask or another equivalent coverage
-solution in every rendering pass. Until then the opaque-image
-optimization is intentionally conservative.
+**Historical Stage 10F restriction (now superseded):** the
+original coarse fallback implementation excluded masked Terra
+Horizon forest clusters and Arbor impostors because their source
+RGBA8 alpha supplied the cutout silhouette. The later section
+**Full-resolution cutout alpha with reduced VT colour fallback**
+adds a separate full-resolution R8 alpha resource and shader
+variants for colour/shadow/selection/feedback. Masked images can
+now use the explicit opt-in preserve-alpha policy, subject to
+its material-compatibility checks and deferred GPU validation.
 
 Native builds, GPU allocation accounting and visual comparisons
 have not been run yet. Verify actual driver residency and
