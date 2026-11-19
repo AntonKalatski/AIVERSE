@@ -187,6 +187,13 @@ public:
     // Call between submitted frames, never during presentation worker dispatch.
     // Returns the number of cache keys invalidated (including failed loads).
     size_t reloadModelSources(const std::vector<std::string>& sources);
+    // Rebuild appearances for affected authored types without evicting or
+    // re-uploading their Model resources. Graph and material changes are
+    // staged first; on compile/parse failure existing animations stay alive.
+    // Returns true for an accepted transaction (including zero resident types).
+    bool reloadAppearanceTypes(const std::set<size_t>& types,
+                               bool reloadMaterialLibrary=false,
+                               size_t* refreshed=nullptr);
     bool typeCurrent(uint16_t t) const { return typeLoaded(t) && requestedModels_[t]==loadedModels_[t]; }
     bool detailRequested(uint16_t t) const { return t<requestedModels_.size() && requestedModels_[t].empty(); }
     void requestDetail(uint16_t type, bool detailed);
