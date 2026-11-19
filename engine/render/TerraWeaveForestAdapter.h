@@ -6,6 +6,7 @@
 #pragma once
 
 #include "engine/render/TerraWeaveModelAdapter.h"
+#include "engine/render/TerraWeaveRootModel.h"
 #include "engine/render/TerraWeaveImpostorAtlas.h"
 #include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/world/TerraWeaveWindField.h"
@@ -64,6 +65,7 @@ public:
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
         branchPivots_.emplace(profile.speciesId,std::move(pivots));
         evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
+        prototypeSeeds_[profile.speciesId]=meshSeed;
         if(phenology_!=CanopyPhenology{} || gpuCrownWindActive())
             rebuildPhenologyMaterials();
     }
@@ -117,6 +119,62 @@ public:
     }
     size_t branchPoseBudgetBytes() const {return branchPoseBudgetBytes_;}
 
+    // Roots are optional visual assets: no mesh or GPU resource exists
+    // until a soil snapshot reports exposed tree/shrub roots. Grass has none.
+    void setRootProfile(uint32_t speciesId,RootProfile profile) {
+        validateRootProfile(profile);
+        if(!models_.contains(speciesId))
+            throw std::invalid_argument("TerraWeave unregistered root species");
+        for(const auto& [key,model]:rootModels_) {
+            (void)model;
+            if(key.first==speciesId)
+                throw std::logic_error(
+                    "TerraWeave root profile cannot change after prototype preparation");
+        }
+        rootProfiles_[speciesId]=profile;
+    }
+    static uint32_t exposedRootTier(const RootState& state,
+                                    RootProfile profile) {
+        if(!state.hasVisibleRoots || state.exposedCm==0 ||
+           profile.habit==PlantHabit::Grass)return 0;
+        const uint64_t numerator=uint64_t(state.exposedCm)*3u+
+            profile.depthCm-1u;
+        return uint32_t(std::clamp<uint64_t>(
+            numerator/std::max(1u,profile.depthCm),1u,3u));
+    }
+    void setRootStates(const std::vector<RootState>& states) {
+        std::map<std::pair<uint32_t,uint64_t>,RootState> next;
+        for(const auto& state:states) {
+            const auto profile=rootProfile(state.speciesId);
+            if(state.habit!=profile.habit ||
+               state.habit==PlantHabit::Grass ||
+               state.supportPermille>1000u ||
+               state.exposedCm>profile.depthCm)
+                throw std::invalid_argument("TerraWeave incompatible root state");
+            if(!next.emplace(std::make_pair(state.speciesId,state.plantKey),
+                             state).second)
+                throw std::invalid_argument("TerraWeave duplicate root identity");
+        }
+        for(const auto& [key,state]:next) {
+            const auto profile=rootProfile(key.first);
+            const auto tier=exposedRootTier(state,profile);
+            if(!tier)continue;
+            const auto modelKey=std::make_pair(key.first,tier);
+            if(!rootModels_.contains(modelKey))
+                rootModels_.emplace(modelKey,makeExposedRootModel(
+                    key.first,prototypeSeeds_.at(key.first),profile,tier));
+        }
+        rootStates_.swap(next);
+    }
+    size_t generatedRootPrototypes()const{return rootModels_.size();}
+    bool pendingRootUploads()const {
+        for(const auto& [key,model]:rootModels_) {
+            (void)key;
+            if(!model->vb.valid() || !model->ib.valid())return true;
+        }
+        return false;
+    }
+
     size_t prototypeCount() const { return models_.size(); }
     render::Model* prototype(uint32_t speciesId) const {
         const auto it = models_.find(speciesId);
@@ -146,7 +204,7 @@ public:
             }
             return true;
         };
-        return upload(models_) && upload(billboards_);
+        return upload(models_) && upload(billboards_) && upload(rootModels_);
     }
 
     void releaseModels(gfx::Device& device) {
@@ -157,6 +215,10 @@ public:
         for (auto& [id, model] : billboards_) {
             (void)id;
             render::releaseModel(device, *model);
+        }
+        for(auto& [key,model]:rootModels_) {
+            (void)key;
+            render::releaseModel(device,*model);
         }
     }
 
@@ -237,7 +299,11 @@ public:
                 // Both the branch model and the impostor use bark material 0
                 // and foliage material 1. Bare deciduous trees submit ONLY
                 // bark, eliminating invisible leaf draws in winter.
-                if(canopyCover==0u)draw.primitiveMaterialFilter=0;
+                if(canopyCover==0u || instance.foliagePermille==0u)
+                    draw.primitiveMaterialFilter=0;
+                const float brightness=0.65f+
+                    0.35f*float(std::min(instance.foliagePermille,1000u))*0.001f;
+                draw.tint={brightness,brightness,brightness,1.0f};
                 if (batch.lod == TreeLOD::Impostor) {
                     const auto& variants =
                         (phenology_==CanopyPhenology{} && !gpuCrownWindActive()) ?
@@ -315,6 +381,37 @@ public:
                     draw.useVertexParameters=true;
                 }
                 emit(draw);
+                // A tree whose ground was eroded remains at its planting
+                // height. Only a precomputed exposed-root tier adds one
+                // separate, shared bark model draw; no root mesh is
+                // generated or submitted for normal flat-ground plants.
+                if(batch.lod!=TreeLOD::Impostor) {
+                    const auto id=std::make_pair(instance.speciesId,
+                                                 instance.key);
+                    if(const auto root=rootStates_.find(id);
+                       root!=rootStates_.end()) {
+                        const uint32_t tier=exposedRootTier(
+                            root->second,rootProfile(instance.speciesId));
+                        if(tier) {
+                            const auto proto=rootModels_.find(
+                                {instance.speciesId,tier});
+                            if(proto!=rootModels_.end() &&
+                               proto->second->vb.valid() &&
+                               proto->second->ib.valid()) {
+                                render::ModelDraw exposed;
+                                exposed.model=proto->second.get();
+                                exposed.world=render::mat4::translate(relative)*
+                                    render::mat4::rotateY(yaw)*
+                                    render::mat4::scale({scale,scale,scale});
+                                exposed.flags=render::kDrawStatic;
+                                exposed.persistentId=detail::mix64(
+                                    draw.persistentId^0xe91aa6f5bba64271ULL);
+                                if(!exposed.persistentId)exposed.persistentId=1;
+                                emit(exposed);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -340,6 +437,11 @@ public:
     }
 
 private:
+    RootProfile rootProfile(uint32_t speciesId)const {
+        if(const auto it=rootProfiles_.find(speciesId);
+           it!=rootProfiles_.end())return it->second;
+        return defaultRootProfile(PlantHabit::Tree);
+    }
     bool gpuCrownWindActive() const {
         return wind_.branchFlexPermille>0 &&
                wind_.maxLeanMilliDegrees>0 &&
@@ -450,6 +552,11 @@ private:
     mutable std::deque<std::vector<render::mat4>> branchPoseArena_;
     std::map<uint32_t,std::vector<render::float3>> branchPivots_;
     std::map<uint32_t,bool> evergreen_;
+    std::map<uint32_t,uint64_t> prototypeSeeds_;
+    std::map<uint32_t,RootProfile> rootProfiles_;
+    std::map<std::pair<uint32_t,uint64_t>,RootState> rootStates_;
+    std::map<std::pair<uint32_t,uint32_t>,
+             std::unique_ptr<render::Model>> rootModels_;
     std::map<uint32_t,std::vector<render::Material>> seasonalNearMaterials_;
     std::map<uint32_t,std::vector<std::vector<render::Material>>> seasonalBillboardMaterials_;
     std::map<uint32_t, std::unique_ptr<render::Model>> models_;
