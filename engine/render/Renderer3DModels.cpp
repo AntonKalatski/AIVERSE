@@ -392,6 +392,51 @@ void Renderer3D::syncPersistentModels() {
             uint32_t(persistentScene_.capacity()), frame, viewProj_);
 }
 
+ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& source) {
+    // Model* is a lookup key, not proof of identity or unchanged content.
+    // Revision, GPU allocation, public cardinalities and geometry attachment
+    // are checked on every hit; asset owners must invalidate before destruction.
+    auto it = staticModelEligibility_.find(&source);
+    if (it != staticModelEligibility_.end()) {
+        const auto& entry = it->second;
+        if (entry.geometryRevision == source.geometryRevision &&
+            entry.vb == source.vb.id && entry.ib == source.ib.id &&
+            entry.nodes == source.nodes.size() &&
+            entry.meshes == source.meshes.size() &&
+            entry.bindNodes == source.bindWorld.size() &&
+            entry.skins == source.skins.size() &&
+            entry.materials == source.materials.size() &&
+            entry.geometry == source.geometry.get()) {
+            it->second.seen = staticEligibilityEpoch_;
+            ++staticEligibilityStats_.hits;
+            return entry.eligibility;
+        }
+    }
+    ++staticEligibilityStats_.misses;
+    const ModelStaticEligibility result = classifyModelStaticEligibility(source);
+    // Retain the hottest assets without unbounded growth from procedural or
+    // streamed one-shot models. At capacity, unmatched models are evaluated
+    // directly until the next epoch sweep or an explicit asset invalidation.
+    constexpr size_t kMaximumModelEntries = 8192;
+    if (it != staticModelEligibility_.end() ||
+        staticModelEligibility_.size() < kMaximumModelEntries) {
+        StaticEligibilityEntry entry{};
+        entry.eligibility = result;
+        entry.geometryRevision = source.geometryRevision;
+        entry.seen = staticEligibilityEpoch_;
+        entry.vb = source.vb.id;
+        entry.ib = source.ib.id;
+        entry.nodes = source.nodes.size();
+        entry.meshes = source.meshes.size();
+        entry.bindNodes = source.bindWorld.size();
+        entry.skins = source.skins.size();
+        entry.materials = source.materials.size();
+        entry.geometry = source.geometry.get();
+        staticModelEligibility_[&source] = entry;
+    }
+    return result;
+}
+
 void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
@@ -410,11 +455,17 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             return mat.shaderGraph && int(matQuality_) >= mat.shaderGraph->minQuality &&
                    mat.shaderGraph->outputs.count("vertexOffset");
         });
+    // Only the geometry-revision-dependent asset traits are memoized.
+    // Current draw flags, pose and displacement remain live per instance.
+    ModelStaticEligibility eligibility{};
+    if ((staticModelCacheEnabled_ || staticRenderPacketsEnabled_) &&
+        d.persistentId && (d.flags & kDrawStatic))
+        eligibility = cachedStaticModelEligibility(*m);
     const StaticModelCache* cache = d.staticCache;
     if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
         cache = nullptr;
     if (!cache && staticModelCacheEnabled_) {
-        if (staticModelCacheCandidate(d, activeDisplacement)) {
+        if (staticModelCacheDrawCandidate(d, activeDisplacement, eligibility)) {
             auto& entry = staticModelCaches_[d.persistentId];
             const bool unchanged =
                 entry.vertexBuffer == m->vb.id &&
@@ -462,8 +513,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         return flag && std::strcmp(flag, "1") == 0;
     }();
     const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
-        staticRenderPacketCandidate(d, activeDisplacement, bakedActive(),
-                                    lodDiagnosticsEnabled_);
+        staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
+                                        lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();
     std::vector<int> packetSelectedMeshes;
     bool packetHasFade = false;
