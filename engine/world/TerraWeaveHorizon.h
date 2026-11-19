@@ -92,6 +92,10 @@ struct HorizonSurfaceSources {
     // Legacy native providers can omit this and retain whole-cm sampling.
     std::function<std::optional<int32_t>(int64_t,int64_t)>
         nearGroundHeightAtQ16Cm;
+    // Optional neighbor-aware signed X/Z slopes in permille. Returns nullopt
+    // when a tile is absent or a boundary is discontinuous. CPU bake only.
+    std::function<std::optional<std::pair<int32_t,int32_t>>(int64_t,int64_t)>
+        nearGroundContinuousSlopeAtQ16Cm;
 };
 
 struct HorizonBake {
