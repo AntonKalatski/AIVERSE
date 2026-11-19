@@ -230,7 +230,7 @@ bool IndexResidency::update(const std::vector<IndexDemand>& demands,
     }
 
     if (incremental_)
-        return updateIncremental(wanted, deferred, error);
+        return updateIncremental(wanted, sorted, deferred, error);
 
     bool unchanged = buffer_.valid();
     uint64_t oldNodes = 0, newNodes = 0, evictions = 0;
