@@ -24,7 +24,13 @@ int main() {
     stepAnimationPresentation(p,.1f);
     assert(p.get<AnimationPoseComponent>(e).valid);
     assert(registry.compile("hero",model,good,3));
+    p.get<AnimationPlayerComponent>(e).restart=false;
     assert(registry.apply(p)==1);
     assert(p.get<AnimationAssetComponent>(e).graph!=original);
+    assert(p.get<AnimationPlayerComponent>(e).restart);
+    // Retiring a Model invalidates its last-good graph cache before GPU
+    // resources are destroyed; reusing its pointer is not a valid cache hit.
+    assert(registry.forgetModel(&model)==1);
+    assert(registry.lookup("hero")==nullptr);
     return 0;
 }
