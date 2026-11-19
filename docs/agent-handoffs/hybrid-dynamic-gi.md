@@ -462,3 +462,21 @@ New source-only tests: gi_gpu_bvh_sparse_upload checks a 64-chunk initial full G
 ACTUAL validation: inspected live Metal RHI storage update semantics via GitHub source; GitHub source creation, CMake edits and repository commits succeeded. NOT RUN: C++ build, CTest, xcrun Metal shader compile, real GPU readback/render, ./run-tests.sh --quick, macOS/Android timing. Do not claim performance improvements without actual GPU timings.
 
 Next agent work: (1) Pull feature/hybrid-dynamic-gi, build all 20 registered GI CTest targets, run ctest --test-dir build/gi --output-on-failure -R '^gi_' and full ./run-tests.sh --quick; report exact tested SHA, compiler warnings, results and MSL validation. (2) Implement true per-chunk GPU residency with stable offsets, partial TLAS updates, fence-safe retirement, then measure bytes/time for falling trees and terrain sculpting. (3) Add 2-3 nested scrolling clipmaps with independently capped GPU memory/updates and blend between levels; improve per-slot validity and double-buffered publication before broad runtime enablement. (4) Integrate with TerraWeave/PHYSIS/NEREID read-only ECS change snapshots and live GPU visual benchmarks. No merge into main without acceptance.
+
+## Stage 20 - 2026-11-19 - strong ownership of cached GPU chunk BVHs (SOURCE COMMITTED; NOT RUN)
+
+Code commits:
+- c6b1391c327e09fe7e9730201512e68d69d51855 - engine/render/GiChunkedGeometry.h, forEachChunkShared stable immutable shared_ptr enumeration
+- e814a0f98074125b8df06edcb7541c2b6792b484 - engine/render/GiGpuChunkBvhCache.h, retain strong source ownership and expose chunkSource diagnostic
+- 10a75dfe6230028aa376b7c71d3cb830ff9c54ea - tests/render/gi_gpu_chunk_bvh_lifetime.cpp
+- e01e08648359a800367c72812f1d0bcf52f7164a - CMakeLists.txt, gi_gpu_chunk_bvh_lifetime in standard ALL/CTest.
+
+Problem fixed: the Stage 18 GPU chunk cache originally used a raw pointer to StaticShadowGeometry as its unchanged-chunk identity key. When the producing GiChunkedGeometrySnapshot was destroyed, a pointer could dangle and later coincidentally be reused for a different geometry allocation. GiChunkedGeometrySnapshot::forEachChunkShared now safely enumerates immutable shared_ptr<const StaticShadowGeometry>. The cache entry retains this strong immutable owner and compares shared_ptr source identity across generations. Unchanged chunk BLAS memory remains reused after a snapshot goes away; a removed cache entry releases the source only when other owners also release it. chunkSource(id) is for debugging/ownership checks and should not be used to mutate the geometry.
+
+Compatibility: no change to GPU BVH ABI, shaders, texture formats, cache serialization or ECS save/network; producer-facing forEachChunk remains available, while a new strong-owner enumeration is used for cache lifetime. Still bounded to 8192 triangles and one compute batch/fence in the experimental GPU backend. Stage 19 incremental GPU writes remain opt-in and subject to stable layout constraints. Metal GPU updates and memory retirement are only safe via the ticket-queue API after completed readback.
+
+Test source (NOT RUN): gi_gpu_chunk_bvh_lifetime creates one immutable chunk, holds a weak_ptr to its geometry, populates cache, destroys scene/builder, checks cached source stays live and traceable, then refreshes cache with an empty snapshot and checks source destruction. Uses always-on AIVERSE_TEST_CHECK.
+
+ACTUAL validation: GitHub source inspection / updates and CTest registration success. NOT RUN: native C++ compilation, CTest, Metal shader validation, GPU execution/timing and full ./run-tests.sh. Do not claim test PASS.
+
+Next: Pull branch and compile/run all 21 registered GI tests in Debug and Release; run ctest -R '^gi_' and ./run-tests.sh --quick, record exact tested SHA and logs. Check MSL shader compile/Metal API Validation and actual GPU result parity. Then implement cascaded clipmap manager (2-3 radii), pixel-space blending across cascade borders, GPU per-brick valid masks, robust GPU BVH allocation/reuse/retirement under async fences, integration with TerraWeave/PHYSIS/NEREID read-only ECS world change notifications and real iOS/Android performance profiling. Do not auto-enable/merge into main until acceptance.
