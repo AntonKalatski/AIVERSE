@@ -115,7 +115,13 @@ public:
                     // always bypass disk archives for the modified region.
                     const bool dirtySource=generation &&
                         !generation->edited.empty();
+                    // Static TWH8 archives have no phenology payload or
+                    // seasonal fingerprint; never replay a summer atlas
+                    // while the runtime requests a different canopy state.
+                    const bool seasonalSource=surface &&
+                        surface->phenology!=CanopyPhenology{};
                     const bool diskAllowed=archive && !dirtySource &&
+                        !seasonalSource &&
                         (!surface || archive->authoredContentHash!=0);
                     const uint64_t fingerprint=diskAllowed ?
                         horizonArchiveFingerprint(terrain_,biomes_,settings_,
