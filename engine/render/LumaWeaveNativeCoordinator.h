@@ -128,7 +128,11 @@ public:
         // Default remain disabled until all source publication + separate
         // material capture is supported by current GPU and PostProcess.
         gpu_.setEnabled(false);
-        if(requestedQuality!=LumaWeaveQuality::Off && gpu_.ready()) {
+        // GPU capture requires an actually active linear HDR downstream.
+        // Otherwise choose the legacy mobile path instead of suppressing
+        // legacy lights for a postprocess wrapper that will never run.
+        if(requestedQuality!=LumaWeaveQuality::Off && gpu_.ready() &&
+           existing_.active() && existing_.linearScene()) {
             stats_.quality=LumaWeaveQualityPolicy::choose(
                 requestedQuality,viewW,viewH,registry_.lights().size(),
                 gpu_.screen().settings());
