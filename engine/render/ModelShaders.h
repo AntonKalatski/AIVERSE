@@ -428,8 +428,11 @@ void main() {
         col += sun * spec * sh * clamp(m_uv1.w, 0.0, 1.0) * 0.12;
     } else if (m_uv1.y > 2.5 && m_uv1.y < 3.5) { // iris/cornea wet film
         float tear = clamp(m_uv1.w, 0.0, 1.0);
+        float cornealIor = clamp(m_uv1.z, 1.0, 2.0);
+        float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
-        col += sun * sh * vec3(cornealGlint) * (0.15 + 0.68 * tear);
+        col += sun * sh * vec3(cornealGlint) *
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * iorF0);
     } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
         vec3 strandT = normalize(v_tan.xyz);
         float alignment = dot(strandT, H);
@@ -916,8 +919,11 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         col += sun * spec * sh * clamp(m.uv1.w, 0.0, 1.0) * 0.12;
     } else if (m.uv1.y > 2.5 && m.uv1.y < 3.5) {
         float tear = clamp(m.uv1.w, 0.0, 1.0);
+        float cornealIor = clamp(m.uv1.z, 1.0, 2.0);
+        float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
-        col += sun * sh * float3(cornealGlint) * (0.15 + 0.68 * tear);
+        col += sun * sh * float3(cornealGlint) *
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * iorF0);
     } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
         float3 strandT = normalize(in.tan.xyz);
         float alignment = dot(strandT, H);
