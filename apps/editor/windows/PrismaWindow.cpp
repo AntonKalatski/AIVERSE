@@ -300,6 +300,8 @@ private:
         for (auto& w : warningsRu(e)) ui::toneText(ui::Tone::Warn, "%s", w.c_str());
         if (d.type == PrismaType::DepthOfField)
             ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1; стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
+        if (d.type == PrismaType::AutoExposure)
+            ui::help("HDR High + AIVERSE_PRISMA_AUTO_EXPOSURE=1. highlightRejection=0 сохраняет прежний замер. Значения выше нуля уменьшают вклад очень ярких пикселей, начиная с highlightStartEV (log2 яркости), с переходом highlightSoftnessEV; вклад всегда не меньше 5%, чтобы полностью яркая сцена не приводила к нулевой сумме. Отдельная история адаптации для каждой камеры сбрасывается при camera cut. Замер идёт по линейному HDR до тонмаппинга; Color Grading применяется после.");
         int off = 0;
         for (auto& p : d.params) {
             switch (p.kind) {
