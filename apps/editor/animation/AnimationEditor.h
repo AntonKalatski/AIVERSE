@@ -129,6 +129,22 @@ private:
     std::string text(const char* key)const{return genreText(*ws_,("animationEditor."+std::string(key)).c_str());}
     Json& graph(){if(scope_.empty()||!doc_["graphs"].has(scope_)){scope_.clear();return doc_;}return doc_.member("graphs").member(scope_);}
     static Json* node(Json& g,const std::string& id){for(auto& n:g.member("nodes").itemsMut())if(n.getStr("id")==id)return &n;return nullptr;}
+    static void stripEditorNodePositions(Json& g) {
+        if (auto* nodes=g.find("nodes"))
+            for (auto& n : nodes->itemsMut()) n.erase("position");
+    }
+    std::string previewProgramKey() {
+        // The graph editor's screen position is not an animation operation.
+        // Do not reset a running animation preview on every node drag.
+        Json active = graph();
+        Json nested = doc_["graphs"];
+        stripEditorNodePositions(active);
+        for (auto& [name,g] : nested.membersMut()) {
+            (void)name;
+            stripEditorNodePositions(g);
+        }
+        return active.dump(-1)+nested.dump(-1);
+    }
     // Retire the ENTIRE old GPU preview, including its model buffer,
     // compiled graph referencing Model, and Portrait's Renderer3D + targets.
     // The Editor keeps the archive alive until a real GPU fence completes.
@@ -242,7 +258,7 @@ private:
         try{
             if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_->init(*dev_,320))throw std::runtime_error("preview initialization failed");}
             if(!model_)return;
-            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){
+            std::string key=previewProgramKey();if(programKey_!=key){
                 programKey_=key;
                 // Graph recompilation must not erase the user-adjusted
                 // preview parameters, even when model/Portrait GPU assets
