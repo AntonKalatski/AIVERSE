@@ -305,6 +305,8 @@ public:
         binding.pageTable=stream->pageTableTexture();
         binding.layer=layer;
         binding.gutterPixels=float(d->session->activeVersion().gutter);
+        binding.addressU=d->session->activeVersion().addressU;
+        binding.addressV=d->session->activeVersion().addressV;
         return binding.valid();
     }
 
