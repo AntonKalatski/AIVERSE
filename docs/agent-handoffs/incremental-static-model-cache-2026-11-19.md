@@ -2191,3 +2191,45 @@ AUTO learning exit=0
 **Still unverified:** actual CPU learned switching on >=64 visible items, GPU ICB in large scenes, stability/p95 in long runs, GPU timestamp comparisons, full CTest/CI and Vulkan parity. Keep opt-in defaults OFF and PR Draft.
 
 **Next action:** add medium/high workload fixtures with independent Direct/CPU MDI/GPU ICB observations and 60+ samples, compare warm steady-state per-pass CPU profile and identical GPU raster captures, then integrate real GPU timing before any general rollout. No change to renderer policy needed on the basis of this small-scene test.
+
+
+---
+
+## Stage 70 — configurable long-form AUTO stress fixture (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Implementation commits:** `2f2f8017aec303b5feca4933570580143a09e9c7` and `1043a9de747fe89cb42de899c15c6d2f4db8e0e1`. **Changed source:** `tests/render/material_batches.cpp` only. Production renderer and AUTO policy unchanged.
+
+### New scenario and intended test
+
+Set `AIVERSE_PALETTE_TEST_CASE=auto_stress` and `AIVERSE_BATCH_STRESS_ITEMS=1024|10000|100000` (valid integer range 64–100000). Fixture uses the existing deterministic 16-primitive rigid model, reusing its uploaded mesh/material buffers, and repeats ModelDraw submissions in a bounded deterministic grid. The requested **model item target** is rounded upward to a multiple of 16 (actual submitted draw calls = ceil(requested/16)); it is NOT a verified post-frustum visible item count. Only actual model draw-path counters and AUTO lane diagnostic histories establish how much work each pass really rendered.
+
+To let Stage 68's per-pass CPU learning reach the 8+8 sample warmup and revisit alternatives, stress mode extends the existing fixture: Direct frames 0–89, AUTO frames 90–195; direct CPU measurement frames 10–75 (66 samples), AUTO CPU measurement frames 115–195 (81 samples). Captures at frames 75 and 195 are byte-compared (`changed_channels=0` required). Both phases use the same camera, lighting, submitted objects, and buffers. Second source commit explicitly fixes a potential accidental non-Direct baseline by applying modelMultiDraw=false before frame 90 for `auto_stress`. Print requested target, submitted ModelDraw count, per-mode shadow+opaque draw counts, CPU MDI/GPU ICB real submissions and commands, and the existing AUTO CPU learned per-pass/bucket EWMA if any bucket trained. No fixed indirect-submission expectation: AUTO can validly choose Direct, CPU MDI or GPU ICB. Any pixel mismatch or other render error remains a failing exit.
+
+**Important limitations:** 16-primitive mesh is reused repeatedly; geometry diversity, skinning, materials, occlusion and real-scene spatial distribution are not represented. The bounded grid repeats positions at high counts, causing overdraw and possible severe GPU load for 100k. This is an escalating stress/smoke test, not representative FPS or GPU bandwidth evidence. `renderer.render()` time is synchronous CPU wall only, not GPU execution latency. Fixed sequential Direct→AUTO order can be affected by thermal state, cache warming and frequency; run repeat/crossover A/B/A on a genuine representative scene before using results to enable the policy by default.
+
+### Verification actually performed
+
+GitHub connector accepted both source changes and the relevant fixture text was re-read to confirm the new scenario and corresponding output path. **NOT RUN:** Mac CMake build, executable, new stress modes, GPU parity, memory or timing measurements, CI, full CTest. The user's earlier Stage 69 small Direct fallback PASS does NOT validate this stage. Keep PR #34 Draft and experimental feature flags OFF by default.
+
+### Exact next step (Mac Studio)
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+
+# Start with 1024 requested primitive items. GPU ICB deliberately disabled
+# to collect clean Direct-vs-CPU MDI policy feedback on both passes.
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-1k
+echo "stress-1k exit=$?"
+```
+
+Require `changed_channels=0`, both phases' samples and learned AUTO buckets, and exit 0. If green, repeat with 10000. Run 100000 last and watch system memory/thermal pressure; stop if unreasonable. For separate GPU ICB assessment, enable its explicit opt-in Metal environment switches and note opaque pass may mix with CPU MDI on other passes. Tests and real-scene GPU timing remain necessary. The next agent should add per-pass post-culling visible-item counters, repeated randomized A/B/A scheduling, GPU timestamp support if available, and scenario material/LOD variations, documenting each stage.
