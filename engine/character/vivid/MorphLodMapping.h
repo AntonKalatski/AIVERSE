@@ -174,7 +174,9 @@ struct MorphLodMapping {
                                 std::span<const render::float3> sourcePositions,
                                 std::span<const std::uint32_t> indices) const {
         validate();
-        if(morphs.vertices()!=sourceVertices ||
+        // Import preparation may append generated LOD vertices to the
+        // full-model CSR, while the original source prefix remains stable.
+        if(morphs.vertices()<sourceVertices ||
            sourcePositions.size()!=sourceVertices ||
            indices.size()/3!=sourceTriangles ||
            indices.size()%3 ||
