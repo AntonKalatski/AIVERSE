@@ -3357,3 +3357,80 @@ Startup JSON: `"terraweaveHorizon": { "quality":"high", "presentationQuality":"m
 - The Stage38 lossless CPU shadow codec is optional; Mobile/Balanced/Desktop presets enable it for dormant GPU cache entries. Activation still restores full bytes before Stage35 GPU RHI patches, with the same correctness contract and staging memory cost.
 - **Independent tester's next step:** refresh Stage29 outdated 1-layer impostor fixtures first, then compile/test Stage31–39, including `HorizonPresentationQualityPreset` values and invalid enums, optional manifest defaults and parsing errors, constructor getter synchronization, bundled validation with no partial mutation, switching exact/procedural wind during active/outgoing crossfade, per-update bandwidth budget vs sparse/dense runs, zero-budget safe fallback, LRU compressed/raw cache retention/re-entry and Metal/Vulkan/GL visual/perf. Save actual command/output and CI links in a new handoff; do not merge merely because GitHub source writes succeeded.
 - **Optional later feature (Stage40 only if explicitly continued):** bounded user-controlled automatic quality adaptation, using measured sustained GPU/CPU frame times and hysteresis with explicit opt-in. Do not silently alter `HorizonSettings` geometry or TWH8 archive fingerprints at runtime.
+
+## Stage 40 — bounded host-fed adaptive Horizon presentation quality (SOURCE COMMITTED; TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`. **PR:** [#24](https://github.com/chromealex/AIVERSE/pull/24), Draft, targeting `main`. At start of stage GitHub compare returned `behind_by=0`; `main` is already ancestral and no branch merge/rebase/force push was necessary. Owner approved **functional feature work first; compile, QA, GPU benchmarking belong to a separate stage**.
+
+### Implementation and documentation commits (actual GitHub write responses)
+
+- `9f04ba49913edc3c96f1c2cd895e643a9ea56128` — NEW `engine/world/TerraWeaveHorizonAdaptiveQuality.h`. Adds `HorizonAdaptiveQualityConfig`, `HorizonFrameTimingSample`, `HorizonAdaptiveQualityState`, `initialHorizonAdaptiveQualityState` and pure `advanceHorizonAdaptiveQuality`. The policy has a configurable bounded quality floor/ceiling/initial level and validated target in microseconds, over/under target percentages, consecutive frame streaks and cooldown. It refuses invalid, duplicate, out-of-order, zero/missing, or >10s samples; only contiguous frame IDs contribute to a persistent streak. The worst available **real** CPU/GPU duration determines the decision, one Stage39 preset rank per successful transition. No GPU backend or PHYSIS dependency.
+- `60fd2a39547311f5c048495509273ed396a8aa4b` — `engine/render/TerraWeaveHorizonScene.h`: runtime owner-thread `setAdaptiveQualityConfig`, `adaptiveQualityConfig`, `adaptiveQualityState`, `submitAdaptiveFrameTiming`. Enabling selects its validated initial Stage39 runtime profile and resets sample history; disabling preserves the last applied quality. The controller uses existing Stage39 setters to apply a changed preset. Explicit manual Stage39 whole-policy or any of the individual wind presentation setters disables adaptation, while ordinary field/tick updates leave it untouched. Adds `HorizonRuntimeStats::adaptiveQualityEnabled`, `adaptiveQualityLevel`, samples/switches/downgrades/upgrades and last measured worst frame microseconds.
+- `d403699bda226bc88174487a681665d20a786476` — `engine/world/WorldScene.h`: native `setVegetationHorizonAdaptiveQualityConfig`, `vegetationHorizonAdaptiveQualityConfig`, `vegetationHorizonAdaptiveQualityState`, `submitVegetationHorizonFrameTiming` with no genre-specific include.
+- `9b28474845ebb59e9533b7c8b19dfb125ee0b0fa` — `engine/world/WorldScene.cpp`: forwards real timing samples to the optional Horizon scene; after an automatic transition keeps all existing `WorldScene` Stage39 effective policy getters synchronized; mirrors manual override opt-out and initializes the config getter from an optional manifest-provided Horizon controller. Disabled/absent Horizon returns false on submissions rather than inventing sample data.
+- `1dcaf5a71b6227bb0bb88ad0b7564444a59ab502` + BatterySaver floor follow-up `8b6ccb2e46043df6499557b109a32821e28d2cbb` — `engine/world/TerraWeaveHorizonManifest.h`: strictly opt-in nested `terraweaveHorizon.adaptiveQuality` object. Bounded fields: `enabled`, `minimum`, `maximum`, `initial`, `targetFrameUs`, `downgradePercent`, `upgradePercent`, `downgradeFrames`, `upgradeFrames`, `cooldownFrames`. Values are parsed/validated; bad names/types/ranges throw `JsonError`. If initial is omitted, inherited `presentationQuality` is used, else Balanced; choosing static BatterySaver expands the default minimum to BatterySaver. Existing `quality` geometry bake semantics are untouched.
+- `48eb033eb9d0a9d00d1a054c5ed27b8693031bab` — `docs/terrain/TERRAWEAVE.md`: native/manifest usage, real CPU/GPU time ownership, hysteresis and QA limitations.
+- `4220a0b5f00fdb8b46cae221f182feb857606ff0` — `skills/world/aiverse-terraweave/SKILL.md`: agent-facing source ownership, native API, safe timing and future test cases.
+- `d68767f738823c5ed714b09f13d23aa54df5ce09` — `AGENTS.md`: root cross-agent rule on measured frame samples, no geometry/PHYSIS ownership or fabricated GPU telemetry.
+- This appended **separate handoff commit** closes Stage40 implementation and records actual status for the next developer.
+
+### Native API and manifest example
+
+```cpp
+using namespace aiverse::terraweave;
+HorizonAdaptiveQualityConfig config;
+config.enabled=true;
+config.minimum=HorizonPresentationQualityPreset::Mobile;
+config.maximum=HorizonPresentationQualityPreset::Desktop;
+config.initial=HorizonPresentationQualityPreset::Balanced;
+worldScene.setVegetationHorizonAdaptiveQualityConfig(config);
+
+// The native host measures actual frame durations; 0 means unavailable.
+// Call from the same WorldScene/render owner thread after each real frame.
+worldScene.submitVegetationHorizonFrameTiming({
+    .frameId=presentedFrameSequence,
+    .cpuFrameUs=measuredCpuFrameUs,
+    .gpuFrameUs=measuredCompletedGpuFrameUs
+});
+```
+
+The optional JSON configuration:
+
+```json
+{
+  "terraweaveHorizon": {
+    "quality":"high",
+    "presentationQuality":"balanced",
+    "adaptiveQuality":{
+      "enabled":true,
+      "minimum":"mobile",
+      "maximum":"desktop",
+      "initial":"balanced",
+      "targetFrameUs":16667,
+      "downgradePercent":115,
+      "upgradePercent":80,
+      "downgradeFrames":30,
+      "upgradeFrames":240,
+      "cooldownFrames":240
+    }
+  }
+}
+```
+
+Runtime defaults are **disabled**, target 16,667 microseconds (~60 Hz), downgrade after 30 consecutive frames >115% target, upgrade after 240 consecutive frames <80% target, cooldown 240 frame IDs between any two switches, and Mobile..Desktop bounds. A quality change is exactly one level, never an immediate jump to extremes. Both CPU/GPU inputs are optional individually; at least one must be real/nonzero. Host must correctly relate completed asynchronous GPU timings to supplied frame IDs or submit GPU=0 if unsupported; `gfx::Device::gpuFrameMs()` may be absent/lagging and is not silently treated as current data. The controller does not inspect frame time without a host-provided timing submission and does not invent GPU timers.
+
+The controller is an **optional presentation quality policy over existing Stage39 presets**, not a new GPU allocation, asset/atlas format, render pass, mesh regeneration or automatic terrain LOD replacement. It never mutates `HorizonSettings`, authored near-landscape masks, TWH8 bake fingerprint, PHYSIS weather state, deterministic ECS gameplay or network replication. Changing the enabled/profile policy is owner-thread-only. `WorldScene` mirrors effective runtime settings whenever the controller changes levels; manual Stage39 API calls deliberately disable automatic decisions. A disabled controller keeps its last selected presentation profile and no further sample can switch it until re-enabled.
+
+### Verified and explicitly unrun work
+
+**Actually verified:** GitHub inspection of Stage39 `HorizonPresentationQuality`, HorizonScene owner-thread shaders/patch policies/stats, WorldScene lifecycle, manifest quality reader and `gfx::Device::gpuFrameMs()` backend contract. Re-read the added pure Stage40 config/state step, Horizon scene methods, manifest parser, WorldScene owner API and public controller diagnostics after successful GitHub commits. No local C++ working tree or runtime measurement was involved; PR was Draft at the last start-of-stage observation.
+
+**NOT RUN:** native compilation (CMake, Clang, GCC, MSVC), CTest, unit timing fixtures, integration with actual frame loop, GLSL/Metal/Vulkan shader pipelines, real GPU timestamp provider, UI screenshot, PHYSIS world load, exact-wind crossfade comparison, device-loss/restart, CPU/GPU FPS benchmarks or CI run outcome validation. Do not assert production readiness, completed visual QA or measured adaptive gains. Keep PR #24 Draft; changes have not been merged to main.
+
+### Risks and next specific test/development steps
+
+1. A global CPU/GPU frame duration may be dominated by unrelated game systems; moving TerraWeave quality alone may not resolve the bottleneck. The host is responsible for appropriate timing samples; a zero metric means absent, not 0ms. Missing/gapped frame IDs deliberately break consecutive streaks.
+2. Runtime policy switches obey Stage36's budget and Stage37/38 cache/shadow invariants. Particularly, moving to BatterySaver (0 GPU wind VB upload bytes) may defer restoring procedural RGB metadata, leaving safe macro wind presentation until a higher-bandwidth profile returns. This is not visual equality of all profiles, but does not mutate geometry.
+3. Manual Stage39 overrides intentionally switch the adaptive controller OFF; re-enable/reset config to resume automatic changes. No host-level timing capture scheduler or platform-specific auto-GPU-query is installed by merely enabling adaptiveQuality in the manifest.
+4. The separate QA agent should first migrate stale Stage29 single-layer impostor tests, then compile Stage31–40 and exercise: exact cutoff equality (strict >115%, <80%), 30/240 consecutive samples, cooldown before/after frame boundary, min/max level clamps, missing/zero/duplicate/reversed/gapped/implausibly long samples, CPU-only/GPU-only/worst of both, invalid bounds/enum, enable-disable-reset, direct and WorldScene manual opt-outs, manifest defaults/inherited BatterySaver, no-Horizon module, active/outgoing wind field crossfade, Stage36 budget starvation and Stage38 compressed GPU LRU restoration. Run real Metal/Vulkan/OpenGL CPU/GPU frame time probes, record exact CI/job URLs, result logs, captured screenshots and measured overhead in a new handoff. Do not merge PR #24 on source review alone.
+5. Future feature work (only if needed after QA): integrate a supported host timing provider with completed GPU frame IDs and optionally isolate Horizon's own GPU cost from total frame time, but NEVER infer a GPU timestamp from CPU upload duration or assign a made-up FPS.
