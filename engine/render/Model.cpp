@@ -492,40 +492,51 @@ void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
     image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true;
 }
 ModelTextureCache::PreparedGpuPromotion
-ModelTextureCache::prepareGpuPromotion(const std::vector<Model*>& models) {
+ModelTextureCache::prepareGpuPromotion(
+        const std::vector<Model*>& models,
+        const std::vector<PendingImage>& appended) {
     PreparedGpuPromotion plan(*this);
-    // A prepared plan stores pointers into stable Model images and map nodes.
-    // Do not modify/re-import any participating Model before commit().
+    // Both existing scratch Model images and future material-override slots
+    // participate in ONE preallocated set of GPU-cache owner nodes.
+    const auto include=[&](const Image& image,Image* live,
+                           Model* future,size_t futureIndex) {
+        if(image.textureCache.get()!=this || image.borrowedTexture ||
+           !image.tex.valid() || image.textureKey.empty())
+            return;
+        const auto key=gpuKey(image);
+        Image* owner=nullptr;
+        if(auto resident=gpu_.find(key);resident!=gpu_.end()) {
+            owner=&resident->second;
+        } else {
+            auto [it,inserted]=plan.pending_.try_emplace(key);
+            if(inserted) {
+                // Copying the descriptor does NOT transfer GPU ownership:
+                // the original Model/staged image retains its handle
+                // until the plan successfully commits.
+                Image prepared=image;
+                prepared.textureCache.reset();
+                prepared.borrowedTexture=false;
+                prepared.textureLease=std::make_shared<int>(0);
+                prepared.rgba.clear();
+                prepared.sharedRgba.reset();
+                prepared.compressed.reset();
+                it->second=std::move(prepared);
+            }
+            owner=&it->second;
+        }
+        plan.bindings_.push_back({live,future,futureIndex,owner});
+    };
     for(Model* model:models) {
         if(!model)continue;
-        for(auto& image:model->images) {
-            if(image.textureCache.get()!=this || image.borrowedTexture ||
-               !image.tex.valid() || image.textureKey.empty())
-                continue;
-            const auto key=gpuKey(image);
-            Image* owner=nullptr;
-            if(auto resident=gpu_.find(key);resident!=gpu_.end()) {
-                owner=&resident->second;
-            }else {
-                auto [it,inserted]=plan.pending_.try_emplace(key);
-                if(inserted) {
-                    // This descriptor does NOT transfer GPU ownership yet:
-                    // the Model retains the real handle until commit.
-                    Image prepared=image;
-                    prepared.textureCache.reset();
-                    prepared.borrowedTexture=false;
-                    prepared.textureLease=std::make_shared<int>(0);
-                    prepared.rgba.clear();
-                    prepared.sharedRgba.reset();
-                    prepared.compressed.reset();
-                    it->second=std::move(prepared);
-                }
-                owner=&it->second;
-            }
-            plan.bindings_.push_back({&image,owner});
-        }
+        for(auto& image:model->images)
+            include(image,&image,nullptr,0);
     }
-    // All future fallback objects are prepared before map publication.
+    for(const auto& proposed:appended) {
+        if(!proposed.model || !proposed.staged ||
+           proposed.appendIndex<proposed.model->images.size())
+            throw std::invalid_argument("invalid speculative material image reference");
+        include(*proposed.staged,nullptr,proposed.model,proposed.appendIndex);
+    }
     plan.redundant_.reserve(plan.bindings_.size());
     return plan;
 }
@@ -540,11 +551,19 @@ std::vector<Image> ModelTextureCache::PreparedGpuPromotion::commit() {
         if(cache_->gpu_.contains(key))
             throw std::logic_error("shared GPU texture key changed during staging: "+key);
     }
+    // Material image slots are appended immediately before commit().
+    // Validate all indices BEFORE mutating shared GPU residency.
+    for(const auto& binding:bindings_)
+        if(binding.appendModel &&
+           binding.appendIndex>=binding.appendModel->images.size())
+            throw std::logic_error("speculative material image was not committed");
     // Merging preallocated std::map nodes does not create a new GPU object.
     // Image* pointers into moved map nodes remain stable.
     cache_->gpu_.merge(pending_);
     for(const auto& binding:bindings_) {
-        Image& image=*binding.modelImage;
+        Image& image=binding.appendModel
+            ?binding.appendModel->images[binding.appendIndex]
+            :*binding.modelImage;
         const Image& owner=*binding.sharedOwner;
         if(image.tex.valid() && image.tex!=owner.tex) {
             Image retired;
