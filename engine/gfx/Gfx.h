@@ -74,7 +74,80 @@ struct BufferDesc {
     const void* data = nullptr;
     const char* label = nullptr;
     bool snapshotUpdates = false; // Dynamic: preserve earlier updates encoded in this frame
+    // Opt-in for dynamic buffers whose next offset-zero update replaces the
+    // entire *readable* payload. Old tail bytes need not be copied to a new
+    // GPU-safe version. Clients must only read the freshly written prefix.
+    // This does NOT relax snapshotUpdates or in-flight GPU lifetime rules.
+    bool discardOnUpdate = false;
 };
+
+// Read-only diagnostics for one dynamic indexed-indirect buffer, accumulated
+// since its creation. These are actual CPU memcpy/memcmp operations observed
+// in the backend; not GPU execution, bus transfers or driver allocations.
+// Backends without this instrumentation return available=false.
+struct BufferUpdateStats {
+    bool available = false;
+    uint64_t updateCalls = 0;
+    uint64_t requestedBytes = 0;
+    uint64_t mappedWriteBytes = 0;  // CPU memcpy into mapped GPU-visible memory
+    uint64_t cpuShadowWriteBytes = 0; // separate CPU-side shadow memcpy
+    uint64_t comparedBytes = 0;     // per memcmp length (one input span)
+    uint64_t skippedWriteBytes = 0; // verified equal spans not copied
+    uint64_t preservedBytes = 0;    // old GPU-visible data copied to new version
+    uint64_t allocations = 0;       // buffer versions/snapshots incl. initial
+    uint64_t reused = 0;            // existing safe snapshots/versions reused
+    size_t retainedBufferBytes = 0; // sum of live allocation logical capacities
+    size_t retainedCpuShadowBytes = 0;
+};
+
+// Compute only monotonic lifetime-counter deltas. Retained capacities are
+// point-in-time gauges, not additive and deliberately remain zero here.
+// An unsupported backend, destroyed handle or counter reset is unavailable.
+inline BufferUpdateStats bufferUpdateCounterDelta(
+    const BufferUpdateStats& before, const BufferUpdateStats& after) {
+    if (!after.available) return {};
+    const BufferUpdateStats empty{};
+    const BufferUpdateStats& previous = before.available ? before : empty;
+    if (after.updateCalls < previous.updateCalls ||
+        after.requestedBytes < previous.requestedBytes ||
+        after.mappedWriteBytes < previous.mappedWriteBytes ||
+        after.cpuShadowWriteBytes < previous.cpuShadowWriteBytes ||
+        after.comparedBytes < previous.comparedBytes ||
+        after.skippedWriteBytes < previous.skippedWriteBytes ||
+        after.preservedBytes < previous.preservedBytes ||
+        after.allocations < previous.allocations ||
+        after.reused < previous.reused) return {};
+    BufferUpdateStats delta{};
+    delta.available = true;
+    delta.updateCalls = after.updateCalls - previous.updateCalls;
+    delta.requestedBytes = after.requestedBytes - previous.requestedBytes;
+    delta.mappedWriteBytes = after.mappedWriteBytes - previous.mappedWriteBytes;
+    delta.cpuShadowWriteBytes = after.cpuShadowWriteBytes - previous.cpuShadowWriteBytes;
+    delta.comparedBytes = after.comparedBytes - previous.comparedBytes;
+    delta.skippedWriteBytes = after.skippedWriteBytes - previous.skippedWriteBytes;
+    delta.preservedBytes = after.preservedBytes - previous.preservedBytes;
+    delta.allocations = after.allocations - previous.allocations;
+    delta.reused = after.reused - previous.reused;
+    return delta;
+}
+
+// Sum deltas from repeated renderModels invocations for a single beginScene.
+// Do not sum retainedBufferBytes/retainedCpuShadowBytes or reinterpret the
+// counters as asynchronous GPU measurements.
+inline void accumulateBufferUpdateCounters(BufferUpdateStats& total,
+                                           const BufferUpdateStats& delta) {
+    if (!delta.available) return;
+    total.available = true;
+    total.updateCalls += delta.updateCalls;
+    total.requestedBytes += delta.requestedBytes;
+    total.mappedWriteBytes += delta.mappedWriteBytes;
+    total.cpuShadowWriteBytes += delta.cpuShadowWriteBytes;
+    total.comparedBytes += delta.comparedBytes;
+    total.skippedWriteBytes += delta.skippedWriteBytes;
+    total.preservedBytes += delta.preservedBytes;
+    total.allocations += delta.allocations;
+    total.reused += delta.reused;
+}
 
 struct TextureDesc {
     int width = 0, height = 0;
@@ -160,7 +233,19 @@ public:
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
+    // Checked shared geometry write. Metal/Vulkan report true only when the
+    // complete copy was encoded/mapped; other backends retain their existing
+    // updateBuffer contract. True is NOT a GPU completion fence.
+    virtual bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                           size_t size, size_t offset = 0) {
+        if (!h.valid() || !data || !size) return false;
+        updateBuffer(h, data, size, offset);
+        return true;
+    }
     virtual void destroyBuffer(BufferHandle h) = 0;
+    // Optional per-buffer diagnostics. No GPU stall/readback, and never
+    // authoritatively measures GPU memory bandwidth or execution.
+    virtual BufferUpdateStats bufferUpdateStats(BufferHandle) { return {}; }
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
@@ -221,6 +306,11 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // Highest fully completed queue serial. Zero means unknown/unsupported.
+    // A buffer range retired at frameSerial() may be overwritten ONLY when
+    // this value is nonzero and >= that retirement serial. This does not
+    // imply any safety for races on a live Model or unsubmitted GPU work.
+    virtual uint64_t completedFrameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
@@ -247,6 +337,14 @@ public:
     virtual void setUniforms(int slot, const void* data, size_t size) = 0;
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0) = 0;
     virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instanceCount = 1) = 0;
+    // Canonical indexed base vertex for pooled rigid models: the vertex
+    // offset is added to the fetched index (and shader-visible vertex ID).
+    // Vulkan differs from its historical direct drawIndexed() convention;
+    // unsupported RHI implementations preserve their usual direct path.
+    virtual void drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                                      int32_t baseVertex, uint32_t instanceCount) {
+        drawIndexed(indexCount, firstIndex, baseVertex, instanceCount);
+    }
     // One API render submission for several indexed GPU commands. Command buffer
     // must use BufferType::Indirect; count/stride are validated by backend.
     // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.
