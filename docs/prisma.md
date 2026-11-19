@@ -1707,6 +1707,68 @@ device-loss simulations, memory profiling, screenshots and CI
 (per user instruction). Static source inspection is not proof
 of runtime correctness. See `docs/handoffs/prisma-stage-38.md`.
 
+
+## Stage 39 — Animation Graph/Rig preview bundles and stable editor state
+
+The Animation Graph and Rig windows now share a presentation-only
+**GPU-fence-deferred preview lifecycle** with the Shader Graph and
+Model/Materials editors. In `apps/editor/animation/AnimationEditor.h`,
+`AnimationEditorPanel::release()` detaches the old preview's *complete
+owner bundle*: the uploaded `render::Model`, immutable compiled
+`AnimationGraphInstance` state that may reference that model, and
+the `game::Portrait` with its own Renderer3D, pipelines, textures
+and color/depth render targets. The previous owner stays alive
+in `GpuResourceRetirement::retireOwned` until its actual backend
+GPU submission fence completes, or a host-confirmed GPU idle.
+Its cleanup resets the graph **before** releasing the referenced
+model's GPU buffers and releases the Portrait's GPU resources at
+the same safe point. No editor ECS or animation simulation data
+is exposed to the retirement manager.
+
+Both `AnimationGraphWindow` and `AnimationRigWindow` call
+`AnimationEditorPanel::suspendPreview()` on a hidden or closed dock
+tab, retiring GPU memory without erasing the editor document.
+When the tab becomes visible again, a new Model/Portrait is built
+from the current document. `release()` intentionally preserves
+`doc_`, `saved_`, undo/redo history, current selected node, graph
+scope, the user-set playback toggle, ground height, yaw, zoom,
+camera/canvas layout and animation-control values.
+
+When the program is compiled again, numeric and vector preview
+parameters with matching names are restored from the previous
+`AnimationParameters`; new/removed parameters still use the
+current graph's definitions. The compiled graph's *runtime clock*
+and transient per-node state can restart after a model
+reload/hidden-tab release — there is no unsafe transfer of
+per-model graph pointers between models.
+
+Pure visual graph node `position` changes no longer invalidate the
+animation preview's compiled-program key (including nested
+subgraphs). Dragging nodes does not needlessly restart the current
+animation playback. The same stage fixes the previously authored
+ShaderGraphPreview GPU-key loop to use the mutable JSON node
+iterator (`itemsMut()`) instead of a const items view; this is
+a source-level type-correctness fix pending actual compilation.
+
+The independent `aiverse_modelview` Gallery has a different
+lifecycle: its Portrait and Renderers are normally released when
+the entire viewer shuts down, not on per-editor-tab hot reload.
+Its shutdown now attempts `Device::waitForSubmittedGpuWork()`
+before destroying Gallery/Portrait and imported model GPU
+resources. That wait is a **shutdown-only** best-effort safeguard,
+not a substitute for the platform's own required GPU-idle teardown
+contract on unsupported backends.
+
+No changes to the FPS/RTS gameplay ECS, animation graph JSON format,
+animation algorithms, PRISMA effect settings, water rendering or
+default-off MotionBlur feature flag.
+
+**NOT RUN:** CMake, C++/Objective-C++ build, CTest, Metal/GL/Vulkan
+GPU fence validation, tab hide/reopen, animator playback smoke,
+ModelView screenshots, memory profiling, and CI. Source inspection
+cannot certify actual GPU lifetime correctness.
+See `docs/handoffs/prisma-stage-39.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
