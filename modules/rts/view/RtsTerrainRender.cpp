@@ -773,8 +773,9 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, boo
     const bool compact=terrainNeedsCompactSamplers(dev.maxFragmentTextureSlots());
     if(compact && !terrainCompactSupported(dev.maxFragmentTextureSlots()))
         return {}; // even the minimal terrain fragments need 16 texture units
-    if(compact && dynamicGi)return {}; // no GI-at-tex21 on strict GLES/Vulkan
-    for (int tier = variant - dbase; tier >= (dynamicGi ? 1 : 0); --tier) {
+    // On compact terrain the freed tex7 is available for CPU-probed GI,
+    // even with only the GLES3 minimum 16 texture units.
+    for (int tier = variant - dbase; tier >= (dynamicGi && !compact ? 1 : 0); --tier) {
         if(compact && tier>0)continue; // resource-limited shader is low tier only
         const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
@@ -786,9 +787,12 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, boo
         std::string fs = def;
         std::string msl = def + shaders::kTerrainMSL;
         if (dynamicGi) {
-            // The base terrain pass already uses tex0..20. Place GI at tex21
-            // and only compile this permutation on a device with >=22 slots.
-            fs += render::giCustomGlslFunctions(render::GiCustomShaderMode::Single,21);
+            // Rich terrain uses tex0..20 and places GI at tex21. Compact low
+            // terrain remaps trace/baked sources to tex6/4/5 and frees tex7,
+            // so GLES3 can sample its CPU GI atlas with only 16 units.
+            const int giSlot=compact ? 7 : 21;
+            fs += render::giCustomGlslFunctions(
+                render::GiCustomShaderMode::Single,giSlot);
             const std::string prelude=render::giCustomMslFunctions(
                 render::GiCustomShaderMode::Single);
             const std::string namespaceMarker="using namespace metal;\n";
@@ -898,12 +902,16 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     const int variant=tier+(detailOn_ ? 3 : 0);
     const gfx::PipelineHandle fallbackPipe=pipeline(dev,variant,false);
     if (!fallbackPipe.valid()) return;
-    // Custom terrain already owns tex0..20. Build the optional tex21 GI
-    // variant only on capable devices. The atlas may be bound AFTER draw()
-    // queues the callback, so availability is checked in the deferred pass,
-    // not at queue time.
+    // Rich PBR terrain uses its disjoint GI atlas at tex21. Compact terrain
+    // uses tex7 after freeing the low-tier material slots: this is the
+    // GLES3/WebGL2 CPU GI route, not compute or a fake HDR target.
+    const int giSlot=compact ? 7 : 21;
+    const bool giSlotAvailable=dev.maxFragmentTextureSlots() >=
+                              (compact ? 16 : 22);
+    // The atlas may be bound after draw() queues the callback. Check actual
+    // availability inside the deferred render pass instead.
     const gfx::PipelineHandle giPipe=
-        tier>=1 && dev.maxFragmentTextureSlots()>=22
+        giSlotAvailable && (compact || tier>=1)
         ? pipeline(dev,variant,true) : gfx::PipelineHandle{};
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
@@ -947,16 +955,16 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, fallbackPipe, giPipe, apron, compact](gfx::Device& d) {
+    r.drawCustomOpaque([this, &r, items, u, fallbackPipe, giPipe, apron, compact, giSlot](gfx::Device& d) {
         const bool giAvailable=giPipe.valid() &&
             r.availableDynamicGiForCustomShader(
-                render::GiCustomShaderMode::Single,21)==render::GiCustomShaderMode::Single;
+                render::GiCustomShaderMode::Single,giSlot)==render::GiCustomShaderMode::Single;
         d.setPipeline(giAvailable ? giPipe : fallbackPipe);
         r.bindLitFrame();
         r.bindTrace(compact ? 6 : 18);
         r.bindBakedTerrain(3,compact ? 4 : 19,compact ? 5 : 20);
         if(giAvailable && r.bindDynamicGiForCustomShader(
-                render::GiCustomShaderMode::Single,21)!=render::GiCustomShaderMode::Single) {
+                render::GiCustomShaderMode::Single,giSlot)!=render::GiCustomShaderMode::Single) {
             // Unexpected GI resource retirement between preflight and bind:
             // use the precompiled ordinary terrain pipeline, never sample
             // an unbound tex21 in a GI shader variant.
