@@ -7333,3 +7333,65 @@ audit `VirtualTextureModelFeedback.h`,
 `TerraWeaveVirtualTextureFeedback.h`, feedback fragment shader
 uniforms, and any CPU UV region planner. Cross-backend shader and
 archive integration tests are deferred until feature closure.
+
+
+## Stage 10Q — wrap-aware GPU feedback page IDs (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21 draft.
+**Source commits:**
+- `2829b03fb3b91cc19d79e3213a9eb3a8c37c7b4c` —
+  `engine/gfx/VirtualTextureFeedback.h`: explicit per-axis
+  Clamp/Repeat/Mirror CPU+GLSL+MSL page-ID lookup, with backwards-
+  compatible normalized-only overloads.
+- `48b1e9dbbf7b7dd551449771dd545251d5a74d12` —
+  `engine/gfx/VirtualTextureFeedbackProgram.h`: append U0 address
+  modes for rigid GPU feedback (176 -> 192 bytes) and update native
+  fragment shader calls.
+- `d8ace88999ff858a8e5409ba4db42602c3abdd85` —
+  `engine/render/VirtualTextureModelFeedback.h`: typed mapping
+  modes and rigid U0 population.
+- `bccd7f0eab76403feba8cf44c7232cb77e8daeea` —
+  `engine/render/VirtualTextureDeformedFeedback.h`: append U6
+  address modes (96 -> 112 bytes), update GLSL/MSL and runtime U6.
+- `a30dd3467a6ee96a73e8534927f9331bde04e06a` —
+  `engine/render/TerraWeaveVirtualAtlasArchive.h`: pass active
+  version addressing to shared material feedback mapping.
+- `ab5e8fe44cb49bb50da765a038412d9a54115af4` —
+  `engine/render/TerraWeaveVirtualTextureFeedback.h`: fail closed
+  for unrepresentable mapping address modes.
+**Documentation commits:**
+- `1f9b2163f0f83c7cc2c46deb8c0a408d49a55f5e` — `docs/texture-rhi.md`.
+- `94196fadfe37aa4a1e27470c3cf1c65eeb47f1f4` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Public API & invariants:** feedback helper overloads accept two
+typed sampler address modes; old normalized six-parameter CPU / five-
+parameter GLSL/MSL calls remain. App-built material maps default to
+clamp. TerraWeave native archives automatically supply modes from
+active typed Version to single/multi-domain feedback. Rigid feedback
+U0 appended float4 address modes; deformed U6 appended float4; no
+regular material/authoritative ECS layout changes. Feedback shaders
+apply wrap to page ID only; unwrapped UV derivatives still choose
+automatic mip, avoiding fract-related false LOD seams.
+
+**Checks actually performed:** fetched actual feedback/rigid/deformed
+program source and uniforms; strict one-occurrence edits; re-fetched
+all six changed files and checked generated source fragments and ABI
+constants. GitHub accepted all commits. **C++ compile NOT RUN,
+CTest NOT RUN, GLSL/MSL compilers NOT RUN, Metal/GL/Vulkan readback
+and render tests NOT RUN.** No active CI pass evidence. Keep draft.
+
+**Remaining limitations:** CPU `VirtualTexturePrefetchPlanner`
+expects normalized 0–1 rectangles, so its visibility caller must
+split UV regions crossing repeat/mirror edges. GPU feedback now has
+explicit addressing but still needs native readback and seam tests.
+Arbitrary border colors remain unsupported. Per-command mixed
+VT resources for Metal ICB still require a distinct descriptor ABI.
+
+**Next stage:** implement bounded wrapped UV-rectangle to normalized
+visible-region splitting for CPU prefetch (before
+`VirtualTexturePrefetchPlanner::plan`), with per-axis repeat/mirror
+and identity for already-normalized clamp, or undertake GPU material
+descriptor table design. During deferred testing verify negative UV,
+edge equality, repeat/mirror, mip derivatives, rigid/deformed ABI
+and backend shader compiler parity; do not merge until green.
