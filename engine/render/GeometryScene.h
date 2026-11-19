@@ -18,6 +18,9 @@ public:
     // Full Device idle proof is required at final teardown. Live reload
     // instead moves old resident Models/HLOD proxies into the ordered queue.
     void shutdown(gfx::Device& dev);
+    // Discard the current static presentation scene without waiting idle:
+    // used on rules/project reload, not final Device teardown.
+    void clear(gfx::Device& dev) {retireResident(dev);}
     size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     bool collectRetired(gfx::Device& dev) {return retirement_.collect(dev);}
     void draw(Renderer3D& renderer);
