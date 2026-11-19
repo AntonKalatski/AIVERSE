@@ -554,3 +554,11 @@ policies. Full dynamic genre-neutral appearance state
 migration and real visual parity remain open.
 **NOT RUN**: native compiler, CTest, renderer/GPU validation,
 FPS/RTS screenshots, sanitizer and CI.
+
+
+
+## Source model reimport without losing compatible playback (Stage 146)
+
+`MotionWeaveSourceBridge::forgetForReimport(World&, sourceIds)`, surfaced as `View::forgetSourcesForReimport(ids)`, is a synchronous, optional pre-retirement handshake. Call **before** old CPU Model/compiled Graph destruction; the bridge first captures named graph state and clip phases from a valid presentation player, then forgets its ECS entity. The next `sync` can consume the seed once when logical source ID/generation, exact copied rig names/parents, explicit **different nonzero** old/new publication epochs and a distinct Model address all match. No old pointer is retained/dereferenced; the old address is a value-only conservative rejection guard. The record is bounded to 8192 sources and expires after 120 source-sync calls. The existing `forget` and `clear` APIs intentionally discard continuity, suitable for despawns or session resets.
+
+The adapter does **not** own CPU/GPU leases, cannot reconstruct an already-destroyed Graph, does not transfer root motion, authored event streams, IK/ragdoll/native solver state or gameplay ECS, and must not run during animation worker dispatch. RTS Model and graph invalidation paths opt in; FPS and editor parity need separate audit. Native compiler/CTest/GPU validation **NOT RUN** for this source-only stage; see [Stage 146 handoff](agent-handoffs/animation-stage146-pre-retirement-playback-rebind-2026-11-19.md).
