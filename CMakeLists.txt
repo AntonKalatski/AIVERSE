@@ -415,6 +415,8 @@ target_sources(aiverse_fx PRIVATE engine/fx/SpectraGraphRuntime.cpp)
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraBatchWorld.cpp)
 # Optional generic tick-cue/attachment scheduler over shared CPU BatchWorld.
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraCueScheduler.cpp)
+# Genre-neutral pooled GPU emitter resource groups with shared CPU fallback.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuPoolWorld.cpp)
 target_link_libraries(aiverse_fx PUBLIC aiverse_engine aiverse_shader_graph)
 # SpectraFX is the official public name; retain aiverse_fx for existing clients.
 add_library(AIVERSE::spectrafx ALIAS aiverse_fx)
