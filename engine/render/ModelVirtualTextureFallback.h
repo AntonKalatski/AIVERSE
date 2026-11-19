@@ -17,6 +17,7 @@ namespace aiverse::render {
 struct VirtualFallbackSavings {
     size_t originalBaseBytes = 0;
     size_t fallbackBaseBytes = 0;
+    size_t fullResolutionAlphaBytes = 0; // R8 base level when preserveAlpha=true
 };
 
 // Changes only the image's upload policy. uploadModel() then creates the
@@ -32,7 +33,8 @@ inline bool configureModelVirtualFallback(
     const gfx::VirtualTextureArchiveVersion& publishedArchive,
     int maxDimension = 64,
     VirtualFallbackSavings* savings = nullptr,
-    std::string* reason = nullptr) {
+    std::string* reason = nullptr,
+    bool preserveAlpha = false) {
     if (savings) *savings = {};
     auto fail = [&](const char* error) {
         if (reason) *reason = error;
@@ -44,8 +46,9 @@ inline bool configureModelVirtualFallback(
         maxDimension < 4 || maxDimension > 1024)
         return fail("invalid image, archive or reduced fallback dimension");
     Image& image = model.images[imageIndex];
-    if (image.tex.valid() || image.borrowedTexture ||
-        image.textureLease || image.virtualFallbackMaxDimension > 0)
+    if (image.tex.valid() || image.virtualAlphaMask.valid() ||
+        image.borrowedTexture || image.textureLease ||
+        image.virtualFallbackMaxDimension > 0)
         return fail("configure fallback before any cached or native GPU upload");
     if (image.width < 1 || image.height < 1 ||
         image.width != publishedArchive.width ||
@@ -63,6 +66,7 @@ inline bool configureModelVirtualFallback(
         return fail("full RGBA8 CPU pixels must be retained until upload");
 
     bool usedAsBase = false;
+    bool needsAlphaMask = false;
     for (const Material& material : model.materials) {
         const auto idx = int(imageIndex);
         if (material.mrTex == idx || material.normalTex == idx ||
@@ -74,14 +78,21 @@ inline bool configureModelVirtualFallback(
                 return fail("image is referenced by Shader Graph texture");
         if (material.baseTex == idx) {
             usedAsBase = true;
-            if (material.alpha != AlphaMode::Opaque || material.transparent ||
+            if (material.alpha == AlphaMode::Mask)
+                needsAlphaMask = true;
+            if (material.alpha == AlphaMode::Blend || material.transparent ||
                 material.shaderGraph || material.team == TeamMode::BaseAlpha ||
+                material.team == TeamMode::VertexAlpha ||
                 material.baseColor.w < 0.999f)
-                return fail("alpha-sensitive, transparent or graph material needs full-resolution base");
+                return fail("blended, graph or team-alpha material needs original base");
+            if (material.alpha == AlphaMode::Mask && !preserveAlpha)
+                return fail("alpha-masked base requires a full-resolution R8 alpha channel");
         }
     }
     if (!usedAsBase)
         return fail("image is not the base texture of a model material");
+    if (preserveAlpha && !needsAlphaMask)
+        return fail("full-resolution alpha allocation requested for non-masked image");
 
     int reducedW = image.width, reducedH = image.height;
     while (std::max(reducedW,reducedH) > maxDimension) {
@@ -93,9 +104,21 @@ inline bool configureModelVirtualFallback(
         // row alignment and shared texture cache are not measured here.
         savings->originalBaseBytes = w*h*4u;
         savings->fallbackBaseBytes = size_t(reducedW)*size_t(reducedH)*4u;
+        savings->fullResolutionAlphaBytes = preserveAlpha ? w*h : 0u;
     }
     image.virtualFallbackMaxDimension = maxDimension;
+    image.virtualFallbackPreserveAlpha = preserveAlpha;
     return true;
+}
+
+inline bool configureModelVirtualMaskedFallback(
+    Model& model, size_t imageIndex,
+    const gfx::VirtualTextureArchiveVersion& publishedArchive,
+    int maxDimension = 64,
+    VirtualFallbackSavings* savings = nullptr,
+    std::string* reason = nullptr) {
+    return configureModelVirtualFallback(model,imageIndex,publishedArchive,
+                                         maxDimension,savings,reason,true);
 }
 
 } // namespace aiverse::render
