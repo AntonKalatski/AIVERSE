@@ -116,3 +116,61 @@ AIVERSE_BATCH_BENCH_BIN=build/batching-stage82/aiverse_material_batches \
 Require 6/6 exits, 38 checks each, real-MDI raster parity, and actual submissions for forced modes. If clean-run AUTO remains slower than forced MDI despite choosing MDI on 80+ frames, compare per-pass and whole-render cost, GPU queue inflight stalls and sampled cadence. Do not conflate CPU wall with GPU time. If clean AUTO is competitive, proceed to 10k and GPU timestamp instrumentation, keeping experimental flags OFF by default and PR #39 Draft.
 
 **Actual work performed for Stage 83:** analyzed owner-provided build and trace log; GitHub handoff updated. No assistant-run native GPU/CTest, no CI or Vulkan validation.
+
+
+---
+
+## Stage 84 — clean crossover outcome and buffered per-frame CPU timeline (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119`, PR #39 (Draft). **Source change:** `adfe9a34d37bb5816f91a85d33e7ac790bd3f6d0` in `tests/render/material_batches.cpp`. Documentation appended as distinct commit. Owner's primary conflicted `AIVERSE` checkout stays untouched.
+
+### Owner Mac Studio native Stage 83 clean six-run crossover
+
+Executed in detached `AIVERSE-batching-stage82` using the prebuilt Stage 82 fixture **without** `AIVERSE_BATCH_AUTO_COST_TRACE`. Runner completed all six runs, every run printed `material palette CPU checks=38 result=passed`, screenshot equality `changed_channels=0`, and zero pipeline failures. Forced CPU MDI runs also printed `actual MDI pixel parity frame=100 changed_channels=0`. CPU synchronous `renderer.render()` medians (ms):
+
+| Mode | Cycle 1 | Cycle 2 |
+|---|---:|---:|
+| Direct | 1.1802 | 1.1677 |
+| CPU MDI | 0.8303 | 0.8201 |
+| AUTO | 0.8488 | 1.4638 |
+
+Cycle 1 AUTO (0.8488ms) came close to forced MDI (0.8303ms): approximately 28.1% faster than standalone Direct and ~2.2% slower than forced MDI. In Cycle 2 AUTO was substantially slower at 1.4638ms even though it **still used MDI** in 79/81 measured frames (755 MDI submissions), versus 80/81 and 800 submissions in Cycle 1. Forced MDI was consistently fast across runs, so the performance regression is not explained by simply choosing Direct. During Cycle 2 AUTO, shadow stage on final frame had 0.88979ms total / 0.54708ms backend submit, while opaque remained 0.34933ms total / 0.26158ms backend; both phases' cost varied, with unexplained large spikes. CPU time is not GPU time/FPS; thermal contention, GPU/CPU waits or interactive scheduling remain hypotheses, not confirmed causes. Do not turn AUTO on by default based on these six process runs.
+
+### Stage 84 code change: opt-in deferred CSV
+
+`AIVERSE_BATCH_FRAME_TIMELINE=1` in the `auto_stress` fixture records an in-memory sample **after** every `renderer.render()` call on batched frames 90..195, and writes the entire CSV only at frame 195. This avoids per-frame file I/O and `fprintf` logging overhead in the measured hot path. Output file: `<prefix>-frames.csv` with columns:
+
+```text
+frame,render_cpu_ms,mdi_submissions,mdi_commands,shadow_draws,opaque_draws,shadow_cpu_ms,opaque_cpu_ms,shadow_backend_ms,opaque_backend_ms
+```
+
+Model phase CPU and backend stage timings come from the existing `ModelRenderStats::mdiCpuStages` measured within the same frame; draw counts are renderer profile shadow/opaque. The timer brackets synchronous `renderer.render()` only and precedes timeline vector append. Writes/flushes at frame 195 are not included in the CPU sampled render time. A failed CSV file write marks the fixture failed. **This is not a GPU timestamp implementation**, and data only covers the scene's second phase, not warm-up Direct frames before frame 90. The CSV may expose successive frame spikes and whether they affect both passes or one pass, but cannot directly identify OS scheduling or Metal queue waits.
+
+### Validation truth
+
+Stage 83 six-run test evidence was provided by the owner and is described above. Stage 84 CSV source has been committed via GitHub, but **was not built or run on Mac Studio yet**; do not claim native CSV output, parity, performance or CI. No rendering/RHI/auto-policy production logic changed in Stage 84; production flags remain OFF by default.
+
+### Exact next Mac command, safe detached worktree
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage82
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$WT" status --short
+git -C "$WT" switch --detach origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake --build "$WT/build/batching-stage82" --target aiverse_material_batches --parallel 8 || exit 1
+cd "$WT" || exit 1
+set -o pipefail
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_FRAME_TIMELINE=1 \
+AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+build/batching-stage82/aiverse_material_batches \
+  unused.obj build/batching-stage82/captures/stage84-auto-1k \
+  2>&1 | tee build/batching-stage82/stage84-auto.log
+echo "Stage 84 exit=$?"
+```
+
+Require `material palette CPU checks=38 result=passed`, actual MDI pixel parity `changed_channels=0`, final `changed_channels=0`, `stress frame timeline samples=106`, and exit=0. The CSV path is `build/batching-stage82/captures/stage84-auto-1k-frames.csv`. Inspect spikes/contiguous windows with the same MDI mode. If no spikes appear in one run, repeat the isolated AUTO process 3+ times with unique prefixes to characterize variability without I/O trace. Next agent should use the actual CSV to decide whether the problem is in selection CPU time, backend submit, or external load. Keep PR #39 Draft and original main worktree untouched.
