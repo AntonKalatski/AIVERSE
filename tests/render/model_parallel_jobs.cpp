@@ -28,6 +28,11 @@ int main() {
     assert(queue.workerCount()==2);
     assert(queue.request("busy0.glb",reader,textures));
     assert(queue.request("busy1.glb",reader,textures));
+    const auto startDeadline=std::chrono::steady_clock::now()+
+                             std::chrono::seconds(2);
+    while(queue.stats().activeWorkers<2 &&
+          std::chrono::steady_clock::now()<startDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     assert(queue.stats().activeWorkers==2);
     assert(queue.request("background.glb",reader,textures,
                          ModelLoadPriority::Background));
