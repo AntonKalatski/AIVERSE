@@ -134,6 +134,15 @@ public:
         if(ed.view().paintGpuRetirementOrphans())
             ImGui::TextDisabled("GPU canvas/paint: сиротских ресурсов %llu",
                 (unsigned long long)ed.view().paintGpuRetirementOrphans());
+        const auto canvasRetirement=ed.view().paintGpuRetirementStats();
+        if(canvasRetirement.idleFallbackFailures ||
+           canvasRetirement.unresolvedFailedFences ||
+           ed.view().paintGpuRetirementEnqueueFailures())
+            ImGui::TextDisabled(
+                "GPU canvas/paint: idle failures %llu · failed fences %zu · queue failures %llu",
+                (unsigned long long)canvasRetirement.idleFallbackFailures,
+                canvasRetirement.unresolvedFailedFences,
+                (unsigned long long)ed.view().paintGpuRetirementEnqueueFailures());
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
