@@ -33,6 +33,10 @@ public:
         return preparation_;
     }
 #endif
+    render::Model* find(const std::string& key) noexcept {
+        const auto it=models_.find(key);
+        return it==models_.end()?nullptr:it->second.get();
+    }
     const render::Model* find(const std::string& key) const noexcept {
         const auto it=models_.find(key);
         return it==models_.end()?nullptr:it->second.get();
