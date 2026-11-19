@@ -2725,3 +2725,13 @@ before calling this stage validated.
 - `Renderer3D` rejects terminally failed HDR variants during transactional appearance preflight, caches failed pipeline handles until GPU generation invalidation and reports `GpuWarmStats::colorVariantsFailed` in editor Stats. Existing View and MotionWeave graphs retain their last-good published state; no new genre dependency or animation clock.
 - **ACTUALLY PERFORMED:** source inspection, GitHub branch/file updates with blob SHAs and branch vs main comparison. **NOT RUN:** local build, linker, CMake/CTest, CI, Metal/GL/Vulkan, sanitizers, screenshots, device-loss or performance. Do not mark this PR ready.
 - **Next Stage 118:** audit failure rollback during partial Renderer3D/LightSystem/trace initialization and additional render-target owners; preserve correct GPU fence lifetimes, add deferred regression sources, then complete all outstanding features before full native build/test/visual parity.
+
+## Stage 118 — Renderer3D/LightSystem GPU init rollback (2026-11-19)
+
+- **Standalone detailed handoff:** [Stage 118](animation-stage118-gpu-init-rollback-2026-11-19.md), including exact feature SHAs, ownership contracts, files, actual validation, risks and next stage.
+- Continued Stage 117 HEAD `1a234b35`; source-only commits on `feature/universal-ecs-animation-pipeline`. After source changes, GitHub compare was ahead 779 / behind 0 relative to main `d71c6d47`. No main write, force push or rebase; PR #22 remains Open/Draft.
+- Generic `Renderer3D::init` and `LightSystem::init` now reject overlapping init, validate required GPU handles and safely roll back partial shader/pipeline/buffer/texture setup after proven GPU idle. `shutdown` guards and resets partial handles; trace initializes only through valid GPU resource stages.
+- Standalone LightSystem release of RTTs without the shared renderer owner now requires a successful GPU idle barrier. Unsupported/failed idle intentionally leaves an orphan and exposes orphan/idle-failure counters. The Renderer3D-owned queue remains shared and fence-aware.
+- Neither MotionWeave graph clock nor ECS gameplay, NEREID or Prisma ownership changed.
+- **ACTUAL:** connected GitHub source/ref review, branch-specific blob-SHA edits and readback, ancestry compare. **NOT RUN:** native compile/link, CMake/CTest/CI, Metal/Vulkan/GL, sanitizers, editor/FPS/RTS screenshots, benchmark or device loss. The code is NOT production-validated. Keep PR Draft.
+- **Next Stage 119:** audit remaining legacy unleased Renderer3D RTT and standalone plugin/FX/terrain owners; finish universal View/attachments hot reload continuity, add deferred failure injections, then run full build/tests after features are completed.
