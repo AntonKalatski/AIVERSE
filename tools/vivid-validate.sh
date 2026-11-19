@@ -139,6 +139,21 @@ if [[ "$GUI" -eq 1 ]]; then
         printf 'VIVID Creator Metal preview did not report pass=1.\n' >&2
         exit 1
     fi
+
+    # Exercise the OPEN external OBJ+manifest+named morph importer in a
+    # real window. No bundled copyrighted scanned human assets required.
+    IMPORT_PPM="$LOGDIR/vivid-imported-head.ppm"
+    run_logged creator-import-preview env \
+        AIVERSE_VIVID_CREATOR_CAPTURE="$IMPORT_PPM" \
+        "$CREATOR" --smoke --asset "$ROOT/tests/vivid/assets/import-head.manifest.json"
+    if [[ ! -s "$IMPORT_PPM" ]]; then
+        printf 'VIVID imported-head Metal PPM missing/empty.\n' >&2
+        exit 1
+    fi
+    if ! grep -q 'pass=1' "$LOGDIR/creator-import-preview.log"; then
+        printf 'VIVID Creator external OBJ/shape import did not render.\n' >&2
+        exit 1
+    fi
 else
     printf 'GUI preview intentionally skipped by --no-gui; this is NOT full visual acceptance.\n'
 fi
@@ -150,6 +165,7 @@ fi
         printf 'Renderer3D colour/shadow/MotionWeave visual preview=PASS\n'
         printf 'Renderer3D shared GPU asset crowd preview=PASS\n'
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
+        printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
     fi
