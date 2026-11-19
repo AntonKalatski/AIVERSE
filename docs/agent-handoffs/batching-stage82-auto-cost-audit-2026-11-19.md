@@ -62,3 +62,57 @@ If detached-worktree path already exists, inspect it rather than overwriting it.
 2. Only if a measurement boundary or cost-model bias is demonstrated, correct it with a targeted regression fixture. Do not introduce another unsubstantiated preference threshold.
 3. Rerun six 1k trials (rotated Direct/MDI/AUTO); capture real CPU MDI pixel parity and GPU timestamps when supported. Revisit 10k only afterward.
 4. Record native results, new commits, limitations and next step in **another handoff**. Keep automated flags OFF by default and create a new Draft PR after passing tests. Preserve the owner's unrelated worktrees.
+
+
+---
+
+## Stage 83 — owner Mac Studio validates Stage 82 AUTO calibration; traced run slows down (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119` (PR #39 Draft). **Source tested:** Stage 82 head `ad20f0b569064d29090f9716fedb016c02bf8b9c`. **This stage reports actual user-provided native test results; no further runtime changes are verified yet.** Target worktree was `/Users/aleksandrfeer/Projects/AIVERSE-batching-stage82`, detached at the correct head; primary checkout remained untouched.
+
+### Actual owner-provided Mac Studio build/test evidence
+
+- AppleClang 17.0.0: configured the separate worktree successfully and built the real `aiverse_material_batches` including `Renderer3DModels.cpp` and `GfxMetal.mm` without a compile/link error.
+- `material palette CPU checks=38 result=passed`.
+- Synthetic geometry: 1024 authored unique primitives, one ModelDraw.
+- Confirmed **actual MDI-submitting frame 101** `changed_channels=0` versus Direct baseline; final AUTO frame also `changed_channels=0`.
+- `stress benchmark policy=auto measured_mdi_frames=80 measured_direct_frames=1 measured_mdi_submissions=730`; terminal `batch=1 shadow=5 opaque=5 total=12 error=`, 10 real CPU MDI submissions and 2048 indirect commands. Cumulative MDI scans=attempts=submitted=860, 0 failed/ineligible/geometry/material/state break rejections.
+- `Stage 82 exit=0`.
+- `AUTO CPU learning phase=0 bucket=2 direct=18 0.92662ms mdi=88 0.79663ms opportunities=106`; opaque `direct=22 0.90724ms mdi=84 0.71809ms opportunities=106`. **The CPU selector now chooses MDI on the test and is no longer stuck on Direct.**
+
+CPU render timing recorded from this specific highly traced run:
+
+| Sample | Count | Median (ms) | P95 (ms) |
+| --- | ---: | ---: | ---: |
+| Direct baseline | 66 | 1.1740 | 2.5262 |
+| mixed AUTO | 81 | 1.4177 | 2.1721 |
+| AUTO Direct fallback | 8 | 1.1988 | 1.2741 |
+| AUTO MDI-submitted | 88 | 1.3492 | 2.1721 |
+| AUTO late frames | 36 | 1.7112 | 2.2683 |
+
+Sampled successful-MDI CPU stage mean per pass: shadow `total=0.62334ms submit=0.39444ms` (n=83 frames, 415 submissions); opaque `total=0.51661ms submit=0.38189ms` (n=79, 395 submissions). Last frame `submit=0.50567ms` shadow and `0.55725ms` opaque.
+
+### What the detailed diagnostic actually demonstrates
+
+At cold startup, first MDI passes were **extremely expensive** (phase0 39.80017ms, phase1 444.91758ms). The next MDI pair measured 1.73/1.61ms. By opportunities ~8–36 the completed MDI passes largely reached ~0.3–0.4ms against initial Direct ~0.5ms, and MDI EWMA dropped below Direct; 32+ MDI calibration samples allowed the policy to overcome the cold EWMA. Late in the run there were substantial >1ms pass-time spikes for both paths, so the overall AUTO wall time was slower than previous untraced six-run fixed-scene CPU MDI runs, whose forced MDI medians were 0.8846ms and 0.8772ms. **The trace run does not establish that AUTO itself causes slowdown**: debug `fprintf(stderr)` on many early frames, cold caches, GPU submission/synchronization and time-varying external contention can affect wall timing. No GPU timestamps, frame thermal/frequency metrics, or randomized per-frame crossover were collected. Do not use this diagnostic sample to tune the 8% policy threshold or claim default-on is ready.
+
+### Next exact step: retrace-free counterbalanced test
+
+From the isolated worktree, use its retained Stage 80 rotated runner **without** `AIVERSE_BATCH_AUTO_COST_TRACE` or `AIVERSE_ICB_PROFILE`. The mode-specific runner already verifies forced CPU MDI raster parity and actual submissions. A fresh six-run log under `build/batching-stage82/stage83-clean` is needed to measure the genuinely learned AUTO after Stage 81 policy changes under balanced process order. Compare both Direct and forced MDI results before drawing conclusions; if all three modes slow simultaneously, suspect device/environment rather than AUTO alone.
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage82 || exit 1
+unset AIVERSE_BATCH_AUTO_COST_TRACE AIVERSE_ICB_PROFILE AIVERSE_BATCH_AUTO_TRACE
+bash tools/batching-stage80-ab.sh 1024 build/batching-stage82/stage83-clean
+```
+
+The script uses `AIVERSE_BATCH_BENCH_BIN` default `build/batching-gpu-verify/aiverse_material_batches`; **set `AIVERSE_BATCH_BENCH_BIN=build/batching-stage82/aiverse_material_batches`** for this isolated Stage 82 build (correct invocation below).
+
+```bash
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage82/aiverse_material_batches \
+  bash tools/batching-stage80-ab.sh 1024 build/batching-stage82/stage83-clean
+```
+
+Require 6/6 exits, 38 checks each, real-MDI raster parity, and actual submissions for forced modes. If clean-run AUTO remains slower than forced MDI despite choosing MDI on 80+ frames, compare per-pass and whole-render cost, GPU queue inflight stalls and sampled cadence. Do not conflate CPU wall with GPU time. If clean AUTO is competitive, proceed to 10k and GPU timestamp instrumentation, keeping experimental flags OFF by default and PR #39 Draft.
+
+**Actual work performed for Stage 83:** analyzed owner-provided build and trace log; GitHub handoff updated. No assistant-run native GPU/CTest, no CI or Vulkan validation.
