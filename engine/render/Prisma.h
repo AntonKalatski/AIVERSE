@@ -36,6 +36,25 @@ public:
     // prior viewport-size render targets (never infer idle from CPU frames).
     void releaseRetiredSizesAfterGpuIdle();
     size_t pendingRetiredSizes() const { return retiredSizes_.size(); }
+    // Close a presentation view without touching size-shared scene targets.
+    // Exposure history is owned per view; borrowed velocity/reactive handles
+    // are not destroyed. The current GPU submission fences owned textures.
+    void retireView(uint64_t viewId);
+    // When Scene/Game is hidden and no new post frame is rendered, the
+    // editor still polls verified GPU completions each UI frame.
+    void collectGpuRetirements();
+    struct RetirementStats {
+        size_t activeSizes = 0;
+        size_t retiredSizes = 0;
+        size_t exposureViews = 0;
+        size_t motionViews = 0;
+        size_t fencedTextures = 0;
+        size_t unfencedTextures = 0;
+        size_t graphRetiredTextures = 0;
+        uint64_t knownPendingBytes = 0; // lower bound; graph pool may add more
+        uint64_t lastGpuCompletedFence = 0;
+    };
+    RetirementStats retirementStats() const;
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
