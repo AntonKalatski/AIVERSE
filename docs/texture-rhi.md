@@ -2282,3 +2282,24 @@ Read `build/texture-rhi/verify-logs/{configure.log,build.log,ctest.log,summary.t
 for actual results after rerunning locally. The PR remains Draft until
 native/platform checks confirm correctness.
 
+
+### Stage 10AU — Mac Studio Clang compile regressions (source fixes)
+
+A real macOS `--editor` verifier run on `ddd096979` configured CMake and
+compiled 13 focused targets, but eight build targets failed. The extracted
+`build.log` identified three root causes rather than eight independent
+failures: `ModelVirtualTextureSampling.h` used `bodyAnchor.size()` on
+`const char* const`; `virtual_texture_feedback_pass.cpp` declared
+different config types together with a single `auto`; and the Radiance
+HDR fixture called the four-component `pixel()` helper with only two
+RLE code/value arguments. The source corrections give `bodyAnchor`
+a `std::string` type, split the two declarations, and use a separate
+two-byte RLE helper. This preserves the engine API and source asset data.
+
+**Actual evidence:** user's macOS build/CTest logs from
+`aiverse-texture-logs.tar.gz` for commit `ddd096979`; fix commits exist
+on the feature branch. **Post-fix macOS compile/CTest NOT YET RUN**.
+Verify in isolated worktree with
+`bash tools/verify-texture-rhi.sh --editor --jobs 4`.
+The original checkout remains in an unrelated unresolved rebase.
+
