@@ -1891,3 +1891,76 @@ and renderer numerical parity has not been demonstrated.
 **NOT RUN:** Clang/CMake, CTest, Metal shader compilation, real GPU
 checkpoint/recovery, fault injection and performance analysis. This API
 is experimental and not a production-safe guarantee of recovery.
+
+## Stage 29 — shared GPU-pool committed-tick cue bridge (functional source, tests deferred)
+
+`spectra::GpuCueBridge` adapts bounded one-shot presentation events
+to the existing `spectra::GpuPoolWorld`. It does **not** create its own
+particle simulator, GPU group, RHI resources, or gameplay ECS components.
+The pool continues to coalesce compatible graph/material/VM policy
+into shared `ComputeParticles` groups and uses the original shared CPU
+`BatchWorld` for unsupported effects.
+
+```cpp
+#include <aiverselib/genre/SpectraFX.h>
+aiverse::spectra::GpuPoolWorld pool;
+pool.init(device);
+pool.defineGraph("impact", graphJson, aiverse::Json::object(), options);
+
+aiverse::spectra::GpuCueBridge cues(pool);
+cues.bind(42, "impact");
+
+// Once AFTER a committed gameplay simulation tick:
+aiverse::spectra::acceptSimGpuCueTick(cues, tick, simEvents);
+
+// Per render frame, after Device::beginFrame and before its scene pass:
+pool.beginPresentationFrame(camera, viewProjection, width, height);
+cues.flush(); // queues are bounded; effects route to GPU/CPU via pool
+pool.step(dt);
+// Within the open render pass:
+pool.draw(fog);
+// After the render pass:
+pool.endPresentationFrame();
+
+// On a gameplay rollback: outside GPU render/compute passes,
+// before replaying any restored committed tick:
+if (!cues.resetForRollback()) { /* handle cues.reason() */ }
+```
+
+`GpuCueBudgets` controls `queued`, `acceptedPerTick`, and
+`dispatchedPerFrame`, independently of the pool's global
+`maxBurstsPerFrame`. `accept(tick, span<GpuCueEvent>)` refuses
+duplicate or decreasing ticks. Accepted cues capture the effect's
+**name** at admission time so later rebinding of an event type does
+not change queued events. The bridge tracks admission, drops,
+successful launches and world-level rejects. Failures during
+`flush` are not treated as emitted and are dropped rather than
+blocking future frames. `GpuCueEvent` optionally supplies a
+source generation key, a direction, tint and a snapshot of eight
+`param0..7` values.
+
+`resetForRollback()` calls `GpuPoolWorld::resetForRollback()`
+**before** clearing queued events and its tick cursor. A rejected
+reset leaves the bridge's state intact so a safe retry is possible.
+This reset clears the **entire pool**, not only the bridge's
+particles: the host must dedicate the pool to the same presentation
+rollback scope.
+
+Native ECS projects use
+`libraries/include/aiverselib/genre/SpectraGpuCueEcsAdapter.h`
+and `acceptSimGpuCueTick` for the existing `SimEvent` type.
+The adapter is read-only and makes no FPS/RTS/genre assumptions.
+
+**Important functional boundary:** This bridge handles only
+**one-shot** effects. The pool currently does not expose a per-source
+GPU particle handle that could selectively stop/kill particles
+or retarget a continuous emitter. Continuous ECS-attached effects
+remain with the existing shared-CPU `CueScheduler` until there is
+a generation-safe per-source GPU lifecycle API. Do not claim
+selective GPU source deletion, complete persistent ECS binding,
+or standalone production migration.
+
+**Verification:** tests are explicitly deferred by the user.
+CMake/CTest, Apple Silicon Metal execution, screenshot/visual parity,
+native FPS/RTS host integration and performance have **NOT RUN**.
+This is committed source, not confirmed release readiness.
