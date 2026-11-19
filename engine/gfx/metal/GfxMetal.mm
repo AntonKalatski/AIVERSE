@@ -95,17 +95,18 @@ public:
         if (!queue_ || !gpuHealthy_->load(std::memory_order_acquire) ||
             enc_ || compute_ || gpuIcbEncoder_)
             return false;
-        // Submit an empty ordering barrier AFTER all earlier committed
-        // command buffers. cmd_ (if any) is the current, unsubmitted frame
-        // and MUST NOT reference textures being drained at this safe point.
-        id<MTLCommandBuffer> barrier = [queue_ commandBuffer];
-        if (!barrier) return false;
-        [barrier commit];
-        [barrier waitUntilCompleted];
-        if (barrier.status != MTLCommandBufferStatusCompleted) return false;
-        // All prior submissions are complete even if their asynchronous
-        // completion callbacks have not yet published their atomics.
-        const uint64_t latest = cmd_ ? (frame_ ? frame_-1 : 0) : frame_;
+        // Do not create/commit a new barrier behind cmd_: cmd_ was already
+        // created by beginFrame but is not committed yet, and Metal queues
+        // may preserve command-buffer creation order. Waiting such a barrier
+        // could deadlock. Instead wait for the last ACTUALLY committed frame.
+        if (lastCommittedGpuFrameBuffer_) {
+            [lastCommittedGpuFrameBuffer_ waitUntilCompleted];
+            if (lastCommittedGpuFrameBuffer_.status !=
+                MTLCommandBufferStatusCompleted) return false;
+        }
+        // Main graphics submissions are in-order on this queue; the last
+        // committed frame covers all earlier frame viewport/ImGui uses.
+        const uint64_t latest = lastCommittedGpuFrame_;
         uint64_t seen = completedGpuFrame_->load(std::memory_order_relaxed);
         while (seen < latest &&
                !completedGpuFrame_->compare_exchange_weak(
@@ -852,6 +853,8 @@ public:
             }];
         }
         if (drawable_) [cmd_ presentDrawable:drawable_];
+        lastCommittedGpuFrameBuffer_ = cmd_;
+        lastCommittedGpuFrame_ = frame_;
         [cmd_ commit];
         cmd_ = nil;
         drawable_ = nil;
@@ -1540,6 +1543,8 @@ private:
     id<MTLDevice> device_;
     id<MTLCommandQueue> queue_;
     id<MTLCommandBuffer> cmd_;
+    id<MTLCommandBuffer> lastCommittedGpuFrameBuffer_ = nil;
+    uint64_t lastCommittedGpuFrame_ = 0;
     id<MTLRenderCommandEncoder> enc_;
     id<MTLComputeCommandEncoder> compute_;
     Pool<id<MTLComputePipelineState>> computes_;
