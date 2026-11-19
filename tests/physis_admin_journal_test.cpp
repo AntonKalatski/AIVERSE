@@ -459,6 +459,7 @@ void authProof() {
 void realLoopbackWebSocket() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
+    {
     auto sim=make();
     LoopbackAdminEndpoint service(dir/"journal");
     std::string error;
@@ -497,6 +498,7 @@ void realLoopbackWebSocket() {
         CHECK(remote.status()==ClientStatus::Applied);
         CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
     }
+    } // Destroy listener and release journal lock BEFORE deleting lock file.
     std::filesystem::remove_all(dir);
 }
 #endif
