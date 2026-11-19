@@ -1444,3 +1444,21 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   native build/CTest/macOS editor/actual remote TLS and security QA
   NOT RUN. Stage handoff
   docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
+
+
+### PHYSIS Stage 26 hardening — queued receipt after process crash
+
+- ServerGateway::restoreJournal must convert every persisted Queued
+  receipt to Unknown: a server restart loses its old in-memory
+  Simulation.pending commands. First restore matching World,
+  then observe() to reconcile to Applied / Conflict from actual
+  revision and field fingerprints. For unresolved intent permit
+  only the identical original authenticated Submit under ACL
+  and expectedRevision. Never fake a successful old receipt.
+- New native source tests in physis_admin_journal cover crash
+  before scheduled tick and crash after World commit but before
+  receipt flush; BUILD/CTEST NOT RUN.
+- FileJournal sidecar and Simulation save are NOT one atomic store.
+  Keep exact limits/ownership and separate PHYSIS, NEREID,
+  TerraWeave and Box3D. Handoff:
+  docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.

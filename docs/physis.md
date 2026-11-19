@@ -797,3 +797,30 @@ write failure, challenge/response rejection and real local WebSocket
 handshake plus ECS update. **No native compilation, CTest PASS, TLS
 integration or macOS GUI test has been performed.** Handoff:
 docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
+
+
+### Stage 26 crash-recovery correction — persisted Queued != pending command
+
+During Stage 26 hardening, ServerGateway::restoreJournal was changed to
+restore every persisted Queued receipt as Unknown and clear the old
+scheduledTick. The previous server's in-memory Simulation command
+queue may have vanished on restart, even when the sidecar journal
+still says Queued. A loaded Queued receipt is not proof of execution.
+
+After the host restores its matching ECS World/checkpoint, observe()
+reconciles Unknown against FieldRuntimeState and authored fingerprints.
+If already committed, the request is Applied. If revision advanced
+incompatibly, it is Conflict. If unchanged, keep Unknown; the EXACT
+original authenticated Submit can be re-admitted with the same ID
+after ACL and revision checks. No new PHYSIS permission or public
+listener is created by this fix.
+
+New source fixtures in physis_admin_journal test both crash before
+the queued command executes and crash after its ECS effect but before
+the Applied sidecar flush. These tests are AUTHORED, NOT RUN.
+The journal and Simulation save remain separate durability domains:
+this is safe resubmission/reconciliation, NOT full cross-file
+crash-atomic exactly-once commit.
+
+Stage-specific handoff:
+docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.

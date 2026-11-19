@@ -228,3 +228,23 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   in CMake and PHYSIS/Studio workflows, but C++ compilation/CTest,
   real GUI/network/TLS QA are NOT RUN. Handoff:
   docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
+
+
+### Stage 26 correction — restore queued sidecar entries as unresolved
+
+- ServerGateway::restoreJournal normalizes persisted Queued to
+  Unknown and clears old scheduledTick. Never infer that a pending
+  Simulation command survived a server-process restart.
+- After restoring the corresponding World checkpoint, call
+  observe() to verify revision+fingerprints. If not applied and
+  revision still matches, ONLY a byte-identical original Submit
+  from the same authenticated principal may re-admit through ACL.
+  Keep request instance/ID and dedupe cache stable.
+- The existing FileJournal and Simulation save are separate files:
+  this recovery is NOT a crash-atomic transaction; ambiguous
+  results remain Unknown/Conflict. Do not promise durable
+  exactly-once ACK without coordinated checkpoints.
+- Tests queuedReceiptBeforeCrash and
+  queuedReceiptAlreadyAppliedBeforeCrash were added to
+  tests/physis_admin_journal_test.cpp, but NOT RUN.
+- Handoff docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.

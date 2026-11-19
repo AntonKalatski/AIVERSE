@@ -364,3 +364,22 @@ canonical editable runtime. Keep NEREID, TerraWeave, Box3D separate.
 
 Tests physis_admin_journal authored and CI registered but NOT RUN.
 Handoff docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
+
+
+### Stage 26 queued-receipt restart recovery
+
+When restoring a FileJournal into ServerGateway, persisted Queued
+requests are now treated as Unknown: the old process may have lost
+its pending command despite its durable sidecar receipt. Restore
+the matching authoritative World checkpoint FIRST. Calling observe
+with current FieldRuntimeState identifies already-Applied commands
+by expected revision plus exact authored fingerprints. Remaining
+Unknown intents may be resubmitted ONLY using the same authenticated
+principal, request ID and original payload with current ACL/expected
+revision checks. Do not mark stale Queued as Rejected just because
+its pre-crash scheduled tick passed. This is NOT cross-file
+crash-atomicity.
+
+C++ fixtures added for crash before command execution and crash
+after ECS commit before the journal Applied flush, NOT RUN.
+Stage handoff docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
