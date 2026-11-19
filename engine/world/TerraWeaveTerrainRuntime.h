@@ -108,8 +108,11 @@ public:
                           const ColliderIdForCell& ids,
                           const MaterialForCell& materials={},
                           float uvScale=0.05f) {
+        const uint64_t trisPerTile=
+            uint64_t(resolution_-1u)*(resolution_-1u)*2u;
         if(!ids || maxUploads<1 || maxUploads>8 ||
-           visible.size()>8192u)
+           visible.size()>512u ||
+           uint64_t(visible.size())*trisPerTile>4000000u)
             throw std::invalid_argument("TerraWeave terrain residency budget");
         std::set<world::Cell> needed;
         for(const auto& tile:visible){
@@ -117,14 +120,9 @@ public:
                 throw std::invalid_argument("TerraWeave tiles are X/Z columns");
             needed.insert(tile);
         }
-        // Do not evict gameplay collision just because it left the camera's
-        // frustum. Caller supplies the full simulation-pinned tile set.
-        for(auto it=residents_.begin();it!=residents_.end();){
-            if(!needed.contains(it->first)){
-                it->second.shutdown(device,spatial,colliders_);
-                it=residents_.erase(it);
-            }else ++it;
-        }
+        // Preserve old simulation-pinned collision until ALL newly needed
+        // tiles have been published. This is load-first/unload-last, unlike
+        // removing old colliders before discovering GPU allocation failure.
         for(const auto& tile:needed)
             if(!residents_.contains(tile) && !pending_.contains(tile))
                 pending_.insert_or_assign(tile,earth_.revision());
@@ -154,6 +152,16 @@ public:
             pending_.erase(it);
             ++published;
         }
+        bool complete=true;
+        for(const auto& tile:needed)
+            if(!residents_.contains(tile)){complete=false;break;}
+        if(complete)
+            for(auto it=residents_.begin();it!=residents_.end();){
+                if(!needed.contains(it->first)){
+                    it->second.shutdown(device,spatial,colliders_);
+                    it=residents_.erase(it);
+                }else ++it;
+            }
         return published;
     }
 
@@ -194,35 +202,30 @@ public:
 private:
     void schedule(const EarthworkChange& change){
         if(change.vertices.empty())return;
+        // Edits to nonresident cells stay authoritative in Earthworks;
+        // they are baked on-demand when the tile becomes simulation-pinned.
+        // Only currently resident tiles need a queued rebuild. This avoids
+        // scanning thousands of unloaded world cells during a large river
+        // flood or a sparse set of far-apart NEREID bank probes.
         const int64_t pad=earth_.spacingCm();
-        const auto clamp=[](int64_t value)->int64_t{
-            return std::clamp<int64_t>(value,-kWorldLimitCm,
-                                      kWorldLimitCm);
-        };
-        const int64_t x0=clamp(change.dirty.minX-pad);
-        const int64_t x1=clamp(change.dirty.maxX+pad);
-        const int64_t z0=clamp(change.dirty.minZ-pad);
-        const int64_t z1=clamp(change.dirty.maxZ+pad);
+        const int64_t x0=std::max<int64_t>(
+            -kWorldLimitCm,change.dirty.minX-pad);
+        const int64_t x1=std::min<int64_t>(
+            kWorldLimitCm,change.dirty.maxX+pad);
+        const int64_t z0=std::max<int64_t>(
+            -kWorldLimitCm,change.dirty.minZ-pad);
+        const int64_t z1=std::min<int64_t>(
+            kWorldLimitCm,change.dirty.maxZ+pad);
         const int64_t span=int64_t(cellSizeMetres_)*100;
-        const int64_t cx0=detail::floorDiv(x0,span);
-        const int64_t cx1=detail::floorDiv(x1,span);
-        const int64_t cz0=detail::floorDiv(z0,span);
-        const int64_t cz1=detail::floorDiv(z1,span);
-        const int64_t width=cx1-cx0+1,height=cz1-cz0+1;
-        if(width<=0 || height<=0 || width*height>65536u)
-            throw std::length_error("TerraWeave soil revision dirty tile budget");
-        // Stage map before publication so a partially allocated dirty queue
-        // never escapes to another thread. Duplicate cells coalesce to the
-        // newest monotonic revision.
         auto next=pending_;
-        for(int64_t z=cz0;z<=cz1;++z)
-            for(int64_t x=cx0;x<=cx1;++x){
-                if(x<INT32_MIN || x>INT32_MAX ||
-                   z<INT32_MIN || z>INT32_MAX)
-                    throw std::out_of_range("TerraWeave dirty world cell");
-                const world::Cell cell{int32_t(x),0,int32_t(z)};
-                next.insert_or_assign(cell,change.revision);
-            }
+        for(const auto& [tile,resident]:residents_) {
+            (void)resident;
+            const int64_t tx=int64_t(tile.x)*span;
+            const int64_t tz=int64_t(tile.z)*span;
+            if(tx<x1 && tx+span>x0 &&
+               tz<z1 && tz+span>z0)
+                next.insert_or_assign(tile,change.revision);
+        }
         pending_.swap(next);
     }
 
