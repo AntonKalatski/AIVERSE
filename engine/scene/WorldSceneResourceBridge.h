@@ -5,7 +5,10 @@
 #pragma once
 #include "SceneResourceBackend.h"
 #include "engine/world/WorldScene.h"
+#include <exception>
+#include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <span>
 #include <string>
