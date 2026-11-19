@@ -5907,3 +5907,27 @@ Verification: GitHub commit succeeded. Native build, CTest,
 shader compiler and GPU execution NOT RUN per user request.
 Next: handle alpha masks, model LOD/animation parity and
 Terra registration, then finish backend storage/RT parity.
+
+
+## Stage 9O — conservative material and LOD feedback eligibility (2026-11-19)
+
+Source commit: 43bc183fc0f6d7ef927ee6905c39c7a1708db581.
+Changed file: engine/render/Renderer3D.h.
+The rigid ModelItem feedback path now rejects AlphaMode::Mask
+and AlphaMode::Blend, transparent flag, partially transparent
+base color, and LOD cross-fade transition items
+(lodThreshold<1), in addition to the previously excluded
+skinned/morphed/baked/dissolving items. This prevents
+reporting virtual pages from geometry that the simple opaque
+feedback shader cannot correctly clip. clearVirtualTextureFeedback
+also clears the separate model pipeline and binder.
+
+These are conservative exclusions, not feature-complete
+alpha-mask/LOD feedback. Such materials will have no feedback
+until the renderer registers compatible alpha clipping and
+LOD transition shader variants. No Terra integration yet.
+Verification: GitHub source commit succeeded. No native
+compile, CTest, shader validation or GPU run, per user's
+functionality-first instruction.
+Next: implement material-aware alpha-mask and LOD feedback
+pipeline variants and Terra integration; close backend gaps.
