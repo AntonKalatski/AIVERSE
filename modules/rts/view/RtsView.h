@@ -183,6 +183,7 @@ public:
         size_t pendingRolledBackImages=0;
         uint64_t imageRollbackEnqueueFailures=0;
         uint64_t imageRollbackOrphanBatches=0;
+        uint64_t stagingQueueFailures=0,stagingOrphanModels=0;
         bool publicationBackpressured=false;
     };
     // Excludes the terrain, special renderers, FX, dedicated buffers and
