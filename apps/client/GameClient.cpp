@@ -1104,6 +1104,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             worldScene_->update(dev, {&focus, 1}, worldRadius_);
             worldMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-worldStarted).count();
         }
+        // Apply the body-space gate before attempting any GPU work.
+        // GPU billboards are still flat-world-only; planet mode resets them.
+        fx_.setPlanetView(planet() ? &view_ : nullptr);
         // Opt-in SpectraFX GPU evolution: must happen inside beginFrame,
         // outside render passes and before the CPU/scene draw opens a pass.
         // No authored fx/gpu/routes.json => existing VFX behavior unchanged.
@@ -1136,7 +1139,6 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
-        fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(), fbW(), fbH(),
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
