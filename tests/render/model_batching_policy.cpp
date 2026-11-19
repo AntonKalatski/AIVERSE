@@ -872,7 +872,12 @@ int main() {
         draw.materials = nullptr;
         std::vector<int> nodeMaterials(1, 0);
         draw.nodeMaterial = &nodeMaterials;
-        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        // Per-node material overrides are live packet inputs, not a blanket
+        // cache exclusion. Renderer3D validates hasNodeMaterialOverride and
+        // the exact nodeMaterialSnapshot on every packet replay.
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        nodeMaterials[0] = -1; // switching overrides remains a runtime input
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
         draw.nodeMaterial = nullptr;
         model.meshes[0].lods.push_back({0, 10.f});
         CHECK(staticRenderPacketCandidate(draw, false, false, false));
