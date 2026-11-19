@@ -5,6 +5,7 @@
 #pragma once
 #include "CommonComponents.h"
 #include <cstdint>
+#include <array>
 
 namespace aiverse {
 
@@ -31,6 +32,8 @@ struct CameraOutputComponent {
     CameraOutputKind kind = CameraOutputKind::Screen;
     uint64_t targetAssetKey = 0;
     uint16_t width = 0, height = 0; // zero = use host/output dimensions
+    bool hdr = false;            // RGBA16F when supported (RT only)
+    bool depth = true;           // allocate depth attachment for offscreen views
     constexpr bool operator==(const CameraOutputComponent&) const = default;
 };
 
@@ -42,6 +45,16 @@ struct CameraUpdateComponent {
     uint16_t everyNFrames = 1;
     uint16_t rateHz = 30;
     constexpr bool operator==(const CameraUpdateComponent&) const = default;
+};
+
+// Declared samples of other camera-produced RTs. Only stable asset keys are
+// persisted; no GPU handles and no per-frame state in the ECS component.
+// The host must declare these reads before its scene-submission callback samples
+// one of the textures. A cycle is invalid, including self-sampling.
+struct CameraDependenciesComponent {
+    std::array<uint64_t, 8> reads{};
+    uint8_t count = 0;
+    constexpr bool operator==(const CameraDependenciesComponent&) const = default;
 };
 
 } // namespace aiverse

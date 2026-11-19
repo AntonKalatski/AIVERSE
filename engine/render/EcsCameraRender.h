@@ -16,6 +16,7 @@ struct EcsCameraView {
     render::Camera camera{};
     CameraOutputComponent output{};
     CameraUpdateComponent update{};
+    CameraDependenciesComponent dependencies{};
     uint32_t visibilityMask = UINT32_MAX;
     int32_t priority = 0;
 };
@@ -57,6 +58,7 @@ inline bool resolveEcsCamera(const aiverse::World& world, aiverse::Entity entity
     out.camera = camera;
     if (const auto* output=world.tryGetConst<CameraOutputComponent>(entity)) out.output=*output;
     if (const auto* update=world.tryGetConst<CameraUpdateComponent>(entity)) out.update=*update;
+    if (const auto* inputs=world.tryGetConst<CameraDependenciesComponent>(entity)) out.dependencies=*inputs;
     out.visibilityMask = settings->visibilityMask;
     out.priority = settings->priority;
     return true;
