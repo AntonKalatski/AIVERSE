@@ -218,7 +218,6 @@ public:
                     return false;
                 }
                 selected.backend.preference=SpectraFxExecutionPreference::Cpu;
-                ++stats_.pooledFallbacks;
             }
         }
         auto preference=chooseSpectraFxBackend(device_,SpectraFxHybridEmitter::effectiveRequest(selected));
@@ -496,6 +495,11 @@ public:
     size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
     size_t sharedPoolCount() const {return pools_.size();}
     uint32_t sharedPoolCapacity() const {return totalPoolCapacity_;}
+    // Includes both pools and dedicated emitters held for in-flight frames.
+    uint64_t retiringGpuSlots() const {return retiringGpuSlots_;}
+    size_t retiringGpuResourceCount() const {
+        return retiringPools_.size()+retiringDedicated_.size();
+    }
     // Approximate native RHI payload only. Driver overhead, pipeline state,
     // transient staging and texture memory alignment are not accounted for.
     uint64_t nominalGpuBytes() const {
