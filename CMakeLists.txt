@@ -2309,6 +2309,24 @@ if(AIVERSE_BUILD_TESTS)
         LABELS "PHYSIS;ECS;PERSISTENCE")
 endif()
 
+# Stage 87 real cross-system test is deliberately opt-in only once the
+# separate TerraWeave branch has been integrated into the SAME checkout.
+# PHYSIS-only branches must neither copy TerraWeave's source nor build a stub
+# claiming to test the actual Box3D falling plant implementation.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_ENABLE_PHYSICS AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/world/TerraWeaveRootEvents.h" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/world/TerraWeaveFallenPhysics.h" AND
+   TARGET aiverse_physics)
+    add_executable(aiverse_physis_terraweave_fall_bridge_test
+        tests/physis_terraweave_fall_bridge_test.cpp)
+    target_link_libraries(aiverse_physis_terraweave_fall_bridge_test PRIVATE
+        aiverse_engine aiverse_physics)
+    add_test(NAME physis_terraweave_fall_bridge
+        COMMAND aiverse_physis_terraweave_fall_bridge_test)
+    set_tests_properties(physis_terraweave_fall_bridge PROPERTIES
+        LABELS "PHYSIS;TERRAWEAVE;PHYSICS;ECS")
+endif()
+
 # PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_physis_wind_test tests/physis_wind_test.cpp)
