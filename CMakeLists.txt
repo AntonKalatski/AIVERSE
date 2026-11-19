@@ -614,6 +614,14 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME animation_model_dependencies COMMAND aiverse_model_dependencies_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_visual_asset_watcher_tests
+        tests/animation/editor_visual_asset_service.cpp)
+    target_link_libraries(aiverse_visual_asset_watcher_tests
+        PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_editor_visual_asset_watcher
+        COMMAND aiverse_visual_asset_watcher_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
