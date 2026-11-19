@@ -45,13 +45,15 @@ bool planView(const Asset& source, const ViewConfig& config,
         source.bounds.size() != source.nodes.size())
         return fail(error, "invalid Strata cluster topology/bounds count");
 
-    // Check all bound ranges, including currently nonresident nodes, so the
-    // result never refers to an out-of-bounds or malformed source index stream.
+    // Disk-backed sources may have released their redundant CPU index
+    // payload after root GPU validation. Ranges are still checked against
+    // the immutable logical count recorded before the release.
+    const size_t logicalIndices=source.logicalIndexCount();
     for (size_t i = 0; i < source.nodes.size(); ++i) {
         const auto& node = source.nodes[i];
         if (!validBounds(source.bounds[i]) ||
-            node.firstIndex > source.indices.size() ||
-            node.indexCount > source.indices.size() - node.firstIndex)
+            node.firstIndex > logicalIndices ||
+            node.indexCount > logicalIndices - node.firstIndex)
             return fail(error, "invalid Strata cluster bounds/index range");
     }
 
