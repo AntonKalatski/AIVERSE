@@ -918,3 +918,9 @@ CI if it remains queued or cancelled.
   map to argument IDs 26/28 through 34/36, with no dynamic
   sampler 16. This does **not** substitute for actual Metal
   shader or GPU tests; leave graph ICB opt-in disabled by default.
+
+
+### Vulkan MSAA runtime query loader (Stage 10AM)
+
+- Under `VK_NO_PROTOTYPES`, every physical-device Vulkan query needs a function pointer entry in `AIVERSE_VK_INSTANCE_FUNCS`. The MSAA image-format query `vkGetPhysicalDeviceImageFormatProperties` was added after CI arm64 GCC failed at `VkResources.cpp:577`.
+- GitHub CI from an older SHA diagnosed the issue. Post-fix build and CTest are pending. Do not claim CI is green based on a source-level fix.
