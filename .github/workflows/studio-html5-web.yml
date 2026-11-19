@@ -1,0 +1,55 @@
+name: AIVERSE HTML5 Studio checks
+on:
+  push:
+    branches: [feature/studio-html5]
+    paths:
+      - 'apps/studio-web/**'
+      - 'apps/studio-native/**'
+      - 'tools/studio/**'
+      - '.github/workflows/studio-html5-web.yml'
+  pull_request:
+    paths:
+      - 'apps/studio-web/**'
+      - 'apps/studio-native/**'
+      - 'tools/studio/**'
+      - '.github/workflows/studio-html5-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-build:
+    name: TypeScript and Vite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/studio-web/package.json
+      - name: Install frontend packages
+        working-directory: apps/studio-web
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        working-directory: apps/studio-web
+        run: npm run typecheck
+      - name: Build static HTML5 frontend
+        working-directory: apps/studio-web
+        run: npm run build
+
+  boundary:
+    name: ImGui boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit no ImGui in new native Studio
+        run: python3 tools/studio/migration_audit.py --strict --json
+      - name: Audit scanner tests
+        run: python3 -m unittest discover -s tools/studio -p 'test_*.py' -v
