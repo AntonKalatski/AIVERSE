@@ -186,6 +186,11 @@ bool Prisma::wantsObjectMotionVectors() const {
         int(quality_) >= int(effect->minQuality) &&
         effect->get("intensity") > 0 && effect->get("maxPixels") > 0;
 }
+uint64_t Prisma::objectMotionEpoch(uint64_t id) const {
+    const auto it = motionViews_.find(id);
+    return it == motionViews_.end() ? 1 : it->second.cutEpoch;
+}
+
 bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
     id = viewId_;
     const auto* effect = settings_.find(PrismaType::MotionBlur);
@@ -196,7 +201,9 @@ bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
         effect->get("intensity") <= 0.0f || effect->get("maxPixels") <= 0.0f)
         return false;
     const auto found = motionViews_.find(viewId_);
-    if (found == motionViews_.end() || !found->second.valid)
+    if (found == motionViews_.end() || !found->second.valid ||
+        found->second.width != stats_.width ||
+        found->second.height != stats_.height)
         return false;
     previous = found->second.previousViewProj;
     return true;
@@ -209,11 +216,19 @@ void Prisma::setObjectMotionVectors(uint64_t id, gfx::TextureHandle texture) {
     motionViews_[id].objectVelocity = texture;
 }
 void Prisma::resetMotionHistory(uint64_t id) {
-    auto it = motionViews_.find(id);
-    if (it != motionViews_.end()) it->second.valid = false;
+    // Epoch is created even if the camera has not rendered before; this
+    // prevents a renderer's prior transform history from surviving a cut.
+    auto& view = motionViews_[id];
+    view.valid = false;
+    ++view.cutEpoch;
+    view.objectVelocity = {};
 }
 void Prisma::resetMotionHistory() {
-    for (auto& [id, view] : motionViews_) view.valid = false;
+    for (auto& [id, view] : motionViews_) {
+        view.valid = false;
+        ++view.cutEpoch;
+        view.objectVelocity = {};
+    }
 }
 
 void Prisma::resetAutoExposure() {
