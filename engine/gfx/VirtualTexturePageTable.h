@@ -84,7 +84,11 @@ public:
         if(pixels_.empty() || cache.baseTilesX()!=width_ ||
            cache.baseTilesY()!=height_ || cache.mipLevels()!=levels_ ||
            cache.virtualLayers()!=layers_) return 0;
-        if(lastRevision_==cache.mappingRevision()) return 0;
+        // Revision alone is not globally unique across independent page caches.
+        // A table reused with a different cache must rescan even when their
+        // counters coincidentally match; never return a stale physical slot.
+        const bool sameCache=lastCache_==&cache;
+        if(sameCache && lastRevision_==cache.mappingRevision()) return 0;
         size_t changed=0;
         const auto visit=[&](int x,int y,int logicalLayer) {
             VirtualPageAllocation nearest;
@@ -119,7 +123,8 @@ public:
         };
         std::vector<VirtualPageKey> recent;
         std::vector<Rect> rectangles;
-        bool partial=lastRevision_!=std::numeric_limits<uint64_t>::max() &&
+        bool partial=sameCache &&
+            lastRevision_!=std::numeric_limits<uint64_t>::max() &&
             cache.mappingChangesSince(lastRevision_,recent,128);
         const size_t fullCells=size_t(width_)*size_t(height_)*size_t(layers_);
         size_t visitCount=0;
@@ -157,6 +162,7 @@ public:
                     for(int x=0;x<width_;++x)
                         visit(x,y,layer);
         }
+        lastCache_=&cache;
         lastRevision_=cache.mappingRevision();
         return changed;
     }
@@ -254,6 +260,7 @@ public:
         width_ = height_ = levels_ = layers_ = tableLayers_ = 0;
         selectors_ = 1;
         lastRevision_=std::numeric_limits<uint64_t>::max();
+        lastCache_=nullptr;
         error_.clear();
     }
 
@@ -261,6 +268,7 @@ private:
     int width_ = 0, height_ = 0, levels_ = 0, layers_ = 0;
     int selectors_ = 1, tableLayers_ = 0;
     uint64_t lastRevision_=std::numeric_limits<uint64_t>::max();
+    const VirtualTexturePageCache* lastCache_=nullptr; // non-owning, never dereferenced
     std::vector<uint8_t> pixels_;
     std::vector<uint8_t> dirtyRows_;
     std::string error_;

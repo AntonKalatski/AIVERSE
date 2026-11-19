@@ -168,6 +168,29 @@ void indexedTableReference() {
     }
     indexed.rebuild(cache);
     compareFull(); // journal history overflow must safely rebuild in full
+
+    // Two independent caches can have equal revisions and identical geometry
+    // yet different physical mappings. Rebinding must force a full rescan.
+    VirtualTexturePageCache first,second;
+    VirtualTexturePageTable rebound;
+    check(first.initialize(8,8,4,2,10) &&
+          second.initialize(8,8,4,2,10) &&
+          rebound.initialize(8,8,4,2,true),
+          "cache identity fixture initialized");
+    const auto onlyFirst=first.reserve({0,0,0,0});
+    const auto onlySecond=second.reserve({0,7,7,1});
+    check(onlyFirst.valid() && onlySecond.valid() &&
+          first.complete({0,0,0,0},onlyFirst,true) &&
+          second.complete({0,7,7,1},onlySecond,true) &&
+          first.mappingRevision()==second.mappingRevision(),
+          "two caches have same revision but different ready pages");
+    check(rebound.rebuild(first)>0 &&
+          rebound.entryForMip(0,0,0,0)[3]==255,
+          "initial binding publishes first cache mapping");
+    check(rebound.rebuild(second)>0 &&
+          rebound.entryForMip(0,0,0,0)[3]==0 &&
+          rebound.entryForMip(7,7,1,0)[3]==255,
+          "switching cache identity cannot retain stale page table entries");
 }
 
 VirtualTextureStreamConfig streamConfig() {
