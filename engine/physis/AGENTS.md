@@ -256,3 +256,25 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Only the identical authenticated original Submit with matching expected revision may requeue an unresolved intent. Do not promise cross-file crash atomicity between journal and World snapshot.
 - Tests `queuedReceiptBeforeCrash` and `queuedReceiptAlreadyAppliedBeforeCrash` are authored in `tests/physis_admin_journal_test.cpp` but native compilation and CTest have NOT RUN.
 - Handoff: `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.
+
+### Stage 40 — real process lifetime and recovery testing (2026-11-19)
+
+- `LoopbackAdminEndpoint` MUST retain its `JournalProcessLock`
+  for the whole listener/peers lifetime. The lock member is declared
+  before the listener, so C++ reverse-order destruction releases it
+  only after the listener and gateway are destroyed. Never unlink the
+  `<journal>.lock` inode while any endpoint is alive.
+- POSIX regression tests in `physis_admin_journal` now fork a second OS
+  process, verify nonblocking exclusion, kill the owner with SIGKILL,
+  and check that a new process can acquire the same path. They also
+  restore persisted Queued as Unknown after a killed child endpoint,
+  then re-admit the exact authorized original and confirm durable
+  Applied after the authoritative ECS tick.
+- Windows has the existing same-process lock test, but no equivalent
+  child-process SIGKILL fixture. Locking remains advisory and does not
+  provide cross-host distributed fencing or joint World/journal commit.
+- An isolated Linux GCC 14.2 C++20 header smoke was compiled with
+  -Wall -Wextra -Werror -pedantic and PASSED the process-kill/reacquire
+  scenario. This is NOT a full AIVERSE CMake/CTest PASS; native repository
+  build, macOS/Windows QA and the new integrated test are NOT RUN.
+- Stage handoff: `docs/agent-handoffs/physis-stage40-cross-process-journal-2026-11-19.md`.
