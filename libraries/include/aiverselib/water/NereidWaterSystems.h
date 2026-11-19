@@ -1,6 +1,6 @@
 // AIVERSE NEREID -- opt-in ECS sampling; no FPS/RTS or rendering coupling.
 #pragma once
-#include <aiverselib/water/NereidCurrentField.h>
+#include <aiverselib/water/NereidVortices.h>
 #include "engine/sim/CommonComponents.h"
 #include "engine/sim/Simulation.h"
 #include <string>
@@ -13,7 +13,8 @@ namespace aiverse::lib::nereid {
 inline void considerWaterCandidate(WaterSample& sample,Entity entity,
                                    const WaterBodyComponent& body,Vec3 position,
                                    const WaterGeometryComponent* geometry=nullptr,
-                                   const WaterCurrentFieldComponent* field=nullptr) {
+                                   const WaterCurrentFieldComponent* field=nullptr,
+                                   const WaterVortexFieldComponent* vortices=nullptr) {
     const bool better=!sample.found ||
         body.priority>sample.priority ||
         (body.priority==sample.priority &&
@@ -24,7 +25,7 @@ inline void considerWaterCandidate(WaterSample& sample,Entity entity,
     sample.kind=body.kind;
     sample.surfaceY=body.surfaceY;
     sample.bottomY=body.bottomY;
-    sample.flow=waterCurrentAt(body,geometry,field,position);
+    sample.flow=waterCurrentWithVortices(body,geometry,field,vortices,position);
     sample.priority=body.priority;
     sample.depth=fxClamp(body.surfaceY-position.y,Fixed{},body.surfaceY-body.bottomY);
     sample.found=true;
@@ -38,7 +39,8 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
             const auto* geometry=world.tryGetConst<WaterGeometryComponent>(entity);
             if(!coversWaterBody(body,geometry,position))return;
             const auto* field=world.tryGetConst<WaterCurrentFieldComponent>(entity);
-            considerWaterCandidate(sample,entity,body,position,geometry,field);
+            const auto* vortices=world.tryGetConst<WaterVortexFieldComponent>(entity);
+            considerWaterCandidate(sample,entity,body,position,geometry,field,vortices);
         });
     return sample;
 }
@@ -79,6 +81,9 @@ inline void addWaterSamplingSystem(Simulation& sim,std::string name) {
     });
 }
 
+inline void registerNereidVortexPersistence(Simulation& sim) {
+    sim.registerPersistentComponent<WaterVortexFieldComponent>("nereid.vortex_field",1);
+}
 inline void registerNereidCurrentPersistence(Simulation& sim) {
     sim.registerPersistentComponent<WaterCurrentFieldComponent>("nereid.current_field",1);
 }
