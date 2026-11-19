@@ -2674,3 +2674,19 @@ Audited existing async publication and GPU cache adoption paths, and fixed a def
 **Actual verification:** GitHub source commit only; no CMake/CTest, compiler, editor/game launch, screenshots or performance measurements. Keep PR Draft. Separate test agent owns tests.
 
 **Next implementation:** expose requested vs active cell status (without changing GPU/archive layouts), and verify diagnostics on source edits, empty regions, GPU cache hits, transitions and shutdown. Then update TERRAWEAVE.md and agent skill. Do not assert passing tests.
+
+## Stage 22g — requested vs active Horizon region diagnostics (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`, PR #24 Draft.
+**Commit:** `cbe93ad60fa5db9ffc32f71cc7846b9374ad9f61`.
+**Changed:** `engine/render/TerraWeaveHorizonScene.h`.
+
+Added owner-thread `requestedCell_` updated after camera hysteresis chooses `desired` and before GPU transition, fast-return, cache-hit and worker paths. `HorizonRuntimeStats` now publishes `requestedRegionPresent`, `requestedRegionPending`, `requestedCellX/Z`, and `activeCellX/Z`. `requestedRegionPending` means a requested cell exists and either no active GPU model is present, the active cell differs, or the active model is from an older source revision (`staleProxy`). `shutdown(device)` clears requested cell as well as active cell and runtime stats. No TWH8 serialization, shader, ECS or GPU resource layout changes.
+
+**Caveat:** An intentionally empty Horizon model may leave `requestedRegionPending=true` because no GPU model exists; the flag denotes missing active GPU presentation, not necessarily an outstanding worker job. `preparing` remains the separate stream status. Coordinates are meaningful only if the matching Present flag is true; absent cells default to zero in the returned struct. An out-of-range observer throws before requested cell is changed.
+
+**Actual verification:** GitHub source commit only; NO CMake, compiler, CTest, running editor/game, GPU screenshot or benchmark. Keep PR Draft and send tests to separate testing agent.
+
+**Tester acceptance:** initial/no observer, active same cell, camera hysteresis, cross-cell streaming, teleport, GPU LRU hit, transition reversal, source revision invalidation, empty model, invalid camera and shutdown. Check that requested pending does not masquerade as `preparing>0`; verify cache hit restores active cell and no stale coordinate after shutdown.
+
+**Next implementation:** refine pending semantics for intentionally empty regions with explicit `activeRegionResolved` if needed; update public TerraWeave docs/skill, then separate agent executes full tests and benchmarks.
