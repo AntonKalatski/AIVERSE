@@ -434,3 +434,13 @@ git fetch origin main && git merge origin/main
 - **Actual validation:** **NOT RUN**: no native compilation, shader compiler, macOS Metal/Vulkan run, CTest, editor/GPU visual QA, CPU parity or CI, per user instruction functions first. Do not treat correctness as verified.
 - **Known limitations:** CPU expiry clock intentionally approximates the same age used by GPU; GPU execution timing and stalling must be checked. No sorting, collisions, GPU-side event callbacks, indirect live-count compaction, multi-emitter particle-level configuration. The GPU texture still contains dormant slots and draws the fixed-capacity instance count.
 - **Next:** introduce an explicit backend policy/capability decision with CPU fallback. Then wire a GPU-capable emitter to the actual editor/game rendering passes and implement richer spawning/kill/streaming. Tests only after feature completion.
+
+
+## 2026-11-19 — Stage 25: conservative CPU/GPU capability routing
+- **Branch:** `feature/spectrafx-generic-cue-queue`, main merged through `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Code commit:** `2bb1b3299def58878945341091d1b29b9a804756`.
+- **New public header:** `engine/fx/SpectraFxExecutionPolicy.h`.
+- **Features:** `SpectraFxExecutionPreference` (Cpu/Auto/Gpu), `SpectraFxFeature` bitmask and `chooseSpectraFxBackend(device,request)` return backend choice, acceptance, and explicit reason. GPU selection requires 1..65536 particles, a simple unsorted billboard-only feature set (alpha/additive), RHI compute and RGBA32F support, and Metal/Vulkan. Collision, trails, mesh, subemitters, lighting, sorting, local-space, flipbook, ribbons and per-particle events remain CPU. Strict GPU requests reject unsupported features when fallback disabled; Auto uses CPU as necessary. No new genre coupling or D3D12 backend.
+- **Important limitations:** policy only; it does not automatically rebind existing `ParticleSystem` emitters to GPU. The GPU code has not been proven with native shaders, backend barriers or framebuffer formats. CPU and GPU must never both simulate the same emitter concurrently. Effect-to-feature extraction and host renderer integration are future work.
+- **Tests actually executed:** **NOT RUN** by user's explicit all-features-first instruction; no C++ compilation, CTest, GPU runtime or editor visual QA. Treat this as authored API only, not validated support.
+- **Next actionable step:** implement one opt-in per-emitter host bridge using the policy, capped GPU slot allocation and actual renderer submission or graceful CPU fallback, then add spawn-rate/quality culling and GPU events. Keep handoff after every stage and reserve validation for final phase.
