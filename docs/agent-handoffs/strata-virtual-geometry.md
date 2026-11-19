@@ -635,3 +635,69 @@ The real Metal fixture MUST actually print five scenario PASS lines and `cases=5
 - Auxiliary Strata index ranges live on the existing model GPU page; never copy a stale candidate after device, source or material revision change.
 - CPU LOD simplification may have visual seams/cracks under different depths; texture parity remains unverified.
 - PR #35 remains Draft. The batching PR #34 was already merged; rebase the PR base onto `main` after this exact upstream integration and continue writing per-stage handoffs.
+
+---
+
+## Stage 10 — Renderer3D ModelDraw dry-run preview, legacy remains authoritative (2026-11-19)
+
+### Branch and exact implementation commits
+Branch `feature/strata-virtual-geometry`, draft PR #35; base `main`, current integrated batching implementation already merged. **NO Strata rendering enabled; NO main mutation in this stage.**
+
+- `54be3a2f0d3f55fb89872fdbc1963938eb912b44` — `engine/render/Renderer3D.h`: additive `previewStrataModel` entry point and `StrataPreviewStats` counters.
+- `ae151e01734e0bd6b9f25128cb6c87e572281c5c` — `engine/render/Renderer3D.cpp`: reset diagnostic counters at `beginScene`.
+- `99a2d0a4f117c539dfcab2cf71b5d86e7e782bc0` — initial `engine/render/StrataRendererPreview.cpp` renderer-side main/shadow route evaluator.
+- `f9f9331b3400bc63c65a9108f2bd125030194199` — `CMakeLists.txt`: compile preview source as part of `aiverse_strata_render_routing` library, no separate renderer or new GPU objects.
+- `513f846d8c5ac900f770d08b5b0845149343fc75` — `engine/render/GeometryScene.h`: `setStrataRenderPreviewEnabled(bool)` (default false) and query.
+- `f6a2d29ffd2fad060519ffcaea623764426b9891` — `engine/render/GeometryScene.cpp`: optional synchronous call to renderer preview for original source assets, ALWAYS followed by existing `r.drawModel(d)`; never preview proxy/HLOD model replacements.
+- `b90bf789544917cb54d07065e56ef7c027e0ab90` — `engine/render/StrataRendererPreview.h`: stateless `previewModelDraw`, per-pass `PreviewContext` and diagnostic `PreviewCounts` API.
+- `1fc6bc3e88cc7d1852180a645c037ae39b7b7cbf` — refactor preview implementation to call the stateless evaluator from `Renderer3D::previewStrataModel`, retaining only per-frame stats in renderer.
+- `c8bdc0f3aa62fcb962379fa5fa645d951e9eb163` — `tests/render/strata_render_routing.cpp`: test main/shadow readiness and cluster counts, reject alpha/tint and assert recording RHI emitted ZERO draw calls.
+- `8272caa80ce601ef4c156a29160d3bf7d8fc7d45` — `docs/strata.md`: explain preview API, source/proxy exclusion, no-double-render rule and counters.
+- `aedc9eda39a853b65385edc1cf169f98a43b9835` and `c0f892f7dc71460c75184eccb607040d7c91e965` — root `AGENTS.md` ownership and default-off feature flag note.
+
+### Functionality / ownership
+`GeometryScene::setStrataRenderPreviewEnabled(true)` is an **additional native opt-in**. It only activates on the already enabled CPU staging and source-resident GPU metadata path. During `GeometryScene::drawInstance`, if the legacy model is still the unmodified source (not a substituted surface proxy or HLOD proxy), the scene looks up the staged `strata::ModelAsset` and pooled GPU index lease and synchronously invokes `Renderer3D::previewStrataModel` prior to the untouched `r.drawModel(d)`. The preview never stores a source key or pointer beyond the call and never creates new GPU resources. If no source is eligible, the legacy draw still executes exactly as before.
+
+The renderer-side public `strata::previewModelDraw(draw, staged, residency, key, context)` uses the actual ModelDraw (model world matrix, bind nodes, runtime material/alpha/flags and absence of animation/overrides). It calculates separate per-pass `objectToClip` from main and shadow projection, checks each eligible mesh primitive using the existing `prepareRenderCandidate` Stage 9 validation, and returns purely diagnostic counts (attempted, ready, rejected, selectedClusters, fullyCulled, skippedUnsafeDraws). The sun pass is only previewed when renderer sun shadow quality is not Off. The renderer's counters reset every `beginScene` and have **no effect on GPU draw commands, material grouping, HLOD, shadows, occlusion or existing CPU/GPU batching**.
+
+Critical no-double-submit rule: `GeometryScene::drawInstance` **always** invokes the original `Renderer3D::drawModel(d)` after preview. Stage 10 does not call `encodeRendererCommands`, set uniforms/pipelines or submit even one Strata indexed draw. A `ready` count only means CPU reference and residency accepted the candidate; it is not proof of Metal compute parity, crack-free geometry or correct raster output. Under AIVERSE_BUILD_STRATA=OFF all preview call sites remain behind the compile-time feature macro; the old runtime still works in principle but must be compiled to confirm.
+
+### Tests and verification — actual status
+- User-provided earlier Stage 8.1 Mac Studio: all five older focused CPU + recording-RHI CTests **PASS (5/5, 1.19 seconds)**.
+- **Stage 8.2 newer real Metal parity, Stage 9 six-test suite, and Stage 10 preview changes: NATIVE BUILD / CTest NOT RUN in this chat.** New code was committed through GitHub API, which does not compile C++. No actual real Metal shader parity, screenshot parity or performance measurement exists here.
+- GitHub focused workflow on the current Stage 10 commits was observed **QUEUED**, not green; other CI jobs similarly queued.
+- The `strata_render_routing` recording-RHI regression has Stage 10 assertions for two independent view passes, no new draws and alpha/tint exclusion; presence of these assertions does not make them passing tests.
+
+### Immediate commands on existing Mac Studio worktree
+```sh
+cd ~/Projects/AIVERSE-strata-stage8
+git status --short
+git fetch origin main feature/strata-virtual-geometry
+# Switch only if status clean or after preserving local edits:
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_render_routing_tests \
+  aiverse_strata_gpu_culling_tests \
+  aiverse_strata_metal_parity --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)$' \
+  --output-on-failure
+build/strata/aiverse_strata_metal_parity
+```
+
+Also run `AIVERSE_BUILD_STRATA=OFF` compile of `aiverse_runtime` (or a real client/editor target) and the main scene drawing fixture with the preview toggle OFF/ON once GPU parity is confirmed. Check for high preview overhead on large source scene counts: preview is only opt-in and builds CPU reference plans per draw, not a production hot-loop option.
+
+### Next step for a new agent
+1. **Before implementing any GPU draw path**, get actual native build/test results for Stage 8.2, 9 and 10. Fix compiler or shader errors; commit code and append a separate handoff with real logs.
+2. Run the real Metal `aiverse_strata_metal_parity` fixture; collect exact GPU counters/ranges and sort against CPU oracle, including per-node transforms, multiple material partitions, 0/1 clip convention, foliage/terrain excluded cases, and missing residency. Success from recording RHI does not establish actual GPU correctness.
+3. Add a full `GeometryScene` fixture with recording gfx::Device and two source instances, inspect model source/proxy selections, verify legacy draw counts and command bytes remain identical with preview OFF and ON, and measure preview CPU cost. Ensure pointer lifetimes during unload/reload.
+4. **Only after** real Metal and visual parity: implement a single mutually exclusive cluster/legacy primitive route under existing `Renderer3D::renderModels` / `drawGeometryBatch`, preserving material/pipeline/shadow/instance ownership. No double submission and no second geometry pool. Preserve non-Metal fallback; then GPU-authored indirect submission, Hi-Z and streaming.
+
+### Known risks
+- Diagnostic preview currently loops each eligible node/primitive and may allocate/validate CPU hierarchy frequently. It is intentionally default OFF and unsuitable for always-on production until caching/versioning is added.
+- Actual GPU cluster selection output has nondeterministic atomic order; compare sorted records before allowing any renderer routing.
+- Source models with old `Model::geometry` GeometryCluster preparation are rejected by shared-pool admission. Do not bypass this without designing a single owner for legacy cluster buffers and Strata sidecars.
+- Source proxy/HLOD substitutions are not previewed; legacy source draws remain authoritative. Scene JSON/asset formats are unchanged.
