@@ -333,11 +333,15 @@ PF_FN float prismaDepthMetric(float d, vec4 info) {
 
 // Full-resolution temporal shutter blur; velocity is from the corresponding
 // previous frame and is expressed as current-minus-previous normalized UV.
+// tapInfo.x: opt-in reactive layer mismatch rejection [0,1]; disabled unless
+// a correctly sized/typed current-frame reactive mask was supplied.
 // Uses current frame samples only (not temporal color accumulation), so no
 // ghost-producing history reads and no persistent color state.
 inline const char* kMotionBlur = R"(
     vec2 uv = TUV(s);
+    vec4 centerColor = TEX0(uv);
     float centerDepth = prismaDepthMetric(TEX2(uv).r,depthInfo);
+    float centerReactive = tapInfo.x > 0.001 ? clamp(TEX3(uv).r,0.0,1.0) : 0.0;
     float depthLimit = depthInfo.w > 0.5 ? max(sun.w,0.01) :
                                            max(sun.x,0.0005);
     vec2 velocity = TEX1(uv).rg;
@@ -379,17 +383,29 @@ inline const char* kMotionBlur = R"(
         float threshold = depthLimit;
         float keep = 1.0 - smoothstep(threshold * 0.125,
                                       threshold, depthDelta);
+        // Do not drag translucent/particle colors onto opaque neighbors
+        // (or vice versa) when their current-frame coverage differs.
+        // The mask is read only when its declared input was accepted.
+        if (tapInfo.x > 0.001) {
+            float tapReactive = clamp(TEX3(sampleUv).r,0.0,1.0);
+            float mismatch = abs(tapReactive-centerReactive);
+            keep *= 1.0 - clamp(tapInfo.x,0.0,1.0) *
+                    smoothstep(0.1,0.8,mismatch);
+        }
         accum += TEX0(sampleUv).rgb * keep;
         weight += keep;
     }
-    vec3 sharp = TEX0(uv).rgb;
+    vec3 sharp = centerColor.rgb;
     vec3 blurred = weight > 0.0001 ? accum / weight : sharp;
     // tex3 is the reactive coverage mask: R=0 unchanged, R=1 fully
     // suppresses blur for the pixel when the configured strength is 1.
     // This mask is current-frame only and never participates in history.
     float reactive = clamp(TEX3(uv).r, 0.0, 1.0);
     float strength = p0.w * (1.0 - reactive * clamp(sun.y, 0.0, 1.0));
-    RETURN(vec4(mix(sharp,blurred,strength),1.0));
+    // Keep the incoming scene alpha intact; only HDR radiance is blurred.
+    // The canonical temporal resolve will separately write hardware depth
+    // to its own history alpha, so this does not change that contract.
+    RETURN(vec4(mix(sharp,blurred,strength),centerColor.a));
 )";
 
 // Stages 42–43. HDR temporal color resolve with opt-in subpixel jitter.
