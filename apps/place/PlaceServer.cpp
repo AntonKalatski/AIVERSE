@@ -419,11 +419,18 @@ void PlaceServer::syncBodies() {
             scene_->setAngularVelocity(r.handle, {0, 0, 0});
             pos = r.start;
         }
-        server_.set(r.id, Schema::kBodyPos, vec3(pos.x, pos.y, pos.z));
-        server_.set(r.id, Schema::kBodyRot, quatValue(scene_->rotation(r.handle)));
-        server_.set(r.id, Schema::kBodySleeping, integer(!awake));
-        b3Vec3 v = awake ? scene_->linearVelocity(r.handle) : b3Vec3{0, 0, 0};
-        server_.set(r.id, Schema::kBodyVelocity, vec3(v.x, v.y, v.z));
+        const b3Quat q = scene_->rotation(r.handle);
+        const b3Vec3 v = awake ? scene_->linearVelocity(r.handle)
+                               : b3Vec3{0, 0, 0};
+        // Four fields share one replica object/layout lookup. Values keep
+        // the original field order and per-field quantization/reliable policy.
+        const replica::FieldUpdate fields[] = {
+            {Schema::kBodyPos, vec3(pos.x, pos.y, pos.z)},
+            {Schema::kBodyRot, quatValue(q)},
+            {Schema::kBodySleeping, integer(!awake)},
+            {Schema::kBodyVelocity, vec3(v.x, v.y, v.z)},
+        };
+        server_.setFields(r.id, fields);
         r.awake = awake;
     }
     for (BodyHandle h : fallen) {
@@ -436,18 +443,24 @@ void PlaceServer::syncBodies() {
 void PlaceServer::syncCharacters() {
     for (auto& [id, p] : away_) {
         const auto& st = p.state;
-        server_.set(p.object, Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z));
-        server_.set(p.object, Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z));
-        server_.set(p.object, Schema::kCharGrounded, integer(st.grounded));
+        const replica::FieldUpdate fields[] = {
+            {Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z)},
+            {Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z)},
+            {Schema::kCharGrounded, integer(st.grounded)},
+        };
+        server_.setFields(p.object, fields);
     }
     for (auto& [slot, p] : players_) {
         const auto& st = p.state;
-        server_.set(p.object, Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z));
-        server_.set(p.object, Schema::kCharYaw, yawValue(st.yaw));
-        server_.set(p.object, Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z));
-        server_.set(p.object, Schema::kCharGrounded, integer(st.grounded));
-        server_.set(p.object, Schema::kCharInput, integer(int64_t(p.applied & 0xFFFFu)));
-        server_.setViewers(slot, {{st.position.x, st.position.y, st.position.z}});
+        const replica::FieldUpdate fields[] = {
+            {Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z)},
+            {Schema::kCharYaw, yawValue(st.yaw)},
+            {Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z)},
+            {Schema::kCharGrounded, integer(st.grounded)},
+            {Schema::kCharInput, integer(int64_t(p.applied & 0xFFFFu))},
+        };
+        server_.setFields(p.object, fields);
+        server_.setViewer(slot, {st.position.x, st.position.y, st.position.z});
     }
 }
 
