@@ -374,3 +374,29 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   FIFO refusal, mode/hardlink denial, inter-process exclusion and
   SIGKILL lock release. Full AIVERSE CMake/CTest was NOT RUN.
 - Handoff: `docs/agent-handoffs/physis-stage45-fifo-lock-hardening-2026-11-19.md`.
+
+### Stage 46 — trusted POSIX journal lock parent and inode identity (2026-11-19)
+
+- `JournalProcessLock::acquire` now opens the direct journal parent
+  with `O_NOFOLLOW` and `O_DIRECTORY` where supported, validates that
+  the parent is an actual directory owned by the server's effective
+  UID and is not group/world writable (`mode & 0022 == 0`), and then
+  resolves `<journal>.lock` via `openat(parentFd,...)`.
+- After acquiring `flock`, validate that the visible lock path
+  still resolves to the same device/inode as the locked fd and that
+  the parent path still resolves to the originally opened directory.
+  Release and fail closed if a replacement is observed.
+- The existing lock inode checks (regular, single link, same UID,
+  no group/other permissions) and `O_NONBLOCK` FIFO protection remain.
+- Treat this as an **acquisition-time** integrity check, not
+  continuous fencing against a same-user process that later replaces
+  the path. The private directory must stay under exclusive server
+  control for the whole endpoint lifetime. Windows owner/ACL/reparse
+  checks are not yet equivalent.
+- `unsafeJournalLockParentsRejected` is a POSIX-only source fixture
+  in `physis_admin_journal`. Isolated Linux GCC 14.2 C++20 harness
+  built the exact new header blob `3fcd9f029bc7cc71f939c4471828acfbc358b843`
+  with `-Wall -Wextra -Werror -pedantic`, and PASSED directory
+  permission/symlink, FIFO, inode mode/hardlink, competing lock and
+  SIGKILL reacquisition checks. Full native AIVERSE/CTest NOT RUN.
+- Handoff: `docs/agent-handoffs/physis-stage46-lock-parent-integrity-2026-11-19.md`.
