@@ -93,6 +93,10 @@ public:
                             pf.stats().temporalJittered ? "on" : "off",
                             double(pf.stats().jitterPixelX),
                             double(pf.stats().jitterPixelY));
+        ImGui::TextDisabled("Prisma render: %dx%d -> output %dx%d  |  temporal upscale: %s",
+                            pf.stats().width,pf.stats().height,
+                            pf.stats().outputWidth,pf.stats().outputHeight,
+                            pf.stats().temporalUpscaled ? "yes" : "off / fallback");
         ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
 
         ui::section(nullptr, "Где");
