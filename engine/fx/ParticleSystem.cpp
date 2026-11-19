@@ -9,6 +9,7 @@
 #include "FxNoise.h"
 #include "ParticleShaders.h"
 #include "engine/render/graph/ShaderGraph.h"
+#include "engine/render/GpuResourceRetirement.h"
 
 namespace aiverse::fx {
 
@@ -698,17 +699,40 @@ void ParticleSystem::shutdown() {
     if (!impl_) return;
     auto& I = *impl_;
     if (I.dev) {
-        for (auto& b : I.batches) { for(auto p:b.graphPipe) if(p.valid()) I.dev->destroyPipeline(p); if(b.shader.valid()) I.dev->destroyShader(b.shader); }
-        for (auto& p : I.pipe) if (p.valid()) I.dev->destroyPipeline(p);
-        for (auto& p : I.meshPipe) if (p.valid()) I.dev->destroyPipeline(p);
-        if (I.shader.valid()) I.dev->destroyShader(I.shader);
-        if (I.mulShader.valid()) I.dev->destroyShader(I.mulShader);
-        if (I.reactiveQuadPipe.valid()) I.dev->destroyPipeline(I.reactiveQuadPipe);
-        if (I.reactiveMeshPipe.valid()) I.dev->destroyPipeline(I.reactiveMeshPipe);
-        if (I.reactiveShader.valid()) I.dev->destroyShader(I.reactiveShader);
-        if (I.vb.valid()) I.dev->destroyBuffer(I.vb);
-        if (I.ib.valid()) I.dev->destroyBuffer(I.ib);
-        if (I.atlas.valid()) I.dev->destroyTexture(I.atlas);
+        auto releasePipeline = [&](gfx::PipelineHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyPipeline(p); p={}; }
+        };
+        auto releaseShader = [&](gfx::ShaderHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyShader(p); p={}; }
+        };
+        auto releaseBuffer = [&](gfx::BufferHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyBuffer(p); p={}; }
+        };
+        auto releaseTexture = [&](gfx::TextureHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyTexture(p); p={}; }
+        };
+        for (auto& batch : I.batches) {
+            for (auto& p : batch.graphPipe) releasePipeline(p);
+            releaseShader(batch.shader);
+        }
+        for (auto& p : I.pipe) releasePipeline(p);
+        for (auto& p : I.meshPipe) releasePipeline(p);
+        releasePipeline(I.reactiveQuadPipe);
+        releasePipeline(I.reactiveMeshPipe);
+        releaseShader(I.shader);
+        releaseShader(I.mulShader);
+        releaseShader(I.reactiveShader);
+        releaseBuffer(I.vb);
+        releaseBuffer(I.ib);
+        releaseTexture(I.atlas);
     }
     TextureLoader keep = std::move(I.loader);
     MeshLoader keepMesh = std::move(I.meshLoader);
@@ -817,7 +841,20 @@ void ParticleSystem::reloadAll() {
     I.effects.clear();
     I.byName.clear();
     I.textures.clear();
-    if (I.dev) for(auto& b:I.batches) { for(auto p:b.graphPipe) if(p.valid()) I.dev->destroyPipeline(p); if(b.shader.valid()) I.dev->destroyShader(b.shader); }
+    if (I.dev) for (auto& batch : I.batches) {
+        // Old shader graph variants can still be referenced by an in-flight
+        // particle draw. The editor opt-in moves them to the GPU fence
+        // lifetime service; gameplay clients keep their existing owner path.
+        for (auto& p : batch.graphPipe) {
+            if (!p.valid()) continue;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyPipeline(p); p={}; }
+        }
+        if (batch.shader.valid()) {
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,batch.shader);
+            else { I.dev->destroyShader(batch.shader); batch.shader={}; }
+        }
+    }
     I.batches.clear();
     I.meshes.clear();
     I.meshByName.clear();
