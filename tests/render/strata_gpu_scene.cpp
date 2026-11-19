@@ -203,6 +203,7 @@ int main() {
     assert(read<GpuNode>(metadata, v2Header.nodesByteOffset).sourceFirstIndex == 0);
     auto poolStats = aiverse::render::geometryPoolStats(dev);
     assert(poolStats.pages == 1);
+    assert(poolStats.liveModels == 1);
     assert(poolStats.auxiliaryIndexSpans == 1);
     assert(poolStats.auxiliaryIndexBytes == 18 * sizeof(uint32_t));
     assert(staging.stage(dev, "shared", sourceModel, asset));
@@ -273,6 +274,8 @@ int main() {
     assert(aiverse::render::geometryPoolStats(dev).auxiliaryIndexSpans == 1);
     aiverse::render::releaseModelGeometryPool(dev, sourceModel);
     assert(dev.buffers.size() == 1); // pending span retains original page
+    assert(aiverse::render::geometryPoolStats(dev).liveModels == 0);
+    assert(aiverse::render::geometryPoolStats(dev).auxiliaryIndexSpans == 1);
     aiverse::render::releaseAuxiliaryGeometryIndices(dev, pending);
     assert(dev.buffers.empty());
     assert(!pending.valid());
