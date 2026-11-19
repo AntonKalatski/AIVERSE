@@ -948,7 +948,10 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         if (apron) drawLod(*apron, 1e9f, 2e9f);
         for (auto& it : *items) drawLod(*it.lod, it.morphStart, it.morphEnd);
     });
-    if (hasWater_ && water_.indexCount) r.drawMesh(water_, mat4{}, look_.waterColor, kDrawNoCastShadow, 0.9f);
+    // Water was already captured as a model/mesh packet in the primary
+    // view; avoid duplicating it when the secondary terrain path runs.
+    if (!preparedOnly && hasWater_ && water_.indexCount)
+        r.drawMesh(water_,mat4{},look_.waterColor,kDrawNoCastShadow,0.9f);
     // AIVERSE_TERRAIN_STATS=1: chunks / triangles / frame time every 60 frames (stderr; perf checks on big maps)
     static const bool printStats = std::getenv("AIVERSE_TERRAIN_STATS") != nullptr;
     if (printStats && !preparedOnly) {
