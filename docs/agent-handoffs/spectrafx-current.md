@@ -31,6 +31,30 @@ the feature base while other agents work. Keep the validated detached
 worktree isolated; do not merge `main` into it or into this feature
 branch until runtime acceptance and conflict review.
 Do not claim release readiness or merge to `main` without validation.
+## Latest GPU rendering gate (Stage 92)
+
+The separate macOS `aiverse_spectrafx_metal_billboard_test` was added
+with CMake and CI in Stage 92. It uses the actual SpectraFX MSL
+billboard shaders and direct offscreen Metal rasterization to verify
+alpha, additive blending, and sorted-index remapping. **NOT YET RUN**,
+so only the earlier `spectrafx_metal_gpu` compute test is a proven
+real GPU PASS. On the user's Apple M3 Ultra validation worktree:
+
+```bash
+cd ~/Projects/AIVERSE-spectrafx-validation
+git status --short
+git fetch origin
+git switch --detach origin/feature/spectrafx-generic-cue-queue
+cmake -S . -B build/spectrafx-validation -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/spectrafx-validation --parallel 4 --target aiverse_spectrafx_metal_gpu_test aiverse_spectrafx_metal_billboard_test
+ctest --test-dir build/spectrafx-validation -L MetalGPU -V --output-on-failure
+```
+
+Expected registered MetalGPU test count after the refresh: **2**.
+Still remaining after raw Metal billboard pass: actual RHI Renderer3D
+integration, Editor Preview on-device, GPU callback/lifetime/stress.
+Do not merge to main without those checks.
+
 ## Where to start
 
 1. `docs/agent-handoffs/spectrafx-2026-11-19.md` is the canonical,
