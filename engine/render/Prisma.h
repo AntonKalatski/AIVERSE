@@ -258,6 +258,8 @@ public:
         int width = 0, height = 0;
         PrismaQuality quality = PrismaQuality::Off;
         bool hdr = false, sceneReady = false;
+        int shaderGraphTextures = 0;     // authored graph texture bindings on last resolve
+        int autoExposureTextureSlot = -1; // -1 when final composite omitted exposure
         std::vector<EffectExecution> effects;
     };
     const ViewEffectReport* effectReport(uint64_t viewId) const;
