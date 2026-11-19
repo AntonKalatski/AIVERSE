@@ -539,3 +539,21 @@ git fetch origin main && git merge origin/main
 - **Compatibility**: additive API, no ECS/gameplay save changes and no PRISMA ownership overlap.
 - **Actually executed**: **NOT RUN** — C++ build, CTest, native editor, CPU/GPU integration, shader compilation, CI and visual QA deliberately deferred per user request. Code is not confirmed production-safe.
 - **Next step**: expose authored GPU hybrid assets in a real editor window. Then implement optional authoring/route configuration and scene runtime lifecycle. Keep testing deferred until feature completion.
+
+
+## 2026-11-19 — Stage 32: GPU emitter assets editing in native AIVERSE Editor
+- **Branch** `feature/spectrafx-generic-cue-queue`; stage began with `main` at `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, 0 commits behind. Existing SpectraFX stages and all main changes preserved.
+- **Implementation commits** `4a7a9b227f907eb271947662d8647fe6a6bbce53` and `81878ea57b0851451aadca7b18c58a5255c23336` (missing library include corrected).
+- **Changed** new `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp`. Dockable look-group editor window registered via `AIVERSE_EDITOR_WINDOW`; lists project `fx/gpu/*.gpu.json`, creates default v1 documents, selects/loads files, permits raw JSON editing, performs mandatory `SpectraFxGpuEmitterAsset::readText` validation before save, tracks dirty documents, prompts before discarding on selection/create, performs temp-file rename and calls `Editor::reloadFx`. It intentionally does not take over the existing SpectraFX particle-graph editor or PRISMA postprocessing.
+- **Scope/ownership** user-authored GPU/CPU emitter configurations only. The actual runtime remains `SpectraFxHybridPlayback` and `ParticleSystem`; no simulation ECS authoring, gameplay/network save or duplicated particle solver. Current UI intentionally does not promise GPU preview: this stage is asset authoring.
+- **Actual validation** **NOT RUN**, as user requested finishing functions before tests. No C++ compiler, native Editor startup, ImGui interactions, actual file IO, CTest, CI, shader compilation, Metal/Vulkan rendering or visual verification. User must not infer the editor window has passed QA.
+- **Known limitations** structured controls for individual GPU parameters are not implemented; uses JSON text editor. No preview toggle, no undo/redo for GPU config edits, no direct emitter scene placement, and `fx/gpu` list only refreshes manually or on project switch. Actual host has not been wired to drive hybrid playback every frame.
+- **Next** implement opt-in scene/game host frame integration and authored cue-to-GPU asset mappings, scene placement, further GPU effect modules and GPU render-pass integration. After all functional stages, run native build/CTest and GPU/UI validation and fix failures.
+- **Pull before continuation**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
