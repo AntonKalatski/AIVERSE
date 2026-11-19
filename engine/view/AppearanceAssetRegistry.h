@@ -90,9 +90,8 @@ public:
             spec.parameters=parameters;
             spec.sourceId=sourceId;
             spec.generation=generation;
-            if(!buildAppearancePacket(spec,world,out))return false;
-            out.animationModelGeneration=modelPublicationGeneration;
-            return true;
+            spec.modelPublicationGeneration=modelPublicationGeneration;
+            return buildAppearancePacket(spec,world,out);
         }
 
         // Native C++ authoring helper: compile a visual LOD against two
