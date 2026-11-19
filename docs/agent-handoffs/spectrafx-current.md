@@ -1,5 +1,23 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 103 — strict full native acceptance 9/9 PASS on Apple M3 Ultra
+
+User supplied the acceptance report for validated SHA
+`fceb8caef1bf26085063b55c224631a3c53a9407`:
+**configure, SpectraFX core, architecture, host integration, full build,
+full CTest, focused SpectraFX, Metal CTest and Metal evidence all exit 0**.
+Failed stages 0, skipped stages 0. All 3 real Metal GPU tests PASS:
+`spectrafx_metal_gpu`, `spectrafx_metal_billboard`,
+`spectrafx_metal_rhi`; `PASS=3/3 SKIP=0 MISSING=0 FAIL=0`.
+The exact full-CTest count is not in this excerpt.
+
+The next work is Renderer3D/Editor live visual QA, real multi-RT camera parity
+and high-volume resource/fault/performance validation, **not rerunning
+the already-green Stage 98–102 acceptance without new changes**.
+
+Handoff: `docs/agent-handoffs/spectrafx-stage103-full-native-acceptance-2026-11-19.md`.
+
+
 ## Stage 102 — distinguish 3/3 native Metal PASS from SKIPPED (parser PASS)
 
 **Code:** `a6b8617d472b104e660a254d2ed228abc4c81905`,

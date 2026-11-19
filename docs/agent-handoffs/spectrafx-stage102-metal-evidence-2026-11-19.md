@@ -41,3 +41,16 @@ Expected: `ctest_metal` and `metal_evidence` both exit 0 and explicitly list **3
 ## Remaining integration work
 
 Hardware 3/3 acceptance is a prerequisite, not the final GPU release gate. Stage 98 tests real gfx::Device offscreen rendering, Stage 100 exercises delayed impact callbacks and Stage 101 checks deterministic HybridPlayback retirement, but actual Renderer3D Scene/Game viewport screenshots and production GPU load/pacing, frame-in-flight lifetime, editor reset and high-volume concurrency still require focused visual/stress tests. Preserve the genre-independent `SpectraFxView` boundary, do not move game/editor logic into engine/fx and do not merge the highly divergent `main` automatically.
+
+## Follow-up native hardware result (supersedes Stage 102's pending status)
+
+The user subsequently provided the complete strict native acceptance
+summary for source commit `fceb8caef1bf26085063b55c224631a3c53a9407`
+on Darwin / Apple M3 Ultra. **9/9 acceptance stages exited 0, failed 0,
+skipped 0**. `metal_evidence` confirmed
+`MetalGPU real PASS=3/3 SKIP=0 MISSING=0 FAIL/UNKNOWN=0`, including
+`spectrafx_metal_rhi`. The full `ctest_full` step exited 0.
+This is user-reported actual execution evidence, not an inferred CI result.
+
+See Stage 103 for the exact results and remaining native Editor/Renderer3D
+visual and performance limitations.
