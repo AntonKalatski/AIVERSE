@@ -811,3 +811,17 @@ CI if it remains queued or cancelled.
   correctness; still require Metal command-buffer status,
   GPU capture, screenshot A/B and performance evaluation.
 - Flags are experimental OFF by default; tests NOT RUN.
+
+
+### Non-VT per-command Metal PBR ICB ABI (Stage 10AF)
+
+- `gfx::GpuIcbPbrMaterial` supplies six valid PBR source
+  TextureHandles plus 36 finite float U2 values, without
+  any Virtual Texture. `prepareGpuEncodedIndexedIcbWithPbrMaterials`
+  returns zero outside explicit backend support.
+- Metal requires `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`
+  and existing GPU ICB safety flags. It writes independent
+  PBR argument buffers and per-command U2 and selects the
+  compatible ICB fragment shader variant; no VT array/U6.
+- Renderer integration is not yet enabled in this stage.
+  Never claim native GPU validation; all tests NOT RUN.
