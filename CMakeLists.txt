@@ -627,6 +627,14 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME resource_retirement_queue COMMAND aiverse_resource_retirement_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_async_resource_retirement_tests
+        tests/render/async_resource_retirement.cpp)
+    target_include_directories(aiverse_async_resource_retirement_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME async_resource_retirement_queue
+        COMMAND aiverse_async_resource_retirement_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_model_resource_owner_tests
         tests/render/model_resource_provider_contract.cpp)
     target_link_libraries(aiverse_model_resource_owner_tests
