@@ -26,7 +26,11 @@ struct ForestEcologySpecies {
     uint64_t lifespanTicks=2400000;
     uint64_t seedIntervalTicks=24000;
     uint64_t shadeDeathTicks=240000;
+    uint64_t floodDeathTicks=80000; // continuous flooded exposure
+    uint64_t droughtDeathTicks=240000;
     uint32_t shadeTolerancePermille=240;
+    uint32_t floodTolerancePermille=450; // 0..1000 tolerated immersion
+    uint32_t minSoilWaterPermille=150;
     uint32_t crownRadiusFactorPermille=3000; // multiplier of root radius
     uint32_t seedSpreadCm=700;
 };
@@ -37,7 +41,11 @@ inline void validateForestEcologySpecies(const ForestEcologySpecies& s) {
        s.lifespanTicks>1000000000000ull ||
        !s.seedIntervalTicks || s.seedIntervalTicks>1000000000000ull ||
        !s.shadeDeathTicks || s.shadeDeathTicks>1000000000000ull ||
+       !s.floodDeathTicks || s.floodDeathTicks>1000000000000ull ||
+       !s.droughtDeathTicks || s.droughtDeathTicks>1000000000000ull ||
        s.shadeTolerancePermille>1000 ||
+       s.floodTolerancePermille>1000 ||
+       s.minSoilWaterPermille>1000 ||
        s.crownRadiusFactorPermille<100 || s.crownRadiusFactorPermille>10000 ||
        s.seedSpreadCm<50 || s.seedSpreadCm>20000)
         throw std::invalid_argument("TerraWeave invalid forest ecology species");
@@ -66,6 +74,7 @@ struct ForestEcologyPlantState {
     AnchoredPlantId id{};
     uint64_t lastEvaluatedTick=0;
     uint64_t shadeStressTicks=0;
+    uint64_t floodStressTicks=0,droughtStressTicks=0;
     uint64_t lastSeedEpoch=0;
     bool dead=false;
     bool recruited=false; // new procedural-age sapling, not an old scatter tree
@@ -97,12 +106,13 @@ inline void validateForestEcologyResource(const ForestEcologyResource& state) {
 }
 inline void io(Archive& a,ForestEcologyPlantState& p) {
     a(p.id.speciesId,p.id.key,p.lastEvaluatedTick,
-      p.shadeStressTicks,p.lastSeedEpoch,p.dead,p.recruited);
+      p.shadeStressTicks,p.floodStressTicks,p.droughtStressTicks,
+      p.lastSeedEpoch,p.dead,p.recruited);
 }
 inline void io(Archive& a,ForestEcologyResource& state) {
     a(state.version,state.initialTick,state.lastStepTick,
       state.cursor,state.revision,state.initialized);
-    uint32_t count=a.count(state.plants.size(),38);
+    uint32_t count=a.count(state.plants.size(),54);
     if(!a.ok() || count>262144u){a.fail();return;}
     if(!a.writing())state.plants.assign(count,{});
     for(auto& p:state.plants)if(a.ok())a(p);
@@ -230,6 +240,7 @@ private:
 
 struct ForestEcologyClimate {
     uint32_t sunPermille=1000;   // PHYSIS / canopy base illumination
+    uint32_t floodedPermille=0;  // submerged root zone from NEREID
     uint32_t waterPermille=1000; // NEREID soil water or existing state
     uint32_t nutrientsPermille=1000;
 };
@@ -333,16 +344,17 @@ inline ForestEcologyResult advanceForestEcology(
         const auto tr=traits.find(id.speciesId);
         if(tr==traits.end() || plant.fallen)continue;
         ForestEcologyPlantState& history=histories[id];
-        if(!history.id.key)history={id,next.initialTick,0,0,false,false};
+        if(!history.id.key)history={id,next.initialTick,0,0,0,0,false,false};
         if(history.dead)continue;
         const uint64_t dt=completedTick-history.lastEvaluatedTick;
         history.lastEvaluatedTick=completedTick;
         const ForestEcologySpecies& policy=tr->second;
         ForestEcologyClimate environment=climate?
             climate(plant):ForestEcologyClimate{
-                1000u,plant.environment.waterPermille,
+                1000u,0u,plant.environment.waterPermille,
                 plant.environment.nutrientsPermille};
         if(environment.sunPermille>1000 ||
+           environment.floodedPermille>1000 ||
            environment.waterPermille>1000 ||
            environment.nutrientsPermille>1000)
             throw std::invalid_argument("TerraWeave forest climate range");
@@ -367,8 +379,21 @@ inline ForestEcologyResult advanceForestEcology(
             history.shadeStressTicks=history.shadeStressTicks>dt?
                 history.shadeStressTicks-dt:0;
         }
+        const auto stressStep=[dt,ageLimit](uint64_t previous,
+                                             bool stressed){
+            if(stressed)
+                return std::min<uint64_t>(ageLimit,previous+
+                    std::min<uint64_t>(dt,ageLimit-previous));
+            return previous>dt?previous-dt:0ull;
+        };
+        history.floodStressTicks=stressStep(history.floodStressTicks,
+            environment.floodedPermille>policy.floodTolerancePermille);
+        history.droughtStressTicks=stressStep(history.droughtStressTicks,
+            environment.waterPermille<policy.minSoilWaterPermille);
         if(env.ageTicks>=policy.lifespanTicks ||
-           history.shadeStressTicks>=policy.shadeDeathTicks) {
+           history.shadeStressTicks>=policy.shadeDeathTicks ||
+           history.floodStressTicks>=policy.floodDeathTicks ||
+           history.droughtStressTicks>=policy.droughtDeathTicks) {
             history.dead=true;
             result.died.push_back({id,completedTick});
         }else if(env.ageTicks>=policy.matureTicks &&
@@ -442,7 +467,7 @@ inline ForestEcologyResult advanceForestEcology(
     }
     for(const auto& child:seedlings)
         next.plants.push_back({{child.anchor.speciesId,
-                               child.anchor.plantKey},completedTick,0,0,false,true});
+                               child.anchor.plantKey},completedTick,0,0,0,0,false,true});
     std::sort(next.plants.begin(),next.plants.end(),
         [](const auto& a,const auto& b){return a.id<b.id;});
     if(next.revision==UINT64_MAX)
