@@ -16,6 +16,7 @@
 #include "Model.h"
 #include "ModelStaticEligibility.h"
 #include "CpuMdiAdaptivePolicy.h"
+#include "StaticCrossModelBatchPolicy.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -218,6 +219,8 @@ struct ModelRenderStats {
     uint64_t staticCrossModelPreflightReady = 0;
     uint64_t staticCrossModelPreflightRejected = 0;
     uint64_t staticCrossModelPreflightItems = 0;
+    // Retained high-water workspace bytes, not per-frame allocation count.
+    size_t staticCrossModelPreflightWorkspaceBytes = 0;
     uint64_t staticCrossModelAdaptiveSkippedPasses = 0;
     uint64_t staticCrossModelAdaptiveProbePasses = 0;
     uint64_t staticCrossModelAdaptiveMeasuredAttempts = 0;
@@ -301,6 +304,7 @@ public:
         staticMaterialOwners_.clear();
         cpuMdiPages_.clear(); // reset page-specific costs on whole-scene reload
         cpuMdiAdaptive_ = {};
+        staticCrossPreflight_.release(); // retire temporary scene identities/capacity
         staticRenderPacketBytes_ = 0;
         staticMaterialOwnerBytes_ = 0;
     }
@@ -656,6 +660,9 @@ private:
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.
     bool staticCrossModelBatchesEnabled_ = false;
+    // Per-renderer reusable hash directory, group storage and item mode map.
+    // All records are invalidated at each independent render pass.
+    StaticCrossModelPreflightWorkspace staticCrossPreflight_;
     bool cpuMdiAdaptiveEnabled_ = false;
     double cpuMdiAdaptiveBudgetUs_ = 25.0;
     // Aggregate display-only diagnostics, not used to suppress any page.
