@@ -69,6 +69,42 @@ public:
     }
     size_t retiredCount() const { return retired_.pendingCount(); }
     const PrismaGraphResourcePool<gfx::TextureHandle>& pool() const { return pool_; }
+    struct GpuMemoryStats {
+        size_t liveTextures = 0;
+        size_t pendingTextures = 0;
+        uint64_t liveKnownBytes = 0;
+        uint64_t pendingKnownBytes = 0;
+        size_t unknownFormatsOrDimensions = 0;
+    };
+    GpuMemoryStats gpuMemoryStats() const {
+        GpuMemoryStats out;
+        const auto bytesOf = [&](gfx::TextureHandle h) -> uint64_t {
+            gfx::TextureInfo info{};
+            if (!device_.textureInfo(h,info) ||
+                info.width <= 0 || info.height <= 0) {
+                ++out.unknownFormatsOrDimensions;
+                return 0;
+            }
+            uint64_t bpp = 4;
+            switch (info.format) {
+                case gfx::PixelFormat::R8: bpp=1; break;
+                case gfx::PixelFormat::RGBA16F: bpp=8; break;
+                case gfx::PixelFormat::RGBA32F: bpp=16; break;
+                case gfx::PixelFormat::Depth: bpp=4; break;
+                default: break;
+            }
+            return uint64_t(info.width)*uint64_t(info.height)*bpp;
+        };
+        for (const auto& e : pool_.entries()) {
+            ++out.liveTextures;
+            out.liveKnownBytes += bytesOf(e.handle);
+        }
+        for (const auto& p : retired_.pending()) {
+            ++out.pendingTextures;
+            out.pendingKnownBytes += bytesOf(p.handle);
+        }
+        return out;
+    }
 
     // External resource handles must be indexed by graph resource ID.
     // Raster: bool(Device&, passId, DispatchView&) INSIDE an open pass.
