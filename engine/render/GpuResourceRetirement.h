@@ -17,6 +17,13 @@
 namespace aiverse::render {
 class GpuResourceRetirement {
 public:
+    // Never allow a pending owner-bundle callback to be destroyed while the
+    // device may already be gone: the capture might own C++ objects whose
+    // destructors call Device::destroy*. Explicit collect/drain is preferred.
+    ~GpuResourceRetirement() { abandonAll(); }
+    GpuResourceRetirement() = default;
+    GpuResourceRetirement(const GpuResourceRetirement&) = delete;
+    GpuResourceRetirement& operator=(const GpuResourceRetirement&) = delete;
     enum class Kind : uint8_t {
         Pipeline, Compute, Buffer, Texture, Shader, Bundle
     };
@@ -26,6 +33,7 @@ public:
         size_t fenced = 0, unfenced = 0;
         uint64_t knownPendingBytes = 0;  // optional, lower bound
         uint64_t completedFence = 0;
+        size_t abandonedHandles = 0, abandonedBundles = 0;
     };
 
     void retire(gfx::Device& device, gfx::PipelineHandle& h) {
@@ -67,6 +75,10 @@ public:
     }
 
     size_t collect(gfx::Device& device) {
+        if (!device.gpuHealthy()) {
+            abandonDevice(device);
+            return 0;
+        }
         const uint64_t completed = device.gpuCompletedFence();
         if (!completed) return 0;
         return releaseMatching(device,completed,false);
@@ -75,12 +87,42 @@ public:
     // Call only when the caller has proven all previously-submitted work
     // using these resources is GPU-complete. Must not execute inside a pass.
     size_t drainAfterGpuIdle(gfx::Device& device) {
+        if (!device.gpuHealthy()) {
+            abandonDevice(device);
+            return 0;
+        }
         return releaseMatching(device,0,true);
+    }
+
+    // Device lost / shutdown without a verifiable GPU completion. Discard
+    // raw driver handles WITHOUT issuing a GPU destroy. Bundle callbacks
+    // cannot be simply destroyed: their captured C++ objects may call the
+    // dead Device in their destructors. Quarantine the captures in a
+    // process-lifetime no-dtor sink instead. This intentionally leaks
+    // orphaned CPU data until process exit, but avoids a use-after-free.
+    // Call before the graphics Device is destroyed if idle could not be
+    // verified. NEVER use this as ordinary memory-pressure collection.
+    size_t abandonDevice(gfx::Device& device) {
+        size_t n = 0;
+        for (auto it = pending_.begin(); it != pending_.end();) {
+            if (it->device != &device) { ++it; continue; }
+            if (it->kind == Kind::Bundle && it->cleanup) {
+                orphanedBundles().push_back(std::move(it->cleanup));
+                ++abandonedBundles_;
+            } else {
+                ++abandonedHandles_;
+            }
+            it = pending_.erase(it);
+            ++n;
+        }
+        return n;
     }
 
     Stats stats(const gfx::Device& device) const {
         Stats out;
         out.completedFence = device.gpuCompletedFence();
+        out.abandonedHandles = abandonedHandles_;
+        out.abandonedBundles = abandonedBundles_;
         for (const auto& p : pending_) {
             if (p.device != &device) continue;
             if (p.token) ++out.fenced;
@@ -98,6 +140,19 @@ public:
         return out;
     }
 private:
+    static std::vector<std::function<void()>>& orphanedBundles() {
+        static auto* sink = new std::vector<std::function<void()>>();
+        return *sink; // no destructor: callbacks can refer to dead GPU Device
+    }
+    void abandonAll() {
+        // Owner destroyed while GPU work is unconfirmed. Preserve bundle
+        // captures inert rather than running their unsafe destructors.
+        for (auto& p : pending_)
+            if (p.kind == Kind::Bundle && p.cleanup)
+                orphanedBundles().push_back(std::move(p.cleanup));
+        pending_.clear();
+    }
+    size_t abandonedHandles_ = 0, abandonedBundles_ = 0;
     struct Pending {
         gfx::Device* device = nullptr;
         uint64_t token = 0;
