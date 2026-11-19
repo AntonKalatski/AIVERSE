@@ -402,7 +402,8 @@ inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     // Both registry paths own the same authored ECS entities. Never install
     // canonical editing over tracked fields or over a previous canonical host.
     // Reject BEFORE install() mutates the World or registers persistence.
-    if(sim.world().resourceConst<RuntimeFieldRegistry>() ||
+    if(sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+       sim.world().resourceConst<RuntimeFieldRegistry>() ||
        sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored field registry already installed; choose exactly one runtime");
     const auto initial=parseFieldAssets(map["physis"],*options);
@@ -410,6 +411,7 @@ inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     options->enableStorms=true;
     options->enableGravityFields=true;
     install(sim,*options);
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Editable});
     sim.registerPersistentResource<FieldRuntimeState>("physis.field_runtime",1);
     FieldRuntimeState registry;
     for(const auto& asset:initial) {
