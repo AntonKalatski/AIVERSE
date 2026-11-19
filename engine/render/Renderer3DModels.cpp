@@ -513,11 +513,18 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     }
     const auto& graphMaterials = d.materials && d.materials->size() >= m->materials.size()
         ? *d.materials : m->materials;
-    const bool activeDisplacement = std::any_of(
-        graphMaterials.begin(), graphMaterials.end(), [this](const Material& mat) {
-            return mat.shaderGraph && int(matQuality_) >= mat.shaderGraph->minQuality &&
-                   mat.shaderGraph->outputs.count("vertexOffset");
-        });
+    // This lookup is entirely optional. Without explicit owner identity and
+    // owner revision, the original full material fingerprint path is used.
+    const SharedMaterialEntry* sharedMaterials =
+        staticRenderPacketsEnabled_ && d.model && d.persistentId
+            ? cachedSharedMaterialState(*m, d, graphMaterials) : nullptr;
+    const bool activeDisplacement = sharedMaterials
+        ? int(matQuality_) >= sharedMaterials->minVertexOffsetQuality
+        : std::any_of(
+            graphMaterials.begin(), graphMaterials.end(), [this](const Material& mat) {
+                return mat.shaderGraph && int(matQuality_) >= mat.shaderGraph->minQuality &&
+                       mat.shaderGraph->outputs.count("vertexOffset");
+            });
     // Only the geometry-revision-dependent asset traits are memoized.
     // Current draw flags, pose and displacement remain live per instance.
     ModelStaticEligibility eligibility{};
@@ -588,13 +595,17 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (found != staticRenderPackets_.end()) {
             StaticPacketEntry& packet = found->second;
             const bool sameSource = packet.geometryRevision == m->geometryRevision &&
+                packet.materialRevision == m->materialRevision &&
                 packet.vertexBuffer == m->vb.id && packet.indexBuffer == m->ib.id &&
                 packet.selectedMeshes.size() == m->nodes.size() &&
                 packet.hasNodeMaterialOverride == (d.nodeMaterial != nullptr) &&
                 (!d.nodeMaterial || packet.nodeMaterialSnapshot == *d.nodeMaterial) &&
                 equivalentStaticRenderPacketDraw(packet.draw, d) &&
-                staticPacketMaterialStateMatches(*m, mats, packet.materialsSnapshot,
-                                                 packet.materialHashes) &&
+                (sharedMaterials
+                    ? packet.sharedMaterialSerial == sharedMaterials->serial
+                    : (packet.sharedMaterialSerial == 0 &&
+                       staticPacketMaterialStateMatches(
+                           *m, mats, packet.materialsSnapshot, packet.materialHashes))) &&
                 std::all_of(packet.items.begin(), packet.items.end(),
                     [m, &mats](const ModelItem& item) {
                         return item.model == m && item.prim &&
@@ -911,7 +922,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         constexpr size_t kMaxPacketBytes = 64u * 1024u * 1024u;
         const size_t count = modelItems_.size() - packetStart;
         const size_t newBytes = count * sizeof(ModelItem) +
-            mats.size() * (sizeof(Material) + sizeof(uint64_t)) +
+            (sharedMaterials ? 0 : mats.size() * (sizeof(Material) + sizeof(uint64_t))) +
             packetSelectedMeshes.size() * sizeof(int) +
             (d.nodeMaterial ? d.nodeMaterial->size() * sizeof(int) : 0);
         auto old = staticRenderPackets_.find(d.persistentId);
@@ -931,13 +942,21 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             else
                 packet.nodeMaterialSnapshot.clear();
             packet.geometryRevision = m->geometryRevision;
+            packet.materialRevision = m->materialRevision;
+            packet.sharedMaterialSerial = sharedMaterials ? sharedMaterials->serial : 0;
             packet.vertexBuffer = m->vb.id;
             packet.indexBuffer = m->ib.id;
             packet.seen = staticRenderPacketEpoch_;
             packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
             packet.selectedMeshes = std::move(packetSelectedMeshes);
-            packet.materialHashes = staticPacketMaterialHashes(*m, mats);
-            packet.materialsSnapshot = mats;
+            if (sharedMaterials) {
+                // Fingerprints are shared across all objects with this owner.
+                packet.materialHashes.clear();
+                packet.materialsSnapshot.clear();
+            } else {
+                packet.materialHashes = staticPacketMaterialHashes(*m, mats);
+                packet.materialsSnapshot = mats;
+            }
             staticRenderPacketBytes_ = staticRenderPacketBytes_ - replacedBytes +
                                        staticPacketBytes(packet);
             ++staticRenderPacketStats_.rebuilds;
