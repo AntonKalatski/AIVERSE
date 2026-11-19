@@ -2801,3 +2801,31 @@ Direct cloning from `github.com` into the agent's container failed with `Could n
 **Limitations and next step:** This is CI orchestration only, not a fix to TerraWeave rendering or algorithm output. Next test agent should inspect the newest completed workflow for the **current source HEAD**, record GCC/Clang `Build TerraWeave tests` and `Run TerraWeave CTest suite` step outcomes and log excerpts, and only then decide whether further code changes are needed. Verify that new pushes of this workflow actually supersede previous runs for the same ref. Keep PR #24 Draft until tests/visuals are verified.
 
 **Post-check: PR mergeability.** GitHub REST `GET /repos/chromealex/AIVERSE/pulls/24` reports `mergeable=false` and `mergeable_state="dirty"` at branch head `8f8e2f93...` against base `b71ad7b6...`. In addition to the queued CI, **merge conflicts with the PR base are a separate unresolved blocker**. Do not merge or overwrite unrelated systems while tests remain unknown. Future integrating agent should compare to latest base, resolve conflicts with targeted changes and re-run isolated + cross-module CI; record actual resolution commits and tests. The CI concurrency workflow commit itself was not proven to cancel older queued runs retroactively.
+
+## Stage 23d — PR #24 retarget to main and SpectraFX scope isolation (SOURCE SCOPE COMMITTED, BUILDS PENDING)
+
+**Date:** 2026-11-19. **Active branch:** `feature/terraweave`. **Target branch:** `main`. **PR:** [#24](https://github.com/chromealex/AIVERSE/pull/24), still Draft. **Scope cleanup commit:** `d1bfdec6a5978963f2df4308a7e1345bc0f65f51`.
+
+### Root cause, resolution and preservation
+
+Previous handoff reported PR #24 as nonmergeable with `main`. That was inaccurate: the PR **base was actually `feature/universal-entity-inspector-fps`**, not `main`. That other branch had ~402 independent commits after the common main ancestor, predominantly SpectraFX; TerraWeave had diverged with its own work. The common `main` ancestor was `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` at inspection, which was already an ancestor of TerraWeave. Therefore there was **nothing to merge from main into TerraWeave**.
+
+- Retargeted existing PR #24 from `feature/universal-entity-inspector-fps` to `main` using GitHub's PR update. GitHub subsequently returned `mergeable=true` and `mergeable_state=clean` against main at the existing Terra head. No merge commit, forced branch update or change to main was needed.
+- Created a preserved safety branch `backup/terraweave-pre-scope-cleanup-20261119` at `85f9cbf1cf4bdb8bcec0780165cbad250cb22d65` **before** any scope cleanup. VFX work also remains in the separate `feature/universal-entity-inspector-fps` branch. Never delete the backup without explicit coordination.
+- `d1bfdec6...` used a normal fast-forward Git commit on `feature/terraweave` (lease against expected head) to restore 15 SpectraFX-only files to their main state (or remove files absent from main). Also removed the SpectraFX-only alias and three VFX test registrations from `CMakeLists.txt` while **preserving every TerraWeave target**; removed the introductory SpectraFX-only block from `AGENTS.md` while **preserving the universal handoff protocol and TerraWeave ownership rules**.
+- Deliberately retained shared `Renderer3D`, `Model`, `GlobalGeometryPool`, editor, `WorldScene`, `AsyncChunkStream` and `ChunkStreamer` integrations used by TerraWeave. No module-specific VFX shader or tests remain in this PR's final file diff. Scope changed from **74 to 59** files. GitHub reported `mergeable=true` and `main` as PR base after cleanup.
+
+### Actual verification and limitations
+
+**Actually checked:** GitHub PR base/head before and after retarget; compare-commits showed `main` already ancestral to TerraWeave (`behind=0`), whereas the unrelated feature branch diverged; GitHub recursive tree SHA comparisons and PR per-file patches were inspected before selectively restoring VFX paths; backup branch creation, cleanup tree/commit and fast-forward ref update succeeded; GitHub PR file list confirmed 59 files and no SpectraFX-only files remaining; PR REST reported `mergeable=true` after cleanup.
+
+**NOT RUN:** local CMake/Ninja/compiler, current-HEAD GitHub Actions GCC/Clang tests, CTest, live editor or game, RHI snapshots, GPU rendering screenshots or benchmarks. Existing TerraWeave CI was queued in preceding stage; no pass or failure can be inferred from GitHub's `mergeable=true`. PR REST also reported `mergeable_state=unstable` after cleanup, so not ready to merge.
+
+**Risks:** Although final PR diff is TerraWeave-focused, its historical commits still contain VFX work later undone by the cleanup commit; recommend a **squash merge only after full validation**. Scoped VFX paths were restored from `main` so no other agent's work is merged accidentally. Shared renderer/WorldScene/AGENTS/CMake modifications still require build/integration verification. The generic skill catalog on this branch was restored to the version from main; its registration of `skills/world/aiverse-terraweave/SKILL.md` should be audited before merge (the earlier branch catalog also did not contain that registration).
+
+### Exact next step
+
+1. Check current clean PR head against latest `main`, confirm no new commits and a clean final diff.
+2. Obtain complete GCC and Clang build + CTest logs for the **latest cleanup commit**; repair compiler/test regressions with a separate stage/commit and handoff. Do not use results from previous VFX-contaminated commits.
+3. Run editor/native-WorldScene integration and actual GPU captures/benchmarks; audit catalog registration and stale skill references.
+4. Keep Draft until all required results are real and recorded, then decide on a tested squash merge into `main`.
