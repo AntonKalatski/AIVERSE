@@ -6,7 +6,9 @@
 #include <string>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan; }
+namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
+    struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
+    class GpuClusterCulling; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
@@ -40,6 +42,17 @@ public:
     // default OFF. Does not upload Strata index data or change draw calls.
     void setStrataGpuMetadataEnabled(bool enabled) { strataGpuMetadataEnabled_ = enabled; }
     bool strataGpuMetadataEnabled() const { return strataGpuMetadataEnabled_; }
+    // Diagnostic GPU culling: caller must execute outside render passes and
+    // never consume returned ranges as draw calls until GPU/CPU parity is proven.
+    // Requires BOTH other Strata staging flags. Default OFF.
+    void setStrataGpuCullingEnabled(bool on) { strataGpuCullingEnabled_ = on; }
+    bool strataGpuCullingEnabled() const { return strataGpuCullingEnabled_; }
+    bool collectStrataGpuInstances(const std::string& sourceKey,
+                                   std::vector<strata::GpuSceneInstance>& out) const;
+    bool dispatchStrataGpuView(gfx::Device& device, const std::string& sourceKey,
+                               const strata::GpuPassConfig& pass,
+                               uint64_t frameSerial,
+                               strata::GpuSelectionSubmission& out);
     gfx::BufferHandle strataGpuMetadataBuffer(const std::string& sourceKey) const;
     // Device-resident auxiliary Strata indices from the EXISTING shared page.
     // NOT a draw submission; model/node transforms, materials and index
@@ -82,6 +95,7 @@ private:
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;
+    std::shared_ptr<strata::GpuClusterCulling> strataGpuCulling_;
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
     std::vector<std::string> warnings_;
@@ -89,6 +103,7 @@ private:
     bool hlod_=false,geometryEnabled_=true,surfacesEnabled_=true,cacheEnabled_=true;
     bool strataStagingEnabled_=false;
     bool strataGpuMetadataEnabled_=false;
+    bool strataGpuCullingEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
