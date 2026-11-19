@@ -15,7 +15,7 @@
 
 ## Подключение к игре
 
-Добавьте объект `animationGraph` в `view` типа, рядом с `model` и `animations`.
+Добавьте объект `animationGraph` в `view` типа, рядом с `model` и `animations`. Также `view.animationGraph` может быть строкой — относительным путём к внешнему JSON-графу (Stage 97): `"animationGraph": "animation/hero.json"`. Файл читается тем же project `FileReader`, проверяется `render::parseAnimationAsset` и компилируется с текущей моделью. Внешний файл позволяет редактировать граф независимо от `rules.json`; редактор отслеживает его изменение, но пока безопасно обновляет весь визуальный `RtsView`, а не переиспользует экземпляр AnimationGraph in-place.
 Пример определения: `examples/animation/locomotion.json`. Имена клипов и костей
 в нём иллюстративные: замените их именами из своей модели. Это не готовый персонаж.
 Граф автоматически включает CPU palette skinning, включая при `skinning: "baked"`.
