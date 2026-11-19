@@ -61,6 +61,7 @@ public:
         device_=nullptr;
         revision_=0;
         gpuResidency_={};
+        pendingGeometry_=false;
         return true;
     }
 
@@ -108,6 +109,7 @@ public:
     }
     const GiTransportConfig& config() const { return config_; }
     const GiGpuResidencyPlan& gpuResidency() const { return gpuResidency_; }
+    bool presentationBlocked() const { return pendingGeometry_; }
 
     // Publisher owns a read-barrier-frozen immutable scene snapshot. The
     // controller retains its shared ownership across all CPU pointer borrows.
@@ -119,15 +121,20 @@ public:
             auto resident=planGpuResident(*next);
             if(!resident.admitted) {
                 gpuResidency_=std::move(resident);
+                pendingGeometry_=true; // never sample old bounce on new world
                 return false;
             }
-            if(!gpu_.setGeometry(resident.selected,revision))return false;
+            if(!gpu_.setGeometry(resident.selected,revision)) {
+                pendingGeometry_=true; // e.g. old command still in flight
+                return false;
+            }
             gpuResidency_=std::move(resident);
         } else {
             cpu_.setTraceGeometry(next->traceView(),revision);
         }
         scene_=std::move(next);
         revision_=revision;
+        pendingGeometry_=false;
         return true;
     }
 
@@ -140,11 +147,14 @@ public:
             auto resident=planGpuResident(*next);
             if(!resident.admitted) {
                 gpuResidency_=std::move(resident);
+                pendingGeometry_=true;
                 return false;
             }
             if (!gpu_.setGeometryRegion(resident.selected,revision,changed,
-                                        extraRadius))
+                                        extraRadius)) {
+                pendingGeometry_=true;
                 return false;
+            }
             gpuResidency_=std::move(resident);
         } else {
             cpu_.setTraceGeometryRegion(next->traceView(),revision,
@@ -152,6 +162,7 @@ public:
         }
         scene_=std::move(next);
         revision_=revision;
+        pendingGeometry_=false;
         return true;
     }
 
@@ -245,7 +256,8 @@ public:
         if (mode_==GiTransportMode::GpuCompute) {
             s.gpu=gpu_.updateFrame(gpuProbeBudget,focus);
             s.pending=s.gpu.dirty;
-            s.canPresent=s.gpu.safeForPresentation && bool(scene_);
+            s.canPresent=s.gpu.safeForPresentation &&
+                         bool(scene_) && !pendingGeometry_;
         } else if (mode_==GiTransportMode::CpuProbes) {
             s.cpu=cpu_.updateAdaptive(focus);
             s.pending=s.cpu.dirty;
@@ -258,7 +270,7 @@ public:
     // and always after a rejected bind. Do not claim a successful GI frame if
     // no scene or the GPU's actual completion fence has not been observed.
     bool bind(Renderer3D& renderer) const {
-        if (!scene_ || !ready()) {
+        if (!scene_ || !ready() || pendingGeometry_) {
             renderer.clearDynamicGiOverlay();
             return false;
         }
@@ -303,6 +315,10 @@ private:
     GiDynamicRuntime cpu_;
     GiGpuDynamicRuntime gpu_;
     GiGpuResidencyPlan gpuResidency_;
+    // GPU may reject new world collision until its old frame completes or
+    // local BVH admission budget is reduced. The old atlas is then stale
+    // relative to already-published ECS/terrain geometry: do not display it.
+    bool pendingGeometry_=false;
 };
 
 } // namespace aiverse::render
