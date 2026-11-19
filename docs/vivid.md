@@ -574,3 +574,10 @@ This source change was committed but **not compiled or GUI-tested**. Authoring a
 An imported closed rigid scalp-proxy in VIVID Creator can now follow a named MotionWeave animated node. The Creator stores original proxy positions and bind-pose transforms, converts the current node transform into the already-used head-local groom coordinate system, and transactionally refits the CPU collision BVH before presentation hair simulation. Invalid/nonfinite computed poses are rejected while retaining the last-good collider. No new skeleton scheduler is introduced.
 
 **Scope:** only an unskinned scalp-proxy with a single owning model node and existing groom-local vertex convention. Multi-joint skinning, morph-deformed scalp geometry, arbitrary transform authoring, collision self-contacts and full character sculpting are still unfinished. This stage is committed as source but **native build, CTests, Metal GPU GUI and visual parity have NOT RUN**. Full implementation details and next-step handoff live in `docs/agent-handoffs/vivid.md`.
+
+
+## Stage 6T — MotionWeave multi-joint scalp skinning adapter (2026-11-19)
+
+A new header-only `ScalpSkinning` CPU adapter resolves imported scalp-proxy vertices against each render primitive's skin joint palette and inverse-bind matrices. It normalizes four 8-bit weights, computes linear-blend deformation from MotionWeave node-world matrices, converts points to the VIVID head-local groom coordinate system, and passes them into transactional BVH refit. Creator now detects and labels rigid-node versus multi-joint scalp modes. The older rigid path remains available; no new animation scheduler or engine/genre-specific API is introduced.
+
+Skinned reference source and negative-case unit checks are committed but **not executed**. This is not yet native-build-verified or real-GLB/FBX visual validated. Production-quality implementation still needs per-frame scratch reuse, animated scanned-head authoring assets, high-density performance work, full sculpt/rig/LOD tooling and more physically accurate skin/eye/hair shaders. See `docs/agent-handoffs/vivid.md` Stage 6T for exact commits.
