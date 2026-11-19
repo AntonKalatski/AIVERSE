@@ -116,6 +116,10 @@ public:
     void add(const PointLight& l);
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
     size_t count() const { return lights_.size(); }
+    // Read-only per-frame source snapshot for explicit indirect GI publication.
+    // Valid after all add() calls and before the next begin(); do not retain
+    // references or mutate this list from asynchronous/GPU/ECS workers.
+    const std::vector<PointLight>& submittedLights() const { return lights_; }
     const LightStats& stats() const { return stats_; }
     void noteReflectionTime(float ms) { stats_.reflMs = ms; }
 
