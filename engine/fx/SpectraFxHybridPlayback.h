@@ -25,6 +25,9 @@ public:
     static constexpr size_t kMaxEmitters=64;
     static constexpr size_t kMaxGpuPools=8;
     static constexpr uint32_t kMaxTotalPooledParticles=65536;
+    // Upper bound on all GPU particle slots owned by one playback instance,
+    // including dedicated emitters and retained homogeneous pool capacity.
+    static constexpr uint32_t kMaxPlaybackGpuSlots=65536;
     struct Route {
         std::string asset;
         bool enabled=true;
@@ -41,6 +44,7 @@ public:
         uint64_t missing=0,refused=0,failed=0,oneShots=0,retired=0;
         uint64_t gpuImpacts=0,impactDropped=0,impactEffects=0;
         uint64_t pooledPlays=0,pooledFallbacks=0,pooledRetired=0,pooledFailures=0;
+        uint64_t gpuBudgetCpuFallbacks=0,gpuBudgetRefusals=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -135,17 +139,29 @@ public:
             }
             ++stats_.pooledFallbacks;
         }
-        // All GPU emitter batches share one static quad, MSL/GLSL shader,
-        // and alpha/additive render pipelines; only particle state is private.
-        const auto preference=chooseSpectraFxBackend(device_,entry->config.backend);
-        const bool gpuRequested=preference.accepted &&
-                                preference.backend==SpectraFxExecutionBackend::Gpu;
+        // Account for all GPU slots reserved by this playback, even if pool
+        // particles are currently dormant. Exceeding the cap falls back to
+        // the authored CPU effect only if the route explicitly allows it.
+        auto selected=entry->config; // never mutate the cached authored asset
+        auto preference=chooseSpectraFxBackend(device_,selected.backend);
+        bool gpuRequested=preference.accepted &&
+                          preference.backend==SpectraFxExecutionBackend::Gpu;
+        if(gpuRequested &&
+           usedGpuSlots()+selected.backend.particles>kMaxPlaybackGpuSlots) {
+            if(!selected.backend.allowCpuFallback || selected.cpuEffect.empty()) {
+                ++stats_.gpuBudgetRefusals;
+                return false;
+            }
+            selected.backend.preference=SpectraFxExecutionPreference::Cpu;
+            ++stats_.gpuBudgetCpuFallbacks;
+            gpuRequested=false;
+        }
         if(gpuRequested && !sharedRendererAttempted_) {
             sharedRendererAttempted_=true;
             sharedRenderer_.init(device_);
         }
         auto next=std::make_unique<SpectraFxHybridEmitter>();
-        if(!next->begin(device_,cpu_,entry->config,cue.position,cue.direction,
+        if(!next->begin(device_,cpu_,std::move(selected),cue.position,cue.direction,
                         gpuRequested ? &sharedRenderer_ : nullptr)) {
             ++stats_.failed;return false;
         }
@@ -302,6 +318,15 @@ public:
     size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
     size_t sharedPoolCount() const {return pools_.size();}
     uint32_t sharedPoolCapacity() const {return totalPoolCapacity_;}
+    uint64_t usedGpuSlots() const {
+        uint64_t total=totalPoolCapacity_;
+        for(const auto& e:active_)
+            if(e.second->gpuActive()) total+=e.second->config().backend.particles;
+        for(const auto& e:oneShots_)
+            if(e.emitter->gpuActive())
+                total+=e.emitter->config().backend.particles;
+        return total;
+    }
     const Stats& stats() const {return stats_;}
     void resetStats() {stats_={};}
 
@@ -369,6 +394,7 @@ private:
            route.sharedPoolCapacity==0 ||
            route.sharedPoolCapacity>kMaxTotalPooledParticles ||
            !effect.autoSpawnGpu || !effect.impactEffect.empty() ||
+           !effect.appearance.additive ||
            effect.environment.reportImpacts) return false;
         // CPU policy and unsupported GPU features retain dedicated fallback.
         const auto choice=chooseSpectraFxBackend(device_,effect.backend);
@@ -386,7 +412,8 @@ private:
                 return false; // heterogeneous group: separate HybridEmitter
         } else {
             if(pools_.size()>=kMaxGpuPools ||
-               route.sharedPoolCapacity>kMaxTotalPooledParticles-totalPoolCapacity_)
+               route.sharedPoolCapacity>kMaxTotalPooledParticles-totalPoolCapacity_ ||
+               usedGpuSlots()+route.sharedPoolCapacity>kMaxPlaybackGpuSlots)
                 return false;
             auto arena=std::make_unique<SpectraFxGpuSharedArena>();
             SpectraFxGpuSharedArena::Config cfg;
