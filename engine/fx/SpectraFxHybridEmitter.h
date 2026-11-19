@@ -11,6 +11,7 @@
 #include "SpectraFxGpuParticleSlots.h"
 #include "SpectraFxGpuImpactFeedback.h"
 #include "SpectraFxGpuBillboardRenderer.h"
+#include "SpectraFxGpuCompaction.h"
 #include "SpectraFxGpuSpawnScheduler.h"
 #include "SpectraFxGpuLod.h"
 #include "ParticleSystem.h"
@@ -31,6 +32,9 @@ public:
         SpectraFxGpuLodSettings lod{};
         FxQuality quality=FxQuality::High;
         bool autoSpawnGpu=true;
+        // Experimental Metal-only GPU live-slot compaction + indirect draw.
+        // False by default until GPU/Metal acceptance; legacy draw is fallback.
+        bool gpuIndirectCompaction=false;
     };
 
     // Begin an emitter with no GPU particles yet. GPU emits are explicit
@@ -60,6 +64,12 @@ public:
                (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 gpuDevice_=&device;
+                if(config_.gpuIndirectCompaction) {
+                    // Compaction failure only disables the optimization;
+                    // the GPU evolution and regular draw remain functional.
+                    if(!compaction_.init(device,config_.backend.particles))
+                        ++compactionFallbacks_;
+                }
                 backend_=SpectraFxExecutionBackend::Gpu;
                 status_="GPU emitter initialized; awaiting spawn at buffer-safe point";
                 return true;
@@ -112,6 +122,10 @@ public:
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
         }
         if(slots_.step(dt,config_.environment)) {
+            if(compaction_.ready()) {
+                if(compaction_.prepare(slots_.evolution())) ++compactionFrames_;
+                else ++compactionFallbacks_;
+            }
             if(config_.environment.reportImpacts && gpuDevice_)
                 impactFeedback_.request(*gpuDevice_,slots_);
             return true;
@@ -153,7 +167,8 @@ public:
         if(gpuActive() && !suspended_ && !lodVisible_) return true;
         return gpuActive() && !suspended_ && rendererOwner_ &&
                rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
-                                    cameraUp,config_.appearance);
+                                    cameraUp,config_.appearance,
+                                    compaction_.ready()?&compaction_:nullptr);
     }
 
     // Stop emission and destroy owned GPU resources before the RHI device.
@@ -166,6 +181,7 @@ public:
         cpuHandle_={};
         impactFeedback_.reset();
         gpuDevice_=nullptr;
+        compaction_.release();
         renderer_.release(); // only owned/local pipelines; shared lives in playback
         rendererOwner_=nullptr;
         slots_.shutdown();
@@ -189,6 +205,8 @@ public:
     SpectraFxExecutionBackend backend() const {return backend_;}
     const SpectraFxBackendDecision& decision() const {return decision_;}
     const Config& config() const {return config_;}
+    uint64_t gpuCompactedFrames() const {return compactionFrames_;}
+    uint64_t gpuCompactionFallbacks() const {return compactionFallbacks_;}
     const std::string& status() const {return status_;}
     uint32_t gpuActiveParticles() const {return slots_.activeCount();}
 
@@ -200,6 +218,7 @@ private:
     SpectraFxExecutionBackend backend_=SpectraFxExecutionBackend::Cpu;
     SpectraFxGpuParticleSlots slots_{};
     SpectraFxGpuBillboardRenderer renderer_{};
+    SpectraFxGpuCompaction compaction_{};
     SpectraFxGpuBillboardRenderer* rendererOwner_=nullptr;
     SpectraFxGpuSpawnScheduler scheduler_{};
     SpectraFxGpuImpactFeedback impactFeedback_{};
@@ -209,5 +228,7 @@ private:
     bool suspended_=false;
     float lodSpawnScale_=1.0f;
     bool lodVisible_=true;
+    uint64_t compactionFrames_=0;
+    uint64_t compactionFallbacks_=0;
 };
 } // namespace aiverse::fx
