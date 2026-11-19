@@ -59,6 +59,9 @@ bool PortableSource::validFor(const Model& source) const {
            sourceGeometryRevision_==source.geometryRevision &&
            sourceMaterialRevision_==source.materialRevision &&
            source.vb.valid() && source.ib.valid() &&
+           source.vb==sourceVertexBuffer_ && source.ib==sourceIndexBuffer_ &&
+           source.gpuBaseVertex==baseVertex_ &&
+           source.gpuFirstIndex==sourceFirstIndex_ &&
            (pooledIndices_.valid()
                 ? auxiliaryGeometryIndicesValidFor(pooledIndices_,source)
                 : dedicated_);
@@ -194,6 +197,9 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     device_=&dev;
     source_=&source;
     asset_=&asset;
+    sourceVertexBuffer_=source.vb;
+    sourceIndexBuffer_=source.ib;
+    sourceFirstIndex_=source.gpuFirstIndex;
     indexBuffer_=buffer;
     firstIndex_=base;
     baseVertex_=source.gpuBaseVertex;
@@ -366,6 +372,7 @@ void PortableSource::shutdown(gfx::Device& dev){
     if(dedicated_&&indexBuffer_.valid())
         dev.destroyBuffer(indexBuffer_);
     device_=nullptr;source_=nullptr;asset_=nullptr;indexBuffer_={};
+    sourceVertexBuffer_={};sourceIndexBuffer_={};sourceFirstIndex_=0;
     pooledIndices_={};dedicated_=false;
     firstIndex_=indexCount_=baseVertex_=0;
     sourceGeometryRevision_=sourceMaterialRevision_=0;
