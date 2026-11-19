@@ -124,6 +124,7 @@ public:
     struct ViewGpuTiming {
         uint64_t viewId = 0;
         uint64_t sampleSequence = 0; // increments only on a finished GPU query
+        uint64_t gpuFenceAtRead = 0; // freshness, not a replacement for query token
         double lastGpuMs = 0;
     };
     void acceptViewGpuTiming(uint64_t viewId, double gpuMs);
