@@ -69,6 +69,12 @@ struct FxFog { float3 color{0.62f, 0.70f, 0.80f}; float density = 0; };  // Rend
 
 // A light carried by particles ("light" module): the apps add these to Renderer3D::lights.
 struct FxPointLight { float3 pos; float radius = 1; float3 color{1, 1, 1}; float intensity = 1; };
+struct FxIdentifiedPointLight {
+    uint32_t particleUid=0;    // monotonic within one ParticleSystem lifetime
+    uint32_t owner=0;          // FxHandle owner including generation for diagnostics
+    uint16_t emitter=0;
+    FxPointLight light{};
+};
 
 // A live particle as seen from outside (tests, tools).
 struct FxParticleInfo { float3 pos, vel; float size = 0, age = 0, life = 0, rotation = 0; float4 color; int effect = -1, emitter = 0; };
@@ -145,6 +151,11 @@ public:
     // Lights of emitters with a "light" module (after update): appended to `out`, at most `maxLights`
     // in total (fewer on low tiers). Call between Renderer3D::beginScene and render.
     void collectLights(std::vector<FxPointLight>& out, int maxLights = 32) const;
+    // Same lighting and quality limits as collectLights(), but exposes real
+    // particle identity. The host adds a unique ParticleSystem namespace and
+    // uses (namespace, particleUid) as the stable key for LumaWeave.
+    void collectLightsStable(std::vector<FxIdentifiedPointLight>& out,
+                             int maxLights=32) const;
 
     void snapshot(std::vector<FxParticleInfo>& out) const;   // every live particle (current size and colour)
     const FxStats& stats() const { return stats_; }
