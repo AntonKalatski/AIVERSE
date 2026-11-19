@@ -712,3 +712,41 @@ must be rebaked after the new version/fingerprint. Keep
 the per-stage handoff and explicitly mark tests NOT RUN
 until the separate test agent supplies compiler, CTest,
 and real Metal/GL/Vulkan evidence.
+
+## Q16 authored seam normals and TWH8 (Stage 21)
+
+Use `AuthoredWorldHeightSnapshot::sampleQ16` for precise
+fractional near-terrain X/Z, preserving the old `sample`
+API for integral world-centimetre callers. Provide
+`HorizonSurfaceSources::nearGroundHeightAtQ16Cm` from
+the SAME immutable authored source as
+`collectNearTerrainRects` and `nearGroundHeightAtCm`
+where possible. Native games may omit the Q16 callback
+to retain legacy integer-centimetre seam behavior.
+
+`populateHorizonNearSeamSamples` samples exact clipped
+seam positions (Q16), clamps high half-open tile
+boundaries by only one Q16 unit, and computes optional
+bounded slope X/Z with a +/-200cm tile-local stencil.
+Missing derivative input marks `nearNormalValid=false`;
+never fabricate a normal or partially weld a missing
+height. The Stage 20 `maxNearWeldSlopePermille`
+all-or-none safety guard remains mandatory.
+
+In `makeHorizonModel` use authored near-surface
+normal targets at welded edges when available; use
+Stage 20 area-weighted face normals otherwise.
+`HorizonRuntimeStats::matchedAuthoredNearNormals`
+reports actual authored-normal matches; it is distinct
+from `smoothedNearNormals`. Neither changes GPU
+geometry allocations or draw calls.
+
+**TWH8 is the current archive version.** It stores two
+signed normal slopes and a validity bit alongside each
+height sample; existing TWH1–TWH7 binaries are stale.
+Atlas-only patch eligibility must compare all seam
+normal/height fields; a vertex patch can apply if the
+index layout and bounds are still safe. The test agent
+owns all CMake/CTest, archive roundtrips, cross-platform
+GPU screenshots and profiling. Label them NOT RUN
+until logs exist.
