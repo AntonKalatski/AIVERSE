@@ -1230,3 +1230,17 @@ test status, limits and next step to its handoff as the next separate commit.
 ## Release-mode test assertion contract (2026-11-19)
 
 Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.
+
+## VIVID universal digital humans (2026-11-19)
+
+**Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
+**Mandatory stage-by-stage handoff:** `docs/agent-handoffs/vivid.md`.
+**Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
+
+VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
+controller (`AIVERSE::vivid`) and a separate adapter to legacy `render::Pose`
+(`AIVERSE::vivid_render`). Do not fork `AnimationGraph`, assume more than
+eight supported GPU morph targets, bundle proprietary human assets, or claim
+MetaHuman DNA, groom and skin features before they actually ship. Every bounded
+implementation step MUST have a following separate handoff commit with exact
+commit IDs and tests that were actually run.
