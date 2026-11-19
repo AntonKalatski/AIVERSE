@@ -335,8 +335,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                                             strataStreamingSceneBudgetBytes_ ||
                                             strataGlobalIndexBudgetBytes_;
             const bool globalBudgetConfigured = !streamingRequested ||
-                strata::configureDeviceIndexBudget(
-                    dev,uint64_t(strataGlobalIndexBudgetBytes_));
+                (strata::configureDeviceIndexBudget(
+                    dev,uint64_t(strataGlobalIndexBudgetBytes_)) &&
+                 strata::configureDeviceFrameUploadBudget(
+                    dev,uint64_t(strataGlobalFrameUploadBudgetBytes_)));
             if(!globalBudgetConfigured)
                 warnings_.push_back(
                     "STRATA global device budget conflicts with an active world");
@@ -498,6 +500,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             const auto shared=strata::deviceIndexBudgetStats(dev);
             stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
             stats_.strataDeviceIndexLeases=shared.activeLeases;
+            stats_.strataDeviceFrameUploadedBytes=shared.currentFrameUploadedBytes;
+            stats_.strataDeviceFrameUploadRemainingBytes=shared.frameUploadRemainingBytes;
             const auto io=strata::sharedDiskIoStats();
             stats_.strataSharedIoWorkers=io.workers;
             stats_.strataSharedIoQueuedJobs=io.queuedJobs;
@@ -678,8 +682,15 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             const auto* before=source->residencyStats();
             const uint64_t beforeTransfer=before ? before->gpuTransferBytes : 0;
             const bool incremental=before && before->incremental;
-            const size_t allowance=frameCap && incremental
+            size_t allowance=frameCap && incremental
                 ? strataStreamingFrameBudgetLeft_ : SIZE_MAX;
+            const uint64_t serial=strataPortableDevice_ ?
+                strataPortableDevice_->frameSerial() : 0;
+            if(incremental && strataPortableDevice_){
+                const uint64_t shared=strata::deviceFrameUploadAllowance(
+                    *strataPortableDevice_,serial);
+                allowance=std::min<uint64_t>(allowance,shared);
+            }
             if(failed.count(model) ||
                !source->updateResidency(requests[model],&error,allowance))
                 ++stats_.strataStreamingPrepareFailures;
@@ -691,6 +702,9 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
                         copied>=strataStreamingFrameBudgetLeft_
                             ? 0 : strataStreamingFrameBudgetLeft_-size_t(copied);
                 }
+                if(incremental && strataPortableDevice_)
+                    strata::accountDeviceFrameUpload(
+                        *strataPortableDevice_,serial,copied);
                 stats_.strataStreamingIndexBytes+=status->activeBytes;
                 stats_.strataStreamingEvictions+=status->evictions;
                 stats_.strataStreamingArenaBytes+=status->arenaBytes;
@@ -709,6 +723,8 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
         const auto shared=strata::deviceIndexBudgetStats(*strataPortableDevice_);
         stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
         stats_.strataDeviceIndexLeases=shared.activeLeases;
+        stats_.strataDeviceFrameUploadedBytes=shared.currentFrameUploadedBytes;
+        stats_.strataDeviceFrameUploadRemainingBytes=shared.frameUploadRemainingBytes;
     }
     const auto io=strata::sharedDiskIoStats();
     stats_.strataSharedIoWorkers=io.workers;
