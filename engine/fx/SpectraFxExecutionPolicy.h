@@ -28,7 +28,8 @@ enum class SpectraFxFeature : uint32_t {
     Ribbons = 1u << 11,
     PerParticleEvents = 1u << 12,
     GroundPlaneCollision = 1u << 13, // GPU-supported world Y plane only
-    GpuImpactFeedback = 1u << 14 // optional Metal async ground-hit events
+    GpuImpactFeedback = 1u << 14, // optional Metal async ground-hit events
+    GpuDepthSort = 1u << 15 // Metal bitonic back-to-front sorted index map
 };
 inline constexpr SpectraFxFeature operator|(SpectraFxFeature a,SpectraFxFeature b) {
     return SpectraFxFeature(uint32_t(a)|uint32_t(b));
@@ -70,18 +71,31 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
                            uint32_t(SpectraFxFeature::Alpha) |
                            uint32_t(SpectraFxFeature::Additive) |
                            uint32_t(SpectraFxFeature::GroundPlaneCollision) |
-                           uint32_t(SpectraFxFeature::GpuImpactFeedback);
+                           uint32_t(SpectraFxFeature::GpuImpactFeedback) |
+                           uint32_t(SpectraFxFeature::Sorting) |
+                           uint32_t(SpectraFxFeature::GpuDepthSort);
     if((mask&~allowed)!=0 || !hasFeature(request.required,SpectraFxFeature::Billboard))
         return cpu("requested particle modules require CPU fallback");
     if(!device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA32F))
         return cpu("RHI compute or RGBA32F storage unavailable");
     const auto backend=device.info().backend;
+    const bool depthSort=hasFeature(request.required,SpectraFxFeature::GpuDepthSort);
+    const bool needsSort=hasFeature(request.required,SpectraFxFeature::Sorting);
+    if(depthSort && (!needsSort ||
+                     !hasFeature(request.required,SpectraFxFeature::Alpha)))
+        return cpu("GPU depth sort only supports alpha billboard effects");
+    if(needsSort && !depthSort)
+        return cpu("GPU alpha requires explicit back-to-front depth sorting");
+    if(depthSort && (backend!=gfx::Backend::Metal ||
+                     request.particles>4096 || !device.frameSerial()))
+        return cpu("GPU alpha depth sorting requires Metal and <=4096 slots");
     if(hasFeature(request.required,SpectraFxFeature::GpuImpactFeedback) &&
        (backend!=gfx::Backend::Metal || request.particles>4096))
         return cpu("GPU impact feedback requires Metal and <=4096 particles");
     if(backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan)
         return cpu("GPU particle shaders are not supported on this RHI backend");
-    return {SpectraFxExecutionBackend::Gpu,true,"GPU billboard backend eligible"};
+    return {SpectraFxExecutionBackend::Gpu,true,
+            depthSort?"Metal GPU-sorted alpha eligible":"GPU billboard backend eligible"};
 }
 
 } // namespace aiverse::fx
