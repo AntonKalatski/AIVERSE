@@ -262,7 +262,11 @@ public:
     // PHYSIS can supply this same POD to near Arbor and far Horizon.
     void setWind(ForestWindState wind) {
         validateForestWind(wind);
+        if(wind==wind_)return;
         wind_=wind;
+        // The fallback wind also determines the exact values outside
+        // the published PHYSIS grid. Repack only when a field is active.
+        if(windField_)++windFieldRevision_;
     }
     const ForestWindState& wind() const {return wind_;}
     // Optional low-frequency cluster-local direction/strength/phase.
@@ -276,9 +280,21 @@ public:
     // shared across all cards of an HLOD region and both crossfade models.
     // No per-tree data in the statistical Horizon cluster atlas.
     void setWindField(std::shared_ptr<const ForestWindField> field) {
+        if(field==windField_)return;
         if(field)field->validate();
+        windFieldHasWind_=field && field->anyWind();
         windField_=std::move(field);
+        ++windFieldRevision_;
     }
+    // Exact PHYSIS field updates uploaded distant card RGB8 attributes
+    // when the immutable snapshot changes. Disabling restores Stage33
+    // procedural metadata at the next safe RHI update.
+    void setExactSpatialWindField(bool enabled) {
+        if(exactSpatialWindField_==enabled)return;
+        exactSpatialWindField_=enabled;
+        ++windFieldRevision_;
+    }
+    bool exactSpatialWindField() const {return exactSpatialWindField_;}
     std::shared_ptr<const ForestWindField> windField() const {
         return windField_;
     }
@@ -291,6 +307,10 @@ public:
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
            observer.z<-kWorldLimitCm||observer.z>kWorldLimitCm)
             throw std::out_of_range("TerraWeave Horizon camera extent");
+        // Run BEFORE fast-return/cached-region paths. No atlas/mesh
+        // regeneration; one bounded render-thread RHI vertex update per
+        // visible model and published weather-field revision.
+        refreshForestWindGpu(device);
         // Keep the current region until the camera moves past the cell
         // boundary plus a hysteresis margin. This prevents rapid rebuilds
         // when the observer oscillates near a 128m streaming edge.
@@ -482,6 +502,10 @@ public:
                 const size_t nextTriangles=next->indices.size()/3;
                 // Preserve the packed post-prepare model arrays only when
                 // CPU region caching is enabled. uploadModel clears them.
+                auto windOverlay=captureHorizonForestWindOverlay(
+                    *prepared->bake,*next);
+                if(!exactSpatialWindField_ || !windField_)
+                    windOverlay.appliedRevision=windFieldRevision_;
                 std::vector<render::ModelVertex> keptVertices;
                 std::vector<uint32_t> keptIndices;
                 if(settings_.maxCachedRegions){
@@ -495,6 +519,7 @@ public:
                 }
                 retireActive(device,cell);
                 model_=std::move(next);
+                activeWindOverlay_=std::move(windOverlay);
                 activeCell_=cell;
                 activeRevision_=sourceRevision_;
                 activeBake_=settings_.maxCachedRegions ?
@@ -565,21 +590,30 @@ public:
         // at HLOD region boundaries without rebaking the atlas per tick.
         const ForestWindState macroWind=sampleForestWindField(
             windField_.get(),lastObserver_.x,lastObserver_.z,wind_);
+        const bool exactRequested=exactSpatialWindField_ &&
+            bool(windField_);
         const auto drawRegion=[&](render::Model* model,
+                                  const HorizonForestWindOverlay& overlay,
                                   int64_t xCm,int64_t zCm,
                                   float alpha,bool blending,int materialFilter) {
             if(!model || alpha<=0.0f)return;
             const bool gpuWind=macroWind.branchFlexPermille>0 &&
                 macroWind.maxLeanMilliDegrees>0 &&
-                (macroWind.xCmPerSec || macroWind.zCmPerSec);
+                (macroWind.xCmPerSec || macroWind.zCmPerSec ||
+                 (exactRequested && windFieldHasWind_));
+            const bool upToDate=overlay.appliedRevision==windFieldRevision_;
+            const bool exactReady=exactRequested && upToDate &&
+                                  !overlay.vertices.empty();
+            const bool proceduralReady=!exactRequested && upToDate;
             // The far forest is one primitive/material in a shared model.
             // Only that material receives vertexOffset; ground is inert.
             // Existing active and crossfade GPU regions are updated without
             // rebaking their CPU atlas or reallocating vertex buffers.
             if(model->materials.size()>1){
                 const auto desired=gpuWind ?
-                    (spatialWindVariation_ ? horizonSpatialWindGraph() :
-                                             canopyWindGraph()) :
+                    (exactReady ? horizonExactFieldWindGraph() :
+                     (proceduralReady && spatialWindVariation_) ?
+                         horizonSpatialWindGraph() : canopyWindGraph()) :
                     std::shared_ptr<const render::graph::Program>{};
                 if(model->materials[1].shaderGraph!=desired)
                     model->materials[1].shaderGraph=desired;
@@ -597,8 +631,11 @@ public:
                 // HLOD crossing cards receive a small synchronized bend.
                 // The bottom two vertices have zero weight; only the top
                 // canopy edge moves, avoiding animated ground geometry.
-                draw.vertexParameters=canopyWindVertexParameters(
-                    macroWind,presentationTick_,0.0f,0.30f);
+                draw.vertexParameters=exactReady ?
+                    horizonExactFieldVertexParameters(
+                        wind_,presentationTick_) :
+                    canopyWindVertexParameters(
+                        macroWind,presentationTick_,0.0f,0.30f);
                 draw.useVertexParameters=true;
                 draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
             }
@@ -621,15 +658,18 @@ public:
                 // Source material slot 0 is distant terrain, slot 1 forest.
                 // A single opaque terrain draw writes correct scene depth;
                 // neither outgoing nor incoming terrain uses transparency.
-                drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false,0);
-                drawRegion(transition_.model.get(),
+                drawRegion(model_.get(),activeWindOverlay_,
+                           originXcm_,originZcm_,1.0f,false,0);
+                drawRegion(transition_.model.get(),transition_.forestWind,
                     transition_.originXcm,transition_.originZcm,
                     1.0f-t,true,1);
-                drawRegion(model_.get(),originXcm_,originZcm_,t,true,1);
+                drawRegion(model_.get(),activeWindOverlay_,
+                           originXcm_,originZcm_,t,true,1);
                 return;
             }
         }
-        drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false,-1);
+        drawRegion(model_.get(),activeWindOverlay_,
+                   originXcm_,originZcm_,1.0f,false,-1);
     }
     void shutdown(gfx::Device& device) {
         if(stream_){
@@ -645,6 +685,7 @@ public:
         activeBake_.reset();
         activeVertices_.clear();
         activeIndices_.clear();
+        activeWindOverlay_={};
         { std::lock_guard lock(cacheMutex_); cache_.clear(); }
         runtime_={}; // No active GPU region: diagnostics must not describe the retired one.
         clusters_=0;
@@ -749,6 +790,7 @@ private:
             activeBake_.reset();
             activeVertices_.clear();
             activeIndices_.clear();
+            activeWindOverlay_={};
             return;
         }
         HorizonGpuRegion previous;
@@ -756,6 +798,7 @@ private:
         previous.bake=std::move(activeBake_);
         previous.vertices=std::move(activeVertices_);
         previous.indices=std::move(activeIndices_);
+        previous.forestWind=std::move(activeWindOverlay_);
         previous.originXcm=originXcm_;
         previous.originZcm=originZcm_;
         previous.clusters=clusters_;
@@ -805,6 +848,7 @@ private:
         activeBake_=std::move(region.bake);
         activeVertices_=std::move(region.vertices);
         activeIndices_=std::move(region.indices);
+        activeWindOverlay_=std::move(region.forestWind);
         originXcm_=region.originXcm;
         originZcm_=region.originZcm;
         clusters_=region.clusters;
@@ -865,7 +909,11 @@ private:
     HorizonSettings settings_;
     ForestWindState wind_{};
     bool spatialWindVariation_=true;
+    bool exactSpatialWindField_=true;
+    bool windFieldHasWind_=false;
+    uint64_t windFieldRevision_=1;
     std::shared_ptr<const ForestWindField> windField_;
+    HorizonForestWindOverlay activeWindOverlay_;
     uint64_t presentationTick_=0;
     std::unique_ptr<world::AsyncChunkStream> stream_;
     std::unique_ptr<render::Model> model_;
