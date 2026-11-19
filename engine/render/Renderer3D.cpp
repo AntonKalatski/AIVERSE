@@ -43,6 +43,7 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
 }
 
 bool Renderer3D::init(gfx::Device& dev) {
+    checkGpuDevice(dev);
     dev_ = &dev;
     gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
     ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
@@ -119,6 +120,7 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    checkGpuDevice(*dev_);
     gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
     if (persistentUpload_) {
@@ -146,6 +148,7 @@ void Renderer3D::shutdown() {
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    if(dev_)checkGpuDevice(*dev_);
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
         return value && std::strcmp(value, "1") == 0;
@@ -317,6 +320,7 @@ void Renderer3D::bindTraceTextures() {
 }
 
 void Renderer3D::resolvePostFx() {
+    if(dev_)checkGpuDevice(*dev_);
     if (!post_) return;
     PostProcess* post = post_;
     post_ = nullptr;
@@ -343,6 +347,7 @@ float4 Renderer3D::drawCallDebugColor(uint32_t drawId) {
 }
 
 void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
+    if(dev_)checkGpuDevice(*dev_);
     drawCalls_ = 0;
     // Synchronize persistent scene staging before any rendering passes.
     // Model shader bindings and GPU culling remain on the legacy path.
