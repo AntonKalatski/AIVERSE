@@ -73,6 +73,16 @@ struct FxPointLight { float3 pos; float radius = 1; float3 color{1, 1, 1}; float
 // A live particle as seen from outside (tests, tools).
 struct FxParticleInfo { float3 pos, vel; float size = 0, age = 0, life = 0, rotation = 0; float4 color; int effect = -1, emitter = 0; };
 
+// Stage 29: bounded, presentation-only live particle import from a GPU
+// checkpoint. The caller must use a compatible already-defined emitter.
+// No authoring source, gameplay ECS state or GPU handles are imported.
+struct FxImportedParticle {
+    float3 pos{}, vel{};
+    float age=0, lifetime=1, size=1;
+    float4 tint{1,1,1,1};
+    std::array<float,8> programParams{}, customAttributes{};
+};
+
 struct FxStats {
     int particles = 0, instances = 0, drawn = 0, batches = 0, drawCalls = 0;
     int trailQuads = 0;     // ribbon segments drawn (included in drawn)
@@ -157,6 +167,11 @@ public:
     // in total (fewer on low tiers). Call between Renderer3D::beginScene and render.
     void collectLights(std::vector<FxPointLight>& out, int maxLights = 32) const;
 
+    // Atomic append: validates all particles/budget/effect before mutation.
+    // Only a single-emitter, no-source-dependent GPU subset is supported.
+    // Imported particles do not resume emitter spawning. Invalid data leaves
+    // all previously live CPU particles unchanged.
+    bool importLiveParticles(int effect,const std::vector<FxImportedParticle>& particles);
     void snapshot(std::vector<FxParticleInfo>& out) const;   // every live particle (current size and colour)
     const FxStats& stats() const { return stats_; }
     void resetStats() { stats_.dropped = stats_.culled = 0; }
