@@ -1566,3 +1566,38 @@ particles honestly. `RequireGpu` still forbids silent CPU fallback.
 
 No compiler, CMake, CTest, Metal execution, fault-injection test or CPU/GPU
 parity test has been performed for Stage 28; source is unverified.
+
+
+## Stage 29 — transactional CPU checkpoint import and guarded GPU-failure recovery
+
+`fx::ParticleSystem::importLiveParticles(effect, particles)` appends already-live
+particles to a compatible **single-emitter** effect without replaying Spawn or
+creating an emitting instance. It validates the entire batch (finite position,
+velocity, color, age, lifetime, size, eight VM params/attributes), existing
+CPU capacity and supported emitter restrictions before altering the CPU pool.
+Each imported particle keeps the position, velocity, age, remaining lifetime
+encoded as age/total lifetime, size, tint and custom registers. It is tagged
+with no emitting owner, participates in normal CPU Update and renderer batching,
+and cannot start new emitter bursts. Unsupported complex ribbons, collision,
+trigger, mesh and local-space effects are rejected rather than partly restored.
+
+After a successful blocking `ComputeParticles::captureGpuCheckpoint`, the
+runtime retains the complete export plus its presentation-frame revision.
+When `switchToCpu` occurs after device failure, it attempts recovery **only**
+when the checkpoint matches the last submitted GPU frame, has the full physical
+slot count, and there are no unsent births. Imported particles are counted in
+`ComputeStats::recoveredOnFallback`; remaining discarded allocations are
+reported in `lostOnFallback`. On stale/missing/invalid snapshots the existing
+CPU fallback still starts clean and reports losses. `RequireGpu` continues
+forbidding an implicit CPU switch.
+
+**Recovery is opt-in by capture timing:** checkpoints are not collected
+automatically because the available synchronous Metal RHI readback blocks
+until the GPU finishes. Call checkpoint capture only between completed frames
+at deliberate safe intervals. An unhealthy GPU cannot be relied on to produce
+new snapshots. Exact CPU/GPU numerical continuation is not proven: renderer
+and simulation algorithms differ, imported particles have no original source
+instance, and a formerly live effect may stop emitting. The term *lossless*
+is not warranted until parity, all emitter categories and fault injection
+are verified. No native compiler, CTest, Metal test or GUI smoke was run for
+this stage; code remains unverified.
