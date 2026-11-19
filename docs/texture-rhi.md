@@ -2399,3 +2399,44 @@ cmake --build build/texture-rhi --target aiverse_editor --parallel 4
 bash tools/verify-texture-rhi.sh --editor --jobs 4
 ```
 
+
+### Stage 10BA — macOS native focused verification PASS (2026-11-19)
+
+**Actual user-executed evidence** from Mac Studio, isolated worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`,
+after pulling `feature/texture-rhi-unification` (source fix checkpoint
+`79e8c04fc10074fc5c8723cbe47d77113d9025ba`):
+
+- `cmake --build build/texture-rhi --target aiverse_editor --parallel 4`:
+  `[100%] Built target aiverse_editor`.
+- `bash tools/verify-texture-rhi.sh --editor --jobs 4`:
+  `CONFIGURE PASS`; every one of the **20** named texture test
+  executable targets reported `BUILD PASS`; `BUILD PASS aiverse_editor`;
+  GLSL validator and Metal `xcrun` reported present; `CTEST PASS`;
+  final line `OVERALL SOURCE TESTS PASS (GPU validation remains separate)`.
+- A preceding Mac CTest log explicitly showed **23/23 PASS**, including
+  `virtual_texture_feedback_shaders` and
+  `virtual_texture_feedback_msl`, and the latest focused verifier
+  reported CTest success with the same source test filter. The latest
+  per-test `ctest.log` has not been uploaded in this turn, so do not
+  claim new per-test timings or hardware execution.
+
+**Status:** the native macOS compile/link + focused source/test gate for
+this texture branch is now confirmed green by user terminal output.
+This **does not** establish Metal GPU runtime fidelity, real GPU
+Texture3D partial z-region readback, layered mip/cube visual parity,
+actual VT physical-page publication on hardware, GPU ICB completion,
+performance, or Windows/Linux/Android/iOS/WebGL2 compatibility.
+Test executables and GLSL/MSL validators are not substitutes for
+on-device graphics acceptance. PR #21 remains Draft until these
+independent acceptance checks are performed and recorded.
+
+**Next suggested focused validation:** perform a real-device Metal
+Texture3D volume creation and nonzero-mip `updateTextureRegion`
+with partial z-range, then read/sampling parity; check all six cube
+faces / array layers and authored mip levels; verify async readback
+callback lifetime and VT feedback/page-table publication with actual
+rendered pixels. Run `--vulkan` only where a Vulkan SDK and suitable
+driver are available. Keep the existing main worktree's unrelated
+incomplete rebase untouched.
+
