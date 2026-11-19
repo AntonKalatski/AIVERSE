@@ -1282,3 +1282,14 @@ atlas requires 14 bindings, optional R8 validity 15, dual cascade 16,
 and Metal-only triple cascade 17. Vulkan reports its true descriptor cap;
 GL/GLES queries GL_MAX_TEXTURE_IMAGE_UNITS. A GLES3/WebGL2 backend must
 never bind tex16. This code and tests are SOURCE ONLY, not yet built.
+
+
+## Stage 32 — bounded CPU dynamic GI fallback for mobile (2026-11-19)
+
+Read `docs/agent-handoffs/gi-stage32-gles-cpu-fallback-budget-2026-11-19.md`.
+The opt-in `GiDynamicRuntime::updateAdaptive()` uses
+`GiCpuTraceBudget` to cap synchronous CPU probe tracing and respond to
+observed cost; it is intended for GLES3/WebGL2 and Vulkan without compute
+storage-image support. Defaults are initial policy, NOT measured target
+hardware timings. Call `update(0,camera)` to clear invalidation with a
+paused trace budget. Source and tests are NOT RUN in this stage.
