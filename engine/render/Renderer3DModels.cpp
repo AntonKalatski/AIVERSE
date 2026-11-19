@@ -487,11 +487,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                             size_t(item.materialIndex) < mats.size();
                     });
             if (sameSource) {
-                struct PacketNodeState {
-                    bool inView = false, inShadow = false;
-                    ModelLodBlend lod;
-                };
-                std::vector<PacketNodeState> nodeStates(m->nodes.size());
+                // Reuse a renderer-owned buffer instead of allocating on
+                // each cache hit across thousands of static entities.
+                auto& nodeStates = staticPacketNodeScratch_;
+                nodeStates.resize(m->nodes.size());
                 bool sameLods = true;
                 const bool opaque = d.tint.w >= .99f && d.dissolve <= 0 &&
                     !transparentItem(d.flags) &&
@@ -515,7 +514,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                         st.inShadow = inShadow && modelBoxVisible(lightViewProj_ * xf,
                                                                    mesh.boundsMin, mesh.boundsMax);
                     }
-                    st.lod = ModelLodBlend{node.mesh};
+                    ModelLodBlend lod{node.mesh};
                     if (modelLodEnabled_ && !mesh.lods.empty()) {
                         const float error = length(mesh.boundsMax - mesh.boundsMin);
                         const bool z01 = dev_->info().clipDepthZeroToOne;
@@ -530,10 +529,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                 error, shadowSize_, shadowSize_, z01));
                         if (!st.inView && !st.inShadow)
                             pixels = std::numeric_limits<float>::infinity();
-                        st.lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
+                        lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
                     }
-                    if (st.lod.incoming >= 0 ||
-                        st.lod.mesh != packet.selectedMeshes[size_t(n)]) {
+                    st.mesh = lod.mesh;
+                    st.level = lod.level;
+                    st.transitioning = lod.incoming >= 0;
+                    if (st.transitioning ||
+                        st.mesh != packet.selectedMeshes[size_t(n)]) {
                         sameLods = false;
                         break;
                     }
@@ -547,8 +549,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                         if (node.mesh < 0) continue;
                         const auto& st = nodeStates[size_t(n)];
                         ++modelStats_.nodes;
-                        ++modelStats_.lodNodes[std::min<size_t>(st.lod.level, 3)];
-                        if (st.lod.mesh != node.mesh) ++profile_.lodNodes;
+                        ++modelStats_.lodNodes[std::min<size_t>(st.level, 3)];
+                        if (st.mesh != node.mesh) ++profile_.lodNodes;
                         if (!st.inView && !st.inShadow && modelCullingEnabled_)
                             ++modelStats_.culledNodes;
                         while (itemIndex < packet.items.size() &&
