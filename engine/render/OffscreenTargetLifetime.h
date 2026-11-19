@@ -61,7 +61,8 @@ public:
             });
     }
     bool drain() {
-        if(!deviceValid())return queue_.empty();
+        if(!deviceValid())
+            return queue_.empty() && orphanedPairs_==0;
         return queue_.drain(
             [&]{return device_->waitForResourceIdle();},
             [&](uint64_t token) {
