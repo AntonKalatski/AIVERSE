@@ -72,6 +72,33 @@ def stage_cost(row):
     return backend, max(0.0, row["render_cpu_ms"] - backend)
 
 
+def mode_name(row):
+    return "mdi" if row["mdi_submissions"] else "direct"
+
+
+def mode_slow_runs(rows, mode, threshold=1.2):
+    """Contiguous slow spans of the SAME actual mode: other-mode frames split spans."""
+    result, active = [], []
+    for row in rows:
+        if mode_name(row) == mode and row["render_cpu_ms"] > threshold:
+            active.append(row)
+        elif active:
+            result.append(active)
+            active = []
+    if active:
+        result.append(active)
+    return sorted(result, key=lambda run: (-len(run), run[0]["frame"]))
+
+
+def median_cost(group):
+    """Median of row-wise paired costs, never the sum of independent medians."""
+    if not group:
+        return float("nan"), float("nan")
+    costs = [stage_cost(r) for r in group]
+    return (statistics.median(x[0] for x in costs),
+            statistics.median(x[1] for x in costs))
+
+
 def stats(label, rows, kind):
     measured = [r for r in rows if 115 <= r["frame"] <= 195]
     mdi = [r for r in measured if r["mdi_submissions"]]
@@ -94,6 +121,15 @@ def stats(label, rows, kind):
     longest = episodes[0] if episodes else []
     slow_mdi = [r for r in slow if r["mdi_submissions"]]
     worst_backend, worst_other_cpu = stage_cost(worst)
+    mdi_runs = mode_slow_runs(measured, "mdi")
+    direct_runs = mode_slow_runs(measured, "direct")
+    mdi_longest = mdi_runs[0] if mdi_runs else []
+    direct_longest = direct_runs[0] if direct_runs else []
+    mdi_cost, _ = median_cost(mdi)
+    slow_mdi_cost, _ = median_cost(slow_mdi)
+    longest_cost, longest_other = median_cost(longest)
+    mdi_longest_cost, mdi_longest_other = median_cost(mdi_longest)
+    direct_longest_cost, direct_longest_other = median_cost(direct_longest)
     return {
         "trial": label, "mode": kind,
         "measured_frames": len(measured),
@@ -116,20 +152,24 @@ def stats(label, rows, kind):
         "worst_opaque_backend_ms": worst["opaque_backend_ms"],
         "worst_backend_sum_ms": worst_backend,
         "worst_non_backend_cpu_ms": worst_other_cpu,
-        "mdi_backend_median_ms": med(mdi, "shadow_backend_ms") + med(mdi, "opaque_backend_ms") if mdi else float("nan"),
-        "slow_mdi_backend_median_ms": (
-            med(slow_mdi, "shadow_backend_ms") +
-            med(slow_mdi, "opaque_backend_ms")
-        ) if slow_mdi else float("nan"),
+        "mdi_backend_median_ms": mdi_cost,
+        "slow_mdi_backend_median_ms": slow_mdi_cost,
         "longest_slow_start_frame": longest[0]["frame"] if longest else -1,
         "longest_slow_end_frame": longest[-1]["frame"] if longest else -1,
-        "longest_slow_backend_median_ms": (
-            med(longest, "shadow_backend_ms") +
-            med(longest, "opaque_backend_ms")
-        ) if longest else float("nan"),
-        "longest_slow_non_backend_median_ms": (
-            statistics.median(stage_cost(r)[1] for r in longest)
-        ) if longest else float("nan"),
+        "longest_slow_backend_median_ms": longest_cost,
+        "longest_slow_non_backend_median_ms": longest_other,
+        "longest_slow_mdi_frames": sum(r["mdi_submissions"] > 0 for r in longest),
+        "longest_slow_direct_frames": sum(r["mdi_submissions"] == 0 for r in longest),
+        "longest_mdi_slow_start_frame": mdi_longest[0]["frame"] if mdi_longest else -1,
+        "longest_mdi_slow_end_frame": mdi_longest[-1]["frame"] if mdi_longest else -1,
+        "longest_mdi_slow_frames": len(mdi_longest),
+        "longest_mdi_slow_backend_median_ms": mdi_longest_cost,
+        "longest_mdi_slow_other_cpu_median_ms": mdi_longest_other,
+        "longest_direct_slow_start_frame": direct_longest[0]["frame"] if direct_longest else -1,
+        "longest_direct_slow_end_frame": direct_longest[-1]["frame"] if direct_longest else -1,
+        "longest_direct_slow_frames": len(direct_longest),
+        "longest_direct_slow_backend_median_ms": direct_longest_cost,
+        "longest_direct_slow_other_cpu_median_ms": direct_longest_other,
     }
 
 
@@ -165,6 +205,17 @@ def main():
               f"non_backend_cpu_median={r['longest_slow_non_backend_median_ms']:.4f}ms, "
               f"worst_backend={r['worst_backend_sum_ms']:.4f}ms "
               f"worst_non_backend_cpu={r['worst_non_backend_cpu_ms']:.4f}ms")
+    print("Mode-separated slow intervals (MDI and Direct never share a streak):")
+    for r in results:
+        print(f"  {r['trial']}: MDI {r['longest_mdi_slow_start_frame']}.."
+              f"{r['longest_mdi_slow_end_frame']} "
+              f"({r['longest_mdi_slow_frames']} frames), "
+              f"backend={r['longest_mdi_slow_backend_median_ms']:.4f}ms, "
+              f"other_cpu={r['longest_mdi_slow_other_cpu_median_ms']:.4f}ms; "
+              f"Direct {r['longest_direct_slow_start_frame']}.."
+              f"{r['longest_direct_slow_end_frame']} "
+              f"({r['longest_direct_slow_frames']} frames), "
+              f"other_cpu={r['longest_direct_slow_other_cpu_median_ms']:.4f}ms")
     print(f"Summary: {output / 'summary.csv'}")
     print("NOTE: process-order controls are not randomized per-frame A/B/A;" 
           " interpret results as environment-dependent CPU wall timings.")
