@@ -185,6 +185,10 @@ public:
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
     virtual bool supports(PixelFormat f) const { return f == PixelFormat::RGBA8 || f == PixelFormat::R8 || f == PixelFormat::Depth || f == PixelFormat::RGBA32F; }
+    // Fragment-stage sampled texture bindings available to material permutations.
+    // GLES3 minimum is 16; querying the device avoids out-of-range dynamic GI
+    // variants on constrained Vulkan/GL contexts. Metal has more texture slots.
+    virtual int maxFragmentTextureSlots() const { return 16; }
     // Copies the colour of a render target (invalid = the screen as drawn so far this frame) into `to`: an RGBA8
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.
