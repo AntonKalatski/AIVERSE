@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -78,6 +79,7 @@ kernel void cs_main(
 class SpectraFxGpuAlphaSort {
 public:
     static constexpr uint32_t kMaxParticles=4096;
+    static constexpr size_t kBufferedFrames=3;
     SpectraFxGpuAlphaSort()=default;
     SpectraFxGpuAlphaSort(const SpectraFxGpuAlphaSort&)=delete;
     SpectraFxGpuAlphaSort& operator=(const SpectraFxGpuAlphaSort&)=delete;
@@ -105,10 +107,7 @@ public:
         if(!shader_.valid()) {
             error_=device.lastError();release();return false;
         }
-        items_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
-                                     size_t(padded_)*8u,nullptr,
-                                     "SpectraFX GPU depth-sort records"});
-        gfx::TextureDesc texture;
+        gfx::TextureDesc texture{};
         texture.width=int(SpectraFxGpuEvolution::kTextureWidth);
         texture.height=int((count_+SpectraFxGpuEvolution::kTextureWidth-1)/
                            SpectraFxGpuEvolution::kTextureWidth);
@@ -116,10 +115,19 @@ public:
         texture.filter=gfx::Filter::Nearest;
         texture.storage=true;
         texture.label="SpectraFX GPU sorted alpha indices";
-        sorted_=device.createTexture(texture);
-        if(!items_.valid()||!sorted_.valid()) {
-            error_="SpectraFX GPU alpha sort resource allocation failed";
-            release();return false;
+        // Metal permits up to three frames in flight. A single items buffer
+        // or sorted-index texture would be overwritten by frame N+1 while
+        // frame N might still be consuming it. Own distinct scratch per slot.
+        for(auto& frame:frames_) {
+            frame.items=device.createBuffer({
+                gfx::BufferType::Storage,gfx::Usage::Immutable,
+                size_t(padded_)*8u,nullptr,
+                "SpectraFX per-frame alpha sort records"});
+            frame.sorted=device.createTexture(texture);
+            if(!frame.items.valid() || !frame.sorted.valid()) {
+                error_="SpectraFX GPU alpha sort frame allocation failed";
+                release();return false;
+            }
         }
         return true;
     }
@@ -129,10 +137,13 @@ public:
     // projection of the particle onto the camera's forward direction.
     bool prepare(const SpectraFxGpuEvolution& particles,
                  render::float3 cameraEye,render::float3 cameraForward) {
-        preparedSerial_=0;sourceTexture_={};
         if(!ready()||!particles.ready()||particles.count()!=count_||
            !device_->frameSerial()||!device_->canUpdateSharedBuffers()||
            !finite(cameraEye)||!finite(cameraForward)) return false;
+        const uint64_t serial=device_->frameSerial();
+        Frame& frame=frames_[serial%kBufferedFrames];
+        frame.preparedSerial=0;
+        frame.sourceTexture={};
         const float forwardLength=render::length(cameraForward);
         if(!(forwardLength>1e-6f) || !std::isfinite(forwardLength)) {
             error_="SpectraFX GPU alpha sort requires a valid view direction";
@@ -158,9 +169,9 @@ public:
                 error_="SpectraFX GPU alpha sort compute encoder unavailable";
                 return false;
             }
-            device_->setComputeBuffer(0,items_);
+            device_->setComputeBuffer(0,frame.items);
             device_->setComputeTexture(0,particles.positionTexture());
-            device_->setComputeTexture(1,sorted_);
+            device_->setComputeTexture(1,frame.sorted);
             device_->setComputeUniforms(&params,sizeof(params));
             device_->dispatch(threads);
             device_->endCompute();
@@ -172,22 +183,32 @@ public:
                 if(!dispatch(1,stage,pass,padded_/2u)) return false;
         }
         if(!dispatch(2,0,0,count_)) return false;
-        preparedSerial_=device_->frameSerial();
-        sourceTexture_=particles.positionTexture();
+        frame.preparedSerial=serial;
+        frame.sourceTexture=particles.positionTexture();
         error_.clear();
         return true;
     }
 
     bool preparedFor(const SpectraFxGpuEvolution& particles) const {
-        return ready() && particles.ready() &&
-               preparedSerial_!=0 &&
-               device_->frameSerial()==preparedSerial_ &&
-               particles.count()==count_ &&
-               sourceTexture_==particles.positionTexture();
+        if(!ready() || !particles.ready() || particles.count()!=count_)
+            return false;
+        const uint64_t serial=device_->frameSerial();
+        if(!serial) return false;
+        const Frame& frame=frames_[serial%kBufferedFrames];
+        return frame.preparedSerial==serial &&
+               frame.sourceTexture==particles.positionTexture();
     }
-    gfx::TextureHandle sortedIndexTexture() const {return sorted_;}
+    gfx::TextureHandle sortedIndexTexture() const {
+        if(!ready()) return {};
+        const uint64_t serial=device_->frameSerial();
+        if(!serial) return {};
+        return frames_[serial%kBufferedFrames].sorted;
+    }
     bool ready() const {
-        return device_ && shader_.valid() && items_.valid() && sorted_.valid();
+        if(!device_ || !shader_.valid()) return false;
+        for(const auto& frame:frames_)
+            if(!frame.items.valid() || !frame.sorted.valid()) return false;
+        return true;
     }
     const std::string& lastError() const {return error_;}
     uint64_t nominalGpuBytes() const {
@@ -195,31 +216,38 @@ public:
         const uint64_t cells=uint64_t(SpectraFxGpuEvolution::kTextureWidth)*
             ((uint64_t(count_)+SpectraFxGpuEvolution::kTextureWidth-1)/
              SpectraFxGpuEvolution::kTextureWidth);
-        return uint64_t(padded_)*8u + cells*sizeof(render::float4);
+        return kBufferedFrames*(uint64_t(padded_)*8u +
+                                cells*sizeof(render::float4));
     }
     uint32_t capacity() const {return count_;}
 
     void release() {
         if(device_) {
-            if(sorted_.valid()) device_->destroyTexture(sorted_);
-            if(items_.valid()) device_->destroyBuffer(items_);
+            for(auto& frame:frames_) {
+                if(frame.sorted.valid()) device_->destroyTexture(frame.sorted);
+                if(frame.items.valid()) device_->destroyBuffer(frame.items);
+            }
             if(ownsShader_ && shader_.valid()) device_->destroyCompute(shader_);
         }
-        device_=nullptr;shader_={};items_={};sorted_={};
-        count_=padded_=0;preparedSerial_=0;sourceTexture_={};
+        frames_={};
+        device_=nullptr;shader_={};
+        count_=padded_=0;
         ownsShader_=false;
     }
 private:
     static bool finite(render::float3 v) {
         return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);
     }
+    struct Frame {
+        gfx::BufferHandle items{};
+        gfx::TextureHandle sorted{},sourceTexture{};
+        uint64_t preparedSerial=0;
+    };
     gfx::Device* device_=nullptr;
     gfx::ComputeHandle shader_{};
     bool ownsShader_=false;
-    gfx::BufferHandle items_{};
-    gfx::TextureHandle sorted_{},sourceTexture_{};
+    std::array<Frame,kBufferedFrames> frames_{};
     uint32_t count_=0,padded_=0;
-    uint64_t preparedSerial_=0;
     std::string error_;
 };
 } // namespace aiverse::fx
