@@ -65,7 +65,7 @@ inline uint64_t modelVirtualTextureBindingHash(const ModelVirtualTextureBinding&
         mix(uint32_t(b.virtualMipLevels));
         mix(std::bit_cast<uint32_t>(b.virtualWidthPixels));
         mix(std::bit_cast<uint32_t>(b.virtualHeightPixels));
-        mix(std::bit_cast<uint32_t>(b.virtualMipBias));
+        mix(b.virtualMipBias == 0 ? 0u : std::bit_cast<uint32_t>(b.virtualMipBias));
     }
     return hash;
 }
@@ -214,12 +214,16 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
         "#endif\n");
     const auto bodyAfter=msl.find(bodyAnchor,signature);
     if (bodyAfter==std::string::npos) return false;
+    // ICB resource aliases exist only in the ICB-specific branch.
     msl.insert(bodyAfter+bodyAnchor.size(),
-        (trilinear ? std::string("#define uModelVt uModelVtParams.base\n"
-                                  "#define uModelVtExtra uModelVtParams.extra\n") :
-                     std::string{})+
         "#define "+atlasName+" icbTextures."+atlasName+"\n"
         "#define "+tableName+" icbTextures."+tableName+"\n");
+    // Uniform aliases must be visible to BOTH direct draws and ICB draws.
+    // Insert immediately after the opening brace, BEFORE the ICB #if.
+    if(trilinear)
+        msl.insert(bodyAfter+std::string(") {\n").size(),
+            "#define uModelVt uModelVtParams.base\n"
+            "#define uModelVtExtra uModelVtParams.extra\n");
     msl.insert(metalNamespace+ns.size(),
         "\n"+std::string(trilinear ?
             "struct AiverseModelVtUniforms { float4 base; float4 extra; };\n" :
