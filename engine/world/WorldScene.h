@@ -5,6 +5,7 @@
 #include "engine/world/NereidCascadeScene.h"
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/world/NereidRipples.h"
+#include "engine/world/NereidWindPresentation.h"
 #include <cmath>
 #include <algorithm>
 
@@ -53,6 +54,10 @@ public:
                 waterId,{fixed(x),fixed(y),fixed(z)});
         });
     }
+    void setNereidVisualWind(NereidVisualWind wind) {
+        visualWind_=normalizeNereidWind(wind);
+    }
+    NereidVisualWind nereidVisualWind()const{return visualWind_;}
     const NereidRippleField& nereidRipples()const{return ripples_;}
 
     const AsyncChunkStream::Status& status()const{return stream_->status();}
@@ -76,6 +81,7 @@ private:
     NereidWaterScene nereidWater_;
     NereidCascadeScene cascades_;
     NereidRippleField ripples_;
+    NereidVisualWind visualWind_{};
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
 }
