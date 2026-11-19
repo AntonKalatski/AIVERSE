@@ -3016,3 +3016,11 @@ cascade steps, flow-aware wakes with directional anisotropy,
 and a bounded per-water current field for rivers/rapids.
 No tests until user requests feature completion, then run native
 and GPU tests and record actual results.
+
+**Stage 28 source review follow-up:** `d3e58576a6d0b14787a3b4c16cdd823922ecf0dd`
+fixes `engine/world/NereidCascadeScene.h` so a source with a
+pending/failed GPU rebuild keeps `dirty=true` after repeated identical
+`setCascades` ECS snapshots. Without this, a native host publishing
+one read-only snapshot per tick could suppress a required upload. This
+was a source-inspection correction, **not** a compiled test or GPU
+verification. Functional priority and Draft PR status are unchanged.
