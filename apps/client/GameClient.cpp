@@ -1200,6 +1200,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             oc.over = screen_ == Screen::Over;
             view_.setOverlayContext(oc);
         }
+        if(lensCamerasActive_)lensModelSnapshot_.beginCapture(r3d_);
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
         fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
@@ -1221,6 +1222,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
         drawToolPreview();
+        if(lensCamerasActive_)lensModelSnapshot_.endCapture(r3d_);
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
@@ -1247,7 +1249,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             [&](const render::EcsCameraView&,render::Renderer3D& renderer){
                 if(worldScene_ && !planet())
                     worldScene_->draw(renderer,world::Cell{0,0,0},1);
-                // Animated models require an immutable MotionWeave VisualFrame.
+                // These finalized packets were captured AFTER MotionWeave's
+                // single update. Replaying them cannot consume animation
+                // events or update animation graph clocks.
+                lensModelSnapshot_.submit(renderer);
             });
         if(std::getenv("AIVERSE_LENS_LOG") && !result.diagnostics.empty())
             std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
