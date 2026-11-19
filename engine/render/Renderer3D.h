@@ -710,6 +710,54 @@ public:
     void setModelLodFadeWidth(float width) { modelLodFadeWidth_=std::clamp(width,0.0f,0.49f); }
     float modelLodFadeWidth() const { return modelLodFadeWidth_; }
 
+    // Native renderer hosts may choose different instancing/indirect/LOD
+    // settings per view. Save the configured state, not resolved GPU commands.
+    struct ModelRenderPolicyOverrides {
+        bool instancing = true;
+        bool multiDraw = true;
+        bool gpuAuthored = true;
+        bool culling = true;
+        bool lod = true;
+        float lodFadeWidth = 0.15f;
+    };
+    ModelRenderPolicyOverrides modelRenderPolicyOverrides() const {
+        return {modelInstancingEnabled_, modelMultiDrawEnabled_,
+                gpuAuthoredDrawEnabled_, modelCullingEnabled_,
+                modelLodEnabled_, modelLodFadeWidth_};
+    }
+    void setModelRenderPolicyOverrides(const ModelRenderPolicyOverrides& value) {
+        setModelInstancingEnabled(value.instancing);
+        setModelMultiDrawEnabled(value.multiDraw);
+        setGpuAuthoredDrawEnabled(value.gpuAuthored);
+        setModelCullingEnabled(value.culling);
+        setModelLodEnabled(value.lod);
+        setModelLodFadeWidth(value.lodFadeWidth);
+    }
+    // Restores the original model batching and culling/LOD settings on
+    // any exit, even when the view's benchmark changes them mid-scope.
+    // This does not restore instanceLimit (shader-pipeline setting), caches
+    // or diagnostics; the referenced renderer must outlive the guard.
+    class ScopedModelRenderPolicyOverride {
+    public:
+        explicit ScopedModelRenderPolicyOverride(Renderer3D& renderer)
+            : renderer_(renderer), saved_(renderer.modelRenderPolicyOverrides()) {}
+        ScopedModelRenderPolicyOverride(
+            Renderer3D& renderer, const ModelRenderPolicyOverrides& overridePolicy)
+            : ScopedModelRenderPolicyOverride(renderer) {
+            renderer_.setModelRenderPolicyOverrides(overridePolicy);
+        }
+        ~ScopedModelRenderPolicyOverride() {
+            renderer_.setModelRenderPolicyOverrides(saved_);
+        }
+        ScopedModelRenderPolicyOverride(const ScopedModelRenderPolicyOverride&) = delete;
+        ScopedModelRenderPolicyOverride& operator=(const ScopedModelRenderPolicyOverride&) = delete;
+        ScopedModelRenderPolicyOverride(ScopedModelRenderPolicyOverride&&) = delete;
+        ScopedModelRenderPolicyOverride& operator=(ScopedModelRenderPolicyOverride&&) = delete;
+    private:
+        Renderer3D& renderer_;
+        ModelRenderPolicyOverrides saved_;
+    };
+
     // Baked global illumination (agent-lightbake): lightmaps for static models (matched by model path,
     // node and world transform), light probes for everything else, mixed with the realtime sun by the
     // set's mode (indirect / shadowmask / subtractive). Null = realtime only. The set must outlive its use.

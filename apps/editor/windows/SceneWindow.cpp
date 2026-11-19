@@ -87,6 +87,7 @@ public:
         {
         Renderer3D::ScopedCpuMdiPolicyOverride sceneCpuMdiGuard(
             renderer, sceneCpuMdiPolicy);
+        Renderer3D::ScopedModelRenderPolicyOverride sceneModelPolicyGuard(renderer);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -193,17 +194,13 @@ public:
         // Renderer3D counters later in the editor frame.
         lastSceneLodStats_ = renderer.modelStats();
         lastSelectedLod_ = renderer.lodDebugSample();
-        } // Restore CPU MDI configuration before Game can render.
+        } // Restore CPU MDI and model-render policies before Game can render.
         const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setProfiling(false);
-        renderer.setModelInstancingEnabled(true);
-        renderer.setModelMultiDrawEnabled(true);
-        renderer.setGpuAuthoredDrawEnabled(true);
-        renderer.setModelCullingEnabled(true);
-        renderer.setModelLodEnabled(true);
-        renderer.setModelLodFadeWidth(0.15f);
+        // The scoped model policy restores the prior host values instead
+        // of forcing Game/native clients back to default-true modes.
         renderer.setLodDebugTarget(0);
         renderer.setLodDiagnosticsEnabled(false);
         vp_.drawnFrame = ImGui::GetFrameCount();
