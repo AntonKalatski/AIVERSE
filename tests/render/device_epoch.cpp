@@ -8,6 +8,11 @@
 #include <csignal>
 #include <spawn.h>
 #include <sys/wait.h>
+#if defined(__APPLE__)
+#include <crt_externs.h>
+#else
+extern char** environ;
+#endif
 #endif
 
 // Unlike assert(), CHECK is active in Release and RelWithDebInfo CTest runs.
@@ -179,6 +184,47 @@ static void verifyReadOwnerRebind() {
     CHECK(cache.activeModelReaders()==0);
 }
 
+// Stage 134: off-thread map reads are forbidden even when the caller
+// does not request a ModelReadLease. Check before touching std::map.
+static void verifyOwnerThreadMapReadContracts() {
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    auto* resident=cache.insertIfAbsent("models/read.glb",
+                                        std::make_unique<render::Model>());
+    CHECK(resident);
+    const auto& constCache=static_cast<const render::ModelResourceCache&>(cache);
+    size_t denied=0;
+    std::thread worker([&]{
+        const auto expectDenied=[&](auto&& fn) {
+            bool rejected=false;
+            try {fn();}
+            catch(const std::logic_error&){rejected=true;}
+            if(rejected)++denied;
+        };
+        expectDenied([&]{(void)cache.find("models/read.glb");});
+        expectDenied([&]{(void)constCache.find("models/read.glb");});
+        expectDenied([&]{(void)cache.contains("models/read.glb");});
+        expectDenied([&]{(void)cache.models();});
+        expectDenied([&]{(void)cache.modelFiles();});
+        expectDenied([&]{(void)cache.affectedBySource("models/read.glb");});
+        expectDenied([&]{(void)cache.stats();});
+        expectDenied([&]{cache.forEachOwnedModel(
+            [](const render::Model&,bool){});});
+        expectDenied([&]{(void)cache.geometryPoolModelReferences();});
+        expectDenied([&]{(void)cache.gpuOwnerEstimate();});
+    });
+    worker.join();
+    CHECK(denied==10);
+    CHECK(cache.find("models/read.glb")==resident);
+    CHECK(constCache.find("models/read.glb")==resident);
+    CHECK(cache.contains("models/read.glb"));
+    CHECK(cache.models().size()==1);
+    CHECK(cache.modelFiles().size()==1);
+    CHECK(cache.affectedBySource("models/read.glb").size()==1);
+    cache.shutdown(dev);
+}
+
 // Stage 133: a callback handed a resident Model* may inspect it, but
 // must never change cache membership or create a new reader guard while
 // the caller still owns its std::map iterator.
@@ -291,8 +337,14 @@ static void verifyFatalReadContracts(const char* self) {
     for(const char* mode:{"--fatal-lease","--fatal-scope","--fatal-destroy"}) {
         pid_t pid=-1;
         char* args[]={const_cast<char*>(self),const_cast<char*>(mode),nullptr};
-        char* env[]={nullptr};
-        const int spawned=posix_spawnp(&pid,self,nullptr,nullptr,args,env);
+        // Preserve the host's runtime-loader environment for the child.
+        // An empty envp may hide DYLD_LIBRARY_PATH / shared libraries.
+#if defined(__APPLE__)
+        char* const* childEnv=*_NSGetEnviron();
+#else
+        char* const* childEnv=::environ;
+#endif
+        const int spawned=posix_spawnp(&pid,self,nullptr,nullptr,args,childEnv);
         CHECK(spawned==0);
         int status=0;
         CHECK(waitpid(pid,&status,0)==pid);
@@ -307,6 +359,7 @@ int main(int argc,char** argv) {
     CHECK(argc==1);
     verifyReadLeaseContracts();
     verifyReadOwnerRebind();
+    verifyOwnerThreadMapReadContracts();
     verifyDetachCallbackReentrancyContracts();
 #if defined(__APPLE__) || defined(__unix__)
     verifyFatalReadContracts(argv[0]);
