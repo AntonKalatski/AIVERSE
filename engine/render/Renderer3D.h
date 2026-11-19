@@ -319,7 +319,7 @@ public:
     void setObjectMotionSubmittedFence(uint64_t lastSubmittedFence) {
         motionLastSubmittedFence_ = lastSubmittedFence;
     }
-    void retireObjectMotionView(uint64_t viewId, uint64_t lastSubmittedFence);
+    void retireObjectMotionView(uint64_t viewId, uint64_t lastSubmittedFence = 0);
     size_t collectCompletedObjectMotion(uint64_t completedGpuFence);
     // Valid only after the host has explicitly confirmed GPU idle.
     size_t drainObjectMotionAfterGpuIdle();
@@ -339,6 +339,14 @@ public:
         bool submitted = false;
     };
     const ObjectMotionStats& objectMotionStats() const { return objectMotionStats_; }
+    struct MotionRetirementStats {
+        size_t liveViews = 0;
+        size_t fencedTextures = 0;
+        size_t unfencedTextures = 0;
+        uint64_t knownPendingBytes = 0;
+        uint64_t lastGpuCompletedFence = 0;
+    };
+    MotionRetirementStats motionRetirementStats() const;
     // Generic presentation-only reactive-mask hook for water, particles and
     // user render modules. Register AFTER beginScene() and BEFORE resolvePrisma().
     // Called once with the reactive RGBA8 render pass already open. The callback
