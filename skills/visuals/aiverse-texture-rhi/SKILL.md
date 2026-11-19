@@ -604,3 +604,20 @@ CI if it remains queued or cancelled.
 - The helper is genre independent and does not discover camera
   geometry. Do not mix multiple VT domain IDs in one planner.
   Compilation and runtime CPU/GPU validation have NOT RUN.
+
+
+### Metal Shader Graph VT source slot expansion — Stage 10S
+
+- Material graphs may author up to four independent source textures
+  alongside `sampleVirtualTexture`. Metal stores graph textures in
+  tex13..16, then virtual atlas/table in tex17/18 for the four-source
+  case, using sampler s1 for the physical VT page and direct table read.
+- The renderer computes/validates these slots with
+  `supportsModelGraphSourceTextures` and
+  `modelGraphVirtualTextureSlots`. GL33/GLES3/Vulkan retain their
+  conservative 16-slot cap; graph VT uses source tex1 fallback when
+  VT arrays do not fit, and the fourth graph source fails closed.
+- Keep graphs out of experimental Metal ICB until its argument buffer
+  supports per-graph source and virtual texture descriptors. This
+  stage modifies source only: C++/MSL/GLSL compile and device tests
+  have not run.
