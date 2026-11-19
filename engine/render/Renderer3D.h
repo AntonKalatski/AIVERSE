@@ -395,7 +395,8 @@ public:
     // Existing shader-graph texture slots 13+ take priority, so models using graph
     // textures currently fall back to their existing GI path.
     bool setDynamicGiOverlay(const GiDynamicProbeTexture* texture, float3 origin,
-                             float spacing, int nx, int ny, int nz);
+                             float spacing, int nx, int ny, int nz,
+                             int ringX = 0, int ringY = 0, int ringZ = 0);
     void clearDynamicGiOverlay() { dynamicGiOverlay_ = nullptr; }
     bool dynamicGiOverlayActive() const { return dynamicGiOverlay_ != nullptr; }
     void setBakedQuality(BakedQuality q);
@@ -670,6 +671,7 @@ private:
     const GiDynamicProbeTexture* dynamicGiOverlay_ = nullptr;
     float4 dynamicGiOrigin_{};
     float4 dynamicGiSize_{};
+    float4 dynamicGiRing_{};
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
