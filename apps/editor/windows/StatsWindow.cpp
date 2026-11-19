@@ -93,8 +93,8 @@ public:
         ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
                     (unsigned long long)post.lastGpuCompletedFence,
                     post.activeSizes, post.retiredSizes);
-        ImGui::Text("Auto Exposure: %zu камер  ·  Motion history: %zu камер  ·  Model velocity: %zu видов",
-                    post.exposureViews, post.motionViews, motion.liveViews);
+        ImGui::Text("Auto Exposure: %zu камер  ·  Temporal HDR: %zu камер  ·  Motion: %zu камер  ·  Model velocity: %zu видов",
+                    post.exposureViews, post.temporalViews, post.motionViews, motion.liveViews);
         ImGui::Text("PRISMA: %zu fenced + %zu unfenced textures, graph pending %zu",
                     post.fencedTextures, post.unfencedTextures,
                     post.graphRetiredTextures);
@@ -114,8 +114,9 @@ public:
                     double(memory.sharedSizeKnownBytes) / mib, memory.activeSizeCaches,
                     memory.unreferencedSizeCaches,
                     double(memory.unreferencedSizeKnownBytes) / mib);
-        ImGui::Text("История камер: %.3f MiB  ·  LUT/graph input: %.2f MiB",
+        ImGui::Text("История камер: %.3f MiB (Temporal HDR %.3f MiB)  ·  LUT/graph input: %.2f MiB",
                     double(memory.viewHistoryKnownBytes) / mib,
+                    double(memory.temporalHistoryKnownBytes) / mib,
                     double(memory.otherLiveKnownBytes) / mib);
         if (ImGui::TreeNode("PRISMA: память по камерам (без двойного подсчёта)")) {
             if (memory.views.empty())
@@ -123,10 +124,12 @@ public:
             for (const auto& view : memory.views) {
                 const char* name = view.viewId == 1 ? "Scene" :
                                    view.viewId == 2 ? "Game" : "Custom";
-                ImGui::BulletText("%s #%llu (%d x %d)  ·  своя история %.3f MiB",
+                ImGui::BulletText("%s #%llu (%d x %d)  ·  Exposure %.3f MiB + Temporal %.3f MiB (%zu targets)",
                     name, (unsigned long long)view.viewId,
                     view.width, view.height,
-                    double(view.ownedHistoryKnownBytes) / mib);
+                    double(view.ownedHistoryKnownBytes) / mib,
+                    double(view.ownedTemporalKnownBytes) / mib,
+                    view.ownedTemporalTextures);
                 ImGui::Indent();
                 ImGui::TextDisabled("Общий кеш размера: %.2f MiB / %zu текстур, совместно с %zu камерами",
                     double(view.sharedKnownBytes) / mib,
