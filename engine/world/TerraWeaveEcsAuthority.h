@@ -98,19 +98,27 @@ struct TerraWeaveAuthoritativeEcsChange {
     EarthworkChange earth;
     PlantSupportUpdate rooted;
     std::vector<GrassCoverChange> grass;
+    SlopeFailurePlan slope;
+    std::vector<std::pair<Entity,int32_t>> bankGroundCorrections;
     uint32_t tick=0;
 };
 
-// A single native fixed-step action. Existing ECS World resource is
-// canonical; no external mutable EarthworksLayer sidecar survives rollback.
-// Commit state only when ALL ground/roots/grass validation succeeds.
+// A single native fixed-step action. The ECS World resource is canonical.
+// Both the user's dig and optional induced slope slides are merged into ONE
+// Earthworks transaction/soil revision (delta replay/rollback compatible).
+// Existing NEREID bank soil height is synchronized on the same ECS barrier.
 inline TerraWeaveAuthoritativeEcsChange
 excavateAuthoritativeEcs(World& world,
                         const TerraWeaveEcsAuthorityConfig& cfg,
-                        EarthworkBrush brush,uint32_t tick){
+                        EarthworkBrush brush,uint32_t tick,
+                        bool enableSlopeFailures=false,
+                        SlopeFailureSettings slopeSettings={},
+                        SlopeSoilSampler slopeMaterial={}) {
+    if(enableSlopeFailures)validateSlopeFailureSettings(slopeSettings);
     const auto* old=world.resourceConst<TerraWeaveAuthorityResource>();
     if(!old)throw std::logic_error("TerraWeave ECS resource not initialized");
-    auto ground=materializeEcsTerrain(*old,cfg);
+    const EarthworksLayer original=materializeEcsTerrain(*old,cfg);
+    EarthworksLayer ground=original;
     RootSupportRegistry roots;
     GrassCoverRegistry grass;
     roots.setSnapshot(old->rooted);
@@ -118,25 +126,100 @@ excavateAuthoritativeEcs(World& world,
 
     TerraWeaveAuthoritativeEcsChange result;
     result.tick=tick;
-    result.earth=ground.sculpt(brush);
-    if(result.earth.vertices.empty())return result;
+    const auto dug=ground.sculpt(brush);
+    if(dug.vertices.empty())return result;
+    std::map<EarthVertex,int32_t> finalHeights;
+    std::vector<EarthVertex> seeds;
+    seeds.reserve(dug.vertices.size());
+    for(const auto& edit:dug.vertices) {
+        finalHeights.emplace(edit.vertex,edit.afterCm);
+        seeds.push_back(edit.vertex);
+    }
+
+    std::map<EarthVertex,SlopeSoil> soils;
+    std::map<EarthVertex,std::pair<Entity,int32_t>> banks;
+    world.eachExistingConst<BankEarthVertexComponent>(
+        [&](Entity e,const BankEarthVertexComponent& bind){
+            const auto* bank=world.tryGetConst<
+                lib::nereid::WaterBankSoilComponent>(e);
+            if(!bank)return;
+            if(!banks.emplace(bind.vertex,std::make_pair(
+                    e,bank->soil.groundCm)).second)
+                throw std::invalid_argument(
+                    "TerraWeave duplicate bank vertex during excavation");
+            soils.emplace(bind.vertex,SlopeSoil{
+                bank->soil.soil,
+                bank->enabled?bank->wetContactPermille:0u,
+                bank->soil.rootBindingPermille});
+        });
+    if(enableSlopeFailures){
+        const SlopeSoilSampler material=
+            [&soils,&slopeMaterial](EarthVertex key){
+                if(slopeMaterial)return slopeMaterial(key);
+                const auto it=soils.find(key);
+                return it==soils.end()?SlopeSoil{}:it->second;
+            };
+        result.slope=planSlopeFailures(
+            ground,seeds,material,slopeSettings);
+        for(const auto& edit:result.slope.edits)
+            finalHeights.insert_or_assign(edit.vertex,edit.afterCm);
+    }
+    std::vector<EarthVertexEdit> combined;
+    combined.reserve(finalHeights.size());
+    for(const auto& [vertex,newHeight]:finalHeights){
+        const int32_t before=original.heightAt(vertex);
+        if(before!=newHeight)
+            combined.push_back({vertex,before,newHeight});
+        const auto bank=banks.find(vertex);
+        if(bank==banks.end())continue;
+        if(bank->second.second!=before)
+            throw std::invalid_argument(
+                "TerraWeave excavated bank ground conflicts with NEREID");
+        if(bank->second.second!=newHeight)
+            result.bankGroundCorrections.push_back({
+                bank->second.first,newHeight});
+    }
+    if(combined.empty())return result;
+    EarthworksLayer next=original;
+    result.earth=next.applyEdits(combined,original.revision());
     result.grass=grass.applyEarthwork(
-        result.earth,ground.spacingCm());
-    const SoilHeightSampler sample=[&ground](int64_t x,int64_t z)
+        result.earth,next.spacingCm());
+    const SoilHeightSampler sample=[&next](int64_t x,int64_t z)
             ->std::optional<int32_t>{
-        const int64_t edge=kWorldLimitCm-ground.spacingCm();
-        if(x<=-edge||x>=edge||z<=-edge||z>=edge)return std::nullopt;
-        return ground.sampleHeightCm(x,z);
+        const int64_t edge=kWorldLimitCm-next.spacingCm();
+        if(x<=-edge||x>=edge||z<=-edge||z>=edge)
+            return std::nullopt;
+        return next.sampleHeightCm(x,z);
     };
-    result.rooted=roots.applyGroundChange(sample,result.earth,tick);
+    result.rooted=roots.applyGroundChange(
+        sample,result.earth,tick);
+
     TerraWeaveAuthorityResource updated=*old;
-    updated.earth=ground.snapshot();
+    updated.earth=next.snapshot();
     if(updated.stateRevision==UINT64_MAX)
         throw std::overflow_error("TerraWeave ECS state revision overflow");
     ++updated.stateRevision;
     updated.rooted=roots.snapshot();
     updated.grass=grass.snapshot();
+
+    // Validate/detach bank pages BEFORE swapping the authoritative
+    // resource. Subsequent existing component writes cannot allocate.
+    using Bank=lib::nereid::WaterBankSoilComponent;
+    Pool<Bank>* mutableBanks=nullptr;
+    if(!result.bankGroundCorrections.empty()){
+        mutableBanks=&world.pool<Bank>();
+        mutableBanks->prepareParallelWrite();
+        for(const auto& [entity,height]:result.bankGroundCorrections){
+            (void)height;
+            if(!world.alive(entity) ||
+               !mutableBanks->tryGet(entity.index))
+                throw std::invalid_argument(
+                    "TerraWeave bank cell disappeared during dig");
+        }
+    }
     world.setResource<TerraWeaveAuthorityResource>(std::move(updated));
+    for(const auto& [entity,height]:result.bankGroundCorrections)
+        mutableBanks->tryGet(entity.index)->soil.groundCm=height;
     return result;
 }
 
