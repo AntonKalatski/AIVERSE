@@ -5,6 +5,7 @@
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
+#include "engine/character/vivid/MorphLodMapping.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
@@ -77,6 +78,8 @@ struct CreatorApp {
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
     int sculptMeshIndex=-1;
+    int sourceLodMesh=-1,targetLodMesh=-1;
+    float lodProjectionTolerance=0.02f;
     bool sculptPickArmed=false;
     int morphTargetIndex=0,morphVertexIndex=0;
     int routeChannelIndex=0;
@@ -863,6 +866,110 @@ struct CreatorApp {
                         importedPackage.morphPath=basename;
                         morphDirty=false;
                         status="VIVID morph sidecar saved; save manifest to publish path";
+                    }catch(const std::exception& e){status=e.what();}
+                }
+                ImGui::TreePop();
+            }
+            if(human.head && morphDraft &&
+               ImGui::TreeNode("Facial LOD surface bake")) {
+                ImGui::TextWrapped("Bake morphs for an authored lower-detail mesh. "
+                    "Source and LOD meshes must share model-local coordinates. "
+                    "This does not change the original model or switch rendered LOD.");
+                auto meshCombo=[&](const char* label,int& selection) {
+                    const auto& meshes=human.head->meshes;
+                    const char* current=selection>=0&&std::size_t(selection)<meshes.size()
+                        ? meshes[std::size_t(selection)].name.c_str() : "Choose mesh";
+                    if(ImGui::BeginCombo(label,current)) {
+                        for(std::size_t i=0;i<meshes.size();++i)
+                            if(ImGui::Selectable(meshes[i].name.c_str(),
+                                                selection==int(i)))selection=int(i);
+                        ImGui::EndCombo();
+                    }
+                };
+                meshCombo("Base face mesh",sourceLodMesh);
+                meshCombo("Target face LOD mesh",targetLodMesh);
+                ImGui::SliderFloat("Projection tolerance",&lodProjectionTolerance,
+                                   0.001f,0.2f,"%.3f");
+                if(ImGui::Button("Bake and export LOD morphs")) {
+                    try {
+                        if(!externalMode || importedManifest.empty() ||
+                           sourceLodMesh<0 || targetLodMesh<0 ||
+                           sourceLodMesh==targetLodMesh ||
+                           std::size_t(sourceLodMesh)>=human.head->meshes.size() ||
+                           std::size_t(targetLodMesh)>=human.head->meshes.size())
+                            throw std::runtime_error("VIVID LOD: select distinct source and target meshes");
+                        const auto& model=*human.head;
+                        std::vector<std::uint32_t> faceIndices;
+                        const auto& sourceMesh=model.meshes[std::size_t(sourceLodMesh)];
+                        for(const auto& primitive:sourceMesh.primitives) {
+                            const auto begin=std::size_t(primitive.firstIndex);
+                            const auto count=std::size_t(primitive.indexCount);
+                            if(begin>model.indices.size()||count>model.indices.size()-begin)
+                                throw std::runtime_error("VIVID LOD: bad source triangle indices");
+                            for(std::size_t j=begin;j<begin+count;++j) {
+                                const auto id=model.indices[j];
+                                if(id>=morphSourceVertices)
+                                    throw std::runtime_error("VIVID LOD: generated source vertex is not authorable");
+                                faceIndices.push_back(id);
+                            }
+                        }
+                        const auto& targetMesh=model.meshes[std::size_t(targetLodMesh)];
+                        std::vector<std::uint32_t> targetIds;
+                        for(const auto& primitive:targetMesh.primitives) {
+                            const auto begin=std::size_t(primitive.firstIndex);
+                            const auto count=std::size_t(primitive.indexCount);
+                            if(begin>model.indices.size()||count>model.indices.size()-begin)
+                                throw std::runtime_error("VIVID LOD: bad target triangle indices");
+                            for(std::size_t j=begin;j<begin+count;++j) {
+                                const auto id=model.indices[j];
+                                if(id>=model.vertices.size())
+                                    throw std::runtime_error("VIVID LOD: target vertex outside mesh");
+                                targetIds.push_back(id);
+                            }
+                        }
+                        std::sort(targetIds.begin(),targetIds.end());
+                        targetIds.erase(std::unique(targetIds.begin(),targetIds.end()),targetIds.end());
+                        if(targetIds.empty())throw std::runtime_error("VIVID LOD: target mesh empty");
+                        std::vector<float3> lodPositions;
+                        lodPositions.reserve(targetIds.size());
+                        for(auto id:targetIds)lodPositions.push_back(model.vertices[id].pos);
+                        std::vector<float3> originalPositions;
+                        originalPositions.reserve(morphSourcePositions.size());
+                        for(const auto& p:morphSourcePositions)
+                            originalPositions.push_back({p[0],p[1],p[2]});
+                        MorphLodMapping map;
+                        map.sourceVertices=std::uint32_t(originalPositions.size());
+                        map.sourceTriangles=std::uint32_t(faceIndices.size()/3);
+                        map.sourceFingerprint=MorphLodMapping::fingerprint(
+                            originalPositions,faceIndices);
+                        map.samples=MorphLodSurface::projectAccelerated(
+                            originalPositions,faceIndices,lodPositions,
+                            lodProjectionTolerance);
+                        const auto lodMorph=map.transfer(morphDraft->compile(),
+                                                         originalPositions,faceIndices);
+                        const auto lodSidecar=MorphAuthoring::fromCompiled(lodMorph)
+                            .toJson(lodPositions.size()).dump(2);
+                        const auto directory=std::filesystem::absolute(
+                            std::filesystem::path(importedManifest)).parent_path();
+                        const auto mappingFile=directory/"vivid-facial-lod.mapping.json";
+                        const auto morphFile=directory/"vivid-facial-lod.morphs.json";
+                        auto save=[&](const std::filesystem::path& file,
+                                      const std::string& contents) {
+                            const auto tmp=std::filesystem::path(file.string()+".vivid.tmp");
+                            {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
+                             if(!out)throw std::runtime_error("VIVID LOD: cannot stage sidecar");
+                             out.write(contents.data(),std::streamsize(contents.size()));
+                             out.flush();
+                             if(!out)throw std::runtime_error("VIVID LOD: sidecar write failed");}
+                            std::error_code ec;
+                            std::filesystem::rename(tmp,file,ec);
+                            if(ec)throw std::runtime_error("VIVID LOD: sidecar rename failed: "+ec.message());
+                        };
+                        save(mappingFile,map.toJson().dump(2));
+                        save(morphFile,lodSidecar);
+                        status="VIVID LOD: baked "+
+                            std::to_string(lodPositions.size())+
+                            " projected vertices; mapping and morph sidecars saved";
                     }catch(const std::exception& e){status=e.what();}
                 }
                 ImGui::TreePop();
