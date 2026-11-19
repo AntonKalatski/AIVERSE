@@ -11,6 +11,7 @@
 #include "Renderer3D.h"
 #include "Lights.h"
 #include "LumaWeaveQuality.h"
+#include "LumaWeaveAdaptiveBudget.h"
 #include "LumaWeaveHdrCompositeShader.h"
 #include <algorithm>
 #include <cmath>
@@ -101,8 +102,18 @@ public:
     bool ready() const{return dev_ && producer_.ready() && pipeline_.valid();}
     void setEnabled(bool on){enabled_=on;}
     bool enabled() const{return enabled_;}
-    void setQuality(LumaWeaveQuality q){quality_=q;}
+    void setQuality(LumaWeaveQuality q) {
+        quality_=q;
+        if(adaptiveEnabled_ && q!=LumaWeaveQuality::Off)adaptive_.setQuality(q);
+    }
     LumaWeaveQuality quality() const{return quality_;}
+    void setAdaptiveBudgetEnabled(bool on) {
+        adaptiveEnabled_=on;
+        if(on && quality_!=LumaWeaveQuality::Off)
+            adaptive_.setQuality(quality_);
+    }
+    bool adaptiveBudgetEnabled() const{return adaptiveEnabled_;}
+    const LumaWeaveAdaptiveBudget& adaptiveBudget() const{return adaptive_;}
     const FrameStats& stats() const{return last_;}
     const LumaWeaveScreenMetal& screen() const{return producer_;}
 
@@ -195,6 +206,13 @@ public:
         }
         scene_=downstream_.scenePass(out,w,h);
         viewWidth_=w;viewHeight_=h;
+        // The current GPU RHI exposes last-completed WHOLE-frame timing only,
+        // not LumaWeave stage time. Adapt conservatively; never drop lights.
+        if(adaptiveEnabled_ && enabled_ && quality_!=LumaWeaveQuality::Off && dev_) {
+            const double ms=dev_->gpuFrameMs();
+            if(adaptive_.observe(float(ms),ms>0.0))
+                quality_=adaptive_.quality();
+        }
         frame_={};
         frame_.lastGpuCompletion=producer_.poll();
         // Metal compositor must NEVER sample the source depth texture while
@@ -340,6 +358,8 @@ private:
     uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0,autoViewSerial_=0;
     bool enabled_=false,sourcesPublished_=false,geometryPublished_=false;
     LumaWeaveQuality quality_=LumaWeaveQuality::Balanced;
+    LumaWeaveAdaptiveBudget adaptive_{};
+    bool adaptiveEnabled_=false;
     FrameStats frame_{},last_{};
 };
 
