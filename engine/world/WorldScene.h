@@ -31,6 +31,7 @@ public:
     void update(gfx::Device&,std::span<const Vec3> observers,int radius=2);
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
+    int worldCellSizeMetres()const{return assets_.cellSize;}
     // Opt-in presentation-only water; call before update. Never mutates ECS.
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
