@@ -83,7 +83,7 @@ Previous: [Stage 120](animation-stage120-canvas-gpu-retirement-2026-11-19.md)
 7. `80a468f7f4a928c9ce381dc9767a8528ce3ffb56`
    `engine/view/View.h`: Stage 121 properties appended AFTER
    the original `view::Object` fields, preserving the old
-   positional aggregate initialization ABI/source usage.
+   positional aggregate source initialization order (not binary ABI).
 8. `8f817f7540df0cf55c5136a29a40464c580a2b5a`
    `engine/view/ModelComposition.h`: morph-target indices are
    mesh-local, so source/visual Models with morph targets cannot
