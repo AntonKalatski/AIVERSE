@@ -2079,6 +2079,14 @@ if(AIVERSE_BUILD_STRATA)
             $<TARGET_OBJECTS:aiverse_runtime>)
         target_link_libraries(aiverse_strata_metal_parity PRIVATE
             aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
+        # Stage 11: separate real Metal raster A/B; shares original source
+        # VB/IB and Strata pooled index sidecar, no production draw switch.
+        add_executable(aiverse_strata_metal_raster_parity
+            tests/render/strata_metal_raster_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_raster_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
