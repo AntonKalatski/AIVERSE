@@ -2204,6 +2204,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_include_directories(aiverse_virtual_texture_feedback_pass_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_virtual_texture_feedback_pass_test PRIVATE Threads::Threads)
     add_test(NAME virtual_texture_feedback_pass COMMAND aiverse_virtual_texture_feedback_pass_test)
+    # Portable C++ contract checks for mixed Metal ICB material snapshots
+    # and fragment-only Shader Graph pipeline identity (no native GPU needed).
+    add_executable(aiverse_gpu_icb_material_contract_test tests/render/gpu_icb_material_contract.cpp)
+    target_include_directories(aiverse_gpu_icb_material_contract_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME gpu_icb_material_contract COMMAND aiverse_gpu_icb_material_contract_test)
     # Optional shader compiler: do not fail platforms that do not ship
     # glslangValidator, but register a real failing test when it is present.
     find_package(Python3 QUIET COMPONENTS Interpreter)
