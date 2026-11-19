@@ -338,13 +338,37 @@ void Renderer3D::bindTraceTextures() {
     bindSceneTextures(4, 5);
 }
 
+void Renderer3D::resetObjectMotionHistory(uint64_t viewId) {
+    auto it = objectMotionViews_.find(viewId);
+    if (it == objectMotionViews_.end()) return;
+    it->second.previous.clear();
+    it->second.previousDeformed.clear();
+    it->second.valid = false;
+}
+void Renderer3D::resetAllObjectMotionHistory() {
+    for (auto& [id, view] : objectMotionViews_) {
+        view.previous.clear();
+        view.previousDeformed.clear();
+        view.valid = false;
+    }
+}
+
 void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
+    objectMotionStats_ = {};
     if (!post.wantsObjectMotionVectors() || !dev_) return;
     uint64_t viewId = 0;
     mat4 previousCamera;
     const bool previousCameraValid =
         post.objectMotionContext(viewId, previousCamera);
     auto& history = objectMotionViews_[viewId];
+    objectMotionStats_.viewId = viewId;
+    const uint64_t epoch = post.objectMotionEpoch(viewId);
+    if (history.epoch != epoch) {
+        history.previous.clear();
+        history.previousDeformed.clear();
+        history.valid = false;
+        history.epoch = epoch;
+    }
 
     // Collect current rigid-node transforms once, before any optional GPU pass.
     // Stable (entity,node) pairs are the identity: repeated primitives and
@@ -416,7 +440,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     const int w = std::max(sceneW_,1), h = std::max(sceneH_,1);
     const bool resize = (history.width != 0 && history.height != 0) &&
                         (history.width != w || history.height != h);
-    if (!previousCameraValid || resize) {
+    if (!previousCameraValid || resize || !history.valid) {
+        history.valid = true;
         history.previous = std::move(current);
         history.previousDeformed = std::move(currentDeformed);
         if (resize) {
@@ -430,6 +455,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     const auto sceneDepth = post.objectMotionSceneDepth();
     if (!sceneDepth.valid() || !dev_->supports(gfx::PixelFormat::RGBA16F)) {
         history.previous = std::move(current);
+        history.previousDeformed = std::move(currentDeformed);
         return;
     }
 
@@ -664,6 +690,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     sample.firstIndex + sample.model->gpuFirstIndex,
                     int32_t(sample.model->gpuBaseVertex),
                     static_cast<uint32_t>(n));
+                objectMotionStats_.rigidDraws++;
+                objectMotionStats_.rigidInstances += static_cast<uint32_t>(n);
                 first += n;
             }
         }
@@ -710,6 +738,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 dev_->drawIndexed(it.indexCount,
                     it.firstIndex + it.model->gpuFirstIndex,
                     int32_t(it.model->gpuBaseVertex));
+                objectMotionStats_.cutoutDraws++;
             }
         }
         // Re-evaluate vertex deformation for BOTH poses. Current and prior
@@ -736,7 +765,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     prior->second.hasSkin != now->second.hasSkin ||
                     prior->second.baked != now->second.baked ||
                     prior->second.sourceModel != now->second.sourceModel ||
-                    it.baked) continue;
+                    it.baked) { ++objectMotionStats_.rejected; continue; }
                 const auto& cur = now->second;
                 const auto& prev = prior->second;
                 const mat4 currentMvp = viewProj_ * cur.world;
