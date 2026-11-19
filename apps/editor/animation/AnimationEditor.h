@@ -237,7 +237,27 @@ private:
                 modelKey_=std::move(modelKey);
             }
             if(!model_)return;
-            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){render::AnimationGraphs graphs;for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;auto previewGraph=graph();animation::sort(previewGraph);auto compiled=render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs);instance_.reset(std::move(compiled));programKey_=std::move(key);controls_=instance_.parameters();error_.clear();}
+            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){
+                render::AnimationGraphs graphs;
+                for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;
+                auto previewGraph=graph();
+                animation::sort(previewGraph);
+                auto compiled=render::AnimationGraph::compile(
+                    *model_,previewGraph,{}, {},graphs);
+                const auto previousControls=controls_;
+                // Editor graph changes should not restart a compatible
+                // state/clip timeline. The new graph owns fresh rig,
+                // contacts and operation state, never old Model pointers.
+                (void)instance_.rebindPlayback(std::move(compiled));
+                auto& inputs=instance_.parameters();
+                for(const auto& [name,value]:previousControls.values)
+                    if(inputs.values.count(name))inputs.values[name]=value;
+                for(const auto& [name,value]:previousControls.vectors)
+                    if(inputs.vectors.count(name))inputs.vectors[name]=value;
+                programKey_=std::move(key);
+                controls_=inputs;
+                error_.clear();
+            }
             if(!instance_.graph())return;
             ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){programKey_.clear();}
             ImGui::SameLine();ImGui::SliderFloat("##yaw",&yaw_,-3.14f,3.14f);if(instance_.hasContacts()){ImGui::SetNextItemWidth(130);ImGui::DragFloat(text("previewGround").c_str(),&previewGround_,.01f);auto env=std::make_shared<render::AnimationEnvironment>();float ground=previewGround_;env->sphereContact=[ground](render::float3 p,float r,render::IKHit& h){return render::ikSpherePlane(p,r,{0,ground,0},{0,1,0},h);};env->raycast=[ground](render::float3 a,render::float3 b,render::IKHit& h){float d=b.y-a.y;if(std::abs(d)<1e-8f)return false;float t=(ground-a.y)/d;if(t<0||t>1)return false;h={a+(b-a)*t,{0,1,0},0,1};return true;};controls_.environment=env;}
