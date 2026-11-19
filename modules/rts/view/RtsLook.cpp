@@ -546,10 +546,23 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
         }
     }
 
-    // A successful appearance may use the proposed future indices, but
-    // no new Image is exposed in any live Model before commit().
+    // A successful appearance may use proposed future texture indices,
+    // but neither new images nor entire newly imported Models may appear
+    // in the live resource cache until ALL authored choices have passed.
     render::ModelImageUploadTransaction imageTransaction(
         *dev_,imageRollback_,gpuDeviceLease_);
+    render::ModelResourceCache::ModelMap stagedModels;
+    struct StagedModelRollback final {
+        render::ModelResourceCache& resources;
+        gfx::Device& device;
+        render::ModelResourceCache::ModelMap& models;
+        ~StagedModelRollback() {
+            for(auto& [key,model]:models) {
+                (void)key;
+                resources.retireUnpublished(device,model);
+            }
+        }
+    } scratchRollback{resources_,*dev_,stagedModels};
     std::map<size_t,TypeLook> staged;
     std::set<size_t> preserveAnimation;
     // Local registry is published only into the replacement TypeLooks after
@@ -557,20 +570,29 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     view::AppearanceAssetRegistry preparedSnapshots;
     struct StrictReloadScope final {
         bool& enabled;
-        render::ModelImageUploadTransaction*& active;
-        StrictReloadScope(bool& flag,render::ModelImageUploadTransaction*& target,
-                          render::ModelImageUploadTransaction& transaction)
-            :enabled(flag),active(target) {
-            if(enabled || active)
+        render::ModelImageUploadTransaction*& activeImages;
+        render::ModelResourceCache::ModelMap*& activeModels;
+        StrictReloadScope(bool& flag,
+                          render::ModelImageUploadTransaction*& targetImages,
+                          render::ModelResourceCache::ModelMap*& targetModels,
+                          render::ModelImageUploadTransaction& images,
+                          render::ModelResourceCache::ModelMap& models)
+            :enabled(flag),activeImages(targetImages),activeModels(targetModels) {
+            if(enabled || activeImages || activeModels)
                 throw std::logic_error("nested RTS appearance transaction");
             enabled=true;
-            active=&transaction;
+            activeImages=&images;
+            activeModels=&models;
         }
-        ~StrictReloadScope(){active=nullptr;enabled=false;}
+        ~StrictReloadScope() {
+            activeModels=nullptr;
+            activeImages=nullptr;
+            enabled=false;
+        }
     };
     try {
         StrictReloadScope strict(strictAppearanceReload_,activeImageTransaction_,
-                                 imageTransaction);
+                                 activeStagedModels_,imageTransaction,stagedModels);
         for(const size_t index:types) {
             if(index>=loadedTypes_.size() || !loadedTypes_[index])continue;
             const auto& authored=rules_->types[index];
@@ -685,6 +707,11 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
         // the first Image. Failure preserves Model image counts and TypeLooks;
         // the transaction destructor queues staged GPU handles for retirement.
         imageTransaction.commit();
+        // Scratch Models were uploaded with shared-cache publication disabled:
+        // the entire node transfer uses allocation-free map node handles.
+        // Existing live Models are still borrowed by old TypeLooks until
+        // the final frame-boundary swap below.
+        resources_.publishStagedModels(stagedModels);
     }catch(const std::exception& e) {
         materialLib_=std::move(previousLibrary);
         warnings_.push_back(std::string("appearance image commit: ")+e.what());
