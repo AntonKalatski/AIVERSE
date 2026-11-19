@@ -42,7 +42,10 @@ struct ViewPlan {
 // On malformed input return false, preserving 'out' and describing the issue.
 // Frustum and projected error use exactly the provided pass transform, never
 // the main camera implicitly. Missing descendants keep resident parents.
+// Optional GPU-residency mask overrides per-node built-in resident flags.
+// Missing children keep a resident ancestor; out is unchanged on invalid mask.
 bool planView(const Asset& source, const ViewConfig& config,
-              ViewPlan& out, std::string* error = nullptr);
+              ViewPlan& out, std::string* error = nullptr,
+              const std::vector<uint8_t>* residentMask = nullptr);
 
 } // namespace aiverse::render::strata
