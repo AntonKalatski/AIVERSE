@@ -904,6 +904,11 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     refreshPrismaVolumes();
     prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
+    // Editor Scene is a lower-priority preview than the live Game viewport.
+    // The cap applies only to this view's two output HDR histories.
+    prisma_.setViewQualityPolicy(1ULL,{64,128});
+    const auto sceneModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
+    prisma_.setExternalModelAssetGpuMemory(sceneModelAssets.knownBytes());
     const auto sceneRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         sceneRendererMemory.liveTextureKnownBytes+
@@ -1020,6 +1025,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     refreshPrismaVolumes();
     prisma_.setViewId(prismaViewId);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
+    prisma_.setViewQualityPolicy(prismaViewId,
+        {uint8_t(prismaViewId==1ULL?64:224),
+         uint32_t(prismaViewId==1ULL?128:256)});
+    const auto gameModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
+    prisma_.setExternalModelAssetGpuMemory(gameModelAssets.knownBytes());
     const auto gameRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         gameRendererMemory.liveTextureKnownBytes+
