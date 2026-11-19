@@ -1435,3 +1435,78 @@ During the eventual test phase, run the unified `./run-tests.sh` per AGENTS.md. 
 - The Stage-26 eight-register GPU VM is restricted to supported Spawn/Update scalar operations, not event stages, rotations, arbitrary CPU physics, module forces or sub-emitters. Strict full CPU fallback is mandatory.
 - Every `ComputeParticles` still owns separate GPU state/vertex/pipeline resources. CPU still owns physical birth/death bookkeeping, and `gpuIndirect` remains an independent opt-in path. No multi-source shared GPU allocator or global GPU material batching exists yet.
 - **Next bounded Stage 28:** build a genre-independent shared GPU emitter resource/pool scheduler with explicit per-emitter material keys, capacity/quality budgets, lifecycle and source reset semantics; preserve the existing shared `BatchWorld` CPU path and never silently switch existing FPS/RTS clients. Provide separate handoff with exact SHAs. Continue postponing tests until user requests them.
+
+## Stage 28 — pooled GPU resource groups and shared CPU fallback (CODE COMMITTED; TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** allow many independent presentation-only VFX sources to share Metal emitter simulation/storage and draw resources when their **whole effect graph** and actual GPU policy are identical, while keeping the mature cross-genre CPU BatchWorld fallback. Do not silently switch FPS/RTS production clients. User continues to request **functional implementation before tests**.
+
+### Exact source commits
+
+| Commit SHA | File | Change |
+|---|---|---|
+| `f32a90b04e434ec74179bd73a1803adfccd5f20f` | `engine/fx/SpectraGpuParticles.cpp` | Allow valid per-instance GPU parameter snapshot updates for material-only shaderGraph sources without a separate ParticleProgramModule |
+| `1f0bb9c434d75fee92ef9ac4ea694e301ae91487` | `engine/fx/SpectraGraphRuntime.cpp` | Permit named runtime parameters on GPU when either a supported VM or supported GPU material can consume them |
+| `3744648ddecf38e10aa62fadb5fbc2ac23137405` | `engine/fx/SpectraGpuPoolWorld.h` | Public `GpuPoolWorld`, `PoolWorldBudgets`, `PoolWorldStats`, per-source material/VM parameter input, lifecycle and rollback API |
+| `ac0afeca25f507be10947ed35322978130ed1aca` | `engine/fx/SpectraGpuPoolWorld.cpp` | Group GPU emitters by full serialized effect and policy, reuse group resources, throttle births, submit per-source values, batch full CPU fallback and schedule per-frame update/draw |
+| `b6543f84bf9bd9a1d18289240975497dee7ee35d` | `engine/fx/SpectraGpuPoolWorld.h` | Private unique CPU definition/GPU group count recalculation |
+| `b5acc48c83d3dcd7c5da3f1d44ce44985ce5f482` | `engine/fx/SpectraGpuPoolWorld.cpp` | Count deduplicated CPU definitions correctly after name changes; reject per-burst values violating named parameter bounds; report actual live GPU availability |
+| `bd94a286cb23e0afdc728b4ca9a45c0a6d196ef4` | `engine/fx/SpectraGpuPoolWorld.cpp` | Length-prefix group identity and require healthy RHI for visual rollback reset |
+| `dafab77cb6ee9d6598d5d87519afffd35cffa6dc` | `engine/fx/SpectraFX.h` | Export shared pool from canonical native SpectraFX public header |
+| `34d706061ddd6eb98284726be44984c77f747d53` | `CMakeLists.txt` | Build GPU pool implementation into `aiverse_fx` / `AIVERSE::spectrafx` |
+| `92c1a3f83747db550f46a2eae03ed8d20e616ab7` | `docs/spectrafx.md` | Public usage, per-effect resource grouping, CPU fallback, budgets, frame semantics and limits |
+| `e2dd8251d726084964d5945a02625d1e9a85cd2c` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Native agent usage and exact unsupported features |
+| `7aeccc7dc018f1e7119d7d6a0016350186f5ff12` | `AGENTS.md` | Required engineering contract, per-frame graphics lifecycle and deferred validation |
+
+### Native API / architecture
+
+`GpuPoolWorld::init(gfx::Device*,PoolWorldBudgets)` creates **one owned CPU `BatchWorld`**, a table of independent logical effect bindings and lazily-created unique GPU groups. Use `defineGraph(name,graph,overrides,GraphRuntimeOptions)` or `defineEffect(name,completeEffect,options)`. On eligible Metal devices, a GPU group is shared whenever the complete `fx::effectToJson(effect)`, actual capacity, quality and `gpuProgram`, `gpuMaterial`, `gpuIndirect` selections match. Resource keys are length-prefixed to avoid ambiguous concatenation. A group owns one persistent `ComputeParticles` with VM payload, physical particle pool, material pipeline/texture and CPU-owned slot bookkeeping; two logical source names with the same effect share this exact allocation. Different effect definitions remain isolated even if they use identical textures.
+
+The world clamps GPU-group count to 64, capacity per group to 4096 physical slots and births to 4096 per presentation frame, with caller-configurable tighter defaults. If the GPU group limit, hardware capability or material/VM eligibility prevents a GPU group, `Automatic`/`PreferGpu` retain the original **full** effect definition in the single owned `BatchWorld`, which already batches compatible CPU effects by material. `RequireGpu` fails with `reason()` instead of creating a fake GPU group.
+
+An individual binding stores independent v2 `instanceParameters` default values and validates updates through `setNamedParameter(sourceName,paramName,value)`. During `burst(name,position,direction,tint,sourceValues?)`, the GPU group sets only its **future** `param0..7` values and snapshots them onto the born particles, so previous particles of other sources keep their old VM/material inputs. CPU births use `BatchWorld::playWithProgramParameters` for prewarm-safe parameter capture. Stage 28 corrects the integrated `ComputeParticles::setProgramParameter` guard to accept a supported shaderGraph material that reads params with no VM module, and `GraphRuntime::initGraph` allows such schemas on GPU when the material opt-in gate is satisfied.
+
+A typical host sequence is:
+
+```cpp
+spectra::GpuPoolWorld world;
+world.init(device, budgets);
+world.defineGraph("engine_left", graphV2, Json::object(), options);
+world.defineGraph("engine_right", graphV2, Json::object(), options); // SAME GPU group
+world.setNamedParameter("engine_left","intensity",0.35f);
+world.setNamedParameter("engine_right","intensity",0.90f);
+
+// After Device::beginFrame and before any render pass:
+world.beginPresentationFrame(camera,viewProj,width,height);
+world.burst("engine_left",{0,1,0});
+world.burst("engine_right",{3,1,0});
+world.step(dt); // once per unique GPU group; once for shared CPU world
+// Inside an already-open scene render pass:
+world.draw(fog);
+// After the pass:
+world.endPresentationFrame();
+// For a new match/visual rollback (between frames only):
+world.resetForRollback();
+world.shutdown(); // before Device destruction
+```
+
+`PoolWorldStats` reports unique GPU groups/CPU definitions, submitted/rejected one-shot bursts, alive particle estimates, GPU memory and actual draw submissions. `isGpuEffect(name)` checks the group's real Metal-ready status, not only its nominal registered preference.
+
+### Explicit limitations
+
+- This is **resource grouping for IDENTICAL FULL EFFECTS**, not a single physical GPU allocator for all materials or one draw across different material graphs. Unique effects still have their own GPU buffers, shaders and indirect counters.
+- The public pool handles **one-shot births**. It does not expose generation-safe per-source GPU stop/kill/move handles or continuous ECS-attached GPU emitter simulation; retain the separate mature shared CPU `CueScheduler` for attached gameplay visuals. `resetForRollback()` resets **every GPU/CPU visual belonging to this pool**, but not arbitrary external renderer owners. The graphics device must be healthy, and reset cannot run during an active pool frame or GPU encoder.
+- Group resources are retained/cached for reuse until world shutdown; redefining names does not destructively free possibly still-live groups. Hot-reload-heavy tooling can reconstruct the world at a safe scene boundary if GPU-group capacity is exhausted.
+- The advanced CPU module system (trails/meshes, external material textures, sorting, collision/trigger/death VM events, etc.) remains complete **CPU fallback**. Metal only supports the explicitly selected Stage-22/26/27 simple additive sprite subset. Vulkan/GL/GLES/WebGL still do not use compute from this interface. No authoritative ECS state or FPS/RTS genre module dependency was introduced.
+
+### Verification actually performed
+
+**NOT RUN — as requested by the user.** Stage-28 C++ code, CMake source registration, public header and docs were committed through GitHub connector writes, but no local AIVERSE checkout build, Clang/MSVC compile, CMake configure, CTest, Apple MSL shader execution, screenshot comparison, GPU profiling, memory leak detection, ECS rollback replay or CI success was observed. Therefore this is a functional source implementation, **not verified to compile or ship**.
+
+During the later requested test phase, run the repository's unified `./run-tests.sh` per `AGENTS.md`. Validate distinct binding names sharing one live GPU allocation; mixing CPU-only effects and compatible GPU groups; multiple burst calls and independent per-source custom VM attributes; capped group count/capacity; RequireGpu failure; reset between frames (and refusal during active encoders); long-running hot reload; cross-platform fallback; actual Metal material draw-count parity, cleanup/device-loss behavior, RAM/GPU bytes and startup complexity.
+
+### Next bounded FUNCTIONAL work
+
+1. **Stage 29:** add generation-safe logical GPU source handles, selective stop/kill/restart semantics for attached ECS emitters, and presentation rollback checkpointing without clearing unrelated sources sharing the same GPU group. This requires tracking source ownership of individual physical particle slots and resetting/releasing individual slots only when GPU render commands have finished, rather than just naming aliases of the same group.
+2. Extend group-level LOD/culling and pooled GPU quality budgets (distance, importance, screen-size, memory/fill targets), then integrate with Terra/PHYSIS/Water via **genre-neutral visual event adapters**, not by hardcoding FPS/RTS rules.
+3. Verify the actual Metal shader/material/compiler and all previous stages after functional completion, as the user explicitly postponed tests. Keep the next stage handoff separate with exact SHA and truthfully recorded verification results.
