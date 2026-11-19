@@ -1866,6 +1866,83 @@ interpret a missing metadata counter as a completed benchmark. Full path
 and SHA inventory, dependencies and next steps:
 `docs/handoffs/prisma-stage-41.md`.
 
+## Stage 42 — opt-in HDR temporalResolve (full-resolution history reprojection)
+
+This feature extends the existing **canonical Prisma pipeline**, not the
+historical `PrismaScreenLighting` wrapper. The normal `postfx` catalog now
+supports a `temporalResolve` effect, with four editor/MCP/volume-configurable
+parameters. Existing effect IDs, `postfx` JSON roots, saved panel ID, and
+PostFx compatibility headers remain unchanged.
+
+To activate, the host must use **HDR/High** and opt in explicitly with
+`AIVERSE_PRISMA_TEMPORAL=1`, in addition to an authored effect:
+
+```json
+{
+  "postfx": {
+    "effects": [
+      {
+        "type": "temporalResolve",
+        "minQuality": "high",
+        "historyWeight": 0.86,
+        "depthThreshold": 0.0075,
+        "motionScale": 0.04,
+        "reactiveStrength": 0.95
+      }
+    ]
+  }
+}
+```
+
+`Prisma::resolve()` now reuses a **single full-resolution signed velocity
+pass** for both Temporal Resolve and Motion Blur, if requested. Velocity is
+current-minus-previous normalized UV and includes camera reprojection and
+optional Renderer3D object/deformation velocity (RGBA16F, B presence bit);
+invalid provider metadata falls back to camera velocity. The current-frame
+RGBA8 reactive coverage is borrowed from Renderer3D/particle callbacks and
+never retained as temporal history.
+
+Each `viewId` owns two full-resolution **RGBA16F linear HDR** textures,
+with color in RGB and **prior hardware depth** in alpha. The temporal shader
+reprojects by signed motion vectors, explicitly reconstructs four previous
+texel taps (nearest GPU sampling, separate depth checks), clamps accepted
+history against a 3×3 current-color neighborhood in a compressed HDR domain,
+then adjusts history weight by motion magnitude and reactive coverage.
+Missing/invalid history writes the current unblurred scene and seeds the
+next frame. Disoccluded pixels reject stale depth rather than using an
+interpolated history alpha. HDR tone mapping, Bloom, LUT, and HUD happen
+**after** the resolve. If opt-in Motion Blur is also active, it uses the
+temporally resolved source. HDR FXAA is skipped when temporal resolve ran:
+do not stack both AA approaches in one frame.
+
+Automatic invalidation applies on resolution change and a large camera
+translation (>12 presentation-world units between frames); explicit
+`Prisma::resetMotionHistory(viewId)` also invalidates temporal history on
+camera cuts and profile switches. `Prisma::retireView(viewId)` moves owned
+history handles into the existing GPU-fenced retirement queue. Resource
+diagnostics report per-camera temporal history texture counts and
+lower-bound resident bytes, without charging them to the shared
+size-keyed render target cache.
+
+**What Stage 42 is not:** it does **not** implement dynamic-resolution
+rendering, jittered subpixel supersampling, native TSR/FSR/DLSS upscaling,
+optical-flow motion estimation, a history confidence/rejection G-buffer, or
+proof of parity with the historical optional PrismaScreenLighting TAA.
+This is an opt-in, full-resolution temporal color stabilization pass. Sky
+pixels with no reconstructed surface depth are not accumulated, and
+moving silhouettes can still need more robust velocity dilation/occlusion
+masks. At 1080p, two RGBA16F histories plus one RGBA16F velocity target
+consume at least ~47 MiB of raw base-level GPU memory per active resolution
+plus shared depth/scratch targets; physical allocation can be higher.
+Dual-camera views have **separate histories** even if target sizes match.
+
+**Verification:** GitHub source readback and static wiring review only.
+**NOT RUN:** CMake/C++/Metal build, CTest, GLES/Vulkan shader compile,
+GPU screenshots, silhouette/transparent parity, VRAM profiling, camera
+cut/resize runtime, mobile GPU benchmarks or CI. No shipping-readiness or
+pixel-quality PASS is claimed. Full handoff:
+`docs/handoffs/prisma-stage-42.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
