@@ -860,12 +860,20 @@ void Renderer3D::renderCurrentFrameReactiveMask(
                 u.uv0[3] = it.mat->uvScale.y;
                 u.uv1[0] = it.mat->uvRotation;
                 u.maskInfo[0] = it.mat->baseColor.w;
+                // TeamMode::BaseAlpha / VertexAlpha override base.a in
+                // ModelShaders; a vertex color alpha must NOT be multiplied
+                // a second time for their ALPHAMASK discard decision.
+                const bool overrideAlpha = it.mat->team == TeamMode::BaseAlpha ||
+                                           it.mat->team == TeamMode::VertexAlpha;
                 u.maskInfo[1] = it.mat->vertexColors &&
-                    !it.mat->vertexOcclusion ? 1.0f : 0.0f;
+                    !it.mat->vertexOcclusion && !overrideAlpha ? 1.0f : 0.0f;
                 u.maskInfo[2] = cutout ? it.mat->alphaCutoff : -1.0f;
                 u.maskInfo[3] = dissolve ? std::clamp(it.dissolve,0.0f,1.0f) : 0.0f;
                 gfx::TextureHandle base = white_;
-                if (it.mat->baseTex >= 0 &&
+                // BaseAlpha explicitly ignores the source texture's alpha
+                // in the normal material shader (only its team tint uses it).
+                if (it.mat->team != TeamMode::BaseAlpha &&
+                    it.mat->baseTex >= 0 &&
                     size_t(it.mat->baseTex) < it.model->images.size()) {
                     const auto t=it.model->images[size_t(it.mat->baseTex)].tex;
                     if (t.valid()) base=t;
