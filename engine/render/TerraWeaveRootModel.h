@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 #include <string>
 
 namespace aiverse::terraweave {
