@@ -696,6 +696,20 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME render_geometry_page_owners
         COMMAND aiverse_geometry_page_owners_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_render_resource_owner_group_tests
+        tests/render/resource_owner_group.cpp)
+    target_link_libraries(aiverse_render_resource_owner_group_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_resource_owner_group
+        COMMAND aiverse_render_resource_owner_group_tests)
+    add_executable(aiverse_portrait_appearance_api_tests
+        tests/view/portrait_appearance_api.cpp)
+    target_link_libraries(aiverse_portrait_appearance_api_tests
+        PRIVATE aiverse_game_view AIVERSE::View)
+    add_test(NAME view_portrait_appearance_api
+        COMMAND aiverse_portrait_appearance_api_tests)
+endif()
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_persistent_model_pool_tests
         tests/render/persistent_model_pool.cpp)
