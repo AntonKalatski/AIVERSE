@@ -250,6 +250,7 @@ public:
         bool requested = false;      // enabled, tier and opt-in/parameter gates
         bool pipelinePrepared = false; // cached RHI handle, not device validation
         bool encoded = false;        // an applicable pass actually issued draw(s)
+        bool degraded = false;       // encoded but had to use a lower-quality fallback
         std::string reason;          // skipped/degraded explanation, empty if encoded
     };
     struct ViewEffectReport {
