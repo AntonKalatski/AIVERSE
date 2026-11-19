@@ -21,13 +21,14 @@ static_assert(client::GameClient::kInitSteps == 6, "ClientHost::kSteps follows G
 ClientHost::ClientHost() = default;
 ClientHost::~ClientHost() {
     stop();
-    // Full Editor shutdown is required to run at a graphics-device teardown
-    // safe point. Try to verify idle if a device is still available; never
-    // silently claim a completed fence based on the frame serial.
-    if (dev_ && dev_->waitForSubmittedGpuWork())
+    // Prefer a real submitted-work GPU-idle wait; never rely on the CPU
+    // frame serial. If the device is lost/unknown, preserve the client owner
+    // inert rather than implicitly running GameClient's destructor, which
+    // could transitively touch an invalid graphics device.
+    if (dev_ && dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
         drainAfterGpuIdle();
-    // A backend that cannot synchronize retains the old host-teardown
-    // contract. Do not dereference the device after its lifetime ends.
+    else
+        abandonOnDeviceLoss();
 }
 
 void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets) {
@@ -60,6 +61,10 @@ void ClientHost::stop() {
 
 size_t ClientHost::collectGpuRetirements() {
     if (!dev_) return 0;
+    if (!dev_->gpuHealthy()) {
+        abandonOnDeviceLoss();
+        return 0;
+    }
     const uint64_t completed = dev_->gpuCompletedFence();
     if (!completed) return 0;
     size_t collected = 0;
@@ -82,6 +87,20 @@ size_t ClientHost::collectGpuRetirements() {
         ++collected;
     }
     return collected;
+}
+
+size_t ClientHost::abandonOnDeviceLoss() {
+    // Terminal recovery only. Retired owners may contain nested renderers
+    // whose destructors invoke Device methods. Preserve CPU state in a
+    // process-lifetime no-dtor sink instead of running those destructors
+    // against a dead GPU context. This is an intentional memory leak until
+    // process exit, not ordinary hot-reload memory retirement.
+    static auto* abandoned = new std::vector<RetiredClient>();
+    const size_t count = retired_.size();
+    for (auto& item : retired_)
+        abandoned->push_back(std::move(item));
+    retired_.clear();
+    return count;
 }
 
 size_t ClientHost::drainAfterGpuIdle() {
