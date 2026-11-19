@@ -26,6 +26,14 @@ add_library(AIVERSE::vivid_actor ALIAS aiverse_vivid_actor)
 target_link_libraries(aiverse_vivid_actor PUBLIC aiverse_vivid_mesh)
 target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
 
+# Versioned human DNA/appearance/rig/groom authoring, independent of
+# gameplay ECS and with the same runtime native C++20 asset contract.
+add_library(aiverse_vivid_human STATIC HumanDNA.cpp)
+add_library(AIVERSE::vivid_human ALIAS aiverse_vivid_human)
+target_include_directories(aiverse_vivid_human PUBLIC ${PROJECT_SOURCE_DIR})
+target_link_libraries(aiverse_vivid_human PUBLIC aiverse_vivid aiverse_models)
+target_compile_features(aiverse_vivid_human PUBLIC cxx_std_20)
+
 # Legacy render::Pose adapter; core remains usable without aiverse_models.
 add_library(aiverse_vivid_render STATIC MorphBinding.cpp)
 add_library(AIVERSE::vivid_render ALIAS aiverse_vivid_render)
@@ -41,6 +49,11 @@ target_compile_features(aiverse_vivid_motionweave PUBLIC cxx_std_20)
 
 
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vivid_human_dna_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/human_dna.cpp)
+    target_link_libraries(aiverse_vivid_human_dna_tests PRIVATE aiverse_vivid_human aiverse_zstd_dec)
+    add_test(NAME vivid_human_dna COMMAND aiverse_vivid_human_dna_tests)
+
     add_executable(aiverse_vivid_face_tests ${PROJECT_SOURCE_DIR}/tests/vivid/face.cpp)
     target_link_libraries(aiverse_vivid_face_tests PRIVATE aiverse_vivid)
     add_test(NAME vivid_face COMMAND aiverse_vivid_face_tests)
