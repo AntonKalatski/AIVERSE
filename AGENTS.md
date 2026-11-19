@@ -1651,3 +1651,22 @@ Scene-only renderer policies. Vulkan nonzero pooled base vertex
 still falls back to direct draws. Keep PR #34 Draft and do not
 claim a speedup or compilation before native testing. Document
 every subsequent stage separately.
+
+
+## Stage 38 — native per-asset geometry-pool admission
+
+`Model::Batching::geometryPoolPolicy` supports
+`Inherit` (default), `Dedicated`, `AllowRigidLods`.
+The native per-model value is also loaded via the strict optional
+`<asset>.batching.json` string `geometryPool`:
+`inherit`, `dedicated`, `rigidLod`.
+Only the **specific asset** is affected at GPU upload time.
+Do not bypass global safe-mode/backend/size gates or try to
+repack GPU buffers of already-uploaded models by changing this enum.
+Use separate renderer asset-lifetime invalidation/reload.
+Cross-model CPU MDI still requires shared page, exact GPU
+material/flags, enough commands and no active crossfade.
+No FPS/RTS dependency; project C++ may assign policy before
+`uploadModel` directly. This feature is source-committed
+but not compiled/tested on native GPUs yet. Keep PR #34 Draft
+and record a separate handoff for each additional step.

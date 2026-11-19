@@ -1212,3 +1212,24 @@ Read live branch source and renderer/backend conditions through connected GitHub
 Inspect device-specific pooled Model index/vertex binding and Metal GPU-authored draws before allowing a default-ON policy. Rigid models with authored clips remain unpooled (intentional until animation presentation parity). Some models will fail the new strict LOD reference validation, falling back safely. Shared global upload policy cannot automatically migrate already uploaded game assets; hosts must reload explicitly. Out-of-range/cyclic and nested LOD references are rejected or still require normal importer validation; the new predicate only guards its direct mesh references. Do not interpret "pool enabled" as an actual cross-model submission metric.
 
 **Next feature:** add safe **per-device/per-asset** opt-in ownership or richer geometry-pool admission diagnostics for native clients (where a global editor toggle can surprise unrelated game hosts). Then finish feature checklist before testing. Validation later must cover no/one/multiple rigid LOD, invalid levels, skin/morph/clip fallbacks, actual two-model same-page uploads, Metal/Vulkan direct vs MDI parity and forced reload/eviction.
+
+
+---
+
+## Stage 38 — per-asset shared geometry pool ownership for native projects (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Before code:** `decbb601ac62cdffd91a7f7a45a79a392096f614`. **Implementation:** `5b58b71205a41689f1a6d7112f246636b9492f8b`. Main was fully integrated at Stage 37, re-compare before merge.
+
+### Feature and API
+Stage 37's global rigid-LOD switch can affect another native renderer host on the same process. Stage 38 introduces an explicit **per-Model admission policy**, evaluated only on upload:
+- `engine/render/Model.h`: `Model::Batching::GeometryPoolPolicy { Inherit, Dedicated, AllowRigidLods }`, default `Inherit`, plus `model.batching.geometryPoolPolicy`. Changes are runtime-only; they do not alter game ECS/save data or layout of GPU vertex/index commands. `Inherit` keeps prior behavior (global default safe pool + Stage 37 rigid LOD toggle). `Dedicated` opts this asset out of the shared pool even if enabled globally. `AllowRigidLods` opts this **asset only** into the Stage 37 rigid LOD allowance; if the asset lacks a LOD, ordinary rigid sharing still applies. Neither policy bypasses global `AIVERSE_GEOMETRY_POOL=off`/`AIVERSE_RENDER_SAFE=1`, backend shared-update/MDI constraints, rejection of skins/morphs/clips/variants/cluster/deformation, per-model size cap or page lifetime checks.
+- `engine/render/GlobalGeometryPool.cpp`: performs the exact policy selection before calling the common `rigidGeometryPoolCandidate(model, allowRigidLods)`. No streaming allocations or ModelDraw path changes. Dedicated fallback is the original `uploadModel` per-Model GPU buffer path, not an error.
+- `engine/render/Model.cpp`: importer sidecar `<path>.batching.json` gains string `geometryPool`: `"inherit"`, `"dedicated"` or `"rigidLod"`. Reject wrong JSON types and unknown strings with a path-specific import error, preserving existing strict sidecar validation. The model is configured before `prepareModelUpload()` and GPU upload. Native projects may also assign the enum directly after `loadModel()` and before `uploadModel()`; supported across genres without an RTS/FPS dependency.
+
+### Lifecycle and actual verification
+An edited sidecar or native model policy does **not** repack buffers already uploaded. Release and reload the model on the graphics-owning thread, invalidating the renderer's model caches as already required for asset destruction. Changing a single model's choice does not mutate other models' upload policy or any persisted ECS component. The Studio checkbox from Stage 37 is still a process-wide convenience; native projects needing isolation should use the model policy instead.
+
+Read branch source, validated unique replacement locations and committed an atomic three-file Git tree through the connector, then fast-forwarded the branch ref using the prior SHA. **Native CMake/CTest: NOT RUN. Sidecar parser runtime fixtures: NOT RUN. Metal/Vulkan pixel parity: NOT RUN. CPU/GPU A/B/A: NOT RUN**, per user feature-first priority; do not claim compiler success or performance gain. PR remains Draft; experimental rigid LOD defaults OFF.
+
+### Next concrete action
+Audit project import pipelines that bypass `loadModel` (e.g. generated procedural/native models): they can set `model.batching.geometryPoolPolicy` before `uploadModel`. If useful, add **bounded read-only per-device admission counters/reasons** to distinguish missing eligible assets from a material/threshold failure. Then finish functionality and run native validation including sidecar enum parsing, mode precedence, model reload, shared-page residency, Metal/Vulkan raster parity and A/B/A performance. Never silently change default production geometry pooling behavior.

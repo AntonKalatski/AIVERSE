@@ -1381,3 +1381,32 @@ their own asset lifetimes. It does not reallocate any already
 uploaded buffers in place. This feature was source-reviewed, not
 yet native-built, pixel-validated, or performance-benchmarked;
 default remains OFF pending final validation.
+
+
+### Per-asset geometry pooling controls (native / imported Model)
+
+In addition to the global Stage 37 flag, `Model::Batching` exposes
+`geometryPoolPolicy` with three values:
+`GeometryPoolPolicy::Inherit` (default: global upload policy),
+`GeometryPoolPolicy::Dedicated` (force standalone VB/IB), and
+`GeometryPoolPolicy::AllowRigidLods` (opt **only that asset** into safe
+rigid-LOD pooling). For a native host:
+
+```cpp
+using PoolPolicy = render::Model::Batching::GeometryPoolPolicy;
+model.batching.geometryPoolPolicy = PoolPolicy::AllowRigidLods;
+// call uploadModel(device, model) on the owning render thread afterwards
+```
+
+The same choice may be saved to the optional model sidecar
+`<asset>.batching.json` as
+`"geometryPool": "inherit" | "dedicated" | "rigidLod"`.
+Invalid JSON values are rejected during import. Per-model options
+do not change the global settings or force an unsupported GPU backend
+to accept shared buffers; `AIVERSE_RENDER_SAFE`, global pool-disable
+and format/size checks still take precedence. Selection occurs only
+at upload, never at camera render time; reload an asset to apply
+a changed sidecar or enum. Native projects using multiple genres
+should prefer explicit per-asset choice over Studio's global checkbox.
+This remains an untested, OFF-by-default experimental path for
+LOD-bearing assets, with no benchmark result.
