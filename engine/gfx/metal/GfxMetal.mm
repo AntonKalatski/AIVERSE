@@ -1619,6 +1619,43 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
         }
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
+        // Diagnostic only. Sample the four existing CPU ICB stage boundaries
+        // after a submission, never inside the per-command encode loop.
+        // Limit printing to avoid turning ordinary frames into a log benchmark.
+        static const bool traceSlowIcb = [] {
+            const char* flag = std::getenv("AIVERSE_ICB_SLOW_TRACE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        if (traceSlowIcb) {
+            const auto afterExecute = std::chrono::steady_clock::now();
+            const auto ms = [](auto begin, auto end) {
+                return std::chrono::duration<double, std::milli>(end - begin).count();
+            };
+            const double argsMs = ms(profileStart, afterArgs);
+            const double allocMs = ms(afterArgs, afterAlloc);
+            const double encodeMs = ms(afterAlloc, afterEncode);
+            const double executeMs = ms(afterEncode, afterExecute);
+            const double totalMs = argsMs + allocMs + encodeMs + executeMs;
+            static const double slowMs = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_MS");
+                if (!raw || !*raw) return 0.15;
+                char* end = nullptr;
+                const double v = std::strtod(raw, &end);
+                return end != raw && *end == '\0' && std::isfinite(v) &&
+                    v >= 0.01 && v <= 100.0 ? v : 0.15;
+            }();
+            static uint32_t printed = 0;
+            if (totalMs >= slowMs && printed < 24) {
+                ++printed;
+                std::fprintf(stderr,
+                    "[metal-icb-slow] frame=%llu slot=%zu commands=%u total=%.5fms "
+                    "args=%.5f alloc=%.5f encode=%.5f residency_execute=%.5f "
+                    "threshold=%.3fms sample=%u/24\n",
+                    static_cast<unsigned long long>(frame_), submissionIndex,
+                    drawCount, totalMs, argsMs, allocMs, encodeMs, executeMs,
+                    slowMs, printed);
+            }
+        }
         if (traceIcb) {
             static uint32_t submissions = 0;
             static uint64_t commandsEncoded = 0;
