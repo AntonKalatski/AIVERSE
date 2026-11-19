@@ -7,6 +7,7 @@
 #pragma once
 #include "GiDynamicRuntime.h"
 #include "GiGpuDynamicRuntime.h"
+#include "GiLightBridge.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -139,6 +140,19 @@ public:
             return gpu_.setLights(std::move(lights));
         cpu_.setLights(std::move(lights));
         return true;
+    }
+
+    // Use the same lights authored for the normal direct lighting path.
+    // Only sources with indirectMultiplier>0 participate; static/baked lamps
+    // stay excluded by default. Source namespace is stable per world/owner.
+    bool setAuthoredLights(const std::vector<PointLight>& source,
+                          uint32_t namespaceId,float3 focus={},
+                          GiLightOverflowPolicy policy=GiLightOverflowPolicy::Reject,
+                          GiLightBridge::Stats* stats=nullptr) {
+        if(!ready())return false;
+        auto converted=GiLightBridge::collect(
+            source,namespaceId,maxMovingLights(),focus,policy,stats);
+        return setLights(std::move(converted));
     }
 
     // Call after the per-world publication barrier, between RHI beginFrame and
