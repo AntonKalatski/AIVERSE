@@ -715,6 +715,65 @@ public:
         if (u.rowPitchBytes < u.width * bpp) return false;
         const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
         if (imagePitch < u.rowPitchBytes * u.height) return false;
+        // Texture2DArray is the physical Virtual Texture atlas. CPU-side
+        // replaceRegion may race older GPU frames sampling the reused slice.
+        // Encode the write as a blit on the SAME Metal queue instead, so
+        // previous readers retire before the new bytes become visible.
+        if (t->dimension == TextureDimension::Texture2DArray && !t->mips) {
+            if (enc_ || compute_ || gpuIcbEncoder_) {
+                error_ = "Metal array texture upload requires no active GPU encoder";
+                return false;
+            }
+            const NSUInteger align = 256;
+            const NSUInteger sourceRow = NSUInteger(u.width) * NSUInteger(bpp);
+            if (sourceRow > NSUInteger(-1) - (align-1)) {
+                error_ = "Metal array upload row overflow";
+                return false;
+            }
+            const NSUInteger gpuRow = (sourceRow + align - 1) & ~(align-1);
+            if (NSUInteger(u.height) > NSUInteger(-1) / gpuRow) {
+                error_ = "Metal array upload buffer overflow";
+                return false;
+            }
+            const NSUInteger total = gpuRow * NSUInteger(u.height);
+            id<MTLBuffer> staging = [device_ newBufferWithLength:total
+                                     options:MTLResourceStorageModeShared];
+            if (!staging) {
+                error_ = "Metal array texture upload staging allocation failed";
+                return false;
+            }
+            auto* dst = static_cast<uint8_t*>(staging.contents);
+            const auto* src = static_cast<const uint8_t*>(u.data);
+            for (int row = 0; row < u.height; ++row)
+                std::memcpy(dst + size_t(row)*size_t(gpuRow),
+                            src + size_t(row)*size_t(u.rowPitchBytes),
+                            size_t(sourceRow));
+            id<MTLCommandBuffer> uploadCmd = cmd_ ? cmd_ : [queue_ commandBuffer];
+            if (!uploadCmd) {
+                error_ = "Metal array texture upload command allocation failed";
+                return false;
+            }
+            id<MTLBlitCommandEncoder> blit = [uploadCmd blitCommandEncoder];
+            if (!blit) {
+                error_ = "Metal array texture upload blit encoder failed";
+                return false;
+            }
+            [blit copyFromBuffer:staging sourceOffset:0
+                sourceBytesPerRow:gpuRow sourceBytesPerImage:total
+                sourceSize:MTLSizeMake(NSUInteger(u.width),NSUInteger(u.height),1)
+                toTexture:t->tex destinationSlice:NSUInteger(u.arrayLayer)
+                destinationLevel:NSUInteger(u.mipLevel)
+                destinationOrigin:MTLOriginMake(NSUInteger(u.x),NSUInteger(u.y),0)];
+            [blit endEncoding];
+            // The completion block keeps staging alive until the queued
+            // transfer has retired, including for standalone command buffers.
+            [uploadCmd addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+                (void)staging;
+                (void)completed;
+            }];
+            if (!cmd_) [uploadCmd commit];
+            return true; // queued in order, NOT a GPU completion fence
+        }
         if (t->dimension == TextureDimension::Texture1D) {
             [t->tex replaceRegion:MTLRegionMake1D(NSUInteger(u.x), NSUInteger(u.width))
                        mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
