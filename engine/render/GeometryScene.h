@@ -3,12 +3,13 @@
 #include "Renderer3D.h"
 #include <map>
 #include <memory>
+#include <functional>
 #include <string>
 
 namespace aiverse::render {
 namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
-    class GpuClusterCulling; }
+    struct GpuSelectionReadback; class GpuClusterCulling; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
@@ -53,6 +54,11 @@ public:
                                const strata::GpuPassConfig& pass,
                                uint64_t frameSerial,
                                strata::GpuSelectionSubmission& out);
+    // Explicit diagnostic readback; callback runs on the device owner thread
+    // in a later frame. Do not let test observers mutate scene lifetime here.
+    bool requestStrataGpuReadback(gfx::Device& device,
+        const strata::GpuSelectionSubmission& submission,
+        std::function<void(strata::GpuSelectionReadback)> callback);
     gfx::BufferHandle strataGpuMetadataBuffer(const std::string& sourceKey) const;
     // Device-resident auxiliary Strata indices from the EXISTING shared page.
     // NOT a draw submission; model/node transforms, materials and index
