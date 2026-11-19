@@ -218,6 +218,8 @@ void LightSystem::setQuality(LightQuality q) {
 
 void LightSystem::shutdown() {
     if (!dev_) return;
+    // Renderer3D has already established a real device-idle barrier.
+    // This must also work when init failed halfway through allocation.
     createMap(0);
     retireTarget(staticGrid_);
     staticGrid_={};
@@ -225,19 +227,27 @@ void LightSystem::shutdown() {
     spotShadow_={};
     retireTarget(reflColor_,reflDepth_);
     reflColor_=reflDepth_={};
-    dev_->destroyTexture(black_);
-    dev_->destroyBuffer(vb_);
-    dev_->destroyBuffer(haloVB_);
-    dev_->destroyBuffer(decalVB_);
-    dev_->destroyPipeline(decalPipe_);
-    dev_->destroyShader(decalShader_);
-    dev_->destroyPipeline(beamPipe_);
-    dev_->destroyBuffer(beamVB_);
-    dev_->destroyShader(beamShader_);
-    dev_->destroyPipeline(pipe_);
-    dev_->destroyPipeline(haloPipe_);
-    dev_->destroyShader(shader_);
-    dev_->destroyShader(haloShader_);
+    if(black_.valid())dev_->destroyTexture(black_);
+    if(vb_.valid())dev_->destroyBuffer(vb_);
+    if(haloVB_.valid())dev_->destroyBuffer(haloVB_);
+    if(decalVB_.valid())dev_->destroyBuffer(decalVB_);
+    if(beamVB_.valid())dev_->destroyBuffer(beamVB_);
+    if(decalPipe_.valid())dev_->destroyPipeline(decalPipe_);
+    if(beamPipe_.valid())dev_->destroyPipeline(beamPipe_);
+    if(pipe_.valid())dev_->destroyPipeline(pipe_);
+    if(haloPipe_.valid())dev_->destroyPipeline(haloPipe_);
+    if(decalShader_.valid())dev_->destroyShader(decalShader_);
+    if(beamShader_.valid())dev_->destroyShader(beamShader_);
+    if(shader_.valid())dev_->destroyShader(shader_);
+    if(haloShader_.valid())dev_->destroyShader(haloShader_);
+    black_={};
+    vb_=haloVB_=decalVB_=beamVB_={};
+    decalPipe_=beamPipe_=pipe_=haloPipe_={};
+    decalShader_=beamShader_=shader_=haloShader_={};
+    vbCap_=smallCap_=0;
+    vbCursor_=haloCursor_=beamCursor_=decalCursor_=0;
+    spotShadowSize_=reflW_=reflH_=0;
+    reflReady_=mapReady_=mapHasLights_=false;
     dev_ = nullptr;
 }
 
