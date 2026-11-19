@@ -3,6 +3,7 @@
 // readTextureAsync run through the same backend as AIVERSE applications.
 // Call only on a Mac with a real Metal device. No silent device skip.
 #include "engine/gfx/Gfx.h"
+#include "engine/gfx/VirtualTextureFeedbackPass.h"
 #include "engine/platform/Platform.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -399,6 +400,156 @@ void shaderSampleVolume(Device& dev) {
                 elapsedMs(start,Clock::now()));
 }
 
+
+// Tests the actual *shader -> RGBA8 feedback render target -> Metal async
+// readback -> CPU virtual-page decoder* contract. Does not touch disk or
+// fake pending readbacks. Hardware is mandatory for this opt-in fixture.
+void gpuVirtualTextureFeedback(Device& dev) {
+    const auto start=Clock::now();
+    VirtualTextureFeedbackConfig feedbackConfig;
+    feedbackConfig.tilesX=feedbackConfig.tilesY=8;
+    feedbackConfig.mipLevels=3;feedbackConfig.virtualLayers=3;
+    feedbackConfig.maxReadbackPixels=16;
+    feedbackConfig.maxUniquePages=8;
+    feedbackConfig.maxVisibleRegions=8;
+    VirtualTexturePrefetchConfig prefetchConfig;
+    prefetchConfig.tilesX=prefetchConfig.tilesY=8;
+    prefetchConfig.mipLevels=3;prefetchConfig.virtualLayers=3;
+    prefetchConfig.maxCandidates=32;
+    prefetchConfig.maxRequestsPerFrame=4;
+
+    // Use the canonical production feedback encoder/material helper, not
+    // duplicated page-ID packing arithmetic in a test-only Metal shader.
+    std::string source=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct FeedbackVertexOut { float4 position [[position]]; };
+vertex FeedbackVertexOut vs_main(uint index [[vertex_id]]) {
+    float2 points[3]={float2(-1.0,-1.0),float2(3.0,-1.0),
+                      float2(-1.0,3.0)};
+    FeedbackVertexOut out;
+    out.position=float4(points[index],0.0,1.0);
+    return out;
+}
+)MSL";
+    source+=kVirtualTextureFeedbackMSL;
+    source+=kVirtualTextureFeedbackMaterialMSL;
+    source+=R"MSL(
+fragment float4 fs_main(FeedbackVertexOut in [[stage_in]],
+                        constant float4& params [[buffer(1)]]) {
+    return aiverse_material_feedback(params.xy,int(params.z),
+                                     int(params.w),int2(8,8));
+}
+)MSL";
+    ShaderDesc shader;
+    shader.msl=source.c_str();
+    shader.uniformSlots=1;
+    shader.label="MetalVirtualTextureFeedbackAcceptance";
+    const ShaderHandle fragment=dev.createShader(shader);
+    if (!fragment.valid()) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: GPU VT feedback shader: %s\n",
+                     dev.lastError().c_str());
+        return;
+    }
+    PipelineDesc pipelineConfig=virtualTextureFeedbackPipelineDesc(fragment,true);
+    pipelineConfig.attrCount=0;
+    pipelineConfig.stride=0;
+    pipelineConfig.indexType=IndexType::None;
+    pipelineConfig.cull=CullMode::None;
+    const PipelineHandle pipeline=dev.createPipeline(pipelineConfig);
+    if (!pipeline.valid()) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: GPU VT feedback pipeline: %s\n",
+                     dev.lastError().c_str());
+        dev.destroyShader(fragment);
+        return;
+    }
+    std::printf("TIMING VT feedback shader_pipeline_setup_ms=%.3f\n",
+                elapsedMs(start,Clock::now()));
+
+    const VirtualPageKey page{1,3,2,2};
+    const uint32_t packed=encodeVirtualTextureFeedback(page);
+    const Color expectedId{
+        uint8_t(packed),uint8_t(packed>>8),
+        uint8_t(packed>>16),uint8_t(packed>>24)};
+    struct Case {
+        std::array<float,4> params;
+        Color expected;
+        bool valid;
+        const char* name;
+    };
+    const Case cases[]={
+        {{0.8125f,0.5625f,1.0f,2.0f},expectedId,true,
+         "VT feedback shader emits packed page ID"},
+        {{-0.125f,0.5625f,1.0f,2.0f},{0,0,0,0},false,
+         "VT feedback shader invalid UV emits zero"}
+    };
+
+    for (const auto& item:cases) {
+        VirtualTextureFeedbackPass pass;
+        if (!pass.initialize(dev,4,4,feedbackConfig,prefetchConfig,8,true)) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: GPU VT feedback render target: %s\n",
+                         pass.lastError().c_str());
+            continue;
+        }
+        dev.beginFrame(16,16);
+        const bool rendered=pass.renderAndCapture([&](Device& active) {
+            active.setPipeline(pipeline);
+            active.setUniforms(0,item.params.data(),sizeof(item.params));
+            active.draw(3);
+            return true;
+        });
+        dev.endFrame();
+        if (!rendered) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: GPU VT feedback render/readback: %s\n",
+                         pass.lastError().c_str());
+            pass.shutdown();
+            continue;
+        }
+        auto read=probe(pass.texture(),0,0,4,4,
+                        solid(4,4,item.expected),item.name);
+        verifyReads(dev,{read},"VT GPU feedback RGBA8 ID");
+        check(pass.readyToSubmit(),
+              "Metal GPU feedback callback decoded on the owner thread");
+        VirtualTextureFeedbackDecoder decoder;
+        check(decoder.initialize(feedbackConfig),
+              "GPU VT feedback decoder initialized with expected topology");
+        std::vector<VirtualTextureVisibleRegion> visible;
+        std::string error;
+        const bool decoded=decoder.decode(read->output,visible,error);
+        if (!decoded) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: native feedback ID decode: %s\n",
+                         error.c_str());
+        } else if (item.valid) {
+            const auto stats=decoder.stats();
+            check(stats.sampledPixels==16 && stats.uniquePages==1 &&
+                  stats.invalidIds==0 && visible.size()==1,
+                  "actual GPU feedback produces one unique visible page");
+            if (visible.size()==1) {
+                const auto& v=visible.front();
+                check(v.desiredMip==page.mip && v.layer==page.layer &&
+                      v.priority==16 &&
+                      v.u0==0.75 && v.v0==0.5,
+                      "real Metal encoded feedback preserves page XY/mip/layer/priority");
+            }
+        } else {
+            const auto stats=decoder.stats();
+            check(stats.sampledPixels==16 && stats.invalidIds==16 &&
+                  stats.uniquePages==0 && visible.empty(),
+                  "zero RGBA8 GPU feedback never requests an invalid page");
+        }
+        pass.shutdown();
+    }
+    dev.destroyPipeline(pipeline);
+    dev.destroyShader(fragment);
+    std::printf("TIMING VT feedback GPU acceptance_total_ms=%.3f\n",
+                elapsedMs(start,Clock::now()));
+}
+
 } // namespace
 
 int main() {
@@ -428,6 +579,7 @@ int main() {
         layered(*device,TextureDimension::Cube,6,"Cube");
         layered(*device,TextureDimension::CubeArray,12,"CubeArray");
         shaderSampleVolume(*device);
+        gpuVirtualTextureFeedback(*device);
         std::printf("TIMING Metal fixture_total_ms=%.3f gpu_test_body_ms=%.3f\n",
                     elapsedMs(testStart,Clock::now()),
                     elapsedMs(deviceReady,Clock::now()));
