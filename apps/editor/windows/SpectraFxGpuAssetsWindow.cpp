@@ -12,6 +12,10 @@
 #include "engine/fx/SpectraFxGpuEmitterAsset.h"
 #include "engine/fx/SpectraFxGpuEmitterLibrary.h"
 #include "engine/fx/SpectraFxGpuRoutes.h"
+#include "engine/fx/SpectraFxSceneHost.h"
+#include "engine/render/Renderer3D.h"
+#include <cmath>
+#include <cstdint>
 
 namespace aiverse::editor {
 namespace fs = std::filesystem;
@@ -23,10 +27,14 @@ public:
     const char* group() const override { return "look"; }
     const char* dockArea() const override { return "center"; }
     bool openByDefault() const override { return false; }
+    ~SpectraFxGpuAssetsWindow() override {
+        shutdownPreview();
+    }
 
     void update(Editor& ed,double) override {
         const auto& dir=ed.ws().project.dir;
         if(project_==dir) return;
+        shutdownPreview(); // before changing the project reader/cpu file cache
         project_=dir;
         selected_.clear();
         text_.clear();saved_.clear();pending_.clear();
@@ -111,6 +119,19 @@ public:
         } else {
             ImGui::TextWrapped("GPU/CPU execution config (version 1). GPU is optional; "
                                "unsupported modules remain on CPU through the authored fallback.");
+        }
+        // Real offscreen preview renders the unsaved GPU JSON through the
+        // same SceneHost/HybridPlayback used by FPS. Route files have no
+        // single emitter to preview, so the canvas is disabled for routes.
+        if(selected_!="@routes") {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Live CPU/GPU emitter preview");
+            if(ImGui::Button("Restart live preview")) {
+                previewHash_=0;
+                previewRestartRequested_=true;
+            }
+            drawPreview(ed,std::max(200.0f,ImGui::GetContentRegionAvail().x),230.0f);
+            ImGui::Separator();
         }
         if(ui::inputMultiline("##spectrafx_gpu_config",text_,ImVec2(-1,-1)))
             dirty_=true;
@@ -388,6 +409,142 @@ private:
         ImGui::TextDisabled("Pool names and other advanced fields: edit JSON below.");
     }
 
+    void shutdownPreview() {
+        previewHost_.shutdown();
+        if(previewDevice_)
+            previewViewport_.release(*previewDevice_);
+        previewDevice_=nullptr;
+        previewHash_=0;
+        previewInitialized_=false;
+        previewRestartRequested_=true;
+        previewLastTime_=-1;
+        previewMessage_.clear();
+    }
+    static uint64_t previewHash(const std::string& text) {
+        uint64_t hash=14695981039346656037ull;
+        for(unsigned char ch:text){hash^=ch;hash*=1099511628211ull;}
+        return hash;
+    }
+    void initPreview(Editor& ed) {
+        if(previewInitialized_) return;
+        if(!previewDevice_) previewDevice_=&ed.device();
+        // The two synthetic assets exist only inside this editor preview,
+        // never in the project's file tree or the running FPS/RTS client.
+        const std::string sourceName="fx/gpu/__spectrafx_preview.gpu.json";
+        const std::string routeName="fx/gpu/routes.json";
+        const std::string routeText=R"JSON({
+          "version":1,
+          "routes":[{
+             "eventType":1,
+             "asset":"__spectrafx_preview",
+             "enabled":true,
+             "ownPlayerOnly":true,
+             "oneShotSeconds":10
+          }]
+        })JSON";
+        const bool ok=previewHost_.init(*previewDevice_,
+            [this,sourceName,routeName,routeText](
+                    const std::string& path,std::string& output) {
+                if(path==routeName) {output=routeText;return true;}
+                if(path==sourceName) {output=text_;return true;}
+                std::ifstream in(fs::path(project_)/path,std::ios::binary);
+                if(!in) return false;
+                output.assign(std::istreambuf_iterator<char>(in),
+                              std::istreambuf_iterator<char>());
+                return !in.bad();
+            },project_+"/");
+        if(!ok) previewMessage_=previewHost_.lastError();
+        else previewMessage_.clear();
+        previewInitialized_=ok;
+    }
+    void drawPreview(Editor& ed,float width,float height) {
+        if(!previewDevice_) previewDevice_=&ed.device();
+        const double now=ed.time();
+        float dt=previewLastTime_<0?0:float(now-previewLastTime_);
+        previewLastTime_=now;
+        dt=std::clamp(dt,0.0f,0.05f);
+        fx::SpectraFxHybridEmitter::Config candidate;
+        std::string error;
+        const bool valid=fx::SpectraFxGpuEmitterAsset::readText(
+            text_,candidate,&error);
+        if(!valid) {
+            previewMessage_=error;
+            // Do not display stale particles from the previous valid draft.
+            if(previewInitialized_) {
+                if(previewHost_.resetScene()) previewHash_=0;
+                else previewMessage_="GPU preview reset deferred to safe frame";
+            }
+        } else {
+            initPreview(ed);
+            if(previewInitialized_) {
+                const uint64_t hash=previewHash(text_);
+                if(previewRestartRequested_ || previewHash_!=hash) {
+                    if(previewHost_.resetScene()) {
+                        fx::SpectraFxCue cue{};
+                        cue.id=1;
+                        cue.key=1; // persistent preview attachment
+                        cue.action=fx::SpectraFxCue::Action::Play;
+                        cue.position={0,0.7f,0};
+                        cue.direction={0,1,0};
+                        if(previewHost_.dispatch(cue)) {
+                            previewMessage_.clear();
+                        } else previewMessage_="Preview effect unavailable: "
+                            "check CPU effect asset and GPU backend compatibility";
+                        previewHash_=hash;
+                        previewRestartRequested_=false;
+                    } else previewMessage_="GPU preview reset deferred to safe frame";
+                }
+                previewHost_.prepareGpu(dt,previewCamera_);
+            }
+        }
+        const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
+        previewViewport_.ensure(*previewDevice_,int(width*dpi),int(height*dpi));
+        auto& renderer=ed.renderer();
+        renderer.beginScene(previewCamera_,previewViewport_.w,previewViewport_.h);
+        const uint32_t grid=render::rgba(70,80,95,255);
+        for(int i=-5;i<=5;++i) {
+            renderer.line({float(i),0,-5},{float(i),0,5},grid);
+            renderer.line({-5,0,float(i)},{5,0,float(i)},grid);
+        }
+        if(valid && previewInitialized_)
+            previewHost_.prepareCpu(dt,previewCamera_,renderer.viewProj(),
+                                    previewViewport_.w,previewViewport_.h);
+        gfx::PassDesc pass;
+        pass.colorTarget=previewViewport_.color;
+        pass.depthTarget=previewViewport_.depth;
+        pass.clearColor[0]=0.12f;
+        pass.clearColor[1]=0.13f;
+        pass.clearColor[2]=0.16f;
+        renderer.render(pass);
+        if(valid && previewInitialized_)
+            previewHost_.render(renderer.lighting,renderer.viewProj(),
+                                previewCamera_);
+        previewDevice_->endPass();
+        previewViewport_.image(*previewDevice_,width,height);
+        if(ImGui::IsItemHovered()) {
+            const auto& io=ImGui::GetIO();
+            if(ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                previewCamera_.yaw-=io.MouseDelta.x*0.01f;
+                previewCamera_.pitch=std::clamp(
+                    previewCamera_.pitch+io.MouseDelta.y*0.01f,0.05f,1.5f);
+            }
+            if(io.MouseWheel)
+                previewCamera_.distance=std::clamp(
+                    previewCamera_.distance*
+                    (io.MouseWheel>0?0.9f:1.1f),2.0f,60.0f);
+        }
+        if(!previewMessage_.empty())
+            ImGui::TextWrapped("%s",previewMessage_.c_str());
+        if(previewInitialized_ && previewHost_.playback()) {
+            const auto* playback=previewHost_.playback();
+            ImGui::TextDisabled(
+                "FX preview: attached %zu | GPU slots %llu | retained KiB %llu",
+                playback->attached(),
+                static_cast<unsigned long long>(playback->usedGpuSlots()),
+                static_cast<unsigned long long>(playback->nominalGpuBytes()/1024));
+        }
+    }
+
     void refresh() {
         files_.clear();
         if(project_.empty()) return;
@@ -539,6 +696,14 @@ private:
     std::string project_,selected_,newName_,pending_,text_,saved_,message_;
     std::vector<std::string> files_;
     bool dirty_=false,pendingCreate_=false;
+    gfx::Device* previewDevice_=nullptr;
+    fx::SpectraFxSceneHost previewHost_{};
+    Viewport previewViewport_{};
+    render::RTSCamera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
+    uint64_t previewHash_=0;
+    double previewLastTime_=-1;
+    bool previewInitialized_=false,previewRestartRequested_=true;
+    std::string previewMessage_;
 };
 AIVERSE_EDITOR_WINDOW(SpectraFxGpuAssetsWindow);
 } // namespace aiverse::editor
