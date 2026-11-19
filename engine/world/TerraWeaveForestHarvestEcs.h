@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestEcology.h"
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -67,7 +68,7 @@ inline void io(Archive& a,ForestHarvestResource& state) {
 inline void registerTerraWeaveForestHarvestPersistence(Simulation& sim) {
     sim.registerPersistentResource<ForestHarvestResource>(
         "terraweave.forest_harvest",1);
-    sim.world().setResource<ForestHarvestResource>({});
+    sim.world().setResource<ForestHarvestResource>(ForestHarvestResource{});
 }
 inline bool isForestHarvested(const ForestHarvestResource& state,
                              AnchoredPlantId id) {
