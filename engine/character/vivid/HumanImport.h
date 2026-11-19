@@ -25,6 +25,7 @@ struct HumanImportManifest {
 };
 struct HumanImportedAsset {
     HumanDNA dna;
+    std::size_t sourceVertexCount=0;
     std::unique_ptr<render::Model> model;
     SparseMorphLibrary facialShapes;
     FaceShapeBinding facialBinding;
