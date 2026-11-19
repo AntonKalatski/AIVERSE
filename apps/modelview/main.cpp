@@ -50,6 +50,7 @@ struct AttachmentSpec {
     bool enabled=true;
     render::mat4 local{};
     render::mat4 childWorld{};
+    std::string id; // optional scene/prefab-stable authored child identity
 };
 struct Instance {
     Model* model = nullptr;
@@ -286,7 +287,7 @@ struct Viewer {
             for(const auto& entry:document.attachments)
                 fromFile.push_back({
                     entry.model,entry.socket,entry.enabled,
-                    entry.local,entry.childWorld});
+                    entry.local,entry.childWorld,entry.id});
             fromFile.insert(fromFile.end(),attachmentSpecs.begin(),attachmentSpecs.end());
             attachmentSpecs=std::move(fromFile);
         }catch(const std::exception& e) {
@@ -303,7 +304,7 @@ struct Viewer {
         for(const auto& entry:attachmentSpecs)
             document.attachments.push_back({
                 entry.modelSource,entry.socketName,entry.enabled,
-                entry.local,entry.childWorld});
+                entry.local,entry.childWorld,entry.id});
         const auto root=::aiverse::view::AttachmentLayoutCodec::write(document);
         std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
         if(!file || !(file<<root.dump(2)))
@@ -363,7 +364,7 @@ struct Viewer {
                     requested.push_back(Imported::childFromLayout(
                         ::aiverse::view::AttachmentLayoutItem{
                             entry.modelSource,entry.socketName,entry.enabled,
-                            entry.local,entry.childWorld},
+                            entry.local,entry.childWorld,entry.id},
                         children.at(entry.modelSource)));
                 }
                 Imported::Compiled compiled;
