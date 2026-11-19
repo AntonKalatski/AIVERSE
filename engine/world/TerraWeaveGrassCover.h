@@ -28,6 +28,10 @@ public:
     static constexpr int64_t kBucketCm=6400;
 
     size_t size() const {return patches_.size();}
+    void exchangeSnapshotState(GrassCoverRegistry& other) noexcept {
+        patches_.swap(other.patches_);
+        buckets_.swap(other.buckets_);
+    }
     const GrassPatch* find(uint64_t key) const {
         const auto it=patches_.find(key);
         return it==patches_.end()?nullptr:&it->second;
