@@ -410,9 +410,11 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         const bool hasMorph = it.prim->morphTargets > 0 &&
                               it.model->morphTex.valid();
         const bool hasSkin = it.joints >= 0;
-        // Baked skin and morph together need a separate mixed permutation.
+        // Mixed baked-clip + morph uses the dedicated Stage 29 shader:
+        // morph deltas are applied before texture-atlas skinning.
         const bool bakedEligible = it.baked && it.model->baked.tex.valid() &&
-            !hasMorph && it.prim->jointPalette.size() <= 80;
+            it.prim->jointPalette.size() <= 80 &&
+            (!hasMorph || it.prim->morphTargets <= kMaxMorphTargets);
         return (hasSkin || hasMorph || bakedEligible) &&
             !(it.baked && !bakedEligible) && it.tint.w >= 0.99f &&
             it.dissolve <= 0.0f && it.materialRole != 1 &&
@@ -569,8 +571,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         shader.glslVertex = motion_shaders::kBakedVS;
         shader.glslFragment = motion_shaders::kFS;
         shader.msl = motion_shaders::kBakedMSL;
-        shader.textureSlots = 8; // texture 0 scene depth, texture 7 baked atlas
-        shader.uniformSlots = 5; // U0 current/previous transforms, U3 palette, U4 animation
+        shader.textureSlots = 9; // texture 0 scene depth, 7 baked atlas, 8 morph deltas
+        shader.uniformSlots = 6; // U0, U3 palette, U4 animation, U5 prior/current morph
         shader.label = "prisma baked animation velocity";
         objectMotionBakedShader_ = dev_->createShader(shader);
         if (objectMotionBakedShader_.valid()) {
@@ -820,6 +822,13 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             struct BakedAnimU {
                 float current[4], previous[4];
             };
+            struct BakedMorphU {
+                float current[8] = {};
+                float previous[8] = {};
+                float info[4] = {};
+                float info2[4] = {};
+            };
+            static_assert(sizeof(BakedMorphU) <= 4096);
             dev_->setPipeline(objectMotionBakedPipeline_);
             for (const auto& it : modelItems_) {
                 if (!it.baked || !deformEligible(it)) continue;
@@ -837,6 +846,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 std::memcpy(u.current,currentMvp.m,sizeof u.current);
                 std::memcpy(u.previous,previousMvp.m,sizeof u.previous);
                 u.params[0] = float(w); u.params[1] = float(h);
+                const bool hasMorph = it.prim->morphTargets > 0 &&
+                                      it.model->morphTex.valid();
+                u.params[2] = hasMorph ? 1.0f : 0.0f;
                 float palette[80] = {};
                 for (size_t i=0;i<it.prim->jointPalette.size() && i<80;++i)
                     palette[i] = float(it.prim->jointPalette[i]);
@@ -846,10 +858,24 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 anim.current[2]=a.z; anim.current[3]=a.w;
                 anim.previous[0]=b.x; anim.previous[1]=b.y;
                 anim.previous[2]=b.z; anim.previous[3]=b.w;
+                BakedMorphU morph{};
+                if (hasMorph) {
+                    std::memcpy(morph.current,now->second.weights.data(),
+                                sizeof morph.current);
+                    std::memcpy(morph.previous,before->second.weights.data(),
+                                sizeof morph.previous);
+                    morph.info[0] = float(it.prim->morphTexel);
+                    morph.info[1] = float(it.prim->firstVertex);
+                    morph.info[2] = float(it.prim->vertexCount);
+                    morph.info[3] = float(it.prim->morphTargets);
+                    morph.info2[0] = float(it.model->morphTexWidth);
+                }
                 dev_->setUniforms(0,&u,sizeof u);
                 dev_->setUniforms(3,palette,sizeof palette);
                 dev_->setUniforms(4,&anim,sizeof anim);
+                dev_->setUniforms(5,&morph,sizeof morph);
                 dev_->setTexture(7,it.model->baked.tex);
+                dev_->setTexture(8,hasMorph ? it.model->morphTex : white_);
                 dev_->setVertexBuffer(it.model->vb);
                 dev_->setIndexBuffer(it.model->ib);
                 dev_->drawIndexed(it.indexCount,
