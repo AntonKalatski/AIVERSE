@@ -209,6 +209,17 @@ public:
     const GpuCaptureStatus& status() const {return status_;}
     bool takeReady(std::vector<uint8_t>& output) {
         if(status_.phase!=GpuCapturePhase::Ready)return false;
+        // A caller may have resumed VFX or recovered the GPU after the
+        // callback was accepted. Recheck both owner epoch AND exact particle
+        // revision at handoff, not only when first marking the bytes Ready.
+        PoolGpuGroupSummary group{};
+        if(!sameLivePool() ||
+           !pool_.gpuGroupSummary(status_.groupIndex,group) ||
+           !group.exportReady ||
+           group.checkpoint.capturedRevision!=status_.capturedRevision) {
+            fail("Capture became stale or pool was recreated before takeReady");
+            return false;
+        }
         output=std::move(result_);
         status_=GpuCaptureStatus{};
         return true;
