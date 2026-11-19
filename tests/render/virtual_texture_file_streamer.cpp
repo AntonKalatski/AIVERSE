@@ -61,6 +61,10 @@ public:
     }
     void finishFeedback(TextureReadbackResult result) {
         auto callback=std::move(feedbackCompletion);
+        // A moved-from std::function is valid but may hold an unspecified
+        // target. Explicitly release the mock's one-outstanding-readback
+        // slot before delivering the callback, as an actual device does.
+        feedbackCompletion = {};
         require(bool(callback),"synthetic pending feedback callback exists");
         callback(std::move(result));
     }
@@ -396,6 +400,8 @@ void asynchronousGpuFeedbackRuntime() {
     require(!runtime.pending() && runtime.readyToSubmit() &&
             runtime.lastFeedbackStats().uniquePages==1,
             "deferred feedback decoded exactly once");
+    require(!gpu.feedbackCompletion,
+            "mock readback completion releases the outstanding callback slot");
     const auto submitted=runtime.submit(stream);
     require(submitted.submittedNewRequests==2 &&
             stream.pendingPage(coarse) && stream.pendingPage(middle) &&
