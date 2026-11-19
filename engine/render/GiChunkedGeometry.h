@@ -36,6 +36,14 @@ public:
         return total;
     }
 
+    // Stable immutable chunk enumeration; use geometry pointer identity for
+    // incremental CPU BVH cache reuse across consecutive scene publications.
+    // The callback MUST NOT mutate the borrowed source geometry.
+    template<class Fn> void forEachChunk(Fn&& visitor) const {
+        for (const auto& chunk : chunks_)
+            visitor(chunk.id, chunk.bounds, *chunk.geometry);
+    }
+
     // Offline/scene-change-only extraction for small GPU reference scenes.
     // Stable chunk-ID order; per-chunk geometry retains original surface/material IDs.
     // Production GPU BVH/clipmap path must NOT flatten large worlds per frame.
