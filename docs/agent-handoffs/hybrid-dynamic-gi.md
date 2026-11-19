@@ -806,3 +806,17 @@ RGBA32F GI tex7, with legacy vision fog tex15 preserved. Existing richer
 Metal/Vulkan terrain GI continues to use tex21; unavailable probes fall
 back to unmodified terrain. Source fixture `gi_terrain_compact` registered
 with CTest. No real native compiler/shader/GPU test or full acceptance run.
+
+
+## Stage 48 — 2026-11-20 — bounded large-world GPU resident BVH (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage48-gpu-resident-volume-2026-11-20.md`.
+The selected Metal/Vulkan source scene now contains only provably
+probe-reachable collision chunks from the immutable full source, reusing
+shared per-chunk BVH pointers. Far world triangles can exceed the 8192
+GPU limit without blocking a local atlas; potentially relevant near
+overflow is explicitly rejected, NEVER silently clipped. A declared
+maximum GPU moving-light radius preserves this reach guarantee.
+New `gi_gpu_residency_planner` regression source and CTest registration.
+Native build, GPU shading/validation, CTest and large-world performance:
+NOT RUN. Further GPU paging/clipmap and current-main integration remain.
