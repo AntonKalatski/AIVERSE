@@ -168,8 +168,10 @@ public:
         if(empty())return true;
         if(!waitIdle()) {
             ++idleFallbackFailures_;
+            emit({RetirementDiagnosticKind::IdleFallbackFailed,0,count_});
             return false;
         }
+        emit({RetirementDiagnosticKind::RecoveredAfterIdle,0,count_});
         drainKnownCompleted(close,destroy);
         return true;
     }
