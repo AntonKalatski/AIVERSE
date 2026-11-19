@@ -250,14 +250,20 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
             if (at.when && !(state & at.when)) continue;
             if (at.carry != -2 && !(o.carry > 0 && (at.carry == -1 || at.carry == o.carryRes))) continue;
             ModelDraw ad = d;
-            ad.persistentId = 0; // attachments need distinct stable IDs
+            ad.persistentId = 0; // attachments retain legacy transient identity
             ad.model = at.model;
             ad.geometry = {};
             ad.materials = &at.materials;
             ad.nodeWorld = nullptr; ad.pose = nullptr; ad.baked = nullptr; ad.variant = -1; ad.nodeMaterial = nullptr;
-            const mat4 socket = at.node >= 0 && size_t(at.node) < st.world.size() ? st.world[size_t(at.node)] : mat4{};
-            ad.world = st.drawn * socket * at.local;
-            ::aiverse::View::submitModel(r,ad);
+            ad.world = {}; // the child's own transform is local to the socket
+            ModelDraw parentAnchor = d;
+            parentAnchor.world = st.drawn; // source model, not this frame's selected visual LOD
+            ModelDraw attached;
+            if(ch.model && ::aiverse::view::composeAttachment(
+                    parentAnchor,*ch.model,
+                    std::span<const mat4>(st.world.data(),st.world.size()),
+                    ad,at.node,at.local,attached))
+                ::aiverse::View::submitModel(r,attached);
         }
         // ---- effect anchors
         if (!tintOverride)
