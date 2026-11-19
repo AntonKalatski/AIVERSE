@@ -8,6 +8,7 @@
 #include "GiDynamicRuntime.h"
 #include "GiGpuDynamicRuntime.h"
 #include "GiLightBridge.h"
+#include "GiEnvironmentBridge.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -151,6 +152,16 @@ public:
             return gpu_.setEnvironment(environment);
         (void)cpu_.setEnvironment(environment);
         return true;
+    }
+
+    // Capture the ordinary per-scene sun/sky only when the host EXPLICITLY
+    // authorizes indirect bounce. Passing both multipliers as zero is a safe
+    // no-op on default/off source state and avoids counting baked sky twice.
+    bool syncRendererEnvironment(const Renderer3D& renderer,
+                                 float sunBounceMultiplier=0,
+                                 float skyBounceMultiplier=0) {
+        return setEnvironment(giEnvironmentFromLighting(
+            renderer.lighting,sunBounceMultiplier,skyBounceMultiplier));
     }
 
     // Use the same lights authored for the normal direct lighting path.
