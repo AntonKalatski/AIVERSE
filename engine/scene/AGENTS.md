@@ -213,3 +213,24 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
 - Do not serialize leases, streams, worker queues, or GPU/physics
   pointers in the authoritative ECS. Only the stable layout
   fingerprint is a native v10 World resource.
+
+
+## Stage 8 — repository skill catalog gate (2026-11-19)
+
+- Skills introduced under `skills/<category>/<id>/SKILL.md` must be
+  registered with the canonical generator in
+  `tools/skills/catalog.py` (as a native package, meta policy or
+  explicit standalone workflow/gameplay entry, as appropriate).
+  Never update only the generated `skills/catalog.json`; run
+  `python3 tools/skills/catalog.py generate` and verify with
+  `python3 tools/skills/catalog.py check`.
+- This branch's `aiverse-ecs-shared-static` is a native opt-in
+  gameplay recipe, **not** a separate AIVERSE CMake library.
+  It is registered with `runtime=none`, `domain=gameplay`,
+  `target=null` and source
+  `engine/sim/SharedStaticComponents.h`. Do not add a fictitious
+  library alias to silence catalog validation.
+- Full native CTest reported `skill_catalog` and `skill_routing`
+  failing because this skill was absent from registration.
+  See `docs/agent-handoffs/ecs-static-scene-stage8-2026-11-19.md`
+  for the corrections and exact verification boundary.
