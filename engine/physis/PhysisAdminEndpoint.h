@@ -41,6 +41,17 @@ public:
             journalLock_.release();
             return false;
         }
+        // A previous lock inode can be unlinked while flock is still
+        // held. Validate path ownership before EVERY journal write.
+        gateway_.setJournalWriter([this](
+            const std::map<ServerGateway::Key,ServerGateway::Entry>& entries,
+            std::string* why) {
+            if(!journalLock_.valid()) {
+                if(why)*why="PHYSIS admin journal lock path was replaced";
+                return false;
+            }
+            return journal_.save(entries,why);
+        });
         if(!listener_.open(port,true)) {
             journalLock_.release();
             if(error)*error="PHYSIS loopback admin WebSocket listener failed";
@@ -56,8 +67,14 @@ public:
     ServerGateway& gateway(){return gateway_;}
     const ServerGateway& gateway()const{return gateway_;}
     std::size_t connections()const{return peers_.size();}
+    bool journalHealthy()const {
+        return journalLock_.valid() && gateway_.journalHealthy();
+    }
 
     void poll(Simulation& sim,std::uint64_t nowMs) {
+        // Fail closed BEFORE ingress, including requests on existing peers.
+        // Cached receipts become Unknown when the journal is unsafe.
+        if(!journalLock_.valid())gateway_.suspendJournal();
         auto newlyConnected=listener_.poll(nowMs);
         for(auto& conn:newlyConnected) {
             if(peers_.size()>=16) {conn->close();continue;}
@@ -91,7 +108,10 @@ public:
             }),peers_.end());
     }
     // Host calls after committed Simulation::step, not from editor/rendering.
-    void afterTick(const Simulation& sim) {gateway_.observe(sim);}
+    void afterTick(const Simulation& sim) {
+        if(!journalLock_.valid())gateway_.suspendJournal();
+        gateway_.observe(sim);
+    }
 
 private:
     struct Peer {
