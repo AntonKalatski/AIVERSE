@@ -1,7 +1,10 @@
 #pragma once
-// PRISMA Stage 45. CPU-only hysteresis for presentation render scale.
-// Only samples explicitly provided verified GPU frame durations; never uses
-// CPU frame time, FPS or a simulated GPU completion token.
+// PRISMA Stages 45-46. CPU-only hysteresis for presentation render scale.
+// Samples may be asynchronously completed whole-frame GPU timings paired with
+// true GPU fences, or completed scoped GPU query results paired with per-view
+// sample sequence numbers. Real GPU-completed fences also permit bounded
+// known-memory pressure to lower the quality even without frame timings.
+// Never use CPU frame time, FPS or an invented completion token.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -24,8 +27,9 @@ struct PrismaAdaptiveResolution {
     }
     // 'ceiling' is an author-chosen renderScale. The controller never raises
     // fidelity beyond it and never drops below the configured floor.
-    // A true completed fence advancing is required for every new sample:
-    // duplicate last-completed GPU timings must NOT be counted repeatedly.
+    // The token must represent a new actual GPU completion: a confirmed
+    // full-frame GPU fence, or a new completed GL33 scoped query sequence.
+    // Duplicate/queued CPU frame updates never advance the controller.
     bool observe(double gpuMs, uint64_t completedFence, float targetGpuMs,
                  float floor, float ceiling, bool memoryPressure = false) {
         if (!initialized) reset(ceiling);
