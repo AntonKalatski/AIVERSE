@@ -5615,3 +5615,31 @@ Next: integrate viewport resize and feedback drawing in a generic
 renderer/material path, then close remaining backend RenderTexture
 and storage image feature gaps. Defer tests until functional phase
 is finished, but do not mark source as validated.
+
+
+## Stage 9E — derivative-based feedback mip policy (2026-11-19)
+
+Source commit: 5d95d281c06debd34fd609aa25f9df28e729b523.
+File: engine/gfx/VirtualTextureFeedback.h.
+Added optional kVirtualTextureFeedbackAutoMipGLSL and
+kVirtualTextureFeedbackAutoMipMSL fragment-shader snippets.
+aiverseFeedbackMipFromDerivatives / aiverse_feedback_mip_from_derivatives
+accept UV, logical virtual texture texel extent, mipLevels and mipBias.
+They use max squared UV derivative footprint, clamp negative LOD to
+mip 0 and bound the result to mipLevels-1. Nonfinite UV/extent/bias
+or derivative footprint and invalid mip counts return -1. The caller
+passes the resulting mip into existing material feedback helper.
+These are generic shader utilities: no FPS/RTS/Terra dependency and
+no automatic pipeline/material binding has been added.
+
+Important: call derivative function in uniform fragment flow, before
+conditional discard/early returns; the texel extent is the logical
+virtual texture size (not feedback render-target pixels). The
+material helper and encoder must still be concatenated in the
+correct order. Real GLSL/MSL compiler behavior remains unverified.
+Verification: GitHub source commit succeeded; no CMake/CTest,
+shader compiler, GPU or visual tests run, per user's functional-first
+instruction.
+Next: integrate automatic mip policy with generic renderer feedback
+submission and material virtual-texture binding; then close backend
+feature gaps before the dedicated validation phase.
