@@ -1,6 +1,7 @@
 #include "Prisma.h"
 #include "PrismaVolumes.h"
 #include "PrismaRhiExecutor.h"
+#include "PrismaCompositeTextureLayout.h"
 #include <chrono>
 #include "graph/ShaderGraph.h"
 #include <algorithm>
@@ -82,7 +83,9 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
     const std::string common = "#define TUV(p) (px.z > 0.5 ? vec2((p).x, 1.0 - (p).y) : (p))\n"
                                "#define TDIR(d) (px.z > 0.5 ? vec2((d).x, -(d).y) : (d))\n";
     std::string gTex, mArgs, gMacros, mMacros;
-    for (int t = 0; t < 9; ++t) {
+    // Slot 9 is reserved for Auto Exposure when the postfx graph uses
+    // all four authored texture slots (5,6,7,8).
+    for (int t = 0; t < 10; ++t) {
         if (!(texMask & (1u << t))) continue;
         const std::string n = std::to_string(t);
         gTex += "uniform sampler2D tex" + n + ";\n";
@@ -1164,7 +1167,6 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
     if (mask & kPfLut) tex |= 16;
-    if (mask & kPfAutoExposure) tex |= (1u << 8);
     std::string body = prisma::kComposite;
     graph::Program graphProgram;
     if (graphData) {
@@ -1180,6 +1182,18 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
             body.replace(body.find(marker),marker.size(),macros+"vec2 sg_uv=s,sg_screen=s;vec4 sg_input=vec4(col,1.0);float sg_time=graphFrame.x;\n// SG_CODE\nRETURN("+graphProgram.outputs.at("color")+");\n");
         }catch(const std::exception& ex){error_=ex.what();compositeFailed_[key]=true;return {};}
     }
+    const auto layout = PrismaCompositeTextureLayout::plan(
+        graphProgram.textures.size(), (mask & kPfAutoExposure) != 0);
+    if (!layout.valid) {
+        error_ = "postfx composite: Shader Graph exceeds four independent textures";
+        compositeFailed_[key] = true;
+        return {};
+    }
+    if (mask & kPfAutoExposure) {
+        tex |= (1u << layout.exposureSlot);
+        if (layout.exposureSlot == 9)
+            defines += "#define PF_AUTO_EXPOSURE_SLOT9 1\n";
+    }
     Built b=buildProgram(kCompositeFields,15,tex,defines,prisma::kCompositeHelpers,body.c_str());
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
@@ -1187,7 +1201,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     }
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = (mask & kPfAutoExposure) ? 9 : 5+int(graphProgram.textures.size());
+    sd.textureSlots = layout.textureSlots;
     sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
@@ -2304,11 +2318,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             for (const auto& path : it->second)
                 graphImages.push_back(graphTexture(path));
     }
-    // Custom graph textures occupy consecutive slots 5..8; never bind
-    // automatic exposure over one of them. The shader path remains valid,
-    // but auto exposure is omitted for graphs using all four slots.
+    // The shared GPU-free texture layout reserves 5..8 for up to four
+    // graph textures, moving exposure from slot 8 to slot 9 as needed.
+    // A backend that cannot compile the ten-slot variant still gets the
+    // existing no-auto-exposure fallback, rather than a texture alias.
+    const auto compositeLayout = PrismaCompositeTextureLayout::plan(
+        graphImages.size(), automaticExposure.valid());
     const bool useAutomaticExposure = automaticExposure.valid() &&
-        graphImages.size() <= 3;
+        compositeLayout.valid;
     if (useAutomaticExposure) mask |= kPfAutoExposure;
     gfx::PipelineHandle pipe = composite(mask, graphData);
     if (!pipe.valid()) {
@@ -2346,7 +2363,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const Lut* l = (mask & kPfLut) ? lut(find(PrismaType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
         for(size_t i=0;i<graphImages.size();++i)dev.setTexture(int(i)+5,graphImages[i]);
-        if (mask & kPfAutoExposure) dev.setTexture(8, automaticExposure);
+        if (mask & kPfAutoExposure)
+            dev.setTexture(compositeLayout.exposureSlot, automaticExposure);
         dev.draw(3);
     }
     ++stats_.passes;
@@ -2438,10 +2456,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     state.pipelinePrepared = pipes_[kExposureLog].valid() &&
                         pipes_[kExposureReduce].valid() && pipes_[kExposureAdapt].valid();
                     state.encoded = compositeEncoded && (mask & kPfAutoExposure) != 0;
-                    if (!state.encoded) state.reason = graphImages.size() > 3 ?
-                        "shader graph occupies exposure texture slot 8" :
+                    if (!state.encoded) state.reason = !compositeLayout.valid ?
+                        "shader graph exceeds four texture bindings" :
                         (!state.pipelinePrepared ? "exposure pipelines unavailable" :
-                         "exposure history/target or composite unavailable");
+                         "exposure history/target or composite fallback unavailable");
                 }
                 break;
             case PrismaType::DepthOfField:
