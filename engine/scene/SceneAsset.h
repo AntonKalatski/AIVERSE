@@ -3,6 +3,8 @@
 #pragma once
 #include "engine/data/Json.h"
 #include <algorithm>
+#include <charconv>
+#include <limits>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -51,6 +53,23 @@ struct SceneAsset {
         return true;
     }
 
+    // IDs are encoded as canonical unsigned decimal integers, not Fixed
+    // numbers (Json::integer would silently truncate fractional input).
+    static bool decodeId(const Json& node, uint64_t& out, bool allowZero = false) {
+        if(!node.isNumber()) return false;
+        const std::string& text = node.numberLiteral();
+        if(text.empty() || (text.size() > 1 && text.front() == '0')) return false;
+        for(char c : text) if(c < '0' || c > '9') return false;
+        uint64_t parsed = 0;
+        const auto parsedResult = std::from_chars(text.data(), text.data()+text.size(), parsed);
+        if(parsedResult.ec != std::errc{} ||
+           parsedResult.ptr != text.data()+text.size() ||
+           parsed > uint64_t(std::numeric_limits<int64_t>::max()) ||
+           (!allowZero && parsed == 0)) return false;
+        out = parsed;
+        return true;
+    }
+
     // Strict schema validation. Sorting normalizes both dependency and object
     // order for deterministic canonical instantiation independent of JSON order.
     static bool decode(const Json& data, SceneAsset& out, std::string* error = nullptr) {
@@ -59,7 +78,7 @@ struct SceneAsset {
             return false;
         };
         if(!data.isObject() || !data["version"].isNumber() ||
-           data["version"].integer() != 1 || !data["id"].isString() ||
+           data["version"].numberLiteral() != "1" || !data["id"].isString() ||
            !validKey(data["id"].str()) || !data["dependencies"].isArray() ||
            !data["objects"].isArray())
             return fail("invalid scene v1 header / id / arrays");
@@ -84,15 +103,13 @@ struct SceneAsset {
                !entry["prefab"].isString() ||
                !validKey(entry["prefab"].str()))
                 return fail("invalid scene object");
-            const int64_t id = entry["id"].integer(-1);
-            if(id <= 0 || !uniqueObjects.insert(uint64_t(id)).second)
+            uint64_t id = 0;
+            if(!decodeId(entry["id"], id) || !uniqueObjects.insert(id).second)
                 return fail("invalid or duplicate scene object ID");
-            int64_t parent = 0;
-            if(entry.has("parent")) {
-                if(!entry["parent"].isNumber()) return fail("invalid parent type");
-                parent = entry["parent"].integer(-1);
-            }
-            if(parent < 0 || parent == id)
+            uint64_t parent = 0;
+            if(entry.has("parent") && !decodeId(entry["parent"], parent, true))
+                return fail("invalid scene parent ID");
+            if(parent == id)
                 return fail("invalid scene parent ID");
             Json properties = Json::object();
             if(entry.has("properties")) {
@@ -100,7 +117,7 @@ struct SceneAsset {
                 properties = entry["properties"];
             }
             candidate.objects.push_back(SceneObjectAsset{
-                uint64_t(id), uint64_t(parent), entry["prefab"].str(),
+                id, parent, entry["prefab"].str(),
                 std::move(properties)});
         }
         std::sort(candidate.objects.begin(), candidate.objects.end(),
