@@ -1124,3 +1124,48 @@ are diagnostic defaults, not optimization budgets, and a stable slow
 stage will not be classified as a spike by this method. **Native
 compile/CTest, Metal and Vulkan correctness, GPU parity and real
 CPU/GPU timing A/B/A: NOT RUN** under feature-first priority.
+
+### Independent sustained CPU stage cost detection (Stage 33)
+
+The opt-in Stage 31/32 120-sample read-only summary now calculates
+**P50 (nearest-rank median)** alongside its existing arithmetic
+mean and P95 for each of eight CPU metrics. This uses the **same**
+already-sorted fixed scratch array on UI/API read; no new per-frame
+sorting, allocation or high-resolution timestamp is introduced.
+
+After at least **30 eligible samples**, a *specific* sub-stage
+(indices 1–7) is marked as a **sustained CPU cost candidate** when
+both conditions hold: its median `P50 >= 0.35 ms` and its
+arithmetic mean represents at least **15% of the mean whole model
+pass time**. The median makes a few isolated slow invocations
+insufficient to trigger a sustained warning; the share guard avoids
+highlighting a relatively expensive stage that consumes too little
+of the overall model pass to be a likely optimization target.
+Index 0 is an **overlapping whole-pass total**, never a specific MDI
+stage. Neither criterion requires P95 variability: a consistently
+high stage is deliberately detected even with no Stage 32 spike.
+
+`Renderer3D::CpuMdiRollingSummary` exposes `p50Ms[8]`,
+`sustained[8]` (index 0 always false), `sustainedStages`,
+`dominantSustainedStage` (1–7 or -1),
+`dominantSustainedP50Ms` and `dominantSustainedShare`.
+The dominant stage has the largest P50 among sustained candidates;
+exact ties retain stage order. Stage 32 `spike[]`/dominant-spike
+results remain independent; a stage can be flagged by *both*.
+
+Studio Scene → Batching → Instancing and indirect details → CPU MDI
+stage timings now shows mean/P50/P95 columns, separate **orange P95
+spike** and **blue sustained CPU cost** notices, and combined labels
+when both conditions occur. Before 30 samples, neither classification
+is emitted. Shadow and main opaque remain separate, while reflection,
+auxiliary views and other genres' rendering pathways are unaffected.
+Disabling profiling pauses collection and full scene invalidation
+or shutdown clears the rolling history exactly as Stage 31.
+
+These are diagnostic CPU wall-time classifications, **not** proof of
+a performance regression, GPU bottleneck or speedup. The stage-time
+components can overlap and their ratios to total pass time should
+not be added together. Thresholds are compile-time conservative
+heuristics, not guaranteed CPU frame-time budgets and do not control
+batch admission. **CMake/CTest, GPU raster parity, real device tests
+and fixed-scene CPU/GPU A/B/A NOT RUN** under feature-first direction.

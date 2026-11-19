@@ -496,6 +496,12 @@ public:
     static constexpr double kCpuMdiSpikeMinP95Ms = 0.25;
     static constexpr double kCpuMdiSpikeMinExcessMs = 0.15;
     static constexpr double kCpuMdiSpikeP95ToMeanRatio = 1.8;
+    // Independent steady-cost heuristic: a high median indicates that
+    // at least half of the sampled invocations spend real CPU time here.
+    // Also require material share of the mean *whole* model pass. These
+    // limits diagnose candidates only and never change batching policy.
+    static constexpr double kCpuMdiSustainedMinMedianMs = 0.35;
+    static constexpr double kCpuMdiSustainedMinMeanShare = 0.15;
     // The eight independent CPU durations are: total model pass,
     // visibility selection, material grouping+sort, candidate scanning,
     // CPU command packing, pipeline setup, indirect buffer update, backend
@@ -504,6 +510,7 @@ public:
     struct CpuMdiRollingSummary {
         size_t samples = 0;
         std::array<double, 8> meanMs{};
+        std::array<double, 8> p50Ms{}; // nearest-rank median, not an average
         std::array<double, 8> p95Ms{};
         // Index 0 is total model-pass wall time; indexes 1..7 are the
         // specific CPU stages. Total may spike without any tracked stage.
@@ -511,6 +518,13 @@ public:
         size_t highlightedStages = 0; // excludes overlapping total
         int dominantStage = -1;       // 1..7, -1 if none
         double dominantExcessMs = 0.0;
+        // Independent steady-cost candidates. Index 0 is always false:
+        // the whole model pass is an overlapping total, not an MDI stage.
+        std::array<bool, 8> sustained{};
+        size_t sustainedStages = 0;
+        int dominantSustainedStage = -1; // 1..7, -1 when no expensive stage
+        double dominantSustainedP50Ms = 0.0;
+        double dominantSustainedShare = 0.0; // ratio of means, not GPU occupancy
         bool hasBaseline = false;     // at least 30 eligible samples
     };
     CpuMdiRollingSummary cpuMdiRollingSummary(size_t phase) const;

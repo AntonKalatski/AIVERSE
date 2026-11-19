@@ -988,3 +988,28 @@ GitHub connector re-fetched main ancestry, Stage 31 summary code and Studio UI, 
 ### Next action
 
 When switching to tests, validate threshold boundaries (29 vs 30 samples; exactly 0.25 ms P95 / 0.15 ms excess / 1.8x ratio), stable-high stages, total-only spikes, dominant-stage tie behavior, wrap at 120 observations, disabled profiling, view separation, and scene-invalidation reset. Then reconcile older Stages 10/11/13 policy fixtures and perform Metal/Vulkan visual parity and balanced CPU/GPU performance A/B/A before enabling or merging. If more features are desired first, the next useful addition is identifying sustained CPU bottlenecks separately from P95 spikes, without using those classifications for automatic batch control.
+
+---
+
+## Stage 33 — stable expensive CPU stage detection, independent of P95 spikes (2026-11-19)
+
+**Repo:** `chromealex/AIVERSE`; **branch:** `perf/incremental-static-model-cache`; Draft PR #34. Start: `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature HEAD `de62b1d196015f1b87f0ef795725d6d037402d29`, compare `behind=0`. Main was already an ancestor; no merge needed. **User direction:** features first, tests later.
+
+### Code, API and documentation
+
+- `engine/render/Renderer3D.h`: new `kCpuMdiSustainedMinMedianMs=0.35` and `kCpuMdiSustainedMinMeanShare=0.15` diagnostics thresholds. Extends `CpuMdiRollingSummary` with `p50Ms[8]` (nearest-rank median), `sustained[8]`, `sustainedStages`, `dominantSustainedStage` (-1 or 1–7), `dominantSustainedP50Ms` and `dominantSustainedShare`. Existing `hasBaseline` min 30 eligible samples is reused. The whole model-pass total (metric index 0) is never flagged as a specific sustained MDI stage.
+- `engine/render/Renderer3DModels.cpp`: `cpuMdiRollingSummary` now calculates `P50` using the **same sorted 120-double scratch array** used for P95, then after Stage 32 spike classification independently flags stages whose median is >=0.35ms AND mean is >=15% of the overall model-pass mean. The metric with maximum P50 becomes the dominant sustained stage, preserving stage index on ties. A stage may also have a spike; these classifications deliberately do not suppress each other. Zero/invalid total mean never divides.
+- `apps/editor/windows/SceneWindow.cpp`: Stage 30/31 CPU timing UI adds mean/P50/P95 numbers, a distinct blue sustained-cost warning with largest median and mean-share, keeps the orange P95 warning, and combines labels on rows meeting both conditions. Shows independent thresholds, 30-sample baseline progress and non-GPU limitations.
+- `docs/geometry-performance.md`, `AGENTS.md` and this handoff document API, architecture, changed files, validations, guardrails and next action.
+
+### Interpretation / safety
+
+This addresses the deficiency of Stage 32: a stable CPU stage can be continuously expensive even without a P95 spike. Requiring P50 >=0.35ms means at least approximately half of the last 30–120 model-pass invocations are this expensive, while the mean-share >=15% gate makes the candidate materially relevant to its pass. It is a **CPU diagnostic heuristic**, not proof of causality, regression, A/B improvement or GPU time. Stage averages can include overlapping work, so their shares cannot be summed to a percentage of the whole pass. P50/P95 are nearest-rank order statistics over **model-pass invocations**, not entire hardware GPU frames. It is read-only and is evaluated only on summary/UI read: no new per-frame allocation, sort, timestamp, dynamic memory, GPU buffer, ECS/gameplay module or backend work. The existing opt-in `profiling_` gate and history reset on full scene invalidation/shutdown remain unchanged. Cross-genre compatibility and experimental default-OFF status are preserved.
+
+### Verification actually performed
+
+Inspected live branch `Renderer3D.h`, `Renderer3DModels.cpp`, Studio UI, agent docs and latest main ancestry via GitHub. Applied exact one-occurrence code replacement and rechecked structural invariants before commit. **Native CMake/CTest: NOT RUN. Metal/Vulkan GPU raster/driver validation: NOT RUN. Fixed-camera A/B/A CPU/GPU: NOT RUN.** No compilation or measured speedup claim. PR #34 stays Draft.
+
+### Next exact action
+
+Prefer moving to validation soon: reconcile stale policy tests from Stages 10/11/13, add CPU-only summaries for P50 (N=1, 29, 30, 120), stable-high/no-spike, rare spike-only/no-sustained, both classifications, dominant ties, share=0.15 boundary, empty total, ring wrap/scene reset and no-profile operation. Run full CMake/CTest and owner Metal/Vulkan fixed-view raster comparisons, then measured CPU/GPU balanced A/B/A before enabling/merging. If features continue first, consider configurable (non-mutating) diagnostic thresholds or an exportable per-view CPU report, but do not add more render-path work without measurements.

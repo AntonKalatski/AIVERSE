@@ -82,6 +82,7 @@ Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
     // Nothing allocates, sorts or scans the ring while rendering a pass.
     std::array<double, kCpuMdiRollingWindow> sorted{};
     const size_t rank = ((95 * result.samples + 99) / 100) - 1; // nearest-rank P95
+    const size_t medianRank = ((50 * result.samples + 99) / 100) - 1; // nearest-rank P50
     for (size_t metric = 0; metric < result.meanMs.size(); ++metric) {
         double sum = 0.0;
         for (size_t i = 0; i < result.samples; ++i) {
@@ -91,6 +92,7 @@ Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
         }
         std::sort(sorted.begin(), sorted.begin() + result.samples);
         result.meanMs[metric] = sum / double(result.samples);
+        result.p50Ms[metric] = sorted[medianRank];
         result.p95Ms[metric] = sorted[rank];
     }
     // Variance diagnosis runs on the same explicit summary/UI read as
@@ -110,6 +112,25 @@ Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
                 if (excess > result.dominantExcessMs) {
                     result.dominantStage = int(metric);
                     result.dominantExcessMs = excess;
+                }
+            }
+            // Independently identify stages that are consistently costly:
+            // P50 protects against isolated outliers lifting the mean.
+            // Index 0 is a whole-pass total and never attributed as a
+            // specific CPU MDI stage. Stage time share is only diagnostic;
+            // individual stages can overlap and must not be summed.
+            if (metric > 0 && result.meanMs[0] > 0.0) {
+                const double share = result.meanMs[metric] / result.meanMs[0];
+                result.sustained[metric] =
+                    result.p50Ms[metric] >= kCpuMdiSustainedMinMedianMs &&
+                    share >= kCpuMdiSustainedMinMeanShare;
+                if (result.sustained[metric]) {
+                    ++result.sustainedStages;
+                    if (result.p50Ms[metric] > result.dominantSustainedP50Ms) {
+                        result.dominantSustainedStage = int(metric);
+                        result.dominantSustainedP50Ms = result.p50Ms[metric];
+                        result.dominantSustainedShare = share;
+                    }
                 }
             }
         }

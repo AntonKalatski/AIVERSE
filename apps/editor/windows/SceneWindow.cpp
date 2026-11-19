@@ -724,7 +724,7 @@ private:
                                 (unsigned long long)cpu.backendFallbacks);
                             const auto rolling = ed.renderer().cpuMdiRollingSummary(phase);
                             if (rolling.samples) {
-                                ImGui::Text("  Rolling CPU average / P95 (last %zu/%zu invocations):",
+                                ImGui::Text("  Rolling CPU mean / P50 / P95 (last %zu/%zu invocations):",
                                     rolling.samples, ed.renderer().kCpuMdiRollingWindow);
                                 static constexpr const char* metrics[] = {
                                     "Total model pass", "Selection", "Grouping + sort",
@@ -746,22 +746,48 @@ private:
                                 } else {
                                     ImGui::TextDisabled("  No P95 CPU spike candidates in the sampled stages.");
                                 }
-                                for (size_t metric = 0; metric < rolling.meanMs.size(); ++metric) {
-                                    if (rolling.spike[metric]) {
-                                        ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
-                                            "    %s: %.3f / %.3f ms [P95 variability]",
-                                            metrics[metric], rolling.meanMs[metric],
-                                            rolling.p95Ms[metric]);
+                                // Long-lived expensive stages and bursty P95
+                                // excursions are independent diagnoses. A row
+                                // may satisfy both, even for steady MDI work.
+                                if (rolling.hasBaseline) {
+                                    if (rolling.dominantSustainedStage >= 0) {
+                                        const size_t dominant =
+                                            size_t(rolling.dominantSustainedStage);
+                                        ImGui::TextColored(ImVec4(0.49f, 0.80f, 0.98f, 1.0f),
+                                            "  Sustained CPU cost candidate: %s (P50 %.3f ms, %.0f%% of pass mean; %zu stages)",
+                                            metrics[dominant],
+                                            rolling.dominantSustainedP50Ms,
+                                            100.0 * rolling.dominantSustainedShare,
+                                            rolling.sustainedStages);
                                     } else {
-                                        ImGui::Text("    %s: %.3f / %.3f ms",
+                                        ImGui::TextDisabled(
+                                            "  No sustained CPU stage cost above the heuristic thresholds.");
+                                    }
+                                }
+                                for (size_t metric = 0; metric < rolling.meanMs.size(); ++metric) {
+                                    const bool spiking = rolling.spike[metric];
+                                    const bool steady = rolling.sustained[metric];
+                                    if (spiking || steady) {
+                                        const ImVec4 color = spiking
+                                            ? ImVec4(1.0f, 0.69f, 0.32f, 1.0f)
+                                            : ImVec4(0.49f, 0.80f, 0.98f, 1.0f);
+                                        ImGui::TextColored(color,
+                                            "    %s: %.3f / %.3f / %.3f ms [%s]",
                                             metrics[metric], rolling.meanMs[metric],
-                                            rolling.p95Ms[metric]);
+                                            rolling.p50Ms[metric], rolling.p95Ms[metric],
+                                            spiking && steady ? "spike + sustained" :
+                                            spiking ? "P95 variability" : "sustained CPU cost");
+                                    } else {
+                                        ImGui::Text("    %s: %.3f / %.3f / %.3f ms",
+                                            metrics[metric], rolling.meanMs[metric],
+                                            rolling.p50Ms[metric], rolling.p95Ms[metric]);
                                     }
                                 }
                             }
                         }
                         ImGui::TextDisabled("Spike heuristic: >=30 samples; P95 >=0.25 ms, >=mean+0.15 ms, >=1.8x mean.");
-                        ImGui::TextDisabled("Highlights CPU timing variability, not GPU stalls or confirmed regressions.");
+                        ImGui::TextDisabled("Sustained-cost heuristic: >=30 samples; stage P50 >=0.35 ms and mean >=15%% of total pass mean.");
+                        ImGui::TextDisabled("Warnings are CPU cost candidates, not GPU stalls, confirmed regressions or automatic tuning.");
                         ImGui::TextDisabled("Synchronous CPU time only; overlapping totals are not additive.");
                         ImGui::TextDisabled("P95 is nearest-rank over eligible model-pass samples, not whole frames.");
                         ImGui::TextDisabled("Profile is per beginScene view; reflections and auxiliary passes excluded.");

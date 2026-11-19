@@ -169,6 +169,20 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 33 independently flags persistently expensive CPU model
+ stages in the same read-only Stage 31 rolling summary. Reuse the
+ existing 120-sample sorted scratch to calculate nearest-rank P50.
+ With >=30 samples, only indexes 1..7 are sustained-cost candidates
+ if P50 >=0.35ms and stage mean >=15% of mean total model-pass time.
+ Metric 0 is a total and NEVER a specific stage. This is independent
+ of Stage 32 P95 variability: stable costly stages may flag with no
+ spikes, and rows may meet both criteria. Dominant sustained stage
+ uses the largest median; don't sum overlapping stage percentages.
+ Show orange P95 and blue sustained warnings separately, and never
+ use these indicators to change actual batching or GPU submission.
+ No extra profiling timestamps, allocation or sort belongs in the
+ render path; callbacks read the summary only with profiling enabled.
+ Keep Stage 33 handoff and future Metal/Vulkan parity validation.
  Stage 32 annotates the Stage 31 read-only CPU rolling summary with
  conservative P95 variability warnings: at least 30 eligible samples,
  P95 >= 0.25 ms, absolute excess over mean >= 0.15 ms, and P95 at
