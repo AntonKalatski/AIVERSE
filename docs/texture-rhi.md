@@ -3024,3 +3024,40 @@ cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parall
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+
+### Stage 10BP — actual Metal fragment page-table indirection PASS (2026-11-19)
+
+**Actual Mac Studio device evidence:** user-provided verbose
+`metal_texture_gpu` CTest #122 output reports
+`Metal Apple M3 Ultra` and **1/1 PASS (0 failures)**,
+2.47 s test / 2.48 s total CTest. All eight
+`VtAtlasFragmentProbe` cases in Stage 10BO returned PASS:
+nonresident fallback before page publication; pinned coarse
+sampling; coarse fallback for the unallocated detail tile;
+preserving coarse after a missing disk file; fine physical slice
+sampling; pinned coarse elsewhere; correct fallback after
+LRU eviction; and new replacement bytes from the reused
+physical slot. Each 4×4 GPU RGBA8 render-target readback had
+a **1 LSB/channel** tolerance. All direct atlas/page-table blit
+readbacks also passed with exact **0 LSB** tolerance.
+
+**Timings in the actual test log:** `disk VT
+shader_lookup_setup_ms=251.017` (shader/pipeline setup,
+not GPU lookup bandwidth). The eight asynchronous
+fragment readbacks showed GPU command-buffer timings
+of roughly **0.004–0.020 ms**. The disk-worker through
+Metal publication stage (including the newly added
+shader draws and repeated callback waits) was
+`701.805 ms`; the complete fixture reported
+`1301.235 ms`, with `1232.526 ms` after device
+initialization. Fragment GPU timing is not an end-to-end
+per-frame scene benchmark.
+
+**Conclusion:** this is the first real hardware acceptance of
+the production `gfx::kVirtualTextureMSL` page-table
+lookup over a **disk-backed, changing physical page atlas**,
+including LRU-reused slices. It does **not** verify experimental
+per-command GPU-authored ICB Shader Graph binding, all sampler
+address modes, broad asset sizes, or GL/Vulkan/mobile parity.
+No fixes were required for the observed PASS.
+
