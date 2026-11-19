@@ -6398,3 +6398,47 @@ Terra materials' source texture atlas unpack/packing into
 real VT pages before claiming a full streaming implementation.
 Then finish shader/backend parity and run native/CTest/GPU
 tests on Metal, GL33/GLES3 and Vulkan.
+
+
+## Stage 10B — runtime versioned RGBA8 page archives (2026-11-19)
+
+**Source commits:** `dceac4832ef756e7a4ac1475e9cd37635f3366d0`,
+`002896341720570c063fd3ae4a334c557e466062`.
+**New:** `engine/gfx/VirtualTexturePageArchiveWriter.h`.
+**Branch:** `feature/texture-rhi-unification`, PR #21.
+
+Implemented genre-independent native C++ `gfx::VirtualTexturePageArchiveWriter::pack()`
+that converts one or more immutable row-major CPU RGBA8 images to
+physical VT pages with clamped edge gutters, consistent mip generation
+(deterministic 2x2 RGBA8 box filter), and exactly the disk layout
+`VirtualTextureDiskQueue` reads:
+`m<MIP>/l<LAYER>/x<X>_y<Y>.rgba`.
+This is the same asset layout as `tools/virtual_texture_pack.py`.
+Configurable pageSize/gutter, CPU source and on-disk size budgets, tile
+and layer limits follow the 32-bit feedback codec (<=2048 tiles per axis,
+<=16 layers and <=30 mip levels).
+A complete directory is built in a sibling staging directory, with
+`manifest.json` documenting dimensions, tile counts, format and
+contentHashFNV64. A same-filesystem directory rename publishes the
+new revision `v<revision>-<hash>` atomically; previous versions
+are untouched. Repeating an identical version reuses its manifest,
+while immutable source hashes separate changed Horizon atlases.
+Failure cleans the staging directory and returns an error.
+
+`VirtualTextureArchiveVersion` exposes the resulting immutable asset
+directory and directly creates matching `VirtualDiskPageConfig` and
+`VirtualTextureStreamConfig` for the existing disk-backed streamer.
+No GPU/renderer/ECS dependency and no concurrent mutation of a
+readable disk archive. The owning application must retain old
+streamer/texture resources until its GPU accesses and feedback readback
+are complete, then activate its replacement at a safe frame boundary.
+A region-revision coordinator and material mapping are next;
+this source commit **does not yet automatically export HorizonBake::atlasRgba
+or hot-swap an initialized streamer**.
+
+Actual checks: inspected `VirtualTextureDiskQueue`,
+`VirtualTextureFileStreamer`, existing Python packer and Terra's
+`HorizonBake` / model images. GitHub source commits succeeded.
+C++ compilation, CTest, shader and GPU tests NOT RUN per user request.
+Next: add Terra-facing image/atlas pack and activation helper with old/new
+streamer retention; validate alpha atlas mip edge behavior later.
