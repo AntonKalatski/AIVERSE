@@ -38,7 +38,8 @@ RtsView::~RtsView() = default;
 size_t RtsView::pendingModelRetirements() const {
     return resources_.pendingRetirements()+
            roads_->pendingGpuRetirements()+
-           shores_->pendingGpuRetirements();
+           shores_->pendingGpuRetirements()+
+           geometryScene_.pendingGpuRetirements();
 }
 bool RtsView::collectRetiredModels() {
     if(!dev_)return false;
@@ -46,7 +47,8 @@ bool RtsView::collectRetiredModels() {
     const bool images=imageRollback_.collect(*dev_);
     // Always poll all three queues, even while a previous one is pending.
     const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
-    return models && images && roads && shores;
+    const bool geometry=geometryScene_.collectRetired(*dev_);
+    return models && images && roads && shores && geometry;
 }
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
