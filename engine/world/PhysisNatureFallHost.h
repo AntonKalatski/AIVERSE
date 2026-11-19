@@ -11,6 +11,7 @@
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace aiverse::world {
