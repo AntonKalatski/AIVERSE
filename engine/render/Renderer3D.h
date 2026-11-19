@@ -235,7 +235,9 @@ public:
         std::vector<gfx::VirtualTextureFeedbackDraw>& out,
         gfx::PipelineHandle pipeline,
         const FeedbackMeshBinder& bind) const {
-        if (!pipeline.valid() || !bind) return false;
+        // Mesh VT feedback is optional: model and procedural producers can
+        // submit feedback even when no immediate-mesh pipeline is installed.
+        if (!pipeline.valid() || !bind) return true;
         for (const auto& item : items_) {
             if (!item.mesh || !item.mesh->vb.valid() ||
                 !item.mesh->ib.valid() || !item.mesh->indexCount ||
@@ -356,9 +358,23 @@ public:
     // exact same per-fragment dither/coverage function and thresholds as
     // its visible model pass; otherwise the pages would be overrequested.
     // The callback receives the incoming/outgoing selection explicitly.
+    // RHI fragments use pixel centers; preserve alignment with the scene
+    // 4x4 ordered-dither grid when feedback and scene sizes differ.
+    struct FeedbackPixelGrid {
+        float scaleX = 1.0f, scaleY = 1.0f;
+        float offsetX = 0.0f, offsetY = 0.0f;
+    };
+    FeedbackPixelGrid feedbackPixelGrid(const gfx::VirtualTextureFeedbackPass& pass) const {
+        const float sx = pass.width() > 0 && sceneW_ > 0 ?
+            float(sceneW_) / float(pass.width()) : 1.0f;
+        const float sy = pass.height() > 0 && sceneH_ > 0 ?
+            float(sceneH_) / float(pass.height()) : 1.0f;
+        return {sx, sy, 0.5f * (1.0f - sx), 0.5f * (1.0f - sy)};
+    }
     using FeedbackLodBinder = std::function<bool(
         gfx::Device&, const Model&, const Primitive&, const Material&,
-        const mat4&, float threshold, bool invert)>;
+        const mat4&, float threshold, bool invert,
+        const FeedbackPixelGrid&)>;
     void setVirtualTextureLodModelFeedback(
         gfx::PipelineHandle pipeline, FeedbackLodBinder binder) {
         feedbackLodModelPipeline_ = pipeline;
@@ -399,6 +415,9 @@ public:
         bool lodInvert;
         uint32_t firstIndex;
         uint32_t indexCount;
+        uint32_t gpuFirstIndex;
+        int32_t gpuBaseVertex;
+        FeedbackPixelGrid pixelGrid;
         const std::vector<float>& jointData;
         const std::vector<float>& morphData;
     };
@@ -432,6 +451,7 @@ public:
         const FeedbackMeshBinder& bind) {
         std::vector<gfx::VirtualTextureFeedbackDraw> meshes;
         if (!collectMeshFeedbackDraws(meshes,meshPipeline,bind)) return false;
+        const auto pixelGrid = feedbackPixelGrid(pass);
         return pass.renderAndCapture([&](gfx::Device& device) {
             for (const auto& draw : meshes) {
                 device.setPipeline(draw.pipeline);
@@ -462,7 +482,9 @@ public:
                             item.joints,item.morph,item.baked,item.anim,
                             item.lodThreshold,item.lodInvert,
                             item.firstIndex,item.indexCount,
-                            jointData_,morphData_};
+                            item.model->gpuFirstIndex,
+                            int32_t(item.model->gpuBaseVertex),
+                            pixelGrid,jointData_,morphData_};
                         if (!feedbackDeformedModelDraw_(device,info))
                             return false;
                         continue;
@@ -483,7 +505,7 @@ public:
                         if (!lodBinder ||
                             !lodBinder(device,*item.model,
                                 *item.prim,*item.mat,item.world,
-                                item.lodThreshold,item.lodInvert))
+                                item.lodThreshold,item.lodInvert,pixelGrid))
                             return false;
                     } else {
                         const auto& binder = masked ? feedbackMaskedModelBinder_
@@ -493,7 +515,9 @@ public:
                                     *item.mat,item.world))
                             return false;
                     }
-                    device.drawIndexed(item.indexCount,item.firstIndex);
+                    device.drawIndexed(item.indexCount,
+                        item.firstIndex + item.model->gpuFirstIndex,
+                        int32_t(item.model->gpuBaseVertex));
                 }
             }
             for (const auto& custom : customFeedback_)
