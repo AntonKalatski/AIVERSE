@@ -302,6 +302,14 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // Diagnostic only: asynchronous readback of an offscreen Depth32Float
+    // texture AFTER the depth pass has ended. Packed row-major native float32
+    // samples, exactly width*height*sizeof(float) bytes. No GPU wait; the
+    // callback runs on the owning thread at a later beginFrame. Empty bytes
+    // indicate GPU failure. Unsupported backends return false.
+    // Resource must remain alive until the queued GPU blit completes.
+    using DepthReadFn = std::function<void(int width,int height,std::vector<uint8_t> depthBytes)>;
+    virtual bool readDepthTextureAsync(TextureHandle,DepthReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
