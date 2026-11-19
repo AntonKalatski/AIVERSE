@@ -98,7 +98,18 @@ std::vector<PrismaTypeDef> buildCatalog() {
         // existing weighted log-luminance estimator for all old profiles.
         num("highlightRejection", 0.0f, 0.0f, 0.95f, "fraction of contribution removed from bright outliers; zero preserves legacy metering", "Подавление ярких выбросов"),
         num("highlightStartEV", 3.0f, -10.0f, 16.0f, "log2 luminance where bright samples begin to be downweighted", "Порог выбросов, EV"),
-        num("highlightSoftnessEV", 2.0f, 0.1f, 8.0f, "smooth log2 luminance transition before full highlight rejection", "Мягкость выбросов, EV")}});
+        num("highlightSoftnessEV", 2.0f, 0.1f, 8.0f, "smooth log2 luminance transition before full highlight rejection", "Мягкость выбросов, EV"),
+        // Stage 58: camera-local cinematic lock. A valid exposure history
+        // is held without GPU metering; a cold/cut camera seeds once first.
+        flag("freezeExposure", false, "hold last valid per-camera exposure; initialize after camera cuts", "Зафиксировать экспозицию"),
+        // Optional circular screen-space metering region. These authored
+        // settings are resolved by the existing camera volume/profile stack.
+        flag("meterRegionEnabled", false, "prefer a normalized screen-space circle for HDR luminance metering", "Замер по области кадра"),
+        num("meterCenterX", 0.5f, 0.0f, 1.0f, "meter region center horizontal [0,1] left to right", "Центр замера X"),
+        num("meterCenterY", 0.5f, 0.0f, 1.0f, "meter region center vertical [0,1] bottom to top", "Центр замера Y"),
+        num("meterRadius", 0.25f, 0.01f, 1.0f, "meter circle radius as fraction of frame height", "Радиус замера области"),
+        num("meterFeather", 0.10f, 0.001f, 0.5f, "soft edge width of the meter circle in frame-height units", "Переход по краю замера"),
+        num("meterOutsideWeight", 0.05f, 0.02f, 1.0f, "minimum weight outside the metering circle; never zero", "Вес вне области")}});
     c.push_back({T::MotionBlur, "motionBlur", "Размытие движения", "Camera reprojection velocity and optional native object velocity texture; screen-space shutter blur.", C::Heavy, kHigh, {
         num("intensity", 0.65f, 0, 1, "shutter blend strength", "Сила"),
         num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
