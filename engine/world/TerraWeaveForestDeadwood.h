@@ -78,6 +78,19 @@ inline void validateForestDeadwoodResource(
             throw std::invalid_argument("TerraWeave invalid nutrient cell");
         prevCell=key;first=false;
     }
+    // Reject impossible save/replay states BEFORE any resource publication:
+    // no organic matter may silently appear or disappear in the ledger.
+    uint64_t accounted=state.totalRespiredUnits;
+    const auto add=[&accounted](uint64_t units) {
+        if(accounted>UINT64_MAX-units)
+            throw std::invalid_argument("TerraWeave deadwood ledger overflow");
+        accounted+=units;
+    };
+    add(state.totalExportedUnits);
+    for(const auto& log:state.logs)add(log.remainingUnits);
+    for(const auto& cell:state.soil)add(cell.availableUnits);
+    if(accounted!=state.totalInitialUnits)
+        throw std::invalid_argument("TerraWeave deadwood mass not conserved");
 }
 
 inline void io(Archive& a,ForestDeadwoodRecord& r) {
