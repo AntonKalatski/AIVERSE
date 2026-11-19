@@ -14,6 +14,7 @@ struct ForestWindState {
     uint32_t gustPermille = 350;          // 0..1000 modulation around base lean
     uint32_t cycleTicks = 120;            // stable, per-tree staggered sway
     uint32_t maxLeanMilliDegrees = 1500;  // max angle at reference 50m/s
+    uint32_t branchFlexPermille = 600;    // 0=root lean only; 1..1000=branch pose
     constexpr bool operator==(const ForestWindState&) const = default;
 };
 
@@ -24,7 +25,8 @@ inline void validateForestWind(const ForestWindState& state) {
        z < -kMaxWindCmPerSec || z > kMaxWindCmPerSec ||
        x*x+z*z>kMaxWindCmPerSec*kMaxWindCmPerSec ||
        state.gustPermille>1000 || state.cycleTicks<8 ||
-       state.cycleTicks>4096 || state.maxLeanMilliDegrees>3000)
+       state.cycleTicks>4096 || state.maxLeanMilliDegrees>3000 ||
+       state.branchFlexPermille>1000)
         throw std::invalid_argument("TerraWeave wind presentation");
 }
 
