@@ -3409,3 +3409,9 @@ seamless river-to-cascade-to-lake visual connections. Then, only
 when the functional backlog is complete, begin the deferred C++,
 GL/Metal and runtime test suite and write the factual results
 to a new handoff section.
+
+**Stage 32 source-review correction:** `7c5ae08bf779394ea048f5c0029399d6df8c76f9`
+updates `engine/world/NereidRipples.h` to reject the invalid
+`UINT64_MAX` packed-water ID before adding one for stable
+presentation identity in the non-tiled shader path; the tiled path
+already had this guard. Source review only — **no tests run**.
