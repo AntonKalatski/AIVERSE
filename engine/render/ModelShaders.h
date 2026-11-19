@@ -673,15 +673,54 @@ struct IcbPbrTextures {
     sampler s11 [[id(23)]];
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
+#if defined(AIVERSE_SG_ICB_GRAPH)
+    // Fragment-only graph source slots 13..16 use the same 2*slot IDs
+    // as the standard PBR argument table; source tex16 uses a constexpr
+    // sampler because Metal has only 16 dynamic fragment sampler slots.
+#if AIVERSE_SG_TEXTURE_COUNT >= 1
+    texture2d<float> tex13 [[id(26)]];
+    sampler s13 [[id(27)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 2
+    texture2d<float> tex14 [[id(28)]];
+    sampler s14 [[id(29)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 3
+    texture2d<float> tex15 [[id(30)]];
+    sampler s15 [[id(31)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 4
+    texture2d<float> tex16 [[id(32)]];
+#endif
 #if defined(AIVERSE_MODEL_VT)
-    // The VT physical atlas uses the existing s1 material sampler;
-    // the page table uses read(), so neither requires a new sampler.
+    // The graph VT atlas/page table immediately follow the graph's
+    // N sources. Neither requires another dynamic Metal sampler.
+#if AIVERSE_SG_TEXTURE_COUNT == 0
+    texture2d_array<float, access::sample> tex13 [[id(26)]];
+    texture2d_array<float, access::read> tex14 [[id(28)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 1
+    texture2d_array<float, access::sample> tex14 [[id(28)]];
+    texture2d_array<float, access::read> tex15 [[id(30)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 2
+    texture2d_array<float, access::sample> tex15 [[id(30)]];
+    texture2d_array<float, access::read> tex16 [[id(32)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 3
+    texture2d_array<float, access::sample> tex16 [[id(32)]];
+    texture2d_array<float, access::read> tex17 [[id(34)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 4
+    texture2d_array<float, access::sample> tex17 [[id(34)]];
+    texture2d_array<float, access::read> tex18 [[id(36)]];
+#endif
+#endif
+#else
+#if defined(AIVERSE_MODEL_VT)
     texture2d_array<float, access::sample> tex13 [[id(26)]];
     texture2d_array<float, access::read> tex14 [[id(28)]];
 #endif
 #if defined(VIRTUAL_ALPHA_MASK)
     texture2d<float> tex15 [[id(30)]];
     sampler s15 [[id(31)]];
+#endif
 #endif
 };
 #endif
