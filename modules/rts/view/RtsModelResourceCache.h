@@ -9,6 +9,7 @@
 #include "RtsModelPreparationService.h"
 #endif
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
@@ -34,7 +35,8 @@ public:
     static std::string sourceForKey(std::string_view key) {
         constexpr std::string_view geometry="#geometry";
         if(key.ends_with(geometry))key.remove_suffix(geometry.size());
-        return std::string(key);
+        if(key.empty())return {};
+        return std::filesystem::path(std::string(key)).lexically_normal().generic_string();
     }
     struct AffectedModel {
         std::string key;
@@ -45,9 +47,10 @@ public:
     std::vector<AffectedModel> affectedBySource(
             std::string_view source) const {
         std::vector<AffectedModel> result;
-        if(source.empty() || source.starts_with("shape:"))return result;
+        const std::string normalized=sourceForKey(source);
+        if(normalized.empty() || normalized.rfind("shape:",0)==0)return result;
         for(const auto& [key,model]:models_)
-            if(sourceForKey(key)==source)
+            if(sourceForKey(key)==normalized)
                 result.push_back({key,model.get()});
         return result;
     }
