@@ -1,7 +1,9 @@
 name: TerraWeave merged-main native acceptance
 on:
   push:
-    branches: [integration/terraweave-main-20261120]
+    branches:
+      - integration/terraweave-main-20261120
+      - integration/terraweave-physis-stage70-20261120
     paths:
       - '.github/workflows/terraweave-main-integration-qa.yml'
       - 'CMakeLists.txt'
