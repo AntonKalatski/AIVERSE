@@ -8,7 +8,10 @@
 #pragma once
 
 #include "TerraWeaveVirtualAtlasArchive.h"
+#include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <tuple>
 #include <functional>
 #include <map>
 #include <memory>
@@ -37,7 +40,6 @@ public:
     struct StreamProgress {
         DomainId domain = 0;
         size_t uploadedPages = 0;
-        size_t bufferedCandidatePages = 0;
         bool capturedFeedbackPending = false;
         bool active = false;
     };
@@ -219,12 +221,17 @@ public:
         const auto next=std::lower_bound(ids.begin(),ids.end(),nextDomainHint_);
         const DomainId id=next==ids.end()?ids.front():*next;
         selectedFeedbackDomain_=id;
+        struct ResetSelectedDomain {
+            DomainId& id;
+            ~ResetSelectedDomain() { id=0; }
+        } reset{selectedFeedbackDomain_};
         Domain* d=find(id);
         // The filtered material callback sees this ID during the draw.
+        // ResetSelectedDomain also restores the filter if a renderer
+        // callback throws while the feedback pass is being closed.
         const bool ok=scene.renderVirtualTextureFeedback(
             *d->feedback,{},Renderer3D::FeedbackMeshBinder{});
-        selectedFeedbackDomain_=0;
-        nextDomainHint_=id==UINT32_MAX?1:id+1;
+        nextDomainHint_=id==std::numeric_limits<DomainId>::max()?1:id+1;
         return ok;
     }
 
@@ -315,7 +322,11 @@ private:
         const Model* model = nullptr;
         const Material* material = nullptr;
         bool operator<(const MaterialIdentity& rhs) const {
-            return std::tie(model,material)<std::tie(rhs.model,rhs.material);
+            const std::less<const Model*> modelLess;
+            const std::less<const Material*> materialLess;
+            if (modelLess(model,rhs.model)) return true;
+            if (modelLess(rhs.model,model)) return false;
+            return materialLess(material,rhs.material);
         }
     };
     struct Assignment { DomainId domain=0; int layer=0; };
