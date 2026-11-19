@@ -580,6 +580,42 @@ first and tests later: no native build, CTest, shader
 compilation or GPU benchmark has been run for Stage 22.
 See the living handoff for exact commits and follow-up work.
 
+## Persistent GPU custom particle attributes (Stage 23)
+
+The opt-in integrated Metal `ComputeParticles` kernel now stores
+eight scalar `attribute0..7` registers in a separate
+32-byte-per-particle storage buffer (Metal compute slot **11**).
+A reused physical particle slot resets all registers at Spawn;
+the supported Spawn/Update CPU VM instruction subset may
+read/write them without losing values between frames.
+
+Use a graph-v2 `ParticleProgramModule` with a Spawn statement
+such as `{"target":"attribute0","value":{"var":"param0"}}`
+and an Update statement that reads
+`{"var":"attribute0"}` to influence `tint.a`, `size`,
+position or velocity. Example asset:
+`examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json`.
+Request `GraphRuntimeOptions::gpuProgram=true` explicitly;
+all other restrictions of the Metal billboard GPU eligibility
+gate remain in force. The full CPU implementation always remains
+the correct fallback for unsupported graph modules or platforms.
+
+Do NOT assume the separate experimental
+`gpu_program::MetalVmPass` implements attributes: its own
+kernel lacks register storage, so it now rejects any payload
+reading or writing fields 16–23 rather than silently dropping
+data. Likewise, Stage-21 CPU shader-material `graphInputs`
+are not yet supported by the simple Metal sprite pipeline.
+GPU attributes affect visible output through supported VM
+field writes; arbitrary custom shader/material graph rendering
+still uses CPU fallback.
+
+The particle ABI remains 64 bytes, expanded Vertex 40 bytes,
+VM Payload version 1. No native build, CTest, Metal shader compile,
+pixel verification or performance benchmark has run for this
+stage by user's explicit deferral. Keep a **separate Stage-23
+handoff commit** and record NOT RUN, not PASS.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
