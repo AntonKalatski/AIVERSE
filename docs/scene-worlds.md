@@ -343,3 +343,18 @@ ctest --test-dir build/scene-worlds -R '^ecs_scene_load_coordinator_test$' --out
 ```
 
 For more complete next steps, see the Stage 2 agent handoff.
+
+
+## Shared/Static prefab integration (isolated integration branch)
+
+The separate `feature/ecs-static-prefab-scene-integration` branch
+merges real SceneRuntime and immutable prefab catalogs without modifying
+their original feature branches. Use
+`engine/scene/PrefabStaticSceneBinding.h` to turn
+`storage::PrefabStaticCatalog<T>` into the coordinator's
+`SpawnPrefab` callback, so additive scenes create just a
+`StaticRef<T>` per entity and share one sealed config table even across
+independent ECS Worlds. See
+`docs/ecs-static-prefab-scene-integration.md` and
+`docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`.
+**Combined CTest remains native-unverified; do not merge to main yet.**
