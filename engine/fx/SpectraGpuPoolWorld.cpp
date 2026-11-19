@@ -275,6 +275,13 @@ PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
     reason_.clear();
     return {sourceWorldEpoch_,slot,source.generation};
 }
+bool GpuPoolWorld::sourceBindingCurrent(PoolSourceId id) const {
+    const Source* source=getSource(id);
+    if(!source)return false;
+    const auto binding=bindings_.find(source->effectName);
+    return binding!=bindings_.end() &&
+           source->bindingRevision==binding->second.revision;
+}
 bool GpuPoolWorld::sourceActive(PoolSourceId id) const {
     const Source* source=getSource(id);
     if(!source || source->paused)return false;
