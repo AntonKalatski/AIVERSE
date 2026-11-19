@@ -33,12 +33,12 @@ bool packGpuMetadata(const ModelAsset& source, std::vector<uint8_t>& out,
     std::set<std::pair<uint32_t, uint32_t>> uniquePrimitives;
     for (const ModelPrimitiveAsset& p : source.primitives) {
         const Asset& geometry = p.geometry;
-        if (!uniquePrimitives.insert({p.mesh, p.primitive}).second ||
-            p.material != geometry.nodes.front().materialGroup)
-            return fail(error, "duplicate Strata primitive or inconsistent material");
         if (!validate(geometry.nodes, geometry.roots) ||
             geometry.bounds.size() != geometry.nodes.size())
             return fail(error, "invalid Strata GPU cluster tree");
+        if (!uniquePrimitives.insert({p.mesh, p.primitive}).second ||
+            p.material != geometry.nodes.front().materialGroup)
+            return fail(error, "duplicate Strata primitive or inconsistent material");
         for (size_t i = 0; i < geometry.nodes.size(); ++i) {
             const auto& node = geometry.nodes[i];
             if (node.materialGroup != p.material ||
