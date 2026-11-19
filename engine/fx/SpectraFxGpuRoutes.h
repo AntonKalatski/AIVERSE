@@ -4,6 +4,7 @@
 #pragma once
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 #include <string>
 #include <unordered_map>
 #include "../data/Json.h"
@@ -36,12 +37,14 @@ public:
         if(!values.isArray() || values.size()>64)
             return fail("SpectraFX GPU routes must contain at most 64 entries");
         Routes next;
+        std::unordered_map<std::string,uint32_t> poolCapacities;
         for(const auto& value:values.items()) {
             if(!value.isObject()) return fail("SpectraFX GPU route must be object");
             for(const auto& p:value.members())
                 if(p.first!="eventType" && p.first!="asset" &&
                    p.first!="oneShotSeconds" && p.first!="enabled" &&
-                   p.first!="ownPlayerOnly")
+                   p.first!="ownPlayerOnly" &&
+                   p.first!="sharedPool" && p.first!="sharedPoolCapacity")
                     return fail("SpectraFX GPU route: unknown field "+p.first);
             const Json& event=value["eventType"];
             if(!event.isNumber() ||
@@ -68,6 +71,22 @@ public:
                 if(!entry.ownPlayerOnly)
                     return fail("SpectraFX shared event visibility requires a host visibility adapter");
             }
+            if(value.has("sharedPool")) {
+                if(!value["sharedPool"].isString() ||
+                   !SpectraFxGpuEmitterLibrary::validName(value["sharedPool"].str()))
+                    return fail("sharedPool requires a non-empty safe pool name");
+                entry.playback.sharedPool=value["sharedPool"].str();
+            }
+            if(value.has("sharedPoolCapacity")) {
+                const Json& capacity=value["sharedPoolCapacity"];
+                if(!capacity.isNumber() ||
+                   capacity.numberLiteral().find_first_of(".eE-")!=std::string::npos ||
+                   capacity.integer(-1)<1 || capacity.integer(-1)>65536)
+                    return fail("sharedPoolCapacity requires an integer in 1..65536");
+                if(entry.playback.sharedPool.empty())
+                    return fail("sharedPoolCapacity requires sharedPool");
+                entry.playback.sharedPoolCapacity=uint32_t(capacity.integer());
+            }
             if(value.has("oneShotSeconds")) {
                 if(!value["oneShotSeconds"].isNumber())
                     return fail("SpectraFX oneShotSeconds must be numeric");
@@ -75,6 +94,12 @@ public:
                 if(!(seconds>0 && seconds<=60))
                     return fail("SpectraFX oneShotSeconds must be in (0,60]");
                 entry.playback.oneShotSeconds=float(seconds);
+            }
+            if(!entry.playback.sharedPool.empty()) {
+                const auto pair=poolCapacities.emplace(entry.playback.sharedPool,
+                                                      entry.playback.sharedPoolCapacity);
+                if(!pair.second && pair.first->second!=entry.playback.sharedPoolCapacity)
+                    return fail("sharedPoolCapacity mismatch across routes in same pool");
             }
             if(!next.emplace(entry.eventType,std::move(entry)).second)
                 return fail("SpectraFX duplicate eventType route");
