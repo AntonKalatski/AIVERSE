@@ -17,6 +17,7 @@ enum class WaterInteractionKind : uint8_t {
 // physics mass/colliders. Only horizontal movement creates surface wakes.
 struct WaterInteractionComponent {
     Fixed wakeSpacing=2_fx;       // metres of horizontal motion per emitted wake
+    Fixed surfaceWakeDepth=1_fx;  // only bodies this close to the surface create wakes
     Fixed wakeRadius=1_fx;        // render/audio hint, metres
     Fixed splashRadius=2_fx;      // render/audio hint, metres
     Fixed strength=1_fx;          // normalized effect multiplier, 0..16
@@ -62,8 +63,11 @@ inline WaterInteractionOutputComponent evaluateWaterInteraction(
     const auto& water=contact.sample;
     const bool wet=water.found && water.submerged;
     if(!config.enabled || config.strength<=Fixed{} ||
-       config.wakeSpacing<=Fixed{} || config.wakeRadius<=Fixed{} ||
-       config.splashRadius<=Fixed{}) {
+       config.wakeSpacing<=Fixed{} || config.wakeSpacing>1000_fx ||
+       config.surfaceWakeDepth<=Fixed{} || config.surfaceWakeDepth>1000_fx ||
+       config.wakeRadius<=Fixed{} || config.wakeRadius>1000_fx ||
+       config.splashRadius<=Fixed{} || config.splashRadius>1000_fx ||
+       config.strength>16_fx) {
         // Disabled config is not an implicit surface-exit event.
         state.initialized=false;
         state.previouslySubmerged=false;
@@ -71,7 +75,9 @@ inline WaterInteractionOutputComponent evaluateWaterInteraction(
     }
     if(!state.initialized) {
         state.initialized=true;
-        state.previouslySubmerged=wet;
+        if(wet && water.depth>config.surfaceWakeDepth)
+        state.wakeAnchor=probePosition;
+    state.previouslySubmerged=wet;
         state.previousBody=wet?water.body:kNullEntity;
         state.previousSurfaceY=wet?water.surfaceY:Fixed{};
         state.previousPosition=probePosition;
@@ -103,7 +109,8 @@ inline WaterInteractionOutputComponent evaluateWaterInteraction(
         output.radius=config.splashRadius;
         output.strength=config.strength;
         state.wakeAnchor=probePosition;
-    } else if(wet && config.emitSurfaceWakes) {
+    } else if(wet && config.emitSurfaceWakes &&
+              water.depth<=config.surfaceWakeDepth) {
         const Fixed dx=probePosition.x-state.wakeAnchor.x;
         const Fixed dz=probePosition.z-state.wakeAnchor.z;
         // Compare squared distances to avoid nondeterministic float sqrt.
@@ -161,7 +168,7 @@ inline void registerNereidInteractionPersistence(Simulation& sim) {
 }
 
 inline void io(Archive& a,WaterInteractionComponent& c) {
-    a(c.wakeSpacing,c.wakeRadius,c.splashRadius,c.strength,
+    a(c.wakeSpacing,c.surfaceWakeDepth,c.wakeRadius,c.splashRadius,c.strength,
       c.emitSurfaceWakes,c.enabled);
 }
 inline void io(Archive& a,WaterInteractionStateComponent& s) {
