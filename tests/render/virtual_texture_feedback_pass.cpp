@@ -196,7 +196,8 @@ void rendererCallbackLifecycle() {
 void rejectionAndWeakLifetime() {
     FakeDevice gpu;
     VirtualTextureFeedbackPass pass;
-    auto fb=feedbackCfg(),pf=prefetchCfg();
+    auto fb = feedbackCfg();
+    auto pf = prefetchCfg();
     require(!pass.initialize(gpu,32,32,fb,pf) &&
             gpu.created==0 && !pass.ready(),
             "feedback pixel count cannot exceed decoder budget");
