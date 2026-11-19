@@ -807,16 +807,25 @@ int RtsView::loadTexture(gfx::Device& dev, const UnitType& t, Model& m, const st
 void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v, ModelChoice& c, bool isShape) {
     Model& m = *c.model;
     c.programmableAnimation=v.getBool("programmableAnimation")||v.has("animationGraph");
-    if (v.has("animationGraph")) {
+    if(v.has("animationGraph")) {
         try {
-            // Compile the same authored inline/external graph through the
-            // generic authoring service. The single existing MotionWeave
-            // presentation owner still evaluates it exactly once.
+            Json definition=v["animationGraph"];
+            // Resolve external JSON exactly once so a graph's hot-reload
+            // signature describes the compiled bytes, not just its path.
+            if(definition.isString()) {
+                std::string source;
+                if(!read_ || !read_(definition.str(),source))
+                    throw std::runtime_error("animationGraph file not found: "+
+                                             definition.str());
+                definition=render::parseAnimationAsset(source);
+            }
             c.graph=view::AppearanceAuthoringService::compileGraph(
-                m,v["animationGraph"],read_,
-                animationOperations_,animationTraits_);
+                m,definition,{},animationOperations_,animationTraits_);
+            c.graphSignature=definition.dump(0);
+        }catch(const std::exception& e) {
+            if(strictAppearanceReload_)throw;
+            warn(t,e.what());
         }
-        catch (const std::exception& e) { warn(t, e.what()); }
     }
     try { c.geometry = parseGeometryPolicy(t.view["geometry"]); }
     catch (const std::exception& e) { warn(t, e.what()); }
@@ -855,6 +864,22 @@ void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v
     // GPU texture loading and warnings remain owned by this RTS host.
     const auto appearance=view::AppearanceChoiceAuthoring::resolve(
         m,v,[this,&t](const std::string& message) {warn(t,message);});
+    if(strictAppearanceReload_) {
+        // CPU preflight rejects invalid authored graphs and references before
+        // texture loader callbacks add more GPU-backed Model images.
+        const auto verify=[&](const Json& ref) {
+            const auto resolved=view::AppearanceAuthoringService::resolveMaterial(
+                materialLib_,ref,[](const std::string& message) {
+                    throw std::runtime_error(message);
+                });
+            if(resolved.has("shaderGraph"))
+                (void)render::graph::compile(resolved["shaderGraph"],"material");
+        };
+        for(const auto& layers:appearance.materialLayers)
+            for(const auto& layer:layers)verify(layer);
+        for(const auto& extra:appearance.extraMaterials)
+            verify(extra.reference);
+    }
     auto apply=[&](Material& material,const Json& ref) {
         applyMaterial(dev,t,m,material,ref);
     };
