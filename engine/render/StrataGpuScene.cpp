@@ -151,34 +151,96 @@ bool GpuMetadataScene::stage(gfx::Device& dev, const std::string& sourceKey,
         warnings_.push_back("Strata GPU metadata '" + sourceKey + "': " + reason);
         return false;
     }
+    uint64_t indexCount = 0;
+    for (const auto& primitive : asset.primitives) {
+        indexCount += primitive.geometry.indices.size();
+        if (indexCount > std::numeric_limits<uint32_t>::max())
+            break;
+    }
     if (payload.size() > limits_.maxSourceBytes ||
         stats_.bytes > limits_.maxSceneBytes ||
         payload.size() > limits_.maxSceneBytes - stats_.bytes) {
         ++stats_.declined;
         return false;
     }
+    const uint64_t requestedIndexBytes = indexCount * sizeof(uint32_t);
+    if (!indexCount || indexCount > std::numeric_limits<uint32_t>::max() ||
+        requestedIndexBytes > limits_.maxSourceIndexBytes ||
+        requestedIndexBytes > limits_.maxSceneIndexBytes ||
+        stats_.indexBytes > limits_.maxSceneIndexBytes ||
+        requestedIndexBytes > limits_.maxSceneIndexBytes - stats_.indexBytes) {
+        ++stats_.indexDeclined;
+        return false;
+    }
+
+    std::vector<uint32_t> indices;
+    indices.reserve(size_t(indexCount));
+    for (const auto& primitive : asset.primitives)
+        indices.insert(indices.end(), primitive.geometry.indices.begin(),
+                       primitive.geometry.indices.end());
+
+    // All requested indices must fit into the source's current, shared pool
+    // page. This uses no Strata vertex or GPU geometry pool allocation.
+    GeometryPoolIndexSpan span;
+    if (!uploadAuxiliaryGeometryIndices(dev, model, indices.data(),
+                                         indices.size(), span)) {
+        ++stats_.indexDeclined;
+        return false;
+    }
+
+    // Version 2 contains actual pooled GPU first-index offsets. Version 1
+    // remains a pure CPU/local metadata format, never drawable. The metadata
+    // and sidecar belong to one staged source lifetime and geometryRevision.
+    GpuMetadataHeader header;
+    std::memcpy(&header, payload.data(), sizeof(header));
+    header.version = 2;
+    std::memcpy(payload.data(), &header, sizeof(header));
+    uint64_t primitiveIndexOffset = 0;
+    for (size_t i = 0; i < asset.primitives.size(); ++i) {
+        const size_t descriptorOffset =
+            size_t(header.primitivesByteOffset) + i * sizeof(GpuPrimitive);
+        GpuPrimitive gpuPrimitive;
+        std::memcpy(&gpuPrimitive, payload.data() + descriptorOffset,
+                    sizeof(gpuPrimitive));
+        const uint64_t gpuFirst = uint64_t(span.firstIndex) +
+                                  primitiveIndexOffset;
+        if (gpuFirst > std::numeric_limits<uint32_t>::max()) {
+            releaseAuxiliaryGeometryIndices(dev, span);
+            ++stats_.indexFailed;
+            return false;
+        }
+        gpuPrimitive.gpuFirstIndex = uint32_t(gpuFirst);
+        std::memcpy(payload.data() + descriptorOffset, &gpuPrimitive,
+                    sizeof(gpuPrimitive));
+        primitiveIndexOffset += asset.primitives[i].geometry.indices.size();
+    }
+
     gfx::BufferDesc desc;
     desc.type = gfx::BufferType::Storage;
     desc.usage = gfx::Usage::Immutable;
     desc.size = payload.size();
     desc.data = payload.data();
-    desc.label = "Strata experimental GPU cluster metadata (no draws)";
+    desc.label = "Strata experimental GPU cluster metadata + pooled indices (no draws)";
     const gfx::BufferHandle h = dev.createBuffer(desc);
     if (!h.valid()) {
+        releaseAuxiliaryGeometryIndices(dev, span);
         ++stats_.failed;
         warnings_.push_back("Strata GPU metadata upload failed: " + sourceKey);
         return false;
     }
     Entry record;
     record.metadata = h;
+    record.indices = std::move(span);
     record.source = &model;
     record.sourceRevision = model.geometryRevision;
     record.sourceVb = model.vb;
     record.sourceIb = model.ib;
     record.bytes = payload.size();
-    entries_.emplace(sourceKey, record);
+    entries_.emplace(sourceKey, std::move(record));
     ++stats_.sources;
+    ++stats_.indexedSources;
     stats_.bytes += payload.size();
+    stats_.indexBytes += requestedIndexBytes;
     return true;
 }
 
@@ -190,12 +252,33 @@ gfx::BufferHandle GpuMetadataScene::find(const std::string& key,
     return e.source == &model && model.geometryPoolPage &&
            model.geometryRevision == e.sourceRevision &&
            model.vb == e.sourceVb && model.ib == e.sourceIb &&
-           model.vb.valid() && model.ib.valid() ? e.metadata : gfx::BufferHandle{};
+           model.vb.valid() && model.ib.valid() &&
+           auxiliaryGeometryIndicesValidFor(e.indices, model)
+           ? e.metadata : gfx::BufferHandle{};
+}
+
+bool GpuMetadataScene::indexBinding(const std::string& key,
+                                    const Model& model,
+                                    IndexBinding& out) const {
+    const auto it = entries_.find(key);
+    if (it == entries_.end() || !find(key, model).valid()) return false;
+    const auto& span = it->second.indices;
+    IndexBinding binding;
+    binding.buffer = span.buffer;
+    binding.firstIndex = span.firstIndex;
+    binding.indexCount = span.indexCount;
+    binding.baseVertex = int32_t(model.gpuBaseVertex);
+    out = binding;
+    return true;
 }
 
 void GpuMetadataScene::shutdown(gfx::Device& dev) {
-    for (auto& [key, entry] : entries_)
+    for (auto& [key, entry] : entries_) {
         if (entry.metadata.valid()) dev.destroyBuffer(entry.metadata);
+        // Index spans are borrowed from the ORIGINAL shared Model page.
+        // Release them before GeometryScene releases that Model.
+        releaseAuxiliaryGeometryIndices(dev, entry.indices);
+    }
     entries_.clear();
     warnings_.clear();
     stats_ = {};
