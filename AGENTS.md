@@ -53,6 +53,10 @@ eligible with value-snapshot invalidation: `ModelDraw::nodeMaterial` indices
 are compared before replay, material variant index is part of the saved draw
 signature, and the baseline's LOD-disabled behaviour for these modes is
 preserved. Do not store caller-owned material override pointers in packets.
+A model file containing authored animation clips can also use the rigid static
+bind-pose cache when its draw has no live pose/baked animation, its skin set
+is empty, the hierarchy has been finalized, and nodes are not runtime-mutable.
+Active animation is still uncached.
 `RtsView` opts eligible stationary scenery in at the host boundary, but no
 packet cache runs without the global experimental flag.
 
