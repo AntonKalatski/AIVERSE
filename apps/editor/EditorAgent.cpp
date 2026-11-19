@@ -101,7 +101,11 @@ void Editor::deliverShots(gfx::Device& dev) {
         if (vp && vp->pointsW > 0) crops.push_back({int(vp->originX * scale), int(vp->originY * scale), int(vp->pointsW * scale), int(vp->pointsH * scale)});
         else crops.push_back({0, 0, 0, 0});
     }
-    dev.captureNextFrame([this, pending, crops](int w, int h, std::vector<uint8_t> px) {
+    auto lifetime = captureLifetime_;
+    dev.captureNextFrame([this, lifetime, pending, crops](int w, int h, std::vector<uint8_t> px) {
+        // The asynchronous screenshot result may arrive after Editor has
+        // been destroyed. Check shared lifetime state BEFORE accessing this.
+        if (!lifetime->load(std::memory_order_acquire)) return;
         captureArmed_ = false;
         for (size_t k = 0; k < pending.size(); ++k) {
             Json r = pending[k].metadata.isObject() ? pending[k].metadata : Json::object();
