@@ -176,18 +176,26 @@ public:
         for(const auto& obj:objects) {
             if(obj.visible)++stats_.visible;
             if(obj.draw.model && obj.visible)++stats_.drawable;
-            if(obj.id!=0 && !obj.lods.empty()) {
-                auto& selection=lodState_[obj.id];
-                if(selection.generation!=obj.generation ||
-                   selection.sourcePublication!=obj.animationModelGeneration) {
-                    selection.level=0;
-                    selection.lodCount=0;
-                    selection.visualModel=nullptr;
-                    selection.visualPublication=0;
+            if(obj.id!=0) {
+                if(obj.lods.empty()) {
+                    // No whole-model LOD configuration is published now.
+                    // A later reintroduction must start fresh.
+                    lodState_.erase(obj.id);
+                } else {
+                    auto& selection=lodState_[obj.id];
+                    if(selection.generation!=obj.generation ||
+                       selection.sourcePublication!=obj.animationModelGeneration ||
+                       selection.sourceModel!=animationSourceModel(obj) ||
+                       selection.baseModel!=obj.draw.model) {
+                        selection.level=0;
+                        selection.revisions.clear();
+                    }
+                    selection.generation=obj.generation;
+                    selection.sourcePublication=obj.animationModelGeneration;
+                    selection.sourceModel=animationSourceModel(obj);
+                    selection.baseModel=obj.draw.model;
+                    selection.seen=frameStamp_;
                 }
-                selection.generation=obj.generation;
-                selection.sourcePublication=obj.animationModelGeneration;
-                selection.seen=frameStamp_;
             }
             const auto* animationModel=animationSourceModel(obj);
             if(!obj.graph || !animationModel)continue;
@@ -317,18 +325,24 @@ public:
             LodSelection* saved=nullptr;
             if(obj.id!=0) {
                 auto& state=lodState_[obj.id];
-                bool revised=state.generation!=obj.generation ||
+                const bool revised=state.generation!=obj.generation ||
                     state.sourcePublication!=obj.animationModelGeneration ||
-                    state.lodCount!=obj.lods.size();
-                if(!revised && state.level>0 && state.level<=obj.lods.size()) {
-                    const auto& previousLod=obj.lods[state.level-1];
-                    revised=previousLod.model!=state.visualModel ||
-                        previousLod.visualModelGeneration!=state.visualPublication ||
-                        previousLod.minDistance!=state.visualDistance;
+                    state.sourceModel!=rig ||
+                    state.baseModel!=obj.draw.model ||
+                    state.hysteresis!=obj.lodHysteresis ||
+                    !matchesLodRevisions(state.revisions,obj.lods);
+                if(revised) {
+                    state.level=0;
+                    // Complete, collision-free comparison of every authored
+                    // level, including UNSELECTED LODs and retarget plans.
+                    // Updated only on configuration change, not per draw.
+                    captureLodRevisions(state.revisions,obj.lods);
                 }
-                if(revised)state.level=0;
                 state.generation=obj.generation;
                 state.sourcePublication=obj.animationModelGeneration;
+                state.sourceModel=rig;
+                state.baseModel=obj.draw.model;
+                state.hysteresis=obj.lodHysteresis;
                 saved=&state;
                 prior=state.level;
             }
@@ -337,17 +351,6 @@ public:
             if(saved) {
                 saved->level=level;
                 saved->seen=frameStamp_;
-                saved->lodCount=obj.lods.size();
-                if(level>0) {
-                    const auto& chosen=obj.lods[level-1];
-                    saved->visualModel=chosen.model;
-                    saved->visualPublication=chosen.visualModelGeneration;
-                    saved->visualDistance=chosen.minDistance;
-                } else {
-                    saved->visualModel=nullptr;
-                    saved->visualPublication=0;
-                    saved->visualDistance=0.f;
-                }
             }
             // Missing streamed distant LODs retain the nearest available
             // representation. The base graph still advances every frame.
@@ -640,16 +643,51 @@ private:
         render::Pose pose;
         std::vector<render::mat4> matrices;
     };
+    // Exact layout identity, including levels not currently selected.
+    // Pointers are comparison-only and never dereferenced after retirement.
+    struct LodRevision {
+        const render::Model* model=nullptr;
+        float minDistance=0.f;
+        uint64_t publication=0;
+        const ModelPoseRetarget* retarget=nullptr;
+        const CompiledModelPoseRetarget* compiledRetarget=nullptr;
+    };
+    static bool matchesLodRevisions(
+            const std::vector<LodRevision>& cached,
+            std::span<const ModelLod> authored) noexcept {
+        if(cached.size()!=authored.size())return false;
+        for(size_t i=0;i<authored.size();++i) {
+            const auto& a=authored[i];
+            const auto& c=cached[i];
+            if(c.model!=a.model || c.minDistance!=a.minDistance ||
+               c.publication!=a.visualModelGeneration ||
+               c.retarget!=a.retarget.get() ||
+               c.compiledRetarget!=a.compiledRetarget.get())return false;
+        }
+        return true;
+    }
+    static void captureLodRevisions(
+            std::vector<LodRevision>& cached,
+            std::span<const ModelLod> authored) {
+        // Reserve first so an allocation failure does not commit partial
+        // changes to the previous snapshot.
+        std::vector<LodRevision> next;
+        next.reserve(authored.size());
+        for(const auto& a:authored)
+            next.push_back({a.model,a.minDistance,
+                            a.visualModelGeneration,a.retarget.get(),
+                            a.compiledRetarget.get()});
+        cached.swap(next);
+    }
     struct LodSelection {
         uint64_t generation=0;
         uint64_t sourcePublication=0;
+        const render::Model* sourceModel=nullptr;
+        const render::Model* baseModel=nullptr;
+        float hysteresis=0.1f;
         size_t level=0;
         uint64_t seen=0;
-        size_t lodCount=0;
-        // Comparison-only metadata, never dereference a retired Model.
-        const render::Model* visualModel=nullptr;
-        uint64_t visualPublication=0;
-        float visualDistance=0.f;
+        std::vector<LodRevision> revisions;
     };
     static uint64_t attachmentDrawId(uint64_t id,uint64_t generation,
                                      uint64_t modelPublication,
