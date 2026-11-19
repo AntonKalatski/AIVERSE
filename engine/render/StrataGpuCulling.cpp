@@ -430,9 +430,11 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                 const std::vector<GpuSceneInstance>& instances,
                                 const GpuPassConfig& config, uint64_t frameSerial,
                                 GpuSelectionSubmission& out) {
-    if ((dev.info().backend != gfx::Backend::Metal &&
-         dev.info().backend != gfx::Backend::Vulkan) ||
+    const bool vulkan=dev.info().backend==gfx::Backend::Vulkan;
+    if ((dev.info().backend != gfx::Backend::Metal && !vulkan) ||
         !dev.supportsCompute() || !gpuMetadataV2.valid() ||
+        (vulkan && (config.maxOutputClusters>2048 ||
+                    config.baseVertex<0)) ||
         !frameSerial || instances.empty() || instances.size() > 4096 ||
         config.maxOutputClusters == 0 || config.maxOutputClusters > 65536 ||
         config.width <= 0 || config.height <= 0 ||
@@ -452,11 +454,20 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if (dev.frameSerial() != 0 && dev.frameSerial() != frameSerial)
         return false;
     if (!pipeline_.valid()) {
-        const bool vulkan=dev.info().backend==gfx::Backend::Vulkan;
         pipeline_ = dev.createCompute({vulkan ? nullptr : kMetalCulling,
                                        vulkan ? kVulkanGpuCulling : nullptr,
                                        "Strata diagnostic GPU cluster culling"});
         if (!pipeline_.valid()) return false;
+    }
+    if(vulkan){
+        if(!indirectClearPipeline_.valid())
+            indirectClearPipeline_=dev.createCompute({nullptr,
+                kVulkanIndirectClear,"Strata Vulkan indirect clear"});
+        if(!indirectSafetyPipeline_.valid())
+            indirectSafetyPipeline_=dev.createCompute({nullptr,
+                kVulkanIndirectSafety,"Strata Vulkan indirect safety"});
+        if(!indirectClearPipeline_.valid() ||
+           !indirectSafetyPipeline_.valid())return false;
     }
     const size_t index = frameSerial % kFramesInFlight;
     if (epochs_[index] != frameSerial) {
@@ -481,6 +492,21 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
                   "Strata diagnostic GPU instances") ||
         !allocate(dev, slot.ranges, slot.rangesBytes, outputBytes,
                   "Strata diagnostic visible cluster ranges")) return false;
+    if(vulkan && (!slot.indirect.valid() ||
+                  slot.indirectBytes < size_t(config.maxOutputClusters) *
+                      sizeof(gfx::DrawIndexedIndirectCommand))){
+        gfx::BufferDesc desc{};
+        desc.type=gfx::BufferType::Indirect;
+        desc.usage=gfx::Usage::Immutable;
+        desc.size=size_t(config.maxOutputClusters) *
+                  sizeof(gfx::DrawIndexedIndirectCommand);
+        desc.label="Strata Vulkan GPU-authored indexed draws";
+        const auto created=dev.createBuffer(desc);
+        if(!created.valid())return false;
+        if(slot.indirect.valid())dev.destroyBuffer(slot.indirect);
+        slot.indirect=created;
+        slot.indirectBytes=desc.size;
+    }
     if (!slot.counters.valid()) {
         gfx::BufferDesc desc{};
         desc.type = gfx::BufferType::Storage;
@@ -493,11 +519,23 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     const GpuSelectionCounters zero{};
     dev.updateBuffer(slot.instances, instances.data(), inputBytes);
     dev.updateBuffer(slot.counters, &zero, sizeof(zero));
+    if(vulkan){
+        // First GPU pass clears all packet slots. It never requires
+        // a CPU readback or uploads a full zero-argument array.
+        if(!dev.beginCompute(indirectClearPipeline_))return false;
+        dev.setComputeBuffer(0,slot.indirect);
+        const uint32_t capacity=config.maxOutputClusters;
+        dev.setComputeUniforms(&capacity,sizeof(capacity));
+        const bool cleared=dev.dispatchChecked(capacity);
+        dev.endCompute();
+        if(!cleared)return false;
+    }
     if (!dev.beginCompute(pipeline_)) return false;
     dev.setComputeBuffer(0, gpuMetadataV2);
     dev.setComputeBuffer(1, slot.instances);
     dev.setComputeBuffer(2, slot.ranges);
     dev.setComputeBuffer(3, slot.counters);
+    if(vulkan)dev.setComputeBuffer(4,slot.indirect);
     GpuSelectionUniforms uniforms{};
     std::memcpy(uniforms.viewProjection, config.viewProjection.m,
                 sizeof(uniforms.viewProjection));
@@ -508,13 +546,29 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     uniforms.thresholdPixels = config.errorThresholdPixels;
     uniforms.clipDepthZeroToOne = config.clipDepthZeroToOne ? 1u : 0u;
     uniforms.frustumCull = config.frustumCull ? 1u : 0u;
+    uniforms.reserved=uint32_t(config.baseVertex);
     dev.setComputeUniforms(&uniforms, sizeof(uniforms));
     const bool encoded=dev.dispatchChecked(uint32_t(instances.size()));
     dev.endCompute();
     if(!encoded) return false;
+    if(vulkan){
+        // Second GPU-only validation consumes counters from the selection
+        // pass; invalid metadata/stack traversal or overflow zeroes ALL
+        // GPU indirect indexCount fields. An incomplete packet can never
+        // silently become partially visible geometry.
+        if(!dev.beginCompute(indirectSafetyPipeline_))return false;
+        dev.setComputeBuffer(0,slot.indirect);
+        dev.setComputeBuffer(1,slot.counters);
+        const uint32_t capacity=config.maxOutputClusters;
+        dev.setComputeUniforms(&capacity,sizeof(capacity));
+        const bool safe=dev.dispatchChecked(capacity);
+        dev.endCompute();
+        if(!safe)return false;
+    }
     GpuSelectionSubmission ready{};
     ready.ranges = slot.ranges;
     ready.counters = slot.counters;
+    if(vulkan)ready.indirect=slot.indirect;
     ready.capacity = config.maxOutputClusters;
     ready.submittedInstances = uint32_t(instances.size());
     ready.frameSerial = frameSerial;
@@ -530,12 +584,19 @@ void GpuClusterCulling::shutdown(gfx::Device& dev) {
             if (slot.instances.valid()) dev.destroyBuffer(slot.instances);
             if (slot.ranges.valid()) dev.destroyBuffer(slot.ranges);
             if (slot.counters.valid()) dev.destroyBuffer(slot.counters);
+            if (slot.indirect.valid()) dev.destroyBuffer(slot.indirect);
         }
         frame.clear();
     }
     epochs_.fill(0);
     cursors_.fill(0);
     if (pipeline_.valid()) dev.destroyCompute(pipeline_);
+    if (indirectClearPipeline_.valid())
+        dev.destroyCompute(indirectClearPipeline_);
+    if (indirectSafetyPipeline_.valid())
+        dev.destroyCompute(indirectSafetyPipeline_);
     pipeline_ = {};
+    indirectClearPipeline_ = {};
+    indirectSafetyPipeline_ = {};
 }
 } // namespace aiverse::render::strata
