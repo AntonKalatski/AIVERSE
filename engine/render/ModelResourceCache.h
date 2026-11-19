@@ -16,6 +16,7 @@
 #include <memory>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -31,6 +32,23 @@ public:
     ~ModelResourceCache() { lifetimeToken_.reset(); }
     std::weak_ptr<const void> lifetimeToken() const noexcept {
         return lifetimeToken_;
+    }
+    // Explicit owner-thread and GPU-device binding. First bind is done
+    // by the host, before any resource upload or group registration.
+    // Subsequent attempts from another device/thread fail closed.
+    void bindResourceDevice(gfx::Device& device) const {
+        const auto thread=std::this_thread::get_id();
+        if(resourceDevice_ &&
+           (resourceDevice_!=&device || resourceThread_!=thread))
+            throw std::logic_error("ModelResourceCache device/thread mismatch");
+        if(!resourceDevice_) {
+            resourceDevice_=&device;
+            resourceThread_=thread;
+        }
+    }
+    bool boundToResourceDevice(const gfx::Device& device) const noexcept {
+        return resourceDevice_==&device &&
+               resourceThread_==std::this_thread::get_id();
     }
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
     // Incremented by every cache-owned insertion, replacement, eviction,
@@ -303,6 +321,7 @@ public:
     // before its marker; newer evictions can NEVER ride an older fence.
     // Returns true only once all pending resources have been released.
     bool collectRetired(gfx::Device& dev) {
+        bindResourceDevice(dev);
         if(retired_.empty())return true;
         const auto before=retired_.pending();
         const bool done=retired_.collect(
@@ -334,6 +353,7 @@ public:
     // Explicitly release GPU assets before destroying the device.
     // No async loader may still reference these objects at this barrier.
     void shutdown(gfx::Device& dev) {
+        bindResourceDevice(dev);
 #ifndef __EMSCRIPTEN__
         preparation_.reset(); // join all texture/model CPU workers before release
 #endif
@@ -363,6 +383,8 @@ public:
 private:
     std::shared_ptr<const void> lifetimeToken_=
         std::make_shared<const uint8_t>(1);
+    mutable gfx::Device* resourceDevice_=nullptr;
+    mutable std::thread::id resourceThread_;
 #ifndef __EMSCRIPTEN__
     ModelPreparationService preparation_;
 #endif
