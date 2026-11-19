@@ -61,7 +61,10 @@ std::string GpuPoolWorld::groupKey(const fx::EffectDef& effect,
         "|vm="+std::to_string(unsigned(options.gpuProgram))+
         "|material="+std::to_string(unsigned(options.gpuMaterial))+
         "|indirect="+std::to_string(unsigned(options.gpuIndirect))+
-        "|checkpointCadence="+std::to_string(options.checkpointEveryFrames);
+        "|checkpointCadence="+std::to_string(options.checkpointEveryFrames)+
+        "|adaptive="+std::to_string(unsigned(options.adaptiveCheckpoint.enabled))+
+        "|adaptiveMax="+std::to_string(options.adaptiveCheckpoint.maxIntervalFrames)+
+        "|adaptiveRecover="+std::to_string(options.adaptiveCheckpoint.recoverAfterCompletions);
 }
 
 void GpuPoolWorld::recountBindings() {
