@@ -1036,3 +1036,15 @@ The existing `uploadModel` failed GPU vertex/index buffer
 regression has been declared in `render_model_image_transaction`,
 but **not executed**. All Stage 116 code must be compiled,
 linked and GPU-validated before PR #22 is merged.
+
+## Stage 118 — Model fallback GPU allocation and rollback
+
+`Renderer3D::init` no longer considers a partly allocated graphics
+owner initialized. It requires valid default model textures and main
+rendering pipelines before publishing, and on failure triggers a
+GPU-idle-guarded renderer rollback. `shutdownModels` now destroys only
+valid white/black/normal fallback handles and clears them before reuse.
+Light/trace partial resource setup follows the same owner policy.
+This does not change Model format, skeleton retargeting, LOD assets
+or MotionWeave state. Native build and GPU failure tests are **NOT RUN**.
+See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
