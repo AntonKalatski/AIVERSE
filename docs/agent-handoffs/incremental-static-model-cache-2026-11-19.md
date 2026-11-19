@@ -1875,3 +1875,56 @@ Require **both** commands to exit 0, include `changed_channels=0`, and show the 
 ### Next steps
 
 Increase warmup/samples and rotate order A/B/A; isolate actual CPU cost stages from the existing `mdiCpuStages` metrics; implement independent GPU timestamp measurement on supported graphics APIs; then test 1k, 10k and 100k objects and representative game scenes. Default-off experimental policies and PR Draft remain unchanged.
+
+
+---
+
+## Stage 63 — Mac Studio independent CPU MDI and GPU ICB measurements (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Tested code:** Stage 62 fixture, commit `f999394fc30a8f2cd6cca976055dfcd67cf15bd8` plus its documentation. Stage 63 is **documentation only** based on real owner-provided Mac Studio terminal output. No renderer or fixture source changed.
+
+### CPU MDI-only test (PASS)
+
+```text
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1759 p95_ms=0.2090 min_ms=0.1601 max_ms=0.2090
+CPU render benchmark cpu_mdi: samples=6 median_ms=0.2133 p95_ms=0.2310 min_ms=0.2034 max_ms=0.2310
+batch=1 shadow=1 opaque=1 total=4 error=
+GPU-encoded ICB: supported=0 required=0 submissions=0 commands=0
+GPU ICB diagnostics: candidates=0 prepared=0 rejected=0 executeFailed=0 preflightGroups=0
+PBR colour indirect active=1 (before 32, after 1)
+CPU MDI: supported=1 submissions=2 commands=64
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+CPU MDI exit=0
+```
+
+Direct median 0.1759ms; CPU MDI median 0.2133ms, +0.0374ms or +21.26% synchronous render() CPU time for this tiny fixture. Actual CPU MDI 2 submissions/64 commands, GPU ICB zero. Raster byte parity and test exit pass.
+
+### GPU ICB plus per-pass CPU MDI test (PASS)
+
+```text
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1580 p95_ms=0.1689 min_ms=0.1553 max_ms=0.1689
+CPU render benchmark gpu_icb_mixed: samples=6 median_ms=0.2467 p95_ms=0.3012 min_ms=0.2102 max_ms=0.3012
+batch=1 shadow=1 opaque=1 total=4 error=
+GPU-encoded ICB: supported=1 required=1 submissions=1 commands=32
+GPU ICB diagnostics: candidates=1 prepared=1 rejected=0 executeFailed=0 preflightGroups=0
+PBR colour indirect active=1 (before 32, after 1)
+CPU MDI: supported=1 submissions=1 commands=32
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+GPU ICB exit=0
+```
+
+Direct median 0.1580ms; GPU ICB+CPU MDI median 0.2467ms, +0.0887ms or +56.14% synchronous render() CPU time for this tiny fixture. Real GPU ICB 1 submission/32 commands, CPU MDI 1 submission/32 commands (distinct paths in different passes). Raster byte parity and exit pass.
+
+### Interpretation and strict limitations
+
+These are **independent six-sample A→B experiments**, not a statistically robust interleaved A/B/A study. The direct medians differ (0.1759ms vs 0.1580ms), so subtracting batched medians across two independent runs to infer exact extra GPU encoding cost is invalid. Renderer render() wall time is synchronous CPU work, **not GPU execution latency or FPS**. Both cases reduce tracked draw calls from 66 to 4, which is not sufficient reason to enable them by default. The fixture has only 32 commands per pass and may be below amortization break-even. CPU check count is 30/30. Nothing is known yet about 1k/10k/100k objects, representative scenes, driver GPU timestamps or Vulkan.
+
+### Next recommended code step
+
+Instrument per-pass already-available `modelStats().mdiCpuStages` for the 3 paths with batch-only diagnostics (selection, material sorting, candidate scan, command packing, pipeline setup, buffer upload, submit). Then extend sampling: 60+ per phase, balanced A/B/A and 1k/10k/100k fixed-scene models. Consider adaptive dispatch using cost thresholds only after controlled performance gains are demonstrated. Keep Draft PR #34 and all experimental flags OFF by default. For next Mac commands always `cd /Users/aleksandrfeer/Projects/AIVERSE` because a separate PHYSIS worktree previously entered conflicted rebase.
