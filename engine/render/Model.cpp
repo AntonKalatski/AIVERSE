@@ -459,13 +459,17 @@ void ModelTextureCache::invalidateSource(const std::string& path) {
     ++sourceRevisions_[key];
 }
 
-bool ModelTextureCache::borrowResident(Image& image) const {
-    if(image.textureKey.empty())return false;
+std::string ModelTextureCache::gpuKey(const Image& image) const {
     const auto revision=sourceRevisions_.find(image.textureKey);
     const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
-    const auto key=image.textureKey+(image.repeat?"#repeat":"#clamp")+
-                   (image.nearest?"#nearest":"#linear")+
-                   "#revision"+std::to_string(epoch);
+    return image.textureKey+(image.repeat?"#repeat":"#clamp")+
+           (image.nearest?"#nearest":"#linear")+
+           "#revision"+std::to_string(epoch);
+}
+
+bool ModelTextureCache::borrowResident(Image& image) const {
+    if(image.textureKey.empty())return false;
+    const auto key=gpuKey(image);
     const auto it=gpu_.find(key);
     if(it==gpu_.end() || !it->second.tex.valid())return false;
     image.tex=it->second.tex;
@@ -476,11 +480,7 @@ bool ModelTextureCache::borrowResident(Image& image) const {
 }
 
 void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
-    const auto revision=sourceRevisions_.find(image.textureKey);
-    const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
-    const auto key = image.textureKey + (image.repeat ? "#repeat" : "#clamp") +
-                     (image.nearest ? "#nearest" : "#linear") +
-                     "#revision" + std::to_string(epoch);
+    const auto key=gpuKey(image);
     auto it = gpu_.find(key);
     if (it == gpu_.end()) {
         Image owner = image; owner.textureCache.reset(); owner.borrowedTexture = false;
@@ -491,6 +491,77 @@ void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
     }
     image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true;
 }
+ModelTextureCache::PreparedGpuPromotion
+ModelTextureCache::prepareGpuPromotion(const std::vector<Model*>& models) {
+    PreparedGpuPromotion plan(*this);
+    // A prepared plan stores pointers into stable Model images and map nodes.
+    // Do not modify/re-import any participating Model before commit().
+    for(Model* model:models) {
+        if(!model)continue;
+        for(auto& image:model->images) {
+            if(image.textureCache.get()!=this || image.borrowedTexture ||
+               !image.tex.valid() || image.textureKey.empty())
+                continue;
+            const auto key=gpuKey(image);
+            Image* owner=nullptr;
+            if(auto resident=gpu_.find(key);resident!=gpu_.end()) {
+                owner=&resident->second;
+            }else {
+                auto [it,inserted]=plan.pending_.try_emplace(key);
+                if(inserted) {
+                    // This descriptor does NOT transfer GPU ownership yet:
+                    // the Model retains the real handle until commit.
+                    Image prepared=image;
+                    prepared.textureCache.reset();
+                    prepared.borrowedTexture=false;
+                    prepared.textureLease=std::make_shared<int>(0);
+                    prepared.rgba.clear();
+                    prepared.sharedRgba.reset();
+                    prepared.compressed.reset();
+                    it->second=std::move(prepared);
+                }
+                owner=&it->second;
+            }
+            plan.bindings_.push_back({&image,owner});
+        }
+    }
+    // All future fallback objects are prepared before map publication.
+    plan.redundant_.reserve(plan.bindings_.size());
+    return plan;
+}
+
+std::vector<Image> ModelTextureCache::PreparedGpuPromotion::commit() {
+    if(committed_ || !cache_)
+        throw std::logic_error("shared GPU texture plan already committed");
+    // All map keys are checked before the first node is transferred.
+    // A host that interleaves another cache publication must retry staging.
+    for(const auto& [key,owner]:pending_) {
+        (void)owner;
+        if(cache_->gpu_.contains(key))
+            throw std::logic_error("shared GPU texture key changed during staging: "+key);
+    }
+    // Merging preallocated std::map nodes does not create a new GPU object.
+    // Image* pointers into moved map nodes remain stable.
+    cache_->gpu_.merge(pending_);
+    for(const auto& binding:bindings_) {
+        Image& image=*binding.modelImage;
+        const Image& owner=*binding.sharedOwner;
+        if(image.tex.valid() && image.tex!=owner.tex) {
+            Image retired;
+            retired.tex=image.tex;
+            retired.borrowedTexture=false;
+            // No allocation: redundant_ capacity was reserved in prepare.
+            redundant_.push_back(std::move(retired));
+        }
+        image.tex=owner.tex;
+        image.textureLease=owner.textureLease;
+        image.borrowedTexture=true;
+        image.gpuCompressed=owner.gpuCompressed;
+    }
+    committed_=true;
+    return std::move(redundant_);
+}
+
 void ModelTextureCache::trim(gfx::Device& dev) {
     for(auto it=gpu_.begin();it!=gpu_.end();) {
         if(it->second.textureLease && it->second.textureLease.use_count()==1) {
