@@ -1,5 +1,8 @@
 #include "WorldScene.h"
 #include "engine/render/ModelTextureCache.h"
+#include "engine/world/NereidWaterManifest.h"
+#include "engine/world/NereidCascadeManifest.h"
+#include "engine/world/NereidConfluenceManifest.h"
 #include <algorithm>
 #include <cmath>
 #include <mutex>
@@ -48,11 +51,37 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     shareModels_=manifest.getBool("shareModels");
     overhang_=float(worldInteger(manifest,"meshOverhang",0,0,4096));
     uploadBytes_=size_t(worldInteger(manifest,"maxUploadBytes",16*1024*1024,1024,1024*1024*1024));
+    // Static opt-in water snapshots are presentation-only; native ECS hosts
+    // can later override them via setNereidSurfaces().
+    const auto water=parseNereidWaterManifest(manifest);
+    nereidWater_.setMaxUploadsPerFrame(water.maxUploadsPerFrame);
+    nereidWater_.setAsyncPreparation(water.asyncPrepare);
+    nereidWater_.setMaxWaterStagingBytes(water.maxStagingBytes);
+    nereidWater_.setMaxEstimatedUploadBytes(water.maxEstimatedUploadBytes);
+    nereidWater_.setVisibilityRange(water.visibilityRange);
+    if(manifest.has("nereidWater"))nereidWater_.setSurfaces(water.surfaces);
+    const auto cascade=parseNereidCascadeManifest(manifest);
+    cascades_.setMaxUploadsPerFrame(cascade.maxUploadsPerFrame);
+    if(manifest.has("nereidCascades"))cascades_.setCascades(cascade.sources);
+    // Static confluences use explicit scene water IDs, not manufactured ECS
+    // Entity handles. Parse all links before accepting a partial scene.
+    const auto confluence=parseNereidConfluenceManifest(manifest,water.surfaces);
+    if(manifest.has("nereidConfluences"))
+        confluences_.setConfluences(confluence.sources);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
 }
 WorldScene::~WorldScene()=default;
+void WorldScene::setNereidSurfaces(std::vector<NereidSceneSurface> surfaces) {
+    nereidWater_.setSurfaces(std::move(surfaces));
+}
+size_t WorldScene::nereidVisibleSurfaceCount()const {
+    return nereidWater_.visibleSurfaceCount();
+}
+NereidUnderwaterView WorldScene::nereidUnderwaterAt(Vec3 camera)const {
+    return sampleNereidUnderwater(nereidWater_,camera);
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
@@ -136,13 +165,28 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             resident_[cell]=prepared;return true;
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
+    nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
+    cascades_.update(device,&nereidWater_);
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
+    nereidWater_.draw(renderer,origin,size,&ripples_,&windField_,
+        [this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
+            const Vec3 joined=confluences_.flowForWater(
+                stableWaterId,position,ordinary,nereidWater_);
+            return cascades_.flowAtConnection(
+                stableWaterId,position,joined,nereidWater_);
+        });
+    cascades_.draw(renderer,origin,size);
+    // Shader-normal ripples replace the old overlay rings for surfaces
+    // using NEREID. The overlay remains available via ripples().draw().
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
 }
 void WorldScene::shutdown(gfx::Device& device) {
+    nereidWater_.shutdown(device);
+    cascades_.shutdown(device);
+    ripples_.clear();
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
 }
 }
