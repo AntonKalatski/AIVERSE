@@ -62,6 +62,17 @@ int main() {
     }
     CHECK(!io::write(dir,"receipts",{},"empty-payload",&reason));
     CHECK(!fs::exists(parent/"receipts.next-empty-payload"));
+    // The low-level helper is public: enforce the 16 MiB FileJournal
+    // cap even if a caller bypasses canonical V1 serialization.
+    const std::vector<std::uint8_t> oversized(io::kMaxJournalBytes+1,0x5a);
+    CHECK(!io::write(dir,"receipts",oversized,"oversized",&reason));
+    CHECK(!fs::exists(parent/"receipts.next-oversized"));
+    readback={77};
+    CHECK(!io::read(dir,"receipts",1,io::kMaxJournalBytes+1,
+                    readback,missing,&reason));
+    CHECK(readback==std::vector<std::uint8_t>{77});
+    CHECK(!io::read(dir,"receipts",11,10,readback,missing,&reason));
+    CHECK(readback==std::vector<std::uint8_t>{77});
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(missing);
     CHECK(io::write(dir,"receipts",data,"nonce-a",&reason));

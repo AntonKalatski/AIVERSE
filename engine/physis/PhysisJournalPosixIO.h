@@ -16,6 +16,9 @@
 
 namespace aiverse::physis::remote::posix_journal {
 
+// Match FileJournal::kMaxDiskBytes, including checksum and header.
+inline constexpr std::size_t kMaxJournalBytes=16u*1024u*1024u;
+
 inline bool validBasename(const std::string& name) {
     return !name.empty() && name!="." && name!=".." &&
            name.find('/')==std::string::npos &&
@@ -39,6 +42,8 @@ inline bool read(int directory,const std::string& name,
                  std::vector<std::uint8_t>& output,bool& missing,
                  std::string* why=nullptr) {
     missing=false;
+    if(minBytes>maxBytes || maxBytes>kMaxJournalBytes)
+        return error(why,"PHYSIS pinned journal read limits invalid");
     if(!ownedDirectory(directory) || !validBasename(name))
         return error(why,"PHYSIS pinned journal directory or name invalid");
     int flags=O_RDONLY|O_NONBLOCK;
@@ -107,8 +112,9 @@ inline bool write(int directory,const std::string& name,
                   const std::vector<std::uint8_t>& bytes,
                   const std::string& randomSuffix,
                   std::string* why=nullptr) {
+    if(bytes.empty() || bytes.size()>kMaxJournalBytes)
+        return error(why,"PHYSIS pinned journal payload size invalid");
     if(!ownedDirectory(directory) || !validBasename(name) ||
-       bytes.empty() ||
        randomSuffix.empty() || randomSuffix.find('/')!=std::string::npos ||
        randomSuffix.find('\0')!=std::string::npos)
         return error(why,"PHYSIS pinned journal directory or name invalid");
