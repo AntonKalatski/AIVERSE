@@ -2,6 +2,7 @@
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
+#include "engine/character/vivid/SkinnedWeightPick.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -242,6 +243,84 @@ void check() {
             updated.vertices[0].weights[0]+updated.vertices[0].weights[1]==255 &&
             updated.vertices[1].weights[0]+updated.vertices[1].weights[1]==255,
             "skin weight brush failed to publish normalized palettes");
+    }
+    {
+        render::Model posed;
+        posed.nodes.resize(3);
+        posed.nodes[0].name="root";
+        posed.nodes[1].name="joint";posed.nodes[1].parent=0;
+        posed.nodes[2].name="skinMesh";posed.nodes[2].mesh=0;
+        posed.nodes[2].skin=0;
+        render::Skin skin;
+        skin.joints={1};
+        skin.inverseBind={render::mat4{}};
+        posed.skins.push_back(skin);
+        posed.vertices.resize(3);
+        posed.vertices[0].pos={0,0,0};
+        posed.vertices[1].pos={1,0,0};
+        posed.vertices[2].pos={0,1,0};
+        for(auto& v:posed.vertices){v.weights[0]=255;v.joints[0]=0;}
+        posed.indices={0,1,2};
+        render::MeshDef mesh;
+        render::Primitive primitive;
+        primitive.firstIndex=0;primitive.indexCount=3;
+        primitive.firstVertex=0;primitive.vertexCount=3;
+        primitive.jointPalette={0};
+        mesh.primitives.push_back(primitive);
+        posed.meshes.push_back(mesh);
+        std::vector<render::mat4> pose(3);
+        pose[1]=render::mat4::translate({0,0,2});
+        SkinnedWeightSurface surface;
+        req(prepareSkinnedWeightSurface(posed,0,pose,surface) &&
+            surface.ready && std::fabs(surface.world[0].z-2)<1.e-5f,
+            "skinned picker failed to follow animated joint world matrices");
+        const auto hit=pickSkinnedWeightVertex(
+            posed,surface,{0.05f,0.05f,4},{0,0,-1});
+        req(hit.hit && hit.vertex==0 && std::fabs(hit.rayDistance-2)<1.e-5f,
+            "skinned raycast used source undeformed triangles");
+        pose[1].at(0,0)=0; // singularity is rejected upstream during rig load
+        pose[1].at(0,3)=std::numeric_limits<float>::quiet_NaN();
+        const auto old=surface.world[0];
+        req(!prepareSkinnedWeightSurface(posed,0,pose,surface) &&
+            surface.world[0].z==old.z,
+            "invalid source pose partially published skinned pick cache");
+    }
+    {
+        render::Model painted;
+        painted.nodes.resize(3);
+        painted.nodes[0].name="root";
+        painted.nodes[1].name="jaw";painted.nodes[1].parent=0;
+        painted.nodes[2].name="skinMesh";painted.nodes[2].skin=0;
+        painted.nodes[2].mesh=0;
+        render::Skin skin;skin.joints={0,1};skin.inverseBind.resize(2);
+        painted.skins.push_back(skin);
+        painted.vertices.resize(3);
+        painted.vertices[0].pos={-0.1f,0,0};
+        painted.vertices[1].pos={0.1f,0,0};
+        painted.vertices[2].pos={2.f,0,0};
+        for(auto& v:painted.vertices) {
+            v.weights[0]=200;v.joints[0]=0;
+            v.weights[1]=55;v.joints[1]=1;
+        }
+        painted.indices={0,1,2};
+        render::Primitive p;p.firstIndex=0;p.indexCount=3;
+        p.firstVertex=0;p.vertexCount=3;p.jointPalette={0,1};
+        render::MeshDef mesh;mesh.primitives.push_back(p);
+        painted.meshes.push_back(mesh);
+        SkinWeightAuthoring stroke;
+        req(stroke.beginStroke() &&
+            stroke.strokeBrush(painted,0,0,"jaw",1.f,0.16f,0.4f,true) &&
+            stroke.strokeBrush(painted,0,1,"jaw",1.f,0.16f,0.4f,true) &&
+            stroke.endStroke() && stroke.canUndo(),
+            "continuous weight drag did not commit as one stroke");
+        req(stroke.undo() && stroke.edits().empty() &&
+            !stroke.undo() && stroke.redo() && stroke.edits().size()==2,
+            "continuous weight paint generated multiple undo steps");
+        const auto saved=stroke.toJson();
+        req(stroke.beginStroke() &&
+            stroke.strokeBrush(painted,0,0,"jaw",0.2f,0.16f,0.5f,true) &&
+            !stroke.endStroke(false) && stroke.toJson()==saved,
+            "cancelled weight drag changed committed authored weights");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
