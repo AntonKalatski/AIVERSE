@@ -13,5 +13,9 @@ struct HumanSurfaceMaterials {
     render::Material skin,iris,sclera,cornea,hair,eyelash,teeth;
 };
 render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna);
+// Preserve imported scan albedo/normal/roughness/AO/emissive texture slots
+// when upgrading a glTF/FBX material to VIVID human-specific shading.
+render::Material humanMaterialFromSource(HumanSurface surface,const HumanDNA& dna,
+                                         const render::Material& source);
 HumanSurfaceMaterials humanMaterials(const HumanDNA& dna);
 }
