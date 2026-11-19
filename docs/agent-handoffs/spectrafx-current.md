@@ -1,5 +1,19 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 112 — Stage 111 strict native + visual review PASS (M3 Ultra)
+
+User-provided acceptance at validated source SHA
+`441d69e08836888604e0aee6ec71765a51fddddc`:
+**10/10 stages exit 0**, failed 0, skipped 0;
+MetalGPU **4/4 real PASS**, SKIP=0, MISSING=0, FAIL=0.
+Seven PPMs were successfully analyzed; all **5/5 objective visual
+checks PASS**, changed-pixel counts A/B/PRISMA **192/322/232**.
+The excerpt does **not** include the full CTest test count, numeric
+GPU p50/p95 or allocated Metal bytes; do not invent these values.
+PPM/JSON artifacts are on the user's Mac, not visually inspected here.
+See `docs/agent-handoffs/spectrafx-stage112-native-visual-acceptance-2026-11-20.md`.
+
+
 ## Stage 111 — GPU timing + Metal allocation telemetry and seven-frame visual QA (NOT RUN)
 
 Code `3e56816e991f304bbe4ebe0fe1abc8505523e4d8`

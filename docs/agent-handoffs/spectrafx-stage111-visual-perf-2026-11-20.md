@@ -61,3 +61,15 @@ Inspect `build/spectrafx-validation/spectrafx-acceptance/summary.md`, `ctest_met
 ## Remaining work for next agent
 
 Fix any native compiler/CTest regressions first, and record exact SHA and logs in a new handoff. After acceptance, visually inspect the contact sheet and live Editor GPU Preview (pause/step/orbit/asset hot reload), profile Metal resource allocation after repeated scene resets to distinguish stable caches from leaks, and compare GPU p50/p95 under comparable thermal frame pacing against baseline. Verify non-Metal Vulkan/GLES CPU fallback when integration branches are ready. Do not rebase/merge `main` blindly (parallel camera/PRISMA/PHYSIS agents own overlapping files).
+
+## User-reported native result: Stage 111 PASS (2026-11-20)
+
+Source `441d69e08836888604e0aee6ec71765a51fddddc`
+passed all ten acceptance stages (exit 0; failed 0; skipped 0) on
+Darwin/Apple M3 Ultra. The strict checker confirmed all four real
+MetalGPU tests PASS with no missing or skipped tests.
+The new `visual_review` PASS analyzed seven local PPM frames:
+five objective checks PASS, changed pixel counts A=192, B=322,
+PRISMA=232. Actual contact sheet has not been visually reviewed.
+The provided excerpt does not print whole-GPU p50/p95/allocation
+figures or full CTest count. See Stage 112 handoff for details.
