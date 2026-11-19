@@ -19,9 +19,8 @@ namespace aiverse::game::view_adapter {
 class RtsModelResourceCache final {
 public:
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
-    // Incremented by publishPrepared, trimUnused and shutdown. Direct
-    // mutation through models() is legacy compatibility and does not
-    // increment generation: hosts must not treat this as a full asset epoch.
+    // Incremented by every cache-owned insertion, replacement, eviction,
+    // and shutdown; the map is exposed read-only so writes cannot bypass it.
     uint64_t generation() const noexcept {return generation_;}
 
     struct Stats {
@@ -34,6 +33,40 @@ public:
         return preparation_;
     }
 #endif
+    const render::Model* find(const std::string& key) const noexcept {
+        const auto it=models_.find(key);
+        return it==models_.end()?nullptr:it->second.get();
+    }
+    bool contains(const std::string& key) const {
+        return models_.count(key)!=0; // null entries cache failed loads
+    }
+    // Insert without replacing a resident or a cached failed load.
+    // The source model may already have been uploaded on the render thread.
+    render::Model* insertIfAbsent(std::string key,
+                                  std::unique_ptr<render::Model> model) {
+        auto [it,inserted]=models_.try_emplace(std::move(key),std::move(model));
+        if(inserted)++generation_;
+        return it->second.get();
+    }
+    // For generated fallback assets and explicit reloads. Release the old
+    // GPU buffers and invalidate host references before replacing them.
+    template<class OnRelease>
+    render::Model* replace(gfx::Device& dev,std::string key,
+                           std::unique_ptr<render::Model> replacement,
+                           OnRelease&& onRelease) {
+        auto it=models_.find(key);
+        if(it!=models_.end()) {
+            if(it->second) {
+                onRelease(it->second.get());
+                render::releaseModel(dev,*it->second);
+            }
+            it->second=std::move(replacement);
+            ++generation_;
+            return it->second.get();
+        }
+        return insertIfAbsent(std::move(key),std::move(replacement));
+    }
+
     // Publish a CPU-prepared model on the render thread. A synchronous
     // load may have installed this key while the worker ran; do not
     // overwrite that resource or upload its duplicate.
@@ -42,12 +75,10 @@ public:
                          Prepared&& prepared) {
         if(models_.count(key))return false;
         if(prepared.model)render::uploadModel(dev,*prepared.model);
-        models_.emplace(key,std::move(prepared.model));
-        ++generation_;
+        insertIfAbsent(key,std::move(prepared.model));
         return true;
     }
 
-    ModelMap& models() noexcept {return models_;}
     const ModelMap& models() const noexcept {return models_;}
     std::shared_ptr<render::ModelTextureCache> textures() const noexcept {
         return textures_;
