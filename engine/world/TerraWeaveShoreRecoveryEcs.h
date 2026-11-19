@@ -49,7 +49,6 @@ inline ShorePatchClimate sampleShorePatchClimate(
         {x0+3*w/4,z0+3*h/4}
     }};
     uint32_t flooded=0;
-    uint32_t shallow=0;
     for(const auto& [x,z]:samples){
         const int64_t edge=kWorldLimitCm-soil.spacingCm();
         if(x<=-edge || x>=edge || z<=-edge || z>=edge)
@@ -60,12 +59,11 @@ inline ShorePatchClimate sampleShorePatchClimate(
             Fixed::fromRatio(heightCm,100),
             Fixed::fromRatio(z,100)};
         const auto resolved=water.sample(sampleAt);
-        if(!resolved.found)continue;
+        if(!resolved.found || !resolved.submerged)continue;
         const int64_t surface=resolved.surfaceY.raw*100/Fixed::kOne;
         const int64_t depth=surface-heightCm;
         if(depth>=2){
             ++flooded;
-            if(depth<20)++shallow;
         }
     }
     ShorePatchClimate climate;
@@ -79,7 +77,6 @@ inline ShorePatchClimate sampleShorePatchClimate(
         (flooded*200)/1000);
     climate.lightPermille=patch.environment.lightPermille;
     climate.nutrientsPermille=patch.environment.nutrientsPermille;
-    (void)shallow;
     return extra?extra(patch,climate):climate;
 }
 
