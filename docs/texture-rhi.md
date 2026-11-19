@@ -3335,3 +3335,50 @@ executable as verified. Capture the first native compiler/MSL, image
 mismatch, group counter or driver diagnostic and fix that root cause.
 Do not run this high-risk opt-in process as part of the existing
 green default texture suite.
+
+### Stage 10BV — production Shader Graph + Renderer3D mixed GPU ICB PASS on Apple M3 Ultra (2026-11-19)
+
+**Real user-supplied Mac Studio test evidence for the source added in Stage 10BU**:
+the native target `aiverse_metal_renderer_graph_icb_gpu_test` completed its build and
+`metal_renderer_graph_icb_gpu` **PASSED 1/1 CTest, 0 failed** in **3.73 s**
+(total CTest real elapsed: **3.74 s**). Unlike Stage 10BT's low-level minimal
+MSL ABI test, this fixture used the actual authored JSON material graph compiled by
+`render::graph::compile`, the production `Renderer3D`, its graph injection and
+model resource bindings, and a live Metal GPU-encoded ICB draw path.
+
+Exact observed diagnostics:
+
+```text
+[metal-assets] libraries=0 sourceMisses=11 pipelines=17 pipelineFailures=0 archive=0 strict=0
+GPU ICB graph stats: eligible=2 candidates=1 prepared=1 submitted=1 mixed=1 gpu_commands=2 rejected=0 errors=0
+Renderer3D Shader Graph regions: left=(196.0,84.0,94.0) right=(87.0,196.0,122.0) delta=249.0
+Renderer3D Shader Graph regions: left=(196.0,84.0,94.0) right=(87.0,196.0,122.0) delta=249.0
+Renderer3D graph CPU/ICB pixels: bad_channels=0 max_delta=0
+PASS: production Renderer3D compiled Shader Graph 4-source mixed Metal GPU ICB pixels
+1/1 Test #122: metal_renderer_graph_icb_gpu ..... Passed 3.73 sec
+```
+
+**What this proves:** both the direct and ICB render paths displayed two distinct
+material regions (the region delta was nonzero in each), the GPU ICB path submitted
+one heterogeneous Shader Graph batch with two GPU commands, no rejects/execute errors,
+and the **entire captured RGBA8 image matched byte-for-byte** (`bad_channels=0`,
+`max_delta=0`; stronger than the test's 2-LSB tolerance).
+
+**Limitations:** This covers the fixture's rigid, opaque, fragment-only
+four-texture Shader Graph permutation on **Apple M3 Ultra / Metal**.
+This CTest's 3.73 s duration is not a GPU frame benchmark, nor evidence
+that ICB is faster than instancing/CPU MDI. The test does **not** exercise
+graph + virtual-texture atlas/page-table sampling together, vertex graph
+displacement, alpha blend/masking, other permutations or content sizes,
+mobile/WebGL, or Vulkan/GL. A single passing hardware fixture is not
+driver/stress certification. Experimental ICB flags and
+`AIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS` stay **OFF by default**;
+do not merge Draft PR #21 until the broader acceptance matrix passes.
+
+**Next stage:** test graph + VT simultaneously on real Metal:
+disk-backed atlas/page-table with a graph `sampleVirtualTexture`
+node and independent 1–4 source textures, distinct archive layers/
+page-table identities per command, proper fallback and LRU changes.
+Require GPU ICB submissions, direct rendering parity and actual
+GPU fragment readbacks. Then separately validate GL/Vulkan/mobile
+non-ICB fallbacks and profile larger scenes with representative workloads.
