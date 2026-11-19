@@ -364,6 +364,10 @@ public:
         // can only be retired on the owning gfx::Device thread.
         gpuCache_.prune(device,sourceRevision_);
         finishTransition(device);
+        // Runtime policy changes affect already-cached dormant models on
+        // the next safe gfx owner-thread update, before budget eviction.
+        if(windShadowCachePolicy_.compressCachedShadows)
+            gpuCache_.compactWindShadows();
         gpuCache_.trimWindShadowBytes(device,
             windShadowCachePolicy_.maxCachedShadowBytes);
         // Patch only models that survived transition retirement. This must
