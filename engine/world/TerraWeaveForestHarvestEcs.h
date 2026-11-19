@@ -17,6 +17,7 @@ namespace aiverse::terraweave {
 struct ForestHarvestRecord {
     AnchoredPlantId id{};
     uint64_t harvestedTick=0;
+    bool wasRecruited=false; // explicit native sapling needs restoration state
 };
 
 // Separate from ecological death and fallen roots: a harvested procedural
@@ -45,12 +46,13 @@ inline void validateForestHarvestResource(const ForestHarvestResource& state) {
     }
 }
 inline void io(Archive& a,ForestHarvestRecord& record) {
-    a(record.id.speciesId,record.id.key,record.harvestedTick);
+    a(record.id.speciesId,record.id.key,record.harvestedTick,
+      record.wasRecruited);
 }
 inline void io(Archive& a,ForestHarvestResource& state) {
     a(state.version,state.revision);
     if(!a.ok() || state.version!=1u){a.fail();return;}
-    uint32_t count=a.count(state.records.size(),20);
+    uint32_t count=a.count(state.records.size(),21);
     if(!a.ok() || count>ForestHarvestResource::kMaxRecords){
         a.fail();return;
     }
@@ -120,7 +122,8 @@ inline NativeForestHarvestOutcome harvestNativeForestTree(
         [](const ForestHarvestRecord& record,AnchoredPlantId key){
             return record.id<key;
         });
-    updatedHarvest.records.insert(insertAt,{id,completedTick});
+    auto inserted=updatedHarvest.records.insert(
+        insertAt,{id,completedTick,false});
     ++updatedHarvest.revision;
 
     // A harvested tree must not compete for canopy light, seed, erode soil
@@ -156,6 +159,7 @@ inline NativeForestHarvestOutcome harvestNativeForestTree(
             out.removedEcology=true;
         }
     }
+    inserted->wasRecruited=out.wasRecruited;
     ++updated.stateRevision;
     out.authoritativeStateRevision=updated.stateRevision;
 
@@ -185,6 +189,14 @@ inline bool restoreHarvestedForestTree(
         throw std::logic_error("TerraWeave missing restore resources");
     validateForestHarvestResource(*harvest);
     if(!isForestHarvested(*harvest,id))return false;
+    const auto found=std::lower_bound(
+        harvest->records.begin(),harvest->records.end(),id,
+        [](const ForestHarvestRecord& record,AnchoredPlantId key){
+            return record.id<key;
+        });
+    if(found->wasRecruited && !planted)
+        throw std::invalid_argument(
+            "TerraWeave native recruit requires explicit replanted roots");
     if(original->stateRevision==UINT64_MAX ||
        harvest->revision==UINT64_MAX)
         throw std::overflow_error("TerraWeave restore revision overflow");
@@ -207,6 +219,29 @@ inline bool restoreHarvestedForestTree(
             throw std::length_error("TerraWeave replant root budget");
         updated.rooted.push_back(*planted);
     }
+    // A native recruited sapling is not part of procedural background
+    // scatter. Rebuild its sparse ecology presentation marker on replant.
+    std::optional<ForestEcologyResource> updatedEcology;
+    if(found->wasRecruited){
+        const auto* ecology=ecs.resourceConst<ForestEcologyResource>();
+        if(!ecology)
+            throw std::logic_error("TerraWeave restore needs ecology state");
+        updatedEcology=*ecology;
+        validateForestEcologyResource(*updatedEcology);
+        if(updatedEcology->revision==UINT64_MAX)
+            throw std::overflow_error("TerraWeave restore ecology overflow");
+        const auto pos=std::lower_bound(
+            updatedEcology->plants.begin(),updatedEcology->plants.end(),id,
+            [](const ForestEcologyPlantState& record,AnchoredPlantId key){
+                return record.id<key;
+            });
+        if(pos!=updatedEcology->plants.end() && pos->id==id)
+            throw std::invalid_argument(
+                "TerraWeave restored recruit already has ecology record");
+        updatedEcology->plants.insert(pos,{
+            id,updatedEcology->lastStepTick,0,0,0,0,false,true});
+        ++updatedEcology->revision;
+    }
     ForestHarvestResource updatedHarvest=*harvest;
     const auto it=std::lower_bound(
         updatedHarvest.records.begin(),updatedHarvest.records.end(),id,
@@ -219,6 +254,9 @@ inline bool restoreHarvestedForestTree(
     World staged=ecs;
     staged.setResource<TerraWeaveAuthorityResource>(std::move(updated));
     staged.setResource<ForestHarvestResource>(std::move(updatedHarvest));
+    if(updatedEcology)
+        staged.setResource<ForestEcologyResource>(
+            std::move(*updatedEcology));
     ecs=std::move(staged);
     return true;
 }
