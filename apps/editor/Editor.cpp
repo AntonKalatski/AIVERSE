@@ -56,9 +56,14 @@ void Editor::refreshPrismaVolumes() {
 
 // ============================ viewport ============================
 
-void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
+void Viewport::ensure(gfx::Device& dev, int pw, int ph,
+                      ViewportGpuRetirement& owner) {
+    ownerDevice = &dev;
+    retirement = &owner;
     pw = std::max(pw, 8); ph = std::max(ph, 8);
-    if (pw == w && ph == h && color.valid()) return;
+    if (pw == w && ph == h && color.valid() && depth.valid()) return;
+    // The old color may still be referenced by ImGui's GPU draw list and
+    // the depth by the previous scene pass. Never destroy them here.
     release(dev);
     gfx::TextureDesc td;
     td.width = pw; td.height = ph;
@@ -72,9 +77,18 @@ void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
 }
 
 void Viewport::release(gfx::Device& dev) {
-    if (color.valid()) dev.destroyTexture(color);
-    if (depth.valid()) dev.destroyTexture(depth);
-    color = depth = {};
+    // Color handles used in ImGui commands must survive GPU submission,
+    // including when an entire Scene/Game/FX window is destroyed.
+    if (retirement) {
+        retirement->retire(dev,color);
+        retirement->retire(dev,depth);
+    } else {
+        // Legacy host not using an Editor owner: preserve its old explicit
+        // teardown contract (caller must guarantee GPU idle).
+        if (color.valid()) dev.destroyTexture(color);
+        if (depth.valid()) dev.destroyTexture(depth);
+        color = depth = {};
+    }
     w = h = 0;
 }
 
