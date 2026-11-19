@@ -65,6 +65,20 @@ public:
                 return false;
             }
         }
+        // Stage 26 recovery: a Queued receipt persisted BEFORE an ECS tick
+        // is not evidence that the command survived a server restart.
+        // Pending Simulation commands are outside the journal and may have
+        // vanished with the process. Reconcile against the restored World
+        // first; if the edit was not applied, the SAME authenticated Submit
+        // can safely requeue its original expected revision. Never emit a
+        // terminal Rejected just because the old scheduled tick elapsed.
+        for(auto& [key,entry]:saved) {
+            if(entry.receipt.result==Result::Queued) {
+                entry.receipt.result=Result::Unknown;
+                entry.receipt.scheduledTick=0;
+                entry.receipt.detail="PHYSIS restored pending edit; awaiting ECS reconciliation";
+            }
+        }
         entries_=std::move(saved);
         if(error)error->clear();
         return true;
