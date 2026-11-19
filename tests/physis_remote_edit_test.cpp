@@ -490,6 +490,97 @@ void ordinaryUnknownStillRetriesOriginal() {
     CHECK(registry(*sim).revision==1);
     CHECK(server.entries().size()==1);
 }
+
+void delayedReceiptCannotUndoApplied() {
+    auto sim=make();
+    ServerGateway gateway;
+    RemoteClient client(99640);
+    CHECK(client.begin(edit(Fixed::fromInt(71)),kEdit,4));
+    const auto originalId=client.requestId();
+    auto [c,s]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c,*s,0,2100);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    // Buffered ACKs on the same authenticated connection may arrive after
+    // Applied. They are not new decisions and cannot resurrect an old edit.
+    std::uint64_t ms=2200;
+    for(const Result old : {Result::Queued,Result::Unknown,Result::Rejected,
+                            Result::Conflict,Result::Denied}) {
+        Packet stale;
+        stale.kind=Message::Receipt;
+        stale.clientInstance=client.instance();
+        stale.requestId=originalId;
+        stale.receipt={old,0,0,"stale buffered receipt"};
+        net::Bytes raw;
+        CHECK(encode(stale,raw));
+        s->send(raw);
+        client.poll(*c,ms);
+        ms+=40;
+        CHECK(client.status()==ClientStatus::Applied);
+        CHECK(client.receipt().result==Result::Applied);
+        CHECK(client.remoteRevision()==1);
+    }
+    // The terminal result must permit the next revision, not leave an
+    // unexpected Queued/Unknown request blocking the editor.
+    CHECK(client.begin(edit(Fixed::fromInt(72),1),kEdit,4));
+    drive(client,gateway,*sim,*c,*s,2500,4500);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==2);
+}
+
+void appliedRecheckNeedsFreshQueryAndManualReconcile() {
+    auto sim=make();
+    ServerGateway gateway;
+    RemoteClient client(99641);
+    CHECK(client.begin(edit(Fixed::fromInt(73)),kEdit,4));
+    const auto requestId=client.requestId();
+    auto [c1,s1]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c1,*s1,0,2100);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    c1->close();s1->close();
+    client.disconnected();
+
+    // Connection may carry an old Queued before/after the new Query.
+    auto [c2,s2]=net::makeLoopbackPair();
+    Packet stale;
+    stale.kind=Message::Receipt;
+    stale.clientInstance=client.instance();
+    stale.requestId=requestId;
+    stale.receipt={Result::Queued,0,0,"stale pre-commit"};
+    net::Bytes raw;
+    CHECK(encode(stale,raw));
+    s2->send(raw);
+    client.poll(*c2,2200); // ignore pre-query frame, send Query
+    CHECK(client.status()==ClientStatus::Applied);
+    s2->send(raw);
+    client.poll(*c2,2201); // ignore old Queued while verifying
+    CHECK(client.status()==ClientStatus::Applied);
+
+    // Missing receipt after server restart is genuinely uncertain;
+    // it must not auto-replay a once-Applied command.
+    ServerGateway restarted;
+    restarted.poll(*sim,*s2,"trusted-editor",readAcl,writeAcl,2240);
+    client.poll(*c2,2241);
+    CHECK(client.status()==ClientStatus::Uncertain);
+    CHECK(client.receipt().result==Result::Unknown);
+    CHECK(!client.exportOutstanding().empty());
+    CHECK(client.requestId()==requestId);
+    s2->send(raw);
+    client.poll(*c2,2300);
+    CHECK(client.status()==ClientStatus::Uncertain);
+    net::Bytes unwanted;
+    CHECK(!s2->recv(unwanted));
+
+    // Only a deliberate same-ID retry may proceed. The authoritative
+    // revision prevents a second effect even without the old receipt cache.
+    client.retry();
+    drive(client,restarted,*sim,*c2,*s2,2400,4000);
+    CHECK(client.status()==ClientStatus::Conflict);
+    CHECK(registry(*sim).revision==1);
+    CHECK(client.requestId()==requestId);
+}
+
 void initialRevisionProbe() {
     auto sim=make();
     ServerGateway gateway;
@@ -571,6 +662,8 @@ int main() {
     reconnectAndRestore();
     editorBridge();
     latencyAndReorderSimulation();
+    delayedReceiptCannotUndoApplied();
+    appliedRecheckNeedsFreshQueryAndManualReconcile();
     initialRevisionProbe();
     revisionProbeStopsOnUnhealthyJournal();
     unhealthyJournalStopsAutomaticResubmit();

@@ -73,6 +73,9 @@ public:
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
         suspendedForJournal_=false;
+        suspendedForReconcile_=false;
+        refreshApplied_=false;
+        refreshQuerySent_=false;
         sent_=false;
         query_=false;
         attempts_=0;
@@ -105,6 +108,9 @@ public:
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
         suspendedForJournal_=false;
+        suspendedForReconcile_=false;
+        refreshApplied_=false;
+        refreshQuerySent_=false;
         sent_=true; // query first: an earlier process might have submitted
         query_=true;
         connected_=false;
@@ -129,6 +135,7 @@ public:
         if(!active_ || terminal(receipt_.result))return;
         // Only a deliberate user action may lift journal-failure suspension.
         suspendedForJournal_=false;
+        suspendedForReconcile_=false;
         attempts_=0;
         nextSendMs_=0;
         query_=sent_;
@@ -150,7 +157,9 @@ public:
             query_=sent_; // on reconnect first ask what happened
             // Also re-query a previously applied edit after reconnect:
             // server rollback may have invalidated the earlier receipt.
-            refreshApplied_ = active_ && receipt_.result==Result::Applied;
+            refreshApplied_ = active_ && receipt_.result==Result::Applied &&
+                              !suspendedForReconcile_;
+            refreshQuerySent_=false;
         }
         net::Bytes wire;
         int maxReceive=64;
@@ -188,16 +197,28 @@ public:
                 continue;
             }
             if(!active_ || message.requestId!=active_->requestId)continue;
-            // Delayed pre-failure Queued/Applied frames must not re-arm
-            // automatic retries after a journal-unavailable Unknown.
-            if(suspendedForJournal_)continue;
+            // A resolved edit stays resolved. Old in-flight Queued/Unknown
+            // frames must never rewind a durable terminal ACK and trigger an
+            // accidental Submit. The only exception is an explicit
+            // post-reconnect verification of a previously Applied edit.
+            if(suspendedForJournal_ || suspendedForReconcile_)continue;
+            if(terminal(receipt_.result) && !refreshApplied_)continue;
+            if(refreshApplied_ &&
+               (!refreshQuerySent_ || message.receipt.result==Result::Queued))
+                continue; // stale pre-query or pre-commit receipt
             const bool wasVerifying=refreshApplied_;
             refreshApplied_=false;
+            refreshQuerySent_=false;
             receipt_=message.receipt;
             if(wasVerifying && receipt_.result==Result::Unknown) {
                 status_=ClientStatus::Uncertain;
                 receipt_.detail="PHYSIS previous ACK missing on server; reconcile manually";
-                continue; // don't replay an already acknowledged edit
+                // This edit was ALREADY acknowledged as Applied. A later
+                // delayed receipt must not resume automatic retries; the
+                // original ID is retained for explicit operator recovery.
+                suspendedForReconcile_=true;
+                nextSendMs_=std::numeric_limits<std::uint64_t>::max();
+                continue;
             }
             if(receipt_.result==Result::Queued) {
                 status_=ClientStatus::Queued;
@@ -267,6 +288,8 @@ public:
             return;
         }
         conn.send(bytes);
+        if(refreshApplied_ && outgoing.kind==Message::Query)
+            refreshQuerySent_=true;
         sent_=true;
         if(status_!=ClientStatus::Queued)status_=ClientStatus::AwaitingReceipt;
         ++attempts_;
@@ -286,6 +309,8 @@ private:
     ClientStatus status_=ClientStatus::Idle;
     bool connected_=false,sent_=false,query_=false,refreshApplied_=false;
     bool suspendedForJournal_=false;
+    bool suspendedForReconcile_=false; // missing ACK needs manual resolution
+    bool refreshQuerySent_=false; // never accept a stale pre-query reply
     unsigned attempts_=0;
     std::uint64_t nextSendMs_=0;
 };
