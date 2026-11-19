@@ -11,6 +11,14 @@ class ShaderGraphPreview {
 public:
     ~ShaderGraphPreview() { shutdown(); }
     gfx::Device* activeDevice() const { return dev_; }
+    // UI-only node positions must not trigger GPU shader, material or
+    // particle recompilation on every mouse drag frame.
+    static std::string resourceKey(const Json& graph) {
+        Json gpu = graph;
+        if (auto* nodes = gpu.find("nodes"))
+            for (auto& node : nodes->items()) node.erase("position");
+        return gpu.dump(-1);
+    }
     // Only used by GPU-fence-completed or host-idle owned-bundle callbacks.
     // The entire preview, including Portrait, Prisma, FX and shaders, can
     // now be released together after all GPU draws referring to it finish.
@@ -45,7 +53,7 @@ public:
             particles_.setTextureLoader([this,base](const std::string& path,fx::FxTexture& out){auto t=textures_.resolve(path,false,base,true);out={t.tex,t.u0,t.v0,t.u1,t.v1};return t.valid();});
         }
         const auto domain=g.getStr("domain");
-        const std::string key=g.dump(-1);
+        const std::string key=resourceKey(g);
         if(key!=key_) {
             key_=key;
             if(domain=="material") {portrait_.shutdown();portrait_.init(*dev_);}
