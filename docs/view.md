@@ -2821,3 +2821,35 @@ hierarchy/morph cases, without per-draw diagnostics.
 
 **NOT RUN:** CMake/native compiler/CTest, GPU backend visual
 tests, sanitizers or profiling.
+
+## Stage 125 — bounded CPU Pose retention and global Model generations
+
+`aiverse::View` now bounds *retained* transient Pose/matrix
+capacity: 512 KiB per View by default, configurable with
+`setRetargetScratchBudgetBytes` (0 means no retention).
+Large animated models are still drawn at full detail; excess
+scratch capacity is freed after the synchronous model draw and
+nested capture callbacks finish. `retargetScratchCapacityBytes`
+and `ModelRetargetStats::scratchTrims` expose diagnostics.
+This does not cap peak per-draw allocations or alter MotionWeave
+graph clocks, game simulation or GPU retirement ownership.
+
+`view::ModelPublicationEpoch::next()` provides nonzero,
+monotonically increasing asset publication identities across
+the native rendering host. `AppearanceAssetRegistry`
+`publish` and `publishPrepared` issue a new revision and
+`Asset::packet` forwards it through
+`Object::animationModelGeneration`. Retarget plans must
+still be compiled for the current source AND visual revisions;
+changed or missing generations, changed model pointers and
+bad plan shape receive separate `CompiledRetargetStatus`
+reasons and are diagnosed without walking the skeleton.
+Any invalid compiled plan uses the visual's own bind pose.
+
+The RTS compatibility adapter offers an opt-in bind-pose
+legacy LOD fallback while preserving old visuals by default.
+Editor Stats shows its fallback counts and the generic View
+scratch retention limit. See [Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
+
+**NOT RUN:** native C++ compiler/CMake, CTest, GPU, sanitizers,
+screenshots or benchmarks. Source-only stage; no speedup claimed.
