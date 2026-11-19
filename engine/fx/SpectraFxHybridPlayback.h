@@ -50,6 +50,8 @@ public:
         uint64_t gpuBudgetCpuFallbacks=0,gpuBudgetRefusals=0;
         uint64_t unusedPoolsReleased=0;
         uint64_t sharedComputePrograms=0,sharedComputeFailures=0;
+        uint64_t sharedAlphaPrograms=0,sharedCompactPrograms=0;
+        uint64_t sharedMetalProgramFailures=0;
         uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
         uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
         uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
@@ -63,7 +65,11 @@ public:
     ~SpectraFxHybridPlayback() {
         reset(); // destroys every borrower before either shared RHI handle
         sharedRenderer_.release();
+        if(sharedCompaction_.valid()) device_.destroyCompute(sharedCompaction_);
+        if(sharedAlphaSort_.valid()) device_.destroyCompute(sharedAlphaSort_);
         if(sharedEvolution_.valid()) device_.destroyCompute(sharedEvolution_);
+        sharedCompaction_={};
+        sharedAlphaSort_={};
         sharedEvolution_={};
     }
 
@@ -188,10 +194,16 @@ public:
         // leaves the historical owned-per-emitter compute path intact.
         const gfx::ComputeHandle sharedCompute=gpuRequested?
             ensureSharedEvolution():gfx::ComputeHandle{};
+        const gfx::ComputeHandle sharedSort=
+            gpuRequested && selected.gpuSortAlpha?
+                ensureSharedAlphaSort():gfx::ComputeHandle{};
+        const gfx::ComputeHandle sharedCompact=
+            gpuRequested && selected.gpuIndirectCompaction?
+                ensureSharedCompaction():gfx::ComputeHandle{};
         auto next=std::make_unique<SpectraFxHybridEmitter>();
         if(!next->begin(device_,cpu_,std::move(selected),cue.position,cue.direction,
                         gpuRequested ? &sharedRenderer_ : nullptr,
-                        sharedCompute)) {
+                        sharedCompute,sharedSort,sharedCompact)) {
             ++stats_.failed;return false;
         }
         if(oneShot) {
@@ -482,6 +494,27 @@ private:
         else ++stats_.sharedComputeFailures;
         return sharedEvolution_;
     }
+    gfx::ComputeHandle ensureSharedAlphaSort() {
+        if(device_.info().backend!=gfx::Backend::Metal) return {};
+        if(sharedAlphaSortAttempted_) return sharedAlphaSort_;
+        sharedAlphaSortAttempted_=true;
+        sharedAlphaSort_=device_.createCompute({
+            kSpectraFxAlphaSortMetal,nullptr,"SpectraFX shared GPU alpha sort"});
+        if(sharedAlphaSort_.valid()) ++stats_.sharedAlphaPrograms;
+        else ++stats_.sharedMetalProgramFailures;
+        return sharedAlphaSort_;
+    }
+    gfx::ComputeHandle ensureSharedCompaction() {
+        if(device_.info().backend!=gfx::Backend::Metal) return {};
+        if(sharedCompactionAttempted_) return sharedCompaction_;
+        sharedCompactionAttempted_=true;
+        sharedCompaction_=device_.createCompute({
+            kSpectraFxCompactMetal,nullptr,"SpectraFX shared live-slot compact"});
+        if(sharedCompaction_.valid()) ++stats_.sharedCompactPrograms;
+        else ++stats_.sharedMetalProgramFailures;
+        return sharedCompaction_;
+    }
+
 
     SpectraFxGpuSharedArena* poolArena(const std::string& name) {
         auto it=pools_.find(name);
@@ -538,7 +571,9 @@ private:
             cfg.appearance=effect.appearance;
             cfg.environment=effect.environment;
             cfg.gpuIndirectCompaction=effect.gpuIndirectCompaction;
-            if(!arena->init(device_,cfg,ensureSharedEvolution())) {
+            if(!arena->init(device_,cfg,ensureSharedEvolution(),
+                            cfg.gpuIndirectCompaction?
+                                ensureSharedCompaction():gfx::ComputeHandle{})) {
                 ++stats_.pooledFailures;
                 return false;
             }
@@ -582,7 +617,11 @@ private:
     SpectraFxGpuBillboardRenderer sharedRenderer_{};
     bool sharedRendererAttempted_=false;
     gfx::ComputeHandle sharedEvolution_{};
+    gfx::ComputeHandle sharedAlphaSort_{};
+    gfx::ComputeHandle sharedCompaction_{};
     bool sharedEvolutionAttempted_=false;
+    bool sharedAlphaSortAttempted_=false;
+    bool sharedCompactionAttempted_=false;
     std::unordered_map<uint32_t,Route> routes_;
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
     std::vector<OneShot> oneShots_;
