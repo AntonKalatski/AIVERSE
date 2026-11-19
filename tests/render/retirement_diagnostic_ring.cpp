@@ -18,6 +18,17 @@ int main() {
     assert(snapshot.size()==2);
     assert(snapshot.front().kind==RetirementDiagnosticKind::TokenSubmitted);
     assert(snapshot.back().kind==RetirementDiagnosticKind::Pending);
+    // Host observers can tag Model and Image events while the same bounded
+    // ring remains agnostic about GPU completion and retirement permission.
+    observer({RetirementDiagnosticKind::Completed,11,2,
+              RetirementResourceKind::Model});
+    observer({RetirementDiagnosticKind::Failed,12,3,
+              RetirementResourceKind::Image});
+    const auto tagged=ring->snapshot();
+    assert(tagged.size()==2);
+    assert(tagged[0].resource==RetirementResourceKind::Model);
+    assert(tagged[1].resource==RetirementResourceKind::Image);
+    assert(ring->overflowCount()==3);
     auto empty=std::make_shared<RetirementDiagnosticRing>(0);
     RetirementDiagnosticRing::observe(empty)(
         {RetirementDiagnosticKind::Failed,12,1});
