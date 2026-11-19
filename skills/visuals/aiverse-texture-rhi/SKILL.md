@@ -433,6 +433,33 @@ result arrives and never queues these into authoritative ECS.
   validate Metal shaders and GPU readback routing during the
   explicitly deferred test phase, not before the user requests it.
 
+### Explicit material Shader Graph VT node
+
+- `sampleVirtualTexture` is a fragment-only, material-only graph
+  op with one UV input. It compiles to `SG_SAMPLE_VIRTUAL(uv)`,
+  and may specify `srgb:true` for the graph compiler's normal
+  sRGB-to-linear conversion. It is not a generic graph texture
+  path, and should not be generated for postfx/particles/vertex.
+- `graph::Program::usesVirtualTexture` tells the model renderer
+  to request an opt-in `ModelVirtualTextureBinding`.
+  No mapping? `SG_SAMPLE_VIRTUAL` falls back to `SG_SAMPLE`
+  (ordinary tex1) rather than sampling unbound 2D arrays.
+- GL33/GLES3/Metal allow only texture slots 0..15 here.
+  The graph's independent sources occupy slots starting 13;
+  the VT physical atlas and page table need two more:
+  0 graph sources -> tex13/tex14; 1 -> tex14/tex15.
+  Reject two or more independent graph textures in a graph
+  with a VT node. Do not collide with Shader Graph slots or
+  hidden R8 mask texture 15 (graph+R8 is not supported).
+- Do not silently mark all graph texture nodes as virtual.
+  `sampleTexture` and `sampleTextureLod` remain regular;
+  authors must explicitly use `sampleVirtualTexture`.
+  Graph-backed GPU models stay on the CPU material submission
+  path, not experimental Metal ICB, until an explicit graph
+  argument-buffer resource ABI is implemented.
+- See docs/shader-graph.md and docs/texture-rhi.md. No shader
+  backend compile or GPU test has been run yet.
+
 ### Verification gates — don't invent passes
 
 ```sh
