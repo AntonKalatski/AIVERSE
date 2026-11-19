@@ -53,6 +53,8 @@ public:
         uint64_t sharedAlphaPrograms=0,sharedCompactPrograms=0;
         uint64_t sharedMetalProgramFailures=0;
         uint64_t gpuRuntimeCpuFallbacks=0;
+        uint64_t pooledCpuRecoveries=0,pooledRecoveryDropped=0;
+        uint64_t pooledRenderFaults=0;
         uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
         uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
         uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
@@ -103,6 +105,8 @@ public:
                                            cue.position,cue.direction)) {
                         ++stats_.failed;return false;
                     }
+                    pooled->second.position=cue.position;
+                    pooled->second.direction=cue.direction;
                     ++stats_.moved;return true;
                 }
                 if(!arena->removeEmitter(pooled->second.ticket,
@@ -344,11 +348,20 @@ public:
         for(auto& shot:oneShots_)
             drawGpu(*shot.emitter,viewProj,cameraRight,cameraUp);
         // One billboard draw per homogeneous pool regardless of source count.
-        for(auto& pair:pools_)
-            if(pair.second.drawReady &&
-               pair.second.arena->aliveParticles()>0 &&
-               !pair.second.arena->render(viewProj,cameraRight,cameraUp))
+        for(auto& pair:pools_) {
+            PoolGroup& group=pair.second;
+            if(!group.drawReady || group.failurePending ||
+               group.arena->aliveParticles()==0) continue;
+            if(!group.arena->render(viewProj,cameraRight,cameraUp)) {
+                // Do NOT free any buffers here: we are inside a render
+                // encoder. Next updateGpu (outside passes) recovers sources
+                // and queues old resources for deferred retirement.
+                group.drawReady=false;
+                group.failurePending=true;
+                ++stats_.pooledRenderFaults;
                 ++stats_.pooledFailures;
+            }
+        }
         if(cpuEncodeProfiling_) {
             const uint64_t us=elapsedMicros(encodeStart);
             ++stats_.cpuDrawSamples;
@@ -455,6 +468,8 @@ private:
     struct PooledRef {
         std::string name;
         uint64_t ticket=0;
+        SpectraFxHybridEmitter::Config config{};
+        render::float3 position{},direction{0,1,0};
     };
     struct PooledShot {
         PooledRef source;
@@ -465,6 +480,7 @@ private:
         std::unique_ptr<SpectraFxGpuSharedArena> arena;
         float idleSeconds=0;
         bool drawReady=false;
+        bool failurePending=false;
     };
 
     static bool same(render::float3 a,render::float3 b) {
@@ -599,7 +615,7 @@ private:
             }
             return false;
         }
-        out={route.sharedPool,ticket};
+        out={route.sharedPool,ticket,effect,cue.position,cue.direction};
         return true;
     }
     void advanceGpu(SpectraFxHybridEmitter& emitter,float dt) {
