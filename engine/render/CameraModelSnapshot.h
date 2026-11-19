@@ -55,8 +55,13 @@ public:
         CameraModelSnapshot* snapshot_=nullptr;
         Renderer3D* renderer_=nullptr;
     public:
-        CaptureGuard(CameraModelSnapshot& snapshot,Renderer3D& renderer)
-            :snapshot_(&snapshot),renderer_(&renderer) {
+        CaptureGuard()=default;
+        CaptureGuard(CameraModelSnapshot& snapshot,Renderer3D& renderer) {
+            begin(snapshot,renderer);
+        }
+        void begin(CameraModelSnapshot& snapshot,Renderer3D& renderer) {
+            end();
+            snapshot_=&snapshot;renderer_=&renderer;
             snapshot_->beginCapture(renderer);
         }
         CaptureGuard(const CaptureGuard&)=delete;
