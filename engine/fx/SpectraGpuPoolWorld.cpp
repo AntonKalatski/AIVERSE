@@ -835,6 +835,25 @@ bool GpuPoolWorld::importRecoveryManifest(
     return true;
 }
 
+bool GpuPoolWorld::requestGpuCheckpoint(
+    size_t groupIndex,std::function<void(bool)> completion) {
+    if(!initialized_ || presentationBlocked() ||
+       groupIndex>=gpuGroups_.size() ||
+       !gpuGroups_[groupIndex].particles ||
+       !gpuGroups_[groupIndex].particles->gpuActive()) {
+        reason_="SpectraFX GPU checkpoint request requires an active healthy group";
+        return false;
+    }
+    if(!gpuGroups_[groupIndex].particles->requestGpuCheckpoint(
+            std::move(completion))) {
+        reason_="SpectraFX GPU checkpoint readback is pending, not ready or "
+                "outside a safe graphics frame";
+        return false;
+    }
+    reason_.clear();
+    return true;
+}
+
 bool GpuPoolWorld::exportFreshCheckpoint(
     size_t groupIndex,std::vector<uint8_t>& bytes,
     size_t maxBytes,std::string* error) const {
