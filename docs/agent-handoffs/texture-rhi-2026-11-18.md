@@ -11181,3 +11181,12 @@ driver/worker/independent RGB oracle error, fix its confirmed
 cause, and append another standalone handoff entry.
 Keep risky ICB tests and feature flags default OFF; keep
 PR #21 Draft pending multi-backend acceptance.
+
+**Stage 10BZ agent-skill addendum (same bounded fix):**
+`864fe6135f0f88f2d06b8f490cf0fb70e72c6fde`
+updates `skills/visuals/aiverse-texture-rhi/SKILL.md`
+to record the actual Clang failure, renamed helper and
+pending native hardware validation. This documentation
+does not change source/test behavior. The complete Stage
+10BZ change set is one test-source fix plus the main guide,
+the agent skill and these append-only handoff entries.
