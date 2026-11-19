@@ -74,6 +74,7 @@ struct GpuCheckpointStatus {
     bool fresh = false;
     bool restoreEligible = false;
     bool unsentBirths = false;
+    bool stagingRecoveryPending = false; // partial checked GPU inputs; retry next step
     uint64_t currentRevision = 0;
     uint64_t capturedRevision = 0;
     uint64_t frameSerial = 0;
@@ -97,6 +98,7 @@ struct ComputeStats {
     uint32_t killedSlotsReclaimed=0;
     uint32_t gpuDeviceUnhealthy=0;
     uint32_t gpuKillUploadFailures=0;
+    uint32_t gpuStagingUploadFailures=0;
     uint32_t gpuComputeBeginFailures=0;
     uint32_t gpuPassOrderRejections=0;
     uint32_t gpuResetFailures=0;
@@ -240,6 +242,7 @@ private:
     bool initialized_ = false, viewReady_ = false, verticesReady_ = false;
     bool gpuIndirectActive_ = false;
     bool gpuResetDirty_ = false; // failed partial GPU clear; block new births/steps
+    bool gpuStagingDirty_ = false; // checked input upload failed; next step retries all input buffers
     ComputeStats stats_;
     std::string reason_;
     std::shared_ptr<uint64_t> readbackLifetime_ = std::make_shared<uint64_t>(0);
