@@ -17,7 +17,8 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
         if (g.domain != h.domain || g.vertexGlsl != h.vertexGlsl ||
             g.vertexMsl != h.vertexMsl || g.glsl != h.glsl ||
             g.msl != h.msl || g.outputs != h.outputs ||
-            g.textures != h.textures || g.minQuality != h.minQuality) return false;
+            g.textures != h.textures || g.minQuality != h.minQuality ||
+            g.usesVirtualTexture != h.usesVirtualTexture) return false;
     }
     auto state = [](const Material& m) {
         return std::tie(m.shading, m.alpha, m.alphaCutoff, m.doubleSided,
@@ -70,6 +71,7 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
         const auto& g = *m.shaderGraph;
         str(g.domain); str(g.vertexGlsl); str(g.vertexMsl);
         str(g.glsl); str(g.msl); u(g.minQuality);
+        u(g.usesVirtualTexture ? 1u : 0u);
         u(g.textures.size());
         for (const auto& t : g.textures) str(t);
         u(g.outputs.size());
