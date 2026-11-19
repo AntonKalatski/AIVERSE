@@ -143,6 +143,66 @@ public:
         return static_cast<int32_t>(sum<0 ? -rounded : rounded);
     }
 
+    // Stage 22: a bounded neighbor-aware Q16 normal probe. Unlike the
+    // tile-local Horizon stencil, this can span a resident tile boundary,
+    // but only if both sides agree on the boundary height. Discontinuous
+    // authored cliffs deliberately return nullopt rather than smoothing
+    // unrelated surfaces. The result is a signed slope in permille, matching
+    // HorizonBake::NearSeamSample's convention (-dY/dX, -dY/dZ).
+    std::optional<std::pair<int32_t,int32_t>> continuousSlopeQ16(
+            int64_t xQ16cm,int64_t zQ16cm,
+            int64_t radiusCm=200,int32_t toleranceCm=1) const {
+        constexpr int64_t q=65536;
+        if(radiusCm<1 || radiusCm>4096 || toleranceCm<0 ||
+           toleranceCm>100)return std::nullopt;
+        const int64_t extent=kWorldLimitCm*q;
+        if(xQ16cm < -extent || xQ16cm > extent ||
+           zQ16cm < -extent || zQ16cm > extent)
+            return std::nullopt;
+        const auto center=sampleQ16(xQ16cm,zQ16cm);
+        if(!center)return std::nullopt;
+        const int64_t step=radiusCm*q;
+        const int64_t xl=std::max(-extent,xQ16cm-step);
+        const int64_t xr=std::min(extent,xQ16cm+step);
+        const int64_t zl=std::max(-extent,zQ16cm-step);
+        const int64_t zr=std::min(extent,zQ16cm+step);
+        if(xl==xr || zl==zr)return std::nullopt;
+        const auto hx0=sampleQ16(xl,zQ16cm);
+        const auto hx1=sampleQ16(xr,zQ16cm);
+        const auto hz0=sampleQ16(xQ16cm,zl);
+        const auto hz1=sampleQ16(xQ16cm,zr);
+        if(!hx0 || !hx1 || !hz0 || !hz1)return std::nullopt;
+        // Verify every crossed tile seam independently. A missing neighbor
+        // or a discontinuity must not be hidden by a central difference.
+        const auto continuous=[&](int64_t a,int64_t b,
+                                   int64_t fixed,bool alongX) {
+            const int64_t lo=std::min(a,b),hi=std::max(a,b);
+            const int64_t tileStep=cellSizeCm_*q;
+            int64_t boundary=(detail::floorDiv(lo,tileStep)+1)*tileStep;
+            for(;boundary<=hi;boundary+=tileStep){
+                if(boundary<=-extent || boundary>=extent)return false;
+                const auto left=alongX ?
+                    sampleQ16(boundary-1,fixed) :
+                    sampleQ16(fixed,boundary-1);
+                const auto right=alongX ?
+                    sampleQ16(boundary,fixed) :
+                    sampleQ16(fixed,boundary);
+                if(!left || !right ||
+                   std::abs(int64_t(*left)-*right)>toleranceCm)
+                    return false;
+            }
+            return true;
+        };
+        if(!continuous(xl,xr,zQ16cm,true) ||
+           !continuous(zl,zr,xQ16cm,false))return std::nullopt;
+        const auto slope=[](int32_t a,int32_t b,int64_t distance) {
+            return static_cast<int32_t>(std::clamp<int64_t>(
+                (int64_t(a)-b)*1000*q/distance,-1000000,1000000));
+        };
+        return std::pair<int32_t,int32_t>{
+            slope(*hx0,*hx1,xr-xl),slope(*hz0,*hz1,zr-zl)};
+    }
+
     // A null result means that no loaded WorldScene heightfield covers this
     // point. Caller may fall back to deterministic procedural height.
     // The same two triangles as the terrain collider are interpolated in
