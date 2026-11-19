@@ -419,6 +419,23 @@ void manualRetryAfterJournalRecovery() {
     if(durable.size()!=1)return;
     CHECK(durable.begin()->second.receipt.result==Result::Queued);
 
+    // A delayed pre-failure positive receipt is not proof of durability.
+    // It must not clear the suspension or restart automatic traffic.
+    Packet delayed;
+    delayed.kind=Message::Receipt;
+    delayed.clientInstance=client.instance();
+    delayed.requestId=originalId;
+    delayed.receipt.result=Result::Queued;
+    delayed.receipt.revision=0;
+    net::Bytes delayedFrame;
+    CHECK(encode(delayed,delayedFrame));
+    s1->send(delayedFrame);
+    client.poll(*c1,uncertainAt+5);
+    CHECK(client.status()==ClientStatus::Uncertain);
+    CHECK(client.receipt().result==Result::Unknown);
+    net::Bytes extra;
+    CHECK(!s1->recv(extra));
+
     // On restart the original Queued journal is no longer evidence
     // that the pending command survived. Observe the RESTORED ECS World.
     ServerGateway recovered;
