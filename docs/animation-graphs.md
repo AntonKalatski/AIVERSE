@@ -1162,3 +1162,26 @@ a later owner-thread transaction.
 **NOT RUN:** native CMake/compiler/CTest, successful CI for Stage 134
 HEAD, renderer/GPU visual parity, sanitizer or performance measurements.
 Detailed [Stage 134 handoff](agent-handoffs/animation-stage134-owner-thread-read-guards-2026-11-19.md).
+
+
+## Stage 135 — native Model ownership visitors and retirement-queue safety
+
+A native presentation host may enumerate resident and GPU-retired Models using
+`ModelResourceCache::forEachOwnedModel`, including the genre-neutral
+`RenderResourceOwnerGroup` diagnostics. The visitor may read or recursively
+enumerate cached Models, but may not mutate the cache, acquire fresh reader
+leases, poll/collect GPU retirements or append unpublished Models while its
+borrowed iterator is live. A nestable owner-thread callback guard enforces
+this until all synchronous visits return, including exception unwinding.
+
+`pendingRetirements`, `retirementStats`,
+`estimatedRetiredGpuBytes` and `publicationBackpressured` now reject
+off-thread reads of mutable retirement-queue state. Existing atomic active
+reader/safety metrics remain cross-thread diagnostics. Calling noexcept
+`retireUnpublished` inside a visitor falls back to an explicit GPU-idle
+safety barrier and can stall, so defer it until the visit completes.
+
+The existing `render_device_epoch` source has Stage 135 visitor and
+retirement regressions, **not yet executed**. See
+[Stage 135](agent-handoffs/animation-stage135-model-ownership-visitors-2026-11-19.md).
+No claims of native compiler/CTest/CI or Metal/GL/Vulkan performance parity.
