@@ -27,6 +27,15 @@ struct PoolSourceId {
     }
 };
 
+// Continuous emission is strictly presentation-only, bounded per-source and
+// by the shared PoolWorldBudgets::maxBurstsPerFrame. A lifetime of 0 is infinite.
+struct PoolContinuousEmission {
+    float burstsPerSecond=0;       // [0,120], rate-based births
+    float metresPerBurst=0;        // 0 disables distance-based births
+    float lifetimeSeconds=0;      // 0 = until explicitly stopped
+    uint32_t maxBurstsPerFrame=8; // [1,64]
+};
+
 struct PoolWorldBudgets {
     uint32_t maxGpuGroups = 16;        // unique compiled graph + backend policy
     uint32_t maxGroupCapacity = 1024;  // each ComputeParticles resource (1..4096)
@@ -55,6 +64,8 @@ struct PoolCheckpointStats {
 struct PoolWorldStats {
     uint32_t gpuGroups = 0, cpuDefinitions = 0;
     uint32_t activeSources=0;
+    uint64_t continuousBursts=0, continuousSkipped=0;
+    uint64_t selectiveKillRequests=0;
     uint32_t submittedBursts = 0, rejectedBursts = 0, frameBursts = 0;
     uint32_t cpuDrawCalls = 0, gpuDrawCalls = 0;
     uint32_t cpuParticles = 0, gpuParticlesEstimated = 0;
@@ -94,13 +105,21 @@ public:
 
     // Generation-safe presentation-only source ownership. Each source holds
     // its own parameter snapshot and named effect binding revision.
-    // retireSource/pauseSource prevent FUTURE births. Existing GPU particles
-    // naturally expire; this does not kill their physical slots immediately.
+    // pause/retire prevent FUTURE births. stopSource(source, true) can
+    // additionally invalidate that source's living GPU physical slots,
+    // preserving unrelated source particles in the same GPU group.
     PoolSourceId createSource(const std::string& effectName);
     bool setSourceNamedParameter(PoolSourceId source,const std::string& name,float value);
     bool pauseSource(PoolSourceId source);
     bool resumeSource(PoolSourceId source);
     bool retireSource(PoolSourceId source);
+    bool stopSource(PoolSourceId source,bool killLiving);
+    bool killSourceParticles(PoolSourceId source);
+    bool setSourceTransform(PoolSourceId source,fx::float3 position,
+                            fx::float3 direction={0,1,0},
+                            fx::float4 tint={1,1,1,1});
+    bool detachSourceTransform(PoolSourceId source);
+    bool configureContinuous(PoolSourceId source,PoolContinuousEmission emission);
     bool sourceActive(PoolSourceId source) const;
     bool emitSource(PoolSourceId source,fx::float3 position,
                     fx::float3 direction={0,1,0},
@@ -144,6 +163,15 @@ private:
         uint64_t bindingRevision=0;
         uint32_t generation=0;
         bool active=false, paused=false, exhausted=false;
+        uint64_t token=0;
+        bool gpu=false;
+        size_t gpuIndex=0;
+        bool transformAttached=false;
+        fx::float3 position{},lastStepPosition{},direction{0,1,0};
+        fx::float4 tint{1,1,1,1};
+        PoolContinuousEmission continuous{};
+        float accumulatedRate=0, accumulatedDistance=0, elapsed=0;
+        std::vector<fx::FxHandle> cpuHandles;
     };
     struct Group {
         std::string key;
@@ -155,6 +183,11 @@ private:
     static std::string groupKey(const fx::EffectDef& effect,
                                 const GraphRuntimeOptions& options,
                                 uint32_t capacity);
+    bool burstImpl(const std::string& effectName,fx::float3 position,
+                   fx::float3 direction,fx::float4 tint,
+                   const std::array<float,8>* sourceParams,uint64_t sourceToken,
+                   fx::FxHandle* cpuHandle);
+    void tickContinuous(float dt);
     void recountBindings();
     Source* getSource(PoolSourceId source);
     const Source* getSource(PoolSourceId source) const;
@@ -169,6 +202,7 @@ private:
     std::vector<Source> sources_;
     std::vector<uint32_t> freeSourceSlots_;
     uint64_t sourceWorldEpoch_=0, nextBindingRevision_=1;
+    uint64_t nextSourceToken_=1;
     // Round-robin dispatch start prevents persistent budget starvation when
     // several GPU groups request checkpoint captures in the same cadence.
     size_t nextGroupStart_ = 0;
