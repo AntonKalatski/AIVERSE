@@ -18,6 +18,10 @@ namespace aiverse::lib::animation {
 struct AnimationSourceLinkComponent {
     uint64_t sourceId=0;
     uint64_t generation=0;
+    // Optional host Model asset-publication identity. Independent from
+    // logical entity respawn and AnimationGraph compilation generation.
+    // A zero generation preserves compatibility with older native hosts.
+    uint64_t modelPublicationGeneration=0;
 };
 
 // A snapshot of authored animation inputs, not a gameplay entity object.
@@ -29,9 +33,13 @@ struct AnimationSourceFrame {
     const render::Model* model=nullptr;
     std::shared_ptr<const render::AnimationGraph> graph;
     render::AnimationParameters inputs;
+    // Appended after legacy aggregate members to preserve older native
+    // source callers. Hosts with hot reload must supply nonzero epochs.
+    uint64_t modelPublicationGeneration=0;
 };
 struct AnimationBridgeStats {
     size_t created=0, updated=0, restarted=0, removed=0;
+    size_t assetEpochRestarts=0;
 };
 
 // One bridge per presentation World / view. Hosts own an independent
@@ -53,6 +61,25 @@ public:
             if(!input.model || !input.graph ||
                input.graph->model()!=input.model)
                 throw std::invalid_argument("MotionWeave bridge: invalid graph/model");
+            // A Model mutated/reimported in place cannot keep using its old
+            // compiled graph, even when the C++ Model address is unchanged.
+            // Validate before any World structural changes are made.
+            if(input.modelPublicationGeneration!=0) {
+                const auto it=links_.find(input.sourceId);
+                if(it!=links_.end() && presentation.alive(it->second)) {
+                    const auto& previous=presentation.get<
+                        AnimationSourceLinkComponent>(it->second);
+                    const auto& asset=presentation.get<
+                        AnimationAssetComponent>(it->second);
+                    if(previous.modelPublicationGeneration!=0 &&
+                       previous.modelPublicationGeneration!=
+                           input.modelPublicationGeneration &&
+                       asset.model==input.model &&
+                       asset.graph==input.graph)
+                        throw std::invalid_argument(
+                            "MotionWeave bridge: Model asset epoch changed without recompiling AnimationGraph");
+                }
+            }
         }
         AnimationBridgeStats stats;
         for(const auto& source:sources) {
@@ -64,7 +91,8 @@ public:
                 links_[source.sourceId]=entity;
                 presentation.add<AnimationSourceLinkComponent>(
                     entity,AnimationSourceLinkComponent{
-                        source.sourceId,source.generation});
+                        source.sourceId,source.generation,
+                        source.modelPublicationGeneration});
                 auto& asset=presentation.add<AnimationAssetComponent>(entity);
                 asset.model=source.model;
                 asset.graph=source.graph;
@@ -78,8 +106,12 @@ public:
                 entity=existing->second;
                 auto& link=presentation.get<AnimationSourceLinkComponent>(entity);
                 auto& asset=presentation.get<AnimationAssetComponent>(entity);
+                const bool assetEpochChanged=
+                    link.modelPublicationGeneration!=
+                        source.modelPublicationGeneration;
                 if(link.generation!=source.generation ||
-                   asset.model!=source.model || asset.graph!=source.graph) {
+                   assetEpochChanged || asset.model!=source.model ||
+                   asset.graph!=source.graph) {
                     auto& player=presentation.get<AnimationPlayerComponent>(entity);
                     player.pendingPlayback.reset();
                     // Only presentation phases survive a compatible resource
@@ -87,7 +119,7 @@ public:
                     // Respawns, changed skeleton hierarchies and unhealthy
                     // graph instances restart from authored defaults.
                     if(link.generation==source.generation &&
-                       asset.model && asset.graph &&
+                       !assetEpochChanged && asset.model && asset.graph &&
                        compatibleHierarchy(*asset.model,*source.model) &&
                        !player.restart && player.instance &&
                        player.active==asset.graph &&
@@ -104,8 +136,11 @@ public:
                     if(auto* eventStream=presentation.tryGet<AnimationGraphNotifiesComponent>(entity))
                         eventStream->events.clear();
                     ++stats.restarted;
+                    if(assetEpochChanged)++stats.assetEpochRestarts;
                 }
                 link.generation=source.generation;
+                link.modelPublicationGeneration=
+                    source.modelPublicationGeneration;
                 asset.model=source.model;
                 asset.graph=source.graph;
                 ++stats.updated;
