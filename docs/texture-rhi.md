@@ -2062,3 +2062,46 @@ reject execution.
 snapshot submissions have not been enabled by this stage.
 These changes are a source-level ABI; native C++/Objective-C++,
 MSL and GPU shader compilation/tests have **NOT RUN**.
+
+
+## Stage 10AJ — opt-in fragment-only Shader Graph in Renderer3D GPU ICB
+
+`Renderer3D` now admits bounded fragment-only, opaque material
+graphs to the experimental GPU-authored Metal ICB path **only**
+when `AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1`, the existing
+`AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` and
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1` gates, plus
+the platform GPU ICB safety gates, are enabled. VT graph materials
+also require the existing per-command VT opt-in. All flags remain
+off by default.
+
+`gpuIcbFragmentGraphEligible` rejects vertex/skin-deforming
+graphs, non-material graphs, missing colour output, transparent
+or cutout materials and more than four source textures.
+`equivalentGpuIcbGraphPipelineMaterial` compares actual
+compiled fragment and vertex graph sources, node output map,
+graph quality and VT usage, plus pipeline-sensitive model flags.
+Resource path differences are allowed **only** when generated
+shader code and texture slot counts are identical; every command
+then carries its own graph source handles and sampler state.
+`gpuIcbGraphPipelineHash` is strictly a prefilter for this
+full equivalence, never authoritative alone.
+
+Per-command `GpuIcbPbrMaterial` and `GpuIcbVirtualMaterial`
+carry the graph's 0–4 source handles; these exact handles
+participate in `GpuMaterialResourceTable` identity and
+generation checks. Renderer3D resolves current texture handles
+again immediately before GPU execution; Metal validates native
+texture/sampler identities too, using the conditional graph
+`IcbPbrTextures` ABI introduced in Stage 10AI.
+Non-VT fragment graphs use PBR U2 and graph textures without
+requiring VT resources; explicit VT graph samples use the
+domain's physical atlas/page table after those graph sources.
+Graphs needing vertex outputs continue to draw normally.
+The Metal vertex shader is no longer injected with unused
+source-texture arguments for compatible fragment-only graphs.
+
+**Verification:** source inspection/commits only. Neither native
+C++/Objective-C++ nor MSL pipeline compilation nor actual GPU
+execution/image parity has been tested. This is opt-in,
+experimental functionality, not a release-ready feature.
