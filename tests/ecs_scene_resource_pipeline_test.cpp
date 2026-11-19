@@ -177,7 +177,9 @@ static void testPipeline() {
     AIVERSE_TEST_CHECK(pipeline.unload(lake.scene));
     AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==0);
     AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==0);
-    AIVERSE_TEST_CHECK(retired["render/shared"]>=1);
+    // Once for rollback invalidation, once after both restored scenes unload.
+    AIVERSE_TEST_CHECK(retired["render/shared"]==2);
+    AIVERSE_TEST_CHECK(published["render/shared"]==2);
     AIVERSE_TEST_CHECK(resources.status().residentReserved==0);
     AIVERSE_TEST_CHECK(resources.status().stagingReserved==0);
     AIVERSE_TEST_CHECK(resources.status().published==0);
