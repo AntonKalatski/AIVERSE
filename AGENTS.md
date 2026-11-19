@@ -48,6 +48,11 @@ does not silently reuse the previous GPU material state. Runtime rigid LOD
 is reselected for the current camera and shadow; a changed LOD rebuilds and
 crossfade frames do not use the cache. Animated, skinned, morphed, vertex-
 displaced, baked-GI, mutable-node and cluster models fall back as before.
+Per-node material overrides and explicit KHR material variants are now
+eligible with value-snapshot invalidation: `ModelDraw::nodeMaterial` indices
+are compared before replay, material variant index is part of the saved draw
+signature, and the baseline's LOD-disabled behaviour for these modes is
+preserved. Do not store caller-owned material override pointers in packets.
 `RtsView` opts eligible stationary scenery in at the host boundary, but no
 packet cache runs without the global experimental flag.
 
