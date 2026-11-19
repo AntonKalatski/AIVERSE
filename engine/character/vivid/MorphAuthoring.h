@@ -87,11 +87,16 @@ public:
     SparseMorphLibrary compile() const {
         return SparseMorphLibrary::compile(vertices_,targets_);
     }
-    Json toJson() const {
+    Json toJson(std::size_t originalVertexCount) const {
         (void)compile();
+        if(originalVertexCount==0 || originalVertexCount>vertices_)
+            throw std::invalid_argument("VIVID morph export: invalid source vertex count");
+        for(const auto& t:targets_)for(const auto& delta:t.deltas)
+            if(delta.vertex>=originalVertexCount)
+                throw std::invalid_argument("VIVID morph export: generated LOD vertex cannot be authored");
         Json root=Json::object();
         root.set("version",Json::number(std::int64_t(1)));
-        root.set("vertices",Json::number(std::int64_t(vertices_)));
+        root.set("vertices",Json::number(std::int64_t(originalVertexCount)));
         Json targets=Json::array();
         for(const auto& t:targets_) {
             Json target=Json::object();
