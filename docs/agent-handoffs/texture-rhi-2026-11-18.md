@@ -8114,3 +8114,58 @@ Metal shader compile, actual GPU execution all NOT RUN**.
 **Remaining:** non-VT opaque PBR batching and Shader Graph
 material descriptor support are not yet implemented.
 Need real GPU captures/driver validation before any release.
+
+
+## Stage 10AF — native Metal non-VT per-command PBR ABI (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Code commits:**
+- `d57c131c62b74b6937cc980375c0194e3746aec1`
+  `engine/gfx/Gfx.h`: optional
+  `GpuIcbPbrMaterial` with six TextureHandles and 36
+  float U2, plus `Device::prepareGpuEncodedIndexedIcbWithPbrMaterials`
+  (unsupported devices return zero).
+- `635619138f135d45e985744a372170815c7a0df7`
+  `engine/gfx/Gfx.h`: explicitly add
+  `GpuIcbVirtualMaterial::hasVirtualTexture`, allowing
+  the internal descriptor to be used for non-VT PBR only,
+  never silently substitute absent VT resources.
+- `1a68d2b1f6f42613d113dfc6a37db0d21da39842`
+  `engine/gfx/metal/GfxMetal.mm`: opt-in non-VT material
+  preparation converts the public PBR array into
+  `hasVirtualTexture=false` internal per-command entries
+  and stages the same PBR six texture/sampler resources and U2.
+  VT U6 and physical array allocations are omitted in non-VT.
+- `af527f2d0e4525e957b2d39698d268b039fb19fe`
+  `engine/gfx/metal/GfxMetal.mm`: retrieve ICB resource
+  mode before pipeline choice; select PBR argument-buffer
+  variant for per-command PBR even with non-VT shader.
+  Check VT shader mode matches per-command VT flag,
+  skip unrelated atlas/table binding when non-VT, retain
+  normal per-command PBR resource execution validation.
+
+**Docs commits:** `d5c122e32d69d4953fbde31f5ee3739fa572db9c` docs/texture-rhi.md and
+`35d7830ced30ef5d6f1a623531d276aa0c51a99b` skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+**Architecture:** separates optional native
+`prepareGpuEncodedIndexedIcbWithPbrMaterials` from
+virtual-material submission without changing the old
+homogeneous API. Shader permutations for built-in opaque
+PBR material are retained, only U2/source textures differ
+per command. Non-VT mode has no VT array/U6 requirements.
+Requires explicit opt-in `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`.
+Does not alter ECS state or default editor runtime.
+
+**Actual checks:** GitHub inspection of Metal source
+variant compilation and actual fragment argument-buffer
+IDs, GPU ICB kernel/payload layout and code committed.
+**C++/Objective-C++ build NOT RUN, CTest NOT RUN, Metal
+shader compilation NOT RUN, GPU execution NOT RUN**.
+
+**Next stage:** link Renderer3D to this new non-VT API under
+`AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` and non-VT command
+eligibility. Group only pipeline-identical opaque built-in
+PBR, use the same U2/texture pack helper from Stage 10AD,
+retain exact resource-table ticket checks and default
+CPU fallback. Keep all experimental flags OFF until
+real hardware validation.
