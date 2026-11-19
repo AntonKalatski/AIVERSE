@@ -149,7 +149,10 @@ public:
         struct VisualLodRequest {
             const Asset* visual=nullptr;
             float minDistance=0.f;
+            // Explicit map for complex rigs; null + matchByName enables
+            // generic importer-name matching, never index guessing.
             std::shared_ptr<const ModelPoseRetarget> mapping;
+            bool matchByName=false;
         };
         struct SocketBindingRequest {
             size_t attachmentIndex=0;
@@ -223,16 +226,24 @@ public:
                 candidate.lods.reserve(authoredLods.size());
                 float previousDistance=0.f;
                 for(const auto& authored:authoredLods) {
-                    if(!authored.visual || !authored.mapping ||
+                    if(!authored.visual || !authored.visual->model ||
                        !std::isfinite(authored.minDistance) ||
                        authored.minDistance<=previousDistance)
                         throw std::invalid_argument(
-                            "visual LOD needs a mapping and strictly increasing distance");
+                            "visual LOD needs a published Model and strictly increasing distance");
+                    auto mapping=authored.mapping;
+                    if(!mapping) {
+                        if(!authored.matchByName)
+                            throw std::invalid_argument(
+                                "visual LOD needs explicit map or opt-in named matching");
+                        mapping=std::make_shared<const ModelPoseRetarget>(
+                            makeNamedModelPoseRetarget(*model,*authored.visual->model));
+                    }
                     ModelLod lod;
                     if(!compileVisualLod(*authored.visual,authored.minDistance,
-                                         *authored.mapping,lod,error))
+                                         *mapping,lod,error))
                         return false;
-                    lod.retarget=authored.mapping;
+                    lod.retarget=std::move(mapping);
                     candidate.lods.push_back(std::move(lod));
                     previousDistance=authored.minDistance;
                 }
