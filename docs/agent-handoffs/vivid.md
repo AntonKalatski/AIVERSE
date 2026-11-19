@@ -244,3 +244,23 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests aiverse_vivid_morph_tests aiverse_vivid_gpu_contract_tests aiverse_vivid_motionweave_tests aiverse_motionweave_api_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^(vivid_|motionweave_api$)'
   ```
+
+## Stage 4C — 2026-11-19 — MotionWeave ECS visibility compile fix
+
+- **Branch:** `feature/vivid-digital-humans`. Merge source snapshot MotionWeave `548f75f0ce824db6f468f6577da95387d388ea0b`; original `feature/universal-ecs-animation-pipeline` was **not modified**. Previous VIVID integration HEAD `65ef792af7f7650a4701caa3fc5a0f433184d4d3`.
+- **External build evidence from user:** In `~/Projects/AIVERSE-vivid/build/vivid`, Clang/Xcode compilation of `aiverse_vivid_motionweave` failed at `libraries/include/aiverselib/animation/MotionWeaveScheduler.h` lines 53, 54, 55, 62. Four primary errors: `World::poolIfExists<T>()` is private in `engine/core/ECS.h:548`; the many `note` messages only identify that declaration. No standalone `warning:` messages appear in the shared log. Other previously built tests still passed: `vivid_face`, `vivid_sparse_morph`, `vivid_shape_binding`, `vivid_gpu_contract`, and `vivid_morph_binding` — **5 passed**. `motionweave_api` and `vivid_motionweave_bridge` were **Not Run** because their executables did not exist after the failed build. CTest reported 5/7 effective passes, 2 Not Run. Do not describe these as runtime test failures.
+- **Code fix commit `3b413656fafecc54c466baa5ab6b83681a43cb6d`:** replace the four private `read.poolIfExists<Component>()` accesses with public `read.tryGetConst<Component>(e)` inside the existing per-entity loop. Read-only, no implicit pool creation, no COW detachment; retains use of `prepareAnimationPresentation` for explicit writable pools and MotionWeave's existing worker/barrier logic. No `World` API exposure or ECS layout change.
+- **Regression fixture commit `c1f76ed9bb0c21d0b3056225d0666ee29b81a938`:** extend `tests/animation/motionweave_api.cpp` to invoke the three-argument `MotionWeave::update` with a persistent 0-worker scheduler, assert exactly one eligible actor, check that missing optional Inputs/WorkHint/Budget components do not increase `World::poolCount()`, and verify a valid pose.
+- **Public API/ABI and persistence:** unchanged. MotionWeave scheduler now uses the existing public const entity accessor; no genre modules, renderer, VIVID morph ABI, save or network schema touched.
+- **Tests actually executed after fix:** **NOT RUN** by this agent. GitHub source diff/inspection verified replacement of the four private API uses and presence of the new test; native Xcode compilation and CI still require confirmation.
+- **Risks/limitations:** Additional latent compilation failures in other deferred MotionWeave tests may emerge after this first error. Do not suppress compiler diagnostics globally or weaken `World` encapsulation. Original MotionWeave feature branch needs this fix separately upstream after its owner coordinates cherry-pick.
+- **Next exact step:** on user's Mac, fetch VIVID HEAD and build both formerly missing targets **before** running CTest. If either build fails, capture the first compiler error and do not run CTest on stale executables. After success, run six VIVID tests plus `motionweave_api`, then full MotionWeave standalone tests as a separate compatibility gate.
+- **Mac commands (NOT RUN in this stage):**
+  ```bash
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_motionweave_tests aiverse_motionweave_api_tests -j 4 &&
+    ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^(vivid_|motionweave_api$)'
+  ```
