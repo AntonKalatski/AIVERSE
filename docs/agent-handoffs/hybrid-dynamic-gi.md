@@ -698,3 +698,15 @@ selected opt-in point/spot lights using stable namespaced keys, without any
 special FPS/RTS ECS dependency or changing direct lighting. The source
 fixture in `gi_lighting_controller` was expanded. C++/CTest/GPU execution
 not run. Main merge not performed.
+
+
+## Stage 39 — 2026-11-20 — explicit sun and overhead sky bounce (SOURCE; NOT RUN)
+
+Read `docs/agent-handoffs/gi-stage39-sun-sky-first-bounce-2026-11-20.md`.
+New `GiEnvironmentLight` source and renderer bridge, CPU/GPU visibility-aware
+one-bounce sun+sky, Metal/Vulkan compute ABI 80B (Vulkan push constant cap),
+fence-safe volume invalidation and CTest source registrations.
+Zero source intensities preserve default baked/direct/ambient GI.
+Sky uses one +Y visibility ray; large-world physically correct sky remains
+unimplemented. No native compiler, CTest, shader compiler, real Metal/Vulkan
+GPU or GLES hardware run. Do NOT merge into main yet.
