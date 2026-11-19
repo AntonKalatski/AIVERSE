@@ -558,3 +558,70 @@ need separate native builds and visual/readback validation.
 
 Every implementation stage requires a code commit and a **separate**
 handoff commit with exact SHAs, actual test results and next steps.
+
+
+## Native Renderer3D material feedback (new RHI program)
+
+The public C++ implementation now includes
+`engine/gfx/VirtualTextureFeedbackProgram.h` and
+`engine/render/VirtualTextureModelFeedback.h`.
+The former generates complete engine-RHI GLSL/MSL shader stages
+and creates an RGBA8 position/UV pipeline with the real U0
+(std140/Metal buffer 1) binding contract. The latter owns
+eight rigid `ModelVertex` pipeline variants: alpha mask
+on/off, LOD fade on/off, and single/double-sided culling.
+It maps `Model::images[material.baseTex]`, alpha cutoff,
+`uvScale`/`uvRotation`/`uvOffset` and LOD pixel-grid
+parameters onto those pipelines automatically.
+
+Example initialization and ownership:
+
+```cpp
+gfx::VirtualTextureFeedbackPass feedback;
+const bool ok = feedback.initialize(dev, feedbackWidth, feedbackHeight,
+                                    feedbackConfig, prefetchConfig,
+                                    8, true); // enable depth
+render::VirtualTextureModelFeedback modelFeedback;
+if (ok && modelFeedback.initialize(dev, feedback.hasDepthAttachment())) {
+    modelFeedback.connect(renderer,
+        [](const render::Model& model,
+           const render::Material& material,
+           render::VirtualTextureMaterialMapping& map) {
+            // Look up your project's VT allocation for this material.
+            // If no VT is assigned return false: still draw depth, no page ID.
+            if (!hasVirtualPages(model, material)) return false;
+            map.baseTilesX = ...; map.baseTilesY = ...;
+            map.layer = ...; map.mipLevels = ...;
+            map.texelWidth = ...; map.texelHeight = ...;
+            return true;
+        });
+    renderer.setVirtualTextureFeedback(&feedback, {}, {});
+}
+```
+
+Call `Renderer3D::beginScene` and submit models normally;
+`Renderer3D::render` invokes feedback automatically before
+opening its main scene pass when the pass is ready and idle.
+Call `feedback.updateStreaming(fileStreamer,budget,...)` from
+the frame coordinator to consume readback requests; otherwise
+pending readback intentionally blocks new capture.
+Before destroying GPU resources, call
+`renderer.clearVirtualTextureFeedback()`,
+`modelFeedback.shutdown()` (disconnects model variants),
+then `feedback.shutdown()`; do so before destroying `dev`.
+
+The resolver is genre-agnostic. A model without VT allocation
+still writes depth with zero feedback IDs, preserving occlusion.
+The adapter creates and owns a 1x1 white alpha texture for
+masked materials without a valid base image.
+
+Limitations: no skinned/baked/morph GPU feedback vertex program
+is created here; use `setVirtualTextureDeformedModelFeedback`
+for those until an exact deformation variant is available.
+The program is not yet registered by Terra automatically.
+For fixed material alpha/LOD/UV parity, special shader graphs,
+material palettes, GPU-driven mesh LOD, and main-pass depth
+must be reviewed during the later GPU test stage.
+The isolated fragment source generators in
+`VirtualTextureFeedback.h` are not themselves complete
+`ShaderDesc` sources; use the new program builder for native RHI.
