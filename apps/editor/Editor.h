@@ -33,6 +33,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/Renderer3D.h"
 #include "ViewportGpuRetirement.h"
+#include "engine/render/GpuResourceRetirement.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
@@ -118,6 +119,8 @@ public:
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
+    render::GpuResourceRetirement& gpuResourceRetirement() { return gpuResourceRetirement_; }
+    const render::GpuResourceRetirement& gpuResourceRetirement() const { return gpuResourceRetirement_; }
     ViewportGpuRetirement& viewportRetirement() { return viewportRetirement_; }
     const ViewportGpuRetirement& viewportRetirement() const { return viewportRetirement_; }
     // Request a GPU-idle drain at NEXT frame's safe pre-render boundary;
@@ -380,6 +383,7 @@ private:
     int focusFirst_ = 0;
     std::vector<std::string> pendingFocus_;   // openWorkspace: tabs to bring to front once docked
     int pendingFocusFrames_ = 0;
+    render::GpuResourceRetirement gpuResourceRetirement_; // outlives ShaderGraph/FX windows
     ViewportGpuRetirement viewportRetirement_; // outlives all window Viewports
     bool gpuRetirementFlushRequested_ = false;
     bool gpuRetirementLastFlushSucceeded_ = false;
