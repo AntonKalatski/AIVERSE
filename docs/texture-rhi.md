@@ -1579,3 +1579,34 @@ unrepresentable bindings.
 MSL/GLSL compiler, GPU capture or cross-backend image parity has
 been run. This is not a bindless material system, arbitrary source
 texture count, or heterogeneous per-command ICB descriptor table.
+
+
+## RHI fragment texture resource capacity — Stage 10T
+
+`gfx::Device::maxFragmentTextureSlots()` now exposes how many
+independently bound **texture resources** a renderer may address
+with `setTexture(slot, handle)`, not how many dynamic sampler
+objects it may bind. The default portable RHI contract remains 16.
+Metal advertises 32 texture indices, while its dynamic sampler
+indices still stop at 15 (high-slot material graphs use a
+compile-time sampler). Vulkan reports the selected device's
+actual descriptor texture capacity, which can be below its
+compiled-in upper bound. GL33/GLES3/WebGL2 retain the portable
+16-slot default.
+
+The Shader Graph material VT allocator now uses this RHI
+capability directly instead of testing a hard-coded backend name.
+The first four normal graph texture sources are still authored
+at tex13..16; a device capable of binding only 16 resources
+rejects the unrepresentable fourth source. A VT graph requests
+two additional independent texture slots and falls back to
+ordinary tex1 when those two slots cannot be allocated.
+Only a Metal RHI with the extended slot capacity opts into
+the MSL virtual-resource injection above tex15.
+
+This is a non-breaking, read-only Device API; consumers should
+query it during pipeline material layout selection, and must not
+confuse texture resource indices with sampler indices.
+The per-command Metal ICB descriptor table is still not
+implemented. C++ compilation and native backend tests for
+this stage are NOT RUN.
