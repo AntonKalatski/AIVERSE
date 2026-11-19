@@ -97,6 +97,24 @@ public:
     const LaneLook& laneLook() const { return lane_; }
     bool showsTerritory() const { return useT_ && terr_.on; }
     bool territoryOn() const { return terr_.on; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        const auto mesh=[&](const render::Mesh& m){c.buffer(m.vb);c.buffer(m.ib);};
+        for (const auto& chunk : chunks_) {
+            mesh(chunk.fill);mesh(chunk.border);mesh(chunk.rock);
+            mesh(chunk.veins);mesh(chunk.gems);mesh(chunk.marks);
+            mesh(chunk.road);mesh(chunk.concrete);
+        }
+        mesh(lanes_);c.texture(white_);
+        auto total=c.stats(), cache=textures_.ownedGpuMemoryStats();
+        total.textureKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.textureKnownBytes,cache.textureKnownBytes);
+        total.bufferKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.bufferKnownBytes,cache.bufferKnownBytes);
+        total.textures+=cache.textures;total.buffers+=cache.buffers;
+        total.unknownTextures+=cache.unknownTextures;total.unknownBuffers+=cache.unknownBuffers;
+        total.multiVersionBuffers+=cache.multiVersionBuffers;
+        return total;
+    }
 
 private:
     struct Chunk {
