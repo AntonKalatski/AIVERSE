@@ -55,12 +55,48 @@ Common workflow: inspect `postfx_catalog` → choose preset or add effects → c
 
 Include `engine/render/PrismaRenderGraph.h` from native projects/tooling to declare typed resources and passes, compile a stable topological order, detect cycles, duplicate writers, read/write feedback and invalid resources. The returned `PrismaGraphPlan` describes first/last use and aliasable transient slots; it is **NOT an executable RHI render graph**. External input/output/temporal history are managed by the caller. See `docs/prisma.md` and `tests/render/prisma_graph.cpp`. Do not replace the existing `Prisma::resolve()` sequence until actual backend resource allocation/execution is integrated and GPU-verified.
 
+## Opt-in full-resolution temporal resolve (Stage 42)
+
+The canonical engine path is `Prisma::resolve()`, **not** a second
+postprocessing implementation inside `PrismaScreenLighting`. The
+`temporalResolve` effect is in the normal `postfx.effects` catalog and
+shares quality profiles, Camera Volumes and data-only parsers. It is
+**inactive by default**, even when configured, until the native host sets
+`AIVERSE_PRISMA_TEMPORAL=1` and uses HDR + High quality.
+
+Example authored game/map effect:
+
+```json
+{"postfx":{"effects":[{"type":"temporalResolve","historyWeight":0.86,
+"depthThreshold":0.0075,"motionScale":0.04,"reactiveStrength":0.95,
+"minQuality":"high"}]}}
+```
+
+It uses camera + optional object velocity (current-minus-previous UV, signed
+RGBA16F), previous per-camera HDR color/depth ping-pong, 3×3 current-color
+neighborhood clipping, four independently depth-validated nearest history
+samples and optional current-frame reactive particle coverage. One velocity
+pass is shared with opt-in Motion Blur. TAA runs before the blur, Bloom and
+final HDR tonemap. HDR FXAA is skipped when temporal actually resolved to
+prevent two spatial/temporal AA filters on the same frame. Calling
+`prisma.resetMotionHistory(viewId)` after a cut invalidates **both** motion
+and temporal history. `retireView(viewId)` fence-retires camera-owned
+history; owner GPU completion/lifetime rules are unchanged.
+
+This is native-resolution stabilization, **not dynamic-resolution temporal
+upscaling**, jittered subpixel reconstruction or a motion-reconstruction
+quality certification. It must be validated on Metal/GL/GLES/Vulkan with
+moving actors, silhouettes, sky, particle transparency, camera teleports,
+dual viewports and pass count. No native compile, CTest or GPU screenshot
+was run in the GitHub-only stage. See
+`docs/handoffs/prisma-stage-42.md`.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
 - Temporal/screen-space: `PrismaScreenLighting.{h,cpp}`, `PrismaScreenLightingShaders.h`.
 - Legacy `PostFx*.h`, `ScreenLighting.h` and old ops header are compatibility-only; legacy .cpp shims have no definitions. New engine changes MUST go in PRISMA files.
-- PRISMA's volume stack is currently opt-in and GPU-free. **RenderGraph, auto exposure, physical depth of field, motion vectors, generalized motion blur and temporal upscaling are not yet implemented**. Never label these as working until code, build and rendering tests prove it.
+- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur and Stage 42 temporal resolve. RenderGraph execution is partially opt-in and temporal upscaling is **not** implemented. Builds and GPU parity tests have not been run for these stages; never label them verified or production-ready.
 
 ## Mandatory validation and handoff
 
