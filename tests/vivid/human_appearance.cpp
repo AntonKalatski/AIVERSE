@@ -105,6 +105,32 @@ void test() {
         expect(stats.triangles==human.hair->indices.size()/3,
                "groom card triangle stats mismatch");
     }
+    // Regression: custom head proportions must use an ellipsoid collision
+    // matching generated roots, not a hard-coded sphere in world units.
+    for(float width:{0.65f,1.0f,1.35f}) {
+        auto dna=HumanDNA::preset("neutral");
+        dna.anatomy.headWidth=width;
+        dna.anatomy.headScale=1.2f;
+        HumanGroomRuntime groom;
+        groom.generate(dna,GroomQuality::Low);
+        const float rx=0.72f*dna.anatomy.headWidth*dna.anatomy.headScale;
+        const float ry=0.90f*dna.anatomy.headScale;
+        const float rz=0.75f*dna.anatomy.headScale;
+        for(int frame=0;frame<24;++frame)
+            expect(groom.step(0.016f,{2.0f,-0.5f,1.0f}),
+                   "DNA-scaled scalp collision step failed");
+        for(const auto& guide:groom.guides()) {
+            expect(finite(guide.position.front()),"groom root became nonfinite");
+            for(std::size_t j=1;j<guide.position.size();++j) {
+                const auto p=guide.position[j];
+                const float q=std::sqrt((p.x/rx)*(p.x/rx)+
+                                        (p.y/ry)*(p.y/ry)+
+                                        (p.z/rz)*(p.z/rz));
+                expect(finite(p)&&q>=0.999f,
+                       "groom strand penetrated DNA-scaled head ellipsoid");
+            }
+        }
+    }
     auto originalDNA=HumanDNA{};
     auto sculptedDNA=originalDNA;
     sculptedDNA.skin.wrinkleStrength=0.95f;
