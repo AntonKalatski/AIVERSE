@@ -26,7 +26,8 @@ public:
 
     bool initialize(Device& device, int width, int height,
                     VirtualTextureFeedbackConfig feedback,
-                    VirtualTexturePrefetchConfig prefetch) {
+                    VirtualTexturePrefetchConfig prefetch,
+                    size_t maxDeferredFrames = 8) {
         shutdown();
         error_.clear();
         // The feedback buffer contains one 32-bit page ID per pixel; it is
@@ -55,7 +56,7 @@ public:
             error_ = targets_.lastError();
             return false;
         }
-        if (!readback_.initialize(device,feedback,prefetch)) {
+        if (!readback_.initialize(device,feedback,prefetch,maxDeferredFrames)) {
             error_ = readback_.lastError();
             targets_.shutdown();
             return false;
@@ -63,7 +64,28 @@ public:
         device_ = &device;
         width_ = width;
         height_ = height;
+        feedbackConfig_ = feedback;
+        prefetchConfig_ = prefetch;
+        maxDeferredFrames_ = maxDeferredFrames;
         return true;
+    }
+
+    // Reallocate feedback resolution on viewport resize. Old in-flight
+    // callbacks are invalidated by shutdown(); the native Device retains
+    // ownership of its outstanding staging commands. A failed allocation
+    // leaves the pass cleanly uninitialized rather than half-resized.
+    // This intentionally discards old camera visibility on resize.
+    bool resize(int width, int height) {
+        if (!ready() || active()) {
+            error_ = "feedback pass must be idle and initialized to resize";
+            return false;
+        }
+        if (width == width_ && height == height_) return true;
+        Device* device = device_;
+        const auto feedback = feedbackConfig_;
+        const auto prefetch = prefetchConfig_;
+        const size_t deferred = maxDeferredFrames_;
+        return initialize(*device,width,height,feedback,prefetch,deferred);
     }
 
     // Called inside an existing graphics frame, with no active render pass.
@@ -178,6 +200,9 @@ public:
         targets_.shutdown();
         device_ = nullptr;
         width_ = height_ = 0;
+        feedbackConfig_ = {};
+        prefetchConfig_ = {};
+        maxDeferredFrames_ = 8;
     }
 
 private:
@@ -185,6 +210,9 @@ private:
     RenderTargetSet targets_;
     VirtualTextureFeedbackRuntime readback_;
     int width_ = 0, height_ = 0;
+    VirtualTextureFeedbackConfig feedbackConfig_{};
+    VirtualTexturePrefetchConfig prefetchConfig_{};
+    size_t maxDeferredFrames_ = 8;
     std::string error_;
 };
 
