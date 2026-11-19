@@ -257,6 +257,30 @@ void test() {
             merged.deltas()==2 && merged.gpuDeltas()[0].vertex==0 &&
             merged.gpuDeltas()[1].vertex==4,
             "full-model GPU actor CSR omitted source or authored LOD delta");
+        MorphTargetInput additional;
+        additional.name="jawOpen";
+        MorphDelta third;
+        third.vertex=0;
+        third.position={0,0.6f,0};
+        additional.deltas.push_back(third);
+        const auto secondCompact=SparseMorphLibrary::compile(1,{additional});
+        const std::array<std::uint32_t,1> secondIds{{2}};
+        const std::array<MorphLodGpuAuthoring::Layer,2> layers{{
+            {&compact,ids},{&secondCompact,secondIds}}};
+        const auto combined=MorphLodGpuAuthoring::combineMany(full,layers);
+        req(combined.vertices()==5 && combined.targets()==1 &&
+            combined.deltas()==3 &&
+            combined.gpuDeltas()[0].vertex==0 &&
+            combined.gpuDeltas()[1].vertex==2 &&
+            combined.gpuDeltas()[2].vertex==4,
+            "multi-LOD facial CSR missing shared semantic deltas");
+        const std::array<std::uint32_t,1> conflictingIds{{4}};
+        const std::array<MorphLodGpuAuthoring::Layer,2> conflictLayers{{
+            {&compact,ids},{&secondCompact,conflictingIds}}};
+        bool multiRejected=false;
+        try {(void)MorphLodGpuAuthoring::combineMany(full,conflictLayers);}
+        catch(const std::invalid_argument&){multiRejected=true;}
+        req(multiRejected,"overlapping multi-LOD target vertices accepted");
         const std::array<std::uint32_t,2> overlap{{0,4}};
         bool rejected=false;
         try {(void)MorphLodGpuAuthoring::combine(full,compact,overlap);}
