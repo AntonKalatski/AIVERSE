@@ -611,6 +611,7 @@ void appliedRecheckTimeoutCanRetryOnlyQuery() {
     client.retry();
     auto [c3,s3]=net::makeLoopbackPair();
     client.poll(*c3,31000);
+    s3->update(31000);
     net::Bytes wire;
     CHECK(s3->recv(wire));
     Packet sent;

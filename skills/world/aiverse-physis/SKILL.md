@@ -885,3 +885,24 @@ bash tools/physis-validate-native.sh --integration --no-physics --jobs 4
 Handoff:
 `docs/agent-handoffs/physis-stage63-revision-probe-durability-2026-11-19.md`.
 
+### Stage 64 — remote ACK monotonicity and Applied retry
+
+A terminal PHYSIS remote receipt must not be rewound by delayed
+Queued/Unknown/Denied/etc. A previously Applied request may ONLY be
+verified again by a new Query after reconnect. Ignore received
+pre-query frames and Queued during verification. An absent prior
+Applied receipt is Uncertain and requires an explicit manual retry
+with the SAME original ID; never silently re-Submit it.
+When verification times out, `RemoteClient::retry()` issues Query
+only for the already-Applied ID. A new `begin()` must reject
+Uncertain and in-progress Applied verification. This is protocol V1;
+there is no query nonce/generation, so absolute cross-reconnect
+freshness needs further protocol design.
+
+Regression source: three Stage 64 fixtures in
+`tests/physis_remote_edit_test.cpp`. AUTHORED, NOT EXECUTED
+in full native AIVERSE. Run
+`bash tools/physis-validate-native.sh --integration --no-physics --jobs 4`
+and preserve actual reports before changing PR #25 from Draft.
+Handoff:
+`docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.

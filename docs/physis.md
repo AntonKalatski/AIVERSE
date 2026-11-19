@@ -828,3 +828,23 @@ docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
 
 ### Stage 26 crash-recovery fix for durable field receipts
 An authenticated PHYSIS editor request may be persisted in the file journal as Queued before the authoritative Simulation step. If the process crashes, its pending in-memory command queue may be gone even though the journal still says Queued. Recovery now converts Queued to Unknown, then compares the restored ECS state: matching revision + fingerprints proves Applied; a still-current revision permits the original authenticated request to be resubmitted once. This prevents premature Rejected or incorrect Applied reports after restart. Test fixtures in `tests/physis_admin_journal_test.cpp` cover both crash-before-commit and crash-after-commit-before-receipt; native CTest has NOT RUN. See `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.
+
+### Stage 64 — ignore stale remote ACK after Apply
+
+`RemoteClient` enforces monotonic receipt handling on an active
+connection: an accepted terminal receipt cannot be overwritten by
+late Queued/Unknown/etc. When an Applied operation is checked after
+reconnect, a Query for the original ID must actually be sent before
+accepting its reply; a pre-query response and stale Queued are
+ignored. An Unknown during Applied verification is **Uncertain**:
+never automatically replay a formerly acknowledged Submit.
+Manual `retry()` after a verification timeout is a Query-only
+operation, and `begin()` rejects uncertain/in-progress verification.
+
+No wire format, ECS schema, NEREID Water, TerraWeave or Box3D changes.
+V1 has no per-Query correlation nonce, so arrival after a Query is
+not cryptographic proof that a delayed Applied packet was generated
+for that Query. A future protocol version should add correlation and
+server generation. Source fixtures are authored, but native engine
+CTest has NOT RUN. See
+`docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.

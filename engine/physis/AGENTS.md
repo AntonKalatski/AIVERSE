@@ -855,3 +855,33 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Handoff:
   `docs/agent-handoffs/physis-stage63-revision-probe-durability-2026-11-19.md`.
 
+### Stage 64 — monotonic remote receipts and safe Applied re-verification (2026-11-19)
+
+- `RemoteClient` now ignores late Queued/Unknown/Rejected/Conflict/Denied
+  receipts after a terminal result on the same connection. A reconnect
+  may explicitly re-verify an Applied request using a Query for its SAME
+  request ID, but ignores pre-query replies and stale Queued while verifying.
+- If the authoritative server no longer knows a previously Applied
+  request, the client becomes Uncertain and requires an explicit
+  operator retry. It cannot automatically re-Submit after that warning,
+  or start a NEW edit while uncertain/re-verifying.
+- Applied verification Query timeout can be retried manually using
+  Query only, never Submit. The previously Applied request ID is
+  preserved; server ACL, saved ECS revision and journal remain authoritative.
+- Three source regression fixtures in `tests/physis_remote_edit_test.cpp`:
+  `delayedReceiptCannotUndoApplied`,
+  `appliedRecheckNeedsFreshQueryAndManualReconcile`, and
+  `appliedRecheckTimeoutCanRetryOnlyQuery`.
+- Implementation commits: `79890dc1c74e34b97325d90b7a09d55c17c14497`,
+  `1e5d9e282f0b0720d7ba570ba2866efba1afd76e`.
+  Docs/test follow-up: see the commit containing this handoff.
+- **Verification:** connected GitHub source/readback checked. Native
+  full AIVERSE build, `physis_remote_edit` CTest and editor/UI QA
+  **NOT RUN** (no full checkout: container DNS fails on github.com);
+  PR workflow lookup for implementation HEAD returned no runs/checks,
+  NOT a PASS. Keep PR #25 Draft. The wire V1 protocol has no Query
+  correlation nonce: fully formal cross-reconnect freshness remains
+  future work. No schema changes, server auth bypass, genre coupling,
+  NEREID/TerraWeave/Box3D edits.
+- Full handoff:
+  `docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.
