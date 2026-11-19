@@ -481,3 +481,22 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 28: versioned JSON GPU/CPU emitter configuration
+- **Branch:** `feature/spectrafx-generic-cue-queue`; merged main ancestor `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Implementation commit:** `6f9ad492c1347d4b82eb7a2c4fbad7a80a42f863`.
+- **File:** `engine/fx/SpectraFxGpuEmitterAsset.h` (new).
+- **Features:** `SpectraFxGpuEmitterAsset::read/readText` accepts explicit `version:1` authored configuration with `cpuEffect`, `preference` (cpu/auto/gpu), particle capacity, fallback policy, quality, rate/distance/burst spawn profile, seed, lifetime/speed/spread, frame budget, billboard appearance and acceleration/damping. Rejects unsupported fields and wrong types; numeric bounds are checked against `SpectraFxGpuSpawnScheduler::configure` before atomically replacing the destination `SpectraFxHybridEmitter::Config`. CPU fallback effect is required when appropriate, and GPU/Auto requires positive capacity. The document is rendering-only and does not enter deterministic gameplay saves or rollback state.
+- **Limitations:** parser/validator only, not yet plugged into live scene asset discovery or editing controls; no writer API. It does not expose advanced modules; those remain on CPU. Incorrectly configured GPU assets are rejected rather than silently switched without an authored CPU fallback.
+- **Verification:** **NOT RUN**, per user instruction. No compiler/CTest, native desktop, Metal/Vulkan graphics, JSON negative-fixture or editor UI execution. Source code requires later comprehensive validation.
+- **Next:** add project-level asset loader and optional editor preview routing for GPU/CPU assets; continue full-feature GPU modules and eventual game loop integration before tests.
+
+### Pull-first
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
