@@ -588,3 +588,13 @@ A `MotionWeaveSourceBridge::sync(world,sources)` source must have a **stable non
 A newly published `Model*` requires a different nonzero `modelPublicationGeneration` from the old one to carry portable named playback on hot reload; same Model/same epoch may retain compatible phase when only the compiled Graph changes. Otherwise the new player safely restarts. `forgetForReimport` is idempotent for duplicate IDs in the SAME detach span, while ordinary `forget` cancels any saved phase. Both View forget APIs erase visual LOD hysteresis for detached source IDs. Cached selected LOD state includes source publication, visual Model address/epoch, selected threshold and level count, and is reset when those tracked revisions change (the entire LOD list is NOT fully fingerprinted). Default attachment persistent IDs incorporate the source Model epoch; explicit IDs are unchanged.
 
 No genre/gameplay/network dependencies were added; there remains a single graph evaluator per source. Full compile, CTest and Metal/GLES/Vulkan runtime checks **NOT RUN** under the agreed feature-first workflow. See [Stage 149 handoff](agent-handoffs/animation-stage149-source-identity-lod-attachment-reimport-2026-11-19.md).
+
+
+
+## Stage 150 — visual LOD authoring revisions and immutable socket bindings
+
+Every `View::Object` continues to use exactly one MotionWeave graph/pose writer independently of its chosen visual Model LOD or attachments. The View now invalidates render-only hysteresis based on complete authored LOD configuration revisions (all levels' Model address/epoch, threshold and optional retarget/compiled-plan identity), not just the previously selected level. Comparison snapshots are rebuilt only when the layout changes and contain no live Model ownership.
+
+A generic native host may compile a named or indexed attachment with `aiverse::view::compileModelSocket(rig, epoch, socketName, socketIndex)` at asset publication time, then share that immutable `CompiledModelSocket` through appended `ModelAttachment::compiledSocket`. The View's revision-aware `composeAttachment` checks exact rig/epoch/authored selector; expired compiled sockets fail closed and require recompilation. Legacy uncompiled sockets and root attachments remain available. Host owns CPU Model/GPU retirement and must not mutate a published Model in place without a new epoch. The animation core has no FPS/RTS/RPG dependencies.
+
+See [Stage 150 handoff](agent-handoffs/animation-stage150-complete-lod-signatures-compiled-sockets-2026-11-19.md). **NOT RUN:** compiler, native CTest, current passing CI, real Metal/Vulkan/GLES visuals, sanitizers or benchmarks pending the user's feature-first single validation pass.
