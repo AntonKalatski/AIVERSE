@@ -609,3 +609,30 @@ Full engine checkout/CTest remains unavailable due GitHub DNS and
 queued/cancelled workflow runs. Continue testing once CI completes.
 
 See `docs/agent-handoffs/physis-stage49-posix-journal-test-2026-11-19.md`.
+
+### Stage 50 — verify journal identity after read and fail closed on collisions
+
+The POSIX-only `PhysisJournalPosixIO.h` helper now verifies that
+the opened journal fd, final published pathname (via `fstatat`
+without symlink following) and the original directory still refer
+to safe, consistent filesystem objects after reading. It rejects
+replaced or resized files instead of exposing stale bytes to
+`ServerGateway::restoreJournal`.
+
+Writes still use `openat(O_EXCL)` and atomically replace via
+`renameat`, but now also verify the parent directory remains
+trusted after `fsync`. Refuse colliding temp names without deleting
+or overwriting another file. Any failed write or read must remain
+fail closed, with no false Applied/Queued durability ACK.
+
+Source test `physis_journal_posix_io` covers these negative cases.
+The exact committed source blobs
+`fc1b07631c5191e8681992fb3743482029c7d2ea` (header) and
+`f3500d80dc7c99c389b12e0d8a40721e202d8048` (CTest)
+passed an isolated Linux CMake/CTest 1/1, strict GCC 14.2 and
+Clang 17 C++20 builds, and GCC AddressSanitizer/UndefinedBehaviorSanitizer.
+Full AIVERSE and native authenticated admin integration have NOT
+been built or run; GitHub feature CI was queued/cancelled.
+
+Handoff:
+`docs/agent-handoffs/physis-stage50-post-read-integrity-2026-11-19.md`.
