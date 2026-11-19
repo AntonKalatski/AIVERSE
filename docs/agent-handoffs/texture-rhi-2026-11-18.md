@@ -7937,3 +7937,40 @@ texture and ICB suites and capture two-domain source-vs-VT
 same-camera image comparison. If a native API/shader ABI
 fails, fix under a new bounded stage and preserve this
 append-only handoff before any merge.
+
+
+## Stage 10AB — conservative opaque PBR pipeline equivalence and exact U2 resource ticket (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; PR #21 Draft.
+**Implementation commits:** `c9272ec945258a9ba0d401b38ff2c2f096237458`
+(`engine/render/GpuMaterialState.h`) adds
+`equivalentGpuIcbPbrPipelineMaterial` and
+`gpuIcbPbrPipelineHash`, limited to nontransparent built-in
+opaque PBR shaders with matching double-sided/shadow and
+normal-map-presence pipeline flags. `06ad7d7be14e288dda6effce29383d59ac7c3555`
+(`engine/render/GpuMaterialResourceTable.h`) extends resource
+snapshots with six valid texture handles and 36 float U2 data
+plus exact comparison/deduplication.
+
+**Docs commits:** `f97991d14edde34a79c463a5359dc7206c7ec36b` (docs/texture-rhi.md) and
+`741ca51c944215a804b0fedbeeaa8002e23602bd` (skills/visuals/aiverse-texture-rhi/SKILL.md).
+
+**Architecture:** The pipeline grouping key is only a necessary
+condition: hash collision never establishes equivalence, and
+normal texture presence must match because it selects a shader
+permutation. Source PBR texture handles and U2 become a separate
+per-command identity. Frame/generation tickets remain unchanged,
+and VT identity is included in the same exact resource table.
+This stage does not itself change GPU resource binding or
+enable batching.
+
+**Checks actually performed:** read actual ModelShaders U2 layout
+and Renderer3D material state/variant selection; GitHub source
+and docs commits accepted. **C++ compile NOT RUN; CTest NOT RUN;
+MSL compiler NOT RUN; GPU execution NOT RUN.**
+
+**Remaining:** need a matching opt-in RHI/native Metal per-command
+PBR descriptor, 256-byte U2 slice, per-command fragment texture
+slots 1..6 and sampler states, and source-side per-draw U2
+packing/revalidation before ICB submission. Keep legacy grouping
+and CPU fallback unchanged until that feature is ready.
