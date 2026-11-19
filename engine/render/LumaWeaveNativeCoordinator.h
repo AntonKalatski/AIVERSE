@@ -141,35 +141,35 @@ public:
         // legacy lights for a postprocess wrapper that will never run.
         if(requestedQuality!=LumaWeaveQuality::Off && geometry && gpu_.ready() &&
            existing_.active() && existing_.linearScene()) {
-        // World-grid candidate coverage follows the actual camera instead of
-        // staying forever at origin (0,0,0). Snap to whole cluster cells to
-        // avoid rebuilding on every sub-metre camera movement. A host-supplied
-        // fixed grid remains supported by setClusterFollowCamera(false).
-        if(clusterFollowsCamera_) {
-            LumaClusterConfig centered=clusterConfig_;
-            const auto snap=[](float coordinate,float cellSize,int cells)->float {
-                const double cellsFromZero=std::floor(
-                    double(coordinate)/double(cellSize)-double(cells)/2.0);
-                return float(cellsFromZero*double(cellSize));
-            };
-            centered.origin={
-                snap(cameraFocus.x,centered.cellSize.x,centered.nx),
-                snap(cameraFocus.y,centered.cellSize.y,centered.ny),
-                snap(cameraFocus.z,centered.cellSize.z,centered.nz)
-            };
-            if(centered.origin.x!=clusterConfig_.origin.x ||
-               centered.origin.y!=clusterConfig_.origin.y ||
-               centered.origin.z!=clusterConfig_.origin.z) {
-                clusterConfig_.origin=centered.origin;
-                clustersReady_=false;
+            // World-grid candidate coverage follows the actual camera instead of
+            // staying forever at origin (0,0,0). Snap to whole cluster cells to
+            // avoid rebuilding on every sub-metre camera movement. A host-supplied
+            // fixed grid remains supported by setClusterFollowCamera(false).
+            if(clusterFollowsCamera_) {
+                LumaClusterConfig centered=clusterConfig_;
+                const auto snap=[](float coordinate,float cellSize,int cells)->float {
+                    const double cellsFromZero=std::floor(
+                        double(coordinate)/double(cellSize)-double(cells)/2.0);
+                    return float(cellsFromZero*double(cellSize));
+                };
+                centered.origin={
+                    snap(cameraFocus.x,centered.cellSize.x,centered.nx),
+                    snap(cameraFocus.y,centered.cellSize.y,centered.ny),
+                    snap(cameraFocus.z,centered.cellSize.z,centered.nz)
+                };
+                if(centered.origin.x!=clusterConfig_.origin.x ||
+                   centered.origin.y!=clusterConfig_.origin.y ||
+                   centered.origin.z!=clusterConfig_.origin.z) {
+                    clusterConfig_.origin=centered.origin;
+                    clustersReady_=false;
+                }
             }
-        }
-        const bool gridCurrent=clustersReady_ &&
-            clusters_.sourceRevision()==registry_.revision();
-        if(!gridCurrent) {
-            stats_.clusters=clusters_.rebuild(registry_,clusterConfig_);
-            clustersReady_=true;
-        }
+            const bool gridCurrent=clustersReady_ &&
+                clusters_.sourceRevision()==registry_.revision();
+            if(!gridCurrent) {
+                stats_.clusters=clusters_.rebuild(registry_,clusterConfig_);
+                clustersReady_=true;
+            }
 
             stats_.quality=LumaWeaveQualityPolicy::choose(
                 requestedQuality,viewW,viewH,registry_.lights().size(),
