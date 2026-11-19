@@ -291,6 +291,7 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
     // Worker owns State only while DiskIndexPages owns it; close() signals,
     // wakes and joins before State, ModelAsset or scene can be destroyed.
     State* state=next.get();
+    try {
     state->worker=std::thread([state]() {
         for(;;) {
             Key key;
@@ -339,6 +340,9 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
             state->cv.notify_all();
         }
     });
+    } catch (const std::system_error&) {
+        return fail(error,"STRATA disk worker could not start");
+    }
     state_=std::move(next);
     return true;
 #endif
