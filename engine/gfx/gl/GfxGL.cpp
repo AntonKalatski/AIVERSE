@@ -604,6 +604,7 @@ public:
 private:
     bool hdr_ = false;
     bool hdrPass_ = false;
+    int fragmentTextureSlots_ = 16;
     DeviceInfo info_;
     std::string error_;
     GLuint vao_ = 0, ubo_ = 0, currentProgram_ = 0;
