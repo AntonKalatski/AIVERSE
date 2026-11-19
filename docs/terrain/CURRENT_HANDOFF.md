@@ -4,6 +4,25 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest acceptance evidence: FULL native CTest 136/136 PASSED
+
+**Read first:** [Mac Studio full CTest 136/136 PASS handoff](qa-2026-11-20-mac-136-ctest-pass.md).
+The user reported the final unfiltered native CTest summary
+`100% tests passed, 0 tests failed out of 136`
+(SpectraFX 3 tests, 1.47 sec*proc).
+This succeeds after the prior Place hot-path fix, Box3D native
+header smoke, and Stage70 nutrient regressions.
+The exact local tested Git SHA and effective CMake cache flags
+are **not in the supplied final excerpt**; obtain them before
+attributing acceptance to a commit or particular build preset.
+Earlier independent Place optimized Debug measurement was
+0.766ms average / 1.729ms worst against the unchanged <5ms
+budget, and replica suite PASS 1/1.
+**Next gate is resolving current main/feature divergence in an
+isolated integration worktree and real cross-owner NEREID/PHYSIS/
+Box3D/terrain GPU acceptance.** This full CPU CTest does not
+establish those separately. PR #24 remains Draft; no merge done.
+
 ## Latest native performance evidence — Place and replica passed
 
 **Read first:** [Mac Studio user-verified Place 0.766ms and replica 1/1 PASS](qa-2026-11-19-place-perf-native-green.md).
