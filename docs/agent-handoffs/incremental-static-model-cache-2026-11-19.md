@@ -1629,3 +1629,43 @@ Follow the already committed `.github/workflows/gpu-batching.yml` `metal-icb-gpu
 AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 AIVERSE_PALETTE_TEST_CASE=indirect AIVERSE_ICB_TRACE=1 build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
 ```
 Require fixture exit=0, explicit `gpuEncodedSubmissions` / `gpuEncodedCommands` nonzero and `changed_channels=0`. If path unsupported or driver fails, report it and retain the flag OFF by default. Additional tests: Vulkan GPU canonical parity and guarded page retirement; no default enable or merge until proven.
+
+
+---
+
+## Stage 56 — real Metal GPU-authored ICB raster parity and distinct counter instrumentation (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Tested source HEAD:** `7e5dc0fcdaeabcf2517dc47ff095b68d7c2035d3`. **Code commit for diagnostic clarification:** `f1015fa11f65b425de705095f94ead2c66a4f652`. This handoff is a separate docs commit. At start of Stage 56 the branch was 0 behind main and 240 commits ahead.
+
+### User's actual native GPU test output and interpretation
+
+The user fetched the above head, ran the previously provided Metal ICB command, and supplied the output:
+
+```
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+batch=1 shadow=1 opaque=1 total=4 error=
+PBR colour indirect active=1 (before 32, after 1)
+GPU indirect supported=1 submissions=1 commands=32\nchanged_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+```
+
+The prescribed command enabled `AIVERSE_EXPERIMENTAL_METAL_ICB=1`, `AIVERSE_GPU_AUTHORED_DRAWS=1`, `AIVERSE_GPU_ENCODED_ICB=1`, `AIVERSE_GPU_ICB_RIGID=1`, `AIVERSE_GPU_ICB_MIN_COMMANDS=2`, `AIVERSE_EXPECT_GPU_ICB=1`, `AIVERSE_PALETTE_TEST_CASE=indirect`, `AIVERSE_ICB_TRACE=1`. The user did not reprint the command with the output, so the positive GPU-authored conclusion is conditional on having executed these prescribed environment settings.
+
+For `scenario=="indirect"`, `tests/render/material_batches.cpp` has an actual runtime assertion: when `AIVERSE_EXPECT_GPU_ICB=1`, lack of `supportsGpuEncodedIcb()`, zero `renderer.gpuModelDrawStats().gpuEncodedSubmissions`, zero `gpuEncodedCommands`, or no submission-count reduction marks the fixture as FAILED (nonzero process exit). With that asserted environment and the reported normal return + exact byte equality `changed_channels=0`, this provides **real Metal GPU-authored ICB parity evidence for the test fixture**, alongside 30/30 CPU checks, no renderer error and 0 pipelineFailures. It is *not* a full-engine validation or proof of CPU/GPU ms speedup.
+
+**Critical distinction:** the log's `GPU indirect supported=1 submissions=1 commands=32` displayed `renderer.modelStats().multiDrawSubmissions` / `indirectCommands` (CPU-encoded MDI), **not** the `gpuEncodedSubmissions` / `gpuEncodedCommands` verified internally. Mixed CPU MDI and GPU ICB submissions on different passes are possible; do not report 1/32 as the exact GPU-encoded count. The old literal `\\n` suffix in that print was a formatting bug, not a driver failure.
+
+### Stage 56 implementation
+
+`tests/render/material_batches.cpp` now prints both paths *separately* for the indirect fixture:
+- `GPU-encoded ICB: supported=<0/1> required=<0/1> submissions=<count> commands=<count>` from `renderer.gpuModelDrawStats()`.
+- `CPU MDI: supported=<0/1> submissions=<count> commands=<count>` from `renderer.modelStats()`.
+
+The new log corrects the literal backslash-n formatting and prevents mistaken attribution of CPU-encoded counters to compute-generated GPU ICB. **No change** to actual renderer behavior, command thresholds, shader/ICB API, test assertions, material/scene setup, screenshots or experiment default flags. Source-only logging change committed through GitHub connector; its new binary **has not been built or executed yet**, so the newly separated exact counts remain unreported.
+
+### Verification state and next action
+
+Stage 55 already verified Metal CPU-encoded MDI raster parity and persistent packet replay parity; Stage 56 user log adds Metal GPU-authored ICB parity (conditional on prescribed `AIVERSE_EXPECT_GPU_ICB=1`). **Not yet verified:** exact GPU-encoded counters printed from this new source, overall CI/full CTest, real Vulkan canonical pooled MDI pixel parity, in-flight recycling stress, cross-scene performance timings, or release readiness. Keep PR #34 Draft, `AIVERSE_GEOMETRY_POOL_RECYCLE` and `AIVERSE_VULKAN_POOLED_MDI` OFF by default.
+
+Next on Mac: `git fetch origin && git switch perf/incremental-static-model-cache && git pull --ff-only origin perf/incremental-static-model-cache`; `cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8`; rerun same GPU ICB fixture with `AIVERSE_EXPECT_GPU_ICB=1` and report the new explicit GPU-encoded and CPU MDI counters plus `changed_channels=0`. After that measure baseline / CPU MDI / GPU ICB **CPU frame time and GPU time** on an identical camera, and validate recycling/Vulkan on supporting hardware.

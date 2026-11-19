@@ -1918,3 +1918,23 @@ Next hardware gate is GPU-authored Metal ICB using
 `AIVERSE_EXPECT_GPU_ICB=1`, then Vulkan parity,
 recycle safety and performance A/B/A. Experimental flags
 remain OFF, Draft PR #34; document each subsequent stage.
+
+
+## Stage 56 — distinguish CPU MDI and GPU-authored ICB counters
+
+On Mac Studio the owner supplied GPU ICB fixture output
+(30 CPU checks passed, 32/32 model submissions reduced
+to 1/1, `changed_channels=0`, zero pipeline errors).
+When run with the prescribed `AIVERSE_EXPECT_GPU_ICB=1`,
+the fixture internally rejects zero GPU-encoded submissions
+and commands: it is valid evidence of GPU ICB output parity
+for that scenario. **Do not misread** the historical
+`GPU indirect supported=1 submissions=1 commands=32`
+line: those are `renderer.modelStats()` CPU MDI counters.
+Stage 56 instrumentation in `material_batches.cpp` now
+prints separate `GPU-encoded ICB` and `CPU MDI` counters
+with proper newlines. This change does not affect GPU
+rendering or test gates; new diagnostic binary remains
+unbuilt and exact GPU ICB counts are not yet recorded.
+Leave PR #34 Draft pending Vulkan, recycling, full CI
+and controlled A/B/A timing measurements.

@@ -1732,3 +1732,27 @@ from GitHub CI. Experimental Metal GPU-authored ICB,
 Vulkan canonical pooled MDI, GPU-fence recycling, full
 CTest and A/B/A time benchmarks are NOT YET VALIDATED.
 PR #34 remains Draft. See Stage 55 handoff.
+
+
+### Metal GPU-authored ICB fixture evidence (Stage 56)
+
+User supplied a native Metal GPU ICB fixture result: 30
+material CPU checks passed, baseline 32 shadow / 32 opaque
+model calls reduced to 1 / 1, 66→4 aggregate renderer
+calls, `changed_channels=0`, no renderer error and no
+pipeline failures. Under the previously prescribed
+`AIVERSE_EXPECT_GPU_ICB=1` environment, the fixture
+requires nonzero GPU-authored ICB submissions/commands
+or exits with failure. Its successful completion therefore
+supports actual GPU ICB parity **for this fixture**, not
+general performance or full backend correctness.
+
+The log's `submissions=1 commands=32` came from **CPU MDI**
+`renderer.modelStats()`, not GPU ICB. Stage 56 now logs
+`GPU-encoded ICB: ... submissions=... commands=...` from
+`renderer.gpuModelDrawStats()` alongside a separately
+labelled `CPU MDI: ...` line, fixing the literal
+backslash-n diagnostic. The new printing code has not
+yet been rebuilt on Mac. Do not report numerical GPU ICB
+counts until that fresh output arrives. Keep GPU recycle
+and Vulkan pooled MDI default OFF, PR #34 Draft.
