@@ -1677,3 +1677,33 @@ has no verified real Metal/Vulkan/GLES3 visual or performance results.
 
 Detailed commit-level handoff:
 `docs/agent-handoffs/strata-virtual-geometry.md` (Stage 15).
+
+
+### Stage 15.1 — aggregate scene budget, deterministic root admission
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataStreamingIndexBudgetBytes(256 * 1024);  // per-source cap
+scene.setStrataStreamingSceneBudgetBytes(8 * 1024 * 1024); // TOTAL scene active index cap
+scene.load(device, sceneJson, readFile);
+```
+
+The scene budget is optional and defaults to zero (no aggregate cap).
+If set by itself, it also activates streaming; each compatible source
+has a maximum of its full Strata indices or 64 MiB, whichever is
+smaller. Root index bytes must be admitted for an entire source before
+STRATA can draw it. With insufficient memory, sources with smaller
+root allocations are admitted first (deterministic key tie-break);
+unadmitted sources continue through Legacy. Remaining bytes are
+apportioned across admitted sources according to their available
+headroom. `strataStreamingBudgetDeclined` counts these fallbacks.
+
+This guarantees **active STRATA index storage per GeometryScene**
+cannot exceed the configured aggregate cap, excluding the original
+source vertex/index buffers, other rendering systems and RHI copies
+of retired but still in-flight Strata index generations. It is not
+a global/multi-world GPU memory manager and does not yet avoid
+whole-buffer repacking. The pure allocation policy is tested by
+authored but **unexecuted** regression fixtures. For commit references
+see Stage 15.1 in the agent handoff.
