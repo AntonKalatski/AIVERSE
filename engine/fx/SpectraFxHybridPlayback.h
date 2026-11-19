@@ -28,6 +28,7 @@ public:
     // Upper bound on all GPU particle slots owned by one playback instance,
     // including dedicated emitters and retained homogeneous pool capacity.
     static constexpr uint32_t kMaxPlaybackGpuSlots=65536;
+    static constexpr float kUnusedPoolRetireSeconds=5.0f;
     struct Route {
         std::string asset;
         bool enabled=true;
@@ -45,6 +46,7 @@ public:
         uint64_t gpuImpacts=0,impactDropped=0,impactEffects=0;
         uint64_t pooledPlays=0,pooledFallbacks=0,pooledRetired=0,pooledFailures=0;
         uint64_t gpuBudgetCpuFallbacks=0,gpuBudgetRefusals=0;
+        uint64_t unusedPoolsReleased=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -228,9 +230,28 @@ public:
             shot.elapsed+=dt;
             ++i;
         }
-        for(auto& pair:pools_) {
-            if(!pair.second.arena->update(dt,lastCameraEye_))
-                ++stats_.pooledFailures;
+        for(auto it=pools_.begin();it!=pools_.end();) {
+            PoolGroup& group=it->second;
+            // No render/compute submission for completely empty groups.
+            // Retire their GPU allocations after a short idle grace period,
+            // avoiding perpetual memory reservation for one-shot bursts.
+            if(group.arena->emitterCount()==0 &&
+               group.arena->aliveParticles()==0) {
+                group.drawReady=false;
+                group.idleSeconds+=dt;
+                if(group.idleSeconds>=kUnusedPoolRetireSeconds) {
+                    group.arena->shutdown();
+                    totalPoolCapacity_-=group.config.particles;
+                    it=pools_.erase(it);
+                    ++stats_.unusedPoolsReleased;
+                    continue;
+                }
+            } else {
+                group.idleSeconds=0;
+                group.drawReady=group.arena->update(dt,lastCameraEye_);
+                if(!group.drawReady) ++stats_.pooledFailures;
+            }
+            ++it;
         }
     }
 
@@ -253,7 +274,8 @@ public:
             drawGpu(*shot.emitter,viewProj,cameraRight,cameraUp);
         // One billboard draw per homogeneous pool regardless of source count.
         for(auto& pair:pools_)
-            if(pair.second.arena->aliveParticles()>0 &&
+            if(pair.second.drawReady &&
+               pair.second.arena->aliveParticles()>0 &&
                !pair.second.arena->render(viewProj,cameraRight,cameraUp))
                 ++stats_.pooledFailures;
     }
@@ -346,6 +368,8 @@ private:
     struct PoolGroup {
         SpectraFxGpuSharedArena::Config config;
         std::unique_ptr<SpectraFxGpuSharedArena> arena;
+        float idleSeconds=0;
+        bool drawReady=false;
     };
 
     static bool same(render::float3 a,render::float3 b) {
