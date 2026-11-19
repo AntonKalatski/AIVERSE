@@ -586,6 +586,11 @@ bool ComputeParticles::step(float dt) {
         return true; // no live GPU particles, no compute work or draw
     }
     const uint32_t killCount=uint32_t(pendingKillSlots_.size());
+    // A zero-dt redraw may still need camera-facing geometry, but must
+    // neither execute the per-particle Update VM nor invalidate an already
+    // completed readback. Births, kills and edited live VM params DO mutate.
+    const bool mutateParticles=dt>0.f || count>0 || killCount>0 ||
+                               programParamsDirty_;
     if(killCount>0) {
         // One bounded 4-byte slot-index upload, no matter how fragmented the
         // physical GPU particle allocation is. Shader mode 6 invalidates
@@ -661,7 +666,8 @@ bool ComputeParticles::step(float dt) {
     // inside mode 1, and vertex publication follows integration. No
     // separate Stage-23 VM pass must run on these same physical particles.
     const auto frame=gpu_pipeline::plan(desc_.capacity,count,updatePrefix,
-                                        compactCount,gpuIndirectActive_);
+                                        compactCount,gpuIndirectActive_,
+                                        mutateParticles);
     for(uint32_t i=0;i<frame.count;++i) {
         const auto& phase=frame.dispatches[i];
         u.meta[0]=phase.shaderMode;
@@ -672,9 +678,9 @@ bool ComputeParticles::step(float dt) {
             ++stats_.gpuCompactDispatches;
     }
     device_->endCompute();
-    // Increment only after submission. Any earlier captured GPU checkpoint
-    // is now stale and may not be used for automatic recovery.
-    ++vmFrameRevision_;
+    // A frozen frame only rebuilds geometry and indirect arguments; it must
+    // not invalidate an unchanged GPU particle+VM checkpoint revision.
+    if(mutateParticles)++vmFrameRevision_;
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
     // Keep killed slots quarantined until their Metal frame completes.
     // On unsupported RHI completion serial, conservatively do not recycle.
