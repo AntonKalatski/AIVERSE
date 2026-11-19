@@ -1,5 +1,7 @@
 #include "SpriteBatch.h"
 #include "SpriteShaders.h"
+#include "SpriteReactiveShaders.h"
+#include "Renderer3D.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -107,6 +109,11 @@ void SpriteBatch::shutdown() {
     for (auto p : {blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_})
         if (p.valid()) dev_->destroyPipeline(p);
     for (auto sh : {shader_, litShader_, casterShader_, waterShader_}) if (sh.valid()) dev_->destroyShader(sh);
+    if (waterReactivePipe_.valid()) dev_->destroyPipeline(waterReactivePipe_);
+    if (waterReactiveShader_.valid()) dev_->destroyShader(waterReactiveShader_);
+    waterReactivePipe_ = {};
+    waterReactiveShader_ = {};
+    waterReactive_.clear();
     dev_ = nullptr;
 }
 
@@ -346,13 +353,92 @@ void SpriteBatch::drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHa
 }
 
 void SpriteBatch::drawWater(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting& lighting) {
-    if (!waterPipe_.valid() || !lighting.bind) { drawMesh(dev, m, tex, viewProj, &lighting, true); return; }
-    if (!m.vb.valid() || !tex.valid()) return;
+    if (!m.vb.valid() || !tex.valid() || m.quads == 0) return;
+    // Capture exact source mesh/alpha texture; this is just draw metadata.
+    // The optional reactive render reuses the same uploaded buffers later.
+    waterReactive_.push_back({m,tex,viewProj});
+    if (!waterPipe_.valid() || !lighting.bind) {
+        drawMesh(dev, m, tex, viewProj, &lighting, true);
+        return;
+    }
     dev.setPipeline(waterPipe_);
     setUniforms(dev, viewProj, true, &lighting);
     dev.setTexture(2, tex);
     if (lighting.bindReflection) lighting.bindReflection(3);
     drawRange(dev, m.vb, 0, m.quads);
+}
+
+
+void SpriteBatch::registerWaterReactive(Renderer3D& renderer) {
+    // Each view callback owns only borrowed handles, captured by value.
+    // Owner must keep SpriteBatch, mesh buffers and textures alive through
+    // this frame's synchronous Renderer3D::resolvePrisma.
+    auto draws = std::move(waterReactive_);
+    waterReactive_.clear();
+    for (const auto& d : draws) {
+        renderer.addMotionReactiveDraw([this,d](gfx::Device& device,
+                                    gfx::TextureHandle depth,int w,int h) {
+            renderWaterReactive(device,depth,w,h,
+                                d.mesh,d.texture,d.viewProj);
+        });
+    }
+}
+
+uint32_t SpriteBatch::renderWaterReactive(
+    gfx::Device& dev, gfx::TextureHandle sceneDepth,
+    int w, int h, const SpriteMesh& m,
+    gfx::TextureHandle tex, const mat4& viewProj) {
+    if (&dev != dev_ || !sceneDepth.valid() || !m.vb.valid() ||
+        !ib_.valid() || !tex.valid() || !m.quads || w <= 0 || h <= 0)
+        return 0;
+    if (!waterReactiveShader_.valid()) {
+        gfx::ShaderDesc sd;
+        sd.glslVertex = sprite_reactive_shaders::kVS;
+        sd.glslFragment = sprite_reactive_shaders::kFS;
+        sd.msl = sprite_reactive_shaders::kMSL;
+        sd.uniformSlots = 1;
+        sd.textureSlots = 2;
+        sd.label = "prisma sprite water reactive";
+        waterReactiveShader_ = dev.createShader(sd);
+    }
+    if (!waterReactiveShader_.valid()) return 0;
+    if (!waterReactivePipe_.valid()) {
+        gfx::PipelineDesc pd;
+        pd.shader = waterReactiveShader_;
+        pd.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+        pd.attrs[1] = {1,gfx::VertexFormat::Float2,12};
+        pd.attrs[2] = {2,gfx::VertexFormat::UByte4N,20};
+        pd.attrCount = 3;
+        pd.stride = sizeof(SpriteVertex);
+        pd.indexType = gfx::IndexType::UInt16;
+        pd.cull = gfx::CullMode::None;
+        pd.depthTest = false;
+        pd.depthWrite = false;
+        pd.blend = gfx::BlendMode::Screen;
+        pd.colorFormat = gfx::PixelFormat::RGBA8;
+        pd.label = "prisma sprite water reactive";
+        waterReactivePipe_ = dev.createPipeline(pd);
+    }
+    if (!waterReactivePipe_.valid()) return 0;
+    struct U { float viewProj[16], params[4]; };
+    U u{};
+    std::memcpy(u.viewProj,viewProj.m,sizeof u.viewProj);
+    u.params[0]=float(w);
+    u.params[1]=float(h);
+    dev.setPipeline(waterReactivePipe_);
+    dev.setViewport({0,0,w,h});
+    dev.setUniforms(0,&u,sizeof u);
+    dev.setTexture(0,tex);
+    dev.setTexture(1,sceneDepth);
+    dev.setVertexBuffer(m.vb);
+    dev.setIndexBuffer(ib_);
+    uint32_t draws=0;
+    for(uint32_t q=0;q<m.quads;q+=kMaxQuadsPerDraw){
+        const uint32_t n=std::min(kMaxQuadsPerDraw,m.quads-q);
+        dev.drawIndexed(n*6,0,int32_t(q*4));
+        ++draws;
+    }
+    return draws;
 }
 
 } // namespace aiverse::render
