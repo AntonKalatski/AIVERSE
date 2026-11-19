@@ -62,3 +62,13 @@ python3 tools/aiverse-progress.py --mode all \
 Then build the broader `^physis_` suite using `bash ./run-tests.sh --filter '^physis_' --build-dir build/physis87-full --jobs 4 --ctest-jobs 4`.
 
 After the focused source passes, create an **isolated integration worktree** combining `feature/physis-terraweave-fracture-host` with `feature/terraweave` without touching original agents' worktrees; resolve integration conflicts and run the additional conditional CTest `physis_terraweave_fall_bridge` with Box3D enabled. Mark the actual test results in a new handoff. Do not merge to `main` or the source PHYSIS/TerraWeave branches until validated.
+
+## Final Stage87 follow-up code/docs commits (same stage)
+
+- `5c6187dde5bdb6e1f9b80fb87495df2f8bf8a5ac`: conditional true TerraWeave CTest also requires `TerraWeaveEcsAuthority.h` present.
+- `92179203031cbbae4892ce2410442efb4f6b5d24`: normalize Stage87 `engine/physis/AGENTS.md` Markdown references.
+- `5b010708a6d0fe790004c475e981e39feb7a33e3`: explicitly include `<utility>` in the native host header.
+- Handoff commit: get via `git log -1 -- docs/agent-handoffs/physis-stage87-terraweave-fall-host-2026-11-19.md`.
+
+GitHub draft PR #38: https://github.com/chromealex/AIVERSE/pull/38.
+This work remains **NOT RUN** on Stage87. Do not attribute prior 28/28 PASS to this branch. Before applying to a combined TerraWeave checkout, inspect new commits arriving on both feature branches.
