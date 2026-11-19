@@ -94,3 +94,8 @@ Or manually click **Reload model files** in the ModelView Attachments window, af
 2. Complete generic morph/skeleton-retarget authoring, animated child source semantics, scene/prefab serialization, attachment transforms and richer Studio UX. Keep only ONE graph writer per distinct animation source and no genre imports in shared libraries.
 3. Final feature freeze: integrate divergence with main/base in a disposable worktree, run the ONE comprehensive native Mac suite (CMake/compiler/CTest/Metal/Vulkan/GLES/sanitizers/fault injections/real renders/high crowd) and repair failures. No unreviewed merge/rebase or force push.
 4. Continue an independent handoff + exact SHA/status table after every stage.
+
+
+## Stage 157 source correction — independent standalone Model watcher
+
+- `aa3f2300843610374fd3a393ded02f8d82d28624` — `apps/modelview/main.cpp`: `--watch-model-files` now activates the provider-backed native preview even when NO attachment JSON or `--attach` argument was given. Previously the watcher flag could remain inert outside an attachment preview. The same full provider+Animator/empty-socket staged reimport path applies; this remains source-only and NOT RUN.
