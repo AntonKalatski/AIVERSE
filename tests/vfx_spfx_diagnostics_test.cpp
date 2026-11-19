@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -23,7 +24,7 @@ static bool contains(const std::string& s,const std::string& fragment) {
     return s.find(fragment)!=std::string::npos;
 }
 
-int main() {
+int main(int argc,char** argv) {
     GpuCheckpoint cp;
     cp.complete=true;cp.frameSerial=9876;
     cp.slots.resize(3);
@@ -147,6 +148,25 @@ int main() {
         inspectGpuCheckpointDiagnostic(corrupted),timeline,zip));
     assert(zip==prior);
 
+    if(argc==3) {
+        // Optional integration fixtures for CI: these files are generated
+        // ONLY when called explicitly with distinct output filenames.
+        const std::string spfxPath=argv[1],zipPath=argv[2];
+        assert(spfxPath!=zipPath);
+        std::ofstream raw(spfxPath,std::ios::binary|std::ios::trunc);
+        raw.write(reinterpret_cast<const char*>(encoded.data()),
+                  std::streamsize(encoded.size()));
+        raw.close();
+        assert(raw.good());
+        std::ofstream safeZip(zipPath,std::ios::binary|std::ios::trunc);
+        safeZip.write(reinterpret_cast<const char*>(prior.data()),
+                      std::streamsize(prior.size()));
+        safeZip.close();
+        assert(safeZip.good());
+    } else if(argc!=1) {
+        std::cerr<<"usage: test [fixture.spfx fixture.zip]\n";
+        return 2;
+    }
     std::cout<<"SPFX V2 diagnostics, privacy, corruption, ZIP central "
              <<"directory & CRC assertions passed\n";
     return 0;
