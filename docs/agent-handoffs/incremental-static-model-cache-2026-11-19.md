@@ -2541,3 +2541,56 @@ Expect 35 CPU checks PASS, `changed_channels=0`, process exit 0 and the new `CPU
 ### Next engineering work
 
 Use actual successful-MDI stage means to prioritize CPU work (Metal ICB encode vs pipeline state vs grouping). Add per-sample path-labeled parity capture on a confirmed MDI frame, controlled rotated A/B/A measurements, and real GPU timing where backend APIs permit. Large stress (10k/100k), GPU-authored ICB comparisons, Vulkan and full CI still pending. Do not turn on experimental flags by default.
+
+
+---
+
+## Stage 77 — Mac Studio successful-MDI frame CPU profiling evidence (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Tested Stage 76 code:** `0b591cd872c705ab0253c61b9c295c6ac5094f03` and `d9588ab5acbd7510df537f2e16e8e90c30e5b4f4`, documented through `916f2157e009b67b2d5ec145014f5d8d73c8539c`. This stage records owner-provided native Mac Studio output only; no production code changes or native tests executed by assistant.
+
+### Actual successful native execution
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=35 result=passed
+stress requested_items=1024 authored_unique_primitives=1024 submitted_model_draws=1
+batch=0 shadow=1024 opaque=1024 total=2050 error=
+CPU render benchmark direct: samples=66 median_ms=1.1544 p95_ms=1.2138 min_ms=1.0700 max_ms=1.2327
+CPU render benchmark batched: samples=81 median_ms=1.1542 p95_ms=1.2166 min_ms=0.8460 max_ms=1.2394
+CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS
+CPU render benchmark auto_direct_frames: samples=90 median_ms=1.1550 p95_ms=1.2174 min_ms=1.0619 max_ms=1.2479
+CPU render benchmark auto_mdi_submitted_frames: samples=6 median_ms=0.8815 p95_ms=0.9039 min_ms=0.8460 max_ms=0.9039
+CPU render benchmark auto_late_frames: samples=36 median_ms=1.1548 p95_ms=1.2166 min_ms=0.8905 max_ms=1.2188
+successful MDI CPU stage pass=0 samples=6 submissions=30 mean_total_ms=0.39251 selection_ms=0.03547 grouping_ms=0.04185 scan_ms=0.00859 packing_ms=0.00601 pipeline_ms=0.03973 upload_ms=0.00781 submit_ms=0.24863
+successful MDI CPU stage pass=1 samples=6 submissions=30 mean_total_ms=0.35822 selection_ms=0.00456 grouping_ms=0.02956 scan_ms=0.00792 packing_ms=0.00555 pipeline_ms=0.03276 upload_ms=0.00675 submit_ms=0.26778
+AUTO stress timing note: exploratory frame modes are not randomized A/B/A, GPU time remains unknown
+AUTO CPU learning phase=0 bucket=2 direct=95 0.52689ms mdi=11 0.89578ms opportunities=106
+AUTO CPU learning phase=1 bucket=2 direct=95 0.50044ms mdi=11 0.83422ms opportunities=106
+batch=1 shadow=1024 opaque=1024 total=2050 error=
+stress phase=auto model_draw_calls=2048 cpu_mdi_submissions=0 cpu_mdi_commands=0 gpu_icb_submissions=0 gpu_icb_commands=0
+stress AUTO cumulative: scans=110 attempts=110 submitted=110 short=0 below=0 ineligible=0 failed=0 geometryBreaks=0 materialBreaks=0 stateBreaks=0
+stress MDI decisions: scans=0 short=0 below=0 ineligible=0 failed=0 geometryBreaks=0 materialBreaks=0 stateBreaks=0
+stress MDI pass=0 scans=0 attempts=0 submitted=0 warmups=0 threshold=0 fallbacks=0 total=0.55154ms grouping=0.04113ms packing=0.00000ms pipeline=0.00000ms submit=0.00000ms
+stress MDI pass=1 scans=0 attempts=0 submitted=0 warmups=0 threshold=0 fallbacks=0 total=0.52529ms grouping=0.02800ms packing=0.00000ms pipeline=0.00000ms submit=0.00000ms
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+Stage 76 exit=0
+```
+
+### Findings
+
+Stage 76 source built on owner Mac Studio and 35/35 CPU checks, screenshot byte equality and exit 0 passed. In a **six-sample** group of actual CPU MDI-submitting frames, renderer.render() median was 0.8815 ms vs Direct fallback's 90-sample median 1.1550 ms, a 0.2735 ms (~23.7%) *observed* difference. The separate early Direct baseline 66-sample median was 1.1544 ms. This does not demonstrate statistically established performance improvement: observations are skewed by training/probe chronology, differing samples, GPU in-flight work, possible warmup or device conditions, and no balanced A/B/A or GPU timestamps.
+
+Of 6 sampled successful MDI frames, each shadow and opaque pass submitted 30 CPU MDI groups total (5 per pass/frame). Mean per successful MDI frame: shadow total 0.39251 ms with backendSubmitMs 0.24863 (~63.3%); opaque total 0.35822 ms with backendSubmitMs 0.26778 (~74.8%). Command packing is ~0.006 ms per pass, far below backend submit. The Metal RHI's CPU indexed indirect path reconstructs ICB commands with a per-command Obj-C encoder sequence and resource binding. Stage 76 only removed repeated pipeline primitive-type lookup, with no clean A/B test establishing its gain. Never confuse CPU encoding/submission duration with GPU execution.
+
+AUTO's per-pass EWMA continues to favor Direct: shadow 0.52689 vs MDI 0.89578 ms, opaque 0.50044 vs MDI 0.83422 ms. These do not align with the full renderer.render() comparison above, because EWMA comprises earlier probes and per-pass wall-time rather than the same window and complete render() call. The final AUTO frame is Direct and the fixture's second screenshot does NOT yet prove pixel parity specifically on a forced/selected MDI frame. Historical smaller CPU MDI fixture did prove parity for other geometry. 110 successful MDI submissions were observed across all AUTO frames; 0 on last frame is expected.
+
+### Next exact tasks
+
+1. **Capture a real MDI-selected frame for pixel parity**, not just a final Direct AUTO frame; use a dedicated intermediate capture with matching fixed-camera Direct snapshot (and do not let the GPU capture callback leak into measured CPU render durations).
+2. **Balanced fixed-camera Direct vs forced CPU MDI vs learned AUTO** with a larger sample size, repeated order crossover and path-labeled samples. The live AUTO comparison cannot decide true break-even from six MDI frames.
+3. Instrument Metal CPU ICB per-submission timing within `drawIndexedIndirect` (pbr argument encoding, uniform snapshots, per-command encode, useResource/execute), but avoid per-command timing overhead in the hot loop. Existing `AIVERSE_ICB_PROFILE=1` aggregate prints only after 600 submissions; increase runs or expose an opt-in fixture-end summary for fewer samples. Profile and optimize the dominant actual CPU encode path, preserving in-flight uniform/index/vertex residency and pipeline safety.
+4. GPU timestamps/command-buffer timing and representative scene scaling to 10k/100k remain unverified. Do not enable default AUTO or merge Draft PR #34 on this evidence.
+
+**Verification performed for this stage:** owner Mac-native build and single fixture run as provided; assistant GitHub documentation write only. Keep all experimental flags OFF by default and PR Draft.
