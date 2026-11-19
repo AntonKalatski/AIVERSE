@@ -634,6 +634,22 @@ private:
                 ImGui::TextDisabled("Asset edits need cache invalidation; benchmark with the same view.");
                 ImGui::TreePop();
             }
+            if (ImGui::TreeNode("Persistent rigid draw packets")) {
+                const auto packets = ed.renderer().staticRenderPacketStats();
+                const char* flag = std::getenv("AIVERSE_PERSISTENT_CPU_PACKETS");
+                const bool enabled = flag && std::strcmp(flag, "1") == 0;
+                ImGui::Text("Status: %s (AIVERSE_PERSISTENT_CPU_PACKETS=1)",
+                            enabled ? "OPT-IN ACTIVE" : "OFF");
+                ImGui::Text("Replayed: %llu | Rebuilt: %llu | Declined: %llu",
+                            (unsigned long long)packets.hits,
+                            (unsigned long long)packets.rebuilds,
+                            (unsigned long long)packets.declined);
+                ImGui::Text("Live packets: %zu | Evicted: %llu",
+                            packets.live, (unsigned long long)packets.evicted);
+                ImGui::TextDisabled("Requires explicit nonzero ModelDraw::staticPacketRevision.");
+                ImGui::TextDisabled("Camera / shadow visibility and depth are still evaluated each frame.");
+                ImGui::TreePop();
+            }
             if (ImGui::TreeNode("Model pass breakdown")) {
                 static constexpr const char* phaseNames[5] = {
                     "Shadow", "Opaque (+ reflection)", "Blended",
