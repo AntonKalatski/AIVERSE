@@ -1358,3 +1358,191 @@ cracks/edge error and GPU-selected cluster indirect submission.
 After each bounded implementation stage add an updated
 handoff with changed files, real test logs, commit SHA, PR
 state, limitations, and next step; never claim unrun tests.
+
+
+---
+
+## Stage 13 — real Metal planar reflection RTT + two independent PBR materials / UV seam parity (2026-11-19)
+
+**Branch:** \`feature/strata-virtual-geometry\`; PR #35 Draft;
+base \`main\`. This stage has NOT been merged, and there is no
+production Strata raster route or second GPU geometry allocator.
+The previous Stage 11 and Stage 12 owner-confirmed Mac Studio
+GPU fixtures are preserved unchanged.
+
+### Implementation changes, architecture and exact commits
+
+1. \`engine/gfx/Gfx.h\` —
+   \`gfx::Device::readColorTextureAsync(TextureHandle,
+   ColorReadFn)\`: opt-in diagnostic for actual offscreen RGBA8
+   target, default false on unsupported backends.
+   Commit \`6478fa3360a3c85996005acc24a58fab1050fa51\`.
+2. \`engine/gfx/metal/GfxMetal.mm\` —
+   bounded asynchronous GPU blit from actual
+   \`MTLPixelFormatBGRA8Unorm\` offscreen reflection target to
+   temporary shared \`MTLBuffer\`, 256-byte row-alignment,
+   BGRA-to-RGBA conversion, GPU-error empty callback, owner-
+   thread delivery, maximum 8 outstanding requests, size
+   <=4096² and <=64 MiB. Requires no active pass or compute
+   encoder. No GPU stall and no main-screen substitution.
+   Commit \`b2adc01d180d1310596d06a72149172f33413d27\`.
+3. \`engine/render/Lights.h/.cpp\` —
+   \`LightSystem::requestPlanarReflectionColorReadback()\` gates
+   on this frame's actual \`reflReady_\`, an allocated
+   \`reflColor_\`, and **LDR RGBA8**. It only delegates to
+   \`gfx::Device\`, preserving ownership of the reflection
+   texture. Commits
+   \`a9e4bf21991144c6f4b773f8ecb36430d0e83c0c\`,
+   \`5cc80bd8f9608085b13df147736b956047de7399\`,
+   \`43dffdbcd1652620e01bd1c0431797cfcd0cb2a4\`.
+4. \`engine/render/Renderer3D.h/.cpp\` —
+   \`requestPlanarReflectionColorReadback()\` requires the
+   selected water reflection plane to be valid and delegates
+   to the existing light system; no new renderer or exposure
+   of the raw texture handle. Commits
+   \`28cac455ddab2a48748ea73c1465d37b089a5aa9\`,
+   \`bb53faf4bd5854b999535724a648c24965cbe1a2\`.
+5. \`engine/render/StrataRenderRouting.h\` —
+   new \`strata::RenderPass::PlanarReflection\` so the
+   preflight can use the actual mirrored reflection VP
+   independently of main-camera/sun-shadow selection.
+   This is NOT production Strata draw permission.
+   Commit \`c01bc2e26781771a01231a63869b4ce464b2e120\`.
+6. \`tests/render/strata_metal_reflection_material_parity.cpp\`
+   — new manual Metal fixture, derived from and extending the
+   already owner-verified Stage 12 fixture; commits
+   \`b3ea93f4a9809dc68ad83c9c4e3209cf6a527515\`
+   (fixture),
+   \`32b9dde39f6459f4a84e5a6a1cf52a136522d105\`
+   (remove duplicate reflection capture declarations),
+   \`a20e3e8227229ad9b18e954fd2b9a869d04e66ab\`
+   (exact coincident UV/material seam).
+7. \`CMakeLists.txt\` — opt-in macOS-only target
+   \`aiverse_strata_metal_reflection_material_parity\`
+   enabled by existing \`AIVERSE_STRATA_METAL_GPU_TESTS=ON\`:
+   \`dc7208d82c837dbea1c420d03581c49c943af78d\`.
+   \`.github/workflows/strata-focused.yml\` additionally
+   COMPILES the target on macOS without opening an AppKit
+   window: \`53aac249fc2cb238542058009461a0d43c2b5a91\`.
+8. \`docs/strata.md\` updated with Stage 13 exact
+   architecture, test oracle, limitations and native commands:
+   \`07d341e6f7f0643d5bd602ff0a8e8154ce042300\`.
+   Root \`AGENTS.md\` updated with new stage contract:
+   \`dd044660e05b791c37af66398bbc17b28c87db3f\`.
+
+### What the fixture actually checks
+
+A single original \`Model\` contains two adjacent quads sharing
+the x=0 geometric seam but with **independent vertex records at
+that boundary**. Each quad has its own opaque PBR material,
+base-color/roughness/metallic factors, distinct
+\`Material::baseTex\`, distinct 4×4 GPU checker image, and
+independent UV offset/scale. Each opaque primitive has its own
+Strata asset of ONE lossless parent (both triangles) and TWO
+resident child clusters (one triangle each). Both primitives
+are staged in the same \`GpuMetadataScene\`, sharing the original
+\`GlobalGeometryPool\` source VB/IB and pooled Strata auxiliary
+index sidecar; Fine/Coarse models are CPU-only borrowed aliases.
+These aliases are NEVER uploaded or released as GPU sources.
+
+Production \`Renderer3D::renderReflection()\` is triggered by an
+existing translucent \`kDrawWaterSurface\` mesh with
+specular=0.98 and high \`LightSystem\` quality, causing actual
+half-resolution planar reflection RTT rendering. No fake GPU
+output and no second geometry renderer is used.
+The standalone fixture renders Empty/Legacy/Fine/Coarse in
+**mutually exclusive frames**, for two independently positioned
+cameras. Selection preflight for every material uses the
+reflection's mirrored view-projection and
+\`RenderPass::PlanarReflection\`, with \`frustumCull=false\`
+in the diagnostic selector to isolate material/index/LOD
+mapping; the **actual Renderer3D reflection path still has
+its normal visibility culling**.
+
+For every view and mode the test obtains THREE independent
+actual Metal GPU outputs:
+- Main 800×600 RGBA8 screenshot.
+- Sun shadow 512×512 Depth32Float readback.
+- Reflection **offscreen RTT** 400×300 RGBA8 readback, NOT a
+  screenshot of the main framebuffer.
+
+It captures 24 GPU outputs total (2 cameras × 4 modes × 3
+buffers), saves PPMs and raw .f32 shadow maps with default
+prefix \`strata-reflect\` (override with
+\`AIVERSE_STRATA_REFLECTION_CAPTURE_PREFIX\`), and requires:
+- All 24 readback callbacks received with expected dimensions.
+- This frame's true reflection render pass executed.
+- In each camera **Legacy != Empty** in main, depth and
+  **reflection RTT**; reject equal all-clear screenshots.
+- Legacy/Fine and Legacy/Coarse bytewise **exact equality**
+  in all three buffers for both cameras.
+- Different Legacy screenshots across cameras, including
+  the actual reflection RTT.
+- At least 2 opaque/material and shadow source draws
+  (4 fine-cluster draws), and precisely ONE \`ModelDraw\` per
+  candidate frame, without double-drawing Legacy+Strata.
+
+Strict equality is meaningful only because the fixture
+uses **LOSSLESS** parent/leaf triangle partitions. It does
+not measure lossy LOD silhouette/attribute/texture errors
+or cracks; no reflection PNG can substitute for the raw
+offscreen readback.
+
+### Actual validation status — do not invent a PASS
+
+- **New Stage 13 C++/ObjC++ compile: NOT RUN by the agent.**
+  New \`aiverse_strata_metal_reflection_material_parity\`
+  real Metal hardware run: **NOT RUN**. Reflection RTT,
+  UV seam, two-material and two-camera parity are therefore
+  **NOT YET VERIFIED**.
+- Previous owner-provided Mac Studio evidence remains:
+  Strata focused native CTests 6/6 PASS (earlier run);
+  real GPU compute selected cluster readback 5/5 PASS;
+  Stage 11 raster 0 changed channels PASS;
+  Stage 12 two-view main RGBA and REAL sun-shadow raw
+  depth bytes 0 changes PASS, nonclear shadow depths.
+- GitHub CI may compile Stage 13, but CI does not execute
+  graphical GPU windows. A queued/pending/green compilation
+  must not be reported as true reflection parity.
+- Test source SHA is only established if native user log
+  includes a \`git rev-parse HEAD\` output; do not invent one.
+
+### Owner Mac Studio steps (preserve local changes)
+
+\`\`\`sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+git rev-parse HEAD
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata \
+  --target aiverse_strata_metal_reflection_material_parity \
+  --parallel 8
+./build/strata/aiverse_strata_metal_reflection_material_parity
+\`\`\`
+
+If the worktree is dirty, preserve or commit changes before
+switching to the remote feature HEAD. The desired (NOT YET
+OBSERVED) final result is
+\`[strata-reflect] status=PASSED views=2 modes=4 frames=89\`
+and 0 differences for main RGBA, sun depth and real
+reflection RTT, in both views. This is a test expectation,
+not a claim of observed success.
+
+### Next bounded stage after real native test
+
+If Stage 13 fails, fix the precise Metal compiler/backend
+blit or actual reflection/image mismatch, and update this
+handoff with owner-supplied logs. Do NOT weaken the strict
+empty baseline or fake offscreen RTT via screen captures.
+Once Stage 13 passes on real Mac Studio, next address
+genuinely lossy meshlet LOD error/attribute borders and
+cross-cluster cracks, multi-world residency/recycling
+stress, and an exclusive per-pass production
+Renderer3D Strata/Legacy draw gate with conservative
+fallback and GPU indirect command readback validation.
+Keep \`main\` untouched until those final gates are met.
