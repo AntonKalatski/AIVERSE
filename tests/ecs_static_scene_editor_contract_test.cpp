@@ -16,6 +16,12 @@ struct Weapon {
     uint32_t range=0;
     std::array<int32_t,28> modifiers{};
 };
+struct Brain {
+    int32_t aggression=0;
+};
+inline void io(aiverse::Archive& a,Brain& value) {
+    a(value.aggression);
+}
 inline void io(aiverse::Archive& a,Weapon& w) {
     a(w.damage,w.range);
     for(auto& v:w.modifiers)a(v);
@@ -133,6 +139,50 @@ static void authoringAndInspector() {
         AIVERSE_TEST_CHECK(meta.isObject());
         AIVERSE_TEST_CHECK(!meta.getBool("editable",true));
     }
+    // A single NativeModule hook can now expose several typed immutable
+    // components without knowing C++ types inside the editor host.
+    st::PrefabStaticCatalogBuilder<test::Brain> brainBuilder;
+    AIVERSE_TEST_CHECK(brainBuilder.add("prefabs/soldier",test::Brain{33}));
+    auto brainCatalog=brainBuilder.seal();
+    AIVERSE_TEST_CHECK(brainCatalog->bindWorld(world));
+    AIVERSE_TEST_CHECK(brainCatalog->attach(world,e,"prefabs/soldier"));
+    sc::PrefabStaticInspectorRegistry inspectors;
+    AIVERSE_TEST_CHECK(inspectors.add<test::Brain>(
+        brainCatalog,"StaticBrain","AI config (read-only)",
+        [](const test::Brain& v) {
+            Json j=Json::object();
+            j.set("aggression",Json::number(int64_t(v.aggression)));
+            return j;
+        }));
+    AIVERSE_TEST_CHECK(inspectors.add<test::Weapon>(
+        catalog,"StaticWeapon","Weapon config (read-only)",
+        [](const test::Weapon& v) {
+            Json j=Json::object();
+            j.set("damage",Json::number(int64_t(v.damage)));
+            return j;
+        }));
+    AIVERSE_TEST_CHECK(!inspectors.add<test::Weapon>(
+        catalog,"StaticWeapon","Duplicate",{}));
+    AIVERSE_TEST_CHECK(inspectors.seal());
+    AIVERSE_TEST_CHECK(!inspectors.seal());
+    AIVERSE_TEST_CHECK(!inspectors.add<test::Brain>(
+        brainCatalog,"Extra","Late",{}));
+    AIVERSE_TEST_CHECK(inspectors.size()==2);
+    Json allComponents=Json::object(),allSchemas=Json::object();
+    inspectors.append(world,e,allComponents,allSchemas);
+    AIVERSE_TEST_CHECK(allComponents.size()==2);
+    AIVERSE_TEST_CHECK(allComponents["StaticBrain"]["config"].getInt(
+        "aggression")==33);
+    AIVERSE_TEST_CHECK(allComponents["StaticWeapon"]["config"].getInt(
+        "damage")==60);
+    for(const auto& [componentId,schema]:allSchemas.members()) {
+        (void)componentId;
+        for(const auto& [fieldId,meta]:schema["fields"].members()) {
+            (void)fieldId;
+            AIVERSE_TEST_CHECK(!meta.getBool("editable",true));
+        }
+    }
+
     // The existing editor accepts this JSON shape from
     // NativeModule::inspectComponents. It must never expose a writeback.
     World saved=world;
