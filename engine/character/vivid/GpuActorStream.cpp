@@ -113,6 +113,11 @@ bool GpuActorStream::shutdownAfterIdle() {
         error_="VIVID actor: GPU idle barrier failed; cannot retire in-flight actor buffers";
         return false;
     }
+    releaseAfterGpuCompletion();
+    return true;
+}
+
+void GpuActorStream::releaseAfterGpuCompletion() noexcept {
     mesh_.release();
     morph_.release();
     device_=nullptr;
@@ -120,7 +125,6 @@ bool GpuActorStream::shutdownAfterIdle() {
     weights_.clear();
     lastAttemptedFrame_=lastCompletedFrame_=0;
     error_.clear();
-    return true;
 }
 
 } // namespace aiverse::vivid
