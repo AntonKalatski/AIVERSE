@@ -42,7 +42,7 @@ public:
             return false;
         gfx::ShaderDesc sd;
         sd.msl=AIVERSE_MSL_LUMAWEAVE_HDR_COMPOSITE;
-        sd.textureSlots=3;sd.uniformSlots=1;
+        sd.textureSlots=4;sd.uniformSlots=1;
         sd.linearTarget=true;
         sd.label="LumaWeave explicit HDR direct compositor";
         const auto shader=dev.createShader(sd);
@@ -91,7 +91,7 @@ public:
         composeDepth_={};depthWidth_=depthHeight_=0;
         materialTarget_={};materialDepth_={};
         receiverWidth_=receiverHeight_=0;
-        material_={};materialWidth_=materialHeight_=0;
+        material_={};receiverDepth_={};materialWidth_=materialHeight_=0;
         sceneToken_=materialToken_=0;frameCounter_=0;
         sourcesPublished_=geometryPublished_=enabled_=false;
         frame_={};last_={};
@@ -137,16 +137,18 @@ public:
     void beginView(uint64_t sceneToken) {
         if(!sceneToken)throw std::invalid_argument("LumaWeave requires nonzero view serial");
         sceneToken_=sceneToken;
-        material_={};
+        material_={};receiverDepth_={};
         materialToken_=0;
     }
-    bool setReceiverMaterial(gfx::TextureHandle albedoMetallic,uint32_t width,
+    bool setReceiverMaterial(gfx::TextureHandle albedoMetallic,
+                             gfx::TextureHandle receiverDepth,uint32_t width,
                              uint32_t height,uint64_t sceneToken) {
-        if(!ready() || !albedoMetallic.valid() || !sceneToken ||
+        if(!ready() || !albedoMetallic.valid() || !receiverDepth.valid() || !sceneToken ||
            sceneToken!=sceneToken_ || !width||!height ||
            width>16384||height>16384)
             return false;
         material_=albedoMetallic;
+        receiverDepth_=receiverDepth;
         materialWidth_=width;materialHeight_=height;
         materialToken_=sceneToken;
         return true;
@@ -178,6 +180,7 @@ public:
         if(texture.valid() && texture.id==materialTarget_.id &&
            w==receiverWidth_ && h==receiverHeight_ && sceneToken_) {
             material_=materialTarget_;
+            receiverDepth_=materialDepth_;
             materialWidth_=uint32_t(w);materialHeight_=uint32_t(h);
             materialToken_=sceneToken_;
         }
@@ -188,7 +191,7 @@ public:
         // Each view must explicitly populate its material side channel; a
         // different viewport's cached albedo must never be reused.
         if(materialToken_!=sceneToken_) {
-            material_={};materialWidth_=materialHeight_=0;materialToken_=0;
+            material_={};receiverDepth_={};materialWidth_=materialHeight_=0;materialToken_=0;
         }
         scene_=downstream_.scenePass(out,w,h);
         viewWidth_=w;viewHeight_=h;
@@ -214,7 +217,7 @@ public:
     void resolve(gfx::Device& device,const gfx::PassDesc& out,
                  const PostFrame& frame) override {
         last_=frame_;
-        const bool sameMaterial=material_.valid() && materialToken_==sceneToken_ &&
+        const bool sameMaterial=material_.valid() && receiverDepth_.valid() && materialToken_==sceneToken_ &&
             materialWidth_==uint32_t(viewWidth_) &&
             materialHeight_==uint32_t(viewHeight_);
         last_.materialMissing=!sameMaterial;
@@ -252,7 +255,7 @@ public:
         downstream_.resolve(device,out,frame);
         // Reset token so even an automatic caller begins a distinct frame.
         sceneToken_=0;
-        material_={};materialToken_=0;
+        material_={};receiverDepth_={};materialToken_=0;
     }
 
 private:
@@ -314,6 +317,7 @@ private:
         d.setTexture(0,direct);
         d.setTexture(1,material_);
         d.setTexture(2,scene_.depthTarget);
+        d.setTexture(3,receiverDepth_);
         d.draw(3);
         d.endPass();
         return true;
@@ -330,7 +334,7 @@ private:
     int depthWidth_=0,depthHeight_=0;
     int receiverWidth_=0,receiverHeight_=0;
     gfx::PassDesc scene_{};
-    gfx::TextureHandle material_{};
+    gfx::TextureHandle material_{},receiverDepth_{};
     uint32_t materialWidth_=0,materialHeight_=0;
     int viewWidth_=0,viewHeight_=0;
     uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0,autoViewSerial_=0;
