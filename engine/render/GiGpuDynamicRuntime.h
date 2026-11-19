@@ -108,7 +108,11 @@ public:
             return a.position.x==b.position.x && a.position.y==b.position.y &&
                    a.position.z==b.position.z && a.radius==b.radius &&
                    a.color.x==b.color.x && a.color.y==b.color.y &&
-                   a.color.z==b.color.z && a.intensity==b.intensity;
+                   a.color.z==b.color.z && a.intensity==b.intensity &&
+                   a.direction.x==b.direction.x &&
+                   a.direction.y==b.direction.y &&
+                   a.direction.z==b.direction.z &&
+                   a.cosInner==b.cosInner && a.cosOuter==b.cosOuter;
         };
         auto find=[](const std::vector<GiMovingLight>& list,uint64_t key) {
             return std::lower_bound(list.begin(),list.end(),key,
