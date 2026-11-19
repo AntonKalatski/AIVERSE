@@ -433,6 +433,11 @@ private:
                 release(leases);
                 leases.clear();
                 return false;
+            } catch(...) {
+                error = "unknown scene resource exception";
+                release(leases);
+                leases.clear();
+                return false;
             }
             refcounts_[dependency] = 1;
             leases.push_back(dependency);
