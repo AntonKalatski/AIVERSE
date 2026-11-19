@@ -2227,3 +2227,22 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         endif()
     endif()
 endif()
+
+# Explicitly opt-in REAL GPU acceptance; never run on CPU-only Linux or
+# silently skip when a Mac lacks a working Metal GPU / drawable.
+# The binary compiles the production Metal RHI directly, without the
+# platform application main() or any game/genre dependency.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_metal_texture_gpu_test
+        tests/render/metal_texture_gpu.mm
+        engine/gfx/metal/GfxMetal.mm)
+    target_include_directories(aiverse_metal_texture_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_source_files_properties(tests/render/metal_texture_gpu.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(aiverse_metal_texture_gpu_test PRIVATE
+        "-framework Metal" "-framework QuartzCore" "-framework Foundation")
+    add_test(NAME metal_texture_gpu COMMAND aiverse_metal_texture_gpu_test)
+    set_tests_properties(metal_texture_gpu PROPERTIES
+        LABELS "METAL;GPU;TEXTURE_RHI" TIMEOUT 60)
+endif()
