@@ -41,6 +41,10 @@ struct Object {
     // Child model draws attached to named/indexed nodes of animationModel.
     // Attachments reuse the parent's already evaluated pose, no extra update.
     std::vector<ModelAttachment> attachments;
+    // Monotonically increasing asset-publication version. Must change
+    // on source Model replacement, even if its memory address is reused.
+    // Zero opts out of compiled retargeting for older/native hosts.
+    uint64_t animationModelGeneration=0;
 };
 inline const render::Model* animationSourceModel(const Object& obj) noexcept {
     return obj.animationModel?obj.animationModel:obj.draw.model;
@@ -317,7 +321,24 @@ public:
         render::Pose retargetPose;
         std::vector<render::mat4> retargetMatrices;
         if(sourcePose && sourceMatrices && rig && draw.model) {
-            if(compatibleModelPose(*rig,*draw.model)) {
+            if(chosenLod && chosenLod->compiledRetarget) {
+                // Compiled maps are bound to BOTH model identity and
+                // publication generation. Never execute an expired plan,
+                // even when the allocator has reused a Model pointer.
+                if(retargetCompiledModelPose(*rig,*draw.model,
+                        obj.animationModelGeneration,
+                        chosenLod->visualModelGeneration,
+                        std::span<const render::NodePose>(
+                            sourcePose->data(),sourcePose->size()),
+                        *chosenLod->compiledRetarget,retargetPose,
+                        retargetMatrices)) {
+                    draw.pose=&retargetPose;
+                    draw.nodeWorld=&retargetMatrices;
+                }else {
+                    draw.pose=nullptr;
+                    draw.nodeWorld=nullptr;
+                }
+            }else if(compatibleModelPose(*rig,*draw.model)) {
                 draw.pose=sourcePose;
                 draw.nodeWorld=sourceMatrices;
             }else if(chosenLod && chosenLod->retarget &&
@@ -326,6 +347,8 @@ public:
                              sourcePose->data(),sourcePose->size()),
                          *chosenLod->retarget,retargetPose,
                          retargetMatrices)) {
+                // Compatibility path for legacy callers without a compiled
+                // plan; Stage 123 native clients should compile at publish.
                 draw.pose=&retargetPose;
                 draw.nodeWorld=&retargetMatrices;
             }else {
