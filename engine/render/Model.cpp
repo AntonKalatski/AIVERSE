@@ -187,6 +187,23 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
+    // Optional per-asset policy for native importers and project sidecars.
+    // It is applied before GPU upload; editing it requires asset reupload.
+    if (config.has("geometryPool")) {
+        const Json& setting = config["geometryPool"];
+        if (!setting.isString())
+            throw std::runtime_error(path + ".batching.json: geometryPool must be a string");
+        const std::string value = setting.str();
+        using PoolPolicy = Model::Batching::GeometryPoolPolicy;
+        if (value == "inherit")
+            model.batching.geometryPoolPolicy = PoolPolicy::Inherit;
+        else if (value == "dedicated")
+            model.batching.geometryPoolPolicy = PoolPolicy::Dedicated;
+        else if (value == "rigidLod")
+            model.batching.geometryPoolPolicy = PoolPolicy::AllowRigidLods;
+        else
+            throw std::runtime_error(path + ".batching.json: geometryPool must be inherit, dedicated or rigidLod");
+    }
     if (config.has("maxExtent")) {
         const float extent = float(config["maxExtent"].toDouble());
         if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)

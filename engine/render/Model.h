@@ -192,6 +192,14 @@ struct Model {
     // from its GLB alone. The default still prepares compatible material/shadow batches.
     struct Batching {
         bool mergeRigid = false;
+        // Per-asset shared GPU geometry pool admission. Inherit uses the
+        // current global upload policy; Dedicated always uses separate VB/IB;
+        // AllowRigidLods opts in safe rigid LODs for only this Model.
+        // Backend/safe/size gates continue to take precedence.
+        enum class GeometryPoolPolicy : uint8_t {
+            Inherit = 0, Dedicated = 1, AllowRigidLods = 2
+        };
+        GeometryPoolPolicy geometryPoolPolicy = GeometryPoolPolicy::Inherit;
         // Generate missing LOD meshes during CPU preparation. Explicit
         // authored LOD chains always win; generated LODs never merge nodes.
         bool autoLod = true;

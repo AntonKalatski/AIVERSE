@@ -74,8 +74,13 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     // retain compact per-model buffers instead of allocating unused large pages.
     if (disabled() || !dev.supportsMultiDrawIndirect() ||
         !dev.canUpdateSharedBuffers() ||
-        !rigidGeometryPoolCandidate(m, rigidLodPoolAllowed()) ||
         m.vertices.empty() || m.indices.empty()) return false;
+    using PoolPolicy = Model::Batching::GeometryPoolPolicy;
+    const PoolPolicy modelPolicy = m.batching.geometryPoolPolicy;
+    if (modelPolicy == PoolPolicy::Dedicated) return false;
+    const bool allowRigidLods = modelPolicy == PoolPolicy::AllowRigidLods ||
+        (modelPolicy == PoolPolicy::Inherit && rigidLodPoolAllowed());
+    if (!rigidGeometryPoolCandidate(m, allowRigidLods)) return false;
     // Guard size arithmetic before allocating or calculating page offsets.
     if (m.vertices.size() > kMaximumPooledModelSize / sizeof(ModelVertex) ||
         m.indices.size() > kMaximumPooledModelSize / sizeof(uint32_t)) return false;
