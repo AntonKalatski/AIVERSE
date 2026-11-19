@@ -178,3 +178,19 @@ not yet available. **It does not establish full AIVERSE suite or
 TerraWeave/Box3D physical falling integration.**
 No code change; documentation checkpoint only.
 Handoff: `docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.
+
+## Stage 82 — durable PHYSIS fracture event API for TerraWeave host
+
+PHYSIS now offers opt-in persistent `NatureFractureOutboxComponent`
+and sorted pending-event/ack APIs, without any direct
+Box3D/TerraWeave runtime dependency. The host maps a PHYSIS
+Entity or grass cluster to its stable TerraWeave
+`AnchoredPlantId` and valid `PlantFallEvent`, then calls
+TerraWeave `FallenPlantPhysics::spawn` at its safe physics
+barrier, reconciles/replicates the result and acknowledges
+the event. The Terra implementation remains separate in
+`feature/terraweave`; not merged here.
+PHYSIS ECS ack and external float Box3D creation are not
+atomic; native host owns replay reconciliation and
+idempotence. Stage82 native test has **NOT RUN** yet.
+See `docs/agent-handoffs/physis-stage82-fracture-outbox-2026-11-19.md`.

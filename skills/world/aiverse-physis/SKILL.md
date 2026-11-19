@@ -1158,3 +1158,21 @@ This verifies the standalone same-World PHYSIS/NEREID contact
 fixture and deterministic stress tests; NOT full game
 TerraWeave/tree falling integration. See
 `docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.
+
+### PHYSIS Stage 82 — host fracture outbox workflow
+
+Enable `enableFractureOutbox` with `enableNatureStress`,
+`enableForces` and `enableNatureContacts`. Place
+`NatureFractureOutboxComponent{}` on an entity before fracture.
+After a committed tick, call `pendingNatureFractures(world)`
+and durably stage the host-owned fallen-tree/Box3D/vegetation
+reaction; only then
+`acknowledgeNatureFracture(world,entity,eventKey,climateTick)`.
+No ack on failed host action. Pending persists over later ticks
+and native saves; rolling back before ack re-exposes pending.
+TerraWeave already owns PlantFallEvent/FallenPlantPhysics on a
+separate branch; do not create another implementation in PHYSIS.
+Source `2b0190cb93e4335e7e458fa03d75239ef65c8424`.
+CTest `physis_fracture_outbox` authored, **NOT RUN**.
+Handoff:
+`docs/agent-handoffs/physis-stage82-fracture-outbox-2026-11-19.md`.

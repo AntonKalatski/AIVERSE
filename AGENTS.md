@@ -1683,3 +1683,40 @@ not yet available. **It does not establish full AIVERSE suite or
 TerraWeave/Box3D physical falling integration.**
 No code change; documentation checkpoint only.
 Handoff: `docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.
+
+### PHYSIS Stage 82 — persistent fracture event handoff (2026-11-19)
+
+Implementation commit `2b0190cb93e4335e7e458fa03d75239ef65c8424`.
+Added `engine/physis/PhysisFractureOutbox.h` defining
+`NatureFractureOutboxComponent` with Empty/Pending/Acknowledged
+states, a generation-safe Entity/tick event key and persistent
+Archive serialization. `advanceNatureFractureOutbox(World&)`
+publishes a current-tick newlyFractured stress event once;
+`pendingNatureFractures(const World&)` returns sorted pending
+messages, retained over later ticks/save, and
+`acknowledgeNatureFracture(World&,Entity,key,tick)` rejects
+wrong/duplicate acknowledgments.
+
+`InstallOptions::enableFractureOutbox=false` by default.
+If enabled, it requires nature stress (already requiring forces
+and nature contacts), registers `physis.fracture_outbox` v1
+persistence and adds system `physis.fracture_outbox` after
+`physis.nature_stress`. Default game save manifests unchanged.
+`tests/physis_fracture_outbox_test.cpp` registered as CTest
+`physis_fracture_outbox` (PHYSIS/ECS/PERSISTENCE labels):
+tests ordering, deterministic keys, pending/ack, native
+save/load, rollback and COW.
+
+TerraWeave `feature/terraweave` already owns
+`PlantFallEvent`, `AnchoredPlantId` and
+`FallenPlantPhysics::spawn` for Box3D. PHYSIS does not
+import or duplicate TerraWeave: a game host must map Entity
+to plant ID, perform/replicate physical consequences and
+then acknowledge. External Box3D float state is not atomic
+with ECS ack; host must deduplicate/resynchronize on rollback.
+NEREID still owns water. Grass uses per-cluster probes.
+
+Prior Stage81 user macOS 2/2 nature tests PASS confirmed;
+Stage82 native compile/CTest **NOT RUN**. PR #25 remains
+Draft. Handoff:
+`docs/agent-handoffs/physis-stage82-fracture-outbox-2026-11-19.md`.
