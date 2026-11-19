@@ -1094,7 +1094,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.depthTarget = hostDepth_;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     if (sim_) {
-        if (planet()) { // orbit camera -> view-world RTSCamera; space is black
+        if (planet()) { // orbit camera -> view-world Camera; space is black
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
             pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
         }

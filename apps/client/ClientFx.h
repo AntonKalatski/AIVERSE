@@ -18,7 +18,7 @@ public:
     // Planet maps: particles in the camera body's local space (RtsView::planetFxSpace); call before update().
     void setPlanetView(const game::RtsView* view);
     // After Renderer3D::beginScene (needs its viewProj); dt = 0 while paused.
-    void update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
+    void update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);

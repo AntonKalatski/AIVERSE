@@ -70,7 +70,7 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
     ps_.setViewSpace(&space_);
 }
 
-void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
+void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::Camera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
     ps_.setView(cam, viewProj, fbW, fbH);
     if (attached_ && dt > 0) bridge_.update(sim, &scene.objects, dt);

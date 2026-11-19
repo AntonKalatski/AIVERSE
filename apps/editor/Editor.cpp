@@ -373,7 +373,7 @@ void Editor::focusScene(float x, float z, float distance) {
 
 void Editor::flash(float x0, float z0, float x1, float z1, double seconds) { flashes_.push_back({x0, z0, x1, z1, time_ + seconds, seconds}); }
 
-bool Editor::groundAt(const Viewport& vp, const RTSCamera& cam, float sx, float sy, float& x, float& z) const {
+bool Editor::groundAt(const Viewport& vp, const Camera& cam, float sx, float sy, float& x, float& z) const {
     float3 g;
     if (view_.planetMode()) { // cells on the face under the cursor (planet tools use planetPosAt)
         const Json at = planetPosAt(vp, sx, sy);
@@ -416,7 +416,7 @@ float Editor::snapCoord(float v, int typeIdx) const {
     return std::round(v * 4) / 4;
 }
 
-int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
+int Editor::pickEntity(const Viewport& vp, const Camera& cam, float sx, float sy) const {
     if (view_.planetMode()) { // nearest entity on the picked body, 3D distance
         int body; float3 local;
         if (!planetAt(vp, sx, sy, body, local)) return -1;
@@ -521,7 +521,7 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
     return best;
 }
 
-int Editor::pickRoad(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
+int Editor::pickRoad(const Viewport& vp, const Camera& cam, float sx, float sy) const {
     float x, z;
     if (!groundAt(vp, cam, sx, sy, x, z)) return -1;
     int best = -1;
@@ -825,7 +825,7 @@ void Editor::drawEditOverlays3D() {
     }
 }
 
-void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
+void Editor::renderScene(Viewport& vp, const Camera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
     if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
@@ -844,7 +844,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto afterFields = std::chrono::steady_clock::now();
     const bool planets = !ws_.project.isFps() && view_.planetMode();
     // planet maps: the orbit camera of the view (Scene window input drives it)
-    const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
+    const Camera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
@@ -899,7 +899,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     }
 }
 
-void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
+void Editor::renderGame(Viewport& vp, const Camera& cam) {
     if (!vp.color.valid() || !sim_) return;
     auto& gs = simModule()->state(*sim_);
     // fields / creep changing during play are read by the terrain shader: build once per play session
@@ -944,7 +944,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
 
 // Overlays get what the player does in this view: cursor, held keys, the structure being placed
 // (Scene: the Place tool; both: overlay_preview), pause / match over.
-void Editor::setOverlayContext(const Viewport& vp, const RTSCamera& cam, bool play) {
+void Editor::setOverlayContext(const Viewport& vp, const Camera& cam, bool play) {
     game::OverlayContext oc;
     oc.sim = play ? sim_.get() : nullptr;
     oc.player = uint8_t(play ? std::max(0, human_) : 1);
