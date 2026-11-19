@@ -539,3 +539,66 @@ do not include PHYSIS internals in the NEREID ECS library and do
 not imply a full native PHYSIS adapter has been compiled/integrated
 until both workstreams merge. Tests deferred by owner request.
 See `docs/nereid/HANDOFF.md` Stage 32.
+
+## Stages 33–35 — spatial wind, eddies, and water↔cascade connections
+
+**Spatial PHYSIS wind** (`engine/world/NereidWindField.h`):
+`WorldScene::setNereidWindZones(std::vector<NereidWindZone>)` accepts
+up to 64 bounded local wind samples `{x,z,radius,wind,influence}`
+after the weather read barrier. Base wind continues through
+`setNereidVisualWind`; per-water tile shading and drifting
+presentation ripples sample wind at their own world X/Z.
+`applyNereidPhysisWindZones(scene,zones)` is a convenience adapter
+but PHYSIS still owns its ECS/physics. No direct PHYSIS dependency.
+
+**Eddies/rapids** (`<aiverselib/water/NereidVortices.h>`):
+opt into `AIVERSE::lib_nereid_vortices` and register
+`NativeWaterPipelineConfig::enableVortices`. Add
+`WaterVortexFieldComponent` to an existing water-body Entity
+with at most 16 `WaterVortex {center,radius,circulation,radial}`
+entries. Both reference/indexed NEREID samplers now share
+`waterCurrentWithVortices`: constant body flow + optional
+RiverSpline profile + local fixed-point swirl/radial velocities.
+`WaterSample.flow` remains the single authoritative output used
+by generic buoyancy and motion. A manifest water surface can include
+`"vortices": [[x,z,radius,circulation,radial]]`.
+This is analytic flow, not a Navier-Stokes solver.
+
+**River → cascade → lake visual connections**:
+`NereidCascadeSource` adds `inletWaterId`, `outletWaterId`,
+`joinLength` (0.1–50m). Optional JSON fields with the same names
+link stable surface IDs; connected water surface heights are read
+from the existing `NereidWaterScene`. If a linked surface is
+present and elevation ordering permits it, `NereidCascadeScene`
+extends a presentation-only ribbon into that water surface with
+foam-masked seams. Changes of water levels invalidate the
+cascade GPU resident and rebuild it with existing upload budgets.
+
+Native ECS projects use the separately persisted
+`WaterCascadeConnectionsComponent` on the cascade Entity:
+`{inlet: Entity, outlet: Entity, transitionLength: Fixed, enabled}`.
+The read-only `snapshotNereidEcsCascades` converts these IDs into
+NEREID scene IDs `Entity::packed()+1`. Never mutate either
+`WaterBodyComponent` or `WaterCascadeComponent` during GPU
+preparation. Endpoints must be authored within/overlapping
+the intended river/lake footprint; automatic river topology
+and physical mass continuity are **not** implied.
+
+Example:
+```json
+{
+  "nereidCascades": {
+    "sources": [{
+      "id": 31, "inletWaterId": 10, "outletWaterId": 11,
+      "joinLength": 3.0,
+      "widthAxis": [1,0],
+      "points": [[5,15,0,3],[7,5,0,4]]
+    }]
+  }
+}
+```
+
+Per-stage implementation notes, changed files and exact commits
+are in `docs/nereid/HANDOFF.md`. Owner requested **functions
+before tests**, so implementation must not be described as
+build-verified or GPU-validated.
