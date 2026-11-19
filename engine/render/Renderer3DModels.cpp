@@ -726,10 +726,12 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Renderer material batching groups GPU-equivalent source materials,
     // but an external VT resolver can assign different physical atlases.
     // Validate each batch that shares GPU parent texture bindings.
-    // Direct batches may split; GPU-encoded parent draws must reject
-    // heterogeneity BEFORE submitting anything to the ICB.
+    // Direct/CPU MDI batches keep exact VT homogeneity. Only the
+    // experimental per-command Metal GPU ICB has independent U6/PBR
+    // bindings and can skip this check after its ticket prevalidation.
     if (count > 1 && (phase == 1 || phase == 2) &&
-        modelVirtualTextureResolver_) {
+        modelVirtualTextureResolver_ &&
+        !(phase == 1 && gpuInstances && gpuIcbPerCommandMaterialSubmit_)) {
         ModelVirtualTextureBinding first;
         const bool firstUsesVt = resolveModelVirtualTexture(
             *it.model,*it.mat,first);
@@ -1154,6 +1156,7 @@ void Renderer3D::prepareGpuModelDraws() {
     // Invalidate previous-frame resource indices even when GPU ICB is off.
     // No table resource is owned and this never retires GPU texture handles.
     gpuMaterialResources_.beginFrame(dev_ ? dev_->frameSerial() : 0);
+    gpuIcbPerCommandMaterialSubmit_ = false;
     gpuAdaptiveInstancingFallback_ = false;
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
@@ -1219,7 +1222,19 @@ void Renderer3D::prepareGpuModelDraws() {
         if (resolveModelVirtualTexture(*item.model,*item.mat,vtBindings[index]))
             vtEnabled[index] = 1;
     }
+    // An additional explicit opt-in allows different VT archives for the
+    // same GPU-equivalent non-graph material. It requires the actual
+    // per-command Metal fragment ABI, never the ordinary homogeneous ICB.
+    static const bool mixedVtGroups = [] {
+        const char* mixed = std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_VT");
+        const char* perCommand =
+            std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return mixed && std::strcmp(mixed,"1")==0 &&
+               perCommand && std::strcmp(perCommand,"1")==0;
+    }();
     const auto vtCompatible = [&](uint32_t left, uint32_t right) {
+        if (mixedVtGroups && vtEnabled[left] && vtEnabled[right])
+            return true; // still requires exact equivalentGpuMaterial
         return compatibleModelVirtualTextureBinding(
             vtEnabled[left]!=0,vtBindings[left],
             vtEnabled[right]!=0,vtBindings[right]);
@@ -1229,7 +1244,7 @@ void Renderer3D::prepareGpuModelDraws() {
         uint64_t hash=gpuMaterialStateHash(*item.model,*item.mat);
         // Exact comparison below remains authoritative, even on a hash
         // collision. The special no-VT tag distinguishes the two modes.
-        const uint64_t vtHash=vtEnabled[index] ?
+        const uint64_t vtHash=(vtEnabled[index] && !mixedVtGroups) ?
             modelVirtualTextureBindingHash(vtBindings[index]) : 0;
         hash ^= vtHash + 0x9e3779b97f4a7c15ULL +
                 (hash << 6) + (hash >> 2);
@@ -1516,16 +1531,23 @@ void Renderer3D::prepareGpuModelDraws() {
             for (size_t j = first; j < end; ++j)
                 packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
                                   instanceRecords.data() + (j - first) * 36u);
-            // Per-command Metal argument descriptors are opt-in. The
-            // grouping above is still homogeneous and validated exactly,
-            // so this stage exercises the GPU ABI without relaxing safe
-            // material-equivalence requirements.
+            // With two independent opt-ins a GPU group may contain
+            // different VT archive bindings, but never different
+            // source PBR materials or shader permutations. Exact per-item
+            // ticket validation below remains mandatory at execution.
             const bool materialMode = perCommandVt && vtEnabled[indices[first]];
             std::vector<gfx::GpuIcbVirtualMaterial> commandMaterials;
+            std::vector<GpuMaterialResourceTicket> commandTickets;
+            bool materialSnapshotValid=true;
             if (materialMode) {
                 commandMaterials.reserve(end-first);
+                commandTickets.reserve(end-first);
                 for (size_t j=first;j<end;++j) {
                     const auto& binding=vtBindings[indices[j]];
+                    if (!vtEnabled[indices[j]] || !binding.valid()) {
+                        materialSnapshotValid=false;
+                        break;
+                    }
                     gfx::GpuIcbVirtualMaterial descriptor;
                     descriptor.physicalAtlas=binding.physicalAtlas;
                     descriptor.pageTable=binding.pageTable;
@@ -1539,8 +1561,23 @@ void Renderer3D::prepareGpuModelDraws() {
                         size_t(item.mat->baseTex)<item.model->images.size())
                         descriptor.alphaCoverage=item.model->images[
                             size_t(item.mat->baseTex)].virtualAlphaMask;
+                    GpuMaterialResourceBinding snapshot;
+                    snapshot.alphaCoverage=descriptor.alphaCoverage;
+                    snapshot.virtualTextureEnabled=true;
+                    snapshot.virtualTexture=binding;
+                    const auto ticket=gpuMaterialResources_.intern(snapshot);
+                    if (!descriptor.valid() || !ticket.valid()) {
+                        materialSnapshotValid=false;
+                        break;
+                    }
                     commandMaterials.push_back(descriptor);
+                    commandTickets.push_back(ticket);
                 }
+            }
+            if (!materialSnapshotValid) {
+                ++gpuIcbRejected_;
+                first=end; // preserve all items for normal CPU fallback
+                continue;
             }
             const auto output=gpuModelCommands_.output(
                 gpuModelFrame_,gpuModelSubmission_);
@@ -1559,6 +1596,7 @@ void Renderer3D::prepareGpuModelDraws() {
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
                 group.perCommandVt = materialMode;
+                group.perCommandTickets = std::move(commandTickets);
                 group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
                 group.virtualTexture = vtBindings[indices[first]];
                 const auto& firstModel = modelItems_[indices[first]];
@@ -1567,12 +1605,18 @@ void Renderer3D::prepareGpuModelDraws() {
                     size_t(firstModel.mat->baseTex) < firstModel.model->images.size())
                     group.alphaCoverage = firstModel.model->images[
                         size_t(firstModel.mat->baseTex)].virtualAlphaMask;
-                GpuMaterialResourceBinding snapshot;
-                snapshot.alphaCoverage = group.alphaCoverage;
-                snapshot.virtualTextureEnabled = group.usesVirtualTexture;
-                if (group.usesVirtualTexture)
-                    snapshot.virtualTexture = group.virtualTexture;
-                group.materialResources = gpuMaterialResources_.intern(snapshot);
+                if (materialMode) {
+                    // First ticket is retained for legacy introspection;
+                    // execution validates the complete per-item array.
+                    group.materialResources = group.perCommandTickets.front();
+                } else {
+                    GpuMaterialResourceBinding snapshot;
+                    snapshot.alphaCoverage = group.alphaCoverage;
+                    snapshot.virtualTextureEnabled = group.usesVirtualTexture;
+                    if (group.usesVirtualTexture)
+                        snapshot.virtualTexture = group.virtualTexture;
+                    group.materialResources = gpuMaterialResources_.intern(snapshot);
+                }
                 if (!group.materialResources.valid()) {
                     // ICB was encoded but will not be submitted. A full or
                     // invalid staging table must never weaken batch checks.
@@ -1860,9 +1904,12 @@ void Renderer3D::renderModels(int phase) {
             // A region/atlas revision may have swapped after compute
             // prepared this ICB. Never bind a new texture table to old
             // encoded command uniforms: fall back to per-item CPU draws.
-            bool stable = group.materialResources.valid();
-            for (uint32_t index : group.items) {
+            bool stable = group.materialResources.valid() &&
+                (!group.perCommandVt ||
+                 group.perCommandTickets.size() == group.items.size());
+            for (size_t itemOrdinal=0;itemOrdinal<group.items.size();++itemOrdinal) {
                 if (!stable) break;
+                const uint32_t index=group.items[itemOrdinal];
                 if (index >= modelItems_.size()) { stable=false; break; }
                 const auto& item = modelItems_[index];
                 ModelVirtualTextureBinding current;
@@ -1877,10 +1924,13 @@ void Renderer3D::renderModels(int phase) {
                 live.virtualTextureEnabled = usesVt;
                 if (usesVt) live.virtualTexture = current;
                 live.alphaCoverage = alpha;
-                if (!gpuMaterialResources_.matches(group.materialResources,live) ||
-                    !compatibleModelVirtualTextureBinding(
-                        group.usesVirtualTexture,group.virtualTexture,usesVt,current) ||
-                    !(alpha == group.alphaCoverage)) {
+                const auto ticket = group.perCommandVt ?
+                    group.perCommandTickets[itemOrdinal] : group.materialResources;
+                if (!gpuMaterialResources_.matches(ticket,live) ||
+                    (!group.perCommandVt &&
+                     (!compatibleModelVirtualTextureBinding(
+                          group.usesVirtualTexture,group.virtualTexture,usesVt,current) ||
+                      !(alpha == group.alphaCoverage)))) {
                     stable = false;
                     break;
                 }
@@ -1891,9 +1941,11 @@ void Renderer3D::renderModels(int phase) {
             currentPipe_ = {};
             lastItem_ = nullptr;
             dev_->setGpuIcbUniformBinding(true);
+            gpuIcbPerCommandMaterialSubmit_ = group.perCommandVt;
             const bool submitted = drawModelBatch(
                 group.items.data(), uint32_t(group.items.size()), phase,
                 false, true);
+            gpuIcbPerCommandMaterialSubmit_ = false;
             const bool executed = submitted &&
                 dev_->executeGpuEncodedIndexedIcb(group.token);
             dev_->setGpuIcbUniformBinding(false);
