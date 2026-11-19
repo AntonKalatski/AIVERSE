@@ -1704,3 +1704,114 @@ Continue **Stage 14.1** with builder/sidecar quality and
 backend lifecycle hardening before the final build; record
 every bounded change here and preserve concurrent main
 work (branch was behind main during Stage 13).
+
+
+---
+
+## Stage 14.1 — portable Strata quality, fallback and GPU-sidecar lifetime hardening (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE`, `feature/strata-virtual-geometry`.
+This stage is committed directly to the feature branch, **not** to `main`.
+Most recent Stage 14.1 *source/test* commit before this handoff:
+`7f40eef3233dafa8a9fa2d2ae1669193297f0272`. No test or local
+Mac build is claimed from this GitHub connector environment.
+
+### What was actually implemented
+
+1. **Spatial LOD parent grouping** — `engine/render/StrataBuilder.cpp`.
+   At each hierarchy level, the frontier is stable-sorted by 30-bit 3D
+   Morton keys of cluster AABB centres (10 quantized bits/axis). Bounds
+   normalization uses double intermediates to avoid float overflow for
+   large but finite positions. This removes arbitrary input-index-order
+   grouping of distant source islands. It does **not** reorder LOD0
+   triangles or meshlet vertex IDs, duplicate the source VB, or change
+   the per-material partition. Existing
+   `meshopt_SimplifyLockBorder` and attribute-aware simplification
+   are retained. Cumulative error and hierarchy BFS validation are
+   unchanged.
+2. **Device-owned sidecar lifecycle** —
+   `engine/render/StrataPortableRender.h/.cpp`.
+   `PortableSource` remembers the `gfx::Device` used by `stage`.
+   `validFor` refuses an unhealthy device. A `shutdown` called
+   on a different device is a no-op, preventing accidental deletion
+   of another RHI's same-numeric-ID buffer. The owner MUST still
+   `shutdown` with the original live device before source unload;
+   device lifetime is borrowed and no recovery allocation is attempted.
+3. **Legacy prepared-cluster coexistence** —
+   `StrataPortableRender.cpp`. A source with pre-existing
+   `Model::geometry` (ordinary `prepareGeometry` clusters and
+   occluders) can enter the portable path if all other rigid/material
+   checks pass. The Strata alias *does not copy* that legacy geometry,
+   clears its built-in mesh LOD and batch chains, and draws one selected
+   Strata frontier through Renderer3D. The untouched source retains
+   the original Legacy geometry for fallback. A source may use one
+   additional immutable index buffer when the shared pool refuses
+   prepared clustered models; **no extra vertex buffer** is created.
+4. **Import/streamed-asset safety gate** — `PortableSource::stage`
+   now rejects an asset whose sum of leaf-node index counts differs
+   from the original root primitive's `indexCount`. It checks finite,
+   ordered node AABBs, every parent AABB contains all child AABBs and
+   parent geometric error is no smaller than its children. These checks
+   run **before** sidecar GPU upload, so malformed hierarchies cannot
+   silently disappear at finer LOD or cause nonconservative culling.
+   This is count/bounds coverage, *not* an exact per-triangle proof once
+   original CPU index data has been released.
+
+### Tests authored (deferred, NOT executed)
+
+- `tests/render/strata_builder.cpp`: alternate complete rows of
+  two spatially distant grid islands; assert original leaf triangle
+  order is preserved while first-level parent AABBs remain local.
+- `tests/render/strata_portable.cpp`: recording-RHI Vulkan/GLES3
+  test for pre-existing `GeometryData` source (legacy remains,
+  selected alias has none); reject incomplete leaf frontiers or
+  incorrect parent AABBs without allocating a sidecar; foreign-device
+  shutdown cannot release handles; device loss rejects preparations
+  transactionally. Existing mock Metal/GL33 cases remain.
+
+**Executed builds/CTest in this stage:** NONE (owner requested
+feature completion before one final native build/test pass).
+No claim of Vulkan/GLES3 device-level rendering parity. Real
+Mac Stage 13 reflection+shadow pixel parity PASS is prior,
+narrower evidence; it does not certify Stage 14/14.1.
+
+### Changed files and commits
+
+- `engine/render/StrataBuilder.cpp`: `1a1d5d2292f10c559f35d3369248e3e20c9fa42b`
+- `tests/render/strata_builder.cpp`: `1ccbbc9f77d9c84f9d99a7416c134a92d0f99a23`
+- `engine/render/StrataPortableRender.h`: `92f68075f07418ee72a5b6050e5c5e89cf2938f3`
+- `engine/render/StrataPortableRender.cpp`: `613ff7138b46e70c77b0ec5d3c35cc77106ea144`,
+  `992ae6be73a777a73ff30e335f43a1583a3c54bf`,
+  `f7efc6d46aeb4de95b238ccffebd227d60520f02`
+- `tests/render/strata_portable.cpp`: `b4314b559a171d88af582f49070d908d43650701`,
+  `e5eb4c01bad9d57a31e3b4be9cdb70ccf0479d45`,
+  `7f40eef3233dafa8a9fa2d2ae1669193297f0272`
+- This file, and `docs/strata.md`: updated as Stage 14.1 handoff/docs.
+
+### Remaining risks and next concrete step
+
+- **Validation required**: do a final isolated native build of
+  `aiverse_strata_builder_tests` and
+  `aiverse_strata_portable_tests` (confirm target names against
+  `CMakeLists.txt`), and the Stage 13 Metal reflection parity
+  fixture; run Vulkan/GLES3 real-device raster and fallbacks when
+  supported by the owner's platforms. Only execute once feature work
+  has been declared complete.
+- Verify newly authored spatial-island parent assertion with the
+  repository's pinned meshoptimizer (parent simplification is data-
+  dependent), and reconcile exact Metal/Vulkan/GLES3 base-vertex
+  addressing in a real renderer path.
+- No GPU-driven Vulkan compute selector yet; GLES3/WebGL2 remains
+  CPU-selected by design. No claim of true per-pass GPU-occlusion
+  hierarchy, crack-free **lossy** LOD transitions, bounded
+  multi-world streaming residency, or measured frame-time wins.
+- `main` had already diverged by 162 commits in the earlier audit.
+  Preserve concurrent agents' changes; perform a separate isolated
+  non-force integration merge and native build. **Do not merge this
+  unverified Draft Strata branch directly into main.**
+
+**Handoff continuation:** Keep one authoritative Renderer3D draw per
+source instance; concentrate on residency/streaming budgets and
+real per-backend raster/LOD lossless+lossy parity, then one combined
+native validation. After every subsequent stage, append to this
+handoff with actual test status and fresh commit identifiers.
