@@ -547,7 +547,17 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     }
 
     std::map<size_t,TypeLook> staged;
+    std::set<size_t> preserveAnimation;
+    // Local registry is published only into the replacement TypeLooks after
+    // ALL selected type choices successfully stage; old snapshots remain live.
+    view::AppearanceAssetRegistry preparedSnapshots;
+    struct StrictReloadScope final {
+        bool& enabled;
+        explicit StrictReloadScope(bool& value):enabled(value){enabled=true;}
+        ~StrictReloadScope(){enabled=false;}
+    };
     try {
+        StrictReloadScope strict(strictAppearanceReload_);
         for(const size_t index:types) {
             if(index>=loadedTypes_.size() || !loadedTypes_[index])continue;
             const auto& authored=rules_->types[index];
@@ -582,6 +592,71 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                candidate.stages.size()<previous.stages.size() || invalid)
                 throw std::runtime_error(
                     "appearance reload declined: a model/graph was lost");
+
+            // Every unchanged runtime graph/model keeps its existing program
+            // pointer and ECS source clock. Shader/material-only changes must
+            // not replay attack, locomotion, montage or death animations.
+            const auto sameRuntime=[](const ModelChoice& oldChoice,
+                                      const ModelChoice& nextChoice) {
+                return oldChoice.model==nextChoice.model &&
+                    oldChoice.graphSignature==nextChoice.graphSignature &&
+                    oldChoice.programmableAnimation==nextChoice.programmableAnimation &&
+                    oldChoice.needsPose==nextChoice.needsPose &&
+                    oldChoice.baked==nextChoice.baked &&
+                    oldChoice.procs.size()==nextChoice.procs.size() &&
+                    oldChoice.legs.size()==nextChoice.legs.size() &&
+                    oldChoice.attach.size()==nextChoice.attach.size() &&
+                    oldChoice.additive.size()==nextChoice.additive.size() &&
+                    oldChoice.weaponPoses.size()==nextChoice.weaponPoses.size();
+            };
+            bool canPreserve=candidate.models.size()==previous.models.size() &&
+                candidate.lods.size()==previous.lods.size() &&
+                candidate.stages.size()==previous.stages.size();
+            if(canPreserve) {
+                for(size_t i=0;i<candidate.models.size();++i)
+                    canPreserve &= sameRuntime(previous.models[i],candidate.models[i]);
+                for(size_t i=0;i<candidate.lods.size();++i)
+                    canPreserve &= sameRuntime(previous.lods[i],candidate.lods[i]);
+                for(size_t i=0;i<candidate.stages.size();++i)
+                    canPreserve &= sameRuntime(previous.stages[i].choice,
+                                               candidate.stages[i].choice);
+            }
+            if(canPreserve) {
+                for(size_t i=0;i<candidate.models.size();++i)
+                    candidate.models[i].graph=previous.models[i].graph;
+                for(size_t i=0;i<candidate.lods.size();++i)
+                    candidate.lods[i].graph=previous.lods[i].graph;
+                for(size_t i=0;i<candidate.stages.size();++i)
+                    candidate.stages[i].choice.graph=previous.stages[i].choice.graph;
+                preserveAnimation.insert(index);
+            }
+            // The prepared snapshot publishes copies of EXACTLY the
+            // material/node/variant data already authored for the RTS choice.
+            // It performs no second texture upload or graph compilation.
+            size_t packetOrdinal=0;
+            const auto stageChoice=[&](ModelChoice& choice,const std::string& kind) {
+                view::AppearanceAssetRegistry::Asset prepared;
+                prepared.model=choice.model;
+                prepared.materials=choice.materials;
+                prepared.nodeMaterial=choice.nodeMaterial;
+                prepared.graph=choice.graph;
+                prepared.geometry=choice.geometry;
+                prepared.variant=choice.variant;
+                prepared.graphDefinition=choice.graphSignature;
+                prepared.modelSource=choice.model?choice.model->path:std::string{};
+                prepared.sources={prepared.modelSource,"materials.json"};
+                prepared.sourceId=choice.graph ?
+                    ((uint64_t(index+1)<<32) | uint64_t(++packetOrdinal)) : 0;
+                const std::string key=std::to_string(index)+"/"+kind+"/"+
+                                      std::to_string(packetOrdinal);
+                std::string error;
+                if(!preparedSnapshots.publishPrepared(key,prepared,&error))
+                    throw std::runtime_error("appearance snapshot "+key+": "+error);
+                choice.appearanceSnapshot=preparedSnapshots.find(key);
+            };
+            for(auto& choice:candidate.models)stageChoice(choice,"model");
+            for(auto& choice:candidate.lods)stageChoice(choice,"lod");
+            for(auto& stage:candidate.stages)stageChoice(stage.choice,"stage");
             staged.emplace(index,std::move(candidate));
         }
     } catch(const std::exception& e) {
@@ -591,7 +666,9 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     }
     if(staged.empty())return true;
     std::set<size_t> affected;
-    for(const auto& [index,look]:staged){(void)look;affected.insert(index);}
+    for(const auto& [index,look]:staged)
+        if(!preserveAnimation.contains(index))
+            affected.insert(index);
     std::vector<uint64_t> graphSources;
     for(const auto& [entity,state]:anims_) {
         (void)entity;
