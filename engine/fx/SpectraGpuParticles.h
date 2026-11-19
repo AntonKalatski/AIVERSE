@@ -45,6 +45,11 @@ struct ComputeEmitterDesc {
     // Off by default; unsupported stages/operations execute the full CPU VM.
     bool gpuProgram = false;
     Json particleProgram; // compiled once to fixed ABI, never executed as JSON
+    // Optional particle shaderGraph subset sharing the CPU material language.
+    // Off by default, validated on the whole EffectDef before Metal routing.
+    bool gpuMaterial = false;
+    Json shaderGraph;
+    Json graphInputs; // four vertex graphData source names
 };
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
@@ -147,6 +152,7 @@ private:
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
     gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
     gfx::BufferHandle seedProgramParams_, stateProgramParams_, gpuVmPayload_;
+    gfx::BufferHandle graphSources_; // 4 uint32 lane selectors, compute slot 13
     gfx::BufferHandle vmErrors_;
     gfx::BufferHandle stateAttributes_; // compute slot 11, 8 scalar VM registers/particle
     gfx::TextureHandle texture_;
