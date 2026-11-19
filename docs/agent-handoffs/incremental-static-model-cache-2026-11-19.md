@@ -1233,3 +1233,23 @@ Read branch source, validated unique replacement locations and committed an atom
 
 ### Next concrete action
 Audit project import pipelines that bypass `loadModel` (e.g. generated procedural/native models): they can set `model.batching.geometryPoolPolicy` before `uploadModel`. If useful, add **bounded read-only per-device admission counters/reasons** to distinguish missing eligible assets from a material/threshold failure. Then finish functionality and run native validation including sidecar enum parsing, mode precedence, model reload, shared-page residency, Metal/Vulkan raster parity and A/B/A performance. Never silently change default production geometry pooling behavior.
+
+
+---
+
+## Stage 39 — read-only geometry pool admission and reason API (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Implementation commit:** `8cf8f02deaf4b03f40a60f24e4dd89fd07f1a8d5`; parent `2193331ef208e7723f6ca30b90959fa523342f0b`. This stage introduces *diagnostics only* and reuses the exact admission logic in the upload path; it changes no default feature flags, draw eligibility, GPU ABI or authoritative ECS data.
+
+### Implementation / files / public API
+
+- `engine/render/GeometryPoolEligibility.h`: `RigidGeometryPoolBlock` enum distinguishes cluster geometry, skin, clips, variants, morph textures/primitives, deformable meshes, LOD pooling disabled, invalid LOD references, joint palettes and per-primitive variants. `rigidGeometryPoolBlock(model, allowRigidLods)` returns the first cause; the previously existing boolean `rigidGeometryPoolCandidate` now delegates to that same predicate so the read-only API and the real gate cannot drift. `rigidGeometryPoolBlockName(reason)` returns a static English description.
+- `engine/render/GlobalGeometryPool.h` / `.cpp`: `geometryPoolAdmission(device, model)` returns `GeometryPoolAdmission { reason, modelBlock, eligible() }` with `GeometryPoolAdmissionReason` discriminating global safe/disabled, backend capability, empty CPU data, asset-specified dedicated buffers, unsafe model and >16MiB model. `geometryPoolAdmissionName(reason)` returns a static English label. Results are read-only, no heap allocation/counters, and are valid for the current model contents and upload settings. The normal `uploadModelToGeometryPool` uses this exact centralized admission check rather than maintaining duplicate predicates before its existing GPU page packing.
+- Models already uploaded or whose CPU vertices/indices were released may report `EmptyGeometry` when queried *after* upload. Query before `uploadModel()`/after `prepareModelUpload()` for a useful eligibility prediction. A result of `Eligible` is not a successful allocation promise: creation may still fail, and the caller falls back to dedicated VB/IB. The API is synchronous and should not be used from an asset writer racing with render upload.
+- No new Stage 39 Studio UI or per-frame polling. Hosts may use the API in an asset inspector/import pipeline or upload telemetry. Native model sidecar `geometryPool` values from Stage 38 are respected. Backend restrictions, GPU residency, fences and cross-model MDI thresholds are unchanged.
+
+### Actual verification / limitations
+Read current branch code, performed one-occurrence source transformation, checked API/reason/plumbing presence, created a three-file Git tree and committed with expected-SHA fast-forward. **Native CMake: NOT RUN. CTest: NOT RUN. GPU raster correctness: NOT RUN. Metal/Vulkan residency/driver: NOT RUN. Actual A/B/A: NOT RUN**, in accordance with user's request to complete features first. No meaningful measured gains or passing CI claimed. The diagnostic classifies only CPU **admission**, not whether two different models share a currently live page, pass geometry/material compatibility, meet the backend command threshold or execute a real draw.
+
+### Next specific action
+Review and resolve any remaining model importer/asset-lifetime edge cases (including malformed LOD chains, in-place material changes and Vulkan pooled addressing). Finish functionality before beginning compilation, dedicated policy fixtures, Metal/Vulkan visual parity, complete scene stress and CPU/GPU A/B/A benchmarking. Keep PR #34 Draft with all experimental modes OFF.

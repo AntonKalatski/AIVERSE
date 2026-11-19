@@ -1670,3 +1670,19 @@ No FPS/RTS dependency; project C++ may assign policy before
 `uploadModel` directly. This feature is source-committed
 but not compiled/tested on native GPUs yet. Keep PR #34 Draft
 and record a separate handoff for each additional step.
+
+
+## Stage 39 — read-only geometry-pool rejection reasons
+
+Use `geometryPoolAdmission(device, model)` before GPU upload to
+inspect why an asset cannot enter shared rigid geometry pages.
+`GeometryPoolAdmission::reason` classifies global enablement,
+backend, missing CPU data, dedicated asset choice, unsafe model and
+oversized model; `modelBlock` provides specific rigid/deformation/
+LOD exclusions (via `rigidGeometryPoolBlockName()`).
+The actual upload uses the identical predicate. This is
+allocation-free *CPU preflight*, not evidence of a real shared page
+allocation, indirect MDI submission or speedup. Query BEFORE the
+normal importer discards CPU vertices. No new Studio per-frame work,
+no genre dependencies and no default-flag changes. Native and GPU
+tests still deferred under user's feature-first direction.

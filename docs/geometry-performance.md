@@ -1410,3 +1410,31 @@ a changed sidecar or enum. Native projects using multiple genres
 should prefer explicit per-asset choice over Studio's global checkbox.
 This remains an untested, OFF-by-default experimental path for
 LOD-bearing assets, with no benchmark result.
+
+
+### Why an asset did not enter the shared GPU geometry pool
+
+Native asset tools can call `geometryPoolAdmission(device, model)`
+**before** `uploadModel()` to obtain a zero-allocation
+`GeometryPoolAdmission` containing an enum `reason`, a more precise
+`modelBlock`, and an `eligible()` predicate. The additional
+`rigidGeometryPoolBlock(model, allowRigidLods)` returns exact immutable
+geometry exclusions. Use `geometryPoolAdmissionName(reason)` and
+`rigidGeometryPoolBlockName(modelBlock)` for human-readable labels.
+
+Typical causes are global pool-disabled/render-safe mode, unsupported
+RHI shared buffer updates or MDI, explicit per-asset Dedicated mode,
+missing CPU vertex/index contents, LOD pooling disabled, morph/skin/
+clips/variants or invalid rigid LOD references, and the 16 MiB model
+limit. The actual `uploadModelToGeometryPool` now invokes the same
+central predicate, so the reported CPU admission rules match the
+real preallocation gate.
+
+This is NOT per-frame culling, backend GPU allocation telemetry or an
+MDI submission estimate: successfully admitted assets can still fail
+GPU allocation, be packed into *different* geometry pages, differ in
+material/flags, or use the direct-render fallback on Vulkan. A model
+already uploaded with discarded CPU vertices may report missing CPU
+geometry; query before upload. This introduces no heap stats/history,
+render-thread sort, GPU readback, shader changes or measured speedup.
+Stage 39 remains source-only until final native tests.
