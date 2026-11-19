@@ -390,6 +390,121 @@ void killedProcessReleasesJournalLock() {
     }
     std::filesystem::remove_all(dir);
 }
+
+// This integrates the disk journal, a real child endpoint process and a new
+// authoritative host after SIGKILL. A pre-crash Queued receipt must restore
+// as Unknown and only the exact authorized original may be re-admitted.
+void killedEndpointRecoversQueuedJournal() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journalPath=dir/"receipts";
+    const auto request=packet(33,551,88);
+    ServerGateway::Entry queued;
+    CHECK(encode(request,queued.originalFrame));
+    queued.expectedRevision=0;
+    queued.receipt.result=Result::Queued;
+    queued.receipt.scheduledTick=15;
+    queued.receipt.revision=0;
+    queued.receipt.detail="pre-crash queued receipt";
+    for(const auto& field:desired(33).desired)
+        queued.desired.emplace(field.id,
+            std::make_pair(field.kind,authoredFingerprint(field)));
+    std::map<ServerGateway::Key,ServerGateway::Entry> saved;
+    saved.emplace(ServerGateway::Key{"admin",551,88},std::move(queued));
+    std::string error;
+    FileJournal file(journalPath);
+    const bool wrote=file.save(saved,&error);
+    CHECK(wrote);
+    if(!wrote) {
+        std::filesystem::remove_all(dir);
+        return;
+    }
+    int ready[2]={-1,-1};
+    if(::pipe(ready)!=0) {
+        CHECK(false);
+        std::filesystem::remove_all(dir);
+        return;
+    }
+    const auto lookup=[](const std::string& name)->std::optional<net::Key>{
+        return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
+    };
+    const pid_t child=::fork();
+    if(child<0) {
+        CHECK(false);
+        ::close(ready[0]);::close(ready[1]);
+        std::filesystem::remove_all(dir);
+        return;
+    }
+    if(child==0) {
+        ::close(ready[0]);
+        LoopbackAdminEndpoint endpoint(journalPath);
+        std::string why;
+        const bool opened=endpoint.open(0,kEdit,lookup,reader,writer,&why);
+        const bool unknown=opened && endpoint.gateway().entries().size()==1 &&
+            endpoint.gateway().entries().begin()->second.receipt.result==Result::Unknown;
+        const char state=unknown?'Y':'N';
+        (void)::write(ready[1],&state,1);
+        ::close(ready[1]);
+        if(!unknown)::_exit(43);
+        for(;;)::pause();
+    }
+    ::close(ready[1]);
+    struct pollfd descriptor{ready[0],POLLIN,0};
+    int polled=-1;
+    do {polled=::poll(&descriptor,1,3000);}
+    while(polled<0 && errno==EINTR);
+    char received='N';
+    if(polled>0 && (descriptor.revents&POLLIN))
+        (void)::read(ready[0],&received,1);
+    ::close(ready[0]);
+    CHECK(polled>0 && received=='Y');
+    if(received=='Y') {
+        LoopbackAdminEndpoint competing(journalPath);
+        CHECK(!competing.open(0,kEdit,lookup,reader,writer,&error));
+    }
+    (void)::kill(child,SIGKILL);
+    int status=0;
+    CHECK(::waitpid(child,&status,0)==child);
+    CHECK(WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL);
+    if(received=='Y') {
+        auto sim=make();
+        net::Bytes encoded;
+        CHECK(encode(request,encoded));
+        {
+            LoopbackAdminEndpoint recovered(journalPath);
+            const bool started=recovered.open(0,kEdit,lookup,reader,writer,&error);
+            CHECK(started);
+            if(started) {
+                CHECK(recovered.gateway().entries().size()==1);
+                CHECK(recovered.gateway().entries().begin()->second.receipt.result==Result::Unknown);
+                auto [client,server]=net::makeLoopbackPair();
+                client->send(encoded);
+                recovered.gateway().poll(*sim,*server,"admin",reader,writer,100);
+                CHECK(recovered.gateway().entries().begin()->second.receipt.result==Result::Queued);
+                for(int i=0;i<4;++i) {
+                    sim->step();
+                    recovered.afterTick(*sim);
+                }
+                CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
+                CHECK(recovered.gateway().entries().begin()->second.receipt.result==Result::Applied);
+            }
+        }
+        // The Applied receipt must survive a second clean endpoint restart
+        // when its authoritative checkpoint has also been restored.
+        auto restored=make();
+        CHECK(restored->deserialize(sim->serialize(),&error));
+        LoopbackAdminEndpoint again(journalPath);
+        const bool restarted=again.open(0,kEdit,lookup,reader,writer,&error);
+        CHECK(restarted);
+        if(restarted) {
+            again.afterTick(*restored);
+            CHECK(again.gateway().entries().size()==1);
+            CHECK(again.gateway().entries().begin()->second.receipt.result==Result::Applied);
+            CHECK(restored->world().resourceConst<FieldRuntimeState>()->revision==1);
+        }
+    }
+    std::filesystem::remove_all(dir);
+}
 #endif
 
 #ifndef __EMSCRIPTEN__
@@ -514,6 +629,7 @@ int main(){
     exclusiveJournalOwnership();
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     killedProcessReleasesJournalLock();
+    killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
     endpointJournalOwnershipLifecycle();
