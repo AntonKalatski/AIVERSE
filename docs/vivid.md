@@ -330,3 +330,23 @@ draw.vertexOverrideCount = static_cast<std::uint32_t>(meshStream.vertexCount());
 New headless `vivid_vertex_override` test verifies public default-off behavior, valid/invalid stream sizes and shared-geometry offset exclusions. It does not render pixels or test real RHI state.
 
 **Still pending:** actual native compilation of merged Renderer3D on Mac, baseline regression, real scene and colour/shadow/LOD/culling screenshots, GPU fences/in-flight safe reuse, material/normal-map parity, visual bounds correctness, and performance benchmarks; no claim that VIVID characters render successfully yet.
+
+## Stage 5D — native Renderer3D colour/shadow/MotionWeave visual preview (2026-11-19)
+
+**Preview executable authored; GUI build, pixel capture, colour/shadow visual parity and renderer link NOT RUN by this agent.** Prior 3/3 Mac test evidence was for Stage 5C pre-preview source, and must not be attributed to this new program.
+
+The new macOS-only `aiverse_vivid_renderer_preview` is linked to the full platform-owned `aiverse_runtime`, `AIVERSE::vivid_mesh` and **existing `AIVERSE::MotionWeave`**, rather than creating an alternate animation system. It has its own test-only `aiverseMain` entry and runs a small procedural sphere/head and floor under real `Renderer3D` shadow + colour passes, using the actual Metal gfx device supplied by the platform.
+
+It composes one reusable presentation World/AnimationGraph clip for gentle vertical node motion, and VIVID's semantic `FaceController`/`FaceShapeBinding` for two exaggerated facial target regions (jaw stretch and right-side displacement) to make visual differences measurable. Each frame, before calling `Renderer3D::drawModel`, it dispatches the sparse 48B CSR morph deformer and 60B mesh stream packer. The original model path renders the baseline, while the later frames explicitly assign `ModelDraw::vertexOverride` / `vertexOverrideCount`. Both paths use the same material and existing `nodeWorld` matrices. For this deliberately isolated fixture, global geometry pooling and the new model's LOD and instancing/MDI features are disabled; no production configuration is changed.
+
+It requests three actual RGBA screen captures from `gfx::Device::captureNextFrame`, writing `/tmp/aiverse-vivid-baseline.ppm`, `/tmp/aiverse-vivid-morph.ppm`, and `/tmp/aiverse-vivid-motionweave.ppm` by default. Set `AIVERSE_VIVID_PREVIEW_PREFIX` to change the path prefix. The fixture checks that the render profile submitted both a shadow and a colour pass, model shaders report no error, the three captures are full-sized, a meaningful number of pixels differ between base and morphed render, and a later MotionWeave-driven node motion causes another visible change. This is a **diagnostic threshold test**, not a photographic/perceptual proof of realistic facial animation or exact shadow-map parity.
+
+The program is intentionally **not registered as CTest**, because it opens a real macOS GUI Metal window and requires drawable/present/capture. It terminates with exit code 0 only after successful capture/comparison, otherwise 1. GPU resources are released only after a real idle barrier and after finishing all render passes. The default legacy renderer code path is unchanged.
+
+Run on the user's Mac from any directory with a GUI session:
+```sh
+cmake --build ~/Projects/AIVERSE-vivid/build/vivid --target aiverse_vivid_renderer_preview -j 4
+AIVERSE_VIVID_PREVIEW_PREFIX=/tmp/aiverse-vivid \
+  ~/Projects/AIVERSE-vivid/build/vivid/aiverse_vivid_renderer_preview
+```
+The executable may be an app bundle on some CMake generators; inspect the generated target for its actual path rather than assuming. Keep all model, VIVID GPU stream and MotionWeave resources alive until rendering finishes. **NOT RUN** on the current coding host.
