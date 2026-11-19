@@ -1334,3 +1334,23 @@ includes it. This fixture does **not** replace real Metal/GL/Vulkan
 frame-time or device-recreation tests. The prior nine TerraWeave CPU cases
 passed in Mac Studio QA; this **new** test was not compiled or executed by
 the authoring agent. See `docs/terrain/AGENT_HANDOFF.md` Stage43.
+
+
+### NEREID ↔ TerraWeave soil ecology (Stages 45–46, 2026-11-19)
+
+NEREID water from \`main\` is the only water owner. New native water
+erosion code is in \`NereidErosion.h\` and optional persistence/system
+in \`NereidShorelineSystems.h\`. TerraWeave owns sparse earth edits
+(\`TerraWeaveEarthworks.h\`), explicit ECS read-barrier adapter
+(\`TerraWeaveNereidSoilBridge.h\`), root/cliff/fall response and grass
+aggregation (\`TerraWeaveVegetationSoil.h\`), shared exposed-root
+Renderer3D models only if needed (\`TerraWeaveRootModel.h\`).
+Native \`WorldScene::setVegetationRootStates\` publishes root snapshots
+for near forest. Trees and shrubs carry seed-derived age/light/growth
+properties; grass never allocates per blade, with one \`GrassPatchDraw\`
+per patch and deterministic \`sampleGrassBlade\` on demand.
+\`terraweave_excavate\` edits flat RTS corner heightfields via MapDoc
+undo. **Not yet finished:** true Box3D fallen-tree rigid bodies,
+streaming terrain collision/navmesh patch/rebuild, GPU grass instancing,
+and voxel cave excavation. **No new native tests run** after Stage45/46.
+See \`docs/nereid/TERRAIN_EROSION.md\` and handoff for exact status.
