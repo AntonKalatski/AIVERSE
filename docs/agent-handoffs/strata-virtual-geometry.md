@@ -1815,3 +1815,30 @@ source instance; concentrate on residency/streaming budgets and
 real per-backend raster/LOD lossless+lossy parity, then one combined
 native validation. After every subsequent stage, append to this
 handoff with actual test status and fresh commit identifiers.
+
+
+### Stage 14.1 follow-up — source GPU reupload identity (same stage)
+
+After the above handoff, a further dedicated-sidecar stale-binding
+hazard was removed. `PortableSource` now snapshots its source
+`vb`, `ib` and `gpuFirstIndex` at successful `stage()`, and
+`validFor()` checks those handles and the staged
+`gpuBaseVertex` against the live Model before every preparation.
+This complements the existing pooled `GeometryPoolIndexSpan` lease
+checks. If a source is released/reuploaded without calling
+`markGeometryChanged()`, an old index sidecar must not accidentally
+draw with a replacement vertex allocation.
+
+- `engine/render/StrataPortableRender.h` commit
+  `569e4b64408c4596a055ce8556caa27910096d2b`
+- `engine/render/StrataPortableRender.cpp` commit
+  `81dfb0fe8b65f3acc9dda8bb58dfb7ab3fd0b2c2`
+- `tests/render/strata_portable.cpp` commit
+  `18878b0616e1288d7ba53e665cdd65dd55d2614e`
+
+The recording-RHI regression mutates the source VB identity and
+first-index base to confirm rejection and unchanged prepared output.
+The source must still be shutdown via the same live RHI device.
+**No build or test run** was executed for this follow-up either.
+Latest code/test source snapshot before the documentation commits:
+`18878b0616e1288d7ba53e665cdd65dd55d2614e`.
