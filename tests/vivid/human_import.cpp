@@ -18,16 +18,19 @@ template<class F> void reject(F fn) {
 void contract() {
     const auto manifest=HumanImportManifest::fromJson(Json::parse(R"({
       "version":1,"model":"characters/head.obj","dna":"characters/skin.json",
-      "morphs":"characters/face.json",
+      "morphs":"characters/face.json","scalpColliderMesh":"closed_head_proxy",
       "routes":[{"channel":"jawOpen","target":"jawOpen","gain":0.8}],
       "materials":{"skinMat":"skin"}
     })"));
+    expect(manifest.scalpColliderMesh=="closed_head_proxy",
+           "import manifest lost explicit scalp proxy name");
     expect(manifest.toJson()==HumanImportManifest::fromJson(manifest.toJson()).toJson(),
            "human import manifest canonical JSON lost fields");
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"../bad.obj"})"));});
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"/absolute.obj"})"));});
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":2,"model":"head.obj"})"));});
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"head.obj","unknown":0})"));});
+    reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"head.obj","scalpColliderMesh":42})"));});
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"head.obj","routes":[{"channel":"nonsense","target":"jawOpen"}]})"));});
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"head.obj","materials":{"a":"unknown"}})"));});
 
