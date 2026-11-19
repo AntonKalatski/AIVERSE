@@ -9612,3 +9612,46 @@ VT page-table feedback hardware test and GPU ICB sampling
 permutations. Keep PR Draft until these separate acceptance gates
 pass; do not touch the main AIVERSE worktree mid-rebase.
 
+
+## Stage 10BE — confirmed native Metal GPU PASS (retrospective handoff, 2026-11-19)
+
+**Recorded after 10BF/10BG to preserve the strictly append-only handoff.**
+This is the previously confirmed acceptance for **older uninstrumented**
+`metal_texture_gpu` fixture source, not evidence for newer changes.
+
+**Source checkpoint:** `5ade89b546ec861c54377c7fb1c110e4db9136c3`,
+Draft PR #21; user used Mac Studio isolated worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+**Real user-reported native CTest result:**
+```text
+1/1 Test #122: metal_texture_gpu ... Passed 1.53 sec
+GPU = 1.53 sec*proc
+METAL = 1.53 sec*proc
+TEXTURE_RHI = 1.53 sec*proc
+100% tests passed, 0 tests failed out of 1
+```
+The user then supplied the full verification script's final output:
+```text
+CTEST PASS
+Running native Metal GPU acceptance...
+METAL GPU PASS
+OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS (other GPU validation remains separate)
+```
+All 20 texture test target builds and `aiverse_editor` were reported PASS
+earlier. This is genuine GPU execution confirmation for fixture
+native Texture3D/2DArray/Cube/CubeArray uploads and exact blit readbacks,
+but **not a microbenchmark, Shader Graph/ICB GPU result, hardware VT
+feedback test, or proof of all cross-platform graphics support**.
+The user's GPU model and per-byte verbose log were not supplied.
+
+**Files changed at this documentation checkpoint:** none in production
+or tests. The result was incorporated into `docs/texture-rhi.md`
+via `71d4316fe7ab075fe17d5f28ae6752bf4340ab09`
+and `0443e904f6d2ea2b618150952524ca1256c20365`.
+
+**Next work:** Stage 10BF split CTest startup/upload/readback timing;
+Stage 10BG adds actual fragment Texture3D sampling. Both are **source only
+and must be recompiled and rerun on the Mac**. GPU Shader Graph ICB,
+virtual page feedback and cross-platform parity remain separate
+acceptance gates. Keep PR #21 Draft until these pass.
+
