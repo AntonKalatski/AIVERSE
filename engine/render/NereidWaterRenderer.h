@@ -62,7 +62,7 @@ inline Mesh uploadNereidWaterSurface(gfx::Device& device,
 inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
         lib::nereid::WaterSurfaceStyle style={},
         const mat4& transform=mat4::identity(),
-        const std::array<float4,4>& ripples={}) {
+        const std::array<float4,16>& ripples={}) {
     if(mesh.indexCount==0 || !validNereidWaterStyle(style))return;
     renderer.drawNereidRippleMesh(mesh,transform,
                       {style.absorption,style.shoreFoamDepth,
