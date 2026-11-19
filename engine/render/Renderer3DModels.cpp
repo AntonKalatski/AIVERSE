@@ -298,7 +298,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         }
         if (vtSampling && !injectModelVirtualTextureSampling(
                 fs,msl,virtualAtlasSlot,virtualTableSlot,
-                dev_->info().backend == gfx::Backend::Metal)) {
+                dev_->info().backend == gfx::Backend::Metal &&
+                dev_->maxFragmentTextureSlots() > 16)) {
             modelError_ = "model virtual-texture shader insertion failed";
             return {};
         }
