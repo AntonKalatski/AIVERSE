@@ -30,7 +30,7 @@ target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
 # gameplay ECS and with the same runtime native C++20 asset contract.
 add_library(aiverse_vivid_human STATIC
     HumanDNA.cpp HumanRig.cpp HumanMaterials.cpp HumanGroom.cpp
-    HumanPreview.cpp HumanCreatorSession.cpp)
+    HumanPreview.cpp HumanCreatorSession.cpp HumanImport.cpp)
 add_library(AIVERSE::vivid_human ALIAS aiverse_vivid_human)
 target_include_directories(aiverse_vivid_human PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(aiverse_vivid_human PUBLIC aiverse_vivid aiverse_models aiverse_shader_graph)
@@ -60,6 +60,11 @@ if(AIVERSE_BUILD_TESTS)
         ${PROJECT_SOURCE_DIR}/tests/vivid/human_appearance.cpp)
     target_link_libraries(aiverse_vivid_human_appearance_tests PRIVATE aiverse_vivid_human aiverse_zstd_dec)
     add_test(NAME vivid_human_appearance COMMAND aiverse_vivid_human_appearance_tests)
+
+    add_executable(aiverse_vivid_human_import_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/human_import.cpp)
+    target_link_libraries(aiverse_vivid_human_import_tests PRIVATE aiverse_vivid_human aiverse_zstd_dec)
+    add_test(NAME vivid_human_import COMMAND aiverse_vivid_human_import_tests)
 
     add_executable(aiverse_vivid_human_creator_tests
         ${PROJECT_SOURCE_DIR}/tests/vivid/human_creator.cpp)
