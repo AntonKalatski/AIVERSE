@@ -44,6 +44,11 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     std::string newChild_,newSocket_,message_;
     std::vector<AuthoredChild> authored_;
     std::unique_ptr<Session> session_;
+    // A retired provider still owns every old CPU/GPU Model until a full
+    // GPU-completion proof. No idle stall on ordinary successful publication.
+    // This is bounded deferred ownership, NOT fence-based destruction.
+    std::vector<std::unique_ptr<Session>> retiredSessions_;
+    static constexpr size_t kRetainedSessionLimit=8;
     render::Renderer3D renderer_;
     Viewport viewport_;
     ::aiverse::View presentationView_; // render-only, no graph evaluation
@@ -106,6 +111,32 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     void preserveUnsafe(std::unique_ptr<Session>& owned) noexcept {
         // Never let an unproven GPU owner destruct at window teardown.
         if(owned)(void)owned.release();
+    }
+    void deferSession(std::unique_ptr<Session>& owned) noexcept {
+        if(!owned)return;
+        try {
+            retiredSessions_.push_back(std::move(owned));
+        }catch(...) {
+            // No queue storage is safe to reclaim without GPU completion.
+            preserveUnsafe(owned);
+        }
+    }
+    void collectSessions(bool force=false) noexcept {
+        if(!device_ || retiredSessions_.empty() ||
+           (!force && retiredSessions_.size()<kRetainedSessionLimit))
+            return;
+        try {
+            if(!device_->waitForResourceIdle()) {
+                message_="Retired attachment Models held: GPU idle unavailable";
+                return;
+            }
+            for(auto& session:retiredSessions_) {
+                if(!retire(session))preserveUnsafe(session);
+            }
+            retiredSessions_.clear();
+        }catch(...) {
+            // A failed GPU proof must never free prior resource generations.
+        }
     }
 
     void preview(Editor& ed) {
@@ -279,22 +310,20 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             if(!Imported::compile(staged->source,staged->provider->resources(),
                                   requested,staged->compiled,&error))
                 throw std::runtime_error("Socket compile: "+error);
-            // Read leases in compile have already left scope. Before the
-            // LAST-GOOD provider may be destroyed, prove all previous GPU
-            // submits finished. This is a blocking, explicit Studio action.
-            if(!ed.device().waitForResourceIdle())
-                throw std::runtime_error(
-                    "GPU idle proof failed; last-good attachments retained");
-            // Drop old runtime snapshots before destroying its resource owner.
+            // All new Models and sockets are ready in a SEPARATE cache.
+            // Make publication immediately visible and defer the previous
+            // provider's destruction; no full-idle wait on common reimport.
+            // It remains alive so old in-flight GPU work cannot outlive it.
             auto old=std::move(session_);
             session_=std::move(staged);
-            if(!retire(old))preserveUnsafe(old);
+            deferSession(old);
             message_="Published "+std::to_string(session_->compiled.children.size())+
-                     " compiled socket attachments";
+                     " sockets; pending retired providers: "+
+                     std::to_string(retiredSessions_.size());
         }catch(...) {
-            // A failed candidate may have completed speculative GPU uploads.
-            // It must not be destroyed until the device is known idle.
-            if(!retire(staged))preserveUnsafe(staged);
+            // Even a partially uploaded scratch provider may be GPU-live.
+            // Keep it in the same deferred owner queue on failure.
+            deferSession(staged);
             throw;
         }
     }
@@ -313,6 +342,9 @@ public:
             }catch(...) {}
         }
         if(!retire(session_))preserveUnsafe(session_);
+        collectSessions(true);
+        for(auto& pending:retiredSessions_)preserveUnsafe(pending);
+        retiredSessions_.clear();
     }
     const char* id() const override{return "animation_attachments";}
     const char* title() const override{return "MotionWeave — Attachments";}
@@ -323,6 +355,9 @@ public:
 
     void update(Editor& ed,double) override {
         device_=&ed.device();
+        // Advisory bounded cleanup, not one blocking barrier per edit.
+        // Stage/Studio tests must verify GPU completion on each backend.
+        collectSessions();
         const auto current=ed.ws().project.dir;
         if(current==project_) {
             // Runs at Studio's owner update boundary before windows draw
@@ -334,12 +369,9 @@ public:
             }
             return;
         }
-        // A project switch must release all old borrowed sources BEFORE
-        // letting its content mounts disappear.
-        if(!retire(session_)) {
-            message_="Cannot change attachment project: GPU idle unavailable";
-            return;
-        }
+        // Old GPU Models remain owned by the deferred provider even after
+        // the project changes, until GPU idle can be proven on this device.
+        deferSession(session_);
         project_=current;
         pendingReimport_=false;
         authored_.clear();
@@ -413,7 +445,10 @@ public:
                 sourcePath_.c_str());
             ImGui::Text("Compiled sockets: %zu",
                 session_->compiled.children.size());
-            ImGui::TextDisabled("Old GPU models retired only after idle proof");
+            ImGui::Text("Retired provider sessions: %zu",
+                        retiredSessions_.size());
+            ImGui::TextDisabled(
+                "Retirement is deferred; full GPU idle fallback only at cap/shutdown");
         }
         if(!message_.empty())ImGui::TextWrapped("%s",message_.c_str());
         ImGui::TextDisabled(
