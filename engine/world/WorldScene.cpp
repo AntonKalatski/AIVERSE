@@ -160,11 +160,15 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     nereidWater_.draw(renderer,origin,size);
+    ripples_.draw(renderer,double(origin.x)*double(size),
+                  double(origin.y)*double(size),
+                  double(origin.z)*double(size));
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
 }
 void WorldScene::shutdown(gfx::Device& device) {
     nereidWater_.shutdown(device);
+    ripples_.clear();
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
 }
 }
