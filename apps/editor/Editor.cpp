@@ -45,6 +45,15 @@ FileReader projectReader(const std::string& dir) {
 
 // ============================ viewport ============================
 
+// Window destruction occurs during Editor::shutdown while the editor's
+// render-target retirement pool and host Device are still valid. A weak
+// owner avoids dereferencing a destroyed editor on abnormal teardown.
+Viewport::~Viewport() noexcept {
+    if(auto owner=targetOwner.lock())
+        owner->retire(color,depth);
+    color=depth={};
+}
+
 void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
     if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
         throw std::logic_error("Editor viewport GPU generation expired");
@@ -65,10 +74,16 @@ void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
 void Viewport::release(gfx::Device& dev) {
     if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
         throw std::logic_error("Editor viewport release GPU generation expired");
-    if (color.valid()) dev.destroyTexture(color);
-    if (depth.valid()) dev.destroyTexture(depth);
-    color = depth = {};
-    w = h = 0;
+    if(auto owner=targetOwner.lock()) {
+        // Prior GPU frames and ImGui draws can still sample these targets.
+        owner->retire(color,depth);
+    }else {
+        // Legacy stand-alone Viewport callers may omit an editor pool.
+        if(color.valid())dev.destroyTexture(color);
+        if(depth.valid())dev.destroyTexture(depth);
+    }
+    color=depth={};
+    w=h=0;
 }
 
 void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
@@ -87,6 +102,8 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 
 void Editor::init(gfx::Device& dev) {
     gpuLifetime_=std::make_unique<render::RenderDeviceLifetime>(dev);
+    offscreenTargets_=std::make_shared<render::OffscreenTargetRetirement>(
+        dev,gpuDeviceLease());
     view_.setGpuDeviceLease(gpuDeviceLease());
     dev_ = &dev;
     ws_.engineDir = opt_.engineDir;
@@ -200,12 +217,20 @@ void Editor::shutdown() {
     view_.shutdown(*dev_);
     view_.modelResources().setRetirementDiagnosticObserver({});
     view_.setImageRetirementDiagnosticObserver({});
+    if(offscreenTargets_)
+        offscreenTargets_->setRetirementDiagnosticObserver({});
     gpuRetirementRing_.reset();
     postFx_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
     if(fpsPreviewMesh_.ib.valid())dev_->destroyBuffer(fpsPreviewMesh_.ib);
     r3d_.shutdown();
     ui_.shutdown();
+    // Windows have released their weakly-owned viewport target pairs into
+    // this queue. A real idle barrier is required before GPU device retire.
+    if(offscreenTargets_ && !offscreenTargets_->drain())
+        throw std::runtime_error(
+            "Editor offscreen targets: GPU retirement barrier failed");
+    offscreenTargets_.reset();
     // The token is invalidated only AFTER all cache-backed GPU shutdowns,
     // and before the platform can destroy or reuse its Device address.
     if(gpuLifetime_)gpuLifetime_->retire();
@@ -1402,6 +1427,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
     if(view_.pendingModelRetirements()!=0 ||
        view_.pendingRolledBackImages()!=0)
         view_.collectRetiredModels();
+    if(offscreenTargets_ && offscreenTargets_->pendingPairs()!=0)
+        offscreenTargets_->collect();
     pollAgentLink();
     applyChanges();
     // Poll changed presentation assets before any new frame submissions.
