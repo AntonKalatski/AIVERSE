@@ -3,6 +3,10 @@
 // block. The editor-owned VisualAssetDependencyService watches model files,
 // even with this panel closed. Agents can inspect assets via `model_info`.
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "modules/rts/view/RtsPortrait.h"
@@ -95,7 +99,11 @@ public:
     int order() const override { return 3; }
     bool openByDefault() const override { return false; }
 
-    ~ModelWindow() override { portrait_.shutdown(); }
+    ~ModelWindow() override {
+        // The GPU device still exists when Editor destroys its windows.
+        if(rawDevice_)rawModels_.shutdown(*rawDevice_);
+        portrait_.shutdown();
+    }
 
     void draw(Editor& ed) override {
         const auto& types = ed.rules().types;
@@ -126,9 +134,57 @@ public:
         // A type chosen in this panel might not occur on the open map.
         // Load it on demand and keep it resident while its preview is visible.
         ed.retainEditorType(uint16_t(type_));
+        const render::Model* current=ed.view().modelOf(uint16_t(type_));
+        // Explicit alternate INSPECTION mode: the imported static asset
+        // without game-type tint, graph, materials or transform overrides.
+        // Ordinary default portraits always retain their original path.
+        bool canShowRaw=current && current->clips.empty() &&
+            current->skins.empty() && !current->path.empty() &&
+            current->path.rfind("shape:",0)!=0;
+        if(canShowRaw) {
+            const std::filesystem::path path(current->path);
+            canShowRaw=path.is_relative();
+            for(const auto& part:path)if(part=="..")canShowRaw=false;
+        }
+        if(canShowRaw)ImGui::Checkbox("Исходная 3D-модель (без overrides)",&rawMode_);
+        else rawMode_=false;
         if (!portraitInit_) { portraitInit_ = true; portrait_.init(ed.device(), 256); }
         time_ += ImGui::GetIO().DeltaTime;
-        portrait_.render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
+        bool rawDrawn=false;
+        if(rawMode_ && canShowRaw) {
+            // Keep this provider entirely separate from RtsView's model
+            // ownership; rebind at project/cache revision boundaries.
+            const auto& project=ed.ws().project.dir;
+            const auto revision=ed.view().modelResources().generation();
+            if(rawProject_!=project || rawRevision_!=revision) {
+                if(rawDevice_)rawModels_.shutdown(*rawDevice_);
+                rawModels_.setReader([project](const std::string& path,
+                                              std::string& bytes) {
+                    std::ifstream in(std::filesystem::path(project)/path,
+                                     std::ios::binary);
+                    if(!in)return false;
+                    bytes.assign(std::istreambuf_iterator<char>(in),
+                                 std::istreambuf_iterator<char>());
+                    return true;
+                });
+                rawDevice_=&ed.device();
+                rawProject_=project;
+                rawRevision_=revision;
+            }
+#ifndef __EMSCRIPTEN__
+            if(!rawModels_.resources().contains(current->path))
+                rawModels_.requestAsync(current->path);
+            rawModels_.publishReady(ed.device());
+#else
+            rawModels_.load(ed.device(),current->path);
+#endif
+            if(rawModels_.find(current->path))
+                rawDrawn=portrait_.renderStaticModel(
+                    rawModels_,current->path,0.5f);
+            else ImGui::TextDisabled("Загрузка исходной модели...");
+        }
+        if(!rawDrawn)
+            portrait_.render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
         if (portrait_.texture().valid()) {
             const bool flip = ed.device().info().renderTargetFlipY;
             const float side = std::clamp(ImGui::GetContentRegionAvail().x, 120.0f, 260.0f);
@@ -219,6 +275,13 @@ private:
     double time_ = 0;
     bool portraitInit_ = false, opRegistered_ = false;
     game::Portrait portrait_;
+    // Owned by the editor Model panel; the default type preview does not
+    // borrow from this independent native-source cache.
+    render::ModelAssetProvider rawModels_;
+    gfx::Device* rawDevice_=nullptr;
+    std::string rawProject_;
+    uint64_t rawRevision_=std::numeric_limits<uint64_t>::max();
+    bool rawMode_=false;
 };
 
 AIVERSE_EDITOR_WINDOW(ModelWindow);
