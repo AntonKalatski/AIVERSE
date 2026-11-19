@@ -51,6 +51,10 @@ void GeometryScene::shutdown(gfx::Device& dev){
     strataGpuCulling_.reset();
     strataGpuMetadata_.reset();
     strataGpuDevice_ = nullptr;
+    strataPortableDevice_=nullptr;
+    strataStreamingFrameSerial_=UINT64_MAX;
+    strataStreamingFrameBudgetLeft_=0;
+    strataStreamingSourceCursor_=0;
     strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
 bool GeometryScene::strataStagingSupported() const {
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
@@ -229,7 +233,7 @@ bool GeometryScene::planStrataView(const std::string& sourceKey,
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
 void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader& read,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){
-    validate(json);shutdown(dev);models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
+    validate(json);shutdown(dev);strataPortableDevice_=&dev;models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
     hlod_=json["hlod"].getBool("enabled");errorPixels_=float(json["hlod"]["errorPixels"].toDouble(2));maxPixels_=float(json["hlod"]["maxPixels"].toDouble(256));
     try{
         size_t vertices=0;
@@ -563,23 +567,60 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
     stats_.strataDiskReadFailures=0;
     stats_.strataDiskPending=0;
     stats_.strataDiskReadyBytes=0;
-    for(auto& [model,source]:strataPortableSources_){
-        if(!source || !source->streamingEnabled())continue;
-        std::string error;
-        if(failed.count(model) ||
-           !source->updateResidency(requests[model],&error))
-            ++stats_.strataStreamingPrepareFailures;
-        if(const auto* status=source->residencyStats()){
-            stats_.strataStreamingIndexBytes+=status->activeBytes;
-            stats_.strataStreamingEvictions+=status->evictions;
-            stats_.strataStreamingArenaBytes+=status->arenaBytes;
-            stats_.strataStreamingUploadedBytes+=status->uploadedBytes;
-            stats_.strataStreamingUploadDeferrals+=status->uploadBudgetDeferrals;
-            stats_.strataStreamingFenceDeferrals+=status->fenceReuseDeferrals;
-            stats_.strataDiskBytesRead+=status->diskBytesRead;
-            stats_.strataDiskReadFailures+=status->diskFailures;
-            stats_.strataDiskPending+=status->diskPending;
-            stats_.strataDiskReadyBytes+=status->diskReadyBytes;
+    stats_.strataStreamingGpuTransferBytes=0;
+    const size_t frameCap=strataStreamingFrameUploadBudgetBytes_;
+    if(frameCap && strataPortableDevice_){
+        const uint64_t serial=strataPortableDevice_->frameSerial();
+        if(!serial || strataStreamingFrameSerial_!=serial){
+            strataStreamingFrameSerial_=serial;
+            strataStreamingFrameBudgetLeft_=frameCap;
+        }
+    }
+    // Model keys are stable across runs. Rotate the first source once per
+    // prepass so one expensive source cannot permanently monopolize the
+    // frame-level GPU bandwidth allowance.
+    std::vector<const Model*> ordered;
+    for(const auto& [key,instance]:models_){
+        if(!instance)continue;
+        const auto it=strataPortableSources_.find(instance.get());
+        if(it!=strataPortableSources_.end() && it->second &&
+           it->second->streamingEnabled())
+            ordered.push_back(instance.get());
+    }
+    if(!ordered.empty()){
+        const size_t start=size_t(strataStreamingSourceCursor_++%ordered.size());
+        for(size_t i=0;i<ordered.size();++i){
+            const Model* model=ordered[(start+i)%ordered.size()];
+            auto& source=strataPortableSources_.at(model);
+            std::string error;
+            const auto* before=source->residencyStats();
+            const uint64_t beforeTransfer=before ? before->gpuTransferBytes : 0;
+            const bool incremental=before && before->incremental;
+            const size_t allowance=frameCap && incremental
+                ? strataStreamingFrameBudgetLeft_ : SIZE_MAX;
+            if(failed.count(model) ||
+               !source->updateResidency(requests[model],&error,allowance))
+                ++stats_.strataStreamingPrepareFailures;
+            if(const auto* status=source->residencyStats()){
+                const uint64_t copied=status->gpuTransferBytes>=beforeTransfer
+                    ? status->gpuTransferBytes-beforeTransfer : 0;
+                if(frameCap && incremental){
+                    strataStreamingFrameBudgetLeft_=
+                        copied>=strataStreamingFrameBudgetLeft_
+                            ? 0 : strataStreamingFrameBudgetLeft_-size_t(copied);
+                }
+                stats_.strataStreamingIndexBytes+=status->activeBytes;
+                stats_.strataStreamingEvictions+=status->evictions;
+                stats_.strataStreamingArenaBytes+=status->arenaBytes;
+                stats_.strataStreamingUploadedBytes+=status->uploadedBytes;
+                stats_.strataStreamingGpuTransferBytes+=status->gpuTransferBytes;
+                stats_.strataStreamingUploadDeferrals+=status->uploadBudgetDeferrals;
+                stats_.strataStreamingFenceDeferrals+=status->fenceReuseDeferrals;
+                stats_.strataDiskBytesRead+=status->diskBytesRead;
+                stats_.strataDiskReadFailures+=status->diskFailures;
+                stats_.strataDiskPending+=status->diskPending;
+                stats_.strataDiskReadyBytes+=status->diskReadyBytes;
+            }
         }
     }
 #else
