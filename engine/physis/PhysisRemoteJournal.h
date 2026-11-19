@@ -4,6 +4,9 @@
 // when replay cannot prove outcome, report Unknown/Conflict, never fake Applied.
 #pragma once
 #include "PhysisRemoteServer.h"
+#ifndef _WIN32
+#include "PhysisJournalPosixIO.h"
+#endif
 #include "engine/core/Hash.h"
 #include "engine/net/Crypto.h"
 #include <algorithm>
@@ -312,117 +315,30 @@ public:
     }
 
 #ifndef _WIN32
-    // Load from the same trusted directory inode that holds the journal lock.
-    // Never follow a substituted journal symlink/FIFO at admin startup.
+    // The canonical admin endpoint pins its already verified journal parent.
+    // Keep receipt serialization separate from the POSIX I/O primitives so
+    // the filesystem contract can be compiled and tested without ECS.
     bool loadPinned(int parentFd,ServerGateway& gateway,
                     std::string* error=nullptr) const {
-        const auto fail=[&](const char* reason) {
-            if(error)*error=reason;
+        net::Bytes bytes;
+        bool missing=false;
+        if(!posix_journal::read(parentFd,file_.filename().string(),
+                                18,kMaxDiskBytes,bytes,missing,error))
             return false;
-        };
-        if(parentFd<0)return fail("PHYSIS pinned journal directory missing");
-        const std::string target=file_.filename().string();
-        if(target.empty() || target=="." || target==".." ||
-           target.find('/')!=std::string::npos)
-            return fail("PHYSIS pinned journal filename invalid");
-        int flags=O_RDONLY|O_NONBLOCK;
-#ifdef O_CLOEXEC
-        flags|=O_CLOEXEC;
-#endif
-#ifdef O_NOFOLLOW
-        flags|=O_NOFOLLOW;
-#endif
-        const int fd=::openat(parentFd,target.c_str(),flags);
-        if(fd<0) {
-            if(errno==ENOENT) {
-                if(error)error->clear();
-                return true; // fresh journal
-            }
-            return fail("PHYSIS pinned journal cannot be opened safely");
-        }
-        struct stat state{};
-        const bool safe=::fstat(fd,&state)==0 &&
-            S_ISREG(state.st_mode) && state.st_nlink==1 &&
-            state.st_uid==::geteuid() && (state.st_mode & 0077)==0 &&
-            state.st_size>=18 &&
-            static_cast<std::uint64_t>(state.st_size)<=kMaxDiskBytes;
-        if(!safe) {
-            ::close(fd);
-            return fail("PHYSIS pinned journal inode or size invalid");
-        }
-        net::Bytes bytes(static_cast<std::size_t>(state.st_size),0);
-        std::size_t offset=0;
-        bool good=true;
-        while(offset<bytes.size()) {
-            const auto count=::read(fd,bytes.data()+offset,bytes.size()-offset);
-            if(count<0 && errno==EINTR)continue;
-            if(count<=0) {good=false;break;}
-            offset+=static_cast<std::size_t>(count);
-        }
-        if(::close(fd)!=0)good=false;
-        if(!good)return fail("PHYSIS pinned journal read failed");
+        if(missing)return true;
         std::map<ServerGateway::Key,ServerGateway::Entry> decoded;
         if(!decodeEntries(bytes,decoded,error))return false;
         return gateway.restoreJournal(std::move(decoded),error);
     }
-#endif
 
-#ifndef _WIN32
-    // The privileged endpoint owns a verified directory fd for its entire
-    // lifetime. Perform every filesystem mutation relative to that inode:
-    // no temp-file creation or rename may follow a replaced parent path.
-    // Direct FileJournal::save remains a legacy, non-lock-owned API.
     bool savePinned(int parentFd,
                     const std::map<ServerGateway::Key,ServerGateway::Entry>& entries,
                     std::string* error=nullptr) const {
-        const auto fail=[&](const char* reason) {
-            if(error)*error=reason;
-            return false;
-        };
-        if(parentFd<0)return fail("PHYSIS pinned journal directory missing");
-        struct stat parent{};
-        if(::fstat(parentFd,&parent)!=0 || !S_ISDIR(parent.st_mode))
-            return fail("PHYSIS pinned journal directory invalid");
-        const std::string target=file_.filename().string();
-        if(target.empty() || target=="." || target==".." ||
-           target.find('/')!=std::string::npos)
-            return fail("PHYSIS pinned journal filename invalid");
         net::Bytes bytes;
         if(!encodeEntries(entries,bytes,error))return false;
         const auto nonce=net::randomKey();
-        const std::string temporary=target+".next-"+
-            net::toHexString(nonce.data(),16);
-        int flags=O_WRONLY|O_CREAT|O_EXCL;
-#ifdef O_CLOEXEC
-        flags|=O_CLOEXEC;
-#endif
-#ifdef O_NOFOLLOW
-        flags|=O_NOFOLLOW;
-#endif
-        const int fd=::openat(parentFd,temporary.c_str(),flags,0600);
-        if(fd<0)return fail("PHYSIS pinned journal temp creation failed");
-        std::size_t offset=0;
-        bool good=true;
-        while(offset<bytes.size()) {
-            const auto written=::write(fd,bytes.data()+offset,bytes.size()-offset);
-            if(written<0 && errno==EINTR)continue;
-            if(written<=0) {good=false;break;}
-            offset+=std::size_t(written);
-        }
-        if(good && ::fsync(fd)!=0)good=false;
-        if(::close(fd)!=0)good=false;
-        if(!good) {
-            (void)::unlinkat(parentFd,temporary.c_str(),0);
-            return fail("PHYSIS pinned journal write/fsync failed");
-        }
-        if(::renameat(parentFd,temporary.c_str(),parentFd,target.c_str())!=0) {
-            (void)::unlinkat(parentFd,temporary.c_str(),0);
-            return fail("PHYSIS pinned journal rename failed");
-        }
-        if(::fsync(parentFd)!=0)
-            return fail("PHYSIS pinned journal directory fsync failed");
-        if(error)error->clear();
-        return true;
+        return posix_journal::write(parentFd,file_.filename().string(),
+            bytes,net::toHexString(nonce.data(),16),error);
     }
 #endif
 
