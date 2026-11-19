@@ -1134,3 +1134,69 @@ the same still-bound graphics object.
 C++/ObjC++/MSL compilation, executing the CLI,
 CTest, malformed-file tests, RHI callback/device-loss tests,
 editor screenshot and Metal hardware checks have NOT RUN.
+
+## Stage 42 — redacted diagnostics, group routing and explicit recovery events
+
+The shared GPU checkpoint V2 inspector now has a
+**privacy-first report layer** in
+`engine/fx/SpectraDiagnosticReport.h`.
+Use `gpuDiagnosticReportJson(inspection)` for safe aggregate
+diagnostics: no original file path, per-particle world position,
+VM/program scalar, raw blob, absolute GPU frame serial, revision
+or CRC fingerprint is included. To disclose only world-space
+MIN/MAX bounds or GPU identifiers for a specific internal bug,
+call with the corresponding
+`GpuDiagnosticReportPrivacy::includeWorldBounds` or
+`includeGpuIdentifiers` explicitly set to true. Never make
+those opt-ins the default.
+
+The offline `tools/spectrafx/inspect_spfx.cpp` CLI now emits
+redacted text and `--json` by default.
+`--report <safe.json>` saves a local, redacted JSON report
+only on user request. `--include-coordinates` and
+`--include-identifiers` independently opt into sensitive
+aggregate fields. The CLI never copies raw particle/VM payloads
+into a JSON report, auto-uploads files, or interprets them
+as authoritative ECS saves. The original `.spfx` V2 binary
+is STILL sensitive raw GPU state; share it only deliberately.
+
+Multi-group GPU worlds now expose
+`GpuPoolWorld::gpuGroupCount()` and
+`gpuGroupSummary(index,out)`, containing only checkpoint
+freshness, previous GPU step/reset status, estimated particle
+counts and memory; no serialized graph source names are
+exposed. The editor has an explicit GPU-group selector and
+separate buttons for **Save safe JSON report** (default
+redaction) versus **Save RAW GPU checkpoint (sensitive)**.
+The editor owns capture scheduling only for its own preview
+group 0. External GPU world telemetry must be captured
+by its NATIVE renderer owner, not from the editor UI.
+
+For native games, `GpuPoolCaptureHost::requestNext(policy)`
+routes ONE bounded async request using
+`GpuCaptureTargetPolicy::{RoundRobin,LargestEstimatedGroup,
+MissingOrStalestCheckpoint}`. Other groups already
+capturing are skipped. The old explicit
+`request(groupIndex)` stays supported. All captures remain
+owner-thread safe-point operations and must obey Stage 32
+shared GPU readback budgets. Do not implement parallel GPU
+reads per source or bypass the completed-fence quarantine.
+
+`GpuPoolRecoveryHost::requestPresentationReset(reason)` is
+a **status/event request only**. Native platform code later
+calls `retryPresentationReset()` after opening a gfx frame,
+before any render/compute encoder. Status now separates
+`ResetRequested`, `ResetRetryRequired` and
+`DeviceRecreationRequired`. `PoolRecoveryEvent` has a
+monotonically increasing `transitionSequence` (stable
+on repeated equivalent polls), pending reset and retained
+CPU-only catalog flags, request and Device replacement
+attempt counts. Never claim the event code recreates
+platform graphics hardware or restores live GPU particles.
+
+**Next agent handoff:** `docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md`.
+
+**Verification status:** source commits and GitHub re-fetch
+only. Native compiler/Metal, CTest, CLI file corruption tests,
+GPU multi-group capture, editor UI and on-device recovery
+have NOT RUN for Stage 42.
