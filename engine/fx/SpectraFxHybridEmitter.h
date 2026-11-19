@@ -3,6 +3,7 @@
 // A backend failure is explicit: no silent dual-simulation or mid-frame
 // migration of authoritative state. Call only on the device/render thread.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
