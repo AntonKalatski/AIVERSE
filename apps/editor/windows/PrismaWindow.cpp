@@ -98,6 +98,16 @@ public:
                             pf.stats().outputWidth,pf.stats().outputHeight,
                             pf.stats().temporalUpscaled ? "yes" : "off / fallback");
         ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
+        ImGui::TextDisabled("GPU adaptive: %s  |  scale: %.3f  |  stable fallback: %s",
+            pf.stats().adaptiveResolution ? "on" : "off",
+            double(pf.stats().requestedRenderScale),
+            pf.stats().temporalFallback ? "used" : "not needed");
+        const double gpuFrame=ed.device().gpuFrameMs();
+        if (std::isfinite(gpuFrame) && gpuFrame>0.0)
+            ImGui::TextDisabled("GPU: %.2f ms (last completed, WHOLE frame; not this viewport)",
+                gpuFrame);
+        else
+            ImGui::TextDisabled("GPU frame timing unavailable; adaptive resolution remains at authored scale");
 
         ui::section(nullptr, "Где");
         static const char* scopes[] = {"Вся игра (game.json)", "Эта карта"};
