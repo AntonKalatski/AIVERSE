@@ -194,6 +194,52 @@ void completePendingBatch() {
             "multi-actor retirement stats wrong");
 }
 
+void sharedImmutableGpuAsset() {
+    FakeMetal device;
+    Fixture fixture;
+    auto asset=GpuMorphSharedAsset::create(device,fixture.library,fixture.original);
+    require(bool(asset) && asset->ready(),"shared GPU morph asset initialization failed");
+    auto first=std::make_unique<GpuActorStream>();
+    auto second=std::make_unique<GpuActorStream>();
+    require(first->initializeShared(device,fixture.model,asset),
+            "first shared-asset actor initialization failed");
+    require(second->initializeShared(device,fixture.model,asset),
+            "second shared-asset actor initialization failed");
+    // 5 immutable GPU buffers (base, deltas, CSR offsets/links, original
+    // ModelVertex) plus 3 mutable buffers per actor, instead of 8*2.
+    require(device.buffers.size()==11 &&
+            device.nextCompute==3 && first->sharedAsset()==asset.get() &&
+            second->sharedAsset()==asset.get() &&
+            first->vertexBuffer()!=second->vertexBuffer(),
+            "actors duplicated shared GPU resource data or reused outputs");
+
+    FaceFrame face{};
+    face.values[static_cast<size_t>(Channel::JawOpen)]=0.7f;
+    device.beginFrame(16,16);
+    require(first->dispatch(face,fixture.mapping) &&
+            second->dispatch(face,fixture.mapping),
+            "shared compute pipeline multi-actor dispatch failed");
+    render::ModelDraw drawA,drawB;
+    drawA.model=drawB.model=&fixture.model;
+    require(first->attach(drawA) && second->attach(drawB) &&
+            drawA.vertexOverride!=drawB.vertexOverride,
+            "shared immutable asset leaked per-instance write state");
+    device.endFrame();
+
+    GpuActorRetirementQueue queue(device);
+    require(queue.retire(first) && queue.retire(second),"shared-asset retire rejected");
+    require(!queue.collect(),"GPU marker completed at creation");
+    require(device.buffers.size()==11,"shared buffers retired while GPU work pending");
+    device.tokens[1]=gfx::ResourceRetirementStatus::Complete;
+    require(queue.collect(),"shared-asset GPU marker failed to retire actors");
+    require(device.buffers.size()==5 &&
+            device.destroyedComputes==0 && asset->ready(),
+            "shared immutable asset destroyed while still externally owned");
+    asset.reset();
+    require(device.buffers.empty() && device.destroyedComputes==2,
+            "last shared immutable GPU asset reference leaked resources");
+}
+
 void failedTokenAndRecovery() {
     FakeMetal dev;Fixture fixture;
     GpuActorRetirementQueue retirement(dev);
@@ -239,6 +285,7 @@ void unsupportedMarkersAndWrongDevice() {
 int main() {
     try {
         completePendingBatch();
+        sharedImmutableGpuAsset();
         failedTokenAndRecovery();
         unsupportedMarkersAndWrongDevice();
         std::cout << "VIVID async GPU actor retirement PASS "
