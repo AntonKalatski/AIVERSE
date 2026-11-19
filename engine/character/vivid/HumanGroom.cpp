@@ -124,6 +124,19 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                 }
             }
         }
+        // Neighbor constraints may move an already-projected point on the
+        // last iteration. Enforce collision once more on the final pose.
+        for(std::size_t j=1;j<guide.position.size();++j) {
+            const auto p=guide.position[j];
+            const float3 scaled{p.x/scalpRadii_.x,
+                                p.y/scalpRadii_.y,
+                                p.z/scalpRadii_.z};
+            const float radius=length(scaled);
+            if(radius<1.0f)
+                guide.position[j]=(radius>1e-5f)
+                    ? p*(1.001f/radius)
+                    : guide.root+guide.normal*0.001f;
+        }
         for(auto v:guide.position)if(!good(v))return false;
     }
     lastStepMs_=float(std::chrono::duration<double,std::milli>(
