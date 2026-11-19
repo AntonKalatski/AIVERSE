@@ -29,6 +29,7 @@ public:
                pair.first!="preference" && pair.first!="particles" &&
                pair.first!="gpuIndirectCompaction" &&
                pair.first!="allowUnsortedAlpha" &&
+               pair.first!="gpuSortAlpha" &&
                pair.first!="allowCpuFallback" && pair.first!="quality" &&
                pair.first!="spawn" && pair.first!="appearance" &&
                pair.first!="environment" && pair.first!="lod")
@@ -42,6 +43,11 @@ public:
             if(doc["allowUnsortedAlpha"].type()!=Json::Type::Bool)
                 return fail("allowUnsortedAlpha must be boolean");
             next.allowUnsortedAlpha=doc["allowUnsortedAlpha"].boolean();
+        }
+        if(doc.has("gpuSortAlpha")) {
+            if(doc["gpuSortAlpha"].type()!=Json::Type::Bool)
+                return fail("gpuSortAlpha must be boolean");
+            next.gpuSortAlpha=doc["gpuSortAlpha"].boolean();
         }
         if(doc.has("gpuIndirectCompaction")) {
             if(doc["gpuIndirectCompaction"].type()!=Json::Type::Bool)
@@ -167,6 +173,9 @@ public:
             }
             if(!next.lod.validate()) return fail("invalid GPU LOD range");
         }
+        if(next.gpuSortAlpha &&
+           (next.appearance.additive || next.gpuIndirectCompaction))
+            return fail("gpuSortAlpha requires alpha blend and forbids indirect compaction");
         // Perform the same bounds as the backend's public runtime contract.
         SpectraFxGpuSpawnScheduler validation;
         if(!validation.configure(next.spawning) ||
