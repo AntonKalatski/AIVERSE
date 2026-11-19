@@ -705,14 +705,27 @@ private:
                             (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedPasses,
                             (unsigned long long)modelStats.staticCrossModelAdaptiveProbePasses,
                             (unsigned long long)modelStats.staticCrossModelAdaptiveMeasuredAttempts);
+                        ImGui::Text("Adaptive page groups: %llu skipped / %llu probed",
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedGroups,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveProbeGroups);
+                        const auto pages = ed.renderer().cpuMdiPageStats();
+                        ImGui::Text("Page feedback: %zu tracked / %llu created / %llu reused",
+                            pages.live, (unsigned long long)pages.created,
+                            (unsigned long long)pages.reused);
+                        ImGui::Text("Page feedback: %llu evicted / %llu untracked",
+                            (unsigned long long)pages.evicted,
+                            (unsigned long long)pages.untracked);
+                        ImGui::Text("Over-budget pages: %zu shadow / %zu opaque",
+                            pages.slowShadow, pages.slowOpaque);
                         const auto& cpu = ed.renderer().cpuMdiAdaptiveFeedback();
-                        ImGui::Text("Shadow cost: %.2f us/command (%u samples)",
+                        ImGui::Text("All pages shadow (diagnostic): %.2f us/command (%u)",
                             cpu[0].avgUsPerCommand, cpu[0].samples);
-                        ImGui::Text("Opaque cost: %.2f us/command (%u samples)",
+                        ImGui::Text("All pages opaque (diagnostic): %.2f us/command (%u)",
                             cpu[1].avgUsPerCommand, cpu[1].samples);
                         ImGui::Text("Adaptive budget: %.1f us/command (CPU submit only)",
                             ed.renderer().cpuMdiAdaptiveBudgetUs());
-                        ImGui::TextDisabled("Feedback excludes GPU execution; 1 probe every 32 eligible passes.");
+                        ImGui::TextDisabled("Decisions are per GPU page; aggregate averages never gate others.");
+                        ImGui::TextDisabled("Feedback excludes GPU execution; 1 probe per 32 eligible page passes.");
                     }
                     ImGui::TextDisabled("Preflight is necessary, not a guarantee of a GPU MDI submission.");
                     ImGui::TextDisabled("Pooled GPU buffers and exact material grouping; independent view/LOD.");
