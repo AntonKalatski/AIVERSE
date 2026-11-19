@@ -82,6 +82,8 @@ struct CreatorApp {
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
     GroomQuality groomQuality=GroomQuality::High;
+    bool groomSelfCollision=true;
+    float groomSelfSeparation=0.014f,groomSelfResponse=0.6f;
     float jaw=0.0f, smile=0.0f, blink=0.0f, yaw=0.18f;
     float wind=0.15f;
     int draftGuides=512,draftSegments=8;
@@ -997,6 +999,17 @@ struct CreatorApp {
             }
         }
         if(ImGui::CollapsingHeader("Hair / groom")) {
+            ImGui::Checkbox("Hair self-collision",&groomSelfCollision);
+            ImGui::SliderFloat("Strand separation",&groomSelfSeparation,
+                               0.002f,0.045f,"%.4f");
+            ImGui::SliderFloat("Strand collision response",&groomSelfResponse,
+                               0.05f,1.0f,"%.2f");
+            if(human.groom.stats().guides) {
+                const auto contacts=human.groom.selfCollisionStats();
+                ImGui::Text("Strand pairs %zu / contacts %zu%s",
+                    contacts.pairChecks,contacts.contacts,
+                    contacts.budgetHit?" / budget reached":"");
+            }
             color("Hair pigment",draft.groom.color);
             slider("Length m",&draft.groom.lengthMeters,0,2);
             slider("Density",&draft.groom.density,0,1);
@@ -1781,7 +1794,14 @@ struct CreatorApp {
                    !human.groom.refitCollisionMesh(scalpAnimatedPositions))
                     status="VIVID Creator: invalid scalp pose, last-good BVH retained";
             }
-            human.groom.step(step,{wind,0,wind*0.3f});
+            GroomSelfCollisionConfig strandSettings{};
+            strandSettings.enabled=groomSelfCollision;
+            strandSettings.separation=groomSelfSeparation;
+            strandSettings.response=groomSelfResponse;
+            if(!human.groom.setSelfCollision(strandSettings))
+                status="VIVID groom: invalid strand collision settings";
+            if(!human.groom.step(step,{wind,0,wind*0.3f}))
+                status="VIVID groom: strand simulation rejected step";
             human.groom.updateCardVertices(human.hair->vertices);
             dev.updateBuffer(human.hair->vb,human.hair->vertices.data(),
                              human.hair->vertices.size()*sizeof(ModelVertex));
