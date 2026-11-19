@@ -23,6 +23,17 @@ struct VirtualTextureMipLevel {
     std::vector<uint8_t> rgba;
 };
 
+inline size_t virtualTexturePhysicalMipChainBytes(int side,int mipLevels) {
+    if(side<1 || side>4096 || mipLevels<1 ||
+       mipLevels>maxTextureMipLevels(side,side)) return 0;
+    size_t bytes=0;
+    for(int mip=0;mip<mipLevels;++mip) {
+        const size_t size=size_t(std::max(1,side>>mip));
+        bytes+=size*size*4u;
+    }
+    return bytes;
+}
+
 inline bool buildVirtualTexturePhysicalMips(
     const void* base, size_t baseBytes, int physicalPageSize,
     int levels, bool srgb, std::vector<VirtualTextureMipLevel>& output) {

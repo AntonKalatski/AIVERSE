@@ -258,6 +258,7 @@ public:
                 completed_, failed_, cancelled_};
     }
     const std::string& lastError() const { return error_; }
+    const TextureStreamConfig& configuration() const { return config_; }
     void shutdown() {
         pending_.clear();
         stagedBytes_ = 0;

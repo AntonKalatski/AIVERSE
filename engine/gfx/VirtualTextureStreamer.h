@@ -55,6 +55,37 @@ public:
             error_ = "virtual texture needs supported RGBA8 array resources";
             return false;
         }
+        // Reject impossible budgets BEFORE staging disk pages or creating any
+        // GPU resource: one page's full mip chain is staged atomically and
+        // the first mip must fit a single uploadBytesPerFrame transaction.
+        const auto& budgets=uploads_.configuration();
+        const size_t onePage=virtualTexturePhysicalMipChainBytes(
+            cfg.physicalPageSize,cfg.physicalMipLevels);
+        const size_t baseBytes=size_t(cfg.physicalPageSize)*
+                               size_t(cfg.physicalPageSize)*4u;
+        const size_t mipSelectors=cfg.indexedMipTable ? size_t(cfg.mipLevels) : 1u;
+        if(cfg.tilesX<1 || cfg.tilesY<1 || cfg.mipLevels<1 ||
+           cfg.virtualLayers<1 || !onePage ||
+           baseBytes>budgets.uploadBytesPerFrame ||
+           onePage>budgets.stagingBudgetBytes ||
+           budgets.uploadsPerFrame<1 ||
+           size_t(cfg.tilesX)*4u>cfg.pageTableBytesPerFlush ||
+           size_t(cfg.tilesX)>std::numeric_limits<size_t>::max()/size_t(cfg.tilesY) ||
+           size_t(cfg.tilesX)*size_t(cfg.tilesY)>
+             std::numeric_limits<size_t>::max()/size_t(cfg.virtualLayers) ||
+           size_t(cfg.tilesX)*size_t(cfg.tilesY)*size_t(cfg.virtualLayers)>
+             std::numeric_limits<size_t>::max()/mipSelectors/4u) {
+            error_="virtual texture exceeds page, staging or page-table upload budget";
+            return false;
+        }
+        const size_t tableBytes=size_t(cfg.tilesX)*size_t(cfg.tilesY)*
+                                size_t(cfg.virtualLayers)*mipSelectors*4u;
+        if(onePage>budgets.gpuBudgetBytes/size_t(cfg.physicalPages) ||
+           tableBytes>budgets.gpuBudgetBytes-
+              onePage*size_t(cfg.physicalPages)) {
+            error_="virtual texture atlas and page table exceed combined GPU budget";
+            return false;
+        }
         if (!pages_.initialize(cfg.tilesX,cfg.tilesY,cfg.mipLevels,
                                cfg.virtualLayers,cfg.physicalPages) ||
             !table_.initialize(cfg.tilesX,cfg.tilesY,cfg.mipLevels,
@@ -293,6 +324,16 @@ public:
     }
     VirtualPageStats pageStats() const { return pages_.stats(); }
     TextureStreamStats streamStats() const { return uploads_.stats(); }
+    // Includes the direct RHI page table allocation which is not owned by
+    // TextureStreamQueue::stats().gpuAllocatedBytes. Estimates exclude driver
+    // padding/alignment, sparse allocation and transient uploads.
+    size_t estimatedGpuAllocatedBytes() const {
+        if(!ready()) return 0;
+        const size_t tableBytes=size_t(config_.tilesX)*size_t(config_.tilesY)*
+            size_t(config_.virtualLayers)*
+            size_t(config_.indexedMipTable ? config_.mipLevels : 1)*4u;
+        return uploads_.stats().gpuAllocatedBytes+tableBytes;
+    }
     bool ready() const {
         return atlas_.valid() && tableGpu_.valid() && !failed_ &&
                !uploads_.failed(atlas_);
