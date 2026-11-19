@@ -949,6 +949,26 @@ private:
             ImGui::Text("Queued forward steps: %u / 300",
                         ed.spectraGpuPreviewPendingSteps());
             ImGui::TextDisabled("Forward-only. No reverse GPU state or historical seek.");
+            const auto& history=ed.spectraGpuPreviewHistory();
+            if(!history.empty()) {
+                std::vector<float> estimates;
+                estimates.reserve(history.size());
+                uint32_t failures=0;
+                for(const auto& record:history) {
+                    estimates.push_back(float(record.estimatedParticles));
+                    if(!record.stepAccepted)++failures;
+                }
+                ImGui::PlotLines("Recent GPU particle estimates",
+                    estimates.data(),int(estimates.size()),0,nullptr,
+                    0.0f,FLT_MAX,{0,54});
+                ImGui::Text("History: %zu / 180 frames, rejected steps: %u",
+                            history.size(),failures);
+                if(ImGui::Button("Copy GPU timeline JSON")) {
+                    const std::string diagnostics=ed.spectraGpuPreviewHistoryJson();
+                    ImGui::SetClipboardText(diagnostics.c_str());
+                    message_="GPU preview diagnostics copied (not replayable snapshot)";
+                }
+            }
             ImGui::BeginDisabled(!ed.spectraGpuPreviewActive());
             ImGui::SetNextItemWidth(155.f);
             ImGui::SliderFloat("Advance GPU (+seconds)",&gpuAdvanceSeconds_,
@@ -976,6 +996,19 @@ private:
             if(pool && pool->ready()) {
                 const auto cp=pool->checkpointStats();
                 const auto& ps=pool->stats();
+                const auto& reset=pool->resetReport();
+                if(reset.retryRequired || reset.deviceLost) {
+                    ui::toneText(ui::Tone::Error,
+                        "GPU reset blocked: %u/%u groups prepared, attempts %llu",
+                        reset.groupsAccepted,reset.groupCount,
+                        static_cast<unsigned long long>(reset.attempts));
+                    if(reset.deviceLost)
+                        ImGui::TextWrapped("Device lost: rebuild a new GPU pool from "
+                            "CPU-side effect definitions. Live GPU particles cannot be recovered.");
+                } else if(reset.attempts>0) {
+                    ImGui::TextDisabled("Last reset accepted: %u/%u groups",
+                        reset.groupsAccepted,reset.groupCount);
+                }
                 ImGui::Text("GPU groups: %u    Sources: %u",
                             ps.gpuGroups,ps.activeSources);
                 if(cp.gpuDeviceHealthKnown) {
