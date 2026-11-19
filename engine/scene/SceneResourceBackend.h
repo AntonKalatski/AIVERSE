@@ -158,7 +158,8 @@ public:
     void poll(size_t startBudget = 4) {
         for(auto it = entries_.begin(); it != entries_.end();) {
             auto& e = it->second;
-            if(e.phase != SceneResourcePhase::Preparing ||
+            if((e.phase != SceneResourcePhase::Preparing &&
+                e.phase != SceneResourcePhase::Cancelled) ||
                !e.future.valid() ||
                e.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 ++it;
@@ -168,7 +169,8 @@ public:
             try { result = e.future.get(); }
             catch(const std::exception& ex) { result.error = ex.what(); }
             catch(...) { result.error = "unknown scene resource worker exception"; }
-            if(e.pins == 0 && e.leases == 0) {
+            if(e.phase == SceneResourcePhase::Cancelled ||
+               (e.pins == 0 && e.leases == 0)) {
                 releaseStaging(e);
                 it = entries_.erase(it);
                 continue;
@@ -212,6 +214,7 @@ public:
                 continue;
             }
             e.phase = SceneResourcePhase::Preparing;
+            e.stagingHeld = true;
             stagingReserved_ += e.spec.stagingBytes;
             ++inflight;
             --startBudget;
