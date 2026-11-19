@@ -283,7 +283,8 @@ HumanImportedAsset importHumanAsset(const HumanImportManifest& m,
         auto match=out.model->findMaterial(name);
         if(match<0)
             throw std::runtime_error("VIVID import: unknown material "+name);
-        out.model->materials[std::size_t(match)]=humanMaterial(category,out.dna);
+        out.model->materials[std::size_t(match)]=humanMaterialFromSource(
+            category,out.dna,out.model->materials[std::size_t(match)]);
     }
     return out;
 }
