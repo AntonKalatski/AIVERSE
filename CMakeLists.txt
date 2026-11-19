@@ -2113,6 +2113,12 @@ if(AIVERSE_BUILD_STRATA)
             target_link_libraries(aiverse_strata_disk_pages_tests PRIVATE
                 aiverse_strata_portable aiverse_zstd_dec)
             add_test(NAME strata_disk_pages COMMAND aiverse_strata_disk_pages_tests)
+            add_executable(aiverse_strata_streaming_coordinator_tests
+                tests/render/strata_streaming_coordinator.cpp)
+            target_link_libraries(aiverse_strata_streaming_coordinator_tests PRIVATE
+                aiverse_strata_disk aiverse_zstd_dec)
+            add_test(NAME strata_streaming_coordinator
+                COMMAND aiverse_strata_streaming_coordinator_tests)
         endif()
     endif()
     # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
