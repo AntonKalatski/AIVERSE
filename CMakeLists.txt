@@ -756,6 +756,26 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         COMMAND aiverse_scoped_resource_owner_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_diagnostic_ring_tests
+        tests/render/retirement_diagnostic_ring.cpp)
+    target_include_directories(aiverse_retirement_diagnostic_ring_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_diagnostic_ring
+        COMMAND aiverse_retirement_diagnostic_ring_tests)
+    add_executable(aiverse_appearance_authoring_tests
+        tests/view/appearance_authoring.cpp)
+    target_link_libraries(aiverse_appearance_authoring_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_authoring
+        COMMAND aiverse_appearance_authoring_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_device_epoch_tests tests/render/device_epoch.cpp)
+    target_link_libraries(aiverse_device_epoch_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_device_epoch COMMAND aiverse_device_epoch_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
