@@ -972,3 +972,16 @@ When PHYSIS/gameplay weather differs across map regions, publish a **small immut
 - CPU integer interpolation is deterministic on validated values; GLSL/MSL floating sine is *not* guaranteed bitwise equal across devices. Preserve the signed world-centimetre convention including negative coordinates.
 
 **User order:** finish all functional features, tests later. After each bounded stage, append `docs/terrain/AGENT_HANDOFF.md` with exact changed files/commit, public API, actual checks, limitations and concrete next step; never claim queued CI or unexecuted GPU shader tests pass.
+
+## Stage 33 — procedural variation within distant Horizon HLOD forest
+
+A far Horizon region has a single shared forest material, atlas and draw path. To avoid the old "every forest cluster sways identically" effect **without allocating per-cluster entities, textures, uniforms or per-frame atlas updates**, use the dedicated Stage 33 `horizonSpatialWindGraph()` with stable world-anchored metadata from `horizonSpatialWindVertexColor(worldXcm,worldZcm,seed,top)`.
+
+- At `makeHorizonModel` time, assign the SAME RGB8 value to all vertices of the two crossed cards of one forest cluster, sampled from smooth 2.4 km deterministic world-centimetre noise. Only alpha changes with crown height (0 bottom, 255 top). `Material::vertexColors=false` keeps the vertex attributes from tinting the fragment RGBA mask.
+- In the existing GLSL/Metal `vertexOffset` hooks, `horizonSpatialWindGraph` rotates the macro wind up to ±30 degrees, scales its strength 0.75..1.25, and offsets its phase using the per-card RGB values. Bottom vertices do not move. No extra GPU buffer or render pass; one shared program is reused across all clusters and game ticks.
+- The macro vector still comes from `TerraWeaveHorizonScene::setWind` and its immutable `ForestWindField` sampled at the latest observer position. The near Flora system continues to sample the field at each tree and blend near-to-far toward the observer macro (Stage 32). **Do NOT claim exact PHYSIS-per-cluster wind**: the new differences are procedural subvariation on top of one macro vector, not direct samples from remote spatial field nodes.
+- `TerraWeaveHorizonScene::setSpatialWindVariation(bool)` and native `WorldScene::setVegetationHorizonSpatialWind(bool)` (default true) switch between this spatial graph and the old uniform macro `canopyWindGraph`. With zero wind, leave graph disabled entirely. Switch on the scene owning render/update thread before frame submission.
+- Ensure no source fingerprint/TWH8 changes, no Horizon atlas re-bake or vertex-buffer updates for wind ticks. World coordinate noise/encoded RGB must be independent from camera region/origin to prevent visible phase jumps on region transitions. Maintain Stage 31 conservative 0.65m displacement envelope.
+- The additional per-vertex trig is not proven free: benchmark GPU cost, shader graph compatibility and visible near/Horizon transition quality before production. Keep the PR Draft and defer CMake/CTest/GPU checks per the user's feature-first instruction.
+
+After every functional feature, append a handoff in `docs/terrain/AGENT_HANDOFF.md` with commit SHAs, source files, architecture/API, actual verification vs unrun tests, limitations and concrete next step for another agent.
