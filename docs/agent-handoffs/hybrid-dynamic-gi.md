@@ -611,3 +611,7 @@ Continuation is on `feature/gi-lighting-portable-backends-20261119`, forked from
 - `docs/agent-handoffs/gi-stage28-world-dirty-clearing-2026-11-19.md`
 
 These stages prevent stale CPU probe radiance from remaining in the RHI texture after moving/removed lights, bounded world invalidations, and saturated terrain/vegetation events. They do not implement native Vulkan compute or prove Android GLES hardware compatibility. New regression sources are authored but **not run**. The upstream GI branch was 159 commits ahead and 467 behind `main` at inspection; do not describe this as integrated or merge-ready.
+
+## Stage 29 — 2026-11-19 — stale GI binding fail-closed and Vulkan/GLES RHI inspection (SOURCE; NOT RUN)
+
+Stage 29 on the portable branch records source commit `01a9ca9b976c9f4d7d10b226d3df0f47d4c6fe47`, the previous-frame borrowed texture unbinding fix, and a source-only audit of Vulkan RGBA32F sampled image and GL ES3 GL_RGBA32F update paths. Full per-stage details, limits, native test status, and exact next action are in `docs/agent-handoffs/gi-stage29-bind-safety-and-rhi-audit-2026-11-19.md`. **Vulkan native compute is absent; do not present CPU/RHI fallback as GPU compute parity. Not compiled or GPU-tested.**
