@@ -569,6 +569,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
+            it.motionPersistentId = d.persistentId;
+            it.motionNodeIndex = n;
             it.castShadow = !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 && it.mat->castShadow && it.mat->alpha != AlphaMode::Blend && !transparentItem(it.flags);
             it.inView = nodeView; it.inShadow = nodeShadow && it.castShadow;
             it.joints = -1; it.baked = false; it.anim = anim; it.morph = -1;
