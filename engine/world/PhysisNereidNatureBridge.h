@@ -31,6 +31,7 @@ inline bool readNatureWaterContact(const ::aiverse::World& world,
     if (!world.alive(entity) || !natureProbe || !natureProbe->enabled ||
         !nature || !nature->valid || !waterProbe || !water ||
         nature->sampledSimulationTick != water->sampledTick ||
+        nature->position != natureProbe->position ||
         nature->position != waterProbe->position)
         return false;
     NatureWaterContactView value;

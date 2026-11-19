@@ -123,6 +123,15 @@ static std::uint64_t run(bool cow) {
             both.sampledSimulationTick == 0,
             "composed PHYSIS/NEREID contact must be coherent");
 
+    // After input moves, the old derived result must not be accepted before
+    // the next committed PHYSIS/NEREID sampling pass.
+    sim->world().get<pn::NatureProbeComponent>(host->observer).position =
+        {-40_fx, 0_fx, -50_fx};
+    require(!bridge::readNatureWaterContact(sim->world(), host->observer, both),
+            "bridge accepted a stale nature position before sampling");
+    sim->world().get<pn::NatureProbeComponent>(host->observer).position =
+        {-50_fx, 0_fx, -50_fx};
+
     const std::string saved = sim->serialize();
     const auto initialChecksum = sim->checksum();
     auto restored = makeSim();
