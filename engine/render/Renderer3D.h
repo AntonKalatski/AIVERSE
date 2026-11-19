@@ -134,6 +134,8 @@ public:
         (void)viewId; (void)previousViewProj; return false;
     }
     virtual void acceptObjectMotionVectors(gfx::TextureHandle) {}
+    // Optional borrowed current-frame reactive coverage (R=0..1).
+    virtual void acceptMotionReactiveMask(gfx::TextureHandle) {}
 };
 
 // Baked skinning sample (Animator::baseSample()): clip A blends to clip B by `mix`; clip -1 = bind pose.
@@ -594,6 +596,7 @@ private:
     struct ObjectMotionHistory {
         gfx::TextureHandle target;
         gfx::TextureHandle depth;
+        gfx::TextureHandle reactive; // current-frame translucent coverage; no temporal content
         int width = 0, height = 0;
         uint64_t epoch = 0; // last observed PostProcess camera-cut generation
         bool valid = false;
@@ -613,6 +616,8 @@ private:
     gfx::PipelineHandle objectMotionBakedPipeline_;
     gfx::ShaderHandle objectMotionMaskedShader_;
     gfx::PipelineHandle objectMotionMaskedPipeline_;
+    gfx::ShaderHandle objectMotionReactiveShader_;
+    gfx::PipelineHandle objectMotionReactivePipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
