@@ -8,6 +8,7 @@ on:
       - 'engine/physis/**'
       - 'engine/physics/PhysisBox3D.h'
       - 'tests/physis_*.cpp'
+      - 'tests/physis_journal_standalone/**'
       - 'CMakeLists.txt'
       - '.github/workflows/physis.yml'
   pull_request:
@@ -15,6 +16,7 @@ on:
       - 'engine/physis/**'
       - 'engine/physics/PhysisBox3D.h'
       - 'tests/physis_*.cpp'
+      - 'tests/physis_journal_standalone/**'
       - 'CMakeLists.txt'
       - '.github/workflows/physis.yml'
   workflow_dispatch:
