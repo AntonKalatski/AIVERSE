@@ -17,7 +17,18 @@ constexpr float kCasterCut = 0.5f;
 } // namespace
 
 bool SpriteBatch::init(gfx::Device& dev) {
+    if (dev_) throw std::logic_error("SpriteBatch init: already initialized");
     dev_ = &dev;
+    auto rollback = [&] {
+        // A failed init may have created GPU objects. Release only after
+        // the backend confirms previous users of this device are idle.
+        if (!dev.waitForResourceIdle())
+            throw std::runtime_error("SpriteBatch init rollback: GPU idle barrier failed");
+        shutdown();
+    };
+    bool initialized = false;
+    try {
+        initialized = [&]() -> bool {
     gfx::ShaderDesc sd;
     sd.glslVertex = shaders::kSpriteVS; sd.glslFragment = shaders::kSpriteFS; sd.msl = shaders::kSpriteMSL;
     sd.textureSlots = 2; sd.uniformSlots = 3; sd.label = "sprite";   // U2 + tex1: lights (LightShaders.h)
@@ -106,6 +117,13 @@ bool SpriteBatch::init(gfx::Device& dev) {
     casterVb_ = dev.createBuffer(vb);
     return blendPipe_.valid() && groundPipe_.valid() && decalPipe_.valid() &&
            ib_.valid() && vb_.valid() && casterVb_.valid();
+        }();
+    } catch (...) {
+        rollback();
+        throw;
+    }
+    if (!initialized) rollback();
+    return initialized;
 }
 
 void SpriteBatch::shutdown() {
