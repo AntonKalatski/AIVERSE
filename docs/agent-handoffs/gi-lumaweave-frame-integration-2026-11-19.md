@@ -86,3 +86,18 @@ No RHI or ECS changes, legacy baked indirect remains independent. New dirty IDs 
 Actual checks: GitHub source update acknowledgments only. C++ compile, CTest, Vulkan GLSL/SPIR-V, GLES3 shader/device, Metal GPU readback/visual benchmarks **NOT RUN**. The test assertions have not been observed passing.
 
 Next stage: explicitly bound portable CPU GI work per backend; author compiler/runtime backend policy checks and Vulkan+GLES acceptance harness. Finish functional work and reconcile main before a single execution of test suite.
+
+## Stage 6 — portable backend budget gates + SPIR-V compile source + acceptance plan (SOURCE COMMITTED; TESTS DEFERRED)
+
+Source commits:
+- `8642734c54cb9a3ba280a19b214209bf1010eb64`: `engine/render/LumaWeaveBackendPolicy.h` capability report and default bounded CPU GI probe work: GLES3=2, Vulkan=16, GL33=8, Metal CPU fallback=8 probes/frame. This is a safety work limit, **not** measured frame timing; `metalComputeCandidate` is only a capability candidate, not shader compilation success.
+- `e7fe07972fff2f07cec374fd7cb31531249d84b1`: `LumaWeaveNativeDriver.h` inspects device backend, honors sampled RGBA32F capability for CPU GI, limits actual CPU GI probe submissions and exposes `cpuGiProbeBudgetAdmitted`/`cpuGiBudgetClamped`.
+- `af16e34666e720145442f8df73d570376546b65f`: source-only `tests/render/lumaweave_backend_policy.cpp` (all four backends, no mistaken Vulkan/GLES compute claim).
+- `388cdd40ff3ee1ff4869fdf8716f3dd766d4953e`: registered `lumaweave_backend_policy` CTest.
+- `923920c47b84335fa7d03a3976b54c5a1427043f`: `tests/render/gi_vulkan_glsl_contract.cpp` checks real `GiDynamicShaders.h` GLSL L1, validity and dual-cascade permutations with vendored Vulkan GLSL-to-SPIR-V compiler. It does NOT require Vulkan device and does NOT validate GLES3 GPU shader.
+- `46d177623a0b1727244da6774e62705e105f1275`: CMake test `gi_vulkan_glsl_contract` (only when `AIVERSE_VULKAN` is enabled).
+- `2c4c754fefd1aca4f90f86bb4a092ec36c7a94cc`: `tools/lumaweave_portable_acceptance.sh` Linux-only, inert without explicit `--run`: builds Debug+Release, executes entire CTest, rejects skipped Vulkan device and silent fallback, captures GLES3/GL and Vulkan renderer screenshots under Xvfb. This is NOT the dedicated GI+Luma native-view visual fixture.
+
+Actual work: source file creates/updates acknowledged in GitHub. **NOT RUN** native compiler, CTest, MSL/SPIR-V GLSL compile, Vulkan device or OpenGL ES3 captures, WebGL2, GPU timing. The one-shot runners are PREPARED ONLY. Main branch still unmerged. Do not call this complete Vulkan GPU compute: Vulkan `Device::supportsCompute()` is not implemented and GLES3/WebGL2 have no compute API in this engine.
+
+Next: prepare and integrate a minimal native lighting visual scene that actually invokes the LumaWeave driver on Metal/Vulkan/GLES, verify GLSL ES3 16 sampler limits, audit material depth and dynamic probe source publication, and reconcile current main renderer interfaces. Then run one consolidated pass per platform on real hardware (including fallback and measured cost), not before source freeze.
