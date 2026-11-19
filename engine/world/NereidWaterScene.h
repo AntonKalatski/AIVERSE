@@ -26,6 +26,8 @@ struct NereidSceneSurface {
     lib::nereid::WaterBodyComponent body{};
     lib::nereid::WaterGeometryComponent geometry{};
     bool useGeometry=false;
+    lib::nereid::WaterCurrentFieldComponent currentField{};
+    bool useCurrentField=false;
     lib::nereid::WaterSurfaceMeshOptions mesh{};
     lib::nereid::WaterSurfaceStyle style{};
     // Optional camera-distance LOD; fixed thresholds are presentation-only.
@@ -170,13 +172,20 @@ public:
     size_t surfaceCount()const{return slots_.size();}
     // Renderer-side flow lookup by the packed WaterBody Entity stored in a
     // presentation ripple event; no ECS pool access or mutable ownership.
-    Vec3 currentForInteractionWater(uint64_t packedWaterId)const {
+    Vec3 currentForInteractionWater(uint64_t packedWaterId,Vec3 position)const {
         if(packedWaterId==UINT64_MAX)return {};
         const uint64_t stableId=packedWaterId+1;
         for(const auto& slot:slots_)if(slot.source.id==stableId &&
-                                         slot.source.body.enabled)
-            return slot.source.body.flow;
+                                         slot.source.body.enabled) {
+            const auto& src=slot.source;
+            return lib::nereid::waterCurrentAt(
+                src.body,src.useGeometry?&src.geometry:nullptr,
+                src.useCurrentField?&src.currentField:nullptr,position);
+        }
         return {};
+    }
+    Vec3 currentForInteractionWater(uint64_t packedWaterId)const {
+        return currentForInteractionWater(packedWaterId,{});
     }
     // Read-only presentation visitor; callers must not retain references
     // beyond the next setSurfaces transaction.
