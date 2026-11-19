@@ -179,7 +179,7 @@ int aiverseMain(int argc, char** argv) {
     // Cold-vs-warm packet screenshot parity uses the same self-contained
     // varied-material 16-rigid-part fixture as the indirect palette test.
     auto model = scenario == "indirect" || scenario == "indirect_palette" ||
-                 scenario == "static_packets"
+                 scenario == "static_packets" || scenario == "auto_stress"
         ? indirectFixture(scenario != "indirect") : render::loadModel(argv[1],read);
     const std::string prefix = argv[2];
     const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
@@ -194,6 +194,28 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    const bool stress = scenario == "auto_stress";
+    const int captureBeforeFrame = stress ? 75 : 8;
+    const int captureAfterFrame = stress ? 195 : 23;
+    const int startBatchFrame = stress ? 90 : 15;
+    const int maximumFrame = stress ? 205 : 40;
+    // Number of visible-targeted primitive items, rounded up in 16-part
+    // rigid-model units. This is not a guaranteed post-culling visible count.
+    size_t stressDraws = 0;
+    if (stress) {
+        const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
+        char* end = nullptr;
+        const unsigned long parsed = raw ? std::strtoul(raw, &end, 10) : 1024ul;
+        if (raw && (end == raw || *end != '\0' || parsed < 64ul ||
+                    parsed > 100000ul)) {
+            std::fprintf(stderr, "AIVERSE_BATCH_STRESS_ITEMS must be 64..100000\n");
+            return 2;
+        }
+        stressDraws = (size_t(parsed) + 15) / 16;
+        std::printf("stress requested_items=%zu submitted_model_draws=%zu "
+                    "source_primitives_per_draw=16\n",
+                    size_t(parsed), stressDraws);
+    }
     // Benchmark only: independent runs for CPU MDI and GPU ICB. The latter
     // may legitimately retain CPU MDI for a different render pass.
     const std::string benchmarkMode = std::getenv("AIVERSE_BATCH_BENCH_MODE")
@@ -232,8 +254,8 @@ int aiverseMain(int argc, char** argv) {
         for (const auto& mesh:model->meshes) batches.push_back(mesh.materialBatches);
     };
     cb.frame=[&](gfx::Device& d,double) {
-        if(failed||finished||frame>40){platform::requestQuit();return;}
-        const bool batch=frame>=15;
+        if(failed||finished||frame>maximumFrame){platform::requestQuit();return;}
+        const bool batch=frame>=startBatchFrame;
         // In cpu_mdi mode explicitly exclude GPU-authored draws, regardless
         // of process flags. In gpu_icb mode the original real GPU ICB path is
         // allowed, with separate CPU MDI counters for any remaining passes.
@@ -277,7 +299,18 @@ int aiverseMain(int argc, char** argv) {
             pixels=std::max(pixels,render::geometryErrorPixels(renderer.lightViewProj()*xf,mesh.boundsMin,mesh.boundsMax,error,renderer.shadowMapSize(),renderer.shadowMapSize(),d.info().clipDepthZeroToOne));
             mesh.lods.resize(1);mesh.lods[0].maxPixels=pixels;renderer.setModelLodFadeWidth(.15f);
         }
-        renderer.drawModel(draw);
+        if (stress) {
+            // Deterministic grid with bounded world footprint; use identical
+            // geometry, camera, lighting and transforms in both phases.
+            // Avoid multiplying geometry payload size by reusing one Model.
+            for (size_t n = 0; n < stressDraws; ++n) {
+                auto instance = draw;
+                const float x = float(n % 32) * 0.12f - 1.8f;
+                const float z = float((n / 32) % 32) * 0.12f - 1.8f;
+                instance.world = render::mat4::translate({x, 0, z}) * draw.world;
+                renderer.drawModel(instance);
+            }
+        } else renderer.drawModel(draw);
         if (scenario == "indirect") {
             render::ModelDraw other = draw;
             other.model = secondModel.get();
@@ -291,8 +324,11 @@ int aiverseMain(int argc, char** argv) {
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
         // Discard pipeline warmup and the transition frame; no readback in sample.
-        if (cpuTiming && ((frame >= 3 && frame <= 8) ||
-                          (frame >= 18 && frame <= 23))) {
+        if (cpuTiming && (stress
+                ? ((frame >= 10 && frame <= captureBeforeFrame) ||
+                   (frame >= 115 && frame <= captureAfterFrame))
+                : ((frame >= 3 && frame <= 8) ||
+                   (frame >= 18 && frame <= 23)))) {
             const double ms = std::chrono::duration<double, std::milli>(
                 endCpu - startCpu).count();
             (batch ? cpuRenderAfter : cpuRenderBefore).push_back(ms);
@@ -311,7 +347,7 @@ int aiverseMain(int argc, char** argv) {
                 failed = true;
             }
         }
-        if (cpuTiming && frame == 23) {
+        if (cpuTiming && frame == captureAfterFrame) {
             const auto report = [](const char* phase, std::vector<double> samples) {
                 std::sort(samples.begin(), samples.end());
                 if (samples.empty()) return;
@@ -343,7 +379,7 @@ int aiverseMain(int argc, char** argv) {
             }
 
         }
-        if(frame==8||frame==23){
+        if(frame==captureBeforeFrame||frame==captureAfterFrame){
             const auto& p=renderer.profile();
             std::printf("batch=%d shadow=%u opaque=%u total=%u error=%s\n",batch,p.draws[0],p.draws[1],renderer.drawCalls(),renderer.modelError().c_str());
             if(!batch){shadowBefore=p.draws[0];opaqueBefore=p.draws[1];}
@@ -373,6 +409,19 @@ int aiverseMain(int argc, char** argv) {
                         stats.mdiPaletteCommands < 16) failed = true;
                 } else if (p.draws[1] != opaqueBefore) failed = true;
                 if (p.draws[0] != shadowBefore) failed = true;
+            }
+            else if (stress) {
+                const auto gpu = renderer.gpuModelDrawStats();
+                const auto cpu = renderer.modelStats();
+                std::printf("stress phase=%s model_draw_calls=%u "
+                            "cpu_mdi_submissions=%llu cpu_mdi_commands=%llu "
+                            "gpu_icb_submissions=%u gpu_icb_commands=%u\n",
+                    batch ? "auto" : "direct", p.draws[0] + p.draws[1],
+                    (unsigned long long)cpu.multiDrawSubmissions,
+                    (unsigned long long)cpu.indirectCommands,
+                    gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                // AUTO can correctly choose any valid renderer path.
+                // Pixel parity and exit status remain mandatory below.
             }
             else if (scenario == "indirect") {
                 const bool supported = d.supportsMultiDrawIndirect();
