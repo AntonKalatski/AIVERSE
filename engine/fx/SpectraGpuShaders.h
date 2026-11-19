@@ -35,6 +35,9 @@ struct DrawArgs {
 // GPU VM ABI mirrors SpectraGpuProgram.h. Slot/field/op numbers are fixed
 // and checked by prepareForMetal before a payload is bound.
 struct VmParams { float4 p0; float4 p1; };
+// Persisted across GPU Spawn/Update in a buffer separate from Particle ABI.
+// Every reused physical slot receives a fresh zero-initialized struct.
+struct VmAttributes { float4 a0; float4 a1; };
 struct VmInstruction { uint opcode; uint field; float scalar; uint reserved; };
 struct VmStatement { uint stage; uint action; uint target; uint firstInstruction;
                      uint instructionCount; uint reserved[3]; };
@@ -43,7 +46,7 @@ struct VmPayload {
     VmStatement statements[64];
     VmInstruction instructions[512];
 };
-float vmRead(uint field,Particle p,VmParams params,float dt) {
+float vmRead(uint field,Particle p,VmParams params,VmAttributes attrs,float dt) {
     switch(field) {
     case 0u:return p.positionAge.w; // age
     case 1u:return clamp(p.positionAge.w/max(p.velocityLife.w,0.01f),0.0f,1.0f);
@@ -60,12 +63,14 @@ float vmRead(uint field,Particle p,VmParams params,float dt) {
     case 14u:return p.tint.z;
     case 15u:return p.tint.w;
     default:
+        if(field>=16u && field<20u)return attrs.a0[field-16u];
+        if(field>=20u && field<24u)return attrs.a1[field-20u];
         if(field>=24u && field<28u)return params.p0[field-24u];
         if(field>=28u && field<32u)return params.p1[field-28u];
         return 0.0f; // must be rejected by the C++ ABI validator
     }
 }
-void vmWrite(uint field,thread Particle& p,float value) {
+void vmWrite(uint field,thread Particle& p,thread VmAttributes& attrs,float value) {
     switch(field) {
     case 4u:p.positionAge.x=value;break;
     case 5u:p.positionAge.y=value;break;
@@ -78,13 +83,16 @@ void vmWrite(uint field,thread Particle& p,float value) {
     case 13u:p.tint.y=clamp(value,0.0f,1.0f);break;
     case 14u:p.tint.z=clamp(value,0.0f,1.0f);break;
     case 15u:p.tint.w=clamp(value,0.0f,1.0f);break;
-    default:break;
+    default:
+        if(field>=16u && field<20u)attrs.a0[field-16u]=value;
+        else if(field>=20u && field<24u)attrs.a1[field-20u]=value;
+        break;
     }
 }
 // Returns false for malformed/unsafe expressions; an individual failed
 // statement is skipped like the CPU VM rather than poisoning GPU state.
 bool vmEvaluate(device const VmPayload& vm,VmStatement s,Particle p,
-                VmParams params,float dt,thread float& result) {
+                VmParams params,VmAttributes attrs,float dt,thread float& result) {
     float stack[48];
     uint top=0u;
     if(s.instructionCount==0u || s.instructionCount>48u ||
@@ -93,7 +101,7 @@ bool vmEvaluate(device const VmPayload& vm,VmStatement s,Particle p,
         VmInstruction ins=vm.instructions[s.firstInstruction+i];
         if(ins.opcode<=1u) {
             if(top>=48u)return false;
-            float v=ins.opcode==0u?ins.scalar:vmRead(ins.field,p,params,dt);
+            float v=ins.opcode==0u?ins.scalar:vmRead(ins.field,p,params,attrs,dt);
             if(!isfinite(v)||fabs(v)>1.0e7f)return false;
             stack[top++]=v;
             continue;
@@ -127,21 +135,21 @@ bool vmEvaluate(device const VmPayload& vm,VmStatement s,Particle p,
     return true;
 }
 void vmRun(device const VmPayload& vm,uint stage,thread Particle& p,
-           VmParams params,float dt) {
+           VmParams params,thread VmAttributes& attrs,float dt) {
     if(vm.abiVersion!=1u || vm.statementCount>64u ||
        vm.instructionCount>512u)return;
     for(uint i=0u;i<vm.statementCount;++i) {
         const VmStatement s=vm.statements[i];
         if(s.stage!=stage)continue;
         float value=0.0f;
-        if(!vmEvaluate(vm,s,p,params,dt,value))continue;
-        const float before=vmRead(s.target,p,params,dt);
+        if(!vmEvaluate(vm,s,p,params,attrs,dt,value))continue;
+        const float before=vmRead(s.target,p,params,attrs,dt);
         float next=value;
         if(s.action==1u)next=before+value;
         else if(s.action==2u)next=before+value*dt;
         else if(s.action==3u)next=before*value;
         else if(s.action!=0u)continue;
-        if(isfinite(next) && fabs(next)<=1.0e7f)vmWrite(s.target,p,next);
+        if(isfinite(next) && fabs(next)<=1.0e7f)vmWrite(s.target,p,attrs,next);
     }
 }
 uint packColor(float4 c) {
@@ -159,7 +167,8 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device const VmParams* seedParams [[buffer(7)]],
                      constant Uniforms& u [[buffer(8)]],
                      device VmParams* stateParams [[buffer(9)]],
-                     device const VmPayload* vmProgram [[buffer(10)]]) {
+                     device const VmPayload* vmProgram [[buffer(10)]],
+                     device VmAttributes* stateAttributes [[buffer(11)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
@@ -167,9 +176,11 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         if(slot<u.meta.y) {
             Particle p=spawns[id];
             VmParams params=seedParams[id];
-            vmRun(vmProgram[0],0u,p,params,0.0f);
+            VmAttributes attrs{}; // no leakage from recycled physical slot
+            vmRun(vmProgram[0],0u,p,params,attrs,0.0f);
             particles[slot]=p;
             stateParams[slot]=params;
+            stateAttributes[slot]=attrs;
         }
         return;
     }
@@ -200,7 +211,9 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         if(p.positionAge.w>=p.velocityLife.w)p.positionAge.w=-1.0f;
         else {
             VmParams params=stateParams[id];
-            vmRun(vmProgram[0],1u,p,params,dt);
+            VmAttributes attrs=stateAttributes[id];
+            vmRun(vmProgram[0],1u,p,params,attrs,dt);
+            stateAttributes[id]=attrs;
         }
         particles[id]=p;
         return;
