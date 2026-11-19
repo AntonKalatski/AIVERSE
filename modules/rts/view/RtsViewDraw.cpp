@@ -191,17 +191,29 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
                 }else {
                     d.pose=nullptr;
                     d.nodeWorld=nullptr; // safe bind pose on stale asset
+                    ++legacyLodFallbackStats_.rejectedCompiledPlans;
+                    ++legacyLodFallbackStats_.bindPoseFallbacks;
                 }
-            }else {
+            }else if(legacyLodFallbackMode_==
+                    LegacyLodFallbackMode::PreserveWorldMatrices) {
                 // Compatibility fallback ONLY for legacy LODs that have
-                // never received a compiled plan. Record real visual parity
-                // before migrating these to source-rig retargeting.
+                // never received a compiled plan. Keep the historical
+                // visual default until real editor/GPU parity is verified.
                 lodWorld=lod->model->bindWorld;
                 for(size_t n=0;n<lodWorld.size() && n<lod->nodeMap.size();++n)
                     if(lod->nodeMap[n]>=0 &&
                        size_t(lod->nodeMap[n])<st.world.size())
                         lodWorld[n]=st.world[size_t(lod->nodeMap[n])];
                 d.nodeWorld=&lodWorld;
+                ++legacyLodFallbackStats_.worldMatrixFallbacks;
+            }else {
+                // Migration mode for projects that require strict
+                // protection against unmatched bone/skeleton layouts.
+                // The source animation continues; the distant asset
+                // remains at its own bind pose.
+                d.pose=nullptr;
+                d.nodeWorld=nullptr;
+                ++legacyLodFallbackStats_.bindPoseFallbacks;
             }
         }
     } else if (stage && stage->choice.model == ch.model && ch.needsPose && !st.world.empty()) {
