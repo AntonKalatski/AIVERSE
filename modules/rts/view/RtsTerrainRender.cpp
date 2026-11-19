@@ -58,6 +58,7 @@ std::vector<uint8_t> parseMaterialRows(const Json& rows, int w, int h) {
 // ------------------------------------------------------------------ setup
 
 void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReader& read, const std::string& contentBase) {
+    checkGpuDevice(dev);
     if (dev_) shutdown(*dev_);
     dev_ = &dev;
     rules_ = &rules;
@@ -163,6 +164,7 @@ void TerrainRenderer::loadTextures(gfx::Device&) {
 }
 
 void TerrainRenderer::shutdown(gfx::Device& dev) {
+    checkGpuDevice(dev);
     for (auto& c : chunks_) freeChunk(dev, c);
     chunks_.clear();
     for (auto* l : {&apron_}) { dev.destroyBuffer(l->vb); dev.destroyBuffer(l->ib); *l = {}; }
@@ -254,6 +256,7 @@ uint64_t TerrainRenderer::chunkHash(const MapGrid& g, const Chunk& c, bool flatD
 }
 
 bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
+    checkGpuDevice(dev);
     auto t0 = std::chrono::steady_clock::now();
     if (g.w <= 0 || g.h <= 0) return false;
     lh_ = rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f;
