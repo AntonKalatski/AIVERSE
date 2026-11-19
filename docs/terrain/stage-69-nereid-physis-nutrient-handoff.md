@@ -222,3 +222,36 @@ available in a TerraWeave-only checkout.
 Always append the next completed stage's specific changed-file list,
 commits, tested commands, real results, exact branch head and
 follow-up in another handoff file.
+
+
+## Final branch/readback snapshot (2026-11-19)
+
+The final source paths were individually re-fetched from GitHub:
+`TerraWeaveForestNutrientCycle.h`,
+`TerraWeaveForestNutrientEcs.h`,
+`TerraWeaveNereidNutrientJunction.h`,
+`TerraWeavePhysisNutrientBridge.h`,
+native `Integration.h`, this Stage69 handoff and
+`docs/terrain/CURRENT_HANDOFF.md`; all returned nonempty content
+and their current blob SHAs. This is **source readback**, not
+compiler, CTest, PHYSIS runtime, GPU or performance verification.
+
+- `cd1c2c7cc090082d28e37d3f1f39070eb1f0d961` —
+  updated `docs/terrain/CURRENT_HANDOFF.md` with Stage69 as latest
+  handoff and the separation between source implementation and QA.
+- `383d6da809037a5f627e639de671414734251290` —
+  updated `examples/world/terraweave_native/README.md`
+  with opt-in junction settings, subcell river sampling, PHYSIS
+  availability gate and native lifecycle limits.
+- Last observed `feature/terraweave` HEAD before this
+  documentation append:
+  `383d6da809037a5f627e639de671414734251290`.
+  Compared to `main`: **915 ahead / 305 behind**, diverged.
+  PR #24 remained open, Draft, GitHub reported nonmergeable.
+  A later commit to this handoff will advance HEAD again.
+  **No merge, rebase or CMake/CTest run performed**.
+
+Testing and upstream integration remain a hard gate. In particular,
+do not claim that PHYSIS direct nature sampling works in a checkout
+where its optional header is absent, and do not claim that 4m
+samples create a 4m saved water grid.
