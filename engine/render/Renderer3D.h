@@ -18,6 +18,7 @@
 #include "Model.h"
 #include "ModelStaticEligibility.h"
 #include "CpuMdiAdaptivePolicy.h"
+#include "AutoCpuBatchPolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
@@ -364,6 +365,7 @@ public:
         staticMaterialOwners_.clear();
         cpuMdiPages_.clear(); // reset page-specific costs on whole-scene reload
         cpuMdiAdaptive_ = {};
+        autoCpuBatch_ = {};
         staticCrossPreflight_.release(); // retire temporary scene identities/capacity
         clearIndirectLayoutCaches(); // release borrowed primitive/model references
         staticRenderPacketBytes_ = 0;
@@ -972,6 +974,7 @@ private:
     double cpuMdiAdaptiveBudgetUs_ = 25.0;
     // Aggregate display-only diagnostics, not used to suppress any page.
     std::array<CpuMdiAdaptiveFeedback, 2> cpuMdiAdaptive_{};
+    AutoCpuBatchPolicy autoCpuBatch_{}; // reset with world/cache invalidation
     struct CpuMdiPageEntry {
         std::weak_ptr<GeometryPoolPage> lifetime;
         std::array<CpuMdiAdaptiveFeedback, 2> byPass{};
