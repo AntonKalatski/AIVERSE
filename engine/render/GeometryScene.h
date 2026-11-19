@@ -2,14 +2,20 @@
 #include "Geometry.h"
 #include "Renderer3D.h"
 #include <map>
+#include <memory>
+#include <string>
 
 namespace aiverse::render {
+namespace strata { struct ModelAsset; class SceneStaging; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
 class GeometryScene {
 public:
-    struct Stats { uint32_t instances=0, groups=0, proxies=0, submitted=0, surfaceProxiesSubmitted=0; };
+    struct Stats { uint32_t instances=0, groups=0, proxies=0, submitted=0, surfaceProxiesSubmitted=0;
+        uint32_t strataSources=0, strataPrimitives=0, strataSkipped=0, strataFailures=0;
+        uint64_t strataNodes=0, strataMeshlets=0, strataIndexBytes=0;
+    };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
     // Borrowed image handles must outlive the scene. GPU geometry is owned by the scene.
@@ -17,6 +23,13 @@ public:
     void shutdown(gfx::Device& dev);
     void draw(Renderer3D& renderer);
     void setRuntimeOptions(bool hlod,bool geometry,bool surfaces,bool cache) { hlod_=hlod;geometryEnabled_=geometry;surfacesEnabled_=surfaces;cacheEnabled_=cache; }
+    // Opt-in staging only: prepare auxiliary CPU Strata assets at load time,
+    // but keep the existing GeometryScene/Renderer3D draw path authoritative.
+    // Must be configured before load/loadPrepared. Defaults OFF.
+    void setStrataStagingEnabled(bool value) { strataStagingEnabled_ = value; }
+    bool strataStagingEnabled() const { return strataStagingEnabled_; }
+    bool strataStagingSupported() const;
+    const strata::ModelAsset* strataAsset(const std::string& sourceKey) const;
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
@@ -37,11 +50,13 @@ private:
     void drawInstance(Renderer3D& renderer,const Instance& instance);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     std::map<std::string,std::unique_ptr<Model>> models_;
+    std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
     std::vector<std::string> warnings_;
     Stats stats_;
     bool hlod_=false,geometryEnabled_=true,surfacesEnabled_=true,cacheEnabled_=true;
+    bool strataStagingEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
