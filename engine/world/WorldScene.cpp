@@ -159,10 +159,9 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
-    nereidWater_.draw(renderer,origin,size);
-    ripples_.draw(renderer,double(origin.x)*double(size),
-                  double(origin.y)*double(size),
-                  double(origin.z)*double(size));
+    nereidWater_.draw(renderer,origin,size,&ripples_);
+    // Shader-normal ripples replace the old overlay rings for surfaces
+    // using NEREID. The overlay remains available via ripples().draw().
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
 }
