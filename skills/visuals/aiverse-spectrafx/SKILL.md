@@ -755,3 +755,41 @@ sources with lifecycle/pose updates use existing CPU `CueScheduler`
 until the GPU pool gains generation-safe stop/kill/retarget handles.
 No platform test, visual Metal validation or CI success has
 been established for this stage (user deferred tests).
+
+## Stage 34 — render-source ownership, continuous emissions, Metal preview
+
+The preceding Stage 29 warning that the GPU pool supports only anonymous
+one-shot events has been superseded for **source-owned pooled emissions**.
+Use `spectra::GpuPoolWorld::createSource(effectName)` to get a
+`PoolSourceId` (world epoch + slot + generation). For a long-lived
+presentation source, call `setSourceTransform` from a native project's
+read-only render-pose resolver and `configureContinuous` for
+rate/distance scheduling (max bursts/frame). Call `pool.step(dt)` once
+before scene rendering: it emits bounded births and simulates.
+`pauseSource` prevents new births;
+`stopSource(source,true)` additionally kills that source's already-live
+GPU/CPU particles without clearing unrelated pooled effects.
+`retireSource` releases its generation-safe presentation handle.
+A committed-tick rollback still invalidates all pool-source handles,
+and the existing `GpuCueBridge` continues to handle one-shots.
+
+The GPU backend tags physical particles with a unique pool source token;
+selective kill uploads dead-state ranges before subsequent GPU dispatch.
+Slot reuse is deferred until a successful ordered compute submission.
+These are renderer-only handles; NEVER persist in authoritative ECS,
+never derive gameplay collision/damage from VFX, and NEVER claim
+Metal GPU fence safety or image parity without executing the native
+device-loss and compaction tests.
+
+GUI authoring: the SpectraFX graph editor has a **Metal GPU** preview
+button. MCP: `fx_graph_preview {graph, gpu:true}` opts in to the strict
+Metal compute subset. Device and entire-graph eligibility are checked;
+unsupported content fails explicitly instead of silently falling back
+or changing graph semantics. Existing **Предпросмотр** remains CPU.
+The Metal preview starts on a later safe scene pre-pass and attaches
+a live GPU pool to the existing diagnostic panel.
+No verified native editor/Metal screenshots have been captured.
+
+**Required handoff:** `docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md`.
+**Verification:** CMake, CTest, editor, MSL, GPU fences, multi-emitter
+stress and actual visuals have NOT RUN. Do not report them as passing.
