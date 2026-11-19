@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestEcology.h"
 #include "engine/world/TerraWeaveForestHarvestEcs.h"
+#include "engine/world/TerraWeaveForestDeadwood.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <functional>
 #include <stdexcept>
@@ -102,6 +103,8 @@ inline ForestEcologyEcsOutcome advanceForestEcologyEcs(
                     "TerraWeave harvested rooted plant must be restored");
         }
     }
+    const auto* deadwood=
+        ecs.resourceConst<ForestDeadwoodResource>();
     ForestEcologyResult result=advanceForestEcology(
         ecology,rooted,tick,species,
         [&ground](int64_t x,int64_t z)->std::optional<int32_t>{
@@ -111,9 +114,36 @@ inline ForestEcologyEcsOutcome advanceForestEcologyEcs(
             return ground.sampleHeightCm(x,z);
         },
         [&](const AnchoredPlant& plant){
-            return nativeRootedPlantClimate(plant,ground,water,extra);
+            ForestEcologyClimate sampled=
+                nativeRootedPlantClimate(plant,ground,water,extra);
+            // Mineralised organic matter is a local fertility PROXY, not
+            // a duplicate soil height/erosion material. It supplements
+            // the authored or PHYSIS baseline without creating mass.
+            if(deadwood)
+                sampled.nutrientsPermille=deadwoodNutrientsPermille(
+                    *deadwood,plant.anchor.xCm,plant.anchor.zCm,
+                    sampled.nutrientsPermille);
+            return sampled;
         },settings);
 
+    // Natural mortality registers organic matter exactly once, as part
+    // of the same World COW snapshot as ecology death/age changes.
+    // If deadwood is disabled, older worlds keep their prior semantics.
+    std::optional<ForestDeadwoodResource> stagedDeadwood;
+    if(deadwood && !result.died.empty()){
+        stagedDeadwood=*deadwood;
+        for(const auto& death:result.died){
+            const auto found=std::find_if(rooted.begin(),rooted.end(),
+                [&](const AnchoredPlant& plant){
+                    return plant.anchor.speciesId==death.id.speciesId &&
+                           plant.anchor.plantKey==death.id.key;
+                });
+            if(found==rooted.end())
+                throw std::logic_error(
+                    "TerraWeave natural death missing rooted identity");
+            seedForestDeadwood(*stagedDeadwood,*found,tick);
+        }
+    }
     TerraWeaveAuthorityResource updated=*authority;
     const bool changed=!result.changed.empty() ||
                        !result.died.empty() ||
@@ -131,6 +161,9 @@ inline ForestEcologyEcsOutcome advanceForestEcologyEcs(
     staged.setResource<ForestEcologyResource>(std::move(ecology));
     if(changed)
         staged.setResource<TerraWeaveAuthorityResource>(std::move(updated));
+    if(stagedDeadwood)
+        staged.setResource<ForestDeadwoodResource>(
+            std::move(*stagedDeadwood));
     const uint64_t revision=changed?
         authority->stateRevision+1:authority->stateRevision;
     ecs=std::move(staged);
