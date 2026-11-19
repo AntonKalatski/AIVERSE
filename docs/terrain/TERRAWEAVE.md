@@ -2975,3 +2975,41 @@ samples, exact threshold boundaries, 30/240 sample streaks, cooldown,
 min/max clamp, manifest precedence, enable/disable/manual override,
 missing GPU data, stale field revisions, crossfade GPU residency, and
 renderer safety before PR #24 may merge.
+
+## Stage 41 — automatic native RTS/FPS frame timing bridge for Horizon adaptive quality
+
+Stage40 exposed an opt-in, **host-fed** adaptive Horizon presentation controller, but it did not connect any real game-frame source. Stage41 connects the two existing native game clients to the AIVERSE graphics measurement APIs while respecting async GPU completion and keeping terrain/PHYSIS/ECS independent.
+
+The new reusable header `engine/world/TerraWeaveHorizonFrameTimingBridge.h` defines `terraweave::HorizonFrameTimingBridge`. Its `begin(gfx::Device&,world::WorldScene*)` and `finish(WorldScene*,Clock::time_point)` are called once around an actual native client frame. `begin` is only active when `worldScene->vegetationHorizonAdaptiveQualityConfig().enabled` is true; otherwise it returns false, drops pending samples, and makes **no GPU timing requests**. It records a monotonically increasing frame ID, requests `gfx::Device::timeGpuFrame(tag)` after the backend has begun a frame, and polls `takeGpuTimings()` on following frame callbacks. The signed GPU completion is associated with its ORIGINAL frame ID using a reserved tag prefix, not misreported as the current frame. The adapter also measures real `std::chrono::steady_clock` CPU callback elapsed time, not simulation `dt`, game tick duration, `gpuUploadMs` or the displayed FPS estimate.
+
+The bridge buffers at most a small bounded number of pending frames (eight GPU-lag frames plus the current submission); frames are delivered to `WorldScene::submitVegetationHorizonFrameTiming` **in increasing frame-ID order**, after the matching GPU timestamp arrives or its eight-frame wait expires. Unsupported/non-ready/invalid GPU queries automatically submit the real CPU-only sample, with `gpuFrameUs=0`. Missing/invalid CPU measurements are likewise zero; never invent a nonzero metric. The controller's existing consecutive-frame and hysteresis policies apply to the delivered samples. No `glFinish`, `waitUntilCompleted`, new RHI API, CPU/GPU synchronization stall or new per-frame GPU buffer is introduced. `deliveredGpuFrames()`, `deliveredCpuOnlyFrames()`, `pendingFrames()` and `lastFrameId()` are lightweight adapter diagnostics. All methods run on the owning game/render thread.
+
+**Actual game paths now integrated:**
+
+- RTS / composable strategy client: `apps/client/GameClient.h/.cpp` owns a bridge beside the streamed `worldScene_`. During an actual streamed-world game frame, after the platform `beginFrame` but before Horizon scene update/draw, it requests a tagged GPU interval; immediately after the client's UI/render submission it delivers measured CPU work. It discards pending submissions on map loading, world teardown/new match and planet/no streamed-world paths. No network, RTS simulation, camera or UI data model change.
+- FPS client: `apps/fps/client.cpp` owns the same bridge beside `streamedScene`. It calls `begin` just after its existing `device.beginFrame`, and `finish` after its existing `endPass/endFrame`, measuring its entire native FPS callback from entry. Shutdown discards pending samples. No FPS weapon/network/prediction, server tick, collision, terrain or renderer backend change.
+- These calls are **automatically dormant** for worlds without Horizon or without an explicit `adaptiveQuality.enabled=true` in the manifest (or native API setting). No CLI switches or external memory allocations at startup are necessary for the disabled case.
+
+**Backend timing ownership:** AIVERSE already exposes `gfx::Device::timeGpuFrame(tag)` and `takeGpuTimings()`; Metal records a tagged command buffer and returns its asynchronously completed `GPUStartTime/GPUEndTime` interval, while supported GL may use `GL_TIME_ELAPSED` around its active interval. These report different GPU scope semantics by backend (Metal whole command buffer, GL from query start until end-frame), NOT isolated TerraWeave render time. Unsupported backends return false and the adapter uses CPU-only data. The `takeGpuTimings()` API **destructively drains all ready device timing tags**, so the adapter must be the one timing consumer for these game-client Device instances, or future integrations must introduce a shared device timing router rather than independently polling the API from another benchmark. These game clients currently have no other device-tag timing collector in their runtime paths. The FPS client controls its own `beginFrame/endFrame`; the RTS client is inside the platform's existing outer frame. Do not add a second begin/end call.
+
+**Usage:** Existing Stage40 manifest remains enough; no new field required:
+
+```json
+{
+  "terraweaveHorizon": {
+    "presentationQuality": "balanced",
+    "adaptiveQuality": {
+      "enabled": true,
+      "minimum": "mobile",
+      "maximum": "desktop",
+      "targetFrameUs": 16667
+    }
+  }
+}
+```
+
+Once the relevant native client loads such a streamed world, it supplies actual frame measurements automatically. Other custom native projects can instantiate the same bridge and bracket their own frame once, or continue calling `WorldScene::submitVegetationHorizonFrameTiming` manually. Do **not** feed samples a second time from the same frame. Future native hosts with multiple consumers of `takeGpuTimings` should coordinate timing ownership. The adaptive controller still only adjusts Stage39 presentation policy. No Horizon geometry, per-branch wind physics, PHYSIS data, ECS save/replay, TWH8 archive fingerprint, forest CPU bake or async worker revision is affected by measurement.
+
+**Limitations/QA:** The bridge measures CPU **callback** duration, which may exclude platform event pump, swap/present wait, vsync and unrelated work outside the callback; GPU query timing covers backend-defined intervals and can be delayed, invalid or unsupported. For GL a timer started at the streamed world phase is not necessarily a whole-frame GPU cost. A consistently overloaded non-TerraWeave subsystem can still cause a global-quality downgrade. There is no proof that altering Horizon presentation quality improves that bottleneck until native profiling. The bridge intentionally falls back to CPU-only after eight frames rather than blocking the render thread. Device timing tags still belong to the device, not this world, so avoid competing consumers.
+
+**Verification performed:** GitHub inspection of `GameClient` streamed-world lifecycle, FPS native frame ownership, existing gfx device tagged timer APIs, GL and Metal backend timing behavior, and new code placement. Source commits exist, but CMake configure/build, C++ compilers, CTest, real Metal/GL/Vulkan runtime, GPU frame tag timing results, FPS/RTS native smoke tests and measured GPU/CPU frame improvements are **NOT RUN** (feature-first owner request). Later QA must validate CPU-only fallback, asynchronous paired GPU frames, out-of-order/missing/invalid device timing results, 8-frame timeout, map changes, match shutdown, unsupported GPU backend, 60 FPS threshold behavior, as well as conflicts with any other runtime device timer consumers. Keep PR #24 Draft.
