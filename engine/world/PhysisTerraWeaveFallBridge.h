@@ -1,0 +1,218 @@
+// Stage 87: opt-in HOST bridge from PHYSIS fracture outbox to the canonical
+// TerraWeave rooted plants and Box3D falling-body factory.
+// This file belongs in engine/world, NEVER inside engine/physis.
+// It requires the TerraWeave branch to be present in the integration build.
+#pragma once
+#include "engine/world/PhysisNatureFallHost.h"
+#include "engine/world/TerraWeaveEcsAuthority.h"
+#include "engine/world/TerraWeaveFallenPhysics.h"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <optional>
+#include <set>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+namespace aiverse::world {
+
+inline terraweave::AnchoredPlantId terraPlantId(NatureFallPlantId id) {
+    return {id.speciesId, id.plantKey};
+}
+
+inline terraweave::PlantFallEvent terraFallEvent(
+        const NatureFallRecord& record) {
+    if (!natureFallValid(record))
+        throw std::invalid_argument("invalid host fall record");
+    terraweave::PlantFallEvent out;
+    out.id = terraPlantId(record.plant);
+    out.habit = static_cast<terraweave::PlantHabit>(record.habit);
+    out.xCm = record.xCm;
+    out.zCm = record.zCm;
+    out.plantedHeightCm = record.plantedHeightCm;
+    out.fallDirectionXPermille = record.directionXPermille;
+    out.fallDirectionZPermille = record.directionZPermille;
+    out.supportPermille = record.supportPermille;
+    out.exposedCm = record.exposedCm;
+    out.sourceSoilRevision = record.soilRevision;
+    out.tick = record.climateTick;
+    return out;
+}
+
+// PHYSIS force is Fixed Q47.16; direction is signed integer permille.
+// Avoid floating-point and squared-magnitude overflow in authoritative code.
+// A zero horizontal wind uses canonical root failure direction (if present).
+inline std::pair<std::int32_t,std::int32_t> fractureFallDirection(
+        const physis::NatureFractureEvent& event,
+        const terraweave::RootState& root) {
+    const auto x = event.aerodynamicForceN.x.raw;
+    const auto z = event.aerodynamicForceN.z.raw;
+    const auto absX = x >= 0 ? x : -x;
+    const auto absZ = z >= 0 ? z : -z;
+    const auto maxAxis = std::max(absX, absZ);
+    if (maxAxis == 0)
+        return {root.fallDirectionXPermille, root.fallDirectionZPermille};
+    // Divide before multiply: preserves 64-bit bounds for large Fixed loads.
+    // These components have magnitude <=1000; Box3D normalizes the vector.
+    const auto scaled = [maxAxis](std::int64_t raw) -> std::int32_t {
+        return static_cast<std::int32_t>(
+            (raw / maxAxis) * 1000 +
+            ((raw % maxAxis) * 1000) / maxAxis);
+    };
+    return {scaled(x),scaled(z)};
+}
+
+inline std::optional<NatureFallRecord> makeNatureFallRecord(
+        const physis::NatureFractureEvent& event,
+        const terraweave::AnchoredPlant& plant,
+        std::uint64_t soilRevision) {
+    if (!event.entity.valid() || event.eventKey == 0 ||
+        !plant.anchor.plantKey || !plant.anchor.speciesId ||
+        plant.anchor.roots.habit == terraweave::PlantHabit::Grass)
+        return std::nullopt;
+    const auto [dx,dz] = fractureFallDirection(event, plant.support);
+    NatureFallRecord result;
+    result.entityPacked = event.entity.packed();
+    result.eventKey = event.eventKey;
+    result.climateTick = event.climateTick;
+    result.plant = {plant.anchor.speciesId, plant.anchor.plantKey};
+    result.habit = static_cast<std::uint8_t>(plant.anchor.roots.habit);
+    result.xCm = plant.anchor.xCm;
+    result.zCm = plant.anchor.zCm;
+    result.plantedHeightCm = plant.anchor.plantedHeightCm;
+    result.directionXPermille = dx;
+    result.directionZPermille = dz;
+    result.supportPermille = plant.support.supportPermille;
+    result.exposedCm = plant.support.exposedCm;
+    result.soilRevision = soilRevision;
+    return natureFallValid(result) ?
+        std::optional<NatureFallRecord>{result} : std::nullopt;
+}
+
+// Must run on the authoritative host barrier AFTER the PHYSIS stress/outbox
+// systems and AFTER any authoritative TerraWeave terrain/root updates.
+// On the PHYSIS branch alone this header is intentionally NOT compiled until
+// TerraWeave is merged: the cross-system API is verified against its branch.
+// Events are not physical bodies: sink only stages a persistent ECS record;
+// the separate Box3D barrier reconstructs bodies from the committed ledger.
+inline physis::NatureFractureDispatchStats
+dispatchPhysisTerraWeaveFalls(World& world, std::size_t maxEvents = 64) {
+    const auto* state = world.resourceConst<NatureFallHostState>();
+    const auto* terrain =
+        world.resourceConst<terraweave::TerraWeaveAuthorityResource>();
+    if (!state || !terrain)
+        throw std::logic_error("PHYSIS/Terra fall host resources not installed");
+
+    return physis::dispatchNatureFractures(
+        world, [&](const physis::NatureFractureEvent& event) {
+            using D = physis::NatureFractureDisposition;
+            // Earlier sink calls replace the host ledger resource; always
+            // re-read its pointer, not a stale pre-dispatch reference.
+            const auto* host = world.resourceConst<NatureFallHostState>();
+            const auto packed = event.entity.packed();
+            const auto bound = std::lower_bound(
+                host->bindings.begin(),host->bindings.end(),packed,
+                [](const NatureFallBinding& b,std::uint64_t key){
+                    return b.entityPacked < key;
+                });
+            if (bound == host->bindings.end() || bound->entityPacked != packed)
+                return D::Retry;
+            const auto* authority =
+                world.resourceConst<terraweave::TerraWeaveAuthorityResource>();
+            const auto it = std::find_if(
+                authority->rooted.begin(),authority->rooted.end(),
+                [&](const terraweave::AnchoredPlant& p){
+                    return p.anchor.plantKey == bound->plant.plantKey &&
+                           p.anchor.speciesId == bound->plant.speciesId;
+                });
+            if (it == authority->rooted.end())
+                return D::Retry;
+            const auto record =
+                makeNatureFallRecord(event,*it,authority->earth.revision);
+            if (!record) return D::Retry;
+            return stageNatureFall(world,event,*record);
+        }, maxEvents);
+}
+
+struct NatureFallReconcileStats {
+    std::size_t spawned = 0;
+    std::size_t reused = 0;
+    std::size_t failed = 0;
+    std::size_t removed = 0;
+};
+
+// Box3D is a DERIVED cache of the authoritative ECS fall ledger.
+// The game must separately persist/replay moving rigid-body poses if it needs
+// exact mid-fall physics snapshots; this only recreates the START pose.
+// Invoke after TerraWeave native scene binding, before scene render/physics.
+// Never call from PHYSIS deterministic simulation jobs.
+class NatureFallBox3DReconciler {
+public:
+    template<class SpeciesSpec>
+    NatureFallReconcileStats reconcile(
+            const World& world, terraweave::FallenPlantPhysics& bodies,
+            SpeciesSpec&& resolveSpec,
+            terraweave::TerraWeaveForestScene* forest = nullptr) {
+        const auto* ledger=world.resourceConst<NatureFallHostState>();
+        if (!ledger)throw std::logic_error("nature fall ledger missing");
+        NatureFallReconcileStats stats;
+        std::set<terraweave::AnchoredPlantId> desired;
+        for (const auto& fall : ledger->records) {
+            if (!fall.active) continue;
+            const auto id = terraPlantId(fall.plant);
+            desired.insert(id);
+            const auto existing = bodies.body(id);
+            auto managed = owned_.find(id);
+            if (managed != owned_.end() && managed->second != fall.eventKey) {
+                // New repair/rebreak cycle; only remove a body we own.
+                bodies.erase(id,forest,false);
+                owned_.erase(managed);
+            } else if (existing != physics::kNoBody) {
+                ++stats.reused;
+                if (forest) forest->removeTree({id.key,id.speciesId});
+                continue;
+            }
+            try {
+                const auto spec = resolveSpec(id.speciesId);
+                if (!spec) {++stats.failed;continue;}
+                const auto spawned=bodies.spawn(terraFallEvent(fall),*spec,forest);
+                if (spawned==physics::kNoBody) {++stats.failed;continue;}
+                // A prior soil-driven body must not become PHYSIS-owned just
+                // because PHYSIS later observed the same rooted plant.
+                if (existing==physics::kNoBody)owned_[id]=fall.eventKey;
+                ++stats.spawned;
+            } catch (...) {
+                // Leave durable fall record intact for the next owner barrier.
+                ++stats.failed;
+            }
+        }
+        for (auto it=owned_.begin();it!=owned_.end();) {
+            if (desired.contains(it->first)) {++it;continue;}
+            const auto id=it->first;
+            bool restore=true;
+            if (const auto* authority =
+                    world.resourceConst<terraweave::TerraWeaveAuthorityResource>()) {
+                for (const auto& plant : authority->rooted) {
+                    if (plant.anchor.speciesId==id.speciesId &&
+                        plant.anchor.plantKey==id.key) {
+                        restore=!plant.fallen;
+                        break;
+                    }
+                }
+            }
+            bodies.erase(id,forest,restore);
+            it=owned_.erase(it);
+            ++stats.removed;
+        }
+        return stats;
+    }
+    // Call when an external scene resets or changes owner. This forgets
+    // transient handles; next reconcile will rebuild from ECS authority.
+    void forgetDerivedBodies() {owned_.clear();}
+private:
+    std::map<terraweave::AnchoredPlantId,std::uint64_t> owned_;
+};
+
+} // namespace aiverse::world
