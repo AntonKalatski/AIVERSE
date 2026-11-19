@@ -10133,3 +10133,95 @@ parity and larger-scene performance. Stage 10BO begins
 the shader-indirection source work; its new source has
 NOT been built or run on Mac. Keep PR Draft.
 
+
+## Stage 10BO — real Metal fragment page-table indirection (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Prior real Mac Studio acceptance:** Stage 10BN actual native
+`metal_texture_gpu` CTest PASS (1/1, 0 failed, 1.46 s),
+confirming real `VirtualTextureFileStreamer` disk worker,
+Metal atlas physical page bytes, GPU table and LRU eviction;
+shader indirection was NOT covered by that earlier run.
+
+**Source commit:** `32d69c8c6215ed470f9a1980bb212eb534eac1c5`
+— only `tests/render/metal_texture_gpu.mm`.
+**Documentation commits:**
+`5d74f4f4d178116eb083a44936389e3bd226efca`
+(`docs/texture-rhi.md`: Stage 10BN result and 10BO source),
+`1d65245654d8c3e0c4903a95ad65a5921f95c21c`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`: usage and scope).
+
+**Source and architecture:** Added
+`#include "engine/gfx/VirtualTextureSampling.h"` to the
+existing isolated real-Metal GPU fixture. New
+`VtAtlasFragmentProbe` constructs an actual native
+`ShaderDesc`/Metal pipeline and 4x4 offscreen color+depth
+render target, then appends the production canonical
+`gfx::kVirtualTextureMSL` to a test fullscreen vertex/fragment
+shader. The fragment invokes **the real**
+`aiverse_sample_virtual(atlas,pageTable,sampler,uv,layer,
+gutter,fallback,addressU,addressV)`. It takes the **live**
+`VirtualTextureFileStreamer::physicalAtlas()` at Metal
+texture slot 0, `pageTableTexture()` at slot 1 and
+samples them via the real Metal `Device::setTexture` binding.
+Uniform UV comes from `Device::setUniforms(0,...)`; draw uses
+`beginRenderTargets`, `draw(3)`, `endPass`, followed by
+native asynchronous RGBA8 render-target `readTextureAsync`.
+Only this thin render test is new; production page lookup,
+streamer and RHI are unchanged.
+
+**Exact acceptance cases added to 10BM:**
+1. Before disk worker publishes any page: fine UV (0.875,0.875)
+   yields fallback `RGBA8{18,79,181,255}`.
+2. After pinned coarse file-backed GPU publication: both
+   base UV (0.125,0.125) and fine UV yield source page
+   `{18,71,93,255}`.
+3. A missing-file worker error must retain coarse physical
+   sampling at another UV (0.375,0.375).
+4. After fine page publication at mip0 tile (3,3), fine UV
+   reads physical page `{82,196,41,255}` while a different
+   UV still reads coarse `{18,71,93,255}`.
+5. After disk-backed LRU replacement at tile (0,0), the
+   old fine UV reverts to coarse `{18,71,93,255}` and
+   new tile UV reads the replacement physical slot
+   `{220,44,16,255}`.
+All output is read from a **real Metal render target**
+(no mock), compared as RGBA8 with <=1 LSB/channel
+float-to-UNORM tolerance; the existing direct native
+blit tests still require **zero tolerance**.
+
+**Failure safety:** Shader compilation, pipeline setup,
+offscreen pass and readback failures increment test
+failures. RAII `VtAtlasFragmentProbe` releases created
+shader/pipeline/color/depth, with explicit shutdown
+before releasing streamed atlas/page table. Test stays
+behind macOS-only `AIVERSE_TEXTURE_METAL_GPU_TESTS=ON`
+and `--metal`; no production API, ECS, shader material
+ABI or CMake changes.
+
+**Actual verification in this assistant environment:**
+re-fetched `engine/gfx/VirtualTextureSampling.h`,
+`ModelVirtualTextureSampling.h`, `GfxMetal.mm` and the
+prior native GPU fixture via connected GitHub to check
+the canonical signature and Metal binding contracts;
+committed source and docs. **New Stage 10BO native
+ObjC++ compilation, CTest and hardware pixels NOT RUN**.
+Previously reported Stage 10BN device PASS does NOT
+verify this new shader-sampling code. Don't merge Draft
+PR until the new on-device gate passes.
+
+**Next action, isolated Mac Studio texture worktree only:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+On failure, report the first native shader/compiler or GPU
+pixel mismatch with device name. On PASS, record exact
+timing/label evidence and proceed to a separate **real Metal
+Shader Graph GPU ICB heterogeneous source-material** acceptance
+gate; cross-platform Vulkan/GL/Windows/mobile testing remains
+independent. Do not touch primary AIVERSE worktree with
+unrelated incomplete rebase.
+
