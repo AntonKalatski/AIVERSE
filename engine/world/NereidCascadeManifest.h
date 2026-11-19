@@ -43,6 +43,26 @@ inline NereidCascadeManifest parseNereidCascadeManifest(const Json& root) {
                 throw JsonError("nereidCascades.requireFootprint: expected boolean");
             source.requireFootprint=item.getBool("requireFootprint",true);
         }
+        if(item.has("flowContinuity")) {
+            const auto& flow=item["flowContinuity"];
+            if(!flow.isObject())
+                throw JsonError("nereidCascades.flowContinuity: expected object");
+            auto& policy=source.flowPolicy;
+            policy.enabled=flow.getBool("enabled",true);
+            if(flow.has("radius"))
+                policy.radius=nereid_manifest_detail::positive(
+                    flow["radius"],"cascade.flow.radius",1000_fx);
+            if(flow.has("blend"))
+                policy.blend=nereid_manifest_detail::coordinate(
+                    flow["blend"],"cascade.flow.blend",1_fx);
+            if(flow.has("speedLimit"))
+                policy.speedLimit=nereid_manifest_detail::positive(
+                    flow["speedLimit"],"cascade.flow.speedLimit",1000_fx);
+            if(policy.enabled &&
+               !lib::nereid::validWaterCascadeFlowPolicy(policy))
+                throw JsonError("nereidCascades.flowContinuity: invalid policy");
+            source.useFlowPolicy=true;
+        }
         auto& c=source.cascade;
         c.enabled=item.getBool("enabled",true);
         if(item.has("foam"))
