@@ -350,10 +350,11 @@ public:
             GLenum bindingQuery;
             GLint texture=0,pbo=0,alignment=4,rowLength=0,
                   imageHeight=0,skipPixels=0,skipRows=0,skipImages=0;
-            static constexpr GLenum kPbo=0x88EC,kPboBinding=0x88EF;
-            static constexpr GLenum kRowLength=0x0CF2,kImageHeight=0x806E;
-            static constexpr GLenum kSkipPixels=0x0CF4,kSkipRows=0x0CF3;
-            static constexpr GLenum kSkipImages=0x806D;
+            enum : GLenum {
+                kPbo=0x88EC,kPboBinding=0x88EF,
+                kRowLength=0x0CF2,kImageHeight=0x806E,
+                kSkipPixels=0x0CF4,kSkipRows=0x0CF3,kSkipImages=0x806D
+            };
             explicit ScopedUnpack(GLenum t):target(t),
               bindingQuery(t==GL_TEXTURE_3D?0x806A:
                            t==GL_TEXTURE_CUBE_MAP?0x8514:0x8C1D) {
