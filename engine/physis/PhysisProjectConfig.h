@@ -3,6 +3,7 @@
 #pragma once
 #include "PhysisFieldAssets.h"
 #include "PhysisRuntimeFields.h"
+#include "PhysisFieldInstallMode.h"
 #include "engine/data/Json.h"
 #include <optional>
 #include <stdexcept>
@@ -84,8 +85,12 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
     if (!options) return false;
     // Parse/validate all authored field volumes BEFORE mutating/initializing
     // ECS or sealing persistence. No partial setup from malformed map input.
+    if (sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+        sim.world().resourceConst<RuntimeFieldRegistry>())
+        throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Static});
     spawnFieldAssets(sim.world(), fields);
     return true;
 }
@@ -96,8 +101,12 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
 inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
     const auto options = optionsFromMap(map);
     if (!options) return false;
+    if (sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+        sim.world().resourceConst<RuntimeFieldRegistry>())
+        throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Tracked});
     sim.registerPersistentResource<RuntimeFieldRegistry>(
         "physis.authored_field_registry", 1);
     reconcileTrackedRuntimeFields(sim.world(), fields);
