@@ -404,3 +404,22 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 23: GPU billboard draw path
+- **Branch:** `feature/spectrafx-generic-cue-queue`, current merged main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`; no missing main commits at preceding comparison.
+- **Implementation commits:** `1c7af99bb444656e04a008f4ec36cf5ae5faf9cc` and `f8f15289d04b37697175a35142e15d0d8e6c723d`.
+- **Paths:** updated `engine/fx/SpectraFxComputeShaders.h`, new `engine/fx/SpectraFxGpuBillboardRenderer.h`.
+- **Functionality:** GPU compute stage now exports xyz and normalized remaining-lifetime alpha to RGBA32F storage texture while preserving internal age/lifetime state. `SpectraFxGpuBillboardRenderer::init/draw/release` creates a shared instanced quad, shader/pipelines for alpha and additive blending, samples GPU-written particle positions directly in MSL/GLSL vertex shader with one drawIndexed call and instance_count==particle count. Billboard orientation comes from caller's camera-right/camera-up vectors, radius/color supplied by `Appearance`. Expired particles blend with alpha zero. Drawing requires a compatible open render pass AFTER compute completes, no CPU position readback; engine RHI owns all native backend specifics.
+- **Semantics:** opt-in, isolated GPU point-billboard visual path. Existing CPU ParticleSystem still owns all production FX and is the fallback; this stage does NOT integrate GPU emitters or select a backend automatically. No new D3D12 backend. This is NOT equivalent to GPU sorting, collisions, subemitters, ribbons, transparent depth sorting, density/soft-particle effects, or complete Niagara-style renderer.
+- **Validation actually performed:** **NOT RUN** by user request (all features first). Source authored and pushed only; no native compile, GLSL/MSL compiler, Metal/Vulkan frame, RHI state, CTest, editor QA or performance evidence. Renderer must be checked for texture resource barriers, shader bindings and pipeline formats on target GPU before enabling.
+- **Next:** GPU emitter batch lifecycle, spawn/kill/recycle and capability policy with CPU fallback; renderer integration into the editor viewport and game render pass; verify after feature pass. Keep handoff on every stage, never claim GPU support as proven until native tests.
+
+Pull-first commands:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
