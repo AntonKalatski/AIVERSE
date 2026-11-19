@@ -127,7 +127,10 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("reactiveStrength", 0.85f, 0.0f, 1.0f, "reduce motion blur on uncertain translucent surfaces covered by a reactive mask", "Подавление на прозрачности"),
         num("velocityDilation", 1.0f, 0.0f, 2.0f, "neighbor search radius in pixels for depth-matched velocity silhouettes, 0 disables", "Расширение векторов"),
         flag("linearDepth", false, "compare depth layers using camera-linearized view distance instead of device-depth", "Линейная глубина"),
-        num("depthToleranceMeters", 0.35f, 0.01f, 10.0f, "linear-depth rejection tolerance in world units/metres", "Порог глубины, м")}});
+        num("depthToleranceMeters", 0.35f, 0.01f, 10.0f, "linear-depth rejection tolerance in world units/metres", "Порог глубины, м"),
+        // Optional Stage 61 transparency-safe sampling; zero preserves the
+        // historical camera/object shutter blur output across all projects.
+        num("reactiveTapRejection", 0.0f, 0.0f, 1.0f, "reject blur taps with differing translucent reactive coverage; 0 preserves legacy behavior", "Защита проб на прозрачных краях")}});
     // Explicit opt-in only: this effect is inert without AIVERSE_PRISMA_TEMPORAL=1.
     // Native/volume users share the same data definition; no genre coupling.
     c.push_back({T::TemporalResolve, "temporalResolve", "Временная стабилизация",
