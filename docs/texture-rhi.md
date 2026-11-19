@@ -2004,3 +2004,25 @@ flags remain disabled in default builds.
 **Validation:** source inspection and GitHub commits only.
 No C++/Objective-C++ build, CTest, MSL shader compilation,
 Metal device frame capture or pixel parity test was run.
+
+
+## Stage 10AH — bounded Shader Graph resource identities in GPU ICB
+
+The opt-in RHI material descriptors `gfx::GpuIcbVirtualMaterial` and
+`gfx::GpuIcbPbrMaterial` now carry `graphTextureCount` (0..4) and four
+optional source `TextureHandle` values. The first N handles must be valid,
+and the unused tail must be zero. The existing `GpuMaterialResourceBinding`
+already supports these exact four graph resources.
+
+Metal's experimental per-command resource preparation now captures both
+the `Texture2D` objects and their native sampler states for all authored
+graph textures, and preserves handle identities for later execution
+checks. It rejects invalid handles, array/non-2D sources and
+multisampled textures. A descriptor containing graph sources without
+per-command U2/PBR is invalid. The non-VT convenience API forwards
+the same graph resource list.
+
+This stage is **CPU/native resource staging only**. MSL argument-buffer
+declarations, GPU shader permutation eligibility and Shader Graph
+renderer submission are separate subsequent stages. Native/Metal
+compiler and GPU tests have **NOT RUN**.
