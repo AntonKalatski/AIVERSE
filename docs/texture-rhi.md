@@ -2783,3 +2783,57 @@ resource mixing, other backends or a multi-frame game performance
 benchmark. Direct feedback ID readback is fast on the GPU, but
 the 0.45 s CTest wall time is not a texture transfer benchmark.
 
+
+### Stage 10BK — native Metal physical VT atlas/page-table publication (source only)
+
+The existing opt-in `tests/render/metal_texture_gpu.mm` hardware CTest
+now additionally exercises the **production** `VirtualTextureStreamer`
+with a real Metal `gfx::Device` (no mock, no disk worker). It creates
+a 4×4 RGBA8 Texture2DArray physical atlas with two slices and a 4×4
+RGBA8 Texture2DArray GPU page table for one virtual layer, with
+4×4 virtual mip-zero tiles and three virtual mip levels.
+
+The new `gpuPhysicalVirtualAtlas` acceptance verifies, via real GPU
+blit readback (zero tolerance for exact RGBA8 bytes):
+
+- Pinned coarsest page `{mip:2,x:0,y:0,layer:0}` stays **unpublished**
+  in both CPU state and GPU page table while an upload ticket is pending.
+- After `VirtualTextureStreamer::drain`, the physical slice
+  contains the exact 4×4 source image and the full page-table texture
+  points to physical slice 0, coarsest mip 2, valid=255.
+- A fine page `{mip:0,x:3,y:3,layer:0}` enters the second physical
+  slice and overrides only its corresponding mip-zero table texel,
+  preserving all other pinned coarse fallback mappings.
+- A third page `{mip:0,x:0,y:0,layer:0}` triggers deterministic LRU
+  reuse of the unpinned fine slot, never the pinned coarse slot.
+  **Before** the replacement GPU transfer, the previous fine mapping
+  must already be invalidated in the real GPU table and return to
+  coarsest fallback, preventing old physical bytes from being sampled
+  as the new virtual page.
+- After `drain`, the reused physical slice contains the third
+  page's new exact pixels and its corresponding GPU table texel
+  points at that slice. An explicit eviction subsequently returns
+  the GPU table to coarse fallback.
+- The final texture inventory must contain both live resources,
+  then neither after `shutdown`.
+
+This tests actual Metal atlas/page-table **resource bytes and
+publication ordering**, not disk file IO, an application-level
+shader sampling through page-table indirection, hardware sparse
+residency or Shader Graph ICB. Existing public RHI and native GPU
+backend are unmodified. The acceptance remains behind
+`AIVERSE_TEXTURE_METAL_GPU_TESTS=ON` / verifier `--metal` only.
+
+**Source commits:** `d8b498d31d3b421261825048ab313bfefa13c6ee`
+and `3ca4b1cf872bab4a06d533aa75c4052d036ea41b`.
+**Post-change macOS build and CTest NOT RUN.** Earlier 10BJ
+`metal_texture_gpu` PASS at 0.45 s applies only to the older
+fixture without this physical atlas test.
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
