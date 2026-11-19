@@ -7236,3 +7236,55 @@ deferred testing, add native packer and Python parity checks for
 negative/positive seams, mixed U/V and odd dimensions, then
 GPU image A/B for source vs VT across actual supported backends.
 Keep PR draft until all compile/CTest/GPU gates are evidenced.
+
+
+## Stage 10O — bounded disk VT manifest import (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21 (draft).
+**Feature commits:** `a33dfd45567112ebc7ee9e4aacc9f75c8b6a504c`
+adds `engine/gfx/VirtualTextureArchiveManifest.h`;
+`50c35d47c70ec087db151cd9622f4b3f9c6411a7`
+adds page directory symlink rejection and removes an unneeded
+pre-calculation.
+**Docs commits:** `f9704ae4f1a309ac4c732aca9d418ba10412a661` `docs/texture-rhi.md`;
+`752af254663f62ecaea2d3fedf62610a9ba2ff32`
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Public API:** `gfx::importVirtualTextureArchiveManifest(const Json&,
+trustedDirectory, outVersion, error, maxArchiveBytes, maxPages,
+importedRevision)`; optional convenience
+`gfx::loadVirtualTextureArchiveManifest(trustedDirectory,...)`.
+Reject inconsistent dimensions, formats, mip geometry, page count,
+archive bytes, missing/nonregular/symlinked files or invalid sampler
+address metadata. Parse strict unsigned integer literals rather than
+allowing fractions/negative/overflow. Only caller-supplied paths are
+used and a failure leaves the `out` version empty. Page-file
+lengths are checked, but the optional hash metadata is not
+cryptographic verification of payloads.
+
+**Architecture:** This lives in gfx, uses existing engine/data/Json,
+performs no GPU work or authoritative ECS operations. It can import
+both Python and native-writer manifest schemas into a
+`VirtualTextureArchiveVersion`. A consumer must still call normal
+prepare/pump/promote with GPU fence rules. It does not swap active
+resources or bypass a live feedback readback.
+
+**Actual checks:** GitHub source inspection of writer/streamer/JSON
+APIs; code committed with exact-file edit verification. **C++ build
+NOT RUN, CTest NOT RUN, actual archive integration NOT RUN, GPU tests
+NOT RUN**. Keep PR draft.
+
+**Limitations:** Caller must choose a trusted immutable archive
+directory; only page shapes and sizes, not source cryptographic
+authenticity, are checked. Filesystem preflight is synchronous and
+should not run per-frame. Native writer revision is supported;
+Python packer has no revision and needs a caller-supplied identifier.
+A separate integration API with Terra session/domain manager is
+still required.
+
+**Next stage:** add `prepareFromArchiveDirectory` to
+`TerraWeaveVirtualAtlasSession` and
+`TerraWeaveVirtualAtlasDomains`, preserving active revisions on
+invalid imports and retaining normal fallback residency/fence gates.
+Then add focused manifest parser tests in test phase, including
+symlinks, truncated pages, malformed metadata, and mixed axis modes.
