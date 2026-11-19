@@ -332,6 +332,21 @@ public:
     void clearVirtualTextureModelFeedback() {
         feedbackModelPipeline_ = {};
         feedbackModelBinder_ = {};
+        clearVirtualTextureMaskedModelFeedback();
+    }
+
+    // Optional material-aware pipeline for alpha-masked rigid models.
+    // This pipeline MUST discard fragments using the same alpha texture,
+    // UV transform and cutoff as the regular model material shader.
+    // Without this explicit pipeline, masked geometry is excluded.
+    void setVirtualTextureMaskedModelFeedback(
+        gfx::PipelineHandle pipeline, FeedbackModelBinder binder) {
+        feedbackMaskedModelPipeline_ = pipeline;
+        feedbackMaskedModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureMaskedModelFeedback() {
+        feedbackMaskedModelPipeline_ = {};
+        feedbackMaskedModelBinder_ = {};
     }
 
     // Per-scene feedback producers for terrain, foliage and procedural
@@ -362,23 +377,30 @@ public:
                 if (draw.prepare && !draw.prepare(device)) return false;
                 device.drawIndexed(draw.count,draw.first,draw.baseVertex,draw.instances);
             }
-            if (feedbackModelPipeline_.valid() && feedbackModelBinder_) {
+            if ((feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
+                (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_)) {
                 for (const auto& item : modelItems_) {
                     if (!item.inView || !item.rigid || item.joints >= 0 ||
                         item.baked || item.morph >= 0 || !item.model ||
                         !item.prim || !item.mat || !item.indexCount ||
                         !item.model->vb.valid() || !item.model->ib.valid() ||
                         item.tint.w < 0.99f || item.dissolve > 0.0f ||
-                        item.mat->alpha != AlphaMode::Opaque ||
-                        item.mat->transparent || item.mat->baseColor.w < 0.99f ||
+                        item.mat->alpha == AlphaMode::Blend ||
+                        item.mat->transparent ||
                         item.lodThreshold < 1.0f ||
                         item.materialRole == 1 || item.shadowRole == 2)
                         continue;
-                    device.setPipeline(feedbackModelPipeline_);
+                    const bool masked = item.mat->alpha == AlphaMode::Mask;
+                    const auto pipeline = masked ? feedbackMaskedModelPipeline_
+                                                 : feedbackModelPipeline_;
+                    const auto& binder = masked ? feedbackMaskedModelBinder_
+                                                : feedbackModelBinder_;
+                    if (!pipeline.valid() || !binder) continue;
+                    device.setPipeline(pipeline);
                     device.setVertexBuffer(item.model->vb);
                     device.setIndexBuffer(item.model->ib);
-                    if (!feedbackModelBinder_(device,*item.model,*item.prim,
-                                               *item.mat,item.world))
+                    if (!binder(device,*item.model,*item.prim,
+                                *item.mat,item.world))
                         return false;
                     device.drawIndexed(item.indexCount,item.firstIndex);
                 }
@@ -605,6 +627,8 @@ private:
     FeedbackMeshBinder feedbackMeshBinder_;
     gfx::PipelineHandle feedbackModelPipeline_;
     FeedbackModelBinder feedbackModelBinder_;
+    gfx::PipelineHandle feedbackMaskedModelPipeline_;
+    FeedbackModelBinder feedbackMaskedModelBinder_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
