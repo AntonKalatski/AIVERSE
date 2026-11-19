@@ -134,6 +134,7 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    int maxFragmentTextureSlots() const override { return fragmentTextureSlots_; }
     const std::string& lastError() const override { return error_; }
 
     // ---------- buffers ----------
