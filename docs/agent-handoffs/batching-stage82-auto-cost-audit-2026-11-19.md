@@ -557,3 +557,42 @@ echo "Stage 91 exit=$?"
 ```
 
 Pass criteria: native build succeeds; `material palette CPU checks=38 result=passed`; `actual MDI pixel parity ... changed_channels=0`; final `changed_channels=0`; 81 MDI measured frames with nonzero commands, no backend failure, and exit 0. Inspect `[metal-icb-slow]` lines for **`icb_reset` vs `uniforms`**, alongside `encode`; collect per-frame CSV to correlate late CPU times. Slow-trace output is sampled and potentially perturbs later frames: performance decisions require separate untraced repeated controls. Preserve Draft PR #39 until native verification and external cross-platform tests.
+
+
+---
+
+## Stage 92 — owner Mac fast forced-MDI run passes; intermittent slowdown not reproduced (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119` (Draft PR #39). **Tested code:** Stage 91 `de9892f6ac6bb33ea1b37f10427697d8e0da4b1f`, handoff `77ab4bb94cf848f8cd3327c22f8a60e2e38a5c2a`. This Stage 92 update documents owner-provided **native Mac Studio evidence**; no renderer/RHI/policy change or assistant-run native test.
+
+### Actual results from owner Mac Studio
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=38 result=passed
+stress requested_items=1024 authored_unique_primitives=1024 submitted_model_draws=1
+batch=0 shadow=1024 opaque=1024 total=2050 error=
+actual MDI pixel parity frame=100 changed_channels=0
+CPU render benchmark direct: samples=66 median_ms=1.2233 p95_ms=2.3969
+CPU render benchmark batched: samples=81 median_ms=0.7739 p95_ms=0.8303 min_ms=0.6899 max_ms=0.9340
+stress benchmark policy=mdi measured_mdi_frames=81 measured_direct_frames=0 measured_mdi_submissions=810
+CPU render benchmark auto_mdi_submitted_frames: samples=96 median_ms=0.7742 p95_ms=0.8416
+CPU render benchmark auto_late_frames: samples=36 median_ms=0.7860 p95_ms=0.8549
+successful MDI CPU stage pass=0 samples=96 submissions=480 mean_total_ms=0.34075 grouping_ms=0.01701 submit_ms=0.23464
+successful MDI CPU stage pass=1 samples=96 submissions=480 mean_total_ms=0.30895 grouping_ms=0.00729 submit_ms=0.24805
+stress frame timeline samples=106 path=build/batching-stage91/captures/stage91-mdi-1k-frames.csv
+batch=1 shadow=5 opaque=5 total=12 error=
+stress phase=auto model_draw_calls=10 cpu_mdi_submissions=10 cpu_mdi_commands=2048 gpu_icb_submissions=0 gpu_icb_commands=0
+changed_channels=0
+Stage 91 exit=0
+```
+
+The test used `AIVERSE_ICB_SLOW_TRACE=1`, `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=120`, `AIVERSE_ICB_SLOW_TRACE_SLOT=0`, `AIVERSE_ICB_SLOW_TRACE_MS=0.08`. **No `[metal-icb-slow]` output** appeared, meaning no eligible sampled slot-0 submission crossed the threshold in this process (subject to trace instrumentation/sampling), NOT that other slots or the GPU were fast. The dedicated `icb_reset` vs `uniforms` diagnostic therefore did not produce observations in this run; its compilation and raster behavior still passed.
+
+### Interpretation and next steps
+
+The forced CPU MDI median 0.7739ms vs sequential Direct baseline 1.2233ms implies an observed ~36.7% lower CPU `renderer.render()` median for this specific synthetic 1k-primitive scene. The late 36-frame MDI median 0.7860ms and P95 0.8549ms do not reproduce the intermittent late slowdown in Stage 89/90, where forced MDI medians were 1.6058/1.4087ms respectively. No code optimization took place between those runs, only opt-in diagnostics differed; do not credit the Stage 91 diagnostic timestamp with a speedup. The variation may be influenced by Metal driver/CPU scheduling/contention but no root cause has been proven. GPU timing/FPS and cross-platform validation are still absent.
+
+**Next experiment without changing renderer:** repeat the *same* compiled Stage 91 forced-MDI process at least three times with `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=160`, no SLOT filter, `AIVERSE_ICB_SLOW_TRACE_MS=0.08`, each with a unique output capture prefix and `AIVERSE_BATCH_FRAME_TIMELINE=1`. A trace capturing all late submission slots will reveal whether a slow recurrence arises in slot0 or another slot, and the generated per-frame CSV can establish whether slow `renderer.render()` coincides with CPU submission stages. Compare against an untraced control to exclude logging effects; preserve submitted count and screenshot parity. Do not rename/rewrite any existing worktree or remove an unfinished rebase.
+
+If repeated runs remain consistently fast, defer further micro-optimizations and proceed to representative 2k/4k load, then controlled 10k with GPU timestamps/memory metrics. Keep CPU MDI/AUTO default-off and PR #39 Draft until validated.
