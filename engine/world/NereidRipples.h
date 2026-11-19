@@ -37,10 +37,10 @@ public:
     // Select at most four nearest ripple rings for one water body.
     // A body snapshot uses Entity::packed()+1 as its ID; events contain
     // Entity::packed() directly. Render coordinates match WorldScene origin.
-    std::array<render::float4,4> shaderRipples(
+    std::array<render::float4,16> shaderRipples(
             uint64_t waterId,double originX,double originZ,
             double targetX,double targetZ) const {
-        std::array<render::float4,4> result{};
+        std::array<render::float4,16> result{};
         struct Candidate {double distanceSquared=0;size_t index=0;};
         std::vector<Candidate> candidates;
         candidates.reserve(ripples_.size());
@@ -58,7 +58,7 @@ public:
             if(a.distanceSquared==b.distanceSquared)return a.index<b.index;
             return a.distanceSquared<b.distanceSquared;
         });
-        for(size_t i=0;i<std::min(size_t(4),candidates.size());++i) {
+        for(size_t i=0;i<std::min(size_t(16),candidates.size());++i) {
             const auto& r=ripples_[candidates[i].index];
             const float fade=std::clamp(1.f-r.age/r.lifetime,0.f,1.f);
             const float radius=r.initialRadius+r.speed*r.age;
