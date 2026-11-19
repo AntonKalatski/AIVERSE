@@ -100,6 +100,15 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("velocityDilation", 1.0f, 0.0f, 2.0f, "neighbor search radius in pixels for depth-matched velocity silhouettes, 0 disables", "Расширение векторов"),
         flag("linearDepth", false, "compare depth layers using camera-linearized view distance instead of device-depth", "Линейная глубина"),
         num("depthToleranceMeters", 0.35f, 0.01f, 10.0f, "linear-depth rejection tolerance in world units/metres", "Порог глубины, м")}});
+    // Explicit opt-in only: this effect is inert without AIVERSE_PRISMA_TEMPORAL=1.
+    // Native/volume users share the same data definition; no genre coupling.
+    c.push_back({T::TemporalResolve, "temporalResolve", "Временная стабилизация",
+        "HDR temporal color resolve with camera and object motion reprojection, neighborhood clipping, depth rejection and reactive coverage.",
+        C::Heavy, kHigh, {
+        num("historyWeight", 0.86f, 0.0f, 0.98f, "maximum history contribution on a stable receiver", "Вес истории"),
+        num("depthThreshold", 0.0075f, 0.0001f, 0.05f, "previous-frame hardware depth disocclusion tolerance", "Порог рассогласования глубины"),
+        num("motionScale", 0.04f, 0.0f, 0.25f, "history weight falloff per pixel of motion", "Подавление при движении"),
+        num("reactiveStrength", 0.95f, 0.0f, 1.0f, "reject history on translucent/particle reactive coverage", "Подавление на прозрачности")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -380,6 +389,7 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::DepthOfField: return {10.0f, 1};
     case T::AutoExposure: return {5.0f, 12};
     case T::MotionBlur: return {17.0f + (e.get("velocityDilation") > 0 ? 8.0f : 0.0f), 2}; // upper-bound pyramid: size-dependent passes
+    case T::TemporalResolve: return {16.0f, 2}; // shared velocity pass + 3x3 neighborhood/history resolve
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
