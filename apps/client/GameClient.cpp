@@ -1118,7 +1118,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             worldScene_->update(dev, {&focus, 1}, worldRadius_);
             worldMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-worldStarted).count();
         }
-        r3d_.beginScene(cam_, fbW(), fbH());
+        prisma_.setViewId(3ULL);
+        prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
+        // Presentation-only Halton jitter: gameplay aiming, viewport picking,
+        // UI and input continue to use the original unjittered cam_.
+        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_, fbW(), fbH());
+        r3d_.beginScene(renderCam, fbW(), fbH());
         if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
         {   // input state for the overlays (placement footprint / build grids, held keys, modes, cursor)
@@ -1167,8 +1172,6 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
-    prisma_.setViewId(3ULL);
-        prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         // PRISMA: current-frame particle alpha/depth coverage for MotionBlur.
