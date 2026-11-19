@@ -147,6 +147,7 @@ void Renderer3D::shutdown() {
     if (objectMotionMaskedPipeline_.valid()) dev_->destroyPipeline(objectMotionMaskedPipeline_);
     if (objectMotionMaskedShader_.valid()) dev_->destroyShader(objectMotionMaskedShader_);
     if (objectMotionReactivePipeline_.valid()) dev_->destroyPipeline(objectMotionReactivePipeline_);
+    if (objectMotionReactiveMeshPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveMeshPipeline_);
     if (objectMotionReactiveShader_.valid()) dev_->destroyShader(objectMotionReactiveShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
@@ -154,6 +155,7 @@ void Renderer3D::shutdown() {
     objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
     objectMotionMaskedPipeline_ = {}; objectMotionMaskedShader_ = {};
     objectMotionReactivePipeline_ = {}; objectMotionReactiveShader_ = {};
+    objectMotionReactiveMeshPipeline_ = {};
     if (objectMotionReactiveSkinPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveSkinPipeline_);
     if (objectMotionReactiveSkinShader_.valid()) dev_->destroyShader(objectMotionReactiveSkinShader_);
     if (objectMotionReactiveBakedPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveBakedPipeline_);
@@ -951,13 +953,25 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             return deform && translucent &&
                 (!it.baked || it.model->baked.tex.valid());
         };
+        // Water sheets and other immediate MeshVertex draws use DrawItem
+        // rather than ModelItem. Their opacity is part of DrawItem::color;
+        // the reactive pass reuses those same GPU buffers and transforms.
+        const auto meshReactiveEligible = [](const DrawItem& item) {
+            return item.mesh && item.mesh->vb.valid() &&
+                item.mesh->ib.valid() && item.mesh->indexCount &&
+                item.color.w > 0.001f && item.color.w < 0.99f;
+        };
+        bool meshReactiveNeeded = false;
+        for (const auto& item : items_)
+            meshReactiveNeeded |= meshReactiveEligible(item);
         bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
         for (const auto& it : modelItems_) {
             rigidReactiveNeeded |= reactiveEligible(it);
             animatedReactiveNeeded |= reactiveAnimatedEligible(it);
         }
         const bool reactiveNeeded = rigidReactiveNeeded ||
-            animatedReactiveNeeded || !motionReactiveDraws_.empty();
+            animatedReactiveNeeded || meshReactiveNeeded ||
+            !motionReactiveDraws_.empty();
         if (reactiveNeeded && !history.reactive.valid()) {
             gfx::TextureDesc target;
             target.width = w; target.height = h;
@@ -967,7 +981,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             target.label = "prisma motion reactive mask";
             history.reactive = dev_->createTexture(target);
         }
-        if (rigidReactiveNeeded && !objectMotionReactiveShader_.valid()) {
+        if ((rigidReactiveNeeded || meshReactiveNeeded) && !objectMotionReactiveShader_.valid()) {
             gfx::ShaderDesc shader;
             shader.glslVertex = reactive_shaders::kVS;
             shader.glslFragment = reactive_shaders::kFS;
@@ -990,6 +1004,22 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 pipeline.label = "prisma motion reactive coverage";
                 objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
             }
+        }
+        if (meshReactiveNeeded && !objectMotionReactiveMeshPipeline_.valid() &&
+            objectMotionReactiveShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionReactiveShader_;
+            pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+            pipeline.attrCount = 1;
+            pipeline.stride = sizeof(MeshVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::None; // water sheets are two-sided
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.blend = gfx::BlendMode::Screen;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA8;
+            pipeline.label = "prisma mesh water reactive coverage";
+            objectMotionReactiveMeshPipeline_ = dev_->createPipeline(pipeline);
         }
         // Deformable translucent models use the same GPU current-pose
         // vertex deformation as their motion shaders, but a coverage-only
@@ -1048,6 +1078,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             (objectMotionReactivePipeline_.valid() ||
              objectMotionReactiveSkinPipeline_.valid() ||
              objectMotionReactiveBakedPipeline_.valid() ||
+             objectMotionReactiveMeshPipeline_.valid() ||
              !motionReactiveDraws_.empty())) {
             struct ReactiveUniforms {
                 float mvp[16], params[4], lod[4];
@@ -1090,6 +1121,28 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 ++objectMotionStats_.reactiveDraws;
             }
 
+            // Actual water/transparent immediate mesh submissions. This
+            // includes RTS TerrainRenderer water surfaces, which queue
+            // Renderer3D::drawMesh(water_, ..., waterColor) before render.
+            // We reuse exactly the submitted mesh GPU geometry and matrix.
+            if (objectMotionReactiveMeshPipeline_.valid()) {
+                dev_->setPipeline(objectMotionReactiveMeshPipeline_);
+                dev_->setTexture(0,sceneDepth);
+                for (const DrawItem& item : items_) {
+                    if (!meshReactiveEligible(item)) continue;
+                    ReactiveUniforms uniforms{};
+                    const mat4 mvp = viewProj_ * item.model;
+                    std::memcpy(uniforms.mvp,mvp.m,sizeof uniforms.mvp);
+                    uniforms.params[0] = float(w);
+                    uniforms.params[1] = float(h);
+                    uniforms.params[2] = std::clamp(item.color.w,0.0f,1.0f);
+                    dev_->setUniforms(0,&uniforms,sizeof uniforms);
+                    dev_->setVertexBuffer(item.mesh->vb);
+                    dev_->setIndexBuffer(item.mesh->ib);
+                    dev_->drawIndexed(item.mesh->indexCount);
+                    ++objectMotionStats_.reactiveMeshDraws;
+                }
+            }
             // Animated translucent current-pose silhouettes. We intentionally
             // use the current pose for both vertex parameters: the fragment
             // writes coverage, NOT velocity. Thus this works without an ID.
