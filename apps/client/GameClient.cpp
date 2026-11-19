@@ -1122,8 +1122,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
-        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_, fbW(), fbH());
-        r3d_.beginScene(renderCam, fbW(), fbH());
+        const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
+        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
+        r3d_.beginScene(renderCam,renderW,renderH);
         if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
         {   // input state for the overlays (placement footprint / build grids, held keys, modes, cursor)
@@ -1151,7 +1152,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
         fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
-        fx_.update(*sim_, scene_, cam_, r3d_.viewProj(), fbW(), fbH(),
+        fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
         runViewScripts(screen_ == Screen::Playing ? float(dt) : 0.0f);
