@@ -40,6 +40,7 @@ static_assert(sizeof(LumaGpuGridUniforms)==64);
 
 struct LumaGpuInputPacket {
     uint64_t sourceRevision=0;
+    uint64_t clusterGeneration=0; // view/camera origin may change with sources unchanged
     std::vector<LumaGpuLight> lights;             // sorted by stable LumaLight::key
     std::vector<LumaGpuClusterEntry> cells;        // 16-byte entries
     std::vector<uint32_t> candidateIndices;       // sorted registry indices
@@ -56,6 +57,7 @@ inline LumaGpuInputPacket packLumaSources(const LumaWeaveRegistry& registry,
     const auto csr=clusters.exportCsr(registry); // validates snapshot revision
     LumaGpuInputPacket packet;
     packet.sourceRevision=registry.revision();
+    packet.clusterGeneration=csr.buildGeneration;
     packet.cells=csr.cells;
     packet.candidateIndices=csr.indices;
     packet.lights.reserve(registry.lights().size());
