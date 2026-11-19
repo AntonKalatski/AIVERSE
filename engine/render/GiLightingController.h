@@ -142,6 +142,17 @@ public:
         return true;
     }
 
+    // Environmental first bounce is separately opted in: the caller MUST
+    // exclude these sources from its baked static GI base (or regenerate it).
+    // Zero sun/sky intensity keeps the legacy static ambient path unchanged.
+    bool setEnvironment(GiEnvironmentLight environment) {
+        if (!ready() || !environment.valid()) return false;
+        if (mode_==GiTransportMode::GpuCompute)
+            return gpu_.setEnvironment(environment);
+        (void)cpu_.setEnvironment(environment);
+        return true;
+    }
+
     // Use the same lights authored for the normal direct lighting path.
     // Only sources with indirectMultiplier>0 participate; static/baked lamps
     // stay excluded by default. Source namespace is stable per world/owner.
