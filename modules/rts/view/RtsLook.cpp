@@ -231,12 +231,11 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
             lc.lodDistance = num(lj["distance"], 30);
             const Model& base = *L.models[0].model;
             for (const auto& c0 : base.clips) lc.clipMap.push_back(lc.model->findClip(c0.name));
-            for (const auto& n : lc.model->nodes) lc.nodeMap.push_back(base.findNode(n.name));
-            // The canonical View retarget is an opt-in authored visual
-            // adapter, compiled once per loaded LOD rather than rebuilt
-            // for each actor, camera and draw submission.
-            auto retarget=std::make_shared<view::ModelPoseRetarget>();
-            retarget->sourceNodeForVisual=lc.nodeMap;
+            // Every genre uses the same name-based authoring helper;
+            // the resulting explicit source-to-visual map is compiled once.
+            auto retarget=std::make_shared<view::ModelPoseRetarget>(
+                view::makeNamedModelPoseRetarget(base,*lc.model));
+            lc.nodeMap=retarget->sourceNodeForVisual; // historical fallback only
             if(auto plan=view::compileModelPoseRetarget(
                    base,*lc.model,*retarget,
                    L.models[0].modelGeneration,lc.modelGeneration)) {
