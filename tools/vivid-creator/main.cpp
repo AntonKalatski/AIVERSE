@@ -56,6 +56,7 @@ struct CreatorApp {
     float jaw=0.0f, smile=0.0f, blink=0.0f, yaw=0.18f;
     float wind=0.15f;
     int draftGuides=512,draftSegments=8;
+    std::array<char,128> rootBone{},headBone{},jawBone{},leftEyeBone{},rightEyeBone{};
     char recipeFile[512]="/tmp/aiverse-vivid-human.json";
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
@@ -64,14 +65,19 @@ struct CreatorApp {
     std::string status;
     std::size_t displayedRevision=0;
 
-    CreatorApp():draft(session.dna()) {
-        draftGuides=int(draft.groom.guideCount);
-        draftSegments=int(draft.groom.segments);
-    }
+    CreatorApp():draft(session.dna()) {syncDraft();}
     void syncDraft() {
         draft=session.dna();
         draftGuides=int(draft.groom.guideCount);
         draftSegments=int(draft.groom.segments);
+        auto copy=[](std::array<char,128>& dst,const std::string& source) {
+            std::snprintf(dst.data(),dst.size(),"%s",source.c_str());
+        };
+        copy(rootBone,draft.rig.rootBone);
+        copy(headBone,draft.rig.headBone);
+        copy(jawBone,draft.rig.jawBone);
+        copy(leftEyeBone,draft.rig.leftEyeBone);
+        copy(rightEyeBone,draft.rig.rightEyeBone);
     }
     void init(gfx::Device& dev) {
         device=&dev;
@@ -273,6 +279,16 @@ struct CreatorApp {
         if(!session.preset(id,&err))status=err;
         else {syncDraft();pendingRebuild=true;}
     }
+    void boneAlias(const char* label,std::array<char,128>& text,
+                   std::string HumanRigDNA::*member) {
+        ImGui::InputText(label,text.data(),text.size());
+        if(!ImGui::IsItemDeactivatedAfterEdit())return;
+        draft.rig.*member=text.data();
+        std::string error;
+        if(session.edit([this](HumanDNA& profile){profile=draft;},&error))
+            pendingRebuild=true;
+        else {status=error;syncDraft();}
+    }
     void guiControls() {
         ImGui::SetNextWindowPos({14,14},ImGuiCond_Once);
         ImGui::SetNextWindowSize({354,750},ImGuiCond_Once);
@@ -304,6 +320,21 @@ struct CreatorApp {
             slider("Eye scale",&draft.anatomy.eyeScale,0.5f,1.8f);
             slider("Brow height",&draft.anatomy.browHeight,0,1);
             slider("Lip fullness",&draft.anatomy.lipFullness,0,1);
+            slider("Mouth width",&draft.anatomy.mouthWidth,0,1);
+            slider("Ear scale",&draft.anatomy.earScale,0.5f,1.8f);
+            slider("Neck length",&draft.anatomy.neckLength,0,1);
+            slider("Shoulder width",&draft.anatomy.shoulderWidth,0,1);
+            slider("Body build",&draft.anatomy.bodyBuild,0,1);
+            slider("Height metres",&draft.anatomy.heightMeters,0.8f,2.6f);
+        }
+        if(ImGui::CollapsingHeader("Rig / imported bone names")) {
+            boneAlias("Root bone",rootBone,&HumanRigDNA::rootBone);
+            boneAlias("Head bone",headBone,&HumanRigDNA::headBone);
+            boneAlias("Jaw bone",jawBone,&HumanRigDNA::jawBone);
+            boneAlias("Left eye bone",leftEyeBone,&HumanRigDNA::leftEyeBone);
+            boneAlias("Right eye bone",rightEyeBone,&HumanRigDNA::rightEyeBone);
+            ImGui::TextWrapped("Retargets imported glTF/FBX bone names. "
+                               "Morph-only jaw and eyes can omit joints.");
         }
         if(ImGui::CollapsingHeader("Skin / skin scattering",ImGuiTreeNodeFlags_DefaultOpen)) {
             color("Pigment",draft.skin.melaninColor);
