@@ -1299,3 +1299,36 @@ virtual-texture shader indirection test and does not validate ICB.
 Do not enable GPU ICB in production or merge Draft PR #21.
 After a real-device result, implement full Shader Graph compiler/
 Renderer3D material acceptance, then test other backends.
+
+## Stage 10BT/10BU — hardware ABI PASS, full Renderer3D graph test pending
+
+**Observed Apple M3 Ultra Stage 10BT PASS** (user-supplied native log):
+`metal_texture_icb_graph_gpu` 1/1 passed in **1.06 s**,
+whole CTest elapsed **1.07 s**. Actual GPU ICB executed two
+material draws and per-command RGBA8 pixel parity PASSED
+for both `graph sources=1` and `graph sources=4`.
+The separate fixture operation times were **240.116 ms**
+and **151.826 ms**; these are not isolated frame times.
+This confirms low-level resource ABI only.
+
+**New Stage 10BU source-only integration gate**:
+`tests/render/metal_renderer_graph_icb_gpu.cpp` is a separate
+native macOS real `Renderer3D` test. It builds a four-source
+Shader Graph via `render::graph::compile` from JSON (not
+custom fixture MSL), uploads material textures and primitives
+via `uploadModel`, renders a direct comparison and then
+GPU ICB, checks nonzero mixed graph ICB counters and
+compares captured scene pixels. It must show distinct
+left/right materials even when parity is achieved.
+
+CMake opt-in `AIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=ON`;
+default OFF. It builds `aiverse_metal_renderer_graph_icb_gpu_test`
+and registers `metal_renderer_graph_icb_gpu`.
+See `docs/texture-rhi.md` Stage 10BU for exact isolated
+worktree configure, build and fail-fast CTest commands.
+
+**Not run:** the new integration test's compilation,
+MSL shader generation, Metal GPU execution or scene image parity.
+Never promote 10BT's ABI PASS to a 10BU Renderer3D PASS.
+Do not merge Draft PR #21 or enable GPU ICB by default
+until actual native logs and cross-backend acceptance.
