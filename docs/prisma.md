@@ -2102,6 +2102,89 @@ execution, screenshot parity, memory, motion-vector/AA quality or
 performance profiling and CI. Stage-specific handoff:
 `docs/handoffs/prisma-stage-44.md`.
 
+## Stage 45 — GPU-sampled adaptive resolution and pre-render stable fallback
+
+This stage extends the **opt-in** Stage 44 source/output temporal scale
+path. It does not change any defaults or the `postfx` JSON root, existing
+MCP IDs, editor tab ID, scene shaders or genre-specific simulation.
+
+**New effect controls** in the existing `temporalResolve` catalog:
+`adaptiveResolution` (boolean, defaults false), `targetGpuMs`
+(4..50ms, default 16.6) and `minRenderScale` (0.5..1, default 0.5).
+The authored Stage 44 `renderScale` remains the *quality ceiling*
+and cannot be exceeded by the adaptive controller. To opt in, set
+`AIVERSE_PRISMA_ADAPTIVE=1` **in addition to** all three Stage 44 flags
+(`AIVERSE_PRISMA_TEMPORAL=1`, `AIVERSE_PRISMA_JITTER=1`,
+`AIVERSE_PRISMA_UPSCALE=1`), choose HDR/High and author an enabled
+`temporalResolve` effect with `adaptiveResolution:true`.
+
+`PrismaAdaptiveResolution` is a CPU-only, genre-independent policy
+in `engine/render/PrismaAdaptiveResolution.h`. It consumes *only* finite,
+positive, asynchronously completed `Device::gpuFrameMs()` readings
+from **new, strictly increasing** `Device::gpuCompletedFence()` tokens.
+A backend without reliable results (e.g. unsupported GL/Vulkan) stays
+at the authored scale; the policy never substitutes editor CPU frame
+time, FPS, frame serials or predicted GPU timings. On Metal the signal
+measures the **whole GPU command frame**, not an isolated Prisma pass
+or editor view; adapting multiple editor views to the same whole-frame
+measurement is conservative and can shift quality in both.
+
+Hysteresis: GPU duration above 115% target for 12 distinct completed
+samples causes a 1/16 renderScale decrease; GPU duration below 80%
+target for 36 samples causes a 1/16 increase, up to authored ceiling.
+A changed scale starts 48 completed samples of cooldown, reducing
+rapid resize/reallocation loops. The floor and ceiling are clamped
+and quantized; `Prisma::retireView` removes per-view controller
+state when the viewport is closed.
+
+**Pre-render resource preflight:** `renderSizeForOutput()` on the
+graphics thread now calls `preflightUpscale()` before returning any
+internal resolution smaller than the output. It checks the temporal
+and motion GPU programs, the guaranteed fallback composite, the HDR
+RGBA16F size-owned scene/velocity textures, internal scene/depth/scratch,
+the camera-private pair of output-size HDR temporal histories and the
+output-size scratch depth. History reallocations use existing
+GPU-fenced retirement. A failed preflight returns **full input/output
+dimensions** and inhibits jitter for that view. Allocation retries
+are rate-limited (60 render-size queries) so an unsupported or
+memory-constrained device is not hammered each frame. No GPU wait
+is introduced in this path.
+
+**Jitter-safe runtime fallback:** if a temporal pass unexpectedly
+cannot run after a low-resolution jittered scene was already encoded,
+the final compositor uses `graphFrame.zw` as a current-jitter
+sampling offset `s + currentJitter` for source color and dependent
+screen effects. The offset is zero during a successful temporal
+resolve or normal non-jittered presentation. That keeps the
+fallback image on a stable output pixel grid while still allowing
+linear bilinear upscaling and HDR color processing. This is a visual
+stabilization measure, not a guarantee of production image quality
+or a replacement for real temporal accumulation. HUD and input
+remain full-size and unjittered.
+
+`PrismaStats` adds `adaptiveResolution`,
+`requestedRenderScale` and `temporalFallback`; the existing
+PRISMA editor panel displays them alongside output/internal
+resolutions and optional asynchronously completed **whole-frame**
+GPU milliseconds. No precise GPU time is shown if unsupported.
+
+**Limitations:** backend timing may be absent; whole-frame timing
+includes other GPU jobs; the fallback can still exhibit simple
+bilinear aliasing and thin-edge shimmer; a mid-frame device loss
+cannot be recovered with texture sampling; cached allocation
+pressure may temporarily rise around scale transitions until
+actual GPU-completed fences allow reclamation. Adaptive scaling
+does not synthesize true per-viewport GPU timing nor promise a
+frame-rate gain. Motion-vector reprojection, jitter sign and
+GLSL/MSL compilation still need native GPU validation.
+
+**Performed:** direct GitHub source edits and source readback only
+(structural checks in the Stage 45 handoff). **NOT RUN:** CMake,
+C++/Obj-C++ compile, CTest, Metal/GL/GLES/Vulkan runtime,
+screenshot/PSNR/ghosting, GPU timing experiments, VRAM profiling,
+device-loss tests or CI. For implementation and next stage see
+`docs/handoffs/prisma-stage-45.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
