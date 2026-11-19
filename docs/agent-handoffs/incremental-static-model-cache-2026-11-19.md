@@ -1725,3 +1725,33 @@ echo "GPU ICB exit=$?"
 ```
 
 Demand process exit 0, `changed_channels=0`, nonzero reported GPU-encoded submission and command counts, and record candidates/prepared/rejected/executeFailed/preflightGroups. CI, Vulkan and performance A/B/A remain unverified at this stage. Leave Draft PR #34 and experimental defaults unchanged. This documentation commit is newer than the compiled SHA, so agents must not attribute a new native build to the documentation-only HEAD.
+
+
+---
+
+## Stage 59 — owner Mac Studio confirms actual GPU-encoded Metal ICB + pixel parity (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Compiled fixture source:** `e8a635d4d` (Stage 57 code plus handoff). The Stage 58 documentation-only commit `a50382bf` followed the successful compilation and did not change the binary. This Stage 59 update documents user-reported execution only; **no production code changed**.
+
+### Actual native execution evidence (owner supplied terminal output)
+
+Owner ran the previously prescribed `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 AIVERSE_PALETTE_TEST_CASE=indirect AIVERSE_ICB_TRACE=1` fixture command on Mac Studio, as the follow-up from Stage 58. Output:
+
+```text
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+batch=1 shadow=1 opaque=1 total=4 error=
+GPU-encoded ICB: supported=1 required=1 submissions=1 commands=32
+GPU ICB diagnostics: candidates=1 prepared=1 rejected=0 executeFailed=0 preflightGroups=0
+PBR colour indirect active=1 (before 32, after 1)
+CPU MDI: supported=1 submissions=1 commands=32
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+GPU ICB exit=0
+```
+
+**Interpretation:** The explicit fixture gate `required=1` passed, and the actual renderer's `gpuEncodedSubmissions=1` / `gpuEncodedCommands=32` (not merely eligible candidates) confirms GPU-compute-authored Metal ICB submission on this fixture. CPU MDI separately reports 1 submission / 32 commands; render passes can use different paths concurrently. Shadow and colour model submission counts reduced 32+32 to 1+1; overall renderer drawCalls 66→4, a 93.94% reduction on this synthetic fixture only. Render captures have zero changed channels; all 30 palette CPU checks passed, with no reported GPU pipeline failures or render error. No inference about production scene frame times is justified.
+
+### Verification boundaries / exact next work
+
+This is **PASS for the Metal GPU ICB fixture**, not full renderer certification. Not yet verified: real-scene CPU and GPU frame times (fixed-camera A/B/A), Vulkan pooled MDI pixel parity, safe live geometry pool retirement under in-flight GPU loads, other scenes/materials, full CTest/CI acceptance. Keep Draft PR #34 and experimental defaults OFF. Next agent should add or run real-scene frame CPU/GPU timing with a fixed camera and compare direct baseline, CPU MDI, GPU ICB separately (including shadows and colour path accounting), then complete Vulkan and recycling validation on appropriate hardware. Record per-run data and GPU timestamps if available. Do not count this as a generic 93.9% FPS gain.
