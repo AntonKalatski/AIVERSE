@@ -198,6 +198,9 @@ public:
     // Budget only retained transient Pose/matrix capacity in the generic
     // MotionWeave View. The largest single actor still renders normally.
     void setGenericRetargetScratchBudgetBytes(size_t bytes);
+    size_t genericRetargetScratchBudgetBytes() const noexcept {
+        return genericRetargetScratchBudgetBytes_;
+    }
     size_t genericRetargetScratchCapacityBytes() const noexcept;
     struct AssetResidencyStats {
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
