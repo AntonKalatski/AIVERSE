@@ -19,6 +19,7 @@
 #include "PrismaRenderGraph.h" // GPU-free post-pass graph planner; executor follows later
 #include "PrismaBloomGraph.h" // persistent compiled Bloom topology per viewport
 #include "PrismaRhiExecutor.h" // opt-in per-view graph GPU context
+#include "PrismaGpuRetirement.h"
 #include "Renderer3D.h"
 
 namespace aiverse::render {
@@ -140,6 +141,7 @@ private:
               std::initializer_list<std::pair<int, gfx::TextureHandle>> tex);
     const Lut* lut(const std::string& path);
     void release(gfx::TextureHandle& t);
+    void retireTarget(gfx::TextureHandle& t); // holds until real GPU fence
 
     gfx::Device* dev_ = nullptr;
     PrismaSettings settings_;
@@ -158,6 +160,8 @@ private:
     std::map<std::string, bool> compositeFailed_;
     std::vector<Sized> sizes_;
     std::vector<RetiredSized> retiredSizes_; // retains GPU resources until verified safe
+    PrismaGpuRetirementQueue<gfx::TextureHandle> retiredTargets_;
+    std::vector<gfx::TextureHandle> unfencedTargets_;
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, MotionView> motionViews_;
