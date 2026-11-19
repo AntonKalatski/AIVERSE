@@ -211,13 +211,15 @@ Prisma::RetirementStats Prisma::retirementStats() const {
     for (const auto& item : retiredSizes_) {
         for (const auto& [role, target] : item.resources.targets) {
             if (target.tex.valid()) {
-                ++stats.fencedTextures; // includes textures held in archived sets
+                if (item.lastSubmittedFence) ++stats.fencedTextures;
+                else ++stats.unfencedTextures;
                 stats.knownPendingBytes += bytesOf(target.tex);
             }
         }
         for (const auto& [key, handle] : item.resources.depths) {
             if (handle.valid()) {
-                ++stats.fencedTextures;
+                if (item.lastSubmittedFence) ++stats.fencedTextures;
+                else ++stats.unfencedTextures;
                 stats.knownPendingBytes += bytesOf(handle);
             }
         }
