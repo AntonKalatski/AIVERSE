@@ -247,6 +247,26 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
     groundCanvas_.draw(r, *dev_, groundMerged_, contentBase_);
 }
 
+// LENS secondary camera: primary RtsView::draw has prepared the terrain,
+// GPU fog texture, visual clocks and all animation packets already. Do not
+// call fog_.update, terrain_.draw or any scene event/FX producers again.
+void RtsView::drawPreparedTerrainFog(Renderer3D& r,const MapGrid& grid,
+                                     const std::vector<uint8_t>* vision,
+                                     double seconds) {
+    if(frame_==0 || !dev_)return;
+    const bool tiles=twoD_ && twoD_->hasTiles();
+    if(hasTerrain_ && !tiles && terrain_.built())
+        terrain_.drawPrepared(r,grid,vision);
+    // Terrain water is in the shared simple mesh packet snapshot. In 2D
+    // tile mode we intentionally omit the legacy water draw here as well.
+    if(vision && !vision->empty() &&
+       !(hasTerrain_ && !tiles && terrain_.shaderFog())) {
+        const bool low=r.shadowQuality()==ShadowQuality::Off ||
+                       r.shadowQuality()==ShadowQuality::Low;
+        fog_.draw(r,seconds,low);
+    }
+}
+
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
     // Resource retirement is driven by the explicit owner frame hook,
     // never by this draw function (which can be called several times).
