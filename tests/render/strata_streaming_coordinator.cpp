@@ -85,6 +85,18 @@ static void globalGpuBudget() {
     auto stats=deviceIndexBudgetStats(a);
     assert(stats.reservedBytes==80 && stats.activeLeases==2);
     assert(stats.limitBytes==80);
+    // Two worlds share one uploaded-byte allowance for a given RHI frame.
+    assert(configureDeviceFrameUploadBudget(a,24));
+    assert(deviceFrameUploadAllowance(a,7)==24);
+    accountDeviceFrameUpload(a,7,12);
+    assert(deviceFrameUploadAllowance(a,7)==12);
+    assert(configureDeviceFrameUploadBudget(a,24)); // must NOT reset allowance
+    assert(deviceFrameUploadAllowance(a,7)==12);
+    assert(!configureDeviceFrameUploadBudget(a,32)); // live worlds disagree
+    accountDeviceFrameUpload(a,7,12);
+    assert(deviceFrameUploadAllowance(a,7)==0);
+    assert(deviceFrameUploadAllowance(a,8)==24);
+    assert(deviceFrameUploadAllowance(a,0)==0);
     assert(configureDeviceIndexBudget(b,80));
     assert(reserveDeviceIndexBytes(b,80,other)); // separate devices
     assert(deviceIndexBudgetStats(b).reservedBytes==80);
