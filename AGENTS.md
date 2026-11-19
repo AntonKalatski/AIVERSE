@@ -1886,5 +1886,6 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   The native `render_gpu_program_retirement` CTest is
   registered but **NOT RUN**. PR #22 remains Draft until
   build, GPU/backend, cross-genre animation and sanitizer
-  suites pass. See Stage 115 handoff for exact commits and
-  next work.
+  suites pass. See the separate
+  `docs/agent-handoffs/animation-stage115-main-gpu-retirement-2026-11-19.md`
+  for exact commits, unresolved risks and the Stage 116 work plan.
