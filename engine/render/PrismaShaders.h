@@ -171,7 +171,10 @@ inline const char* kDepthOfField = R"(
 // First pass stores weighted log2 luminance in R and total weight in G.
 // p0.x = centerWeight (0 uniform, 1 strongly center-biased)
 // p0.y = centerRadius (relative normalized image coordinates)
-// p0.z = opt-in bright-outlier rejection (0 = byte-for-byte legacy weights)
+// p0.z = opt-in bright-outlier rejection (0 = legacy highlight weights)
+// p0.w = weight OUTSIDE optional region, clamped to >= .02
+// region = (screen center X, screen center Y, radius, feather);
+//          negative radius disables region and reproduces legacy meter.
 // sun.xy = min/max metering log2 luminance clamps
 // sun.zw = bright-outlier start log2 L and smooth transition width in stops.
 // Later reduction preserves numerator/denominator rather than averaging
@@ -210,6 +213,24 @@ inline const char* kExposureLog = R"(
         vec4 t = smoothstep(vec4(sun.z),
                             vec4(sun.z + max(sun.w,0.1)),logL);
         weights *= vec4(1.0) - t*reject;
+    }
+    // Stage 58: a camera-authored region influences metering only, not
+    // final color. Sample positions are converted from backend texture UV
+    // back into normalized bottom-up screen coordinates for consistency.
+    // A nonzero outside weight prevents an empty metering denominator.
+    if (region.z > 0.0) {
+        float aspect = px.y / max(px.x,0.000001);
+        vec2 ar = vec2(aspect,1.0);
+        vec2 rc = region.xy;
+        vec4 distance = vec4(length((TUV(q0)-rc)*ar),
+                             length((TUV(q1)-rc)*ar),
+                             length((TUV(q2)-rc)*ar),
+                             length((TUV(q3)-rc)*ar));
+        vec4 inside = vec4(1.0) -
+            smoothstep(vec4(region.z),
+                       vec4(region.z+max(region.w,0.001)),distance);
+        weights *= mix(vec4(clamp(p0.w,0.02,1.0)),
+                       vec4(1.0),inside);
     }
     RETURN(vec4(dot(logL,weights)*0.25,
                 (weights.x+weights.y+weights.z+weights.w)*0.25,0.0,1.0));
