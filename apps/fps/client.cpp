@@ -16,13 +16,13 @@
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationBackendPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
-#include "libraries/include/aiverselib/animation/AnimationHotReload.h"
 #include "libraries/include/aiverselib/animation/AnimationAssetLoader.h"
 #include "modules/fps/view/FpsAnimationEvents.h"
 #include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/view/View.h"
 #include "engine/view/AppearanceAuthoringService.h"
+#include "engine/view/AppearanceAssetRegistry.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -73,6 +73,8 @@ struct App {
     World characterPresentation;
     std::unique_ptr<render::Model> characterModel;
     std::shared_ptr<const render::AnimationGraph> characterGraph;
+    ::aiverse::view::AppearanceAssetRegistry characterAppearanceRegistry;
+    ::aiverse::view::AppearanceAssetRegistry::Snapshot characterAppearance;
     std::map<uint8_t,Entity> characterEntities;
     std::map<uint8_t,uint32_t> characterLives;
     std::map<uint8_t,fps::view::ReplicatedAnimationActions> characterActions;
@@ -85,8 +87,9 @@ struct App {
     motionweave::AnimationBackendOptions backendOptions{};
     std::unique_ptr<motionweave::MotionWeaveScheduler> characterScheduler;
     motionweave::MotionWeaveScheduleStats lastAnimationStats{};
-    motionweave::AnimationHotReloadRegistry animationReload;
     std::filesystem::path characterGraphFile;
+    std::filesystem::file_time_type characterGraphStamp{};
+    bool characterGraphHasStamp=false;
     unsigned animationReloadFrame=0;
     i18n::Localization lang;
     ein::InputFlow actions;
@@ -235,6 +238,41 @@ struct App {
         if(platform::readContentFile(projectRoot+"/audio.json",bank)||platform::readContentFile("engine/assets/fps_audio.json",bank))if(!audio.loadBank(Json::parse(bank),[](const auto& file,auto& out){return platform::readContentFile(file,out);},&error))std::fprintf(stderr,"FPS audio: %s\n",error.c_str());
     }
 
+    // Source-owned resource publication; MotionWeave and the presentation
+    // ECS remain the sole pose/clock authority for every remote player.
+    bool publishCharacterAppearance(const render::Model& model,
+                                    const Json& fallbackGraph,
+                                    std::string& error) {
+        ::aiverse::view::AppearanceAssetRegistry::Request request;
+        request.model=&model;
+        request.sourceId=1; // registry asset key; NOT an individual actor ID
+        request.appearance=rules["fps"]["visual"];
+        request.materialLibrary=rules["fps"]["visual"]["materialLibrary"];
+        request.animationGraph=characterGraphFile.empty()
+            ?fallbackGraph:Json::string(characterGraphFile.string());
+        if(!model.path.empty())request.sources.push_back(model.path);
+        if(!characterGraphFile.empty()) {
+            request.sources.push_back(characterGraphFile.string());
+            request.graphReader=[](const std::string& path,std::string& out) {
+                std::ifstream stream(path,std::ios::binary);
+                if(!stream)return false;
+                // Bounded read: a failed oversized edit must keep last-good.
+                std::string bytes(256u*1024u+1u,'\0');
+                stream.read(bytes.data(),std::streamsize(bytes.size()));
+                const auto count=stream.gcount();
+                if(stream.bad() || count>256*1024)return false;
+                bytes.resize(size_t(count));
+                out=std::move(bytes);
+                return true;
+            };
+        }
+        return characterAppearanceRegistry.publish(
+            "fpsCharacter",request,{},
+            [](const std::string& warning) {
+                std::fprintf(stderr,"FPS appearance: %s\n",warning.c_str());
+            },&error);
+    }
+
     // Opt-in model for FPS remote players. Existing box fallback remains when
     // fps.visual.model is unset or the asset fails to load.
     void loadAnimatedCharacter(gfx::Device& device) {
@@ -294,7 +332,6 @@ struct App {
                 def.set("output",Json::string(output));
                 def.set("parameters",Json::parse(R"({"moving":0,"speed":0})"));
             }
-            auto compiled=::aiverse::view::AppearanceAuthoringService::compileGraph(*model,def);
             // Optional project-local hot-reloadable graph asset; file revisions
             // never affect authoritative FPS simulation or networking.
             const auto graphFile=view.getStr("graphFile");
@@ -305,12 +342,20 @@ struct App {
                    graphFile.find("..")!=std::string::npos)
                     throw std::invalid_argument("animation graphFile escapes project");
                 characterGraphFile=std::filesystem::path(projectRoot)/local;
-                if(!animationReload.pollFile("fpsCharacter",*model,
-                                             characterGraphFile))
-                    if(!animationReload.lookup("fpsCharacter") ||
-                       !animationReload.lookup("fpsCharacter")->graph)
-                        throw std::runtime_error("FPS animation graphFile failed to compile");
-                compiled=animationReload.lookup("fpsCharacter")->graph;
+            }
+            // Both the initial file and later edits use the same immutable
+            // appearance transaction (materials, node overrides, graph).
+            std::string appearanceError;
+            if(!publishCharacterAppearance(*model,def,appearanceError))
+                throw std::runtime_error("FPS appearance: "+appearanceError);
+            characterAppearance=characterAppearanceRegistry.find("fpsCharacter");
+            if(!characterAppearance || !characterAppearance->graph)
+                throw std::runtime_error("FPS appearance has no animation graph");
+            const auto compiled=characterAppearance->graph;
+            if(!characterGraphFile.empty()) {
+                std::error_code ec;
+                characterGraphStamp=std::filesystem::last_write_time(characterGraphFile,ec);
+                characterGraphHasStamp=!ec;
             }
             // Authoring uses Workspace animations/montage/*.json. Opt-in
             // cosmetic montages never drive hit, reload or damage authority.
@@ -376,6 +421,8 @@ struct App {
             if(pendingModel)render::releaseModel(device,*pendingModel);
             if(characterModel)render::releaseModel(device,*characterModel);
             characterGraph.reset();
+            characterAppearance.reset();
+            characterAppearanceRegistry.clear();
             characterModel.reset();
             characterBakeAvailable=false;
             characterBakedCrowd=false;
@@ -441,10 +488,45 @@ struct App {
             // not reset merely because a rendering backend changed.
         }
         if(!characterGraphFile.empty() && ++animationReloadFrame%30u==0u) {
-            if(animationReload.pollFile("fpsCharacter",*characterModel,
-                                        characterGraphFile)) {
-                characterGraph=animationReload.lookup("fpsCharacter")->graph;
-                animationReload.apply(characterPresentation);
+            std::error_code ec;
+            const auto stamp=std::filesystem::last_write_time(characterGraphFile,ec);
+            if(!ec && (!characterGraphHasStamp || stamp!=characterGraphStamp)) {
+                characterGraphStamp=stamp;
+                characterGraphHasStamp=true;
+                characterAppearanceRegistry.invalidateSources(
+                    {characterGraphFile.string()});
+                std::string error;
+                if(publishCharacterAppearance(*characterModel,Json{},error)) {
+                    characterAppearance=characterAppearanceRegistry.find("fpsCharacter");
+                    const auto compiled=characterAppearance->graph;
+                    if(compiled!=characterGraph) {
+                        characterGraph=compiled;
+                        // No second animation evaluator: update ONLY the
+                        // existing ECS graph assets and restart their players.
+                        for(const auto& [slot,entity]:characterEntities) {
+                            (void)slot;
+                            auto* asset=characterPresentation.tryGet<
+                                motionweave::AnimationAssetComponent>(entity);
+                            if(!asset || asset->model!=characterModel.get() ||
+                               asset->graph==compiled)continue;
+                            asset->graph=compiled;
+                            if(auto* player=characterPresentation.tryGet<
+                                    motionweave::AnimationPlayerComponent>(entity))
+                                player->restart=true;
+                            if(auto* slots=characterPresentation.tryGet<
+                                    motionweave::AnimationMontageSlotsComponent>(entity)) {
+                                slots->players.clear();
+                                slots->events.clear();
+                            }
+                            if(auto* notifies=characterPresentation.tryGet<
+                                    motionweave::AnimationGraphNotifiesComponent>(entity))
+                                notifies->events.clear();
+                        }
+                    }
+                } else
+                    std::fprintf(stderr,
+                        "FPS appearance hot reload (last good retained): %s\n",
+                        error.c_str());
             }
         }
         std::set<uint8_t> presentSlots;
@@ -473,9 +555,6 @@ struct App {
                     auto& asset=characterPresentation.add<motionweave::AnimationAssetComponent>(e);
                     asset.model=characterModel.get();
                     asset.graph=characterGraph;
-                    if(!characterGraphFile.empty())
-                        characterPresentation.add<motionweave::AnimationGraphKeyComponent>(
-                            e,motionweave::AnimationGraphKeyComponent{"fpsCharacter"});
                     characterPresentation.add<motionweave::AnimationPlayerComponent>(e);
                     characterPresentation.add<motionweave::AnimationPoseComponent>(e);
                     if(const auto phase=phaseHandoff.find(remote.slot);
@@ -792,6 +871,14 @@ struct App {
                 if(found!=characterEntities.end()) {
                     render::ModelDraw draw;
                     draw.model=characterModel.get();
+                    // Snapshot owns material/node overrides for the entire
+                    // ordered submit; characterModel owns the GPU resources.
+                    if(characterAppearance) {
+                        draw.materials=&characterAppearance->materials;
+                        draw.nodeMaterial=&characterAppearance->nodeMaterial;
+                        draw.variant=characterAppearance->variant;
+                        draw.geometry=characterAppearance->geometry;
+                    }
                     draw.persistentId=uint64_t(remote.slot);
                     const float yaw=float(remote.yaw.toDouble()*6.283185307179586);
                     draw.world=render::mat4::translate(position+render::float3{0,characterHeightOffset,0})
@@ -945,6 +1032,8 @@ struct App {
         characterActions.clear();
         characterMontages.clear();
         characterGraph.reset();
+        characterAppearance.reset();
+        characterAppearanceRegistry.clear();
         if(characterModel) {
             render::releaseModel(device,*characterModel);
             characterModel.reset();
