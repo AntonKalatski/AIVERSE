@@ -61,6 +61,15 @@ inline bool compatibleModelPose(const render::Model& source,
     if(&source==&visual)return true;
     if(source.nodes.size()!=visual.nodes.size() ||
        source.skins.size()!=visual.skins.size())return false;
+    // Morph-target indices are mesh-local. They cannot be copied between
+    // independently authored LOD assets without an explicit channel map.
+    const auto morphs=[](const render::Model& model) {
+        for(const auto& mesh:model.meshes)
+            for(const auto& primitive:mesh.primitives)
+                if(primitive.morphTargets>0)return true;
+        return false;
+    };
+    if(morphs(source) || morphs(visual))return false;
     auto near=[](float a,float b) {
         return std::isfinite(a)&&std::isfinite(b) &&
                std::abs(a-b)<=0.0005f;
