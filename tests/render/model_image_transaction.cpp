@@ -101,6 +101,9 @@ int main(){
     resident.textureCache=shared;
     shared->upload(device,resident);
     assert(resident.tex.valid() && shared->gpuCount()==1);
+    // The importer keeps only its Model leases. Drop the temporary probe
+    // lease so the cache can trim after the retired Model completes.
+    resident.textureLease.reset();
     auto scratch=std::make_unique<render::Model>();
     auto hit=makeImage("shared.png");
     hit.textureKey="textures/shared.png";
