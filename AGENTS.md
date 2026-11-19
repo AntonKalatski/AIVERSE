@@ -332,7 +332,7 @@ separate mandatory handoff commit to
 before starting another feature stage. Preserve multi-agent
 branches and do not merge into `main` without user request.
 
-**Stage 23 — integrated Metal VM custom scalar attributes
+**Stage 26 — integrated Metal VM custom scalar attributes
 (SOURCE COMMITTED, tests deferred by user):**
 `SpectraGpuProgram.h` now accepts VM `attribute0..7`
 reads/writes for the restricted Spawn/Update Metal interpreter.
