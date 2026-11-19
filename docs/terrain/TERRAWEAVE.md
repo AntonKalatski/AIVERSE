@@ -2259,3 +2259,26 @@ worldScene.setVegetationPresentationTick(gameplayTick);
 **Important limitations:** this is a low-cost root/whole-tree sway approximation, not branch/leaf skinning or vertex-shader wind deformation. Distant Horizon HLOD remains static (moving 12km forest atlases per tick would be excessive); the very far treeline therefore does not individually sway. Billboard impostors lean as one quad. The final float transform is cosmetic and not guaranteed bit-for-bit identical between rendering backends; authoritative physics or harvest logic must never use it. PHYSIS can map its velocity field into this POD from the owning game host without linking the TerraWeave engine to PHYSIS.
 
 **Performance and correctness:** no new model geometry or draw calls are introduced; however CPU transform math is performed per submitted tree when wind is nonzero, so actual frame cost and visual quality still require the separately scheduled benchmarking and GPU test phase. A future optional vertex deformation shader could preserve stable roots while bending crowns more naturally. Neither compiler nor GPU/CTest has been run during this features-first stage.
+
+## Stage 29 — bark/foliage-separated multi-azimuth impostor atlas
+
+**Code committed; no build/CTest/GPU validation yet** per the feature-first instruction. This stage replaces the combined all-season RGBA impostor image produced by `makeArborImpostorAtlas`. A near Arbor tree and its billboard can now lose leaves while retaining an intact bark silhouette.
+
+### Atlas and render layout
+
+`engine/render/TerraWeaveImpostorAtlas.h` generates **one GPU RGBA8 texture per species** with two horizontal sets of equal-sized view tiles:
+
+- The first `azimuthViews` tiles contain bark/trunk/branch strokes only.
+- The following `azimuthViews` tiles contain foliage/leaf-cluster strokes only.
+
+Both sets are projected from the **same stable TreeSkeleton** for each view angle and retain per-tile gutters. The atlas is `2 * tile.width * azimuthViews` pixels wide by `tile.height` high (maximum width 8192, hence previously accepted ultra-wide combinations may now be rejected). Default 8-view, 128x256 atlas becomes 2048x256 RGBA8 instead of 1024x256, doubling raw atlas bytes but still using ONE texture object.
+
+The common `render::Model` contains one node, one mesh, **8 vertices, 12 indices and two alpha-masked primitives** (`Primitive.material=0` bark, `=1` foliage). The foliage quad is offset +2cm toward its camera-facing model +Z to avoid depth fighting. Both material slots reference the same `baseTex=0` with independent per-view UV transforms; `ArborImpostorAtlas::viewMaterials` is still indexed by azimuth but now contains exactly **two materials** for each view, in bark/foliage order. No new shader, RHI backend, ECS components, model per instance, or separate atlas upload pass.
+
+### Seasonal policy
+
+`ArborForestAdapter::rebuildPhenologyMaterials()` copies per-species near and impostor material variants only on policy changes. Material 0 (bark) remains untouched; only material 1 (foliage) gets tint and alpha. `canopyCoverPermille` chooses evergreen versus broadleaf by the registered profile. At **zero** canopy cover, existing `ModelDraw::primitiveMaterialFilter=0` submits bark primitives only for near BranchLOD and impostors, skipping invisible leaf draws. At partial cover, foliage uses the existing alpha-blend material policy; bark remains alpha-masked and fully opaque. Existing wind lean and root-anchored camera-facing orientation are shared by both impostor layers.
+
+**Cost/quality caveats:** full-canopy impostors now have two primitives instead of one, so draw submissions/material batching and texture bandwidth can increase. Cutout bark and blended foliage may differ slightly in ordering/coverage from the previous single-layer approximation. Far Horizon still uses its separate aggregated silhouette atlas and is unaffected by this near-impostor format. Partial transparency is a simplified seasonal representation, not deterministic individual leaf shedding; GPU/backend captures are needed to confirm blend order, shadow behavior, LOD transition quality and precise visual parity.
+
+**Backward compatibility:** `makeArborBillboardModel` (the standalone *single-view* utility) retains its original one-quad format. Only the multi-azimuth `makeArborImpostorAtlas` output changes shape; any native consumer assuming 4 vertices, 6 indices, single material or original atlas width must migrate. Existing `tests/terraweave_model_test.cpp` has expectations for that old layout and is intentionally **not updated or executed** in this features-first phase. The later testing agent must revise these assertions to the two-layer contract, then run GCC/Clang CTest, GPU screenshot and benchmark checks. No TWH8 distant-Horizon disk archive version change is needed because its format is unrelated to this near-impostor atlas.
