@@ -581,3 +581,12 @@ An imported closed rigid scalp-proxy in VIVID Creator can now follow a named Mot
 A new header-only `ScalpSkinning` CPU adapter resolves imported scalp-proxy vertices against each render primitive's skin joint palette and inverse-bind matrices. It normalizes four 8-bit weights, computes linear-blend deformation from MotionWeave node-world matrices, converts points to the VIVID head-local groom coordinate system, and passes them into transactional BVH refit. Creator now detects and labels rigid-node versus multi-joint scalp modes. The older rigid path remains available; no new animation scheduler or engine/genre-specific API is introduced.
 
 Skinned reference source and negative-case unit checks are committed but **not executed**. This is not yet native-build-verified or real-GLB/FBX visual validated. Production-quality implementation still needs per-frame scratch reuse, animated scanned-head authoring assets, high-density performance work, full sculpt/rig/LOD tooling and more physically accurate skin/eye/hair shaders. See `docs/agent-handoffs/vivid.md` Stage 6T for exact commits.
+
+
+## Stage 6V–6W — non-destructive morph sculpting and semantic authoring (2026-11-19)
+
+VIVID Creator now includes an imported sparse morph authoring panel. Numeric source-vertex position offsets can be changed without touching the original mesh, with transactional undo/redo and export to the existing open morph sidecar JSON schema. The importer exposes the original model's vertex count so automatically appended LOD vertices cannot accidentally be exported as original morph vertex IDs.
+
+Creators may add/delete named corrective morph targets, bind one to any of the existing 52 ARKit semantic channels, adjust gains via the existing imported route UI, and save both morph sidecars and manifests. Deletion removes dangling mappings; target undo does not currently restore those mappings.
+
+**Actual native build/CTest/Metal screenshots NOT RUN** for these additions. The panel edits numeric offsets by vertex ID; this is not yet a viewport brush/cage sculpt, rig joint editor, authored facial LOD pipeline or real MetaHuman-quality DCC tooling. See `docs/agent-handoffs/vivid.md` Stages 6V–6W for exact commits and remaining work.
