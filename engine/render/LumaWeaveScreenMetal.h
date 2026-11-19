@@ -121,6 +121,7 @@ public:
         sourcePacket_={};settings_={};
         sourcesReady_=geometryReady_=historyValid_=false;
         sourceRevision_=geometryRevision_=serial_=pendingSerial_=0;
+        pendingProducesHistory_=false;
         width_=height_=confirmedWidth_=confirmedHeight_=0;
         nodeCount_=0;confirmedIndex_=pendingIndex_=0;
         return true;
@@ -273,7 +274,13 @@ public:
                          settings_.normalAgreement,settings_.depthThreshold};
         denoise.spatial={settings_.spatialDepthTolerance,settings_.historyColorClamp,
                          settings_.cameraCutMetres,0};
-        if(!dev_->beginCompute(denoise_))return result;
+        if(!dev_->beginCompute(denoise_)) {
+            // The DIRECT encoder was already submitted. Even on denoiser
+            // failure, fence its raw input/output before another dispatch or
+            // source reallocation. Do not mark an unfinished image renderable.
+            queueFence(currentVP,eye,confirmedIndex_,false);
+            return result;
+        }
         dev_->setComputeTexture(0,filtered_[dst]);
         dev_->setComputeTexture(1,normalDepth_[dst]);
         dev_->setComputeTexture(2,raw_);
@@ -284,27 +291,15 @@ public:
         dev_->dispatch(uint32_t(pixels));
         dev_->endCompute();
 
-        auto state=std::make_shared<Fence>();
-        const bool async=dev_->readBufferAsync(marker_,sizeof(uint32_t),
-            [state](std::vector<uint8_t> bytes) {
-                uint32_t marker=0;
-                if(bytes.size()==sizeof(marker))
-                    std::memcpy(&marker,bytes.data(),sizeof(marker));
-                state->success.store(marker==kMarker,std::memory_order_release);
-                state->ready.store(true,std::memory_order_release);
-            });
-        state->async=async;
-        pending_=state;
-        pendingSerial_=++serial_;
-        pendingIndex_=dst;
-        pendingVP_=currentVP;
-        pendingEye_=eye;
+        const bool async=queueFence(currentVP,eye,dst,true);
         result={true,async,pendingSerial_,sourceRevision_,geometryRevision_,
                 width_,height_,samples,pixels*samples,
                 pixels*(uint64_t(samples)+1u)*sources};
         return result;
     }
 
+    // No other command may modify the scene's render targets between the
+    // compute kernel and this callback's command-buffer fence.
     // Same-current-frame compositing ONLY: called immediately after dispatch
     // by the PostProcess wrapper, before ending/submitting the command buffer.
     // GPU encoder order guarantees visibility even before the fence callback.
@@ -336,21 +331,42 @@ public:
         result.completed=true;
         result.success=pending_->success.load(std::memory_order_acquire);
         result.serial=pendingSerial_;
-        if(result.success) {
+        if(result.success && pendingProducesHistory_) {
             confirmedIndex_=pendingIndex_;
             previousVP_=pendingVP_;
             previousEye_=pendingEye_;
             confirmedWidth_=width_;confirmedHeight_=height_;
             historyValid_=true;
-        } else {
+        } else if(!result.success) {
             historyValid_=false;
         }
         pending_.reset();
         pendingSerial_=0;
+        pendingProducesHistory_=false;
         return result;
     }
 
 private:
+    bool queueFence(const mat4& vp,float3 eye,uint32_t outputIndex,bool producedHistory) {
+        auto state=std::make_shared<Fence>();
+        const bool async=dev_->readBufferAsync(marker_,sizeof(uint32_t),
+            [state](std::vector<uint8_t> bytes) {
+                uint32_t marker=0;
+                if(bytes.size()==sizeof(marker))
+                    std::memcpy(&marker,bytes.data(),sizeof(marker));
+                state->success.store(marker==kMarker,std::memory_order_release);
+                state->ready.store(true,std::memory_order_release);
+            });
+        state->async=async;
+        pending_=state;
+        pendingSerial_=++serial_;
+        pendingIndex_=outputIndex;
+        pendingProducesHistory_=producedHistory;
+        pendingVP_=vp;
+        pendingEye_=eye;
+        return async;
+    }
+
     struct Fence {
         std::atomic<bool> ready{false};
         std::atomic<bool> success{false};
@@ -398,6 +414,7 @@ private:
     mat4 previousVP_{},pendingVP_{};
     float3 previousEye_{},pendingEye_{};
     bool sourcesReady_=false,geometryReady_=false,historyValid_=false;
+    bool pendingProducesHistory_=false;
     std::shared_ptr<Fence> pending_;
 };
 
