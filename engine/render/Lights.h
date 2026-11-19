@@ -28,6 +28,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "StaticLightGrid.h"
+#include "GpuOwnedMemory.h"
 
 namespace aiverse::render {
 
@@ -113,6 +114,10 @@ public:
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
     size_t count() const { return lights_.size(); }
     const LightStats& stats() const { return stats_; }
+    // Own GPU allocations only: light maps, spot/planar reflections,
+    // static light atlas, owned light-vertex streaming buffers.
+    // All values are known lower bounds, not device total VRAM.
+    GpuOwnedMemoryStats ownedGpuMemoryStats() const;
     void noteReflectionTime(float ms) { stats_.reflMs = ms; }
 
     // Renderer3D::render, after the sun shadow pass: picks the spot that gets a shadow this frame
