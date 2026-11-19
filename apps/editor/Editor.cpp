@@ -938,6 +938,11 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
     const bool postActiveForScene = postEnabledForScene && prisma_.active();
+    static const bool measurePrismaViews=[] {
+        const char* value=std::getenv("AIVERSE_PRISMA_VIEWPORT_GPU_TIMING");
+        return value && std::strcmp(value,"1")==0;
+    }();
+    const bool sceneGpuScope=measurePrismaViews && dev_->beginGpuScope(1ULL);
     r3d_.render(pass, postEnabledForScene ? &prisma_ : nullptr);
     if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
@@ -955,6 +960,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
+    if (sceneGpuScope) dev_->endGpuScope();
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
         static unsigned samples = 0;
@@ -1019,6 +1025,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     const bool postActiveForGame = prisma_.active();
+    static const bool measureGameGpu=[] {
+        const char* value=std::getenv("AIVERSE_PRISMA_VIEWPORT_GPU_TIMING");
+        return value && std::strcmp(value,"1")==0;
+    }();
+    const bool gameGpuScope=measureGameGpu && dev_->beginGpuScope(prismaViewId);
     r3d_.render(pass, &prisma_);
     if (postActiveForGame && prismaViewId == 1ULL) prismaSceneRendered_ = true;
     if (postActiveForGame && prismaViewId == 2ULL) prismaGameRendered_ = true;
@@ -1031,6 +1042,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
+    if (gameGpuScope) dev_->endGpuScope();
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 
@@ -1290,6 +1302,12 @@ void Editor::frame(gfx::Device& dev, double dt) {
         return mb * 1024 * 1024;
     }();
     viewportRetirement_.setBudgetBytes(retirementBudgetBytes);
+    // Only completed scoped GPU queries are returned. This is a distinct
+    // queue from whole-frame timing/benchmark APIs; never consume those.
+    for (const auto& timing : dev.takeGpuScopeTimings())
+        if (timing.valid && std::isfinite(timing.milliseconds) &&
+            timing.milliseconds>0 && (timing.tag==1ULL || timing.tag==2ULL))
+            prisma_.acceptViewGpuTiming(timing.tag,timing.milliseconds);
     viewportRetirement_.collect(dev);
     gpuResourceRetirement_.collect(dev);
     clientHost_.collectGpuRetirements();
