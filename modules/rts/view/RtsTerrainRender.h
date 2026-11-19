@@ -76,6 +76,11 @@ public:
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
     // darken in the shader; levels maps keep the classic fog sheet drawn by RtsView).
     void draw(render::Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool flatDig);
+    // Secondary LENS view: cull prepared terrain LODs per camera without
+    // advancing terrain simulation, uploading textures or rebuilding buffers.
+    // Must follow draw() on the same presentation frame.
+    void drawPrepared(render::Renderer3D& r,const MapGrid& g,
+                      const std::vector<uint8_t>* vision);
     void drawWater(render::Renderer3D& r);
     bool built() const { return built_; }
     bool shaderFog() const { return heightfield_; }
@@ -130,6 +135,8 @@ private:
     void updateHeightField(gfx::Device& dev, const MapGrid& g);
     gfx::PipelineHandle pipeline(gfx::Device& dev, int variant);   // tier + 3 * detail
     int tierFor(const render::Renderer3D& r) const;
+    void drawInternal(render::Renderer3D& r,const MapGrid& g,
+                      const std::vector<uint8_t>* vision,bool preparedOnly);
     int tierFor0() const;                       // device / env tier without a renderer (detail sample count)
 
     void checkGpuDevice(const gfx::Device& dev) const {
