@@ -3,6 +3,7 @@
 // The host chooses how to present splash, foam, ripples, audio and wake VFX.
 #pragma once
 #include <aiverselib/water/NereidWaterSystems.h>
+#include <aiverselib/water/NereidWakeDirection.h>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -136,6 +137,7 @@ inline void addWaterInteractionSystem(Simulation& sim,std::string name) {
         World& world=current.world();
         auto* outputs=world.prepareExistingWrite<WaterInteractionOutputComponent>();
         auto* states=world.prepareExistingWrite<WaterInteractionStateComponent>();
+        auto* directionPool=world.prepareExistingWrite<WaterWakeDirectionComponent>();
         if(!outputs)return;
         const World& read=world;
         for(size_t i=0;i<outputs->size();++i) {
@@ -144,6 +146,8 @@ inline void addWaterInteractionSystem(Simulation& sim,std::string name) {
             auto& output=outputs->dataAt(i);
             output={};
             output.tick=current.tick();
+            auto* motion=directionPool?directionPool->tryGet(entity.index):nullptr;
+            if(motion)*motion=WaterWakeDirectionComponent{};
             auto* state=states?states->tryGet(entity.index):nullptr;
             const auto* config=read.tryGetConst<WaterInteractionComponent>(entity);
             const auto* probe=read.tryGetConst<WaterProbeComponent>(entity);
@@ -153,8 +157,13 @@ inline void addWaterInteractionSystem(Simulation& sim,std::string name) {
                 state->initialized=false;
                 continue;
             }
+            const Vec3 previous=state->previousPosition;
+            const bool hadHistory=state->initialized;
             output=evaluateWaterInteraction(*contact,probe->position,*config,
                                             *state,current.tick());
+            if(motion && hadHistory &&
+               output.kind==WaterInteractionKind::SurfaceWake)
+                *motion=waterWakeDirection(previous,probe->position,current.tick());
         }
     });
 }
@@ -163,6 +172,7 @@ inline void registerNereidInteractionPersistence(Simulation& sim) {
     sim.registerPersistentComponent<WaterInteractionComponent>("nereid.interaction",1);
     sim.registerPersistentComponent<WaterInteractionStateComponent>("nereid.interaction_state",1);
     sim.registerPersistentComponent<WaterInteractionOutputComponent>("nereid.interaction_output",1);
+    sim.registerPersistentComponent<WaterWakeDirectionComponent>("nereid.wake_direction",1);
 }
 
 inline void io(Archive& a,WaterInteractionComponent& c) {
