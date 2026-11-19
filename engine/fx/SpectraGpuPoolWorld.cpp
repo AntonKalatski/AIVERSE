@@ -391,7 +391,10 @@ bool GpuPoolWorld::emitSource(PoolSourceId id,fx::float3 position,
     const bool emitted=burstImpl(source.effectName,position,direction,tint,
                                   &values,source.token,&cpuHandle);
     if(emitted && !source.gpu && cpuHandle.valid()) {
-        if(source.cpuHandles.size()==65536)source.cpuHandles.erase(source.cpuHandles.begin());
+        if(source.cpuHandles.size()==65536) {
+            cpu_.kill(source.cpuHandles.front()); // do not lose kill ownership
+            source.cpuHandles.erase(source.cpuHandles.begin());
+        }
         source.cpuHandles.push_back(cpuHandle);
     }
     return emitted;
