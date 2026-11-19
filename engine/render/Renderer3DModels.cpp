@@ -2354,9 +2354,17 @@ void Renderer3D::renderModels(int phase) {
                             const auto elapsedUs =
                                 std::chrono::duration<double, std::micro>(
                                     std::chrono::steady_clock::now() - scanBegin).count();
+                            const bool submitted =
+                                modelStats_.multiDrawSubmissions > submissionsBefore;
+                            // The pass-wide aggregate is diagnostic only.
+                            // Admission is controlled by the source page's
+                            // own shadow/opaque EMA, never another page.
                             cpuMdiAdaptive_[size_t(phase)].observe(
-                                elapsedUs, uint32_t(runs),
-                                modelStats_.multiDrawSubmissions > submissionsBefore);
+                                elapsedUs, uint32_t(runs), submitted);
+                            if (CpuMdiPageEntry* entry =
+                                    cpuMdiPageEntry(*first.model))
+                                entry->byPass[size_t(phase)].observe(
+                                    elapsedUs, uint32_t(runs), submitted);
                             ++modelStats_.staticCrossModelAdaptiveMeasuredAttempts;
                         }
                         if (traceModelPass) {
