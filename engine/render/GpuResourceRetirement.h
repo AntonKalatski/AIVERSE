@@ -49,12 +49,27 @@ public:
     void retire(gfx::Device& device, gfx::BufferHandle& h,
                 uint64_t knownBytes = 0) {
         if (!h.valid()) return;
+        if (!knownBytes) {
+            gfx::BufferInfo info{};
+            if (device.bufferInfo(h,info))
+                knownBytes = uint64_t(info.logicalBytes);
+        }
         enqueue(device,Kind::Buffer,h.id,knownBytes,{});
         h = {};
     }
     void retire(gfx::Device& device, gfx::TextureHandle& h,
                 uint64_t knownBytes = 0) {
         if (!h.valid()) return;
+        if (!knownBytes) {
+            gfx::TextureInfo info{};
+            if (device.textureInfo(h,info) && info.width > 0 && info.height > 0) {
+                const uint64_t bytesPerPixel =
+                    info.format == gfx::PixelFormat::R8 ? 1 :
+                    info.format == gfx::PixelFormat::RGBA16F ? 8 :
+                    info.format == gfx::PixelFormat::RGBA32F ? 16 : 4;
+                knownBytes = uint64_t(info.width)*uint64_t(info.height)*bytesPerPixel;
+            }
+        }
         enqueue(device,Kind::Texture,h.id,knownBytes,{});
         h = {};
     }
