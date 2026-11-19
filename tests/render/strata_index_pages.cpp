@@ -23,6 +23,7 @@ public:
     gfx::DeviceInfo info_{};
     std::string error_;
     bool healthy_=true, canUpload_=true, failOneUpload_=false;
+    uint64_t failAtCall_=0;
     uint32_t nextId_=1, allocations_=0, frees_=0;
     uint64_t serial_=1, completed_=0, bytesWritten_=0, uploadCalls_=0;
     std::map<uint32_t,std::vector<uint8_t>> data_;
@@ -44,8 +45,11 @@ public:
     }
     bool updateSharedBufferChecked(gfx::BufferHandle h,const void* bytes,
                                    size_t size,size_t offset=0) override {
-        if(!canUpload_ || failOneUpload_){
-            failOneUpload_=false;return false;
+        if(!canUpload_ || failOneUpload_ ||
+           (failAtCall_ && uploadCalls_+1==failAtCall_)){
+            failOneUpload_=false;
+            failAtCall_=0;
+            return false;
         }
         if(!bytes || !size || !types_.count(h.id) ||
            types_[h.id]!=gfx::BufferType::Storage ||
@@ -190,6 +194,32 @@ static void pageLifecycle(gfx::Backend backend) {
     assert(dev.data_.empty() && dev.frees_==1);
 }
 
+static void partiallyFailedUpload() {
+    PageRecorder dev(gfx::Backend::Vulkan);
+    auto data=asset();
+    IndexResidency cache;
+    std::string error;
+    assert(cache.initialize(dev,data,96,&error,true,0));
+    const auto handle=cache.buffer();
+    const auto before=cache.stats().activeBytes;
+    // Fail the SECOND child write: first successful checked upload is to
+    // a never-published slot. The two-child frontier must remain absent.
+    dev.failAtCall_=dev.uploadCalls_+2;
+    assert(!cache.update({{0,1,10.f}},&error));
+    assert(cache.buffer()==handle);
+    assert(cache.stats().activeBytes==before);
+    assert(!cache.resident(0,1) && !cache.resident(0,2));
+    assert(cache.resident(0,0) && cache.resident(1,0));
+    // Next retry can safely write the same unused slots and then publish
+    // both siblings atomically; no new GPU buffer allocation is required.
+    assert(cache.update({{0,1,10.f}},&error));
+    assert(cache.resident(0,1) && cache.resident(0,2));
+    assert(cache.stats().activeBytes==before+24);
+    assert(dev.allocations_==1);
+    cache.shutdown(dev);
+    assert(dev.data_.empty());
+}
+
 static void bandwidthLimits() {
     PageRecorder dev(gfx::Backend::Vulkan);
     auto data=asset();
@@ -235,6 +265,7 @@ static void portableFallback() {
 int main() {
     pageLifecycle(gfx::Backend::Metal);
     pageLifecycle(gfx::Backend::Vulkan);
+    partiallyFailedUpload();
     bandwidthLimits();
     portableFallback();
     return 0;
