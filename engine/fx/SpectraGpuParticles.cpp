@@ -129,6 +129,8 @@ bool ComputeParticles::initCpu() {
 bool ComputeParticles::initGpu() {
     readbackLifetime_=std::make_shared<uint64_t>(0);
     vmFrameRevision_=0;
+    checkpointRevision_=0;
+    lastCheckpoint_={};
     if(!device_) {reason_="no RHI Device";return false;}
     const uint32_t cap=desc_.capacity;
     gpu_program::Payload vmPayload;
@@ -279,6 +281,7 @@ void ComputeParticles::shutdown() {
     initialized_=false;viewReady_=false;verticesReady_=false;
     drawCount_=0;
     programParams_={};
+    lastCheckpoint_={};checkpointRevision_=0;
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -611,21 +614,57 @@ bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
         std::memcpy(d.attributes.data(),&attributes[i],sizeof(ProgramAttributes));
     }
     next.complete=true;
-    out=std::move(next);
+    out=next;
+    lastCheckpoint_=std::move(next);
+    checkpointRevision_=vmFrameRevision_;
     return true;
 }
 
 void ComputeParticles::switchToCpu(const std::string& why) {
     ++stats_.gpuFallbacks;
     stats_.gpuVmErrorsKnown=false;
-    // Includes pending birth allocations, not just the last drawn survivors.
-    stats_.lostOnFallback+=uint32_t(ages_.size()-freeSlots_.size());
+    // Restore only a complete checkpoint captured after the LAST submitted
+    // GPU frame, with no pending unsent births. A stale checkpoint must never
+    // resurrect particles that have died or silently omit recent births.
+    const bool canRestore=lastCheckpoint_.complete &&
+        checkpointRevision_==vmFrameRevision_ && pendingStates_.empty() &&
+        lastCheckpoint_.slots.size()==ages_.size() &&
+        lastCheckpoint_.remainingLifetime.size()==ages_.size();
+    std::vector<fx::FxImportedParticle> restored;
+    if(canRestore) {
+        restored.reserve(lastCheckpoint_.slots.size());
+        for(size_t i=0;i<lastCheckpoint_.slots.size();++i) {
+            const auto& src=lastCheckpoint_.slots[i];
+            if(src.positionAge.w<0.f || lastCheckpoint_.remainingLifetime[i]<=0.f)
+                continue;
+            fx::FxImportedParticle p;
+            p.pos={src.positionAge.x,src.positionAge.y,src.positionAge.z};
+            p.vel={src.velocityLife.x,src.velocityLife.y,src.velocityLife.z};
+            p.age=src.positionAge.w;
+            p.lifetime=src.velocityLife.w;
+            p.size=src.size.x;
+            p.tint={src.tint.x,src.tint.y,src.tint.z,src.tint.w};
+            p.programParams=src.programParams;
+            p.customAttributes=src.attributes;
+            restored.push_back(p);
+        }
+    }
+    const uint32_t owned=uint32_t(ages_.size()-freeSlots_.size());
     releaseGpu();backend_=ComputeBackend::Cpu;
     const bool ok=initCpu();
-    reason_=why+(ok?"; CPU fallback active; GPU-resident particles were discarded"
-                   :"; CPU fallback init failed");
-    initialized_=ok;stats_.alive=0;stats_.gpuBytes=0;
+    bool imported=false;
+    if(ok && canRestore)
+        imported=cpu_.importLiveParticles(cpuEffect_,restored);
+    const uint32_t recovered=imported?uint32_t(restored.size()):0u;
+    stats_.recoveredOnFallback+=recovered;
+    stats_.lostOnFallback+=owned>=recovered?owned-recovered:0u;
+    reason_=why+(ok
+        ?(imported?"; restored particles from last complete GPU checkpoint"
+                  :"; CPU fallback active; latest GPU state unavailable/incompatible")
+        :"; CPU fallback init failed");
+    initialized_=ok;stats_.alive=recovered;stats_.gpuBytes=0;
     stats_.submittedSlots=0;
+    lastCheckpoint_={};checkpointRevision_=0;
 }
 
 } // namespace aiverse::spectra
