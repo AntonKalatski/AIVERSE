@@ -117,7 +117,8 @@ public:
     // Must be called after ECS light-change barrier with a stable key per source.
     // Only changed/new/removed light volumes are invalidated, expanded by traceDistance
     // to account for light -> surface -> probe transport rather than direct light alone.
-    void setLights(std::vector<GiMovingLight> current) {
+    void setLights(std::vector<GiMovingLight> current,
+                   std::vector<uint32_t>* cleared = nullptr) {
         if (current.size() > 64) throw std::invalid_argument("too many dynamic GI lights");
         const auto valid = [](const GiMovingLight& l) {
             const auto finite3 = [](float3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
@@ -148,11 +149,11 @@ public:
         };
         for (const auto& old : lights_) {
             const auto* newer = find(current, old.key);
-            if (!newer || changed(old, *newer)) invalidateLight(old);
+            if (!newer || changed(old, *newer)) invalidateLight(old, cleared);
         }
         for (const auto& next : current) {
             const auto* old = find(lights_, next.key);
-            if (!old || changed(*old, next)) invalidateLight(next);
+            if (!old || changed(*old, next)) invalidateLight(next, cleared);
         }
         lights_ = std::move(current);
     }
@@ -177,10 +178,19 @@ public:
     }
 
 private:
-    void invalidateLight(const GiMovingLight& light) {
+    // Invalidation also retires old coefficients immediately: a removed or moving
+    // light must not keep illuminating Vulkan/GLES/Metal while the next frame's
+    // bounded tracing budget catches up. The host uploads these cleared IDs.
+    void invalidateLight(const GiMovingLight& light, std::vector<uint32_t>* cleared) {
         const float r = light.radius + traceDistance_;
         const float3 ext{r,r,r};
-        scheduler_.invalidate({light.position-ext, light.position+ext}, GiDirtyReason::Lighting);
+        std::vector<uint32_t> affected;
+        scheduler_.invalidate({light.position-ext, light.position+ext},
+                              GiDirtyReason::Lighting, 0, &affected);
+        for (uint32_t id : affected) {
+            coeffs_[id] = {};
+            if (cleared) cleared->push_back(id);
+        }
     }
     static float3 direction(int i, int count) {
         const float y = 1 - 2 * (float(i)+.5f)/float(count);
