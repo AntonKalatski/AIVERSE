@@ -65,9 +65,22 @@ bool IndexResidency::initializeIncremental(size_t uploadBudgetBytes,
         const auto& geometry = asset_->primitives[p].geometry;
         for (uint32_t root : geometry.roots) {
             const auto& node = geometry.nodes[root];
+            std::vector<uint32_t> diskRoot;
+            const uint32_t* bytes=geometry.indices.data()+node.firstIndex;
+            if (diskPages_) {
+                if (!diskPages_->readRoot(uint32_t(p),root,diskRoot,error) ||
+                    diskRoot.size()!=node.indexCount) {
+                    device_->destroyBuffer(handle);
+                    ++stats_.failedUploads;
+                    if(error && error->empty())
+                        *error="STRATA pinned disk root page is invalid";
+                    return false;
+                }
+                bytes=diskRoot.data();
+            }
             if (node.indexCount > capacity - at ||
                 !device_->updateSharedBufferChecked(
-                    handle, geometry.indices.data() + node.firstIndex,
+                    handle, bytes,
                     size_t(node.indexCount) * sizeof(uint32_t),
                     size_t(at) * sizeof(uint32_t))) {
                 device_->destroyBuffer(handle);
@@ -92,6 +105,14 @@ bool IndexResidency::initializeIncremental(size_t uploadBudgetBytes,
     stats_.uploadCalls = roots;
     stats_.uploadedBytes = stats_.activeBytes;
     stats_.generations = 1;
+    if(diskPages_){
+        const auto disk=diskPages_->stats();
+        stats_.diskCompletedReads=disk.completedReads;
+        stats_.diskBytesRead=disk.bytesRead;
+        stats_.diskFailures=disk.failedReads;
+        stats_.diskPending=disk.queued;
+        stats_.diskReadyBytes=disk.readyBytes;
+    }
     return true;
 }
 
