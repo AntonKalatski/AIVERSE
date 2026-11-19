@@ -307,6 +307,12 @@ public:
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
+    // Diagnostic-only asynchronous sun shadow DEPTH readback on backends
+    // supporting gfx::Device::readDepthTextureAsync. Call after render()
+    // and after the main colour pass is ended; never waits on the GPU.
+    // A completed GPU failure arrives as an empty byte vector.
+    // Does not expose or change shadow texture ownership.
+    bool requestSunShadowDepthReadback(gfx::Device::DepthReadFn callback) const;
     bool setShadowMapSize(int size) { highShadowSize_=size; setShadowQuality(quality_); return quality_!=ShadowQuality::High||shadowMap_.valid(); }
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
