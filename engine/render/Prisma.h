@@ -183,6 +183,7 @@ private:
     };
     struct MotionView {
         mat4 previousViewProj;
+        float3 previousCameraPos{};
         bool valid = false;
         uint64_t cutEpoch = 1;
         int width = 0, height = 0;
