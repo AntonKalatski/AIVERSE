@@ -123,6 +123,14 @@ public:
         const auto it=retirementTokens_.find(token);
         return it!=retirementTokens_.end() && it->second->load()==1;
     }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it==retirementTokens_.end())return ResourceRetirementStatus::Failed;
+        const int status=it->second->load();
+        if(status>0)return ResourceRetirementStatus::Complete;
+        if(status<0)return ResourceRetirementStatus::Failed;
+        return ResourceRetirementStatus::Pending;
+    }
     void endResourceRetirement(uint64_t token) override {
         const auto it=retirementTokens_.find(token);
         if(it!=retirementTokens_.end() && it->second->load()==1)
