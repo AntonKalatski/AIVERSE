@@ -2087,6 +2087,9 @@ void Renderer3D::renderModels(int phase) {
                         ++modelStats_.staticCrossModelPreflightItems;
                 }
                 staticCrossModelSort = permittedGroups > 0;
+                if (staticCrossModelSort)
+                    modelStats_.staticCrossModelRankedGroups +=
+                        workspace.prepareSortRanks();
             }
         }
     }
@@ -2103,6 +2106,21 @@ void Renderer3D::renderModels(int phase) {
             const bool crossY = staticCrossModelSort &&
                 staticCrossPreflight_.modeOf(b) == 1u;
             if (crossX != crossY) return crossX; // only preflight-ready static groups
+            if (crossX && crossY) {
+                // All rigid cross-model candidates share the invariants:
+                // no joints/baking/GI, one exact material/page/VB/IB/flags
+                // key per preflight group. Preserve the original key order
+                // using a compact precomputed rank instead of re-reading
+                // GPU page, material, model and buffer state on each sort
+                // comparison. Within one group keep the previous lightmap
+                // page / primitive / stable item-index ordering.
+                const uint16_t rankX = staticCrossPreflight_.sortRankForItem(a);
+                const uint16_t rankY = staticCrossPreflight_.sortRankForItem(b);
+                if (rankX != rankY) return rankX < rankY;
+                if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
+                if (x.prim != y.prim) return x.prim < y.prim;
+                return a < b;
+            }
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
             if (paletteSort && paletteGroup[a] != paletteGroup[b])
