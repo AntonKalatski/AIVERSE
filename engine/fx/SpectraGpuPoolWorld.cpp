@@ -325,6 +325,15 @@ bool GpuPoolWorld::killSourceParticles(PoolSourceId id) {
     reason_.clear();
     return true;
 }
+bool GpuPoolWorld::canStopSource(PoolSourceId id,bool killLiving) const {
+    const Source* source=getSource(id);
+    if(!source)return false;
+    if(!killLiving || !source->gpu)return true;
+    return device_ && device_->gpuHealthy() &&
+           device_->canUpdateSharedBuffers() &&
+           source->gpuIndex<gpuGroups_.size() &&
+           gpuGroups_[source->gpuIndex].particles->gpuActive();
+}
 bool GpuPoolWorld::stopSource(PoolSourceId id,bool killLiving) {
     Source* source=getSource(id);
     if(!source)return false;
