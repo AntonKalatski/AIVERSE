@@ -27,7 +27,8 @@ enum class SpectraFxFeature : uint32_t {
     Flipbook = 1u << 10,
     Ribbons = 1u << 11,
     PerParticleEvents = 1u << 12,
-    GroundPlaneCollision = 1u << 13 // GPU-supported world Y plane only
+    GroundPlaneCollision = 1u << 13, // GPU-supported world Y plane only
+    GpuImpactFeedback = 1u << 14 // optional Metal async ground-hit events
 };
 inline constexpr SpectraFxFeature operator|(SpectraFxFeature a,SpectraFxFeature b) {
     return SpectraFxFeature(uint32_t(a)|uint32_t(b));
@@ -68,12 +69,16 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
     const uint32_t allowed=uint32_t(SpectraFxFeature::Billboard) |
                            uint32_t(SpectraFxFeature::Alpha) |
                            uint32_t(SpectraFxFeature::Additive) |
-                           uint32_t(SpectraFxFeature::GroundPlaneCollision);
+                           uint32_t(SpectraFxFeature::GroundPlaneCollision) |
+                           uint32_t(SpectraFxFeature::GpuImpactFeedback);
     if((mask&~allowed)!=0 || !hasFeature(request.required,SpectraFxFeature::Billboard))
         return cpu("requested particle modules require CPU fallback");
     if(!device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA32F))
         return cpu("RHI compute or RGBA32F storage unavailable");
     const auto backend=device.info().backend;
+    if(hasFeature(request.required,SpectraFxFeature::GpuImpactFeedback) &&
+       (backend!=gfx::Backend::Metal || request.particles>4096))
+        return cpu("GPU impact feedback requires Metal and <=4096 particles");
     if(backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan)
         return cpu("GPU particle shaders are not supported on this RHI backend");
     return {SpectraFxExecutionBackend::Gpu,true,"GPU billboard backend eligible"};
