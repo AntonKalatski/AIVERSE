@@ -1,5 +1,8 @@
 #include "GeometryScene.h"
 #include "Renderer3D.h"
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+#include "StrataModelAdapter.h"
+#endif
 #include <algorithm>
 #include <numeric>
 #include <set>
@@ -27,7 +30,24 @@ bool sameBoundMaterial(Material a,Material b,const std::vector<Image>& images){
 }
 float scaleBound(const mat4& m){float sum=0;for(int r=0;r<3;++r)for(int c=0;c<3;++c)sum+=m.at(r,c)*m.at(r,c);return std::sqrt(sum);}
 }
-void GeometryScene::shutdown(gfx::Device& dev){for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
+void GeometryScene::shutdown(gfx::Device& dev){strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
+bool GeometryScene::strataStagingSupported() const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    return true;
+#else
+    return false;
+#endif
+}
+
+const strata::ModelAsset* GeometryScene::strataAsset(const std::string& sourceKey) const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    return strataStaging_ ? strataStaging_->find(sourceKey) : nullptr;
+#else
+    (void)sourceKey;
+    return nullptr;
+#endif
+}
+
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
 void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader& read,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){
@@ -72,6 +92,30 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             instances_.push_back(in);
         }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+        if (strataStagingEnabled_) {
+            // Build once for each *source* model before uploadModel may release
+            // CPU vertex streams. Surface/HLOD proxies retain legacy ownership
+            // and are never duplicated here. This path does NOT draw Strata.
+            strataStaging_ = std::make_shared<strata::SceneStaging>();
+            std::set<const Model*> usedSources;
+            for (const auto& instance : instances_)
+                usedSources.insert(instance.model);
+            for (const auto& [file, model] : models_)
+                if (model && usedSources.count(model.get()))
+                    strataStaging_->stage(file, *model);
+            const auto& st = strataStaging_->stats();
+            stats_.strataSources = st.stagedSources;
+            stats_.strataPrimitives = st.stagedPrimitives;
+            stats_.strataSkipped = st.skippedPrimitives + st.skippedSources;
+            stats_.strataFailures = st.failedSources;
+            stats_.strataNodes = st.clusterNodes;
+            stats_.strataMeshlets = st.meshlets;
+            stats_.strataIndexBytes = st.indexBytes;
+            for (const auto& warning : strataStaging_->warnings())
+                warnings_.push_back(warning);
+        }
+#endif
         if(hlod_&&!instances_.empty()){std::vector<size_t> ids(instances_.size());std::iota(ids.begin(),ids.end(),0);buildGroup(dev,std::move(ids));}
         for(auto& [k,m]:models_)if(!uploadModel(dev,*m)||!m->vb.valid()||!m->ib.valid())throw std::runtime_error("geometry scene: source GPU upload failed");
         for(auto& in:instances_){
