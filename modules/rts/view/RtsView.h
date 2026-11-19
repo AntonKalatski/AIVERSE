@@ -211,6 +211,19 @@ public:
         // GPU memory ownership ends at shutdown, not when drawn=false.
         merge(terrain_.ownedGpuMemoryStats());
         merge(planets_.ownedGpuMemoryStats());
+        merge(groundFx_.ownedGpuMemoryStats());
+        merge(planetGroundFx_.ownedGpuMemoryStats(device));
+        merge(fog_.ownedGpuMemoryStats());
+        merge(fieldView_.ownedGpuMemoryStats());
+        merge(overlays_.ownedGpuMemoryStats());
+        merge(groundCanvas_.ownedGpuMemoryStats());
+        merge(paintLayers_.ownedGpuMemoryStats());
+        if (twoD_) merge(twoD_->ownedGpuMemoryStats(device));
+        if (roads_) merge(roads_->ownedGpuMemoryStats());
+        if (shores_) merge(shores_->ownedGpuMemoryStats());
+        render::GpuOwnedMemoryCounter direct(device);
+        direct.buffer(projectile_.vb);direct.buffer(projectile_.ib);
+        merge(direct.stats());
         return result;
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
