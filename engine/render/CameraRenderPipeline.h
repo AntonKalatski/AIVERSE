@@ -12,6 +12,7 @@
 #include "CameraCompositor.h"
 #include "CameraCaptureViews.h"
 #include "CameraCaptureGraph.h"
+#include "CameraPanorama.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -45,7 +46,7 @@ public:
     const CameraRenderTargetPool& targets() const { return targets_; }
     // Requires a host-confirmed GPU idle point (or final device teardown).
     void shutdownAfterGpuIdle() {
-        compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
+        panorama_.shutdownAfterGpuIdle();compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
         targets_.shutdownAfterGpuIdle(); scheduler_.reset();
     }
 
@@ -224,6 +225,26 @@ public:
     // Explicit non-ECS captures for cubemap faces, stereo eyes, portals,
     // mirrors and one-shot scene previews. The host supplies distinct keys
     // and declares any sampling dependencies; no screen clear is involved.
+    // Cubemap source keys must already contain six successfully rendered
+    // faces. Result is a standard sampleable equirectangular 2D RenderTexture.
+    bool renderPanorama(const std::array<uint64_t,6>& faces,uint64_t outputKey,
+                        int width,int height,bool hdr=false) {
+        if(!outputKey||width<=0||height<=0)return false;
+        std::array<gfx::TextureHandle,6> source{};
+        for(size_t i=0;i<source.size();++i) {
+            if(faces[i]==outputKey)return false;
+            source[i]=targets_.color(faces[i]);
+            if(!source[i].valid())return false;
+        }
+        auto* output=targets_.acquire(outputKey,width,height,hdr,false);
+        if(!output || !panorama_.init(device_))return false;
+        if(!panorama_.render(source,output->color,width,height)) {
+            targets_.markInvalid(outputKey);return false;
+        }
+        targets_.markReady(outputKey);
+        return true;
+    }
+
     template<class Submit>
     CameraCaptureGraphPlan renderCaptureGraph(
             const std::vector<CameraCaptureNode>& nodes,
@@ -266,6 +287,7 @@ private:
     CameraRenderTargetPool targets_;
     CameraRenderTargetPool screenTargets_;
     CameraCompositor compositor_;
+    CameraPanorama panorama_;
 };
 
 } // namespace aiverse::render
