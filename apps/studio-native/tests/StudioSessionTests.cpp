@@ -14,5 +14,8 @@ int main() {
     assert(call(R"({"id":3,"method":"workspace.call","params":{}})").has("error"));
     assert(call(R"({"id":4,"method":"studio.setProperty","params":{"entityId":"entity:0","key":"x","value":1}})").has("error"));
     assert(call(R"({"id":5,"method":"studio.select","params":{"id":null}})")["result"]["selectedId"].isNull());
+    assert(call(R"({"id":6,"method":"studio.save","params":{}})").has("error"));
+    assert(call(R"({"id":7,"method":"studio.undo","params":{}})").has("error"));
+    assert(call(R"({"id":8,"method":"studio.redo","params":{}})").has("error"));
     std::cout << "studio session contract PASS\n";
 }

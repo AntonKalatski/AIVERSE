@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Box, ChevronDown, ChevronRight, CirclePlay, Code2, Command, FileCode2, FolderTree, Layers3, Lightbulb, MonitorPlay, MoreHorizontal, PanelBottom, Plus, RefreshCw, Search, Settings2, SlidersHorizontal, Terminal, WandSparkles } from 'lucide-react';
+import { Activity, Box, ChevronDown, ChevronRight, CirclePlay, Code2, Command, FileCode2, FolderTree, Layers3, Lightbulb, MonitorPlay, MoreHorizontal, PanelBottom, Plus, Redo2, RefreshCw, Save, Search, Settings2, SlidersHorizontal, Terminal, Undo2, WandSparkles } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import type { StudioEntity, StudioProperty, StudioSnapshot } from './types';
 
@@ -53,6 +53,12 @@ export default function App() {
     void refresh();
     return onNativeEvent(event => { if (event === 'workspace.changed' || event === 'selection.changed') void refresh(); });
   }, [refresh]);
+  const historyAction = async (method: 'studio.save' | 'studio.undo' | 'studio.redo') => {
+    setBusy(true);
+    try { setSnapshot(await invoke(method, {})); setError(''); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
   const select = async (id: string | null) => {
     setBusy(true);
     try { setSnapshot(await invoke('studio.select', { id })); setError(''); }
@@ -90,7 +96,7 @@ export default function App() {
     </header>
     <div className="toolbar">
       <div className="toolbar-left"><span className="toolbar-label"><Box size={16}/> Workspace</span><span className="toolbar-divider"/><button className="tool-button selected"><FolderTree size={15}/> Level Editor</button><button className="tool-button" disabled><Code2 size={15}/> Scripting</button></div>
-      <div className="toolbar-right"><button className="tool-button" disabled title="Available after native engine integration"><WandSparkles size={15}/> AI Assist</button><button className="play-button" disabled title="Play integration is pending"><CirclePlay size={16}/> Play</button></div>
+      <div className="toolbar-right"><button className="tool-button" onClick={() => void historyAction('studio.undo')} disabled={busy || !snapshot?.history.canUndo} title="Undo"><Undo2 size={15}/> Undo</button><button className="tool-button" onClick={() => void historyAction('studio.redo')} disabled={busy || !snapshot?.history.canRedo} title="Redo"><Redo2 size={15}/> Redo</button><button className="tool-button" onClick={() => void historyAction('studio.save')} disabled={busy || !connected || !snapshot?.project.path || !snapshot.project.dirty} title="Save current map"><Save size={15}/> Save</button><button className="tool-button" disabled title="Available after native engine integration"><WandSparkles size={15}/> AI Assist</button><button className="play-button" disabled title="Play integration is pending"><CirclePlay size={16}/> Play</button></div>
     </div>
     {!connected && <div className="demo-banner"><span>Preview mode:</span> interface and edits are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
     {error && <div role="alert" className="error-banner">{error} <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}

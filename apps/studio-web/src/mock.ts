@@ -21,9 +21,12 @@ let snapshot: StudioSnapshot = {
     { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
   ],
   logs: [{ level: 'info', text: 'HTML5 Studio preview loaded — native engine is not connected.', time: 'preview' }],
-  mode: 'edit'
+  mode: 'edit',
+  history: { canUndo: false, canRedo: false }
 };
-const clone = (): StudioSnapshot => structuredClone(snapshot);
+const undoStack: StudioSnapshot[] = [];
+const redoStack: StudioSnapshot[] = [];
+const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
 
 export async function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
   if (method === 'studio.select') {
@@ -37,6 +40,16 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
       { key: 'z', label: 'Position Z', type: 'number', value: 0 },
       { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
     ];
+  } else if (method === 'studio.save') {
+    throw Error('Saving a project requires the native AIVERSE host');
+  } else if (method === 'studio.undo') {
+    if (!undoStack.length) throw Error('Nothing to undo');
+    redoStack.push(clone());
+    snapshot = undoStack.pop()!;
+  } else if (method === 'studio.redo') {
+    if (!redoStack.length) throw Error('Nothing to redo');
+    undoStack.push(clone());
+    snapshot = redoStack.pop()!;
   } else if (method === 'studio.setProperty') {
     const { entityId, key, value } = params as StudioParams['studio.setProperty'];
     if (entityId !== snapshot.selectedId) throw Error('Selection changed while editing');
@@ -45,6 +58,8 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
     if (typeof value !== property.type.replace('text', 'string').replace('number', 'number').replace('boolean', 'boolean')) {
       throw Error('Property type mismatch');
     }
+    undoStack.push(clone());
+    redoStack.length = 0;
     property.value = value;
     if (key === 'name') {
       const entity = snapshot.scene.entities.find(e => e.id === entityId);

@@ -28,8 +28,10 @@ int StudioSession::indexFor(const std::string& id) const {
     for (size_t i = 7; i < id.size(); ++i) {
         unsigned char c = static_cast<unsigned char>(id[i]);
         if (!std::isdigit(c)) throw std::runtime_error("Invalid entity ID");
-        n = n * 10 + (c - '0');
-        if (n > uint64_t(std::numeric_limits<int>::max())) throw std::runtime_error("Entity index overflow");
+        const uint64_t digit = uint64_t(c - '0');
+        const uint64_t limit = uint64_t(std::numeric_limits<int>::max());
+        if (n > (limit - digit) / 10) throw std::runtime_error("Entity index overflow");
+        n = n * 10 + digit;
     }
     if (n >= ws_.map.data.entities.size()) throw std::runtime_error("Entity does not exist");
     return int(n);
@@ -79,6 +81,10 @@ Json StudioSession::snapshot() const {
         logs.push(std::move(row));
     }
     result.set("logs", std::move(logs));
+    Json history = Json::object();
+    history.set("canUndo", Json::fromBool(ws_.map.canUndo()));
+    history.set("canRedo", Json::fromBool(ws_.map.canRedo()));
+    result.set("history", std::move(history));
     result.set("mode", str("edit"));
     return result;
 }
@@ -97,6 +103,18 @@ Json StudioSession::dispatch(const Json& request) {
             const std::string next = id.isNull() ? "" : id.str();
             if (!next.empty()) indexFor(next);
             selected_ = next;
+            reply.set("result", snapshot());
+        } else if (method == "studio.save") {
+            const Json r = ws_.call("map_save", Json::object(), "studio");
+            if (r.has("error")) throw std::runtime_error(r.getStr("error"));
+            reply.set("result", snapshot());
+        } else if (method == "studio.undo") {
+            if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");
+            ws_.map.undo();
+            reply.set("result", snapshot());
+        } else if (method == "studio.redo") {
+            if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
+            ws_.map.redo();
             reply.set("result", snapshot());
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");

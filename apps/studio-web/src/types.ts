@@ -9,15 +9,22 @@ export interface StudioSnapshot {
   properties: StudioProperty[];
   logs: StudioLog[];
   mode: 'edit' | 'play';
+  history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
+  'studio.save': Record<string, never>;
+  'studio.undo': Record<string, never>;
+  'studio.redo': Record<string, never>;
   'studio.select': { id: string | null };
   'studio.setProperty': { entityId: string; key: string; value: string | number | boolean };
 }
 export interface StudioResult {
   'studio.snapshot': StudioSnapshot;
+  'studio.save': StudioSnapshot;
+  'studio.undo': StudioSnapshot;
+  'studio.redo': StudioSnapshot;
   'studio.select': StudioSnapshot;
   'studio.setProperty': StudioSnapshot;
 }
