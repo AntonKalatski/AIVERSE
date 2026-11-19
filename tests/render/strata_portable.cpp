@@ -144,8 +144,19 @@ static void testBackend(gfx::Backend backend,bool mdi){
     const auto vb=original.vb;
     const auto ib=original.ib;
     const uint32_t initialAllocations=dev.allocs;
-    PortableSource staged;
     std::string error;
+    // Reject malformed import data BEFORE allocating a GPU sidecar:
+    // original leaf coverage and parent bounds must remain conservative.
+    auto incomplete=makeAsset();
+    incomplete.primitives[0].geometry.nodes[1].indexCount=6;
+    PortableSource rejected;
+    assert(!rejected.stage(dev,original,incomplete,&error));
+    assert(dev.allocs==initialAllocations);
+    auto badBounds=makeAsset();
+    badBounds.primitives[0].geometry.bounds[0].min[0]=0.f;
+    assert(!rejected.stage(dev,original,badBounds,&error));
+    assert(dev.allocs==initialAllocations);
+    PortableSource staged;
     assert(staged.stage(dev,original,asset,&error));
     assert(error.empty());
     assert(staged.validFor(original));
