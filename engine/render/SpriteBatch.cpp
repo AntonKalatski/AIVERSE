@@ -104,7 +104,8 @@ bool SpriteBatch::init(gfx::Device& dev) {
     vb_ = dev.createBuffer(vb);
     vb.size = 256 * 4 * sizeof(SpriteVertex); vb.label = "sprite casters";   // distinct snapshot stream
     casterVb_ = dev.createBuffer(vb);
-    return blendPipe_.valid() && groundPipe_.valid() && decalPipe_.valid() && ib_.valid() && vb_.valid();
+    return blendPipe_.valid() && groundPipe_.valid() && decalPipe_.valid() &&
+           ib_.valid() && vb_.valid() && casterVb_.valid();
 }
 
 void SpriteBatch::shutdown() {
