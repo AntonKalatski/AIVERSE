@@ -1393,3 +1393,17 @@ generation and draw submission use the SAME base, including pipeline-change
 graph texture rebinding even if material pointer is unchanged.
 GLES3 16-unit limit admits a single GI atlas + up to two graph textures,
 not dual GI + graph texture. SOURCE ONLY, NOT COMPILER/GPU-TESTED.
+
+
+## GI stage 42 — custom terrain/foliage shader binding (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage42-custom-terrain-foliage-bindings-2026-11-20.md`.
+`Renderer3D::bindDynamicGiForCustomShader(GiCustomShaderMode)` provides an
+EXACT, opt-in resource binding contract for custom terrain, foliage, water and
+other shader pipelines. The custom shader must match the requested mode and
+the current GI atlas/validity/cascade resources. No silent shader mode
+downgrade; reject Single when a partial validity mask is required. Shared
+resource slots U6/tex13, tex14, U7/tex15 and Metal-only U8/tex16.
+Use a compatible shader variant and apply the indirect delta only once; this
+binder does NOT compile or automatically modify terrain/foliage PBR shading.
+All new C++/CTest and GLES/Metal/Vulkan GPU validation remain NOT RUN.
