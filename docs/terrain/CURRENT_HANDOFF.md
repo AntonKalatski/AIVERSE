@@ -6,7 +6,9 @@ cross-branch conflict reconciliation.
 
 ## Current integration/QA stage — source features frozen
 
-**Read first:** [2026-11-19 full native QA handoff](qa-2026-11-19-full-integration-handoff.md).
+**Latest Mac CTest triage:** [2026-11-19 Mac Studio 131-test diagnostics](qa-2026-11-19-mac-ctest-triage.md): 94 passed, 33 Not Run from missing binaries, three importer tests missing `aiverse_headless`, and `skill_audit` three broken paths fixed in GitHub. GCC/Clang and full native CI were re-triggered; source fixes require a real rerun before being marked green.
+
+**Original QA kickoff:** [2026-11-19 full native QA handoff](qa-2026-11-19-full-integration-handoff.md).
 The existing TerraWeave GCC/Clang workflow had an unterminated CTest
 regex; this has been fixed. It now builds the Stage70 pure nutrient
 test and a native NEREID/ECS/optional-PHYSIS header compile smoke.
