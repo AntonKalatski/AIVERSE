@@ -2316,6 +2316,7 @@ endif()
 if(AIVERSE_BUILD_TESTS AND AIVERSE_ENABLE_PHYSICS AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/world/TerraWeaveRootEvents.h" AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/world/TerraWeaveFallenPhysics.h" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/world/TerraWeaveEcsAuthority.h" AND
    TARGET aiverse_physics)
     add_executable(aiverse_physis_terraweave_fall_bridge_test
         tests/physis_terraweave_fall_bridge_test.cpp)
