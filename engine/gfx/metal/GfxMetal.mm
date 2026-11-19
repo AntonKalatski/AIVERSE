@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace aiverse::gfx {
