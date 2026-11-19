@@ -152,7 +152,11 @@ public:
     bool publishSources(const LumaWeaveRegistry& sources,
                         const LumaWeaveClusters& clusters) {
         if(!ready())return false;
-        if(sourcesPublished_ && producer_.sourceRevision()==sources.revision())
+        // Source values can be unchanged while a camera-following clustered
+        // grid scrolls. That changes CSR indices/origin and MUST republish
+        // the GPU packet before shading with the new camera positions.
+        if(sourcesPublished_ && producer_.sourceRevision()==sources.revision() &&
+           producer_.clusterGeneration()==clusters.buildGeneration())
             return true;
         const auto packet=packLumaSources(sources,clusters);
         if(!producer_.setSources(packet))return false;
