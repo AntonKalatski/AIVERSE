@@ -2561,6 +2561,31 @@ void Renderer3D::renderModels(int phase) {
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
     const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
+    // Opt-in short diagnostic. Trace MDI training probes, not every object.
+    // A missing candidate scan means one of the gates below rejected the
+    // whole pass; no amount of command-packing optimization can fix that.
+    static const bool traceAutoCpu = [] {
+        const char* value = std::getenv("AIVERSE_BATCH_AUTO_TRACE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (traceAutoCpu && autoBatchCpu && autoCpuLearn && phase <= 1) {
+        static uint32_t probes[2]{};
+        const size_t lane = size_t(phase);
+        if (autoCpuPermit && probes[lane]++ < 12) {
+            std::fprintf(stderr,
+                "[auto-cpu-gate] phase=%d items=%zu permit=%d allowed=%d "
+                "multiDraw=%d adaptiveGpuFallback=%d groupAdaptive=%d "
+                "renderSafe=%d indirectOff=%d supported=%d "
+                "minCommands=%zu instanceLimit=%u gpuGroups=%zu\n",
+                phase, order_.size(), int(autoCpuPermit), int(allowIndirect),
+                int(modelMultiDrawEnabled_), int(gpuAdaptiveInstancingFallback_),
+                int(groupAdaptive),
+                int(renderSafe && std::strcmp(renderSafe, "1") == 0),
+                int(indirectToggle && std::strcmp(indirectToggle, "off") == 0),
+                int(dev_->supportsMultiDrawIndirect()), minIndirectCommands,
+                instanceLimit_, gpuEncodedBatches_.size());
+        }
+    }
     if (traceModelPass) {
         // candidates=0 is otherwise ambiguous: it could mean no GPU MDI
         // support, an explicit safety toggle, or an adaptive ICB fallback.
