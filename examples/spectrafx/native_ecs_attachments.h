@@ -115,10 +115,25 @@ public:
         return true;
     }
 
+    // Explicit graphics-device recovery. Both old and new Device objects
+    // must still be alive here: the old pool owns old-device resources until
+    // shutdown(), and the restored pool initializes on recoveredDevice.
+    // Only authored effects/policies are restored; all physical GPU particles
+    // and renderer source IDs are lost. ECS rebinds on the next prepare().
+    bool rebuildOnRecoveredDevice(gfx::Device& recoveredDevice) {
+        if(frameOpen_)return false;
+        const auto manifest=pool_.exportRecoveryManifest();
+        pool_.shutdown(); // old graphics Device MUST still exist here
+        bridge_.discardTrackingAfterPoolRecreation();
+        poseHistory_.resetForRollback();
+        return pool_.importRecoveryManifest(&recoveredDevice,manifest);
+    }
+
     // Explicitly release resources while Device is still alive.
     void shutdown() {
         if(frameOpen_)finish();
         pool_.shutdown();
+        bridge_.discardTrackingAfterPoolRecreation();
         poseHistory_.resetForRollback();
     }
 
@@ -150,5 +165,10 @@ private:
 //   if(fx.afterRollback()) { world.copyFrom(savedAuthoritativeSnapshot); }
 //   Device.endFrame();
 //   // Never restart presentation replay unless visual reset succeeded.
+//   // After an unrecoverable Metal Device loss:
+//   // gfx::Device newDevice = hostRecreateGraphicsDevice(); // pseudocode
+//   // bool recovered=fx.rebuildOnRecoveredDevice(newDevice);
+//   // Host must keep the OLD Device alive through pool shutdown above.
+//   // Re-resolve committed ECS sources via prepare() only after recovery.
 
 } // namespace aiverse::examples::spectrafx
