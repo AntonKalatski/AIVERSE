@@ -1267,7 +1267,7 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH7` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH8` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
@@ -1378,3 +1378,28 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   compilation, CTest, GPU screenshots and benchmarks
   to another dedicated testing agent; always report
   `NOT RUN` unless actual evidence is provided.
+
+### TerraWeave TWH8 exact fractional near-normal seam contract
+
+- **Current Horizon archive is TWH8**. Historical TWH1–TWH7
+  blobs must be regenerated; exact Q16 near seam heights,
+  signed near-surface gradient components and normal-valid
+  flags are versioned and fingerprinted through the
+  Horizon archive.
+- `AuthoredWorldHeightSnapshot::sampleQ16` is an optional
+  fractional-centimetre source contract used only by the
+  CPU seam baker. `WorldScene` supplies
+  `nearGroundHeightAtQ16Cm` from the SAME immutable
+  near-ground snapshot as near tile ownership.
+- On the near/far seam, use authored near-surface normals
+  when available, otherwise the existing area-weighted
+  far triangle normals. The `maxNearWeldSlopePermille`
+  all-or-none seam welding guard remains active.
+- `horizonCanReuseModelGeometry` must reject changes
+  in Q16 seam positions, near height, slopes, normal
+  validity and normal blend settings for **atlas-only**
+  GPU patching; never leave stale vertex normals.
+- `HorizonRuntimeStats::matchedAuthoredNearNormals`
+  measures actual near-surface normal matches, not GPU
+  performance. Separate testing agent performs all
+  CMake/CTest/Metal/Vulkan/GL/benchmark validation.
