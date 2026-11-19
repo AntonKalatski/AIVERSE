@@ -228,3 +228,109 @@ provided. See `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`.
 This validates the targeted integration, not production FPS/RTS replay,
 actual GPU/Metal, additive collision ownership, complete game save formats
 or process RSS. Preserve those as explicit pre-merge gates.
+
+
+## Stage 5: multiple immutable config domains per prefab (source committed)
+
+The opt-in header `engine/scene/PrefabStaticDomainRegistry.h` now lets
+one SceneAsset object attach **multiple independent StaticRef<T> types**
+such as weapon, AI/brain and inventory. It uses existing
+`PrefabStaticCatalog<T>` and `SceneLoadCoordinator`; no rewrite of the
+production ECS Sparse Set or `Simulation::step()`.
+
+```cpp
+#include "engine/scene/PrefabStaticDomainRegistry.h"
+namespace sc = aiverse::scene;
+
+auto definitions = std::make_shared<sc::PrefabStaticDomainRegistry>();
+definitions->addDomain<WeaponConfig>(
+    "combat/weapon", "mygame.prefab.weapon", weaponCatalog,
+    sc::MissingPrefabConfig::Reject);
+definitions->addDomain<AIConfig>(
+    "ai/brain", "mygame.prefab.ai", aiCatalog,
+    sc::MissingPrefabConfig::Reject);
+definitions->addDomain<InventoryConfig>(
+    "items/inventory", "mygame.prefab.inventory", inventoryCatalog,
+    sc::MissingPrefabConfig::Skip);  // Optional for a projectile/ambient entity
+if(!definitions->seal())throw std::runtime_error("no prefab domains");
+
+// In GameModule::setup before Simulation seals native persistence schemas:
+sc::registerScenePersistence(sim);
+definitions->registerPersistence(sim);
+if(!definitions->bindWorld(sim.world()))
+    throw std::runtime_error("immutable prefab domain mismatch");
+
+// Host, at an owned tick/structural barrier:
+sc::SceneLoadCoordinator coordinator(
+    sim.world(), readScene, sceneResources,
+    definitions->callback(
+        [](aiverse::World& world, aiverse::Entity entity,
+           const sc::SceneObjectAsset& instance, std::string& error) {
+            // Only ordinary per-instance ECS state is mutable.
+            world.add<MutableHealth>(entity, ...);
+            return true;
+        }));
+```
+
+The registry sorts domain keys (e.g. `ai/brain` before
+`combat/weapon`) regardless of registration order. `seal()` prevents
+further registration, rejects duplicate domain names, native schema
+identifiers and duplicate `StaticRef<T>` C++ types, because one World
+can store only one component of a given T per entity. Native persistence
+IDs are validated for allowed ASCII characters and length before
+registration.
+
+**Two-pass spawn:** all domains first check that the World is bound to
+the correct immutable catalog revision, every required prefab is
+supported and each StaticRef is not already assigned. Only then does
+the registry attach 4-byte references and invoke the optional mutable
+instance initializer. If an initializer fails, SceneLoadCoordinator
+cancels the new scene and removes its partially instantiated entities;
+previous committed scenes are untouched.
+
+**Two-pass World bind:** each catalog's new read-only
+`canBindWorld(world)` checks existing fingerprints before any catalog
+is inserted into the World, so a stale second domain never partially
+binds the first. Allocation errors can still throw at setup, so do this
+only during a structural barrier. The immutable catalogs and table
+values may be shared by the game World, a second multiplayer World,
+and the editor preview World.
+
+The new `tests/ecs_static_scene_multidomain_test.cpp` checks: three
+domains, an optional inventory domain only on soldiers, invalid
+mandatory prefab preflight without writes, no partial World binding,
+stable native checksum/serialization under **different domain
+registration order**, instances with mutable ammo overrides, additive
+global+field scenes, persistent objects, replacement and failed
+replacement, rollback, native serialization, and rejection of changed
+prefab-to-config aliases without a changed underlying unique-value
+table. CTest target:
+`aiverse_ecs_static_scene_multidomain_test`.
+
+**Native status: new Stage 5 CTest has not yet been compiled or run.**
+The preceding Stage 4 target selection was verified 7/7 on Mac Studio,
+which is not evidence for this newly added code.
+
+### Expanded native regression runner
+
+Use the script `tools/ecs-static-scene-validate.sh` in an isolated
+worktree. It does not fetch/change Git refs, and logs build and CTest
+output under `build/static-scene/verification/`.
+
+```sh
+cd ~/Projects/AIVERSE-static-scene
+git fetch origin feature/ecs-static-prefab-scene-integration
+git pull --ff-only origin feature/ecs-static-prefab-scene-integration
+bash tools/ecs-static-scene-validate.sh build/static-scene smoke 8
+bash tools/ecs-static-scene-validate.sh build/static-scene extended 8
+```
+
+`smoke` builds/runs 12 scene/Shared/Static/COW/hierarchy tests.
+`extended` includes 9 additional regressions, notably real RTS/FPS
+GameModule replay, native persistence, COW rollback session, guarded
+parallelism and ECS wave replay (21 tests total). The tool configures
+CMake with `AIVERSE_BUILD_TESTS=ON` and
+`CMAKE_BUILD_TYPE=Release` automatically. Every test must pass before
+considering a production main merge. Platform-specific graphics/Metal,
+scene-editor and collision namespaces remain separate verification
+requirements.
