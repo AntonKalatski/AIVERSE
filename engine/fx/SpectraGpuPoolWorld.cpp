@@ -650,6 +650,8 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         result.budgetDenied+=stats.checkpointBudgetDenied;
         result.adaptiveBackoffs+=stats.checkpointAdaptiveBackoffs;
         result.adaptiveRecoveries+=stats.checkpointAdaptiveRecoveries;
+        result.killedSlotsAwaitingFence+=state.killsAwaitingGpuFence;
+        result.killedSlotsReclaimed+=stats.killedSlotsReclaimed;
         result.maximumCurrentIntervalFrames=std::max(
             result.maximumCurrentIntervalFrames,state.checkpointIntervalFrames);
         result.bytesReturned+=stats.checkpointBytesReturned;
