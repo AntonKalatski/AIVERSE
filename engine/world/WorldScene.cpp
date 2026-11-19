@@ -111,6 +111,27 @@ size_t WorldScene::vegetationRootPrototypeCount()const {
     return terraForest_?terraForest_->generatedRootPrototypes():0u;
 }
 
+// Publish an immutable post-ECS Earthworks snapshot. This only affects
+// presentation source data; terrain triangles, collision and navmesh still
+// require explicit native TerrainMutationCoordinator publication.
+void WorldScene::setVegetationTerrainSnapshot(
+        std::shared_ptr<const terraweave::EarthworksLayer> soil,
+        std::vector<terraweave::RectCm> edited) {
+    if(edited.size()>128u)
+        throw std::length_error("TerraWeave terrain snapshot edit budget");
+    for(const auto& r:edited)
+        if(r.minX>=r.maxX || r.minZ>=r.maxZ ||
+           r.minX<-terraweave::kWorldLimitCm ||
+           r.minZ<-terraweave::kWorldLimitCm ||
+           r.maxX>terraweave::kWorldLimitCm ||
+           r.maxZ>terraweave::kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave invalid terrain edit bounds");
+    if(soil==vegetationTerrain_ && edited.empty())return;
+    vegetationTerrain_=std::move(soil);
+    vegetationTerrainEdited_=std::move(edited);
+    vegetationTerrainDirty_=true;
+}
+
 // A caller-owned, serializable set of runtime clearings shared by both
 // Flora instances and distant Horizon canopy silhouettes. Only the first
 // state and the latest replacement matter until the next WorldScene update.
@@ -386,7 +407,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
     },uploadBytes_);
     if((terraForest_ || terraHorizon_) &&
        (landscapeChanged || vegetationClearingsDirty_ ||
-        vegetationPhenologyDirty_)){
+        vegetationPhenologyDirty_ || vegetationTerrainDirty_)){
         // Cleared patches may extend far beyond resident collision tiles.
         // Include BOTH old and new rectangles so an old canopy silhouette
         // is invalidated when a clearing is restored or moved.
@@ -397,6 +418,9 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             editedLandscape.insert(editedLandscape.end(),
                 vegetationClearings_.begin(),vegetationClearings_.end());
         }
+        if(vegetationTerrainDirty_)
+            editedLandscape.insert(editedLandscape.end(),
+                vegetationTerrainEdited_.begin(),vegetationTerrainEdited_.end());
         // Publish a single immutable snapshot for both terrain heights and
         // obstacle footprints. Async foliage jobs keep old snapshots alive
         // until canceled; revision checks discard their stale results.
@@ -416,6 +440,34 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 terraweave::AuthoredHeightTileCm tile;
                 tile.resolution=prepared->terrainResolution;
                 tile.heightsCm=prepared->terrainHeightsCm;
+                if(vegetationTerrain_) {
+                    // Resample the published immutable Earthworks snapshot at
+                    // the exact Fixed-grid X/Z positions used by collision.
+                    // Never query mutable gameplay soil from a render worker.
+                    const int64_t baseX=int64_t(cell.x)*assets_.cellSize*100;
+                    const int64_t baseZ=int64_t(cell.z)*assets_.cellSize*100;
+                    const int64_t den=int64_t(tile.resolution)-1;
+                    const auto roundedCm=[](Fixed v)->int64_t{
+                        const int64_t n=v.raw*100;
+                        return n>=0 ? (n+Fixed::kOne/2)/Fixed::kOne :
+                                      (n-Fixed::kOne/2)/Fixed::kOne;
+                    };
+                    for(uint32_t z=0;z<tile.resolution;++z)
+                        for(uint32_t x=0;x<tile.resolution;++x){
+                            const auto sx=baseX+roundedCm(Fixed::fromRatio(
+                                int64_t(x)*assets_.cellSize,den));
+                            const auto sz=baseZ+roundedCm(Fixed::fromRatio(
+                                int64_t(z)*assets_.cellSize,den));
+                            const int64_t limit=terraweave::kWorldLimitCm-
+                                vegetationTerrain_->spacingCm();
+                            if(sx<=-limit || sz<=-limit ||
+                               sx>=limit || sz>=limit)
+                                throw std::out_of_range(
+                                    "TerraWeave soil snapshot outside authored tile extent");
+                            tile.heightsCm[size_t(z)*tile.resolution+x]=
+                                vegetationTerrain_->sampleHeightCm(sx,sz);
+                        }
+                }
                 mutableHeights->setTile(cell,std::move(tile));
             }
             const int64_t baseX=int64_t(cell.x)*assets_.cellSize*100;
@@ -450,11 +502,19 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         std::shared_ptr<const terraweave::FoliageExclusionMask> mask;
         if(boxes)mask=std::move(mutableMask);
         if(terraForest_ &&
-           (landscapeChanged || vegetationClearingsDirty_)){
+           (landscapeChanged || vegetationClearingsDirty_ ||
+            vegetationTerrainDirty_)){
             const terraweave::TerrainSettings fallback=
                 terraForest_->settings().terrain;
+            const auto soil=vegetationTerrain_;
             terraForest_->setLandscapeSources(
-                [heights,fallback](int64_t x,int64_t z)->int32_t{
+                [heights,fallback,soil](int64_t x,int64_t z)->int32_t{
+                    if(soil) {
+                        const int64_t edge=terraweave::kWorldLimitCm-
+                            soil->spacingCm();
+                        if(x>-edge && z>-edge && x<edge && z<edge)
+                            return soil->sampleHeightCm(x,z);
+                    }
                     if(const auto sample=heights->sample(x,z))return *sample;
                     return terraweave::heightAtCm(fallback,x,z);
                 },
@@ -469,7 +529,14 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             const auto fallback=terraHorizon_->terrainSettings();
             auto surface=std::make_shared<terraweave::HorizonSurfaceSources>();
             surface->phenology=vegetationPhenology_;
-            surface->heightAtCm=[heights,fallback](int64_t x,int64_t z){
+            const auto soil=vegetationTerrain_;
+            surface->heightAtCm=[heights,fallback,soil](int64_t x,int64_t z){
+                if(soil){
+                    const int64_t edge=terraweave::kWorldLimitCm-
+                        soil->spacingCm();
+                    if(x>-edge && z>-edge && x<edge && z<edge)
+                        return soil->sampleHeightCm(x,z);
+                }
                 if(const auto sample=heights->sample(x,z))return *sample;
                 return terraweave::heightAtCm(fallback,x,z);
             };
@@ -508,6 +575,8 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         }
         vegetationClearingsDirty_=false;
         vegetationPhenologyDirty_=false;
+        vegetationTerrainDirty_=false;
+        vegetationTerrainEdited_.clear();
         previousVegetationClearings_.clear();
     }
     if(terraForest_){
