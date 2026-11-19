@@ -191,3 +191,33 @@ save schema and retain strict conservation with NEREID runoff.
 Inspect `main` and shared Renderer3D/Gfx/editor paths separately; don't
 force-merge or rebase other agents' uncommitted work. Keep this PR Draft
 until real native and graphics verification.
+
+## Stage67 follow-up source fixes, current integration snapshot
+
+- `48ef648de2b7198b0d79633a68d1c68ddbb29400` — archive/load
+  validation now checks the complete saved organic-matter ledger, rejecting
+  missing/created units before any ECS publication.
+- `9cb2f184180c0f9b0fcd39a405ae5cba538e07c0` — decay transaction
+  validates the staged ledger before committing and
+  `deadwoodLedgerBalanced` retains its bool-returning diagnostic contract.
+- `859ddf93b557845fa9f48be3587726ff0d4fbaed` — fully spent wood
+  clears unpayable fractional carry only after the final mineralisation
+  payout has used the previous carry.
+- `04845838386e88e5b38f533f01112b35f4eff080`,
+  `431144b27ca55373a98eb73a5cc7152f26c7ed8a`,
+  `a0e887bc54d9b51e17b643c885b5c2daa78e1026` —
+  `examples/world/terraweave_native/README.md` documents native
+  fall-event batching, posttick Box3D cleanup, nutrient effects,
+  compilation caveats and the correct relative Stage67 handoff link.
+
+**Final source readback:** all eight core/header/handoff paths were
+successfully fetched from GitHub on `feature/terraweave` with nonempty
+contents. This is NOT evidence of C++ compilation or physical correctness.
+
+**Integration status at this read:** remote head
+`a0e887bc54d9b51e17b643c885b5c2daa78e1026`; vs `main`: `diverged` with
+`878` ahead and `305` behind.
+PR #24: `open`, draft `true`,
+mergeable `false`. No merge/rebase performed.
+Tests still NOT RUN for Stage67. Any later concurrent commits require
+new source/branch readback and a new QA record.
