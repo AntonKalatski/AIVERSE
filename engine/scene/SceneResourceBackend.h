@@ -144,6 +144,11 @@ public:
         retireIfUnused(it);
     }
     // Standard SceneLoadCoordinator adapter, with backend outliving loader.
+    // The backend counts ONE lease per coordinator/key (unique external owner),
+    // not one lease per scene. SceneLoadCoordinator::resourceRefCount(key)
+    // separately counts the additive scenes that use that dependency.
+    // For two scenes in one coordinator: backend leaseCount == 1 while
+    // coordinator resourceRefCount == 2. This is intentional deduplication.
     SceneResourceAdapter coordinatorAdapter() {
         return {
             [this](const std::string& key, std::string& error) {
