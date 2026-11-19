@@ -2244,6 +2244,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
     set_source_files_properties(tests/render/metal_texture_gpu.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(aiverse_metal_texture_gpu_test PRIVATE
+        Threads::Threads
         "-framework Metal" "-framework QuartzCore" "-framework Foundation")
     add_test(NAME metal_texture_gpu COMMAND aiverse_metal_texture_gpu_test)
     set_tests_properties(metal_texture_gpu PROPERTIES
