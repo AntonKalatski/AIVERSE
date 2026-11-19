@@ -6959,3 +6959,97 @@ tables (current GPU ICB groups must remain homogeneous). After
 features close, run dedicated cross-backend native/GPU tests,
 confirm GPU feedback domains cannot cross-contaminate physical
 page streamer requests, and compare viewport/LOD/alpha results.
+
+
+## Stage 10K — explicit material Shader Graph VT sampling (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21.
+**Feature commits:**
+- `2d3b97b4142fea11c51b5445ca1115ffec11a60c`:
+  `engine/render/graph/ShaderGraph.h`, add
+  `Program::usesVirtualTexture` metadata.
+- `8d4e6b9d5952434bdfa39fda5a1f94b3caf95569`:
+  `engine/render/graph/ShaderGraph.cpp`, register
+  `sampleVirtualTexture` as material-fragment-only graph node,
+  emit `SG_SAMPLE_VIRTUAL(uv)`, count it in sample budget,
+  and validate that at most ONE independent graph texture
+  coexists with its two virtual-array resources.
+- `8edab2d591d590b3b7e0191a4aa2029b2faa1055`:
+  `engine/render/ModelVirtualTextureSampling.h`, allow
+  dynamic physical atlas/table slots (13/14 or 14/15) in
+  canonical shared GLSL/MSL virtual lookup injection; retain
+  the corrected Metal R8/ICB signature handling from Stage 10J.
+- `6b7b5cd67b625648b171adbefe55999ebc7a3c5b`:
+  `engine/render/Renderer3DModels.cpp`, select
+  `kKeyModelVirtualTexture` for built-in materials OR graphs
+  that explicitly request the VT node, add graph macro
+  expansion against real atlas/page-table plus fallback
+  to conventional `SG_SAMPLE(uv)` if no mapping is present,
+  allocate bounded shader slots and bind resources/U6 per
+  material draw. Normal `sampleTexture` graph resources stay
+  separate; MSL/GLSL use same native VT sampling helpers.
+- `8d9edbcb3a1e448faabdbd368ff2904f9b124c73`:
+  `engine/render/GpuMaterialState.h`, include graph VT flag
+  in exact material equivalence and GPU material state hash.
+- `fa0b83121370a2319dddfb8f66b420a17379132c`:
+  graph node supports opt-in `srgb:true` conversion through
+  the existing compiler colour transform.
+
+**Documentation/agent skill commits:**
+`11f3cfbca60c7e88fe7255f649e19afedc791cb2`
+(`docs/shader-graph.md` with JSON node example),
+`bac54803a4c4ea985d96cb07a0ac5cce6f6c425b`
+(`docs/texture-rhi.md`),
+`15ac86f21176413a2099efc1af9a7815683c817e`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**API:** Shader Graph material JSON may contain an op
+`sampleVirtualTexture` with one UV-vector input and optional
+`srgb:true`. It emits a fragment `vec4/float4` sample.
+`Renderer3D` uses its installed ModelVirtualTextureResolver
+for physical atlas and page-table handles, layer and gutter.
+No valid VT mapping produces ordinary source `tex1` fallback
+instead of an invalid array sample. Domain=material only;
+vertex, postfx and particle contexts are rejected. The graph
+compiler's existing eight-sample cap still applies.
+
+**Texture slot budget:** graph-resident textures occupy
+tex13 onward. A graph requesting VT may use 0 independent
+textures (VT arrays at tex13/tex14) or 1 (arrays at
+tex14/tex15), bounded by GL33/GLES3/Metal 16 sampler slots.
+Two or more independent graph textures with the VT node are
+rejected at graph compilation. R8 masked-alpha reduction
+remains forbidden for Shader Graph inputs, preventing collision
+with R8 tex15. Shader Graph material draws stay off Metal
+ICB/MDI path until the argument-buffer graph ABI supports
+their dynamic texture slots. Existing non-VT graphs continue
+their previous shader/material code path.
+
+**Architecture:** This is an explicit graph sample node,
+NOT automatic virtualization of every `sampleTexture`
+node. The new op reuses `gfx::kVirtualTextureGLSL/MSL` page
+lookup and existing physical atlas/page table, with no
+alternate VT codec or new streamer. `ModelShaderKey`
+and `GpuMaterialState` include graph VT permutations.
+The model shader's `SG_SAMPLE_VIRTUAL` macro is supplied
+either by a real VT shader variant or safe tex1 fallback.
+Graph-backed multi-domain Terra samplers can use any active
+domain returned by the existing material resolver.
+
+**Checks actually performed:** fetched and inspected
+`ShaderGraph.h/cpp`, `ShaderGraphNodes.h`,
+`Renderer3DModels.cpp`, `ModelVirtualTextureSampling.h`,
+`ModelShaders.h`, and the RHI's texture binding conventions.
+Source and docs commits accepted by GitHub.
+**Native C++ compilation NOT RUN; CTest NOT RUN; GLSL/MSL
+shader compilation NOT RUN; Metal/GL/Vulkan GPU execution
+NOT RUN**, per user's instruction to finish functions before tests.
+
+**Remaining work:** proper heterogeneous per-command Metal ICB
+VT/resource index ABI (current GPU ICB remains homogeneous),
+arbitrary many-texture Shader Graph VT via an explicit
+resource/descriptor strategy instead of overflowing 16 slots,
+source-alpha/LOD visual parity and source texture lifecycle
+verification. Treat this graph node as implemented in source
+but not compiler/GPU-validated. Next agent should update
+AGENTS.md and add shader/backend tests during the test phase.
