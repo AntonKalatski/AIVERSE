@@ -106,11 +106,17 @@ void physicalMipKernel() {
           "sRGB half-intensity must be averaged in linear light");
     check(virtualTexturePhysicalMipChainBytes(4,3)==84,
           "physical mip byte budget includes every level");
-    pixels[0]=255;pixels[3]=0;
-    for(int i=1;i<4;++i) {
-        auto* p=pixels.data()+size_t(i)*4u;
-        p[0]=0;p[1]=255;p[2]=0;p[3]=255;
-    }
+    // This fixture must not inherit the previous red checkerboard.
+    // mip1 texel (0,0) averages source pixels (0,0), (1,0), (0,1),
+    // (1,1), not the first four consecutive RGBA pixels.
+    std::fill(pixels.begin(),pixels.end(),uint8_t(0));
+    for(int y=0;y<2;++y)
+        for(int x=0;x<2;++x) {
+            auto* p=pixels.data()+(size_t(y)*4u+size_t(x))*4u;
+            p[0]=0;p[1]=255;p[2]=0;p[3]=255;
+        }
+    // Fully transparent red is ignored when averaging premultiplied RGB.
+    pixels[0]=255;pixels[1]=0;pixels[2]=0;pixels[3]=0;
     check(buildVirtualTexturePhysicalMips(pixels.data(),pixels.size(),
           4,2,false,linear) &&
           linear[1].rgba[0]==0 &&
