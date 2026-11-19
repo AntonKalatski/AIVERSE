@@ -326,7 +326,12 @@ public:
     // Exports a FULL, CURRENT-revision GPU checkpoint from an attached pool,
     // if available. Writes one <=529 KiB diagnostic file under userDataDir.
     // out receives a path on success or a reason on failure.
-    bool saveFreshSpectraGpuCheckpoint(std::string& out) const;
+    bool saveFreshSpectraGpuCheckpoint(
+        std::string& out,size_t groupIndex=static_cast<size_t>(-1)) const;
+    // Saves only aggregate diagnostic counters; coordinates/serials require
+    // separate explicit opt-ins. NEVER includes raw GPU/VM scalar buffers.
+    bool saveSafeSpectraGpuReport(std::string& out,size_t groupIndex,
+        bool includeWorldBounds=false,bool includeGpuIdentifiers=false) const;
     void reloadFx();                           // after fx files changed (Effects window, agents)
     std::vector<std::string> fxWarnings;       // from the last reloadFx()
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
