@@ -182,10 +182,51 @@ bool build(const BuildInput& input, const BuildOptions& options,
     }
     flush();
 
+    // Group spatial neighbours at EVERY hierarchy level, not adjacent
+    // triangles in import order. Imported indices are often material- or
+    // exporter-sorted and can interleave distant islands. Combining those
+    // islands produces enormous parent bounds, poor LOD and unstable culling.
+    // Morton sorting changes only hierarchy grouping: leaf triangle order,
+    // vertex IDs, seam-aware border locks and the source VB remain untouched.
+    auto sortFrontierSpatially = [&]() {
+        std::array<double, 3> low{
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity()};
+        std::array<double, 3> high{-low[0], -low[1], -low[2]};
+        for (uint32_t id : frontier)
+            for (unsigned k = 0; k < 3; ++k) {
+                low[k] = std::min(low[k], double(created[id].bounds.min[k]));
+                high[k] = std::max(high[k], double(created[id].bounds.max[k]));
+            }
+        std::vector<uint32_t> keys(created.size(), 0);
+        for (uint32_t id : frontier) {
+            uint32_t q[3]{};
+            for (unsigned k = 0; k < 3; ++k) {
+                const auto& b = created[id].bounds;
+                const double center = (double(b.min[k]) + double(b.max[k])) * 0.5;
+                const double extent = high[k] - low[k];
+                const double normalized = extent > 0
+                    ? std::clamp((center - low[k]) / extent, 0.0, 1.0) : 0.0;
+                q[k] = uint32_t(normalized * 1023.0 + 0.5);
+            }
+            uint32_t morton = 0;
+            for (uint32_t bit = 0; bit < 10; ++bit)
+                for (uint32_t axis = 0; axis < 3; ++axis)
+                    morton |= ((q[axis] >> bit) & 1u) << (bit * 3 + axis);
+            keys[id] = morton;
+        }
+        std::stable_sort(frontier.begin(), frontier.end(),
+                         [&](uint32_t a, uint32_t b) {
+                             return keys[a] < keys[b];
+                         });
+    };
+
     // Build from leaves upward. A parent covers the exact union of its
     // children. meshopt_SimplifyLockBorder avoids collapsing mesh boundaries,
     // and reports an absolute geometric error for cumulative LOD error.
     for (uint32_t level = 0; level < options.maxLevels && frontier.size() > 1; ++level) {
+        sortFrontierSpatially();
         std::vector<uint32_t> next;
         bool addedParent = false;
         for (size_t begin = 0; begin < frontier.size();
