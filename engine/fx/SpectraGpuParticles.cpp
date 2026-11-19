@@ -654,6 +654,14 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
         size_t left=0;
         bool failed=false, acceptedAll=false;
         std::function<void(bool)> completion;
+        std::shared_ptr<CheckpointReadbackBudget> budget;
+        size_t reservedBytes=0, returnedBytes=0;
+        uint32_t reservedChunks=0;
+        ~Pending() {
+            // All accepted callbacks release their captures before this
+            // reservation is settled, even on partial enqueue or teardown.
+            if(budget)budget->settle(reservedBytes,reservedChunks,returnedBytes);
+        }
     };
     auto pending=std::make_shared<Pending>();
     pending->remainingLifetime=ages_;
@@ -662,6 +670,16 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
     pending->completion=std::move(callback);
     pending->left=chunks;
     for(size_t i=0;i<3;++i)pending->bytes[i].resize(lengths[i]);
+    const size_t totalBytes=lengths[0]+lengths[1]+lengths[2];
+    if(desc_.checkpointBudget &&
+       !desc_.checkpointBudget->tryReserve(
+            pending->frameSerial,totalBytes,uint32_t(chunks))) {
+        ++stats_.checkpointBudgetDenied;
+        return false; // cadence skips this capture; never block rendering
+    }
+    pending->budget=desc_.checkpointBudget;
+    pending->reservedBytes=totalBytes;
+    pending->reservedChunks=uint32_t(chunks);
     const std::weak_ptr<uint64_t> lifetime=readbackLifetime_;
     asyncCheckpointPending_=true;
     ++stats_.checkpointRequests;
@@ -678,10 +696,17 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
                 buffers[b],offset,length,
                 [this,lifetime,pending,b,offset,length](
                     std::vector<uint8_t> data) {
-                    if(!lifetime.lock())return; // destroyed/fallback
+                    const bool live=bool(lifetime.lock());
                     if(data.size()!=length)pending->failed=true;
-                    else std::memcpy(pending->bytes[b].data()+offset,
-                                     data.data(),length);
+                    else {
+                        pending->returnedBytes+=length;
+                        if(live) {
+                            stats_.checkpointBytesReturned+=length;
+                            std::memcpy(pending->bytes[b].data()+offset,
+                                        data.data(),length);
+                        }
+                    }
+                    if(!live)return; // destroyed/fallback; budget still settles
                     if(--pending->left!=0)return;
                     asyncCheckpointPending_=false;
                     bool complete=pending->acceptedAll && !pending->failed &&
