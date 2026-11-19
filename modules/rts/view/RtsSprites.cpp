@@ -519,41 +519,41 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
         equal3(secondaryCasterRight_,casterAxis);
     if (!reusable) {
         secondaryBatch_.begin();
-    const auto previousCam=cam_;
-    const auto previousRight=camRight_,previousUp=camUp_,previousFwd=camFwd_;
-    const auto previousGroundRight=groundRight_,previousGroundFront=groundFront_;
-    const auto previousCasterRight=casterRight_;
-    const auto previousQuality=quality_;
-    cam_=r.camera();
-    // Use the already computed basis from this secondary camera.
-    camRight_=b.right; camUp_=b.up; camFwd_=b.fwd;
-    groundRight_=b.gRight; groundFront_=b.gFront;
-    casterRight_=casterAxis;
-    quality_=r.shadowQuality();
-    replayingPrepared_=true;
-    emittingBatch_=&secondaryBatch_;
-    for(const auto& packet:preparedSprites_) {
-        if(!packet.look)continue;
-        if(packet.width==packet.look->width && packet.height==packet.look->height) {
-            emit(*packet.look,packet.ground,packet.facing,packet.action,
-                 packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
-        } else {
-            // Scale is the only per-entity override to the canonical look.
-            // Construct this inexpensive temporary only when necessary.
-            SpriteLook scaled=*packet.look;
-            scaled.width=packet.width;
-            scaled.height=packet.height;
-            emit(scaled,packet.ground,packet.facing,packet.action,
-                 packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
+        const auto previousCam=cam_;
+        const auto previousRight=camRight_,previousUp=camUp_,previousFwd=camFwd_;
+        const auto previousGroundRight=groundRight_,previousGroundFront=groundFront_;
+        const auto previousCasterRight=casterRight_;
+        const auto previousQuality=quality_;
+        cam_=r.camera();
+        // Use the already computed basis from this secondary camera.
+        camRight_=b.right; camUp_=b.up; camFwd_=b.fwd;
+        groundRight_=b.gRight; groundFront_=b.gFront;
+        casterRight_=casterAxis;
+        quality_=r.shadowQuality();
+        replayingPrepared_=true;
+        emittingBatch_=&secondaryBatch_;
+        for(const auto& packet:preparedSprites_) {
+            if(!packet.look)continue;
+            if(packet.width==packet.look->width && packet.height==packet.look->height) {
+                emit(*packet.look,packet.ground,packet.facing,packet.action,
+                     packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
+            } else {
+                // Scale is the only per-entity override to the canonical look.
+                // Construct this inexpensive temporary only when necessary.
+                SpriteLook scaled=*packet.look;
+                scaled.width=packet.width;
+                scaled.height=packet.height;
+                emit(scaled,packet.ground,packet.facing,packet.action,
+                     packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
+            }
         }
-    }
-    emittingBatch_=&batch_;
-    replayingPrepared_=false;
-    cam_=previousCam;
-    camRight_=previousRight; camUp_=previousUp; camFwd_=previousFwd;
-    groundRight_=previousGroundRight; groundFront_=previousGroundFront;
-    casterRight_=previousCasterRight;
-    quality_=previousQuality;
+        emittingBatch_=&batch_;
+        replayingPrepared_=false;
+        cam_=previousCam;
+        camRight_=previousRight; camUp_=previousUp; camFwd_=previousFwd;
+        groundRight_=previousGroundRight; groundFront_=previousGroundFront;
+        casterRight_=previousCasterRight;
+        quality_=previousQuality;
         secondaryRight_=b.right; secondaryUp_=b.up; secondaryFwd_=b.fwd;
         secondaryGroundRight_=b.gRight; secondaryGroundFront_=b.gFront;
         secondaryCasterRight_=casterAxis; secondaryQuality_=r.shadowQuality();
