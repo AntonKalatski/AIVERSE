@@ -552,11 +552,20 @@ public:
             (t->dimension == TextureDimension::Texture2DArray && u.arrayLayer >= t->layers))
             return false;
         const int bpp = uncompressedTexturePixelBytes(t->fmt);
-        if (bpp < 1 || u.rowPitchBytes < u.width * bpp) return false;
-        const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
-        if (imagePitch < u.rowPitchBytes * u.height) return false;
+        if (bpp < 1 || u.width > std::numeric_limits<int>::max() / bpp ||
+            u.rowPitchBytes < u.width * bpp ||
+            u.height > std::numeric_limits<int>::max() / u.rowPitchBytes)
+            return false;
+        const int minImagePitch = u.rowPitchBytes * u.height;
+        const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : minImagePitch;
+        if (imagePitch < minImagePitch) return false;
         const GLenum format = uncompressedExternal(t->fmt);
         const GLenum type = uncompressedType(t->fmt);
+        // GLES3/WebGL2 expose UNPACK_ALIGNMENT as shared context state.
+        // Preserve it so this streaming upload cannot corrupt later texture
+        // uploads performed by unrelated render/material systems.
+        GLint previousUnpackAlignment = 4;
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
         glBindTexture(t->target, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         const auto* src = static_cast<const uint8_t*>(u.data);
@@ -576,6 +585,13 @@ public:
                       src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
         }
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
+        const GLenum uploadError = glGetError();
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        if (uploadError != GL_NO_ERROR) {
+            error_ = "GL texture region upload failed (GL error " +
+                     std::to_string(static_cast<unsigned>(uploadError)) + ")";
+            return false;
+        }
         return glGetError() == GL_NO_ERROR;
     }
     TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& v) override {
