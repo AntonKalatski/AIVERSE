@@ -1600,3 +1600,33 @@ and CMake warning/success-log integration passed. Actual
 AIVERSE macOS Terminal UI is **NOT RUN**. Guide:
 `docs/aiverse-build-monitor.md`; handoff:
 `docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.
+
+## PHYSIS Stage 78 — optional per-entity Nature Contacts (2026-11-19)
+
+New `engine/physis/PhysisNatureSampling.h` adds reusable
+`NatureProbeComponent` (3D Fixed position/enabled),
+`NatureContactComponent` (wind, gravity, atmospheric and surface
+fields, fire/quake, validation and two tick stamps), and
+`advanceNatureContacts(World&,uint32_t)`.
+`InstallOptions::enableNatureContacts` defaults to **false**;
+the optional components are persisted only when enabled and
+`physis.nature_contacts` runs AFTER the climate system. No
+historical save manifest or genre-dependent code is changed by default.
+
+Separate `engine/world/PhysisNereidNatureBridge.h` combines
+the published PHYSIS/NEREID read-only contacts on one ECS entity,
+checking enabled state, matching tick stamps and probe positions
+to avoid stale data. It neither advances water nor writes
+NEREID bodies. Host must register both samplers; choose
+`FloodMode::ExternalAuthority` if NEREID owns water.
+
+**Code commits:** `354e0689fffcfc4ec9853307fc3a06ba32c86212`,
+`a286022cb733c524f30b795501c957ee1ae3f9ec`.
+**Verification:** source and test registered in CMake; combined native
+`physis_nereid_contacts` test is WRITTEN, **NOT RUN** on macOS
+or other full AIVERSE checkout. The earlier 40/40 focused
+PHYSIS/NEREID/SpectraFX PASS predates these commits and must NOT
+be cited as testing Nature Contacts. Review possible compile or
+runtime errors in the new test rather than claiming readiness.
+
+Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.

@@ -1075,3 +1075,27 @@ and a full AIVERSE build with the new version remain NOT RUN.
 Release Place runner (prior monitor) was user-reported PASS in
 1:41; exact average tick not provided. See handoff:
 `docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.
+
+### Stage 78 — sample PHYSIS environment into ECS contacts
+
+Use `NatureProbeComponent` + `NatureContactComponent` only
+for entities needing an authoritative environment snapshot.
+Enable `InstallOptions::enableNatureContacts=true` explicitly
+in `GameModule::setup`; PHYSIS samples once after its climate
+pass via `physis.nature_contacts`, leaving movement, weather,
+water-body updates and rendering to their owners. These components
+and `io(Archive&, ...)` schema registration are optional to
+preserve legacy saves.
+
+For opt-in NEREID water contact on the SAME entity, host also
+registers NEREID persistence and a water sampling system.
+`engine/world/PhysisNereidNatureBridge.h` provides
+`readNatureWaterContact(world,entity,view)`; it rejects stale
+tick stamps or mismatched probe positions and does not mutate
+either subsystem. Use PHYSIS `FloodMode::ExternalAuthority`
+when NEREID is water authority.
+
+New test `tests/physis_nereid_nature_contacts_test.cpp`,
+CTest `physis_nereid_contacts`: authored, NOT EXECUTED; compile,
+run and fix actual failures before production use. Handoff:
+`docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.

@@ -98,3 +98,27 @@ save/rollback state and weather/water read-only presentation.
 This is still a required integration acceptance step, alongside
 full repo CTest, real editor GUI, GPU/Metal water and CI tests.
 See `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+## Stage 78 — per-entity composable contacts (source implemented; not native-tested)
+
+PHYSIS now has an optional `NatureProbeComponent` /
+`NatureContactComponent` ECS sampling path in
+`engine/physis/PhysisNatureSampling.h`, enabled via
+`InstallOptions::enableNatureContacts`. It publishes
+immutable-by-convention derived weather, wind, gravity and
+hazard values per interested entity after the authoritative
+climate step; these contacts are written ECS outputs and may
+be persisted only when opted in.
+
+Host-side `engine/world/PhysisNereidNatureBridge.h` reads a
+PHYSIS contact and a NEREID `WaterContactComponent` on the
+same entity, requiring equal sample ticks and probe positions.
+No water-body authority, rainfall-to-volume coupling, solver
+or TerraWeave vegetation/terrain mutation is introduced.
+Its same-World native test `physis_nereid_contacts` was
+registered in CMake, but **native CTest has not run** after
+Stage78. Do not claim this as a verified runtime integration
+until the new test passes; previous separate 40/40 results
+pre-date the new code.
+Handoff:
+`docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
