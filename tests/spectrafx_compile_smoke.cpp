@@ -58,7 +58,7 @@ struct CinemaCamera {
         return aiverse::render::mat4::perspective(.75f,a,.1f,1000.0f,z);
     }
 };
-void compileGenreNeutralSceneHost(aiverse::fx::SpectraFxSceneHost& host,
+[[maybe_unused]] void compileGenreNeutralSceneHost(aiverse::fx::SpectraFxSceneHost& host,
                                   aiverse::fx::ParticleSystem& particles,
                                   const aiverse::render::Lighting& lighting) {
     const CinemaCamera camera{};
