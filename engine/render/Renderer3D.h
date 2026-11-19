@@ -405,10 +405,17 @@ public:
                                     float3 origin, float spacing,
                                     int nx, int ny, int nz,
                                     int ringX=0, int ringY=0, int ringZ=0);
+    // Extra Metal-only third clipmap (tex16, U8). Disabled for GL/GLES/Vulkan
+    // because their exposed sampled texture slot limits are not assumed >16.
+    bool setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* third,
+                                         float3 origin, float spacing,
+                                         int nx, int ny, int nz,
+                                         int ringX=0, int ringY=0, int ringZ=0);
     void clearDynamicGiOverlay() {
         dynamicGiOverlay_ = nullptr;
         dynamicGiValidity_ = nullptr;
         dynamicGiFarOverlay_ = nullptr;
+        dynamicGiThirdOverlay_ = nullptr;
     }
     bool dynamicGiOverlayActive() const { return dynamicGiOverlay_ != nullptr; }
     void setBakedQuality(BakedQuality q);
@@ -683,12 +690,16 @@ private:
     const GiDynamicProbeTexture* dynamicGiOverlay_ = nullptr;
     const GiClipmapValidityTexture* dynamicGiValidity_ = nullptr;
     const GiDynamicProbeTexture* dynamicGiFarOverlay_ = nullptr;
+    const GiDynamicProbeTexture* dynamicGiThirdOverlay_ = nullptr;
     float4 dynamicGiOrigin_{};
     float4 dynamicGiSize_{};
     float4 dynamicGiRing_{};
     float4 dynamicGiFarOrigin_{};
     float4 dynamicGiFarSize_{};
     float4 dynamicGiFarRing_{};
+    float4 dynamicGiThirdOrigin_{};
+    float4 dynamicGiThirdSize_{};
+    float4 dynamicGiThirdRing_{};
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
