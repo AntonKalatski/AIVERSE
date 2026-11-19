@@ -49,16 +49,31 @@ inline bool buildVirtualTexturePhysicalMips(
     const uint8_t* src=static_cast<const uint8_t*>(base);
     first.rgba.assign(src,src+baseBytes);
     chain.push_back(std::move(first));
+    // sRGB conversion on thousands of streamed tiles must not call pow()
+    // per source texel. Generate a monotonic decoding LUT once, then use
+    // nearest linear-light entry for quantization (maximum 0.5 sRGB code).
+    static const std::array<double,256> kSrgbLinear=[] {
+        std::array<double,256> values{};
+        for(size_t i=0;i<values.size();++i) {
+            const double v=double(i)/255.0;
+            values[i]=v<=0.04045 ? v/12.92 :
+                      std::pow((v+0.055)/1.055,2.4);
+        }
+        return values;
+    }();
     const auto decode = [srgb](uint8_t value)->double {
-        const double s=double(value)/255.0;
-        if (!srgb) return s;
-        return s<=0.04045 ? s/12.92 : std::pow((s+0.055)/1.055,2.4);
+        return srgb ? kSrgbLinear[value] : double(value)/255.0;
     };
     const auto encode = [srgb](double value)->uint8_t {
         const double v=std::clamp(value,0.0,1.0);
-        const double c=srgb ? (v<=0.0031308 ? 12.92*v :
-                       1.055*std::pow(v,1.0/2.4)-0.055) : v;
-        return uint8_t(std::clamp(int(std::lround(c*255.0)),0,255));
+        if(!srgb)
+            return uint8_t(std::clamp(int(std::lround(v*255.0)),0,255));
+        auto found=std::lower_bound(kSrgbLinear.begin(),kSrgbLinear.end(),v);
+        if(found==kSrgbLinear.begin()) return 0;
+        if(found==kSrgbLinear.end()) return 255;
+        const size_t next=size_t(found-kSrgbLinear.begin());
+        return uint8_t(v-kSrgbLinear[next-1] <= kSrgbLinear[next]-v ?
+                       next-1 : next);
     };
     for (int mip=1; mip<levels; ++mip) {
         const VirtualTextureMipLevel& previous=chain.back();
