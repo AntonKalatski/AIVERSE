@@ -972,3 +972,51 @@ or backwards timeline seeking.
 **Verification:** Only GitHub source writes and source inspections.
 Native C++/ObjC++/MSL compilation, CTest, real editor/Metal testing,
 device-loss recovery and CPU-GPU parity have NOT RUN.
+
+## Stage 39 — native recovery events and bounded GPU diagnostics
+
+Use `GpuPoolRecoveryHost` from the native
+`<aiverselib/genre/SpectraFX.h>` API whenever a project owns a
+`GpuPoolWorld`, a read-only `GpuEcsAttachmentPresenter`, and
+an optional `GpuEcsPoseInterpolator`. The recovery coordinator
+has **no platform Device ownership** and never automatically
+creates graphics devices. `poll()` emits a structured
+`PoolRecoveryEvent` only when status/reset progress changes:
+`RetryResetInGraphicsFrame`, `RecreateGraphicsDevice`,
+`InspectFailure` or `None`. Rollback retry requires an active
+gfx frame outside encoders. For an irrecoverable Metal loss, the
+host recreates `gfx::Device`, keeps the old one alive through
+old-pool shutdown, and explicitly calls `replaceDevice(newDevice)`.
+The CPU-only catalog restores compiled effect definitions but
+NOT live GPU particles or ECS renderer source handles; reattach
+from the latest committed `World` after recovery. See
+`examples/spectrafx/native_ecs_attachments.h`.
+
+The Stage 39 checkpoint export is a **bounded diagnostic-only**
+binary. `ComputeParticles::exportFreshCheckpoint` and
+`GpuPoolWorld::exportFreshCheckpoint(groupIndex)` accept only
+an existing fully completed, current-revision GPU capture with no
+pending births, kills, incomplete reset or asynchronous readback.
+The binary cap is 512 KiB GPU state + 16 KiB CPU lifespan mirror
++ 40-byte header. The API never starts a new GPU readback.
+The editor can write a `.spfx` file under
+`userDataDir()/spectrafx-diagnostics` only when a GPU group is
+`exportReady`. This data is neither a portable savegame nor
+reverse playback, and cannot prove lossless GPU-to-CPU fallback.
+
+For automatic emission budget control, opt in via
+`PoolLoadSheddingPolicy` / `GpuPoolWorld::setLoadShedding`
+between frames. Set the continuous-burst budget, manual one-shot
+reservation, estimated particle soft limit and in-flight
+checkpoint-byte threshold. Sources are served with a rotating
+starting slot to avoid permanent order bias. Policy does not
+lower manually requested one-shot limits, and lost births are
+not queued for expensive future catch-up. `pressureSkipped`
+and `continuousFrameBudget` reflect presentation estimates,
+not measured GPU load.
+
+**Mandatory stage handoff:**
+`docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md`.
+**Verification status:** GitHub source writes and code inspection
+only; CMake/ObjC++/Metal build, CTest, editor startup, actual GPU
+checkpoint export, device loss and budget stress have NOT RUN.
