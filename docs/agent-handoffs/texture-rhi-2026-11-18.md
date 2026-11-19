@@ -7605,3 +7605,52 @@ atlas/table, layer/gutter/wrap, revision serial). It must support
 deduplication and reject stale index generations. Do not enable
 heterogeneous GPU ICB until Metal argument-buffer command ABI,
 encoder pipeline and hardware checks are implemented together.
+
+
+## Stage 10V — bounded GPU material resource table CPU staging (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Source commit:** `55defc79e7872658ee610627bb87bb21f0a95742`
+adds `engine/render/GpuMaterialResourceTable.h`.
+**Documentation commits:**
+- `aa8f8e1324141944ded9146b13752ee6a82beba0`: `docs/texture-rhi.md`.
+- `b88bbfe8306eec5c73dcc52ed2dfdb42d8de7287`: `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/API:** generic CPU-only, genre-independent
+`GpuMaterialResourceBinding` snapshots up to four graph source
+handles, optional alpha mask and the exact VT atlas/table/layer/
+gutter/wrap policy. `GpuMaterialResourceTable::beginFrame(serial)`
+increments a generation and clears the bounded table.
+`intern` deduplicates resource signatures only after exact equality
+checks in hash buckets and returns a
+`GpuMaterialResourceTicket{frameSerial,generation,index}`.
+`resolve` copies a staged snapshot, `matches` compares it
+with the current live draw just before submission, and
+`reset` invalidates all existing tickets on shutdown/reload.
+
+**Safety invariants:** no ownership of TextureHandles and no
+GPU allocations; the caller still owns device fences, external
+archive revision lifetimes, and command buffer retirement.
+Invalid resource handles, excessive graph source count, full
+tables or stale generation/frame tickets fail closed. The
+class has no dependence on FPS/RTS or authoritative ECS.
+
+**Actual checks:** source authored and GitHub accepted the new
+header and documentation. **C++ compiler NOT RUN, CTest NOT RUN,
+native consumer linking NOT RUN, GPU Metal/Vulkan/GL tests NOT RUN.**
+This is not a production-ready ICB resource table.
+
+**Remaining:** GPU ICB compute encoder currently encodes command
+geometry and transforms only; inherited fragment material resources
+are still homogeneous. No shader or Metal argument-buffer is yet
+reading per-command descriptor indices. Do not claim that
+heterogeneous batching is enabled simply because this header
+exists. Existing conservative grouping remains active.
+
+**Next stage:** wire the CPU staging table into experimental Metal
+ICB prepare/revalidation as a strictly observational resource
+snapshot (keep homogeneous checks). Then introduce a separate
+opt-in Metal argument-buffer per-command resource-index ABI,
+shader lookup, buffer residency/fence tracking and safe runtime
+fallback. Cross-backend C++ compilation, tests, real GPU output
+and source texture hot reload must be validated in later test phase.
