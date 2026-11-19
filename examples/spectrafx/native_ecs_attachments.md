@@ -30,9 +30,13 @@ a `gfx::Device`, viewport, scene rendering, and committed `World`.
 6. On entity destruction or disabling the component, the bridge retires
    the old `Entity::packed()`-keyed source. A newly recycled entity
    index has a different generation and starts its own VFX source.
-7. On rollback, end any active render pass/frame, call `afterRollback`
-   at a safe graphics boundary, and only then restart presentation from
-   the restored authoritative snapshot. This resets **the entire pool**:
+7. On rollback, end any active render pass/frame, then start a NEW
+   `Device::beginFrame`, call `afterRollback` outside render/compute
+   encoders **while that graphics frame is open**, then call
+   `Device::endFrame`. Only on success restart presentation from
+   the restored authoritative snapshot. A checked Metal GPU reset now
+   reports failure if called with no active RHI command buffer.
+   This resets **the entire pool**:
    use a dedicated rollback scope, not a pool shared with unrelated
    presentation systems.
 
