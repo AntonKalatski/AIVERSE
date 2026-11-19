@@ -319,6 +319,7 @@ public:
         uint32_t perCommandVtExecutions = 0, mixedVtExecutions = 0;
         // Host-accepted ICB submissions; actual GPU completion is async.
         uint32_t perCommandPbrSubmissions = 0, mixedPbrSubmissions = 0;
+        uint32_t shaderGraphIcbSubmissions = 0, mixedGraphSourceSubmissions = 0;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
@@ -335,7 +336,8 @@ public:
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
                 gpuModelCommandsReady_,
                 gpuIcbPerCommandVtExecuted_, gpuIcbMixedVtExecuted_,
-                gpuIcbPerCommandPbrSubmitted_, gpuIcbMixedPbrSubmitted_};
+                gpuIcbPerCommandPbrSubmitted_, gpuIcbMixedPbrSubmitted_,
+                gpuIcbGraphSubmitted_, gpuIcbMixedGraphSubmitted_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -922,6 +924,8 @@ private:
         bool perCommandPbr = false; // exact per-command U2 and slots 1..6
         bool mixedVtResources = false; // actual different VT bindings
         bool mixedPbrResources = false;
+        bool shaderGraph = false;
+        bool mixedGraphSources = false;
         Material pbrPipelineSnapshot; // frozen pipeline-only safety contract
         std::vector<GpuMaterialResourceTicket> perCommandTickets;
         // CPU table snapshot validates each command before ICB execution. The Metal GPU ICB
@@ -939,6 +943,7 @@ private:
     uint32_t gpuIcbRejected_ = 0, gpuIcbExecuteFailed_ = 0;
     uint32_t gpuIcbPerCommandVtExecuted_ = 0, gpuIcbMixedVtExecuted_ = 0;
     uint32_t gpuIcbPerCommandPbrSubmitted_ = 0, gpuIcbMixedPbrSubmitted_ = 0;
+    uint32_t gpuIcbGraphSubmitted_ = 0, gpuIcbMixedGraphSubmitted_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     uint32_t gpuModelDynamicEligible_ = 0, gpuModelLodEligible_ = 0;
     PersistentGpuScene persistentScene_;
