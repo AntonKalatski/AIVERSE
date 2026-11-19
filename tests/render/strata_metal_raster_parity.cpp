@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -231,6 +232,19 @@ struct Fixture {
             if (w != kWidth || h != kHeight ||
                 rgba.size() != size_t(w*h*4)) {
                 fail("invalid Metal screenshot dimensions");
+                return;
+            }
+            const auto mode = Mode(idx);
+            std::string prefix = "strata-raster";
+            if (const char* p = std::getenv("AIVERSE_STRATA_RASTER_CAPTURE_PREFIX"))
+                prefix = p;
+            std::ofstream ppm(prefix + "-" + modeName(mode) + ".ppm",
+                              std::ios::binary);
+            ppm << "P6\\n" << w << " " << h << "\\n255\\n";
+            for (size_t pos = 0; pos < rgba.size(); pos += 4)
+                ppm.write(reinterpret_cast<const char*>(rgba.data()+pos), 3);
+            if (!ppm) {
+                fail("unable to write raster A/B PPM capture");
                 return;
             }
             captures[idx] = std::move(rgba);
