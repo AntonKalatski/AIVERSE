@@ -617,3 +617,97 @@ CTest-tested, run with PHYSIS merged, visually captured or
 benchmarked. The implementation uses the existing NEREID ECS
 interfaces but needs independent C++ and runtime validation.
 See [Stage69 agent handoff](../../../docs/terrain/stage-69-nereid-physis-nutrient-handoff.md).
+
+
+## Stage 70 — sparse 4m body-tagged nutrient water
+
+The Stage69 4m *sampling* still saved one dissolved amount per
+32m nutrient tile. Stage70 introduces an optional **real sparse 4m
+persistent water nutrient grid** with a separate NEREID
+generation-safe body ID for every amount. Unlike the old coarse
+mode, two streams inside one 32m soil tile can carry independent
+nutrient supplies. This is NOT a NEREID water-volume solver or a
+dense 4m terrain mesh. TerraWeave soil, rooted plants and grass
+patches remain aggregated in their existing 32m/patch records.
+
+The sample `registerSystems` accepts new *trailing* optional arguments
+after `useNativePhysisWeather`:
+
+- `enableFourMetreNutrients=false` — enable the new mode. Requires
+  `enableForestDeadwood=true` and `enableForestNutrientCycle=true`.
+- `ForestMicroSettings microSettings={}` — per-step bounded soil/
+  micro-water counts, 4m transport cap, uptake and rain/leach limits.
+- `ForestNereidMicroJunctionSettings microJunctionSettings={}`
+  — NEREID confluence/cascade mouth search radius and link cap.
+- `onMicroNutrients` — optional post-tick callback; enqueue only.
+
+The native example registers **only one** scheduler: Stage68 coarse
+when `enableFourMetreNutrients=false`, Stage70 sparse 4m when true.
+Both use the same organic ledger, the same real NEREID water and PHYSIS
+optional weather inputs; no duplicate rainfall/uptake or second solver.
+
+**Save compatibility:** `ForestDeadwoodResource.version=3`,
+native persistent schema `terraweave.forest_deadwood` version 3.
+The standard registration helper explicitly accepts v1 and v2 resource
+payloads and promotes them to v3. Old 32m dissolved records remain in
+the conserved `resource.water` **unassigned legacy pool** after
+migration. They are not copied into the new 4m `microWater` because
+the old save had no water-body identity. Use an **explicit full-cell**
+`ForestLegacyMicroClaim` plan to allocate each old coarse amount
+to one or more real 4m water-body cells after NEREID has initialized.
+
+```cpp
+#include "engine/world/TerraWeaveNereidMicroNutrients.h"
+
+// Run once at an authoritative structural/ECS barrier, with NEREID
+// bodies and the current TerraWeave ground already published.
+terraweave::ForestLegacyMicroClaim claim;
+claim.coarseX=0;claim.coarseZ=0;
+claim.allocations={
+    {{riverA.packed()+1ull, 1, 1}, 50},
+    {{riverB.packed()+1ull, 3, 2}, 50}
+};
+// The two amounts must sum EXACTLY to the old saved 32m amount,
+// and each 4m point must be submerged in the expected NEREID body.
+const uint64_t moved=terraweave::claimForestLegacyNereidWaterEcs(
+    sim.world(),cfg,std::span<const terraweave::ForestLegacyMicroClaim>(
+        &claim,1));
+
+// At a game-authored river outlet, with an ordered authoritative
+// command ID from replication/replay:
+const uint64_t exported=terraweave::exportForestNereidMicroOutletEcs(
+    sim.world(),cfg,{riverA.packed()+1ull,1,1},
+    /*maxUnits*/20,/*commandId*/123);
+```
+
+A rejected partial/ambiguous migration leaves the original resource
+unchanged. An already-applied claim cannot be replayed because its
+old coarse record no longer exists. The outlet receipt uses the same
+monotonic command ID as the Stage68 coarse outlet, preventing duplicate
+awards/exports.
+
+The pure core is `advanceForestMicroNutrients`; native wrapper is
+`advanceForestMicroNutrientsEcs`. Its NEREID water sampler checks
+each 4m center against real wetness, current and body ID at the actual
+Earthworks terrain height, not merely whether the point lies in an
+authored river footprint. It transports at most one 4m cardinal hop
+per scheduled nutrient tick. Real NEREID confluence/cascade ECS
+connections enable explicit cross-body transfers; the prior-tick
+amount is the maximum one source may send, preventing same-tick
+multi-hop. All mass remains in the single validated organic ledger.
+
+**Limitations:** The 4m center must intersect the actual wet footprint;
+rivers narrower than a tile may still be missed. Overlapping bodies
+at *exactly the same 4m point* can be represented in save data but
+may need a future per-body layering query (the NEREID indexed sample
+returns one covering body). Per-tick sparse map construction is O(N)
+in resident micro tile count; performance is not benchmarked.
+A valid existing NEREID inlet/outlet topology is required: no
+cross-water-body movement is inferred from proximity alone.
+
+A new CPU fixture is available as
+`aiverse_terraweave_micro_nutrient_test` /
+CTest `terraweave_micro_nutrient`. **Its source and CMake target
+were committed, but have NOT been built or executed in this authoring
+environment**. See [Stage70 agent handoff](../../../docs/terrain/stage-70-sparse-micro-nutrients-handoff.md)
+for exact commits, testing commands and integration gates.
