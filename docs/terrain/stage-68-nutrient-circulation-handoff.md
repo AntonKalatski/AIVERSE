@@ -258,3 +258,33 @@ At last pre-handoff check: `feature/terraweave` SHA
 ahead / 305 behind `main`; PR #24 was open, Draft, nonmergeable.
 Several commits were added later in this stage; always fetch current
 HEAD before comparing. No merge/rebase into `main` was performed.
+
+
+## Final Stage68 review and boundary fixes
+
+- `1aada4ebe2d7b3d86c4da8dc3953406cf94f8e03` —
+  new `docs/terrain/CURRENT_HANDOFF.md` stable entry point for the
+  next agent; links all Stage65–68 separate handoffs and explicit
+  native QA obligations.
+- `e9eeb2051b55acafc6dcd3b549b49bffd382a619` —
+  `TerraWeaveForestNutrientEcs.h`: a valid first ECS water body can
+  have `Entity(index=0,generation=0)` and `packed()==0`.
+  The bridge now encodes valid body identity as `packed()+1`,
+  reserving 0 exclusively for absent/flood-only water; prevents
+  accidentally disabling nutrient transport in the first river.
+- `f3f283f05dcb31170aef18f35c2d9b0b0a3534d7` —
+  `TerraWeaveForestNutrientCycle.h`: reject nutrient completed ticks
+  older than the already published deadwood decay tick, not just
+  earlier nutrient-cycle ticks. Protects replay/order consistency.
+
+**Source inspections completed:** fetched the current v2 archive/resource,
+the final native `NereidQueryIndex` adapter, pure nutrient-cycle transport,
+existing shared `FallenPlantPhysics` and README; verified file presence,
+nonempty source and staging boundaries. No local compiler/CTest/GPU
+execution occurred after these fixes.
+
+**Mandatory extra QA:** include a real NEREID body with packed Entity ID
+zero, same-body neighboring cells and fixed deterministic current. Verify
+advection occurs in this case; a true `kNullEntity` body still prevents
+fabricated flood-pool transport. Also assert reversed cross-resource
+decay/nutrient timestamps reject cleanly without mutating ECS.
