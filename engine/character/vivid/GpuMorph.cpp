@@ -96,7 +96,7 @@ bool GpuMorphDeformer::initialize(gfx::Device& device, const SparseMorphLibrary&
         gfx::BufferDesc desc{};
         desc.type = gfx::BufferType::Storage;
         desc.usage = usage;
-        desc.size = std::max<std::size_t>(count * elementBytes, 16);
+        desc.size = count ? count * elementBytes : 16;
         desc.data = count ? data : nullptr;
         desc.label = label;
         buffers_[slot] = device.createBuffer(desc);
