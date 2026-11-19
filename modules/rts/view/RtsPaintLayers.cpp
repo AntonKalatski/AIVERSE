@@ -299,6 +299,7 @@ void coastDistance(const std::vector<uint8_t>& sea,int w,int h,std::vector<uint8
 void RtsPaintLayers::drawCells(render::Renderer3D& r,gfx::Device& dev,render::PaintLayer& p,const MapGrid& g,const RtsView& view,int id,double time){
  auto& l=layers_[id];
  if(!cellPipe_.valid()){
+  if(cellShader_.valid()){retirement_->retire(cellShader_);cellShader_={};}
   gfx::ShaderDesc sd;sd.glslVertex=cellVs;sd.glslFragment=cellFs;sd.msl=cellMsl;sd.textureSlots=2;sd.label="paint cells";cellShader_=dev.createShader(sd);
   gfx::PipelineDesc pd;pd.shader=cellShader_;pd.attrs[0]={0,gfx::VertexFormat::Float3,0};pd.attrCount=1;pd.stride=sizeof(render::MeshVertex);
   pd.indexType=gfx::IndexType::UInt32;pd.depthWrite=false;pd.cull=gfx::CullMode::None;pd.blend=gfx::BlendMode::Alpha;
@@ -331,7 +332,12 @@ void RtsPaintLayers::drawCells(render::Renderer3D& r,gfx::Device& dev,render::Pa
  if(!l.mesh.vb.valid()){   // one quad over the bounds, at the terrain height of its centre + lift
   render::MeshBuilder mb;const float y=view.heightAt(g,p.x+p.w*.5f,p.z+p.h*.5f)+p.lift;
   mb.quad(render::float3{p.x,y,p.z},render::float3{p.x,y,p.z+p.h},render::float3{p.x+p.w,y,p.z+p.h},render::float3{p.x+p.w,y,p.z});
-  l.mesh=mb.upload(dev);
+  auto mesh=mb.upload(dev);
+  if(!mesh.vb.valid() || !mesh.ib.valid() || mesh.indexCount==0) {
+   retirement_->retire(mesh.vb);retirement_->retire(mesh.ib);
+   return; // no invalid GPU buffers in a deferred render packet
+  }
+  l.mesh=mesh;
  }
  struct U{render::mat4 vp;render::float4 bounds,size,border,style,outside,groundA,groundB,coastA,beach,shallow,earthNear,earthFar,foam;};
  const size_t o=size_t(p.outside)*4;
@@ -387,6 +393,7 @@ void RtsPaintLayers::draw(render::Renderer3D& r,gfx::Device& dev,const std::shar
   source_=source;w_=g.w;h_=g.h;viewer_=viewer;revision_=1;memory_.assign(size_t(w_)*h_,0);
  }
  if(!pipe_.valid()){
+  if(shader_.valid()){retirement_->retire(shader_);shader_={};}
   gfx::ShaderDesc sd;sd.glslVertex=vs;sd.glslFragment=fs;sd.msl=msl;sd.textureSlots=1;sd.label="paint surface";shader_=dev.createShader(sd);
   gfx::PipelineDesc pd;pd.shader=shader_;pd.attrs[0]={0,gfx::VertexFormat::Float3,0};pd.attrCount=1;pd.stride=sizeof(render::MeshVertex);
   pd.indexType=gfx::IndexType::UInt32;pd.depthWrite=false;pd.cull=gfx::CullMode::None;pd.blend=gfx::BlendMode::Alpha;
@@ -456,11 +463,22 @@ void RtsPaintLayers::draw(render::Renderer3D& r,gfx::Device& dev,const std::shar
    auto point=[&](float xx,float zz){return render::float3{xx,view.heightAt(g,xx,zz)+p.lift,zz};};
    mb.quad(point(float(x),float(y)),point(float(x),float(y+1)),point(float(x+1),float(y+1)),point(float(x+1),float(y)));
   }
-  // Cached geometry must populate every frame-in-flight. Dynamic Metal buffers rotate;
-  // updating only the current slice leaves the other slices empty while the mask is static.
-  retirement_->retire(l.mesh.vb);retirement_->retire(l.mesh.ib);
-  l.mesh=mb.upload(dev);l.meshKey=key;
+  // Upload the replacement before retiring old frame-visible geometry.
+  // On OOM, keep the last-good surface and retry next frame.
+  if(mb.empty()){
+   retirement_->retire(l.mesh.vb);retirement_->retire(l.mesh.ib);
+   l.mesh={};l.meshKey=key;
+  }else{
+   auto replacement=mb.upload(dev);
+   if(replacement.vb.valid() && replacement.ib.valid() && replacement.indexCount>0){
+    retirement_->retire(l.mesh.vb);retirement_->retire(l.mesh.ib);
+    l.mesh=replacement;l.meshKey=key;
+   }else{
+    retirement_->retire(replacement.vb);retirement_->retire(replacement.ib);
+   }
   }
+  }
+  if(!l.mesh.vb.valid()||!l.mesh.ib.valid()||!l.mesh.indexCount)continue;
   struct U{render::mat4 vp;render::float4 bounds,color,style;};
   U u{r.viewProj(),{p.x,p.z,p.w,p.h},{p.color[0],p.color[1],p.color[2],p.color[3]},{p.opacity,p.border,0,0}};
   auto mesh=l.mesh;auto texture=sample;auto pipe=pipe_;
