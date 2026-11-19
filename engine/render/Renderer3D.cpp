@@ -772,10 +772,11 @@ void Renderer3D::renderCurrentFrameReactiveMask(
                                        motion_shaders::kDeformedVS;
         const char* vertexMsl = baked ? motion_shaders::kBakedMSL :
                                           motion_shaders::kDeformedMSL;
-        const std::string msl = reactive_shaders::animatedMsl(vertexMsl);
-        if (msl.empty()) return;
+        const std::string glsl = reactive_shaders::animatedVertexGlsl(vertex,baked);
+        const std::string msl = reactive_shaders::animatedMsl(vertexMsl,baked);
+        if (glsl.empty() || msl.empty()) return; // avoid stale/unbound varyings
         gfx::ShaderDesc shader;
-        shader.glslVertex = vertex;
+        shader.glslVertex = glsl.c_str();
         shader.glslFragment = reactive_shaders::kAnimatedFS;
         shader.msl = msl.c_str();
         shader.textureSlots = 9; // scene depth 0 + morph atlas 8 / baked 7
@@ -787,11 +788,15 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         gfx::PipelineDesc pipeline;
         pipeline.shader = shaderHandle;
         pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
-        pipeline.attrs[1] = {5,gfx::VertexFormat::UByte4,
+        pipeline.attrs[1] = {2,gfx::VertexFormat::Float2,
+                             uint32_t(offsetof(ModelVertex,uv))};
+        pipeline.attrs[2] = {4,gfx::VertexFormat::UByte4N,
+                             uint32_t(offsetof(ModelVertex,color))};
+        pipeline.attrs[3] = {5,gfx::VertexFormat::UByte4,
                              uint32_t(offsetof(ModelVertex,joints))};
-        pipeline.attrs[2] = {6,gfx::VertexFormat::UByte4N,
+        pipeline.attrs[4] = {6,gfx::VertexFormat::UByte4N,
                              uint32_t(offsetof(ModelVertex,weights))};
-        pipeline.attrCount = 3;
+        pipeline.attrCount = 5;
         pipeline.stride = sizeof(ModelVertex);
         pipeline.indexType = gfx::IndexType::UInt32;
         pipeline.cull = gfx::CullMode::Back;
@@ -824,8 +829,30 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         static_assert(sizeof(ReactiveUniforms) == 96);
         struct ReactiveCutoutUniforms {
             float mvp[16], params[4], lod[4], uv0[4], uv1[4], maskInfo[4];
+            float world[16], reveal[4], revealAxis[4];
         };
-        static_assert(sizeof(ReactiveCutoutUniforms) == 144);
+        static_assert(sizeof(ReactiveCutoutUniforms) == 240);
+        // U1 for the current animated draw; U0 and U3/U4/U5 remain the
+        // existing skin/morph/baked deformation ABI. No CPU mesh readback.
+        struct ReactiveAnimatedU1 {
+            float lod[4], uv0[4], uv1[4], maskInfo[4];
+            float world[16], reveal[4], revealAxis[4];
+        };
+        static_assert(sizeof(ReactiveAnimatedU1) == 160);
+        const auto putActorReveal = [&](const ModelItem& it,
+                float* world, float* reveal, float* axis) {
+            std::memcpy(world,it.world.m,sizeof it.world.m);
+            if (!(geometryMainView_ && actorReveal.w > 0.0f &&
+                  (it.flags & kDrawActorReveal))) return;
+            reveal[0]=actorReveal.x;reveal[1]=actorReveal.y;
+            reveal[2]=actorReveal.z;reveal[3]=actorReveal.w;
+            const float3 centre{actorReveal.x,actorReveal.y,actorReveal.z};
+            const float3 direction=normalize(cam_.ortho ?
+                cam_.eye()-cam_.target : cam_.eye()-centre);
+            axis[0]=direction.x;axis[1]=direction.y;axis[2]=direction.z;
+            axis[3]=cam_.ortho ? 0.0f :
+                1.0f/std::max(0.01f,length(cam_.eye()-centre));
+        };
         struct ReactiveMorphU {
             float currentW[8] = {}, previousW[8] = {};
             float info[4] = {}, info2[4] = {};
@@ -877,6 +904,8 @@ void Renderer3D::renderCurrentFrameReactiveMask(
                     !it.mat->vertexOcclusion && !overrideAlpha ? 1.0f : 0.0f;
                 u.maskInfo[2] = cutout ? it.mat->alphaCutoff : -1.0f;
                 u.maskInfo[3] = dissolve ? std::clamp(it.dissolve,0.0f,1.0f) : 0.0f;
+                putActorReveal(it,u.world,u.reveal,u.revealAxis);
+                if (reveal) ++objectMotionStats_.actorRevealReactiveDraws;
                 gfx::TextureHandle base = white_;
                 // BaseAlpha explicitly ignores the source texture's alpha
                 // in the normal material shader (only its team tint uses it).
@@ -982,14 +1011,42 @@ void Renderer3D::renderCurrentFrameReactiveMask(
             dev_->setPipeline(pipeline);
             dev_->setUniforms(0,&position,sizeof position);
             const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
-            float reactiveLod[4] = {
-                it.lodThreshold, it.lodInvert ? 1.0f : 0.0f,
-                fade ? 1.0f : 0.0f, 0.0f
-            };
-            dev_->setUniforms(1,reactiveLod,sizeof reactiveLod);
+            const bool cutout = it.mat->alpha == AlphaMode::Mask;
+            const bool dissolve = it.dissolve > 0.0f;
+            const bool reveal = geometryMainView_ && actorReveal.w > 0.0f &&
+                (it.flags & kDrawActorReveal);
+            ReactiveAnimatedU1 coverage{};
+            coverage.lod[0] = it.lodThreshold;
+            coverage.lod[1] = it.lodInvert ? 1.0f : 0.0f;
+            coverage.lod[2] = fade ? 1.0f : 0.0f;
+            coverage.uv0[0] = it.mat->uvOffset.x;
+            coverage.uv0[1] = it.mat->uvOffset.y;
+            coverage.uv0[2] = it.mat->uvScale.x;
+            coverage.uv0[3] = it.mat->uvScale.y;
+            coverage.uv1[0] = it.mat->uvRotation;
+            coverage.maskInfo[0] = it.mat->baseColor.w;
+            const bool overrideAlpha = it.mat->team == TeamMode::BaseAlpha ||
+                                       it.mat->team == TeamMode::VertexAlpha;
+            coverage.maskInfo[1] = it.mat->vertexColors &&
+                !it.mat->vertexOcclusion && !overrideAlpha ? 1.0f : 0.0f;
+            coverage.maskInfo[2] = cutout ? it.mat->alphaCutoff : -1.0f;
+            coverage.maskInfo[3] = dissolve ?
+                std::clamp(it.dissolve,0.0f,1.0f) : 0.0f;
+            putActorReveal(it,coverage.world,coverage.reveal,coverage.revealAxis);
+            dev_->setUniforms(1,&coverage,sizeof coverage);
             if (fade) ++objectMotionStats_.lodReactiveDraws;
-            if (it.dissolve > 0.0f) ++objectMotionStats_.dissolveReactiveDraws;
+            if (dissolve) ++objectMotionStats_.dissolveReactiveDraws;
+            if (cutout) ++objectMotionStats_.cutoutReactiveDraws;
+            if (reveal) ++objectMotionStats_.actorRevealReactiveDraws;
             dev_->setTexture(0,sceneDepth);
+            gfx::TextureHandle base=white_;
+            if (it.mat->team != TeamMode::BaseAlpha &&
+                it.mat->baseTex >= 0 &&
+                size_t(it.mat->baseTex) < it.model->images.size()) {
+                const auto t=it.model->images[size_t(it.mat->baseTex)].tex;
+                if (t.valid()) base=t;
+            }
+            dev_->setTexture(1,base);
             if (baked) {
                 float palette[80] = {};
                 for (size_t j=0;j<it.prim->jointPalette.size() && j<80;++j)
