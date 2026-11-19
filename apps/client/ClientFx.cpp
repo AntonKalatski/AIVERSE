@@ -34,8 +34,9 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
     std::string routesText;
     if(platform::readContentFile("fx/gpu/routes.json",routesText)) {
         fx::SpectraFxGpuRouteAsset::Routes routes;
+        fx::SpectraFxGpuBudgetGovernor::Config gpuBudget{};
         std::string issue;
-        if(!fx::SpectraFxGpuRouteAsset::readText(routesText,routes,&issue))
+        if(!fx::SpectraFxGpuRouteAsset::readText(routesText,routes,&issue,&gpuBudget))
             std::fprintf(stderr,"SpectraFX GPU routes: %s\n",issue.c_str());
         else if(!routes.empty()) {
             gpuRoutes_=std::move(routes);
@@ -45,6 +46,7 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
                 });
             gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
                 dev,ps_,*gpuLibrary_);
+            gpuPlayback_->configureGpuBudget(gpuBudget);
             for(const auto& [type,route]:gpuRoutes_)
                 if(route.playback.enabled)
                     gpuPlayback_->route(uint32_t(type),route.playback);
