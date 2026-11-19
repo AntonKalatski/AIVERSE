@@ -15,6 +15,7 @@
 #include "Lights.h"
 #include "Math3D.h"
 #include "Model.h"
+#include "ModelVirtualTextureSampling.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -269,6 +270,31 @@ public:
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Optional VT sampling for built-in model material shaders. Resolver
+    // returns the physical atlas/page-table domain for a given model and
+    // material; it must only query existing GPU allocations (render thread).
+    // Shader Graph materials keep their existing texture slot contract.
+    using ModelVirtualTextureResolver = std::function<bool(
+        const Model&, const Material&, ModelVirtualTextureBinding&)>;
+    void setModelVirtualTextureResolver(ModelVirtualTextureResolver resolver) {
+        modelVirtualTextureResolver_ = std::move(resolver);
+    }
+    void clearModelVirtualTextureResolver() {
+        modelVirtualTextureResolver_ = {};
+    }
+    bool resolveModelVirtualTexture(const Model& model,
+                                    const Material& material,
+                                    ModelVirtualTextureBinding& out) const {
+        out = {};
+        if (!modelVirtualTextureResolver_ ||
+            !modelVirtualTextureResolver_(model,material,out) ||
+            !out.valid()) {
+            out = {};
+            return false;
+        }
+        return true;
+    }
+
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -749,6 +775,7 @@ private:
     gfx::PipelineHandle feedbackMaskedLodModelPipeline_;
     FeedbackLodBinder feedbackMaskedLodModelBinder_;
     FeedbackDeformedModelDraw feedbackDeformedModelDraw_;
+    ModelVirtualTextureResolver modelVirtualTextureResolver_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
