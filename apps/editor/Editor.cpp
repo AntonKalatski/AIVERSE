@@ -1442,6 +1442,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
     if(view_.pendingModelRetirements()!=0 ||
        view_.pendingRolledBackImages()!=0)
         view_.collectRetiredModels();
+    if(view_.pendingPaintGpuRetirements()!=0)
+        view_.collectRetiredPaintGpuResources();
     if(offscreenTargets_ && offscreenTargets_->pendingPairs()!=0)
         offscreenTargets_->collect();
     if(r3d_.pendingProgramRetirements()!=0)
