@@ -235,7 +235,6 @@ inline WaterFloodTick stepNereidFlood(
         netX[destination]+=int64_t(dx)*moved;
         netZ[destination]+=int64_t(dz)*moved;
         result.movedCm+=moved;
-        result.newlyWetCells+=!to.volumeCm && incoming[destination]==moved;
         result.edges.push_back({
             from.x,from.z,to.x,to.z,moved,permeability,!to.volumeCm});
     };
@@ -250,7 +249,6 @@ inline WaterFloodTick stepNereidFlood(
     for(size_t i=0;i<n;++i){
         auto& c=candidate.cells[i];
         c.volumeCm=c.volumeCm-outgoing[i]+incoming[i];
-        result.newlyDryCells+=r.cells[i].volumeCm>0 && c.volumeCm==0;
         if(!c.waterBody.valid() && c.volumeCm)
             c.waterBody=newBody[i];
         if(!c.volumeCm)c.waterBody=kNullEntity;
@@ -280,7 +278,6 @@ inline WaterFloodTick stepNereidFlood(
                 candidate.externalVolumeCm,
                 uint64_t(100000u-c.volumeCm)}));
             if(amount){
-                result.newlyWetCells+=c.volumeCm==0;
                 if(!c.volumeCm)c.waterBody=port.waterBody;
                 c.volumeCm+=amount;
                 candidate.externalVolumeCm-=amount;
@@ -296,15 +293,18 @@ inline WaterFloodTick stepNereidFlood(
                 candidate.externalVolumeCm+=amount;
                 if(!c.volumeCm){
                     c.waterBody=kNullEntity;
-                    ++result.newlyDryCells;
                 }
                 result.drainedCm+=amount;
             }
         }
     }
     result.totalAfterCm=candidate.externalVolumeCm;
-    for(const auto& c:candidate.cells)
+    for(size_t i=0;i<n;++i){
+        const auto& c=candidate.cells[i];
         result.totalAfterCm+=c.volumeCm;
+        result.newlyWetCells+=!r.cells[i].volumeCm && c.volumeCm;
+        result.newlyDryCells+=r.cells[i].volumeCm && !c.volumeCm;
+    }
     if(result.totalAfterCm!=result.totalBeforeCm)
         throw std::logic_error("NEREID flood routing did not conserve water");
     candidate.lastTick=tick;
@@ -388,7 +388,16 @@ inline void addNereidFloodRoutingSystem(
         [dtMs,config](Simulation& current){
             World& world=current.world();
             const auto* stored=world.resourceConst<WaterFloodResource>();
-            if(!stored)return;
+            if(!stored || stored->cells.empty())return;
+            for(const auto& port:stored->ports){
+                if(port.kind!=WaterFloodPortKind::Inflow)continue;
+                const auto* body=world.tryGetConst<WaterBodyComponent>(
+                    port.waterBody);
+                if(!world.alive(port.waterBody) ||
+                   !body || !validWaterBody(*body))
+                    throw std::invalid_argument(
+                        "NEREID flood inflow references invalid water body");
+            }
             WaterFloodResource next=*stored;
             // Obstruction callback is host-independent, based only on the
             // immutable ECS record for the same water tick.
