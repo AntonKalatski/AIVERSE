@@ -6,6 +6,7 @@
 #include "engine/render/Math3D.h"
 #include <cmath>
 #include <cstddef>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -22,6 +23,10 @@ struct AttachmentLayoutItem {
     // existing local and ModelDraw::world semantics exactly.
     render::mat4 local{};
     render::mat4 childWorld{};
+    // Optional stable authored child key within ONE parent prefab.
+    // Keep appended to preserve legacy aggregate initializers.
+    // Empty in old files: position/ordinal remains its only identity.
+    std::string id;
 };
 struct AttachmentLayout {
     std::string parent;
@@ -76,6 +81,7 @@ public:
         AttachmentLayout next;
         next.parent=source.getStr("parent");
         next.attachments.reserve(source["attachments"].size());
+        std::set<std::string> authoredIds;
         for(const auto& field:source["attachments"].items()) {
             if(!field.isObject())
                 throw std::invalid_argument("attachment entry must be object");
@@ -83,6 +89,17 @@ public:
             item.model=field.getStr("model");
             item.socket=field.getStr("socket");
             item.enabled=field.getBool("enabled",true);
+            if(field.has("id")) {
+                if(!field["id"].isString())
+                    throw std::invalid_argument(
+                        "attachment id must be a string");
+                item.id=field["id"].str();
+                if(item.id.size()>128 ||
+                   (!item.id.empty() &&
+                    !authoredIds.insert(item.id).second))
+                    throw std::invalid_argument(
+                        "attachment stable id too long or duplicated");
+            }
             if(item.model.empty() || item.socket.empty())
                 throw std::invalid_argument(
                     "attachment entry needs model path and named socket");
@@ -96,11 +113,19 @@ public:
         Json root=Json::object();
         root.set("parent",Json::string(layout.parent));
         Json entries=Json::array();
+        std::set<std::string> authoredIds;
         for(const auto& item:layout.attachments) {
             if(item.model.empty() || item.socket.empty())
                 throw std::invalid_argument(
                     "cannot save attachment with missing model/socket");
+            if(item.id.size()>128 ||
+               (!item.id.empty() &&
+                !authoredIds.insert(item.id).second))
+                throw std::invalid_argument(
+                    "attachment stable id too long or duplicated");
             Json entry=Json::object();
+            if(!item.id.empty())
+                entry.set("id",Json::string(item.id));
             entry.set("model",Json::string(item.model));
             entry.set("socket",Json::string(item.socket));
             entry.set("enabled",Json::fromBool(item.enabled));
