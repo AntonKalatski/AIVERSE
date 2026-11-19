@@ -570,15 +570,33 @@ void prepareModelUpload(Model& m) {
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
-    if (!m.vertices.empty() && !m.vb.valid()) {
+    const bool hasCpuVertices = !m.vertices.empty();
+    // Recover an incomplete previous standalone upload without mistaking its
+    // orphan VB/IB for a fully initialized Model. A shared-page Model always
+    // acquires both handles together and must be released by its owner.
+    if (m.vb.valid() != m.ib.valid()) {
+        if (m.geometryPoolPage) return false;
+        if (m.vb.valid()) dev.destroyBuffer(m.vb);
+        if (m.ib.valid()) dev.destroyBuffer(m.ib);
+        m.vb = {}; m.ib = {};
+    }
+    if (hasCpuVertices && !m.vb.valid()) {
         prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
-            m.vb = dev.createBuffer(vb);
+            const gfx::BufferHandle newVb = dev.createBuffer(vb);
+            if (!newVb.valid()) return false; // keep CPU arrays for retry
             gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
-            m.ib = dev.createBuffer(ib);
+            const gfx::BufferHandle newIb = dev.createBuffer(ib);
+            if (!newIb.valid()) {
+                dev.destroyBuffer(newVb);
+                return false; // do not publish a half-uploaded Model
+            }
+            m.vb = newVb;
+            m.ib = newIb;
         }
     }
+    if (hasCpuVertices && (!m.vb.valid() || !m.ib.valid())) return false;
     for (auto& img : m.images) {
         const auto previousTexture = img.tex;
         if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
@@ -615,7 +633,10 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         m.vertices.clear(); m.vertices.shrink_to_fit();
         m.indices.clear(); m.indices.shrink_to_fit();
     }
-    return m.vertices.empty() || m.vb.valid();
+    // Evaluate against the original CPU upload request: keepCpu=false
+    // clears source vectors, which must never turn a GPU allocation failure
+    // into a spurious success.
+    return !hasCpuVertices || (m.vb.valid() && m.ib.valid());
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
