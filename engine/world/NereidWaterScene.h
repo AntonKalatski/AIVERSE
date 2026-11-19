@@ -168,6 +168,16 @@ public:
     }
     uint32_t maxUploadsPerFrame()const{return maxUploadsPerFrame_;}
     size_t surfaceCount()const{return slots_.size();}
+    // Renderer-side flow lookup by the packed WaterBody Entity stored in a
+    // presentation ripple event; no ECS pool access or mutable ownership.
+    Vec3 currentForInteractionWater(uint64_t packedWaterId)const {
+        if(packedWaterId==UINT64_MAX)return {};
+        const uint64_t stableId=packedWaterId+1;
+        for(const auto& slot:slots_)if(slot.source.id==stableId &&
+                                         slot.source.body.enabled)
+            return slot.source.body.flow;
+        return {};
+    }
     // Read-only presentation visitor; callers must not retain references
     // beyond the next setSurfaces transaction.
     template<class Fn> void forEachSource(Fn&& fn)const {
