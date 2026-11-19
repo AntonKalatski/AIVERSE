@@ -103,6 +103,37 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
 }
 
 
+// Experimental Metal GPU-ICB *built-in opaque* material compatibility.
+// U2 factors and textures 1..6 are per-command only with the opt-in
+// descriptor ABI. Pipeline-sensitive features remain equal. Graph,
+// masked/transparent, and alpha coverage variants remain excluded.
+// The normal-texture presence affects the NORMAL_MAP shader permutation.
+inline bool equivalentGpuIcbPbrPipelineMaterial(const Material& a,
+                                                const Material& b) {
+    return !a.shaderGraph && !b.shaderGraph &&
+           a.alpha == AlphaMode::Opaque && b.alpha == AlphaMode::Opaque &&
+           !a.transparent && !b.transparent &&
+           a.doubleSided == b.doubleSided &&
+           a.castShadow == b.castShadow &&
+           a.receiveShadow == b.receiveShadow &&
+           (a.normalTex >= 0) == (b.normalTex >= 0);
+}
+
+inline uint64_t gpuIcbPbrPipelineHash(const Material& m) {
+    uint64_t h=14695981039346656037ull;
+    const auto mix=[&](uint64_t value) {
+        h^=value; h*=1099511628211ull;
+    };
+    mix(m.shaderGraph ? 1u : 0u);
+    mix(uint32_t(m.alpha));
+    mix(m.transparent ? 1u : 0u);
+    mix(m.doubleSided ? 1u : 0u);
+    mix(m.castShadow ? 1u : 0u);
+    mix(m.receiveShadow ? 1u : 0u);
+    mix(m.normalTex >= 0 ? 1u : 0u);
+    return h;
+}
+
 // Indirect per-instance material palette: those three scalar factors travel
 // with each indexed command instead of being inherited from U2. Every other
 // shader factor, texture handle, sampler/alpha mode and graph remains part of
