@@ -3,6 +3,7 @@
 // The client controls the gfx frame, scene submission and GPU-idle shutdown.
 #pragma once
 #include "CameraRuntimeHost.h"
+#include "CameraVisualFrame.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -75,6 +76,20 @@ public:
         if(!handle.valid())return false;
         device.setTexture(textureSlot,handle);
         return true;
+    }
+    // Consume one already-prepared, immutable presentation frame in all
+    // scheduled ECS cameras. The caller updates animation/visual events ONCE
+    // before invoking this function; this does not run animation updates.
+    template<class PreparedFrame,class SubmitFn>
+    CameraExecutionResult renderPrepared(const PreparedFrame& frame,
+            CameraVisualFrameId id,float dt,SubmitFn&& submit,
+            Vec3 renderOrigin={}) {
+        if(!loaded_ || !id.valid())return {};
+        auto visual=makeCameraVisualFrame(frame,id,std::forward<SubmitFn>(submit));
+        return host_.render(++frame_,id.seconds,dt,
+            [&](const EcsCameraView& camera,Renderer3D& renderer) {
+                (void)visual.submit(camera,renderer);
+            },renderOrigin);
     }
     bool loaded()const{return loaded_;}
     CameraRuntimeHost& host(){return host_;}
