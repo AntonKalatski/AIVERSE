@@ -2315,8 +2315,13 @@ Model images before the TypeLook/snapshot swap. On exceptions before
 commit, live Model image counts, last-good appearance snapshots and
 running animations remain unchanged. The existing separate
 `RtsView::collectRetiredModels()` now polls both model and rolled-back
-image queues. Shutdown drains the image queue after detaching
-borrowed snapshots and before shutting down the Model resource cache.
+image queues. The GameClient and Editor frame boundaries explicitly
+invoke it whenever **either** queue has pending resources; an
+image-only failed hot reload must not strand its retirement tokens.
+The Editor Statistics panel reports pending rollback images, queue
+allocation failures and unrecoverable orphan batches. Shutdown drains
+the image queue after detaching borrowed snapshots and before
+shutting down the Model resource cache.
 
 Generation-aware checks were extended to `render::PostFx`,
 `TerrainRenderer`, `RtsGroundFx`, `fx::ParticleSystem` and
