@@ -5,6 +5,9 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/view/ImportedAttachmentAuthoring.h"
+#include "engine/render/Animation.h"
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -41,7 +44,15 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     std::string newChild_,newSocket_,message_;
     std::vector<AuthoredChild> authored_;
     std::unique_ptr<Session> session_;
+    render::Renderer3D renderer_;
+    Viewport viewport_;
+    ::aiverse::View presentationView_; // render-only, no graph evaluation
+    render::Pose previewPose_;
+    std::vector<render::mat4> previewMatrices_;
+    float previewTime_=0.f,previewYaw_=0.6f,previewPitch_=0.4f;
+    bool previewPlaying_=true,rendererReady_=false;
     bool dirty_=false;
+    bool pendingReimport_=false;
 
     static bool readAsset(const std::string& path,std::string& result) {
         std::ifstream input(path,std::ios::binary);
@@ -97,6 +108,83 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         if(owned)(void)owned.release();
     }
 
+    void preview(Editor& ed) {
+        if(!session_ || !session_->source || !session_->source->model)
+            return;
+        if(!rendererReady_) {
+            viewport_.setGpuDeviceLease(ed.gpuDeviceLease());
+            viewport_.setTargetOwner(ed.offscreenTargets());
+            if(!renderer_.init(ed.device()))
+                throw std::runtime_error("attachment preview renderer initialization failed");
+            renderer_.setShadowQuality(render::ShadowQuality::Low);
+            rendererReady_=true;
+        }
+        auto available=ImGui::GetContentRegionAvail();
+        const float height=std::clamp(available.y*0.50f,180.f,470.f);
+        viewport_.ensure(ed.device(),
+                         std::clamp(int(available.x),96,1200),
+                         std::clamp(int(height),96,900));
+        const auto* model=session_->source->model;
+        auto rigRead=session_->provider->resources().acquireModelRead(model);
+        if(!rigRead) {
+            message_="Preview parent Model is no longer cache-resident";
+            return;
+        }
+        const int clip=model->clips.empty()?-1:0;
+        if(clip>=0) {
+            const float duration=model->clips[size_t(clip)].duration;
+            if(std::isfinite(duration) && duration>0.f) {
+                if(previewPlaying_)
+                    previewTime_=std::fmod(previewTime_+1.f/60.f,duration);
+                ImGui::Checkbox("Play preview",&previewPlaying_);
+                ImGui::SliderFloat("Preview time",&previewTime_,0.f,duration);
+            }
+        }
+        render::bindPose(*model,previewPose_);
+        if(clip>=0)
+            render::sampleClip(model->clips[size_t(clip)],
+                               previewTime_,previewPose_);
+        render::worldMatrices(*model,previewPose_,previewMatrices_);
+        render::RTSCamera cam;
+        cam.target=(model->boundsMin+model->boundsMax)*0.5f;
+        cam.distance=std::max(2.f,
+            render::length(model->boundsMax-model->boundsMin)*1.4f);
+        cam.minDistance=0.1f;
+        cam.yaw=previewYaw_;
+        cam.pitch=previewPitch_;
+        renderer_.beginScene(cam,viewport_.w,viewport_.h);
+        Imported::Prepared packet;
+        std::string error;
+        const bool ready=Imported::prepare(
+            session_->compiled,session_->provider->resources(),
+            render::mat4{},nullptr,packet,
+            Imported::AnimationOwner::HostPrecomputed,&error);
+        if(ready) {
+            packet.object.id=1; // isolated preview source identity
+            packet.object.draw.pose=&previewPose_;
+            packet.object.draw.nodeWorld=&previewMatrices_;
+            presentationView_.submitOne(renderer_,packet.object);
+        } else message_="Preview packet rejected: "+error;
+        gfx::PassDesc pass;
+        pass.colorTarget=viewport_.color;
+        pass.depthTarget=viewport_.depth;
+        pass.clearColor[0]=0.08f;
+        pass.clearColor[1]=0.09f;
+        pass.clearColor[2]=0.12f;
+        pass.clearColor[3]=1.f;
+        renderer_.render(pass);
+        ed.device().endPass();
+        // Both the parent read lease and prepared child/LOD read leases
+        // remain alive until after Renderer3D::render has consumed inputs.
+        viewport_.image(ed.device(),available.x,height);
+        if(ImGui::IsItemHovered() &&
+           ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            previewYaw_+=ImGui::GetIO().MouseDelta.x*0.01f;
+            previewPitch_=std::clamp(
+                previewPitch_+ImGui::GetIO().MouseDelta.y*0.01f,-0.9f,1.4f);
+        }
+    }
+
     void loadLayout() {
         const auto path=withinProject(layoutPath_);
         std::string contents;
@@ -148,6 +236,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         // owner: even a failed GPU upload cannot evict old published Models.
         auto staged=std::make_unique<Session>();
         staged->provider=std::make_unique<render::ModelAssetProvider>(readAsset);
+        // Share the Editor Device's explicit generation token. Pointer
+        // identity alone is insufficient after graphics device recreation.
+        staged->provider->setGpuDeviceLease(ed.gpuDeviceLease());
         staged->registry=std::make_unique<Registry>();
         std::string error;
         try {
@@ -210,6 +301,17 @@ class AttachmentAuthoringWindow final : public EditorWindow {
 
 public:
     ~AttachmentAuthoringWindow() override {
+        // Editor::shutdown has already proven GPU idle before destroying
+        // its windows. Do not discard owner-side attachments without proof.
+        if(device_) {
+            try {
+                if(device_->waitForResourceIdle() && rendererReady_) {
+                    viewport_.release(*device_);
+                    renderer_.shutdown();
+                    rendererReady_=false;
+                }
+            }catch(...) {}
+        }
         if(!retire(session_))preserveUnsafe(session_);
     }
     const char* id() const override{return "animation_attachments";}
@@ -222,7 +324,16 @@ public:
     void update(Editor& ed,double) override {
         device_=&ed.device();
         const auto current=ed.ws().project.dir;
-        if(current==project_)return;
+        if(current==project_) {
+            // Runs at Studio's owner update boundary before windows draw
+            // and before another ImGui/render submission can borrow Models.
+            if(pendingReimport_) {
+                pendingReimport_=false;
+                try { stageAndPublish(ed); }
+                catch(const std::exception& e) { message_=e.what(); }
+            }
+            return;
+        }
         // A project switch must release all old borrowed sources BEFORE
         // letting its content mounts disappear.
         if(!retire(session_)) {
@@ -230,6 +341,7 @@ public:
             return;
         }
         project_=current;
+        pendingReimport_=false;
         authored_.clear();
         sourcePath_.clear();
         layoutPath_="attachments.json";
@@ -286,11 +398,17 @@ public:
             dirty_=true;
         }
         if(ImGui::Button("Reimport & Publish")) {
-            try{stageAndPublish(ed);}
-            catch(const std::exception& e){message_=e.what();}
+            // Never wait for GPU completion from the middle of an active
+            // Studio UI draw. Run import/replace in the NEXT owner update.
+            pendingReimport_=true;
+            message_="Reimport queued for the next pre-draw owner update";
         }
         if(dirty_)ImGui::TextDisabled("Unsaved attachment layout");
         if(session_) {
+            // Separate preview owns its own source+child Model cache;
+            // existing Modeling/Graph windows keep independent graph clocks.
+            try { preview(ed); }
+            catch(const std::exception& e) {message_=e.what();}
             ImGui::Text("Published source: %s",
                 sourcePath_.c_str());
             ImGui::Text("Compiled sockets: %zu",
