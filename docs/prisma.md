@@ -1943,6 +1943,80 @@ cut/resize runtime, mobile GPU benchmarks or CI. No shipping-readiness or
 pixel-quality PASS is claimed. Full handoff:
 `docs/handoffs/prisma-stage-42.md`.
 
+## Stage 43 — optional subpixel jitter and confidence-aware temporal AA
+
+Stage 43 builds on Stage 42's **canonical PRISMA temporalResolve** without
+introducing a second TAA subsystem or rewriting stable `postfx`/MCP
+identifiers. The native-resolution history remains two per-camera HDR
+RGBA16F targets; no lower-resolution render target or temporal upscaler
+is introduced.
+
+The effect adds two optional float parameters:
+
+- `jitterPixels`: 0..0.5 (default 0.5) controls the maximum subpixel
+  projection offset. Jitter additionally requires
+  `AIVERSE_PRISMA_JITTER=1` and the original
+  `AIVERSE_PRISMA_TEMPORAL=1`, with HDR + High quality and an authored
+  enabled `temporalResolve` effect. Existing games are unmodified
+  without both explicit environment flags.
+- `historyConfidence`: 0..1 (default 0.65) controls how aggressively
+  previous HDR color is rejected near sharp luma/depth changes, in
+  addition to the Stage 42 disocclusion depth/velocity/reactive rules.
+
+**C++ camera contract:** Call `setViewId(id)`, then
+`applyCameraVolumes(stack, camera.eye())`, then
+`RTSCamera renderCamera = prisma.jitteredCamera(camera,w,h)` immediately
+**before** `renderer.beginScene(renderCamera,w,h)`. `jitteredCamera`
+returns a copy and never mutates `camera` itself: keep the original
+`RTSCamera` for mouse picking, editor gizmos, UI, and touch input.
+The standard GameClient, Editor Scene and Editor Game rendering paths
+have been updated to follow this sequence. ShaderGraph, FX and native
+preview owners may opt in separately. The real render projection uses
+`RTSCamera::jitter`, and the renderer's shadow-camera strips jitter
+already, avoiding artificial shadow-map projection shifts.
+
+**Shader behavior:** Each view ID maintains its own 8-step Halton (2,3)
+sequence. Jitter is expressed in NDC by the camera; the temporal shader
+receives the current/previous jitter in **unflipped normalized UV**.
+Each stable output pixel samples the current HDR color/depth/velocity at
+`pixel + currentJitter`, then samples the prior history at
+`reprojectedInputUV - previousJitter`. This removes projection jitter
+from the history-addressing and from physical-motion confidence while
+retaining distinct subpixel samples for accumulation. GLSL and Metal
+use the same shader body, with the render-target Y flip applied only
+by the existing `TUV` macro. A 3×3 current compressed-HDR color
+neighborhood yields local mean/variance and bounds; the shader uses
+independently depth-validated previous taps, color disagreement and
+current depth-edge contrast as confidence multipliers. Moving
+silhouettes and reactive particles therefore receive lower history
+weight than smooth static surfaces.
+
+On explicit camera cuts, projection type/FOV/near/far discontinuities,
+history changes, jitter mode/amplitude switches or viewport size
+changes, the temporal history restarts instead of blending
+incompatible pixels. The existing camera-position cutoff still
+applies. `PrismaStats` reports whether the last frame resolved
+temporal color, whether jitter was active, and the applied offsets
+in pixels; the **PRISMA — Постобработка** panel displays the values.
+
+This is native-resolution **temporal antialiasing**, not
+jittered temporal *upscaling*, DLSS/FSR/TSR, optical flow or
+dynamic-resolution rendering. Transparent surfaces and screenspace
+effects may still alias if their producers do not supply suitable
+reactive or motion masks. `PrismaScreenLighting` contains an older
+optional independent TAA; do not activate both histories at once.
+The history and GPU-referenced resources remain subject to
+GPU-fence retirement from Stages 35–42.
+
+**Verification:** GitHub source inspection and structural readback
+only. CMake/native C++ and GLSL/MSL shader compilation, CTest,
+GL/Metal/Vulkan/Android GLES runtime, camera/UI parity, multiple
+viewports, memory profiling and screenshots are **NOT RUN** by the
+ongoing features-first direction. No measurable image-quality
+improvement or production-readiness is claimed until those tests.
+The exact source commits, APIs and next steps are recorded in
+`docs/handoffs/prisma-stage-43.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
