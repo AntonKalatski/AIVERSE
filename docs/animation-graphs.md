@@ -1303,3 +1303,35 @@ presentation ECS animation writer, graph time or gameplay simulation.
 [Stage 141 handoff](agent-handoffs/animation-stage141-explicit-frame-boundary-preview-lifetime-2026-11-19.md).
 **NOT RUN** native compiler/CMake/CTest/CI, GPU fault injection, FPS/RTS/
 editor visual parity, sanitizers or performance benchmarks.
+
+
+## Stage 142 — editor-owned preview Model lifetime and reusable Portrait
+
+`Editor::retirePreviewModel` now transfers any direct
+`ModelingWindow`, `AnimationGraphWindow` or `AnimationRigWindow`
+GPU Model to one editor-owned `NativePresentationRetirement` queue.
+The editor polls that queue only at its Device-owner frame hook,
+before UI windows and offscreen renderer submissions, and requires
+GPU idle proof at final shutdown before window destructors release
+native render targets. No Model GPU release in an ordinary authoring
+window may rely on the duration of a UI frame.
+
+`ModelingWindow` stages a replacement Model, graph and bind pose
+before swapping active content; a bad authoring/graph compile preserves
+the previous GPU Model. Partly failed uploads and replaced assets
+retire safely. Both Modeling and Animation/Rig preview windows also
+release active Models on closed tabs without destroying their
+registration/agent-facing editor objects.
+
+The AnimationEditor Graph/Rig preview retains an offscreen Portrait
+target between source/graph reloads instead of recreating it and
+blocking GPU idle every edit. The Model remains under the Editor's GPU
+retirement ownership; only the final window destruction shuts down
+the Portrait. Failed graph compilation does not commit the new
+program key, allowing retry. No animation ECS authority, root motion
+protocol or second MotionWeave clock is introduced.
+
+**NOT RUN:** native compiler, CMake/CTest, CI green for new head,
+Metal/GL/Vulkan offscreen visual checks, GPU failure injection,
+sanitizers or benchmarks. See
+[Stage 142](agent-handoffs/animation-stage142-editor-preview-model-ownership-2026-11-19.md).
