@@ -5,6 +5,7 @@
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
+#include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
@@ -68,6 +69,8 @@ struct CreatorApp {
     std::size_t morphSourceVertices=0;
     std::vector<MorphVec3> morphSourcePositions;
     float morphBrushRadius=0.1f;
+    int sculptMeshIndex=-1;
+    bool sculptPickArmed=false;
     int morphTargetIndex=0,morphVertexIndex=0;
     int routeChannelIndex=0;
     char newMorphName[129]="newCorrective";
@@ -203,6 +206,8 @@ struct CreatorApp {
         morphTargetIndex=0;
         morphVertexIndex=0;
         morphEditOffset={};
+        sculptMeshIndex=-1;
+        sculptPickArmed=false;
         morphDirty=false;
         importedManifest=path;
         importedPackage=std::move(manifest);
@@ -653,6 +658,25 @@ struct CreatorApp {
                 if(morphDraft->targets()>0) {
                 ImGui::TextWrapped("Edit one source vertex position delta in "
                     "the chosen target. Source head geometry stays unchanged.");
+                if(human.head && !human.head->meshes.empty()) {
+                    const char* current=(sculptMeshIndex>=0 &&
+                        std::size_t(sculptMeshIndex)<human.head->meshes.size())
+                        ? human.head->meshes[std::size_t(sculptMeshIndex)].name.c_str()
+                        : "Select face mesh";
+                    if(ImGui::BeginCombo("3D pick mesh",current)) {
+                        for(std::size_t mesh=0;mesh<human.head->meshes.size();++mesh) {
+                            if(ImGui::Selectable(human.head->meshes[mesh].name.c_str(),
+                                sculptMeshIndex==int(mesh)))
+                                sculptMeshIndex=int(mesh);
+                        }
+                        ImGui::EndCombo();
+                    }
+                    if(ImGui::Button(sculptPickArmed
+                        ?"Cancel viewport picking":"Pick vertex in 3D viewport"))
+                        sculptPickArmed=!sculptPickArmed;
+                    ImGui::TextWrapped("Select the source face mesh, click Pick, "
+                        "then click its visible triangles outside inspector.");
+                }
                 const int maxTarget=int(morphDraft->targets())-1;
                 ImGui::SliderInt("Morph target",&morphTargetIndex,0,maxTarget);
                 morphTargetIndex=std::clamp(morphTargetIndex,0,maxTarget);
@@ -832,6 +856,50 @@ struct CreatorApp {
             status="VIVID facial rig: invalid composition";
         if(!actor->dispatch(controller.frame(),human.facialBinding))
             status=actor->lastError();
+        // Picking uses the actual camera ray and rendered node-world pose,
+        // never a guessed nearest projected vertex behind the head.
+        if(externalMode && sculptPickArmed && morphDraft && human.head &&
+           ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+           !ImGui::GetIO().WantCaptureMouse &&
+           sculptMeshIndex>=0 &&
+           std::size_t(sculptMeshIndex)<human.head->meshes.size()) {
+            const auto mouse=ImGui::GetMousePos();
+            const float width=float(dev.framebufferWidth());
+            const float height=float(dev.framebufferHeight());
+            float3 origin{},direction{};
+            if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
+                const auto pick=pickSculptVertex(*human.head,
+                    std::size_t(sculptMeshIndex),facePose,
+                    origin,direction,morphSourceVertices);
+                if(pick.hit) {
+                    morphVertexIndex=int(pick.vertex);
+                    sculptPickArmed=false;
+                    status="Picked face source vertex "+
+                        std::to_string(morphVertexIndex);
+                }else status="No source face triangle under cursor";
+            }
+        }
+        if(externalMode && morphSourceVertices && human.head &&
+           morphVertexIndex>=0 &&
+           std::size_t(morphVertexIndex)<morphSourceVertices) {
+            // Visible marker is screen-space only; no extra model/GPU draw.
+            float2 screen{};
+            const auto p=human.head->vertices[std::size_t(morphVertexIndex)].pos;
+            bool found=false;
+            for(std::size_t i=0;i<human.head->nodes.size();++i) {
+                if(sculptMeshIndex>=0 &&
+                   human.head->nodes[i].mesh==sculptMeshIndex) {
+                    found=camera.worldToScreen(facePose[i].transformPoint(p),
+                         float(dev.framebufferWidth()),
+                         float(dev.framebufferHeight()),screen);
+                    break;
+                }
+            }
+            if(found && std::isfinite(screen.x) && std::isfinite(screen.y)) {
+                ImGui::GetForegroundDrawList()->AddCircle(
+                    ImVec2(screen.x,screen.y),7.0f,IM_COL32(255,190,50,255),20,2.0f);
+            }
+        }
         if(inspectGroom && human.hair) {
             if(scalpPoseNode>=0 && !scalpBindPositions.empty() &&
                std::size_t(scalpPoseNode)<facePose.size()) {
