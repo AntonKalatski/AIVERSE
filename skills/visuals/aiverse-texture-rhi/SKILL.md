@@ -1014,6 +1014,10 @@ bash tools/verify-texture-rhi.sh --editor --metal --jobs 4
 cat build/texture-rhi/verify-logs/metal-gpu.log
 ```
 
+The new CMake option `AIVERSE_TEXTURE_METAL_GPU_TESTS` is OFF by
+default, so ordinary `ctest` suites **do not register** the Metal GPU
+fixture. `--metal` sets it ON for this invocation, and a later normal
+verifier run forces it OFF again even with a reused CMake cache.
 Normal source-only 23 CTests do **not** run this GPU test; the
 `--metal` verifier mode adds a separate **fail-closed** CTest gate,
 records exact device name and per-plane byte parity to
