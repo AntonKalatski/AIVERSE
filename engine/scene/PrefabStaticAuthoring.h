@@ -5,6 +5,8 @@
 #pragma once
 
 #include "engine/sim/PrefabStaticCatalog.h"
+#include "engine/scene/SceneAsset.h"
+#include <exception>
 #include "engine/data/Json.h"
 #include <cstddef>
 #include <cstdint>
@@ -38,7 +40,7 @@ struct PrefabStaticAuthoring {
             return {};
         };
         if(!decode)return fail("missing typed prefab config decoder");
-        if(!storage::PrefabStaticCatalogBuilder<T>::validKey(expectedDomain))
+        if(!SceneAsset::validKey(expectedDomain))
             return fail("invalid expected prefab config domain");
         if(!document.isObject() || !document["version"].isNumber() ||
            document["version"].numberLiteral()!="1" ||
@@ -57,7 +59,7 @@ struct PrefabStaticAuthoring {
                !object["config"].isObject())
                 return fail("prefab static entry expects id/config");
             const std::string key=object["id"].str();
-            if(!storage::PrefabStaticCatalogBuilder<T>::validKey(key) ||
+            if(!SceneAsset::validKey(key) ||
                !seen.insert(key).second)
                 return fail("invalid or duplicate prefab static key: "+key);
             T value{};
