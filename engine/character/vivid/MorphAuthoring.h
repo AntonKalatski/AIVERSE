@@ -135,8 +135,13 @@ public:
             }
             for(int axis=0;axis<3;++axis) {
                 const auto ax=std::size_t(axis);
-                it->position[ax]+=offset[ax]*direct+
+                const float delta=offset[ax]*direct+
                                   reflectedOffset[ax]*mirrored;
+                // The symmetry plane must stay on X=0 even when the brush
+                // centre itself lies exactly on the plane.
+                if(mirrorX && axis==0 && std::fabs(position[0])<1e-6f)
+                    continue;
+                it->position[ax]+=delta;
             }
             ++changed;
         }
