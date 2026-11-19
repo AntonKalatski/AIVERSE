@@ -168,3 +168,33 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Status interpretation**: Stages 1, 2, 3A, 3B, 3C now have user-confirmed local native unit tests on macOS for this exact revision. Testing was performed by the user; this agent recorded evidence but did not independently rerun it. GitHub CI, comprehensive engine suite, GPU shaders, render captures, cross-platform tests and MetaHuman DNA import remain **NOT RUN / NOT IMPLEMENTED as appropriate**.
 - **API/save compatibility**: this checkpoint changes no executable API, engine ABI or game persistence, only documentation. Existing `render::Model` eight-morph GPU limit is still in effect.
 - **Next actionable step**: begin Stage 4 as opt-in GPU morph execution, first inspect the existing RHI buffer/compute and model skinning contracts on current main and feature branches. Implement Metal compute dispatch and readback parity against `SparseMorphLibrary::evaluateGather`, with a backend-neutral command/resource interface, while keeping legacy rendering unchanged. Add real GPU tests and a separate implementation + handoff commit before claiming working GPU rendering.
+
+## Stage 4A — 2026-11-19 — opt-in RHI GPU morph dispatch
+
+- **Branch:** `feature/vivid-digital-humans`, previous checkpoint `2dfa495471e055adf69179db384db754934365e9`. **MotionWeave source inspected** at `feature/universal-ecs-animation-pipeline` HEAD `2ae54740331d7ed6ba8d8e01e6c39e753391852f`; **not merged**, because Stage 4A does not consume it and 913 unrelated commits/245 changed files would introduce large simultaneous integration risks.
+- **Exact implementation SHAs/paths**:
+  - `2eb2e3308f852b5cf424b5b7cd02b7b0f9d32318` — NEW `engine/character/vivid/VividComputeShaders.h` (matching Metal/GLSL CSR compute kernels).
+  - `823c690802853aeeb84a64e6b78de9ebd67b1b84` — NEW `engine/character/vivid/GpuMorph.h` (48B GPU vertex, 32B uniform, backend-neutral API, resource ownership).
+  - `fb32ea3b0027d90f87778bdd425d86728ec1bf10` — NEW `engine/character/vivid/GpuMorph.cpp` (six storage buffers, memory caps, weight validation, dispatch/readback/cleanup).
+  - `9d641cd433df367127fc42eb8c832beb3a8f9ca0` — NEW `tests/vivid/gpu_contract.cpp` (recording RHI and error-path fixture).
+  - `23370138ff37e5672bf9e427aabf16d10eb9a3cc` — `GpuMorph.cpp` correct buffer allocation size to avoid reading more bytes than 1–3 small weight values at initialization.
+  - `6342d505f37610894c4b8e2ac60bc59ab8fe6f4d` — remove unused partial GPU fixture.
+  - `9ed748eaa639f3d3e1484d25b0c696cc78bee4b3` — `engine/character/vivid/CMakeLists.txt` adds `AIVERSE::vivid_gpu` and `vivid_gpu_contract`.
+  - `51d1b4accdbb50eeeff24cf9d060aff23fda52e0` — recording test correctly handles weight upload before an out-of-frame `beginCompute` rejection.
+  - `cb4fc06813c897a62e4bb9f695ce97b082ca8d24` — `docs/vivid.md` feature documentation and MotionWeave compatibility plan.
+- **What works at source level**: VIVID now supplies RHI-neutral `GpuMorphDeformer` for the existing `gfx::Device` compute contract, paired MSL/GLSL kernels, explicit GPU buffer packing, opt-in CMake target and headless fake-RHI fixture. CPU `SparseMorphLibrary::evaluateGather` remains a reference; no change to 8-morph legacy `render::Model` runtime.
+- **Compatibility and public API**: `AIVERSE::vivid_gpu` adds `GpuMorphDeformer::initialize/dispatch/download/release/outputBuffer`, `GpuMorphVertex` and `GpuMorphUniforms`. No changes to `engine/gfx/Gfx.h`, Metal/GL/Vulkan backend implementation, MotionWeave, simulation, game saves or network.
+- **Tests actually executed by this agent**: **NOT RUN** (the development environment does not have a full local AIVERSE checkout and cannot resolve github.com for clone). Static connector review of gfx::Device, Metal compute, source and CMake contracts performed. **New CTest `vivid_gpu_contract` has NOT RUN**; its fake backend validates command binding but **does not run a GPU shader**. User-confirmed earlier 4/4 native CPU CTest pass applies only to `31d04c986` and earlier.
+- **CI, GPU execution, real device readback, screenshots, warnings**: NOT RUN/NOT CHECKED. No GPU-vs-CPU numerical comparison has actually been executed on Mac yet. Do not claim Metal correctness from the fake-backend test.
+- **Known issues and risks**: RHI has no `inFrame()` query. `dispatch` may upload weights before `beginCompute` rejects an out-of-frame call; no GPU dispatch occurs, but it can increment upload metrics. Real GPU buffer synchronization/usage, Metal shader acceptance, render->skinning pipeline integration, GL/Vulkan compute support and resource lifetime must be tested. The output format is `GpuMorphVertex` (48B), not legacy `ModelVertex` (60B); never feed it straight into model draws. No 52+ GPU shapes render until the renderer explicitly uses this deformed stream.
+- **MotionWeave handoff**: use presentation ECS `MotionWeave::update(presentationWorld,dt)` or persistent scheduler overload from `<aiverselib/motionweave/MotionWeave.h>` once that branch stabilizes. Final rig/retarget pose must remain MotionWeave-owned; VIVID applies optional facial offsets afterwards and deforms only the character's render stream. MotionWeave Stage 125 user deferred tests; do not call it production verified. Never copy/squash 913 animation commits into VIVID just for this GPU step.
+- **Next exact step**: build and run all five VIVID CTests on user's Mac. Fix any compiler warnings/errors and append new handoff with exact test SHA. Then create a REAL Metal graphics-device test that launches compute, reads output between frames, compares to `SparseMorphLibrary::evaluateGather()` across 160 targets and checks normal/tangent parity. Add opt-in integration to the render-stream ownership only after GPU parity and resource lifetime tests pass. Coordinate with MotionWeave agent when entering final-pose integration.
+- **Mac commands (NOT RUN by this agent)**:
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests aiverse_vivid_morph_tests aiverse_vivid_gpu_contract_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_'
+  ```
