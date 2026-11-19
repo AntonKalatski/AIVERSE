@@ -350,6 +350,13 @@ void main() {
     ao *= m_misc.w > 1.5 ? (m_misc.w > 3.5 && !gl_FrontFacing ? v_col.r : v_col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
+#if defined(LUMAWEAVE_MATERIAL)
+    // HDR side-channel: exact material diffuse base + metallic, not the
+    // already-illuminated scene color. Respect alpha mask, tint, PBR textures
+    // and Shader Graph overrides applied above. No legacy direct or GI term.
+    o_color=vec4(clamp(base.rgb,vec3(0.0),vec3(1.0)),metallic);
+    return;
+#endif
 
     vec3 L = normalize(u_sunDir.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
@@ -849,6 +856,11 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
+#if defined(LUMAWEAVE_MATERIAL)
+    // Real linear material receiver for external direct lighting. The
+    // compute result is multiplied by the physically correct diffuse color.
+    return float4(clamp(base.rgb,float3(0.0),float3(1.0)),metallic);
+#endif
 
     float3 L = normalize(f.sunDir.xyz);
     float3 V = normalize(f.camPos.xyz - in.wpos);
