@@ -1660,3 +1660,11 @@ by user instruction. After each stage append a separate
 architecture, API, changed files/commits, actual tests,
 known limitations and the next precise task. Do not merge
 uncompiled GPU/resource/animation source into main.
+
+### Animation/View Stage 109: immutable appearance transactions
+
+- The genre-independent authoring API lives in \`engine/view/AppearanceAuthoringService.h\` and \`AppearanceAssetRegistry.h\`; do not import RTS/FPS types into it. A \`Request\` resolves material overrides and optionally compiles an authored/external AnimationGraph before publishing a pinned immutable \`Asset\`.
+- Hot reload must call \`invalidateSources\` with the host's material library/model/external graph paths, then \`publish\` at a safe frame boundary. A failed publication leaves the old asset and dirty flag alive. \`graphRevision\` handles in-memory graph changes; material-only changes preserve the graph instance generation.
+- A returned \`Asset\` owns material overrides and immutable graph, but borrows \`Model\` and external texture indices. Keep its shared snapshot alive through \`Asset::packet\` and View submission. Retire/release GPU resources only after the last borrowed render packet and snapshot are gone. TextureLoader callbacks must manage their own side-effect rollback. Only the host-owned View/MotionWeave may advance an animated source once.
+- Standalone FPS now uses \`AppearanceAuthoringService::compileGraph\` and a host-owned \`RenderDeviceLifetime\` for GPU character load/shutdown; do not multiply AnimationGraph clocks. Do not assume the RTS GameClient, editor-hosted FPS, postFX or other direct GPU owners are fully epoch protected.
+- Stage 109 regression \`tests/view/appearance_registry.cpp\` / \`view_appearance_registry\` is registered but **NOT RUN**. CMake/CTest/graphics/sanitizer checks remain deferred at user request (implement features first). For exact commits/risks/next task see \`docs/agent-handoffs/animation-universal.md\` Stage 109.
