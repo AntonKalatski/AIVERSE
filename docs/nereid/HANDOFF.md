@@ -3415,3 +3415,61 @@ updates `engine/world/NereidRipples.h` to reject the invalid
 `UINT64_MAX` packed-water ID before adding one for stable
 presentation identity in the non-tiled shader path; the tiled path
 already had this guard. Source review only — **no tests run**.
+
+## Stage 33 — spatial PHYSIS-ready wind zones per NEREID water tile
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Previous head:** `9dcde885bcaee57e4efae197ae70926b36f3a25e`.
+**Owner priority:** features first; no tests authored or executed.
+**Commits / files:**
+- `823941c971eff798db095df9bec7b3b24c16d6a9` new
+  `engine/world/NereidWindField.h`: immutable-to-render
+  `NereidWindZone{x,z,radius,wind,influence}`, bounded
+  `NereidVisualWindField` (64 zones max), validation and weighted
+  radial C1 blend over base wind with double world coordinates.
+- `405809809915f87ad41532c761ba3bfad2b1ca3d` same file:
+  explicit double→float final GPU sample conversion.
+- `cd691eb700dcf6d8b8bc1901617a7e3fa98cb102`
+  `engine/world/NereidWaterScene.h`: each indexed water tile receives
+  a sample at its own world-space centre; untiled draw samples the
+  observer or body basis. Zero/absent wind uses the existing uniform.
+- `fdda474d7faa03bea2c8e1c8e04646672a190027`
+  `engine/world/WorldScene.h`: `setNereidWindZones`,
+  `nereidWindField`, existing `setNereidVisualWind` now sets
+  base wind, `advanceNereidRipples` samples local wind at each pulse.
+- `5b3f4ed07278384ed752e481c87b7a02ba73a93b`
+  `engine/world/WorldScene.cpp`: supply field to existing water draw.
+- `0184413a0cc7e910d6340cbc0b9b2602104d44db`
+  `engine/world/NereidRipples.h`: generic callback sample overload
+  for local winds; retain five-scalar legacy overload.
+- `386d4050d2fc5a5fa33093fe7704d60530df92b8`
+  `engine/world/NereidPhysisWindBridge.h`: external
+  `applyNereidPhysisWindZones(scene,zones)`, clear resets zones/base.
+
+**Usage:**
+```cpp
+worldScene.setNereidVisualWind({2.f,0.f,0.2f,1.f});
+worldScene.setNereidWindZones({
+   {1000.0,2000.0,500.0,{8.f,-3.f,0.8f,1.f},1.f}
+});
+// PHYSIS may publish these zones after its own read barrier, without
+// linking the PHYSIS ECS module to NEREID.
+```
+
+**Ownership:** PHYSIS/host produces and owns weather, NEREID consumes
+a presentation snapshot, per-body material shader receives a
+`float4` wind sampled at the tile center; no ECS/gameplay mutation,
+new render targets, PHYSIS header dependencies or genre coupling.
+Zones are capped at 64, water surface tiles at 64. Far-world
+interpolation is done in double before final GPU float conversion.
+Base wind remains as a fallback outside all zones; zero zones
+preserves Stage 32 behavior. Water surface normals are still
+approximated per tile, not sampled every pixel.
+
+**Actually performed:** connected GitHub source review and commits;
+handoff appended. **NOT RUN:** builds, tests, GPU graphics, PHYSIS
+integration, FPS/RTS regression (per owner direction). Keep PR Draft.
+
+**Next:** Stage 34 optional deterministic current vortices tied to
+water-body ECS, shared by reference/indexed sampler, buoyancy and
+visual ripple flow. Add own handoff before proceeding to connections.
