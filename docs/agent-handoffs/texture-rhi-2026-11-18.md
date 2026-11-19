@@ -7654,3 +7654,61 @@ opt-in Metal argument-buffer per-command resource-index ABI,
 shader lookup, buffer residency/fence tracking and safe runtime
 fallback. Cross-backend C++ compilation, tests, real GPU output
 and source texture hot reload must be validated in later test phase.
+
+
+## Stage 10W — Renderer3D observational material table integration (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Feature commits:**
+- `2ba1ba90449f05f9d2ae1f655031a952aa7eb72b`
+  `engine/render/Renderer3D.h`: include CPU material table,
+  store one frame-scoped `GpuMaterialResourceTicket` per ICB group
+  and own a bounded table in Renderer3D.
+- `53ddaddde9468d64b2ee5c5e10f13a8fc3bc029b`
+  `engine/render/Renderer3DModels.cpp`: new frame generation at
+  GPU model preparation; snapshot exact homogeneous VT and alpha R8
+  handles into the CPU table; reject groups whose ticket is invalid
+  or whose live per-item signature does not match the captured one
+  immediately before GPU execution.
+- `e16b62b4f1cd57abc1b2ad21b6c95e50d25568a1`
+  `engine/render/Renderer3DModels.cpp`: reset table and discard
+  GPU batch tickets at model renderer shutdown.
+**Documentation commits:**
+- `a5414443f11281994072812344c8f081f27241f2` `docs/texture-rhi.md`.
+- `9909dbff0ecd974c0473787ed238f80ab6f03c68`
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API/architecture:** No public RHI signature changes. Renderer3D's
+existing experimental Metal compute-encoded ICB path is still fully
+homogeneous; the new CPU ticket adds exact resource identity and
+generation/frame ownership. `GpuMaterialResourceBinding` captures
+the optional VT pair, layer, gutter/wrap and R8 coverage; graph source
+textures remain absent because graphs are excluded from this path.
+A failed `intern` does not submit a GPU group; no texture lifecycle
+is controlled by this table. Render-phase validation invokes
+`matches` for every item before calling the established
+`drawModelBatch` / `executeGpuEncodedIndexedIcb` path. Any change
+to archive identity, coverage, frame or staging generation falls back
+to the ordinary CPU renderer. Only accepted table entries count as
+`gpuIcbPrepared`. Shutdown invalidates all retained tickets.
+
+**Actual checks:** inspected source preparation and execution code,
+group-eligibility rules, shutdown path and public table ABI; source
+and docs commits accepted by GitHub. **Native C++ compilation NOT
+RUN; CTest NOT RUN; Metal ICB GPU execution NOT RUN; GL/Vulkan/
+MSL shader validation NOT RUN.** No claim of measured improvement.
+
+**Remaining:** no per-command GPU argument-buffer resource index,
+no heterogeneous Metal ICB binding. Existing Metal PBR ICB still
+binds one inherited parent material/VT group. The staging table is
+only an additional fail-closed CPU identity gate and does not permit
+combining different atlases. A prepared but rejected GPU token is
+not executed; its normal backend frame allocator handles lifetime.
+
+**Next concrete stage:** inspect `engine/gfx/metal/MetalGpuIcb.h` and
+`engine/gfx/metal/GfxMetal.mm`, plus `ModelShaders.h`. Define a
+new explicitly opt-in shader/encoder resource-index ABI that can bind
+textures per GPU command without changing existing homogeneous
+parent argument-buffer layout. Retain safe runtime fallback and
+do not enable by default until real Metal shader compilation and
+frame-fence/device tests pass.
