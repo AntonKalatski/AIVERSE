@@ -312,6 +312,10 @@ public:
             [&]{return dev.waitForResourceIdle();},
             [&](std::unique_ptr<Model>& model) {
                 if(model)render::releaseModel(dev,*model);
+            },
+            [&](uint64_t token) {
+                return dev.resourceRetirementStatus(token)==
+                    gfx::ResourceRetirementStatus::Failed;
             });
         if(retired_.pending()<before)textures_->trim(dev);
         return done;
