@@ -12,6 +12,7 @@ on:
       - 'engine/render/Renderer3D.h'
       - 'engine/render/Renderer3DModels.cpp'
       - 'tools/vivid-validate.sh'
+      - 'tools/vivid-creator/**'
       - '.github/workflows/vivid-validation.yml'
       - 'CMakeLists.txt'
   workflow_dispatch:
@@ -45,6 +46,11 @@ jobs:
             aiverse_vivid_metal_rhi_tests \
             aiverse_vivid_vertex_override_tests \
             aiverse_vivid_actor_retirement_tests \
+            aiverse_vivid_human_dna_tests \
+            aiverse_vivid_human_rig_tests \
+            aiverse_vivid_human_appearance_tests \
+            aiverse_vivid_human_creator_tests \
+            aiverse_vivid_creator \
             aiverse_vivid_motionweave_tests \
             aiverse_motionweave_api_tests
       - name: CTest (Metal may skip without physical GPU)
