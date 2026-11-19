@@ -24,7 +24,7 @@ if [[ "$(uname -s)" != Linux ]]; then
   echo "ERROR: Vulkan/GLES3 acceptance requires Linux; use the Metal script on macOS" >&2
   exit 4
 fi
-for cmd in cmake ctest xvfb-run python3 timeout; do
+for cmd in cmake ctest xvfb-run python3 timeout glslangValidator; do
   command -v "$cmd" >/dev/null || {
     echo "ERROR: missing $cmd" >&2
     exit 4
@@ -52,6 +52,25 @@ for config in Release Debug; do
     tee -a "$report/manifest.txt"
 done
 build="$base/Release"
+# Compile REAL GLSL ES 3.00 model shader variants (single/valid/dual GI,
+# instanced and material palettes). Vulkan SPIR-V conversion alone does NOT
+# validate GLES3/WebGL2 source-level shader compatibility.
+dump="$build/aiverse_lumaweave_shader_dump"
+test -x "$dump" || {
+  echo "ERROR: GLES3 model shader source exporter missing" >&2
+  exit 5
+}
+mkdir -p "$report/gles3"
+"$dump" --gles3-list > "$report/gles3/variants.txt"
+while IFS= read -r variant; do
+  [[ -z "$variant" ]] && continue
+  "$dump" --gles3-vertex "$variant" > "$report/gles3/$variant.vert"
+  "$dump" --gles3-fragment "$variant" > "$report/gles3/$variant.frag"
+  glslangValidator -l "$report/gles3/$variant.vert" \
+                      "$report/gles3/$variant.frag" \
+    2>&1 | tee "$report/gles3/$variant-compile.log"
+  echo "$variant: GLSL_ES3_COMPILED" | tee -a "$report/gles3/status.txt"
+done < "$report/gles3/variants.txt"
 if [[ ! -x "$build/aiverse_vulkan_tests" || ! -x "$build/AiverseGame" ]]; then
   echo "ERROR: Vulkan test or client missing; do not report success" >&2
   exit 5
