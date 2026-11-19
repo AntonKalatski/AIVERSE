@@ -53,6 +53,24 @@ gfx::BufferHandle GeometryScene::strataGpuMetadataBuffer(const std::string& sour
 #endif
 }
 
+bool GeometryScene::strataGpuIndexBinding(const std::string& sourceKey,
+                                           StrataIndexBinding& out) const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (!strataGpuMetadata_) return false;
+    const auto it = models_.find(sourceKey);
+    if (it == models_.end() || !it->second) return false;
+    strata::GpuMetadataScene::IndexBinding binding;
+    if (!strataGpuMetadata_->indexBinding(sourceKey, *it->second, binding))
+        return false;
+    out = {binding.buffer, binding.firstIndex, binding.indexCount,
+           binding.baseVertex};
+    return true;
+#else
+    (void)sourceKey; (void)out;
+    return false;
+#endif
+}
+
 const strata::ModelAsset* GeometryScene::strataAsset(const std::string& sourceKey) const {
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
     return strataStaging_ ? strataStaging_->find(sourceKey) : nullptr;
@@ -171,6 +189,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             stats_.strataGpuMetadataDeclined = gpuStats.declined;
             stats_.strataGpuMetadataFailures = gpuStats.failed;
             stats_.strataGpuMetadataBytes = gpuStats.bytes;
+            stats_.strataGpuIndexedSources = gpuStats.indexedSources;
+            stats_.strataGpuIndexBytes = gpuStats.indexBytes;
+            stats_.strataGpuIndexDeclined = gpuStats.indexDeclined;
+            stats_.strataGpuIndexFailures = gpuStats.indexFailed;
             for (const auto& warning : strataGpuMetadata_->warnings())
                 warnings_.push_back(warning);
         }
