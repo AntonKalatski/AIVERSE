@@ -1,6 +1,7 @@
 // Engine regression: static batching preserves runtime-mutable subtrees.
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
+#include "engine/render/Animation.h" // full NodePose definition for active-pose regression
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/GlobalGeometryPool.h"
@@ -8,6 +9,10 @@
 #include "engine/render/PersistentGpuSceneUpload.h"
 #include "engine/render/GpuSceneDrawCommands.h"
 #include "engine/render/GpuIcbPolicy.h"
+#include "engine/render/StaticModelCachePolicy.h"
+#include "engine/render/StaticCrossModelBatchPolicy.h"
+#include "engine/render/ModelLodTransition.h"
+#include "engine/render/EcsStaticModelRender.h"
 #include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
@@ -28,6 +33,11 @@ public:
     std::map<uint32_t,std::vector<uint8_t>> buffers;
     uint32_t nextId = 1;
     int created = 0, destroyed = 0;
+    int createAttempts = 0, failCreateOn = 0;
+    int sharedWrites = 0, failSharedOn = 0;
+    uint64_t serial = 0, completed = 0;
+    uint64_t frameSerial() const override { return serial; }
+    uint64_t completedFrameSerial() const override { return completed; }
     const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error; }
     bool supportsMultiDrawIndirect() const override { return indirectSupported; }
@@ -43,6 +53,7 @@ public:
     void dispatch(uint32_t, uint32_t) override {}
     void endCompute() override {}
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
+        if (++createAttempts == failCreateOn) return {};
         auto id = nextId++;
         buffers[id].resize(d.size);
         if (d.data && d.size) std::memcpy(buffers[id].data(), d.data, d.size);
@@ -52,6 +63,12 @@ public:
         auto& v = buffers.at(h.id);
         CHECK(offset <= v.size() && size <= v.size() - offset);
         if (size) std::memcpy(v.data() + offset, data, size);
+    }
+    bool updateSharedBufferChecked(aiverse::gfx::BufferHandle h,
+                                   const void* data, size_t size, size_t offset) override {
+        if (++sharedWrites == failSharedOn) return false;
+        updateBuffer(h, data, size, offset);
+        return true;
     }
     void destroyBuffer(aiverse::gfx::BufferHandle h) override {
         CHECK(buffers.erase(h.id) == 1);
@@ -173,8 +190,216 @@ static Model pooledFixture(float dx) {
 }
 
 
+
+// Source-only tests for retained whole-pair recycling and upload failure
+// recovery. The MockDevice does not execute GPU commands: these prove only
+// allocator and CPU/RHI contract logic, not Vulkan/Metal pixel parity.
+static void verifyGeometryPoolRetirementAndUploadRecovery() {
+    {
+        MockDevice dev;
+        dev.serial = 10;
+        auto large = pooledFixture(1);
+        large.vertices.resize(12);
+        large.indices.resize(12, 1);
+        auto keeper = pooledFixture(2);
+        CHECK(uploadModel(dev, large, true));
+        CHECK(uploadModel(dev, keeper, true));
+        const uint32_t oldFirst = large.gpuFirstIndex;
+        const uint32_t oldBase = large.gpuBaseVertex;
+        const uint32_t oldVBBytes = large.gpuPoolVertexBytes;
+        const uint32_t oldIBBytes = large.gpuPoolIndexBytes;
+        CHECK(oldVBBytes > 3 * sizeof(ModelVertex));
+        CHECK(oldIBBytes > 3 * sizeof(uint32_t));
+        releaseModel(dev, large);
+        CHECK(geometryPoolStats(dev).retiredPairs == 1);
+        CHECK(geometryPoolStats(dev).reusablePairs == 0);
+
+        // Still in-flight. A new model must use a different physical span.
+        dev.serial = 11;
+        auto early = pooledFixture(3);
+        CHECK(uploadModel(dev, early, true));
+        CHECK(early.gpuBaseVertex != oldBase);
+
+        dev.completed = 10;
+        auto smaller = pooledFixture(4);
+        CHECK(uploadModel(dev, smaller, true));
+        CHECK(smaller.gpuBaseVertex == oldBase);
+        CHECK(smaller.gpuFirstIndex == oldFirst);
+        CHECK(smaller.gpuPoolVertexBytes == oldVBBytes);
+        CHECK(smaller.gpuPoolIndexBytes == oldIBBytes);
+        CHECK(geometryPoolStats(dev).recycledUploads == 1);
+
+        // Releasing the smaller successor MUST retain the full old pair.
+        releaseModel(dev, smaller);
+        dev.completed = 10; // its current retirement serial 11 isn't ready
+        auto waiting = pooledFixture(5);
+        waiting.vertices.resize(12);
+        waiting.indices.resize(12, 1);
+        CHECK(uploadModel(dev, waiting, true));
+        CHECK(waiting.gpuBaseVertex != oldBase);
+
+        dev.completed = 11;
+        auto restored = pooledFixture(6);
+        restored.vertices.resize(12);
+        restored.indices.resize(12, 1);
+        CHECK(uploadModel(dev, restored, true));
+        CHECK(restored.gpuBaseVertex == oldBase);
+        CHECK(restored.gpuFirstIndex == oldFirst);
+        CHECK(geometryPoolStats(dev).recycledUploads == 2);
+        releaseModel(dev, restored);
+        releaseModel(dev, waiting);
+        releaseModel(dev, early);
+        releaseModel(dev, keeper);
+        CHECK(dev.buffers.empty() && geometryPoolStats(dev).pages == 0);
+    }
+    {
+        MockDevice dev;
+        dev.failSharedOn = 2; // vertex copy succeeded, index copy failed
+        auto model = pooledFixture(10);
+        CHECK(uploadModel(dev, model, true)); // standalone fallback
+        CHECK(!model.geometryPoolPage);
+        CHECK(model.vb.valid() && model.ib.valid() && model.vb != model.ib);
+        CHECK(dev.destroyed == 1); // rejected new shared page was retired
+        CHECK(geometryPoolStats(dev).pages == 0);
+        releaseModel(dev, model);
+        CHECK(dev.buffers.empty());
+    }
+    {
+        MockDevice dev;
+        dev.indirectSupported = false; // force separate VB / IB
+        dev.failCreateOn = 2; // second standalone buffer allocation fails
+        auto model = pooledFixture(20);
+        CHECK(!uploadModel(dev, model, false));
+        CHECK(!model.vb.valid() && !model.ib.valid());
+        CHECK(model.vertices.size() == 3 && model.indices.size() == 3);
+        CHECK(dev.buffers.empty());
+        dev.failCreateOn = 0;
+        CHECK(uploadModel(dev, model, false));
+        CHECK(model.vb.valid() && model.ib.valid());
+        CHECK(model.vertices.empty() && model.indices.empty());
+        releaseModel(dev, model);
+        CHECK(dev.buffers.empty());
+    }
+}
+
+static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
+    // Stage 21-24: current-pass exact page/material grouping, epoch-safe
+    // membership, and deterministic bucket sorting of the admitted prefix.
+    StaticCrossModelPreflightWorkspace workspace;
+    workspace.beginPass(10);
+    const StaticCrossModelPreflightKey high{nullptr, 20u, 3u, 17u, 19u};
+    const StaticCrossModelPreflightKey low{nullptr, 10u, 3u, 17u, 19u};
+    const uint16_t highGroup = workspace.findOrCreate(high);
+    const uint16_t lowGroup = workspace.findOrCreate(low);
+    CHECK(highGroup != StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(lowGroup != StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(highGroup != lowGroup);
+    CHECK(workspace.findOrCreate(high) == highGroup);
+    Model first, second;
+    Primitive primitiveA, primitiveB;
+    auto& admitted = workspace.groups()[highGroup].group;
+    admitted.observe(&first, &primitiveA, 2);
+    admitted.observe(&second, &primitiveB, 2);
+    CHECK(admitted.opportunity(2, 16));
+    admitted.ready = true;
+    admitted.permitted = true;
+    auto& earlier = workspace.groups()[lowGroup].group;
+    earlier.ready = earlier.permitted = true;
+    for (uint32_t index = 1; index <= 4; ++index) {
+        workspace.rememberItem(index, index <= 2 ? highGroup : lowGroup);
+    }
+    workspace.activateModes(10);
+    for (uint32_t index = 1; index <= 4; ++index)
+        workspace.rememberMode(index, 1);
+    CHECK(workspace.modeOf(1) == 1);
+    CHECK(workspace.modeOf(5) == 0);
+    CHECK(workspace.prepareSortRanks() == 2);
+    CHECK(workspace.sortRankForPermittedItem(3) <
+          workspace.sortRankForPermittedItem(1));
+    std::vector<uint32_t> order{4, 1, 3, 2, 8};
+    CHECK(workspace.bucketizePermittedPrefix(
+        order, 4, [](uint32_t a, uint32_t b) { return a < b; }));
+    const std::vector<uint32_t> expected{3, 4, 1, 2, 8};
+    CHECK(order == expected);
+    // Invalid prefix does not corrupt the caller's ordering.
+    std::vector<uint32_t> invalid{5, 1, 2};
+    const auto unchanged = invalid;
+    CHECK(!workspace.bucketizePermittedPrefix(
+        invalid, 3, [](uint32_t a, uint32_t b) { return a < b; }));
+    CHECK(invalid == unchanged);
+    workspace.beginPass(10);
+    CHECK(workspace.groupForItem(1) ==
+          StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.activateModes(10);
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.clearModes();
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.release();
+    CHECK(workspace.retainedBytes() == 0);
+
+    // Stage 28-29: counter differences are monotonic and retained-capacity
+    // gauges are deliberately not added to per-pass transfer deltas.
+    aiverse::gfx::BufferDesc desc{};
+    CHECK(!desc.discardOnUpdate);
+    aiverse::gfx::BufferUpdateStats before{};
+    before.available = true;
+    before.updateCalls = 2;
+    before.requestedBytes = 160;
+    before.mappedWriteBytes = 192;
+    before.cpuShadowWriteBytes = 40;
+    before.comparedBytes = 80;
+    before.skippedWriteBytes = 20;
+    before.preservedBytes = 32;
+    before.allocations = 3;
+    before.reused = 4;
+    before.retainedBufferBytes = 4096;
+    auto after = before;
+    ++after.updateCalls;
+    after.requestedBytes += 80;
+    after.mappedWriteBytes += 64;
+    after.cpuShadowWriteBytes += 80;
+    after.comparedBytes += 80;
+    after.skippedWriteBytes += 16;
+    after.preservedBytes += 8;
+    after.allocations += 1;
+    after.reused += 2;
+    after.retainedBufferBytes = 8192;
+    const auto delta = aiverse::gfx::bufferUpdateCounterDelta(before, after);
+    CHECK(delta.available && delta.updateCalls == 1);
+    CHECK(delta.requestedBytes == 80);
+    CHECK(delta.mappedWriteBytes == 64);
+    CHECK(delta.cpuShadowWriteBytes == 80);
+    CHECK(delta.comparedBytes == 80);
+    CHECK(delta.skippedWriteBytes == 16);
+    CHECK(delta.preservedBytes == 8);
+    CHECK(delta.allocations == 1 && delta.reused == 2);
+    CHECK(delta.retainedBufferBytes == 0 && delta.retainedCpuShadowBytes == 0);
+    aiverse::gfx::BufferUpdateStats sum{};
+    aiverse::gfx::accumulateBufferUpdateCounters(sum, delta);
+    aiverse::gfx::accumulateBufferUpdateCounters(sum, delta);
+    CHECK(sum.available && sum.updateCalls == 2);
+    CHECK(sum.mappedWriteBytes == 128 && sum.allocations == 2);
+    CHECK(sum.retainedBufferBytes == 0);
+    auto reset = after;
+    reset.updateCalls = 0;
+    CHECK(!aiverse::gfx::bufferUpdateCounterDelta(after, reset).available);
+    CHECK(!aiverse::gfx::bufferUpdateCounterDelta(before, {}).available);
+    const auto initiallyCreated = aiverse::gfx::bufferUpdateCounterDelta({}, after);
+    CHECK(initiallyCreated.available && initiallyCreated.allocations == after.allocations);
+}
+
 int main() {
+    // This process tests both serial-fenced retirement and a dedicated
+    // fallback. Per-process production default remains OFF.
+#ifdef _WIN32
+    CHECK(_putenv_s("AIVERSE_GEOMETRY_POOL_RECYCLE", "1") == 0);
+#else
+    CHECK(setenv("AIVERSE_GEOMETRY_POOL_RECYCLE", "1", 1) == 0);
+#endif
     verifyVehiclePartsRemainIndependent();
+    verifyIncrementalBatchingWorkspaceAndRhiCounters();
+    verifyGeometryPoolRetirementAndUploadRecovery();
     Model m;
     m.materials.resize(1);
     constexpr int kNodes = 5;
@@ -511,6 +736,229 @@ int main() {
         CHECK(chooseSceneBatchMode({12.100, 11.800, 11.900}, 3) == 1);
         CHECK(chooseSceneBatchMode({12.100, 12.020, 11.700}, 3) == 2);
         CHECK(chooseSceneBatchMode({12.100, 12.070, 10.000}, 2) == 0);
+    }
+
+    // Model content revisions must distinguish in-place edits even if an
+    // allocator reuses the same address or the GPU reuses the same handle ID.
+    {
+        Model model;
+        const uint64_t initial = model.geometryRevision;
+        model.finalize();
+        CHECK(model.geometryRevision != initial);
+        const uint64_t afterFinalize = model.geometryRevision;
+        model.markGeometryChanged();
+        CHECK(model.geometryRevision != afterFinalize);
+        const uint64_t beforeRelease = model.geometryRevision;
+        MockDevice dev;
+        releaseModel(dev, model);
+        CHECK(model.geometryRevision != beforeRelease);
+    }
+
+    // CPU-side cross-frame rigid cache is deliberately narrower than an
+    // immediate ModelDraw: visibility and material overrides stay live.
+    {
+        Model model;
+        model.nodes.resize(1);
+        model.meshes.resize(1);
+        ModelDraw draw;
+        draw.model = &model;
+        draw.persistentId = 41;
+        draw.flags = kDrawStatic;
+        // The CPU cache requires bindWorld matrices from finalized assets.
+        // Imported models always call finalize(); this synthetic fixture must
+        // do so too. Missing bind matrices are correctly ineligible.
+        CHECK(!staticModelCacheCandidate(draw, false));
+        model.finalize();
+        CHECK(model.bindWorld.size() == model.nodes.size());
+        CHECK(staticModelCacheCandidate(draw, false));
+        draw.materials = &model.materials;
+        std::vector<int> nodeOverrides(1, -1);
+        draw.nodeMaterial = &nodeOverrides;
+        CHECK(staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheCandidate(draw, true));
+
+        StaticModelCache cache;
+        cache.model = &model;
+        cache.world = draw.world;
+        cache.transforms.resize(model.nodes.size());
+        cache.primitiveOffsets.resize(model.meshes.size());
+        CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, true));
+        draw.world.m[12] += 2.0f;
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.world = cache.world;
+        draw.persistentId = 0;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.persistentId = 41;
+        draw.flags = 0;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.flags = kDrawStatic;
+        std::vector<mat4> animatedNodes(1);
+        draw.nodeWorld = &animatedNodes;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.nodeWorld = nullptr;
+        model.nodes[0].runtimeMutable = true;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        model.nodes[0].runtimeMutable = false;
+        // Authored clips on disk do not mean this *instance* is animated.
+        // Bind-pose static instances remain eligible; an active pose does not.
+        model.clips.emplace_back();
+        CHECK(staticModelCacheCandidate(draw, false));
+        CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
+        std::vector<NodePose> activePose(1);
+        draw.pose = &activePose;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.pose = nullptr;
+        model.clips.clear();
+        model.geometry = std::make_shared<GeometryData>();
+        CHECK(!staticModelCacheCandidate(draw, false));
+    }
+
+    // Persistent packet blueprints must never reuse camera/LOD/GI/pose
+    // assumptions or silently ignore caller-visible appearance revisions.
+    {
+        Model model;
+        model.nodes.resize(1);
+        model.nodes[0].mesh = 0;
+        model.meshes.resize(1);
+        model.materials.resize(1);
+        ModelDraw draw;
+        draw.model = &model;
+        draw.persistentId = 42;
+        draw.flags = kDrawStatic;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.staticPacketRevision = 1;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false)); // missing bindWorld
+        model.finalize();
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        CHECK(!staticRenderPacketCandidate(draw, true, false, false));
+        CHECK(!staticRenderPacketCandidate(draw, false, true, false));
+        CHECK(!staticRenderPacketCandidate(draw, false, false, true));
+
+        ModelDraw snapshot = draw;
+        CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.staticPacketRevision++;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.staticPacketRevision = snapshot.staticPacketRevision;
+        draw.outline.w = 0.03f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.outline = snapshot.outline;
+        draw.tint.w = 0.5f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.tint = snapshot.tint;
+        draw.world.m[12] = 15.f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.world = snapshot.world;
+        CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
+
+        draw.materials = &model.materials;
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        const auto savedMaterials = model.materials;
+        const auto savedHashes = staticPacketMaterialHashes(model, savedMaterials);
+        CHECK(staticPacketMaterialStateMatches(model, model.materials,
+                                                savedMaterials, savedHashes));
+        model.materials[0].metallic = .85f; // pointer-stable native mutation
+        CHECK(!staticPacketMaterialStateMatches(model, model.materials,
+                                                 savedMaterials, savedHashes));
+        model.materials[0] = savedMaterials[0];
+        CHECK(staticPacketMaterialStateMatches(model, model.materials,
+                                                savedMaterials, savedHashes));
+        model.materials.emplace_back(); // reallocated material vector
+        CHECK(!staticPacketMaterialStateMatches(model, model.materials,
+                                                 savedMaterials, savedHashes));
+        model.materials.pop_back();
+        draw.materials = nullptr;
+        std::vector<int> nodeMaterials(1, 0);
+        draw.nodeMaterial = &nodeMaterials;
+        // Per-node material overrides are live packet inputs, not a blanket
+        // cache exclusion. Renderer3D validates hasNodeMaterialOverride and
+        // the exact nodeMaterialSnapshot on every packet replay.
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        nodeMaterials[0] = -1; // switching overrides remains a runtime input
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        draw.nodeMaterial = nullptr;
+        model.meshes[0].lods.push_back({0, 10.f});
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        model.meshes[0].lods.clear();
+        model.meshes[0].deformable = true;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        model.meshes[0].deformable = false;
+        model.nodes[0].runtimeMutable = true;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        model.nodes[0].runtimeMutable = false;
+        model.nodes[0].skin = 0;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+    }
+
+    // LOD-aware packet replay must invalidate on a changed selected mesh,
+    // and bypass continuously varying crossfade frames.
+    {
+        const std::vector<ModelLod> levels{{1, 32.f}, {2, 8.f}};
+        const auto near = selectModelLod(0, levels, 150.f, .15f);
+        const auto mid = selectModelLod(0, levels, 20.f, .15f);
+        const auto far = selectModelLod(0, levels, 2.f, .15f);
+        CHECK(near.mesh == 0 && near.incoming < 0);
+        CHECK(mid.mesh == 1 && mid.incoming < 0);
+        CHECK(far.mesh == 2 && far.incoming < 0);
+        const auto transition = selectModelLod(0, levels, 32.f, .15f);
+        CHECK(transition.incoming >= 0 && transition.progress > 0.f);
+    }
+
+    // Generic ECS presentation adapter: only integer asset identity and
+    // revision live in ECS; the renderer receives a current fixed->float world
+    // matrix, a stable generation-aware host key, and a live model reference.
+    {
+        aiverse::World world;
+        const auto first = world.create();
+        const auto missingTransform = world.create();
+        aiverse::render::EcsStaticModelRender component;
+        component.assetKey = 7;
+        component.appearanceRevision = 9;
+        component.flags = kDrawNoCastShadow;
+        world.add<aiverse::render::EcsStaticModelRender>(first, component);
+        world.add<aiverse::render::EcsStaticModelRender>(
+            missingTransform, component);
+        aiverse::WorldTransform xf;
+        xf.affine.m[3] = aiverse::Fixed::fromInt(7);
+        world.add<aiverse::WorldTransform>(first, xf);
+        Model model;
+        size_t draws = 0;
+        uint64_t lastId = 0;
+        const auto resolve = [&model](uint32_t asset) -> const Model* {
+            return asset == 7 ? &model : nullptr;
+        };
+        const auto stableId = [](aiverse::Entity entity) {
+            return entity.packed() + uint64_t{1};
+        };
+        auto submit = [&](aiverse::Entity e, const ModelDraw& d) {
+            CHECK(e == first);
+            CHECK(d.model == &model);
+            CHECK(d.staticPacketRevision == 9);
+            CHECK(d.persistentId == stableId(first));
+            CHECK((d.flags & kDrawStatic) != 0);
+            CHECK((d.flags & kDrawNoCastShadow) != 0);
+            CHECK(d.world.at(0,3) == 7.f);
+            lastId = d.persistentId;
+            ++draws;
+        };
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 1);
+        CHECK(draws == 1 && lastId);
+        world.get<aiverse::render::EcsStaticModelRender>(first).visible = false;
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 0);
+        world.get<aiverse::render::EcsStaticModelRender>(first).visible = true;
+        world.get<aiverse::render::EcsStaticModelRender>(first).appearanceRevision = 0;
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 0);
+        // A recycled ECS index gains a generation, so the host's stable
+        // namespaced mapping can distinguish it from the old render packet.
+        world.destroy(first);
+        const auto recycled = world.create();
+        CHECK(recycled.index == first.index && recycled.gen != first.gen);
+        CHECK(stableId(recycled) != lastId);
     }
 
     std::puts("engine model batching policy: PASS");

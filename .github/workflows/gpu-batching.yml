@@ -1,5 +1,12 @@
 name: GPU batching focused regression
 
+# AIVERSE has many concurrent agent branches. Never queue dozens of
+# superseded raster checks for successive commits to the same PR.
+# The current head remains authoritative; unrelated PRs run independently.
+concurrency:
+  group: gpu-batching-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     paths:
@@ -7,6 +14,7 @@ on:
       - 'engine/gfx/**'
       - 'apps/editor/windows/SceneWindow.cpp'
       - 'tests/render/model_batching_policy.cpp'
+      - 'tests/render/material_batches.cpp'
       - '.github/workflows/gpu-batching.yml'
   workflow_dispatch:
 
@@ -61,6 +69,17 @@ jobs:
         run: |
           mkdir -p build/metal-cpu-mdi/captures
           build/metal-cpu-mdi/aiverse_material_batches unused.obj build/metal-cpu-mdi/captures/cpu-mdi
+      - name: Verify cold vs warm persistent CPU packet raster
+        env:
+          AIVERSE_PERSISTENT_CPU_PACKETS: '1'
+          AIVERSE_PALETTE_TEST_CASE: static_packets
+          AIVERSE_MULTI_DRAW_INDIRECT: 'off'
+        run: |
+          # First image: no staticPacketRevision, dynamic path.
+          # Second: same geometry, warmed persistent packet replay.
+          # Fixture requires nonzero packet hits, matching draw counts
+          # and byte-identical GPU screenshots, including sun shadows.
+          build/metal-cpu-mdi/aiverse_material_batches unused.obj build/metal-cpu-mdi/captures/static-packets
       - name: Preserve CPU MDI before/after captures
         if: always()
         uses: actions/upload-artifact@v4
