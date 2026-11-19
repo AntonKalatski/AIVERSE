@@ -1376,7 +1376,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // An unavailable/failed fence retains retired resources for a retry.
     // A false result is expected while an asynchronous retirement token
     // is still in flight, not necessarily a GPU error. Poll silently.
-    if(view_.pendingModelRetirements()!=0)
+    if(view_.pendingModelRetirements()!=0 ||
+       view_.pendingRolledBackImages()!=0)
         view_.collectRetiredModels();
     pollAgentLink();
     applyChanges();
