@@ -2616,3 +2616,19 @@ Added optional `HorizonSurfaceSources::nearGroundContinuousSlopeAtQ16Cm` callbac
 **Tester matrix:** continuous adjacent tiles (including negative world coordinates), discontinuous height steps, missing neighbor, half-open boundary Q16 inset, tile corners, cross-compiler deterministic archive bytes, TWH8 roundtrip, near normal 0/65/100% blend, strict atlas-only rejection when slopes change, partial VB update and GPU LRU restoration. Confirm unchanged triangle/index/material counts and no GPU allocation regression.
 
 **Next implementation:** add explicit source-normal provenance diagnostics without changing TWH8 archive layout (derive or track during CPU bake), expose neighbor-aware vs local-fallback counts in HorizonRuntimeStats/GPU cache, then update TERRAWEAVE.md and skill. Tests remain deferred to separate agent.
+
+## Stage 22c — near normal provenance diagnostics (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`, PR #24 Draft.
+**Commits:** `60590e01efa3301ebb84855f6c9ace2c38d35fd3`, `fa90692ce0ed5fabd2e364df4297026cd798c2ee`, `36cbd2e0c8716d19a0d09a7bed467deb6e428a52`, `4da16f5277be66b93ea964f9c99ce270a290c62d`, `589f7e5d70f27701b7f16531c0022d2593e45d5d`.
+**Changed:** `engine/world/TerraWeaveHorizon.h`, `engine/render/TerraWeaveHorizonClip.h`, `engine/render/TerraWeaveHorizonGpuCache.h`, `engine/render/TerraWeaveHorizonScene.h`.
+
+Added nonserialized `HorizonBake::continuousNearNormalSamples` and `localFallbackNearNormalSamples`, incremented during seam CPU sampling. Added corresponding `HorizonRuntimeStats` and GPU LRU metadata fields. CPU prepared publication paths read counts from `prepared->bake`, retirement stores runtime counts, and GPU cache adoption restores them. These are counts of **unique seam sample points**, not GPU vertices or draw calls; `matchedAuthoredNearNormals` retains its prior vertex semantics.
+
+**Important:** TWH8 disk archives intentionally do NOT store provenance counters. An archive cache hit therefore reports zeros for provenance even when archived slope values are valid. Do not present zero as proof no neighbor-aware work happened. This is a known limitation; next stage should add an explicit `provenanceAvailable` status (or derive provenance when rebaking) before exposing counts as authoritative diagnostics. Keep the archive format unchanged unless there is a justified version bump.
+
+**Actual verification:** GitHub source writes only. No build, CTest, GPU runtime, screenshots or benchmark. Separate test agent owns verification. Keep PR Draft.
+
+**Tester acceptance:** compile C++20, verify unique seam counts and local fallback paths, all-or-none slope rejection, GPU full/atlas/VB patch publication and GPU LRU restoration, disk archive cache hit zero/unknown semantics, no changed draw/triangle counts, and TWH8 compatibility. Also verify source-revision invalidation and no stale diagnostics after an empty model or cache restore.
+
+**Next implementation:** explicit provenance availability flag, distinguish unavailable archive provenance from true zero; expose diagnostics to editor/host as appropriate, update docs and skill. Tests remain separate.
