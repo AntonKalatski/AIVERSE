@@ -996,6 +996,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     if(view_.pendingModelRetirements()!=0 ||
        view_.pendingRolledBackImages()!=0)
         view_.collectRetiredModels();
+    if(r3d_.pendingProgramRetirements()!=0)
+        r3d_.collectRetiredPrograms();
     const auto frameStarted = std::chrono::steady_clock::now();
     if (mapLoading_) { frameMapLoading(dev, dt); return; }
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
