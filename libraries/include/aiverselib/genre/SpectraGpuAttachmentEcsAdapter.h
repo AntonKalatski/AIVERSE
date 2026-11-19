@@ -88,68 +88,117 @@ public:
                 reason_="SpectraFX pooled ECS attachment requires unit scale: "+want.effect;
                 return false;
             }
+            if(want.hasPose &&
+                (!std::isfinite(want.position.x) ||
+                 !std::isfinite(want.position.y) ||
+                 !std::isfinite(want.position.z) ||
+                 !std::isfinite(want.direction.x) ||
+                 !std::isfinite(want.direction.y) ||
+                 !std::isfinite(want.direction.z))) {
+                reason_="SpectraFX ECS pose contains nonfinite coordinates: "+want.effect;
+                return false;
+            }
         }
-        // Release stale bindings first, freeing their bounded source slots for
-        // new entities. On runtime failure retain tracking for safe retry.
+        // Stage replacement sources BEFORE touching any old attachment. If
+        // capacity is exhausted, old effects continue unaffected; the caller
+        // can increase PoolWorldBudgets::maxSources for overlap headroom.
+        auto equivalent=[&](uint64_t key,const Wanted& want) {
+            auto old=attached_.find(key);
+            if(old==attached_.end())return false;
+            auto policy=bindings_.find(want.effect);
+            return policy!=bindings_.end() &&
+                   old->second.effect==want.effect &&
+                   old->second.revision==want.revision &&
+                   old->second.scaleRaw==want.scaleRaw &&
+                   old->second.policyRevision==policy->second.revision &&
+                   pool_.sourceBindingCurrent(old->second.handle);
+        };
+        std::map<uint64_t,Attached> staged;
+        const auto abandonStaged=[&]() {
+            // Staged emitters have not been submitted yet, so no GPU kill is
+            // required. Invalidating their handles leaves original live.
+            for(auto& [key,state]:staged) {
+                (void)key;
+                (void)pool_.retireSource(state.handle);
+            }
+            staged.clear();
+        };
+        for(const auto& [key,want]:desired) {
+            if(equivalent(key,want))continue;
+            const auto policy=bindings_.find(want.effect);
+            const PoolSourceId id=pool_.createSource(want.effect);
+            if(!id.valid()) {
+                const std::string why=pool_.reason();
+                abandonStaged();
+                reason_="SpectraFX ECS staged admission failed (old sources kept): "+why;
+                return false;
+            }
+            Attached entry;
+            entry.handle=id;entry.effect=want.effect;
+            entry.revision=want.revision;
+            entry.scaleRaw=want.scaleRaw;
+            entry.policyRevision=policy->second.revision;
+            entry.killOnDetach=want.killOnDetach;
+            staged.emplace(key,entry);
+            bool ok=pool_.configureContinuous(id,policy->second.emission);
+            if(ok && want.hasPose)
+                ok=pool_.setSourceTransform(id,want.position,want.direction);
+            if(ok && !want.hasPose)
+                ok=pool_.pauseSource(id);
+            if(!ok) {
+                const std::string why=pool_.reason();
+                abandonStaged();
+                reason_="SpectraFX ECS staged source configuration failed: "+why;
+                return false;
+            }
+            staged[key].pausedForMissingPose=!want.hasPose;
+        }
+
+        // Check expected GPU selective-kill preconditions before applying any
+        // detach. Hardware health can still change after the check.
+        for(const auto& [key,current]:attached_) {
+            auto want=desired.find(key);
+            if(want!=desired.end() && equivalent(key,want->second))continue;
+            if(!pool_.canStopSource(current.handle,current.killOnDetach)) {
+                abandonStaged();
+                reason_="SpectraFX ECS detach preflight rejected; old sources kept";
+                return false;
+            }
+        }
+
+        // Commit stage: retire obsolete sources. An actual RHI failure here
+        // can be partial (checked GPU command failed after another detach).
+        // The retained map allows retry; it is not falsely called atomic.
         for(auto it=attached_.begin();it!=attached_.end();) {
             auto want=desired.find(it->first);
-            const auto policy=want!=desired.end()?bindings_.find(want->second.effect):bindings_.end();
-            const bool equivalent=want!=desired.end() &&
-                policy!=bindings_.end() &&
-                want->second.effect==it->second.effect &&
-                want->second.revision==it->second.revision &&
-                want->second.scaleRaw==it->second.scaleRaw &&
-                policy->second.revision==it->second.policyRevision;
-            if(equivalent) {++it;continue;}
-            // An obsolete source must not be allowed to generate future
-            // particles, even if the next source cannot yet be created.
+            if(want!=desired.end() && equivalent(it->first,want->second)) {
+                ++it;continue;
+            }
             if(!pool_.stopSource(it->second.handle,it->second.killOnDetach) ||
                !pool_.retireSource(it->second.handle)) {
-                reason_="SpectraFX ECS attachment detach failed: "+pool_.reason();
+                const std::string why=pool_.reason();
+                abandonStaged();
+                reason_="SpectraFX ECS detach failed; retry presentation sync: "+why;
                 return false;
             }
             it=attached_.erase(it);
         }
 
+        // Staged handles now become owned by the presentation attachment map.
+        for(auto& [key,state]:staged)
+            attached_.emplace(key,std::move(state));
+        staged.clear();
+
+        // Update existing sources only after successful staging/retirement.
+        // Missing poses pause rather than retire. When the pose returns,
+        // attach it and resume without invalidating source generations.
         for(const auto& [key,want]:desired) {
-            auto policy=bindings_.find(want.effect);
-            if(policy==bindings_.end()) {
-                reason_="SpectraFX ECS effect has no bound continuous policy: "+want.effect;
-                return false;
-            }
-            // The old CPU SourceComponent supports scale, but the strict pooled
-            // GPU billboard subset does not. Refuse silent size/velocity parity
-            // loss rather than ignoring a non-unit authored multiplier.
-            if(want.scaleRaw!=(1_fx).raw) {
-                reason_="SpectraFX pooled ECS attachment requires unit scale: "+want.effect;
-                return false;
-            }
             auto it=attached_.find(key);
-            if(it==attached_.end()) {
-                const PoolSourceId handle=pool_.createSource(want.effect);
-                if(!handle.valid()) {
-                    reason_="SpectraFX ECS source admission: "+pool_.reason();
-                    return false;
-                }
-                if(!pool_.configureContinuous(handle,policy->second.emission)) {
-                    (void)pool_.retireSource(handle);
-                    reason_="SpectraFX ECS continuous policy rejected: "+want.effect;
-                    return false;
-                }
-                Attached a;
-                a.handle=handle;
-                a.effect=want.effect;
-                a.revision=want.revision;
-                a.scaleRaw=want.scaleRaw;
-                a.policyRevision=policy->second.revision;
-                a.killOnDetach=want.killOnDetach;
-                it=attached_.emplace(key,std::move(a)).first;
-            }
+            if(it==attached_.end())continue; // retained for defensive safety
             it->second.killOnDetach=want.killOnDetach;
             if(!want.hasPose) {
-                // Do not infer a pose from the previous frame; no spawns.
                 if(!pool_.pauseSource(it->second.handle)) {
-                    reason_="SpectraFX ECS attachment pause failed";
+                    reason_="SpectraFX ECS source pause rejected";
                     return false;
                 }
                 it->second.pausedForMissingPose=true;
@@ -157,12 +206,12 @@ public:
             }
             if(!pool_.setSourceTransform(it->second.handle,
                                          want.position,want.direction)) {
-                reason_="SpectraFX ECS attachment transform rejected";
+                reason_="SpectraFX ECS source transform rejected";
                 return false;
             }
             if(it->second.pausedForMissingPose &&
                !pool_.resumeSource(it->second.handle)) {
-                reason_="SpectraFX ECS attachment resume failed";
+                reason_="SpectraFX ECS source resume rejected";
                 return false;
             }
             it->second.pausedForMissingPose=false;
