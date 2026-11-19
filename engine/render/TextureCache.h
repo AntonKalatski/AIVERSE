@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "../gfx/Gfx.h"
+#include "GpuOwnedMemory.h"
 
 #include "engine/atlas/AtlasFormat.h"
 
@@ -67,6 +68,20 @@ public:
     // Procedural texture registered under a logical name (e.g. "builtin:shadow").
     TextureRef addGenerated(const std::string& name, int w, int h, const std::vector<uint32_t>& rgba, bool nearest);
     const std::string& lastError() const { return error_; }
+    // Owned sprite/atlas textures, not their borrowed AtlasFrame aliases.
+    // Render-thread only; GPU retirement owns quarantined old textures.
+    // Shared atlas pages are de-duplicated against cache references.
+    GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        GpuOwnedMemoryCounter counter(*dev_);
+        for (const auto& [key, page] : atlasPages_) {
+            (void)key; counter.texture(page);
+        }
+        for (const auto& [key, ref] : cache_) {
+            (void)key; counter.texture(ref.tex);
+        }
+        return counter.stats();
+    }
 
 private:
     // Build-time texture atlases (engine/atlas): images packed into a page resolve to the page +
