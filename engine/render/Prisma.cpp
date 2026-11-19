@@ -192,6 +192,8 @@ void Prisma::retireView(uint64_t id) {
     }
     requestedOutputSizes_.erase(id);
     adaptiveViews_.erase(id);
+    viewQualityPolicies_.erase(id);
+    viewHistoryAdmissionRejected_.erase(id);
     scopedGpuTimings_.erase(id);
     adaptivePressure_.erase(id);
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
@@ -468,6 +470,8 @@ void Prisma::shutdown() {
         for (auto& h : view.history) release(h);
     temporalViews_.clear();
     adaptiveViews_.clear();
+    viewQualityPolicies_.clear();
+    viewHistoryAdmissionRejected_.clear();
     scopedGpuTimings_.clear();
     adaptivePressure_.clear();
     externalRendererLiveKnownBytes_=externalRendererPendingKnownBytes_=0;
@@ -588,6 +592,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
     width=std::max(1,width);
     height=std::max(1,height);
     requestedOutputSizes_[viewId_]={width,height};
+    viewHistoryAdmissionRejected_.erase(viewId_);
     auto previous=temporalViews_.find(viewId_);
     if (previous!=temporalViews_.end()) previous->second.preflightRejected=false;
     if (width<64 || height<64 || !dev_ || !dev_->gpuHealthy() ||
@@ -613,6 +618,25 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
 
     const float ceiling=PrismaAdaptiveResolution::quantize(
         std::clamp(effect->get("renderScale"),0.5f,1.0f));
+    // Admission is for two output-size RGBA16F histories owned by this
+    // camera, not the global/opaque VRAM budget. Refuse *before* jitter and
+    // suppress temporal resolve too, otherwise resolve() could allocate
+    // precisely the history that this hard per-view cap rejected.
+    const auto policyIt=viewQualityPolicies_.find(viewId_);
+    const ViewQualityPolicy policy=policyIt==viewQualityPolicies_.end()
+        ? ViewQualityPolicy{} : policyIt->second;
+    const uint64_t historyBytes=uint64_t(width)*uint64_t(height)*16u;
+    if (policy.maxTemporalHistoryMiB &&
+        historyBytes>uint64_t(policy.maxTemporalHistoryMiB)*1024u*1024u) {
+        viewHistoryAdmissionRejected_[viewId_]=true;
+        if (auto history=temporalViews_.find(viewId_);
+            history!=temporalViews_.end()) {
+            history->second.valid=false;
+            history->second.preflightRejected=true;
+            for (auto& handle:history->second.history) retireTarget(handle);
+        }
+        return {width,height};
+    }
     float scale=ceiling;
     const char* adaptiveFlag=std::getenv("AIVERSE_PRISMA_ADAPTIVE");
     const bool adaptiveRequested=adaptiveFlag &&
@@ -657,7 +681,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
             scoped->second.sampleSequence : completedFence;
         adaptive.observe(gpuMs,sampleToken,
             effect->get("targetGpuMs"),effect->get("minRenderScale"),
-            ceiling,memoryPressure,scopedValid);
+            ceiling,memoryPressure,scopedValid,policy.priority);
         adaptivePressure_[viewId_]={
             knownBytes,memoryLimit,memoryPressure,scopedValid,gpuMs};
         scale=adaptive.scale;
@@ -1285,8 +1309,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const bool motionRequested = hdrFrame_ && motionEffect && motionFlag &&
         std::strcmp(motionFlag,"1")==0 && motionEffect->get("intensity")>0 &&
         motionEffect->get("maxPixels")>0;
+    const bool rejectedHistory = viewHistoryAdmissionRejected_.count(viewId_) != 0;
     const bool temporalRequested = hdrFrame_ && temporalEffect && temporalFlag &&
-        std::strcmp(temporalFlag,"1")==0 &&
+        std::strcmp(temporalFlag,"1")==0 && !rejectedHistory &&
         temporalEffect->get("historyWeight")>0;
     const gfx::TextureHandle sceneDepth = depthFor(set,w,h);
     const gfx::TextureHandle scratchDepth = depthFor(set,w,h,true);
@@ -1999,6 +2024,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         stats_.temporalFallback=true;
     }
     stats_.adaptiveResolution=adaptiveViews_.count(viewId_)!=0;
+    stats_.adaptiveHistoryAdmissionRejected=
+        viewHistoryAdmissionRejected_.count(viewId_)!=0;
+    if (const auto policy=viewQualityPolicies_.find(viewId_);
+        policy!=viewQualityPolicies_.end())
+        stats_.adaptiveViewPriority=policy->second.priority;
     if (const auto m=adaptivePressure_.find(viewId_);
         m!=adaptivePressure_.end()) {
         stats_.adaptiveKnownGpuBytes=m->second.knownBytes;
