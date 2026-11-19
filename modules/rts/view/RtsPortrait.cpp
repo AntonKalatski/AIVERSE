@@ -8,6 +8,7 @@ namespace aiverse::game {
 using namespace render;
 
 bool Portrait::init(gfx::Device& dev, int size) {
+    previewModels_.bindResourceDevice(dev);
     dev_ = &dev;
     size_ = size;
     if (!r3d_.init(dev)) return false;
