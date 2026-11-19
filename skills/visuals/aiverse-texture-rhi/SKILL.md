@@ -668,3 +668,18 @@ CI if it remains queued or cancelled.
   argument buffer or permit mixed ICB textures; keep existing
   homogeneous fallback until the GPU/encoder ABI is implemented
   and tested. C++/GPU tests NOT RUN.
+
+
+### Renderer3D Metal ICB resource ticket safety (Stage 10W)
+
+- `Renderer3D::prepareGpuModelDraws` now stages a
+  `GpuMaterialResourceTicket` for each accepted homogeneous GPU ICB
+  group. It snapshots VT atlas/page table, layer, wrap/gutter and
+  optional R8 alpha coverage. Full/invalid staging tables reject the
+  ICB group and keep ordinary CPU fallback.
+- `Renderer3D::renderModels` rechecks `GpuMaterialResourceTable::matches`
+  for every submitted model, in addition to old exact VT/alpha
+  compatibility. Stale generations and asset reloads cannot silently
+  submit a reused GPU batch. `shutdownModels` resets the tickets.
+- Do not claim per-command mixed Metal ICB resources: the new table is
+  still CPU staging only. No native build/GPU shader validation RUN.
