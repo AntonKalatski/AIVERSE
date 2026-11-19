@@ -101,6 +101,11 @@ public:
     };
 
     explicit Editor(Options o) : opt_(std::move(o)) {}
+    ~Editor() {
+        // A graphics backend can deliver a capture callback after the
+        // Editor instance is gone, even if an explicit shutdown was skipped.
+        captureLifetime_->store(false,std::memory_order_release);
+    }
     void init(gfx::Device& dev);
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
