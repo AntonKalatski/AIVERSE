@@ -1382,6 +1382,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.width = f.width;
     effectReport.height = f.height;
     effectReport.shaderGraphTextures = 0;
+    effectReport.shaderGraphFallback = false;
     effectReport.autoExposureTextureSlot = -1;
     effectReport.autoExposureHighlightRejection = 0;
     effectReport.autoExposureFrozen = false;
@@ -2495,40 +2496,65 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const auto* graphEffect = find(PrismaType::ShaderGraph);
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
     std::vector<gfx::TextureHandle> graphImages;
+    bool graphInputsReady = true;
     if (graphEffect) {
-        // Populate the shader graph texture list before deciding whether
-        // fixed slot 8 is available for the HDR exposure history texture.
-        // Existing compiled composite variants are cached by mask+graph.
+        // ShaderGraph textures have their own cache/loader. A missing
+        // image must not silently become a black graph input, or force
+        // Bloom/Grade/LUT to fall all the way back to composite(0).
+        // Compile the graph's variant once to populate its texture list;
+        // the normal composite cache prevents a repeated GPU build.
         composite(mask, graphData);
         const auto it = graphPaths_.find(graphEffect->shaderGraph.dump(-1));
-        if (it != graphPaths_.end())
-            for (const auto& path : it->second)
+        if (it != graphPaths_.end()) {
+            for (const auto& path : it->second) {
                 graphImages.push_back(graphTexture(path));
+                const auto loaded = graphTextures_.find(path);
+                if (loaded == graphTextures_.end() || !loaded->second.valid())
+                    graphInputsReady = false;
+            }
+        }
     }
-    // The shared GPU-free texture layout reserves 5..8 for up to four
-    // graph textures, moving exposure from slot 8 to slot 9 as needed.
-    // A backend that cannot compile the ten-slot variant still gets the
-    // existing no-auto-exposure fallback, rather than a texture alias.
-    const auto compositeLayout = PrismaCompositeTextureLayout::plan(
-        graphImages.size(), automaticExposure.valid());
-    const bool useAutomaticExposure = automaticExposure.valid() &&
-        compositeLayout.valid;
-    if (useAutomaticExposure) mask |= kPfAutoExposure;
-    gfx::PipelineHandle pipe = composite(mask, graphData);
-    if (!pipe.valid()) {
-        // A failed exposure variant may fall back to identical non-auto
-        // color processing without binding an absent TEX8 sampler.
+    // Try the authored graph first, including Auto Exposure. On failure,
+    // try the SAME graph without exposure; if both fail (or a graph image
+    // is absent), preserve the full fixed-effect mask WITHOUT the graph,
+    // still with Auto Exposure when supported. Plain composite(0) is the
+    // final emergency fallback, NOT the first graph-failure response.
+    const uint32_t fixedMask = mask;
+    const Json* selectedGraph = graphInputsReady ? graphData : nullptr;
+    const auto authoredLayout = PrismaCompositeTextureLayout::plan(
+        selectedGraph ? graphImages.size() : 0, automaticExposure.valid());
+    if (automaticExposure.valid() && authoredLayout.valid)
+        mask |= kPfAutoExposure;
+    gfx::PipelineHandle pipe = composite(mask, selectedGraph);
+    if (!pipe.valid() && (mask & kPfAutoExposure)) {
         mask &= ~kPfAutoExposure;
-        pipe = composite(mask, graphData);
+        pipe = composite(mask, selectedGraph);
     }
-    const bool graphCompositePrepared = graphEffect && pipe.valid();
+    if (!pipe.valid() && selectedGraph) {
+        selectedGraph = nullptr;
+        mask = fixedMask;
+        if (automaticExposure.valid()) mask |= kPfAutoExposure;
+        pipe = composite(mask, nullptr);
+        if (!pipe.valid() && (mask & kPfAutoExposure)) {
+            mask &= ~kPfAutoExposure;
+            pipe = composite(mask, nullptr);
+        }
+    }
     if (!pipe.valid()) {
-        mask = 0; // fixed-effect status must not claim a fallback composite
-        pipe = composite(0);   // a broken variant still shows the scene
+        selectedGraph = nullptr;
+        mask = 0;
+        pipe = composite(0); // last resort still presents the scene
     }
-    // Record only the final bound composite variant, not an earlier
-    // pipeline that was rejected before the no-exposure fallback.
+    const bool graphCompositePrepared = graphEffect &&
+        selectedGraph != nullptr && pipe.valid();
+    // The final sampler slot must describe the selected variant. If a
+    // four-image graph failed, the graphless AE variant reads TEX8, NOT
+    // the graph variant's TEX9. This also drives the runtime setTexture.
+    const auto compositeLayout = PrismaCompositeTextureLayout::plan(
+        graphCompositePrepared ? graphImages.size() : 0,
+        (mask & kPfAutoExposure) != 0);
     effectReport.shaderGraphTextures = static_cast<int>(graphImages.size());
+    effectReport.shaderGraphFallback = graphEffect && !graphCompositePrepared;
     if (manualSelected && pipe.valid()) {
         effectReport.manualExposureEncoded = true;
         effectReport.manualExposureEV = manualEV;
@@ -2565,7 +2591,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         dev.setTexture(3, shaftTex.valid() ? shaftTex : black_);
         const Lut* l = (mask & kPfLut) ? lut(find(PrismaType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
-        for(size_t i=0;i<graphImages.size();++i)dev.setTexture(int(i)+5,graphImages[i]);
+        if (graphCompositePrepared)
+            for (size_t i = 0; i < graphImages.size(); ++i)
+                dev.setTexture(int(i) + 5, graphImages[i]);
         if (mask & kPfAutoExposure)
             dev.setTexture(compositeLayout.exposureSlot, automaticExposure);
         dev.draw(3);
