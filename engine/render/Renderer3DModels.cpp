@@ -143,13 +143,19 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const auto* graph = selectedGraph.get();
     const ModelShaderKey skey{shaderKey, selectedGraph};
     const ModelShaderKey pkey{pipeKey, selectedGraph};
-    for (auto& [k, p] : modelPipes_) if (k == pkey) return p;
+    for (auto& [k, p] : modelPipes_) if (k == pkey) {
+        if(warmingPipelines_ && !p.valid())warmingFailed_=true;
+        return p;
+    }
 
     for (auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();++it) if(it->first==pkey) {
         gfx::PipelineHandle result;
         if (!it->second(result)) { warmingPending_=true; return {}; }
         pendingModelPipes_.erase(it);
-        if (!result.valid()) modelError_="model pipeline: "+dev_->lastError();
+        if (!result.valid()) {
+            modelError_="model pipeline: "+dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
         modelPipes_.push_back({pkey,result}); return result;
     }
     ShaderEntry* entry = nullptr;
@@ -252,6 +258,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         else e.shader = dev_->createShader(sd);
         if (!e.job && !e.shader.valid()) {
             e.failed = true;
+            if(warmingPipelines_)warmingFailed_=true;
             modelError_ = "model shader (" + defs + "): " + dev_->lastError();
             std::fprintf(stderr, "%s\n", modelError_.c_str());
         }
@@ -261,8 +268,13 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     if (entry->job) {
         if (!entry->job(entry->shader)) { warmingPending_=true; return {}; }
         entry->job={};
-        if (!entry->shader.valid()) { entry->failed=true; modelError_="model shader: "+dev_->lastError(); }
+        if (!entry->shader.valid()) {
+            entry->failed=true;
+            if(warmingPipelines_)warmingFailed_=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
     }
+    if(warmingPipelines_ && entry->failed)warmingFailed_=true;
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[stream-pipeline-state] key=%u phase=%d\n",pipeKey,phase);
     gfx::PipelineHandle ph;
     if (!entry->failed) {
@@ -295,14 +307,21 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             auto job=dev_->createPipelineAsync(pd);
             if (!job(ph)) { pendingModelPipes_.push_back({pkey,std::move(job)}); warmingPending_=true; return {}; }
         } else ph = dev_->createPipeline(pd);
-        if (!ph.valid()) modelError_ = "model pipeline: " + dev_->lastError();
+        if (!ph.valid()) {
+            modelError_ = "model pipeline: " + dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
     }
     modelPipes_.push_back({pkey, ph});
     return ph;
 }
 
-bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Material>* materials) {
-    warmingPipelines_=true; warmingPending_=false;
+Renderer3D::PipelineWarmStatus
+Renderer3D::warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials) {
+    if(dev_)checkGpuDevice(*dev_);
+    warmingPipelines_=true;
+    warmingPending_=warmingFailed_=false;
     auto warm=[&](const ModelItem& item,int phase,bool instanced) {
         const auto pipe=modelPipeline(item,phase,instanced);
         if (pipe.valid() && !dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) warmingPending_=true;
@@ -334,7 +353,15 @@ bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Materi
             }
         }
     }
-    warmingPipelines_=false; return !warmingPending_;
+    warmingPipelines_=false;
+    return warmingFailed_ ? PipelineWarmStatus::Failed :
+           warmingPending_ ? PipelineWarmStatus::Pending :
+                             PipelineWarmStatus::Ready;
+}
+
+bool Renderer3D::warmModelPipelines(
+        const Model& model,const std::vector<Material>* materials) {
+    return warmModelPipelinesChecked(model,materials)==PipelineWarmStatus::Ready;
 }
 
 void Renderer3D::recordPersistentModel(const ModelDraw& d) {
