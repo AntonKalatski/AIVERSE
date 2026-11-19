@@ -252,6 +252,26 @@ static void bandwidthLimits() {
     allowed.shutdown(dev);
 }
 
+static void aggregateAllowance() {
+    PageRecorder dev(gfx::Backend::Vulkan);
+    auto data=asset();
+    IndexResidency cache;
+    std::string error;
+    assert(cache.initialize(dev,data,96,&error,true,0));
+    const auto atRoots=cache.stats().gpuTransferBytes;
+    // Scene governor can deny an entire 24-byte sibling group while
+    // preserving its source root; 0 means no new GPU uploads.
+    assert(cache.update({{0,1,4.f}},&error,0));
+    assert(!cache.resident(0,1));
+    assert(cache.stats().gpuTransferBytes==atRoots);
+    assert(cache.update({{0,1,4.f}},&error,16));
+    assert(!cache.resident(0,1));
+    assert(cache.update({{0,1,4.f}},&error,24));
+    assert(cache.resident(0,1) && cache.resident(0,2));
+    assert(cache.stats().gpuTransferBytes==atRoots+24);
+    cache.shutdown(dev);
+}
+
 static void portableFallback() {
     for(auto backend:{gfx::Backend::GLES3,gfx::Backend::GL33}) {
         PageRecorder dev(backend);
@@ -273,6 +293,7 @@ int main() {
     pageLifecycle(gfx::Backend::Vulkan);
     partiallyFailedUpload();
     bandwidthLimits();
+    aggregateAllowance();
     portableFallback();
     return 0;
 }
