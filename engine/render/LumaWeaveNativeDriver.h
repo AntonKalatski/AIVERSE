@@ -40,7 +40,7 @@ struct LumaNativeViewInput {
 
 struct LumaNativeViewResult {
     LumaNativeFrameStats sources{};
-    LumaWeaveMetalScreen::Completion priorGpuCompletion{};
+    LumaWeaveScreenMetal::Completion priorGpuCompletion{};
     GiCascadeFrame giFrame{};           // actual submitted/dirty probe tickets
     LumaGiSyncStatus giSourceSync{};    // meaningful if sync was requested
     bool giRequested=false;
