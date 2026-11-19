@@ -240,3 +240,41 @@ ownership boundaries.
 **Mandatory per-stage rule:** new commits, changed files, exact API,
 actual tests/not run, limitations, branch HEAD and next step must be
 recorded in another standalone handoff.
+
+
+## Final stage source update and branch status
+
+- `76ae95aacf67f90767c6cc164a97d8721789622d` —
+  `examples/world/terraweave_native/README.md` documents opt-in
+  `enableFourMetreNutrients`, the v3 resource migration contract,
+  explicit NEREID-vetted full-cell legacy distribution, native
+  micro outflow, and the existing authoritative PHYSIS/NEREID boundaries.
+- `d4e07fa1d426d63afda61bc1a0e3e4502c30c2e7` —
+  `docs/terrain/CURRENT_HANDOFF.md` now points first to Stage70
+  and distinguishes authored test fixtures from executed validation.
+- GitHub readback successfully fetched nonempty current source for:
+  v3 `TerraWeaveForestDeadwood.h`,
+  `TerraWeaveForestDeadwoodEcs.h`,
+  `TerraWeaveForestMicroNutrients.h`,
+  `TerraWeaveNereidMicroNutrients.h`,
+  native `Integration.h`,
+  the Stage70 regression fixture,
+  `CURRENT_HANDOFF.md` and this handoff.
+  This verifies files were written, not that C++ builds.
+- Last observed remote feature head before this appended document:
+  `d4e07fa1d426d63afda61bc1a0e3e4502c30c2e7`.
+  `feature/terraweave` is **929 ahead / 305 behind** `main`
+  (diverged); GitHub PR #24 remained open, Draft, nonmergeable.
+  No merge/rebase was performed.
+- Actual CMake configure, native compile, CTest execution, v1/v2-v3
+  live ECS migration, PHYSIS/Box3D runtime and GPU QA are STILL NOT RUN.
+  The first independent QA action remains the exact Stage70 test
+  command above, followed by native NEREID and full-suite checks.
+
+**Risk to prioritize in QA:** The 4m NEREID bridge uses the body's
+highest-priority `WaterQueryIndex` surface at each fine-cell center.
+Its v3 archive is capable of storing separate overlapping body keys,
+but a secondary water body fully concealed by another at the
+same exact 4m center is conservatively not advanced; test this
+deliberately and do not call the feature a volumetric water chemistry
+solution. Source implementation is a bounded sparse gameplay tracer.
