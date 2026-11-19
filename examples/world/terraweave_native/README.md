@@ -433,3 +433,123 @@ stage has **not** been compiled, executed in a native game, or verified
 on Metal/GL/Vulkan/Box3D/CTest. See
 [Stage67 agent handoff](../../../docs/terrain/stage-67-deadwood-soil-nutrients-handoff.md)
 for exact commits, budgets, dependencies, QA and next work.
+
+
+## Stage 68 — finite nutrient uptake, PHYSIS climate, NEREID transport, shared rotting tiers
+
+**Opt-in:** Existing Stage67 configuration remains unchanged by default.
+Append the Stage68 arguments to
+`examples::terraweave_native::registerSystems`: `deadwoodClimate`
+(`ForestDeadwoodClimateSampler`), `enableForestNutrientCycle` (false by
+default), `nutrientSettings`, `nutrientWeather`
+(`ForestNutrientWeatherSampler`) and `onNutrientCycle`.
+`enableForestDeadwood=true` is mandatory before enabling the nutrient cycle.
+The new resource/archive schema is `terraweave.forest_deadwood` **v2** with
+explicit persistent-ECS v1 migration.
+
+The host's **PHYSIS authoring/simulation** must supply deterministic
+per-tick weather snapshots: temperature in hundredths of a degree Celsius
+and moisture/rainfall in permille. Stage68 does not create another weather
+solver. The following callbacks are examples, not hardcoded PHYSIS APIs:
+
+```cpp
+terraweave::ForestDeadwoodClimateSampler decayWeather =
+    [&](const terraweave::ForestDeadwoodRecord& wood) {
+        const auto snapshot = authoredWeatherAt(
+            wood.xCm,wood.zCm); // YOUR authoritative PHYSIS adapter
+        return terraweave::ForestDeadwoodClimate{
+            snapshot.temperatureCentiC,snapshot.moisturePermille};
+    };
+
+terraweave::ForestNutrientWeatherSampler nutrientWeather =
+    [&](int64_t xCm,int64_t zCm) {
+        const auto snapshot=authoredWeatherAt(xCm,zCm);
+        return terraweave::ForestNutrientWeather{
+            snapshot.rainfallPermille,snapshot.moisturePermille};
+    };
+```
+
+For projects that register ECS systems manually, call
+`registerTerraWeaveForestDeadwoodPersistence(sim)` once before the
+registry seals (now registers save schema v2 and exact v1 migration).
+Install `addTerraWeaveForestDeadwoodSystem` with the extra
+`decayWeather` argument **after** forest mortality, and
+`addTerraWeaveForestNutrientSystem` after decay. Native sample
+`registerSystems` preserves this order.
+
+The kernel owns separate ledgers for **remaining wood**, **soil minerals**,
+**dissolved water nutrients**, **respiration**, **harvested wood**,
+**plant uptake** and **out-of-world nutrient export**.
+`deadwoodLedgerBalanced` checks that their sum equals the original
+organic input. Plant uptake is real bounded mineral removal (tracked in the
+absorbed sink), not the old Stage67 fertility-only proxy. Stage65/64 living
+tree/shrub/grass health still receives a bounded fertility scalar sampled
+from the remaining soil nutrient reserve.
+
+**NEREID actual flow:** During each nutrient interval, the bridge
+`advanceForestNutrientCycleEcs` queries `WaterQueryIndex` at the
+authoritative TerraWeave height in each relevant 32m cell. It reads the
+actual NEREID body ID, submerged contact and current (including existing
+flow modifiers); it does NOT simulate water flow independently. Rain and
+wetness transfer a bounded number of mineral units from soil to the local
+dissolved-water cell. A prior-tick dissolved snapshot advects some units
+toward the dominant flow axis only when the neighbor has valid submerged
+contact from the SAME water body. Isolated/flood-only cells without a
+canonical body ID hold nutrients, rather than fabricating a connection.
+The host may explicitly link confluences/outlets in a future transport
+policy; this implementation does not silently move mass across bodies.
+
+At a **game-authored NEREID river outlet** (not automatically inferred
+from a dry map edge), an authoritative post-water command can export a
+bounded amount once. Here `commandId` is a strictly increasing, nonzero
+network/replay command sequence for *the entire native nutrient ledger*:
+
+```cpp
+// Call on the authoritative ECS command/structural barrier only.
+// Nutrient cell indices are signed 32m cells, NOT world centimetres.
+const uint64_t exported =
+    terraweave::exportForestDissolvedNutrientsEcs(
+        sim.world(),outletCellX,outletCellZ,
+        maximumNutrientUnits,commandId);
+```
+
+Duplicate or stale outflow sequence numbers return zero; a zero-volume
+command is still recorded to prevent a later retry exporting new matter.
+The outlet is a game/level-authored NEREID topological connection. This
+export **does not** change NEREID water volume, sediment, or create an
+independent river solver.
+
+**Shared visual tiers:** The Box3D owner can pass the immutable saved
+`ForestDeadwoodResource` snapshot as the optional final argument to
+`FallenPlantPhysics::submit(renderer,origin,sharedPrototype,&wood)`.
+The normal `Arbor` species model is reused, with four opaque per-draw
+`ModelDraw.tint` stages (fresh, weathered, rotten, crumbling) computed
+from stored initial and remaining organic units. When no wood remains,
+the draw is skipped and the existing posttick Box3D cleanup removes the
+physical body; no per-tree mesh, special postprocessing or alpha overdraw
+is introduced. Old v1 saves set the initial presentation baseline from
+surviving units (original initial mass was not recorded), while keeping
+the actual organic mass unchanged.
+
+Defaults: nutrient cycle once per 256 simulation ticks, up to 256 soil
+and 256 dissolved-water cells evaluated per due tick; uptake <=32,
+leaching <=64 and advection <=128 abstract organic units per cell/step,
+all configurable within bounded validation. Each grass patch contributes
+at most one aggregate uptake demand; no grass-blade ECS entities. PHYSIS
+weather callbacks and NEREID body sampling are called on the completed
+authoritative ECS read phase and must be rollback-deterministic.
+
+**Important limitations:** the 32m nutrient grid cannot represent small
+streams or arbitrary estuary mixing faithfully; this is a bounded nutrient
+tracer coupled to NEREID motion, not a chemistry/biology or water-volume
+solver. No automatic PHYSIS installation is assumed, no cross-body
+confluence nutrient transport, no fungal root networks or 3D soil strata.
+The outflow authoring hook and physics/body ownership are native game
+responsibilities. Prior persistent ECS schemas may require the explicit
+v1 migration registered by the helper; opting a previously disabled
+resource into an older save requires a game-level schema-count migration.
+
+**QA:** Stage68 source is in the GitHub feature branch, but has NOT been
+compiled, executed or benchmarked. See
+[Stage68 agent handoff](../../../docs/terrain/stage-68-nutrient-circulation-handoff.md)
+for exact commits, limitations and independent test acceptance.
