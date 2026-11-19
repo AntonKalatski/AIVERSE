@@ -56,6 +56,7 @@ struct HorizonRuntimeStats {
     size_t weldedNearVertices=0;
     int32_t maxNearWeldDeltaCm=0;
     size_t smoothedNearNormals=0;
+    size_t matchedAuthoredNearNormals=0;
     bool nearWeldSlopeFallback=false;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
@@ -357,6 +358,7 @@ public:
                     runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
                     runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                     runtime_.smoothedNearNormals=prepared->clipStats.smoothedNearNormals;
+                    runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                     runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                     return true;
                 }
@@ -402,6 +404,7 @@ public:
                             runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
                             runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                             runtime_.smoothedNearNormals=prepared->clipStats.smoothedNearNormals;
+                            runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                             runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                             runtime_.gpuUploadMs=std::chrono::duration<
                                 double,std::milli>(
@@ -463,6 +466,7 @@ public:
                 runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
                 runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                 runtime_.smoothedNearNormals=prepared->clipStats.smoothedNearNormals;
+                runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                 runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                 runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
@@ -657,6 +661,7 @@ private:
         previous.weldedNearVertices=runtime_.weldedNearVertices;
         previous.maxNearWeldDeltaCm=runtime_.maxNearWeldDeltaCm;
         previous.smoothedNearNormals=runtime_.smoothedNearNormals;
+        previous.matchedAuthoredNearNormals=runtime_.matchedAuthoredNearNormals;
         previous.nearWeldSlopeFallback=runtime_.nearWeldSlopeFallback;
         previous.estimatedGpuBytes=estimateHorizonGpuResidencyBytes(
             previous.atlasBytes,previous.vertexCount,previous.triangleCount);
@@ -705,6 +710,7 @@ private:
         runtime_.weldedNearVertices=region.weldedNearVertices;
         runtime_.maxNearWeldDeltaCm=region.maxNearWeldDeltaCm;
         runtime_.smoothedNearNormals=region.smoothedNearNormals;
+        runtime_.matchedAuthoredNearNormals=region.matchedAuthoredNearNormals;
         runtime_.nearWeldSlopeFallback=region.nearWeldSlopeFallback;
         runtime_.gpuUploadMs=0;
         runtime_.atlasPatchRegions=0;
