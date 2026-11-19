@@ -688,6 +688,15 @@ private:
                 ImGui::Text("MDI submissions: %llu (%llu indexed commands)",
                     (unsigned long long)modelStats.multiDrawSubmissions,
                     (unsigned long long)modelStats.indirectCommands);
+                if (const char* shared = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
+                    shared && std::strcmp(shared, "1") == 0) {
+                    ImGui::Text("Static cross-model MDI: %llu submissions / %llu commands / %llu items",
+                        (unsigned long long)modelStats.staticCrossModelSubmissions,
+                        (unsigned long long)modelStats.staticCrossModelCommands,
+                        (unsigned long long)modelStats.staticCrossModelItems);
+                    ImGui::TextDisabled("Pooled GPU buffers and exact material grouping; independent view/LOD.");
+                    ImGui::TextDisabled("Only accepted CPU MDI draws count, not grouping candidates.");
+                }
                 if (const char* pal = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE");
                     pal && std::strcmp(pal, "1") == 0) {
                     ImGui::Text("Per-command PBR palette: %llu submissions / %llu commands",
