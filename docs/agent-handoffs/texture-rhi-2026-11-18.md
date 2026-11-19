@@ -5643,3 +5643,36 @@ instruction.
 Next: integrate automatic mip policy with generic renderer feedback
 submission and material virtual-texture binding; then close backend
 feature gaps before the dedicated validation phase.
+
+
+## Stage 9F — complete feedback fragment shader source builders (2026-11-19)
+
+Source commits: ba3ef59334d3bd0c76795446a8205277591a183b,
+0558da0da78f45bb37d7d25587ab9d884a45b6f7.
+File: engine/gfx/VirtualTextureFeedback.h.
+Added virtualTextureFeedbackFragmentGLSL(bool automaticMip=true)
+and virtualTextureFeedbackFragmentMSL(bool automaticMip=true).
+They compose the existing packed page-ID encoder, UV-to-page
+material helper, optional derivative-based mip selector and a
+complete fragment entry point. GLSL declares vVirtualUV and
+uniforms uVirtualBaseTiles/uVirtualLayer/uVirtualMip/
+uVirtualMipLevels/uVirtualTexels/uVirtualMipBias. Metal declares
+AiverseFeedbackParams in fragment buffer(0) and stage input UV
+at user(locn0), with entry point aiverseVirtualFeedbackFragment.
+The follow-up commit corrected source newline escaping.
+
+Usage: supply a compatible vertex shader, shader version/header
+as required by the selected RHI, set viewport/depth testing to
+match visible geometry, disable blending, use a linear RGBA8
+single-sample attachment and pass correct material/texture
+geometry parameters. MSL parameter struct layout must match
+Metal's ABI. Source builder is not yet integrated into the
+main renderer or material system. Do not assume this is a
+verified production shader until compiler and GPU validation.
+
+Verification: GitHub source commits succeeded. Native compile,
+shader compilation, CTest and GPU tests NOT RUN, per user
+instruction to complete functionality first.
+Next: connect source builders to generic material pipeline
+creation and scene-visible draw submission; finish backend
+storage texture and render target feature parity.
