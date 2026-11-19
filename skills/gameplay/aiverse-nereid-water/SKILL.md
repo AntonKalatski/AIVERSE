@@ -695,3 +695,8 @@ The core package remains `aiverse-nereid-water`. Specialized native targets now 
 ## Stage 48 — ocean LOD fixture verification
 
 `ecs_nereid_renderer_contract_test` now tests a four-vertex ocean patch using explicit Far LOD, and additionally tests Medium's subdivided geometry and precise local basis. Defaults remain Medium; no renderer or ECS code changed. Fix was source-reviewed and committed, NOT compiled or run. Full handoff: `docs/nereid/stage-48-ocean-lod-fixture.md`.
+
+
+## Stage 49 — required release gate
+
+Use `bash tools/nereid/validate.sh --focused` for repeated CPU checks of NEREID, SpectraFX compatibility, native ECS and skills; `--full` rebuilds all test targets and runs the entire CTest suite. Override `AIVERSE_NEREID_BUILD_DIR=build/nereid-test` to reuse an existing build directory; logs are written to `<build>/nereid-logs`. The workflow `.github/workflows/nereid-regression.yml` runs focused checks on Linux/macOS. These checks never establish Metal/GLSL GPU visual parity. Stage 49 source code has been committed but no new CI/CTest pass observed in this agent session; see `docs/nereid/stage-49-validation-gate.md`.

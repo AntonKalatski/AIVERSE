@@ -359,3 +359,8 @@ Each registered NEREID CMake package has a distinct skill ID; core water skill r
 ## Stage 48 — large-world ocean LOD test contract
 
 The precise-world ocean patch API honors `WaterSurfaceMeshOptions.lod`: Far emits one unsubdivided quad (four vertices), while default Medium subdivides. Tests must set Far explicitly before asserting vertex count and must test Medium's local-coordinate preservation separately. No runtime changes; rebuild and run native CTest. See `docs/nereid/stage-48-ocean-lod-fixture.md`.
+
+
+## Stage 49 — repeatable NEREID regression gates
+
+The official CPU validation entrypoint is `bash tools/nereid/validate.sh --focused` or `--full`. Focused mode checks generated AI skills and runs all NEREID ECS/cascade/geometry/render-source contracts, VFX ECS and native RTS integration after building the relevant executables. Full mode builds all targets and runs full CTest. Linux/macOS CPU CI mirrors focused mode in `.github/workflows/nereid-regression.yml`. Per-stage logs and Git HEAD are preserved. GPU optical quality, driver behavior, performance and platform visuals remain separate acceptance gates. See `docs/nereid/stage-49-validation-gate.md`.
