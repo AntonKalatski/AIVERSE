@@ -848,3 +848,26 @@ for that Query. A future protocol version should add correlation and
 server generation. Source fixtures are authored, but native engine
 CTest has NOT RUN. See
 `docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.
+
+### Stage 65 — macOS remote edit and admin journal integration GREEN
+
+Native user-reported PHYSIS `--integration --no-physics` CTest
+previously failed `physis_admin_journal` and
+`physis_remote_edit` (4/6 PASS). Commit
+`e628ba359a31be4e8fa2d16d8fab156e1e212e4d`
+preserves the last authoritative Applied status while sending
+a reconnect verification Query, and keeps the native WebSocket
+admin test's accelerated timestamps monotonic across handshake
+and edit, avoiding unsigned elapsed-time underflow.
+
+**macOS native rerun after fix: BUILD PASS, all six CTests PASS,
+100%, 0 failed, 2.99 seconds.** Tests:
+`physis_journal_posix_io`, `physis_journal_locked_io`,
+`physis_journal_crash_recovery`, `physis_admin_journal`,
+`physis_remote_edit`, `physis_field_runtime`.
+Report:
+`/Users/aleksandrfeer/Projects/AIVERSE/build/physis-validation-integration/physis-reports/20261119-102507-474`.
+No changes to wire format, saved ECS data, runtime Box3D or other
+agents' NEREID/TerraWeave source. Complete PHYSIS/physics/editor
+CI remains unverified. See stage handoff:
+`docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.

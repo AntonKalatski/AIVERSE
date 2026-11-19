@@ -885,3 +885,32 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   NEREID/TerraWeave/Box3D edits.
 - Full handoff:
   `docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.
+
+### Stage 65 — integration regressions fixed and user-verified on macOS (2026-11-19)
+
+- On the previous Stage 64 checkout, the user reported native CTest **4/6**:
+  - PASS `physis_journal_posix_io`, `physis_journal_locked_io`,
+    `physis_journal_crash_recovery`, `physis_field_runtime`;
+  - FAIL `physis_admin_journal` and `physis_remote_edit`.
+- Fix commit `e628ba359a31be4e8fa2d16d8fab156e1e212e4d`:
+  - `RemoteClient::poll` keeps a previously confirmed `Applied`
+    status while merely sending a reconnect Query. Incoming
+    authoritative response/timeout still controls the eventual state.
+  - In the native loopback WebSocket admin test, the time passed to
+    `WsConn::update` stays monotonic between synthetic authentication
+    and edit loops, preventing unsigned timeout underflow.
+    Failure-only admin/WS diagnostics were added.
+- **ACTUAL macOS user-reported PASS AFTER FIX**: integration runner's
+  headless C++ build succeeded, then all six native CTests PASS
+  (`0 failed out of 6`, total 2.99 seconds). Runner summary:
+  `PHYSIS validation PASS`, report
+  `/Users/aleksandrfeer/Projects/AIVERSE/build/physis-validation-integration/physis-reports/20261119-102507-474`.
+- This is verified test output supplied by the user, not a local
+  test executed by this agent. Full PHYSIS/Box3D/Editor/Windows/CI
+  suites are still **NOT RUN/NOT CONFIRMED**. PR #25 stays Draft.
+- Next: on the same macOS checkout, run
+  `bash tools/physis-validate-native.sh --full --jobs 4`,
+  then editor-enabled PHYSIS authoring targets. Do not claim
+  production readiness until complete QA.
+- Standalone handoff:
+  `docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.

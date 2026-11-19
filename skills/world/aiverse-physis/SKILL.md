@@ -906,3 +906,23 @@ in full native AIVERSE. Run
 and preserve actual reports before changing PR #25 from Draft.
 Handoff:
 `docs/agent-handoffs/physis-stage64-monotonic-ack-2026-11-19.md`.
+
+### Stage 65 — successful macOS integration after reconnect fixes
+
+The real native macOS PHYSIS integration runner initially failed
+`physis_remote_edit` and `physis_admin_journal` (4/6 PASS). Fix
+`e628ba359a31be4e8fa2d16d8fab156e1e212e4d` corrected
+send-side Applied status preservation on reconnect Query and a
+backwards synthetic WS test clock. The user then reran the exact
+`--integration --no-physics` target: **BUILD PASS, CTest 6/6
+PASS, 0 failures, 2.99s**. Native report location:
+`build/physis-validation-integration/physis-reports/20261119-102507-474`
+(macOS path prefixed with user's AIVERSE checkout).
+
+Do NOT report this as full-engine/Box3D/editor PASS. Next run:
+```sh
+bash tools/physis-validate-native.sh --full --jobs 4
+```
+Inspect failures, keep PR #25 Draft, update handoff after each stage.
+Full detail in
+`docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.
