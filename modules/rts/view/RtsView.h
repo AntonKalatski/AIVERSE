@@ -218,6 +218,8 @@ public:
     // Supply it before init; hosted clients share the editor's generation.
     void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {
         gpuDeviceLease_=std::move(lease);
+        terrain_.setGpuDeviceLease(gpuDeviceLease_);
+        groundFx_.setGpuDeviceLease(gpuDeviceLease_);
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
