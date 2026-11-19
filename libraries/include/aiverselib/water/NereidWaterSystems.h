@@ -1,6 +1,6 @@
 // AIVERSE NEREID -- opt-in ECS sampling; no FPS/RTS or rendering coupling.
 #pragma once
-#include <aiverselib/water/NereidVortices.h>
+#include <aiverselib/water/NereidCascadeFlow.h>
 #include "engine/sim/CommonComponents.h"
 #include "engine/sim/Simulation.h"
 #include <string>
@@ -42,6 +42,7 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
             const auto* vortices=world.tryGetConst<WaterVortexFieldComponent>(entity);
             considerWaterCandidate(sample,entity,body,position,geometry,field,vortices);
         });
+    applyWaterCascadeFlow(world,position,sample);
     return sample;
 }
 
