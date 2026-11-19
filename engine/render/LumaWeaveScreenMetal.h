@@ -246,7 +246,11 @@ public:
         const uint64_t sources=sourcePacket_.lights.size();
         if(pixels*(uint64_t(samples)+1u)*sources>settings_.maxCandidateEvaluations)
             return result; // correctness-preserving admission failure
-        const uint32_t dst=historyValid_?(1u-confirmedIndex_):0u;
+        // ALWAYS write the opposite ping-pong slot, even on the very first
+        // frame or after invalidation. The denoiser binds oldFiltered as
+        // texture(3), and Metal must never sample a texture while writing to
+        // the same resource at texture(0), even if historyWeight is zero.
+        const uint32_t dst=1u-confirmedIndex_;
         ScreenParams p;
         p.invVP=inverseVP;
         p.eye={eye.x,eye.y,eye.z,dev_->info().renderTargetFlipY?1.f:0.f};
