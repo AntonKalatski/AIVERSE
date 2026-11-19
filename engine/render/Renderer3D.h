@@ -128,6 +128,8 @@ public:
     // Optional read-only presentation bridge for object motion vectors.
     virtual bool wantsObjectMotionVectors() const { return false; }
     virtual gfx::TextureHandle objectMotionSceneDepth() const { return {}; }
+    // Monotonic per-view camera-cut epoch. Default hook remains inert.
+    virtual uint64_t objectMotionEpoch(uint64_t viewId) const { (void)viewId; return 0; }
     virtual bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const {
         (void)viewId; (void)previousViewProj; return false;
     }
@@ -285,6 +287,23 @@ public:
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
     // Call after everything that belongs to the 3D scene (particles), before UI.
     void resolvePrisma(); // canonical image processing resolve; leaves UI pass open
+    // Presentation-only camera cut / teleport / view replacement hooks.
+    // Invalidating a view keeps GPU target allocations but discards all
+    // previous transform and deformation history. No ECS mutation.
+    void resetObjectMotionHistory(uint64_t viewId);
+    void resetAllObjectMotionHistory();
+    struct ObjectMotionStats {
+        uint64_t viewId = 0;
+        uint32_t rigidInstances = 0;
+        uint32_t rigidDraws = 0;
+        uint32_t cutoutDraws = 0;
+        uint32_t skinnedDraws = 0;
+        uint32_t bakedDraws = 0;
+        uint32_t reactiveDraws = 0;
+        uint32_t rejected = 0;
+        bool submitted = false;
+    };
+    const ObjectMotionStats& objectMotionStats() const { return objectMotionStats_; }
     void resolvePostFx() { resolvePrisma(); } // legacy API
     // Extra renderers (sprites, tiles) that draw with their own pipelines inside the main pass: run
     // after opaque and translucent meshes, before overlays (fog of war stays on top).
@@ -451,7 +470,7 @@ private:
                                 bool instancePalette = false);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
-    void renderObjectMotionVectors(PostProcess& post); // RHI pass, opaque rigid models only
+    void renderObjectMotionVectors(PostProcess& post); // RHI pass, rigid + deformed models
     bool initSelectionOutline();
     void renderSelectionOutline(const gfx::PassDesc& scenePass, int width, int height);
 
@@ -576,11 +595,14 @@ private:
         gfx::TextureHandle target;
         gfx::TextureHandle depth;
         int width = 0, height = 0;
+        uint64_t epoch = 0; // last observed PostProcess camera-cut generation
+        bool valid = false;
         std::map<std::pair<uint64_t, int>, MotionRigidPose> previous;
         // Same node can draw different primitives with distinct skin palettes.
         std::map<std::tuple<uint64_t, int, size_t>, MotionDeformPose> previousDeformed;
     };
     std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
+    ObjectMotionStats objectMotionStats_{};
     gfx::ShaderHandle objectMotionShader_;
     gfx::PipelineHandle objectMotionPipeline_;
     gfx::ShaderHandle objectMotionInstancedShader_;
