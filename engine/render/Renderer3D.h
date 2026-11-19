@@ -299,6 +299,8 @@ public:
         staticRenderPackets_.clear();
         staticModelEligibility_.clear();
         staticMaterialOwners_.clear();
+        cpuMdiPages_.clear(); // reset page-specific costs on whole-scene reload
+        cpuMdiAdaptive_ = {};
         staticRenderPacketBytes_ = 0;
         staticMaterialOwnerBytes_ = 0;
     }
