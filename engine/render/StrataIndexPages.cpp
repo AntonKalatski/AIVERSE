@@ -119,7 +119,8 @@ bool IndexResidency::initializeIncremental(size_t uploadBudgetBytes,
 bool IndexResidency::updateIncremental(
         const std::vector<std::vector<uint8_t>>& wanted,
         const std::vector<IndexDemand>& priorities,
-        uint64_t deferred, std::string* error) {
+        uint64_t deferred, std::string* error,
+        size_t uploadAllowanceBytes) {
     if (!incremental_ || !device_ || !buffer_.valid() ||
         !device_->gpuHealthy() || !device_->canUpdateSharedBuffers()) {
         if (error) *error = "STRATA indexed page upload outside safe RHI epoch";
@@ -266,9 +267,11 @@ bool IndexResidency::updateIncremental(
                 }
             }
 
-            if (incremental_->uploadBudget &&
-                (bytes > incremental_->uploadBudget ||
-                 newBytes > incremental_->uploadBudget - bytes)) {
+            const size_t allowed=std::min(
+                incremental_->uploadBudget ? incremental_->uploadBudget
+                                           : SIZE_MAX,
+                uploadAllowanceBytes);
+            if (bytes > allowed || newBytes > allowed - bytes) {
                 ++bandwidthDeferrals;
                 break;
             }
