@@ -18,6 +18,14 @@ struct GeometryPoolPage {
     size_t capacity = 0;
     size_t vertexEnd = 0;
     size_t indexBegin = 0;
+    struct RetiredPair {
+        size_t vertexOffset = 0, indexOffset = 0;
+        uint32_t vertexBytes = 0, indexBytes = 0;
+        uint64_t retireFrame = 0;
+    };
+    // No concurrent RHI calls: owned by poolMutex, with bounded retention.
+    std::vector<RetiredPair> retired;
+    uint64_t recycledUploads = 0;
 };
 namespace {
 std::atomic<bool> poolEnabled{true};
@@ -27,6 +35,14 @@ std::map<gfx::Device*, std::vector<std::weak_ptr<GeometryPoolPage>>> pools;
 // Oversized models still get a dedicated power-of-two page below.
 constexpr size_t kDefaultPageSize = 2 * 1024 * 1024;
 constexpr size_t kMaximumPooledModelSize = 16 * 1024 * 1024;
+constexpr size_t kMaxRetiredPairsPerPage = 256;
+bool recyclingEnabled() {
+    static const bool requested = [] {
+        const char* value = std::getenv("AIVERSE_GEOMETRY_POOL_RECYCLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return requested;
+}
 // -1 inherits the one-time environment setting; editor/native hosts may
 // override it before asset (re)upload without mutating existing pooled data.
 std::atomic<int> rigidLodPoolingOverride{-1};
@@ -50,6 +66,7 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
     std::lock_guard lock(poolMutex);
     const auto iter = pools.find(&dev);
     if (iter == pools.end()) return stats;
+    const uint64_t completed = dev.completedFrameSerial();
     for (const auto& weak : iter->second) {
         const auto page = weak.lock();
         if (!page) continue;
@@ -58,6 +75,12 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
         stats.occupiedBytes += page->vertexEnd + (page->capacity - page->indexBegin);
         const long owners = page.use_count() - 1; // exclude this temporary lock
         if (owners > 0) stats.liveModels += size_t(owners);
+        stats.retiredPairs += page->retired.size();
+        stats.recycledUploads += page->recycledUploads;
+        if (completed != 0 && dev.gpuHealthy())
+            for (const auto& span : page->retired)
+                if (span.retireFrame != 0 && span.retireFrame <= completed)
+                    ++stats.reusablePairs;
     }
     return stats;
 }
@@ -120,12 +143,35 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     auto& pages = pools[&dev];
     std::shared_ptr<GeometryPoolPage> target;
     bool newPage = false;
-    for (auto it = pages.begin(); it != pages.end();) {
+    size_t selectedPair = SIZE_MAX;
+    const uint64_t completed = recyclingEnabled() && dev.gpuHealthy()
+        ? dev.completedFrameSerial() : 0;
+    // Try completed, whole vertex/index pairs first. No split/coalescing of
+    // mixed geometry allocations: it must never overwrite a live neighbor.
+    if (completed != 0) {
+        for (auto it = pages.begin(); it != pages.end(); ++it) {
+            auto page = it->lock();
+            if (!page) continue;
+            for (size_t n = 0; n < page->retired.size(); ++n) {
+                const auto& span = page->retired[n];
+                if (span.retireFrame != 0 && span.retireFrame <= completed &&
+                    span.vertexBytes >= vertexBytes &&
+                    span.indexBytes >= indexBytes) {
+                    target = std::move(page);
+                    selectedPair = n;
+                    break;
+                }
+            }
+            if (target) break;
+        }
+    }
+    if (!target) for (auto it = pages.begin(); it != pages.end();) {
         auto page = it->lock();
         if (!page) { it = pages.erase(it); continue; }
         if (!target && page->indexBegin >= page->vertexEnd &&
             vertexBytes <= page->indexBegin - page->vertexEnd &&
-            indexBytes <= page->indexBegin - page->vertexEnd - vertexBytes) target = page;
+            indexBytes <= page->indexBegin - page->vertexEnd - vertexBytes)
+            target = std::move(page);
         ++it;
     }
     if (!target) {
@@ -145,8 +191,12 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
         newPage = true; // publish only after both writes succeed
     }
     // Vertex base is measured in 60-byte vertices; index base in uint32s.
-    const size_t vbOffset = target->vertexEnd;
-    const size_t ibOffset = target->indexBegin - indexBytes;
+    const bool reusePair = selectedPair != SIZE_MAX;
+    const size_t vbOffset = reusePair
+        ? target->retired[selectedPair].vertexOffset : target->vertexEnd;
+    const size_t ibOffset = reusePair
+        ? target->retired[selectedPair].indexOffset
+        : target->indexBegin - indexBytes;
     const bool offsetsValid =
         vbOffset / sizeof(ModelVertex) <= std::numeric_limits<uint32_t>::max() &&
         ibOffset / sizeof(uint32_t) <= std::numeric_limits<uint32_t>::max();
@@ -167,14 +217,25 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
         }
         return false;
     }
-    target->vertexEnd += vertexBytes;
-    target->indexBegin = ibOffset;
+    if (reusePair) {
+        // Keep the full original pair reserved; unused tail of an oversized
+        // pair remains fragmentation (never hand out overlapping slices).
+        auto& holes = target->retired;
+        holes[selectedPair] = holes.back();
+        holes.pop_back();
+        ++target->recycledUploads;
+    } else {
+        target->vertexEnd += vertexBytes;
+        target->indexBegin = ibOffset;
+    }
     if (newPage) pages.push_back(target);
     m.geometryPoolPage = target;
     m.vb = target->buffer;
     m.ib = target->buffer;
     m.gpuBaseVertex = uint32_t(vbOffset / sizeof(ModelVertex));
     m.gpuFirstIndex = uint32_t(ibOffset / sizeof(uint32_t));
+    m.gpuPoolVertexBytes = uint32_t(vertexBytes);
+    m.gpuPoolIndexBytes = uint32_t(indexBytes);
     return true;
 }
 
@@ -188,6 +249,20 @@ void releaseModelGeometryPool(gfx::Device& dev, Model& m) {
         if (!m.geometryPoolPage) return;
         const std::shared_ptr<GeometryPoolPage> page =
             std::move(m.geometryPoolPage);
+        if (page.use_count() > 1 && recyclingEnabled() &&
+            m.gpuPoolVertexBytes && m.gpuPoolIndexBytes &&
+            page->retired.size() < kMaxRetiredPairsPerPage) {
+            const uint64_t retireFrame = dev.frameSerial();
+            if (retireFrame != 0) {
+                // Copy byte offsets BEFORE clearing the Model allocation.
+                // The new owner must wait for this GPU frame to complete.
+                page->retired.push_back({
+                    size_t(m.gpuBaseVertex) * sizeof(ModelVertex),
+                    size_t(m.gpuFirstIndex) * sizeof(uint32_t),
+                    m.gpuPoolVertexBytes, m.gpuPoolIndexBytes,
+                    retireFrame});
+            }
+        }
         if (page.use_count() == 1) {
             orphan = page->buffer;
             const auto iter = pools.find(&dev);
@@ -207,5 +282,6 @@ void releaseModelGeometryPool(gfx::Device& dev, Model& m) {
     // RHI destroy is responsible for retaining in-flight GPU uses.
     if (orphan.valid()) dev.destroyBuffer(orphan);
     m.gpuBaseVertex = m.gpuFirstIndex = 0;
+    m.gpuPoolVertexBytes = m.gpuPoolIndexBytes = 0;
 }
 } // namespace aiverse::render

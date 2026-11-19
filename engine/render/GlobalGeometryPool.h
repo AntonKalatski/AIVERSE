@@ -10,6 +10,9 @@ struct GeometryPoolStats {
     size_t allocatedBytes = 0;
     size_t occupiedBytes = 0;
     size_t liveModels = 0;
+    size_t retiredPairs = 0;       // bounded, quarantined until GPU completes
+    size_t reusablePairs = 0;      // subset with completed GPU serial
+    uint64_t recycledUploads = 0; // successful upload into an old pair
 };
 GeometryPoolStats geometryPoolStats(gfx::Device& dev);
 // Read-only prediction before GPU upload: distinguishes global/backend

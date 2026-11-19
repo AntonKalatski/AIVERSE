@@ -253,6 +253,9 @@ struct Model {
     // An empty page means legacy dedicated per-model buffers.
     std::shared_ptr<GeometryPoolPage> geometryPoolPage;
     uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
+    // Byte extents of the reserved rigid geometry page pair, retained after
+    // uploadModel releases CPU vertices/indices. Zero for dedicated models.
+    uint32_t gpuPoolVertexBytes = 0, gpuPoolIndexBytes = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;
