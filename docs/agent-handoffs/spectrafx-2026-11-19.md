@@ -616,3 +616,12 @@ git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main
 git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 37: project-facing GPU runtime guide and client adapter cleanup
+- **Branch:** `feature/spectrafx-generic-cue-queue`; latest main comparison for this continuation: main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` (0 commits behind at start).
+- **Implementation/cleanup commits:** `fcf91926ef439af33808228070f2f7609291845c` (unused non-owning ClientFx device field removed), `9052e1886ff7e5f762496d6b07fcd28fbf39f4d4` (unused assignments removed), `8d946e63b80dd72333e0e614eb0b3b87018fc32f` (new `docs/spectrafx-gpu-runtime.md`).
+- **Documentation:** demonstrates `fx/gpu/<safe-name>.gpu.json` CPU/GPU config and `fx/gpu/routes.json` project opt-in; labels example eventType 42 explicitly **illustrative only**, not an actual game module event code. Explains conservative local-player event visibility, potential duplication with `fx/fx.json`, backend policy and lack of D3D12, editor route editing + client restart, game `beginFrame -> GPU compute -> Renderer3D scene pass -> CPU and GPU particles -> PRISMA` order, exact ownership/reset requirements and the currently incomplete GPU modules.
+- **Scope:** cleaning header/cpp warning exposure and source documentation only; no ECS/system/save version changes. Earlier Stage 34 and Stage 35 source changes remain committed intact, with handoffs. No tests or compilation were performed.
+- **Verification actually executed:** **NOT RUN**, by explicit user's instructions (all functions, then tests). GitHub accepted all changes; no C++ compile, CTest, editor/game smoke, screenshot, Mac Metal/Vulkan rendering or perf evidence. Route documentation is not proof of implementation correctness.
+- **Next feature priorities:** native Scene Editor GPU preview, pooled GPU particle storage across emitters, GPU collision/event feedback, LOD/quality controls, additional cross-genre host integration. Follow the mandatory per-stage handoff protocol; only after feature completion move to compiling and testing every implemented path.
