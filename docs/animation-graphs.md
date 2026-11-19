@@ -766,3 +766,19 @@ Legacy bool-only Vulkan/GL/third-party implementations report Ready/Pending
 without inventing a Failed result. Real Metal and cross-backend validation,
 CMake/CTest and visual continuity tests are **NOT RUN**.
 See [Stage 117 handoff](agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
+
+## Stage 118 — GPU resource initialization for appearance publication
+
+The AnimationGraph and MotionWeave presentation ECS remain unchanged.
+Their genre-neutral View publication host can now reject and roll back
+partial Renderer3D, LightSystem and trace GPU initialization without
+mistaking a partially allocated pipeline or fallback texture for a valid
+render owner. Rollback requires a real Device GPU-idle barrier; on
+failure to prove idle, a native exception prevents unsafe publication
+or destruction rather than silently falling back to old resource IDs.
+Standalone LightSystem owners have explicit orphan/idle-failure counters.
+
+This does not add a second AnimationGraph update, ECS simulation writer,
+root motion authority or genre dependency. Native build/CTest, GPU
+failure injection, visual hot reload and sanitizers were **NOT RUN**.
+See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
