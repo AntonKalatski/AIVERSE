@@ -501,3 +501,32 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   previous implementation. NEREID, TerraWeave and Box3D ownership
   remains unchanged. Handoff:
   `docs/agent-handoffs/physis-stage49-posix-journal-test-2026-11-19.md`.
+
+### Stage 50 — post-read identity and journal collision safety (2026-11-19)
+
+- Canonical `posix_journal::read` now rechecks the opened journal fd,
+  visible filename device/inode, file size/owner/mode/link count and
+  the pinned directory's ownership BEFORE publishing read bytes.
+  This detects common rename/replacement/truncation races. On failure
+  caller output remains unchanged; the canonical host fails closed.
+- `posix_journal::write` revalidates private directory ownership
+  after directory fsync. If chmod changes mid-write, durability is
+  reported uncertain instead of success, and ServerGateway's sticky
+  journal health policy suspends further privileged edits.
+- Native `physis_journal_posix_io` CTest now covers unmodified output
+  on invalid/oversized reads, temp-name O_EXCL collision and original
+  receipt preservation, and directory mode denial for reads as well
+  as writes. Do not silently remove or overwrite a collided temp file.
+- ACTUAL PASS: rebuilt local source-identical isolated PHYSIS POSIX
+  CTest on Linux (1/1), plus GCC 14.2 and Clang 17 strict-warning
+  builds and GCC ASan/UBSan, all passing.
+  Verified GitHub blob hashes:
+  `engine/physis/PhysisJournalPosixIO.h` =
+  `fc1b07631c5191e8681992fb3743482029c7d2ea`,
+  `tests/physis_journal_posix_io_test.cpp` =
+  `f3500d80dc7c99c389b12e0d8a40721e202d8048`.
+- Full AIVERSE compilation and `physis_admin_journal` plus complete
+  PHYSIS CTest are STILL NOT RUN; GitHub feature CI is queued/cancelled,
+  not confirmed green. No cross-file journal+World atomic guarantee
+  or Windows ACL parity. See
+  `docs/agent-handoffs/physis-stage50-post-read-integrity-2026-11-19.md`.
