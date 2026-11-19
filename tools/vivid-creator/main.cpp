@@ -369,6 +369,29 @@ struct CreatorApp {
             slider("Sclera redness",&draft.eyes.scleraRedness,0,1);
             slider("Tear film",&draft.eyes.tearFilm,0,1);
         }
+        if(ImGui::CollapsingHeader("Facial morph / 52 semantic channels")) {
+            ImGui::TextWrapped("Author default facial channel weights. "
+                               "Live jaw, blink and smile controls override "
+                               "their corresponding default channels.");
+            for(std::size_t i=0;i<kChannelCount;++i) {
+                const auto name=channelName(static_cast<Channel>(i));
+                const std::string label(name);
+                ImGui::PushID(int(i));
+                ImGui::SliderFloat(label.c_str(),
+                                   &draft.expressionRest[i],0.0f,1.0f,"%.2f");
+                editCommit();
+                ImGui::PopID();
+            }
+            if(ImGui::Button("Reset facial defaults")) {
+                std::string error;
+                if(session.edit([](HumanDNA& dna) {
+                    dna.expressionRest.fill(0.0f);
+                },&error)) {
+                    syncDraft();
+                    pendingRebuild=true;
+                } else status=error;
+            }
+        }
         if(ImGui::CollapsingHeader("Hair / groom")) {
             color("Hair pigment",draft.groom.color);
             slider("Length m",&draft.groom.lengthMeters,0,2);
@@ -462,6 +485,11 @@ struct CreatorApp {
             status="MotionWeave pose temporarily unavailable";
             return;
         }
+        // The DNA 52-channel neutral pose is applied first. Interactive
+        // demonstration controls below override their named channels.
+        for(std::size_t i=0;i<kChannelCount;++i)
+            controller.set(Layer::Tracking,static_cast<Channel>(i),
+                           session.dna().expressionRest[i]);
         controller.set(Layer::Tracking,Channel::JawOpen,jaw);
         controller.set(Layer::Tracking,Channel::EyeBlinkLeft,blink);
         controller.set(Layer::Tracking,Channel::EyeBlinkRight,blink);
