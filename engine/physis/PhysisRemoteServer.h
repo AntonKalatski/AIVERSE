@@ -209,7 +209,7 @@ public:
                     } else {
                         answer(Result::Unknown,journalHealthy_
                             ? "PHYSIS request not found; safe to retry original"
-                            : "PHYSIS journal unavailable; new edits and retries suspended");
+                            : kJournalRetrySuspended);
                         if(const auto* state=simulation.world().resourceConst<FieldRuntimeState>())
                             reply.receipt.revision=state->revision;
                     }
@@ -338,7 +338,7 @@ public:
                 reply.receipt.result==Result::Applied)) {
                 reply.receipt.result=Result::Unknown;
                 reply.receipt.scheduledTick=0;
-                reply.receipt.detail="PHYSIS journal unavailable; receipt durability unconfirmed";
+                reply.receipt.detail=kJournalDurabilityUnavailable;
             }
             net::Bytes response;
             if(encode(reply,response))authenticatedConn.send(response);
