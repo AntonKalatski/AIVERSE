@@ -184,6 +184,18 @@ int main() {
     }
     assert(device.rasterDraws==0 && device.indirectDraws==0);
 
+    // A stale/missing GPU sidecar and a live material edit must be rejected,
+    // even if the caller forgot to increment materialRevision.
+    GpuMetadataScene absent;
+    assert(!encodeRendererCommands(model,absent,candidate,7,gate,commands));
+    model.materials[0].alpha=AlphaMode::Blend;
+    assert(!encodeRendererCommands(model,residency,candidate,7,gate,commands));
+    model.materials[0].alpha=AlphaMode::Opaque;
+    model.meshes[0].shadowBatch.indexCount=6;
+    assert(!prepareRenderCandidate(model,asset,residency,"static",0,0,
+                                   RenderPass::SunShadow,view,candidate,&error));
+    model.meshes[0].shadowBatch.indexCount=0;
+
     // A second pass with a large pixel threshold is a different, valid
     // *exclusive* candidate. It selects the parent, not its two children.
     view.errorThresholdPixels=5000.f;
