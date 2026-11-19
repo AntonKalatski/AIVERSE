@@ -5,6 +5,8 @@
 #pragma once
 #include "AppearanceAssetRegistry.h"
 #include "engine/render/ModelResourceCache.h"
+#include "engine/render/ModelAssetProvider.h"
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -56,6 +58,56 @@ public:
                 source.get()==current.get();
         }
     };
+
+    // Import a REAL child model through the host's generic resource owner,
+    // then publish its immutable static appearance in the common registry.
+    // On failure, the caller's previous Snapshot is untouched; old models
+    // must be detached before the host invalidates their source in its cache.
+    // This is a single-asset helper; use compile() to transactionally author
+    // the complete set of already-published children and sockets.
+    static bool importChild(render::ModelAssetProvider& provider,
+                            gfx::Device& device,
+                            AppearanceAssetRegistry& appearances,
+                            const std::string& assetKey,
+                            const std::string& modelSource,
+                            AppearanceAssetRegistry::Request authored,
+                            Snapshot& out,
+                            const AppearanceAssetRegistry::TextureLoader& textures={},
+                            std::string* error=nullptr) {
+        if(error)error->clear();
+        try {
+            if(assetKey.empty() || modelSource.empty())
+                throw std::invalid_argument(
+                    "imported attachment needs a source path and asset key");
+            if(!authored.animationGraph.isNull() || authored.sourceId!=0)
+                throw std::invalid_argument(
+                    "static attachment cannot publish its own AnimationGraph");
+            auto* model=provider.load(device,modelSource);
+            if(!model)
+                throw std::runtime_error("child Model import/upload failed");
+            auto read=provider.resources().acquireModelRead(model);
+            if(!read)
+                throw std::runtime_error("imported child Model not cache resident");
+            authored.model=model;
+            if(std::find(authored.sources.begin(),authored.sources.end(),
+                         modelSource)==authored.sources.end())
+                authored.sources.push_back(modelSource);
+            // publish() is last-good transactional: a failed appearance
+            // compile never replaces its previously published snapshot.
+            if(!appearances.publish(assetKey,authored,textures,{},error))
+                return false;
+            auto candidate=appearances.find(assetKey);
+            if(!candidate || candidate->model!=model ||
+               candidate->modelPublicationGeneration==0)
+                throw std::runtime_error(
+                    "published child appearance has an invalid Model epoch");
+            out=std::move(candidate);
+            return true;
+        }catch(const std::exception& ex) {
+            if(error)*error=ex.what();
+            return false;
+        }
+    }
 
     // A prepared packet and its short-lived CPU read leases must stay on
     // the render/asset owner thread until AFTER synchronous View submission.
