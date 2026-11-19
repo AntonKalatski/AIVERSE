@@ -364,3 +364,38 @@ even when material pointer, vector size and GPU handle ID do not change.
 destroying/replacing a Model. Do not use this fast path for an owner that
 cannot guarantee version propagation; the existing unversioned path is
 available and checks the full material state.
+
+**Implemented shared material-state memo:** With
+`AIVERSE_PERSISTENT_CPU_PACKETS=1` and both nonzero owner fields,
+`Renderer3D` maintains a separate cache keyed by
+`(Model*, materialOwnerKey)`. For a newly observed owner revision it
+computes resolved GPU material fingerprints once, plus the minimum shader
+quality that enables vertex displacement. Later draws with the same
+`materialOwnerRevision`, `Model::materialRevision`, geometry revision and
+material count reuse that signature. An increasing internal serial
+identifies each refreshed material state. A saved static packet may hot-replay
+only while its serial matches; when owner or source revisions change the
+packet rebuilds, so it cannot silently reuse the old material selection.
+
+The versioned path rebinds every packet's material index to the **live**
+draw's material vector. It does not save a per-object material copy or hash
+vector when a shared owner signature exists; the signature is retained
+once for all objects sharing that owner. Thus thousands of rigid static
+instances can share the same material-state computation and storage.
+`minVertexOffsetQuality` also avoids rescanning each material's shader
+graph on hot draws while remaining sensitive to the current material
+quality level. If either owner token is zero, the renderer still performs
+its existing full material hash plus exact GPU-state equality checks
+for every packet candidate, with no pointer-identity shortcuts.
+
+The shared owner cache is bounded to 4096 entries, 512 materials per
+owner, and **8 MiB of fingerprint payload**. Old owners expire after
+128 unseen render-scene epochs at periodic sweeps; full invalidation
+and `invalidateModelCachesFor(model)` discard associated signatures.
+The Scene → Batching panel exposes shared hits, misses, entries,
+evictions and payload memory. No GPU resources are owned by this cache.
+Model pointer identity is only a scoped lookup key, not an asset lifetime
+guarantee. Owners changing material vector contents without incrementing
+their revision violate the explicit fast-path contract; use the conservative
+unversioned path for data without reliable revision propagation.
+
