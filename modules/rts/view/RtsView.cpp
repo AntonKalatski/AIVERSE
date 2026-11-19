@@ -433,6 +433,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         genericObjects.reserve(s.objects.size());
         for(size_t oi=0;oi<s.objects.size();++oi) {
             const auto& o=s.objects[oi];
+            // A fallback render-array index is not a stable logical
+            // identity: a different object could reuse it after reload.
+            // Keep those objects on the existing legacy animation path.
+            if(!o.entity.valid())continue;
             if(!o.visible || o.isProjectile || o.parented || o.body!=-1 ||
                o.type>=looks_.size() || !typeLoaded(o.type))continue;
             if(twoD_ && twoD_->hasSprite(o.type))continue;
@@ -444,6 +448,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             auto& st=stateFor(key,o);
             const auto& ch=look.models[size_t(st.choice)];
             if(!ch.graph || !ch.model || !ch.needsPose ||
+               ch.modelGeneration==0 ||
                ch.baked || !ch.procs.empty() || !ch.legs.empty() ||
                !ch.additive.empty() || !ch.attach.empty() ||
                !ch.fx.empty() || !ch.weaponPoses.empty() ||
@@ -472,6 +477,9 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             packet.id=key;packet.generation=(uint64_t(o.type)<<32)|
                 uint32_t(st.choice);
             packet.draw.model=ch.model;
+            // Preserve the authored asset-publication epoch across graph
+            // edits; a new Model upload receives a fresh epoch in RtsLook.
+            packet.animationModelGeneration=ch.modelGeneration;
             packet.graph=ch.graph;
             packet.parameters=ch.graph->defaults();
             packet.parameters.set("speed",st.speed);
