@@ -44,6 +44,8 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
 void GpuPoolWorld::shutdown() {
     // Destroy GPU resources before the caller's graphics Device.
     gpuGroups_.clear();
+    resetAccepted_.clear();
+    resetReport_={};
     bindings_.clear();
     sources_.clear();freeSourceSlots_.clear();
     sourceWorldEpoch_=0;nextBindingRevision_=1;nextSourceToken_=1;
@@ -87,8 +89,8 @@ void GpuPoolWorld::recountBindings() {
 bool GpuPoolWorld::defineGraph(const std::string& name,const Json& graph,
                               const Json& overrides,
                               const GraphRuntimeOptions& options) {
-    if(!initialized_ || frameOpen_) {
-        reason_="define pooled SpectraFX graph outside presentation frames";
+    if(!initialized_ || frameOpen_ || presentationBlocked()) {
+        reason_="define pooled SpectraFX graph requires a healthy, unblocked presentation world";
         return false;
     }
     InstanceParameterTable named;
@@ -109,8 +111,8 @@ bool GpuPoolWorld::defineGraph(const std::string& name,const Json& graph,
 bool GpuPoolWorld::defineEffect(const std::string& name,
                                const fx::EffectDef& effect,
                                const GraphRuntimeOptions& options) {
-    if(!initialized_ || frameOpen_) {
-        reason_="define pooled SpectraFX effect outside presentation frames";
+    if(!initialized_ || frameOpen_ || presentationBlocked()) {
+        reason_="define pooled SpectraFX effect requires a healthy, unblocked presentation world";
         return false;
     }
     return defineCompiled(name,effect,options,{});
@@ -226,8 +228,8 @@ GpuPoolWorld::Source* GpuPoolWorld::getSource(PoolSourceId id) {
 }
 PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
     auto binding=bindings_.find(effectName);
-    if(!initialized_ || binding==bindings_.end()) {
-        reason_="SpectraFX createSource: unknown effect or pool not initialized";
+    if(!initialized_ || presentationBlocked() || binding==bindings_.end()) {
+        reason_="SpectraFX createSource: unready/blocked pool or unknown effect";
         return {};
     }
     if(nextSourceToken_==0) {
@@ -426,7 +428,8 @@ bool GpuPoolWorld::burstImpl(const std::string& effectName,fx::float3 position,
                             const std::array<float,8>* sourceParams,
                             uint64_t sourceToken,fx::FxHandle* cpuHandle) {
     const auto it=bindings_.find(effectName);
-    if(!initialized_||!frameOpen_||stepped_||it==bindings_.end()||
+    if(!initialized_||presentationBlocked()||!frameOpen_||stepped_||
+       it==bindings_.end()||
        stats_.frameBursts>=budgets_.maxBurstsPerFrame||
        !valid(position)||!valid(direction)||!valid(tint)) {
         ++stats_.rejectedBursts;
@@ -481,8 +484,9 @@ bool GpuPoolWorld::burstImpl(const std::string& effectName,fx::float3 position,
 bool GpuPoolWorld::beginPresentationFrame(const render::RTSCamera& camera,
                                           const render::mat4& viewProj,
                                           int width,int height) {
-    if(!initialized_||frameOpen_||width<=0||height<=0) {
-        reason_="SpectraFX pool begin frame requires a ready world and viewport";
+    if(!initialized_||presentationBlocked()||frameOpen_||
+       width<=0||height<=0) {
+        reason_="SpectraFX pool begin frame requires a healthy, unblocked world and viewport";
         return false;
     }
     frameOpen_=true;stepped_=drawn_=false;
@@ -583,7 +587,8 @@ void GpuPoolWorld::tickContinuous(float dt) {
 }
 
 bool GpuPoolWorld::step(float dt) {
-    if(!initialized_||!frameOpen_||stepped_||!valid(dt)||dt<0.f||dt>1.f) {
+    if(!initialized_||presentationBlocked()||!frameOpen_||
+       stepped_||!valid(dt)||dt<0.f||dt>1.f) {
         reason_="SpectraFX pool step must run once before render with dt in [0,1]";
         return false;
     }
@@ -616,7 +621,8 @@ bool GpuPoolWorld::step(float dt) {
 }
 
 void GpuPoolWorld::draw(const fx::FxFog& fog) {
-    if(!initialized_||!frameOpen_||!stepped_||drawn_)return;
+    if(!initialized_||presentationBlocked()||
+       !frameOpen_||!stepped_||drawn_)return;
     drawn_=true;
     cpu_.draw(fog);
     stats_.cpuDrawCalls=uint32_t(cpu_.stats().drawCalls);
@@ -633,39 +639,77 @@ void GpuPoolWorld::endPresentationFrame() {
 }
 
 bool GpuPoolWorld::resetForRollback() {
-    if(!initialized_||frameOpen_||
-       (device_&&(!device_->gpuHealthy() ||
-                  !device_->canUpdateSharedBuffers()))) {
-        reason_="SpectraFX pool reset must run outside GPU render/compute frame";
+    if(!initialized_) {
+        reason_="SpectraFX rollback requires an initialized pool";
         return false;
     }
-    // A reset is valid only after ALL GPU groups accept their ordered
-    // checked uploads. Unlike legacy void clear(), failure is surfaced and
-    // CPU presentation state/source handles are not falsely marked reset.
-    // Hardware failure during a later group can still leave an earlier
-    // group cleared: retry the entire reset at a safe graphics boundary.
-    for(auto& group:gpuGroups_) {
+    // Any attempted rollback becomes an explicit fail-closed reset gate.
+    // An unaccepted reset must never allow old particle emissions to resume.
+    if(!resetReport_.retryRequired) {
+        resetAccepted_.assign(gpuGroups_.size(),0u);
+        resetReport_.groupsAccepted=0;
+    }
+    resetReport_.retryRequired=true;
+    resetReport_.groupCount=uint32_t(gpuGroups_.size());
+    resetReport_.failedGroup=std::numeric_limits<uint32_t>::max();
+    ++resetReport_.attempts;
+
+    if(!device_ || !device_->gpuHealthy()) {
+        resetReport_.deviceLost=true;
+        reason_="SpectraFX graphics Device lost; do not replay ECS VFX. "
+                "Shutdown this pool while old Device still lives, then rebuild "
+                "the effect definitions on a recovered graphics Device";
+        return false;
+    }
+    // A previously LOST device cannot be assumed recovered simply because
+    // gpuHealthy later flipped true. The native host must rebuild resources.
+    if(resetReport_.deviceLost) {
+        reason_="SpectraFX GPU resources were lost; explicit renderer recreation required";
+        return false;
+    }
+    if(frameOpen_ || !device_->canUpdateSharedBuffers()) {
+        reason_="SpectraFX rollback must execute inside Device::beginFrame, "
+                "outside render/compute encoders";
+        return false;
+    }
+
+    // All groups use one graphics queue, but each checked reset comprises
+    // ordered RHI writes. A failed later group cannot undo an earlier group's
+    // accepted writes; the accepted mask makes retries resume safely.
+    for(size_t i=0;i<gpuGroups_.size();++i) {
+        auto& group=gpuGroups_[i];
         group.stepOk=false;
+        if(resetAccepted_[i])continue;
         if(!group.particles->tryClear()) {
-            reason_="SpectraFX pooled GPU rollback reset incomplete: "+
-                    group.particles->reason();
+            resetReport_.failedGroup=uint32_t(i);
+            reason_="SpectraFX pooled rollback partially prepared ("+
+                std::to_string(resetReport_.groupsAccepted)+"/"+
+                std::to_string(resetReport_.groupCount)+
+                " groups accepted), failed group "+std::to_string(i)+": "+
+                group.particles->reason();
             return false;
         }
+        resetAccepted_[i]=1u;
+        ++resetReport_.groupsAccepted;
     }
+
+    // Only after ALL GPU reset commands are accepted do we invalidate
+    // presentation-owned CPU effect handles and ECS source generations.
     cpu_.clear();
     stats_.frameBursts=stats_.gpuDrawCalls=stats_.cpuDrawCalls=0;
     stats_.cpuParticles=stats_.gpuParticlesEstimated=0;
-    // A rollback invalidates all presentation source handles. Generation
-    // counters remain allocated, so previously returned IDs cannot revive.
     for(uint32_t i=0;i<uint32_t(sources_.size());++i) {
         Source& source=sources_[i];
         if(!source.active)continue;
         source.active=false;source.paused=false;
         source.effectName.clear();source.bindingRevision=0;
-        source.values={};
+        source.values={};source.token=0;source.cpuHandles.clear();
+        source.continuous={};source.transformAttached=false;
         if(!source.exhausted)freeSourceSlots_.push_back(i);
     }
     stats_.activeSources=0;
+    resetReport_.retryRequired=false;
+    resetReport_.failedGroup=std::numeric_limits<uint32_t>::max();
     reason_.clear();
     return true;
 }
