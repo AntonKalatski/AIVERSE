@@ -1118,3 +1118,22 @@ test intentional fatal wrong-thread `ModelReadLease` /
 **NOT RUN:** native compiler/CMake/CTest/CI/GPU parity/sanitizers; these
 are committed test sources, not verified passing tests. Details and exact
 commits: [Stage 132 handoff](agent-handoffs/animation-stage132-thread-owned-streaming-release-tests-2026-11-19.md).
+
+
+## Stage 133 — callback-safe native Model eviction
+
+Render-owner-thread `ModelResourceCache` host detach/release callbacks may
+read existing resident Model data but may no longer recursively mutate cache
+membership or create new Model read guards while an outer replace, trim or
+source invalidation retains borrowed pointers and map iterators. The new
+exception-safe synchronous callback guard rejects those nested operations
+before they can invalidate the outer transaction. Outer mutations recheck
+active readers after returning from the host callback. Hosts must defer
+any intended nested publication or eviction until the outer call completes.
+
+This guard is NOT a concurrent map, GPU fence, or any change to MotionWeave's
+presentation-only graph clock / deterministic simulation authority. No
+whole-trim rollback is promised after an exception on a later entry.
+
+**NOT RUN:** AIVERSE compiler/build/CTest/CI on this head, graphics
+parity, sanitizer or performance checks. [Stage 133 details](agent-handoffs/animation-stage133-model-cache-callback-reentrancy-2026-11-19.md).
