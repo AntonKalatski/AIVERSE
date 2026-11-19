@@ -785,3 +785,18 @@ Local standalone build and CTest completed with **2/2 PASS** under Linux GCC. Th
 
 Stage handoff: `docs/agent-handoffs/physis-stage58-independent-ci-2026-11-19.md`.
 
+### Stage 59 — process crash between temp fsync and rename
+
+The physis_journal_crash_recovery POSIX CTest uses actual
+PhysisJournalProcessLock and PhysisJournalPosixIO production
+headers and a real fork/SIGKILL. It demonstrates that an abandoned
+fsynced .next-uncommitted file after a crash is NOT recognized as
+committed receipt history, and that the next owner can safely
+reacquire the flock and continue canonical journal writes.
+Use the deterministic pipe handshake, not arbitrary sleeps.
+
+The standalone Linux native CTest passed 3/3, strict Clang 17 and
+GCC ASan+UBSan passed. Full AIVERSE, macOS runners, authenticated
+admin test and Windows are still UNVERIFIED.
+See docs/agent-handoffs/physis-stage59-process-crash-recovery-2026-11-19.md.
+

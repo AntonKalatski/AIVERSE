@@ -717,3 +717,26 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - ACTUAL PASS: local Linux CMake/CTest using exact standalone project, `physis_journal_posix_io` and `physis_journal_locked_io` **2/2**. GitHub runner jobs are still QUEUED, not PASS; full engine, Ubuntu/macOS CI and editor integration remain unverified.
 - Keep per-stage handoff at `docs/agent-handoffs/physis-stage58-independent-ci-2026-11-19.md`. PR #25 remains DRAFT and has merge conflicts with its target feature branch; main is already included and must not be remerged unnecessarily.
 
+### Stage 59 — actual SIGKILL cross-process receipt recovery (2026-11-19)
+
+- Added tests/physis_journal_crash_recovery_test.cpp using real
+  JournalProcessLock and posix_journal::read/write in separate POSIX
+  processes, with pipe+poll handshake and SIGKILL.
+- The child writes a canonical journal and fsyncs a different
+  .next-uncommitted temporary file BEFORE rename. SIGKILL then
+  releases flock without a destructor. The parent reacquires the
+  lock, reads only the committed canonical bytes, writes a new
+  journal, and preserves the orphan for inspection.
+- The test is registered in root CMake and the standalone CMake,
+  and included in the independent Ubuntu/macOS journal workflow
+  and the full PHYSIS build target list.
+- ACTUAL PASS: source-identical local Linux standalone GCC 14.2
+  native CMake/CTest 3/3; Clang 17 strict C++20 PASS; GCC
+  ASan+UBSan PASS. Exact new CTest source blob:
+  644671c632d0a2cc33372263681754cc6843bcb1.
+- NOT RUN: full AIVERSE root CMake, high-level FileJournal V1
+  codec, PHYSIS admin WebSocket/ECS, Ubuntu/macOS CI completion,
+  Windows, Box3D or editor. This test protects the low-level
+  process/IO boundary, not exactly-once gameplay effects.
+- Handoff: docs/agent-handoffs/physis-stage59-process-crash-recovery-2026-11-19.md.
+
