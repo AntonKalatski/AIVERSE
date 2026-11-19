@@ -635,6 +635,47 @@ Next functionality: independent Renderer3D object-motion camera cleanup
 and GPU-fenced deferred teardown of the historical PrismaScreenLighting
 adapter. Keep Draft PR #26, do not merge to main without authorization.
 
+## Stage 54 — independent camera motion retirement and optional lighting lifetime
+
+`Renderer3D::retireUnregisteredObjectMotionViews(liveViewIds)`
+retains ONLY IDs supplied by the host after all per-camera render
+submissions. Every absent stable view ID is retired through the
+existing object-motion queue using `Device::gpuSubmissionFence()`.
+The owner collects textures only after verified
+`Device::gpuCompletedFence()`. If no reliable backend fence exists,
+targets are quarantined until a separately guaranteed GPU-idle drain;
+NEVER use CPU `frameSerial`, wall time, frame count or size to
+infer completion. This object-motion queue belongs to Renderer3D,
+**not** `Prisma::retireView` or the Prisma size-sharing cache.
+
+The editor passes the exact same Scene/Game live camera IDs to
+`Prisma::retireUnregisteredViews` and
+`Renderer3D::retireUnregisteredObjectMotionViews`, then calls
+`Prisma::retireUnreferencedSizeCaches` and completion collectors.
+Native GameClient similarly retires both cameras' private history
+when displaying menu/asset/map loading frames and retains camera ID
+3 during actual 3D rendering. For custom camera hosts implement the
+same explicit live-ID roster; never invent a hidden-view timeout.
+
+The optional historical `PrismaScreenLighting` adapter now has its
+OWN independent `PrismaGpuRetirementQueue` for bounce, scatter,
+legacy history[2], and private depth. At resize/disable its
+`releaseTargets` fences these handles instead of directly destroying
+in-flight GPU textures. `collectGpuRetirements()` is nonblocking
+and polls only the backend completion token;
+`retirementStats()` is read-only and
+`drainRetiredAfterGpuIdle()` must be called ONLY after explicit
+GPU-idle synchronization. `shutdown()` also REQUIRES GPU idle
+for shaders/pipelines/buffers. It NEVER owns Prisma's shared scene
+targets, velocity or canonical TAA histories.
+
+Stage 54 was structurally inspected via GitHub readback
+(**30/30 static presence/lifecycle checks**). CMake, compiler,
+CTest, actual RHI completion, screenshots and benchmarks remain
+NOT RUN. Handoff: `docs/handoffs/prisma-stage-54.md`.
+Complete remaining functional catalog/editor work first; retain
+Draft PR #26 and never merge main without user authorization.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
