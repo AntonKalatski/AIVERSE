@@ -9540,3 +9540,75 @@ fragment shader texture sampling, GPU VT feedback/page-table
 publication and GPU ICB permutations before PR promotion.
 Never touch the main AIVERSE worktree during unrelated rebase.
 
+
+## Stage 10BG — native fragment Texture3D shader sampling source (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Implementation source commit:**
+`9e747cff974d6f44085cc25cfc841198a6f1c309`
+(`tests/render/metal_texture_gpu.mm`).
+**Documentation commits:**
+`94da868b67c3687b16617d866a3efe4ce6a2bf01`
+(`docs/texture-rhi.md`) and
+`36f7adcd52fb259aaf6476f89aed7803422931c2`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Reason:** Stage 10BB/10BE's actual macOS Metal GPU
+CTest PASS validated CPU->native upload, Metal command-buffer
+blit readback, RGBA8 byte parity, volume mip/z and cube/array
+subresources. It did **not** validate real shader texture sampling.
+Stage 10BF added wall-clock + optional GPU command-buffer phase
+timings but has not been rerun on the user's Mac Studio.
+Continue by covering the shader sampling gap explicitly.
+
+**Changes:** extends the opt-in real-metal
+`tests/render/metal_texture_gpu.mm` test with the
+`kVolumeSampleMSL` fullscreen triangle. Uses Metal's existing
+`Device::createShader`, `createPipeline`, `beginRenderTargets`,
+`setTexture(0,...)`, `setUniforms(0,...)`, `draw(3)`
+and asynchronous target `readTextureAsync` contract.
+The pixel shader samples an RGBA8 Texture3D and explicitly
+selects lod from the uniform coordinate. Three output probes:
+- original base slice Z0, mip0;
+- changed rectangular area at Z2, mip0;
+- authored mip1 slice Z1.
+The output target is RGBA8 with a valid depth texture to
+match Metal pipeline depth format. The 2D render target
+readback checks the resulting pixel colors.
+Original blit readback tests retain exact byte equality;
+only normalized shader-sampled float->UNORM quantization
+receives ±1 least-significant-byte tolerance. Reject GPU
+shader/pipeline/pass setup failure and all output mismatch.
+Adds `<cstdlib>` for integer absolute-difference handling.
+
+**Architecture/API:** no production RHI, shader graph,
+ICB, ECS, scene or serialized texture changes; test fixture
+only, CMake option and `--metal` default-off behavior unchanged.
+This tests a **direct Metal fragment texture3d sample**,
+not Shader Graph compilation or actual ICB material mixing.
+
+**Actually verified:** used GitHub connector to inspect
+`Gfx.h` shader/pipeline/pass/setTexture APIs, native
+`GfxMetal.mm` `setTexture` and depth/pass setup, and
+existing MSL conventions in `ModelShaders.h` before
+editing the fixture. GitHub accepted source and docs updates.
+**Not run**: any native macOS build or on-device GPU readback
+for 10BF/10BG since these modifications. The older
+noninstrumented GPU PASS must not be treated as source
+validation for either new stage.
+
+**Next exact Mac Studio step:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Inspect/record the `TIMING` lines, GPU device name, native
+shader/pipeline error if any and exact per-pixel mismatches.
+Do not claim success without the user's new CTest output.
+After actual hardware acceptance, proceed with genre-independent
+VT page-table feedback hardware test and GPU ICB sampling
+permutations. Keep PR Draft until these separate acceptance gates
+pass; do not touch the main AIVERSE worktree mid-rebase.
+
