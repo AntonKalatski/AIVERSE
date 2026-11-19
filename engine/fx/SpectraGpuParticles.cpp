@@ -162,6 +162,7 @@ bool ComputeParticles::initGpu() {
     const std::array<uint32_t,4> graphChannels=graphMaterial.sources;
     gpuIndirectActive_=desc_.gpuIndirect && device_->supportsGpuAuthoredIndirectDraw();
     gpuResetDirty_=false;
+    gpuStagingDirty_=false;
     compute_=device_->createCompute({shaders::kMetal,shaders::kGLSL,"SpectraFX Metal particle simulation"});
     if(!compute_.valid()) {reason_=device_->lastError();return false;}
 
@@ -314,6 +315,7 @@ void ComputeParticles::releaseGpu() {
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     stateAttributes_={};graphSources_={};
     gpuResetDirty_=false;
+    gpuStagingDirty_=false;
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
     pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
     slotSourceTokens_.clear();
@@ -395,6 +397,7 @@ bool ComputeParticles::tryClear() {
     stats_.alive=stats_.submittedSlots=stats_.gpuKillFencesPending=0;
     stats_.gpuVmErrorsKnown=false;
     gpuResetDirty_=false;
+    gpuStagingDirty_=false;
     reason_.clear();
     return true;
 }
@@ -578,7 +581,8 @@ bool ComputeParticles::step(float dt) {
             if(!gpuIndirectActive_)aliveSlots_.push_back(i);
         }
     }
-    if(updatePrefix==0 && count==0 && pendingKillSlots_.empty()) {
+    if(updatePrefix==0 && count==0 && pendingKillSlots_.empty() &&
+       !gpuStagingDirty_ && !programParamsDirty_) {
         drawCount_=0;
         stats_.submittedSlots=stats_.alive=0;
         verticesReady_=true;
@@ -590,7 +594,7 @@ bool ComputeParticles::step(float dt) {
     // neither execute the per-particle Update VM nor invalidate an already
     // completed readback. Births, kills and edited live VM params DO mutate.
     const bool mutateParticles=dt>0.f || count>0 || killCount>0 ||
-                               programParamsDirty_;
+                               programParamsDirty_ || gpuStagingDirty_;
     if(killCount>0) {
         // One bounded 4-byte slot-index upload, no matter how fragmented the
         // physical GPU particle allocation is. Shader mode 6 invalidates
@@ -606,31 +610,60 @@ bool ComputeParticles::step(float dt) {
         }
         stats_.gpuKillIndexBytes+=size_t(killCount)*sizeof(uint32_t);
     }
+    // Every storage upload that supplies compute input must be checked.
+    // A failure may occur AFTER prior blits were accepted into this frame.
+    // Keep pending births/slot mirrors intact, invalidate prior snapshots,
+    // and retry ALL inputs on the next safe render-frame submission.
+    const auto stagingRejected=[&](const char* label) {
+        ++stats_.gpuStagingUploadFailures;
+        gpuStagingDirty_=true;
+        ++vmFrameRevision_;
+        lastCheckpoint_={};checkpointRevision_=0;
+        verticesReady_=false;drawCount_=0;stats_.submittedSlots=0;
+        reason_=std::string("SpectraFX checked GPU staging rejected (")+
+                label+"): "+device_->lastError();
+        return false;
+    };
     const uint32_t resetVmErrors=0;
-    device_->updateBuffer(vmErrors_,&resetVmErrors,sizeof(resetVmErrors));
-    if(programParamsDirty_) {
-        device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
-                              programStateCache_.size()*sizeof(ProgramParams));
+    if(!device_->updateStorageBufferChecked(
+            vmErrors_,&resetVmErrors,sizeof(resetVmErrors)))
+        return stagingRejected("VM error counter");
+    if(programParamsDirty_ || gpuStagingDirty_) {
+        if(!device_->updateStorageBufferChecked(
+                stateProgramParams_,programStateCache_.data(),
+                programStateCache_.size()*sizeof(ProgramParams)))
+            return stagingRejected("live VM parameters");
         stats_.uploadedBytes+=programStateCache_.size()*sizeof(ProgramParams);
-        programParamsDirty_=false;
     }
     if(count>0) {
-        device_->updateBuffer(seeds_,pendingStates_.data(),size_t(count)*sizeof(ParticleState));
-        device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
-        device_->updateBuffer(seedProgramParams_,pendingProgramParams_.data(),
-                              size_t(count)*sizeof(ProgramParams));
+        if(!device_->updateStorageBufferChecked(
+                seeds_,pendingStates_.data(),size_t(count)*sizeof(ParticleState)))
+            return stagingRejected("spawn state");
+        if(!device_->updateStorageBufferChecked(
+                slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t)))
+            return stagingRejected("spawn slot IDs");
+        if(!device_->updateStorageBufferChecked(
+                seedProgramParams_,pendingProgramParams_.data(),
+                size_t(count)*sizeof(ProgramParams)))
+            return stagingRejected("spawn VM parameters");
         stats_.uploadedBytes+=size_t(count)*(sizeof(ParticleState)+
                                sizeof(uint32_t)+sizeof(ProgramParams));
     }
     if(compactCount>0 && !gpuIndirectActive_) {
-        device_->updateBuffer(liveSlots_,aliveSlots_.data(),size_t(compactCount)*sizeof(uint32_t));
+        if(!device_->updateStorageBufferChecked(
+                liveSlots_,aliveSlots_.data(),size_t(compactCount)*sizeof(uint32_t)))
+            return stagingRejected("live gather slot IDs");
         stats_.uploadedBytes+=size_t(compactCount)*sizeof(uint32_t);
     }
     if(!device_->beginCompute(compute_)) {
         ++stats_.gpuComputeBeginFailures;
+        gpuStagingDirty_=true;
+        ++vmFrameRevision_;
+        lastCheckpoint_={};checkpointRevision_=0;
         verticesReady_=false;drawCount_=0;stats_.submittedSlots=0;
-        reason_="Metal compute encoder unavailable: call step between beginFrame/endFrame, before rendering";
-        return false; // pending births, age/free lists and draw count remain unchanged
+        reason_="Metal compute encoder unavailable after checked staging; "
+                "retry input uploads before rendering";
+        return false; // pending births, ages and slot free lists unchanged
     }
     device_->setComputeBuffer(0,states_);
     device_->setComputeBuffer(1,seeds_);
@@ -678,6 +711,10 @@ bool ComputeParticles::step(float dt) {
             ++stats_.gpuCompactDispatches;
     }
     device_->endCompute();
+    // Only a successful ordered compute submission can consume a dirty
+    // upload batch. Retrying a partial staging failure never leaks old data.
+    gpuStagingDirty_=false;
+    programParamsDirty_=false;
     // A frozen frame only rebuilds geometry and indirect arguments; it must
     // not invalidate an unchanged GPU particle+VM checkpoint revision.
     if(mutateParticles)++vmFrameRevision_;
@@ -789,7 +826,8 @@ bool ComputeParticles::requestGpuVmErrors(
 bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) {
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
-       !readbackLifetime_ || asyncCheckpointPending_ || gpuResetDirty_ ||
+       !readbackLifetime_ || asyncCheckpointPending_ ||
+       gpuResetDirty_ || gpuStagingDirty_ ||
        !states_.valid() || !stateProgramParams_.valid() ||
        !stateAttributes_.valid() || ages_.empty() ||
        !pendingStates_.empty() || !pendingKillSlots_.empty() ||
@@ -929,6 +967,7 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
     status.pending=asyncCheckpointPending_;
     status.complete=lastCheckpoint_.complete;
     status.unsentBirths=!pendingStates_.empty();
+    status.stagingRecoveryPending=gpuStagingDirty_;
     status.currentRevision=vmFrameRevision_;
     status.capturedRevision=checkpointRevision_;
     status.physicalSlots=static_cast<uint32_t>(ages_.size());
@@ -942,6 +981,7 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
         status.fresh=status.currentRevision==status.capturedRevision;
     }
     status.restoreEligible=status.gpuActive && status.fresh &&
+        !gpuResetDirty_ && !gpuStagingDirty_ &&
         !status.unsentBirths && pendingKillSlots_.empty() &&
         killedSlotsAwaitingFrame_.empty() &&
         lastCheckpoint_.slots.size()==ages_.size() &&
@@ -972,7 +1012,8 @@ bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
        !states_.valid() || !stateProgramParams_.valid() ||
-       !stateAttributes_.valid() || ages_.empty() || gpuResetDirty_ ||
+       !stateAttributes_.valid() || ages_.empty() ||
+       gpuResetDirty_ || gpuStagingDirty_ ||
        !pendingStates_.empty() || !pendingKillSlots_.empty() ||
         !killedSlotsAwaitingFrame_.empty())return false;
     const size_t n=ages_.size();
