@@ -843,3 +843,16 @@ CI if it remains queued or cancelled.
   and require the additional VT flag. Masked/transparent
   and Shader Graph material groups retain existing CPU
   or homogeneous GPU fallback; no release GPU validation.
+
+
+### GPU ICB Shader Graph resource identity — Stage 10AH
+
+- The optional RHI per-command PBR/VT material descriptor can hold
+  `graphTextureCount=0..4` and corresponding valid source texture
+  handles. Unused slots must be empty; graph sources require U2/PBR
+  binding and cannot be supplied in base-only mode.
+- Metal snapshots native 2D texture resources **and samplers** with
+  each command. This does not yet mean shaders read those slots:
+  fragment argument-buffer code and renderer integration follow.
+- Maintain 16 native sampler limit; tex16 requires constexpr
+  sampler if used. No C++/Metal/GPU tests RUN.
