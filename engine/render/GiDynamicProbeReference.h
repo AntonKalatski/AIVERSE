@@ -66,12 +66,11 @@ public:
         if (geometry == geometry_ && revision == geometryRevision_) return;
         geometry_ = geometry;
         geometryRevision_ = revision;
-        if (!geometry_) {
-            std::fill(coeffs_.begin(), coeffs_.end(), GiDynamicCoefficient{});
-            scheduler_.resetClean();
-        } else {
-            scheduler_.invalidateAll(GiDirtyReason::Geometry);
-        }
+        // Light transport from the previous obstacle layout is now invalid.
+        // Prefer a temporarily dark result to ghost light leaking through a removed wall.
+        std::fill(coeffs_.begin(), coeffs_.end(), GiDynamicCoefficient{});
+        if (!geometry_) scheduler_.resetClean();
+        else scheduler_.invalidateAll(GiDirtyReason::Geometry);
     }
 
     // Must be called after ECS light-change barrier with a stable key per source.
