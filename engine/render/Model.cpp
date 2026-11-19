@@ -789,8 +789,14 @@ bool uploadStandaloneImage(gfx::Device& dev, Image& image) {
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
-    for (size_t i = 0; i < m.images.size(); ++i) if (!img.name.empty() && m.images[i].name == img.name) return int(i);
+    for (size_t i = 0; i < m.images.size(); ++i)
+        if (!img.name.empty() && m.images[i].name == img.name)
+            return int(i);
+    // Preallocate Model storage before allocating a GPU texture; a vector
+    // growth failure after createTexture could otherwise drop a live handle.
+    m.images.reserve(m.images.size()+1);
     uploadImage(dev, img);
+    if (!img.tex.valid()) return -1; // never publish an invalid material index
     img.rgba.clear(); img.rgba.shrink_to_fit();
     m.images.push_back(std::move(img));
     return int(m.images.size() - 1);
