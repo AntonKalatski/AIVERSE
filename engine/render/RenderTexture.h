@@ -1,6 +1,10 @@
 #pragma once
 #include "../gfx/Gfx.h"
+#include "CanvasGpuRetirement.h"
 #include <array>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace aiverse::render {
@@ -9,8 +13,26 @@ namespace aiverse::render {
 class RenderTexture {
 public:
     struct Stroke { float ax, ay, bx, by, radius, softness; std::array<float,4> color; };
+    // Shared lifetime owner is usually RtsPaintLayers, and must outlive
+    // every canvas borrowing it. Bind before init; never change an active owner.
+    void setRetirementOwner(CanvasGpuRetirement* owner) {
+        if(dev_)throw std::logic_error("RenderTexture: change retirement owner while active");
+        retirement_=owner;
+    }
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
+        if(dev_)throw std::logic_error("RenderTexture: change GPU epoch while active");
+        gpuLease_=std::move(lease);
+    }
     bool init(gfx::Device& dev, int width, int height);
+    // Synchronous standalone shutdown may require a proven full GPU idle.
+    // Borrowed-owner shutdown only enqueues; the host drains the owner later.
     void shutdown();
+    size_t pendingRetirements() const noexcept {
+        return ownedRetirement_?ownedRetirement_->pending():0;
+    }
+    bool collectRetiredResources() {
+        return ownedRetirement_?ownedRetirement_->collect():true;
+    }
     // Copy a different texture into a normalized destination rectangle, preserving command order.
     bool blit(gfx::TextureHandle source, float x=0, float y=0, float w=1, float h=1);
     void clear(std::array<float,4> color = {});
@@ -23,6 +45,9 @@ public:
     int height() const { return height_; }
 private:
     gfx::Device* dev_ = nullptr;
+    RenderDeviceLifetime::Lease gpuLease_;
+    CanvasGpuRetirement* retirement_=nullptr; // borrowed or owned
+    std::unique_ptr<CanvasGpuRetirement> ownedRetirement_;
     gfx::TextureHandle texture_;
     gfx::ShaderHandle shader_, blitShader_;
     gfx::PipelineHandle pipe_, blitPipe_;
