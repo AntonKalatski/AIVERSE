@@ -35,6 +35,14 @@ inline NereidCascadeManifest parseNereidCascadeManifest(const Json& root) {
         if(item.has("joinLength"))
             source.joinLength=nereid_manifest_detail::scalar(
                 item["joinLength"],"cascade.joinLength",0.1f,50.f);
+        if(item.has("joinWidthBlend"))
+            source.joinWidthBlend=nereid_manifest_detail::scalar(
+                item["joinWidthBlend"],"cascade.joinWidthBlend",0.f,1.f);
+        if(item.has("requireFootprint")) {
+            if(item["requireFootprint"].type()!=Json::Type::Bool)
+                throw JsonError("nereidCascades.requireFootprint: expected boolean");
+            source.requireFootprint=item.getBool("requireFootprint",true);
+        }
         auto& c=source.cascade;
         c.enabled=item.getBool("enabled",true);
         if(item.has("foam"))
