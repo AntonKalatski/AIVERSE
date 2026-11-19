@@ -592,13 +592,21 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--native") v.native = true;
         else if (a == "--no-merge") v.merge = false;
         else if (a == "--provider") v.providerMode = true;
-        else if (a == "--attachments-file") v.attachmentConfigPath=next();
+        else if (a == "--attachments-file") {
+            v.attachmentConfigPath=next();
+            if(v.attachmentConfigPath.empty()) {
+                std::fprintf(stderr,"--attachments-file requires a JSON path\n");
+                return 2;
+            }
+        }
         else if (a == "--attach") {
             auto authored=next();
             const auto at=authored.rfind('@');
-            if(at==std::string::npos || at==0 || at+1>=authored.size())
-                throw std::invalid_argument(
-                    "--attach expects imported-child.glb@NamedSocket");
+            if(at==std::string::npos || at==0 || at+1>=authored.size()) {
+                std::fprintf(stderr,
+                    "--attach expects imported-child.glb@NamedSocket\n");
+                return 2;
+            }
             v.attachmentSpecs.push_back({
                 authored.substr(0,at),authored.substr(at+1),true});
         }
