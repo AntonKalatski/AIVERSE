@@ -95,6 +95,7 @@ inline void validateNereidFlood(const WaterFloodResource& r){
            c.groundCm<-10000000 || c.groundCm>10000000 ||
            c.volumeCm>100000u ||
            (c.volumeCm && !c.waterBody.valid()) ||
+           (!c.volumeCm && c.waterBody.valid()) ||
            c.flowXcmPerSec<-100000 || c.flowXcmPerSec>100000 ||
            c.flowZcmPerSec<-100000 || c.flowZcmPerSec>100000 ||
            int64_t(c.x)*r.gridCm+r.originXcm<-100000000 ||
@@ -249,7 +250,7 @@ inline WaterFloodTick stepNereidFlood(
     for(size_t i=0;i<n;++i){
         auto& c=candidate.cells[i];
         c.volumeCm=c.volumeCm-outgoing[i]+incoming[i];
-        if(!c.waterBody.valid() && c.volumeCm)
+        if(!r.cells[i].volumeCm && c.volumeCm)
             c.waterBody=newBody[i];
         if(!c.volumeCm)c.waterBody=kNullEntity;
         // Derived local surface flow is deterministic signed cm/s.
