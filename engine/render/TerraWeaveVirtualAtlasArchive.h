@@ -12,6 +12,7 @@
 #include "ModelVirtualTextureFallback.h"
 #include "TerraWeaveVirtualTextureFeedback.h"
 #include "../gfx/VirtualTexturePageArchiveWriter.h"
+#include "../gfx/VirtualTextureArchiveManifest.h"
 #include <cstdint>
 #include <cmath>
 #include <filesystem>
@@ -121,6 +122,26 @@ public:
         : device_(&device),budget_(budget) {}
     TerraWeaveVirtualAtlasSession(const TerraWeaveVirtualAtlasSession&) = delete;
     TerraWeaveVirtualAtlasSession& operator=(const TerraWeaveVirtualAtlasSession&) = delete;
+
+    // Read a trusted immutable disk archive (Python or C++ packed) first.
+    // Failures preserve the current active/candidate GPU resources.
+    // Call once during asset staging, not every render frame.
+    bool prepareFromArchiveDirectory(
+        const std::filesystem::path& directory,
+        int physicalPages = 128, size_t maxBufferedPages = 8,
+        uint64_t importedRevision = 0,
+        size_t maxArchiveBytes = size_t(512) << 20,
+        size_t maxPages = 262144) {
+        gfx::VirtualTextureArchiveVersion next;
+        std::string validationError;
+        if (!gfx::loadVirtualTextureArchiveManifest(
+                directory,next,validationError,maxArchiveBytes,maxPages,
+                importedRevision)) {
+            error_ = std::move(validationError);
+            return false;
+        }
+        return prepare(next,physicalPages,maxBufferedPages);
+    }
 
     // Prepare new GPU atlas+table while the old atlas remains active.
     // The old archive remains immutable on disk. Only the render thread
