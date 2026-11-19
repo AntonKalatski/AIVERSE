@@ -15,6 +15,8 @@ struct DeviceIndexBudgetStats {
     uint64_t limitBytes=0; // 0 = no global cap
     uint64_t reservedBytes=0;
     uint32_t activeLeases=0;
+    uint64_t frameUploadLimitBytes=0, frameUploadRemainingBytes=0;
+    uint64_t currentFrameSerial=0, currentFrameUploadedBytes=0;
 };
 
 // All GeometryScenes using one gfx::Device share a single reservation ledger.
@@ -27,6 +29,15 @@ bool reserveDeviceIndexBytes(gfx::Device& device, uint64_t bytes,
                              uint64_t& outToken);
 void releaseDeviceIndexBytes(gfx::Device& device, uint64_t token);
 DeviceIndexBudgetStats deviceIndexBudgetStats(gfx::Device& device);
+
+// Stage 15.4: single GPU upload-byte limit shared by ALL scenes/worlds
+// recording on a device. The caller's serialized RHI frame serial is the
+// lifetime boundary. Serial 0 under a configured cap refuses new uploads;
+// pinned roots loaded at scene initialization are outside this governor.
+bool configureDeviceFrameUploadBudget(gfx::Device& device,uint64_t bytes);
+uint64_t deviceFrameUploadAllowance(gfx::Device& device,uint64_t frameSerial);
+void accountDeviceFrameUpload(gfx::Device& device,uint64_t frameSerial,
+                              uint64_t checkedBytes);
 
 struct SharedDiskIoStats {
     uint32_t workers=0;
