@@ -9070,3 +9070,62 @@ Read `build/texture-rhi/verify-logs/{build.log,ctest.log,summary.txt}`
 if any test fails. Do not enter/modify the primary AIVERSE worktree
 during its unrelated interrupted rebase.
 
+
+## Stage 10AY — Mac Studio CTest gate green, editor gate still red (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Known remote code HEAD preceding verification:** `3b922c015f63f768e1c2a72e106c7d78adcaf6e9`.
+**Actual user environment:** isolated Mac Studio worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+The pasted terminal output shows updated files and a rerun of
+`bash tools/verify-texture-rhi.sh --editor --jobs 4`, but does NOT print
+the tested `git rev-parse HEAD` or complete individual CTest results.
+
+**Observed Mac build/test result (from user terminal):**
+`CONFIGURE PASS`; **all 20** explicitly listed texture test
+executable targets `BUILD PASS`, including `texture_asset`,
+`virtual_texture_file_streamer`, `virtual_texture_feedback_pass`,
+`gpu_icb_material_contract`, DDS/KTX2/HDR/EXR and streaming tests;
+`BUILD aiverse_editor` **FAIL (exit 2)**;
+`glslangValidator` and `xcrun` present;
+`CTEST PASS` (exit 0);
+overall verifier `OVERALL FAIL: 1 build/test gates failed`.
+The test filter covers 23 named tests. No CTest log was provided on this
+turn, so exact counts, skips and per-test runtime cannot be independently
+confirmed from the terminal summary. GLSL/MSL validator presence alone
+must not be confused with an executed and passing shader validation.
+
+**Implications:** the three earlier failing CPU tests and all other
+focused CTest checks no longer caused CTest to return nonzero in this
+Mac run. Editor native compilation / link continues to fail.
+A previous `Renderer3DModels.cpp:2137` undeclared lambda error
+was fixed in Stage 10AX; do not assume it is the current error without
+the **new** build log.
+
+**Code changes:** none in this bounded diagnosis stage; avoiding
+ungrounded edits to renderer, Metal RHI, CMake or other agents' systems.
+Only this append-only handoff is committed. Do not merge PR #21.
+
+**Not checked:** current editor compiler/linker first error, GPU rendering,
+GPU ICB execution, true hardware feedback/readbacks, texture image parity,
+Windows/Android/WebGL2 builds, benchmark/regression.
+No post-commit native execution is performed from the assistant runtime.
+
+**Next exact step:** in the isolated texture worktree, **do not**
+rerun all 20 texture test builds. Inspect the latest compiler diagnostics:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+LOG=build/texture-rhi/verify-logs/build.log
+sed -n '/===== aiverse_editor =====/,$p' "$LOG" |
+  grep -nE -B 6 -A 12 'error:|fatal error:|Undefined symbols|ld:|FAILED:' |
+  head -240
+tail -100 "$LOG"
+tail -50 build/texture-rhi/verify-logs/ctest.log
+```
+Supply the current editor compiler context to the next agent. If none
+appears, run only `cmake --build build/texture-rhi --target aiverse_editor
+--parallel 4`, capturing stderr. Fix the actual failing source,
+record a new code SHA and separate stage handoff, then rerun the
+`--editor` gate. Main AIVERSE worktree remains blocked in unrelated
+unfinished rebase and must be left untouched.
+
