@@ -856,3 +856,18 @@ CI if it remains queued or cancelled.
   fragment argument-buffer code and renderer integration follow.
 - Maintain 16 native sampler limit; tex16 requires constexpr
   sampler if used. No C++/Metal/GPU tests RUN.
+
+
+### Shader Graph Metal ICB shader argument layout (Stage 10AI)
+
+- Only **fragment-only** graph shader variants may opt into
+  `AIVERSE_SG_ICB_GRAPH`; no graph vertex output, deformation,
+  transparent, cutout, palette, or unsupported shader permutation.
+- Graph sources use tex13..16; tex16 must use constexpr sampler s16.
+  Per-command VT arrays start at tex13+N/tex14+N, N=graph count.
+  In the Metal ICB variant, fragment graph arguments are read
+  from `IcbPbrTextures`, not direct texture/sampler function
+  parameters; legacy source shaders are unchanged.
+- Metal validates each graph source handle+native sampler against
+  the captured descriptor and shader count. This is not yet an
+  enabled Renderer3D graph batching path. No native/GPU tests RUN.
