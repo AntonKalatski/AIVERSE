@@ -187,6 +187,46 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
     groundCanvas_.draw(r, *dev_, groundMerged_, contentBase_);
 }
 
+// Re-submit already evaluated animation poses for secondary LENS cameras.
+// drawObject writes only its temporary placement/drawn caches, emits models
+// into the supplied renderer, and may append effect anchors. Restore these
+// observable presentation values; do not invoke animate/handleEvents or update
+// the primary view frame clock. Source assets must remain resident meanwhile.
+size_t RtsView::drawFrozenModels(Renderer3D& r,const MapGrid& grid) {
+    if(frame_==0 || !rules_ || planets_.active())return 0;
+    const auto savedCamera=camPos_;
+    const auto savedViewProjection=viewProj_;
+    const size_t savedEffects=effects_.size();
+    camPos_=r.cameraPos();
+    viewProj_=r.viewProj();
+    size_t submitted=0;
+    for(auto& [key,st]:anims_) {
+        (void)key;
+        if(!st.initialized || st.seen!=frame_ || st.last.isProjectile ||
+           !st.last.visible || st.type>=looks_.size() || !typeLoaded(st.type))
+            continue;
+        const auto& look=looks_[st.type];
+        if(look.models.empty() || st.choice<0 || size_t(st.choice)>=look.models.size())
+            continue;
+        const auto& object=st.last;
+        const float ground=st.ground.valid && st.ground.grid==&grid
+            ? st.ground.height
+            : ((!rules_->types[st.type].structure && !look.air)
+                ? groundAt(grid,object.pos.x,object.pos.z)
+                : heightAt(grid,object.pos.x,object.pos.z));
+        const auto priorPlacement=st.placement;
+        const auto priorDrawn=st.drawn;
+        drawObject(r,st,object,ground,1.f);
+        st.placement=priorPlacement;
+        st.drawn=priorDrawn;
+        ++submitted;
+    }
+    effects_.resize(savedEffects); // never trigger duplicate socket effects
+    camPos_=savedCamera;
+    viewProj_=savedViewProjection;
+    return submitted;
+}
+
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
