@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/MorphAuthoring.h"
+#include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <array>
@@ -92,6 +93,48 @@ void test() {
         try { (void)sculpt.toJson(1); }
         catch(const std::invalid_argument&) { rejected=true; }
         req(rejected,"sculpt exported generated vertex outside original topology");
+    }
+    {
+        // Actual triangle-ray hit must choose the nearest source vertex,
+        // never a projected point hidden behind unrelated model surfaces.
+        aiverse::render::Model model;
+        model.vertices.resize(3);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.indices={0,1,2};
+        aiverse::render::MeshDef mesh;
+        aiverse::render::Primitive triangle;
+        triangle.firstIndex=0;
+        triangle.indexCount=3;
+        mesh.primitives.push_back(triangle);
+        model.meshes.push_back(std::move(mesh));
+        aiverse::render::Node node;
+        node.mesh=0;
+        model.nodes.push_back(node);
+        const std::array<aiverse::render::mat4,1> pose{};
+        const auto picked=pickSculptVertex(model,0,pose,
+            {0.05f,0.05f,2.0f},{0,0,-1},3);
+        req(picked.hit&&picked.vertex==0,
+            "viewport sculpt did not pick expected nearest triangle vertex");
+        req(!pickSculptVertex(model,0,pose,
+            {2,2,2},{0,0,-1},3).hit,
+            "viewport sculpt accepted ray missing the triangle");
+    }
+    {
+        auto target=MorphTargetInput{};
+        target.name="symmetric";
+        auto sculpt=MorphAuthoring::fromCompiled(
+            SparseMorphLibrary::compile(2,{target}));
+        const std::array<MorphVec3,2> source{{{-1,0,0},{1,0,0}}};
+        req(sculpt.brush(0,source,0,0.2f,{0.1f,0,0},true),
+            "bilateral sculpt stroke rejected");
+        const auto gpu=sculpt.compile().gpuDeltas();
+        req(gpu.size()==2&&gpu[0].position[0]>0.09f &&
+            gpu[1].position[0]<-0.09f,
+            "sculpt symmetry did not mirror horizontal displacement");
+        req(sculpt.undo()&&sculpt.compile().deltas()==0,
+            "symmetric brush did not undo as one transaction");
     }
     std::filesystem::remove(file);
 }
