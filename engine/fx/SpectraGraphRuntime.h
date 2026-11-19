@@ -100,6 +100,17 @@ public:
     // Diagnostic readback, only between completed Metal frames. Returns false
     // when GPU is unavailable; never treats missing results as zero errors.
     bool readGpuVmErrors(uint32_t& count) { return gpu_.readGpuVmErrors(count); }
+    // Accepted async diagnostic requests callback on a later device frame.
+    // Callbacks are cancelled if the GPU runtime shuts down beforehand.
+    bool requestGpuVmErrors(std::function<void(bool,uint32_t)> callback) {
+        return useComputeWrapper_ &&
+            gpu_.requestGpuVmErrors(std::move(callback));
+    }
+    // Blocking checkpoint capture between COMPLETED frames; this is
+    // diagnostic/export data, not yet a CPU ParticleSystem import.
+    bool captureGpuCheckpoint(GpuCheckpoint& out) {
+        return useComputeWrapper_ && gpu_.captureGpuCheckpoint(out);
+    }
 private:
     bool initCpu(gfx::Device*, const fx::EffectDef&, fx::FxQuality);
     bool initialized_ = false;
