@@ -6,6 +6,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestEcology.h"
+#include "engine/world/TerraWeaveForestHarvestEcs.h"
 #include "engine/world/TerraWeaveTerrainRuntime.h"
 #include "engine/world/TerraWeaveWorldSceneBinding.h"
 #include "engine/world/TerraWeaveForestScene.h"
@@ -137,6 +138,19 @@ public:
             forest->setFallenTrees(fallen);
             forest->setDeadTrees(dead);
             forest->setRecruitedPlants(recruited);
+            // Stage66 tombstones are authoritative even when a forest chunk
+            // unloads. Do not replace legacy presentation-only removals in
+            // native projects which did not opt into harvest persistence.
+            if(const auto* harvest=
+                   ecs.resourceConst<ForestHarvestResource>()){
+                validateForestHarvestResource(*harvest);
+                std::vector<ForestTreeIdentity> removed;
+                removed.reserve(harvest->records.size());
+                for(const auto& record:harvest->records)
+                    removed.push_back({
+                        record.id.key,record.id.speciesId});
+                forest->setRemovedTrees(removed);
+            }
         }
 
         // The caller now uploads new dynamic mesh/collision tiles within
