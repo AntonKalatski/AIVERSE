@@ -174,3 +174,31 @@ echo "Stage 84 exit=$?"
 ```
 
 Require `material palette CPU checks=38 result=passed`, actual MDI pixel parity `changed_channels=0`, final `changed_channels=0`, `stress frame timeline samples=106`, and exit=0. The CSV path is `build/batching-stage82/captures/stage84-auto-1k-frames.csv`. Inspect spikes/contiguous windows with the same MDI mode. If no spikes appear in one run, repeat the isolated AUTO process 3+ times with unique prefixes to characterize variability without I/O trace. Next agent should use the actual CSV to decide whether the problem is in selection CPU time, backend submit, or external load. Keep PR #39 Draft and original main worktree untouched.
+
+
+---
+
+## Stage 85 — actual Stage 84 CSV analysis: steady-state AUTO MDI is stable in this run (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Owner evidence:** user-uploaded `stage84-auto-1k-frames.csv`, 106 rows with integer frames 90..195 and columns `frame,render_cpu_ms,mdi_submissions,mdi_commands,shadow_draws,opaque_draws,shadow_cpu_ms,opaque_cpu_ms,shadow_backend_ms,opaque_backend_ms`. Analyzed the actual file using Python pandas, not inferred from prior logs. This stage documents results only; no production source changes or Mac tests run by assistant.
+
+### Quantified observations
+
+- **MDI mode**: 93/106 rows have nonzero `mdi_submissions`, median synchronous `renderer.render()` **0.850792ms**, mean 1.005803ms inflated by early warmup outliers, min 0.751875ms, max 8.87179ms.
+- **Direct mode**: 13/106 rows, median **1.190000ms**, mean 1.182105ms, min 1.113380ms, max 1.24629ms.
+- Full MDI mode consistently submits 10 CPU indirect groups with 2048 commands and 5 shadow + 5 opaque draw calls. Direct mode has 0 MDI submissions and 1024 + 1024 draw calls. Those are distinct paths, so no claim that MDI is always faster in a real scene or on GPU.
+- First cold/slow MDI frames:
+  - Frame 91: render 8.871790ms, shadowCPU 4.036960ms, opaqueCPU 4.648370ms, backend submissions 2.762210ms + 1.500000ms.
+  - Frame 93: render 3.901250ms, shadowCPU 2.001460ms, opaqueCPU 1.742420ms, backend submissions 1.655630ms + 1.556080ms.
+  - Frame 95: render 3.563420ms, shadowCPU 1.778540ms, opaqueCPU 1.618130ms, backend submissions 1.471290ms + 1.442540ms.
+  - Frame 97: MDI returns to 0.898250ms; frame 99: 0.899417ms.
+- **After frame 97** (frames 98..195), no MDI-submitted row exceeds 1.2ms CPU render duration. MDI medians by further window: frames 100..115 ~0.842ms, 116..139 ~0.848ms, 140..159 ~0.844ms, 160..179 ~0.852ms, 180..195 ~0.859ms. This *one* recorded process has no sustained late-run MDI slowdown; the high Cycle 2 AUTO medians in the preceding six-run clean benchmark are not reproduced here. One healthy run cannot disprove intermittent slowdowns on another process run.
+- Medians are unpaired samples from one sequential AUTO workload, not independent randomized A/B/A, and **all values are CPU synchronous wall time only**. GPU timestamps, completion latency, FPS, CPU frequency, scheduling and external contention are unmeasured. The earlier Mac GPU raster parity of this fixture was confirmed independently, but a CSV cannot itself verify pixel parity.
+
+### Interpretation and next work
+
+The immediate high-confidence conclusion is that the cold first 3 MDI samples heavily increase backend CPU submission cost; a warmed run can be stable around 0.85ms while Direct is around 1.19ms in this fixed scene. The prior apparently slow second AUTO process might reflect GPU queue stalls/CPU scheduler/thermal contention, but there is **no evidence yet** to attribute it to any single mechanism.
+
+**Next tasks:** collect three independent Stage 84 CSV files using distinct `<prefix>` values in the same isolated worktree, preferably logging hardware/thermal state separately, and compare timelines by frame, especially whether spikes occur in `shadow_backend_ms`, `opaque_backend_ms` or the remainder. Collect GPU command-buffer or timestamp timing separately. Before changing the policy or declaring performance ready, repeat forced MDI alongside AUTO under different process order and capture actual GPU parity and no-submission guards. Keep experimental flags OFF by default and Draft PR #39 open. Handoff must report any new code commits and Mac test outcomes.
+
+**Verification truth:** Python-loaded uploaded CSV successfully parsed, shape (106,10). This is analysis/handoff only; no native compilation, CTest, CI or GPU run was performed in this stage.
