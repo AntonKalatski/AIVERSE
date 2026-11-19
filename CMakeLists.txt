@@ -2031,10 +2031,18 @@ if(AIVERSE_BUILD_STRATA)
     target_link_libraries(aiverse_strata_gpu_culling PUBLIC
         aiverse_strata_gpu_scene aiverse_strata_view)
     target_include_directories(aiverse_strata_gpu_culling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Shared-gfx indirect argument preflight. No live draw path is selected:
+    # renderer ownership/parity gates are explicit and default Legacy.
+    add_library(aiverse_strata_render_routing STATIC
+        engine/render/StrataRenderRouting.cpp)
+    target_link_libraries(aiverse_strata_render_routing PUBLIC
+        aiverse_strata_gpu_scene aiverse_strata_view)
+    target_include_directories(aiverse_strata_render_routing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC
-        aiverse_strata_view aiverse_strata_gpu_scene aiverse_strata_gpu_culling)
+        aiverse_strata_view aiverse_strata_gpu_scene
+        aiverse_strata_gpu_culling aiverse_strata_render_routing)
     target_compile_definitions(aiverse_runtime PRIVATE AIVERSE_STRATA_STAGING_ENABLED=1)
     if(AIVERSE_BUILD_TESTS)
         add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
@@ -2055,6 +2063,11 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_gpu_culling_tests PRIVATE
             aiverse_strata_gpu_culling aiverse_zstd_dec)
         add_test(NAME strata_gpu_culling COMMAND aiverse_strata_gpu_culling_tests)
+        add_executable(aiverse_strata_render_routing_tests
+            tests/render/strata_render_routing.cpp)
+        target_link_libraries(aiverse_strata_render_routing_tests PRIVATE
+            aiverse_strata_render_routing aiverse_zstd_dec)
+        add_test(NAME strata_render_routing COMMAND aiverse_strata_render_routing_tests)
     endif()
     # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
     # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
