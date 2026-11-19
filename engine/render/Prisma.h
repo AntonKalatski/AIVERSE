@@ -159,7 +159,7 @@ private:
         std::map<int, Target> targets;     // by role
         std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
         PrismaBloomGraphCache bloomGraph; // invalidates on size, mip count or HDR format changes
-        std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
+        std::unique_ptr<PrismaRhiExecutor> graphExecutor; // size-shared graph cache, NOT view-owned
     };
     struct RetiredSized {
         Sized resources;
