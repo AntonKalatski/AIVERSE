@@ -321,3 +321,26 @@ need physics, while an FPS hitscan weapon may not simulate a flying entity.
   behavior until parity tests verify equivalent hit timing, target death,
   damage, saves and network replay. No new system is considered implemented
   merely because it is described here.
+
+
+## NEREID: shared water ECS primitives (experimental)
+
+Public headers: `<aiverselib/water/NereidWaterSystems.h>` and
+`<aiverselib/water/NereidWater.h>`; package: `AIVERSE::lib_nereid_water`.
+`WaterBodyComponent` defines deterministic bodies, `WaterProbeComponent`
+supplies a query point, `WaterContactComponent` stores sampled water
+immersion/velocity; the host registers water persistence. The same pure
+`sampleWater` policy and `addWaterSamplingSystem` serve unrelated genres.
+Existing `waterNetwork` / RTS baked map tiles remain unchanged. Only stage 1
+fixed-point volume sampling has been implemented; rendering, polygon/spline
+shape, waves and physics are future tasks. Read `docs/nereid/HANDOFF.md` and
+`skills/gameplay/aiverse-nereid-water/SKILL.md`. Native test is unverified.
+
+### NEREID stage 2: composable water forces (experimental)
+
+`AIVERSE::lib_nereid_buoyancy` adds ECS buoyancy parameters, per-tick
+velocity input and acceleration output. Deterministic
+`computeWaterForces` calculates buoyancy and flow-relative drag from
+NEREID's sampled contact. Integrate output through the host's canonical
+physical velocity (do not create a new physics owner in NEREID).
+`ecs_nereid_buoyancy_test` is authored but native execution is pending.

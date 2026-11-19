@@ -48,6 +48,11 @@ struct AnimationTrait {
 using AnimationTraits = std::map<std::string, std::shared_ptr<const AnimationTrait>>;
 using AnimationGraphs = std::map<std::string, Json>;
 
+struct AnimationGraphNotify {
+    std::string node,name;
+    float framePhase=0.f; // 0..1 within last update
+    int64_t cycle=0;
+};
 class AnimationGraph {
 public:
     enum class Kind { Bind, Clip, Blend, Additive, TwoBoneIK, Native, Stack, Subgraph, Rig, MotionMatching, Controller };
@@ -56,8 +61,10 @@ public:
         std::shared_ptr<const AnimationRig> rig;
         Json config;
     };
+    struct Notify { float time=0.f; std::string name; };
     struct Node {
         std::string id, parameter, target, pole;
+        std::vector<Notify> notifies;
         Kind kind = Kind::Bind;
         int a = -1, b = -1, clip = -1, hip = -1, knee = -1, foot = -1;
         float weight = 1, speed = 1;
@@ -108,6 +115,7 @@ public:
     void update(float dt);
     void evaluate(Pose& result);
     const std::string& state() const;
+    const std::vector<AnimationGraphNotify>& notifies() const {return notifies_;}
     float stateTime() const { return time_; }
     // CPU-only preview clock checkpoint. Explicitly refuses nodes with stateful
     // native/rig/motion/controller/trait data or an unfinished transition fade.
@@ -127,6 +135,33 @@ public:
     };
     std::optional<PreviewClockSnapshot> snapshotPreviewClocks() const;
     bool restorePreviewClocks(const PreviewClockSnapshot& snapshot);
+    // A named, presentation-only playback position for compatible graph/model
+    // hot reload. Does not transfer native operations, contacts, rig solver
+    // caches, poses, event queues or authoritative root motion.
+    struct PlaybackSnapshot {
+        struct Clip {
+            std::string node;
+            std::string clip;
+            float phase=0.f;
+            bool loop=true;
+        };
+        std::string state;
+        float stateTime=0.f;
+        std::vector<Clip> clips;
+    };
+    PlaybackSnapshot snapshotPlayback() const;
+    // Call after reset(newGraph). Return false without mutating clocks if
+    // the old state/clip identities cannot be matched.
+    bool restorePlayback(const PlaybackSnapshot& snapshot);
+    // Replace a presentation-only graph while preserving a compatible
+    // named state and clip phases. No old rig/model/pose pointers survive.
+    // Returns true only if the old clock could be restored. A renamed/
+    // incompatible state or clip safely starts the new graph at defaults.
+    bool rebindPlayback(std::shared_ptr<const AnimationGraph> graph);
+    // Scoped, cosmetic-only clip clock seeding for CPU/GPU backend migration.
+    // Does not synthesize notifies; only valid clip nodes may be queried.
+    std::optional<float> clipTime(const std::string& node) const;
+    bool seekClipNode(const std::string& node,float seconds);
     AnimationGraphInstance* child(const std::string& node);
     const MotionPlayer* motion(const std::string& node) const;
     const AnimationControllerPlayer* controller(const std::string& node) const;
@@ -146,6 +181,9 @@ private:
     std::vector<mat4> world_;
     std::vector<std::vector<float>> nativeState_;
     std::vector<double> clocks_;
+    std::vector<double> unwrappedClocks_;
+    std::vector<uint8_t> clipStarted_;
+    std::vector<AnimationGraphNotify> notifies_;
     struct TraitState { std::vector<float> data; bool enabled=true; std::shared_ptr<AnimationRigState> rig; };
     std::vector<std::vector<TraitState>> traitState_;
     std::vector<std::shared_ptr<AnimationGraphInstance>> children_;

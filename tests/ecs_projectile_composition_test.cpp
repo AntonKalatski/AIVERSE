@@ -2,7 +2,7 @@
 // modules, with canonical impact events, COW snapshot and replay parity.
 // No RtsModule, fps::Module or genre-specific Actor dependency.
 #include <aiverselib/genre/EcsProjectileSystems.h>
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -110,7 +110,7 @@ public:
     void setup(Simulation& sim,const Json&,const Json&) override {
         World& w=sim.world();
         // The same collision provider is used by either genre.
-        assert(collision_.add({42,{{-2_fx,0_fx,5_fx},{2_fx,3_fx,6_fx}}}));
+        AIVERSE_TEST_CHECK(collision_.add({42,{{-2_fx,0_fx,5_fx},{2_fx,3_fx,6_fx}}}));
         w.setResource<ImpactLog>();
         Entity owner=w.create();
         w.add<Source>(owner);
@@ -131,7 +131,7 @@ public:
             [this](Simulation&) -> const world::SpatialWorld& {return collision_;},
             [](Simulation& current,const lg::ProjectileImpactEvent& event) {
                 auto* log=current.world().resource<ImpactLog>();
-                assert(log);
+                AIVERSE_TEST_CHECK(log);
                 log->shots.push_back(event.shotId);
                 log->walls.push_back(event.contact.collider);
             });
@@ -151,7 +151,7 @@ public:
                 h.u32(v.state.age);
             });
         const auto* log=w.resourceConst<ImpactLog>();
-        assert(log);
+        AIVERSE_TEST_CHECK(log);
         for(size_t i=0;i<log->shots.size();++i) {
             h.u32(log->shots[i]);
             h.u32(log->walls[i]);
@@ -171,20 +171,20 @@ uint64_t test(bool cow) {
     for(int i=0;i<7;++i)sim.step();
     const auto expected=sim.checksum();
     const auto* log=sim.world().resourceConst<ImpactLog>();
-    assert(log && log->shots.size()==2);
-    assert(log->shots[0]==101 && log->shots[1]==102);
-    assert(log->walls[0]==42 && log->walls[1]==42);
+    AIVERSE_TEST_CHECK(log && log->shots.size()==2);
+    AIVERSE_TEST_CHECK(log->shots[0]==101 && log->shots[1]==102);
+    AIVERSE_TEST_CHECK(log->walls[0]==42 && log->walls[1]==42);
     sim.loadState(checkpoint);
     for(int i=0;i<7;++i)sim.step();
-    assert(sim.checksum()==expected);
+    AIVERSE_TEST_CHECK(sim.checksum()==expected);
     return expected;
 }
 int main(){
     exerciseSharedSweptContacts();
     exerciseSharedBounceMotion();
     const uint64_t shooter=test<ShooterWeaponSource>(false);
-    assert(test<StrategyTurretSource>(false)==shooter);
-    assert(test<ShooterWeaponSource>(true)==shooter);
-    assert(test<StrategyTurretSource>(true)==shooter);
+    AIVERSE_TEST_CHECK(test<StrategyTurretSource>(false)==shooter);
+    AIVERSE_TEST_CHECK(test<ShooterWeaponSource>(true)==shooter);
+    AIVERSE_TEST_CHECK(test<StrategyTurretSource>(true)==shooter);
     std::cout<<"PASS shared projectile ECS system in shooter and strategy modules, impact order and COW replay\n";
 }

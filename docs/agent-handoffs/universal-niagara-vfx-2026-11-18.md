@@ -487,3 +487,41 @@ Then run a **real Metal** offscreen smoke: execute `step()` in a frame *before* 
 3. **Single pool and material.** Implement a reusable emitter scheduler, per-emitter storage ranges, batching by material, dead-particle compaction, scalable indirect draw, alpha sort and transparent rendering before targeting large particle counts.
 4. **CPU-only backends.** Vulkan compute is not wired through the current RHI; GLSL 430 kernel text is only a placeholder. Do not pretend it runs under GL33/GLES3/WebGL2.
 5. **Next bounded stage:** native compile/CTest/Apple Metal validation and fixes, then opt-in integration of `ComputeParticles` into native presentation/ECS bridge with explicit GPU eligibility/fallback for graph-v1 effects. Record actual benchmark numbers only after using GPU timing and representative scenes; update this same handoff with a separate commit after each bounded stage.
+
+## Stage 45.4 — SpectraFX upstream header compile fix selected for water integration
+
+**Date:** 2026-11-19. **Branch:** `feature/nereid-water-core` (Draft PR #23, no merge to main). **Implementation commit:** `191b22e5948b502651ec3da53777e1b9873181f7`.
+
+**User-reported build error:** Clang reports `unknown type name ParticleSystem` in `engine/fx/VfxGraphAssets.h`, then unknown `fx::ParticleSystem`/`fx::FxHandle` in `engine/fx/SpectraFX.h`, while compiling `tests/vfx_graph_compiler_test.cpp`. These are compile-time public-header dependency failures unrelated to NEREID simulation.
+
+**Discovery:** there is no dedicated branch named SpectraFX. Active upstream VFX development is in `feature/universal-entity-inspector-fps` (Stage 40 on its head). Compared against NEREID branch: **diverged**, 520 upstream-ahead / 356 water-ahead commits at inspection; a full merge risks unresolved CMake/editor/render conflicts and changes outside NEREID scope. The exact upstream fix was already committed as `3aa17d390fae819458cc3f89127f25804e3b2877`, changing only `engine/fx/VfxGraphAssets.h` to include `"ParticleSystem.h"` after `"VfxGraph.h"`.
+
+**Action taken:** applied the identical upstream one-line fix to the water branch without merging unrelated commits. Verified the resulting `VfxGraphAssets.h` content is byte-identical to the corresponding SpectraFX-upstream header. This supplies the complete ParticleSystem type for inline `ps_.define`, and transitively exposes `ParticleSystem`/`FxHandle` for aliases in `SpectraFX.h`. No gameplay, VFX behavior, ECS schema, GPU code or water code changed.
+
+**Actually verified:** GitHub branch listing, branch divergence, upstream commit diff, source comparison, and remote commit/ref update.
+**NOT run:** macOS Clang recompile, CTest, graph runtime checks, VFX GPU/Metal effects, full water/FPS/RTS regression. Compilation is not claimed successful. Keep Draft PR.
+
+**Next command:** fetch/pull `feature/nereid-water-core`, reconfigure only if required by other changes, and rerun `cmake --build build/nereid-test --parallel 4`; if it succeeds, run `ctest --test-dir build/nereid-test --output-on-failure --parallel 4`. Report the first new compiler/runtime failure and continue in the same branch.
+
+
+## Stage 45.5 — SpectraFX ECS presenter test missing snapshot vector (macOS compile)
+
+**Date:** 2026-11-19. **Destination:** `feature/nereid-water-core`, PR #23 stays Draft. **Source:** owner-supplied Clang compiler failure at `tests/vfx_ecs_presentation_test.cpp:87-88` (`particles` undeclared).
+
+**Cause:** The rollback-reset test added `ps.snapshot(particles)` and `particles.empty()`, but never declared the local collection. Checked both the water branch and current SpectraFX development branch (`feature/universal-entity-inspector-fps`): the same defect is present in both. This is a test-local type declaration, not a missing engine API or a water component issue.
+
+**Fix:** Introduced `std::vector<fx::FxParticleInfo> particles;` immediately before `ps.snapshot(particles)` inside `scenario<Kind>()`. The source already includes `<vector>`, and `ParticleSystem::snapshot(std::vector<FxParticleInfo>&) const` is the public API. No runtime FX behavior, ECS state or NEREID game logic was changed.
+
+**Verification performed:** compared the two branch files, inspected `ParticleSystem.h` public API and committed the one-line fix via the GitHub connector. **NOT RUN:** actual macOS build, CTest, GPU validation, full regression. Do not claim test PASS. **Next:** pull the NEREID branch, run `cmake --build build/nereid-test --parallel 4`; after a successful build, run `ctest --test-dir build/nereid-test --output-on-failure --parallel 4`. Share subsequent failures; keep PR Draft until build and tests pass. **Upstream note:** the originating SpectraFX branch has the same bug, so the SpectraFX agent should also take this patch.
+
+
+## Stage 45.7 — SpectraFX test regression: unsigned underflow during gameplay event check
+
+**Date:** 2026-11-19. **Branch:** `feature/nereid-water-core`, PR #23 Draft. **Actual failure:** on macOS, CTest `vfx_ecs_presentation` (109/118) aborted with `std::runtime_error: gameplay event did not play`.
+
+**Root cause:** the test compared `size_t once >= before-20`, where `before` is an unsigned particle count from a low-rate continuous emitter. When `before<20`, subtraction wraps to an enormous `size_t` value and reports a failure even when gameplay-event emission works.
+
+**Fix:** assert the actual `impact_flash` particle ID in a headless `ParticleSystem::snapshot`: the fixture's High-quality three-particle burst, with 0.5-second lifetime, must have exactly three impact particles after one 0.1-second update. Replaying the same tick must not add another impact burst, tested after a second 0.1-second update. Existing reset check still requires no attached or one-shot particles to remain. Added `<algorithm>` for `std::count_if`. No shipping VFX, ECS or water code changed.
+
+**Performed:** GitHub source inspection of CPU emission and presenter, guarded edit, branch commit and handoff. **Not performed:** native C++ build/CTest rerun, GPU check or FPS/RTS/PHYSIS regressions. **Next:** pull, build `aiverse_vfx_ecs_tests`, run `ctest --test-dir build/nereid-test --output-on-failure -R '^vfx_ecs_presentation$'`; if successful, full CTest. Remain Draft.
+

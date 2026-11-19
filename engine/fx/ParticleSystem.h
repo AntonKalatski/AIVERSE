@@ -14,6 +14,7 @@
 //     (FxQuality) — fill rate is what kills old Mali/Adreno, so the size cap matters most;
 //   * one-shot effects that start off-screen or far away are not spawned at all.
 #pragma once
+#include "engine/render/RenderDeviceLifetime.h"
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -92,6 +93,7 @@ public:
     ParticleSystem& operator=(const ParticleSystem&) = delete;
 
     // `dev` may be null: simulation without drawing (tests, headless tools).
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     bool init(gfx::Device* dev);
     void shutdown();
     // Optional presentation-only GPU-fenced lifetime manager for editor
@@ -176,6 +178,10 @@ public:
 
 private:
     struct Impl;
+    bool deviceLeaseValid(const gfx::Device& dev) const noexcept {
+        return !gpuDeviceLease_.device() || gpuDeviceLease_.validFor(dev);
+    }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     std::unique_ptr<Impl> impl_;
     render::GpuResourceRetirement* gpuRetirement_ = nullptr;
     FxQuality quality_ = FxQuality::Medium;

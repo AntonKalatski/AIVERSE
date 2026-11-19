@@ -1,7 +1,7 @@
 // Real RollbackSession parity with incremental COW snapshots OFF and ON.
 // Build via tests/run_ecs_experiment_suite.sh.
 #include "engine/net/Rollback.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -50,22 +50,22 @@ static Result run(bool incremental) {
         RollbackSession session(sim,cfg,{1},
             [](uint32_t,const std::vector<Command>&){},
             [](uint32_t,uint64_t){});
-        assert(sim.world().cowSnapshotsEnabled()==incremental);
+        AIVERSE_TEST_CHECK(sim.world().cowSnapshotsEnabled()==incremental);
         for(int i=0;i<5;++i)session.update(0.05,uint64_t(i*50));
-        assert(sim.tick()==5);
+        AIVERSE_TEST_CHECK(sim.tick()==5);
         Command delayed;
         delayed.tick=2;delayed.player=2;delayed.seq=1;delayed.type=1;delayed.param=37;
         session.confirm(0,3,{delayed});
         // Update with zero seconds still applies correction and replay.
         session.update(0.0,250);
-        assert(session.stats().rollbacks>=1);
+        AIVERSE_TEST_CHECK(session.stats().rollbacks>=1);
         for(int i=5;i<8;++i)session.update(0.05,uint64_t(i*50));
         return {sim.checksum(),sim.tick(),session.stats().rollbacks};
     }
 }
 int main(){
     const auto deep=run(false),cow=run(true);
-    assert(deep.hash==cow.hash);
-    assert(deep.tick==cow.tick && deep.rollbacks==cow.rollbacks);
+    AIVERSE_TEST_CHECK(deep.hash==cow.hash);
+    AIVERSE_TEST_CHECK(deep.tick==cow.tick && deep.rollbacks==cow.rollbacks);
     std::cout<<"PASS RollbackSession deep-vs-incremental COW parity including late confirmations\n";
 }

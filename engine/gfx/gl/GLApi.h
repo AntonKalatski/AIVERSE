@@ -72,6 +72,7 @@
   typedef struct __GLsync* GLsync;
   #define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
   #define GL_ALREADY_SIGNALED 0x911A
+  #define GL_TIMEOUT_EXPIRED 0x911B
   #define GL_CONDITION_SATISFIED 0x911C
   #define GL_WAIT_FAILED 0x911D
   #define AIVERSE_GL_FUNCS(X) \

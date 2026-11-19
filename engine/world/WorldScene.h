@@ -2,6 +2,16 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/render/GpuOwnedMemory.h"
+#include "engine/render/AsyncResourceRetirementQueue.h"
+#include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidCascadeScene.h"
+#include "engine/world/NereidConfluenceScene.h"
+#include "engine/world/NereidUnderwaterView.h"
+#include "engine/world/NereidRipples.h"
+#include "engine/world/NereidWindPresentation.h"
+#include "engine/world/NereidWindField.h"
+#include <cmath>
+#include <algorithm>
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -17,6 +27,75 @@ public:
     // Distinct shared Model objects are deduplicated across resident cells.
     render::GpuOwnedMemoryStats ownedGpuMemoryStats(
         const gfx::Device& device) const;
+    // Call at the explicit owning Device frame boundary, BEFORE new draws.
+    // Shared CPU/worker references must drop before a Model can acquire
+    // its final GPU retirement marker.
+    bool collectRetired(gfx::Device&);
+    size_t pendingGpuRetirements() const noexcept {
+        return deferredModels_.size()+retiredModels_.pending();
+    }
+    // Opt-in presentation-only water; call before update. Never mutates ECS.
+    void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
+    size_t nereidVisibleSurfaceCount()const;
+    NereidUnderwaterView nereidUnderwaterAt(Vec3 camera)const;
+    // Native projects may override static waterfall manifest from ECS.
+    void setNereidCascades(std::vector<NereidCascadeSource> cascades) {
+        cascades_.setCascades(std::move(cascades));
+    }
+    size_t nereidCascadeCount()const{return cascades_.residentCount();}
+    // Publish an immutable confluence snapshot from the same ECS tick
+    // as setNereidSurfaces; missing body snapshots suppress contribution.
+    void setNereidConfluences(std::vector<NereidConfluenceSource> sources) {
+        confluences_.setConfluences(std::move(sources));
+    }
+    size_t nereidConfluenceCount()const{return confluences_.count();}
+    template<class Fn> void forEachNereidCascade(Fn&& fn)const {
+        cascades_.forEachSource(std::forward<Fn>(fn));
+    }
+    // Explicit presentation read barrier: consume one ECS tick of events.
+    void ingestNereidInteractions(
+        const std::vector<lib::nereid::WaterPresentationEvent>& events,
+        uint32_t completedTick) {ripples_.ingest(events,completedTick);}
+    template<class Callback> void ingestNereidInteractions(
+        const std::vector<lib::nereid::WaterPresentationEvent>& events,
+        uint32_t completedTick,Callback&& onSpectraFxOrAudio) {
+        ripples_.ingest(events,completedTick,
+                        std::forward<Callback>(onSpectraFxOrAudio));
+    }
+    void advanceNereidRipples(float deltaSeconds) {
+        ripples_.advance(deltaSeconds,[this](uint64_t waterId,
+                                     double x,double y,double z) {
+            // Presentation-only coordinate quantization before an immutable
+            // fixed-point current lookup; never enters authoritative ECS.
+            auto fixed=[](double value) {
+                constexpr double limit=1e12;
+                const double safe=std::clamp(value,-limit,limit);
+                return Fixed::fromRaw(int64_t(std::llround(safe*Fixed::kOne)));
+            };
+            const Vec3 position{fixed(x),fixed(y),fixed(z)};
+            const Vec3 bodyFlow=nereidWater_.currentForInteractionWater(
+                waterId,position);
+            if(waterId==UINT64_MAX)return bodyFlow;
+            const Vec3 joined=confluences_.flowForWater(
+                waterId+1,position,bodyFlow,nereidWater_);
+            return cascades_.flowAtConnection(
+                waterId+1,position,joined,nereidWater_);
+        });
+        ripples_.applyVisualWind(deltaSeconds,
+            [this](double x,double z) {
+                return windField_.sample(x,z);
+            });
+    }
+    void setNereidVisualWind(NereidVisualWind wind) {
+        windField_.setBase(wind);
+    }
+    NereidVisualWind nereidVisualWind()const{return windField_.base();}
+    void setNereidWindZones(std::vector<NereidWindZone> zones) {
+        windField_.setZones(std::move(zones));
+    }
+    const NereidVisualWindField& nereidWindField()const{return windField_;}
+    const NereidRippleField& nereidRipples()const{return ripples_;}
+
     const AsyncChunkStream::Status& status()const{return stream_->status();}
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
@@ -32,9 +111,19 @@ private:
     bool shareModels_=false;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
+    // Candidate registry retains one shared_ptr per GPU Model, including
+    // after its last render chunk disappears. Weak worker cache entries are
+    // invalidated atomically only when the final candidate is enqueued.
+    std::map<render::Model*,std::shared_ptr<render::Model>> deferredModels_;
+    render::AsyncResourceRetirementQueue<std::shared_ptr<render::Model>> retiredModels_;
     size_t uploadBytes_=16*1024*1024;
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
+    NereidWaterScene nereidWater_;
+    NereidCascadeScene cascades_;
+    NereidConfluenceScene confluences_;
+    NereidRippleField ripples_;
+    NereidVisualWindField windField_{};
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
 }

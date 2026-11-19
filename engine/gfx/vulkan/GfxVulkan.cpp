@@ -273,6 +273,11 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    for(const auto& [token,fence]:retirementFences_) {
+        (void)token;
+        if(fence)vkDestroyFence(device_,fence,nullptr);
+    }
+    retirementFences_.clear();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
     textures_.each(killTex);
@@ -408,6 +413,73 @@ void VulkanDevice::ensureBackBuffer(int w, int h) {
     VkCommandBuffer cb = transferCmd();
     initImageLayout(back_, cb, true);
     initImageLayout(backDepth_, cb, true);
+}
+
+bool VulkanDevice::waitForResourceIdle() {
+    // Frame serial counts submissions, NOT GPU completion. Only a
+    // successful device-wide wait establishes the retirement fence.
+    // Caller must be outside passes and before any current-frame packet
+    // can borrow a model scheduled for destruction.
+    if(!device_ || inPass_ || !healthy_)return false;
+    const VkResult result=vkDeviceWaitIdle(device_);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        return false;
+    }
+    completed_=std::max(completed_,serial_-1);
+    collectGarbage();
+    return true;
+}
+
+uint64_t VulkanDevice::beginResourceRetirement() {
+    // Enqueue an empty ordered queue submission. The fence completes only
+    // after earlier submitted graphics/transfer work on this same queue.
+    // Recorded-but-unsubmitted current-frame commands are NOT included.
+    if(!device_ || !healthy_ || inPass_ || !queue_)return 0;
+    VkFence fence=VK_NULL_HANDLE;
+    const auto info=vkStruct<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+    if(vkCreateFence(device_,&info,nullptr,&fence)!=VK_SUCCESS)return 0;
+    const VkResult result=vkQueueSubmit(queue_,0,nullptr,fence);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        vkDestroyFence(device_,fence,nullptr);
+        return 0;
+    }
+    const uint64_t token=nextRetirementToken_++;
+    retirementFences_.emplace(token,fence);
+    return token;
+}
+
+bool VulkanDevice::resourceRetirementComplete(uint64_t token) {
+    return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+}
+
+ResourceRetirementStatus VulkanDevice::resourceRetirementStatus(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_ || !healthy_)
+        return ResourceRetirementStatus::Failed;
+    const VkResult result=vkGetFenceStatus(device_,it->second);
+    if(result==VK_SUCCESS)return ResourceRetirementStatus::Complete;
+    if(result==VK_NOT_READY)return ResourceRetirementStatus::Pending;
+    if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+    return ResourceRetirementStatus::Failed;
+}
+
+void VulkanDevice::endResourceRetirement(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    if(vkGetFenceStatus(device_,it->second)!=VK_SUCCESS)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
+void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
+    // This API requires an earlier successful vkDeviceWaitIdle: it is
+    // forbidden for failed/vkDeviceLost paths with incomplete submissions.
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
 }
 
 void VulkanDevice::prepareSlot() {

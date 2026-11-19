@@ -79,19 +79,47 @@ void Renderer3D::shutdownModels() {
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
-    for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
+    pendingModelPipes_.clear(); pendingColorWarms_.clear(); failedColorWarms_.clear();
+    modelPipes_.clear(); modelShaders_.clear();
+    for (auto t : {white_, black_, flatNormal_})
+        if(t.valid()) dev_->destroyTexture(t);
+    white_=black_=flatNormal_={};
+}
+
+void Renderer3D::retireModelPrograms() {
+    if(!dev_)return;
+    checkGpuDevice(*dev_);
+    if(!programRetirement_)
+        throw std::logic_error("Renderer3D shader retirement owner unavailable");
+    // Reserve BEFORE detaching any renderer pipeline/shader handles. An
+    // allocation failure leaves the previous material cache usable.
+    GpuProgramBatch resources;
+    resources.pipelines.reserve(modelPipes_.size());
+    resources.shaders.reserve(modelShaders_.size());
+    for(const auto& [key,pipeline]:modelPipes_) {
+        (void)key;
+        if(pipeline.valid())resources.pipelines.push_back(pipeline);
+    }
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.shader.valid())resources.shaders.push_back(shader.shader);
+    }
+    // Pending native compiler jobs own their own cancellation semantics.
+    // They are never mistaken for completed shader handles.
+    pendingModelPipes_.clear();
+    pendingColorWarms_.clear(); // invalidated pipeline handles must not be polled
+    failedColorWarms_.clear(); // failures belong to this retired pipeline generation
+    modelPipes_.clear();
+    modelShaders_.clear();
+    programRetirement_->retire(std::move(resources));
 }
 
 void Renderer3D::setInstanceLimit(uint32_t limit) {
     const auto maximum=dev_?uint32_t(std::clamp<size_t>(dev_->maxUniformBytes()/144,1,256)):32u;
     const auto next=limit?std::clamp(limit,1u,maximum):maximum;
     if(next==instanceLimit_)return;
+    if(dev_)retireModelPrograms();
     instanceLimit_=next;
-    if(!dev_)return;
-    for(auto& [key,p]:modelPipes_)dev_->destroyPipeline(p);
-    for(auto& [key,s]:modelShaders_)if(s.shader.valid())dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear();modelShaders_.clear();
 }
 void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     model=&source;world=transform;transforms.clear();primitiveOffsets.clear();
@@ -103,12 +131,9 @@ void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     for(int i=0;i<8;++i){auto p=world.transformPoint({c.x+(i&1?e.x:-e.x),c.y+(i&2?e.y:-e.y),c.z+(i&4?e.z:-e.z)});min=min3(min,p);max=max3(max,p);}
 }
 void Renderer3D::setMaterialQuality(MaterialQuality q) {
-    if (q == matQuality_) return;
-    matQuality_ = q;
-    if (!dev_) return;
-    for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
-    for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
+    if(q==matQuality_)return;
+    if(dev_)retireModelPrograms();
+    matQuality_=q;
 }
 
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced,
@@ -143,13 +168,19 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const auto* graph = selectedGraph.get();
     const ModelShaderKey skey{shaderKey, selectedGraph};
     const ModelShaderKey pkey{pipeKey, selectedGraph};
-    for (auto& [k, p] : modelPipes_) if (k == pkey) return p;
+    for (auto& [k, p] : modelPipes_) if (k == pkey) {
+        if(warmingPipelines_ && !p.valid())warmingFailed_=true;
+        return p;
+    }
 
     for (auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();++it) if(it->first==pkey) {
         gfx::PipelineHandle result;
         if (!it->second(result)) { warmingPending_=true; return {}; }
         pendingModelPipes_.erase(it);
-        if (!result.valid()) modelError_="model pipeline: "+dev_->lastError();
+        if (!result.valid()) {
+            modelError_="model pipeline: "+dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
         modelPipes_.push_back({pkey,result}); return result;
     }
     ShaderEntry* entry = nullptr;
@@ -252,6 +283,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         else e.shader = dev_->createShader(sd);
         if (!e.job && !e.shader.valid()) {
             e.failed = true;
+            if(warmingPipelines_)warmingFailed_=true;
             modelError_ = "model shader (" + defs + "): " + dev_->lastError();
             std::fprintf(stderr, "%s\n", modelError_.c_str());
         }
@@ -261,8 +293,13 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     if (entry->job) {
         if (!entry->job(entry->shader)) { warmingPending_=true; return {}; }
         entry->job={};
-        if (!entry->shader.valid()) { entry->failed=true; modelError_="model shader: "+dev_->lastError(); }
+        if (!entry->shader.valid()) {
+            entry->failed=true;
+            if(warmingPipelines_)warmingFailed_=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
     }
+    if(warmingPipelines_ && entry->failed)warmingFailed_=true;
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[stream-pipeline-state] key=%u phase=%d\n",pipeKey,phase);
     gfx::PipelineHandle ph;
     if (!entry->failed) {
@@ -295,17 +332,56 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             auto job=dev_->createPipelineAsync(pd);
             if (!job(ph)) { pendingModelPipes_.push_back({pkey,std::move(job)}); warmingPending_=true; return {}; }
         } else ph = dev_->createPipeline(pd);
-        if (!ph.valid()) modelError_ = "model pipeline: " + dev_->lastError();
+        if (!ph.valid()) {
+            modelError_ = "model pipeline: " + dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
     }
     modelPipes_.push_back({pkey, ph});
     return ph;
 }
 
-bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Material>* materials) {
-    warmingPipelines_=true; warmingPending_=false;
+Renderer3D::PipelineWarmStatus
+Renderer3D::warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials) {
+    if(dev_)checkGpuDevice(*dev_);
+    warmingPipelines_=true;
+    // Shader/pipeline jobs or user-authored graph generation may throw;
+    // never let an exception leak the temporary warming mode into the
+    // regular frame renderer.
+    struct WarmingScope {
+        bool& enabled;
+        ~WarmingScope(){enabled=false;}
+    } scope{warmingPipelines_};
+    warmingPending_=warmingFailed_=false;
     auto warm=[&](const ModelItem& item,int phase,bool instanced) {
         const auto pipe=modelPipeline(item,phase,instanced);
-        if (pipe.valid() && !dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) warmingPending_=true;
+        if(!pipe.valid())return;
+        // A pending colour variant has no backend ShaderJob to poll.
+        // Record its stable handle exactly once; all later owner frames
+        // advance it without regenerating the authored scratch Model.
+        if(std::find(failedColorWarms_.begin(),failedColorWarms_.end(),
+                     pipe)!=failedColorWarms_.end()) {
+            warmingFailed_=true;
+        }else if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
+                            pipe)!=pendingColorWarms_.end()) {
+            warmingPending_=true;
+        }else {
+            switch(dev_->warmPipelineColorStatus(pipe,gfx::PixelFormat::RGBA16F)) {
+            case gfx::Device::PipelineColorWarmStatus::Ready:
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Pending:
+                warmingPending_=true;
+                pendingColorWarms_.push_back(pipe);
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Failed:
+                warmingFailed_=true;
+                failedColorWarms_.push_back(pipe);
+                ++colorWarmFailed_;
+                modelError_="model HDR pipeline: "+dev_->lastError();
+                break;
+            }
+        }
     };
     const auto& mats = materials ? *materials : model.materials;
     bool lod = false, palette = false;
@@ -334,7 +410,85 @@ bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Materi
             }
         }
     }
-    warmingPipelines_=false; return !warmingPending_;
+    return warmingFailed_ ? PipelineWarmStatus::Failed :
+           warmingPending_ ? PipelineWarmStatus::Pending :
+                             PipelineWarmStatus::Ready;
+}
+
+bool Renderer3D::warmModelPipelines(
+        const Model& model,const std::vector<Material>* materials) {
+    return warmModelPipelinesChecked(model,materials)==PipelineWarmStatus::Ready;
+}
+
+Renderer3D::GpuWarmStats Renderer3D::gpuWarmStats() const noexcept {
+    GpuWarmStats out;
+    out.pipelineJobs=pendingModelPipes_.size();
+    out.colorVariants=pendingColorWarms_.size();
+    out.colorPollAttempts=colorWarmPollAttempts_;
+    out.colorVariantsReady=colorWarmReady_;
+    out.colorVariantsFailed=colorWarmFailed_;
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.job)++out.shaderJobs;
+    }
+    return out;
+}
+
+bool Renderer3D::hasPendingModelPipelineJobs() const noexcept {
+    if(!pendingModelPipes_.empty() || !pendingColorWarms_.empty())
+        return true;
+    for(const auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(entry.job)return true;
+    }
+    return false;
+}
+
+bool Renderer3D::pollPendingModelPipelineJobs() {
+    if(!dev_)return false;
+    checkGpuDevice(*dev_);
+    // Do not allocate or upload a Model, texture, or material merely to
+    // advance GPU compiler jobs that have already been submitted.
+    for(auto it=pendingColorWarms_.begin();it!=pendingColorWarms_.end();) {
+        ++colorWarmPollAttempts_;
+        switch(dev_->warmPipelineColorStatus(*it,gfx::PixelFormat::RGBA16F)) {
+        case gfx::Device::PipelineColorWarmStatus::Ready:
+            ++colorWarmReady_;
+            it=pendingColorWarms_.erase(it);
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Failed:
+            failedColorWarms_.push_back(*it);
+            ++colorWarmFailed_;
+            modelError_="model HDR pipeline: "+dev_->lastError();
+            it=pendingColorWarms_.erase(it);
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Pending:
+            ++it;
+            break;
+        }
+    }
+    for(auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(!entry.job)continue;
+        if(!entry.job(entry.shader))continue;
+        entry.job={};
+        if(!entry.shader.valid()) {
+            entry.failed=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
+    }
+    // Reserve room for all completed programs before polling a backend job:
+    // if vector allocation fails, the job is still in its original slot.
+    modelPipes_.reserve(modelPipes_.size()+pendingModelPipes_.size());
+    for(auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();) {
+        gfx::PipelineHandle pipeline{};
+        if(!it->second(pipeline)) {++it;continue;}
+        if(!pipeline.valid())
+            modelError_="model pipeline: "+dev_->lastError();
+        modelPipes_.push_back({it->first,pipeline});
+        it=pendingModelPipes_.erase(it);
+    }
+    return hasPendingModelPipelineJobs();
 }
 
 void Renderer3D::recordPersistentModel(const ModelDraw& d) {

@@ -23,9 +23,10 @@ enum : uint32_t {
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
     kPfAutoExposure = 1u << 13,
+    kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
@@ -70,10 +71,10 @@ const char* kTemporalFields[] = {
     "prev0", "prev1", "prev2", "prev3", "jitter", "inputPx"
 };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -141,6 +142,7 @@ PrismaQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 }
 
 bool Prisma::init(gfx::Device& dev) {
+    checkGpuDevice(dev);
     dev_ = &dev;
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
@@ -277,6 +279,7 @@ size_t Prisma::retireUnreferencedSizeCaches() {
 }
 
 void Prisma::collectGpuRetirements() {
+    if(dev_)checkGpuDevice(*dev_);
     if (dev_) collectCompletedSizes(dev_->gpuCompletedFence());
 }
 
@@ -506,6 +509,9 @@ void Prisma::releaseRetiredSizesAfterGpuIdle() {
 }
 void Prisma::shutdown() {
     if (!dev_) return;
+    checkGpuDevice(*dev_);
+    if (gpuDeviceLease_.device() && !dev_->waitForResourceIdle())
+        throw std::runtime_error("Prisma shutdown: GPU retirement barrier failed");
     // Existing host teardown must synchronize the GPU before shutdown.
     // Unlike per-frame resize, shutdown is a full GPU idle safe point.
     releaseRetiredSizesAfterGpuIdle();
@@ -548,10 +554,23 @@ void Prisma::shutdown() {
     if (triangle_.valid()) dev_->destroyBuffer(triangle_);
     release(black_);
     triangle_ = {};
+    underwater_ = {};
     dev_ = nullptr;
 }
 
+void Prisma::setUnderwater(PrismaUnderwater target,float deltaSeconds) {
+    underwater_=advancePrismaUnderwater(underwater_,target,deltaSeconds);
+}
+
+size_t Prisma::pendingTargetRetirements() const {
+    size_t count=retiredTargets_.pendingCount()+unfencedTargets_.size();
+    for(const auto& entry:retiredSizes_)
+        count+=entry.resources.targets.size()+entry.resources.depths.size();
+    return count;
+}
+
 void Prisma::setImageLoader(ImageLoader fn) {
+    if(dev_)checkGpuDevice(*dev_);
     // Project reload can happen while the previous frame's LUTs/graph
     // textures remain referenced by GPU commands. Fence-retire them rather
     // than destroying live borrowed inputs as soon as a new loader arrives.
@@ -1100,7 +1119,9 @@ bool Prisma::hdrRequested() const {
 }
 
 bool Prisma::active() const {
-    return dev_ && triangle_.valid() && enabled_ && (hdrRequested() || settings_.anyActive(quality_));
+    return dev_ && triangle_.valid() && enabled_ && settings_.enabled &&
+        quality_!=PrismaQuality::Off &&
+        (hdrRequested() || settings_.anyActive(quality_) || underwater_.blend>0.001f);
 }
 
 Prisma::Sized& Prisma::sized(int w, int h) {
@@ -1229,8 +1250,12 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 14; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (int i = 0; i < 16; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
+    if (mask & kPfUnderwaterDepth) {
+        tex |= 1u << 5;
+        defines += "#define PF_DEPTH_SAMPLE(p) TEX5(p).r\n";
+    }
     if (mask & kPfBloom) tex |= 2;
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
@@ -1262,14 +1287,15 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
         if (layout.exposureSlot == 9)
             defines += "#define PF_AUTO_EXPOSURE_SLOT9 1\n";
     }
-    Built b=buildProgram(kCompositeFields,15,tex,defines,prisma::kCompositeHelpers,body.c_str());
+    Built b=buildProgram(kCompositeFields,23,tex,defines,prisma::kCompositeHelpers,body.c_str(),
+        (mask & kPfUnderwaterDepth) ? (1u << 5) : 0);
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
         at=b.msl.find("// SG_CODE");b.msl.replace(at,10,graphProgram.msl);
     }
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = layout.textureSlots;
+    sd.textureSlots = std::max(layout.textureSlots, (mask & kPfUnderwaterDepth) ? 6 : 0);
     sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
@@ -1348,6 +1374,7 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
 }
 
 gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
+    if(dev_)checkGpuDevice(*dev_);
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -1378,7 +1405,7 @@ void Prisma::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
     if (!dst.tex.valid() || !pipe.valid()) return; // never redirect a failed effect to the screen
     gfx::PassDesc p;
     p.colorTarget = dst.tex;
-    p.depthTarget = depthFor(s, dst.w, dst.h);
+    p.depthTarget = depthFor(s, dst.w, dst.h, true);
     p.clearColor[0] = p.clearColor[1] = p.clearColor[2] = 0; p.clearColor[3] = 1;
     dev_->beginPass(p);
     dev_->setViewport({0, 0, dst.w, dst.h});
@@ -1392,6 +1419,7 @@ void Prisma::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
 }
 
 void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& f) {
+    checkGpuDevice(dev);
     stats_ = {};
     auto& effectReport = effectReports_[viewId_];
     ++effectReport.sequence;
@@ -1861,7 +1889,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             bool graphDrawn = false;
             const char* optIn = std::getenv("AIVERSE_PRISMA_GRAPH_FXAA");
             if (optIn && std::strcmp(optIn, "1") == 0 && fxaaOutput.tex.valid()) {
-                const gfx::TextureHandle aaDepth = depthFor(set, w, h);
+                const gfx::TextureHandle aaDepth = depthFor(set, w, h, true);
                 if (aaDepth.valid()) {
                     PrismaRenderGraph graph;
                     const auto input = graph.addResource({
@@ -2011,7 +2039,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 std::vector<gfx::TextureHandle> depths;
                 bool ready = graphPlan.valid;
                 if (ready) for (const auto& op : ops) {
-                    const auto depth = depthFor(set, op.destination.w, op.destination.h);
+                    const auto depth = depthFor(set, op.destination.w, op.destination.h, true);
                     depths.push_back(depth);
                     ready = ready && depth.valid() &&
                         (pooledBloom || op.destination.tex.valid());
@@ -2075,7 +2103,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             if (bloomOptIn && std::strcmp(bloomOptIn, "1") == 0 &&
                 src.tex.valid() && down[0].tex.valid()) {
                 const gfx::TextureHandle prefilterDepth =
-                    depthFor(set, down[0].w, down[0].h);
+                    depthFor(set, down[0].w, down[0].h, true);
                 if (prefilterDepth.valid()) {
                     PrismaRenderGraph graph;
                     const PrismaGraphFormat pixelFormat =
@@ -2161,7 +2189,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const char* graphFlag = std::getenv("AIVERSE_PRISMA_GRAPH_TILT_SHIFT");
         if (graphFlag && std::strcmp(graphFlag, "1") == 0 &&
             src.tex.valid() && a.tex.valid() && b.tex.valid()) {
-            const auto depth = depthFor(set, a.w, a.h);
+            const auto depth = depthFor(set, a.w, a.h, true);
             if (depth.valid()) {
                 const auto format = hdrFrame_ ? PrismaGraphFormat::RGBA16F :
                                                 PrismaGraphFormat::RGBA8;
@@ -2271,7 +2299,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 const char* graphFlag = std::getenv("AIVERSE_PRISMA_GRAPH_SUN_SHAFTS");
                 if (graphFlag && std::strcmp(graphFlag, "1") == 0 &&
                     src.tex.valid() && a.tex.valid() && b.tex.valid()) {
-                    const auto depth = depthFor(set, a.w, a.h);
+                    const auto depth = depthFor(set, a.w, a.h, true);
                     if (depth.valid()) {
                         const auto fmt = hdrFrame_ ? PrismaGraphFormat::RGBA16F :
                                                      PrismaGraphFormat::RGBA8;
@@ -2535,7 +2563,38 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // No exposure history, sampled texture, extra sampler or pipeline
     // variant is needed. ColorGrade's artistic exposure composes with it.
     if (manualSelected) u.filt[2] *= std::exp2(manualEV);
+    if(underwater_.blend>0.001f && quality_!=PrismaQuality::Off) {
+        mask|=kPfUnderwater;
+        put(u.underwater0,underwater_.tintR,underwater_.tintG,
+            underwater_.tintB,underwater_.blend);
+        const auto budget=prismaUnderwaterBudget(quality_);
+        put(u.underwater1,underwater_.absorption,
+            underwater_.depthMetres,
+            underwater_.distortion*budget.distortion,
+            underwater_.scattering*budget.scattering);
+        put(u.underwater2,budget.crossing,budget.scattering,
+            float(budget.samples),underwater_.surfaceOffset);
+        u.graphFrame[1]=underwater_.crossing*budget.crossing;
+        ++stats_.effects;
+    }
     const auto* graphEffect = find(PrismaType::ShaderGraph);
+    // Depth sampling is enabled only after the scene pass has ended.
+    // ShaderGraph owns tex5+, so avoid conflicting with its inputs.
+    const auto depthTex=depthFor(set,w,h);
+    const bool depthSafe=(mask & kPfUnderwater) &&
+        quality_>=PrismaQuality::Medium && !graphEffect &&
+        depthTex.valid() && depthTex != out.depthTarget;
+    if(depthSafe) {
+        mask |= kPfUnderwaterDepth;
+        const auto inv=f.viewProj.inverse();
+        for(int n=0;n<4;++n) {
+            float* dst=n==0?u.inverseViewProj0:n==1?u.inverseViewProj1:
+                       n==2?u.inverseViewProj2:u.inverseViewProj3;
+            for(int j=0;j<4;++j)dst[j]=inv.m[n*4+j];
+        }
+        put(u.underwaterCamera,f.cameraPos.x,f.cameraPos.y,
+            f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
+    }
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
     std::vector<gfx::TextureHandle> graphImages;
     bool graphInputsReady = true;
@@ -2568,6 +2627,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     if (automaticExposure.valid() && authoredLayout.valid)
         mask |= kPfAutoExposure;
     gfx::PipelineHandle pipe = composite(mask, selectedGraph);
+    if (!pipe.valid() && (mask & kPfUnderwaterDepth)) {
+        mask &= ~kPfUnderwaterDepth;
+        pipe = composite(mask, selectedGraph);
+    }
     if (!pipe.valid() && (mask & kPfAutoExposure)) {
         mask &= ~kPfAutoExposure;
         pipe = composite(mask, selectedGraph);
@@ -2619,7 +2682,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     Target aaTarget;
     if (aaAfter) {
         hdrFrame_ = false; aaTarget = target(set, kAa, outW, outH); hdrFrame_ = true;
-        const auto aaDepth = depthFor(set, outW, outH);
+        const auto aaDepth = depthFor(set, outW, outH, true);
         aaAfter = aaTarget.tex.valid() && aaDepth.valid();
         if (aaAfter) { compositeOut.colorTarget = aaTarget.tex; compositeOut.depthTarget = aaDepth; }
     }
@@ -2635,6 +2698,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         dev.setTexture(3, shaftTex.valid() ? shaftTex : black_);
         const Lut* l = (mask & kPfLut) ? lut(find(PrismaType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
+        if(mask & kPfUnderwaterDepth)dev.setTexture(5,depthTex);
         if (graphCompositePrepared)
             for (size_t i = 0; i < graphImages.size(); ++i)
                 dev.setTexture(int(i) + 5, graphImages[i]);

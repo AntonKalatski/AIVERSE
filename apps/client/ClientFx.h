@@ -11,6 +11,9 @@ namespace aiverse::client {
 
 class ClientFx {
 public:
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        ps_.setGpuDeviceLease(std::move(lease));
+    }
     void init(gfx::Device& dev, const game::Rules& rules);
     void shutdown();
     void startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& view, const game::MapGrid& grid);

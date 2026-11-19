@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include "engine/gfx/Gfx.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "engine/platform/Platform.h"
 
 namespace aiverse { class Simulation; }
@@ -23,7 +24,8 @@ public:
     ClientHost();
     ~ClientHost();
     // projectDir: content root; engineAssets: folder with the engine's assets ("engine/..." paths)
-    void start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets);
+    void start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets,
+               render::RenderDeviceLifetime::Lease deviceLease={});
     void stop();
     // A stopped hosted client may still own GPU handles referenced by a
     // submitted editor frame. Retire its GPU allocations only when the

@@ -1,7 +1,7 @@
 // c++ -std=c++20 -O2 -pthread -I. tests/ecs_guarded_failure_test.cpp engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp -o /tmp/aiverse-ecs-failure
 // /tmp/aiverse-ecs-failure
 #include "engine/experiments/EcsSimulationBridge.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -49,12 +49,12 @@ int main(){
         const auto initial=sim.checksum();
         bool threw=false;
         try{sim.step();}catch(const std::runtime_error&){threw=true;}
-        assert(threw && sim.tick()==0);
-        assert(sim.checksum()==initial);
+        AIVERSE_TEST_CHECK(threw && sim.tick()==0);
+        AIVERSE_TEST_CHECK(sim.checksum()==initial);
         for(int i=0;i<100;++i){
             Entity e{uint32_t(i),0};
-            assert(sim.world().get<ValueA>(e).x==i);
-            assert(sim.world().get<ValueB>(e).x==i*2);
+            AIVERSE_TEST_CHECK(sim.world().get<ValueA>(e).x==i);
+            AIVERSE_TEST_CHECK(sim.world().get<ValueB>(e).x==i*2);
         }
     }
     std::cout<<"PASS opt-in World transactional restoration on guarded worker failure\n";

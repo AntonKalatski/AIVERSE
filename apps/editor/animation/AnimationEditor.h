@@ -8,6 +8,8 @@
 #include "engine/render/AnimationGraph.h"
 #include "engine/render/AnimationRig.h"
 #include "engine/render/FullBodyIK.h"
+#include "engine/render/FailedModelUpload.h"
+#include <stdexcept>
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -24,6 +26,7 @@ public:
             release();
     }
     void update(Editor& ed,double dt){
+        owner_ = &ed;
         gpuResourceOwner_ = &ed.gpuResourceRetirement();
         dt_=float(std::min(dt,.1));
         if(registered_)return;
@@ -86,6 +89,7 @@ public:
                           true});
     }
     void draw(Editor& ed){
+        owner_=&ed;
         ws_=&ed.ws();auto tr=[&](const char* k){return text(k);};
         if(ed.ws().project.dir.empty()){ui::hint(tr("openProject").c_str());return;}
         if(project_!=ed.ws().project.dir){if(!project_.empty())drafts_[project_]={doc_,saved_,name_,dirty_};project_=ed.ws().project.dir;if(drafts_.count(project_)){auto& draft=drafts_[project_];doc_=draft.document;saved_=draft.saved;name_=draft.name;dirty_=draft.dirty;}else{doc_=saved_=animation::makeGraph();name_="untitled";dirty_=false;}reset();}
@@ -263,38 +267,73 @@ private:
     }
     void preview(Editor& ed){
         ready_=false;std::string path=doc_.getStr("model");std::string modelKey=project_+"/"+path;
+        // A model source change resets the GraphInstance, but named clip
+        // phases may still be compatible with the imported replacement.
+        // Keep only the value snapshot, never old rig/Model/pose pointers.
+        const bool modelChanged=modelKey_!=modelKey;
+        const auto previousPlayback=modelChanged ?
+            instance_.snapshotPlayback() :
+            render::AnimationGraphInstance::PlaybackSnapshot{};
         try{
-            if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_->init(*dev_,320))throw std::runtime_error("preview initialization failed");}
+            if(modelChanged){
+                release();
+                dev_=&ed.device();
+                auto candidate=loadAnimationModel(ed.ws(),path);
+                if(!candidate)throw std::runtime_error("animation preview Model load failed");
+                try {
+                    if(!render::uploadModel(*dev_,*candidate,true))
+                        throw std::runtime_error("model GPU upload failed");
+                }catch(...) {
+                    ed.retirePreviewModel(candidate);
+                    throw;
+                }
+                if(!portrait_->texture().valid()) {
+                    try {
+                        if(!portrait_->init(*dev_,320))
+                            throw std::runtime_error("preview initialization failed");
+                    }catch(...) {
+                        // Partly allocated offscreen targets are destroyed
+                        // only after the portrait's own GPU idle proof.
+                        try {portrait_->shutdown();}catch(...) {}
+                        ed.retirePreviewModel(candidate);
+                        throw;
+                    }
+                }
+                model_=std::move(candidate);
+                modelKey_=std::move(modelKey);
+            }
             if(!model_)return;
             std::string key=previewProgramKey();if(programKey_!=key){
-                // Graph recompilation must not erase the user-adjusted
-                // preview parameters, even when model/Portrait GPU assets
-                // were retired during a reload or a hidden-tab transition.
-                const auto oldValues = controls_.values;
-                const auto oldVectors = controls_.vectors;
                 render::AnimationGraphs graphs;
                 for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;
                 auto previewGraph=graph();
                 animation::sort(previewGraph);
-                instance_.reset(render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs));
-                controls_=instance_.parameters();
-                for (const auto& [name,value] : oldValues)
-                    if (auto it=controls_.values.find(name);it!=controls_.values.end())
-                        it->second=value;
-                for (const auto& [name,value] : oldVectors)
-                    if (auto it=controls_.vectors.find(name);it!=controls_.vectors.end())
-                        it->second=value;
+                auto compiled=render::AnimationGraph::compile(
+                    *model_,previewGraph,{}, {},graphs);
+                const auto previousControls=controls_;
+                // Editor graph changes should not restart a compatible
+                // state/clip timeline. The new graph owns fresh rig,
+                // contacts and operation state, never old Model pointers.
+                const bool rebound=instance_.rebindPlayback(std::move(compiled));
+                if(modelChanged && !rebound && !previousPlayback.state.empty())
+                    (void)instance_.restorePlayback(previousPlayback);
+                auto& inputs=instance_.parameters();
+                for(const auto& [name,value]:previousControls.values)
+                    if(inputs.values.count(name))inputs.values[name]=value;
+                for(const auto& [name,value]:previousControls.vectors)
+                    if(inputs.vectors.count(name))inputs.vectors[name]=value;
                 if (savedPreviewClocks_ && savedClockModelKey_ == modelKey_ &&
                     savedClockProgramKey_ == key)
                     (void)instance_.restorePreviewClocks(*savedPreviewClocks_);
                 savedPreviewClocks_.reset();
                 savedClockModelKey_.clear();
                 savedClockProgramKey_.clear();
-                programKey_=key; // successful compilation only
+                programKey_=std::move(key);
+                controls_=inputs;
                 error_.clear();
             }
             if(!instance_.graph())return;
-            ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){savedPreviewClocks_.reset();programKey_.clear();}
+            ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){savedPreviewClocks_.reset();instance_.reset({});programKey_.clear();}
             ImGui::SameLine();ImGui::SliderFloat("##yaw",&yaw_,-3.14f,3.14f);if(instance_.hasContacts()){ImGui::SetNextItemWidth(130);ImGui::DragFloat(text("previewGround").c_str(),&previewGround_,.01f);auto env=std::make_shared<render::AnimationEnvironment>();float ground=previewGround_;env->sphereContact=[ground](render::float3 p,float r,render::IKHit& h){return render::ikSpherePlane(p,r,{0,ground,0},{0,1,0},h);};env->raycast=[ground](render::float3 a,render::float3 b,render::IKHit& h){float d=b.y-a.y;if(std::abs(d)<1e-8f)return false;float t=(ground-a.y)/d;if(t<0||t>1)return false;h={a+(b-a)*t,{0,1,0},0,1};return true;};controls_.environment=env;}
             instance_.parameters()=controls_;if(playing_)instance_.update(dt_);instance_.evaluate(pose_);if(!instance_.healthy())error_=instance_.error();
             if(instance_.locomotionReport().active){const auto c=instance_.locomotionReport();ImGui::TextWrapped(text("climbReport").c_str(),c.supports,c.stepping,c.footError);ImGui::TextUnformatted(text(c.attached?"attached":"detached").c_str());}
@@ -332,7 +371,7 @@ private:
         for(auto& [name,v]:controls_.vectors){auto p=point(v);dl->AddCircle(p,7,ImGui::GetColorU32(ImGuiCol_PlotLines),12,2);dl->AddText({p.x+8,p.y},ImGui::GetColorU32(ImGuiCol_Text),name.c_str());ImGui::SetCursorScreenPos({p.x-8,p.y-8});ImGui::PushID(name.c_str());ImGui::InvisibleButton("control",{16,16});if(ImGui::IsItemActive()&&ImGui::IsMouseDragging(0)){auto d=ImGui::GetIO().MouseDelta;if(plane_==2)v.y+=d.x/scale;else v.x+=d.x/scale;if(plane_==0)v.y-=d.y/scale;else v.z-=d.y/scale;}ImGui::PopID();}ImGui::EndChild();
     }
     bool dragging_=false,rigMode_=false,registered_=false,dirty_=false,ready_=false,playing_=true;
-    Workspace* ws_=nullptr;gfx::Device* dev_=nullptr;float previewGround_=0,dt_=0,yaw_=.5f,zoom_=1;int plane_=0,unit_=0;ImVec2 pan_{};
+    Workspace* ws_=nullptr;Editor* owner_=nullptr;gfx::Device* dev_=nullptr;float previewGround_=0,dt_=0,yaw_=.5f,zoom_=1;int plane_=0,unit_=0;ImVec2 pan_{};
     Json doc_=animation::makeGraph(),saved_=doc_;std::vector<Json> undo_,redo_;struct Draft{Json document,saved;std::string name;bool dirty=false;};std::map<std::string,Draft> drafts_;std::map<ImGuiID,std::string> fields_;
     std::string project_,name_="untitled",scope_,subName_="subgraph",selected_,target_,modelKey_,programKey_,error_,message_;
     std::unique_ptr<render::Model> model_;
