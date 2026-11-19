@@ -572,6 +572,7 @@ void Prisma::acceptViewGpuTiming(uint64_t id,double gpuMs) {
     auto& row=scopedGpuTimings_[id];
     row.viewId=id;
     row.lastGpuMs=gpuMs;
+    row.gpuFenceAtRead=dev_?dev_->gpuCompletedFence():0;
     ++row.sampleSequence; // only a real completed scoped GPU query
 }
 
@@ -638,15 +639,21 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         // existing GPU time is a whole-command-buffer measurement; NEVER
         // label it as per-view. No completed timer -> no guessed CPU/FPS.
         const auto scoped=scopedGpuTimings_.find(viewId_);
+        const uint64_t completedFence=dev_->gpuCompletedFence();
         const bool scopedValid=scoped!=scopedGpuTimings_.end() &&
-            scoped->second.sampleSequence>0;
+            scoped->second.sampleSequence>0 &&
+            // Stale/closed tab GPU samples must not prevent a later
+            // whole-frame fallback; no extrapolation from old queries.
+            (completedFence==0 || scoped->second.gpuFenceAtRead==0 ||
+             (completedFence>=scoped->second.gpuFenceAtRead &&
+              completedFence-scoped->second.gpuFenceAtRead<=8));
         const double gpuMs=scopedValid ? scoped->second.lastGpuMs :
             dev_->gpuFrameMs();
         const uint64_t sampleToken=scopedValid ?
-            scoped->second.sampleSequence : dev_->gpuCompletedFence();
+            scoped->second.sampleSequence : completedFence;
         adaptive.observe(gpuMs,sampleToken,
             effect->get("targetGpuMs"),effect->get("minRenderScale"),
-            ceiling,memoryPressure);
+            ceiling,memoryPressure,scopedValid);
         adaptivePressure_[viewId_]={
             knownBytes,memoryLimit,memoryPressure,scopedValid,gpuMs};
         scale=adaptive.scale;
