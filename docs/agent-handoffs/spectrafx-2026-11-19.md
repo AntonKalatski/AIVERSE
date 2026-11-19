@@ -229,3 +229,12 @@ git fetch origin main && git merge origin/main
 - **Build/CTest/CI**: **NOT RUN** by user request (all features first, tests later). No claims of renderer verification.
 - **Known limitations**: no direct particle collision/death callback plumbing, no RHI GPU simulation; event depth relies on external event provenance. `Completed` must not be conflated with particle extinction.
 - **Next**: connect lifecycle events from tracked CPU emitters to event router on explicit starts/stops and natural emission shutdown, without altering existing particle simulation.
+
+
+## 2026-11-19 — Stage 12: tracked CPU emitter lifecycle event bridge
+- **Code commits**: `63e2a2d8a70baa38046723f53e3836659cace7cc` and `9d083de0a40307db2464f951aee905ea126684b5`, branch `feature/spectrafx-generic-cue-queue`. Main comparison: 0 commits behind `9ee6ff6` at this continuation's start.
+- **Changes**: `SpectraFxCpuEmitterRuntime::emitting(instance, const ParticleSystem&)` exposes whether a tracked handle is still *emitting*. New `engine/fx/SpectraFxEmitterController.h` orchestrates tracked `start/move/stop/poll/reset` across the existing CPU runtime and `SpectraFxEmitterEventRouter`. Start publishes Spawned, poll (after `ParticleSystem::update`) publishes Completed once after emission ceases, explicit stop/kill suppresses false natural-completion signals. Reset clears tracked handles and pending presentation events without touching unrelated FX.
+- **Semantics**: Completed means **emission ended**, not that all particles have died. Existing ParticleSystem owns their remaining lifetime. This is an opt-in presentation adapter; existing RTS/FPS are not switched over. Controller and its referenced runtime/router must have coherent lifetimes.
+- **Actual checks**: **NOT RUN**; no local build/CTest/CI/GPU/editor QA because user explicitly requested all feature implementation before testing.
+- **Limits**: no direct per-particle collision/death callbacks (ParticleSystem continues handling its own subemitters). Completion routing must use a key bound by the host; generation-safe keys needed; bounded router may drop events under overload. No automatic graph authoring UI or GPU compute backend.
+- **Next step**: implement graph authoring and stage-program serialization, then integrate configurable stage orchestration into native editor/host. Keep a dedicated handoff for each stage.
