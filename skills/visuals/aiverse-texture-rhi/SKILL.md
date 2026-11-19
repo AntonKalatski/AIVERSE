@@ -570,3 +570,21 @@ CI if it remains queued or cancelled.
 - The active version carries U/V wrap policies into the model renderer.
   Never change a live archive in place or trust external path names.
 - All C++/GPU validations for the new helper remain NOT RUN.
+
+
+### GPU page-feedback address parity (Stage 10Q)
+
+- Virtual page sampling and GPU feedback now share U/V addressing:
+  `VirtualTextureMaterialMapping::addressU/addressV` follows
+  `VirtualTextureArchiveVersion`, and the dedicated rigid/deformed
+  feedback shader uniforms carry those modes.
+- New `gfx::virtualTextureFeedbackPageAtUV` overload takes typed
+  U/V modes. Old normalized-only overload remains for legacy code.
+  Shader fragment helpers likewise have old and addressing-aware
+  variants. Feedback uses unwrapped UV derivatives for mip selection.
+- Rigid feedback U0 is now 192 bytes; deforming feedback U6 is 112.
+  Do not reuse a binary shader/uniform contract compiled for the old
+  lengths. Sample page IDs in linear RGBA8 without postprocessing.
+- CPU visibility prefetch rectangles remain normalized; for wrapped
+  large UV domains use GPU feedback or split regions before prefetch.
+  No native compiler/driver tests have been run for this stage.
