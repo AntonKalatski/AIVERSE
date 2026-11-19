@@ -39,8 +39,11 @@ public:
         if(!reader("fx/gpu/routes.json",routesText)) return true;
         SpectraFxGpuRouteAsset::Routes routes;
         SpectraFxGpuBudgetGovernor::Config budget;
+        std::optional<FxQuality> authoredQuality;
         if(!SpectraFxGpuRouteAsset::readText(routesText,routes,&lastError_,
-                                            &budget)) return false;
+                                            &budget,&authoredQuality))
+            return false;
+        if(authoredQuality) quality_=*authoredQuality;
         if(routes.empty()) return true;
         reader_=std::move(reader);
         textureBase_=std::move(textureBase);
