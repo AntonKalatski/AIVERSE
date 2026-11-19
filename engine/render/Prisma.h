@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include "PrismaData.h"
 #include "PostFxData.h" // legacy aliases used by existing clients and editor
@@ -120,9 +121,11 @@ public:
     // Call after setViewId/applyCameraVolumes and BEFORE Renderer3D::beginScene;
     // retain the original camera for gameplay picking and 2D overlays.
     // Active only with HDR temporalResolve + AIVERSE_PRISMA_JITTER=1.
+    // Pass the INTERNAL render resolution, not the final display dimensions.
     RTSCamera jitteredCamera(RTSCamera camera, int width, int height);
     // Host query BEFORE beginScene(): returns internal 3D resolution while
     // leaving the output texture/UI at the caller's full output resolution.
+    // The host must call it every rendered frame for offscreen output metadata.
     // The default is unchanged. Upscaling requires temporalResolve, HDR/High,
     // an explicit renderScale < 1 and AIVERSE_PRISMA_UPSCALE=1.
     std::pair<int,int> renderSizeForOutput(int width, int height);
