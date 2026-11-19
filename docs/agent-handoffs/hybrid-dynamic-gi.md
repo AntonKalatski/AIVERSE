@@ -756,3 +756,16 @@ Allows terrain/foliage/custom material layouts owning tex13..20 to
 request GI at tex21+ on capable Metal/Vulkan devices. Strict GLES3
 texture limitations keep fallback. Native build, CTest, shaders and GPU
 pixels NOT RUN. Continue Stage 44 real receiver integration.
+
+
+## Stage 44 — 2026-11-20 — actual terrain PBR GI receiver (SOURCE; NOT RUN)
+
+Full handoff: `docs/agent-handoffs/gi-stage44-terrain-receiver-2026-11-20.md`.
+The existing genre-specific terrain consumer now uses the genre-neutral
+remappable GI shader API: separate GLSL/MSL GI at tex21 plus U6, retained
+fallback and cached shader permutations; custom deferred pass checks GI
+availability before selecting shader. Terrain original tex0..20 remain
+intact; low-tier and GLES strict16 use existing shaders. Shutdown frees
+all 12 terrain pipeline/shader variants. Added `gi_terrain_receiver`
+source contract CTest. **No native build, compiler, CTest, driver GPU test
+or real TerraWeave runtime integration performed.**
