@@ -4,6 +4,7 @@
 #include "RtsView.h"
 #include "RtsModelStreaming.h"
 #include "engine/view/AppearanceAuthoringService.h"
+#include "engine/view/AppearanceChoiceAuthoring.h"
 
 #include <algorithm>
 #include <chrono>
@@ -76,19 +77,7 @@ const char* const kAuto[RtsView::kAnimCount][6] = {
     {"hit", "hurt", "damage", nullptr}, {"working", "produce", "work", nullptr},
     {"construct", nullptr}, {"cast", "spell", nullptr},
 };
-// case-insensitive glob with * and ? (node names in "assign")
-bool globMatchCi(const std::string& pat, const std::string& text) {
-    size_t p = 0, t = 0, star = std::string::npos, mark = 0;
-    auto eq = [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); };
-    while (t < text.size()) {
-        if (p < pat.size() && (pat[p] == '?' || eq(pat[p], text[t]))) { ++p; ++t; }
-        else if (p < pat.size() && pat[p] == '*') { star = p++; mark = t; }
-        else if (star != std::string::npos) { p = star + 1; t = ++mark; }
-        else return false;
-    }
-    while (p < pat.size() && pat[p] == '*') ++p;
-    return p == pat.size();
-}
+
 } // namespace
 
 Json RtsView::resolveMaterial(const UnitType& t, const Json& ref, int depth) {
@@ -861,46 +850,28 @@ void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v
     for (const auto& n : team.items())
         if (m.findMaterial(n.str()) < 0) warn(t, "team: material '" + n.str() + "' not found in " + m.path);
 
-    // ---- material overrides: "*" first, then by name; values are override objects or library
-    // references ("steel", {"use": "steel", "roughness": 0.2})
-    auto apply = [&](Material& mt, const Json& ref) { applyMaterial(dev, t, m, mt, ref); };
-    const Json& mats = v["materials"];
-    if (const Json& all = mats["*"]; all.isObject() || all.isString()) for (auto& mt : c.materials) apply(mt, all);
-    for (const auto& [name, o] : mats.members()) {
-        if (name == "*") continue;
-        int i = m.findMaterial(name);
-        if (i < 0) { warn(t, "materials: '" + name + "' not found in " + m.path); continue; }
-        apply(c.materials[size_t(i)], o);
+    // Shared genre-independent CPU policy preserves authored "*" then
+    // named material layering, descendant node assignments and variants.
+    // GPU texture loading and warnings remain owned by this RTS host.
+    const auto appearance=view::AppearanceChoiceAuthoring::resolve(
+        m,v,[this,&t](const std::string& message) {warn(t,message);});
+    auto apply=[&](Material& material,const Json& ref) {
+        applyMaterial(dev,t,m,material,ref);
+    };
+    for(size_t i=0;i<appearance.materialLayers.size();++i)
+        for(const auto& layer:appearance.materialLayers[i])
+            apply(c.materials[i],layer);
+    for(const auto& extra:appearance.extraMaterials) {
+        Material material;
+        material.name=extra.name;
+        // Name/reference defaults and GPU texture side effects match the
+        // pre-existing RTS choice path; only the rule resolution moved.
+        const Json resolved=resolveMaterial(t,extra.reference);
+        apply(material,resolved);
+        c.materials.push_back(std::move(material));
     }
-    // ---- "assign": a fresh material for the meshes of matching nodes ("Turret": "steel", "Wheel*": {...})
-    c.nodeMaterial.clear();
-    for (const auto& [pattern, ref] : v["assign"].members()) {
-        Material nm;
-        nm.name = ref.isString() ? ref.str() : pattern;
-        Json fresh = resolveMaterial(t, ref);
-        apply(nm, fresh);
-        const int idx = int(c.materials.size());
-        bool any = false;
-        // a matching node and everything under it ("Turret" = the turret with its barrel); later
-        // entries override earlier ones
-        std::vector<int> stack;
-        for (size_t n = 0; n < m.nodes.size(); ++n) if (globMatchCi(pattern, m.nodes[n].name)) stack.push_back(int(n));
-        while (!stack.empty()) {
-            const int n = stack.back();
-            stack.pop_back();
-            for (int ch : m.nodes[size_t(n)].children) stack.push_back(ch);
-            if (m.nodes[size_t(n)].mesh < 0) continue;
-            if (c.nodeMaterial.empty()) c.nodeMaterial.assign(m.nodes.size(), -1);
-            c.nodeMaterial[size_t(n)] = idx;
-            any = true;
-        }
-        if (any) c.materials.push_back(nm);
-        else warn(t, "assign: no node (with meshes under it) matches '" + pattern + "' in " + m.path);
-    }
-    if (!v.getStr("variant").empty()) {   // "" = default materials (a model entry can clear the view's variant)
-        c.variant = m.findVariant(v.getStr("variant"));
-        if (c.variant < 0) warn(t, "variant '" + v.getStr("variant") + "' not found in " + m.path);
-    }
+    c.nodeMaterial=appearance.nodeMaterial;
+    c.variant=appearance.variant;
 
     // ---- clips
     const Json& anims = v["animations"];
