@@ -324,3 +324,8 @@ Per-water-surface presentation style now has `rapidFoamR/G/B` (normalized, defau
 ## Stage 42 — immutable scene confluence flow projection
 
 `NereidConfluenceScene` is a read-only value snapshot adapter. `snapshotNereidEcsConfluences(world)` maps generation-safe ECS junction and water-body IDs to scene IDs (`packed()+1`). Publish via `WorldScene::setNereidConfluences(...)` at the same ECS read barrier as `setNereidSurfaces(...)`. Both visual ripple advection and per-tile rapid foam apply `flowForWater` (shared Fixed confluence kernel) followed by cascade flow, mirroring ECS sampling. Missing/invalid input snapshots suppress contribution. Scene has no new fluid solver, GPU buffer, geometry modification or persistence. C++/GPU/tests NOT RUN; see `docs/nereid/stage-42-confluence-scene.md`.
+
+
+## Stage 43 — GPU mesh residency independent of draw-only style
+
+NEREID source mesh revision depends only on body geometry, LOD and vertex tint fields (deep RGB, shoreline foam RGB/strength). Shader-only changes use `NereidSurfaceResident::setDrawStyle`, avoiding VB/IB uploads while preserving full style equality for external callers. `sameNereidSurfaceUploadKey` controls mesh residency and async staging acceptance; pending workers remain bound to immutable geometry revision. This changes no ECS data or GPU uniform layouts. Source-reviewed and committed, but C++/shader/GPU tests have not run. See `docs/nereid/stage-43-material-residency.md`.

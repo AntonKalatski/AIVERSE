@@ -670,3 +670,8 @@ Include `<aiverselib/water/NereidConfluences.h>`; enable `NativeWaterPipelineCon
 ## Stage 42 — confluence presentation snapshots
 
 After publishing the water-body ECS snapshot to WorldScene, call `scene.setNereidConfluences(aiverse::world::snapshotNereidEcsConfluences(sim.world()))` with `engine/world/NereidConfluenceEcsPresentation.h` after the same ECS read barrier. Water sources must share `packed Entity + 1` stable IDs. Visual NEREID flow is composed as ordinary current -> confluence -> cascade, then used for ripples and rapid-water shader inputs. No implicit JSON scene topology inference or renderer-to-ECS feedback. Read Stage 42 handoff at `docs/nereid/stage-42-confluence-scene.md`; CMake, CTest, shader compilers and graphics execution remain unverified.
+
+
+## Stage 43 — avoid water mesh upload for shader-only edits
+
+`NereidWaterScene::setSurfaces` does not increase mesh revision for changes to optics, rapid-foam color/quality/threshold, current/vortices and other draw-only fields. A live `NereidSurfaceResident::setDrawStyle(style)` applies those fields with no VB/IB reupload; changes to deepColor, foamColor or foamStrength are vertex baked and still require upload. Async workers keep geometry-only upload-key matching. Full handoff `docs/nereid/stage-43-material-residency.md`. Native build, CTest and GPU verification are pending.

@@ -102,6 +102,24 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         x.specular==y.specular;
 }
 
+// These fields are baked into the uploaded per-vertex colour.
+inline bool sameNereidWaterVertexStyle(
+        const lib::nereid::WaterSurfaceStyle& a,
+        const lib::nereid::WaterSurfaceStyle& b) {
+    return a.deepR==b.deepR && a.deepG==b.deepG && a.deepB==b.deepB &&
+           a.foamR==b.foamR && a.foamG==b.foamG && a.foamB==b.foamB &&
+           a.foamStrength==b.foamStrength;
+}
+// Preserve full-key equality for external users while making upload
+// identity ignore draw-only style (optics, whitewater palette and quality).
+inline bool sameNereidSurfaceUploadKey(const NereidSurfaceKey& a,
+                                      const NereidSurfaceKey& b) {
+    if(!sameNereidWaterVertexStyle(a.style,b.style))return false;
+    auto meshKey=a;
+    meshKey.style=b.style;
+    return sameNereidSurfaceKey(meshKey,b);
+}
+
 enum class NereidSurfaceUpdate { Unchanged, Uploaded, Failed };
 
 struct NereidPreparedSurface {
@@ -136,7 +154,7 @@ public:
         const bool infinite=(!geometry || !geometry->enabled) &&
             body.footprint==lib::nereid::WaterFootprint::Infinite;
         const auto key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
-        return !resident_ || !sameNereidSurfaceKey(key,key_);
+        return !resident_ || !sameNereidSurfaceUploadKey(key,key_);
     }
     // Pure CPU work, safe outside the render/device update phase as long as
     // the copied body/geometry input remains immutable during preparation.
@@ -167,7 +185,7 @@ public:
                                       const NereidPreparedSurface& prepared) {
         if(prepared.cpu.empty() || !validNereidWaterStyle(prepared.key.style))
             return NereidSurfaceUpdate::Failed;
-        if(resident_ && sameNereidSurfaceKey(prepared.key,key_))
+        if(resident_ && sameNereidSurfaceUploadKey(prepared.key,key_))
             return NereidSurfaceUpdate::Unchanged;
         Mesh replacement=uploadNereidWaterSurface(device,prepared.cpu,
                                                    prepared.key.style);
@@ -194,6 +212,15 @@ public:
             lib::nereid::WaterSurfaceStyle style={}) {
         auto prepared=prepare(body,geometry,sourceRevision,opts,style);
         return prepared?uploadPrepared(device,*prepared):NereidSurfaceUpdate::Failed;
+    }
+
+    // Optics and rapid material changes do not touch the resident VB/IB.
+    // Reject baked vertex tint changes (which must still reupload).
+    bool setDrawStyle(lib::nereid::WaterSurfaceStyle style) {
+        if(!resident_ || !validNereidWaterStyle(style) ||
+           !sameNereidWaterVertexStyle(key_.style,style))return false;
+        key_.style=style;
+        return true;
     }
 
     const std::vector<lib::nereid::WaterTileRange>& tiles()const{return tiles_;}

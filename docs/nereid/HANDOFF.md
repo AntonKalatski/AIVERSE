@@ -4004,3 +4004,9 @@ Corrected a source-level compile incompatibility: `Fixed` has no integer constru
 
 **Branch:** `feature/nereid-water-core`, Draft PR #23, code and per-stage handoff atomic. [Stage 42](stage-42-confluence-scene.md) contains files, API, limitations and next steps.
 New `NereidConfluenceScene.h` stores immutable confluence snapshots by stable id, checks linked `NereidWaterScene` bodies, and computes confluence flow through the same Fixed-point Stage-41 kernel/reducer. New `NereidConfluenceEcsPresentation.h` snapshots live complete ECS junctions at read barrier using Entity packed()+1 water IDs. `WorldScene::setNereidConfluences` opts in; ripple advection and per-tile whitewater follow confluence then cascade in the same order as water sampling. No ECS writes or GPU geometry ownership changes. **Verified only by source inspection/remote commit**, not by compiler, CTest, GPU or native game. **Next:** split shader-only material updates from mesh residency; run deferred tests before merging.
+
+
+## Stage 43 — draw-only water material updates without mesh upload
+
+**Branch** `feature/nereid-water-core`, Draft PR #23. Code + documentation atomic commit. Independent handoff: [Stage 43](stage-43-material-residency.md).
+Added `sameNereidWaterVertexStyle`, `sameNereidSurfaceUploadKey` and `NereidSurfaceResident::setDrawStyle`; full public key equality remains. Changed NereidWaterScene revision to only geometry/vertex-baked fields, while current, flow, optics and rapids are draw-only; preserve latest style after async mesh upload. Vertex baked deep/foam RGB/strength still rebuild meshes. **Performed:** GitHub source inspection and commit only. **NOT RUN:** C++ build, shaders, CTest, GPU metrics, scene parity or other genre regressions. **Next:** feature completeness check, then full validation and repair. Keep Draft PR.

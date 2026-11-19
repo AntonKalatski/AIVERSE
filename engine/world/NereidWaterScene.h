@@ -91,6 +91,41 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
     return true;
 }
 
+// Geometry and baked vertex tint determine upload identity. Read-only
+// body flow, current/vortex fields, priorities and shader-only style do not.
+inline bool sameNereidSceneMeshSource(const NereidSceneSurface& a,
+                                     const NereidSceneSurface& b) {
+    const auto& x=a.body;const auto& y=b.body;
+    const auto& m=a.mesh;const auto& n=b.mesh;
+    const auto& u=a.style;const auto& v=b.style;
+    if(x.kind!=y.kind || x.footprint!=y.footprint ||
+       x.center!=y.center || x.surfaceY!=y.surfaceY ||
+       x.bottomY!=y.bottomY || x.halfExtents!=y.halfExtents ||
+       x.radius!=y.radius || x.enabled!=y.enabled ||
+       a.useGeometry!=b.useGeometry ||
+       m.lod!=n.lod || m.uvScale!=n.uvScale ||
+       m.foamWidth!=n.foamWidth ||
+       m.oceanPatchRadius!=n.oceanPatchRadius ||
+       m.maxVertices!=n.maxVertices ||
+       m.rippleTileGrid!=n.rippleTileGrid ||
+       a.autoLod!=b.autoLod ||
+       a.mediumDistance!=b.mediumDistance ||
+       a.farDistance!=b.farDistance ||
+       a.lodHysteresis!=b.lodHysteresis ||
+       !render::sameNereidWaterVertexStyle(u,v))return false;
+    if(!a.useGeometry)return true;
+    if(a.geometry.enabled!=b.geometry.enabled ||
+       a.geometry.kind!=b.geometry.kind ||
+       a.geometry.points.size()!=b.geometry.points.size())return false;
+    for(size_t i=0;i<a.geometry.points.size();++i) {
+        const auto& p=a.geometry.points[i];
+        const auto& q=b.geometry.points[i];
+        if(p.x!=q.x || p.z!=q.z || p.halfWidth!=q.halfWidth)
+            return false;
+    }
+    return true;
+}
+
 struct NereidSceneStats {
     size_t visible=0, resident=0, pending=0;
     uint32_t uploadsAttempted=0;
@@ -149,7 +184,7 @@ public:
                 slot.visible=old.visible;
                 slot.prepared=std::move(old.prepared);
                 slot.selectedLod=old.selectedLod;
-                if(!sameNereidSceneSurface(source,old.source)) {
+                if(!sameNereidSceneMeshSource(source,old.source)) {
                     ++slot.revision;
                     slot.prepared.reset();
                     slot.selectedLod.reset();
@@ -351,7 +386,7 @@ public:
             bool accepted=false;
             for(auto& slot:slots_)if(slot.source.id==pendingJob_->id) {
                 if(slot.revision==prepared->key.sourceRevision &&
-                   render::sameNereidSurfaceKey(prepared->key,pendingJob_->key) &&
+                   render::sameNereidSurfaceUploadKey(prepared->key,pendingJob_->key) &&
                    prepared->bufferBytes<=maxStagingBytes_ &&
                    retainedPreparedBytes()<=maxStagingBytes_-prepared->bufferBytes) {
                     slot.prepared=std::move(prepared);
@@ -429,6 +464,7 @@ public:
             const auto* geometry=slot.source.useGeometry?&slot.source.geometry:nullptr;
             if(!slot.gpu->needsUpdate(slot.source.body,geometry,
                                       slot.revision,opts,slot.source.style)) {
+                slot.gpu->setDrawStyle(slot.source.style);
                 slot.prepared.reset();continue;
             }
             ++stats_.pending;
@@ -438,7 +474,7 @@ public:
             const auto expected=render::makeNereidSurfaceKey(
                 slot.revision,infinite,opts,slot.source.style);
             if(slot.prepared &&
-               !render::sameNereidSurfaceKey(slot.prepared->key,expected))
+               !render::sameNereidSurfaceUploadKey(slot.prepared->key,expected))
                 slot.prepared.reset();
             if(stats_.uploadsAttempted>=maxUploadsPerFrame_)continue;
             if(!slot.prepared) {
@@ -500,8 +536,12 @@ public:
             ++stats_.uploadsAttempted;
             stats_.estimatedBytesAdmitted+=bytes;
             const auto result=slot.gpu->uploadPrepared(device,*slot.prepared);
-            if(result!=render::NereidSurfaceUpdate::Failed)
+            if(result!=render::NereidSurfaceUpdate::Failed) {
+                // An async mesh may carry old draw-only parameters, but
+                // identical baked vertex tint (checked via upload key).
+                slot.gpu->setDrawStyle(slot.source.style);
                 slot.prepared.reset();
+            }
             nextUpload_=(i+1)%slots_.size();
         }
         for(const auto& slot:slots_)if(slot.gpu->resident())++stats_.resident;
