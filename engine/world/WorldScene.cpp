@@ -1,6 +1,7 @@
 #include "WorldScene.h"
 #include "engine/render/ModelTextureCache.h"
 #include "engine/world/NereidWaterManifest.h"
+#include "engine/world/NereidCascadeManifest.h"
 #include <algorithm>
 #include <cmath>
 #include <mutex>
@@ -58,6 +59,9 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     nereidWater_.setMaxEstimatedUploadBytes(water.maxEstimatedUploadBytes);
     nereidWater_.setVisibilityRange(water.visibilityRange);
     if(manifest.has("nereidWater"))nereidWater_.setSurfaces(water.surfaces);
+    const auto cascade=parseNereidCascadeManifest(manifest);
+    cascades_.setMaxUploadsPerFrame(cascade.maxUploadsPerFrame);
+    if(manifest.has("nereidCascades"))cascades_.setCascades(cascade.sources);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
@@ -156,10 +160,12 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
     nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
+    cascades_.update(device);
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     nereidWater_.draw(renderer,origin,size,&ripples_);
+    cascades_.draw(renderer,origin,size);
     // Shader-normal ripples replace the old overlay rings for surfaces
     // using NEREID. The overlay remains available via ripples().draw().
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
@@ -167,6 +173,7 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
 }
 void WorldScene::shutdown(gfx::Device& device) {
     nereidWater_.shutdown(device);
+    cascades_.shutdown(device);
     ripples_.clear();
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
 }
