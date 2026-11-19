@@ -50,22 +50,20 @@ public:
         const auto prepared=prepareAnimationPresentation(world);
         if(!prepared.players || !prepared.poses)return last_;
         const World& read=world;
-        const auto* inputs=read.poolIfExists<AnimationInputsComponent>();
-        const auto* assets=read.poolIfExists<AnimationAssetComponent>();
-        const auto* hints=read.poolIfExists<AnimationWorkHintComponent>();
+        // Read via public const ECS accessors: no pool registration or COW
+        // detachment, and no dependency on World::poolIfExists (private).
         // Reuse allocation capacity across frames. Cache graph classification
         // only within the current frame: hot reload may reuse freed addresses.
         safe_.clear();unsafe_.clear();weight_.clear();graphPlans_.clear();
         safe_.reserve(prepared.players->size());
         unsafe_.reserve(prepared.players->size()/4+1);
         weight_.reserve(prepared.players->size());
-        const auto* budget=read.poolIfExists<AnimationBudgetComponent>();
         for(size_t i=0;i<prepared.players->size();++i) {
             const Entity e=prepared.players->entityAt(i);
             if(!world.alive(e)||!prepared.poses->has(e.index))continue;
-            const auto* asset=assets?assets->tryGet(e.index):nullptr;
-            const auto* input=inputs?inputs->tryGet(e.index):nullptr;
-            const auto* hint=hints?hints->tryGet(e.index):nullptr;
+            const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
+            const auto* input=read.tryGetConst<AnimationInputsComponent>(e);
+            const auto* hint=read.tryGetConst<AnimationWorkHintComponent>(e);
             GraphPlan plan{};
             if(asset && asset->graph) {
                 const auto* compiled=asset->graph.get();
@@ -83,7 +81,7 @@ public:
             safe_.push_back(i);
             uint32_t cost=scaledAnimationCost(plan.cost,
                 hint?hint->multiplier:1.f);
-            const auto* visibility=budget?budget->tryGet(e.index):nullptr;
+            const auto* visibility=read.tryGetConst<AnimationBudgetComponent>(e);
             const auto* pose=prepared.poses->tryGet(e.index);
             if(visibility && !visibility->visible && pose && pose->valid) {
                 cost=std::max<uint32_t>(1,cost/4);
