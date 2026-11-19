@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveHorizon.h"
 #include "engine/render/TerraWeaveHorizonClip.h"
+#include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/render/Model.h"
 #include <algorithm>
 #include <array>
@@ -493,7 +494,13 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
             for (int i=0;i<4;++i) {
                 render::ModelVertex v;
                 v.pos=pos[i];v.nrm={nx,0,nz};v.uv=uv[i];
-                v.color=(i>=2 ? 0xff000000u : 0u)|0x00ffffffu;
+                // RGB: smooth 2.4km world-anchored direction, strength
+                // and phase, shared by both crossing cards of this cluster.
+                // A: 0 at the base, 255 at the canopy top (Stage 31).
+                // Materials ignore vertexColors in fragment shading.
+                v.color=horizonSpatialWindVertexColor(
+                    cluster.centerXcm,cluster.centerZcm,
+                    0x544552524157494eULL,i>=2);
                 model->vertices.push_back(v);
             }
             model->indices.insert(model->indices.end(),{
