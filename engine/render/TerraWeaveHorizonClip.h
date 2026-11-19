@@ -209,6 +209,8 @@ inline std::optional<HorizonTerrainClipPlan> planHorizonNearGroundClipping(
 inline void populateHorizonNearSeamSamples(
         HorizonBake& bake,const HorizonSurfaceSources* source) {
     bake.nearSeamSamples.clear();
+    bake.continuousNearNormalSamples=0;
+    bake.localFallbackNearNormalSamples=0;
     bake.nearWeldSlopeFallback=false;
     if(!source || (!source->nearGroundHeightAtCm &&
                    !source->nearGroundHeightAtQ16Cm) ||
@@ -268,7 +270,10 @@ inline void populateHorizonNearSeamSamples(
                 // Prefer continuous neighboring tile normals only when the
                 // authored source verifies the entire stencil is seamless.
                 if(auto slope=source->nearGroundContinuousSlopeAtQ16Cm(
-                        xq,zq))nearSlopes.emplace(key,*slope);
+                        xq,zq)){
+                    nearSlopes.emplace(key,*slope);
+                    ++bake.continuousNearNormalSamples;
+                }
             }
             if(source->nearGroundHeightAtQ16Cm &&
                !nearSlopes.contains(key)){
@@ -296,6 +301,7 @@ inline void populateHorizonNearSeamSamples(
                         slope(*hx0,*hx1,xr-xl),
                         slope(*hz0,*hz1,zr-zl)
                     });
+                    ++bake.localFallbackNearNormalSamples;
                 }
             }
         }
@@ -324,6 +330,8 @@ inline void populateHorizonNearSeamSamples(
             const double baseArea=ax*bz-az*bx;
             if(std::abs(baseArea)<1e-7){
                 bake.nearWeldSlopeFallback=true;
+                bake.continuousNearNormalSamples=0;
+                bake.localFallbackNearNormalSamples=0;
                 return;
             }
             std::array<double,3> original{},welded{};
