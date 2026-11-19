@@ -289,6 +289,7 @@ public:
                !uploads_.failed(atlas_);
     }
     const std::string& lastError() const {return error_;}
+    const VirtualTextureStreamConfig& configuration() const { return config_; }
 
     void shutdown() {
         pending_.clear(); batches_.clear(); roots_.clear();

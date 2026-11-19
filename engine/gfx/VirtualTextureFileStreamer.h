@@ -208,6 +208,13 @@ public:
     }
 
     bool ready() const { return initialized_ && atlas_.ready(); }
+    const VirtualTextureStreamer& atlasStreamer() const { return atlas_; }
+    TextureHandle indexedMipPageTableTexture() const {
+        return ready() ? atlas_.indexedMipPageTableTexture() : TextureHandle{};
+    }
+    int indexedMipTableLevels() const {
+        return ready() ? atlas_.indexedMipTableLevels() : 0;
+    }
     // Read-only exact residency / in-flight status for prefetch planning.
     // Parent fallback from resolve() is NOT sufficient: detail mip
     // requests must still reach the streaming worker.

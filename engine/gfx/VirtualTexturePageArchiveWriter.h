@@ -74,7 +74,9 @@ struct VirtualTextureArchiveVersion {
         result.maxReadyBytes = readyBytes;
         return result;
     }
-    VirtualTextureStreamConfig streamConfig(int physicalPages = 128) const {
+    VirtualTextureStreamConfig streamConfig(int physicalPages = 128,
+                                            bool indexedMipTable = false,
+                                            int physicalMipLevels = 1) const {
         VirtualTextureStreamConfig result;
         result.tilesX = baseTilesX;
         result.tilesY = baseTilesY;
@@ -83,6 +85,8 @@ struct VirtualTextureArchiveVersion {
         result.physicalPageSize = pageSize;
         result.physicalPages = physicalPages;
         result.physicalFormat = PixelFormat::RGBA8;
+        result.indexedMipTable = indexedMipTable;
+        result.physicalMipLevels = physicalMipLevels;
         return result;
     }
 };
