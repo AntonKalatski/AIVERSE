@@ -6,7 +6,6 @@
 #include <limits>
 #include <unordered_map>
 #include <string>
-#include <unordered_map>
 #include "../data/Json.h"
 #include "SpectraFxHybridPlayback.h"
 
@@ -23,7 +22,8 @@ struct SpectraFxGpuEventRoute {
 class SpectraFxGpuRouteAsset {
 public:
     using Routes = std::unordered_map<uint16_t, SpectraFxGpuEventRoute>;
-    static bool read(const Json& doc, Routes& result, std::string* error=nullptr) {
+    static bool read(const Json& doc, Routes& result, std::string* error=nullptr,
+                     SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr) {
         auto fail=[&](const std::string& reason){
             if(error) *error=reason;
             return false;
@@ -31,8 +31,29 @@ public:
         if(!doc.isObject() || doc.getInt("version",-1)!=1)
             return fail("SpectraFX GPU routes require version 1");
         for(const auto& p:doc.members())
-            if(p.first!="version" && p.first!="routes")
+            if(p.first!="version" && p.first!="routes" &&
+               p.first!="gpuFrameBudgetMs" && p.first!="minGpuSpawnScale")
                 return fail("SpectraFX GPU routes: unknown field "+p.first);
+        SpectraFxGpuBudgetGovernor::Config budget;
+        if(doc.has("gpuFrameBudgetMs")) {
+            const Json& field=doc["gpuFrameBudgetMs"];
+            if(!field.isNumber()) return fail("gpuFrameBudgetMs must be numeric");
+            const double x=field.toDouble();
+            if(!std::isfinite(x) || x<0 || x>1000)
+                return fail("gpuFrameBudgetMs must be 0..1000 milliseconds");
+            budget.targetFrameMs=float(x);
+        }
+        if(doc.has("minGpuSpawnScale")) {
+            const Json& field=doc["minGpuSpawnScale"];
+            if(!field.isNumber()) return fail("minGpuSpawnScale must be numeric");
+            const double x=field.toDouble();
+            if(!std::isfinite(x) || x<0 || x>1)
+                return fail("minGpuSpawnScale must be 0..1");
+            budget.minSpawnScale=float(x);
+        }
+        SpectraFxGpuBudgetGovernor validation;
+        if(!validation.configure(budget))
+            return fail("SpectraFX GPU frame-budget settings invalid");
         const Json& values=doc["routes"];
         if(!values.isArray() || values.size()>64)
             return fail("SpectraFX GPU routes must contain at most 64 entries");
@@ -105,12 +126,14 @@ public:
                 return fail("SpectraFX duplicate eventType route");
         }
         result=std::move(next);
+        if(gpuBudget) *gpuBudget=budget;
         if(error) error->clear();
         return true;
     }
     static bool readText(const std::string& text,Routes& routes,
-                         std::string* error=nullptr) {
-        try {return read(Json::parse(text),routes,error);}
+                         std::string* error=nullptr,
+                         SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr) {
+        try {return read(Json::parse(text),routes,error,gpuBudget);}
         catch(const std::exception& e) {
             if(error) *error=e.what();
             return false;
