@@ -194,6 +194,10 @@ public:
         float centerX = 0.5f, centerY = 0.5f; // normalized bottom-up screen UV
         float radius = 0.25f, feather = 0.10f; // relative to frame height
         float outsideWeight = 0.05f; // strictly >0, prevents empty metering
+        // Appended to preserve existing aggregate {enabled,center,radius,
+        // feather,outsideWeight} call sites; circle remains the default.
+        bool box = false;
+        float halfWidth = 0.25f, halfHeight = 0.25f; // normalized viewport axes
     };
     void setViewExposureMeterRegion(uint64_t viewId, ExposureMeterRegion region);
     void clearViewExposureMeterRegion(uint64_t viewId);
@@ -287,6 +291,7 @@ public:
         bool autoExposureRegionMetered = false; // current scene metered with authored circle
         bool manualExposureEncoded = false; // fixed EV applied by final HDR composite
         float manualExposureEV = 0; // last applied EV, meaningful iff manualExposureEncoded
+        bool autoExposureBoxMetered = false; // last encoded region meter used a box, not circle
         std::vector<EffectExecution> effects;
     };
     const ViewEffectReport* effectReport(uint64_t viewId) const;
