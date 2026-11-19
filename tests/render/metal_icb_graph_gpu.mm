@@ -77,6 +77,13 @@ struct IcbGraphSources {
     sampler s12 [[id(25)]];
     texture2d<float> tex13 [[id(26)]];
     sampler s13 [[id(27)]];
+#if AIVERSE_SG_TEXTURE_COUNT == 4
+    texture2d<float> tex14 [[id(28)]];
+    sampler s14 [[id(29)]];
+    texture2d<float> tex15 [[id(30)]];
+    sampler s15 [[id(31)]];
+    texture2d<float> tex16 [[id(32)]];
+#endif
 };
 
 struct GraphVertexOut {
@@ -106,6 +113,14 @@ fragment float4 fs_main(
 #else
     float4 ordinary=base.sample(baseSampler,float2(0.5));
     float4 graphColor=graph.sample(graphSampler,float2(0.5));
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT == 4 && defined(AIVERSE_ICB_PBR)
+    // Exactly as in the production graph ICB path, texture slot 16 uses
+    // a constexpr sampler: Metal fragment dynamic sampler slots stop at 15.
+    constexpr sampler s16(address::repeat, filter::linear);
+    graphColor += source.tex14.sample(source.s14,float2(0.5));
+    graphColor += source.tex15.sample(source.s15,float2(0.5));
+    graphColor += source.tex16.sample(s16,float2(0.5));
 #endif
     return float4((ordinary.rgb+graphColor.rgb)*u2[0].rgb,1.0);
 }
@@ -142,7 +157,9 @@ bool readPixels(Device& dev,TextureHandle target,std::vector<uint8_t>& output) {
     return true;
 }
 
-int run() {
+int run(uint32_t graphCount) {
+    const bool fourSources=graphCount==4;
+    require(graphCount==1 || fourSources,"only the 1- and 4-source GPU ICB layouts are accepted");
     id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
     if (!metal) {
         std::fprintf(stderr,"FAIL: Metal GPU unavailable; explicit ICB test cannot skip\n");
@@ -159,16 +176,18 @@ int run() {
             "FAIL: experimental GPU encoded ICB unsupported / opt-in flags missing\n");
         return 2; // Fail closed; never call a CPU fallback "GPU ICB pass".
     }
-    std::printf("Metal GPU ICB graph ABI acceptance: %s\n",dev->info().name.c_str());
+    std::printf("Metal GPU ICB graph ABI acceptance: %s, graph sources=%u\n",
+                dev->info().name.c_str(),unsigned(graphCount));
     const auto start=std::chrono::steady_clock::now();
 
     std::vector<TextureHandle> textures;
-    auto createTex=[&](Pixel color)->TextureHandle {
+    auto createTex=[&](Pixel color,bool graphSource=false)->TextureHandle {
         auto bytes=solid(color);
         TextureDesc d;
         d.width=d.height=kWidth;
         d.mipLevels=1;
-        d.filter=Filter::Nearest;
+        d.filter=graphSource?Filter::Linear:Filter::Nearest;
+        d.repeat=graphSource;
         d.data=bytes.data();
         const auto h=dev->createTexture(d);
         if (h.valid()) textures.push_back(h);
@@ -176,9 +195,22 @@ int run() {
     };
     const TextureHandle dummy=createTex({0,0,0,255});
     const TextureHandle baseA=createTex({90,0,0,255});
-    const TextureHandle graphA=createTex({0,0,160,255});
+    const TextureHandle graphA=createTex({0,0,160,255},true);
     const TextureHandle baseB=createTex({0,140,0,255});
-    const TextureHandle graphB=createTex({200,0,0,255});
+    const TextureHandle graphB=createTex({200,0,0,255},true);
+    // The 4-source path covers the upper Shader Graph texture slot 16
+    // and per-command argument IDs 28, 30 and 32, not just tex13.
+    std::array<TextureHandle,3> extraA{},extraB{};
+    if (fourSources) {
+        extraA={createTex({0,20,0,255},true),
+                createTex({0,0,20,255},true),
+                createTex({10,0,0,255},true)};
+        extraB={createTex({0,20,0,255},true),
+                createTex({0,0,30,255},true),
+                createTex({20,0,0,255},true)};
+        for (const auto t:extraA) require(t.valid(),"left 4-source graph texture allocated");
+        for (const auto t:extraB) require(t.valid(),"right 4-source graph texture allocated");
+    }
     require(dummy.valid() && baseA.valid() && graphA.valid() &&
             baseB.valid() && graphB.valid(),
             "native GPU per-command material textures allocated");
@@ -193,9 +225,18 @@ int run() {
     if (color.valid()) textures.push_back(color);
     if (depth.valid()) textures.push_back(depth);
     ShaderDesc shDesc;
-    shDesc.msl=kGraphAbiShader;
+    std::string shaderSource=kGraphAbiShader;
+    if (fourSources) {
+        constexpr const char* marker="#define AIVERSE_SG_TEXTURE_COUNT 1";
+        const auto pos=shaderSource.find(marker);
+        if (pos==std::string::npos)
+            require(false,"ICB Shader Graph source marker missing");
+        else shaderSource.replace(pos,std::char_traits<char>::length(marker),
+                                  "#define AIVERSE_SG_TEXTURE_COUNT 4");
+    }
+    shDesc.msl=shaderSource;
     shDesc.label="TextureIcbGraphAbiAcceptance";
-    shDesc.textureSlots=14;
+    shDesc.textureSlots=fourSources?17:14;
     shDesc.uniformSlots=8;
     const auto shader=dev->createShader(shDesc);
     PipelineDesc pDesc;
@@ -240,7 +281,7 @@ int run() {
     std::array<GpuIcbPbrMaterial,2> materials{};
     for(auto& m:materials) {
         m.textures.fill(dummy);
-        m.graphTextureCount=1;
+        m.graphTextureCount=graphCount;
     }
     materials[0].textures[0]=baseA;
     materials[0].graphTextures[0]=graphA;
@@ -248,6 +289,12 @@ int run() {
     materials[0].u2[2]=1.0f;materials[0].u2[3]=1.0f;
     materials[1].textures[0]=baseB;
     materials[1].graphTextures[0]=graphB;
+    if (fourSources) {
+        for (size_t j=0;j<3;++j) {
+            materials[0].graphTextures[j+1]=extraA[j];
+            materials[1].graphTextures[j+1]=extraB[j];
+        }
+    }
     materials[1].u2[0]=0.5f;materials[1].u2[1]=1.0f;
     materials[1].u2[2]=1.0f;materials[1].u2[3]=1.0f;
     require(materials[0].valid() && materials[1].valid(),
@@ -304,8 +351,8 @@ int run() {
             std::vector<uint8_t> output;
             if (!readPixels(*dev,color,output)) ++failures;
             else {
-                const Pixel left{90,0,160,255};
-                const Pixel right{100,140,0,255};
+                const Pixel left=fourSources?Pixel{100,20,180,255}:Pixel{90,0,160,255};
+                const Pixel right=fourSources?Pixel{110,160,30,255}:Pixel{100,140,0,255};
                 bool match=true;
                 for(int y=0;y<kHeight;++y)
                     for(int x=0;x<kWidth;++x) {
@@ -354,6 +401,7 @@ int main() {
                 "FAIL: test requires all three explicit experimental Metal ICB flags\n");
             return 2;
         }
-        return run();
+        const int oneSource=run(1);
+        return oneSource==0?run(4):oneSource;
     }
 }
