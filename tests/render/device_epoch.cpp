@@ -10,7 +10,7 @@
 #include <sys/wait.h>
 #endif
 
-// Unlike CHECK(), CHECK is active in Release and RelWithDebInfo CTest runs.
+// Unlike assert(), CHECK is active in Release and RelWithDebInfo CTest runs.
 [[noreturn]] static void testCheckFailed(const char* expr,const char* file,int line) {
     std::fprintf(stderr,"render_device_epoch CHECK failed: %s at %s:%d\n",
                  expr,file,line);
