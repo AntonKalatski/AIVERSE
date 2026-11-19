@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# One-pass validation of experimental AIVERSE Studio HTML5 on macOS.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+BUILD_DIR="$ROOT/build/studio-html5-verify"
+
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "This native build requires macOS, WKWebView and the Apple Metal SDK." >&2
+  exit 2
+fi
+for required in npm cmake ctest xcrun; do
+  if ! command -v "$required" >/dev/null 2>&1; then
+    echo "Missing dependency: $required" >&2
+    exit 2
+  fi
+done
+
+echo "==== Step 1: HTML5 TypeScript/Vite ===="
+(
+  cd "$ROOT/apps/studio-web"
+  npm install --no-audit --no-fund
+  npm run typecheck
+  npm run build
+)
+if [[ ! -f "$ROOT/apps/studio-web/dist/index.html" ]]; then
+  echo "Vite build did not produce dist/index.html" >&2
+  exit 1
+fi
+
+echo "==== Step 2: CMake configure ===="
+cmake -S "$ROOT" -B "$BUILD_DIR" \
+  -DAIVERSE_BUILD_EDITOR=ON \
+  -DAIVERSE_BUILD_STUDIO_HTML5=ON \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DCMAKE_BUILD_TYPE=Debug
+
+echo "==== Step 3: native target and tests ===="
+cmake --build "$BUILD_DIR" \
+  --target aiverse_studio aiverse_studio_session_tests aiverse_studio_viewport_layout_tests \
+  --parallel 4
+
+echo "==== Step 4: studio contracts ===="
+ctest --test-dir "$BUILD_DIR" --output-on-failure -R '^studio_(session|viewport_layout)$'
+
+echo "==== Automated verification finished; macOS visual testing still required ===="
+echo "Open the generated AiverseStudioHTML5.app with --project /path/to/project."
+echo "Manually verify Metal rendering, resizing, picking, history and native popovers."
