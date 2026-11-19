@@ -25,6 +25,7 @@ public:
             return fail("SpectraFX GPU emitter expects JSON object version 1");
         for(const auto& pair:doc.members())
             if(pair.first!="version" && pair.first!="cpuEffect" &&
+               pair.first!="impactEffect" &&
                pair.first!="preference" && pair.first!="particles" &&
                pair.first!="allowCpuFallback" && pair.first!="quality" &&
                pair.first!="spawn" && pair.first!="appearance" &&
@@ -35,6 +36,16 @@ public:
            doc["cpuEffect"].str().size()>128)
             return fail("cpuEffect must be an effect name string (<=128)");
         next.cpuEffect=doc["cpuEffect"].str();
+        if(doc.has("impactEffect")) {
+            const Json& effect=doc["impactEffect"];
+            if(!effect.isString() || effect.str().size()>64)
+                return fail("impactEffect must be a safe effect name");
+            for(unsigned char ch:effect.str())
+                if(!((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||
+                     (ch>='0'&&ch<='9')||ch=='_'||ch=='-'))
+                    return fail("impactEffect contains an unsafe character");
+            next.impactEffect=effect.str();
+        }
         const auto mode=doc.getStr("preference","auto");
         if(mode=="cpu") next.backend.preference=SpectraFxExecutionPreference::Cpu;
         else if(mode=="gpu") next.backend.preference=SpectraFxExecutionPreference::Gpu;
@@ -139,6 +150,8 @@ public:
            !std::isfinite(next.environment.tangentRetention) ||
            next.environment.tangentRetention<0 || next.environment.tangentRetention>1)
             return fail("GPU emitter configuration out of range");
+        if(!next.impactEffect.empty() && !next.environment.reportImpacts)
+            return fail("impactEffect requires groundCollision.emitImpactEvents");
         if(next.environment.collideGround)
             next.backend.required=next.backend.required |
                                   SpectraFxFeature::GroundPlaneCollision;
