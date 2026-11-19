@@ -34,6 +34,10 @@ inline std::vector<NereidSceneSurface> snapshotNereidEcsWater(
             surface.body=body;
             surface.mesh=options.mesh;
             surface.style=options.style;
+            if(const auto* field=world.tryGetConst<lib::nereid::WaterCurrentFieldComponent>(e)) {
+                surface.useCurrentField=true;
+                surface.currentField=*field;
+            }
             if(const auto* geometry=world.tryGetConst<lib::nereid::WaterGeometryComponent>(e)) {
                 surface.useGeometry=true;
                 surface.geometry=*geometry;
