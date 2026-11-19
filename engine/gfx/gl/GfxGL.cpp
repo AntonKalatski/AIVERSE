@@ -198,6 +198,12 @@ public:
         glBufferSubData(b->target, GLintptr(offset), GLsizeiptr(size), data);
         attribsDirty_ = true;
     }
+    bool bufferInfo(BufferHandle h, BufferInfo& out) const override {
+        const auto* b = buffers_.get(h.id);
+        if (!b) return false;
+        out = {b->size,1};
+        return true;
+    }
     void destroyBuffer(BufferHandle h) override {
         if (auto* b = buffers_.get(h.id)) { glDeleteBuffers(1, &b->id); buffers_.remove(h.id); }
     }
