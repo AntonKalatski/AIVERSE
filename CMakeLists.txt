@@ -958,6 +958,12 @@ if(AIVERSE_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME lumaweave_backend_policy
         COMMAND aiverse_lumaweave_backend_policy_test)
+    add_executable(aiverse_lumaweave_screen_history_epoch_test
+        tests/render/lumaweave_screen_history_epoch.cpp)
+    target_include_directories(aiverse_lumaweave_screen_history_epoch_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME lumaweave_screen_history_epoch
+        COMMAND aiverse_lumaweave_screen_history_epoch_test)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_bake_tests tests/bake/bake_tests.cpp)
