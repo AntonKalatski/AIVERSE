@@ -12700,3 +12700,14 @@ bash -n tools/texture-rhi-final-verify.sh
 bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 ```
 Require actual new SHA and `result=PASS`, `full_engine=1`, `safe_texture_tests=22`, `native_metal_gpu_tests=7` in current `build/texture-final-logs/acceptance.txt` and absence of `FAIL:` log assertions. Inspect whether shader compiler tests truly ran, not just registered. Need additional GPU pixel oracles for mixed virtual mips, anisotropy and indexed shader model path. Keep high-risk experimental ICB disabled by default; do not merge #21 until certified.
+
+## Stage 10CW — feature-branch Linux focused validation trigger (2026-11-19)
+
+**Code SHA:** `0ad0d8a9264f97c72d3e06130b7b1cf298f832c7`.
+**Source:** `.github/workflows/texture-rhi.yml`. **Branch:** `feature/texture-rhi-unification`, PR #21 Draft, `main` unchanged.
+
+**Change:** Add an explicit feature-branch `push` event with source and script path filters, in addition to the existing `workflow_dispatch` and `pull_request` events. This makes GitHub Actions run the existing Linux OpenEXR OFF/ON and Vulkan-focused build matrix when the texture implementation branch advances, rather than depending exclusively on a potentially stale/draft PR event. Tests/targets are inherited from the Stage 10CV updated `tools/verify-texture-rhi.sh`, including new `virtual_texture_mip_pipeline` CTest. This workflow is not a Mac Studio, Metal GPU, Android, WebGL or Windows validation, and does not verify full-engine CTest.
+
+**Execution evidence at this writing:** GitHub Actions workflow run `44604340610` for exact SHA `0ad0d8a9...` is **QUEUED**, with three queued jobs: Vulkan compute/source CTests; Linux texture OpenEXR=ON; Linux texture OpenEXR=OFF. No job has passed or failed yet. This is an actual scheduled GitHub workflow run, not a hardware test outcome. Inspect the run's exact logs and all job conclusions before reporting PASS. The old 21+7 Mac GPU PASS remains at `7494f32d` only.
+
+**Next:** review real GitHub Actions job logs once run concludes; fix any build/GLSL regression with source commit and separate handoff. Then run macOS whole-engine + seven native Metal GPU acceptance on latest feature source SHA. Do not infer green GPU tests from Linux shader compilation, and do not merge PR #21 until all necessary gates pass.

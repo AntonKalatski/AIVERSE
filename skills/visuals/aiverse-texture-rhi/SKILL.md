@@ -1947,3 +1947,7 @@ Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual
 ## Stage 10CV — new final-stage indexed VT regression fixture (SHA 40398dae)
 
 `virtual_texture_mip_pipeline` CTest now exercises production CPU physical mip generation, indexed mip table partial-vs-full oracle, bounded page-change history, atomic multi-frame upload/cancellation, and fail-fast GPU/staging budgets with mock RHI. CMake, focused verifier, and Mac one-shot script include this 22nd safe test; seven existing Metal GPU tests unchanged. This is SOURCE ADDED, NOT COMPILED OR PASSED. The exact CTest outcome must be recorded only after real CI/Mac validation.
+
+## Stage 10CW — CI queue is not a PASS (SHA 0ad0d8a9)
+
+The focused Texture RHI workflow now triggers on pushes to `feature/texture-rhi-unification` with code/test/script paths. First run `44604340610` is queued for OpenEXR ON/OFF and Vulkan jobs, which must actually complete with build, new `virtual_texture_mip_pipeline`, and GLSL compiler results before claims. Mac Metal GPU and full engine are separate required gates.
