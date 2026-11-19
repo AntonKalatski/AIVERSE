@@ -34,7 +34,8 @@ struct GpuMaterialResourceBinding {
     ModelVirtualTextureBinding virtualTexture{};
 
     bool valid() const {
-        if (graphTextureCount > kMaxGraphTextures) return false;
+        if (graphTextureCount > kMaxGraphTextures ||
+            (graphTextureCount && !pbrEnabled)) return false;
         for (uint32_t i = 0; i < graphTextureCount; ++i)
             if (!graphTextures[i].valid()) return false;
         for (uint32_t i = graphTextureCount; i < kMaxGraphTextures; ++i)
