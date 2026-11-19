@@ -217,9 +217,16 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
         }
         return false;
     }
+    // The model owns the *entire* reserved pair, not merely the uploaded
+    // prefix. A smaller successor must return the original extents on release,
+    // otherwise every recycle generation silently loses the unused tails.
+    uint32_t reservedVertices = uint32_t(vertexBytes);
+    uint32_t reservedIndices = uint32_t(indexBytes);
     if (reusePair) {
-        // Keep the full original pair reserved; unused tail of an oversized
-        // pair remains fragmentation (never hand out overlapping slices).
+        const GeometryPoolPage::RetiredPair previous =
+            target->retired[selectedPair];
+        reservedVertices = previous.vertexBytes;
+        reservedIndices = previous.indexBytes;
         auto& holes = target->retired;
         holes[selectedPair] = holes.back();
         holes.pop_back();
@@ -234,8 +241,8 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     m.ib = target->buffer;
     m.gpuBaseVertex = uint32_t(vbOffset / sizeof(ModelVertex));
     m.gpuFirstIndex = uint32_t(ibOffset / sizeof(uint32_t));
-    m.gpuPoolVertexBytes = uint32_t(vertexBytes);
-    m.gpuPoolIndexBytes = uint32_t(indexBytes);
+    m.gpuPoolVertexBytes = reservedVertices;
+    m.gpuPoolIndexBytes = reservedIndices;
     return true;
 }
 
