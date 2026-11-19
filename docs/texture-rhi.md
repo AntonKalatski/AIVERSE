@@ -1542,3 +1542,40 @@ threads and never updates ECS authoritative game state.
 project-level wrapped UV visibility tests NOT RUN. Limitations include
 CPU-side rectangular overfetch for highly rotated/nonrectangular visible
 surfaces and no GPU filtering/seam parity proof yet.
+
+
+## Shader Graph virtual textures with up to four source textures on Metal — Stage 10S
+
+The material graph compiler now permits the original four independent
+`sampleTexture` / `sampleTextureLod` source paths together with the
+explicit `sampleVirtualTexture` node. Graphs remain backend-neutral;
+their actual fragment texture binding budget is resolved by the renderer,
+never assumed by source JSON.
+
+Metal's existing RHI supports fragment texture indices 0..31 while
+fragment sampler indices 0..15 remain separate. The four authored graph
+textures bind at tex13..tex16; tex16 uses the existing constexpr sampler.
+The two virtual atlas/page-table arrays then use tex17/tex18, reusing
+material sampler s1 for the physical atlas and a texel read for the table.
+This requires no new Metal fragment *sampler* slot. Graphs with zero to
+three authored textures use lower free indices as appropriate.
+
+For GL33, GLES3 and Vulkan, the current RHI binding budget stays at
+16 texture slots. An explicit graph virtual sample retains its
+conventional tex1 fallback if the additional two resources cannot be
+bound, while the four-source graph (which needs tex16) fails closed
+rather than silently dropping its fourth texture. Shader Graph's
+non-VT behavior, material equivalence/hashing, original texture
+bindings and the conservative non-ICB graph drawing path are retained.
+
+The same layout helper is used for pipeline permutation selection
+and for actual `setTexture`/U6 draw bindings to avoid conflicting
+atlas/table slots. The injection helper now requires an explicit Metal
+extended-slot opt-in to permit a page table beyond tex15. It still
+rejects unsupported addresses, malformed shader anchors and other
+unrepresentable bindings.
+
+**Verification:** source-only change committed. No native C++ build,
+MSL/GLSL compiler, GPU capture or cross-backend image parity has
+been run. This is not a bindless material system, arbitrary source
+texture count, or heterogeneous per-command ICB descriptor table.
