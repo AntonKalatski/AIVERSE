@@ -25,6 +25,10 @@ struct AppearanceSpec {
     std::shared_ptr<const render::AnimationGraph> graph;
     render::AnimationParameters parameters;
     uint64_t sourceId=0,generation=0;
+    // Optional native Model asset epoch, independent of entity generation.
+    // Set from ModelPublicationEpoch::next() at new Model publication;
+    // do not bump it merely because an AnimationGraph was recompiled.
+    uint64_t modelPublicationGeneration=0;
 };
 
 inline bool buildAppearancePacket(const AppearanceSpec& spec,
@@ -45,6 +49,7 @@ inline bool buildAppearancePacket(const AppearanceSpec& spec,
     packet.draw.flags=spec.flags;
     packet.graph=spec.graph;
     packet.parameters=spec.parameters;
+    packet.animationModelGeneration=spec.modelPublicationGeneration;
     return true;
 }
 
