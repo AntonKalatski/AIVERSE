@@ -10225,3 +10225,49 @@ gate; cross-platform Vulkan/GL/Windows/mobile testing remains
 independent. Do not touch primary AIVERSE worktree with
 unrelated incomplete rebase.
 
+
+## Stage 10BP — real Apple M3 Ultra Shader VT page lookup PASS (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; Draft PR #21.
+**Prior source:** Stage 10BO, native
+`VtAtlasFragmentProbe` against production `gfx::kVirtualTextureMSL`
+and live `VirtualTextureFileStreamer` atlas/table.
+**Documentation result commit:**
+`2dd9a7ec9b9eb9524dc2cf1a1cef933b760a50dc`
+(`docs/texture-rhi.md`).
+
+**Actually performed by user on native Apple M3 Ultra:**
+provided full verbose `metal_texture_gpu` CTest log:
+`Test #122 ... Passed 2.47 sec`, **1/1 PASS** (0 failed),
+2.48 sec elapsed total. All eight shader indirection
+readbacks showed `PASS` with 1 LSB pixel tolerance:
+pre-publication nonresident fallback, pinned coarse sample,
+fine address coarse fallback, unchanged coarse after an
+intentionally missing page file, fine resident slice,
+coarse elsewhere, post-LRU evicted fine fallback, and the
+replacement page in the recycled physical slice.
+All physical page bytes/page-table blit readbacks
+continued to PASS at zero tolerance.
+The reported shader lookup/pipeline setup was 251.017 ms,
+the worker/atlas+shader suite 701.805 ms,
+fixture 1301.235 ms, and selected GPU command intervals
+~0.004–0.020 ms. CTest process elapsed time must
+not be equated to texture lookup GPU duration.
+
+**Verification boundary:** native source at the user's
+last pull passed the test, no rendering/backend code
+fixes needed. Hardware Shader Graph ICB material mixing,
+sampler wrap permutations, Vulkan/GL/WebGL/mobile parity
+and large-scene profiling remain separate, NOT RUN.
+**Changes:** documentation/handoff only for this bounded PASS.
+Keep Draft PR until remaining acceptance; primary
+AIVERSE worktree remains in unrelated unfinished rebase.
+
+**Next:** isolated opt-in test for production Metal
+GPU-encoded ICB per-command Shader Graph PBR textures.
+Do not conflate generic fragment texture rendering with
+GPU ICB validation; must inspect actual
+`Device::prepareGpuEncodedIndexedIcbWithPbrMaterials`
+and `executeGpuEncodedIndexedIcb` and require
+a nonzero GPU token + successful native execute and pixels.
+
