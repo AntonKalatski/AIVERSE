@@ -62,7 +62,9 @@ public:
     bool begin(gfx::Device& device,ParticleSystem& cpu,Config config,
                float3 origin={0,0,0},float3 direction={0,1,0},
                SpectraFxGpuBillboardRenderer* sharedRenderer=nullptr,
-               gfx::ComputeHandle sharedEvolution={}) {
+               gfx::ComputeHandle sharedEvolution={},
+               gfx::ComputeHandle sharedAlphaSort={},
+               gfx::ComputeHandle sharedCompaction={}) {
         stop();
         // Configure before allocating GPU resources: failed settings do not
         // replace or partially initialize any backend.
@@ -90,7 +92,8 @@ public:
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 gpuDevice_=&device;
                 if(config_.gpuSortAlpha &&
-                   !alphaSort_.init(device,config_.backend.particles)) {
+                   !alphaSort_.init(device,config_.backend.particles,
+                                    sharedAlphaSort)) {
                     // Cannot silently draw unsorted alpha when authored sorted
                     // alpha is required. Release the GPU path and let the
                     // existing authored CPU fallback start below.
@@ -102,7 +105,8 @@ public:
                     if(config_.gpuIndirectCompaction) {
                         // Metal-only unsorted live-particle compaction;
                         // any failure retains regular GPU instanced draw.
-                        if(!compaction_.init(device,config_.backend.particles))
+                        if(!compaction_.init(device,config_.backend.particles,
+                                             sharedCompaction))
                             ++compactionFallbacks_;
                     }
                     backend_=SpectraFxExecutionBackend::Gpu;
