@@ -2,7 +2,9 @@
 // Owns legacy TAA only when canonical Prisma Temporal Resolve is NOT selected.
 #pragma once
 #include "Prisma.h"
+#include "PrismaGpuRetirement.h"
 #include <algorithm>
+#include <vector>
 namespace aiverse::render {
 // Sunlit in-scattering through the sun shadow map (High post quality only). The scene's exponential
 // fog already provides extinction and ambient haze; this adds the shadowed, view-dependent sun term.
@@ -22,7 +24,21 @@ struct VolumetricLight {
 class PrismaScreenLighting : public PostProcess {
 public:
     bool init(gfx::Device& dev, Prisma& post);
+    // shutdown() requires a host-confirmed GPU idle point, exactly like
+    // Prisma::shutdown(): shaders, buffers and any quarantined textures
+    // are destroyed only after their final submission completed.
     void shutdown();
+    // Poll only the device's actually completed GPU submission fence.
+    // Never release pending textures based on CPU frame count or delay.
+    size_t collectGpuRetirements();
+    // Call only AFTER the host has explicitly synchronized GPU idle.
+    size_t drainRetiredAfterGpuIdle();
+    struct RetirementStats {
+        size_t fencedTextures = 0;
+        size_t unfencedTextures = 0;
+        uint64_t completedFence = 0;
+    };
+    RetirementStats retirementStats() const;
     void setEnabled(bool on) { if (enabled_ != on) reset(); enabled_ = on; }
     void setDiffuseBounceEnabled(bool on) { if(diffuseBounce_!=on){diffuseBounce_=on;reset();} }
     void setVolumetricLight(const VolumetricLight& v) { volume_=v; volume_.steps=std::clamp(v.steps,4,32); volume_.ambientStart=std::max(v.ambientStart,0.0f); }
@@ -48,10 +64,13 @@ public:
     const std::string& lastError() const { return error_; }
 private:
     void releaseTargets();
+    void queueTarget(gfx::TextureHandle& target);
     gfx::Device* dev_ = nullptr;
     Prisma* post_ = nullptr;
     gfx::PassDesc scene_;
     gfx::TextureHandle bounce_, scatter_, history_[2], depth_;
+    PrismaGpuRetirementQueue<gfx::TextureHandle> retiredTargets_;
+    std::vector<gfx::TextureHandle> unfencedTargets_;
     gfx::BufferHandle triangle_;
     gfx::ShaderHandle shaders_[5];
     gfx::PipelineHandle pipes_[5];
