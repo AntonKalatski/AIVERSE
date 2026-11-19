@@ -172,6 +172,15 @@ void SceneStaging::clear() {
     stats_ = {};
 }
 
+size_t SceneStaging::discardArchivedCpuIndices(const std::string& key) {
+    const auto it=assets_.find(key);
+    if(it==assets_.end())return 0;
+    size_t released=0;
+    for(auto& entry:it->second.primitives)
+        released+=entry.geometry.discardCpuIndexPayload();
+    return released;
+}
+
 const ModelAsset* SceneStaging::find(const std::string& key) const {
     const auto found = assets_.find(key);
     return found == assets_.end() ? nullptr : &found->second;
