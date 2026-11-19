@@ -15,8 +15,6 @@
 
 namespace aiverse::terraweave {
 
-enum class PlantHabit : uint8_t { Tree=0, Shrub=1, Grass=2 };
-
 struct PlantEnvironment {
     uint64_t ageTicks=0;           // native game simulation ticks
     uint64_t matureTicks=0;        // 0 => full grown, backward compatible
