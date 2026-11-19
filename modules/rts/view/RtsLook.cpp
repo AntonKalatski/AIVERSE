@@ -467,7 +467,11 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
 // Capture only named playback clocks and presentation event ages; old
 // Graph, Animator, pose, rig and Model* must be destroyed before eviction.
 // Bounded even if the host repeatedly reloads sources for unseen entities.
-void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) {
+void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) noexcept {
+    // State preservation is best-effort, never a prerequisite for a safe
+    // source/graph transaction. Allocation failure falls back to restart
+    // rather than interrupting committed GPU/publication cleanup.
+    try {
     constexpr size_t kMaxPending=8192;
     constexpr uint64_t kMaxAgeFrames=120;
     if(reloadPlayback_.size()>=kMaxPending &&
@@ -498,6 +502,9 @@ void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) {
     snapshot.lastPos=state.lastPos;
     snapshot.dead=state.dead;
     reloadPlayback_.insert_or_assign(key,std::move(snapshot));
+    }catch(...) {
+        // Graph/Model source invalidation remains safe with no snapshot.
+    }
 }
 
 // Invalidate model-source dependencies as one render-thread transaction.
