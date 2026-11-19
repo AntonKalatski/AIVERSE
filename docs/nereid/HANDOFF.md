@@ -3551,3 +3551,124 @@ requires verification during the later hardening phase.
 using immutable NEREID surface levels and cascade geometry, with
 bounded transition lengths and explicit water IDs. Update
 handoff before starting any tests.
+
+## Stage 35 — river → cascade → lake transition ribbons
+
+**Branch:** `feature/nereid-water-core`, PR #23 Draft.
+**Stage 34 baseline:** `59316bdab02a4b7b2a1c63cd8c5c2ec4e9acef26`.
+**Owner priority:** finish functions first, tests/compilation deliberately
+deferred. No unrelated branches merged or main modified.
+
+### Commits and changed files
+
+- `472488bf8b204b793747316d04f01daf3e78df42` —
+  `libraries/include/aiverselib/water/NereidCascades.h`: new
+  `WaterCascadeConnectionsComponent` with optional
+  `inlet/outlet` generation-safe ECS Entities, `transitionLength`
+  Fixed (metres) and `enabled`; independent v1 persistence ID
+  `nereid.cascade_connections`, registered with the cascade package.
+  Existing `WaterCascadeComponent` archive remains unchanged.
+- `e667ea82fa68ef469cfd943074ca9620d33d078a` —
+  `engine/world/NereidWaterScene.h`: read-only
+  `surfaceLevelForId(stableWaterId)` resolves enabled water surface
+  elevation without ECS mutation or GPU allocation.
+- `a46f6447203b2298349c99909d66b54651e046f8` —
+  `engine/world/NereidCascadeScene.h`: `NereidCascadeSource`
+  gains optional `inletWaterId/outletWaterId/joinLength`.
+  `connectedNereidCascade` creates a presentation copy of the
+  descending ribbon with short entry/exit extensions at currently
+  linked water levels, when their elevation ordering permits it.
+  Joined surfaces use existing CPU mesh generation and the existing
+  per-frame bounded GPU upload pipeline. Live inlet/outlet levels
+  are cached in each resident slot and trigger a rebuild on change,
+  including disappearance/appearance of linked water bodies.
+- `c6a63c7ea549413da69b5b1cabc125e1caa88a88` —
+  `engine/world/NereidCascadeManifest.h`: optional JSON fields
+  `inletWaterId`, `outletWaterId`, `joinLength` with bounded values.
+- `9d4965d7dee2e2e1e3cd372b0ff5b93646f0b31e` —
+  `engine/world/NereidCascadeEcsPresentation.h`: read-only
+  conversion of persistent connection component to stable
+  `Entity::packed()+1` water scene IDs, validating link lifetime.
+- `70c0d6fa12f9185191b7d460d6791eaffd8dbc9b` —
+  `engine/world/WorldScene.cpp`: passes
+  `&nereidWater_` to `cascades_.update(device,waterScene)`, so the
+  cascade's GPU mesh is built after immutable water elevations
+  have been published and can respond to live level changes.
+- `716a6d73eae4bf6d03caf1a28357aa5a1661a35d` —
+  `engine/world/NereidCascadeScene.h`: transition-only foam
+  gradients on entry/exit joined segments mask water/cascade
+  shading seams without altering the authoritative cascade points.
+- `86c38ac456fc0385e8dfe135118a6500b485be40` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: AI agent/native
+  authoring documentation for Stages 33–35.
+
+### Architecture, usage and ownership
+
+Source water ECS remains authoritative for elevations, footprint and
+priority. The existing Stage-27 cascade ECS data remains authoritative
+for waterfall geometry. The optional new connection component names
+the adjoining water bodies by generation-safe Entity IDs. Only the
+presentation scene converts IDs to `uint64 stableId=packed+1`.
+`WorldScene` publishes water source snapshots before the separate
+`NereidCascadeScene` GPU update. The original cascade point
+vector is never mutated; a transient copy receives an extended
+ribbon aligned to the source's 3D path tangent. Purely vertical
+paths fall back to the perpendicular of the authored width axis.
+Entry Y matches upstream water surface if `upstreamY>=cascadeHeadY`;
+exit Y matches downstream water if `downstreamY<=cascadeFootY`.
+Mismatched/missing links leave the old geometry unchanged.
+Updated elevations trigger dirty GPU residency, and retry
+pending uploads within the existing cascade upload budget.
+
+Sample scene fragment (surface IDs 10 and 11 should be valid,
+already published water bodies):
+```json
+{
+  "nereidCascades": {
+    "sources": [{
+      "id": 31,
+      "inletWaterId": 10, "outletWaterId": 11,
+      "joinLength": 3.0,
+      "widthAxis": [1,0],
+      "points": [[5,15,0,3],[7,5,0,4]],
+      "style": {"opacity":0.75,"foamStrength":0.8}
+    }]
+  }
+}
+```
+Native ECS projects use the optional
+`WaterCascadeConnectionsComponent` attached to the same Entity as
+`WaterCascadeComponent`; existing
+`snapshotNereidEcsCascades(world)` picks it up automatically.
+Join length is bounded to 0.1..50 metres, and the pure CPU cascade
+vertex cap remains active. No new RHI texture, render pass, ECS
+integrator, PHYSIS, FPS/RTS or terrain ownership is introduced.
+
+### Verification and next agent
+
+**Actually performed:** connected GitHub source reviews and code,
+manifest, native ECS adapter, scene and handoff commits.
+**Not performed (per owner):** new tests, native C++ compilation,
+CTest, GL/Metal shader compilation, real GPU visual verification,
+FPS/RTS/gameplay regression. Keep PR Draft until verified.
+
+**Known limits:** these are geometric overlap strips, not
+topologically guaranteed watertight connections. Each authored
+cascade head/foot must be placed within or overlapping the
+intended inlet/outlet water footprint and properly oriented by
+`widthAxis`. The join cannot increase cascade points past its
+existing 128-point validation cap (with two extra points, original
+source must contain at most 126). Missing or elevation-incompatible
+links fall back to the unconnected ribbon. Width at the junction
+uses authored cascade halfWidth, not a fully resolved river bank
+profile; foam masks color discontinuities but does not change
+shaders' surface optics. This is not mass-conserving hydrodynamics,
+automatic confluence detection, or current transfer across the
+cascade. Rebuild after level changes is bounded by existing
+upload budgets and may be delayed by device allocation.
+
+**Next feature:** configurable source/destination width blending,
+connection-surface footprint validation, current continuity through
+waterfall links and optional whitewater turbulence at the seam.
+After the functional backlog, run native C++ builds plus GLSL/Metal
+GPU rendering and record actual results.
