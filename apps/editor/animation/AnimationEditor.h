@@ -207,8 +207,15 @@ private:
     }
     void preview(Editor& ed){
         ready_=false;std::string path=doc_.getStr("model");std::string modelKey=project_+"/"+path;
+        // A model source change resets the GraphInstance, but named clip
+        // phases may still be compatible with the imported replacement.
+        // Keep only the value snapshot, never old rig/Model/pose pointers.
+        const bool modelChanged=modelKey_!=modelKey;
+        const auto previousPlayback=modelChanged ?
+            instance_.snapshotPlayback() :
+            render::AnimationGraphInstance::PlaybackSnapshot{};
         try{
-            if(modelKey_!=modelKey){
+            if(modelChanged){
                 release();
                 dev_=&ed.device();
                 auto candidate=loadAnimationModel(ed.ws(),path);
@@ -248,7 +255,9 @@ private:
                 // Editor graph changes should not restart a compatible
                 // state/clip timeline. The new graph owns fresh rig,
                 // contacts and operation state, never old Model pointers.
-                (void)instance_.rebindPlayback(std::move(compiled));
+                const bool rebound=instance_.rebindPlayback(std::move(compiled));
+                if(modelChanged && !rebound && !previousPlayback.state.empty())
+                    (void)instance_.restorePlayback(previousPlayback);
                 auto& inputs=instance_.parameters();
                 for(const auto& [name,value]:previousControls.values)
                     if(inputs.values.count(name))inputs.values[name]=value;
