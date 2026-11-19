@@ -525,6 +525,7 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                                     bool reloadMaterialLibrary,
                                     size_t* refreshed) {
     if(refreshed)*refreshed=0;
+    gpuAppearancePending_=false;
     if(!dev_ || !rules_)return false;
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset(); // no worker may publish during staging
@@ -665,6 +666,32 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                 for(size_t i=0;i<candidate.stages.size();++i)
                     candidate.stages[i].choice.graph=previous.stages[i].choice.graph;
                 preserveAnimation.insert(index);
+            }
+            // The host renderer is the only owner of GPU shader/pipeline
+            // caches. Prewarm all candidate model/LOD/stage materials before
+            // publishing either Model GPU residency or TypeLook snapshots.
+            // Pending asynchronous jobs retain last-good visuals and ask the
+            // host watcher to retry. Failed backend programs reject the edit.
+            if(appearancePipelineValidator_) {
+                bool pending=false;
+                const auto warm=[&](const ModelChoice& choice) {
+                    if(!choice.model)return;
+                    const auto status=appearancePipelineValidator_(
+                        *choice.model,choice.materials);
+                    if(status==render::Renderer3D::PipelineWarmStatus::Failed)
+                        throw std::runtime_error(
+                            "appearance GPU shader/pipeline compilation failed");
+                    pending|=status==
+                        render::Renderer3D::PipelineWarmStatus::Pending;
+                };
+                for(const auto& choice:candidate.models)warm(choice);
+                for(const auto& choice:candidate.lods)warm(choice);
+                for(const auto& stage:candidate.stages)warm(stage.choice);
+                if(pending) {
+                    gpuAppearancePending_=true;
+                    throw std::runtime_error(
+                        "appearance GPU shader compilation still pending");
+                }
             }
             // The prepared snapshot publishes copies of EXACTLY the
             // material/node/variant data already authored for the RTS choice.
