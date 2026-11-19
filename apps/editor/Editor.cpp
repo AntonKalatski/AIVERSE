@@ -1277,7 +1277,12 @@ void Editor::frame(gfx::Device& dev, double dt) {
     const bool flushRequested = gpuRetirementFlushRequested_;
     gpuRetirementFlushRequested_ = false; // one attempt, no repeated UI stalls
     if (flushRequested ||
-        (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes)) {
+        (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes) ||
+        clientHost_.pendingRetiredClients() > 2) {
+        // A retired hosted GameClient has deep renderer/textures whose
+        // GPU byte count is not cheaply enumerable. Bound the number of
+        // archived clients as an additional pressure signal (never as a
+        // GPU-completion signal). Only a real completed idle may drain them.
         // This can block, but only at the safe PRE-RENDER boundary. If the
         // backend can't guarantee submitted-work idle (e.g. WebGL), keep
         // every resource quarantined rather than freeing in-flight textures.
