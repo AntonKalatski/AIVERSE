@@ -863,3 +863,25 @@ retarget helper for LOD visuals whose node maps validate.
 
 **NOT RUN:** native compiler/linker, animation graph or LOD CTests,
 Metal/GL/Vulkan real GPU parity or sanitizers. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
+
+## Stage 123 — retarget plans share assets, never graph clocks
+
+`CompiledModelPoseRetarget` stores prevalidated static
+source/visual bone and morph correspondence for a particular
+pair of host-owned Model publication generations. Model LOD
+selection never resets the MotionWeave source graph, advances
+animation time twice, or transfers ECS/gameplay authority.
+The CPU retarget step consumes the **already evaluated** source
+Pose, computing a transient target-local Pose for one draw.
+
+The source and visual pointers/versions must match before the
+compiled steps run. On stale plan or incompatible source Pose,
+the visual uses its own bind pose, while base rig sockets and
+source AnimationGraph continue uninterrupted. When no compiled
+plan exists the older validation path remains. Host assets must
+outlive the synchronous animation worker join and Renderer3D
+submission. `View::modelRetargetStats` is diagnostic only,
+reset per presentation update / prepared frame.
+
+**NOT RUN:** CMake/C++ compiler, CTest, GPU backend visual
+comparison, sanitizers or crowd benchmarks. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
