@@ -267,3 +267,73 @@ simulation, import GPU state or make the V2 binary portable.
 **Stage 41 status:** GitHub source committed; native/Metal compilation,
 CTest, CLI execution, callback lifetime and restart smoke tests have
 NOT RUN. Treat this as an unverified native integration example.
+
+## Stage 42 — private reports and multi-group capture routing
+
+A native project can request one GPU checkpoint using an explicit
+group index or one of three selection policies. This is
+presentation-only diagnostics: no gameplay ECS state is touched.
+
+```cpp
+// Between graphics frames:
+fx.queueGpuCheckpoint(/*groupIndex=*/1);
+// Or choose a group with one queued request at a time:
+fx.queueNextGpuCheckpoint(
+    spectra::GpuCaptureTargetPolicy::MissingOrStalestCheckpoint);
+// Other policies: RoundRobin (default), LargestEstimatedGroup.
+// Owner frame: Device.beginFrame -> fx.prepare() -> scene draw ->
+// fx.finish -> Device.endFrame, as in the Stage 41 example.
+
+// After capture is Ready, take a privacy-safe JSON summary INSTEAD of
+// the raw V2 binary checkpoint:
+std::string safeJson;
+if(fx.takeSafeGpuDiagnosticReport(safeJson)) {
+    // Report contains counts and numeric warnings only.
+    // No world coordinates, VM scalar values or exact GPU serials.
+}
+// Optional sensitive WORLD BOUNDS (only an intentional opt-in):
+spectra::GpuDiagnosticReportPrivacy privacy;
+privacy.includeWorldBounds=true;
+fx.takeSafeGpuDiagnosticReport(safeJson,privacy);
+
+// For a deliberately requested RAW binary blob, use the separate
+// fx.takeGpuCheckpoint(rawBytes). It contains sensitive scene positions
+// and graph VM parameters and is NOT a savegame.
+```
+
+The capture controller's default selection uses a rotating start
+across currently active GPU groups to avoid a permanent low-index
+preference. The alternative policies select by previous CPU
+alive-particle estimate or missing/stale checkpoint revision,
+respecting existing pending GPU readbacks. This never starts
+multiple asynchronous captures at once and cannot override the
+Stage 32 per-frame/in-flight readback budget.
+
+A native rendering host can request a visual reset *before*
+beginning a graphics frame:
+
+```cpp
+fx.queueVisualReset(); // emits native ResetRequested status; no RHI work
+// Later in a safe graphics frame, outside all rendering encoders:
+device.beginFrame(width,height);
+bool resetOk=fx.afterRollback(); // retries checked GPU group reset
+device.endFrame();
+```
+
+The recovery callback now includes `transitionSequence`,
+`hostResetRequests`, `deviceReplacementAttempts`,
+`explicitResetPending` and `recoveryCatalogRetained`.
+It reports a separate `ResetRequested` phase; failed
+cross-group uploads remain `ResetRetryRequired`, and lost/failed
+new-device imports remain `DeviceRecreationRequired`. On reset
+failure the native host MUST NOT advance VFX presentation until
+retry or graphics-device reconstruction succeeds.
+
+The new `engine/fx/SpectraDiagnosticReport.h` and offline
+`tools/spectrafx/inspect_spfx.cpp` implement redaction-by-default.
+The editor now has separate explicit safe JSON and sensitive RAW
+GPU checkpoint save actions. No automatic uploads of diagnostic
+files, source graphs or VM data are performed.
+
+These Stage 42 changes were source-committed but not run in a
+native C++/Metal build or GPU hardware test.
