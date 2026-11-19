@@ -202,10 +202,10 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // the original texture slots / vertex ABI do not change. Sampler s1
     // is already bound by the regular material shader.
     msl.replace(signature,parameterAnchor.size(),
-        "                        GI_FARGS\n"
+        std::string("                        GI_FARGS\n") +
         (trilinear ?
           "                        , constant AiverseModelVtUniforms& uModelVtParams [[buffer(7)]]\n" :
-          "                        , constant float4& uModelVt [[buffer(7)]]\n")
+          "                        , constant float4& uModelVt [[buffer(7)]]\n") +
         "#if !defined(AIVERSE_ICB_PBR)\n"
         "                        , texture2d_array<float, access::sample> "+
             atlasName+" [[texture("+std::to_string(atlasSlot)+")]]\n"
