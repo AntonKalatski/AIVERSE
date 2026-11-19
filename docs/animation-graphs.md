@@ -1185,3 +1185,31 @@ The existing `render_device_epoch` source has Stage 135 visitor and
 retirement regressions, **not yet executed**. See
 [Stage 135](agent-handoffs/animation-stage135-model-ownership-visitors-2026-11-19.md).
 No claims of native compiler/CTest/CI or Metal/GL/Vulkan performance parity.
+
+
+## Stage 136 — asynchronous Model GPU upload rollback and retirement observers
+
+`ModelResourceCache::publishPrepared` consumes worker-prepared CPU Model
+data on the render owner thread. It now checks the actual `uploadModel`
+return value: incomplete geometry is never admitted as a resident Model.
+Failed or exception-interrupted uploads retain a scratch Model until it can
+be retired via the existing GPU completion queue; no ordinary
+`unique_ptr<Model>` destructor may drop GPU-live handles. Expected duplicate
+keys are rejected without GPU upload; `preparedUploadFailures()` counts
+failed/throwing upload attempts. The legacy null failed-load tombstone
+still works.
+
+Resident Model removal now uses allocation-safe `enqueueFrom` to preserve
+ownership if pending-retirement allocation fails. Synchronous diagnostic
+callbacks emitted by retired-resource enqueue, collection and shutdown
+drain run with the same nestable no-mutation guard as ownership visitors;
+read-only diagnostics remain valid. The RTS async preparation host reports
+failed uploads and advances rather than silently retrying a stale worker
+result forever. This does not add automatic backoff or a new GPU fence.
+
+The new `render_device_epoch` CPU test cases cover failed geometry
+allocation, injected exception and diagnostic observer recursion, but
+**have not run** on native Mac/Metal or a real GPU. Existing
+`uploadModel` success criteria do not comprehensively detect shared
+texture/morph failure; coordinate that with graphics/texture owners.
+[Stage 136 handoff](agent-handoffs/animation-stage136-prepared-model-rollback-retirement-observers-2026-11-19.md).
