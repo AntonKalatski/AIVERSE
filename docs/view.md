@@ -963,3 +963,73 @@ before this is production-safe. `RtsView` remains a compatibility adapter.
 **NOT RUN** by request: no local native compiler, CMake/CTest, Metal/RTS/FPS/
 editor runtime, ASan/TSan, benchmarks or CI. The code was committed through
 the GitHub API; source review is not a substitute for compilation.
+
+## Source dependency index and revisioned external visuals (Stage 97)
+
+`game::view_adapter::ModelSourceDependencyIndex` (new
+`modules/rts/view/RtsModelSourceDependencies.h`) provides a reusable,
+host-owned index of source path -> dependency categories and type IDs.
+`rebuild(types,materialLibrary)` uses authored view descriptions, not
+loaded models: nested variants, LOD, stages, attachments, streaming
+coarse/detail model paths, referenced library materials, direct texture
+overrides and optional external `animationGraph` paths are included
+even for missing and not-yet-streamed sources. A host can add
+`addResidentModel` and `addResidentTexture` entries from already
+loaded render Models to catch imported glTF/etc external texture files.
+`resolve(changedFiles)` returns impacted types, model sources and
+category flags; paths are lexical-normalized. No workers, GPU, or game
+simulation state are owned by the index.
+
+`ModelWindow` rebuilds this index during its existing once-per-second
+asset scan, safely excludes absolute/parent-traversal watch paths,
+remembers both present and absent file timestamps and notices
+delete/recreate transitions. Watch state is reset when changing projects.
+Requests remain queued while in-game or client play is active.
+Unchanged imported-model conversion behaviour is retained.
+
+For **model changes**, Stage 96's selective model-source transaction
+is used, with all authored model variants of affected types rebuilt.
+For a **texture change**, the editor first increments that texture
+source's revision through `render::ModelTextureCache::invalidateSource`,
+then reloads the affected model sources. The decoded CPU entry is
+discarded; the shared GPU cache uses a revision-suffixed key for new
+uploads, leaving old texture leases with existing borrowed models.
+When model records release, the normal cache trim collects old GPU
+entries whose leases are no longer retained. No borrowed GPU texture
+is forcibly destroyed by invalidation. If a texture affects an object
+without any resolvable model source (e.g., a built-in shape), the
+editor chooses the full-view refresh fallback.
+
+`view.animationGraph` now also accepts a JSON asset **path string**
+in addition to the existing inline graph object; the renderer-host
+file reader loads and validates the external definition. The editor
+watches external graph paths and falls back to the existing full
+presentation refresh to avoid crossing model/graph lifetimes.
+`materials.json` edits also use the whole-view fallback until
+library material revision and ownership are independently managed.
+`AnimationHotReloadRegistry::apply` now requests player restart and
+clears stale montage/notify state on a changed graph, while
+`forgetModel(model)` removes last-good compiled graphs before a host
+destroys their `Model`. This generic registry API is **not** yet used
+by the transitional RTS host, which has its own graph cache.
+
+No JSON schema change is required for existing inline graphs, models or
+type references. This stage adds optional file-backed graph syntax,
+new C++ helpers, and an internal GPU texture-cache revision suffix.
+There are no authoritative ECS, network/save/checksum or gameplay
+changes and no duplicate animation evaluation.
+
+**NOT RUN:** native build, CMake, CTest, Metal/editor/FPS/RTS screenshots,
+sanitizers, CI, device/GPU fence checks and performance benchmarks.
+Test sources `tests/animation/model_dependencies.cpp` and additions
+to `tests/animation/hot_reload.cpp` were authored but not executed.
+
+**Important limits:** the source index does not dynamically parse
+nested external graph includes, imported model-specific sidecars that
+are not exposed as models/images, runtime-generated external texture
+paths that never enter the cache, or arbitrary dependencies produced by
+custom loaders. The watcher currently lives in ModelWindow and is
+editor-only. Targeted reload still depends on RtsView for appearance
+rebuild and must run between GPU submissions. Model-derived external
+materials/texture lease lifetimes and render synchronization require
+real platform verification before production deployment.
