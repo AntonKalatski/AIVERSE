@@ -1507,3 +1507,27 @@ simulation, PHYSIS, terrain geometry, TWH8 or shader change.
 Build/tests/native Metal/GL/Vulkan timings **NOT RUN** until the
 separate agent performs QA. Continue updating the Stage41 handoff
 in `docs/terrain/AGENT_HANDOFF.md`.
+
+### AIVERSE Stage42 — one GPU timing collector per graphics Device
+
+The shared RHI now owns `gfx::Device::gpuTimingRouter()`
+(`engine/gfx/GpuTimingRouter.h`). Every new GPU timing client
+(TerraWeave, Prisma, SpectraFX/VFX, editor/tools/benchmarks)
+MUST use `subscribe`, `request`, `poll`, `take(subscriber)`,
+`cancel` and `unsubscribe`, rather than directly draining
+`Device::takeGpuTimings()` in parallel. The backend API still
+exists but its completed-result drain is destructive across ALL
+tags; the router alone should poll it for shared devices. Router
+messages restore the original caller's tag and are isolated in
+bounded per-subscriber queues; rejected requests retain each
+caller's CPU-only/unsupported fallback. Owner-thread only;
+never wait for GPU fences, invent timestamps, or claim separate
+per-feature GPU costs from a shared Metal command buffer.
+Existing native Stage41 RTS/FPS, editor batching benchmark,
+RenderBench, GeometryBench and instancing preview were moved
+to the generic router. Full API/limits:
+`docs/render/GPU_TIMING_ROUTER.md`. No changes to PHYSIS,
+geometry, archive TWH8, gameplay ECS or network authority.
+Source committed; native CMake/CTest/Metal/GL/Vulkan validation
+**NOT RUN** under feature-first instruction. Append exact
+per-stage handoff `docs/terrain/AGENT_HANDOFF.md`.
