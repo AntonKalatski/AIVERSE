@@ -1,5 +1,16 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 95 — rolled/overhead camera basis (unverified)
+
+`ParticleSystem` now derives billboards from the caller's `SpectraFxView.up`
+rather than a forced world-Y vector. `spectrafx_contract` includes a
+genre-neutral vertical-camera and invalid-view fixture. The code is committed
+on this branch; native compilation/CTest/GPU visual validation for this SHA
+**HAVE NOT RUN**. See
+`docs/agent-handoffs/spectrafx-stage95-arbitrary-camera-2026-11-19.md`.
+The final one-command acceptance is still required.
+
+
 ## Stage 94 — no genre/editor camera dependency
 
 The current branch now contains `SpectraFxView`: an explicit, camera-independent
