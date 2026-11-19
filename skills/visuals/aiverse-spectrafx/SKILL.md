@@ -728,3 +728,30 @@ python3 tools/skills/catalog.py check
 **Verification status:** these tests are committed, not proven passing. Never mark them successful based on source presence.
 
 **Handoff requirement:** every bounded implementation stage must end with a separate dated append to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` in the SAME branch, including implementation/test commit SHA, exact tests executed and their outputs, API/format changes, risks and the next step.
+
+## Stage 29: GPU pool committed-tick one-shot cues
+
+Use `spectra::GpuCueBridge` over an already initialized
+`spectra::GpuPoolWorld` to route bounded gameplay cues into
+shared GPU emitters or lossless shared CPU fallback. Bind each
+game-defined event type to a graph name, call `accept(tick,events)`
+**once per committed simulation tick**, and call `flush()`
+between the pool's `beginPresentationFrame` and `step` operations.
+Native games include `<aiverselib/genre/SpectraFX.h>` and use
+`acceptSimGpuCueTick` to convert existing `SimEvent` positions;
+no VFX state or handles enter authoritative ECS.
+
+Budget limits cover queued events, per-tick admissions and
+per-frame submissions, in addition to global pool burst limits.
+After gameplay rollback, call `bridge.resetForRollback()` only
+outside active render/compute encoders, then replay committed
+ticks. This clears the **whole** `GpuPoolWorld`; never share
+the pool with unrelated rollback owners if independent retention
+is required. Rejected reset preserves pending cues and tick
+cursor so callers can retry safely.
+
+**Only one-shots are supported**. For continuous ECS-attached
+sources with lifecycle/pose updates use existing CPU `CueScheduler`
+until the GPU pool gains generation-safe stop/kill/retarget handles.
+No platform test, visual Metal validation or CI success has
+been established for this stage (user deferred tests).
