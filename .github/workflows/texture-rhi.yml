@@ -52,12 +52,14 @@ jobs:
             -DAIVERSE_BUILD_SERVER=OFF \
             -DAIVERSE_BUILD_TOOLS=OFF \
             -DAIVERSE_TEXTURE_WITH_OPENEXR=${{ matrix.openexr }}
-      - name: Compile production VT sampler for OpenGL 3.3 and GLES 3.0
+      - name: Compile canonical VT sampler for OpenGL 3.3 and GLES 3.0
         run: |
           command -v glslangValidator
           ctest --test-dir build/texture-rhi-ci \
             --verbose --output-on-failure --no-tests=error \
-            -R '^virtual_texture_sampling_glsl
+            -R '^virtual_texture_sampling_glsl$'
+      - name: Upload explicit build / CTest evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: texture-rhi-linux-openexr-${{ matrix.openexr }}-logs
@@ -95,112 +97,12 @@ jobs:
           # A zero CTest exit can still indicate a SKIPPED GPU scenario.
           grep -Ei 'vulkan_backend|passed|failed|skipped' \
             build/texture-rhi-vulkan/verify-logs/ctest.log || true
-      - name: Compile portable VT sampling GLSL in Vulkan-focused build
+      - name: Compile canonical VT GLSL in Vulkan-focused build
         run: |
           command -v glslangValidator
           ctest --test-dir build/texture-rhi-vulkan \
             --verbose --output-on-failure --no-tests=error \
-            -R '^virtual_texture_sampling_glsl
-        uses: actions/upload-artifact@v4
-        with:
-          name: texture-rhi-vulkan-logs
-          path: build/texture-rhi-vulkan/verify-logs/
-          if-no-files-found: warn
-
-      - name: Upload explicit build / CTest evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: texture-rhi-linux-openexr-${{ matrix.openexr }}-logs
-          path: build/texture-rhi-ci/verify-logs/
-          if-no-files-found: warn
-
-  vulkan-build:
-    name: Vulkan compute compile + source CTests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Verify texture script Bash syntax
-        run: bash -n tools/verify-texture-rhi.sh
-      - name: System build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ python3 \
-            libx11-dev libegl1-mesa-dev libgles2-mesa-dev libgl-dev \
-            libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools
-      - name: Compile native Vulkan implementation and focused tests
-        run: |
-          chmod +x tools/verify-texture-rhi.sh
-          tools/verify-texture-rhi.sh \
-            --vulkan --jobs 4 \
-            --build-dir "${{ github.workspace }}/build/texture-rhi-vulkan" \
-            -DAIVERSE_BUILD_CLIENT=OFF \
-            -DAIVERSE_BUILD_EDITOR=OFF \
-            -DAIVERSE_BUILD_HEADLESS=OFF \
-            -DAIVERSE_BUILD_SERVER=OFF \
-            -DAIVERSE_BUILD_TOOLS=OFF \
-            -DAIVERSE_VULKAN=ON
-          # A zero CTest exit can still indicate a SKIPPED GPU scenario.
-          grep -Ei 'vulkan_backend|passed|failed|skipped' \
-            build/texture-rhi-vulkan/verify-logs/ctest.log || true
-      - name: Upload build and Vulkan execution logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: texture-rhi-vulkan-logs
-          path: build/texture-rhi-vulkan/verify-logs/
-          if-no-files-found: warn
-
-      - name: Upload build and Vulkan execution logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: texture-rhi-vulkan-logs
-          path: build/texture-rhi-vulkan/verify-logs/
-          if-no-files-found: warn
-
-      - name: Upload explicit build / CTest evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: texture-rhi-linux-openexr-${{ matrix.openexr }}-logs
-          path: build/texture-rhi-ci/verify-logs/
-          if-no-files-found: warn
-
-  vulkan-build:
-    name: Vulkan compute compile + source CTests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Verify texture script Bash syntax
-        run: bash -n tools/verify-texture-rhi.sh
-      - name: System build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ python3 \
-            libx11-dev libegl1-mesa-dev libgles2-mesa-dev libgl-dev \
-            libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools
-      - name: Compile native Vulkan implementation and focused tests
-        run: |
-          chmod +x tools/verify-texture-rhi.sh
-          tools/verify-texture-rhi.sh \
-            --vulkan --jobs 4 \
-            --build-dir "${{ github.workspace }}/build/texture-rhi-vulkan" \
-            -DAIVERSE_BUILD_CLIENT=OFF \
-            -DAIVERSE_BUILD_EDITOR=OFF \
-            -DAIVERSE_BUILD_HEADLESS=OFF \
-            -DAIVERSE_BUILD_SERVER=OFF \
-            -DAIVERSE_BUILD_TOOLS=OFF \
-            -DAIVERSE_VULKAN=ON
-          # A zero CTest exit can still indicate a SKIPPED GPU scenario.
-          grep -Ei 'vulkan_backend|passed|failed|skipped' \
-            build/texture-rhi-vulkan/verify-logs/ctest.log || true
+            -R '^virtual_texture_sampling_glsl$'
       - name: Upload build and Vulkan execution logs
         if: always()
         uses: actions/upload-artifact@v4
