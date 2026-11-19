@@ -850,3 +850,38 @@ component and integrates it with an actual editor host. It does not
 yet move all rules-driven asset selection/hot reload from `RtsView`
 or change MotionWeave. **NOT RUN**: CMake/native compiler, CTest,
 Metal screenshots, sanitizers and CI remain deferred per user request.
+
+## Tracked model cache writes and budgeted editor prefetch (Stage 94)
+
+`RtsModelResourceCache` now exposes read-only `models()`, plus
+`contains`, `find`, `insertIfAbsent`, and `replace(device,key,
+replacement,onRelease)`. All known RTS model-map writes have moved
+through this resource-owner API: synchronous imports preserve null
+failure-cache entries, worker results use `publishPrepared`, and
+generated shapes use tracked replacement which releases prior GPU
+buffers and invalidates their host animation-cache entries.
+`generation()` now advances on those writes, unused-model eviction,
+and shutdown. This covers every currently identified mutation in the
+RTS loaders, but callers must still rebuild/invalidate borrowed raw
+`Model*` pointers after replacement, trim, or full reload.
+
+The editor's `RtsModelDemandScheduler` adds `drainBudget(budgetMs,
+maxCount,load)`, prioritizing interactive/visible requests and
+preserving FIFO within equal priority. The editor continues to service
+interactive selection/Inspector loads synchronously. Its residency
+sweep queues missing *retained* map/type models for background
+prefetch, and each non-playing non-FPS editor frame consumes at most
+two requests with a nominal 1 ms wall-clock budget. Because
+`loadType` can be synchronous, one load may exceed this soft budget.
+Rules reload resets demand and the existing RtsView shutdown releases
+all cache resources, advancing their generation; targeted per-file
+hot reload still needs a safe external invalidation API.
+
+Genre-specific keep rules (map references, current selection,
+placement/overlay preview, and recent use) remain in the editor.
+The generic engine View and MotionWeave are unchanged. RtsView is
+still a compatibility host and owns the cache instance.
+
+**NOT RUN**: native compilation, CMake, CTest, sanitizers, Metal
+screenshots, editor/RTS/FPS smoke runs and CI were deferred at the
+user's explicit request.
