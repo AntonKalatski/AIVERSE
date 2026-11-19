@@ -4,6 +4,7 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/HumanImport.h"
+#include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
@@ -63,6 +64,11 @@ struct CreatorApp {
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
     HumanImportManifest importedPackage;
+    std::unique_ptr<MorphAuthoring> morphDraft;
+    std::size_t morphSourceVertices=0;
+    int morphTargetIndex=0,morphVertexIndex=0;
+    render::float3 morphEditOffset{};
+    bool morphDirty=false;
     std::array<char,129> scalpProxyName{};
     // Immutable bind-pose vertices and a single rigid MotionWeave node.
     // Updated positions are always supplied in the groom's local space.
@@ -181,6 +187,13 @@ struct CreatorApp {
         if(!session.loadJson(imported.dna.toJson(),&error))
             throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
         syncDraft();
+        morphSourceVertices=imported.sourceVertexCount;
+        morphDraft=std::make_unique<MorphAuthoring>(
+            MorphAuthoring::fromCompiled(imported.facialShapes));
+        morphTargetIndex=0;
+        morphVertexIndex=0;
+        morphEditOffset={};
+        morphDirty=false;
         importedManifest=path;
         importedPackage=std::move(manifest);
         std::snprintf(scalpProxyName.data(),scalpProxyName.size(),"%s",
@@ -288,8 +301,10 @@ struct CreatorApp {
                 auto imported=importHumanAsset(manifest,readerFor(importedManifest));
                 proposed.head=std::move(imported.model);
                 proposed.rig=imported.rig;
-                proposed.facialShapes=std::move(imported.facialShapes);
-                proposed.facialBinding=std::move(imported.facialBinding);
+                proposed.facialShapes=morphDraft
+                    ? morphDraft->compile() : std::move(imported.facialShapes);
+                proposed.facialBinding=FaceShapeBinding::compile(
+                    proposed.facialShapes,manifest.routes);
                 for(const auto& [name,surface]:manifest.materials) {
                     const auto index=proposed.head->findMaterial(name);
                     if(index>=0)proposed.head->materials[std::size_t(index)]=
@@ -615,6 +630,78 @@ struct CreatorApp {
                 ImGui::SliderFloat("Gain",&route.gain,0.0f,4.0f,"%.2f");
                 if(ImGui::IsItemDeactivatedAfterEdit())pendingRebuild=true;
                 ImGui::PopID();
+            }
+            if(morphDraft && morphDraft->targets()>0 &&
+               ImGui::TreeNode("Sparse morph vertex sculpt")) {
+                ImGui::TextWrapped("Edit one source vertex position delta in "
+                    "the chosen target. Source head geometry stays unchanged.");
+                const int maxTarget=int(morphDraft->targets())-1;
+                ImGui::SliderInt("Morph target",&morphTargetIndex,0,maxTarget);
+                morphTargetIndex=std::clamp(morphTargetIndex,0,maxTarget);
+                const auto& target=morphDraft->shapes()[std::size_t(morphTargetIndex)];
+                ImGui::Text("Target: %s",target.name.c_str());
+                const int maxVertex=int(morphSourceVertices)-1;
+                ImGui::SliderInt("Source vertex",&morphVertexIndex,0,
+                                 std::max(0,maxVertex));
+                const auto index=std::uint32_t(morphVertexIndex);
+                const auto existing=std::find_if(target.deltas.begin(),target.deltas.end(),
+                    [&](const MorphDelta& d){return d.vertex==index;});
+                if(ImGui::Button("Read vertex delta")) {
+                    morphEditOffset=existing==target.deltas.end()
+                        ? float3{} : float3{existing->position[0],
+                                          existing->position[1],
+                                          existing->position[2]};
+                }
+                ImGui::DragFloat3("Position delta",&morphEditOffset.x,0.001f,-1.0f,1.0f);
+                if(ImGui::Button("Apply vertex delta")) {
+                    if(morphDraft->setPosition(
+                        std::size_t(morphTargetIndex),index,
+                        {morphEditOffset.x,morphEditOffset.y,morphEditOffset.z})) {
+                        morphDirty=true;
+                        pendingRebuild=true;
+                        status="VIVID sparse morph vertex edited";
+                    }else status="VIVID sparse morph edit rejected";
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Undo sculpt") && morphDraft->undo()) {
+                    morphDirty=true;pendingRebuild=true;
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Redo sculpt") && morphDraft->redo()) {
+                    morphDirty=true;pendingRebuild=true;
+                }
+                ImGui::TextUnformatted(morphDirty?"Morph changes not exported":"Morph source unchanged");
+                if(ImGui::Button("Export morph JSON")) {
+                    try {
+                        if(importedManifest.empty() || morphSourceVertices==0)
+                            throw std::runtime_error("VIVID morph export: no imported source");
+                        // Keep author-specified source intact; new packages use
+                        // an owned sidecar in the same manifest directory.
+                        const auto basename=importedPackage.morphPath.empty()
+                            ? std::string("vivid-authored-morphs.json")
+                            : importedPackage.morphPath;
+                        const auto destination=std::filesystem::absolute(
+                            std::filesystem::path(importedManifest)).parent_path()/basename;
+                        const auto data=morphDraft->toJson(morphSourceVertices).dump(2);
+                        const auto staging=std::filesystem::path(
+                            destination.string()+".vivid.tmp");
+                        {
+                            std::ofstream out(staging,std::ios::binary|std::ios::trunc);
+                            if(!out)throw std::runtime_error("Morph staging open failed");
+                            out.write(data.data(),std::streamsize(data.size()));
+                            out.flush();
+                            if(!out)throw std::runtime_error("Morph staging write failed");
+                        }
+                        std::error_code ec;
+                        std::filesystem::rename(staging,destination,ec);
+                        if(ec)throw std::runtime_error(
+                            "Morph atomic replacement failed: "+ec.message());
+                        importedPackage.morphPath=basename;
+                        morphDirty=false;
+                        status="VIVID morph sidecar saved; save manifest to publish path";
+                    }catch(const std::exception& e){status=e.what();}
+                }
+                ImGui::TreePop();
             }
             if(ImGui::Button("Save imported manifest")) {
                 try {
