@@ -21,6 +21,7 @@
 #include "PrismaBloomGraph.h" // persistent compiled Bloom topology per viewport
 #include "PrismaRhiExecutor.h" // opt-in per-view graph GPU context
 #include "PrismaGpuRetirement.h"
+#include "PrismaAdaptiveResolution.h"
 #include "Renderer3D.h"
 
 namespace aiverse::render {
@@ -29,6 +30,9 @@ struct PrismaStats {
     int passes = 0, effects = 0, width = 0, height = 0;
     int outputWidth = 0, outputHeight = 0;
     bool temporalUpscaled = false;
+    bool temporalFallback = false;
+    bool adaptiveResolution = false;
+    float requestedRenderScale = 1.0f;
     bool temporalResolved = false, temporalJittered = false;
     float jitterPixelX = 0, jitterPixelY = 0;
 };
@@ -204,6 +208,8 @@ private:
         float2 currentJitterUv{}, previousJitterUv{}; // NDC jitter / 2, unflipped UV
         bool jitterActive = false;
         float lastJitterPixels = 0;
+        bool preflightRejected = false;
+        unsigned preflightCooldown = 0;
         bool projectionKnown = false;
         bool previousOrtho = false;
         float previousFovY = 0, previousNear = 0, previousFar = 0;
@@ -224,6 +230,7 @@ private:
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
     Sized& sized(int w, int h);
     void destroySized(Sized& s);
+    bool preflightUpscale(int outputW, int outputH, int renderW, int renderH);
     void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
     gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
@@ -256,6 +263,7 @@ private:
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, MotionView> motionViews_;
     std::map<uint64_t, TemporalView> temporalViews_;
+    std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
