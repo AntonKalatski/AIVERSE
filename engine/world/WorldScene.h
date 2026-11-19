@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveWindField.h"
 #include "engine/world/TerraWeaveWindUploadPolicy.h"
 #include "engine/world/TerraWeaveWindShadowCachePolicy.h"
+#include "engine/world/TerraWeaveHorizonPresentationQuality.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -69,6 +70,21 @@ public:
     vegetationHorizonWindShadowCachePolicy() const {
         return vegetationHorizonWindShadowCachePolicy_;
     }
+    // Compose existing presentation switches and Stage36-38 runtime policies
+    // without altering any Horizon geometry/bake quality or game simulation.
+    void setVegetationHorizonPresentationPolicy(
+        terraweave::HorizonPresentationPolicy policy);
+    terraweave::HorizonPresentationPolicy
+    vegetationHorizonPresentationPolicy() const {
+        terraweave::HorizonPresentationPolicy policy;
+        policy.exactSpatialWindField=vegetationHorizonExactWindField_;
+        policy.spatialWindVariation=vegetationHorizonSpatialWind_;
+        policy.windUpload=vegetationHorizonWindUploadPolicy_;
+        policy.windShadowCache=vegetationHorizonWindShadowCachePolicy_;
+        return policy;
+    }
+    void setVegetationHorizonPresentationQualityPreset(
+        terraweave::HorizonPresentationQualityPreset preset);
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
