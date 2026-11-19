@@ -30,7 +30,7 @@ int aiverseMain(int argc,char** argv){
         scene.load(dev,j,[obj](const std::string&,std::string& out){out=obj;return true;});
     };
     int frame=0;
-    cb.frame=[&](gfx::Device& dev,double){render::RTSCamera cam;cam.target={0,0,0};cam.distance=80;cam.pitch=.6f;cam.yaw=.4f;if(mode!="hlod"){cam.distance=mode=="lod"?800:20;cam.pitch=0;cam.yaw=0;}
+    cb.frame=[&](gfx::Device& dev,double){render::Camera cam;cam.target={0,0,0};cam.distance=80;cam.pitch=.6f;cam.yaw=.4f;if(mode!="hlod"){cam.distance=mode=="lod"?800:20;cam.pitch=0;cam.yaw=0;}
         renderer.beginScene(cam,dev.framebufferWidth(),dev.framebufferHeight());
         if(mode=="hlod")scene.draw(renderer);
         else {render::ModelDraw d;d.model=&wall;d.geometry.clusters=enabled&&(mode=="clusters"||mode=="lod");d.geometry.errorPixels=2;d.geometry.occluder=enabled&&mode=="occlusion";renderer.drawModel(d);

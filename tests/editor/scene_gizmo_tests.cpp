@@ -10,7 +10,7 @@ static void require(bool condition) {
 }
 
 int main() {
-    RTSCamera camera;
+    Camera camera;
     camera.target = {0, 0, 0};
     camera.distance = 15.0f;
     camera.pitch = 0.9f;

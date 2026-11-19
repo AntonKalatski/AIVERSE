@@ -17,7 +17,7 @@ int aiverseMain(int argc,char** argv){
     platform::AppConfig cfg;cfg.title="AIVERSE Surface Proxy: source left, proxy right";cfg.width=1200;cfg.height=720;
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& dev){device=&dev;renderer.init(dev);renderer.setShadowQuality(render::ShadowQuality::Off);render::uploadModel(dev,*source.model);render::uploadModel(dev,*proxy);};
-    cb.frame=[&](gfx::Device& dev,double){render::RTSCamera cam;cam.distance=15;cam.target={0,0,0};cam.yaw=0;cam.pitch=0;
+    cb.frame=[&](gfx::Device& dev,double){render::Camera cam;cam.distance=15;cam.target={0,0,0};cam.yaw=0;cam.pitch=0;
         renderer.beginScene(cam,dev.framebufferWidth(),dev.framebufferHeight());
         render::ModelDraw d;d.model=source.model.get();d.world=render::mat4::translate({-2.6f,0,0})*render::mat4::rotateY(yaw);renderer.drawModel(d);
         d.model=proxy.get();d.world=render::mat4::translate({2.6f,0,0})*render::mat4::rotateY(yaw);renderer.drawModel(d);

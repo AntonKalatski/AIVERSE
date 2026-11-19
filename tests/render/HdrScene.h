@@ -19,7 +19,7 @@ struct HdrScene {
     ScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
-    RTSCamera camera;
+    Camera camera;
     Mesh floor, cube, water;
     std::unique_ptr<Model> spheres;
     int frame = 0, probeIndex = 0, gridProbe = -1;
