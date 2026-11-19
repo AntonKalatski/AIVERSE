@@ -2642,3 +2642,54 @@ Require (a) `material palette CPU checks=35 result=passed`, (b) actual MDI `stre
 ### Next tasks
 
 After raster correctness, collect ~60+ CPU MDI samples with a forced mode vs Direct in balanced repeated orders and profile true GPU time using backend-supported timestamps. Prioritize actual CPU Metal ICB encode/bind stages if their measured aggregate dominates; no changes to shader semantics or compatibility guards without GPU pixel regression. Then increase workload to 10k and eventually 100k with memory monitoring, run Vulkan parity and full CTest before any default enable.
+
+
+---
+
+## Stage 79 — Mac Metal actual MDI-frame raster parity PASS; warmed CPU ICB encoder dominates (2026-11-19)
+
+**Repository / branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache` (Draft PR #34). **Tested code:** Stage 78 commits `4e124ba40598082e8335bba6fc90be0b76dc3d65` and `9a3c14ca3da7db2dd90accfe070aab8507afbee0`, with handoff `b03224060357f3eda2120d497f298eb3f1a3611d`. **Stage 79 updates documentation only**, no production code changed, no build run by assistant. All execution evidence is owner-provided native Mac Studio output.
+
+### Actual run, correctness and CPU measurements
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=35 result=passed
+stress requested_items=1024 authored_unique_primitives=1024 submitted_model_draws=1
+batch=0 shadow=1024 opaque=1024 total=2050 error=
+[metal-icb] avg/32 submissions args=0.0027 alloc=0.2338 encode=0.0457 residency-execute=0.0064 ms commands/submission=206.2
+actual MDI pixel parity frame=101 changed_channels=0
+[metal-icb] avg/32 submissions args=0.0003 alloc=0.0059 encode=0.0376 residency-execute=0.0043 ms commands/submission=206.2
+[metal-icb] avg/32 submissions args=0.0004 alloc=0.0058 encode=0.0373 residency-execute=0.0042 ms commands/submission=202.7
+CPU render benchmark direct: samples=66 median_ms=1.1615 p95_ms=1.2127 min_ms=1.1198 max_ms=1.2405
+CPU render benchmark batched: samples=81 median_ms=1.1567 p95_ms=1.2285 min_ms=0.8459 max_ms=1.2342
+CPU render benchmark auto_direct_frames: samples=90 median_ms=1.1585 p95_ms=1.2285 min_ms=1.0856 max_ms=1.2342
+CPU render benchmark auto_mdi_submitted_frames: samples=6 median_ms=0.8696 p95_ms=0.9260 min_ms=0.8258 max_ms=0.9260
+CPU render benchmark auto_late_frames: samples=36 median_ms=1.1671 p95_ms=1.2285 min_ms=0.8834 max_ms=1.2332
+successful MDI CPU stage pass=0 samples=6 submissions=30 mean_total_ms=0.38454 selection_ms=0.03576 grouping_ms=0.03999 scan_ms=0.00892 packing_ms=0.00519 pipeline_ms=0.03967 upload_ms=0.00778 submit_ms=0.24249
+successful MDI CPU stage pass=1 samples=6 submissions=30 mean_total_ms=0.35005 selection_ms=0.00490 grouping_ms=0.02585 scan_ms=0.00792 packing_ms=0.00711 pipeline_ms=0.03728 upload_ms=0.00697 submit_ms=0.25664
+AUTO CPU learning phase=0 bucket=2 direct=95 0.51848ms mdi=11 0.92223ms opportunities=106
+AUTO CPU learning phase=1 bucket=2 direct=95 0.49552ms mdi=11 0.82230ms opportunities=106
+batch=1 shadow=1024 opaque=1024 total=2050 error=
+stress phase=auto model_draw_calls=2048 cpu_mdi_submissions=0 cpu_mdi_commands=0 gpu_icb_submissions=0 gpu_icb_commands=0
+stress AUTO cumulative: scans=110 attempts=110 submitted=110 short=0 below=0 ineligible=0 failed=0 geometryBreaks=0 materialBreaks=0 stateBreaks=0
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+Stage 78 exit=0
+```
+
+**Pass gates:** Stage 78 native Metal/Objective-C++ compilation PASS, all 35 CPU invariants PASS, 1,024 unique primitives in shadow+opaque baseline, a **confirmed actually MDI-submitting frame 101** with `changed_channels=0` versus captured Direct baseline, final frame pixel parity `changed_channels=0`, no shader pipeline failures, exit=0. This closes the missing *MDI-frame raster parity* gate for this specific geometry/material/light scene only. Previously only the final AUTO Direct frame was compared. The native test proves CPU MDI correctness on this fixture, not cross-platform or real-scene correctness.
+
+### Performance interpretation
+
+Mixed chronology: Direct fallback frames n=90 median 1.1585ms versus actual MDI-submitted frames n=6 median 0.8696ms, an observed 0.2889ms (~24.94%) lower synchronous `renderer.render()` CPU time in the small MDI subset. This is **NOT statistically established universal speedup**, due to unequal samples, AUTO probes vs baseline chronology, and no randomized crossover or GPU timestamps. AUTO EWMA still favours Direct in both passes; its per-pass EWMA and complete renderer.render() include different windows/overheads and cannot be equated. Final AUTO frame returned to Direct, as shown by zero final-frame MDI submissions, while cumulative successful MDI submissions=110.
+
+For two **warmed 32-submission windows**, ICB CPU internal averages per submission: args 0.0003–0.0004ms, alloc/uniform copies 0.0058–0.0059ms, per-command encode 0.0373–0.0376ms, residency/execute 0.0042–0.0043ms, ~203–206 commands/submission. Per-command CPU encoding is ~78% of the sum of these warmed measured stages. First 32 submissions showed substantial cold allocation/warmup effect (alloc 0.2338ms, encode 0.0457ms), not representative of steady state. The RHI submission functions' CPU duration is not GPU command execution latency; GPU timestamps unmeasured. Mean successful model-pass backendSubmitMs is shadow 0.24249ms and opaque 0.25664ms, dominated by the same Metal ICB CPU submission machinery.
+
+### Concrete next work
+
+1. **Hot-loop optimizations:** keep ICB explicit per-command pipeline and vertex/fragment bindings, as inheritance configurations previously caused AGX driver failures. Consider reducing redundant Objective-C bindings *only after proving exact equivalent ICB semantics*, or precomputing validated active uniform binding descriptors, and A/B against a saved code baseline. Stage 78 already compacts the active uniform slot list; no further correctness-sensitive binding changes should be speculative.
+2. **Rigorous benchmark:** balanced Direct / forced CPU MDI / learned AUTO sequence with 60+ steady-state samples per path after identical warmup, randomize/rotate execution order and repeat across runs. Require actual MDI commands on forced path and pixel equivalence for each mode. Keep per-pass and complete-render CPU timing distinct. Use GPU timestamps and memory/thermal monitoring before enabling AUTO by default.
+3. **Scale safely:** test 10k only after above, 100k last; verify animation, differing materials, shadows/LOD, and Vulkan parity. No full CTest/CI completion, Vulkan GPU parity, frame FPS or GPU timestamp was established by this run.
+
+**Validation:** user native Mac build + fixture PASS only. Assistant only committed this handoff; no source modifications for Stage 79. Keep Draft PR #34 and experimental flags OFF by default.
