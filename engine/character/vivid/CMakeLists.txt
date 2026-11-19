@@ -5,8 +5,18 @@ add_library(AIVERSE::vivid ALIAS aiverse_vivid)
 target_include_directories(aiverse_vivid PUBLIC ${PROJECT_SOURCE_DIR})
 target_compile_features(aiverse_vivid PUBLIC cxx_std_20)
 
+# Legacy render::Pose adapter; core remains usable without aiverse_models.
+add_library(aiverse_vivid_render STATIC MorphBinding.cpp)
+add_library(AIVERSE::vivid_render ALIAS aiverse_vivid_render)
+target_link_libraries(aiverse_vivid_render PUBLIC aiverse_vivid aiverse_models)
+target_compile_features(aiverse_vivid_render PUBLIC cxx_std_20)
+
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vivid_face_tests ${PROJECT_SOURCE_DIR}/tests/vivid/face.cpp)
     target_link_libraries(aiverse_vivid_face_tests PRIVATE aiverse_vivid)
     add_test(NAME vivid_face COMMAND aiverse_vivid_face_tests)
+
+    add_executable(aiverse_vivid_morph_tests ${PROJECT_SOURCE_DIR}/tests/vivid/morph_binding.cpp)
+    target_link_libraries(aiverse_vivid_morph_tests PRIVATE aiverse_vivid_render aiverse_zstd_dec)
+    add_test(NAME vivid_morph_binding COMMAND aiverse_vivid_morph_tests)
 endif()
