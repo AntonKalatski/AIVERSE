@@ -2026,3 +2026,53 @@ One measured shadow pass: `pipelineSetupMs=0.01158`, `backendSubmitMs=0.02504`; 
 4. In a new AUTO fallback fixture, **do not assert indirect submission or lower draw count** when AUTO intentionally chooses Direct. Continue to assert screenshot parity, successful exit, and actual chosen-path counters.
 
 **Caveat:** These results do not demonstrate a real GPU-FPS regression. All timings are synchronous CPU wall time and only 6 whole-render samples per mode. Keep PR #34 Draft and flags OFF by default.
+
+
+---
+
+## Stage 66 — AUTO Direct / Instancing fallback for small CPU MDI passes (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. At start, `main` was already an ancestor (behind 0). **Code commits:** `8e4dd780b18c6ea324411066c3e34c3f3537138e` (`engine/render/Renderer3DModels.cpp`) and `64d93922db9b3d7c0becc108613d5fa397b80096` (`tests/render/material_batches.cpp`). No changes to gfx/Metal, resource lifetime, scene submissions or enabled-by-default settings.
+
+### Problem and behavior
+
+Stage 65 Mac telemetry confirmed AUTO rejected GPU ICB, but still spent 0.2290ms median on the CPU MDI path versus 0.1548ms direct for a small scene. Existing GPU-only AUTO policy was incomplete: CPU MDI selection remained independent.
+
+With `AIVERSE_BATCH_AUTO=1`, `Renderer3D::renderModels` now checks **visible ordered model item count per phase** after culling/ordering. For shadow and opaque passes with fewer than `AIVERSE_BATCH_AUTO_CPU_MIN_ITEMS` (default **64**, optional value **16..4096**), it disables CPU indirect submission for that pass and retains existing conventional renderer Direct/Instancing behavior. All usual compatibility, sorting, material checks, draw and shadow semantics remain, with no manual/default mode change. This is a simple conservative *workload gate*, not a statistically learned CPU cost model nor GPU-time-aware dispatcher.
+
+The GPU ICB admission remains separate: GPU ICB with `AIVERSE_BATCH_AUTO=1` still requires its own conservative minimum of 64+, and can execute on eligible opaque groups even if the shadow pass chooses CPU direct. The new CPU gate is applied only to the CPU indirect path; it does not disable already prepared, independently valid GPU ICB groups.
+
+### Regression fixture change
+
+The existing synthetic `indirect` Metal fixture previously required indirect reduction whenever the GPU supported MDI, which would falsely fail an intentional AUTO Direct choice. With `AIVERSE_BATCH_AUTO=1` and legacy fixture benchmark mode, the test instead asserts zero CPU MDI submissions, zero GPU ICB submissions, and **the same shadow+opaque draw counts as Direct** for this tiny case; screenshot `changed_channels=0` remains mandatory. It now prints `AUTO path: direct/instancing (small eligible scene)`. Manual `cpu_mdi` and `gpu_icb` benchmark modes preserve their earlier assertions and GPU ICB requirements. In this configuration, stage counters can show no MDI attempts; that is intentional.
+
+### Verification actually done
+
+GitHub connector read and committed both changed sources, and prior owner's Stage 65 native output is available. **NOT RUN for Stage 66:** CMake compilation, CTest, Metal runtime pixel capture, actual CPU timings, larger workload, GPU timestamps, Vulkan, CI. No verified speedup on this revision. Keep PR #34 Draft and `AIVERSE_BATCH_AUTO` OFF by default.
+
+### Exact Mac Studio verification
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 \
+AIVERSE_GPU_AUTHORED_DRAWS=1 \
+AIVERSE_GPU_ENCODED_ICB=1 \
+AIVERSE_GPU_ICB_RIGID=1 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/auto-direct
+echo "AUTO direct exit=$?"
+```
+
+Require `AUTO path: direct/instancing (small eligible scene)`, `CPU MDI ... submissions=0 commands=0`, `GPU-encoded ICB ... submissions=0 commands=0`, `changed_channels=0`, `exit=0`, and report CPU direct/batched medians and P95. For a control experiment, run with `AIVERSE_BATCH_AUTO_CPU_MIN_ITEMS=16` to allow CPU MDI on the same fixture (GPU AUTO remains at 64); do not mistake absence of GPU ICB for a test failure. Do not conclude faster AUTO from 6 sequential measurements.
+
+### Next-stage work
+
+Run sufficiently long, randomized A/B/A tests on 1k/10k/100k model items; calibrate independent shadow/opaque break-even by measured per-stage CPU costs, persistent hysteresis and GPU timestamp data. Optimize backend pipeline/setup/submit only after repeated CPU profile sampling. Preserve render parity and safety fallback.
