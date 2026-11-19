@@ -225,11 +225,22 @@ the adapter.
 
 Source templates hold non-owning `Model*` and `Primitive*` references.
 Cached material pointers are explicitly rebound from the current live vector
-before each replay. `Renderer3D::invalidateStaticModelCaches()` clears both the
-transform cache and packet cache before asset destruction/reload; the editor
-does so from `reloadRules()`. The implementation caps each packet at 128
-items and combined retained item/material/LOD snapshot payload storage at 64 MiB, with periodic
-expiry of unused packets. A cache miss always uses the full original draw path.
+before each replay. `Renderer3D::invalidateStaticModelCaches()` clears both
+transform and packet caches for whole-scene reloads; the editor does so from
+`reloadRules()`. Native streaming hosts can now call
+`Renderer3D::invalidateStaticModelCache(persistentId)` to retire a single
+object's transforms and packet, or `invalidateModelCachesFor(model)` to
+retire **all** retained entries referencing an asset before unloading that
+model. These API calls update packet byte accounting immediately instead of
+waiting for periodic expiry; they do not modify already queued frame draws.
+`engine/render/EcsStaticModelRender.h` offers
+`invalidateEcsStaticModel(renderer, entity, stableKey)` for ECS despawn or
+asset replacement. The host must call these between submissions, on the
+renderer thread, before releasing source models, or use full invalidation.
+
+The implementation caps each packet at 128 items and combined retained
+item/material/LOD/override snapshot payload storage at 64 MiB, with periodic
+expiry of unused packets. A cache miss always uses the original draw path.
 
 Scene → Batching → Persistent rigid draw packets reports per-scene replay,
 rebuild and declined counts. Use matched fixed-camera Metal/other-backend
