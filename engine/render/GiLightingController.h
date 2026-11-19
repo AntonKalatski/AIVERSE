@@ -10,6 +10,7 @@
 #include "GiLightBridge.h"
 #include "GiEnvironmentBridge.h"
 #include "GiGpuResidencyPlanner.h"
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -62,6 +63,8 @@ public:
         revision_=0;
         gpuResidency_={};
         pendingGeometry_=false;
+        pendingLights_=false;
+        pendingEnvironment_=false;
         return true;
     }
 
@@ -109,7 +112,9 @@ public:
     }
     const GiTransportConfig& config() const { return config_; }
     const GiGpuResidencyPlan& gpuResidency() const { return gpuResidency_; }
-    bool presentationBlocked() const { return pendingGeometry_; }
+    bool presentationBlocked() const {
+        return pendingGeometry_ || pendingLights_ || pendingEnvironment_;
+    }
 
     // Publisher owns a read-barrier-frozen immutable scene snapshot. The
     // controller retains its shared ownership across all CPU pointer borrows.
@@ -169,15 +174,19 @@ public:
     // GPU supports 16 moving lights, CPU supports 64; never silently truncate
     // incoming authored sources and change the actual lighting design.
     bool setLights(std::vector<GiMovingLight> lights) {
-        if (!ready() || lights.size()>maxMovingLights()) return false;
-        if (mode_==GiTransportMode::GpuCompute) {
+        if (!ready())return false;
+        // An updated direct source may already be visible in the scene.
+        // Never render an older indirect delta when its publication fails.
+        pendingLights_=true;
+        if(lights.size()>maxMovingLights())return false;
+        if(mode_==GiTransportMode::GpuCompute) {
             for(const auto& light:lights)
                 if(!std::isfinite(light.radius) ||
                    light.radius>config_.maxGpuMovingLightRadius)
                     return false; // GPU resident bounds are not guaranteed
-            return gpu_.setLights(std::move(lights));
-        }
-        cpu_.setLights(std::move(lights));
+            if(!gpu_.setLights(std::move(lights)))return false;
+        }else cpu_.setLights(std::move(lights));
+        pendingLights_=false;
         return true;
     }
 
@@ -185,10 +194,13 @@ public:
     // exclude these sources from its baked static GI base (or regenerate it).
     // Zero sun/sky intensity keeps the legacy static ambient path unchanged.
     bool setEnvironment(GiEnvironmentLight environment) {
-        if (!ready() || !environment.valid()) return false;
-        if (mode_==GiTransportMode::GpuCompute)
-            return gpu_.setEnvironment(environment);
-        (void)cpu_.setEnvironment(environment);
+        if(!ready())return false;
+        pendingEnvironment_=true;
+        if(!environment.valid())return false;
+        if(mode_==GiTransportMode::GpuCompute) {
+            if(!gpu_.setEnvironment(environment))return false;
+        }else (void)cpu_.setEnvironment(environment);
+        pendingEnvironment_=false;
         return true;
     }
 
@@ -210,6 +222,9 @@ public:
                           GiLightOverflowPolicy policy=GiLightOverflowPolicy::Reject,
                           GiLightBridge::Stats* stats=nullptr) {
         if(!ready())return false;
+        // The authoring bridge can throw on duplicate/invalid stable IDs.
+        // Mark the old atlas unsafe BEFORE converting the newer source set.
+        pendingLights_=true;
         auto converted=GiLightBridge::collect(
             source,namespaceId,maxMovingLights(),focus,policy,stats);
         return setLights(std::move(converted));
@@ -257,11 +272,11 @@ public:
             s.gpu=gpu_.updateFrame(gpuProbeBudget,focus);
             s.pending=s.gpu.dirty;
             s.canPresent=s.gpu.safeForPresentation &&
-                         bool(scene_) && !pendingGeometry_;
+                         bool(scene_) && !presentationBlocked();
         } else if (mode_==GiTransportMode::CpuProbes) {
             s.cpu=cpu_.updateAdaptive(focus);
             s.pending=s.cpu.dirty;
-            s.canPresent=bool(scene_);
+            s.canPresent=bool(scene_) && !presentationBlocked();
         }
         return s;
     }
@@ -270,7 +285,7 @@ public:
     // and always after a rejected bind. Do not claim a successful GI frame if
     // no scene or the GPU's actual completion fence has not been observed.
     bool bind(Renderer3D& renderer) const {
-        if (!scene_ || !ready() || pendingGeometry_) {
+        if (!scene_ || !ready() || presentationBlocked()) {
             renderer.clearDynamicGiOverlay();
             return false;
         }
@@ -319,6 +334,8 @@ private:
     // local BVH admission budget is reduced. The old atlas is then stale
     // relative to already-published ECS/terrain geometry: do not display it.
     bool pendingGeometry_=false;
+    bool pendingLights_=false;
+    bool pendingEnvironment_=false;
 };
 
 } // namespace aiverse::render
