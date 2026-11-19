@@ -147,7 +147,17 @@ and temporary 16-bit group indices by ModelItem to skip repeated page/
 material lookups during the promotion pass. Group/model/page pointers
 are valid **only during the current render pass**; beginPass resets the
 generation and group contents without releasing high-water capacity.
-The 8-bit mode array is filled only when preflight finds ready groups.
+Stage 22 makes the 16-bit group-index and 8-bit mode arrays
+**sparse by epoch stamps**: each actual written item receives a 32-bit
+generation, so `groupForItem(index)` and `modeOf(index)` return invalid/0
+for stale entries without clearing all ModelItems each pass. `clearModes()`
+is a constant-time logical disable; even passes with no ready groups
+avoid full-mode array initialization. On item-generation wrap, reset
+both stamp arrays once to prevent stale values becoming valid.
+Only current-view selected items may be marked; never preserve group
+or mode decisions across camera/shadow passes. This costs 8 extra bytes
+per retained ModelItem in two generation-stamp arrays, counted in
+`retainedBytes()`, in exchange for fewer full-scene writes.
 `invalidateStaticModelCaches()` and `shutdown()` release this workspace.
 Scene → Batching reports its retained CPU memory in KiB. Do not retain
 camera, visibility, material equivalence or LOD results across passes, or
