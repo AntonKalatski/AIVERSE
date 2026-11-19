@@ -1610,3 +1610,25 @@ confuse texture resource indices with sampler indices.
 The per-command Metal ICB descriptor table is still not
 implemented. C++ compilation and native backend tests for
 this stage are NOT RUN.
+
+
+## Shader Graph shader cache identity correctness — Stage 10U
+
+`Renderer3D::ModelShaderKey` now compares all shader-generating
+graph properties, not just GLSL fragment/vertex source, source texture
+**count** and output map. The equality path now covers material
+domain, GLSL/MSL fragment sources, GLSL/MSL vertex sources, exact
+source texture paths, output connections, the `usesVirtualTexture`
+feature flag, and the material quality selector. Pointer-identical
+immutable graphs still use the existing quick path.
+
+This prevents an MSL-only difference, source texture set change or
+VT-material permutation from aliasing an unrelated shader cache
+entry on another backend. The safety improvement does not add a
+dynamic GPU material descriptor table or enable graphs in Metal ICB;
+it protects the existing direct-rendering shader and pipeline
+cache. Any cached shaders remain GPU resources and must be retired
+according to their usual device lifetime.
+
+**Verification:** source inspection and commit, no native compiler,
+shader compiler or GPU tests run for this change.
