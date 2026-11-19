@@ -47,7 +47,6 @@ private:
         std::deque<fx::SpectraFxCue> pending;
         uint64_t dropped=0;
     };
-    gfx::Device* device_=nullptr;
     fx::SpectraFxGpuRouteAsset::Routes gpuRoutes_;
     std::unique_ptr<fx::SpectraFxGpuEmitterLibrary> gpuLibrary_;
     std::unique_ptr<fx::SpectraFxHybridPlayback> gpuPlayback_;
