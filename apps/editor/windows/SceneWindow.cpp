@@ -49,7 +49,7 @@ public:
         toolbar(ed); // Same scene tools and selection controls in every genre.
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
-        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi), ed.viewportRetirement());
+        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi), ed.viewportRetirement(), "Scene");
         ImVec2 p = ImGui::GetCursorScreenPos();
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it
