@@ -1,6 +1,10 @@
 #include "HumanGroom.h"
 #include "HumanMaterials.h"
 #include <algorithm>
+#include <array>
+#include <functional>
+#include <numeric>
+#include <unordered_map>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -75,28 +79,142 @@ bool HumanGroomRuntime::setCollisionMesh(
         if(length(cross(ab,ac))<1e-7f)return false;
         proposed.push_back({vertices[a],vertices[b],vertices[c]});
     }
+    // Reject open/non-manifold surfaces before parity testing. Every
+    // undirected edge must belong to exactly two triangles.
+    std::unordered_map<std::uint64_t,std::uint8_t> edges;
+    edges.reserve(triangles.size());
+    for(std::size_t i=0;i<triangles.size();i+=3) {
+        for(int e=0;e<3;++e) {
+            const auto a=triangles[i+e],b=triangles[i+(e+1)%3];
+            const auto lo=std::min(a,b),hi=std::max(a,b);
+            const auto key=(std::uint64_t(lo)<<32)|hi;
+            auto& count=edges[key];
+            if(++count>2)return false;
+        }
+    }
+    for(const auto& edge:edges)if(edge.second!=2)return false;
+    std::vector<std::uint32_t> order(proposed.size());
+    std::iota(order.begin(),order.end(),std::uint32_t(0));
+    std::vector<CollisionNode> nodes;
+    nodes.reserve(proposed.size()*2);
+    auto coord=[](render::float3 p,int axis) {
+        return axis==0?p.x:axis==1?p.y:p.z;
+    };
+    std::function<std::uint32_t(std::uint32_t,std::uint32_t)> build =
+        [&](std::uint32_t begin,std::uint32_t count)->std::uint32_t {
+        CollisionNode node;
+        const float inf=std::numeric_limits<float>::max();
+        node.min={inf,inf,inf};node.max={-inf,-inf,-inf};
+        auto expand=[&](render::float3 p){
+            node.min.x=std::min(node.min.x,p.x);
+            node.min.y=std::min(node.min.y,p.y);
+            node.min.z=std::min(node.min.z,p.z);
+            node.max.x=std::max(node.max.x,p.x);
+            node.max.y=std::max(node.max.y,p.y);
+            node.max.z=std::max(node.max.z,p.z);
+        };
+        for(std::uint32_t i=begin;i<begin+count;++i) {
+            const auto& t=proposed[order[i]];
+            expand(t.a);expand(t.b);expand(t.c);
+        }
+        const auto id=std::uint32_t(nodes.size());
+        nodes.push_back(node);
+        if(count<=kCollisionLeafSize) {
+            nodes[id].begin=begin;
+            nodes[id].count=count;
+            return id;
+        }
+        const auto extent=node.max-node.min;
+        const int axis=(extent.x>=extent.y && extent.x>=extent.z)?0:
+                       (extent.y>=extent.z)?1:2;
+        const auto middle=begin+count/2;
+        std::nth_element(order.begin()+begin,order.begin()+middle,
+            order.begin()+begin+count,[&](auto a,auto b){
+                const auto& ta=proposed[a];const auto& tb=proposed[b];
+                const auto ca=(ta.a+ta.b+ta.c)*(1.0f/3.0f);
+                const auto cb=(tb.a+tb.b+tb.c)*(1.0f/3.0f);
+                const auto va=coord(ca,axis),vb=coord(cb,axis);
+                return va==vb?a<b:va<vb;
+            });
+        const auto left=build(begin,count/2);
+        const auto right=build(middle,count-count/2);
+        nodes[id].left=left;nodes[id].right=right;
+        return id;
+    };
+    build(0,std::uint32_t(order.size()));
     collisionTriangles_=std::move(proposed);
+    collisionOrder_=std::move(order);
+    collisionNodes_=std::move(nodes);
     return true;
 }
 void HumanGroomRuntime::clearCollisionMesh() noexcept {
     collisionTriangles_.clear();
+    collisionOrder_.clear();
+    collisionNodes_.clear();
 }
 render::float3 HumanGroomRuntime::resolveCollision(
         render::float3 p,const GroomGuide& guide) const {
     using namespace render;
     if(!collisionTriangles_.empty()) {
-        // Interior-only constraint. The mesh must be closed; do not infer
-        // inside/outside from arbitrary open triangle fragments.
+        // BVH traversal: ray parity plus nearest surface in a single pass.
+        // No per-strand allocation; tree depth is bounded by median splits.
         const float3 ray=normalize(float3{1.0f,0.173f,0.091f});
+        auto boxDistance2=[&](const CollisionNode& n) {
+            const float dx=std::max({n.min.x-p.x,0.0f,p.x-n.max.x});
+            const float dy=std::max({n.min.y-p.y,0.0f,p.y-n.max.y});
+            const float dz=std::max({n.min.z-p.z,0.0f,p.z-n.max.z});
+            return dx*dx+dy*dy+dz*dz;
+        };
+        auto rayIntersectsBox=[&](const CollisionNode& n) {
+            float nearT=0.0f,farT=std::numeric_limits<float>::max();
+            for(int axis=0;axis<3;++axis) {
+                const float o=axis==0?p.x:axis==1?p.y:p.z;
+                const float d=axis==0?ray.x:axis==1?ray.y:ray.z;
+                const float a=axis==0?n.min.x:axis==1?n.min.y:n.min.z;
+                const float b=axis==0?n.max.x:axis==1?n.max.y:n.max.z;
+                if(std::fabs(d)<1e-8f) {
+                    if(o<a||o>b)return false;
+                    continue;
+                }
+                const float t1=(a-o)/d,t2=(b-o)/d;
+                nearT=std::max(nearT,std::min(t1,t2));
+                farT=std::min(farT,std::max(t1,t2));
+                if(farT<nearT)return false;
+            }
+            return true;
+        };
         std::size_t intersections=0;
         auto closest=p;
         float nearest=std::numeric_limits<float>::max();
-        for(const auto& tri:collisionTriangles_) {
-            if(rayHits(p,ray,tri.a,tri.b,tri.c))++intersections;
-            const auto candidate=closestTriangle(p,tri.a,tri.b,tri.c);
-            const auto delta=candidate-p;
-            const float d2=dot(delta,delta);
-            if(d2<nearest){nearest=d2;closest=candidate;}
+        struct Visit {std::uint32_t index;bool nearest;};
+        std::array<Visit,128> stack{};
+        std::size_t size=0;
+        stack[size++]={0,true};
+        stack[size++]={0,false};
+        while(size) {
+            const auto visit=stack[--size];
+            const auto& node=collisionNodes_[visit.index];
+            if(visit.nearest) {
+                if(boxDistance2(node)>nearest)continue;
+            }else if(!rayIntersectsBox(node))continue;
+            if(node.count) {
+                for(std::uint32_t i=node.begin;i<node.begin+node.count;++i) {
+                    const auto& tri=collisionTriangles_[collisionOrder_[i]];
+                    if(visit.nearest) {
+                        const auto candidate=closestTriangle(p,tri.a,tri.b,tri.c);
+                        const auto delta=candidate-p;
+                        const float d2=dot(delta,delta);
+                        if(d2<nearest){nearest=d2;closest=candidate;}
+                    }else if(rayHits(p,ray,tri.a,tri.b,tri.c)) {
+                        ++intersections;
+                    }
+                }
+            }else {
+                // Median-split BVH depth is at most 13 for configured budget.
+                // 128 entries leaves generous room even with both query modes.
+                stack[size++]={node.left,visit.nearest};
+                stack[size++]={node.right,visit.nearest};
+            }
         }
         if(intersections%2==1) {
             // Move from inside to the nearest surface, then slightly beyond.
