@@ -160,6 +160,8 @@ void Editor::init(gfx::Device& dev) {
 
 void Editor::shutdown() {
     if (!dev_) return;
+    // Synchronize before shutting down any renderer/host that owns RHI data.
+    const bool editorGpuIdle=dev_->waitIdle();
     clientHost_.stop();
     gameFxBridge_.detach();
     sim_.reset();
@@ -167,7 +169,6 @@ void Editor::shutdown() {
     fxTextures_.shutdown();
     // Shutdown-only barrier: all window RTs (including queued captures) must
     // be retired before their owning device is released.
-    const bool editorGpuIdle=dev_->waitIdle();
     if(editorGpuIdle)
         for(auto& window:windows_)window->shutdownAfterGpuIdle(*this);
     windows_.clear(); // unsupported waitIdle: device teardown owns unreclaimed GPU handles
