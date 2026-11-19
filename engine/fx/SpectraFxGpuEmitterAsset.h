@@ -96,11 +96,29 @@ public:
         if(!environment.isNull()) {
             if(!environment.isObject()) return fail("environment must be object");
             for(const auto& p:environment.members())
-                if(p.first!="acceleration" && p.first!="damping")
+                if(p.first!="acceleration" && p.first!="damping" &&
+                   p.first!="groundCollision")
                     return fail("unknown environment field "+p.first);
             if(!floatField(environment,"damping",next.environment.damping) ||
                !vec3Field(environment,"acceleration",next.environment.acceleration))
                 return fail("invalid environment");
+            const Json& ground=environment["groundCollision"];
+            if(!ground.isNull()) {
+                if(!ground.isObject()) return fail("groundCollision must be object");
+                for(const auto& p:ground.members())
+                    if(p.first!="enabled" && p.first!="height" &&
+                       p.first!="restitution" && p.first!="tangentRetention")
+                        return fail("unknown groundCollision field "+p.first);
+                if(ground.has("enabled")) {
+                    if(ground["enabled"].type()!=Json::Type::Bool)
+                        return fail("groundCollision.enabled must be boolean");
+                    next.environment.collideGround=ground["enabled"].boolean();
+                }
+                if(!floatField(ground,"height",next.environment.groundHeight) ||
+                   !floatField(ground,"restitution",next.environment.restitution) ||
+                   !floatField(ground,"tangentRetention",next.environment.tangentRetention))
+                    return fail("invalid groundCollision configuration");
+            }
         }
         // Perform the same bounds as the backend's public runtime contract.
         SpectraFxGpuSpawnScheduler validation;
@@ -108,8 +126,16 @@ public:
            !std::isfinite(next.appearance.radius) ||
            next.appearance.radius<=0 || next.appearance.radius>1000 ||
            !std::isfinite(next.environment.damping) ||
-           next.environment.damping<0 || next.environment.damping>1)
+           next.environment.damping<0 || next.environment.damping>1 ||
+           !std::isfinite(next.environment.groundHeight) ||
+           !std::isfinite(next.environment.restitution) ||
+           next.environment.restitution<0 || next.environment.restitution>1 ||
+           !std::isfinite(next.environment.tangentRetention) ||
+           next.environment.tangentRetention<0 || next.environment.tangentRetention>1)
             return fail("GPU emitter configuration out of range");
+        if(next.environment.collideGround)
+            next.backend.required=next.backend.required |
+                                  SpectraFxFeature::GroundPlaneCollision;
         if(next.backend.preference!=SpectraFxExecutionPreference::Cpu &&
            next.backend.particles==0)
             return fail("GPU/auto emitter requires nonzero capacity");
