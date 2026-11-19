@@ -160,6 +160,12 @@ public:
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
+    // Optional error-reporting storage upload, used for GPU source kills.
+    // Accepting means the copy was encoded in the device's current ordered
+    // frame command buffer, NOT completed. Unsupported backends return false.
+    virtual bool updateStorageBufferChecked(BufferHandle,const void*,size_t,size_t=0) {
+        return false;
+    }
     virtual void destroyBuffer(BufferHandle h) = 0;
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
@@ -228,6 +234,9 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // Last SUCCESSFULLY completed graphics frame (0 = none/unsupported).
+    // Owner-thread polling only; may lag behind frameSerial().
+    virtual uint64_t completedFrameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
