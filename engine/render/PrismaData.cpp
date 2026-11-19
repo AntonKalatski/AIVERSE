@@ -93,7 +93,12 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("centerWeight", 0.0f, 0.0f, 1.0f, "0=uniform metering; 1=center-weighted", "Приоритет центра"),
         num("centerRadius", 0.35f, 0.05f, 1.0f, "normalized center-metering radius", "Радиус замера"),
         num("minMeterLogL", -10.0f, -16.0f, 0.0f, "lower log2 luminance clamp for metering", "Нижняя граница замера"),
-        num("maxMeterLogL", 10.0f, 0.0f, 16.0f, "upper log2 luminance clamp for metering", "Верхняя граница замера")}});
+        num("maxMeterLogL", 10.0f, 0.0f, 16.0f, "upper log2 luminance clamp for metering", "Верхняя граница замера"),
+        // Stage 57: opt-in robust highlight metering. Zero preserves the
+        // existing weighted log-luminance estimator for all old profiles.
+        num("highlightRejection", 0.0f, 0.0f, 0.95f, "fraction of contribution removed from bright outliers; zero preserves legacy metering", "Подавление ярких выбросов"),
+        num("highlightStartEV", 3.0f, -10.0f, 16.0f, "log2 luminance where bright samples begin to be downweighted", "Порог выбросов, EV"),
+        num("highlightSoftnessEV", 2.0f, 0.1f, 8.0f, "smooth log2 luminance transition before full highlight rejection", "Мягкость выбросов, EV")}});
     c.push_back({T::MotionBlur, "motionBlur", "Размытие движения", "Camera reprojection velocity and optional native object velocity texture; screen-space shutter blur.", C::Heavy, kHigh, {
         num("intensity", 0.65f, 0, 1, "shutter blend strength", "Сила"),
         num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
