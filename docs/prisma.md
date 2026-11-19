@@ -791,6 +791,80 @@ their image parity. CPU/GPU builds, CTest, shader compilation,
 screenshots and benchmarks are **NOT RUN** at the user's request.
 See `docs/handoffs/prisma-stage-28.md`.
 
+
+## Stage 29 — camera-cut epochs, reactive transparency and baked+morph velocity
+
+PRISMA's experimental HDR motionBlur path now has three additional
+presentation-only capabilities, all gated by the existing
+`AIVERSE_PRISMA_MOTION_BLUR=1` runtime flag and configured quality.
+
+**Explicit camera/view lifecycle.** `Prisma::resetMotionHistory(viewId)`
+increments a monotonically increasing per-view camera-cut epoch exposed by
+`PostProcess::objectMotionEpoch(viewId)`. Renderer3D reads this epoch on
+each opt-in velocity pass and discards prior rigid and deformable transform
+snapshots when it changes. This keeps the camera reprojection and
+per-object pose histories in sync across camera cuts, teleports, quality
+changes and map reconfigurations without modifying gameplay ECS. The
+renderer also provides `resetObjectMotionHistory(viewId)` and
+`resetAllObjectMotionHistory()` for explicit standalone control.
+`releaseObjectMotionViewAfterGpuIdle(viewId)` releases the per-view
+GPU velocity, reactive and depth textures **only** after the host has
+confirmed GPU idle; CPU frame serials are NOT a GPU completion signal.
+No automatic viewport closure or backend GPU fences are wired yet.
+
+A new read-only `Renderer3D::objectMotionStats()` returns the last
+velocity pass's view ID, submitted state and rigid instance/draw, cutout,
+skinned, baked, reactive and rejected draw counters. These values are
+CPU submission diagnostics, not measured GPU time or performance data.
+
+**Reactive masks.** Renderer3D can emit a separate, current-frame RGBA8
+reactive coverage texture for visible **rigid, translucent ModelDraw**
+primitives. It samples the final scene depth and uses a dedicated
+scratch depth attachment rather than modifying scene depth. The red
+channel is coverage strength, while an all-zero background means no
+reactive pixels. `PostProcess::acceptMotionReactiveMask` forwards the
+borrowed handle to PRISMA. Native renderers can instead provide a
+borrowed R=0..1 texture through
+`Prisma::setMotionReactiveMask(viewId,texture)` before resolve.
+The motion blur shader samples this mask at texture slot 3 and reduces
+local blur strength by `1 - reactive * reactiveStrength`. A missing
+mask uses the black fallback, so motion blur remains unchanged.
+
+The new optional effect parameter `reactiveStrength` defaults to 0.85
+and has a range of 0..1. The renderer's reactive pass is a conservative
+geometric silhouette of translucent rigid models: it does **not**
+reproduce per-pixel blended texture alpha, alpha-test materials,
+skinning, particles or water drawn by other renderer modules.
+False-positive reactive coverage may reduce blur inside glass geometry,
+which is preferable to inventing object velocities. It remains an
+experimental approximation.
+
+**Baked clip + morph.** The baked-velocity vertex shader now applies
+both the current and previous morph weights against immutable morph
+deltas (tex8) **before** sampling current and previous baked clip rows
+from tex7, matching the existing color shader's deformation order.
+Palette, animation and morph parameters are all per primitive and
+per view; a missing previous frame or changed model identity still
+suppresses object-velocity override. This does not add per-vertex CPU
+readback or change deterministic animation state.
+
+LOD transition geometry that requires screen-space dithering is now
+conservatively excluded from object velocity until a matching LOD fade
+shader is implemented; camera motion reconstruction remains the
+fallback there.
+
+Example:
+```json
+{"type":"motionBlur","intensity":0.65,"maxPixels":20,
+ "samples":8,"shutterScale":1,"depthThreshold":0.012,
+ "reactiveStrength":0.85}
+```
+
+No native C++ compilation, shader validation, GPU tests, screenshots
+or CTest were run at the user's request. The new GPU passes and
+lifetime APIs remain opt-in and are not proven production-ready.
+See `docs/handoffs/prisma-stage-29.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
