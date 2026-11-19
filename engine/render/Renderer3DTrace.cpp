@@ -66,7 +66,8 @@ bool Renderer3D::initTrace() {
 
 void Renderer3D::shutdownTrace() {
     if (!dev_) return;
-    for (auto& t : sceneTargets_) { dev_->destroyTexture(t.color); dev_->destroyTexture(t.depth); }
+    for(auto& t:sceneTargets_)
+        retireRenderTargets(t.color,t.depth);
     sceneTargets_.clear();
     for (auto t : {dummyDepth_, dummyHeight_}) if (t.valid()) dev_->destroyTexture(t);
     sceneColor_ = sceneDepth_ = dummyDepth_ = dummyHeight_ = {};
@@ -96,7 +97,8 @@ bool Renderer3D::beginSceneCapture(int w, int h) {
         // drop targets of sizes not used for a while (resized window); keep a few (editor views)
         for (size_t i = 0; i < sceneTargets_.size();) {
             if (traceFrame_ - sceneTargets_[i].lastUse > 120 || sceneTargets_.size() > 4) {
-                dev_->destroyTexture(sceneTargets_[i].color); dev_->destroyTexture(sceneTargets_[i].depth);
+                retireRenderTargets(sceneTargets_[i].color,
+                                    sceneTargets_[i].depth);
                 sceneTargets_.erase(sceneTargets_.begin() + long(i));
             } else ++i;
         }
@@ -105,7 +107,10 @@ bool Renderer3D::beginSceneCapture(int w, int h) {
         dd.filter = gfx::Filter::Nearest; dd.label = "scene depth";
         cd.format = hdrFrame_ ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA8;
         SceneTarget n; n.hdr = hdrFrame_; n.w = w; n.h = h; n.color = dev_->createTexture(cd); n.depth = dev_->createTexture(dd);
-        if (!n.color.valid() || !n.depth.valid()) { if (n.color.valid()) dev_->destroyTexture(n.color); if (n.depth.valid()) dev_->destroyTexture(n.depth); return false; }
+        if(!n.color.valid() || !n.depth.valid()) {
+            retireRenderTargets(n.color,n.depth);
+            return false; // keep old scene captures alive until their fence
+        }
         sceneTargets_.push_back(n);
         t = &sceneTargets_.back();
     }
