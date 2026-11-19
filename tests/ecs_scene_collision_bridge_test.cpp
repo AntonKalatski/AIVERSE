@@ -2,6 +2,7 @@
 // disjoint namespaces in the same SpatialWorld. Host gates simulation until
 // collision regions are resident. Read and write assertions remain enabled.
 #include "engine/scene/SceneCollisionBridge.h"
+#include "engine/scene/SceneCollisionPersistence.h"
 #include "engine/pack/Sha256.h"
 #include "tests/AlwaysCheck.h"
 #include <chrono>
@@ -82,6 +83,17 @@ static void testRealSceneBridge() {
         out=it->second;return true;
     };
     World world;
+    AIVERSE_TEST_CHECK(sc::bindCollisionNamespaces(world,ids));
+    AIVERSE_TEST_CHECK(sc::validateCollisionNamespaces(world,ids));
+    World initial=world;
+    AIVERSE_TEST_CHECK(sc::validateCollisionNamespaces(initial,ids));
+    sc::SceneCollisionNamespaces differentLayout;
+    AIVERSE_TEST_CHECK(differentLayout.define("instances/cave",2));
+    AIVERSE_TEST_CHECK(differentLayout.define("instances/global",1));
+    AIVERSE_TEST_CHECK(differentLayout.define("instances/town",1));
+    AIVERSE_TEST_CHECK(differentLayout.seal());
+    AIVERSE_TEST_CHECK(!sc::bindCollisionNamespaces(world,differentLayout));
+    AIVERSE_TEST_CHECK(!sc::validateCollisionNamespaces(world,differentLayout));
     sc::SceneLoadCoordinator loader(world,sceneReader,collision.adapter(),{});
     sc::SceneRuntime scenes(world);
 
@@ -145,7 +157,56 @@ static void testRealSceneBridge() {
     AIVERSE_TEST_CHECK(collision.residentSceneResources()==0);
     AIVERSE_TEST_CHECK(ids.activeCount()==0);
 }
+struct CollisionModule final : GameModule {
+    const sc::SceneCollisionNamespaces& ids;
+    explicit CollisionModule(const sc::SceneCollisionNamespaces& input):ids(input){}
+    std::string name()const override{return "collision-layout-persistence";}
+    void setup(Simulation& sim,const Json&,const Json&)override {
+        sc::registerCollisionNamespacePersistence(sim);
+        AIVERSE_TEST_CHECK(sc::bindCollisionNamespaces(sim.world(),ids));
+    }
+    void applyCommand(Simulation&,const Command&) override {}
+    void hashState(Simulation&,Hasher&) override {}
+    bool serializeState(Simulation&,Archive&) override{return true;}
+    int result(Simulation&)override{return 0;}
+};
+static void testNativeSaveLayoutIdentity() {
+    sc::SceneCollisionNamespaces ids;
+    AIVERSE_TEST_CHECK(ids.define("instances/a",2));
+    AIVERSE_TEST_CHECK(ids.define("instances/b",1));
+    AIVERSE_TEST_CHECK(ids.seal());
+    auto create=[&]{
+        auto sim=std::make_unique<Simulation>(SimConfig{45,20,0,true},
+            std::make_unique<CollisionModule>(ids));
+        sim->setup(Json::object(),Json::object());
+        return sim;
+    };
+    auto original=create();
+    AIVERSE_TEST_CHECK(sc::validateCollisionNamespaces(original->world(),ids));
+    const uint64_t checksum=original->checksum();
+    const std::string bytes=original->serialize();
+    AIVERSE_TEST_CHECK(!bytes.empty());
+    SimSnapshot snapshot;
+    original->saveState(snapshot);
+    original->loadState(snapshot);
+    AIVERSE_TEST_CHECK(original->checksum()==checksum);
+    auto restored=create();
+    std::string error;
+    AIVERSE_TEST_CHECK(restored->deserialize(bytes,&error));
+    AIVERSE_TEST_CHECK(restored->checksum()==checksum);
+    AIVERSE_TEST_CHECK(sc::validateCollisionNamespaces(restored->world(),ids));
+
+    // A different namespace layout must not be accepted by the runtime
+    // even if the scene logical names are identical.
+    sc::SceneCollisionNamespaces changed;
+    AIVERSE_TEST_CHECK(changed.define("instances/a",1));
+    AIVERSE_TEST_CHECK(changed.define("instances/b",1));
+    AIVERSE_TEST_CHECK(changed.seal());
+    AIVERSE_TEST_CHECK(!sc::validateCollisionNamespaces(restored->world(),changed));
+    AIVERSE_TEST_CHECK(!sc::bindCollisionNamespaces(restored->world(),changed));
+}
 int main() {
+    testNativeSaveLayoutIdentity();
     testRealSceneBridge();
     std::cout<<"PASS additive collision ownership, real scene loads, physics gate "
                "and independent unload/replace\n";
