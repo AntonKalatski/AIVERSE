@@ -1086,3 +1086,44 @@ selection, no-forest entries, active/crossfade preservation, camera
 return path, source-generation changes and the Stage29 model fixture.
 Keep PR #24 Draft until full validation; every stage needs its own
 accurate handoff with implementation SHA and next step.
+
+## Stage 38 — reversible dormant wind shadow compression
+
+`HorizonWindShadowCachePolicy::compressCachedShadows` (default **false**)
+opt-in enables lossless byte packing of inactive Horizon GPU cache shadows.
+Use native `WorldScene::setVegetationHorizonWindShadowCachePolicy(policy)`.
+It preserves Stage37 `maxCachedShadowBytes` and Stage36 GPU bandwidth
+policy independently. Never compress or discard an active/crossfade
+`HorizonForestWindOverlay`.
+
+The codec in `engine/render/TerraWeaveHorizonWindCompression.h`
+encodes zero runs and literal runs directly from **all 60 bytes** of
+`render::ModelVertex`, without converting float bits, GPU colours or
+PHYSIS data. `compressHorizonForestWindOverlay` packs only if
+capacity truly shrinks; sets `packedVertexCount`; clears raw vertices
+while the model is **dormant**. `restoreHorizonForestWindOverlay`
+losslessly reconstructs raw vertices before the GPU LRU returns the
+region to active. Do not enable Stage35 GPU vertex colour patching on
+a still-compressed overlay, and do not update `appliedRevision` just
+because of compression or restoration. Malformed stream on the
+device-aware `take(device,cell,revision)` triggers full GPU region
+retirement and normal worker re-stream, NOT a fabricated colour shadow.
+Runtime policy enablement also compacts existing dormant cache entries,
+with one scan per entry (no per-frame recompression of failed candidates).
+
+Budget counts raw/packed vector **capacities** plus immutable world-cm
+centres. Low-entropy data may still remain raw and be evicted as in
+Stage37. No GPU readback, new atlas, RHI path, TWH8 format or
+genre/PHYSIS dependency. New stats:
+`gpuCachedCompressedWindShadows`,
+`gpuWindShadowCompressions`, `gpuWindShadowRestores` and
+`gpuWindShadowDecodeFailures`. Preserve strict alignment,
+version-free memory-only compression and existing owner-thread barriers.
+
+**QA intentionally NOT RUN.** Future independent tests: codec roundtrip
+(including nonzero alpha and arbitrary float patterns), malformed byte
+streams, first/last-token boundaries, compression benefit/no-benefit,
+toggle after old regions are cached, GPU LRU return without reupload,
+multiple PHYSIS wind revisions, Stage35 sparse wind patches, Stage37
+zero/low/16MiB limits and device loss. Keep PR #24 Draft and record
+all exact implementation commits in the Stage38 handoff.
