@@ -254,7 +254,10 @@ void LightSystem::shutdown() {
     if (!dev_) return;
     // Renderer3D has already established a real device-idle barrier.
     // This must also work when init failed halfway through allocation.
-    createMap(0);
+    // Do not rely on mapSize_ matching the actual pair during rollback.
+    retireTarget(map_,mapDepth_);
+    map_=mapDepth_={};
+    mapSize_=0;
     retireTarget(staticGrid_);
     staticGrid_={};
     retireTarget(spotShadow_);
