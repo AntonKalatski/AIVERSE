@@ -1062,3 +1062,12 @@ git merge origin/main
 - **Compat/intent:** policy change only for an explicit strict mode (Auto+no fallback), which now fails rather than silently violating the asset. Existing default Auto+fallback=true and explicit Cpu effects continue unchanged. No ECS/gameplay changes.
 - **Native validation actually executed:** **NOT RUN** per user's features-first request; no C++ build, CTest, UI, Metal GPU or CPU fallback test yet. A future focused test must assert the nine preference/fallback combinations across supported/unsupported RHI device stubs and keep strict modes rejected as specified.
 - **Next:** inspect preview lifecycle/quality and last readback/RHI resource scheduling risks, then schedule complete native compilation and focused automated tests after functions are closed.
+
+
+## 2026-11-19 — Stage 83: graceful renderer initialization fallback
+- **Branch:** `feature/spectrafx-generic-cue-queue`, main ancestor `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Code commit:** `abce8bc1670eada11c5f202229e933c66d6378b9`, modified `engine/fx/SpectraFxHybridPlayback.h`.
+- **Issue and fix:** the lazy shared `SpectraFxGpuBillboardRenderer` could fail `init(device_)`, but `HybridPlayback::dispatch` unconditionally passed its pointer to new GPU emitters whenever GPU was requested. `HybridEmitter::begin` sees a non-null renderer as an externally initialized pipeline, checks `sharedRenderer->ready()` and never attempts its own private GPU billboard renderer. This could cause an unnecessary CPU fallback or strict-GPU refusal even if allocating a local pipeline would have succeeded. The new dispatch path only lends `&sharedRenderer_` when `sharedRenderer_.ready()`; otherwise it passes nullptr, letting `HybridEmitter::begin` attempt the established per-emitter GPU renderer and then the authored CPU fallback if necessary.
+- **Compatibility:** strictly an initialization-failure fallback; normal shared-pipeline reuse and shader ownership unchanged, and no ECS/backend config/save or PRISMA changes. No retry loop or false success claim on resource failures. Debug shared-program counters remain unchanged.
+- **Actual verification:** **NOT RUN**, user's features-first requirement. No GPU allocation fault injection, C++ compile, CTest or Metal shader/RHI validation.
+- **Next:** complete the source-level audit of GPU return values, async feedback callbacks and preview UI lifecycle, then run planned native validation and fix all compile/runtime failures before merge.
