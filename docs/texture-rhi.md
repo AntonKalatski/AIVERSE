@@ -3497,3 +3497,66 @@ seams, mixed wrap modes at UV outside [0,1], and independent
 Vulkan/GL/mobile non-ICB parity. Do not infer any frame-time
 speedup from CTest duration. Keep PR #21 Draft and GPU ICB
 flags OFF in production until further validation.
+
+### Stage 10BX — Apple M3 Ultra full Shader Graph + dual disk-backed VT + GPU ICB PASS (2026-11-19)
+
+**Native hardware result supplied by user:** isolated macOS fixture
+`metal_renderer_graph_vt_icb_gpu` on **Metal Apple M3 Ultra**
+reported **1/1 CTest PASS, 0 failed**, test **4.57 s**,
+entire CTest **4.58 s**. Exact test environment included the
+experimental GPU-authored, PBR, Shader Graph, per-command VT
+and mixed VT flags. The test is deliberately independent
+from the already-passing non-VT Shader Graph and low-level ICB
+fixtures.
+
+For **each** of pinned coarse, fine detail and LRU recycled
+states, real `Renderer3D` logged:
+`eligible=2 prepared=1 graph=1 mixedGraph=1 vt=1 mixedVt=1
+commands=2 rejected=0 errors=0`.
+The production-compiled material Shader Graph sampled four
+ordinary source textures **and** the virtual atlas/table from
+two independent, file-backed archives and virtual layers.
+Both source material regions were nonidentical in each phase.
+
+**Actual device pixel checks**:
+
+| Virtual residency | Direct vs GPU ICB | Max channel delta | Region delta |
+|---|---|---:|---:|
+| Pinned coarse | bad_channels=0 | 0 | 91.0 |
+| Fine detail | bad_channels=0 | 0 | 93.7 |
+| LRU physical slot recycled | bad_channels=0 | 0 | 48.5 |
+
+Observed page-transition changes in ordinary render images:
+`fine detail changed_channels=1392` and
+`LRU recycled changed_channels=2886`.
+The fixture confirmed pinned coarse page survival, fine page
+residency and replacement after LRU eviction. A false PASS from
+ordinary-draw fallback was prevented by nonzero mixed VT/graph
+ICB counters. The final native log printed:
+
+```text
+PASS: Shader Graph+VT pinned coarse Renderer3D CPU/ICB pixels
+PASS: Shader Graph+VT fine detail Renderer3D CPU/ICB pixels
+PASS: Shader Graph+VT LRU recycled Renderer3D CPU/ICB pixels
+PASS: production Renderer3D Shader Graph+disk VT mixed Metal GPU ICB coarse/fine/LRU pixel parity
+1/1 Test #122: metal_renderer_graph_vt_icb_gpu ... Passed 4.57 sec
+```
+
+No production source fix was needed for this observed PASS.
+**Scope is specific:** one Apple M3 Ultra/Metal, 2 primitives,
+4 Shader Graph source textures, two distinct raw RGBA8 disk
+VT archives, three residency states, one pair of U-addressing
+modes. This is *not* an FPS measurement, broad driver soak test
+or a validation of all UV seam/filtering cases. Shader Graph
+missing-page behavior, out-of-range UV Repeat/MirrorRepeat
+boundaries, alpha/deformation permutations, remaining source
+counts and GL/Vulkan/mobile/WebGL acceptance are still open.
+
+**Current policy:** keep opt-in Metal ICB tests and feature flags
+OFF in production; PR #21 remains Draft until the broader
+backend/compatibility matrix passes. Next high-value validation
+is a separate dedicated test for nonresident and intentionally
+missing disk pages with coarse/fallback persistence, sample UV
+outside [0,1] at seams, and native GPU screenshot/oracle
+comparison. Reuse `VirtualTextureFileStreamer` and the existing
+canonical shader sampler; do not implement a parallel VT runtime.
