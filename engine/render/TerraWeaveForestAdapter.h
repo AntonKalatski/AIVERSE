@@ -8,6 +8,7 @@
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveImpostorAtlas.h"
 #include "engine/render/TerraWeaveVertexWind.h"
+#include "engine/world/TerraWeaveWindField.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include "engine/world/TerraWeavePhenology.h"
@@ -87,7 +88,26 @@ public:
             rebuildPhenologyMaterials(); // shader variant once, not per tick
     }
     const ForestWindState& wind() const {return wind_;}
+    // Immutable PHYSIS/game field; never mutate the underlying snapshot
+    // after publication to rendering and forest worker owners.
+    void setWindField(std::shared_ptr<const ForestWindField> field) {
+        if(field)field->validate();
+        const bool wasActive=gpuCrownWindActive();
+        const bool hasWind=field && field->anyWind();
+        windField_=std::move(field);
+        fieldHasWind_=hasWind;
+        if(wasActive!=gpuCrownWindActive())rebuildPhenologyMaterials();
+    }
+    std::shared_ptr<const ForestWindField> windField() const {
+        return windField_;
+    }
     void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
+    void setWindTransitionRange(int32_t startCm,int32_t endCm) {
+        if(startCm<0 || endCm<=startCm || endCm>100000000)
+            throw std::invalid_argument("TerraWeave wind transition range");
+        viewTransitionStartCm_=startCm;
+        viewTransitionEndCm_=endCm;
+    }
     // Bounded per-frame temporary pose arena. 0 disables branch poses,
     // preserving the original low-cost whole-tree lean fallback.
     void setBranchPoseBudgetBytes(size_t bytes) {
@@ -161,6 +181,10 @@ public:
             throw std::out_of_range("TerraWeave forest render origin");
         if (camera && (!inside(camera->x) || !inside(camera->z)))
             throw std::out_of_range("TerraWeave forest camera extent");
+        const ForestCameraCm macroCamera=camera.value_or(
+            ForestCameraCm{origin.x,origin.z});
+        const ForestWindState macroWind=sampleForestWindField(
+            windField_.get(),macroCamera.x,macroCamera.z,wind_);
         for (const FloraBatch& batch : batches) {
             const render::Model* model = batch.lod == TreeLOD::Impostor
                 ? billboardPrototype(batch.speciesId)
@@ -187,6 +211,25 @@ public:
                                  float((camera ? camera->z : origin.z) - instance.zCm))
                     : float(instance.yawMilliDegrees) * 0.000017453292519943295f;
                 const float scale = float(instance.scalePermille) * 0.001f;
+                ForestWindState windAtTree=wind_;
+                if(windField_){
+                    windAtTree=sampleForestWindField(
+                        windField_.get(),instance.xCm,instance.zCm,wind_);
+                    const int64_t distance=std::max(
+                        std::abs(instance.xCm-macroCamera.x),
+                        std::abs(instance.zCm-macroCamera.z));
+                    const int64_t start=std::max<int64_t>(
+                        0,viewTransitionStartCm_);
+                    const int64_t end=std::max<int64_t>(
+                        start+1,viewTransitionEndCm_);
+                    const uint32_t blend=distance<=start ? 0u :
+                        distance>=end ? 1000u :
+                        static_cast<uint32_t>(
+                            (distance-start)*1000/(end-start));
+                    windAtTree=blendForestWind(windAtTree,macroWind,blend);
+                }
+                const bool localWindActive=windAtTree.maxLeanMilliDegrees>0 &&
+                    (windAtTree.xCmPerSec!=0 || windAtTree.zCmPerSec!=0);
                 render::ModelDraw draw;
                 draw.model = model;
                 const uint32_t canopyCover=canopyCoverPermille(
@@ -212,10 +255,9 @@ public:
                     draw.materials=&seasonalNearMaterials_.at(batch.speciesId);
                 }
                 draw.world = render::mat4::translate(relative);
-                if(wind_.maxLeanMilliDegrees &&
-                   (wind_.xCmPerSec || wind_.zCmPerSec)) {
+                if(localWindActive) {
                     const auto lean=forestTreeLean(
-                        wind_,presentationTick_,
+                        windAtTree,presentationTick_,
                         instance.key ^ (uint64_t(instance.speciesId)<<32));
                     constexpr float millidegToRadians=0.000017453292519943295f;
                     // Apply lean in WORLD coordinates, before the tree's
@@ -234,9 +276,8 @@ public:
                 // branch pivot while preserving parent hierarchy. More
                 // distant impostors remain on the cheap whole-tree sway.
                 if(batch.lod!=TreeLOD::Impostor &&
-                   wind_.branchFlexPermille>0 &&
-                   wind_.maxLeanMilliDegrees>0 &&
-                   (wind_.xCmPerSec||wind_.zCmPerSec)) {
+                   windAtTree.branchFlexPermille>0 &&
+                   localWindActive) {
                     const auto& pivots=branchPivots_.at(batch.speciesId);
                     const size_t bytes=model->nodes.size()*
                         sizeof(render::mat4);
@@ -245,7 +286,8 @@ public:
                        branchPoseBytes<=branchPoseBudgetBytes_-bytes) {
                         branchPoseArena_.emplace_back();
                         buildBranchWindPose(*model,pivots,instance,
-                                            batch.lod,branchPoseArena_.back());
+                                            windAtTree,batch.lod,
+                                            branchPoseArena_.back());
                         draw.nodeWorld=&branchPoseArena_.back();
                         branchPoseBytes+=bytes;
                     }
@@ -263,12 +305,13 @@ public:
                     // primitiveMaterialFilter suppresses the leaf primitive.
                     draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
                 }
-                if(gpuCrownWindActive() && canopyCover>0u) {
+                if(gpuCrownWindActive() && localWindActive &&
+                   canopyCover>0u) {
                     const float tier=batch.lod==TreeLOD::High ? 1.0f :
                                      batch.lod==TreeLOD::Medium ? 0.75f :
                                      batch.lod==TreeLOD::Low ? 0.5f : 0.35f;
                     draw.vertexParameters=canopyWindVertexParameters(
-                        wind_,presentationTick_,yaw,tier);
+                        windAtTree,presentationTick_,yaw,tier);
                     draw.useVertexParameters=true;
                 }
                 emit(draw);
@@ -300,7 +343,8 @@ private:
     bool gpuCrownWindActive() const {
         return wind_.branchFlexPermille>0 &&
                wind_.maxLeanMilliDegrees>0 &&
-               (wind_.xCmPerSec!=0 || wind_.zCmPerSec!=0);
+               ((wind_.xCmPerSec!=0 || wind_.zCmPerSec!=0) ||
+                fieldHasWind_);
     }
     // All Arbor branch geometry is authored in model-space centimetres
     // converted to metres, not re-centered around a local branch origin.
@@ -309,15 +353,15 @@ private:
     void buildBranchWindPose(
             const render::Model& model,
             const std::vector<render::float3>& pivots,
-            const FoliageInstance& instance,TreeLOD lod,
-            std::vector<render::mat4>& pose) const {
+            const FoliageInstance& instance,const ForestWindState& wind,
+            TreeLOD lod,std::vector<render::mat4>& pose) const {
         pose.resize(model.nodes.size());
         constexpr float milliRadians=0.000017453292519943295f;
         // Soften articulated sway as distance tiers approach impostor LOD;
         // the far static HLOD then receives only low-cost root motion.
         const float lodScale=lod==TreeLOD::High ? 1.0f :
                              lod==TreeLOD::Medium ? 0.65f : 0.25f;
-        const float flex=float(wind_.branchFlexPermille)*0.001f*lodScale;
+        const float flex=float(wind.branchFlexPermille)*0.001f*lodScale;
         const uint64_t treeKey=instance.key ^
             (uint64_t(instance.speciesId)<<32);
         for(int nodeIndex:model.order){
@@ -332,7 +376,7 @@ private:
             const uint64_t phaseKey=detail::mix64(treeKey ^
                 detail::mix64(uint64_t(n)+0x4252414e43485744ULL));
             const auto lean=forestTreeLean(
-                wind_,presentationTick_,phaseKey);
+                wind,presentationTick_,phaseKey);
             const auto pivot=pivots[n];
             const render::float3 neg{-pivot.x,-pivot.y,-pivot.z};
             const render::mat4 bend=
@@ -393,6 +437,12 @@ private:
     }
     CanopyPhenology phenology_{};
     ForestWindState wind_{};
+    std::shared_ptr<const ForestWindField> windField_;
+    bool fieldHasWind_=false;
+    // Native scene config can set these to the Flora medium-to-cull band.
+    // Defaults match the existing forest view; no field = no blend overhead.
+    int32_t viewTransitionStartCm_=9000;
+    int32_t viewTransitionEndCm_=24000;
     uint64_t presentationTick_=0;
     size_t branchPoseBudgetBytes_=4u*1024u*1024u;
     // Stable deque element addresses for ModelDraw::nodeWorld borrowed
