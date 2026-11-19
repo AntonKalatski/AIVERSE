@@ -447,3 +447,35 @@ Implement `Renderer3D`'s **shared versioned material signature memo** with a res
 
 ### Next actionable feature
 Propagate the new owner key/revision through the universal `EcsStaticModelRender` adapter (append fields after old aggregate members to preserve source compatibility), allow generic native projects to share named material sets. Optionally add an explicit ECS owner invalidation helper if the native asset source is hot-reloaded. Do **not** automatically promote existing RTS material copies without a reliable revision source. Append a distinct Stage 16 handoff before any further feature. Once features are complete, update policy regressions and run focused CI and real Metal raster A/B.
+
+---
+
+## Stage 16 — shared material revisions through universal ECS presentation (2026-11-19)
+
+**Branch/PR:** `perf/incremental-static-model-cache`, PR #34 (Draft). **Code/doc HEAD before handoff:** `801c2f63db27cefd1577f7860f68a6ef927ef927`. `main` was `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` and had 0 missing commits at start of these Material State Cache stages. Re-fetch/compare before integration. **Instruction:** features before tests.
+
+### Feature files and commits
+- `22b7639393ffb58a9b8bed659c19c3cde161a8e6`: `engine/render/EcsStaticModelRender.h` now appends `uint64_t materialOwnerKey=0` and `uint64_t materialOwnerRevision=0` to the existing four-field, integer-only view component. They are appended **after** `assetKey`, `appearanceRevision`, `flags`, `visible`, so old aggregate initializers remain source-compatible. `visitEcsStaticModels` copies them to `ModelDraw`, enabling identical material-set owners to share the new memo even from generic ECS native games. Existing renderer and model resolution callbacks are unchanged.
+- `18ee40f0c9b7630a45e27286dfa52b74600bda8f`: `docs/geometry-performance.md` documents the ECS material-owner bridge and a native example, including how to resolve external material override vectors only in the presentation callback instead of placing C++ pointers in ECS.
+- `ac40494482f8f4c89ce07b14753a033cf7688f36`: `AGENTS.md` documents the shared owner revision contract for ECS/genre-independent native projects.
+- `801c2f63db27cefd1577f7860f68a6ef927ef927`: `engine/render/Renderer3DModels.cpp` adds the direct `<limits>` include required by `std::numeric_limits<int>::max()` in the Stage 15 memo (header dependency hygiene).
+
+### Usage / compatibility
+Native ECS code can add:
+```cpp
+render::EcsStaticModelRender view{
+    assetKey, appearanceRevision, flags, true,
+    materialOwnerKey, materialOwnerRevision
+};
+world.add<render::EcsStaticModelRender>(entity, view);
+render::drawEcsStaticModels(world, renderer, resolveModel, stableDrawId);
+```
+The component remains data-only; `WorldTransform` is converted to a float matrix only at the rendering boundary. For custom material overrides use `visitEcsStaticModels(..., submit)` and set the live `ModelDraw::materials` pointer inside `submit` before calling `Renderer3D::drawModel`. The same owner key/revision must denote identical material state for every draw using it, and the owner must bump revision after native changes (including texture content behind unchanged GPU handles). `Model::markMaterialChanged()` is likewise required for model-owned state edits. **No RTS/FPS genre branches, new authoritative simulation dependencies, or shader/GPU ABI changes.** No automatic enabling: still requires nonzero stable ID, `kDrawStatic`, `staticPacketRevision` and env `AIVERSE_PERSISTENT_CPU_PACKETS=1`. Old four-field initializers and unversioned material hash/equality path remain intact.
+
+### Actual validation and risks
+- GitHub connector successfully applied the ECS, doc, AGENTS and include commits to the same PR branch. Source re-fetch inspections confirmed owner fields, versioned memo declaration/use, serial check, conservative fallback and new editor diagnostics are present. **These were static source inspections only.**
+- **Native CMake compilation: NOT RUN. CTest: NOT RUN. Metal raster parity: NOT RUN. City A/B CPU/GPU benchmark: NOT RUN.** User explicitly deferred test work. Earlier test fixtures still have stale expectations for static bind-pose clip metadata and node material/variant eligibility. New signature memo has no executed regression coverage yet. Do not claim build or GPU performance success.
+- Correctness depends on explicit owner revision propagation, no unsafe use-after-model-unload, and in-place `Model::markMaterialChanged()` where applicable. Keying by Model pointer is only a scoped identity inside the renderer; `invalidateModelCachesFor(model)` must occur before asset destruction. `invalidateSharedMaterialState(model, ownerKey)` is provided for individual material-owner replacement. Never use owner version fast-path for mutable sources without reliable generation tracking.
+
+### Exact next feature/test handoff
+Feature-first next work: investigate broader static material batching across distinct rigid models only where shader, resolved resource bindings and primitive geometry are genuinely compatible; do not force glTF nodes/mesh identity together or break culling/LOD. Alternatively implement owner-driven dirty events to retire changed static packet templates rather than relying only on sampling on draw. Once feature scope is declared complete, update tests and run focused CTest/Metal A/B + large city A/B/A with explicit CPU frame time and memory measurements. Leave PR Draft and cache flags OFF by default until confirmed.
