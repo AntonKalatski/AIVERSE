@@ -1217,3 +1217,32 @@ Retarget scratch capacity is capped for retention (512 KiB
 per View by default), NOT current draw memory. No CPU/GPU
 benchmark or real model comparison was run. See
 [Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
+
+## Stage 126 — model publication epoch continuity
+
+A new appearance snapshot is not necessarily a new Model
+asset. `AppearanceAssetRegistry` now keeps a borrowed Model's
+`modelPublicationGeneration` stable across material-only and
+AnimationGraph-only republishing. Its appearance `version`
+still changes every successful publication; its graph
+`generation` changes when the compiled graph/source changes.
+A replaced Model, changed `Request::modelRevision`, changed
+model path or `invalidateSources(modelPath)` produces a new
+Model epoch, so compiled LOD retarget plans reject stale
+generations even when a C++ allocator reuses an address.
+
+Native projects can now pass the model epoch in
+`AppearanceSpec::modelPublicationGeneration` to the
+genre-neutral `buildAppearancePacket`. Published registry
+assets use the same field automatically, and native callers
+can compile an immutable visual LOD from two published
+`AppearanceAssetRegistry::Asset` snapshots using
+`compileVisualLod`. On failure this API reports the bone/map
+reason if requested and preserves the previous valid LOD.
+It does not own Model/texture/buffer lifetimes and cannot
+detect a host that modifies a Model in-place without
+modelRevision updates or source invalidation.
+
+**NOT RUN:** native C++ build/CTest, hot reload fault injection,
+GPU visual parity and performance tests. See
+[Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
