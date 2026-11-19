@@ -8394,3 +8394,45 @@ RHI/Metal graph argument-table format/slot/layout assertions,
 and audit shader code generation for 0/1/2/3/4 sources
 and optional VT before running a native Metal compiler.
 Do not move PR out of Draft without native and GPU evidence.
+
+
+## Stage 10AK — host-accepted Shader Graph ICB diagnostic counters (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Code commits:**
+- `255d67eb9f2b52ca3ba467e9ea96f6ee4dd12274` —
+  `engine/render/Renderer3D.h`: add public
+  `shaderGraphIcbSubmissions` and
+  `mixedGraphSourceSubmissions` to
+  `GpuModelDrawStats`, plus corresponding counters and
+  per-batch source identity flags.
+- `cc740a5c5571a450e557e5c670ba6f32dd1118da` —
+  `engine/render/Renderer3DModels.cpp`: detect whether
+  a prepared group contains different graph source handles
+  and increment the above counters only after
+  `executeGpuEncodedIndexedIcb` returns true.
+
+**Documentation commits:** `9a3c999ff51155a572421d095e79386ba6d67b04`
+docs/texture-rhi.md; `3f1ce4395e16fa10de8068abd9a34a7aa0753e67`
+skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+**API/architecture:** A host-accepted graph ICB submission
+counter is not a GPU fence completion event. The mixed
+graph source counter requires actual graph handle differences,
+not only per-command U2/PBR textures. Existing stats and
+default CPU renderer are unchanged; this stage is
+genre independent.
+
+**Actual checks:** GitHub accepted C++ header and source
+edits and handoff docs. **C++/Objective-C++ compilation
+NOT RUN; MSL shader compiler NOT RUN; CTest NOT RUN;
+GPU command-buffer completion NOT RUN; image/perf
+tests NOT RUN.** No claim of material correctness.
+
+**Next:** audit the shader generator and native Metal graph
+argument layout for count 0/1/2/3/4 and optional VT,
+especially MSL preprocessor guards, high-slot constexpr
+sampler 16, and fallback on shader/pipeline failure.
+Record any source-level guard fixes separately; then
+run the deferred native/macOS shader and GPU test phase
+when requested. Keep the PR Draft.
