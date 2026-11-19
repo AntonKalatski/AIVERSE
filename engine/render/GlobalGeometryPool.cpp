@@ -65,39 +65,34 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
 GeometryPoolReferencedStats geometryPoolReferencedStats(
         gfx::Device& dev,std::span<const Model* const> models) {
     GeometryPoolReferencedStats result;
+    std::set<const Model*> distinctModels;
     std::set<const GeometryPoolPage*> requested;
-    std::set<const Model*> visited;
     for(const Model* model:models) {
-        if(!model || !model->geometryPoolPage || !visited.insert(model).second)
-            continue;
-        ++result.referenceModels;
+        if(!model || !model->geometryPoolPage ||
+           !distinctModels.insert(model).second)continue;
         requested.insert(model->geometryPoolPage.get());
     }
-    std::lock_guard lock(poolMutex);
-    const auto it=pools.find(&dev);
-    if(it==pools.end())return {};
-    for(const auto& weak:it->second) {
-        const auto page=weak.lock();
-        if(!page || requested.erase(page.get())==0)continue;
-        ++result.uniquePages;
-        result.allocatedBytes+=page->capacity;
-        result.occupiedBytes+=page->vertexEnd+
-                              (page->capacity-page->indexBegin);
+    std::set<const GeometryPoolPage*> matched;
+    {
+        std::lock_guard lock(poolMutex);
+        const auto it=pools.find(&dev);
+        if(it==pools.end())return {};
+        for(const auto& weak:it->second) {
+            const auto page=weak.lock();
+            if(!page || !requested.contains(page.get()) ||
+               !matched.insert(page.get()).second)continue;
+            ++result.uniquePages;
+            result.allocatedBytes+=page->capacity;
+            result.occupiedBytes+=page->vertexEnd+
+                                  (page->capacity-page->indexBegin);
+        }
     }
-    // Pointers to pages owned by another Device must not appear in this
-    // device's report. Only count model references on matching pages.
-    if(!requested.empty()) {
-        size_t validModels=0;
-        for(const Model* model:visited)
-            if(model->geometryPoolPage &&
-               std::any_of(it->second.begin(),it->second.end(),
-                   [&](const auto& weak) {
-                       const auto page=weak.lock();
-                       return page && page.get()==model->geometryPoolPage.get();
-                   }))
-                ++validModels;
-        result.referenceModels=validModels;
-    }
+    for(const Model* model:distinctModels)
+        if(model->geometryPoolPage &&
+           matched.contains(model->geometryPoolPage.get()))
+            ++result.referenceModels;
+    // Count each device page once even when many native hosts share it.
+    // The page metadata describes allocator bytes, never driver VRAM.
     return result;
 }
 
