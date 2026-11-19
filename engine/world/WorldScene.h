@@ -11,6 +11,7 @@
 #include <cmath>
 #include <algorithm>
 #include "engine/world/TerraWeave.h"
+#include "engine/world/TerraWeaveEarthworks.h"
 #include "engine/world/TerraWeaveVegetationSoil.h"
 #include "engine/world/TerraWeavePhenology.h"
 #include "engine/world/TerraWeaveWindField.h"
@@ -95,6 +96,16 @@ public:
     // half-open. Shared across near Flora and far Horizon. Set on the
     // WorldScene update thread, not while worker/render callbacks execute.
     void setVegetationClearings(std::vector<terraweave::RectCm> clearings);
+    // Native-authority terrain handoff. The host publishes an immutable
+    // EarthworksLayer snapshot whose base callback also captures immutable data.
+    // Only forest/Horizon read this; native game owns collision/RHI changes.
+    // nullptr restores authored/procedural height sampling.
+    void setVegetationTerrainSnapshot(
+        std::shared_ptr<const terraweave::EarthworksLayer> soil,
+        std::vector<terraweave::RectCm> edited = {});
+    uint64_t vegetationTerrainRevision() const {
+        return vegetationTerrain_ ? vegetationTerrain_->revision() : 0;
+    }
     // Explicit authoritative soil->presentation handoff for tree/shrub root
     // exposure. WorldScene never decides gameplay falling or edits ECS.
     void setVegetationRootStates(std::vector<terraweave::RootState> states);
@@ -211,6 +222,10 @@ private:
     std::vector<terraweave::RectCm> vegetationClearings_;
     std::vector<terraweave::RectCm> previousVegetationClearings_;
     bool vegetationClearingsDirty_=false;
+    // Published only on owner update thread; captured const snapshot for workers.
+    std::shared_ptr<const terraweave::EarthworksLayer> vegetationTerrain_;
+    std::vector<terraweave::RectCm> vegetationTerrainEdited_;
+    bool vegetationTerrainDirty_=false;
     terraweave::CanopyPhenology vegetationPhenology_{};
     bool vegetationPhenologyDirty_=false;
     terraweave::ForestWindState vegetationWind_{};
