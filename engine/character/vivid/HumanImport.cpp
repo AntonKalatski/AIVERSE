@@ -112,7 +112,7 @@ void HumanImportManifest::validate() const {
     relativePath(dnaPath,false);
     relativePath(morphPath,false);
     require(scalpColliderMesh.size()<=128 &&
-            scalpColliderMesh.find_first_of("\\n\\r") == std::string::npos,
+            scalpColliderMesh.find_first_of("\n\r") == std::string::npos,
             "VIVID import: invalid scalp collider mesh name");
     require(routes.size()<=4096 && materials.size()<=512,
             "VIVID import: route/material budget exceeded");
