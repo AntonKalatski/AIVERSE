@@ -62,8 +62,9 @@ struct CreatorApp {
     RigAuthoring rigCorrections;
     SkinWeightAuthoring skinWeightEdits;
     bool authorBindPose=false;
-    int skinVertexId=0,skinJointNode=0;
-    float skinWeightValue=0.5f;
+    int skinVertexId=0,skinJointNode=0,skinMeshIndex=-1;
+    float skinWeightValue=0.5f,skinBrushRadius=0.12f,skinBrushStrength=0.5f;
+    bool skinBrushArmed=false,skinMirrorX=false,skinHeatmap=false;
     char skinWeightFile[512]="/tmp/vivid-skin-weights.json";
     int selectedRigNode=0;
     float rigOffset[3]={0,0,0};
@@ -819,6 +820,32 @@ struct CreatorApp {
             ImGui::TextWrapped("Edit one model-relative vertex and named bone. "
                 "Other influences are normalized automatically to 255 bytes. "
                 "Shared vertices with incompatible skin palettes are rejected.");
+            if(human.head) {
+                const auto& meshes=human.head->meshes;
+                const char* current=skinMeshIndex>=0 &&
+                    std::size_t(skinMeshIndex)<meshes.size()
+                    ?meshes[std::size_t(skinMeshIndex)].name.c_str():"Select skin mesh";
+                if(ImGui::BeginCombo("Weight paint mesh",current)) {
+                    for(std::size_t i=0;i<meshes.size();++i)
+                        if(ImGui::Selectable(meshes[i].name.c_str(),
+                            skinMeshIndex==int(i)))skinMeshIndex=int(i);
+                    ImGui::EndCombo();
+                }
+            }
+            ImGui::SliderFloat("Brush radius",&skinBrushRadius,0.005f,1.f,"%.3f");
+            ImGui::SliderFloat("Brush strength",&skinBrushStrength,0.01f,1.f,"%.2f");
+            ImGui::Checkbox("Mirror weight paint X",&skinMirrorX);
+            ImGui::Checkbox("Show skin weight heatmap",&skinHeatmap);
+            if(ImGui::Button("Paint weight on next click")) {
+                skinBrushArmed=true;
+                status="VIVID weight paint armed: click a skinned mesh triangle";
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Undo weights")&&skinWeightEdits.undo())
+                pendingRebuild=true;
+            ImGui::SameLine();
+            if(ImGui::Button("Redo weights")&&skinWeightEdits.redo())
+                pendingRebuild=true;
             if(human.head && !human.head->vertices.empty() &&
                !human.head->nodes.empty()) {
                 skinVertexId=std::clamp(skinVertexId,0,
@@ -1546,6 +1573,81 @@ struct CreatorApp {
         }else if(cpuActor) {
             if(!cpuActor->dispatch(controller.frame(),human.facialBinding))
                 status=cpuActor->lastError();
+        }
+        if(externalMode && skinBrushArmed && human.head &&
+           ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+           !ImGui::GetIO().WantCaptureMouse &&
+           skinMeshIndex>=0 &&
+           std::size_t(skinMeshIndex)<human.head->meshes.size() &&
+           skinJointNode>=0 &&
+           std::size_t(skinJointNode)<human.head->nodes.size()) {
+            const auto mouse=ImGui::GetMousePos();
+            float3 origin{},direction{};
+            if(camera.screenRay(mouse.x,mouse.y,
+                                float(dev.framebufferWidth()),
+                                float(dev.framebufferHeight()),origin,direction)) {
+                const auto pick=pickSculptVertex(*human.head,
+                    std::size_t(skinMeshIndex),facePose,
+                    origin,direction,human.head->vertices.size());
+                if(pick.hit) {
+                    skinVertexId=int(pick.vertex);
+                    const auto& bone=human.head->nodes[std::size_t(skinJointNode)].name;
+                    if(skinWeightEdits.brush(*human.head,
+                        std::size_t(skinMeshIndex),pick.vertex,bone,
+                        skinWeightValue,skinBrushRadius,skinBrushStrength,skinMirrorX)) {
+                        skinBrushArmed=false;
+                        pendingRebuild=true;
+                        status="Weight stroke committed; replacement character queued";
+                    }else status="Weight stroke rejected: skin/palette/radius incompatible";
+                }else status="No skinned mesh triangle under cursor";
+            }
+        }
+        // Heatmap is a bounded editor-only screen-space visualization.
+        // Shows source vertex weights on the selected mesh; this is a
+        // bind-space diagnostic, not the final GPU-skinned vertex positions.
+        if(skinHeatmap && human.head && skinMeshIndex>=0 &&
+           std::size_t(skinMeshIndex)<human.head->meshes.size() &&
+           skinJointNode>=0 &&
+           std::size_t(skinJointNode)<human.head->nodes.size()) {
+            int owner=-1;
+            for(std::size_t i=0;i<human.head->nodes.size();++i)
+                if(human.head->nodes[i].mesh==skinMeshIndex) {
+                    if(owner>=0){owner=-1;break;}
+                    owner=int(i);
+                }
+            if(owner>=0 && std::size_t(owner)<facePose.size()) {
+                std::vector<std::uint32_t> ids;
+                for(const auto& prim:human.head->meshes[
+                    std::size_t(skinMeshIndex)].primitives) {
+                    const auto first=std::size_t(prim.firstIndex);
+                    if(first>human.head->indices.size() ||
+                       prim.indexCount>human.head->indices.size()-first)continue;
+                    for(std::size_t i=first;i<first+prim.indexCount;++i)
+                        ids.push_back(human.head->indices[i]);
+                }
+                std::sort(ids.begin(),ids.end());
+                ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+                const std::size_t stride=std::max<std::size_t>(1,(ids.size()+999)/1000);
+                const auto& bone=human.head->nodes[
+                    std::size_t(skinJointNode)].name;
+                for(std::size_t i=0;i<ids.size();i+=stride) {
+                    const auto id=ids[i];
+                    if(id>=human.head->vertices.size())continue;
+                    try {
+                        const float weight=SkinWeightAuthoring::weightAt(
+                            *human.head,std::size_t(skinMeshIndex),id,bone);
+                        float2 screen{};
+                        const auto p=facePose[std::size_t(owner)].transformPoint(
+                            human.head->vertices[id].pos);
+                        if(!camera.worldToScreen(p,
+                            float(dev.framebufferWidth()),
+                            float(dev.framebufferHeight()),screen))continue;
+                        ImGui::GetForegroundDrawList()->AddCircleFilled(
+                            ImVec2(screen.x,screen.y),2.3f,
+                            IM_COL32(int(weight*255),40,int((1-weight)*255),190));
+                    }catch(const std::invalid_argument&){}
+                }
+            }
         }
         // Picking uses the actual camera ray and rendered node-world pose,
         // never a guessed nearest projected vertex behind the head.
