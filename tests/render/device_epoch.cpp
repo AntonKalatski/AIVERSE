@@ -213,15 +213,82 @@ static void verifyOwnerThreadMapReadContracts() {
             [](const render::Model&,bool){});});
         expectDenied([&]{(void)cache.geometryPoolModelReferences();});
         expectDenied([&]{(void)cache.gpuOwnerEstimate();});
+        expectDenied([&]{(void)cache.pendingRetirements();});
+        expectDenied([&]{(void)cache.retirementStats();});
+        expectDenied([&]{(void)cache.estimatedRetiredGpuBytes();});
+        expectDenied([&]{(void)cache.publicationBackpressured();});
     });
     worker.join();
-    CHECK(denied==10);
+    CHECK(denied==14);
     CHECK(cache.find("models/read.glb")==resident);
     CHECK(constCache.find("models/read.glb")==resident);
     CHECK(cache.contains("models/read.glb"));
     CHECK(cache.models().size()==1);
     CHECK(cache.modelFiles().size()==1);
     CHECK(cache.affectedBySource("models/read.glb").size()==1);
+    cache.shutdown(dev);
+}
+
+// Stage 135: a read-only owner enumeration callback must not invalidate
+// its own map/retirement iterators. Recursive *read-only* enumeration remains
+// valid and exceptions must restore the callback guard.
+static void verifyModelOwnershipVisitorContracts() {
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    auto first=std::make_unique<render::Model>();
+    first->path="models/first.glb";
+    auto second=std::make_unique<render::Model>();
+    second->path="models/second.glb";
+    const auto* resident=cache.insertIfAbsent("models/first.glb",
+                                              std::move(first));
+    CHECK(resident);
+    CHECK(cache.insertIfAbsent("models/second.glb",std::move(second)));
+    const auto initialGeneration=cache.generation();
+    unsigned visited=0, blocked=0;
+    const auto expectBlocked=[&](auto&& callback) {
+        bool thrown=false;
+        try{callback();}
+        catch(const std::logic_error&){thrown=true;}
+        CHECK(thrown);
+        ++blocked;
+    };
+    cache.forEachOwnedModel([&](const render::Model& model,bool retired) {
+        CHECK(!retired);
+        ++visited;
+        CHECK(cache.models().size()==2);
+        CHECK(cache.contains(model.path));
+        CHECK(cache.retirementStats().pendingResources==0);
+        CHECK(cache.pendingRetirements()==0);
+        CHECK(!cache.publicationBackpressured());
+        unsigned nested=0;
+        cache.forEachOwnedModel([&](const render::Model&,bool) {++nested;});
+        CHECK(nested==2);
+        // Changing any cached membership or retirement state while the
+        // owner enumerates would make the current borrowed Model unsafe.
+        expectBlocked([&]{cache.insertIfAbsent("models/new.glb",
+                           std::make_unique<render::Model>());});
+        expectBlocked([&]{cache.replace(dev,"models/first.glb",
+                           std::make_unique<render::Model>(),
+                           [](const render::Model*){});});
+        expectBlocked([&]{(void)cache.acquireModelRead(&model);});
+        expectBlocked([&]{(void)cache.collectRetired(dev);});
+    });
+    CHECK(visited==2);
+    CHECK(blocked==8);
+    CHECK(cache.generation()==initialGeneration);
+    CHECK(cache.find("models/first.glb")==resident);
+    CHECK(cache.find("models/new.glb")==nullptr);
+    bool escaped=false;
+    try {
+        cache.forEachOwnedModel([](const render::Model&,bool) {
+            throw std::logic_error("simulated inspector exception");
+        });
+    }catch(const std::logic_error&){escaped=true;}
+    CHECK(escaped);
+    CHECK(cache.insertIfAbsent("models/new.glb",
+                               std::make_unique<render::Model>()));
+    CHECK(cache.generation()==initialGeneration+1);
     cache.shutdown(dev);
 }
 
@@ -360,6 +427,7 @@ int main(int argc,char** argv) {
     verifyReadLeaseContracts();
     verifyReadOwnerRebind();
     verifyOwnerThreadMapReadContracts();
+    verifyModelOwnershipVisitorContracts();
     verifyDetachCallbackReentrancyContracts();
 #if defined(__APPLE__) || defined(__unix__)
     verifyFatalReadContracts(argv[0]);
