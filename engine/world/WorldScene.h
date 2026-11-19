@@ -2,6 +2,7 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidFloodVisualScene.h"
 #include "engine/world/NereidCascadeScene.h"
 #include "engine/world/NereidConfluenceScene.h"
 #include "engine/world/NereidUnderwaterView.h"
@@ -42,6 +43,12 @@ public:
     // Opt-in presentation-only water; call before update. Never mutates ECS.
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
+    // Optional finite-volume flood overlay, supplied by native NEREID ECS
+    // on the graphics/update owner thread after its completed water tick.
+    void setNereidFloodCells(std::vector<NereidFloodVisualCell> cells){
+        floodVisual_.setCells(std::move(cells));
+    }
+    size_t nereidFloodCellCount()const{return floodVisual_.cells();}
     NereidUnderwaterView nereidUnderwaterAt(Vec3 camera)const;
     // Native projects may override static waterfall manifest from ECS.
     void setNereidCascades(std::vector<NereidCascadeSource> cascades) {
@@ -281,6 +288,7 @@ private:
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
     NereidWaterScene nereidWater_;
+    NereidFloodVisualScene floodVisual_;
     std::vector<NereidSceneFlowObstruction> nereidFlowObstructions_;
     NereidCascadeScene cascades_;
     NereidConfluenceScene confluences_;
