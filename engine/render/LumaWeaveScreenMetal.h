@@ -144,11 +144,20 @@ public:
         confirmedShaded_=pendingShaded_=false;
         sourceRevision_=geometryRevision_=serial_=pendingSerial_=0;
         pendingProducesHistory_=false;
+        historyEpoch_=pendingHistoryEpoch_=0;
         width_=height_=confirmedWidth_=confirmedHeight_=0;
         nodeCount_=0;confirmedIndex_=pendingIndex_=0;
         return true;
     }
 
+    // A route change (Metal -> raster fallback), world/context switch or
+    // explicit camera reset invalidates history even if a previous frame's
+    // async fence has not yet been delivered. That old completion must still
+    // be polled to retire GPU resources, but can never resurrect history.
+    void invalidateHistory() {
+        historyValid_=false;
+        ++historyEpoch_;
+    }
     bool ready() const{return dev_ && direct_.valid() && denoise_.valid();}
     bool pbrAvailable() const{return ready() && pbr_.valid() && pbrDenoise_.valid();}
     bool confirmedShaded() const{return historyValid_ && confirmedShaded_;}
@@ -385,14 +394,17 @@ public:
         result.completed=true;
         result.success=pending_->success.load(std::memory_order_acquire);
         result.serial=pendingSerial_;
-        if(result.success && pendingProducesHistory_) {
+        if(result.success && pendingProducesHistory_ &&
+           pendingHistoryEpoch_==historyEpoch_) {
             confirmedIndex_=pendingIndex_;
             previousVP_=pendingVP_;
             previousEye_=pendingEye_;
             confirmedWidth_=width_;confirmedHeight_=height_;
             historyValid_=true;
             confirmedShaded_=pendingShaded_;
-        } else if(!result.success) {
+        } else {
+            // A successful but deactivated/obsolete dispatch can no longer
+            // republish its temporal output after a platform/route switch.
             historyValid_=false;
         }
         pending_.reset();
@@ -417,6 +429,7 @@ private:
         pendingSerial_=++serial_;
         pendingIndex_=outputIndex;
         pendingProducesHistory_=producedHistory;
+        pendingHistoryEpoch_=historyEpoch_;
         pendingVP_=vp;
         pendingEye_=eye;
         return async;
@@ -466,6 +479,7 @@ private:
     uint32_t width_=0,height_=0,confirmedWidth_=0,confirmedHeight_=0;
     uint32_t nodeCount_=0,confirmedIndex_=0,pendingIndex_=0;
     uint64_t sourceRevision_=0,geometryRevision_=0,serial_=0,pendingSerial_=0;
+    uint64_t historyEpoch_=0,pendingHistoryEpoch_=0;
     mat4 previousVP_{},pendingVP_{};
     float3 previousEye_{},pendingEye_{};
     bool sourcesReady_=false,geometryReady_=false,historyValid_=false;
