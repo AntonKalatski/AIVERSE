@@ -62,6 +62,10 @@ struct HorizonRuntimeStats {
     size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
     size_t windOverlayPatchRanges=0, windOverlayChangedClusters=0;
     size_t windOverlayFullRangeFallbacks=0, windOverlayNoopRevisions=0;
+    // Stage39 effective presentation quality, including manual overrides.
+    size_t windUploadBudgetBytes=0, cachedWindShadowBudgetBytes=0;
+    uint32_t windUploadSparseRangeCap=0, windUploadFullFallbackPercent=0;
+    bool windShadowCompressionEnabled=false, spatialWindVariationEnabled=false;
     bool windOverlayPending=false, exactWindFieldActive=false;
     size_t transitionStarts=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
@@ -798,6 +802,14 @@ public:
         out.gpuWindShadowDecodeFailures=
             gpuCache_.windShadowDecodeFailures();
         out.exactWindFieldActive=exactSpatialWindField_ && bool(windField_);
+        out.windUploadBudgetBytes=windUploadPolicy_.maxBytesPerUpdate;
+        out.cachedWindShadowBudgetBytes=
+            windShadowCachePolicy_.maxCachedShadowBytes;
+        out.windUploadSparseRangeCap=windUploadPolicy_.maxSparseRanges;
+        out.windUploadFullFallbackPercent=windUploadPolicy_.fullFallbackPercent;
+        out.windShadowCompressionEnabled=
+            windShadowCachePolicy_.compressCachedShadows;
+        out.spatialWindVariationEnabled=spatialWindVariation_;
         out.windOverlayPending=bool(model_) &&
             !activeWindOverlay_.vertices.empty() &&
             activeWindOverlay_.appliedRevision!=windFieldRevision_;
