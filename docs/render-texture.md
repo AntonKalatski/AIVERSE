@@ -161,3 +161,21 @@ No Lua command or simulation checksum semantics were changed.
 
 This stage is **source-only and NOT COMPILED/TESTED**.
 See [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+## Stage 122 — checked canvas flush and failure diagnostics
+
+Native `render::RenderTexture` now provides
+`bool flushChecked()`. If the GPU cannot allocate temporary
+brush vertices it returns false and keeps queued strokes and
+clear intent for retry; legacy `void flush()` remains a thin
+source-compatible wrapper. `blit` and partial `upload` propagate
+a failed flush and do not report their own command as applied.
+`SubmissionStats` separately counts failed brush-buffer,
+blit-buffer and upload-texture allocations. Paint layers avoid
+rendering incomplete canvas passes and the Editor statistics
+reports these counters for currently live paint owners.
+All transient GPU handles still retire through Stage 120's
+CanvasGpuRetirement queue and genuine completion tokens.
+
+**NOT COMPILED, GPU-TESTED or benchmarked** for Stage 122.
+See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
