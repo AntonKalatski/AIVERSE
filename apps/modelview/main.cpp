@@ -877,6 +877,29 @@ int aiverseMain(int argc, char** argv) {
             v.files.push_back({a.substr(0, at), at == std::string::npos ? std::string() : a.substr(at + 1)});
         }
     }
+    // A serialized generic scene/prefab attachment layout can be opened
+    // directly without separately spelling its parent Model on the CLI.
+    // init() will read the complete document once after the Device exists.
+    if(v.files.empty() && v.gameDir.empty() &&
+       !v.attachmentConfigPath.empty()) {
+        std::string bytes;
+        if(!Viewer::readFile(v.attachmentConfigPath,bytes)) {
+            std::fprintf(stderr,
+                "attachment layout file unavailable: %s\n",
+                v.attachmentConfigPath.c_str());
+            return 2;
+        }
+        try {
+            ::aiverse::view::AttachmentLayout doc;
+            ::aiverse::view::AttachmentLayoutCodec::read(
+                Json::parse(bytes),doc);
+            if(!doc.parent.empty())
+                v.files.push_back({doc.parent,{}});
+        }catch(const std::exception& ex) {
+            std::fprintf(stderr,"invalid attachment layout: %s\n",ex.what());
+            return 2;
+        }
+    }
     if (v.files.empty() && v.gameDir.empty()) {
         std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
                     "       aiverse_modelview parent.glb@Walk --attach child.glb@Hand.R [--attachments-file file.json]\n"
