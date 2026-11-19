@@ -301,6 +301,21 @@ private:
         ImGui::SameLine();
         if(ImGui::Button("Metal GPU"))preview(ed,true);
         ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!ed.spectraGpuPreviewActive());
+        if(ImGui::Button(ed.spectraGpuPreviewPaused()?"Play GPU":"Pause GPU"))
+            ed.setSpectraGpuPreviewPaused(!ed.spectraGpuPreviewPaused());
+        ImGui::SameLine();
+        bool frozen=ed.spectraGpuPreviewFrozen();
+        if(ImGui::Checkbox("Freeze GPU",&frozen))
+            ed.setSpectraGpuPreviewFrozen(frozen);
+        ImGui::SameLine();
+        bool loop=ed.spectraGpuPreviewLoop();
+        if(ImGui::Checkbox("Loop GPU",&loop))
+            ed.setSpectraGpuPreviewLoop(loop);
+        ImGui::SameLine();
+        if(ImGui::Button("Stop GPU"))ed.stopSpectraGpuPreview();
+        ImGui::EndDisabled();
         ImGui::SameLine();ImGui::TextDisabled("%s  v%lld (%d)",
             dirty_?"*":"",static_cast<long long>(doc_.getInt("version")),emitters_);
     }
@@ -942,6 +957,9 @@ private:
                             static_cast<unsigned long long>(cp.adaptiveRecoveries));
                 ImGui::Text("Max active checkpoint interval: %u submissions",
                             cp.maximumCurrentIntervalFrames);
+                ImGui::Text("GPU killed slots: %u waiting for completion, %llu reclaimed",
+                            cp.killedSlotsAwaitingFence,
+                            static_cast<unsigned long long>(cp.killedSlotsReclaimed));
                 ImGui::TextWrapped("* Recoverable means a complete current-revision "
                                    "snapshot exists; numerical CPU/Metal parity "
                                    "and uninterrupted visuals are not guaranteed.");
