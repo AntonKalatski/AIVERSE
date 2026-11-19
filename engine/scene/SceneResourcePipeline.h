@@ -146,6 +146,7 @@ public:
 
 private:
     struct Pending {
+        explicit Pending(SceneTicket value) : ticket(value) {}
         SceneTicket ticket;
         std::vector<std::string> dependencies;
         std::vector<std::string> pinned;
