@@ -140,10 +140,27 @@ bool Renderer3D::init(gfx::Device& dev) {
 void Renderer3D::retireRenderTargets(gfx::TextureHandle color,
                                      gfx::TextureHandle depth) {
     if(!color.valid() && !depth.valid())return;
-    if(targetRetirement_)targetRetirement_->retire(color,depth);
-    else if(dev_) {
+    if(targetRetirement_) {
+        targetRetirement_->retire(color,depth);
+        return;
+    }
+    // The shared target owner exists throughout normal Renderer3D use.
+    // The fallback is for exceptional setup/teardown only. Never destroy
+    // GPU-visible resources without a real idle proof, even with no lease.
+    if(!dev_) {
+        ++unleasedTargetOrphans_;
+        return;
+    }
+    try {
+        if(!dev_->waitForResourceIdle()) {
+            ++unleasedTargetIdleFailures_;
+            ++unleasedTargetOrphans_;
+            return;
+        }
         if(color.valid())dev_->destroyTexture(color);
         if(depth.valid())dev_->destroyTexture(depth);
+    }catch(...) {
+        ++unleasedTargetOrphans_;
     }
 }
 
