@@ -102,9 +102,11 @@ private:
              std::uint64_t now):conn(std::move(c)),handshake(lookup),
                                   createdAt(now){}
     };
+    // Member destruction is reverse declaration order. Keep ownership until
+    // AFTER peers, gateway and listener have been destroyed during shutdown.
+    JournalProcessLock journalLock_;
     net::WsListener listener_;
     FileJournal journal_;
-    JournalProcessLock journalLock_;
     ServerGateway gateway_;
     KeyLookup keys_;
     ReadAcl read_;
