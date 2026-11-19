@@ -563,6 +563,7 @@ private:
         StaticModelCache cache;
         uint64_t seen = 0;
         uint32_t vertexBuffer = 0, indexBuffer = 0;
+        uint64_t geometryRevision = 0;
     };
     std::unordered_map<uint64_t, StaticCacheEntry> staticModelCaches_;
     uint64_t staticModelCacheEpoch_ = 0;
