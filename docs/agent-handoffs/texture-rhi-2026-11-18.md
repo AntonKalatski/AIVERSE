@@ -5851,3 +5851,32 @@ shader compilation and GPU tests NOT RUN, per user request.
 Next: connect Terra's renderer to drawCustomFeedback, add
 ModelItem feedback handling, and schedule feedback at the
 appropriate point before Renderer3D main scene pass.
+
+
+## Stage 9M — opt-in automatic feedback scheduling in Renderer3D (2026-11-19)
+
+Source commits: 5c7da4b40798e1ab69fe82bfb72bd935c1f56519,
+a4f759f4fb56e873faa3a0d8fb5c675a2e1ca0e5.
+Files: engine/render/Renderer3D.h, engine/render/Renderer3D.cpp.
+Added Renderer3D::setVirtualTextureFeedback(pass*,meshPipeline,
+FeedbackMeshBinder) and clearVirtualTextureFeedback(). The
+renderer stores a non-owning feedback pass pointer and optional
+mesh material binder. When configured and feedback pass is
+ready, with no pending/ready async readback, Renderer3D::render()
+submits the opaque mesh and registered custom feedback callbacks
+after shadow passes and before opening the main scene pass.
+This preserves the existing contract where the main scene pass
+stays open for subsequent UI rendering. Frame-level streamer
+pump remains external; the application must invoke
+VirtualTextureFeedbackPass::updateStreaming after readback
+completion, or the pass will eventually stop capturing new data.
+
+Lifecycle: call clearVirtualTextureFeedback() before destroying
+the feedback pass or device. This is opt-in, not default.
+ModelItem and automatic Terra producer registration remain
+outstanding. The renderer's generic mesh binder must supply
+compatible UV mapping, transforms and material parameters.
+Verification: GitHub source commits succeeded; native build,
+CTest, GLSL/MSL compiler and GPU execution NOT RUN by request.
+Next: implement ModelItem feedback bridge, integrate Terra
+feedback callbacks and finish backend parity before testing.
