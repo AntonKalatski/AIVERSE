@@ -3743,6 +3743,130 @@ Metal/GL/GLES/Vulkan/WebGL, pixel capture,
 Точные коммиты и следующая задача:
 `docs/handoffs/prisma-stage-62.md`.
 
+## Stage 63 — точная rigid alpha-cutout / dissolve reactive coverage и lifecycle callbacks
+
+Этот этап расширяет текущий `Renderer3D::renderCurrentFrameReactiveMask`
+(Stage 62), не меняя архитектуру, формат `Prisma`/MCP,
+HDR color history или ownership Reactives. Reactive mask остаётся
+**RGBA8 current-frame** входом от `Renderer3D` в PRISMA;
+пер-камерная история движения является независимым компонентом.
+
+### Rigid-модели: точный AlphaMask, dissolve и LOD
+
+Для rigid-моделей с `AlphaMode::Mask` или `dissolve > 0`
+добавлен отдельный шейдерный вариант
+`reactive_shaders::kCutoutVS/kCutoutFS/kCutoutMSL`
+и `objectMotionReactiveCutoutPipeline_`.
+Основной water/transparent/mesh pipeline оставлен без изменений.
+
+Шейдер повторяет фрагментные условия обычного
+`ModelShaders`: `baseTex` alpha, `baseColor.a`,
+опциональную vertex alpha (с исключением
+vertex-occlusion/AO), `alphaCutoff`, KHR base-UV
+offset/scale/rotation, screen-space 4×4 LOD dither
+и **тот же object-space noise**
+`modelNoise3(opos*7)*0.7 + modelNoise3(opos*19)*0.3`
+для dissolve. `TeamMode::BaseAlpha` использует
+baseColor alpha без baseTexture alpha; для
+`TeamMode::VertexAlpha` не умножает alpha vertex
+дважды, следуя материалу. Сцена по-прежнему
+сэмплирует чужой `sceneDepth` только на чтение;
+реактивный pass имеет собственный writable
+`history.depth`. Используется `BlendMode::Screen`
+для объединения coverage. Shader source предоставляет
+одинаковую логику отсечения GLSL и Metal, но **GPU
+parity требует настоящих shader tests**.
+
+Новый uniforms layout только для этого pipeline:
+`ReactiveCutoutUniforms {mvp,params,lod,uv0,uv1,maskInfo}`,
+144 bytes. Vertex attributes — настоящие
+`ModelVertex` `position[0]`, `uv[2]`,
+`color[4]`. AlphaCutout texture bind slot 1,
+scene depth в slot 0. Поскольку шейдер точно
+отбрасывает alpha holes, реактивность больше не
+закрашивает целый треугольник у foliage/grilles.
+Shader Graph vertex displacement и geometry-driven
+models по-прежнему требуют отдельных производителей
+coverage; не заявлять их как поддержанные данным
+rigid-путём.
+
+### Анимированные переходы и callbacks
+
+Для skinned/morph/baked translucent моделей
+`kAnimatedFS` и его MSL-генератор получили
+необязательный `U1.reactiveLod` (fragment
+`buffer(2)`) с точным 4×4 LOD dithering на
+текущем кадре. Анимированные LOD и
+`dissolve` теперь подают coverage и при
+отсутствии previous pose. **Dissolve у
+анимированных объектов консервативный** —
+маска может покрывать фрагменты, которые
+основной ModelShaders отбрасывает по
+object-space noise. Точный анимированный
+alpha-cutout/actor aperture требует нового
+current-object-space varying или отдельного
+material-specific shader, не реализован здесь.
+
+В `Renderer3D` readiness маски проверяется
+**по необходимому источнику**: отдельно
+simple rigid, cutout/dissolve rigid,
+skinned, baked, MeshVertex или
+`motionReactiveDraws_`. Наличие
+неподходящего заранее созданного shader
+(например, skin pipeline при отсутствии
+baked pipeline) больше не является основанием
+публиковать пустую reactive mask. Когда
+callback был зарегистрирован на текущий
+scene frame, но активный postprocess, scene
+depth или mask pipeline недоступны,
+`ObjectMotionStats.reactiveCallbacksDropped`
+учитывает невыполненные вызовы; callback
+не переносится на следующий кадр.
+
+Registration contract прежний: `addMotionReactiveDraw`
+**после** `beginScene`, но **до**
+`resolvePrisma`. Рендерер вызывает
+callbacks только с открытым масочным pass:
+поставщик должен лишь записывать draws,
+не вызывать `beginPass/endPass`, сохранять
+свои GPU ресурсы до завершения submission и
+комбинировать coverage без уничтожения
+предыдущих пикселей. Список очищается
+после resolve, при неактивном postprocess
+или в начале нового scene frame.
+Промежуточная маска не кэшируется
+между camera cuts и не переносится между
+`viewId`.
+
+`Renderer3D::ObjectMotionStats` дополнен
+`cutoutReactiveDraws`,
+`dissolveReactiveDraws`,
+`reactiveCallbacksDropped`; прежние
+`reactiveDraws/reactiveAnimatedDraws/
+reactiveCallbacks/reactiveSubmitted` сохранены.
+Счётчики означают CPU-encoded submissions /
+callback invocations, а **не GPU completion**
+или доказанное содержимое пикселей.
+Общий per-view `Prisma::ViewEffectReport`
+из Stage 62 и GPU-fenced retirement
+Stage 54 не изменялись.
+
+**Фактически выполнено:** GitHub readback
+`Renderer3D.{h,cpp}`,
+`Renderer3DReactiveShaders.h`,
+`ModelShaders.h` и `Model.h`;
+**51/51 static source-presence, binding и
+ownership checks**, статический баланс
+C++ и shader header brace scopes.
+**NOT RUN:** CMake/clang, Metal/GLSL/MSL
+shader compilation, native editor/game,
+CTest, Metal/GL/GLES/Vulkan/WebGL,
+alpha-mask/dissolve/camera-cut pixel readback,
+multi-view callbacks, memory/fence stress,
+profiler и CI. Описание коммитов и
+следующий этап — `docs/handoffs/prisma-stage-63.md`.
+
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
