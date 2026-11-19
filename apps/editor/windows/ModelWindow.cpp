@@ -167,14 +167,19 @@ public:
                                  std::istreambuf_iterator<char>());
                     return true;
                 });
+                // Advisory size estimate, not a hard VRAM cap. Busy GPU
+                // allocations remain alive until their retirement token.
+                rawModels_.resources().setEstimatedRetirementByteLimit(
+                    64ull*1024ull*1024ull);
                 rawDevice_=&ed.device();
                 rawProject_=project;
                 rawRevision_=revision;
             }
 #ifndef __EMSCRIPTEN__
             if(!rawModels_.resources().contains(current->path))
-                rawModels_.requestAsync(current->path);
-            rawModels_.publishReady(ed.device());
+                rawModels_.requestAsync(
+                    current->path,render::ModelLoadPriority::Interactive);
+            rawModels_.publishReady(ed.device(),1,1.0);
 #else
             rawModels_.load(ed.device(),current->path);
 #endif
