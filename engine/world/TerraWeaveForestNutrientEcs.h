@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveForestEcology.h"
 #include "engine/world/TerraWeaveForestDeadwoodEcs.h"
 #include "engine/world/TerraWeaveForestNutrientCycle.h"
+#include "engine/world/TerraWeaveNereidNutrientJunction.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <algorithm>
 #include <cstdint>
@@ -71,7 +72,8 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
         World& ecs,const TerraWeaveEcsAuthorityConfig& cfg,
         uint64_t completedTick,
         ForestNutrientCycleSettings settings={},
-        ForestNutrientWeatherSampler weather={}) {
+        ForestNutrientWeatherSampler weather={},
+        NereidNutrientJunctionSettings junctionSettings={}) {
     validateForestNutrientCycleSettings(settings);
     const auto* old=ecs.resourceConst<ForestDeadwoodResource>();
     const auto* authority=ecs.resourceConst<TerraWeaveAuthorityResource>();
@@ -103,35 +105,56 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
         if(const auto it=demand.find(Key{cellX,cellZ});
            it!=demand.end())result.demandUnits=it->second;
         const int64_t edge=kWorldLimitCm-ground.spacingCm();
-        if(x>-edge && x<edge && z>-edge && z<edge){
-            const int32_t height=ground.sampleHeightCm(x,z);
+        const auto probe=[&](int64_t px,int64_t pz)->bool{
+            if(px<=-edge || px>=edge || pz<=-edge || pz>=edge)
+                return false;
             const auto resolved=water.sample({
-                Fixed::fromRatio(x,100),
-                Fixed::fromRatio(height,100),
-                Fixed::fromRatio(z,100)});
-            if(resolved.found && resolved.submerged){
-                result.submergedPermille=1000;
-                // Flood-only samples without a canonical body must not invent
-                // a common transport path across isolated pools.
-                // 0 is reserved for 'no body'. ECS Entity(index=0,
-                // generation=0) is valid and packs to zero, so offset the
-                // packed identifier to keep that first water body usable.
-                result.waterBodyKey=resolved.body.valid()?
-                    resolved.body.packed()+1ull:0ull;
-                const auto cmPerSec=[](Fixed speed)->int32_t{
-                    const int64_t cap=100ll*Fixed::kOne;
-                    return int32_t(std::clamp<int64_t>(
-                        speed.raw,-cap,cap)*100/Fixed::kOne);
-                };
-                result.currentXcmPerSec=cmPerSec(resolved.flow.x);
-                result.currentZcmPerSec=cmPerSec(resolved.flow.z);
-            }
+                Fixed::fromRatio(px,100),
+                Fixed::fromRatio(ground.sampleHeightCm(px,pz),100),
+                Fixed::fromRatio(pz,100)});
+            if(!resolved.found || !resolved.submerged)return false;
+            result.submergedPermille=1000;
+            // NEREID Entity(index=0,gen=0) is a valid water body.
+            result.waterBodyKey=resolved.body.valid()?
+                resolved.body.packed()+1ull:0ull;
+            const auto cmPerSec=[](Fixed speed)->int32_t{
+                const int64_t cap=100ll*Fixed::kOne;
+                return int32_t(std::clamp<int64_t>(
+                    speed.raw,-cap,cap)*100/Fixed::kOne);
+            };
+            result.currentXcmPerSec=cmPerSec(resolved.flow.x);
+            result.currentZcmPerSec=cmPerSec(resolved.flow.z);
+            return true;
+        };
+        // First try the legacy center: no extra work for broad rivers.
+        // Then use a bounded 1/2/4/8 lattice, at most 64 probes per
+        // 32m nutrient cell. A 4m-wide creek can now register even when
+        // the cell center happens to be dry. NEREID is still authoritative.
+        if(!probe(x,z) && settings.waterSamplesPerAxis>1){
+            const int64_t cm=ForestDeadwoodResource::kNutrientCellCm;
+            const int64_t baseX=cellX*cm,baseZ=cellZ*cm;
+            const int64_t n=settings.waterSamplesPerAxis;
+            bool found=false;
+            for(int64_t j=0;j<n && !found;++j)
+                for(int64_t i=0;i<n && !found;++i){
+                    const int64_t px=baseX+(2*i+1)*cm/(2*n);
+                    const int64_t pz=baseZ+(2*j+1)*cm/(2*n);
+                    if(px==x && pz==z)continue;
+                    found=probe(px,pz);
+                }
         }
         return result;
     };
 
+    // Linked confluences/cascades are discovered from the SAME ECS read
+    // snapshot used by NEREID WaterQueryIndex. No ad-hoc water topology.
+    const auto junctions=buildNereidNutrientJunctionPlan(
+        ecs,junctionSettings);
+    if(junctions.size()>settings.maxJunctionTransfersPerStep)
+        throw std::length_error(
+            "TerraWeave junction plan exceeds configured step budget");
     auto report=advanceForestNutrientCycle(
-        next,completedTick,sample,settings);
+        next,completedTick,sample,settings,junctions);
     World staged=ecs;
     // Cursor, last tick and nutrient ledger always persist on a due step,
     // even when no units were transported: rollback must replay the same
@@ -167,16 +190,21 @@ inline void addTerraWeaveForestNutrientSystem(
         TerraWeaveEcsAuthorityConfig cfg,
         ForestNutrientCycleSettings settings={},
         ForestNutrientWeatherSampler weather={},
-        std::function<void(const ForestNutrientCycleOutcome&)> onChange={}) {
+        std::function<void(const ForestNutrientCycleOutcome&)> onChange={},
+        NereidNutrientJunctionSettings junctionSettings={}) {
     validateEcsAuthorityConfig(cfg);
     validateForestNutrientCycleSettings(settings);
+    validateNereidNutrientJunctionSettings(junctionSettings);
     sim.addSystem(std::move(name),
         [cfg=std::move(cfg),settings,weather=std::move(weather),
-         onChange=std::move(onChange)](Simulation& current){
+         onChange=std::move(onChange),junctionSettings]
+        (Simulation& current){
             auto report=advanceForestNutrientCycleEcs(
-                current.world(),cfg,current.tick(),settings,weather);
+                current.world(),cfg,current.tick(),settings,weather,
+                junctionSettings);
             if(onChange && (report.absorbedUnits ||
-                            report.leachedUnits || report.advectedUnits))
+                            report.leachedUnits || report.advectedUnits ||
+                            report.junctionTransferredUnits))
                 onChange(report); // enqueue only; no Box3D/GPU here
         });
 }
