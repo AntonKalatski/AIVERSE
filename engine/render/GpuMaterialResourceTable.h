@@ -8,6 +8,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <bit>
+#include <cmath>
 #include <limits>
 #include <unordered_map>
 #include <utility>
@@ -23,6 +25,11 @@ struct GpuMaterialResourceBinding {
     std::array<gfx::TextureHandle,kMaxGraphTextures> graphTextures{};
     uint32_t graphTextureCount = 0;
     gfx::TextureHandle alphaCoverage{};
+    // Opt-in per-command built-in PBR texture slots 1..6 and exact U2,
+    // 9 std140/Metal float4 rows. No Shader Graph or material palette.
+    bool pbrEnabled = false;
+    std::array<gfx::TextureHandle,6> pbrTextures{};
+    std::array<float,36> pbrU2{};
     bool virtualTextureEnabled = false;
     ModelVirtualTextureBinding virtualTexture{};
 
@@ -32,6 +39,13 @@ struct GpuMaterialResourceBinding {
             if (!graphTextures[i].valid()) return false;
         for (uint32_t i = graphTextureCount; i < kMaxGraphTextures; ++i)
             if (graphTextures[i].valid()) return false;
+        if (pbrEnabled) {
+            for (const auto t : pbrTextures) if (!t.valid()) return false;
+            for (float x : pbrU2) if (!std::isfinite(x)) return false;
+        } else {
+            for (const auto t : pbrTextures) if (t.valid()) return false;
+            for (float x : pbrU2) if (x != 0.0f) return false;
+        }
         if (virtualTextureEnabled) return virtualTexture.valid();
         return !virtualTexture.physicalAtlas.valid() &&
                !virtualTexture.pageTable.valid();
@@ -128,6 +142,12 @@ private:
         mix(value.graphTextureCount);
         for (auto t : value.graphTextures) mix(t.id);
         mix(value.alphaCoverage.id);
+        mix(value.pbrEnabled ? 1u : 0u);
+        if (value.pbrEnabled) {
+            for (auto t : value.pbrTextures) mix(t.id);
+            for (float valueU2 : value.pbrU2)
+                mix(valueU2 == 0.0f ? 0u : std::bit_cast<uint32_t>(valueU2));
+        }
         mix(value.virtualTextureEnabled ? 1u : 0u);
         if (value.virtualTextureEnabled)
             mix(modelVirtualTextureBindingHash(value.virtualTexture));
