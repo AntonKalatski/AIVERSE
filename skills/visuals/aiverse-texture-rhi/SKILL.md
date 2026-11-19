@@ -936,3 +936,17 @@ CI if it remains queued or cancelled.
 
 - New test target `aiverse_gpu_icb_material_contract_test`, CTest name `gpu_icb_material_contract`. It exercises actual C++ headers for frame/generation tickets, source VT/PBR/graph descriptor validation and strict graph/pipeline compatibility.
 - Run `cmake --build <build> --target aiverse_gpu_icb_material_contract_test` and `ctest --test-dir <build> --output-on-failure -R '^gpu_icb_material_contract$'`. This was registered but **not run** in the model's Linux environment.
+
+
+### Texture RHI focused verifier now covers Shader Graph ICB (Stage 10AP)
+
+- `tools/verify-texture-rhi.sh` builds
+  `aiverse_gpu_icb_material_contract_test` and runs CTest
+  `gpu_icb_material_contract` in both default and `--vulkan`
+  modes.
+- The test reads `ModelShaders.h` MSL source and audits all N=0..4
+  graph-VT atlas/page-table argument layouts and the lack of
+  dynamic sampler 16.
+- Tested here: only GitHub source registration and branch-string
+  consistency, **not** executable CTest nor the Metal compiler.
+  Never record PASS for a test whose GitHub job is queued/cancelled.
