@@ -822,6 +822,10 @@ struct App {
             if(server){server->poll(now);if(!server->step()){accumulated=0;break;}client->poll(now);}
             accumulated-=1.0/config.tickRate;
         }
+        // Streamed WorldScene GPU ownership is retired only at this
+        // real device-frame boundary, before any new scene submissions.
+        if(streamedScene && streamedScene->pendingGpuRetirements()!=0)
+            (void)streamedScene->collectRetired(device);
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
         auto actor=client->predicted();viewTime+=dt;
         updateCharacterAnimations(dt,actor);
