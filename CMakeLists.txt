@@ -2519,6 +2519,7 @@ if(AIVERSE_DESKTOP AND (AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS))
         aiverse_runtime AIVERSE::vivid_human AIVERSE::vivid_actor
         AIVERSE::MotionWeave aiverse_zstd_dec)
     target_compile_features(aiverse_vivid_creator PRIVATE cxx_std_20)
+    target_compile_definitions(aiverse_vivid_creator PRIVATE AIVERSE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 endif()
 
 # Geometry visibility verification uses the same renderer on GL and Metal.
