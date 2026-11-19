@@ -11857,3 +11857,101 @@ mark broken tests green.
 Keep experimental ICB OFF by default and
 PR #21 Draft pending cross-platform/driver
 and performance validation.
+
+## Stage 10CF — detached HEAD one-shot Mac texture suite preflight fix (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Context:** Stage 10CD added a full compiled `Renderer3D`
+nonuniform disk VT+Shader Graph mixed Metal GPU ICB
+acceptance fixture and the one-shot runner
+`tools/texture-rhi-final-verify.sh`; Stage 10CE
+repaired a prior editing duplication and restored a
+single clear shell script before native use.
+
+**First actual user one-shot attempt:** after
+`git fetch origin feature/texture-rhi-unification`
+and `git pull --ff-only origin feature/texture-rhi-unification`
+the worktree successfully fast-forwarded
+`636e96d8b..67cd9a421`, and
+`bash -n tools/texture-rhi-final-verify.sh`
+returned successfully. The next command stopped
+immediately before CMake with
+`FAIL: run only in the feature/texture-rhi-unification
+isolated worktree`. This was a shell preflight
+misclassification, not a failing Metal/Vulkan/GL,
+texture stream or Shader Graph test. The user's
+isolated verification worktree was already intentionally
+checked out at **detached HEAD**; therefore
+`git branch --show-current` produced an empty name
+even though the fetched source code was current.
+
+**Source fix:** `1fd7dcba4b16cbf72c64d0f6c81c5be9415c23ce`
+modifies **only**
+`tools/texture-rhi-final-verify.sh`.
+It replaces the brittle local-branch-name-only
+guard with a strict commit identity comparison:
+`git rev-parse HEAD` MUST equal
+`git rev-parse refs/remotes/origin/
+feature/texture-rhi-unification^{commit}`.
+The remote-tracking ref must exist; no unnamed
+or stale detached SHA can run. If symbolic-ref
+does return a branch, only exactly
+`feature/texture-rhi-unification` is allowed.
+The source SHA and branch/detached state are
+displayed. No source switch or local rebase
+is performed. No native C++, Metal shader,
+GPU ICB logic or asset data was changed.
+
+**Documentation and agent skill:**
+`f3018a40c4bab2f727f3f89d31b68618f1875646`
+appended Stage 10CF to `docs/texture-rhi.md`;
+`7b8e552d72b00dc2def870ab0e44451abd1aa9d2`
+updated `skills/visuals/aiverse-texture-rhi/SKILL.md`;
+this append-only handoff is a separately committed
+stage record, preserving its native failure, source
+fix and next action.
+
+**Verification actually performed:** fetched the
+GitHub script before modification, identified the
+exact false-rejecting guard, replaced it using
+GitHub connector, reviewed correct `HEAD` and
+origin ref equality logic and its fail-closed
+branch cases. The source update is committed.
+The user supplied terminal evidence for the
+prior fast-forward and preflight failure.
+**Native one-shot full CMake/CTest, 21 portable tests,
+seven native Metal GPU gates, the new Stage 10CD
+nonuniform scene oracle and final acceptance.txt
+are NOT RUN / NOT VERIFIED after this fix.**
+Do not infer PASS from the earlier green
+per-feature Metal GPU tests.
+
+**Next exact one-shot command, detached HEAD safe:**
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+# Optional: append --full-engine for all default AIVERSE tests.
+```
+
+**Full success criteria:** script accepts the
+exact fetched remote source SHA while detached;
+both safe and GPU CMake configurations generate;
+21 portable texture/VT/graph tests pass plus
+optional tool-dependent checks; all **seven**
+native Metal GPU test binaries build before
+any native GPU tests run, then execute serially
+and report their specific GPU success markers.
+The real compiled Renderer3D four-source
+nonuniform guttered virtual texture and GPU ICB
+oracle must pass. The process exits 0 and
+creates `build/texture-final-logs/acceptance.txt`
+with the exact accepted SHA and `result=PASS`.
+On any next error, capture the FIRST actual
+CMake/compiler/Metal/pixel failure, fix code
+and append another handoff with real results.
+Keep Draft PR #21 and GPU ICB default OFF.
