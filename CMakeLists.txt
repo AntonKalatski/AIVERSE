@@ -734,6 +734,28 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         COMMAND aiverse_persistent_model_pool_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_status_replay_tests
+        tests/render/retirement_status_replay.cpp)
+    target_include_directories(aiverse_retirement_status_replay_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_status_replay
+        COMMAND aiverse_retirement_status_replay_tests)
+    add_executable(aiverse_view_appearance_packet_tests
+        tests/view/appearance_packet.cpp)
+    target_link_libraries(aiverse_view_appearance_packet_tests
+        PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_packet
+        COMMAND aiverse_view_appearance_packet_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_scoped_resource_owner_tests
+        tests/render/resource_owner_scope.cpp)
+    target_link_libraries(aiverse_scoped_resource_owner_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_scoped_resource_owner
+        COMMAND aiverse_scoped_resource_owner_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
