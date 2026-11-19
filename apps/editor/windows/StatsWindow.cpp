@@ -80,6 +80,12 @@ public:
                     pool.liveModels, residency.cachedModels, residency.loadedTypes, ed.rules().types.size());
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
+        const auto modelOwnerMemory=ed.view().ownedModelGpuMemoryStats(ed.device());
+        ImGui::TextDisabled("Model/material GPU owned: %.2f MiB, %zu textures + %zu buffers; unknown %zu",
+            double(modelOwnerMemory.knownBytes()) / mib,
+            modelOwnerMemory.textures,modelOwnerMemory.buffers,
+            modelOwnerMemory.unknownTextures+modelOwnerMemory.unknownBuffers);
+        ImGui::TextDisabled("Dedicated non-pooled geometry + owner textures only; shared geometry pages excluded.");
         ImGui::TextDisabled("Учтён только asset pool; отдельные render targets и FX указаны ниже частично.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
