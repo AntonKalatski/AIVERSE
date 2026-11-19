@@ -9,6 +9,8 @@ if (!url || !/^https?:\/\//.test(url)) {
   console.error("Usage: node tests/render/webgl2_context_recovery_browser.mjs http://host/AIVERSE.html");
   process.exit(2);
 }
+const verifyVT = process.argv.includes("--vt");
+// --vt requires the standalone AIVERSE production VirtualTextureStreamer app.
 const assert = (condition, message) => {
   if (!condition) throw new Error("FAIL: " + message);
 };
@@ -29,6 +31,19 @@ try {
       && m._aiverse_web_test_generation() === 1
       && m._aiverse_web_test_frames() > 2;
   }, null, { timeout: 30000 });
+  const vt = key => page.evaluate(name => {
+    const f = globalThis.Module?.["_aiverse_web_vt_" + name];
+    return typeof f === "function" ? f() : null;
+  }, key);
+  if (verifyVT) {
+    await page.waitForFunction(() => {
+      const m = globalThis.Module;
+      return m && typeof m._aiverse_web_vt_completed === "function"
+        && m._aiverse_web_vt_completed() === 1
+        && m._aiverse_web_vt_failures() === 0;
+    }, null, { timeout: 30000 });
+    assert((await vt("stage")) === 3, "production VT stage reached LRU fallback");
+  }
   const initialFrames = await metric("frames");
   assert(initialFrames > 2, "AIVERSE rendering started");
 
@@ -113,11 +128,24 @@ try {
     const before = await metric("frames");
     await page.waitForFunction(previous => globalThis.Module._aiverse_web_test_frames() > previous + 2,
                                before, { timeout: 10000 });
+    if (verifyVT) {
+      await page.waitForFunction(expected => {
+        const m = globalThis.Module;
+        return m && m._aiverse_web_vt_generation() === expected + 1
+          && m._aiverse_web_vt_completed() === expected + 1
+          && m._aiverse_web_vt_shutdowns() >= expected
+          && m._aiverse_web_vt_stage() === 3
+          && m._aiverse_web_vt_failures() === 0;
+      }, cycle, { timeout: 30000 });
+      assert((await vt("failures")) === 0,
+        "production VT no streaming failures after restore cycle " + cycle);
+    }
     assert(await checkTexture(), "WebGL2 mip/layer readback after restore cycle " + cycle);
     console.log("PASS: WebGL2 restore cycle " + cycle + ", generation=" + await metric("generation"));
   }
   assert(errors.length === 0, "no page errors: " + errors.join("; "));
   console.log("PASS: AIVERSE WebGL2 context-loss suspension, device regeneration, browser texture-array readback");
+  if (verifyVT) console.log("PASS: production VirtualTextureStreamer root/detail/LRU republished after two context restores");
 } finally {
   await browser.close();
 }
