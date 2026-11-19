@@ -874,7 +874,7 @@ may clear the failure and return the client to Idle. Never treat
 the unhealthy Unknown as a safe baseline.
 
 Regression source:
-`tests/physis_remote_edit_test.cpp::revisionProbeStopsOnUnhealthyJournal`.
+`tests/physis_remote_edit_test.cpp` (function `revisionProbeStopsOnUnhealthyJournal`).
 This high-level integration fixture is authored but has NOT
 executed on a full engine build. The unrelated standalone POSIX
 journal CTests still pass 3/3. To validate the actual fix on a

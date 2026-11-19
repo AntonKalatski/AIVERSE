@@ -1954,6 +1954,11 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
             target_compile_options(aiverse_place_tests PRIVATE -Wall -Wextra)
         endif()
         add_test(NAME place COMMAND aiverse_place_tests ${PROJECT_SOURCE_DIR}/examples/place/scene.json)
+        # The place test includes a strict measured server-tick (<5 ms) performance
+        # budget. Never co-schedule it with heavyweight CTests: competing
+        # workers distort wall-clock time without changing simulation work.
+        # Preserve the original performance threshold and all functional checks.
+        set_tests_properties(place PROPERTIES RUN_SERIAL TRUE)
         # Place hosting: tickets, gate, reconnect, suspend, WebSocket (agent-place-secure, docs/replica.md § Place hosting)
         add_executable(aiverse_place_secure_tests tests/place/place_secure_tests.cpp)
         target_link_libraries(aiverse_place_secure_tests PRIVATE aiverse_place)
