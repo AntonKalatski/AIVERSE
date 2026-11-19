@@ -371,3 +371,38 @@ portrait/type-appearance compatibility layer remains active.
 actual GPU/Metal/Vulkan/GL/WebGL, FPS/RTS/editor screenshots,
 multithreaded loader contention and visual parity have not been
 verified. See the Stage 103 handoff for exact SHA and next action.
+
+### Stage 104 — persistent multi-worker import and View selection styles
+
+The native `render::AsyncModelCpuQueue` now reuses 1–8 persistent
+`std::thread` workers instead of spawning a new asynchronous task
+for each model file. It uses condition-variable dispatch, bounded
+waiting/ready queues, source revision invalidation and the existing
+Visual/Interactive/Background priorities. Configuration is host-owned:
+the reader and CPU image cache must be reentrant; all GPU upload,
+source publication and MotionWeave pose state remain on the render
+owner thread. Changing the worker count joins in-flight tasks;
+do not reconfigure during an interactive rendering frame.
+
+Shared GPU geometry is accounted by page identity, not by the
+number of animations or imported Models. The
+`geometryPoolReferencedStats(device,modelPointers)` API can accept
+models from multiple render host owners in ONE collection, avoiding
+double charging a page referenced by many models or views.
+`ModelResourceCache::geometryPoolModelReferences` includes
+currently resident and GPU-retired models. The device's global
+geometry pool remains the authoritative page capacity owner, and
+shared textures remain counted by their texture-cache owner.
+
+`aiverse::view::MeshObject` now has genre-independent
+`selectionOutline` / `selectionColor` styling. The editor's
+`SceneRenderable` selected/hovered mesh submissions and selection
+edge lines are routed through `aiverse::View::submitMesh/submitLine`
+with the legacy renderer-specific silhouette implementation
+preserved internally. This does not tick an animation graph or add
+gameplay selection components to MotionWeave.
+Full `game::RtsView` retirement is still unfinished.
+
+**NOT RUN:** native build, CTest, desktop/mobile GPU tests, editor
+selection visual parity, CPU thread sanitizer and geometry pool
+GPU-lifetime checks. See Stage 104 agent handoff.
