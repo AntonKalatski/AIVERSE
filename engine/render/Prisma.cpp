@@ -28,6 +28,10 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
+struct MotionBlurU {
+    float px[4], p0[4], sun[4], depthInfo[4];
+};
+const char* kMotionBlurFields[] = {"px", "p0", "sun", "depthInfo"};
 struct MotionUniforms {
     float px[4], p0[4], sun[4];
     float inv0[4], inv1[4], inv2[4], inv3[4];
@@ -331,14 +335,16 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kExposureReduce, nullptr, 1, "prisma exposure reduce"},
         {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
         {prisma::kMotionVectors, nullptr, 7, "prisma camera motion vectors"},
-        {prisma::kMotionBlur, nullptr, 15, "prisma shutter motion blur"},
+        {prisma::kMotionBlur, prisma::kMotionBlurHelpers, 15, "prisma shutter motion blur"},
     };
     const Def& d = defs[p];
     const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
         ? (1u << 1) : (p == kMotionBlur ? (1u << 2) : 0u);
     Built b = (p == kMotionVectors)
         ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
-        : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
+        : p == kMotionBlur
+            ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
+            : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
     sd.textureSlots = p == kMotionBlur ? 4 : (p == kMotionVectors ? 3 : 2);
@@ -673,14 +679,20 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             raster(velocity, pipes_[kMotionVectors], &vectors, sizeof vectors,
                    scene.tex, sceneDepth,
                    motionView.objectVelocity.valid() ? motionView.objectVelocity : black_);
-            SimpleU blur{};
+            MotionBlurU blur{};
             put(blur.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
             put(blur.p0, motionEffect->get("shutterScale"),
                 motionEffect->get("maxPixels"),
                 motionEffect->get("samples"), motionEffect->get("intensity"));
             put(blur.sun, motionEffect->get("depthThreshold"),
                 motionEffect->get("reactiveStrength"),
-                motionEffect->get("velocityDilation"), 0);
+                motionEffect->get("velocityDilation"),
+                motionEffect->get("depthToleranceMeters"));
+            const bool linearDepth = motionEffect->get("linearDepth") > 0.5f &&
+                f.depthFar > f.depthNear + 0.001f &&
+                (f.orthographic || f.depthNear > 0.0f);
+            put(blur.depthInfo, f.depthNear, f.depthFar,
+                f.orthographic ? 1.0f : 0.0f, linearDepth ? 1.0f : 0.0f);
             raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
                    scene.tex, velocity.tex, sceneDepth);
             src = blurred;
