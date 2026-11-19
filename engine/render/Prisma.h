@@ -220,6 +220,23 @@ public:
     bool active() const override;
     bool linearScene() const override { return hdrFrame_; }
     bool hdrRequested() const;
+    // Pure read-only requested/capability/last-frame diagnostic. No GPU
+    // programs, textures, or temporal histories are allocated by this query.
+    struct RuntimeCapabilities {
+        bool deviceHealthy=false, hdrFormatSupported=false;
+        bool hdrRequested=false, hdrEffectiveLastFrame=false;
+        bool temporalRequested=false, temporalPipelinePrepared=false;
+        bool temporalResolvedLastFrame=false;
+        bool jitterRequested=false, jitterAppliedLastFrame=false;
+        bool upscaleRequested=false, upscaleAppliedLastFrame=false;
+        bool adaptiveRequested=false, scopedGpuSampleAvailable=false;
+        bool velocityPipelinePrepared=false, reactiveLastFrame=false;
+        std::string fallbackReason;
+    };
+    RuntimeCapabilities runtimeCapabilities() const;
+    // Canonical history has sole ownership. The optional older
+    // PrismaScreenLighting wrapper MUST skip its separate TAA when true.
+    bool canonicalTemporalRequested() const;
     gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) override;
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
     bool wantsObjectMotionVectors() const override;
