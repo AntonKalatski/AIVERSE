@@ -24,9 +24,10 @@ public:
     GiDynamicProbeTexture(const GiDynamicProbeTexture&) = delete;
     GiDynamicProbeTexture& operator=(const GiDynamicProbeTexture&) = delete;
 
-    bool initialize(gfx::Device& device, size_t probeCount) {
+    bool initialize(gfx::Device& device, size_t probeCount, bool computeWritable = false) {
         release();
-        if (!probeCount || probeCount > 20000 || !device.supports(gfx::PixelFormat::RGBA32F))
+        if (!probeCount || probeCount > 20000 || !device.supports(gfx::PixelFormat::RGBA32F) ||
+            (computeWritable && !device.supportsCompute()))
             return false;
         const int rows = int((probeCount + kProbesPerRow - 1) / kProbesPerRow);
         std::vector<float4> zeroes(size_t(kTextureWidth) * size_t(rows));
@@ -35,6 +36,7 @@ public:
         desc.height = rows;
         desc.format = gfx::PixelFormat::RGBA32F;
         desc.filter = gfx::Filter::Nearest;
+        desc.storage = computeWritable; // Metal: shader read + shader write; legacy default stays read-only.
         desc.data = zeroes.data();
         desc.label = "dynamic GI probe overlay (3 float4/probe)";
         auto texture = device.createTexture(desc);
