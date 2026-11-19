@@ -253,6 +253,29 @@ void Editor::reloadRules() {
     reloadFx();
 }
 
+// Presentation-only asset refresh. The old view joins its model-preparation
+// worker and releases GPU resources before new model/graph pointers are exposed.
+// Unlike reloadRules(), do not reparse rules, restart FX or reset editor demand
+// history. The caller defers this transaction until after play mode.
+void Editor::reloadVisualAssets() {
+    if (!dev_ || playing() || clientPlaying()) return;
+    editSceneCacheValid_ = false;
+    editSceneCache_.clear();
+    view_.shutdown(*dev_);
+    modelDemand_.invalidate(); // discard requests for the old resource generation
+    view_.setDeferredLoading(lazyEditorAssets_);
+    view_.setDeferAppearanceVariants(false);
+    view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
+    view_.init(*dev_, rules(), projectReader(ws_.project.dir));
+    for (const auto& warning : view_.warnings())
+        ws_.log("view", warning, true);
+    // Preview entities and the height queries must rebind after resources
+    // change; this is not a rules-document or gameplay state revision.
+    gridRevision_ = ~0ull;
+    ++rulesRevision_;
+    reclaimEditorAssets(true); // requeue authored/selected types, not the full catalog
+}
+
 void Editor::retainEditorType(uint16_t type) {
     if (type >= rules().types.size()) return;
     if (modelDemand_.size() != rules().types.size())
