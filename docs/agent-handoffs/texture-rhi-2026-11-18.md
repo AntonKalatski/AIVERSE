@@ -12673,3 +12673,30 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Actual verification:** Source pushed via GitHub connector, not compiled, tested, benchmarked, or GPU-validated. The CPU mip kernel should receive golden-image and performance reference fixtures in the final verification stage. No speedup number asserted. Prior old Mac 21+7 PASS is still for `7494f32d` only.
 
 **Next:** feature freeze and final cross-backend acceptance tests including indexed residency partial-vs-full reference, mixed-mip anisotropic seams, GPU atlas mips, model permutations, streaming budgets and performance. Keep #21 Draft and experimental ICB OFF.
+
+## Stage 10CV — final-gate CPU fixture for physical virtual mips and streaming (2026-11-19)
+
+**Source commit SHA:** `40398dae9129a87681f7b152786b1d7e7ba876e7`
+**Branch:** `feature/texture-rhi-unification`; **PR:** #21 Draft; `main` unchanged.
+
+**New source:** `tests/render/virtual_texture_mip_pipeline.cpp` is a real C++ test intended to compile against the production `VirtualTextureStreamer.h` and `VirtualTexturePageTable.h` and a mock RHI. It covers:
+- RGBA8 mip-chain sizes, linear vs sRGB averaging, alpha-premultiplied fringe prevention, invalid/truncated page buffers.
+- Indexed page-table array layers, nearest resident coarse fallback, unchanged-revision no-op, and incremental rebuild compared byte-for-byte to a newly initialized **full-reference rebuild**, through many LRU page changes including bounded journal history overflow.
+- Explicit indexed zero-initialization, multi-frame 4-mip upload publication only after all levels complete, no early READY, root ticket cancellation after partial upload, re-staging and failure quarantine.
+- Early rejection of impossible staging/GPU/table-row budgets without allocating GPU textures.
+
+**CMake + script integration:** added `aiverse_virtual_texture_mip_pipeline_test` target and `virtual_texture_mip_pipeline` CTest in `CMakeLists.txt`. `tools/verify-texture-rhi.sh` includes it in focused build targets and test regex (CPU/Vulkan modes). `tools/texture-rhi-final-verify.sh` includes it in safe targets/test names; the expected safe CTest count becomes **22** (21 older + 1 new) and the seven native Metal GPU targets stay unchanged. Existing Linux texture PR CI invokes the updated focused script so it is automatically included in its OpenEXR ON/OFF and Vulkan compile jobs.
+
+**Actual validation:** GitHub source fetches, targeted string/anchor replacement checks and Git blob/tree/commit/update_ref only. **NOT RUN**: C++ compiler, CMake/CTest, GLSL/MSL shader compiler, macOS/Metal native GPU or performance. The user requested features first, then a single validation phase; a test added to source must not be called PASS until executed. Older 21 portable + seven Metal GPU PASS was observed at `7494f32d`, not this SHA.
+
+**Next exact action:** finish remaining source fixes and validate CMake registration, compiler-backed canonical shaders, model material permutations and system package dependencies. Run the one-shot Mac Studio command in isolated worktree:
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
+```
+Require actual new SHA and `result=PASS`, `full_engine=1`, `safe_texture_tests=22`, `native_metal_gpu_tests=7` in current `build/texture-final-logs/acceptance.txt` and absence of `FAIL:` log assertions. Inspect whether shader compiler tests truly ran, not just registered. Need additional GPU pixel oracles for mixed virtual mips, anisotropy and indexed shader model path. Keep high-risk experimental ICB disabled by default; do not merge #21 until certified.

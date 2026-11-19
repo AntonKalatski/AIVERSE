@@ -1943,3 +1943,7 @@ Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual
 ## Stage 10CU — optimized sRGB mip CPU converter (SHA dae9aade)
 
 `buildVirtualTexturePhysicalMips` now uses one static 256-value sRGB-to-linear table and binary-search inverse quantization, avoiding per-texel `pow` during runtime VT page uploads. Existing alpha-correct filtering and generated mip dimensions unchanged. Correctness and performance have not been tested for this source SHA; record actual oracle/benchmarks in final acceptance.
+
+## Stage 10CV — new final-stage indexed VT regression fixture (SHA 40398dae)
+
+`virtual_texture_mip_pipeline` CTest now exercises production CPU physical mip generation, indexed mip table partial-vs-full oracle, bounded page-change history, atomic multi-frame upload/cancellation, and fail-fast GPU/staging budgets with mock RHI. CMake, focused verifier, and Mac one-shot script include this 22nd safe test; seven existing Metal GPU tests unchanged. This is SOURCE ADDED, NOT COMPILED OR PASSED. The exact CTest outcome must be recorded only after real CI/Mac validation.
