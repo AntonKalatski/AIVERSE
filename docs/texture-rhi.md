@@ -2837,3 +2837,42 @@ cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parall
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+
+### Stage 10BL — Apple M3 Ultra physical atlas GPU acceptance PASS (2026-11-19)
+
+**Actual native GPU evidence, provided by the user:** in the isolated
+Mac Studio texture-verification worktree, the extended
+`metal_texture_gpu` CTest #122 **PASSED (1/1, 0 failed)** in
+**1.62 s** (total CTest 1.63 s).
+Exact RGBA8 native GPU readbacks (tolerance 0) confirmed
+fine-page override, invalidation of old page-table entries
+**before** LRU reuse, physical page replacement, post-LRU
+republishing, and coarse fallback after explicit eviction.
+The actual test ends with
+`PASS: Metal GPU texture subresources, fragment sampling,
+VT feedback/page table and async readback parity`.
+
+**Native timestamps:** fine publication readbacks=2,
+submit=9.053 ms, callback wait=20.277 ms, GPU command=0.018 ms;
+pre-overwrite invalidation readbacks=1, submit=8.905 ms,
+callback wait=20.219 ms, GPU command=0.005 ms;
+replacement publication readbacks=2, submit=9.035 ms,
+callback wait=20.100 ms, GPU command=0.006 ms;
+explicit eviction readbacks=1, submit=8.845 ms,
+callback wait=20.719 ms, GPU command=0.005 ms.
+The complete `VT physical atlas publication_total_ms` was
+177.399 ms; the GPU fixture total was 1221.715 ms and
+`gpu_test_body_ms` was 475.428 ms. These are distinct
+measurement intervals; CTest wall time is **not** page-upload
+GPU time and the GPU command interval includes the whole
+command buffer, not pure texture-transfer throughput.
+
+**Verified scope:** production `VirtualTextureStreamer`
+with actual Metal allocation/update/blit readbacks; per-slot
+page-table validity, coarser fallback and deterministic LRU
+transition. This stage does not yet exercise the real
+`VirtualTextureFileStreamer` disk worker or sample the
+page table through a fragment shader, nor does it validate
+GPU ICB Shader Graph material mixing or other backends.
+No source code changed to achieve this observed PASS.
+
