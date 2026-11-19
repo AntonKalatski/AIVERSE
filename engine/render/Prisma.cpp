@@ -1373,6 +1373,22 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     };
     const float seed = float(frame_ % 61) * 0.173f;
 
+    // Invalidate per-camera HDR exposure BEFORE the current-frame meter.
+    // Otherwise a camera jump can present one frame of stale adaptation.
+    auto& motionView = motionViews_[viewId_];
+    const float3 cameraDelta = f.cameraPos - motionView.previousCameraPos;
+    const bool automaticCut = motionView.valid &&
+        (!std::isfinite(cameraDelta.x) || !std::isfinite(cameraDelta.y) ||
+         !std::isfinite(cameraDelta.z) ||
+         dot(cameraDelta,cameraDelta) > 144.0f); // >12 presentation units
+    if (automaticCut) {
+        motionView.valid = false;
+        ++motionView.cutEpoch;
+        if (auto it = temporalViews_.find(viewId_); it != temporalViews_.end())
+            it->second.valid = false;
+        resetAutoExposure(viewId_);
+    }
+
     // ---- Stage 23: GPU-only HDR eye adaptation (linear scene -> log luminance
     // pyramid -> 1x1 exposure ping-pong). The 1x1 multiplier is applied in
     // composite BEFORE tone mapping; never post-process UI/HUD.
@@ -1398,9 +1414,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             put(measure.px, 1.0f / float(pw), 1.0f / float(ph), flip, 0);
             if (level == 0) {
                 put(measure.p0, autoEffect->get("centerWeight"),
-                    autoEffect->get("centerRadius"), 0, 0);
+                    autoEffect->get("centerRadius"),
+                    autoEffect->get("highlightRejection"), 0);
                 put(measure.sun, autoEffect->get("minMeterLogL"),
-                    autoEffect->get("maxMeterLogL"), 0, 0);
+                    autoEffect->get("maxMeterLogL"),
+                    autoEffect->get("highlightStartEV"),
+                    autoEffect->get("highlightSoftnessEV"));
             }
             draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
                  &measure, sizeof measure, {{0, source}});
@@ -1414,9 +1433,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 SimpleU measure{};
                 put(measure.px, 1, 1, flip, 0);
                 put(measure.p0, autoEffect->get("centerWeight"),
-                    autoEffect->get("centerRadius"), 0, 0);
+                    autoEffect->get("centerRadius"),
+                    autoEffect->get("highlightRejection"), 0);
                 put(measure.sun, autoEffect->get("minMeterLogL"),
-                    autoEffect->get("maxMeterLogL"), 0, 0);
+                    autoEffect->get("maxMeterLogL"),
+                    autoEffect->get("highlightStartEV"),
+                    autoEffect->get("highlightSoftnessEV"));
                 draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
                      {{0, scene.tex}});
                 source = mip.tex;
@@ -1474,21 +1496,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // reconstruction and shutter blur. Temporal history is keyed by viewId,
     // not shared by same-resolution Scene/Game cameras.
     Target src = scene;
-    auto& motionView = motionViews_[viewId_];
-    // Unexpected teleport: do not accumulate stale color or smear a huge
-    // apparent velocity across a newly selected camera. Explicit camera-cut
-    // notifications still use resetMotionHistory(id) and take precedence.
-    const float3 cameraDelta = f.cameraPos - motionView.previousCameraPos;
-    const bool automaticCut = motionView.valid &&
-        (!std::isfinite(cameraDelta.x) || !std::isfinite(cameraDelta.y) ||
-         !std::isfinite(cameraDelta.z) ||
-         dot(cameraDelta,cameraDelta) > 144.0f); // >12 presentation-world units
-    if (automaticCut) {
-        motionView.valid=false;
-        ++motionView.cutEpoch;
-        if (auto it=temporalViews_.find(viewId_); it!=temporalViews_.end())
-            it->second.valid=false;
-    }
+    // The same camera cut already invalidated both velocity and exposure
+    // before the GPU meter was encoded.
     const bool previousValid = motionView.valid &&
         motionView.width == w && motionView.height == h;
     const auto validInput = [&](const MotionTextureInput& input,
