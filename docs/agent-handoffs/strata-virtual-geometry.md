@@ -501,3 +501,66 @@ cmake --build build/strata --target aiverse_strata_gpu_culling_tests -j 8
 ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)$' --output-on-failure
 ```
 Do not discard uncommitted work if `git status` is nonempty. On success, append the actual output and test commit/OS to a fresh handoff section; then address real Metal kernel compile and GPU-vs-CPU selection parity. Keep Strata diagnostics OFF by default and main unchanged.
+
+
+---
+
+## Stage 8.2 — owner 5/5 CPU CTests; diagnostic async GPU readback and real-Metal parity harness (2026-11-19)
+
+### Branch, scope and test evidence
+**Branch:** `feature/strata-virtual-geometry`, PR #35 Draft stacked on batching PR #34. Main unchanged.
+
+The user ran Stage 8.1 **before** the new Stage 8.2 implementation on Mac Studio at `~/Projects/AIVERSE-strata-stage8`. The native build produced `aiverse_strata_gpu_culling_tests` and CTest reported **100% tests passed, 5/5, 0 failed, 1.19 s**:
+- `strata_builder` PASS 0.17 s
+- `strata_model_adapter` PASS 0.17 s
+- `strata_view` PASS 0.16 s
+- `strata_gpu_scene` PASS 0.20 s
+- `strata_gpu_culling` PASS 0.48 s
+
+This is **real user-reported Mac native compilation / CPU + recording-RHI tests** for the older code, not a Metal compute parity pass or execution of this new Stage 8.2 code.
+
+### Implementation commits
+- `36636cbb1c06ca6fcd446922766be308ad04d82f`: `engine/render/StrataGpuCulling.h` adds `GpuSelectionReadback`, explicit statuses `Valid/Overflow/Invalid/ReadbackFailed`, asynchronous readback callback API, sorted CPU-vs-GPU parity oracle.
+- `cb7d0a40a77be93033b05da6a089bc68850c6d6a`: `engine/render/StrataGpuCulling.cpp` implements two independent RHI asynchronous reads (counters and ranges) with owner-thread completion, fail-closed invalid and overflow, 2048-record/65536-byte Metal limit and `compareGpuSelection` sorted exact CPU oracle.
+- `9716fee0e64089210d0d5dee3a8d08d24d58b248`: `tests/render/strata_gpu_culling.cpp` extends fake RHI for async callback sequencing, synthetic GPU selected records, GPU/CPU comparison, rejected overflow and oversized readback.
+- `cab54aa847d5819430610aa95da00252396d0b08`: `tests/render/strata_metal_parity.cpp` new real Metal/AppKit platform fixture. Uses pooled source Model + metadata v2, GPU compute dispatch and asynchronous readback; checks five scenarios: two instances/fine LOD, coarse parent LOD, frustum rejection, disabled instance, capacity overflow. Never submits renderer draws. Fixture fails on MSL compile errors or GPU/CPU mismatch.
+- `e10d0b3a37ed4037ed7872d845a5c02813879dd8`: `CMakeLists.txt` optional macOS target `aiverse_strata_metal_parity` gated by `AIVERSE_STRATA_METAL_GPU_TESTS=ON` (default OFF; intentionally not an unattended CTest because it opens a native Metal window).
+- `7221b7fa9dd59346b731e8636c93d2fa342be247`: `engine/render/GeometryScene.h` additive async readback API.
+- `52d4941f0008b18b939008eb6ad3588bf35a4442`: `engine/render/GeometryScene.cpp` delegates readback to scene-owned culler with gfx::Device identity/lifetime and opt-in gating. Compile-time Strata-OFF path is no-op.
+- `210de63271823291fd4fe23c1ec6beaaad09fc69`: real Metal fixture stores a validated pooled GPU sidecar index base during setup, avoiding late mutable lookups in callbacks.
+- `77002ea0473c329d417e5a1b4c6a36f4591beeef`: `docs/strata.md` readback contract, real Metal testing instructions, validation distinctions.
+- `fc28f78d772835882beaac8a6346e030eaedf036`: `AGENTS.md` stages and prior owner-confirmed pass.
+- `355044339ff142188a67619627e28a29bfbb9b3b`: `tests/render/strata_gpu_culling.cpp` additionally rejects nonzero `GpuSelectionCounters::invalid` with a complete-looking GPU prefix.
+
+### API and correctness
+`GpuClusterCulling::requestReadback(dev, selection, cb)` must run **during the same GPU frame and outside Metal encoders**, after a successful diagnostic `dispatch()`. It issues two `gfx::Device::readBufferAsync` copies. Metal supports at most 65536 bytes per request, so `GpuSelectionSubmission.capacity > 2048` fails immediately and reports `ReadbackFailed` to callback. GPU callbacks are delivered at a later `Device::beginFrame` on the device owner's thread. The shared callback state waits for both reads; malformed/incomplete, overflow or invalid counters do not publish drawable ranges. A scheduling failure reports failure once. Diagnostic only, no renderer submission.
+
+`compareGpuSelection(source, instances, pass, pooledFirstIndex, gpu, error)` independently invokes `planView` for each enabled instance with `cpuReferenceView`, computes absolute pooled offsets from source primitive concatenation, translates local node IDs to global metadata IDs, sorts both CPU and atomic-order GPU output by full record keys and requires exact match. Duplicate enabled instance tokens, malformed source, GPU invalid/overflow or CPU budget fallback are rejected. It is a correctness ORACLE, not a production draw backend.
+
+Real Metal fixture exercises `platform::run` and `gfx::createMetalDevice` through the existing engine runtime, no second RHI implementation. It enables only the pre-existing **CPU MDI admission** environment switch `AIVERSE_METAL_CPU_MDI=1` so its source can enter the shared `GlobalGeometryPool`; GPU-authored MDI/ICB and Strata renderer submission are NOT enabled. The fixture receives actual GPU results asynchronously, verifies expected LOD/frustum counts and CPU parity, and exits with failure on any issue. `GeometryScene` has a public readback convenience method for other diagnostic hosts; they MUST manage callback lifetime across scene unload.
+
+### Validation as of this handoff
+- **Previous Stage 8 Mac native focused tests: PASS 5/5** (user-supplied logs above).
+- Stage 8.2 native compilation and all new fake RHI checks: **NOT RUN**.
+- Actual Metal MSL compile, GPU dispatch, async readback and CPU/GPU parity: **NOT RUN**.
+- GPU raster screenshots, no-double-render proof, Vulkan and performance benchmarks: **NOT RUN**.
+- GitHub Actions was observed **QUEUED/PENDING** on Stage 8.2 intermediate commits; queued is not a passing result.
+
+### Exact next commands (existing worktree on Mac)
+```sh
+cd ~/Projects/AIVERSE-strata-stage8
+git status --short
+git fetch origin feature/strata-virtual-geometry
+# Only if your worktree has no unsaved changes:
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target aiverse_strata_gpu_culling_tests \
+  aiverse_strata_metal_parity --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)$' \
+  --output-on-failure
+build/strata/aiverse_strata_metal_parity
+```
+
+On any compiler error, shader pipeline error or failed GPU/CPU comparison, save the exact output, update the implementation and append a **new handoff section with actual results**. Inspect Metal shader compiler diagnostics, frame serials and GPU counters first. The real fixture must print five PASS scenario lines and `cases=5/5 status=PASSED` before claiming stage 8.2 GPU parity. Those are future required results, NOT current achievements. Preserve diagnostic-only mode and the legacy Renderer3D draw owner. Next work after real parity: randomized passes/transforms and conservative CPU/GPU pixel parity before mutually exclusive submission and Hi-Z.
