@@ -1787,3 +1787,41 @@ echo "exit=$?"
 ```
 
 Require the existing GPU assertion and `changed_channels=0` to remain true, plus two `CPU render benchmark` sample lines. The batch phase may mix GPU ICB and CPU MDI; report both actual submission counters. Repeat several A/B/A runs and use a separate representative-scene test for CPU frame/GPU timestamp estimates. Keep experimental flags off by default and PR Draft.
+
+
+---
+
+## Stage 61 — owner Mac CPU A/B measurements: batch path slower in tiny fixture (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Benchmarked code:** Stage 60 at `53ad8de2f073c83811c3fdffb5dd416c31c3251f`. This is a documentation-only stage; no code, profiling instrumentation, or default settings changed.
+
+### Real Mac Studio evidence provided by owner
+
+```text
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1651 p95_ms=0.2100 min_ms=0.1461 max_ms=0.2100
+CPU render benchmark batched: samples=6 median_ms=0.2484 p95_ms=0.2896 min_ms=0.2083 max_ms=0.2896
+CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS
+batch=1 shadow=1 opaque=1 total=4 error=
+GPU-encoded ICB: supported=1 required=1 submissions=1 commands=32
+GPU ICB diagnostics: candidates=1 prepared=1 rejected=0 executeFailed=0 preflightGroups=0
+PBR colour indirect active=1 (before 32, after 1)
+CPU MDI: supported=1 submissions=1 commands=32
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+GPU ICB benchmark exit=0
+```
+
+**Observation:** 0.2484/0.1651 = 1.5045x CPU time in the batched path (approximately +50.45%, +0.0833 ms) for this specific tiny indirect fixture, despite 66→4 total draw calls and exact raster parity. Six samples per phase, sequential Direct-then-Batched order, and mixed CPU MDI/GPU ICB paths make this unsuitable for attributing the overhead to one backend path or predicting whole-frame FPS. A real GPU frame-time measurement was NOT taken. All existing assertions pass, and the diagnostic counters prove actual GPU-authored submissions, not a speedup.
+
+### Next development work
+
+1. Design a repeatable, independent fixed-scene Direct / CPU MDI / GPU ICB tri-mode benchmark (not simultaneous CPU MDI+GPU ICB comparison) with per-pass submission counts.
+2. Use balanced A/B/A or rotating order, dozens/hundreds of samples after warmup, report median/p95 and distributions, device and renderer configuration.
+3. Inspect already existing `Renderer3D::ModelRenderStats::CpuMdiStageProfile` and Scene profiling counters to locate CPU overhead before editing render paths.
+4. Add GPU timestamp / command-buffer duration only where backed by actual Metal/Vulkan API support. Do not label CPU wall time GPU time.
+5. Stress 1k/10k/100k objects, different material counts, shadow configurations, occlusion/LOD and real representative scenes; separately verify Vulkan MDI/recycling.
+6. Keep Draft PR #34 and all experimental flags OFF by default; do not enable optimizations on draw-call reduction alone.
+
+**Verification:** Owner successfully executed native CMake-built Metal fixture; assistant did not run local CMake, profile frame GPU time, or perform a new code test in this documentation-only stage.
