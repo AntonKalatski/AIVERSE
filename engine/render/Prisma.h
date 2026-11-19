@@ -51,7 +51,11 @@ public:
         size_t fencedTextures = 0;
         size_t unfencedTextures = 0;
         size_t graphRetiredTextures = 0;
-        uint64_t knownPendingBytes = 0; // lower bound; graph pool may add more
+        size_t graphLiveTextures = 0;
+        size_t graphUnknownTextures = 0;
+        uint64_t graphLiveKnownBytes = 0;
+        uint64_t graphPendingKnownBytes = 0;
+        uint64_t knownPendingBytes = 0; // lower bound; includes retired graph handles
         uint64_t lastGpuCompletedFence = 0;
     };
     RetirementStats retirementStats() const;
