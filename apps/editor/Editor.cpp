@@ -240,6 +240,7 @@ void Editor::reloadRules() {
     view_.shutdown(*dev_);
     modelDemand_.resize(rules().types.size());
     modelDemand_.markSweep(time_);
+    visualAssets_.reset();
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -291,6 +292,83 @@ size_t Editor::reloadVisualModelSources(
         ++rulesRevision_;
     }
     return invalidated;
+}
+
+// Model conversion remains a host/tooling concern, not part of the
+// genre-neutral resource index. Cache one attempted timestamp in the
+// VisualAssetDependencyService to avoid repeated external processes.
+bool Editor::convertVisualModelSource(const std::string& src) {
+    std::error_code ec;
+    fs::path tool=fs::path(ws_.buildTool).parent_path() /
+#if defined(_WIN32)
+        "modelconv.exe";
+#else
+        "modelconv";
+#endif
+    if(!fs::exists(tool,ec)) {
+        ws_.log("view","нужна конвертация "+src+
+                       ", но modelconv не найден рядом с aiversebuild");
+        return false;
+    }
+    const std::string cmd="\"" + tool.string() + "\" \"" + src + "\" 2>&1";
+#if defined(_WIN32)
+    FILE* pipe=_popen(cmd.c_str(),"r");
+#else
+    FILE* pipe=popen(cmd.c_str(),"r");
+#endif
+    if(!pipe)return false;
+    std::string output;
+    char buffer[256];
+    while(std::fgets(buffer,sizeof buffer,pipe))output+=buffer;
+#if defined(_WIN32)
+    const int rc=_pclose(pipe);
+#else
+    const int rc=pclose(pipe);
+#endif
+    ws_.log("view",(rc==0?"сконвертирована модель ":"не удалось сконвертировать ")+
+                   src+(rc==0?std::string{}:": "+output));
+    return rc==0;
+}
+
+void Editor::pollVisualAssets(double dt) {
+    if(!dev_ || ws_.project.dir.empty() || ws_.project.isFps()) {
+        visualAssets_.reset();
+        return;
+    }
+    if(!visualAssets_.due(ws_.project.dir,dt))return;
+    visualAssets_.scan(ws_.project.dir,rules().types,view_.materialLibrary(),
+        view_.modelResources(),
+        [this](const std::string& src){return convertVisualModelSource(src);},
+        [this](const std::string& message){ws_.log("view",message);});
+    // Changes are retained throughout editor/client play. GPU mutations
+    // happen only here, before the first rendering pass of a new frame.
+    if(!visualAssets_.pending() || playing() || clientPlaying())return;
+    const auto impact=visualAssets_.impact();
+    if(impact.requiresWholeView() ||
+       (impact.texture && impact.models.empty())) {
+        reloadVisualAssets();
+        ws_.log("view","обновлены графы/материалы: "+
+                 std::to_string(visualAssets_.changedSources().size())+
+                 " источников");
+    } else if(!impact.empty()) {
+        if(impact.texture) {
+            auto cache=view_.textureCache();
+            for(const auto& source:visualAssets_.changedSources()) {
+                const auto* entry=visualAssets_.index().lookup(source);
+                if(entry && entry->has(
+                    game::view_adapter::ModelSourceKind::Texture))
+                    cache->invalidateSource(source);
+            }
+        }
+        std::vector<std::string> models(
+            impact.models.begin(),impact.models.end());
+        const auto invalidated=reloadVisualModelSources(models);
+        ws_.log("view","обновлено ключей моделей: "+
+                 std::to_string(invalidated)+
+                 "; исходников: "+
+                 std::to_string(visualAssets_.changedSources().size()));
+    }
+    visualAssets_.acknowledge();
 }
 
 void Editor::retainEditorType(uint16_t type) {
@@ -1239,6 +1317,9 @@ void Editor::frame(gfx::Device& dev, double dt) {
     time_ += dt;
     pollAgentLink();
     applyChanges();
+    // Poll changed presentation assets before any new frame submissions.
+    // This runs even when every editor property/model window is closed.
+    pollVisualAssets(dt);
     // Background asset residency is paced on the editor thread. A single
     // slow upload can overrun the advisory time budget, so also cap count.
     // Interactive Inspector and viewport requests still load immediately.
