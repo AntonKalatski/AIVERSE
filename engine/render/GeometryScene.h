@@ -10,6 +10,7 @@ namespace aiverse::render {
 namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
     struct GpuSelectionReadback; class GpuClusterCulling;
+    class PortableSource;
     struct RenderCandidate; enum class RenderPass : uint8_t; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
@@ -26,6 +27,10 @@ public:
         uint32_t strataGpuIndexedSources=0, strataGpuIndexDeclined=0,
                  strataGpuIndexFailures=0;
         uint64_t strataGpuIndexBytes=0;
+        // Cross-backend CPU-selected Strata indexed rendering (opt-in).
+        uint32_t strataPortableSources=0, strataPortableDeclined=0;
+        uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
+        uint64_t strataPortableClusters=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -53,6 +58,14 @@ public:
     // unchanged; no Strata indirect or direct draw is performed. Default OFF.
     void setStrataRenderPreviewEnabled(bool on) { strataRenderPreviewEnabled_ = on; }
     bool strataRenderPreviewEnabled() const { return strataRenderPreviewEnabled_; }
+    // Optional actual Strata raster route for rigid opaque sources:
+    // CPU selects one conservative frontier for main/sun/reflection, then
+    // renders it with THE EXISTING Renderer3D on Metal, Vulkan and GLES3.
+    // Source GPU vertex data stays shared; the auxiliary index-only stream
+    // is pooled when supported, dedicated on GLES3. Default OFF.
+    // Scene must be reloaded after changing this option.
+    void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
+    bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
     bool dispatchStrataGpuView(gfx::Device& device, const std::string& sourceKey,
@@ -114,6 +127,10 @@ private:
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;
     std::shared_ptr<strata::GpuClusterCulling> strataGpuCulling_;
+    // Sources live until scene shutdown; aliases live until the following
+    // draw epoch, after Renderer3D has consumed all ModelDraw pointers.
+    std::map<const Model*, std::shared_ptr<strata::PortableSource>> strataPortableSources_;
+    std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
     gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
@@ -124,6 +141,7 @@ private:
     bool strataGpuMetadataEnabled_=false;
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
+    bool strataPortableRenderingEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
