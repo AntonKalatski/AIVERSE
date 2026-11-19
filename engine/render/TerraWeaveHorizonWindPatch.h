@@ -91,7 +91,8 @@ struct HorizonForestWindUploadPlan {
 // field is immutable across weather updates. Group consecutive dirty clusters
 // (8 vertices each) into at most maxRanges contiguous RHI writes. If the edits
 // are too fragmented or cover >=70% of the region, one full-suffix write is
-// cheaper than many buffer updates. It remains bounded by the 2 MiB budget.
+// cheaper than many buffer updates. The absolute 2 MiB shadow cap stays,
+// while per-update bandwidth and planning thresholds are host-configurable.
 inline std::optional<HorizonForestWindUploadPlan>
 planHorizonForestWindUpload(
         std::span<const render::ModelVertex> oldVertices,
