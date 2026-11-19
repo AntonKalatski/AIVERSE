@@ -424,3 +424,67 @@ guarantee. Owners changing material vector contents without incrementing
 their revision violate the explicit fast-path contract; use the conservative
 unversioned path for data without reliable revision propagation.
 
+
+
+### Static cross-model GPU-page groups (experimental CPU MDI)
+
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` enables a targeted **CPU-side**
+grouping policy for rigid static ModelDraw primitives originating from
+*different Models* that share exactly the same pooled GPU geometry page
+(`Model::geometryPoolPage`, vertex and index buffers). It does **not**
+merge CPU asset meshes or change the geometry pool allocation. It relies
+on the renderer's existing indexed multi-draw indirect (MDI) backend and
+its per-command `firstIndex + gpuFirstIndex`, `gpuBaseVertex` and
+`firstInstance` offsets. The opt-in therefore also needs the normal
+model MDI option and `Device::supportsMultiDrawIndirect()`. The Metal
+command threshold remains governed by `AIVERSE_METAL_MDI_MIN_COMMANDS`
+(default 16 unique commands); smaller groups keep their ordinary draws.
+
+**Two separate stages preserve correctness:**
+
+1. Every source ModelDraw independently performs current-camera/frustum,
+   sun-shadow and per-node LOD selection, including crossfade decisions.
+   Then the normal pass selector applies transparency, reflection,
+   occlusion and other visibility rules to each ModelItem. No model is
+   admitted to the shared batch solely because another model is visible.
+2. Only after that, the main opaque and sun-shadow pass may sort rigid
+   static candidates with one shared `geometryPoolPage` toward each other.
+   The existing material equivalence registry (GPU state + resolved
+   texture handles, exact comparison), pipeline flags, GI, shadow roles,
+   current visible primitive and vertex/index handles still gate each
+   indirect group. Different source model pointers are fine **only** when
+   their shared GPU arena and buffer handles agree. Otherwise the usual
+   sort, instancing and indexed direct draw fallback remain intact.
+
+The additional sorter is deliberately conservative: it excludes animated
+or skinned/morphed draws, transparent/faded/actor-reveal objects, active
+LOD crossfade, GPU-authored LOD, material-batch roles, baked GI, shader
+graphs and unpooled geometry. It does not reorder blended passes,
+reflection/auxiliary rendering or editor draw-call debug mode. Vulkan
+indirect draws with nonzero `gpuBaseVertex` use the existing direct
+fallback. `AIVERSE_RENDER_SAFE=1` or
+`AIVERSE_MULTI_DRAW_INDIRECT=off` disables the optimization. It is
+independent of `AIVERSE_PERSISTENT_CPU_PACKETS` and can group ordinary
+static ModelItems with no retained packet cache.
+
+The common policy lives in
+`engine/render/StaticCrossModelBatchPolicy.h` as the pure
+`staticCrossModelPageCompatible(a, b)` page/buffer check.
+`Renderer3D::renderModels` does the per-pass safe candidate sorting
+and grouping using the existing CPU MDI backend.
+`ModelRenderStats::staticCrossModelSubmissions`,
+`staticCrossModelCommands` and `staticCrossModelItems` count
+**successfully submitted** multi-model CPU MDI groups, not merely
+candidates. See Scene → Batching → Instancing and indirect details.
+Ordinary model MDI already supported limited mixed-model grouping via
+`AIVERSE_MDI_GEOMETRY_SORT=1`; this opt-in provides a narrower
+static-only sorting and shared-page contract rather than replacing it.
+
+**Performance / testing:** Keep OFF by default until it is built,
+pixel-compared and benchmarked on Metal and other backends. Static page
+grouping does not promise fewer calls unless visible compatible meshes
+meet the backend's command threshold. Compare same-camera CPU/GPU time
+and rendered pixels OFF/ON/OFF, including buildings, cars, distance LOD,
+shadows, transparency and missing shared-page models. No numerical speedup
+or parity proof has yet been obtained; feature implementation precedes
+tests at the user's request.
