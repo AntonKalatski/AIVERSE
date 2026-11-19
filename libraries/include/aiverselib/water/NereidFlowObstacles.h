@@ -87,7 +87,11 @@ inline void applyNereidFlowObstructions(
         return;
     // Do not trust ECS pool insertion order: sorted by generation-safe
     // entity identity, identical in reference/indexed/adaptive water queries.
-    std::vector<std::pair<uint64_t,const WaterFlowObstructionComponent*>> candidates;
+    struct Candidate {
+        uint64_t order=0,ecsId=0;
+        const WaterFlowObstructionComponent* obstacle=nullptr;
+    };
+    std::vector<Candidate> candidates;
     candidates.reserve(std::min<size_t>(
         kMaxWaterFlowObstructions,
         world.countExisting<WaterFlowObstructionComponent>()));
@@ -101,13 +105,21 @@ inline void applyNereidFlowObstructions(
                 return;
             if(candidates.size()>=kMaxWaterFlowObstructions)
                 throw std::length_error("NEREID active flow obstruction budget");
-            candidates.emplace_back(id.packed(),&o);
+            // Generated sources are sorted by stable source ID on BOTH ECS
+            // and visual side, so overlapping logs/boulders deflect water in
+            // the same sequence despite ECS entity recycling. Authored
+            // obstacles use their generation-safe entity ID as a fallback.
+            candidates.push_back({
+                o.sourceKey?o.sourceKey:id.packed(),id.packed(),&o});
         });
     std::sort(candidates.begin(),candidates.end(),
-        [](const auto& a,const auto& b){return a.first<b.first;});
-    for(const auto& [id,obstacle]:candidates)
+        [](const auto& a,const auto& b){
+            return a.order==b.order ?
+                a.ecsId<b.ecsId : a.order<b.order;
+        });
+    for(const auto& entry:candidates)
         sample.flow=deflectNereidFlow(
-            sample.flow,*obstacle,sampleAt,id);
+            sample.flow,*entry.obstacle,sampleAt,entry.ecsId);
 }
 
 inline void io(Archive& a,WaterFlowObstructionComponent& o){
