@@ -78,4 +78,14 @@ size_t drawEcsStaticModels(const aiverse::World& world,
         }, renderOrigin);
 }
 
+// Call on the presentation thread before an ECS Entity is removed, its
+// asset key changes to a different Model, or its stable identity is reused.
+// This is not a simulation system: renderer caches never enter rollback state.
+template<class StableKey>
+void invalidateEcsStaticModel(Renderer3D& renderer,
+                              aiverse::Entity entity,
+                              StableKey&& stableKey) {
+    renderer.invalidateStaticModelCache(stableKey(entity));
+}
+
 } // namespace aiverse::render
