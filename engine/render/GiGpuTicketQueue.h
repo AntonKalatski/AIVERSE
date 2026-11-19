@@ -86,6 +86,11 @@ public:
         if (!ready() || !pending_.empty()) return false;
         return backend.setGeometry(snapshot,revision);
     }
+    bool setPackedGeometry(GiGpuSmallScene& backend,const GiGpuBvh& packet,
+                           uint64_t revision) {
+        if(!ready() || !pending_.empty())return false;
+        return backend.setPackedGeometry(packet,revision);
+    }
     bool setLights(GiGpuSmallScene& backend,std::vector<GiMovingLight> lights) {
         if (!ready() || !pending_.empty()) return false;
         return backend.setLights(std::move(lights));
