@@ -50,6 +50,14 @@ if [[ "$want_metal" -eq 1 && "$(uname -s)" != "Darwin" ]]; then
     exit 2
 fi
 
+# Never register hardware CTests during ordinary source verification,
+# even if this build directory previously ran in --metal mode.
+if [[ "$want_metal" -eq 1 ]]; then
+    cmake_flags+=("-DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON")
+else
+    cmake_flags+=("-DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF")
+fi
+
 mkdir -p "$build/verify-logs"
 logs="$build/verify-logs"
 : >"$logs/build.log"
