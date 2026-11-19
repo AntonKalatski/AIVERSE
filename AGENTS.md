@@ -37,6 +37,19 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+## Strata virtualized geometry work (2026-11-19)
+
+Strata development is isolated on `feature/strata-virtual-geometry`.
+Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
+indirect batching, read `docs/strata.md` and
+`docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
+`docs/metal-batching-agent-handoff.md`. Stage 2 currently builds CPU
+meshlet/LOD assets only: **no Strata GPU submission path is operational**.
+Coordinate with the batching agent: share a single instance/material/indirect
+grouping authority, do not duplicate rendered primitives or transforms.
+On each bounded Strata step: implementation commit first; append and commit the
+handoff separately, recording unrun tests honestly.
+
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
 **Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
