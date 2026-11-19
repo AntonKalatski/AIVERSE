@@ -312,6 +312,13 @@ int aiverseMain(int argc, char** argv) {
                                         std::string(std::getenv("AIVERSE_EXPECT_GPU_ICB")) == "1";
                 const auto gpuDraw = renderer.gpuModelDrawStats();
                 const uint64_t indirectCommands = renderer.modelStats().indirectCommands;
+                // Separate GPU-compute-authored ICB from CPU-encoded MDI.
+                // The two paths can both contribute to a single model frame
+                // (e.g. different shadow/PBR passes), so the aggregate CPU
+                // indirect counters alone cannot establish GPU ICB execution.
+                std::printf("GPU-encoded ICB: supported=%d required=%d submissions=%u commands=%u\n",
+                            int(d.supportsGpuEncodedIcb()), int(expectGpu),
+                            gpuDraw.gpuEncodedSubmissions, gpuDraw.gpuEncodedCommands);
                 // CPU-encoded MDI and GPU-encoded ICB account for separate
                 // command counters. Do not reject a successful GPU ICB draw
                 // merely because the CPU indirect-command counter is zero.
@@ -347,7 +354,7 @@ int aiverseMain(int argc, char** argv) {
                 }
                 std::printf("PBR colour indirect active=%d (before %u, after %u)\n",
                             int(p.draws[1] < opaqueBefore), opaqueBefore, p.draws[1]);
-                std::printf("GPU indirect supported=%d submissions=%llu commands=%llu\\n",
+                std::printf("CPU MDI: supported=%d submissions=%llu commands=%llu\n",
                             int(supported),
                             (unsigned long long)renderer.modelStats().multiDrawSubmissions,
                             (unsigned long long)renderer.modelStats().indirectCommands);
