@@ -927,6 +927,12 @@ if(AIVERSE_BUILD_TESTS)
         tests/render/lumaweave_native_compile.cpp)
     target_include_directories(aiverse_lumaweave_native_compile PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(aiverse_lumaweave_backend_policy_test
+        tests/render/lumaweave_backend_policy.cpp)
+    target_include_directories(aiverse_lumaweave_backend_policy_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME lumaweave_backend_policy
+        COMMAND aiverse_lumaweave_backend_policy_test)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_bake_tests tests/bake/bake_tests.cpp)
