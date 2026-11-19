@@ -1128,6 +1128,111 @@ Metal/GL/Vulkan images, GPU-performance measurements, and CI. The
 source is not verified ready for production.
 See `docs/handoffs/prisma-stage-32.md`.
 
+
+## Stage 33 — GPU-completed fences for safe PRISMA resource retirement
+
+The renderer now exposes a separate **GPU-completion timeline** in the
+genre-independent `gfx::Device` interface:
+
+```cpp
+uint64_t submitted = dev.gpuSubmissionFence(); // current GPU frame, 0 if unavailable
+uint64_t completed = dev.gpuCompletedFence();  // GPU-confirmed completion only
+```
+
+The submitted token covers work encoded in the *currently active* GPU
+frame and is not the CPU frame counter. It can be attached to a target
+retirement before that frame is actually submitted; the backend will
+complete it only after GPU execution. A nonzero `gpuCompletedFence()`
+result is a real, contiguous completed GPU timeline token. Unsupported
+devices return zero. All values are per-device; never compare values
+from different devices, contexts or GPU queues.
+
+**Metal:** `GfxMetal.mm` uses the current command buffer's frame token
+and updates an atomic completed counter in its
+`addCompletedHandler` **only** for
+`MTLCommandBufferStatusCompleted`. It does not turn
+`frameSerial()` into a completion fence. The asynchronous callback
+captures shared lifetime-safe state and the graphics owner thread
+polls it by reading `gpuCompletedFence()`.
+
+**GL33 / GLES3 / WebGL2:** after the frame's render commands the backend
+inserts `glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0)` and flushes
+the command stream without waiting. At the next `beginFrame`, it
+calls `glClientWaitSync(..., timeout=0)` on its oldest pending fence,
+advancing completed tokens strictly in submission order and deleting
+signalled GL sync objects. The Windows GL33 dynamic loader now loads
+`glFenceSync`, `glClientWaitSync`, `glDeleteSync`.
+A failed fence is never treated as successful completion.
+No per-frame `glFinish` is added.
+
+**Vulkan:** uses its already existing per-frame `VkFence` and
+`serial_`. `gpuSubmissionFence` is the currently recording GPU
+frame's serial; `gpuCompletedFence` returns only the highest serial
+whose slot fence has been successfully confirmed by
+`vkWaitForFences`. A lost device or unsuccessful wait does not
+advance the completed fence. This is the existing slot-wait path, not
+a new polling implementation that blocks extra frames.
+
+### Automatic motion target reclamation
+
+`Renderer3D::beginScene` now calls
+`collectCompletedObjectMotion(dev.gpuCompletedFence())` on the
+graphics owner thread. When a viewport changes size,
+`queueObjectMotionTexture` takes the current
+`dev.gpuSubmissionFence()` if available and associates it with the
+old object velocity, reactive or scratch-depth target. On completion
+the old targets are destroyed; before then they are retained.
+`retireObjectMotionView` and `setObjectMotionSubmittedFence`
+remain available for externally managed submission lifecycles.
+On devices without submission-fence support, old targets remain in
+the Stage 32 quarantine until explicit GPU idle.
+
+### Deferred PRISMA Sized / RenderGraph targets
+
+`Prisma::sized` still keeps three active size entries for Scene/Game
+views, but when evicting the least-recently-used entry it now
+moves the **whole** `Sized` context — legacy raster targets, depth
+targets, cached Bloom graph and persistent `PrismaRhiExecutor`
+resource pool — into a fence-tagged retirement list instead of
+releasing it immediately. When the GPU reports that the last
+referencing submission completed, `collectCompletedSizes` frees
+the retired targets and safely resets the graph executor pool.
+In addition, `Prisma::target` now fence-retires targets replaced by
+size/HDR format changes, avoiding immediate destruction of a texture
+that may be in use by an earlier in-flight GPU command buffer.
+
+`Prisma::releaseRetiredSizesAfterGpuIdle()` is the escape hatch for
+hosts that have explicitly waited for an idle GPU; the function also
+drains unfenced/quarantined individual targets. The `shutdown` path
+assumes the platform's normal device-teardown GPU-idle condition.
+
+This stage is about **resource lifetime correctness**, not a change
+to image output, bloom topology, exposed `postfx` JSON, particle
+simulation or gameplay ECS. Existing experimental flags remain off
+by default.
+
+### Limits
+
+The new timeline only covers commands on the backend's regular
+graphics submission queue. External GPU queues or devices need their
+own fence tracking. Metal handles are released after the command
+buffer completion callback; GLES/WebGL sync capabilities and actual
+device behavior still require runtime validation. Vulkan may only
+advance its completion counter when rotating to a frame slot whose
+fence was waited. Without a GPU-completed token, retired resources
+are **not** released opportunistically and quarantine can grow.
+
+Auto Exposure per-view 1×1 history, PRISMA LUTs, externally owned
+Sprite/FX buffers and other unrelated render-resource caches have
+their own existing teardown policies; they are not all migrated to
+this queue. RenderGraph internal pool cleanup is deferred together
+with the evicted `Sized` context, rather than by assuming every
+pixel pass finished at the end of the CPU frame.
+
+Native compilation, CTest, Metal/GL/Vulkan GPU completion tests,
+images and memory profiling have **NOT RUN**, per the user's
+features-first instruction. See `docs/handoffs/prisma-stage-33.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
