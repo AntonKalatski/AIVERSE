@@ -174,6 +174,15 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
+bool Prisma::wantsObjectMotionVectors() const {
+    const auto* effect = settings_.find(PrismaType::MotionBlur);
+    const char* env = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
+    return enabled_ && settings_.enabled && hdrFrame_ &&
+        env && std::strcmp(env, "1") == 0 &&
+        effect && effect->enabled &&
+        int(quality_) >= int(effect->minQuality) &&
+        effect->get("intensity") > 0 && effect->get("maxPixels") > 0;
+}
 bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
     id = viewId_;
     const auto* effect = settings_.find(PrismaType::MotionBlur);
@@ -431,6 +440,7 @@ gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     gfx::PassDesc p = out;
     p.colorTarget = target(s, kScene, w, h).tex;
     p.depthTarget = depthFor(s, w, h);
+    sceneDepthForMotion_ = p.depthTarget;
     sceneReady_ = p.colorTarget.valid() && p.depthTarget.valid();
     if (!sceneReady_ && hdrFrame_) {
         hdrFailed_ = true; hdrFrame_ = false;
