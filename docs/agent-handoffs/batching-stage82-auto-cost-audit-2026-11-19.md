@@ -751,3 +751,10 @@ Each sample run should show `material palette CPU checks=38 result=passed` and `
 ### Next decisions
 
 If slow-frame **wall** increases while calling-thread **CPU time** stays near fast values, investigate descheduling or blocking/waiting with Instruments System Trace and Metal command buffer instrumentation. If thread CPU itself rises ~2x, inspect Xcode Time Profiler samples and CPU frequency/thermal/processor-core distribution; a thread CPU clock measures consumed time, not instructions or cycles. If both vary, compare per-stage CPU backend/other metrics and use paired fine-grained time profiling. In all cases validate the same byte-identical raster fixture, and eventually independent GPU timing with representative 10k workloads before any default enable/merge. Maintain separate handoff each stage.
+
+
+### Stage 95 runner parity hardening
+
+After the Stage 95 initial handoff, the standalone bash runner gained a hard assertion that the **terminal** pixel comparison line is `^changed_channels=0$` in addition to the separately verified actual-MDI capture. Source commit: `b36d8a5a23e7213b5966678dcece0c85d719feca`. This assertion was reviewed at source level but **not run on Mac**. Native compilation and validation remain pending.
+
+**Note:** The direct CPU-thread clock uses `CLOCK_THREAD_CPUTIME_ID` on macOS/Linux (per platform documentation), and the CSV intentionally retains its first 10 legacy fields. The new analyzer requires actual populated thread-time columns and rejects an unsupported `-1` value. Do not mistake the thread-vs-wall difference for a GPU timestamp or conclusive evidence of OS descheduling.
