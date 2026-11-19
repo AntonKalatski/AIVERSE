@@ -5,6 +5,7 @@
 #endif
 #include "engine/render/StrataRenderRouting.h"
 #include "engine/render/StrataRendererPreview.h"
+#include "engine/render/StrataVulkanIndirectContract.h"
 #include "engine/render/GlobalGeometryPool.h"
 
 #include <cassert>
@@ -29,6 +30,7 @@ public:
     const gfx::DeviceInfo& info() const override { return meta; }
     const std::string& lastError() const override { return last; }
     bool supportsMultiDrawIndirect() const override { return true; }
+    uint64_t frameSerial() const override { return 101; }
     bool supportsCompute() const override { return true; }
     gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
         if (desc.size == 0 || desc.size > 8*1024*1024) return {};
@@ -185,6 +187,46 @@ int main() {
     assert(candidate.ranges[0].firstIndex==indices.firstIndex+3);
     assert(candidate.ranges[1].firstIndex==indices.firstIndex+6);
     assert(candidate.ranges[0].baseVertex==indices.baseVertex);
+
+    // Stage 16.2 conservative Vulkan GPU-authored packet admission.
+    // The renderer is still exclusively Legacy until hardware image
+    // parity has been explicitly established. The CPU contract checks
+    // original-primitive fallback indices, immutability, frame identity
+    // and the common pooled VB/IB address space before the GPU dispatch.
+    device.meta.backend=gfx::Backend::Vulkan;
+    GpuPassConfig gpuView;
+    gpuView.viewProjection=mat4::identity();
+    gpuView.width=800;gpuView.height=600;
+    gpuView.maxOutputClusters=16;
+    VulkanIndirectContract contract{};
+    GpuPassConfig guarded{};
+    assert(prepareVulkanIndirectContract(device,model,asset,indices,
+        gpuView,false,contract,guarded,&error));
+    assert(contract.source==&model);
+    assert(guarded.gpuFallbackEnabled);
+    assert(guarded.gpuFallbackFirstIndex==
+           model.gpuFirstIndex+original.firstIndex);
+    assert(guarded.gpuFallbackIndexCount==original.indexCount);
+    assert(guarded.baseVertex==int32_t(model.gpuBaseVertex));
+    GpuSelectionSubmission authored{};
+    authored.ranges={98};authored.counters={99};authored.indirect={100};
+    authored.capacity=16;
+    authored.submittedInstances=1;
+    authored.frameSerial=device.frameSerial();
+    assert(validateVulkanIndirectSubmission(device,model,
+        contract,authored,&error));
+    authored.submittedInstances=2;
+    assert(!validateVulkanIndirectSubmission(device,model,
+        contract,authored,&error));
+    authored.submittedInstances=1;
+    assert(!prepareVulkanIndirectContract(device,model,asset,indices,
+        gpuView,true,contract,guarded,&error)); // active shadow/mirror
+    const auto saveAlpha=model.materials[0].alpha;
+    model.materials[0].alpha=AlphaMode::Blend;
+    assert(!prepareVulkanIndirectContract(device,model,asset,indices,
+        gpuView,false,contract,guarded,&error));
+    model.materials[0].alpha=saveAlpha;
+    device.meta.backend=gfx::Backend::Metal;
 
     RenderRouteGate gate;
     assert(chooseExclusiveRenderRoute(gate)==RenderRoute::Legacy);
