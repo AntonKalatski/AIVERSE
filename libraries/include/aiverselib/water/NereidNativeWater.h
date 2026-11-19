@@ -6,6 +6,7 @@
 #include <aiverselib/water/NereidInteractions.h>
 #include <aiverselib/water/NereidCascades.h>
 #include <aiverselib/water/NereidConfluences.h>
+#include <aiverselib/water/NereidShorelineSystems.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +21,8 @@ struct NativeWaterPipelineConfig {
     bool enableConfluences=false;
     bool enableCurrentField=false;
     bool enableVortices=false;
+    bool enableBankErosion=false;
+    uint32_t bankErosionTickMs=16;
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
 };
@@ -36,9 +39,13 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     if(config.enableConfluences)registerNereidConfluencePersistence(sim);
     if(config.enableCurrentField)registerNereidCurrentPersistence(sim);
     if(config.enableVortices)registerNereidVortexPersistence(sim);
+    if(config.enableBankErosion)registerNereidBankErosionPersistence(sim);
     if(config.probeFromTransform)
         addWaterProbeFromTransformSystem(sim,prefix+".probe");
     addAdaptiveWaterSamplingSystem(sim,prefix+".sample",config.adaptive);
+    if(config.enableBankErosion)
+        addNereidBankErosionSystem(sim,prefix+".bank_erosion",
+                                  config.bankErosionTickMs);
     if(config.enableBuoyancy)
         addWaterBuoyancySystem(sim,prefix+".buoyancy");
     if(config.enableInteractions)
