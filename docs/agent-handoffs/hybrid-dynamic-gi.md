@@ -107,3 +107,35 @@ Scope/compatibility: header-only CPU/reference contract and always-on regression
 Actually executed: read existing model shader and RHI source via GitHub and successfully committed the above files. **NOT RUN:** native compile, CTest, GPU shader validation, ./run-tests.sh, device measurement. This remains unverified until owner or an agent can run native commands in a working clone.
 
 Next exact action: implement opt-in model shader sampling of the independent dynamic delta with correct volume mapping and AO exactly once. CAUTION: model fragment textures 13+ are currently shader-graph textures (Renderer3DModels.cpp: kGraphTextureSlot=13), and Metal has sampler limits. Do not collide with graph samplers or corrupt GPU ICB material bindings. A safe first stage is to enable dynamic GI only for models without graph textures while retaining the old path for all others. Reserve an unused uniform slot carefully, bind dynamic data only for color phases, and never force shader permutation changes in the default GI-off configuration. Add always-on sampling contract and shader-variant checks before broadening to shader graphs / terrain / water.
+
+
+## Stage 5 - 2026-11-19 - opt-in GLSL/Metal dynamic probe sampling for PBR models (source committed; NOT VERIFIED)
+
+Implementation commits:
+- 10e14e62763b02438d8923271ae6739dce9c45a5 - engine/render/GiDynamicShaders.h
+- 3b34d758299d44abe7eae3b7c5bd109dba3a83ab - engine/render/ModelShaders.h, dynamic overlay in indirect diffuse path (GLSL + Metal)
+- c4d937b7da680b3f75ad5efc02cf849963372184, 731f0a4be5b3e6c3f452cd840ca03ba3af6398a9 - engine/render/Renderer3D.h, borrowed overlay API and shared eligibility gate
+- b329f25f6ae2b5c40b53d581d7041f2e941d7619, fac7e8744bfa8a17991e9889ba2e63b8364a0dd6 - engine/render/Renderer3DModels.cpp, shader variant/binding and HDR/Medium+/device eligibility
+- 8839e554fa8f1f5747c035cd5350a91ae8336a1e - engine/render/GiDynamicSampling.h, CPU-reference sample math
+- d04e94a422073945ef8818b7db698cb141e953b4 - tests/render/gi_dynamic_sampling.cpp
+- d482ae8e04b323e0c6c210b7b8d4739723887862 - CMakeLists.txt, gi_dynamic_sampling test
+- 7bf5852d07a3855a5680710f8c28264d99272aab - engine/render/GiDynamicProbeTexture.h, exposing the owning gfx::Device to check safe borrowed textures
+
+Public API: Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float3 origin, float spacing, int nx,int ny,int nz) validates atlas readiness, matching device, grid dimensions and finite parameters; clearDynamicGiOverlay() disconnects it. Caller MUST retain GiDynamicProbeTexture, keep it on the same RHI, and supply an atlas with coefficients containing only indirect radiance from sources not already counted in the selected static base. This is opt-in; existing no-overlay models are unchanged.
+
+Integration: GLSL/Metal material shader DYNAMIC_GI variant uses tex13 and U6 (Metal buffer(7)), samples the independent 384-wide 3-texels-per-probe atlas by four tetrahedral neighbors, fades at the volume border, adds the dynamic-only indirect result into ambient PBR prior to material AO. The existing scalable-field indirect term is suppressed only in DYNAMIC_GI variants that already use baked lightmaps or baked probes, while direct local lights and sunlight remain. The old GI-disabled shaders remain unchanged. Renderer only generates this variant in color phases 1/2, in HDR at Medium/High material quality, for lit models without active Shader Graph textures, and without GPU ICB instance or instance palette mode. Shader Graph textures begin at slot 13; this gate prevents a sampler collision. Terrain/basic meshes, water, GPU authored draw variants, low/LDR and models with graph texture inputs are NOT integrated yet.
+
+Test source: gi_dynamic_sampling compares lattice-centre evaluation and tetra interpolation against GiDynamicProbeReference, checks zero outside and at fade boundary, and checks that both model shader strings have dynamic GI guards/expected bindings. NOTE string checks are NOT a replacement for compiling GLSL/MSL variants on actual devices.
+
+Compatibility: no change to .avgic/lightmap version, active default quality policies, ECS persistence or networking; old rendering stays active when overlay pointer is null. Current dynamic probe reference still traces on CPU, so this does NOT establish mobile-rate dynamic GI. No built-in owner currently creates/configures a GiDynamicProbeTexture or calls setDynamicGiOverlay from game/editor; the hook is intentionally opt-in.
+
+Actual validation: GitHub source read/write succeeded; source-only review of shader slot occupancy and CMake registration. **NOT RUN:** native build, CTest, GPU GLSL/MSL compilation and captures, mobile GPU profiling, ./run-tests.sh --quick. Do not declare compile/visual parity without evidence.
+
+Next precise action:
+1. Pull branch. Run native:
+   cmake -S . -B build/gi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_CLIENT=OFF
+   cmake --build build/gi --target aiverse_gi_update_scheduler_test aiverse_gi_dynamic_probe_reference_test aiverse_gi_dynamic_probe_texture_test aiverse_gi_lighting_composition_test aiverse_gi_dynamic_sampling_test -j8
+   ctest --test-dir build/gi --output-on-failure -R '^gi_'
+   Run ./run-tests.sh --quick when feasible. Fix every compile warning/assertion and record exact SHA. Critically compile real GLSL and MSL opt-in variants with texture slots 13, uniform 6, HDR PBR and LIGHTMAP/PROBES.
+2. Add lightweight host-side runtime ownership so a game/editor can allocate/reference the volume, apply changed lights and geometry revisions, update <= budget probes/frame and upload only returned dirty IDs; then call setDynamicGiOverlay() before drawModel. Instrument light-to-indirect latency and upload bytes. Make ownership and teardown explicit.
+3. Add GPU compute tracing on Metal behind capabilities and a conservative fallback; integrate terrain, Shader Graph texture-slot remapping, and dynamic occluder BVH/SDF. Never silently enable GPU ICB experimental flags. Full 30 FPS Android claim requires actual device measurements.
