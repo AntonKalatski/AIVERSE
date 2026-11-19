@@ -16,13 +16,16 @@ namespace aiverse::render {
 
 class LumaWeaveParticleBridge {
 public:
-    static constexpr uint32_t kMaxSystemNamespace=(1u<<30)-1u;
+    static constexpr uint32_t kMaxSystemNamespace=(1u<<29)-1u;
+    static constexpr uint64_t kParticleDomain=1ull<<61;
     static uint64_t stableParticleKey(uint32_t systemNamespace,uint32_t particleUid) {
         if(!systemNamespace || systemNamespace>kMaxSystemNamespace || !particleUid)
             throw std::invalid_argument("invalid SpectraFX system namespace or particle UID");
-        // Top bits 01. The payload reserves 30 bits for an independent FX
-        // instance/system and all 32 monotonic per-system particle UID bits.
-        return LumaWeaveEffectBridge::kEffectNamespace |
+        // Top bits 01 mark VFX; bit 61 marks the particle subdomain.
+        // Generic effect instance keys (instanceId<<16 | emitterSlot) use
+        // only low bits 0..47 and can NEVER collide with this subdomain.
+        // 29 bits for a live ParticleSystem namespace + all 32 UID bits.
+        return LumaWeaveEffectBridge::kEffectNamespace | kParticleDomain |
                (uint64_t(systemNamespace)<<32) | particleUid;
     }
 
