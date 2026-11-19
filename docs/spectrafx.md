@@ -1533,6 +1533,138 @@ screenshots, performance and visual CPU/GPU parity remain NOT RUN**.
 The generated shader and storage binding should be checked on
 actual Apple Silicon before enabling this path in production.
 
+## Shared CPU/GPU emitter resource world (Stage 28 — source committed, tests deferred)
+
+The opt-in, genre-independent `spectra::GpuPoolWorld` creates
+**one persistent GPU emitter resource group for each unique full effect**
+and reuses that resource across multiple logical source names.
+Two vehicles, weapons or spell effects that reference the exact
+same graph and GPU policy share one `ComputeParticles`
+simulation buffer, VM payload and graphics pipeline.
+Unsupported graph modules go into **one existing CPU
+`spectra::BatchWorld`**, which can batch compatible
+materials/primitive types regardless of gameplay genre.
+
+The public API is exported from `engine/fx/SpectraFX.h` and
+linked with `AIVERSE::spectrafx`:
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GpuPoolWorld pool;
+aiverse::spectra::PoolWorldBudgets budgets;
+budgets.maxGpuGroups = 16;
+budgets.maxGroupCapacity = 1024;
+budgets.maxBurstsPerFrame = 256;
+pool.init(device, budgets);
+
+aiverse::spectra::GraphRuntimeOptions gpu;
+gpu.gpuProgram = true;
+gpu.gpuMaterial = true;
+gpu.capacity = 1024;
+pool.defineGraph("ship_left", graphJson, aiverse::Json::object(), gpu);
+pool.defineGraph("ship_right", graphJson, aiverse::Json::object(), gpu);
+// Identical full graph + matching options => ONE GPU resource group.
+// Runtime instance values remain independent for each source name.
+pool.setNamedParameter("ship_left", "intensity", 0.3f);
+pool.setNamedParameter("ship_right", "intensity", 0.9f);
+
+// After gfx::Device::beginFrame(), BEFORE scene beginPass():
+pool.beginPresentationFrame(camera, viewProj, width, height);
+pool.burst("ship_left", {0, 1, 0});
+pool.burst("ship_right", {3, 1, 0});
+pool.step(1.f/60.f); // ONE CPU BatchWorld update + ONE update per GPU group
+
+// DURING the already open scene render pass:
+pool.draw(fog);      // one CPU batching pass + one draw per live GPU group
+// After ending the render pass:
+pool.endPresentationFrame();
+
+// Between frames (no active render/compute encoder):
+pool.resetForRollback(); // clears this pool's entire visual scene
+pool.shutdown();         // BEFORE destroying the graphics Device
+```
+
+### Resource identity, budgets and parameter semantics
+
+- GPU resource-group identity includes the **full canonical
+  `fx::effectToJson(effect)`**, the capacity, effective quality tier
+  and `gpuProgram`, `gpuMaterial`, `gpuIndirect`
+  flags. A length-prefixed serialized key prevents collisions
+  with authored shader graph strings. Matching definitions share
+  exactly one `ComputeParticles` group; different effect
+  definitions or GPU policies do not falsely share state.
+- `PoolWorldBudgets` limits GPU groups (0..64), per-group
+  physical particle capacity (1..4096), one-shot burst starts
+  per frame (0..4096) and shared CPU quality. Requested
+  per-definition quality/capacity cannot exceed the world
+  budget. When a GPU group is unsupported, unavailable or
+  budget-exhausted, `Automatic`/`PreferGpu` retain the
+  complete `EffectDef` in the shared CPU world.
+  `RequireGpu` fails explicitly.
+- `GpuPoolWorld::defineGraph` stores independent
+  `instanceParameters` defaults for each logical name,
+  even when its graph shares a GPU group. Use
+  `setNamedParameter(name,parameter,value)` to change
+  future emission defaults, with bounded type/range checks.
+  `burst(...,const std::array<float,8>* sourceParams)`
+  optionally overrides all eight values per call.
+  Before a GPU birth, the world updates the group's **future**
+  parameter set and `ComputeParticles` captures that
+  set at Spawn. Older particles from other sources keep
+  their own snapshots; CPU births use
+  `BatchWorld::playWithProgramParameters`.
+- Stage 28 also allows named `param0..7` inputs
+  in a GPU **material-only** graph when no
+  `ParticleProgramModule` is present.
+  This does not enable unsupported GPU VM operations:
+  the material itself must pass the strict Stage-27
+  shaderGraph capability gate.
+- `beginPresentationFrame / step / draw /
+  endPresentationFrame` enforce **one update and draw
+  per owned world per presentation frame**.
+  The host remains responsible for the actual RHI
+  beginFrame/beginPass/endPass/endFrame order.
+  The scene must not draw the CPU batch a second
+  time through another owner.
+- `PoolWorldStats` reports number of unique GPU
+  resource groups and CPU effect definitions, submitted
+  and dropped burst counts, GPU memory, CPU/GPU
+  particle estimates and draw counts. CPU and GPU
+  budgets remain renderer-side and never modify
+  deterministic ECS simulation.
+
+### Current boundaries
+
+This is **GPU resource reuse by full effect definition**,
+not a single global GPU particle allocator for all materials.
+Each unique GPU effect still has its own physical pool,
+atomic alive counter and indexed draw. Compatible sources
+with *identical* effects share those buffers and draw
+submissions; unrelated shader/material definitions do
+not merge just because they use the same texture.
+The host currently submits **one-shot births only** into
+these pooled groups. There is no per-source GPU kill/stop
+handle, individual continuous GPU emitter lifetime,
+cross-group transparent sorting or GPU-only global free
+list yet. Rollback clears ALL GPU/CPU effects owned by
+this GpuPoolWorld (not external particle worlds) and
+must execute between frames while the RHI is healthy.
+
+No existing RTS/FPS client is silently migrated.
+`CueScheduler` remains the separate established
+shared CPU event/attachment path. Adapt persistent ECS
+sources and per-source GPU cancellation only when
+semantics, generation identifiers and rollback parity
+can be preserved.
+
+**Verification:** The user explicitly postponed testing
+until functional completion. No native CMake/CTest,
+shader compilation, GPU frame capture, editor screenshot
+or CPU/GPU resource-budget benchmark was run for
+Stage 28. The implementation is committed **source**,
+not a verified production graphics feature.
+
 ## Validation checklist
 
 ```bash
