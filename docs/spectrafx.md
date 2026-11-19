@@ -2580,3 +2580,127 @@ partial rollback fault injection, ECS pose interpolation tests,
 image parity or GPU performance benchmarks. Do not enable these
 experimental features by default in production based only on
 source code presence.
+
+## Stage 39 — recovery host events, bounded fresh GPU exports and fair VFX pressure
+
+### Native GPU recovery notifications and explicit Device replacement
+
+The genre-neutral native presentation header
+`<aiverselib/genre/SpectraFX.h>` now exports
+`GpuPoolRecoveryHost` from
+`libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h`.
+This object holds **references only** to an initialized
+`GpuPoolWorld`, the presentation-owned
+`GpuEcsAttachmentPresenter` and optionally a render-pose
+interpolator. It does not take ownership of the platform's
+`gfx::Device` or perform background work.
+
+```cpp
+GpuPoolRecoveryHost recovery(pool,ecsPresenter,&poseHistory);
+recovery.onChange([](const PoolRecoveryEvent& e) {
+    // e.phase/e.next: Ready, retry rollback in an active gfx frame,
+    // recreate Device, inspect unknown failure or initialize the pool.
+    // e.resetGroupsAccepted, e.resetGroupsTotal, e.resetAttempts, e.reason
+});
+auto status=recovery.poll();
+if(status.next==PoolRecoveryAction::RetryResetInGraphicsFrame) {
+    // Only after Device::beginFrame, BEFORE any active encoder:
+    if(!recovery.retryPresentationReset()) { /* do not render VFX */ }
+}
+if(status.next==PoolRecoveryAction::RecreateGraphicsDevice) {
+    // Host/platform explicitly creates a healthy replacement Device.
+    // OLD Device remains alive through old-pool shutdown.
+    bool restored=recovery.replaceDevice(newHealthyDevice);
+    // Compiled effect definitions survive; live GPU particles do not.
+}
+```
+
+`poll()` reports only phase/progress/health transitions to its
+callback, and never invents successful recovery. The host must
+perform actual platform device reconstruction. `replaceDevice()`
+exports the CPU-only recovery manifest, releases old graphics
+resources, invalidates presentation-owned source handles and
+interpolated pose history, then imports effect definitions into a
+freshly initialized pool. No GPU-resident particle buffers,
+authoritative ECS data, network state or previous renderer source
+generations are resurrected. The standalone native integration
+example at `examples/spectrafx/native_ecs_attachments.h` now
+uses this controller for rollback and new-Device recreation.
+
+### Strict and bounded GPU checkpoint binary diagnostics
+
+`engine/fx/SpectraCheckpointExport.h` defines a 40-byte
+`GpuCheckpointExportHeader` with magic `SPFX`, format version,
+slot count, captured GPU revision, graphics frame serial and raw
+payload length. The capture body consists of the existing 128-byte
+per-slot `GpuCheckpointParticle` state plus a 4-byte-per-slot
+CPU lifetime mirror. At the existing 4096 physical-slot limit the
+maximum is **512 KiB GPU state + 16 KiB mirror + 40-byte header**.
+The encoding is a native ABI diagnostic blob, **not** a portable
+savegame, stable cross-version serialization, screenshot, or
+restorable GPU timeline.
+
+`ComputeParticles::exportFreshCheckpoint(bytes,maxBytes)` and
+`GpuPoolWorld::exportFreshCheckpoint(groupIndex,bytes,maxBytes)`
+only copy **existing completed** GPU checkpoint data when all of
+these are true: Metal GPU is active and healthy, the retained
+checkpoint's captured revision is exactly the current GPU revision,
+the snapshot is complete and the correct slot count, there are
+no unsent particle births or kill slots awaiting a GPU fence,
+no incomplete GPU reset, and no concurrent pending checkpoint read.
+The encoded buffer is swapped into the output only after all
+preflight/size validations; failure leaves the caller's old
+output intact. These methods **never initiate GPU readback**.
+
+`PoolCheckpointStats::exportReadyGroups` counts groups that
+currently satisfy these conditions. The SpectraFX editor now
+shows the count and offers **Save fresh GPU checkpoint** only when
+a group is eligible. It saves one bounded `.spfx` file under
+`platform::userDataDir()/spectrafx-diagnostics/` using a temporary
+file and then renaming it. If an async readback is stale at UI
+time, the button is disabled or a clear error is returned; there
+is no fake snapshot or blocking synchronous readback. This feature
+requires the host to have opted into actual checkpoint cadence
+or to have completed a manual checkpoint; by default, no
+checkpoints are automatically captured.
+
+### Fair automatic VFX load shedding (opt-in)
+
+`PoolLoadSheddingPolicy` is available inside
+`PoolWorldBudgets::loadShedding` and via
+`GpuPoolWorld::setLoadShedding(policy)` between presentation
+frames:
+
+```cpp
+PoolLoadSheddingPolicy policy{};
+policy.enabled=true;
+policy.maxContinuousBurstsPerFrame=64;
+policy.reserveManualBursts=16;
+policy.estimatedParticleSoftLimit=8000; // previous frame's estimate
+policy.maxReadbackBytesInFlight=1024u*1024u;
+pool.setLoadShedding(policy);
+```
+
+The scheduler rotates its starting source slot every frame, so
+a consistently busy low-index emitter cannot permanently starve
+higher-index emitters. The enabled policy caps automatic births
+while preserving the existing global limit and an explicit
+allocation of capacity for manual one-shot bursts. Particle
+pressure is based on the **previous rendered step's estimated**
+CPU + GPU particle count; readback pressure uses the existing
+Stage 32 scheduler's reserved bytes in flight. This is not a
+GPU performance measurement or hard memory-residency guarantee.
+Excess automatic bursts are discarded, **not** queued into an
+unbounded catch-up backlog. Disabling the policy preserves the
+old overall emission behavior (other than fair rotation).
+`PoolWorldStats` reports
+`continuousFrameBudget`, `pressureActive`,
+`pressureSkipped` and `sourceCapacity`; the editor renders
+these values when a GPU pool is attached.
+
+**Stage 39 verification:** GitHub source commits and source API
+inspection only. **NOT RUN:** native C++/ObjC++/MSL compilation,
+CTest, editor launch, on-device Metal simulation, complete/fresh
+checkpoint export at various revisions, GPU reset/device loss
+fault injection, pressure/starvation validation or performance
+benchmarks. The implementation is not production-verified.
