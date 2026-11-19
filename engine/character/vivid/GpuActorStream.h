@@ -58,6 +58,10 @@ public:
     const std::string& lastError() const noexcept { return error_; }
 
 private:
+    friend class GpuActorRetirementQueue;
+    // Called only by the GPU completion-token owner after a Complete token,
+    // or by shutdownAfterIdle after an explicit successful GPU idle barrier.
+    void releaseAfterGpuCompletion() noexcept;
     // GPU members have ordinary nonblocking destructors; hosts MUST complete
     // shutdownAfterIdle() while the Device is alive, not just destroy this
     // object during scene shutdown with active/in-flight commands.
