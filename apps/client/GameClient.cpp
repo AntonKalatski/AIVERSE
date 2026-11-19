@@ -1196,16 +1196,13 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             [&](const render::EcsCameraView&,render::Renderer3D& renderer){
                 if(worldScene_ && !planet())
                     worldScene_->draw(renderer,world::Cell{0,0,0},1);
-                // RtsView::draw mutates animation clocks and visual-event queues.
-                // Never replay it by default for extra cameras: this must not
-                // change the main view's events, effects or input selection.
-                // Explicit opt-in is for investigation until a pure geometry
-                // submission API is extracted from RtsView.
-                if(manifest_["lens"].getBool("experimentalReplayRtsView",false)) {
-                    auto& gs=mod().state(*sim_);
-                    view_.draw(renderer,scene_,time_,
-                               spectator_?nullptr:&gs.vision[human_],gs.grid);
-                }
+                // Main-view draw() has already advanced animation state once.
+                // The frozen pass only re-submits cached model poses, without
+                // replaying RtsView events, animation updates or FX dispatch.
+                // Non-model paths (sprites, trails, terrain) are not yet
+                // included in this secondary view snapshot.
+                auto& gs=mod().state(*sim_);
+                view_.drawFrozenModels(renderer,gs.grid);
             });
         if(!captures.diagnostics.empty() && std::getenv("AIVERSE_LENS_LOG"))
             std::fprintf(stderr,"[lens] captured=%zu skipped=%zu diagnostics=%zu\n",
