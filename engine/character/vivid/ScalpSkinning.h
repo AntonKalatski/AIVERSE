@@ -128,8 +128,11 @@ public:
     // On invalid matrices or output sizes no output element is written.
     bool evaluate(std::span<const render::mat4> nodeWorld,
                   const render::mat4& headRigidWorld,
-                  std::span<render::float3> output) const {
-        if(output.size()!=vertices_.size() || nodeWorld.empty())return false;
+                  std::span<render::float3> output,
+                  std::span<render::float3> scratch) const {
+        if(output.size()!=vertices_.size() ||
+           scratch.size()!=vertices_.size() ||
+           nodeWorld.empty())return false;
         for(float value:headRigidWorld.m)if(!std::isfinite(value))return false;
         for(const auto& vertex:vertices_)
             for(std::size_t j=0;j<vertex.count;++j) {
@@ -148,8 +151,7 @@ public:
         const render::float3 c{m.at(0,2),m.at(1,2),m.at(2,2)};
         if(std::fabs(render::dot(a,render::cross(b,c)))<1e-7f)return false;
         const auto inverseHead=headRigidWorld.inverse();
-        std::vector<render::float3> staged;
-        staged.reserve(vertices_.size());
+        std::size_t index=0;
         for(const auto& vertex:vertices_) {
             render::float3 position{};
             for(std::size_t j=0;j<vertex.count;++j) {
@@ -161,10 +163,18 @@ public:
             const auto local=inverseHead.transformPoint(position);
             if(!std::isfinite(local.x)||!std::isfinite(local.y)||
                !std::isfinite(local.z))return false;
-            staged.push_back(local);
+            scratch[index++]=local;
         }
-        for(std::size_t i=0;i<staged.size();++i)output[i]=staged[i];
+        for(std::size_t i=0;i<scratch.size();++i)output[i]=scratch[i];
         return true;
+    }
+    // Convenience form for standalone tools and tests. Runtime callers
+    // should supply a persistent scratch buffer to avoid frame allocations.
+    bool evaluate(std::span<const render::mat4> nodeWorld,
+                  const render::mat4& headRigidWorld,
+                  std::span<render::float3> output) const {
+        std::vector<render::float3> scratch(vertices_.size());
+        return evaluate(nodeWorld,headRigidWorld,output,scratch);
     }
 private:
     std::vector<Vertex> vertices_;
