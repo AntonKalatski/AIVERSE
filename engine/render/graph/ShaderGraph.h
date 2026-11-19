@@ -17,6 +17,10 @@ struct Program {
     std::string glsl, msl; // statements inside a fragment function
     std::map<std::string, std::string> outputs;
     int nodes = 0, samples = 0;
+    // Material fragment graphs can sample the scene's current virtual
+    // base-colour atlas via SG_SAMPLE_VIRTUAL(uv). Requires two free RHI
+    // fragment slots; the renderer checks that at compilation time.
+    bool usesVirtualTexture = false;
     int minQuality = 0; // material tier; particles use emitter.minQuality, postfx uses effect tiers
 };
 // Host context: sg_uv/sg_screen (vec2), sg_input/sg_color/sg_particle (vec4),
