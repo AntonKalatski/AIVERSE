@@ -83,7 +83,8 @@ public:
     SpectraFxGpuAlphaSort& operator=(const SpectraFxGpuAlphaSort&)=delete;
     ~SpectraFxGpuAlphaSort()=default; // release before gfx::Device shutdown
 
-    bool init(gfx::Device& device,uint32_t count) {
+    bool init(gfx::Device& device,uint32_t count,
+              gfx::ComputeHandle sharedCompute={}) {
         release();
         error_.clear();
         if(device.info().backend!=gfx::Backend::Metal ||
@@ -97,8 +98,10 @@ public:
         padded_=1;
         while(padded_<count_) padded_<<=1;
         device_=&device;
-        shader_=device.createCompute({kSpectraFxAlphaSortMetal,nullptr,
-                                      "SpectraFX bitonic alpha depth sorting"});
+        ownsShader_=!sharedCompute.valid();
+        shader_=sharedCompute.valid()?sharedCompute:
+            device.createCompute({kSpectraFxAlphaSortMetal,nullptr,
+                                  "SpectraFX bitonic alpha depth sorting"});
         if(!shader_.valid()) {
             error_=device.lastError();release();return false;
         }
@@ -200,10 +203,11 @@ public:
         if(device_) {
             if(sorted_.valid()) device_->destroyTexture(sorted_);
             if(items_.valid()) device_->destroyBuffer(items_);
-            if(shader_.valid()) device_->destroyCompute(shader_);
+            if(ownsShader_ && shader_.valid()) device_->destroyCompute(shader_);
         }
         device_=nullptr;shader_={};items_={};sorted_={};
         count_=padded_=0;preparedSerial_=0;sourceTexture_={};
+        ownsShader_=false;
     }
 private:
     static bool finite(render::float3 v) {
@@ -211,6 +215,7 @@ private:
     }
     gfx::Device* device_=nullptr;
     gfx::ComputeHandle shader_{};
+    bool ownsShader_=false;
     gfx::BufferHandle items_{};
     gfx::TextureHandle sorted_{},sourceTexture_{};
     uint32_t count_=0,padded_=0;
