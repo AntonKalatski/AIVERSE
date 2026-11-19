@@ -6,6 +6,39 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 41, source-only; native tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md).
+Use `engine/fx/SpectraCheckpointInspector.h` and
+`tools/spectrafx/inspect_spfx.cpp` for offline **V2 only**
+`.spfx` diagnostics. The bounded native reader distinguishes
+magic, header, version, payload length, truncation/trailing
+bytes and CRC errors, then reports finite/live/dead GPU
+particle properties without ever opening a graphics Device.
+This is NOT a portable savegame or GPU state importer.
+
+The native presentation layer now exports
+`GpuPoolCaptureHost` through `<aiverselib/genre/SpectraFX.h>`.
+It holds ONE capture request, submits async readback ONLY after
+pool.step and before the render pass, and polls on the Device
+owner thread at the next beginFrame before any new particle
+mutation. It rejects stale or incorrect pool-lifetime epochs
+and request IDs and uses weak callback ownership with a
+600-graphics-frame poll limit. Source GPU state must remain
+frozen while a request is queued/in flight/ready; the
+`examples/spectrafx/native_ecs_attachments.h` sample now
+models this without writing renderer handles into gameplay
+ECS. Cancel before rollback, shutdown or gfx::Device
+recreation; callback cancellation DOES NOT cancel RHI GPU
+reads, which must settle their Stage 32 budget normally.
+`GpuPoolRecoveryHost` also rejects replacing an existing
+Device with the exact same old graphics object.
+**Stage 41 native compilation, the CLI execution, CTest,
+Metal readback and device-loss smoke tests have NOT RUN.**
+Do not claim successful tests or modify main without request.
+Keep distinct Stage 35/40 ownership, readback and kill-fence
+rules and separate agent handoff for every stage.
+
+
 **Latest implementation handoff (Stage 40, source committed; execution NOT verified):**
 [docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md).
 A truly frozen Metal frame with no births/kills/live VM parameter
