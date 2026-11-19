@@ -52,6 +52,15 @@ inline std::vector<NereidCascadeSource> snapshotNereidEcsCascades(
                 item.joinWidthBlend=float(policy->widthBlend.toDouble());
                 item.requireFootprint=policy->requireFootprint;
             }
+            if(const auto* flow=ecs.tryGetConst<
+                    lib::nereid::WaterCascadeFlowPolicyComponent>(entity)) {
+                if(flow->enabled &&
+                   !lib::nereid::validWaterCascadeFlowPolicy(*flow))
+                    throw std::invalid_argument(
+                        "nereid.cascade: invalid ECS flow policy");
+                item.flowPolicy=*flow;
+                item.useFlowPolicy=true;
+            }
             item.style=options.style;
             item.options=options.mesh;
             out.push_back(std::move(item));
