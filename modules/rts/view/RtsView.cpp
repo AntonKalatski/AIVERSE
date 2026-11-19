@@ -88,7 +88,10 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
     looks_.clear();
     warnings_.clear();
-    geometryScene_.shutdown(dev);
+    // A live rules/project reload must not stall the whole GPU or destroy
+    // static/HLOD Models still referenced by an earlier rendered frame.
+    // Final teardown continues to call the blocking shutdown barrier.
+    geometryScene_.clear(dev);
     try {
         std::string text;
         if (read_("game.json", text)) {
