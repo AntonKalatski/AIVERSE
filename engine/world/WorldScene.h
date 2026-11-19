@@ -7,6 +7,7 @@
 #include "engine/world/TerraWeaveWindUploadPolicy.h"
 #include "engine/world/TerraWeaveWindShadowCachePolicy.h"
 #include "engine/world/TerraWeaveHorizonPresentationQuality.h"
+#include "engine/world/TerraWeaveHorizonAdaptiveQuality.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -85,6 +86,19 @@ public:
     }
     void setVegetationHorizonPresentationQualityPreset(
         terraweave::HorizonPresentationQualityPreset preset);
+    // Stage40 host-fed controller: frames are monotonically indexed,
+    // timings are actual measured CPU/GPU duration in microseconds.
+    // Defaults OFF. A manual Stage39 setter opts out of adaptation.
+    void setVegetationHorizonAdaptiveQualityConfig(
+        terraweave::HorizonAdaptiveQualityConfig config);
+    terraweave::HorizonAdaptiveQualityConfig
+    vegetationHorizonAdaptiveQualityConfig() const {
+        return vegetationHorizonAdaptiveConfig_;
+    }
+    terraweave::HorizonAdaptiveQualityState
+    vegetationHorizonAdaptiveQualityState() const;
+    bool submitVegetationHorizonFrameTiming(
+        terraweave::HorizonFrameTimingSample sample);
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -130,6 +144,7 @@ private:
     bool vegetationHorizonExactWindField_=true;
     terraweave::HorizonWindUploadPolicy vegetationHorizonWindUploadPolicy_{};
     terraweave::HorizonWindShadowCachePolicy vegetationHorizonWindShadowCachePolicy_{};
+    terraweave::HorizonAdaptiveQualityConfig vegetationHorizonAdaptiveConfig_{};
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
