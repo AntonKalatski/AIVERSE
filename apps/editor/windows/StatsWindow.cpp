@@ -80,7 +80,7 @@ public:
                     pool.liveModels, residency.cachedModels, residency.loadedTypes, ed.rules().types.size());
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
-        ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
+        ImGui::TextDisabled("Учтён только asset pool; отдельные render targets и FX указаны ниже частично.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
         ui::section(ICON_REGIONS, "PRISMA · GPU resource retirement");
