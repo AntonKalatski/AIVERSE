@@ -38,6 +38,7 @@ private:
         uint64_t meshKey=0;
         std::vector<float> value,target;
         uint64_t revision=0;
+        bool uploadRetry=false; // retain authoritative CPU bytes after a failed GPU upload
         std::vector<uint8_t> bytes;
         gfx::TextureHandle coast;   // categorical ground: signed shoreline distance (R = .5 + texels / 64)
         uint64_t seaKey=0;
