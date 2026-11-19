@@ -871,3 +871,24 @@ CI if it remains queued or cancelled.
 - Metal validates each graph source handle+native sampler against
   the captured descriptor and shader count. This is not yet an
   enabled Renderer3D graph batching path. No native/GPU tests RUN.
+
+
+### Experimental fragment-only Shader Graph GPU ICB (Stage 10AJ)
+
+- Opt-in: `AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1`
+  alongside per-command/mixed PBR flags and existing Metal
+  GPU ICB gates. For VT graphs also enable the per-command VT
+  gate. Default is disabled.
+- Only opaque fragment-only material graphs (<=4 source
+  textures, no vertex outputs or deformation) are eligible.
+  The renderer groups graphs only if their actual compiled
+  shader source/output mapping/texture count and structural
+  pipeline traits match. Different source paths/textures are
+  allowed when the shader program itself is equivalent.
+- Every command stages its four-or-fewer graph source handles
+  together with U2, PBR sources and optional VT identity.
+  `GpuMaterialResourceTable` and Metal native resource checks
+  reject changes since preparation. Vertex graph textures
+  remain on the safe ordinary draw route.
+- No C++/Objective-C++ builds, MSL compiler or Metal GPU
+  execution tests have been run. Keep Draft and release OFF.
