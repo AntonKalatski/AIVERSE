@@ -246,7 +246,14 @@ public:
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
-    bool setShadowMapSize(int size) { highShadowSize_=size; setShadowQuality(quality_); return quality_!=ShadowQuality::High||shadowMap_.valid(); }
+    bool setShadowMapSize(int size) {
+        highShadowSize_=size;
+        setShadowQuality(quality_);
+        // A failed allocation keeps the previous shadow texture alive;
+        // report that the requested High resolution was not published.
+        return quality_!=ShadowQuality::High ||
+               (shadowMap_.valid() && shadowSize_==size);
+    }
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
