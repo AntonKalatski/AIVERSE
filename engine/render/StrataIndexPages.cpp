@@ -23,6 +23,7 @@ struct IndexResidency::IncrementalStorage {
     size_t uploadBudget = 0; // 0 means unthrottled
 };
 
+IndexResidency::IndexResidency() = default;
 IndexResidency::~IndexResidency() = default;
 
 bool IndexResidency::initializeIncremental(size_t uploadBudgetBytes,
