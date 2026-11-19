@@ -106,6 +106,7 @@ struct Viewer {
 
     void init(gfx::Device& d) {
         dev = &d;
+        loadAttachmentConfig();
         // This attachment preview uses ONE real ModelAssetProvider for both
         // source rig and imported children. The original comparison/gallery
         // paths remain unchanged unless the user opts into attachments.
@@ -244,6 +245,122 @@ struct Viewer {
         cam.yaw = yawDeg * 3.14159265f / 180.0f;
         cam.pitch = pitchDeg * 3.14159265f / 180.0f;
         cam.minDistance = 1;
+    }
+
+    // ModelView is an actual file-backed authoring host. It never stores
+    // permanent read leases in its compiled bundles: only the provider owns
+    // Models and the draw-scoped Prepared object holds temporary leases.
+    void loadAttachmentConfig() {
+        if(attachmentConfigPath.empty())return;
+        std::string contents;
+        if(!readFile(attachmentConfigPath,contents))return; // new file
+        try {
+            const auto authored=Json::parse(contents);
+            if(!authored["attachments"].isArray())
+                throw std::invalid_argument("attachment config requires an attachments array");
+            std::vector<AttachmentSpec> fromFile;
+            for(const auto& entry:authored["attachments"].items()) {
+                const auto child=entry.getStr("model");
+                const auto socket=entry.getStr("socket");
+                if(child.empty() || socket.empty())
+                    throw std::invalid_argument("attachment needs model and named socket");
+                fromFile.push_back({child,socket,entry.getBool("enabled",true)});
+            }
+            fromFile.insert(fromFile.end(),attachmentSpecs.begin(),attachmentSpecs.end());
+            attachmentSpecs=std::move(fromFile);
+        }catch(const std::exception& e) {
+            log.push_back(std::string("attachment config rejected: ")+e.what());
+        }
+    }
+
+    void saveAttachmentConfig() {
+        if(attachmentConfigPath.empty())
+            attachmentConfigPath=files.empty()?"attachments.json":
+                files.front().first+".attachments.json";
+        auto root=Json::object();
+        auto items=Json::array();
+        for(const auto& entry:attachmentSpecs) {
+            auto item=Json::object();
+            item.set("model",Json::string(entry.modelSource));
+            item.set("socket",Json::string(entry.socketName));
+            item.set("enabled",Json::fromBool(entry.enabled));
+            items.push(item);
+        }
+        root.set("attachments",items);
+        std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
+        if(!file || !(file<<root.dump(2)))
+            log.push_back("failed to save attachment config: "+attachmentConfigPath);
+        else log.push_back("saved attachment config: "+attachmentConfigPath);
+    }
+
+    bool rebuildAttachments() {
+        if(!dev || !attachmentPreview || gallery)return false;
+        std::vector<Imported::Compiled> staged;
+        std::vector<::aiverse::view::AppearanceAssetRegistry::Snapshot> stagedParents;
+        staged.reserve(inst.size());
+        stagedParents.reserve(inst.size());
+        std::map<std::string,::aiverse::view::AppearanceAssetRegistry::Snapshot> children;
+        std::string error;
+        try {
+            // Import real child files BEFORE taking any source read lease:
+            // ModelResourceCache does not allow mutation while read-locked.
+            for(const auto& entry:attachmentSpecs) {
+                if(!entry.enabled)continue;
+                if(entry.modelSource.empty() || entry.socketName.empty())
+                    throw std::invalid_argument("attachment needs model path and socket name");
+                if(children.count(entry.modelSource))continue;
+                ::aiverse::view::AppearanceAssetRegistry::Snapshot published;
+                ::aiverse::view::AppearanceAssetRegistry::Request request;
+                if(!Imported::importChild(
+                        nativeModels,*dev,attachmentsRegistry,
+                        "modelview/child/"+entry.modelSource,
+                        entry.modelSource,std::move(request),published,{},&error))
+                    throw std::runtime_error(error);
+                children.emplace(entry.modelSource,std::move(published));
+            }
+            for(size_t i=0;i<inst.size();++i) {
+                auto& instance=inst[i];
+                if(!instance.model)
+                    throw std::invalid_argument("parent Model is unavailable");
+                auto lease=nativeModels.resources().acquireModelRead(instance.model);
+                if(!lease)
+                    throw std::invalid_argument(
+                        "source Model is not owned by the native provider");
+                ::aiverse::view::AppearanceAssetRegistry::Request req;
+                req.model=instance.model;
+                req.sources.push_back(instance.path);
+                const std::string key="modelview/source/"+std::to_string(i);
+                if(!attachmentsRegistry.publish(key,req,{}, {},&error))
+                    throw std::runtime_error(error);
+                auto parent=attachmentsRegistry.find(key);
+                std::vector<Imported::ChildRequest> requests;
+                for(const auto& entry:attachmentSpecs) {
+                    if(!entry.enabled)continue;
+                    Imported::ChildRequest child;
+                    child.appearance=children.at(entry.modelSource);
+                    child.socketName=entry.socketName;
+                    requests.push_back(std::move(child));
+                }
+                Imported::Compiled compiled;
+                if(!Imported::compile(parent,nativeModels.resources(),
+                                      requests,compiled,&error))
+                    throw std::runtime_error(error);
+                staged.push_back(std::move(compiled));
+                stagedParents.push_back(std::move(parent));
+            }
+            for(size_t i=0;i<inst.size();++i) {
+                inst[i].compiledAttachments=std::move(staged[i]);
+                inst[i].publishedAppearance=std::move(stagedParents[i]);
+                inst[i].attachmentsReady=true;
+                inst[i].lastAttachmentError.clear();
+            }
+            log.push_back("attachment layout published for "+std::to_string(inst.size())+" source Models");
+            return true;
+        }catch(const std::exception& e) {
+            error=e.what();
+            log.push_back("attachment update rejected; last good retained: "+error);
+            return false;
+        }
     }
 
     void play(Instance& in) {
