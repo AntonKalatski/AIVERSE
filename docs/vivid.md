@@ -526,3 +526,10 @@ This stage closes several source-level correctness gaps in the new human authori
 - The one-shot `tools/vivid-validate.sh` now builds and executes **16 VIVID/MotionWeave CTests**, then GUI-renders original 1-actor, 12-actor, procedural human Creator, warm-preset human Creator and imported external head Creator. It checks all required PPM captures and the screenshot test's render-pass results; `tools/vivid-creator/compare_ppm.py` compares neutral/warm materials **only outside the GUI inspector** to validate actual 3D viewport changes. All logs/screenshots remain under `build/vivid-onepass/vivid-validation`.
 
 **Important:** Stage 6A–6F have been implemented in GitHub but the new native C++ test targets, shader programs, real Creator GUI and imported-head captures have **NOT RUN on the user's Mac yet**. The previous Stage 5J 11/11 passes on SHA `fa5504a9f2e1f64087ef73139525e5bde31976b4` predate all of these changes. We do not claim physically measured MetaHuman skin/groom/eye parity or release readiness; real authored high-resolution human scans, proprietary asset licensing, complete body rig/groom/LOD streaming, GPU time measurements, Vulkan parity and full AIVERSE regression remain independent gates.
+
+
+## Stage 6G — groom collision respects head DNA (2026-11-19)
+
+`HumanGroomRuntime` now retains scalp ellipsoid radii from the same `HumanDNA` parameters used to generate hair roots. Secondary-motion constraint projection excludes the DNA-proportional head shape rather than a hard-coded world-space sphere. A final contact projection closes the gap left by sequential strand-length correction. The `vivid_human_appearance` test now includes wind-driven scalp nonpenetration for multiple head widths and scales.
+
+**Source and regression authored, native build/CTest and GPU Creator preview NOT RUN yet.** This is a procedural ellipsoid collider and does not yet support exact collision with imported scalp meshes. See `docs/agent-handoffs/vivid.md` for implementation SHAs and validation instructions.
