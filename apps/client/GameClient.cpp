@@ -134,7 +134,10 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         view_.setGpuDeviceLease(gpuDeviceLease_);
         view_.init(dev, rules_);
         break;     // models, textures, atlases of every type
-    case 3: fx_.init(dev, rules_); break;
+    case 3:
+        fx_.setGpuDeviceLease(gpuDeviceLease_);
+        fx_.init(dev, rules_);
+        break;
     case 4: initAudio(); break;
     case 5: initUi(); break;
     default: break;
