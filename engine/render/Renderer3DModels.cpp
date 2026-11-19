@@ -343,8 +343,10 @@ void Renderer3D::recordPersistentModel(const ModelDraw& d) {
     std::memcpy(record.world, d.world.m, sizeof(record.world));
     const auto& lo = d.model->boundsMin;
     const auto& hi = d.model->boundsMax;
-    record.boundsMin[0] = lo.x; record.boundsMin[1] = lo.y; record.boundsMin[2] = lo.z;
-    record.boundsMax[0] = hi.x; record.boundsMax[1] = hi.y; record.boundsMax[2] = hi.z;
+    const float offset=std::isfinite(d.maxVertexOffsetMetres) ?
+        std::clamp(d.maxVertexOffsetMetres,0.0f,10.0f) : 0.0f;
+    record.boundsMin[0] = lo.x-offset; record.boundsMin[1] = lo.y-offset; record.boundsMin[2] = lo.z-offset;
+    record.boundsMax[0] = hi.x+offset; record.boundsMax[1] = hi.y+offset; record.boundsMax[2] = hi.z+offset;
     record.geometry = d.model->vb.id;
     record.material = d.model->ib.id;
     record.flags = d.flags;
@@ -403,15 +405,23 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         capture_(d, nodeWorld);
     }
     const auto* cache=d.staticCache;
-    if(cache&&(d.primitiveMaterialFilter>=0||cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
+    if(cache&&(d.useVertexParameters||d.primitiveMaterialFilter>=0||cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
     if(cache)++profile_.cachedModels;
     // whole-model culling with the bind-pose bounds (padded: animation moves limbs outside them)
     float3 c = (m->boundsMin + m->boundsMax) * 0.5f, e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
     const auto& graphMaterials=d.materials && d.materials->size()>=m->materials.size()?*d.materials:m->materials;
     const bool displaced=cache?cache->displaced:std::any_of(graphMaterials.begin(),graphMaterials.end(),[this](const Material& mat){return mat.shaderGraph && int(matQuality_)>=mat.shaderGraph->minQuality && mat.shaderGraph->outputs.count("vertexOffset");});
-    const bool inView = displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
+    // Bounded vertex graphs retain ordinary node frustum tests and LOD.
+    // Unknown vertexOffset graphs remain conservatively uncullable.
+    const float offset=(displaced && std::isfinite(d.maxVertexOffsetMetres) &&
+                        d.maxVertexOffsetMetres>0.0f &&
+                        d.maxVertexOffsetMetres<=10.0f) ?
+                        d.maxVertexOffsetMetres : 0.0f;
+    const bool unboundedDisplacement=displaced && offset==0.0f;
+    const float3 margin{offset,offset,offset};
+    const bool inView = unboundedDisplacement || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e - margin, c + e + margin));
     const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
-                          (displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
+                          (unboundedDisplacement || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e - margin, c + e + margin)));
     if (!inView && !inShadow) return;
     const std::vector<mat4>& world = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
     const std::vector<Material>& mats = d.materials && d.materials->size() >= m->materials.size() ? *d.materials : m->materials;
@@ -427,24 +437,24 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (node.mesh < 0) continue;
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
-        const bool rigid = node.skin < 0 && !baseMesh.deformable && !displaced;
+        const bool rigid = node.skin < 0 && !baseMesh.deformable && !unboundedDisplacement;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
-            nodeView = inView && modelBoxVisible(viewProj_ * nodeWorld, baseMesh.boundsMin, baseMesh.boundsMax);
-            nodeShadow = inShadow && modelBoxVisible(lightViewProj_ * nodeWorld, baseMesh.boundsMin, baseMesh.boundsMax);
+            nodeView = inView && modelBoxVisible(viewProj_ * nodeWorld, baseMesh.boundsMin-margin, baseMesh.boundsMax+margin);
+            nodeShadow = inShadow && modelBoxVisible(lightViewProj_ * nodeWorld, baseMesh.boundsMin-margin, baseMesh.boundsMax+margin);
             if (!nodeView && !nodeShadow) ++modelStats_.culledNodes; // retained for later mirror/spot frusta
         }
         int meshIndex = node.mesh; size_t level = 0;
         ModelLodBlend lodBlend{node.mesh};
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
-        const bool skinLod = node.skin >= 0 && !displaced && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
+        const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
         const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
-            float3 lodMin = baseMesh.boundsMin, lodMax = baseMesh.boundsMax;
+            float3 lodMin = baseMesh.boundsMin-margin, lodMax = baseMesh.boundsMax+margin;
             if (skinLod) {
                 lodMin = {1e30f, 1e30f, 1e30f}; lodMax = {-1e30f, -1e30f, -1e30f};
                 const Skin& skin = m->skins[size_t(node.skin)];
@@ -604,6 +614,12 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             // sort distance: ortho cameras along the view direction (Unity's TransparencySortMode.Default), else from the eye
             it.depth = cam_.ortho ? dot(wc - camPos_, normalize(cam_.target - camPos_)) : length(wc - camPos_);
             bakedItem(it, d, n);
+            // Rigid material ShaderGraph vertices can use the already
+            // allocated U0 Inst.anim vec4, which is otherwise reserved for
+            // baked skin clips or baked lightmap UVs. Never overwrite those.
+            if(d.useVertexParameters && it.joints<0 && !it.baked &&
+               it.morph<0 && it.gi!=1 && it.mat->shaderGraph)
+                it.anim=d.vertexParameters;
             it.shadowRole = shadowRole;
             it.materialRole = materialRole;
             if (materialRole == 2) it.paletteMaterials = &mats;
