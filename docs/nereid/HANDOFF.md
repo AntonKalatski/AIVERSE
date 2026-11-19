@@ -3296,3 +3296,116 @@ for NEREID that a PHYSIS owner/adapter can supply, without NEREID
 referencing genre or non-merged PHYSIS sources. Apply wind to
 water shader normals and presentation ripple advection. Append
 a new handoff when implemented; defer tests until owner requests.
+
+## Stage 32 — optional PHYSIS wind input for NEREID visual water
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Baseline:** Stage 31 handoff `48e00baddb35ccc9f3d9909025b91adbc6ce0462`.
+**Owner priority:** implement features before tests. No tests authored or
+run this stage; no unrelated feature branches or main merged.
+
+### Implementation commits / files
+
+- `ab28a52af633eb18c39fd5af270a5a1aa9082717` —
+  NEW `engine/world/NereidWindPresentation.h`:
+  finite/bounded `NereidVisualWind {east,north,gust,coupling}`,
+  `normalizeNereidWind` and presentation-only
+  `nereidVisualWindFromSample(Vec3,Fixed,Fixed)`.
+- `635bf8748bef4282310f5ba28c70d015a178f596` —
+  `engine/render/Renderer3D.h`: per-draw wind float4.
+- `c75cdb157eda2eb515d81b8682244d4982841c0f` —
+  `engine/render/Renderer3D.cpp`: water wind copied to U0.
+- `1c0ceb13dbbd0df055a733e608ee86ffbe74f227` —
+  `engine/render/Renderer3DReflect.cpp`: reflected opaque U0 layout
+  grows to exactly the same size, zero-initialized by default.
+- `6b53012533766ca97650edefe4bf050ee608cc78` —
+  `engine/render/NereidWaterRenderer.h`;
+  `f12e4b535a7f3bdce3fa49dbd9ffe36b534950be` —
+  `engine/render/NereidSurfaceResident.h`;
+  `b8a23b7d668226942afa3a13fa778ac68e75e86a` —
+  `engine/world/NereidWaterScene.h`: forward per-water wind for both
+  single draw and spatial-tiled ripple index ranges.
+- `d77c7c823c85b681d1c270a84e8012eeefeede74` —
+  `engine/world/WorldScene.h`: public
+  `setNereidVisualWind` / `nereidVisualWind`, presentation state.
+- `ec71c2cf89038ecc37f63d7cad719ac7d7fc5f4f` —
+  `engine/world/WorldScene.cpp`: forwards the wind to water draws.
+- `06a3fa545bea04f027b573c8eee94df01fa9eaaa`,
+  `b48af73433c403992129e316514d26d9dd34e6b1` —
+  `engine/render/Shaders.h`: identical GLSL/MSL U0 extension and
+  NEREID-only visual wave phase advection/normal tilt by wind and
+  gust. The windless/default and untagged legacy-water paths retain
+  old shader behavior. Steady winds also affect waves when gust=0.
+- `124c047bb57584d4db5b8ecb019399b3f7d2d71e` —
+  `engine/world/NereidRipples.h`: non-authoritative wind drift
+  of existing visual pulse centres, with bounded frame time,
+  velocity and coupling.
+- `b954b7a42a01397906990507b2f44dfc49417c74` —
+  `engine/world/WorldScene.h`: includes wind drift after spatial
+  ECS flow advection.
+- `d677f343358d7cee31fdc013312f7680e59fa148` —
+  NEW `engine/world/NereidPhysisWindBridge.h`, explicit
+  `applyNereidPhysisWindSample(WorldScene&, Vec3, Fixed, Fixed)`
+  and `clearNereidPhysisWind`.
+- `7f06f45f846f5eb2fa1e4cb839f64a3cdd89db3f` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: AI handoff and
+  native project integration documentation.
+
+### Usage / ownership boundary
+
+The weather simulation owner (PHYSIS or a game's custom weather)
+provides a read-only per-frame sampled wind velocity (X/Z metres/sec)
+and gust strength (0..1) **after its own ECS read barrier**. Example:
+
+```cpp
+#include "engine/world/NereidPhysisWindBridge.h"
+// The host calls its own PHYSIS API to acquire sampledWind and gust:
+world::applyNereidPhysisWindSample(
+    worldScene,sampledWind,physisGust,1_fx);
+// Existing WorldScene::advanceNereidRipples(dt) and draw() use it.
+worldScene.advanceNereidRipples(deltaSeconds);
+```
+
+`NereidVisualWind` caps values and is presentation-only;
+`WorldScene::setNereidVisualWind` is also available directly.
+Shader waterWave phase/normal response, and optional downstream
+ripple drift, use this data. WaterBodyComponent.flow continues
+to own gameplay buoyancy and current-force semantics, and the
+Stage-29 spatial river profile is unaffected by PHYSIS wind.
+No PHYSIS ECS component or API contract was present in this branch
+at review time, so the bridge accepts an **external sample** and
+does not claim direct/automatic PHYSIS tick registration. PHYSIS
+remains owner of wind, storms and weather systems; NEREID is only
+the consuming visual subsystem. This allows a later PHYSIS agent
+to call the adapter without pulling PHYSIS code into the reusable
+water simulation library or genre modules.
+
+Shared Renderer3D U0 adds one float4 and so native C++ draw
+uniforms, reflection U0, GLSL and MSL all require later native
+compiler/GPU verification. Legacy untagged water ignores the wind
+path. No new GPU texture, render pass, RHI backend, or physics
+integrator has been introduced.
+
+### Verification / limitations / next feature
+
+**Actually completed:** source review of existing NEREID, Renderer3D
+and shader contracts, all GitHub implementation commits and per-stage
+handoff. **NOT performed:** unit-test authoring, compiled C++ build,
+CTest, GLSL/Metal compilation, GPU visuals, mobile profiling,
+FPS/RTS regression and actual PHYSIS-host integration, per owner's
+feature-first direction. PR #23 must remain Draft.
+
+Limitations: wind uniform is global to the WorldScene camera and
+is not sampled spatially per lake/river tile; gust is a time-sampled
+parameter supplied by the host. Visual normal tilt and drift are
+bounded approximations, not a spectral ocean or two-way coupling
+with fluid pressure. Lack of a common PHYSIS header in this branch
+prevents direct PHYSIS-system auto-wiring. Calling
+`clearNereidPhysisWind` on scene reset is advised.
+
+**Next functional stage:** add location-aware PHYSIS wind samples
+per water tile (optional), configurable river wake vorticity and
+seamless river-to-cascade-to-lake visual connections. Then, only
+when the functional backlog is complete, begin the deferred C++,
+GL/Metal and runtime test suite and write the factual results
+to a new handoff section.
