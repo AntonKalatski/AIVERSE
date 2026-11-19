@@ -197,6 +197,13 @@ public:
     };
     void setViewExposureMeterRegion(uint64_t viewId, ExposureMeterRegion region);
     void clearViewExposureMeterRegion(uint64_t viewId);
+    // Fixed manual camera EV replaces GPU Auto Exposure (no 1x1 history).
+    // Unlike freezeExposure, it works without having first metered a frame.
+    // Explicit enabled=false overrides an inherited manualExposure=true.
+    // The opt-in remains per stable view and requires an authored
+    // AutoExposure effect and usable linear HDR presentation.
+    void setViewManualExposure(uint64_t viewId, bool enabled, float ev);
+    void clearViewManualExposure(uint64_t viewId);
     // Optional subpixel jitter for a COPY of the current render camera.
     // Call after setViewId/applyCameraVolumes and BEFORE Renderer3D::beginScene;
     // retain the original camera for gameplay picking and 2D overlays.
@@ -278,6 +285,8 @@ public:
         float autoExposureHighlightRejection = 0; // last encoded composite; zero if absent
         bool autoExposureFrozen = false; // valid 1x1 camera history reused, no meter passes
         bool autoExposureRegionMetered = false; // current scene metered with authored circle
+        bool manualExposureEncoded = false; // fixed EV applied by final HDR composite
+        float manualExposureEV = 0; // last applied EV, meaningful iff manualExposureEncoded
         std::vector<EffectExecution> effects;
     };
     const ViewEffectReport* effectReport(uint64_t viewId) const;
@@ -385,6 +394,8 @@ private:
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, bool> viewExposureFreeze_;
     std::map<uint64_t, ExposureMeterRegion> viewExposureMeterRegions_;
+    struct ManualExposureOverride { bool enabled = false; float ev = 0; };
+    std::map<uint64_t, ManualExposureOverride> viewManualExposure_;
     std::map<uint64_t, MotionView> motionViews_;
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
