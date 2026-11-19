@@ -1839,3 +1839,96 @@ Full CPU index release, shared global IO workers, cross-world
 memory budgets, Vulkan GPU-driven selection and crack-free lossy LOD
 remain future stages. For all exact commits and test cases see
 `docs/agent-handoffs/strata-virtual-geometry.md`, Stage 15.3.
+
+
+## Stage 15.4 — Shared Multi-World Streaming Coordinator (2026-11-20)
+
+STRATA now has a **genre-independent process-wide native disk IO pool**
+and **device-wide index streaming budget reservations** shared across
+multiple concurrently loaded `GeometryScene` / ECS worlds.
+The legacy per-scene and per-source budgets remain additional upper
+bounds. The default game/render path is unchanged until the user opts
+in to the Strata portable + incremental disk route.
+
+### Configuration (before any scene is loaded)
+
+```cpp
+// Configures one shared native background pool. Call once before the
+// first archive request. Defaults: 2 threads and 64 MiB CPU ready cache.
+aiverse::render::strata::configureSharedDiskIo(
+    2, 64u * 1024u * 1024u);
+
+render::GeometryScene worldA;
+worldA.setStrataPortableRenderingEnabled(true);
+worldA.setStrataStreamingIndexBudgetBytes(256u * 1024u);
+worldA.setStrataStreamingSceneBudgetBytes(8u * 1024u * 1024u);
+worldA.setStrataGlobalIndexBudgetBytes(128u * 1024u * 1024u);
+worldA.setStrataIncrementalIndexStreamingEnabled(true);
+worldA.setStrataStreamingUploadBudgetBytes(128u * 1024u);
+worldA.setStrataStreamingFrameUploadBudgetBytes(256u * 1024u);
+worldA.setStrataGlobalFrameUploadBudgetBytes(512u * 1024u);
+worldA.setStrataDiskPageDirectory("Content/Strata");
+worldA.setStrataDropArchivedCpuIndicesEnabled(true);
+worldA.load(device, jsonA, readFile);
+
+// worldB may be an entirely different ECS world/scene, but must use
+// the SAME device-wide nonzero limits if loaded simultaneously.
+// Its source allocations count toward worldA's global GPU index cap.
+```
+
+The process-wide I/O executor uses up to 2 worker threads by default
+(configurable 1–8 *before* starting any worker), a bounded global job
+queue, and bounded total **verified ready-page cache** memory. Each
+archive schedules at most one shared job concurrently; no new thread
+is created per source/world. Cancellation and scene unload clear
+queued and ready pages and release their shared CPU cache reservations.
+Worker tasks capture reference-counted archive state, not pointers to
+the scene or source ModelAsset. A cancelled archive cannot publish
+into a destroyed scene.
+
+A device-wide index reservation is made **before** an admitted source
+allocates its Stage 15 index buffer/arena. If a second world's sources
+exceed the shared cap, their index budget is reduced where roots
+still fit; otherwise those sources render using original Legacy
+geometry. GPU handles and page ownership remain with the original
+`gfx::Device` and renderer. Tokens are returned only after sidecars
+are destroyed; different device objects have independent ledgers.
+An additional device-wide checked GPU page-transfer cap applies to
+every scene sharing the same RHI frame serial. Zero serial prevents
+new incremental promotions under a configured cross-world cap.
+Root uploads at scene-load time are outside this per-frame governor.
+
+### Optional CPU index memory saving
+
+When the archive has been matched to the complete imported
+`ModelAsset` and its pinned root index pages have been checked and
+uploaded to GPU, enabling
+`setStrataDropArchivedCpuIndicesEnabled(true)` releases the
+**duplicate staged STRATA index vectors**. `Asset::logicalIndexCount()`
+retains the immutable validation bounds and `planView` continues to
+work without the released `indices` vector. The original
+`Model` vertex/index allocations and Legacy fallback remain intact.
+Diagnostics/GPU metadata/preview requests keep the CPU STRATA index
+copy instead of risking invalid reads. This is an opt-in steady-state
+CPU memory reduction, **not** full removal of source/model geometry or
+an import-time peak-memory reduction.
+
+### Limits and verification
+
+The shared GPU cap is a logical **reserved STRATA index arena** budget,
+not an exact physical VRAM or in-flight copy limit. Vulkan may retain
+extra CPU shadows and GPU versions; shared IO accounting excludes
+short-lived file-read buffers and copies exposed to callers. This
+does not yet deduplicate pages shared between different source keys,
+provide cross-device/physical-GPU limits, perform mesh-shader indirect
+culling, or solve lossy LOD cracks. GLES3/WebGL2 retains the existing
+CPU-selected immutable-buffer route without disk-native worker support.
+
+**Code and new regression fixtures are committed, but Stage 15.4
+has not been natively compiled or run.** The
+`aiverse_strata_streaming_coordinator_tests` target covers two-world
+GPU leases, cross-world per-frame transfer counters and 24 archive
+instances sharing two workers. ModelAdapter/View/Disk tests additionally
+exercise release of staged CPU indices after verification. Full
+Stage 15.4 file/commit/test handoff:
+`docs/agent-handoffs/strata-virtual-geometry.md`.
