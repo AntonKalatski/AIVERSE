@@ -4,6 +4,44 @@ Branch: `feature/universal-multicamera-render-targets`
 
 > **Status: PARTIALLY IMPLEMENTED, NOT BUILD-VALIDATED.** Stage 1 renamed `render::Camera`; Stage 2 extracted `render::PortraitRenderer`; Stage 3 added native ECS camera components and read-only snapshots. Scheduling, output allocation, RenderGraph integration and all P1/P2 features below are still proposals. See the dated handoffs; keep common engine code genre-independent.
 
+## Stage 4–5 implementation (2026-11-19)
+
+The reusable core has now been committed in the feature branch (NOT hardware-validated):
+
+- `engine/render/CameraRenderScheduler.h`: ECS entity-driven scheduling with priorities, dependency DAG, duplicate-output and cycle diagnostics; `EveryFrame`, `EveryNFrames`, `FixedRate`, `OnDirty`, `Manual`. The highest-priority screen camera is last, after offscreen cameras. Until split-screen is implemented, additional full-screen cameras are suppressed.
+- `engine/render/RenderTargetPool.h`: on-demand RGBA8/RGBA16F and depth attachment allocation by asset key; lazy resize; completion-serial deferred retirement; unknown completion retains targets until confirmed GPU-idle teardown.
+- `engine/render/CameraRenderPipeline.h`: executes `CameraRenderPlan` into `Renderer3D::render(gfx::PassDesc)`, lets the host submit scene geometry and supply per-camera postprocess instances, and exposes sampleable color/depth textures.
+- CTest source fixtures (NOT RUN): `ecs_camera`, `camera_scheduler`, `camera_rt_pool`. GPU pixel tests and full editor/native integration remain pending.
+
+### Native C++ host example
+
+```cpp
+render::CameraRenderScheduler schedule;
+render::CameraRenderPipeline lens(device, renderer, schedule);
+// The host created ECS camera Entities with WorldTransform and CameraComponent.
+// CameraOutputComponent{Texture, 42, 512, 512} chooses a stable RT asset key.
+// All rendered models are submitted by the game's presentation callback.
+device.beginFrame(framebufferWidth, framebufferHeight);
+auto result = lens.execute(world, frameIndex, seconds,
+    [&](const render::EcsCameraView& camera, render::Renderer3D& r3d) {
+        // Submit your world geometry here; respect camera.visibilityMask.
+        // Never sample camera.output.targetAssetKey in this same pass.
+        submitVisibleWorld(camera, r3d);
+    });
+auto cameraColor = lens.targets().color(42); // valid after its successful pass
+device.endFrame();
+// At an externally proven GPU-idle point before Device teardown:
+// lens.shutdownAfterGpuIdle();
+```
+
+The native example is explanatory, not a buildable standalone project: `submitVisibleWorld`,
+`world`, `renderer`, and `device` are owned by the game. A target's `depth` flag
+controls whether depth is externally exposed; the internal depth attachment is always
+allocated to keep 3D depth testing correct. Do not read a camera target while the same
+camera writes it. Declare RT dependencies using `CameraDependenciesComponent`.
+For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and call
+`executeWithPost`.
+
 ## 1. Requirements
 1. An arbitrary number of cameras simultaneously present in one scene, each defined by a native ECS `Entity` (existing generation-safe identity), with normal scene hierarchy `Parent`, `LocalTransform`, and `WorldTransform`.
 2. Each camera can render to swapchain, external or managed render texture (color/depth, HDR), viewport sub-rectangle, or an offscreen capture; independent clear/load/store and layer masks.
@@ -31,9 +69,10 @@ Branch: `feature/universal-multicamera-render-targets`
 - **Planned:** `CameraTargetComponent` / `CameraRigComponent` and explicit stable persistence schema registration; defaults are not auto-persisted without `PersistentEcs` registration. Cameras do not own simulation time.
 - `engine/camera/CameraDirector.h/.cpp` — active view selection, priorities, virtual cameras, cuts and interpolated blends.
 - `engine/camera/CameraRig.h/.cpp` — orthographic/perspective targets, follow, look-at, orbit, free-fly, spring arm, rail/dolly, constraints and deterministic damping.
-- `engine/render/CameraRenderScheduler.h/.cpp` — capture requests, topological ordering of RT dependencies, policy/budget, debug stats, per-view save/restore.
+- **Implemented Stage 4 (CPU):** `engine/render/CameraRenderScheduler.h` — capture requests, ordering and dependency/cycle diagnostics, basic update policies. GPU time budgeting and per-view profiling remain planned.
 - `engine/render/CameraView.h` — immutable `RenderView` snapshot (Camera, viewport, output, masks, clip overrides, quality, temporal key, clear).
-- `engine/render/RenderTargetPool.h/.cpp` — matching color/depth, ownership, resize, explicit format/sample count and deferred destruction by GPU frame completion.
+- **Implemented Stage 5:** `engine/render/RenderTargetPool.h` — managed color/depth, HDR, resize and GPU-serial deferred destruction. MSAA, format negotiation, asset persistence and host integration remain planned.
+- **Implemented Stage 5:** `engine/render/CameraRenderPipeline.h` — offscreen and primary screen camera execution using existing Renderer3D, GPU target readiness and dependency checks. It is opt-in by native code; not yet wired to Studio cameras or game clients.
 - `engine/render/PortraitRenderer.h/.cpp` — purely model/pose/material preview renderer without `RtsView`, `UnitType` or `modules/rts` includes. RTS stays a thin adapter and other hosts call directly.
 - `apps/editor/windows/CameraWindow.cpp` — per-entity camera inspector, selection, live preview/RT visualization, capture flags and instrumentation.
 - `engine/camera/CaptureAsset.h` (later) — named RT assets exposed to materials, UI and scripts without raw transient texture handles in save data.

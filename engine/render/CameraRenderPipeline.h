@@ -15,7 +15,7 @@
 namespace aiverse::render {
 
 enum class CameraExecutionIssue : uint8_t {
-    MissingInput, TargetUnavailable, InvalidFramebuffer, SharedPostProcess
+    MissingInput, TargetUnavailable, InvalidFramebuffer, SharedPostProcess, DeviceLost
 };
 struct CameraExecutionDiagnostic {
     Entity entity{};
@@ -37,6 +37,8 @@ public:
     }
     CameraRenderTargetPool& targets() { return targets_; }
     const CameraRenderTargetPool& targets() const { return targets_; }
+    // Requires a host-confirmed GPU idle point (or final device teardown).
+    void shutdownAfterGpuIdle() { targets_.shutdownAfterGpuIdle(); scheduler_.reset(); }
 
     template<class Submit>
     CameraExecutionResult execute(const World& world,uint64_t frame,double seconds,
@@ -106,11 +108,26 @@ public:
                 post=nullptr;
                 result.diagnostics.push_back({view.entity,CameraExecutionIssue::SharedPostProcess});
             }
+            // Isolate per-camera adaptive geometry feedback even when several
+            // captures share one Renderer3D and the same geometry pages.
+            auto policy=renderer_.cpuMdiPolicyOverrides();
+            policy.adaptiveScope=view.entity.packed();
+            Renderer3D::ScopedCpuMdiPolicyOverride scope(renderer_,policy);
             renderer_.beginScene(view.camera,width,height);
             submit(view,renderer_); // renderer must be initialized by the host
             renderer_.render(pass,post);
             renderer_.resolvePostFx(); // no-op without an active post chain
             device_.endPass();
+            if (!device_.gpuHealthy()) {
+                ++result.skipped;
+                result.diagnostics.push_back({view.entity,CameraExecutionIssue::DeviceLost,
+                                               view.output.targetAssetKey});
+                if(target) {
+                    targets_.markInvalid(view.output.targetAssetKey);
+                    failedTargets.insert(view.output.targetAssetKey);
+                }
+                continue; // no acknowledgement on reported GPU failure
+            }
             if(target)targets_.markReady(view.output.targetAssetKey);
             scheduler_.acknowledge(view.entity,view.output,frame,seconds,true);
             ++result.submitted;
