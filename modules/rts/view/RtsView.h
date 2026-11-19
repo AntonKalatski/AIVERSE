@@ -206,7 +206,14 @@ public:
         return 0.0f;
 #endif
     }
-    const std::string& preparingResource() const { return preparation_.resource(); }
+    const std::string& preparingResource() const {
+#ifndef __EMSCRIPTEN__
+        return preparation_.resource();
+#else
+        static const std::string empty;
+        return empty;
+#endif
+    }
     std::string typeResource(uint16_t type) const;
     void shutdown(gfx::Device& dev);
     // Terrain from the grid (chunked: only chunks whose cells changed are rebuilt); call again after
