@@ -177,7 +177,7 @@ public:
         if(cacheReaders.activeReaders || cacheReaders.peakReaders ||
            cacheReaders.blockedMutations)
             ImGui::TextDisabled(
-                "Model cache read guards: %zu active / %zu peak / %llu blocked evictions",
+                "Model cache read guards: %zu active / %zu peak / %llu blocked mutations",
                 cacheReaders.activeReaders,cacheReaders.peakReaders,
                 (unsigned long long)cacheReaders.blockedMutations);
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
