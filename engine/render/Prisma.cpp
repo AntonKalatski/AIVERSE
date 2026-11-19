@@ -966,7 +966,26 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     stats_ = {};
     if (!sceneReady_) { auto p = out; p.clearColorEnabled = p.clearDepthEnabled = false; dev.beginPass(p); return; }
     const int w = std::max(f.width, 1), h = std::max(f.height, 1);
-    stats_.width = w; stats_.height = h;
+    // The scene/depth/velocity may be lower resolution than the final
+    // framebuffer, but this remains the original resolution without opt-in.
+    int outW=w, outH=h;
+    gfx::TextureInfo outputInfo{};
+    if (out.colorTarget.valid() && dev.textureInfo(out.colorTarget,outputInfo) &&
+        outputInfo.width>0 && outputInfo.height>0) {
+        outW=outputInfo.width; outH=outputInfo.height;
+    } else if (const auto it=requestedOutputSizes_.find(viewId_);
+               it!=requestedOutputSizes_.end()) {
+        outW=std::max(1,it->second.first);
+        outH=std::max(1,it->second.second);
+    } else if (!out.colorTarget.valid() &&
+               dev.framebufferWidth()>0 && dev.framebufferHeight()>0) {
+        outW=dev.framebufferWidth();outH=dev.framebufferHeight();
+    }
+    // Never upscale an unrelated native caller that did not explicitly
+    // choose the new render-size contract. An output target with a larger
+    // size is still filled correctly by the ordinary composite fallback.
+    stats_.width=w;stats_.height=h;
+    stats_.outputWidth=outW;stats_.outputHeight=outH;
     Sized& set = sized(w, h);
     const Target scene = target(set, kScene, w, h);
     const float flip = dev.info().renderTargetFlipY ? 1.0f : 0.0f;
