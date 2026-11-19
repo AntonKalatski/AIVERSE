@@ -1241,3 +1241,48 @@ monotonic sequence, hysteresis/cooldown, manual override and
 manifest quality binding, with platform-specific actual GPU timing
 providers and crossfade safety. Record full code commit SHAs
 and next step in `docs/terrain/AGENT_HANDOFF.md`.
+
+## Stage 41 — native RTS/FPS host frame timing bridge
+
+Stage40 adaptive Horizon QoS no longer needs hand-written native FPS/RTS
+timing calls. Use `engine/world/TerraWeaveHorizonFrameTimingBridge.h`:
+`HorizonFrameTimingBridge::begin(device,worldScene)` after the host begins
+its graphics frame; `finish(worldScene,realCpuFrameStart)` after submitting
+the render work (and `endFrame` when owned by the app). The bridge is
+enabled ONLY when `worldScene->vegetationHorizonAdaptiveQualityConfig().enabled`;
+no Horizon or disabled adaptation causes no GPU timers or feedback.
+
+Existing integrations: `apps/client/GameClient.h/.cpp` uses the bridge
+around streamed-world RTS render within the platform-owned frame; native
+`apps/fps/client.cpp` begins/ends a graphics frame itself and brackets its
+FPS client callback. It uses `std::chrono::steady_clock` *measured CPU
+work*, not `dt`, and `gfx::Device::timeGpuFrame(tag)` +
+`takeGpuTimings()` only when available. GPU results are asynchronous
+and tagged to the ORIGINAL frame. The bridge buffers at most eight
+frames of GPU latency, emits ordered matching measurements or CPU-only
+fallback (0 GPU microseconds), never waits/stalls and never fabricates
+completed GPU results. Do not submit a second timing sample manually
+when using the bridge.
+
+**Important:** `takeGpuTimings()` destructively returns **all** ready
+device queries, including tags for other systems. The RTS/FPS client
+paths have no other current GPU tag consumer, but future benchmarking
+must route queries via one shared device owner instead of competing
+pollers. Metal tags cover the full command buffer and GL timers start
+when the query is issued, so neither is a measured isolated Horizon
+cost. Other native hosts may use the bridge but must respect each
+backend's `beginFrame/endFrame` ownership. The bridge does NOT add a
+new backend API or change PHYSIS/ECS/gameplay/geometry/atlas/TWH8.
+
+`lastFrameId`, `pendingFrames`, `deliveredGpuFrames` and
+`deliveredCpuOnlyFrames` provide internal diagnostics. While
+`adaptiveQuality.enabled` is false (the default), no new sample is
+recorded and no GPU timer is requested. Use the Stage40 optional
+manifest to enable; it now drives real native RTS/FPS callback samples
+automatically.
+
+**QA deliberately NOT RUN:** CMake/Clang/GCC/CTest/real Metal/GL/Vulkan
+frame loop, GPU tag ordering, FPS/RTS smoke, map teardown, concurrent
+tag consumers, performance/battery benefit. The independent tester
+must verify all these and the Stage29 atlas migration before merging
+PR #24. Update `docs/terrain/AGENT_HANDOFF.md` with exact code SHAs.
