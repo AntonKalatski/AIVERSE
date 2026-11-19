@@ -60,7 +60,17 @@ int main() {
     const fs::path target=root/"somewhere-else";
     CHECK(::symlink(target.c_str(),(parent/"receipts").c_str())==0);
     CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
-    CHECK(fs::remove(parent/"receipts"));
+    // Atomic rename replaces the symlink entry; never follow it to
+    // create or modify the outside target.
+    CHECK(io::write(dir,"receipts",data,"nonce-link",&reason));
+    CHECK(!fs::exists(target));
+    CHECK(!fs::is_symlink(parent/"receipts"));
+    CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    const fs::path otherLink=root/"hardlink";
+    CHECK(::link((parent/"receipts").c_str(),otherLink.c_str())==0);
+    CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    CHECK(fs::remove(otherLink));
+    CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(::chmod(parent.c_str(),0777)==0);
     CHECK(!io::write(dir,"receipts",data,"nonce-b",&reason));
     CHECK(::chmod(parent.c_str(),0700)==0);
