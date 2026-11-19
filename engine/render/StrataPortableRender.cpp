@@ -56,19 +56,23 @@ bool safeSource(const Model& source){
 bool PortableSource::validFor(const Model& source) const {
     return source_==&source && device_ && device_->gpuHealthy() &&
            asset_ && indexBuffer_.valid() &&
+           (!streaming_ ||
+            (streaming_->valid() && streaming_->buffer()==indexBuffer_)) &&
            sourceGeometryRevision_==source.geometryRevision &&
            sourceMaterialRevision_==source.materialRevision &&
            source.vb.valid() && source.ib.valid() &&
            source.vb==sourceVertexBuffer_ && source.ib==sourceIndexBuffer_ &&
            source.gpuBaseVertex==baseVertex_ &&
            source.gpuFirstIndex==sourceFirstIndex_ &&
-           (pooledIndices_.valid()
+           (streaming_ ||
+            (pooledIndices_.valid()
                 ? auxiliaryGeometryIndicesValidFor(pooledIndices_,source)
-                : dedicated_);
+                : dedicated_));
 }
 
 bool PortableSource::stage(gfx::Device& dev,const Model& source,
-                           const ModelAsset& asset,std::string* error){
+                           const ModelAsset& asset,std::string* error,
+                           size_t indexBudgetBytes){
     if(error)error->clear();
     if(device_ || source_ || indexBuffer_.valid() || pooledIndices_.valid())
         return fail(error,"portable Strata source already staged; shutdown first");
@@ -176,7 +180,15 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     // Prefer the original source's pool, even on Vulkan without compute.
     // GLES3 normally has dedicated vertex/index buffers; allocate ONLY an
     // immutable auxiliary index stream, NEVER duplicate its vertex data.
-    if(source.geometryPoolPage &&
+    std::unique_ptr<IndexResidency> streaming;
+    if(indexBudgetBytes){
+        streaming=std::make_unique<IndexResidency>();
+        if(!streaming->initialize(dev,asset,indexBudgetBytes,error))
+            return false;
+        buffer=streaming->buffer();
+        // The residency manager owns this dedicated index-only buffer.
+        // Never hand it to the pooled allocator or destroy it twice.
+    }else if(source.geometryPoolPage &&
        uploadAuxiliaryGeometryIndices(dev,source,combined.data(),
                                       combined.size(),pooled)){
         buffer=pooled.buffer;
@@ -209,9 +221,13 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     primitiveOffsets_=std::move(offsets);
     pooledIndices_=std::move(pooled);
     dedicated_=dedicated;
+    streaming_=std::move(streaming);
     stats_={};
     stats_.pooledIndices=pooledIndices_.valid();
-    stats_.dedicatedIndices=dedicated;
+    stats_.dedicatedIndices=dedicated || bool(streaming_);
+    stats_.streamingIndices=bool(streaming_);
+    stats_.residentIndexBytes=streaming_ ? streaming_->stats().activeBytes
+                                       : uint64_t(indexCount_)*sizeof(uint32_t);
     return true;
 }
 
@@ -287,11 +303,23 @@ bool PortableSource::prepareModel(
                 parent[id]=n;
             }
         std::vector<uint8_t> refine(g.nodes.size(),0);
+        std::vector<uint8_t> gpuMask;
+        if(streaming_){
+            gpuMask.resize(g.nodes.size());
+            for(uint32_t n=0;n<g.nodes.size();++n)
+                gpuMask[n]=streaming_->resident(uint32_t(i),n) ? 1 : 0;
+        }
         if(forceFinestForUnspecifiedPass){
             // Unknown future reflection/capture views use the original
             // finest resident meshlets. Never cull by the main camera alone.
-            for(uint32_t n=0;n<g.nodes.size();++n)
-                if(g.nodes[n].childCount)refine[n]=1;
+            for(uint32_t n=0;n<g.nodes.size();++n){
+                const auto& candidate=g.nodes[n];
+                bool allChildrenResident=candidate.childCount>0;
+                for(uint32_t k=0;k<candidate.childCount;++k)
+                    if(streaming_ && !gpuMask[candidate.firstChild+k])
+                        allChildrenResident=false;
+                if(allChildrenResident)refine[n]=1;
+            }
         }else{
             bool wasUsed=false;
             for(size_t n=0;n<source_->nodes.size();++n){
@@ -310,7 +338,8 @@ bool PortableSource::prepareModel(
                     view.frustumCull=false;
                     view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                     ViewPlan plan;
-                    if(!planView(g,view,plan,nullptr) ||
+                    if(!planView(g,view,plan,nullptr,
+                                 streaming_ ? &gpuMask : nullptr) ||
                        plan.budgetExceeded)
                         return reject("portable Strata CPU LOD plan failed");
                     for(const auto& range:plan.ranges){
@@ -345,7 +374,14 @@ bool PortableSource::prepareModel(
                    uint64_t(indexCount_))
                 return reject("invalid portable Strata selected index frontier");
             Primitive prim=source_->meshes[entry.mesh].primitives[entry.primitive];
-            prim.firstIndex=primitiveOffsets_[i]+node.firstIndex;
+            if(streaming_){
+                const auto gpu=streaming_->span(uint32_t(i),n);
+                if(!gpu.valid() || gpu.indexCount!=node.indexCount)
+                    return reject("selected Strata node has no GPU-resident index range");
+                prim.firstIndex=gpu.firstIndex;
+            }else{
+                prim.firstIndex=primitiveOffsets_[i]+node.firstIndex;
+            }
             prim.indexCount=node.indexCount;
             prim.shadowBatched=false;
             const auto& bounds=g.bounds[n];
@@ -367,6 +403,10 @@ void PortableSource::shutdown(gfx::Device& dev){
     // A buffer handle is scoped to its creating RHI device. Never destroy
     // that numeric handle on another device (which may own unrelated data).
     if(device_ && device_!=&dev)return;
+    if(streaming_){
+        streaming_->shutdown(dev);
+        streaming_.reset();
+    }
     if(pooledIndices_.valid())
         releaseAuxiliaryGeometryIndices(dev,pooledIndices_);
     if(dedicated_&&indexBuffer_.valid())
