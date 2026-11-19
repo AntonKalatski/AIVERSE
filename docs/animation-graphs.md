@@ -749,3 +749,20 @@ while sharing the same generic GPU target retirement pool. This
 stage changes no animation clock, ECS writer or gameplay state.
 Source changes are committed to the feature branch but were not
 compiled or GPU-tested.
+
+## Stage 117 — transactional animation appearance with terminal GPU errors
+
+During Model/Material/AnimationGraph hot reload the existing appearance
+validator distinguishes an asynchronous HDR colour variant still Pending
+from a Metal shader/pipeline that definitively Failed. It uses the same
+`Renderer3D::warmModelPipelinesChecked` call from generic View, not a
+separate graph evaluator. Failed variants remain cached as terminal
+for that GPU pipeline generation, keeping last-good model materials
+and MotionWeave presentation state. Quality/instance-limit shader
+invalidation clears those failed-handle entries.
+
+The generic gfx::Device status API is optional and backwards-compatible.
+Legacy bool-only Vulkan/GL/third-party implementations report Ready/Pending
+without inventing a Failed result. Real Metal and cross-backend validation,
+CMake/CTest and visual continuity tests are **NOT RUN**.
+See [Stage 117 handoff](agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
