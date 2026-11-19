@@ -51,6 +51,9 @@ jobs:
       - name: Build existing SpectraFX test binaries
         run: |
           cmake --build build/spectrafx-ci --parallel 2 --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests
+      - name: Build native Apple Metal GPU kernel acceptance
+        if: runner.os == 'macOS'
+        run: cmake --build build/spectrafx-ci --parallel 2 --target aiverse_spectrafx_metal_gpu_test
       - name: Run existing SpectraFX CTest label
         run: ctest --test-dir build/spectrafx-ci --output-on-failure -L SpectraFX
       - name: Build native editor and FPS client
