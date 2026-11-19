@@ -794,3 +794,15 @@ unverified GPU-authored instance buffers excluded. New genre-neutral
 `GiModelBatchPolicy` and source CTest `gi_model_batch_policy`.
 No actual native compilation/CTest, PBR pixel parity or branch reconciliation
 performed. Keep all other GI acceptance gates and GPU fence safety.
+
+
+## Stage 47 — 2026-11-20 — 16-slot GLES3 terrain CPU GI path (SOURCE; NOT RUN)
+
+Full handoff: `docs/agent-handoffs/gi-stage47-gles16-terrain-gi-2026-11-20.md`.
+The generic engine GI selector can now be consumed by a strict16-slot
+compact terrain material. Low-tier GLSL omits rich splat/cliff samplers;
+baked terrain maps occupy tex4/5, traced height tex6, optional CPU-probed
+RGBA32F GI tex7, with legacy vision fog tex15 preserved. Existing richer
+Metal/Vulkan terrain GI continues to use tex21; unavailable probes fall
+back to unmodified terrain. Source fixture `gi_terrain_compact` registered
+with CTest. No real native compiler/shader/GPU test or full acceptance run.
