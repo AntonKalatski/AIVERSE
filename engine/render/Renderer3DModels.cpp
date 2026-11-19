@@ -65,18 +65,23 @@ MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bo
 }
 
 bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float3 origin,
-                                     float spacing, int nx, int ny, int nz) {
+                                     float spacing, int nx, int ny, int nz,
+                                     int ringX, int ringY, int ringZ) {
     if (!overlay) { clearDynamicGiOverlay(); return true; }
-    if (!dev_ || !dev_->supports(gfx::PixelFormat::RGBA32F) ||
+    if (!dev_ || !dev_->supports(overlay->computeWritable()
+                              ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
         !overlay->texture().valid() || overlay->device() != dev_ ||
         !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
         !std::isfinite(spacing) || spacing < .25f || spacing > 1000.f ||
         nx < 1 || ny < 1 || nz < 1 || nx > 256 || ny > 256 || nz > 256 ||
+        ringX < 0 || ringY < 0 || ringZ < 0 ||
+        ringX >= nx || ringY >= ny || ringZ >= nz ||
         size_t(nx) * size_t(ny) * size_t(nz) != overlay->probeCount())
         return false;
     dynamicGiOverlay_ = overlay; // caller owns it; exact same device required
     dynamicGiOrigin_ = {origin.x, origin.y, origin.z, 1.0f / spacing};
     dynamicGiSize_ = {float(nx), float(ny), float(nz), 0.0f};
+    dynamicGiRing_ = {float(ringX), float(ringY), float(ringZ), 0.0f};
     return true;
 }
 
@@ -791,9 +796,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (dynamicGiEligible(it,phase,gpuInstances,instancePalette)) {
         // U6 / tex13 exist only in the DYNAMIC_GI shader permutation.
         // This is a *separate* bounced indirect layer: the static atlas stays intact.
-        const float giData[8] = {
+        const float giData[12] = {
             dynamicGiOrigin_.x, dynamicGiOrigin_.y, dynamicGiOrigin_.z, dynamicGiOrigin_.w,
-            dynamicGiSize_.x, dynamicGiSize_.y, dynamicGiSize_.z, dynamicGiSize_.w
+            dynamicGiSize_.x, dynamicGiSize_.y, dynamicGiSize_.z, dynamicGiSize_.w,
+            dynamicGiRing_.x, dynamicGiRing_.y, dynamicGiRing_.z, dynamicGiRing_.w
         };
         dev_->setUniforms(6, giData, sizeof giData);
         dev_->setTexture(13, dynamicGiOverlay_->texture());
