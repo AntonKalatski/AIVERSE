@@ -1981,44 +1981,44 @@ void Renderer3D::renderModels(int phase) {
     // meet the backend's indirect-command threshold trigger special sorting.
     // Everything else retains the original material/primitive sort order.
     // GPU-state materialGroup IDs were resolved with exact comparisons above.
-    // 0 = normal, 1 = permitted cross-model MDI, 2 = per-page
-    // adaptive fallback to conventional instancing/direct draws.
-    std::vector<uint8_t> staticCrossModes;
+    // Workspace memory and group slots persist across shadow/main passes,
+    // but a beginPass epoch prevents leaking any visibility or stale pointer
+    // decisions from the preceding camera or model asset revision.
+    auto& staticCrossModes = staticCrossPreflight_.modes();
+    staticCrossModes.clear();
     if (staticCrossModelSort) {
         const size_t threshold = dev_->info().backend == gfx::Backend::Metal
             ? indirectCommandThreshold() : size_t{4};
         if (order_.size() < threshold || size_t(instanceLimit_) < threshold) {
             staticCrossModelSort = false;
         } else {
-            using PreflightKey = StaticCrossModelPreflightKey;
-            using PreflightGroup = StaticCrossModelPreflightGroup;
-            std::unordered_map<PreflightKey, PreflightGroup,
-                               StaticCrossModelPreflightKeyHash> groups;
-            groups.reserve(std::min<size_t>(order_.size(), 256));
-            // Too many one-off pages/materials defeat cheap preflight:
-            // keep regular sorting when the bounded group budget is exhausted.
-            constexpr size_t kMaxPreflightGroups = 2048;
+            auto& workspace = staticCrossPreflight_;
+            workspace.beginPass(modelItems_.size());
+            // A fixed open-addressed directory and bounded vector of groups
+            // replace the per-pass unordered_map/node allocations. The
+            // item->group index is retained only for this render pass, so
+            // the promotion scan does not repeat a material/page hash lookup.
             bool budgetExceeded = false;
             for (uint32_t itemIndex : order_) {
                 const ModelItem& item = modelItems_[itemIndex];
                 if (!eligibleStaticPage(item)) continue;
-                const PreflightKey key{item.model->geometryPoolPage.get(),
-                                       materialGroup[itemIndex], item.flags,
-                                       item.model->vb.id, item.model->ib.id};
-                auto found = groups.find(key);
-                if (found == groups.end()) {
-                    if (groups.size() == kMaxPreflightGroups) {
-                        budgetExceeded = true;
-                        break;
-                    }
-                    found = groups.try_emplace(key).first;
+                const StaticCrossModelPreflightKey key{
+                    item.model->geometryPoolPage.get(),
+                    materialGroup[itemIndex], item.flags,
+                    item.model->vb.id, item.model->ib.id};
+                const uint16_t groupIndex = workspace.findOrCreate(key);
+                if (groupIndex == StaticCrossModelPreflightWorkspace::kInvalidGroup) {
+                    budgetExceeded = true;
+                    break;
                 }
-                found->second.observe(item.model, item.prim, threshold);
+                workspace.groups()[groupIndex].group.observe(
+                    item.model, item.prim, threshold);
+                workspace.rememberItem(itemIndex, groupIndex);
             }
-            modelStats_.staticCrossModelPreflightGroups += groups.size();
+            modelStats_.staticCrossModelPreflightGroups += workspace.groups().size();
             size_t readyGroupsThisPass = 0;
-            if (!budgetExceeded) for (auto& [key, group] : groups) {
-                (void)key;
+            if (!budgetExceeded) for (auto& record : workspace.groups()) {
+                auto& group = record.group;
                 group.ready = group.opportunity(threshold, instanceLimit_);
                 if (group.ready) {
                     ++readyGroupsThisPass;
@@ -2028,23 +2028,21 @@ void Renderer3D::renderModels(int phase) {
                 }
             }
             if (budgetExceeded) {
-                modelStats_.staticCrossModelPreflightRejected += groups.size();
+                modelStats_.staticCrossModelPreflightRejected += workspace.groups().size();
                 staticCrossModelSort = false;
             } else if (readyGroupsThisPass == 0) {
                 staticCrossModelSort = false;
             } else {
                 // Each live GPU page has its own shadow/opaque CPU cost.
-                // A page is decided once per scene epoch/pass, even if it
-                // contributes many materials. Missing tracking capacity
-                // means use original MDI, never decline unknown pages.
+                // One decision per page, scene epoch and pass, regardless
+                // of how many material groups on that page qualified.
                 size_t permittedGroups = 0;
                 bool skippedThisPass = false, probedThisPass = false;
-                for (auto& [key, group] : groups) {
-                    (void)key;
+                for (auto& record : workspace.groups()) {
+                    auto& group = record.group;
                     if (!group.ready) continue;
                     if (cpuMdiAdaptiveEnabled_) {
-                        CpuMdiPageEntry* entry =
-                            cpuMdiPageEntry(*group.firstModel);
+                        CpuMdiPageEntry* entry = cpuMdiPageEntry(*group.firstModel);
                         if (entry) {
                             const size_t pass = size_t(phase);
                             if (entry->decisionEpoch[pass] != cpuMdiPageEpoch_) {
@@ -2074,19 +2072,16 @@ void Renderer3D::renderModels(int phase) {
                     ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
                 if (probedThisPass)
                     ++modelStats_.staticCrossModelAdaptiveProbePasses;
-                // Declined groups receive mode 2 even if *all* pages are
-                // over budget, so only those pooled static items skip MDI.
-                staticCrossModes.resize(modelItems_.size(), uint8_t{0});
+                // The group index was captured during this same visibility
+                // epoch. No second GPU-material/page hash lookup or redundant
+                // eligibleStaticPage call is needed when assigning draw modes.
                 for (uint32_t itemIndex : order_) {
-                    const ModelItem& item = modelItems_[itemIndex];
-                    if (!eligibleStaticPage(item)) continue;
-                    const PreflightKey key{item.model->geometryPoolPage.get(),
-                                           materialGroup[itemIndex], item.flags,
-                                           item.model->vb.id, item.model->ib.id};
-                    const auto found = groups.find(key);
-                    if (found == groups.end() || !found->second.ready)
+                    const uint16_t groupIndex = workspace.groupForItem(itemIndex);
+                    if (groupIndex == StaticCrossModelPreflightWorkspace::kInvalidGroup)
                         continue;
-                    const uint8_t mode = found->second.permitted ? 1u : 2u;
+                    const auto& group = workspace.groups()[groupIndex].group;
+                    if (!group.ready) continue;
+                    const uint8_t mode = group.permitted ? 1u : 2u;
                     staticCrossModes[itemIndex] = mode;
                     if (mode == 1u)
                         ++modelStats_.staticCrossModelPreflightItems;
@@ -2095,6 +2090,9 @@ void Renderer3D::renderModels(int phase) {
             }
         }
     }
+    modelStats_.staticCrossModelPreflightWorkspaceBytes = std::max(
+        modelStats_.staticCrossModelPreflightWorkspaceBytes,
+        staticCrossPreflight_.retainedBytes());
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
