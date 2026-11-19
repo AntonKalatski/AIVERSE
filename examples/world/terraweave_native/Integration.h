@@ -8,6 +8,7 @@
 #include "engine/world/TerraWeaveSedimentEcs.h"
 #include "engine/world/TerraWeaveNereidFloodBridge.h"
 #include "engine/world/TerraWeaveFloodShorelineSystem.h"
+#include "engine/world/TerraWeaveShoreRecoveryEcs.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <optional>
@@ -29,7 +30,9 @@ inline void registerSystems(
         bool enableSlopeFailures=true,
         terraweave::SlopeFailureSettings slopeSettings={},
         std::optional<terraweave::ShorelineRasterSettings>
-            autoFloodShoreline=std::nullopt) {
+            autoFloodShoreline=std::nullopt,
+        bool enableEcologyRecovery=true,
+        terraweave::ShoreRecoverySettings recoverySettings={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -54,6 +57,8 @@ inline void registerSystems(
     terraweave::registerTerraWeaveObstructionPersistence(sim);
     terraweave::registerNereidSedimentEcsPersistence(sim);
     terraweave::registerTerraWeaveAuthorityResource(sim,cfg);
+    if(enableEcologyRecovery)
+        terraweave::registerShoreRecoveryPersistence(sim);
     // NEREID calculates local bank erosion; transport then conserves
     // suspended sediment between same-water-body neighbouring banks.
     // TerraWeave applies already computed soil changes LAST.
@@ -80,6 +85,12 @@ inline void registerSystems(
     if(autoFloodShoreline)
         terraweave::addAutomaticNereidShorelineRefreshSystem(
             sim,"terraweave.auto_shoreline",cfg,*autoFloodShoreline);
+    // A lower-frequency, deterministic ecological update, after the
+    // NEREID flood and bank authoring. This never creates grass-blade ECS
+    // entities and does not raise/revive fallen trees automatically.
+    if(enableEcologyRecovery)
+        terraweave::addTerraWeaveShoreEcologySystem(
+            sim,"terraweave.shore_ecology",cfg,recoverySettings);
 }
 
 inline Entity addWaterBody(
