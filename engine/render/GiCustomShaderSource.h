@@ -11,6 +11,7 @@
 #include <cctype>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace aiverse::render {
 
@@ -53,9 +54,17 @@ inline std::string giCustomGlslFunctions(GiCustomShaderMode mode,int firstSlot) 
     source+=AIVERSE_GLSL_DYNAMIC_GI;
     if(giCustomModeUsesFar(mode))source+=AIVERSE_GLSL_CASCADE_GI;
     // Rewrite ONLY generated GI declarations/functions, never the host shader.
-    source=giCustomReplaceIdentifier(std::move(source),"tex13","tex"+std::to_string(firstSlot));
-    source=giCustomReplaceIdentifier(std::move(source),"tex14","tex"+std::to_string(firstSlot+1));
-    source=giCustomReplaceIdentifier(std::move(source),"tex15","tex"+std::to_string(firstSlot+2));
+    // Two passes prevent alias chains: remapping 13->14 must not cause the
+    // newly produced tex14 to be renamed again to 15.
+    source=giCustomReplaceIdentifier(std::move(source),"tex13","AIVERSE_GI_FINE_ATLAS");
+    source=giCustomReplaceIdentifier(std::move(source),"tex14","AIVERSE_GI_FINE_MASK");
+    source=giCustomReplaceIdentifier(std::move(source),"tex15","AIVERSE_GI_FAR_ATLAS");
+    source=giCustomReplaceIdentifier(std::move(source),"AIVERSE_GI_FINE_ATLAS",
+                                     "tex"+std::to_string(firstSlot));
+    source=giCustomReplaceIdentifier(std::move(source),"AIVERSE_GI_FINE_MASK",
+                                     "tex"+std::to_string(firstSlot+1));
+    source=giCustomReplaceIdentifier(std::move(source),"AIVERSE_GI_FAR_ATLAS",
+                                     "tex"+std::to_string(firstSlot+2));
     return source;
 }
 
