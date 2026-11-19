@@ -30,7 +30,7 @@ static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform b
 
 constexpr uint32_t kKeyDrawCallView = 32768;
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27;
-constexpr uint32_t kKeyDynamicGI = 1u << 28; // opt-in color-only dynamic probe sampler // editor draw-call diagnostic shader permutation
+constexpr uint32_t kKeyDynamicGI = 1u << 28; // opt-in color-only dynamic probe sampler
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -68,7 +68,7 @@ bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float
                                      float spacing, int nx, int ny, int nz) {
     if (!overlay) { clearDynamicGiOverlay(); return true; }
     if (!dev_ || !dev_->supports(gfx::PixelFormat::RGBA32F) ||
-        !overlay->texture().valid() ||
+        !overlay->texture().valid() || overlay->device() != dev_ ||
         !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
         !std::isfinite(spacing) || spacing < .25f || spacing > 1000.f ||
         nx < 1 || ny < 1 || nz < 1 || nx > 256 || ny > 256 || nz > 256 ||
@@ -84,7 +84,8 @@ bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
                                   bool gpuInstances, bool instancePalette) const {
     if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
         !dynamicGiOverlay_->texture().valid() || gpuInstances ||
-        instancePalette || it.mat->shading == ShadingModel::Unlit)
+        instancePalette || !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
+        it.mat->shading == ShadingModel::Unlit)
         return false;
     const auto& program = it.mat->shaderGraph;
     // Shader Graph textures start at slot 13, which the opt-in GI overlay uses.
