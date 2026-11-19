@@ -553,3 +553,67 @@ resource into an older save requires a game-level schema-count migration.
 compiled, executed or benchmarked. See
 [Stage68 agent handoff](../../../docs/terrain/stage-68-nutrient-circulation-handoff.md)
 for exact commits, limitations and independent test acceptance.
+
+
+## Stage 69 — native NEREID junction nutrients, creek sampling and PHYSIS weather
+
+Stage69 extends the **optional** Stage68 nutrient cycle. It does not
+change NEREID hydrology or rebuild the persistent `terraweave.forest_deadwood`
+v2 ledger. Default `registerSystems` calls continue to work unchanged.
+
+The native `registerSystems(...)` overload now has two trailing
+arguments after the Stage68 `onNutrientCycle` callback:
+
+- `NereidNutrientJunctionSettings junctionSettings={}`: maxLinks
+  (default 64), searchRadiusCells (default 1), samplesPerAxis (default
+  8, i.e. 4m within existing 32m cells). `ForestNutrientCycleSettings`
+  also exposes `waterSamplesPerAxis=8` and
+  `maxJunctionTransfersPerStep=64`.
+- `bool useNativePhysisWeather=false`: request native PHYSIS
+  climate sampling from the SAME authoritative `Simulation::world()`.
+  The optional `TerraWeavePhysisNutrientBridge.h` includes the
+  real `engine/physis/PhysisPresentation.h` only if available and
+  calls `physis::sampleNatureField`. When the feature branch is
+  built without PHYSIS, `useNativePhysisWeather=true` explicitly
+  fails during setup, before ECS systems are registered. Manually
+  provided Stage68 climate callbacks still work without PHYSIS.
+
+**NEREID links:** `buildNereidNutrientJunctionPlan` reads existing
+`WaterConfluenceComponent` and
+`WaterCascadeConnectionsComponent` with valid linked water bodies,
+cascade geometry and live wet-contact samples on the current
+Earthworks heightfield. It creates a directed list of inlet→outlet
+transfers only when 32m source and destination nutrient cells can
+be unambiguously owned by their respective NEREID bodies. Where
+two different rivers share the same 32m cell, the link is skipped
+rather than guessing the source of dissolved matter.
+
+**Small creeks:** the native Stage69 sampler checks the 32m cell
+center first, then an optional bounded lattice at 32/16/8/4m
+resolution. This can find narrow rivers that center-only sampling
+missed, but it **does not increase the persistent nutrient grid
+resolution**. Source and destination are still 32m saved cells.
+True within-one-cell branching requires a future new saved layout,
+not just more water queries.
+
+**No double advection:** a new junction transfer uses only the
+original prior-tick dissolved mass still available after ordinary
+same-body cardinal movement. Nutrients received through an inlet
+cannot be sent onwards into a second cascade during that same
+scheduled nutrient tick. Every amount remains in the existing
+conserved ledger, with `ForestNutrientCycleOutcome::
+junctionTransferredUnits` reporting actual linked transfers.
+
+**PHYSIS climate source:** the adapter reads real, normalized PHYSIS
+rain, wetness and Fixed temperature (centi-C) after the completed
+PHYSIS simulation phase. It never creates its own climate, changes
+NEREID water volume or queries render-side GPU weather. The
+PHYSIS headers are currently on a separate integration branch:
+using this setting in a TerraWeave-only source checkout without
+those headers is unsupported and deliberately rejected.
+
+**QA status:** Stage69 source committed via GitHub, but not compiled,
+CTest-tested, run with PHYSIS merged, visually captured or
+benchmarked. The implementation uses the existing NEREID ECS
+interfaces but needs independent C++ and runtime validation.
+See [Stage69 agent handoff](../../../docs/terrain/stage-69-nereid-physis-nutrient-handoff.md).
