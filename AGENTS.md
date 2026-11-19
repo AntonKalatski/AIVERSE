@@ -6,6 +6,33 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 39; functional source, verification deferred):**
+[docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md).
+The new `GpuPoolRecoveryHost` is a **native renderer-owned**
+status/event coordinator for GPU-reset retry and explicit fresh
+graphics-Device recreation. It never owns/replaces platform
+`gfx::Device` autonomously and never restores living GPU
+particles or old presenter source generations. `PoolRecoveryEvent`
+reports exact actions and accepted reset group counts; the game host
+must keep the OLD Device alive through old-pool shutdown.
+The CPU-only `PoolRecoveryManifest` rebuilds effect definitions.
+`GpuPoolWorld::exportFreshCheckpoint` exports **only** fully
+complete, CURRENT GPU revision binary diagnostics with no pending
+births/kills/reset/readback and a strict <=528KiB+header bound.
+This is NOT a portable ECS save, rollback file or replay timeline.
+The editor can save the blob only when eligible, and never
+starts an implicit GPU readback for the Save button.
+`PoolLoadSheddingPolicy` opt-in throttles continuous births under
+estimated particle/readback pressure, rotates source start for
+fairness, and reserves bursts for manual one-shot VFX. Avoid
+genre-specific throttling, hard-coded RTS/FPS pipelines, unsafe
+GPU slot recycling, or a blanket claim of measured performance.
+No CMake/ObjC++/Metal compiler, CTest, editor launch, real
+GPU export or device-loss test was run for this stage. Continue
+the mandatory dated per-stage handoff and do not merge to main
+without explicit instruction.
+
+
 **Latest implementation handoff (Stage 38, source implementation; tests still deferred):**
 [docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md).
 Multi-group Metal rollback now records `PoolResetReport` with the
