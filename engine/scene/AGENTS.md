@@ -201,3 +201,15 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
 - See `docs/scene-collision-namespaces.md` and
   `docs/agent-handoffs/ecs-static-scene-stage7-2026-11-19.md`
   for contracts, limits, exact source/test status and continuation.
+
+
+### Collision layout persistence after Stage 7
+
+- Opt in to `SceneCollisionPersistence.h` from GameModule::setup:
+  `registerCollisionNamespacePersistence(sim)` and
+  `bindCollisionNamespaces(sim.world(),namespaces)`.
+  Validate layout fingerprint after COW rollback or native disk load
+  before allowing gameplay collision.
+- Do not serialize leases, streams, worker queues, or GPU/physics
+  pointers in the authoritative ECS. Only the stable layout
+  fingerprint is a native v10 World resource.
