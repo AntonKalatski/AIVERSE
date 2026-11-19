@@ -185,7 +185,16 @@ public:
     virtual void destroyShader(ShaderHandle h) = 0;
     virtual PipelineHandle createPipeline(const PipelineDesc& d) = 0;
     // Poll preparation of a backend-selected colour-target variant. Device thread only.
+    // Legacy bool means "no longer pending", not "compiled successfully".
+    // Implementations may override the status API to distinguish permanent
+    // compilation failures from asynchronous Pending. Default preserves the
+    // behavior of older backends and third-party gfx::Device implementations.
+    enum class PipelineColorWarmStatus : uint8_t { Ready, Pending, Failed };
     virtual bool warmPipelineColor(PipelineHandle, PixelFormat) { return true; }
+    virtual PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) {
+        return warmPipelineColor(h, format) ? PipelineColorWarmStatus::Ready
+                                            : PipelineColorWarmStatus::Pending;
+    }
     virtual void destroyPipeline(PipelineHandle h) = 0;
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
