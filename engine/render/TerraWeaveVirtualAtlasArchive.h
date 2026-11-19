@@ -11,6 +11,7 @@
 #include "VirtualTextureModelFeedback.h"
 #include "../gfx/VirtualTexturePageArchiveWriter.h"
 #include <cstdint>
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -215,6 +216,31 @@ inline VirtualTextureMaterialMapping terraWeaveAtlasMapping(
     map.texelWidth=float(v.width);
     map.texelHeight=float(v.height);
     return map;
+}
+
+// The normal ModelShaders.h texture transform is rotation(-uvRotation)
+// of (uv * uvScale), plus uvOffset. The native rigid feedback U0 currently
+// supports only scale+offset, so reject nonzero rotation rather than
+// silently requesting the wrong virtual pages. This is particularly
+// important for TerraWeave's per-azimuth impostor atlas subrectangles.
+inline bool terraWeaveAtlasMappingForMaterial(
+    const gfx::VirtualTextureArchiveVersion& archive,
+    const Material& material, VirtualTextureMaterialMapping& mapping,
+    int layer = 0) {
+    if (!archive.valid() || layer < 0 || layer >= archive.virtualLayers ||
+        !std::isfinite(material.uvRotation) ||
+        !std::isfinite(material.uvScale.x) ||
+        !std::isfinite(material.uvScale.y) ||
+        !std::isfinite(material.uvOffset.x) ||
+        !std::isfinite(material.uvOffset.y) ||
+        std::fabs(material.uvRotation) > 1e-6f)
+        return false;
+    mapping = terraWeaveAtlasMapping(archive,layer);
+    mapping.uvScaleX = material.uvScale.x;
+    mapping.uvScaleY = material.uvScale.y;
+    mapping.uvOffsetX = material.uvOffset.x;
+    mapping.uvOffsetY = material.uvOffset.y;
+    return true;
 }
 
 } // namespace aiverse::render
