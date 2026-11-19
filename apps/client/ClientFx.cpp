@@ -138,6 +138,9 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
 void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
     ps_.setView(cam, viewProj, fbW, fbH);
+    // GPU feedback arrives asynchronously at a later beginFrame. Keep
+    // presentation sub-effects bounded and submit after current camera setup.
+    if(gpuPlayback_ && !planet_) gpuPlayback_->playGpuImpactEffects(32);
     if (attached_ && dt > 0) bridge_.update(sim, &scene.objects, dt);
     ps_.update(dt);
     static const bool dbg = std::getenv("AIVERSE_FX_DEBUG") != nullptr;
