@@ -53,7 +53,7 @@ public:
         uint64_t sharedComputePrograms=0,sharedComputeFailures=0;
         uint64_t sharedAlphaPrograms=0,sharedCompactPrograms=0;
         uint64_t sharedMetalProgramFailures=0;
-        uint64_t gpuRuntimeCpuFallbacks=0;
+        uint64_t gpuRuntimeCpuFallbacks=0,gpuDeferredReleaseCompleted=0;
         uint64_t pooledCpuRecoveries=0,pooledRecoveryDropped=0;
         uint64_t pooledRenderFaults=0;
         uint64_t pooledResourceRetired=0,pooledResourceReleased=0;
@@ -288,6 +288,8 @@ public:
         gpuGovernor_.observe(float(device_.gpuFrameMs()),dt);
         const float spawnScale=gpuGovernor_.spawnScale();
         for(auto& pair:active_) {
+            if(pair.second->collectDeferredGpuRelease())
+                ++stats_.gpuDeferredReleaseCompleted;
             pair.second->setExternalSpawnScale(spawnScale);
             advanceGpu(*pair.second,dt);
         }
@@ -302,6 +304,8 @@ public:
                 ++stats_.retired;
                 continue;
             }
+            if(shot.emitter->collectDeferredGpuRelease())
+                ++stats_.gpuDeferredReleaseCompleted;
             shot.emitter->setExternalSpawnScale(spawnScale);
             advanceGpu(*shot.emitter,dt);
             shot.elapsed+=dt;
@@ -519,9 +523,10 @@ public:
     uint64_t usedGpuSlots() const {
         uint64_t total=uint64_t(totalPoolCapacity_)+retiringGpuSlots_;
         for(const auto& e:active_)
-            if(e.second->gpuActive()) total+=e.second->config().backend.particles;
+            if(e.second->gpuResourcesHeld())
+                total+=e.second->config().backend.particles;
         for(const auto& e:oneShots_)
-            if(e.emitter->gpuActive())
+            if(e.emitter->gpuResourcesHeld())
                 total+=e.emitter->config().backend.particles;
         return total;
     }
@@ -570,12 +575,15 @@ private:
             std::unique_ptr<SpectraFxHybridEmitter> emitter,
             bool killCpu) {
         if(!emitter) return;
-        // CPU effects can be stopped immediately. The GPU storage and
-        // textures remain alive until the Metal frame slot is completed.
-        if(!emitter->gpuActive()) {
+        // CPU effects with no retained GPU state stop immediately. A
+        // CPU fallback may still hold buffers from a prior GPU frame;
+        // stop only its CPU handle and retire the buffers with the same
+        // completed-frame serial policy as any other GPU owner.
+        if(!emitter->gpuResourcesHeld()) {
             emitter->stop(killCpu);
             return;
         }
+        if(emitter->cpuActive()) emitter->stopCpuOnly(killCpu);
         const auto slots=emitter->config().backend.particles;
         retiringGpuSlots_+=slots;
         retiringDedicated_.push_back({std::move(emitter),slots,
