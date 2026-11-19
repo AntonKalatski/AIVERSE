@@ -13,6 +13,16 @@ public:
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
     const AsyncChunkStream::Status& status()const{return stream_->status();}
+    // Optional genre-independent presentation forest. Native hosts may feed
+    // a deterministic tick and schedule sparse harvest/regrowth without
+    // touching renderer buffers or creating one entity per cosmetic tree.
+    // Null when terraweaveForest is absent from the world manifest.
+    terraweave::TerraWeaveForestScene* forestScene() noexcept {
+        return terraForest_.get();
+    }
+    const terraweave::TerraWeaveForestScene* forestScene() const noexcept {
+        return terraForest_.get();
+    }
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
     struct Prepared final:AsyncChunkStream::Resource {
