@@ -12,10 +12,10 @@ kernel void cs_main(device const uint* original [[buffer(0)]],
                     device const float4* morphed [[buffer(1)]],
                     device uint* result [[buffer(2)]],
                     constant Params& params [[buffer(8)]],
-                    uint vertex [[thread_position_in_grid]]) {
-    if (vertex >= params.vertexCount) return;
-    const uint base = vertex * 15u;
-    const uint morph = vertex * 3u;
+                    uint vertexIndex [[thread_position_in_grid]]) {
+    if (vertexIndex >= params.vertexCount) return;
+    const uint base = vertexIndex * 15u;
+    const uint morph = vertexIndex * 3u;
     for (uint i = 0u; i < 15u; ++i)
         result[base+i] = original[base+i];
     const float4 position = morphed[morph];
