@@ -284,6 +284,82 @@ inline const char* kMotionBlur = R"(
     RETURN(vec4(mix(sharp,blurred,strength),1.0));
 )";
 
+// Stage 42. HDR temporal color resolve. TEX0=current linear HDR color,
+// TEX1=per-view previous RGBA16F color + previous device depth in alpha,
+// TEX2=screen velocity (current-minus-previous normalized UV), TEX3=depth,
+// TEX4=current-frame reactive mask (R). The history is nearest-filtered;
+// four explicit bilinear taps are depth validated INDEPENDENTLY to avoid
+// interpolating an occluder's depth into a newly uncovered surface.
+// Uses the same current/previous view-projection columns as motion vectors.
+// px.xy=texel size, px.z=render-target Y flip; p0.x=clip depth 0..1,
+// p0.y=valid history; p0.z=history weight; p0.w=reactive strength.
+// sun.x=depth threshold, sun.y=motion attenuation per pixel,
+// sun.z=reactive input present. Never writes to the sampled history target.
+inline const char* kTemporalResolveHelpers = R"(
+PF_FN vec3 prismaHistoryCompress(vec3 c) {
+    c=max(c,vec3(0.0));
+    return c/(1.0+dot(c,vec3(0.2126,0.7152,0.0722)));
+}
+PF_FN vec3 prismaHistoryExpand(vec3 c) {
+    return c/max(1.0-dot(c,vec3(0.2126,0.7152,0.0722)),0.0001);
+}
+)";
+inline const char* kTemporalResolve = R"(
+    vec2 uv=TUV(s);
+    vec3 current=prismaHistoryCompress(TEX0(uv).rgb);
+    float depth=TEX3(uv).r;
+    vec3 lo=current, hi=current;
+    for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
+        vec2 q=TUV(clamp(s+vec2(float(x)*px.x,float(y)*px.y),vec2(0.0),vec2(1.0)));
+        vec3 c=prismaHistoryCompress(TEX0(q).rgb);
+        lo=min(lo,c);hi=max(hi,c);
+    }
+    vec3 resolved=current;
+    if(p0.y>0.5 && depth<0.99999) {
+        vec2 velocity=TEX2(uv).rg;
+        vec2 previousUv=s-velocity;
+        if(min(previousUv.x,previousUv.y)>px.x*0.5 &&
+           previousUv.x<1.0-px.x*0.5 &&
+           previousUv.y<1.0-px.y*0.5) {
+            vec4 clip=vec4(s*2.0-vec2(1.0),
+                          p0.x>0.5?depth:depth*2.0-1.0,1.0);
+            vec4 world=inv0*clip.x+inv1*clip.y+inv2*clip.z+inv3*clip.w;
+            world=world/max(abs(world.w),0.000001)*(world.w<0.0?-1.0:1.0);
+            vec4 prev=prev0*world.x+prev1*world.y+prev2*world.z+prev3*world.w;
+            if(prev.w>0.00001) {
+                float expected=p0.x>0.5?prev.z/prev.w:prev.z/prev.w*0.5+0.5;
+                vec2 pixel=previousUv/px.xy-vec2(0.5);
+                vec2 base=floor(pixel), fraction=fract(pixel);
+                vec3 oldSum=vec3(0.0);
+                float weightSum=0.0;
+                // Validated bilinear history reconstruction, not alpha interpolation.
+                for(int y=0;y<2;++y)for(int x=0;x<2;++x) {
+                    vec2 q=(base+vec2(float(x),float(y))+vec2(0.5))*px.xy;
+                    if(min(q.x,q.y)<0.0||max(q.x,q.y)>1.0)continue;
+                    vec4 previous=TEX1(TUV(q));
+                    float err=abs(previous.a-expected);
+                    float keep=1.0-smoothstep(sun.x*0.5,sun.x,err);
+                    float wx=x==0?1.0-fraction.x:fraction.x;
+                    float wy=y==0?1.0-fraction.y:fraction.y;
+                    float w=keep*wx*wy;
+                    oldSum+=prismaHistoryCompress(previous.rgb)*w;
+                    weightSum+=w;
+                }
+                if(weightSum>0.01) {
+                    vec3 old=clamp(oldSum/weightSum,lo,hi);
+                    float motionPixels=length(velocity/max(px.xy,vec2(0.000001)));
+                    float reactive=sun.z>0.5?clamp(TEX4(uv).r,0.0,1.0):0.0;
+                    float historyWeight=p0.z/(1.0+sun.y*motionPixels);
+                    historyWeight*=1.0-reactive*p0.w;
+                    historyWeight*=clamp(weightSum,0.0,1.0);
+                    resolved=mix(current,old,clamp(historyWeight,0.0,0.98));
+                }
+            }
+        }
+    }
+    RETURN(vec4(prismaHistoryExpand(resolved),depth));
+)";
+
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
 inline const char* kFxaaHelpers = R"(
 PF_FN float pfLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
