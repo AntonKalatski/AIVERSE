@@ -99,6 +99,9 @@ public:
     struct Entry {
         StaticCrossModelPreflightKey key{};
         StaticCrossModelPreflightGroup group{};
+        // Ordered once per render pass. Only preflight-ready, permitted
+        // groups get a rank; this never persists material/view decisions.
+        uint16_t sortRank = kInvalidGroup;
     };
 
     void beginPass(size_t itemCount) {
@@ -180,9 +183,49 @@ public:
     std::vector<Entry>& groups() { return groups_; }
     const std::vector<Entry>& groups() const { return groups_; }
 
+    // Existing renderModels sorting compares material state, page pointers,
+    // buffers and draw flags for *every* item comparison. Those properties
+    // are uniform within each exact preflight group; order the (<=2048)
+    // permitted groups once, and compare their numeric rank for each item.
+    // Match the prior comparator's cross-candidate key ordering exactly.
+    size_t prepareSortRanks() {
+        sortedGroups_.clear(); // preserve high-water allocation
+        for (size_t i = 0; i < groups_.size(); ++i) {
+            Entry& entry = groups_[i];
+            entry.sortRank = kInvalidGroup;
+            if (entry.group.ready && entry.group.permitted)
+                sortedGroups_.push_back(uint16_t(i));
+        }
+        std::sort(sortedGroups_.begin(), sortedGroups_.end(),
+                  [this](uint16_t ai, uint16_t bi) {
+            const auto& a = groups_[ai].key;
+            const auto& b = groups_[bi].key;
+            if (a.materialGroup != b.materialGroup)
+                return a.materialGroup < b.materialGroup;
+            if (a.page != b.page)
+                return std::less<const GeometryPoolPage*>{}(a.page, b.page);
+            if (a.vertexBuffer != b.vertexBuffer)
+                return a.vertexBuffer < b.vertexBuffer;
+            if (a.indexBuffer != b.indexBuffer)
+                return a.indexBuffer < b.indexBuffer;
+            return a.flags < b.flags;
+        });
+        for (size_t i = 0; i < sortedGroups_.size(); ++i)
+            groups_[sortedGroups_[i]].sortRank = uint16_t(i);
+        return sortedGroups_.size();
+    }
+
+    uint16_t sortRankForItem(uint32_t itemIndex) const {
+        if (modeOf(itemIndex) != 1u) return kInvalidGroup;
+        const uint16_t groupIndex = groupForItem(itemIndex);
+        return groupIndex == kInvalidGroup
+            ? kInvalidGroup : groups_[groupIndex].sortRank;
+    }
+
     size_t retainedBytes() const {
         return slots_.capacity() * sizeof(Slot) +
                groups_.capacity() * sizeof(Entry) +
+               sortedGroups_.capacity() * sizeof(uint16_t) +
                groupForItem_.capacity() * sizeof(uint16_t) +
                groupStamp_.capacity() * sizeof(uint32_t) +
                modes_.capacity() * sizeof(uint8_t) +
@@ -194,6 +237,7 @@ public:
     void release() {
         std::vector<Slot>().swap(slots_);
         std::vector<Entry>().swap(groups_);
+        std::vector<uint16_t>().swap(sortedGroups_);
         std::vector<uint16_t>().swap(groupForItem_);
         std::vector<uint32_t>().swap(groupStamp_);
         std::vector<uint8_t>().swap(modes_);
@@ -211,6 +255,7 @@ private:
     };
     std::vector<Slot> slots_; // allocated once when the feature is first used
     std::vector<Entry> groups_;
+    std::vector<uint16_t> sortedGroups_; // bounded current-pass group ranks
     std::vector<uint16_t> groupForItem_; // contents guarded by groupStamp_
     std::vector<uint32_t> groupStamp_;
     std::vector<uint8_t> modes_; // 0=ordinary, 1=MDI, 2=instancing
