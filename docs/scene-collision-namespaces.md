@@ -190,3 +190,35 @@ git fetch origin feature/ecs-static-prefab-scene-integration
 git pull --ff-only origin feature/ecs-static-prefab-scene-integration
 bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000
 ```
+
+
+## Persistence binding for lockstep and cold loads
+
+New optional `engine/scene/SceneCollisionPersistence.h` provides
+`CollisionNamespaceBinding{uint64_t fingerprint}` plus
+`registerCollisionNamespacePersistence`,
+`bindCollisionNamespaces(World&,catalog)` and
+`validateCollisionNamespaces(const World&,catalog)`.
+
+During `GameModule::setup`, before native registry sealing:
+
+```cpp
+scene::registerCollisionNamespacePersistence(
+    simulation, "aiverse.scene.collision-namespaces", 1);
+if(!scene::bindCollisionNamespaces(simulation.world(),namespaces))
+    throw std::runtime_error("collision namespace layout mismatch");
+```
+
+After COW rollback/cold deserialize, require
+`validateCollisionNamespaces(sim.world(),namespaces)` before
+advancing physics. The only authoritative data stored is the
+deterministic fingerprint; collision worker progress and leases
+remain **host-only**, never serialized. One independent physical
+SpatialWorld per Simulation is the intended use. Multiple distinct
+physical spaces inside one Simulation require separate typed/ID
+registrations and a larger host integration.
+
+`ecs_scene_collision_bridge_test` additionally covers native v10
+serialization, rollback, same-layout restoration and rejection of
+a layout whose scene names match but reserved capacities differ.
+**Native execution remains pending.**
