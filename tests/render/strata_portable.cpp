@@ -5,6 +5,7 @@
 #undef NDEBUG
 #endif
 #include "engine/render/StrataPortableRender.h"
+#include "engine/render/Geometry.h"
 
 #include <cassert>
 #include <cstdint>
@@ -207,7 +208,46 @@ static void testBackend(gfx::Backend backend,bool mdi){
     else {dev.destroyBuffer(vb);dev.destroyBuffer(ib);}
     assert(dev.data_.empty());
 }
+// GeometryScene may already have legacy cluster/occluder metadata before
+// staging Strata. It is NOT a second geometry source in the prepared alias:
+// legacy stays intact for fallback, while Strata selects its own indices.
+static void testLegacyClusteredSource(gfx::Backend backend) {
+    Recorder dev(backend,false);
+    Model source=makeModel();
+    prepareGeometry(source);
+    assert(source.geometry);
+    const ModelAsset asset=makeAsset();
+    gfx::BufferDesc vb{};
+    vb.type=gfx::BufferType::Vertex;
+    vb.size=source.vertices.size()*sizeof(ModelVertex);
+    vb.data=source.vertices.data();
+    source.vb=dev.createBuffer(vb);
+    gfx::BufferDesc ib{};
+    ib.type=gfx::BufferType::Index;
+    ib.size=source.indices.size()*sizeof(uint32_t);
+    ib.data=source.indices.data();
+    source.ib=dev.createBuffer(ib);
+    PortableSource staged;
+    std::string error;
+    assert(staged.stage(dev,source,asset,&error));
+    assert(staged.stats().dedicatedIndices);
+    Model alias;
+    PortablePassView fine{mat4::identity(),640,480,true,.01f};
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(!alias.geometry);
+    assert(source.geometry);
+    assert(alias.vb==source.vb);
+    assert(alias.meshes[0].primitives.size()==2);
+    alias=Model{};
+    staged.shutdown(dev);
+    dev.destroyBuffer(source.vb);
+    dev.destroyBuffer(source.ib);
+    assert(dev.data_.empty());
+}
+
 int main(){
+    testLegacyClusteredSource(gfx::Backend::GLES3);
+    testLegacyClusteredSource(gfx::Backend::Vulkan);
     testBackend(gfx::Backend::GLES3,false);
     testBackend(gfx::Backend::Vulkan,true);
     testBackend(gfx::Backend::Metal,true);
