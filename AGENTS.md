@@ -356,6 +356,41 @@ CPU/GPU numerical parity are **NOT RUN**. Preserve all
 unrelated agent changes and record a separate stage handoff in
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
 
+**Stage 27 — restricted Metal particle material shaderGraph and CPU-compatible
+vertex source bindings (CODE COMMITTED, TESTS DEFERRED):**
+`engine/fx/SpectraGpuMaterial.h` validates an opt-in, bounded
+particle-domain `shaderGraph` through the **existing**
+`render::graph::compile` system. It allows only trusted
+fragment-node operations, the builtin sprite texture, no
+external samplers or vertex graph, and maps four `graphInputs`
+to `attribute0..7`, `param0..7`, age/lifetime/zero.
+Stable UID `random` is currently GPU-unsupported and must
+NOT silently substitute another value. The generated Metal/GLSL
+material shaders share the CPU shader graph language.
+Only the shaderGraph material variant uses vertex Float4
+attribute 3 at offset 24; other GPU sprites retain the
+existing pipeline.
+
+`GraphRuntimeOptions::gpuMaterial` and
+`ComputeEmitterDesc::gpuMaterial` default FALSE. The full
+GPU eligibility gate must validate the whole EffectDef,
+including `shaderGraph` and `graphInputs`; an unsupported
+graph stays on full CPU, and `RequireGpu` must report an
+error rather than discard authored features. The GPU
+compute material source map is a 16-byte one-time buffer
+bound at slot 13, and the CPU fallback carries the full
+shaderGraph/graphInputs as originally authored. No
+FPS/RTS dependency, gameplay ECS mutation, external shader
+source, GPU mesh/ribbon or texture graph extension is
+introduced. Example:
+`examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json`.
+
+User requested feature implementation first: native compilation,
+CTest, actual MSL compilation, GPU screenshots, performance and
+CPU/GPU visual parity are **NOT RUN**. Keep the mandatory
+handoff in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with implementation SHAs, exact limitations and next step.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
