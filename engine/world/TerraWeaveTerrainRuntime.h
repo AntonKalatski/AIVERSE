@@ -5,6 +5,7 @@
 #include "engine/render/TerraWeaveTerrainPatchRender.h"
 #include "engine/render/TerraWeaveGrassRender.h"
 #include "engine/world/TerraWeaveNereidErosionBridge.h"
+#include "engine/world/TerraWeaveNavMeshBridge.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -221,6 +222,24 @@ public:
             (void)cell;patch.submit(renderer,origin);
         }
         grassRhi_.draw(renderer,{origin.x,origin.y,origin.z});
+    }
+
+    // Refresh the EXISTING nav::Mesh only where newly published collision
+    // tiles differ. The caller owns the walkability/water/obstacle snapshot
+    // used by EarthworksNavSource. We intentionally DO NOT consume dirty
+    // records here: Horizon/foliage and external navmesh listeners must see
+    // the same revision via takeTerrainDirty() after all refreshes succeed.
+    bool refreshNavMesh(nav::Mesh& mesh,
+                        const EarthworksNavSource& source,
+                        std::string* error=nullptr) const {
+        std::vector<RectCm> dirty;
+        for(const auto& [cell,resident]:residents_){
+            (void)cell;
+            for(const auto& change:resident.pendingDirty())
+                dirty.push_back(change.bounds);
+        }
+        if(dirty.empty())return true;
+        return refreshEarthworksNav(mesh,source,dirty,error);
     }
 
     std::vector<TerrainPatchDirtyRegion> takeTerrainDirty(){
