@@ -801,6 +801,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 dev_->drawIndexed(it.indexCount,
                     it.firstIndex + it.model->gpuFirstIndex,
                     int32_t(it.model->gpuBaseVertex));
+                objectMotionStats_.skinnedDraws++;
             }
         }
         // Texture-baked animation: rows A/B and blend are independently
@@ -848,9 +849,11 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 dev_->drawIndexed(it.indexCount,
                     it.firstIndex + it.model->gpuFirstIndex,
                     int32_t(it.model->gpuBaseVertex));
+                objectMotionStats_.bakedDraws++;
             }
         }
         dev_->endPass();
+        objectMotionStats_.submitted = true;
         post.acceptObjectMotionVectors(history.target);
     }
     history.previous = std::move(current);
