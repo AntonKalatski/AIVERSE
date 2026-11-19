@@ -107,14 +107,31 @@ public:
 
     void invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius=0) {
         ensureReady();
-        reference_.scheduler().invalidate(bounds,reason,influenceRadius);
+        std::vector<uint32_t> cleared;
+        reference_.scheduler().invalidate(bounds,reason,influenceRadius,&cleared);
+        reference_.clearCoefficients(cleared);
+        if (!clearPending_)
+            pendingRegionalClear_.insert(pendingRegionalClear_.end(),
+                                         cleared.begin(),cleared.end());
     }
 
     // Batch ECS/world-change presentation notifications into deterministic probe dirties.
     // For actual changed obstacles caller must ALSO publish a rebuilt BVH via setGeometry.
     GiWorldDirtyAccumulator::Stats applyWorldChanges(GiWorldDirtyAccumulator& changes) {
         ensureReady();
-        return changes.flush(reference_.scheduler());
+        std::vector<uint32_t> cleared;
+        const auto stats=changes.flush(reference_.scheduler(),&cleared);
+        if (stats.fullVolume) {
+            reference_.clearAllCoefficients();
+            clearPending_=true;
+            pendingRegionalClear_.clear();
+        } else {
+            reference_.clearCoefficients(cleared);
+            if (!clearPending_)
+                pendingRegionalClear_.insert(pendingRegionalClear_.end(),
+                                             cleared.begin(),cleared.end());
+        }
+        return stats;
     }
 
     GiRuntimeStats update(size_t probeBudget, float3 camera) {
