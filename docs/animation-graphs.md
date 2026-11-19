@@ -595,3 +595,27 @@ gameplay-specific state decisions remain the host's job.
 Validation: source code and deferred CMake fixtures only;
 **NOT RUN** native compilation, GPU visual playback, CTest
 or screenshot/animation parity checks.
+
+## Stage 110 — one animation writer during appearance hot reload
+
+The standalone FPS character host now publishes its project-authored
+graph and material choices via `view::AppearanceAssetRegistry`. The
+registry owns immutable compiled graph/material snapshots, not a
+runtime `AnimationGraphInstance`. Its `sourceId=1` is the *asset
+authoring key*, not an ECS actor identity. Actual remote actors keep
+their own presentation ECS entities, per-actor clips and MotionWeave
+updates. When a watched `fps.visual.graphFile` changes, the FPS host
+invalidates that source, publishes a replacement, then updates the
+existing `AnimationAssetComponent` and marks the existing player for
+restart; failure leaves the current player untouched. Draw submission
+uses already computed node matrices or baked samples through the
+generic `View` and must not call a second `View::update`.
+
+`AppearanceChoiceAuthoring` now shares RTS/FPS authored material,
+node-assignment and model-variant rules, while per-genre simulation
+data, attack state, IK contact sampling and attachment behavior remain
+host adapters. A host that replaces `Model` at the same address must
+increment `Request::modelRevision` or invalidate its `Model::path`
+before republishing so a graph cannot be reused against stale model
+node/clip storage. This is not protection against destruction of a
+Model while a pinned snapshot or render packet still borrows it.
