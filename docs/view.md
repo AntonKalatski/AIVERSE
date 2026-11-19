@@ -1465,3 +1465,106 @@ does not preempt the active worker, and upload time budgets remain
 advisory. Standalone modelview and raw editor preview are explicitly
 separate from full authored graph/appearance simulation and need
 real native verification before production use.
+
+## Stage 103 — bounded multi-worker model imports and separate GPU resource owners
+
+### Parallel CPU model preparation
+
+`engine/render/AsyncModelCpuQueue.h` now supports **1–8 parallel CPU
+worker tasks** with `setWorkerCount(n)` and `workerCount()` (default 1
+for compatibility). Its owner-thread API still accepts
+`ModelLoadPriority::Background`, `Visible` and `Interactive`,
+with upgrades of queued requests, FIFO for equal priority, bounded
+waiting queue, duplicate suppression, source-generation invalidation
+and `pollReady(Prepared&)` for render-thread publication.
+`pollReady` checks every running task rather than waiting for an older
+unready task to finish, so a later independent completion can be
+published without blocking. The CPU import uses `std::async` per active
+job, while all GPU upload, View packet construction, ECS mutation and
+model-cache publication remain outside the worker threads.
+
+After eight consecutive selections favoring later queued work, the
+scheduler admits the oldest queued source to prevent starvation of
+background loads. It does not preempt active decoders, guarantee job
+runtime fairness or exceed the configured concurrency cap.
+`AsyncModelCpuQueue::Stats` now includes active/configured worker
+counts, total dispatched work and fairness activations in addition
+to the existing queued/finished/stale result counters.
+`ModelAssetProvider::setCpuWorkerCount`, `cpuWorkerCount` and
+`setCpuMaxQueued` expose scheduling through the native project
+resource owner. The Editor Model window uses two workers and an
+8-request waiting queue in its opt-in raw model preview, with
+`Interactive` priority, one GPU upload per invocation and the
+existing nominal 1 ms upload budget. CPU worker counts and waiting
+requests are shown beside the preview when active.
+
+**Thread-safety:** the caller-provided `FileReader` must be
+reentrant/thread-safe when worker count exceeds one. `ModelTextureCache`
+guards decoded-image access with a mutex, while GPU methods are confined
+to the render owner thread. Calls to request, invalidate, poll and
+shutdown are single-owner-thread operations. An invalidated CPU task
+may finish but must not be published if its revision is stale. Lowering
+worker count does not interrupt work already in flight; project
+shutdown joins it before reader and texture-cache destruction.
+
+### Owner-accounted GPU estimates without shared-resource double charging
+
+`render::ModelTextureCache::gpuOwnerEstimate()` walks its unique
+GPU texture keys ONCE and reports unique texture count, compressed
+texture count and RGBA8 base-mip equivalent bytes. Borrowed
+`Model::images` are not billed again because shared GPU textures have
+their own resource owner. This equivalent-size estimate is NOT the
+actual GPU allocation size for compressed images, mipmaps or
+driver-specific alignment.
+
+`render::ModelResourceCache::gpuOwnerEstimate()` combines *separate*
+categories: known dedicated allocations of its resident models,
+known retired-model allocations awaiting GPU fences, unique
+ModelTextureCache GPU texture equivalents, and number of models
+referencing the shared geometry pool. The global geometry pool's
+allocated/occupied page sizes belong to the *device-wide* owner and
+must be queried separately via `geometryPoolStats(device)`.
+Do **not** sum the device-global geometry pool once per model/cache,
+nor add borrowed per-model textures to the owner texture count.
+`RtsView::assetResidencyStats()` and the Editor Statistics window
+expose these categories separately. The numbers remain diagnostic,
+source-derived approximations, not vendor GPU heap measurements.
+
+### Additional real editor render consumer
+
+`apps/editor/SceneRenderable.h` now routes authored
+`SceneRenderable::model` through `aiverse::View::submitModel`
+and normal unselected meshes through
+`aiverse::View::submitMesh`. Existing `ModelDraw` transform,
+tint and selected/hovered model outline fields are unchanged.
+Special selected/hovered mesh drawing continues using the
+renderer-specific selection silhouette path; pickable debug
+edges and world-space selection behavior are retained. This
+removes another direct model/mesh submission from the editor
+without importing any genre-specific code into the View.
+The default animated/complex RTS portrait remains a compatibility
+adapter and must not acquire a second MotionWeave graph evaluator.
+
+### Deferred verification and known limits
+
+`tests/render/model_parallel_jobs.cpp` (CTest
+`render_model_parallel_jobs`, native-only, Threads) covers bounded
+multi-worker concurrency, revision invalidation, duplicate requests,
+new priority classes and worker configuration.
+`tests/render/model_owner_estimates.cpp` (CTest
+`render_model_owner_estimates`) checks model-owned allocation
+estimates exclude borrowed shared textures even across independent
+retirement records. These are ordinary CMake test targets.
+**NOT RUN:** CMake/compiler, CTest/run-tests.sh, desktop/mobile GPU,
+parallel source import stress, editor render/selection parity, FPS/RTS,
+sanitizers, benchmarks, CI and screen captures, by the user's
+features-before-tests request.
+
+The scheduler currently starts a bounded number of `std::async` tasks,
+rather than keeping persistent thread-pool workers, and it does not
+support live preemption. Memory accounting excludes unknown
+driver allocations and must not be treated as a guaranteed budget.
+Shared geometry pool accounting is device-wide, not attributable
+without additional ownership tags. Remaining RtsView type appearance,
+simulation-specific visuals and animated portrait wrappers are still
+not retired.
