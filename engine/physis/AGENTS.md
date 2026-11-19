@@ -293,3 +293,21 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   New CI runs for both macOS and Ubuntu were still queued. Do not claim
   compilation, CTest or platform QA PASS until verified from job logs.
 - Handoff: `docs/agent-handoffs/physis-stage41-ci-validation-2026-11-19.md`.
+
+### Stage 42 — do not acknowledge unpersisted admin receipts (2026-11-19)
+
+- When `ServerGateway::persistJournal` fails (including in
+  `observe()` after a committed ECS tick or after command scheduling),
+  `journalHealthy_` becomes false. A queued or applied receipt held
+  only in process memory must be externally returned as
+  `Result::Unknown`, never a confirmed `Queued` or `Applied`.
+- New edit submissions fail closed. Unknown request IDs while the
+  journal is unhealthy must NOT be called safe to retry; the server
+  cannot guarantee deduplication until journal recovery/restart.
+- In-memory ECS `FieldRuntimeState` remains authoritative for current
+  simulation state, but the sidecar is not a joint transaction with
+  World checkpoints. Preserve this uncertainty in remote UI.
+- `tests/physis_admin_journal_test.cpp` contains writer-injection
+  regressions for failed Queued/Applied persistence and denied new
+  edits. Source authored, native CMake/CTest NOT RUN at this stage.
+- Handoff: `docs/agent-handoffs/physis-stage42-durable-receipts-2026-11-19.md`.
