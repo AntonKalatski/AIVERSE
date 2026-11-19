@@ -52,6 +52,7 @@ public:
         count_ = 0;
     }
 
+    const gfx::Device* device() const { return dev_; }
     gfx::TextureHandle texture() const { return handle_; }
     size_t probeCount() const { return count_; }
     int height() const { return int((count_ + kProbesPerRow - 1) / kProbesPerRow); }
