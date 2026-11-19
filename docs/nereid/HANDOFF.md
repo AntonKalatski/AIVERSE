@@ -4084,3 +4084,14 @@ Inspected exact definitions: `worldInteger` and `worldVector` are implemented (n
 **Change:** construct `Slot slot{};` so all members are explicitly initialized, then `slot.source=std::move(source);`, followed by `next.emplace(id,std::move(slot))`. Keeps default flags, empty GPU handles/optional levels, 0 revisions/origin, map identity and duplicate error unchanged. No fixed ECS data, water physics, scene geometry or renderer algorithms changed.
 
 **Actually verified:** source inspected through GitHub connector, offending initializer located exactly once, guarded patch and branch commit. **Not run:** macOS recompile, CTest or GPU verification; cannot claim warning fully gone until user reruns. **Next:** let the current build finish and report failures; after fetching this change rebuild `aiverse_runtime` or full target, and run CTest when compilation succeeds. Keep PR Draft.
+
+
+## Stage 45.7 — SpectraFX test regression: unsigned underflow during gameplay event check
+
+**Date:** 2026-11-19. **Branch:** `feature/nereid-water-core`, PR #23 Draft. **Actual failure:** on macOS, CTest `vfx_ecs_presentation` (109/118) aborted with `std::runtime_error: gameplay event did not play`.
+
+**Root cause:** the test compared `size_t once >= before-20`, where `before` is an unsigned particle count from a low-rate continuous emitter. When `before<20`, subtraction wraps to an enormous `size_t` value and reports a failure even when gameplay-event emission works.
+
+**Fix:** assert the actual `impact_flash` particle ID in a headless `ParticleSystem::snapshot`: the fixture's High-quality three-particle burst, with 0.5-second lifetime, must have exactly three impact particles after one 0.1-second update. Replaying the same tick must not add another impact burst, tested after a second 0.1-second update. Existing reset check still requires no attached or one-shot particles to remain. Added `<algorithm>` for `std::count_if`. No shipping VFX, ECS or water code changed.
+
+**Performed:** GitHub source inspection of CPU emission and presenter, guarded edit, branch commit and handoff. **Not performed:** native C++ build/CTest rerun, GPU check or FPS/RTS/PHYSIS regressions. **Next:** pull, build `aiverse_vfx_ecs_tests`, run `ctest --test-dir build/nereid-test --output-on-failure -R '^vfx_ecs_presentation$'`; if successful, full CTest. Remain Draft.

@@ -1,5 +1,6 @@
 // Same VFX presenter consumes data-only ECS components in unrelated game styles.
 #include <aiverselib/genre/SpectraFX.h>
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <stdexcept>
@@ -66,14 +67,25 @@ static void scenario() {
     hit.type=72;
     hit.pos={1_fx,2_fx,3_fx};
     const std::map<uint16_t,spectra::EventBinding> bindings{{72,{"impact_flash",1_fx}}};
-    const size_t before=ps.stats().particles;
+    // Check the effect's own particles. An unsigned 'before-20'
+    // underflows for the small headless continuous emitter in this test.
+    const int impactId=ps.effect("impact_flash");
+    check(impactId>=0,"impact effect ID missing");
+    std::vector<fx::FxParticleInfo> particles;
+    auto impactCount=[&]() {
+        ps.snapshot(particles);
+        return std::count_if(particles.begin(),particles.end(),
+            [impactId](const fx::FxParticleInfo& p) {
+                return p.effect==impactId;
+            });
+    };
     presenter.consumeTickEvents(40,{hit},bindings);
     ps.update(0.1f);
-    const size_t once=ps.stats().particles;
-    check(once>0 && once>=before-20,"gameplay event did not play");
+    check(impactCount()==3,"gameplay event must spawn three impact particles");
     presenter.consumeTickEvents(40,{hit},bindings);
     check(presenter.lastPresentedTick()==40,"duplicate tick changed cursor");
     ps.update(0.1f);
+    check(impactCount()==3,"duplicate tick must not spawn another impact burst");
 
     world.destroy(source);
     Entity recycled=world.create();
@@ -84,7 +96,6 @@ static void scenario() {
     check(presenter.activeAttachments()==1,"recycled entity attached twice");
     presenter.reset();
     check(presenter.activeAttachments()==0,"reset retained renderer handles");
-    std::vector<fx::FxParticleInfo> particles;
     ps.snapshot(particles);
     check(particles.empty(),"reset must kill attached and recent one-shot particles");
     presenter.consumeTickEvents(39,{hit},bindings);
