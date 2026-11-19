@@ -1698,3 +1698,30 @@ AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODE
 ```
 
 Require exit 0, `changed_channels=0`, nonzero `GPU-encoded ICB ... submissions/commands`, and inspect the newly printed `GPU ICB diagnostics` line for preflight failures. Then run an identical fixed-camera baseline / CPU MDI / GPU ICB A/B/A CPU and GPU frame-time comparison, and independently validate Vulkan pooled MDI and geometry-pool recycling on relevant GPU hardware. Record command outputs and failures verbatim in the next handoff before advancing the stage.
+
+
+---
+
+## Stage 58 — owner Mac Studio native compilation of Stage 57 diagnostics (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`; **compiled Git HEAD:** `e8a635d4d` (Stage 57 handoff commit). **Source change in this stage:** documentation only; no renderer or test fixture code edited. The following results are **owner-provided terminal evidence**, not a build executed by this agent.
+
+The owner ran `git fetch origin`, switched to the branch (already active), and fast-forwarded via `git pull --ff-only origin perf/incremental-static-model-cache` from `7e5dc0fcd` to `e8a635d4d`. Git reported four changed files (AGENTS.md, handoff, geometry-performance docs, material_batches.cpp), 130 additions/3 deletions. Then `cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8` completed at 100%, including compilation of `tests/render/material_batches.cpp.o` and successful linking of `aiverse_material_batches`. **No compiler errors or warnings appeared in the shared excerpt.** This establishes Stage 57 GPU ICB diagnostics compile on Mac Studio with the owner's existing CMake tree; it does not establish runtime correctness, CTest success, pixel equivalence, or performance gains on this revision.
+
+### Next verification command (no additional source changes needed)
+
+```sh
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 \
+AIVERSE_GPU_AUTHORED_DRAWS=1 \
+AIVERSE_GPU_ENCODED_ICB=1 \
+AIVERSE_GPU_ICB_RIGID=1 \
+AIVERSE_GPU_ICB_MIN_COMMANDS=2 \
+AIVERSE_EXPECT_GPU_ICB=1 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+AIVERSE_ICB_TRACE=1 \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+echo "GPU ICB exit=$?"
+```
+
+Demand process exit 0, `changed_channels=0`, nonzero reported GPU-encoded submission and command counts, and record candidates/prepared/rejected/executeFailed/preflightGroups. CI, Vulkan and performance A/B/A remain unverified at this stage. Leave Draft PR #34 and experimental defaults unchanged. This documentation commit is newer than the compiled SHA, so agents must not attribute a new native build to the documentation-only HEAD.
