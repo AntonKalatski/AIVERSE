@@ -10,6 +10,7 @@
 #include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/world/TerraWeaveWindField.h"
 #include "engine/world/TerraWeaveHorizonPresentationQuality.h"
+#include "engine/world/TerraWeaveHorizonAdaptiveQuality.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -66,6 +67,13 @@ struct HorizonRuntimeStats {
     size_t windUploadBudgetBytes=0, cachedWindShadowBudgetBytes=0;
     uint32_t windUploadSparseRangeCap=0, windUploadFullFallbackPercent=0;
     bool windShadowCompressionEnabled=false, spatialWindVariationEnabled=false;
+    // Host-supplied frame timing only; never fabricate GPU measurements.
+    bool adaptiveQualityEnabled=false;
+    HorizonPresentationQualityPreset adaptiveQualityLevel=
+        HorizonPresentationQualityPreset::Balanced;
+    uint64_t adaptiveQualitySamples=0, adaptiveQualitySwitches=0;
+    uint64_t adaptiveQualityDowngrades=0, adaptiveQualityUpgrades=0;
+    uint32_t adaptiveQualityLastFrameUs=0;
     bool windOverlayPending=false, exactWindFieldActive=false;
     size_t transitionStarts=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
@@ -288,6 +296,7 @@ public:
     // Toggle only on the render owner thread before submit(); this changes
     // the shared vertex shader graph, never the mesh or CPU atlas.
     void setSpatialWindVariation(bool enabled) {
+        adaptiveQualityConfig_.enabled=false; // explicit manual override
         spatialWindVariation_=enabled;
     }
     bool spatialWindVariation() const {return spatialWindVariation_;}
@@ -305,6 +314,7 @@ public:
     // when the immutable snapshot changes. Disabling restores Stage33
     // procedural metadata at the next safe RHI update.
     void setExactSpatialWindField(bool enabled) {
+        adaptiveQualityConfig_.enabled=false; // explicit manual override
         if(exactSpatialWindField_==enabled)return;
         exactSpatialWindField_=enabled;
         ++windFieldRevision_;
@@ -314,6 +324,7 @@ public:
     // Changes apply to pending wind revisions at the next update(device).
     void setWindUploadPolicy(HorizonWindUploadPolicy policy) {
         validateHorizonWindUploadPolicy(policy);
+        adaptiveQualityConfig_.enabled=false; // explicit manual override
         windUploadPolicy_=policy;
     }
     HorizonWindUploadPolicy windUploadPolicy() const {
@@ -324,6 +335,7 @@ public:
     // so it happens at the start of the next update(), not in this setter.
     void setWindShadowCachePolicy(HorizonWindShadowCachePolicy policy) {
         validateHorizonWindShadowCachePolicy(policy);
+        adaptiveQualityConfig_.enabled=false; // explicit manual override
         windShadowCachePolicy_=policy;
     }
     HorizonWindShadowCachePolicy windShadowCachePolicy() const {
@@ -349,6 +361,41 @@ public:
     }
     void setPresentationQualityPreset(HorizonPresentationQualityPreset preset) {
         setPresentationPolicy(horizonPresentationPolicyForQuality(preset));
+    }
+    // Explicit host-fed adaptive quality (OFF by default). Enabling selects
+    // the configured initial Stage39 presentation profile immediately;
+    // disabling preserves the last selected profile. Manual policy changes
+    // intentionally opt out rather than fighting the host's selection.
+    void setAdaptiveQualityConfig(HorizonAdaptiveQualityConfig config) {
+        validateHorizonAdaptiveQualityConfig(config);
+        if(config.enabled) {
+            const auto initial=horizonPresentationPolicyForQuality(config.initial);
+            setPresentationPolicy(initial);
+            adaptiveQualityState_=initialHorizonAdaptiveQualityState(config);
+        }
+        adaptiveQualityConfig_=config;
+    }
+    HorizonAdaptiveQualityConfig adaptiveQualityConfig() const {
+        return adaptiveQualityConfig_;
+    }
+    HorizonAdaptiveQualityState adaptiveQualityState() const {
+        return adaptiveQualityState_;
+    }
+    // The engine has no universal GPU timer; caller must submit actual
+    // CPU/GPU frame duration in microseconds once per monotonically indexed
+    // rendered frame. No update/device calls or geometry re-bakes here.
+    std::optional<HorizonPresentationQualityPreset> submitAdaptiveFrameTiming(
+            HorizonFrameTimingSample sample) {
+        auto next=advanceHorizonAdaptiveQuality(
+            adaptiveQualityConfig_,adaptiveQualityState_,sample);
+        if(next) {
+            // Stage39 manual setter clears the controller's enabled flag;
+            // re-enable it solely for this internally decided transition.
+            const auto selected=horizonPresentationPolicyForQuality(*next);
+            setPresentationPolicy(selected);
+            adaptiveQualityConfig_.enabled=true;
+        }
+        return next;
     }
     std::shared_ptr<const ForestWindField> windField() const {
         return windField_;
@@ -810,6 +857,13 @@ public:
         out.windShadowCompressionEnabled=
             windShadowCachePolicy_.compressCachedShadows;
         out.spatialWindVariationEnabled=spatialWindVariation_;
+        out.adaptiveQualityEnabled=adaptiveQualityConfig_.enabled;
+        out.adaptiveQualityLevel=adaptiveQualityState_.current;
+        out.adaptiveQualitySamples=adaptiveQualityState_.samples;
+        out.adaptiveQualitySwitches=adaptiveQualityState_.switches;
+        out.adaptiveQualityDowngrades=adaptiveQualityState_.downgrades;
+        out.adaptiveQualityUpgrades=adaptiveQualityState_.upgrades;
+        out.adaptiveQualityLastFrameUs=adaptiveQualityState_.lastMeasuredFrameUs;
         out.windOverlayPending=bool(model_) &&
             !activeWindOverlay_.vertices.empty() &&
             activeWindOverlay_.appliedRevision!=windFieldRevision_;
@@ -1030,6 +1084,8 @@ private:
     bool exactSpatialWindField_=true;
     HorizonWindUploadPolicy windUploadPolicy_{};
     HorizonWindShadowCachePolicy windShadowCachePolicy_{};
+    HorizonAdaptiveQualityConfig adaptiveQualityConfig_{};
+    HorizonAdaptiveQualityState adaptiveQualityState_{};
     bool windFieldHasWind_=false;
     uint64_t windFieldRevision_=1;
     std::shared_ptr<const ForestWindField> windField_;
