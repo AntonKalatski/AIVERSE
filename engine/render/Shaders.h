@@ -24,14 +24,14 @@ namespace aiverse::render::shaders {
     "  vec4 u_skyColor; vec4 u_groundColor; vec4 u_fog; vec4 u_camPos; vec4 u_shadow; vec4 u_quality;\n" \
     "  vec4 u_trace0; vec4 u_trace1; vec4 u_trace2; vec4 u_trace3; };\n"
 #define AIVERSE_GLSL_BLOCKS \
-    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[4]; };\n" AIVERSE_GLSL_FRAME
+    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; };\n" AIVERSE_GLSL_FRAME
 
 #define AIVERSE_MSL_FRAME \
     "struct U1 { float4x4 viewProj; float4x4 lightViewProj; float4x4 invViewProj; float4 sunDir; float4 sunColor;\n" \
     "  float4 skyColor; float4 groundColor; float4 fog; float4 camPos; float4 shadow; float4 quality;\n" \
     "  float4 trace0; float4 trace1; float4 trace2; float4 trace3; };\n"
 #define AIVERSE_MSL_BLOCKS \
-    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[4]; };\n" AIVERSE_MSL_FRAME
+    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; };\n" AIVERSE_MSL_FRAME
 
 // Traced terrain shadows (Renderer3D "trace" tier, needs U1 and the height field in slot TEX):
 // the sun ray is marched over a 16-bit height map of the whole map (R high byte, G low byte; built by
@@ -442,7 +442,7 @@ void main() {
     // amplitude disables a slot; no extra texture reads or geometry upload.
     if(u_params.x < -0.5) {
         vec2 grad = vec2(0.0);
-        for(int i=0;i<4;++i) {
+        for(int i=0;i<16;++i) {
             vec4 ripple=u_waterRipples[i];
             if(ripple.w<=0.0)continue;
             vec2 delta=v_wpos.xz-ripple.xy;
@@ -591,7 +591,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     }
     if(u.params.x < -0.5) {
         float2 grad=float2(0.0);
-        for(int i=0;i<4;++i) {
+        for(int i=0;i<16;++i) {
             float4 ripple=u.waterRipples[i];
             if(ripple.w<=0.0)continue;
             float2 delta=in.wpos.xz-ripple.xy;
