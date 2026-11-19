@@ -2232,7 +2232,10 @@ endif()
 # silently skip when a Mac lacks a working Metal GPU / drawable.
 # The binary compiles the production Metal RHI directly, without the
 # platform application main() or any game/genre dependency.
-if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+option(AIVERSE_TEXTURE_METAL_GPU_TESTS
+    "Opt-in real Metal GPU texture acceptance (macOS hardware required)" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
+   AND AIVERSE_TEXTURE_METAL_GPU_TESTS)
     add_executable(aiverse_metal_texture_gpu_test
         tests/render/metal_texture_gpu.mm
         engine/gfx/metal/GfxMetal.mm)
