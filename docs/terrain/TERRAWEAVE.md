@@ -2719,3 +2719,109 @@ phase. The QA agent should verify the codec's bitwise roundtrip, no-change
 fallback, zero budget, toggling compression at runtime, malformed stream
 eviction, camera return without model reupload when compressed, source
 revision invalidation and mixed packed/raw LRU accounting.
+
+## Stage 39 — composable Horizon runtime quality profiles for native projects and manifests
+
+Stage39 adds **presentation/memory quality** independently of the earlier
+`HorizonSettings` CPU silhouette/terrain **geometry** quality. The new
+`engine/world/TerraWeaveHorizonPresentationQuality.h` defines:
+
+- `HorizonPresentationQualityPreset`: `BatterySaver`, `Mobile`,
+  `Balanced`, `Desktop`.
+- `HorizonPresentationPolicy` with `exactSpatialWindField`,
+  `spatialWindVariation`, `HorizonWindUploadPolicy windUpload`,
+  and `HorizonWindShadowCachePolicy windShadowCache`.
+- `horizonPresentationPolicyForQuality(preset)` and
+  `validateHorizonPresentationPolicy(policy)`, which validates the whole
+  bundle **before** any partial update to a live world scene.
+
+This is a convenience composition of the existing Stage33/34 shader mode,
+Stage36 GPU wind update bandwidth, Stage37 inactive CPU shadow budget and
+Stage38 optional lossless shadow compression. No change to how PHYSIS
+computes wind, no per-tree ECS state, no added GPU/CPU resource
+allocation, no atlas/regeneration for applying a preset, and no TWH8
+archive version/fingerprint change. Existing setters still work after
+a preset and can override individual values.
+
+### Built-in profiles
+
+| Preset | Exact PHYSIS cluster field | Procedural spatial graph | GPU wind upload bytes/update | Max sparse runs | Full-range threshold | Inactive wind CPU budget | Lossless compression |
+|---|---|---|---:|---:|---:|---:|---|
+| BatterySaver | Off | Off | 0 | 1 | 70% | 0 | Off |
+| Mobile | Off | On | 128 KiB | 2 | 90% | 1 MiB | On |
+| Balanced | On | On | 512 KiB | 4 | 75% | 4 MiB | On |
+| Desktop | On | On | 2 MiB | 8 | 70% | 16 MiB | On |
+
+These are **initial engine policy choices**, NOT measured performance
+recommendations. A low upload limit may defer a dense full-suffix
+weather metadata patch indefinitely; the existing Stage34 macro wind
+graph remains the safe fallback. BatterySaver intentionally pauses
+weather VB changes and does not promise immediate restoration of a
+procedural graph after switching away from exact field mode. Inactive
+GPU-cache models may be evicted when their CPU wind-shadow total
+exceeds the chosen budget. Actual GPU and CPU effects depend on
+terrain geometry and wind field distribution and need device QA.
+
+### Native project API
+
+```cpp
+using namespace aiverse::terraweave;
+worldScene.setVegetationHorizonPresentationQualityPreset(
+    HorizonPresentationQualityPreset::Mobile);
+
+// Fine-tune after preset (or define a fully custom value policy):
+auto quality=worldScene.vegetationHorizonPresentationPolicy();
+quality.windUpload.maxBytesPerUpdate=256u*1024u;
+quality.windShadowCache.maxCachedShadowBytes=2u*1024u*1024u;
+worldScene.setVegetationHorizonPresentationPolicy(quality);
+```
+
+The direct renderer owner API is
+`TerraWeaveHorizonScene::setPresentationQualityPreset`,
+`setPresentationPolicy`, and `presentationPolicy()`.
+These calls are **owner-thread-only**; no concurrent
+`update(device)`, `submit` or mutable PHYSIS field sampling.
+`WorldScene` updates its existing individual getters when a
+whole policy is set, so individual setters and aggregate getters remain
+coherent. The whole-policy setter validates all fields before altering
+the live Horizon source; errors cannot leave half a preset applied.
+No name for a "currently active preset" is retained after manual overrides:
+query the **effective** policy values instead.
+
+### Manifest (startup only)
+
+```json
+{
+  "terraweaveHorizon": {
+    "quality": "high",
+    "presentationQuality": "mobile"
+  }
+}
+```
+
+`quality` still selects CPU/terrain/atlas *geometry* settings and is
+included in TWH8 asset compatibility. The NEW optional
+`presentationQuality` accepts exactly
+`"battery-saver"`, `"mobile"`, `"balanced"`, `"desktop"`.
+It configures presentation and runtime budgets **after** Horizon
+geometry settings are validated; a missing value retains existing
+Stage38 defaults exactly. Invalid values throw `JsonError`.
+`WorldScene` copies the manifest-effective runtime values from
+`TerraWeaveHorizonScene` at initialization so the public getter does
+not incorrectly report defaults after a manifest preset.
+
+For tools/inspectors, `HorizonRuntimeStats` reports effective
+`windUploadBudgetBytes`, `cachedWindShadowBudgetBytes`,
+`windUploadSparseRangeCap`, `windUploadFullFallbackPercent`,
+`windShadowCompressionEnabled` and
+`spatialWindVariationEnabled` alongside existing patch/eviction
+traffic counters and `exactWindFieldActive`. These are settings and
+bookkeeping, not measured frame times or certified memory savings.
+
+**Feature-first status:** source + docs committed, but native C++ build,
+CTest, GLSL/MSL compilation, Metal/Vulkan/GL rendering, visual LOD
+handoff and device-memory profiling **NOT RUN**. Independent QA
+must verify manifest parsing and no-field defaults, each preset's
+values, malformed enum/policies, switching during an exact field
+revision, manual override/getter coherence, low-budget fallback and
+GPU cache/crossfade preservation. Do not merge PR #24 until verified.
