@@ -7,6 +7,8 @@
 #include <map>
 #include <memory>
 #include <functional>
+#include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 #include <set>
@@ -107,7 +109,7 @@ public:
         // A retirement handoff remains valid for at most 120 complete
         // source-sync calls. All records are values; no retired Model or
         // Graph is dereferenced during this expiration sweep.
-        if(syncSerial_!=UINT64_MAX)++syncSerial_;
+        if(syncSerial_!=std::numeric_limits<uint64_t>::max())++syncSerial_;
         pruneRetirementSnapshots();
         AnimationBridgeStats stats;
         for(const auto& source:sources) {
@@ -328,19 +330,20 @@ private:
                                 uint64_t id,Entity entity) {
         try {
             if(!presentation.alive(entity))return;
-            const auto& link=presentation.get<AnimationSourceLinkComponent>(entity);
-            const auto& asset=presentation.get<AnimationAssetComponent>(entity);
-            const auto& player=presentation.get<AnimationPlayerComponent>(entity);
+            const auto* link=presentation.tryGetConst<AnimationSourceLinkComponent>(entity);
+            const auto* asset=presentation.tryGetConst<AnimationAssetComponent>(entity);
+            const auto* player=presentation.tryGetConst<AnimationPlayerComponent>(entity);
             const auto rig=sourceRigs_.find(id);
-            if(link.sourceId!=id || link.modelPublicationGeneration==0 ||
-               !asset.model || !asset.graph ||
-               asset.graph->model()!=asset.model ||
+            if(!link || !asset || !player ||
+               link->sourceId!=id || link->modelPublicationGeneration==0 ||
+               !asset->model || !asset->graph ||
+               asset->graph->model()!=asset->model ||
                rig==sourceRigs_.end() || !rig->second ||
-               player.restart || !player.instance ||
-               player.active!=asset.graph ||
-               player.instance->graph()!=asset.graph.get() ||
-               !player.instance->healthy())return;
-            auto snapshot=player.instance->snapshotPlayback();
+               player->restart || !player->instance ||
+               player->active!=asset->graph ||
+               player->instance->graph()!=asset->graph.get() ||
+               !player->instance->healthy())return;
+            auto snapshot=player->instance->snapshotPlayback();
             if(snapshot.state.empty())return;
             if(pendingRetirements_.size()>=kMaxRetiredPlayback) {
                 // Reimports are rare, and this only executes at detach;
@@ -352,9 +355,9 @@ private:
                 pendingRetirements_.erase(oldest);
             }
             RetiredPlayback retired;
-            retired.generation=link.generation;
-            retired.publication=link.modelPublicationGeneration;
-            retired.modelAddress=reinterpret_cast<std::uintptr_t>(asset.model);
+            retired.generation=link->generation;
+            retired.publication=link->modelPublicationGeneration;
+            retired.modelAddress=reinterpret_cast<std::uintptr_t>(asset->model);
             retired.rig=rig->second;
             retired.playback=std::move(snapshot);
             retired.syncSerial=syncSerial_;
