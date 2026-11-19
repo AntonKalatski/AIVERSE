@@ -44,6 +44,10 @@ struct IndexResidencyStats {
     // live pages, arenaBytes counts its full reserved capacity. Vulkan RHI
     // may still retain multiple device versions and a CPU shadow.
     uint64_t arenaBytes = 0, uploadedBytes = 0, uploadCalls = 0;
+    // Checked RHI transfer bytes, including successfully written orphan
+    // slots from a later failed all-sibling transaction. This counter,
+    // not published uploadedBytes, enforces the per-frame aggregate cap.
+    uint64_t gpuTransferBytes = 0;
     uint64_t uploadBudgetDeferrals = 0, fenceReuseDeferrals = 0;
     bool incremental = false;
     // Background archive reads; bytes are verified CPU pages, not GPU DMA.
