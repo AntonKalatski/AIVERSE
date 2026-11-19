@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -387,6 +388,41 @@ inline uint64_t claimForestLegacyWater(
     validateForestDeadwoodResource(next);
     resource=std::move(next);
     return totalClaimed;
+}
+
+// An authored NEREID river outlet may remove dissolved nutrients from a
+// SINGLE body-tagged 4m cell. Same monotonic replay command stream as
+// Stage68 coarse export; a zero-volume command is still consumed.
+inline uint64_t exportForestMicroDissolvedNutrients(
+        ForestDeadwoodResource& resource,ForestMicroKey key,
+        uint64_t maximumUnits,uint64_t commandId) {
+    validateForestMicroKey(key);
+    validateForestDeadwoodResource(resource);
+    if(!commandId)
+        throw std::invalid_argument("TerraWeave 4m outlet command ID");
+    if(commandId<=resource.lastOutflowCommandId)return 0;
+    ForestDeadwoodResource next=resource;
+    auto pos=std::lower_bound(next.microWater.begin(),
+        next.microWater.end(),key,
+        [](const ForestMicroWaterCell& cell,ForestMicroKey rhs){
+            return microKeyOf(cell)<rhs;
+        });
+    uint64_t exported=0;
+    if(pos!=next.microWater.end() && microKeyOf(*pos)==key){
+        exported=std::min(pos->dissolvedUnits,maximumUnits);
+        if(next.totalRunoffExportUnits>UINT64_MAX-exported)
+            throw std::overflow_error("TerraWeave 4m outlet mass overflow");
+        pos->dissolvedUnits-=exported;
+        if(!pos->dissolvedUnits)next.microWater.erase(pos);
+        next.totalRunoffExportUnits+=exported;
+    }
+    if(next.revision==UINT64_MAX)
+        throw std::overflow_error("TerraWeave 4m outlet revision overflow");
+    next.lastOutflowCommandId=commandId;
+    ++next.revision;
+    validateForestDeadwoodResource(next);
+    resource=std::move(next);
+    return exported;
 }
 
 } // namespace aiverse::terraweave
