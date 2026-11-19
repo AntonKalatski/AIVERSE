@@ -188,6 +188,23 @@ using detail::state;
 namespace {
 std::unique_ptr<gfx::Device> g_device;
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_ctx = 0;
+bool g_contextLost = false;
+bool g_contextRestorePending = false;
+bool g_initialized = false;
+EM_BOOL onWebGLContextLost(int, const EmscriptenWebGLContextEvent*, void*) {
+    // Returning true prevents browser default handling and permits restoration.
+    // Invalidate all GPU handles; rendering resumes only after reinitialization.
+    g_contextLost = true;
+    g_contextRestorePending = false;
+    emscripten_log(EM_LOG_WARN,"AIVERSE WebGL2 context lost; frames suspended");
+    return EM_TRUE;
+}
+EM_BOOL onWebGLContextRestored(int, const EmscriptenWebGLContextEvent*, void*) {
+    g_contextRestorePending = true;
+    emscripten_log(EM_LOG_CONSOLE,"AIVERSE WebGL2 context restored; rebuilding GPU resources");
+    return EM_TRUE;
+}
+
 uint8_t g_pasteMods = kModCtrl;
 std::string g_pasteText;
 detail::FrameClock g_clock; // rAF stops in hidden tabs; the clamp keeps the first frame back sane
@@ -309,6 +326,30 @@ EM_BOOL onResize(int, const EmscriptenUiEvent*, void*) {
 void frame(void*) {
     auto& S = state();
     double dt = g_clock.tick(emscripten_get_now() / 1000.0);
+    if(g_contextRestorePending) {
+        // Run callbacks on the main loop, not in a browser event callback.
+        // Legacy GPU handles and textures must not survive context recovery.
+        g_contextRestorePending = false;
+        if(emscripten_webgl_make_context_current(g_ctx)!=EMSCRIPTEN_RESULT_SUCCESS) {
+            g_contextLost = true;
+            emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2 restore: make-current failed");
+            return;
+        }
+        if(g_initialized && S.cb.shutdown) S.cb.shutdown();
+        g_device.reset();
+        g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+        if(!g_device) {
+            g_contextLost = true;
+            emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2 restore: device recreation failed");
+            return;
+        }
+        if(S.cb.init) S.cb.init(*g_device);
+        g_initialized = true;
+        g_contextLost = false;
+        // Never render using stale dt or scene state from the lost context.
+        return;
+    }
+    if(g_contextLost || !g_device) return;
     double cssW = 0, cssH = 0;
     emscripten_get_element_css_size(kCanvas, &cssW, &cssH);
     if (int(cssW) != int(S.winW) || int(cssH) != int(S.winH)) onResize(0, nullptr, nullptr);
@@ -352,6 +393,8 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     g_ctx = emscripten_webgl_create_context(kCanvas, &a);
     if (g_ctx <= 0) { emscripten_log(EM_LOG_ERROR, "WebGL2 is not available"); return 1; }
     emscripten_webgl_make_context_current(g_ctx);
+    emscripten_set_webglcontextlost_callback(kCanvas,nullptr,EM_TRUE,onWebGLContextLost);
+    emscripten_set_webglcontextrestored_callback(kCanvas,nullptr,EM_TRUE,onWebGLContextRestored);
 
     emscripten_set_mousedown_callback(kCanvas, nullptr, EM_TRUE, onMouse);
     emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, onMouse);
@@ -375,7 +418,12 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
 void startAfterStorage() {
     auto& S = state();
     g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+    if (!g_device) {
+        emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2: unable to initialize graphics device");
+        return;
+    }
     if (S.cb.init) S.cb.init(*g_device);
+    g_initialized = true;
     emscripten_set_main_loop_arg(frame, nullptr, 0, EM_FALSE);
 }
 
