@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveNereidSoilBridge.h"
 #include "engine/world/TerraWeaveRootEvents.h"
 #include "engine/world/TerraWeaveGrassCover.h"
+#include "engine/world/TerraWeaveSlopeFailure.h"
 #include <aiverselib/water/NereidShorelineSystems.h>
 #include "engine/sim/Simulation.h"
 #include <cstdint>
@@ -39,6 +40,13 @@ struct EcsBankTerrainCommit {
     uint32_t scannedBanks=0;
     uint32_t editedVertices=0;
     uint32_t completedTick=0;
+    // Opt-in hillslope relaxation, planned after NEREID's bank erosion
+    // but committed in the SAME one-revision Earthworks transaction.
+    SlopeFailurePlan slope{};
+    // Existing ECS bank soil is already at post-NEREID erosion height.
+    // Apply these additional settled-height corrections after canonical
+    // ECS terrain resource commit, before the next NEREID tick.
+    std::vector<std::pair<Entity,int32_t>> bankGroundCorrections;
 };
 
 // This is the SINGLE soil-commit stage after native
@@ -48,7 +56,10 @@ struct EcsBankTerrainCommit {
 inline EcsBankTerrainCommit commitNereidBankTerrain(
         const World& ecs,uint32_t completedTick,EarthworksLayer& earth,
         RootSupportRegistry* roots=nullptr,
-        GrassCoverRegistry* grass=nullptr){
+        GrassCoverRegistry* grass=nullptr,
+        bool slopeFailures=false,
+        SlopeFailureSettings slopeSettings={},
+        SlopeSoilSampler slopeMaterial={}){
     EcsBankTerrainCommit output;
     output.completedTick=completedTick;
     std::map<EarthVertex,EarthVertexEdit> edits;
@@ -90,32 +101,96 @@ inline EcsBankTerrainCommit commitNereidBankTerrain(
     batch.reserve(edits.size());
     for(const auto& [key,edit]:edits){(void)key;batch.push_back(edit);}
 
+    // Preview NEREID's height changes WITHOUT publishing. Slopes are then
+    // evaluated from this post-erosion snapshot, not from stale pre-water
+    // geometry. Merge final vertex heights into ONE soil revision so the
+    // network delta and RootSupportRegistry see one coherent terrain edit.
+    EarthworksLayer afterErosion=earth;
+    (void)afterErosion.applyEdits(batch,earth.revision());
+    std::map<EarthVertex,int32_t> finalHeight;
+    for(const auto& edit:batch)
+        finalHeight.emplace(edit.vertex,edit.afterCm);
+    if(slopeFailures){
+        std::map<EarthVertex,SlopeSoil> bankProfiles;
+        std::map<EarthVertex,std::pair<Entity,int32_t>> bankGround;
+        ecs.eachExistingConst<BankEarthVertexComponent>(
+            [&](Entity entity,const BankEarthVertexComponent& bind){
+                const auto* bank=ecs.tryGetConst<
+                    lib::nereid::WaterBankSoilComponent>(entity);
+                if(!bank)return;
+                if(!bankProfiles.emplace(bind.vertex,SlopeSoil{
+                    bank->soil.soil,
+                    bank->enabled?bank->wetContactPermille:0u,
+                    bank->soil.rootBindingPermille}).second)
+                    throw std::invalid_argument(
+                        "TerraWeave multiple bank soils claim one slope vertex");
+                bankGround.emplace(bind.vertex,std::make_pair(
+                    entity,bank->soil.groundCm));
+            });
+        const SlopeSoilSampler terrainSoil=
+            [&bankProfiles,&slopeMaterial](EarthVertex key)->SlopeSoil {
+                if(slopeMaterial)return slopeMaterial(key);
+                const auto it=bankProfiles.find(key);
+                return it==bankProfiles.end()?SlopeSoil{}:it->second;
+            };
+        std::vector<EarthVertex> triggers;
+        triggers.reserve(batch.size());
+        for(const auto& edit:batch)triggers.push_back(edit.vertex);
+        output.slope=planSlopeFailures(
+            afterErosion,triggers,terrainSoil,slopeSettings);
+        for(const auto& slide:output.slope.edits)
+            finalHeight.insert_or_assign(slide.vertex,slide.afterCm);
+        // Existing WaterBankSoilComponent groundCm must track any adjacent
+        // slide as well as the already-computed NEREID local bank erosion.
+        // Do NOT re-run erodeShore or overwrite suspended sediment.
+        for(const auto& [vertex,entry]:bankGround){
+            const auto newValue=finalHeight.find(vertex);
+            if(newValue==finalHeight.end())continue;
+            if(afterErosion.heightAt(vertex)!=entry.second)
+                throw std::invalid_argument(
+                    "TerraWeave slope bank height conflicts with NEREID tick");
+            if(newValue->second!=entry.second)
+                output.bankGroundCorrections.push_back({
+                    entry.first,newValue->second});
+        }
+    }
+    std::vector<EarthVertexEdit> combined;
+    combined.reserve(finalHeight.size());
+    for(const auto& [vertex,height]:finalHeight){
+        const int32_t before=earth.heightAt(vertex);
+        if(before!=height)
+            combined.push_back({vertex,before,height});
+    }
+
     EarthworksLayer nextEarth=earth;
-    output.earth=nextEarth.applyEdits(batch,earth.revision());
+    if(!combined.empty())
+        output.earth=nextEarth.applyEdits(combined,earth.revision());
     RootSupportRegistry nextRoots;
     GrassCoverRegistry nextGrass;
     if(roots)nextRoots=*roots;
     if(grass)nextGrass=*grass;
-    if(grass)output.grassCoverage=
-        nextGrass.applyEarthwork(output.earth,nextEarth.spacingCm());
-    if(roots){
-        const SoilHeightSampler source=[&nextEarth](int64_t x,int64_t z)
-                ->std::optional<int32_t> {
-            const int64_t edge=kWorldLimitCm-nextEarth.spacingCm();
-            if(x<=-edge||z<=-edge||x>=edge||z>=edge)
-                return std::nullopt;
-            return nextEarth.sampleHeightCm(x,z);
-        };
-        output.vegetation=nextRoots.applyGroundChange(
-            source,output.earth,completedTick);
+    if(!output.earth.vertices.empty()){
+        if(grass)output.grassCoverage=
+            nextGrass.applyEarthwork(output.earth,nextEarth.spacingCm());
+        if(roots){
+            const SoilHeightSampler source=[&nextEarth](int64_t x,int64_t z)
+                    ->std::optional<int32_t> {
+                const int64_t edge=kWorldLimitCm-nextEarth.spacingCm();
+                if(x<=-edge||z<=-edge||x>=edge||z>=edge)
+                    return std::nullopt;
+                return nextEarth.sampleHeightCm(x,z);
+            };
+            output.vegetation=nextRoots.applyGroundChange(
+                source,output.earth,completedTick);
+        }
     }
 
     // Prevalidated state swap: no copy allocation or partial update once
-    // the authoritative terrain, root and grass transitions are ready.
+    // authoritative terrain, root and grass transitions are ready.
     earth.exchangeSnapshotState(nextEarth);
     if(roots)roots->exchangeSnapshotState(nextRoots);
     if(grass)grass->exchangeSnapshotState(nextGrass);
-    output.editedVertices=uint32_t(batch.size());
+    output.editedVertices=uint32_t(combined.size());
     return output;
 }
 
