@@ -675,3 +675,12 @@ VIVID's `GpuActorStream` no longer hard-rejects non-Metal GPUs; it requires the 
 VIVID Creator can now fall back to a separate `CpuActorStream` on baseline GLES3/WebGL2 or any non-compute device. That actor uses the same sparse morph source and ARKit semantic bindings to deform the full `ModelVertex` stream on CPU and upload a dynamic vertex override through standard gfx::Device; original UVs, joints, material data and model LOD vertex ranges remain intact. It requires no compute shaders or frame serial, and retains the existing safe resource-release contract. This is a CPU fallback, not GPU morphing on GLES.
 
 A fake-GLES headless CTest for output bytes and retirement was added, but **not compiled/run**. Real Android/WebGL2 vertex-buffer update reliability, bandwidth, GPU image parity and native Vulkan compute remain to be measured/implemented. Detailed ownership, commits and test gate are in `docs/agent-handoffs/vivid.md` Stages 7G–7H.
+
+
+## Stage 7J — integration with merged universal ECS animation source lifetime (2026-11-20)
+
+The VIVID branch now contains the full `feature/universal-ecs-animation-pipeline` history via two-parent merge `8c9048fb6f0407ad87cc62d112b53fa467d43f78`. The merged animation system introduces safer model publication epochs, read leases and GPU/CPU retirement across shared native presentation hosts. Standalone VIVID Creator continues owning its private Model and World directly and does **not** borrow a `ModelResourceCache` lease that it cannot legitimately acquire.
+
+Creator teardown now synchronously drains its GPU actor and then releases MotionWeave ECS / AnimationGraph and copied pose owners **before** releasing the old head/hair Model resources, preventing stale borrowed pointers through the new animation lifetime contract. `HumanRigBinding::compose` now rejects any nonfinite input MotionWeave node-world matrix before modifying the last-good presentation pose. A negative regression source case was authored.
+
+**Validation status:** source committed, but merged-tree native build, CTest, GPU/Creator preview and retirement tests have NOT RUN. Full transactional replacement upload, render-thread retirement performance and animation epoch integration in shared non-Creator asset hosts remain further work. Full source SHAs, handoff and next actions: `docs/agent-handoffs/vivid.md` Stage 7J.
