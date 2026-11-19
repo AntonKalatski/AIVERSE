@@ -449,3 +449,11 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_vertex_override_tests aiverse_vivid_metal_rhi_tests aiverse_vivid_metal_gpu_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_(vertex_override|metal_rhi|metal_gpu)$'
   ```
+
+## Stage 5C macOS verification — 2026-11-19 — 3/3 Passed
+
+- **Source revision expected:** `f21777a6b79f8c3087d1a9260b499eebc56f3f0f` (`feature/vivid-digital-humans`, previous advertised build command); the provided excerpt does not independently echo the detached HEAD SHA. Do not attribute this result to a later code commit.
+- **User Mac build evidence:** `aiverse_engine`, `aiverse_vivid`, `aiverse_vivid_gpu`, `aiverse_models`, `aiverse_vivid_mesh` and `aiverse_vivid_metal_gpu_tests` built, `aiverse_vivid_metal_rhi_tests` linked. Three CTest fixtures ran: `vivid_metal_gpu` PASS (0.96 s), `vivid_metal_rhi` PASS (0.46 s), `vivid_vertex_override` PASS (0.31 s). **3/3 passed, 0 failed, 1.75 s real time**. The source excerpt contains no warnings or notes.
+- **Evidence scope:** numeric GPU-vs-CPU and 60-byte mesh stream parity plus the headless renderer override policy are verified at this revision. **No actual Renderer3D colour/shadow draw, capture, image comparison, skinning-on-camera, FPS benchmark, or full test suite was run in the provided excerpt.** The `vivid_vertex_override` policy test does not compile/link the whole `Renderer3DModels.cpp` render path, so independent renderer compilation remains required.
+- **Verifier:** native tests executed by user; this agent records user output, not an independent Mac run.
+- **Next step:** construct a narrow real-Metal renderer test for a moving/deformed model and capture actual colour/depth/shadow results using existing Renderer3D and gfx device. Preserve default-off stream override, MotionWeave skeletal ownership and per-stage handoff. Run full renderer build and targeted CTest before claiming visual integration.
