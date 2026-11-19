@@ -1693,6 +1693,12 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
 
+    // Feedback from the previous completed pass, sampled before counters reset.
+    // This is CPU submission feedback, not measured GPU busy-time.
+    static const bool autoBatch = [] {
+        const char* flag = std::getenv("AIVERSE_BATCH_AUTO");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
     static const bool enabled = [] {
         const char* flag = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
         return flag && std::strcmp(flag, "1") == 0;
@@ -1751,8 +1757,13 @@ void Renderer3D::prepareGpuModelDraws() {
             ? uint32_t(value) : 2u;
     }();
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
-    const uint32_t effectiveMinimum = gpuIcbMinimumCommands(
-        gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
+    const uint32_t effectiveMinimum = autoBatch
+        ? std::max(minGpuIcbCommands, gpuIcbAutoMinimum_)
+        : gpuIcbMinimumCommands(
+            gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
+    // In auto mode avoid costly grouping/compute for small eligible workloads.
+    // Existing CPU MDI / instancing still handles every item.
+    if (autoBatch && gpuIcb && gpuModelEligible_ < effectiveMinimum) return;
     if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
         dev_->supportsGpuEncodedIcb()) {
         // First eliminate impossible groups using only resource handles and
@@ -1993,24 +2004,25 @@ void Renderer3D::prepareGpuModelDraws() {
                 first = end; // leave these models for CPU instancing/MDI
                 continue;
             }
-            std::vector<uint32_t> sourceSlots;
-            sourceSlots.reserve(end - first);
+            gpuIcbSourceSlotsScratch_.clear();
+            gpuIcbSourceSlotsScratch_.reserve(end - first);
             for (size_t j = first; j < end; ++j)
-                sourceSlots.push_back(gpuModelSlots_[indices[j]]);
+                gpuIcbSourceSlotsScratch_.push_back(gpuModelSlots_[indices[j]]);
             ++gpuIcbCandidates_;
             // One contiguous GPU Instance record per command. The Metal vertex
             // shader fetches it by baseInstance, so no per-batch U0 upload is
             // necessary when binding the GPU_INSTANCE_BUFFER permutation.
-            std::vector<float> instanceRecords((end - first) * 36u, 0.0f);
+            gpuIcbInstancesScratch_.resize((end - first) * 36u);
+            std::fill(gpuIcbInstancesScratch_.begin(), gpuIcbInstancesScratch_.end(), 0.0f);
             for (size_t j = first; j < end; ++j)
                 packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
-                                  instanceRecords.data() + (j - first) * 36u);
+                                  gpuIcbInstancesScratch_.data() + (j - first) * 36u);
             const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
                 gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                 modelItems_[indices[first]].model->vb,
                 modelItems_[indices[first]].model->ib,
-                sourceSlots.data(), uint32_t(sourceSlots.size()),
-                instanceRecords.data(), instanceRecords.size() * sizeof(float));
+                gpuIcbSourceSlotsScratch_.data(), uint32_t(gpuIcbSourceSlotsScratch_.size()),
+                gpuIcbInstancesScratch_.data(), gpuIcbInstancesScratch_.size() * sizeof(float));
             if (token) {
                 ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
@@ -2024,6 +2036,21 @@ void Renderer3D::prepareGpuModelDraws() {
     // A single command-encoder end creates the compute->render dependency
     // for all groups, instead of opening/closing one encoder per ICB batch.
     dev_->finishGpuEncodedIcbPreparation();
+    if (autoBatch) {
+        // Hysteresis: favour the CPU for sustained failed prepares and only
+        // probe GPU encoding again after workload grows. Never disable
+        // ordinary draw fallback or bypass material/geometry validation.
+        if (gpuIcbPrepared_ && !gpuIcbRejected_) {
+            gpuIcbAutoMisses_ = 0;
+            if (gpuIcbAutoMinimum_ > 64)
+                gpuIcbAutoMinimum_ = std::max(64u, gpuIcbAutoMinimum_ / 2u);
+        } else if (gpuIcbCandidates_) {
+            if (++gpuIcbAutoMisses_ >= 3) {
+                gpuIcbAutoMinimum_ = std::min(256u, gpuIcbAutoMinimum_ * 2u);
+                gpuIcbAutoMisses_ = 0;
+            }
+        }
+    }
 }
 
 void Renderer3D::renderModels(int phase) {
