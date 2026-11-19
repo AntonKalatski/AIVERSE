@@ -256,6 +256,17 @@ int aiverseMain(int argc, char** argv) {
             if (!model->geometryPoolPage || !secondModel->geometryPoolPage ||
                 !(model->vb == secondModel->vb)) { failed=true; return; }
         }
+        // AUTO is a complete CPU-path opt-in on Metal. Failing this capability
+        // gate used to silently prevent all MDI probes and poison learning.
+        if (stress && std::getenv("AIVERSE_BATCH_AUTO") &&
+            std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1" &&
+            d.info().backend == gfx::Backend::Metal &&
+            !d.supportsMultiDrawIndirect()) {
+            std::fprintf(stderr,
+                "AUTO stress: Metal CPU MDI capability unavailable despite explicit AUTO opt-in\n");
+            failed = true;
+            return;
+        }
         renderer.setProfiling(true); renderer.setShadowQuality(render::ShadowQuality::High);
         renderer.lighting.fogDensity=0;
         if (const char* q=std::getenv("AIVERSE_PALETTE_TEST_QUALITY")) renderer.setMaterialQuality(render::MaterialQuality(std::atoi(q)));
