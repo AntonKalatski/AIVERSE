@@ -111,6 +111,15 @@ public:
         return {}; // rejected: Model belongs to another cache or was retired
     }
     ModelReadLease acquireModelRead(const std::string& key) const {
+        // Validate the owner BEFORE touching models_. A foreign-thread
+        // lookup would otherwise race with the render owner's map writes
+        // even though acquireModelRead(Model*) subsequently rejects it.
+        const auto thread=std::this_thread::get_id();
+        if((resourceDevice_ && resourceThread_!=thread) ||
+           (readState_->ownerThread!=std::thread::id{} &&
+            readState_->ownerThread!=thread) ||
+           !readState_->alive.load(std::memory_order_acquire))
+            throw std::logic_error("ModelResourceCache key read on foreign or expired owner");
         const auto it=models_.find(key);
         return it==models_.end()?ModelReadLease{}:
             acquireModelRead(it->second.get());
