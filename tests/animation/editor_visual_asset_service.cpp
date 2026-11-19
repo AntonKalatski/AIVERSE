@@ -1,7 +1,7 @@
 // Stage 98: editor-owned watcher and missing-file regression.
 // Fixture intentionally deferred; run through CTest after feature phase.
 #include "apps/editor/core/VisualAssetDependencyService.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -38,20 +38,20 @@ int main() {
     auto convert=[&](const std::string&)->bool{++conversions;return false;};
     auto log=[&](const std::string&){++logs;};
 
-    assert(!service.due(root.string(),0.5));
-    assert(service.due(root.string(),0.5));
+    AIVERSE_TEST_CHECK(!service.due(root.string(),0.5));
+    AIVERSE_TEST_CHECK(service.due(root.string(),0.5));
     service.scan(root.string(),types,library,cache,convert,log);
-    assert(!service.pending());
-    assert(conversions==0); // GLB already native
+    AIVERSE_TEST_CHECK(!service.pending());
+    AIVERSE_TEST_CHECK(conversions==0); // GLB already native
     // External graph changes are independent of model GPU cache residency.
     const auto graph=root/"animation/hero.json";
     auto initialGraphStamp=fs::last_write_time(graph);
     fs::last_write_time(graph,initialGraphStamp+std::chrono::seconds(4));
     service.scan(root.string(),types,library,cache,convert,log);
-    assert(service.pending());
+    AIVERSE_TEST_CHECK(service.pending());
     auto graphImpact=service.impact();
-    assert(graphImpact.graph && !graphImpact.model);
-    assert(graphImpact.types.count(0)==1);
+    AIVERSE_TEST_CHECK(graphImpact.graph && !graphImpact.model);
+    AIVERSE_TEST_CHECK(graphImpact.types.count(0)==1);
     service.acknowledge();
 
     // Deleted and recovered files are each observable changes. The service
@@ -59,19 +59,19 @@ int main() {
     const auto model=root/"models/hero.glb";
     fs::remove(model);
     service.scan(root.string(),types,library,cache,convert,log);
-    assert(service.pending());
-    assert(service.impact().model);
+    AIVERSE_TEST_CHECK(service.pending());
+    AIVERSE_TEST_CHECK(service.impact().model);
     service.scan(root.string(),types,library,cache,convert,log);
-    assert(service.pending());
+    AIVERSE_TEST_CHECK(service.pending());
     service.acknowledge();
     std::ofstream(model)<<"recovered";
     service.scan(root.string(),types,library,cache,convert,log);
-    assert(service.pending());
-    assert(service.changedSources().count("models/hero.glb")==1);
+    AIVERSE_TEST_CHECK(service.pending());
+    AIVERSE_TEST_CHECK(service.changedSources().count("models/hero.glb")==1);
 
     // Switching projects clears old pending paths and timestamps.
-    assert(!service.due((root/"other").string(),0.01));
-    assert(!service.pending());
+    AIVERSE_TEST_CHECK(!service.due((root/"other").string(),0.01));
+    AIVERSE_TEST_CHECK(!service.pending());
     fs::remove_all(root,ec);
     return 0;
 }

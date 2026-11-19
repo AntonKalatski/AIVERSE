@@ -1,5 +1,5 @@
 #include <aiverselib/animation/AnimationAssetLoader.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 using namespace aiverse;
 using namespace aiverse::render;
 using namespace aiverse::lib::animation;
@@ -14,10 +14,10 @@ int main(){
         "sections":[{"name":"Shot","clip":"Shoot","begin":0,"end":0.7,
                      "next":-1,"notifies":[{"time":0.3,"name":"shot_fx"}]}]
     })"));
-    assert(asset && asset->sections.size()==1);
-    assert(asset->sections[0].notifies[0].time>.29f);
+    AIVERSE_TEST_CHECK(asset && asset->sections.size()==1);
+    AIVERSE_TEST_CHECK(asset->sections[0].notifies[0].time>.29f);
     bool failed=false;
     try{compileMontageAsset(m,Json::parse(R"({"sections":[{"clip":"Missing","begin":0,"end":1}]})"));}catch(const std::exception&){failed=true;}
-    assert(failed);
+    AIVERSE_TEST_CHECK(failed);
     return 0;
 }

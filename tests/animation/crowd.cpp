@@ -1,5 +1,5 @@
 #include <aiverselib/animation/AnimationCrowdSystems.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 using namespace aiverse;
 using namespace aiverse::lib::animation;
 namespace aiverse::platform {bool readContentFile(const std::string&,std::string&){return false;}}
@@ -9,9 +9,9 @@ int main(){
     auto& state=world.add<AnimationCrowdComponent>(e);
     world.add<AnimationCrowdSampleComponent>(e);
     stepAnimationCrowd(world,.1f);
-    assert(!world.get<AnimationCrowdSampleComponent>(e).valid);
+    AIVERSE_TEST_CHECK(!world.get<AnimationCrowdSampleComponent>(e).valid);
     state.speed=1.f;
     stepAnimationCrowd(world,.1f);
-    assert(!world.get<AnimationCrowdSampleComponent>(e).valid);
+    AIVERSE_TEST_CHECK(!world.get<AnimationCrowdSampleComponent>(e).valid);
     return 0;
 }
