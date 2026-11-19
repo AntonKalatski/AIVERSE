@@ -1122,3 +1122,35 @@ share the generic helper without a second graph update.
 This Stage 122 is **source-only** and has NOT been compiled,
 linked, GPU-tested, benchmarked or validated with real visual
 LOD assets. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
+
+## Stage 123 — immutable source/visual rig versions and retarget cache
+
+An authored `ModelPoseRetarget` can now be compiled once per
+source/visual Model publication into a shared immutable
+`CompiledModelPoseRetarget`. Compile outside the animation
+worker dispatch, with nonzero **host-controlled publication
+version IDs** for each Model. The plan caches source bind T,
+inverse bind rotation and scale, target bind T/R/S, and optional
+morph channel mappings; its runtime path is a bounded pass over
+visual nodes. This is separate from GPU Model residency and from
+ECS entity generation.
+
+For an opt-in whole-asset visual LOD, native C++ code supplies
+`ModelLod::compiledRetarget` and
+`ModelLod::visualModelGeneration`, and the host actor supplies
+`Object::animationModelGeneration`. `View` rejects mismatched
+pointers/versions and uses the visual's bind pose rather than
+feeding stale source bones to another asset. Rebuild plans after
+**every** hot reload (also for in-place Model changes). Old
+`ModelLod::retarget` remains for older native host code.
+
+`RtsLook` publishes monotonic, nonzero per-choice versions
+through `loadChoice`, including appearances built by source
+and material/graph reload. It compiles one LOD map when the
+authored choice is built and reuses that plan for multiple actors.
+RTS presentation scratch is now owned by the individual View,
+not a process-static buffer. Old LODs without a compiled map
+continue using the legacy path pending visual parity tests.
+
+**NOT COMPILED OR TESTED:** no measured speedup or real rig
+validation is claimed. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
