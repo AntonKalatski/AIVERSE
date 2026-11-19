@@ -53,7 +53,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
-namespace aiverse::view { class View; }
+namespace aiverse::view { class View; struct ModelPoseRetarget; }
 namespace aiverse::game {
 
 struct Lane;
@@ -517,6 +517,7 @@ private:
         render::float3 muzzleOffset;
         float lodDistance = 0;                    // LOD: used beyond this camera distance
         std::vector<int> clipMap, nodeMap;        // LOD: base clip / node -> this model's
+        std::shared_ptr<const view::ModelPoseRetarget> poseRetarget; // validated once during authoring
     };
     struct Stage { float build = -1, hp = -1; ModelChoice choice; };
     enum class Construction : uint8_t { Grow, Dissolve, Stages };
