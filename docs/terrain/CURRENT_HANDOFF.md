@@ -1,23 +1,25 @@
 # TerraWeave — current agent handoff entry point
 
-Last source stage: **69** (2026-11-19), branch `feature/terraweave`.
+Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
 ## Where to start
 
-1. [Stage 69: linked NEREID confluences/cascades, 4m creek sampling, PHYSIS nature](stage-69-nereid-physis-nutrient-handoff.md)
-   — current source implementation, exact commits, immutable owner boundaries,
-   correctness limitations and mandatory independent QA.
-2. [Stage 68: nutrient cycle, PHYSIS weather and NEREID flow](stage-68-nutrient-circulation-handoff.md)
+1. [Stage 70: sparse body-tagged 4m nutrient ledger and v3 save migration](stage-70-sparse-micro-nutrients-handoff.md)
+   — latest source, exact commits, new CMake test target, native APIs,
+   explicit lossless migration, actual QA status and next acceptance.
+2. [Stage 69: linked NEREID confluences/cascades, 4m creek sampling, PHYSIS nature](stage-69-nereid-physis-nutrient-handoff.md)
+   — previous coarse-water Stage69 topology and weather implementation.
+3. [Stage 68: nutrient cycle, PHYSIS weather and NEREID flow](stage-68-nutrient-circulation-handoff.md)
    — conserved v2 nutrient ledger, rain leaching, uptake and same-body transport.
-3. [Stage 67: deadwood/soil nutrition](stage-67-deadwood-soil-nutrients-handoff.md)
+4. [Stage 67: deadwood/soil nutrition](stage-67-deadwood-soil-nutrients-handoff.md)
    — prior organic ledger, fallen Box3D retirement, forest/grass fertility.
-4. [Stage 66: authoritative harvest](stage-66-authoritative-harvest-handoff.md)
+5. [Stage 66: authoritative harvest](stage-66-authoritative-harvest-handoff.md)
    — persisted tree removals/replanting and ECS native authority.
-5. [Stage 65: rooted forest ecology](stage-65-rooted-forest-ecology-handoff.md)
+6. [Stage 65: rooted forest ecology](stage-65-rooted-forest-ecology-handoff.md)
    — growth, mortality, sun competition and native seed recruitment.
-6. [Full historical handoff](AGENT_HANDOFF.md) and
+7. [Full historical handoff](AGENT_HANDOFF.md) and
    [TerraWeave architecture](TERRAWEAVE.md).
 
 ## Immutable design boundaries
@@ -32,9 +34,14 @@ cross-branch conflict reconciliation.
   their respective post-ECS owner barriers.
 - Native game modules configure optional features; never hardcode RTS/FPS
   into generic TerraWeave.
-- Code is written to GitHub, but Stage69 has **not** been built/tested
-  on a C++ compiler, run under native PHYSIS/NEREID/Box3D, GPU profiled,
-  or save/replay verified. Existing earlier QA passes apply to older commits.
+- Stage70 v3 source, native mode and the `terraweave_micro_nutrient`
+  test **source** are committed to GitHub. C++ compilation, execution,
+  native v1/v2→v3 save migration and NEREID/PHYSIS regression verification
+  have NOT been observed; previous green tests apply only to older commits.
+- Historical v1/v2 32m dissolved water stays a fully conserved UNASSIGNED
+  legacy pool. Body-tagged 4m migration is explicit and validates every
+  NEREID wet tile; never automatically give an old coarse amount to one
+  of two possible rivers.
 - PHYSIS's real nature API was inspected on a separate PHYSIS branch;
   the TerraWeave-only feature checkout does NOT yet contain that header.
   The Stage69 native adapter is optional, compiled conditionally, and
@@ -46,16 +53,20 @@ cross-branch conflict reconciliation.
 
 ## First next action
 
-The independent QA agent should compile Stage69 native headers/Integration
-and add a dedicated deterministic test target for: genuine NEREID
-confluence/cascade transfers, dry/wet and mixed-body 32m tile rejection,
-4m creek subcell sampling, zero double-hop, exact conserved ledger,
-rollback/order invariance, and absent-PHYSIS fail-fast behavior. Then
-validate the direct PHYSIS bridge in an integration worktree where both
-branches' headers and ECS scheduling are present. Record actual command
-output and repair compiler/runtime faults, together with earlier Stage44–68
-regressions. No tests are claimed passing for Stage69.
+Use an isolated worktree on `feature/terraweave`; first compile
+`aiverse_terraweave_micro_nutrient_test` and execute CTest
+`terraweave_micro_nutrient`, then add native ECS NEREID two-stream
+tests with a real confluence inside one former 32m tile, exact
+v1/v2→v3 archive migrations, rollback, input-order determinism,
+legacy claim failure/atomicity, strict mass conservation, 65k
+memory/performance bounds and coarse-mode opt-out regression.
+Do not declare Stage70 passing without exact logs.
 
-The next feature agent should start with Stage69's standalone handoff,
-then consider Stage70 true adaptive/4m nutrient water residency with
-versioned migration; never reinterpret old 32m saved indices implicitly.
+Only after the separate QA agent fixes failures should the engine's
+larger previously deferred TerraWeave/PHYSIS/NEREID tests be
+run as a coordinated batch and `main` merge conflicts reconciled.
+
+The next feature agent may consider Stage71 per-body flow weighting
+and optional 1m local nutrient tiles, but must not invent a dense
+world grid or silently change the v3 archive. Each stage requires
+its own accurate handoff and committed SHA.
