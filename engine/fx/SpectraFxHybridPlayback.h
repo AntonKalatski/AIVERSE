@@ -52,6 +52,7 @@ public:
         uint64_t sharedComputePrograms=0,sharedComputeFailures=0;
         uint64_t sharedAlphaPrograms=0,sharedCompactPrograms=0;
         uint64_t sharedMetalProgramFailures=0;
+        uint64_t gpuRuntimeCpuFallbacks=0;
         uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
         uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
         uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
@@ -602,8 +603,10 @@ private:
         return true;
     }
     void advanceGpu(SpectraFxHybridEmitter& emitter,float dt) {
-        if(emitter.gpuActive()&&!emitter.suspended()&&!emitter.updateGpu(dt))
-            ++stats_.failed;
+        if(!emitter.gpuActive() || emitter.suspended()) return;
+        const bool ok=emitter.updateGpu(dt);
+        if(emitter.cpuActive()) ++stats_.gpuRuntimeCpuFallbacks;
+        if(!ok) ++stats_.failed;
     }
     void drawGpu(SpectraFxHybridEmitter& emitter,
                  const render::mat4& viewProj,render::float3 right,
