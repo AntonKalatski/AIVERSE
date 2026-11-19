@@ -2825,3 +2825,153 @@ must verify manifest parsing and no-field defaults, each preset's
 values, malformed enum/policies, switching during an exact field
 revision, manual override/getter coherence, low-budget fallback and
 GPU cache/crossfade preservation. Do not merge PR #24 until verified.
+
+## Stage 40 — opt-in host-fed adaptive Horizon presentation quality
+
+Stage40 adds a bounded *runtime presentation* controller in
+`engine/world/TerraWeaveHorizonAdaptiveQuality.h`. It composes only the
+four Stage39 profiles (BatterySaver, Mobile, Balanced, Desktop) and the
+existing Stage33–38 wind shader/bandwidth/CPU-cache policy. The
+**terrain/forest geometry, near seam, atlas, PHYSIS field, native ECS state,
+GPU resource topology and TWH8 archive remain untouched**. The controller
+is **disabled by default** and never starts timing a frame by itself.
+
+### Inputs, API and integration
+
+The game or platform host already responsible for framing/presentation
+supplies measured CPU and/or completed GPU frame times in **microseconds**,
+with a monotonically increasing frame index:
+
+```cpp
+using namespace aiverse::terraweave;
+HorizonAdaptiveQualityConfig adaptive;
+adaptive.enabled=true;
+adaptive.minimum=HorizonPresentationQualityPreset::Mobile;
+adaptive.maximum=HorizonPresentationQualityPreset::Desktop;
+adaptive.initial=HorizonPresentationQualityPreset::Balanced;
+adaptive.targetFrameUs=16667;  // 60 Hz frame budget, not a GPU benchmark
+worldScene.setVegetationHorizonAdaptiveQualityConfig(adaptive);
+
+// On the scene owner thread, after the host has a frame measurement:
+const HorizonFrameTimingSample timing{
+    .frameId=completedFrameId,
+    .cpuFrameUs=measuredCpuFrameUs,
+    .gpuFrameUs=measuredCompletedGpuFrameUs // 0 when unavailable
+};
+const bool switched=worldScene.submitVegetationHorizonFrameTiming(timing);
+auto state=worldScene.vegetationHorizonAdaptiveQualityState();
+```
+
+Direct scene API:
+`TerraWeaveHorizonScene::setAdaptiveQualityConfig(config)`,
+`adaptiveQualityConfig()`, `adaptiveQualityState()`,
+`submitAdaptiveFrameTiming(timing)`.
+A native WorldScene with no Horizon module returns false for submissions.
+`setVegetationHorizonAdaptiveQualityConfig` applies the initial profile
+**immediately** only when enabling adaptation. Disabling keeps the
+current profile. Explicit manual calls to the Stage39 whole-policy
+setter or any of the four existing individual presentation setters
+**disable** adaptation rather than fighting the developer's choice.
+Wind-field publication, normal simulation ticks and camera updates do
+not count as manual overrides. Re-enabling starts a fresh history.
+
+The engine's gfx `Device::gpuFrameMs()` can report a backend's last
+completed GPU duration, but this is not universally implemented and
+may be delayed. The host must distinguish real completed timing
+samples from unavailable/stale values and may submit zero for missing
+GPU or CPU. Stage40 does **not** synthesize GPU time or equate its
+own `HorizonRuntimeStats::gpuUploadMs` with the whole-frame
+render duration. At least one nonzero actual CPU/GPU frame duration
+is required; a frame with no measurements is ignored. An individual
+sample of more than 10 seconds, an out-of-order/duplicate frame index,
+or disabled adaptation is ignored. Missing frame IDs break continuous
+streaks, so occasional metrics must not masquerade as sustained FPS
+degradation. CPU and GPU together use the **worst available** duration.
+This is global frame quality control, not evidence that TerraWeave
+itself caused all CPU/GPU work.
+
+### Hysteresis and hard limits
+
+`HorizonAdaptiveQualityConfig` defaults:
+`minimum=Mobile`, `maximum=Desktop`, `initial=Balanced`,
+`targetFrameUs=16667`, `downgradePercent=115`,
+`upgradePercent=80`, `downgradeFrames=30`,
+`upgradeFrames=240`, `cooldownFrames=240`. Consecutive valid
+frame IDs more than 15% above the target trigger a **one-level
+downgrade** after 30 samples. Consecutive samples at least 20%
+under the target trigger a **one-level upgrade** after 240 samples.
+The neutral band clears both streaks. No further switch occurs until
+at least 240 frame IDs have elapsed since the previous change; neither
+direction can pass the configured min/max. No elapsed-wall-clock
+timers or nondeterministic thread callbacks are involved.
+
+Validation rejects quality ranks outside [0,3], reversed bounds,
+initial outside bounds, target outside 4–100 ms, downgrade threshold
+outside 101–200%, upgrade outside 25–99%, downgrade streak outside
+2–600 frames, upgrade streak outside 2–3600, and cooldown above
+36,000 frames. The controller is purely presentation state driven by
+host measurements and does not belong in authoritative ECS save/replay.
+`advanceHorizonAdaptiveQuality(config,state,sample)` is a
+backend-free deterministic state step for later unit tests.
+
+### Optional manifest configuration
+
+```json
+{
+  "terraweaveHorizon": {
+    "quality": "high",
+    "presentationQuality": "balanced",
+    "adaptiveQuality": {
+      "enabled": true,
+      "minimum": "mobile",
+      "maximum": "desktop",
+      "initial": "balanced",
+      "targetFrameUs": 16667,
+      "downgradePercent": 115,
+      "upgradePercent": 80,
+      "downgradeFrames": 30,
+      "upgradeFrames": 240,
+      "cooldownFrames": 240
+    }
+  }
+}
+```
+
+`quality` still controls the immutable Stage39-era geometry bake.
+`presentationQuality` optionally sets the original runtime profile;
+`adaptiveQuality` only opts into automatic *presentation* changes.
+It remains OFF without `"adaptiveQuality":{"enabled":true}`.
+If `initial` is missing, it inherits the optional static
+`presentationQuality` (otherwise Balanced). The default minimum is
+Mobile, or BatterySaver if the initial static profile is
+`battery-saver`; projects can override bounds explicitly.
+All levels use `battery-saver|mobile|balanced|desktop`, and invalid
+names/types/bounds fail manifest parsing instead of silently accepting
+an unsafe policy. The manifest does not install a frame timing provider;
+the host must still feed the per-frame measurements.
+
+### Diagnostics and limitations
+
+`HorizonRuntimeStats` now includes `adaptiveQualityEnabled`,
+`adaptiveQualityLevel`, `adaptiveQualitySamples`,
+`adaptiveQualitySwitches`, `adaptiveQualityDowngrades`,
+`adaptiveQualityUpgrades`, and `adaptiveQualityLastFrameUs`.
+Existing effective Stage39 policy diagnostics indicate the currently
+applied bandwidth/cache options after an adaptive change.
+`WorldScene` synchronizes its public policy getters after each
+automatic switch. Diagnostics are **not** GPU performance benchmarks.
+Adaptive control may respond to frame costs from completely unrelated
+systems; the host should opt in only when this behavior is desired.
+A Stage39 low-bandwidth profile can postpone dense wind vertex updates
+and safely show the macro field until later; automatic quality selection
+does not bypass Stage36 safety checks. Configure appropriate frame
+sampling and GPU completion handling for each native platform.
+
+**Feature-first verification:** code committed and source re-read via
+GitHub only. Native C++ compilation, CMake/CTest, frame time instrumentation,
+Metal/Vulkan/OpenGL visual parity and actual FPS gains **NOT RUN**.
+The separate QA agent must test reset-on-gap, duplicates and malformed
+samples, exact threshold boundaries, 30/240 sample streaks, cooldown,
+min/max clamp, manifest precedence, enable/disable/manual override,
+missing GPU data, stale field revisions, crossfade GPU residency, and
+renderer safety before PR #24 may merge.
