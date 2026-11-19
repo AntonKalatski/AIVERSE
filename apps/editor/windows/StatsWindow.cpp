@@ -118,6 +118,13 @@ public:
             ImGui::TextDisabled("GPU fence ERROR: %zu удерживаемых партий (ошибок всего %llu)",
                 residency.unresolvedFailedFences,
                 (unsigned long long)residency.retirementFailedFenceBatches);
+        ImGui::Text("GPU откат текстур hot reload: %zu текстур ждут GPU fence",
+                    residency.pendingRolledBackImages);
+        if(residency.imageRollbackEnqueueFailures ||
+           residency.imageRollbackOrphanBatches)
+            ImGui::TextDisabled("GPU откат: ошибок очереди %llu · потерянных партий %llu",
+                (unsigned long long)residency.imageRollbackEnqueueFailures,
+                (unsigned long long)residency.imageRollbackOrphanBatches);
         if(const auto* ring=ed.gpuRetirementDiagnostics()) {
             ImGui::TextDisabled("GPU retirement события: %zu/%zu · переполнений %llu",
                 ring->size(),ring->capacity(),
