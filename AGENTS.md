@@ -432,6 +432,23 @@ explicit request; record **NOT RUN** and update
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
 with exact SHAs in its own separate commit.
 
+**Stage 29 — bounded pooled GPU/CPU one-shot cue routing (SOURCE COMMITTED,
+TESTS DEFERRED):** `engine/fx/SpectraGpuCueBridge.{h,cpp}`
+builds a genre-neutral presentation cue scheduler above the **existing**
+`GpuPoolWorld`, rather than a new CPU/GPU particle simulation.
+Native ECS projects include `SpectraGpuCueEcsAdapter.h` via
+`<aiverselib/genre/SpectraFX.h>` to convert committed
+`SimEvent` positions read-only. Each tick is consumed only once;
+bounded queue/tick/frame budgets and a pool-level budget apply.
+`resetForRollback()` resets the WHOLE pool before clearing tick
+state; rejected resets preserve bridge state for safe retries.
+**Do not claim per-source GPU kill/move/lifecycle**: the pool currently
+supports only one-shot bursts, and attached/continuous effects
+remain with CPU `CueScheduler`. Existing engine ECS and FPS/RTS
+renderers remain unchanged by default. Tests/build/Metal GUI are
+NOT RUN by explicit user instruction. Preserve a separate
+Stage-29 handoff and continue feature work before testing.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
