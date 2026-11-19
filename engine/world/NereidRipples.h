@@ -34,7 +34,7 @@ public:
     }
     size_t size()const{return ripples_.size();}
     const std::vector<NereidRipple>& ripples()const{return ripples_;}
-    // Select at most four nearest ripple rings for one water body.
+    // Select at most sixteen nearest ripple rings for one water body.
     // A body snapshot uses Entity::packed()+1 as its ID; events contain
     // Entity::packed() directly. Render coordinates match WorldScene origin.
     std::array<render::float4,16> shaderRipples(
