@@ -31,6 +31,9 @@ public:
         uint32_t strataPortableSources=0, strataPortableDeclined=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
+        uint32_t strataStreamedSources=0;
+        uint64_t strataStreamingIndexBytes=0, strataStreamingEvictions=0;
+        uint64_t strataStreamingPrepareFailures=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -66,6 +69,15 @@ public:
     // Scene must be reloaded after changing this option.
     void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
     bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
+    // Positive budget enables bounded physical index-only GPU residency per
+    // source, instead of eager full Strata sidecars. Must set before load.
+    // Zero means classic fully resident mode; this does not affect source VB.
+    void setStrataStreamingIndexBudgetBytes(size_t bytes) {
+        strataStreamingIndexBudgetBytes_=bytes;
+    }
+    size_t strataStreamingIndexBudgetBytes() const {
+        return strataStreamingIndexBudgetBytes_;
+    }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
     bool dispatchStrataGpuView(gfx::Device& device, const std::string& sourceKey,
@@ -122,6 +134,7 @@ private:
     int buildGroup(gfx::Device& dev, std::vector<size_t> ids);
     void drawGroup(Renderer3D& renderer,int group);
     void drawInstance(Renderer3D& renderer,const Instance& instance);
+    void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
@@ -142,6 +155,7 @@ private:
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
+    size_t strataStreamingIndexBudgetBytes_=0;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
