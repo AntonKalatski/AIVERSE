@@ -1830,13 +1830,23 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 const auto* table=textures_.get(materials[i].pageTable.id);
                 const auto* alpha=materials[i].alphaCoverage.valid() ?
                     textures_.get(materials[i].alphaCoverage.id) : nullptr;
+                // The stage's physical atlas and page table use RGBA8
+                // array slices. R8 alpha is the separately allocated full-
+                // resolution cutout mask. Fail closed for incompatible
+                // textures rather than encoding invalid Metal arguments.
                 if (!atlas || !table || !atlas->tex || !table->tex ||
                     atlas->dimension != TextureDimension::Texture2DArray ||
                     table->dimension != TextureDimension::Texture2DArray ||
+                    atlas->fmt != PixelFormat::RGBA8 ||
+                    table->fmt != PixelFormat::RGBA8 ||
+                    !atlas->tex.arrayLength || !table->tex.arrayLength ||
                     (alpha && (!alpha->tex ||
-                     alpha->dimension != TextureDimension::Texture2D)) ||
+                     alpha->dimension != TextureDimension::Texture2D ||
+                     alpha->fmt != PixelFormat::R8)) ||
                     (materials[i].alphaCoverage.valid() && !alpha) ||
-                    materials[i].params[0] >= float(table->tex.arrayLength))
+                    materials[i].params[0] >= float(table->tex.arrayLength) ||
+                    2.0f*materials[i].params[1]+1.0f >=
+                        float(std::min(atlas->tex.width,atlas->tex.height)))
                     return 0;
                 GpuIcbNativeVtMaterial native;
                 native.atlasHandle=materials[i].physicalAtlas;
