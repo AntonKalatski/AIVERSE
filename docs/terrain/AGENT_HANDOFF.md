@@ -2660,3 +2660,17 @@ Audited existing async publication and GPU cache adoption paths, and fixed a def
 **Actual verification:** GitHub commit succeeded. No compilation, CTest, editor/game execution, GPU screenshot or benchmark. Dedicated test agent retains ownership; PR stays Draft.
 
 **Next functionality:** add explicit active/source revision and stale-proxy status to HorizonRuntimeStats (without altering archive or GPU layout), then audit cache-hit/empty-model/failure behavior. Tests later should verify shutdown resets stats, no active model after shutdown, and source revision pending preserves old model without falsely claiming fresh data.
+
+## Stage 22f — active/source revision and stale GPU proxy diagnostics (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`, PR #24 Draft.
+**Commit:** `2a0bc2cde12fbbfe522b7b836ee60266d542e602`.
+**Changed:** `engine/render/TerraWeaveHorizonScene.h`.
+
+`HorizonRuntimeStats` now exposes `sourceRevision`, `activeRevision`, `activeRegionPresent` and `staleProxy`. `runtimeStats()` derives these live from `sourceRevision_`, `activeRevision_`, `model_` and `activeCell_`; no duplicated cache fields or TWH8 archive changes. `staleProxy` is true only when an active GPU model is present and its revision differs from the current authored source revision. An empty region, pre-first-upload state or shutdown reports no active GPU model. The existing explicit `nearNormalProvenanceAvailable` continues to distinguish unknown archive diagnostics from true zero.
+
+**Important semantics:** a camera teleport to a different region with unchanged source revision can still leave an old proxy until coverage gating/next upload; `staleProxy` intentionally denotes **source-revision mismatch**, not all possible wrong-camera-region cases. The separate `submit()` coverage check still owns teleport visibility.
+
+**Actual verification:** GitHub source commit only; no CMake/CTest, compiler, editor/game launch, screenshots or performance measurements. Keep PR Draft. Separate test agent owns tests.
+
+**Next implementation:** expose requested vs active cell status (without changing GPU/archive layouts), and verify diagnostics on source edits, empty regions, GPU cache hits, transitions and shutdown. Then update TERRAWEAVE.md and agent skill. Do not assert passing tests.
