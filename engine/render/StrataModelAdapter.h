@@ -63,6 +63,11 @@ public:
     explicit SceneStaging(const BuildOptions& options) : options_(options) {}
     bool stage(const std::string& key, const Model& model);
     void clear();
+    // Offline/editor export of staged, immutable index-page archives. Writes
+    // one deterministic hashed filename per source key. Never performs GPU
+    // allocation or uses game-thread rendering resources.
+    bool writeDiskArchives(const std::string& directory,
+                           std::vector<std::string>* failures=nullptr) const;
     const ModelAsset* find(const std::string& key) const;
     const StagingStats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
