@@ -261,3 +261,15 @@ New headless CTest source: `tests/vivid/motionweave_bridge.cpp`, registered as `
 - **What this test does not prove:** the `gfx::Device` Metal command path (`GpuMorphDeformer::dispatch()`), GPU resource lifetime across frames, drawing with VIVID-deformed mesh buffers, VIVID↔MotionWeave skinning order, other render passes or Vulkan/GL. A separate actual device RHI integration test and renderer hookup are required after the kernel passes.
 
 The user's earlier **7/7 native tests Passed** on the pre-Stage-4D merged source. No real Metal GPU comparison has yet been executed, and do not transfer those passes to this new test.
+
+## Stage 4F — real AIVERSE Metal RHI end-to-end compute validation (2026-11-19)
+
+**Code committed; new native test NOT RUN on the Mac yet.** Stage 4D's direct Metal compute test `vivid_metal_gpu` was reported **Passed (1/1, 0.68 s total)** by the user at source SHA `424e8382144511c1b453ce9d3234cc813734356c`. Its CMake/Objective-C++ issue is resolved. This proves the kernel/CSR ABI numerically on real Apple hardware but not the AIVERSE GPU resource path.
+
+New `tests/vivid/metal_rhi.mm` calls the engine's actual `aiverse::gfx::createMetalDevice` using a headless CAMetalLayer and drives `GpuMorphDeformer::initialize/dispatch/download/release`, using `gfx::Device::beginFrame/endFrame` between multiple submissions. It constructs **160 sparse morph targets / 79 vertices**, reads the actual output RHI storage buffer and compares all position/normal/tangent components to `SparseMorphLibrary::evaluateGather` with 0.0005 absolute tolerance. Four consecutive GPU frames vary morph weights and normalization and verify that deformation never accidentally accumulates across frames.
+
+The macOS-only `aiverse_vivid_metal_rhi_tests` binary links `engine/gfx/metal/GfxMetal.mm` in the standalone test rather than linking all of `aiverse_runtime`; a minimal `platform::readContentFile` stub replaces the runtime's optional shader-archive content hook for this test only. CMake target uses Objective-C++20, ARC, Foundation, QuartzCore and Metal frameworks. CTest entry is `vivid_metal_rhi` with return code 77 treated as Skipped only if no physical Metal device exists; shader/RHI failures must fail.
+
+This does **not** yet connect the GPU-computed 48B `GpuMorphVertex` stream to `ModelVertex` drawing/skin vertex buffers or the final MotionWeave skinned pose. Render integration will require careful frame ownership, barriers, LOD and shadow parity.
+
+User Mac runner: `cmake --build build/vivid --target aiverse_vivid_metal_rhi_tests -j 4` then `ctest --test-dir build/vivid --output-on-failure -R '^vivid_metal_rhi$'`. Record exact compile errors, warnings and GPU parity numbers in the next stage handoff; until then **new RHI test is NOT RUN**.
