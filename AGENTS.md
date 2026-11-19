@@ -332,6 +332,30 @@ separate mandatory handoff commit to
 before starting another feature stage. Preserve multi-agent
 branches and do not merge into `main` without user request.
 
+**Stage 23 — integrated Metal VM custom scalar attributes
+(SOURCE COMMITTED, tests deferred by user):**
+`SpectraGpuProgram.h` now accepts VM `attribute0..7`
+reads/writes for the restricted Spawn/Update Metal interpreter.
+`SpectraGpuShaders.h` binds a separate 32-byte-per-physical-slot
+attribute storage buffer at compute slot **11**, resets registers
+on every GPU birth and persists changes after every Update.
+`SpectraGpuParticles.{h,cpp}` allocates, releases, and clears that
+buffer without changing the 64-byte particle state, 40-byte
+vertex format, or VM payload ABI version. Strict whole-effect
+GPU eligibility and CPU fallback remain mandatory; this does
+NOT implement arbitrary `shaderGraph` materials on GPU.
+
+`gpu_program::MetalVmPass` is a **different, standalone**
+compute utility without custom register storage. It must
+reject any payload reading/writing attribute fields 16–23;
+never silently substitute zero or report parity.
+Example: `examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json`.
+User explicitly deferred tests until functional completion:
+CMake/CTest, MSL compilation, Apple GPU rendering and
+CPU/GPU numerical parity are **NOT RUN**. Preserve all
+unrelated agent changes and record a separate stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
