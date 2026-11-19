@@ -670,6 +670,7 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
         states_,stateProgramParams_,stateAttributes_
     };
     bool allAccepted=true;
+    size_t acceptedChunks=0;
     for(size_t b=0;b<3 && allAccepted;++b) {
         for(size_t offset=0;offset<lengths[b];offset+=kChunkBytes) {
             const size_t length=std::min(kChunkBytes,lengths[b]-offset);
@@ -710,27 +711,21 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
                         lastCheckpoint_=std::move(result);
                         checkpointRevision_=pending->frameRevision;
                         ++stats_.checkpointCompleted;
-                    } else ++stats_.checkpointFailed;
+                    } else if(pending->acceptedAll) ++stats_.checkpointFailed;
                     if(pending->completion)pending->completion(complete);
                 });
             if(!accepted) {allAccepted=false;break;}
+            ++acceptedChunks;
         }
     }
     if(!allAccepted) {
-        // Earlier accepted callbacks still own their staging data. Mark the
-        // request invalid and count the unqueued chunks as completed failures;
-        // no partial data may ever be published as a usable checkpoint.
+        // Already accepted readbacks remain in-flight. They finish without
+        // publishing a checkpoint or invoking a callback for a rejected API
+        // request. A new request is permitted once they have all completed.
         pending->failed=true;
-        pending->acceptedAll=false;
-        size_t unqueued=0;
-        // The remaining count includes both accepted and unaccepted chunks;
-        // the latter will never callback. Count accepted requests instead.
-        // 'left' is recomputed from this request's accepted callback count.
-        // (see accepted counter below)
-        (void)unqueued;
-        // The device may have reached its concurrent-readback limit. Revoke
-        // the entire batch; callbacks will be ignored via failure marker.
-        asyncCheckpointPending_=false;
+        pending->completion={};
+        pending->left=acceptedChunks;
+        if(acceptedChunks==0)asyncCheckpointPending_=false;
         ++stats_.checkpointFailed;
         return false;
     }
