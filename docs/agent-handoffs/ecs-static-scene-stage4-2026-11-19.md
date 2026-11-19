@@ -3,8 +3,7 @@
 Date: 2026-11-19  
 Repository: `chromealex/AIVERSE`  
 Branch: `feature/ecs-static-prefab-scene-integration`  
-Status: **code + CMake + native test source committed; integration native
-compilation and CTest NOT yet performed. Do not merge to main.**
+Status: **Mac Studio integrated targeted build completed; 6/7 CTests passed, one backend lease assertion failed. A source/test correction is committed and awaiting native rerun. Do not merge to main.**
 
 ## Source integration provenance
 
@@ -138,10 +137,168 @@ again independently while other agents work.
   0.60s total (the user's log did not include exact checked-out SHA).
 - **SceneRuntime / SceneLoadCoordinator / SceneResourceBackend tests on
   their own branch have not been reported as executed.**
-- **This new combined integration test has never been executed.**
+- **The combined static-scene integration test has now passed 1/1 on Mac Studio**, but the combined 7-test CTest suite is **not green** until `ecs_scene_resource_pipeline_test` passes after the fix.
 - No full FPS/RTS lockstep parity, cross-platform results or process
   RSS data exist for the combined branch. Do not extrapolate the
   earlier source-branch microbenchmark to full game scenes.
+
+## Native integrated verification — user log, 2026-11-19
+
+Source worktree: `/Users/aleksandrfeer/Projects/AIVERSE-static-scene`.
+Build tree: `build/static-scene`.
+
+All seven selected test executables were built and linked. Compiler
+emitted two `-Wmissing-field-initializers` warnings in
+`engine/scene/SceneResourcePipeline.h` at the two
+`Pending{ticket}` constructions.
+
+CTest result (before correction):
+
+| Test | Result | Time |
+| --- | --- | ---: |
+| `ecs_scene_runtime_test` | Passed | 0.53 s |
+| `ecs_multiworld_test` | Passed | 0.39 s |
+| `ecs_scene_load_coordinator_test` | Passed | 0.33 s |
+| `ecs_scene_resource_pipeline_test` | Failed | 0.33 s |
+| `ecs_shared_static_components_test` | Passed | 0.34 s |
+| `ecs_prefab_static_catalog_test` | Passed | 0.38 s |
+| `ecs_static_scene_integration_test` | Passed | 0.37 s |
+
+Summary: **6/7 passed, 1 failed, 2.68 s total**.
+
+Failure: test line 115 asserted
+`resources.leaseCount("render/shared")==2`. Source inspection
+confirmed that there are deliberately TWO layers of deduplication:
+
+- `SceneLoadCoordinator::refcounts_` owns one reference per scene
+  for the same dependency (`2` for persistent/global and village).
+- `SceneResourceBackend::leaseCount` counts leases held by external
+  consumers of a unique dependency. One SceneLoadCoordinator leases
+  `render/shared` **once** from the backend, no matter how many of its
+  scenes reference it (`1`).
+
+No evidence of a production resource leak or double-release was found
+in this failure. The test mixed the two counters. Source fixes:
+
+1. `8ed3c16f23821c422b20292f79dc0ea2df3e9f4b`: update four
+   shared-resource assertions to require
+   `loader.resourceRefCount("render/shared")==2` and
+   `resources.leaseCount("render/shared")==1`, and verify the
+   transition to one remaining scene then zero references at final unload.
+2. `8ebe389cd1844519ed659e6d8bf112bdd0024d76`: add explicit
+   `Pending(SceneTicket)` constructor so both ticket creation paths
+   initialize remaining fields using defaults without Clang
+   `-Wmissing-field-initializers` warnings.
+3. `4e78817d9ee0826fa3cd40a0003cf11b594e0d28`: assert
+   exactly two publish/retire cycles for `render/shared` across
+   rollback invalidation followed by restored scene unload.
+
+**Native results after these commits: NOT YET VERIFIED.** The user
+provided no compiler version or exact worktree SHA with this run, so
+do not infer either from previous Mac Studio builds.
+
+### Minimal retest from existing worktree
+
+```sh
+cd ~/Projects/AIVERSE-static-scene
+git fetch origin feature/ecs-static-prefab-scene-integration
+git pull --ff-only origin feature/ecs-static-prefab-scene-integration
+git rev-parse HEAD
+
+cmake --build build/static-scene \
+  --target aiverse_ecs_scene_resource_pipeline_test --parallel 8
+
+ctest --test-dir build/static-scene \
+  -R '^ecs_scene_resource_pipeline_test
+
+Use a **new isolated worktree**, so neither main checkout nor other
+agents' worktrees are modified:
+
+```sh
+cd ~/Projects/AIVERSE
+git fetch origin main feature/ecs-static-prefab-scene-integration
+
+git worktree add -b verify-static-scene \
+  ../AIVERSE-static-scene \
+  origin/feature/ecs-static-prefab-scene-integration
+
+cd ../AIVERSE-static-scene
+git pull --ff-only origin feature/ecs-static-prefab-scene-integration
+git rev-parse HEAD
+
+cmake -S . -B build/static-scene \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DCMAKE_BUILD_TYPE=Release
+
+cmake --build build/static-scene --parallel 8 --target \
+  aiverse_ecs_static_scene_integration_test \
+  aiverse_ecs_prefab_static_catalog_test \
+  aiverse_ecs_shared_static_components_test \
+  aiverse_ecs_scene_runtime_test \
+  aiverse_ecs_scene_load_coordinator_test \
+  aiverse_ecs_multiworld_test \
+  aiverse_ecs_scene_resource_pipeline_test
+
+ctest --test-dir build/static-scene --output-on-failure \
+  -R '^(ecs_static_scene_integration_test|ecs_prefab_static_catalog_test|ecs_shared_static_components_test|ecs_scene_runtime_test|ecs_scene_load_coordinator_test|ecs_multiworld_test|ecs_scene_resource_pipeline_test)$'
+```
+
+Run COW/hierarchy then full ECS and RTS/FPS replay/rollback save tests
+before offering this as a production merge. After each compiler fix,
+commit code to this *integration* branch and update this handoff
+with actual CTest results, warnings, exact SHA and next step.
+
+## Known boundaries and hazards
+
+- `StaticRef<T>` values remain immutable after binding through the
+  public catalog API. Raw `World::add<StaticRef<T>>` is still a
+  low-level escape hatch in production Sparse Set; this branch
+  does not rewrite core ECS to forbid raw mutation.
+- `SceneLoadCoordinator` instantiates gameplay Entities only when
+  the game host calls `commit(ticket)` at a deterministic structural
+  barrier. Never auto-commit on I/O completion in lockstep networking.
+  Reader callbacks capture valid worker-safe content readers.
+- If a second config domain is optional for certain prefab keys, use
+  `MissingPrefabConfig::Skip` with an ordered spawn chain. A complete
+  multi-domain integration fixture and additional dynamic override
+  policies are future work.
+- Prefab instance `LocalTransform` and `Parent` binary persistence
+  are still host-registered separately from the static prefab/scene
+  schemas. Never misrepresent the new static integration as having
+  migrated all hierarchy serialization.
+- Source-branch SceneResourceBackend and WorldScene bridge exist but
+  are still native-unverified. The scene branch has a known
+  additive `CollisionStream` high-ID conflict when two streams share
+  one `SpatialWorld`. Do not bypass the existing collider namespace
+  check; coordinate safe deterministic ID management with the physics
+  agent.
+- The immutable table is external to ECS and is retained by a shared_ptr
+  in game/module/callback owners. Scene unloading only removes Entities
+  and scene resource leases. Do not unconditionally destroy config table
+  when one scene unloads while another World still references it.
+- A save binding fingerprint detects a different content revision but
+  is a deterministic 64-bit checksum, not cryptographic file integrity.
+  Existing SHA256 content manifest verification remains responsible
+  for authenticity.
+- CMake target union, template interaction and native save semantics
+  require actual Mac Studio Release validation before main merge.
+
+## Next implementation priorities
+
+1. Compile integrated tests, fix any actual failures in integration
+   branch and document exact results.
+2. Full scene + COW + multiworld + FPS/RTS parity and regression tests.
+3. Add deterministic multi-domain prefab config composition and
+   per-instance mutable override tests.
+4. Resolve additive static collision ID namespace with world/physics
+   owners; later integrate real TerraWeave/PHYSIS/NEREID/SpectraFX.
+5. Complete editor scene tree and preview-world provenance/inspector.
+ \
+  --output-on-failure
+```
+
+After that test passes, rerun all seven and the wider ECS/COW/FPS/RTS
+parity suite; preserve actual warning/error output and exact SHA.
 
 ## Immediate next agent action: native build and CTest
 
