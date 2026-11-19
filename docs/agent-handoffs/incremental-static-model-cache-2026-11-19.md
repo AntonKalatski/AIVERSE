@@ -2289,3 +2289,57 @@ echo "AUTO unique-stress exit=$?"
 ```
 
 Require `material palette CPU checks=35 result=passed`, renderer errors empty, `changed_channels=0`, exit 0, and inspect `AUTO CPU learning` for each pass including Direct vs real MDI successful samples or miss fallback. Do not assert that all 1024 authored items were visible until visibility telemetry is added; draw calls can differ substantially due to culling and real batching. If 1k validated, scale cautiously to 10k; 100k requires GPU-memory observation and should be the last stage. Keep experimental flags OFF and PR Draft until a long-run cross-device acceptance gate completes.
+
+
+---
+
+## Stage 72 — 1,024 unique primitives stress: Direct parity PASS, CPU MDI no-submission diagnosis (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Source commits for diagnostics:** `38770c5db452dd86198caeccb308ac1d6e93f795` (per-pass rejection diagnostics), `7320ddaf11c0cc7a7e6b3eafa4d7629511b27914` (aggregate diagnostics over all AUTO frames), `621ea3677ddeb277dba5680af3f08198b70b2d6c` (newline correction). **No production renderer logic changed in this stage.** Main was previously up-to-date as ancestor of branch.
+
+### Owner's real Stage 71 Mac Studio output
+
+```text
+batch=0 shadow=1024 opaque=1024 total=2050 error=
+CPU render benchmark direct: samples=66 median_ms=0.8985 p95_ms=0.9439 min_ms=0.8480 max_ms=0.9802
+CPU render benchmark batched: samples=81 median_ms=1.5573 p95_ms=2.2013 min_ms=0.8512 max_ms=2.2790
+CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS
+AUTO CPU learning phase=0 bucket=2 direct=100 0.73839ms mdi=0 0.00000ms opportunities=106
+AUTO CPU learning phase=1 bucket=2 direct=100 0.52832ms mdi=0 0.00000ms opportunities=106
+batch=1 shadow=1024 opaque=1024 total=2050 error=
+stress phase=auto model_draw_calls=2048 cpu_mdi_submissions=0 cpu_mdi_commands=0 gpu_icb_submissions=0 gpu_icb_commands=0
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=15 pipelineFailures=0 archive=0 strict=0
+AUTO stress exit=0
+```
+
+**What is actually confirmed:** 1,024 unique primitives draw as 1,024 separate tracked model draws in both shadow and opaque, 2,050 aggregate draw calls including nonmodel passes, GPU output byte-identical, exit 0. The corrected fixture is now representative of unique primitive *submission pressure*, but not of diverse materials, meshes, CPU model transforms, or GPU occupancy. Direct median 0.8985ms vs AUTO 1.5573ms (+0.6588ms, +73.3%) under sequential 66 vs 81 CPU samples. Both final modes actually used Direct; **this is not a Direct-vs-MDI measured speedup/regression** and variation/order effects may contribute. The AUTO phase's 106 opportunities, 100 recorded Direct attempts and zero MDI samples indicate no MDI submission was achieved. The AUTO policy correctly rejects invalid indirect work after repeated no-submissions, but its training cannot compare a genuinely successful MDI path yet.
+
+### Diagnosis and implementation this stage
+
+Read the actual `renderModels` MDI gate: a pass must have sufficiently many items, compatible GPU buffer/material/state runs, enough **distinct indirect primitive commands**, a completed pipeline and backend success. Existing final-frame MDI counters can be zero because AUTO stopped attempting MDI after earlier failures; therefore they cannot reveal why the learner stalled. Do not assume the cause is GPU/Metal submission overhead or that successful MDI commands were ever attempted.
+
+`tests/render/material_batches.cpp` now records:
+- Final-frame MDI candidates/scans, short/below-threshold/ineligible/failed groups and geometry/material/state run breaks.
+- Shadow and opaque `mdiCpuStages[phase]` counters and cost categories (candidate scans, actual command-packing attempts, submitted, pipeline warmups, below-threshold, backend fallback, etc.).
+- **Aggregate over all AUTO frames**: scans, attempts, actual MDI submissions, short/below-threshold/ineligible/failed groups, and geometry/material/state breaks. This is the key evidence for whether zero MDI learning reflects incompatible runs, too few distinct commands, warmup/fallback or actual unsuccessful submission.
+
+No optimization thresholds, eligibility conditions, GPU state equivalence, draw semantics or feature defaults changed. Source inspection + GitHub file writes succeeded. **NOT RUN for Stage 72:** new binary compilation, stress execution, CTest, Metal captures or Vulkan.
+
+### Exact next command
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_PALETTE_TEST_CASE=auto_stress AIVERSE_BATCH_STRESS_ITEMS=1024 \
+ AIVERSE_BATCH_AUTO=1 AIVERSE_BATCH_CPU_TIMING=1 \
+ build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-diagnostic-1k
+echo "AUTO stress diagnostic exit=$?"
+```
+
+Capture `stress AUTO cumulative:`, `stress MDI decisions:`, `stress MDI pass=`, `AUTO CPU learning`, `changed_channels` and exit code. Fix the proven blocker based on these counters; only then benchmark independent Direct/CPU MDI costs and investigate performance. Do not jump to 10k/100k before getting MDI candidate and successful submission evidence at 1k. Preserve previous handoffs; Draft PR #34 and all experimental defaults OFF.
