@@ -47,6 +47,14 @@ public:
     // Read-only diagnostic traversal. The estimate callback receives a
     // const Resource&, may return approximate bytes, and must have no GPU
     // side effects. Both token-assigned and unsubmitted resources count.
+    // Owner inspection, without changing GPU retirement or completion
+    // semantics. Borrowed resources remain alive until their own token.
+    template<class Visit>
+    void forEachPending(Visit&& visit) const {
+        for(const auto& resource:pending_)visit(resource);
+        for(const auto& batch:batches_)
+            for(const auto& resource:batch.resources)visit(resource);
+    }
     template<class Estimate>
     uint64_t estimatedPendingBytes(Estimate&& estimate) const {
         uint64_t bytes=0;
