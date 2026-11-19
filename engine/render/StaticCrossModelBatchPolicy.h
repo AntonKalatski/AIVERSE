@@ -108,18 +108,37 @@ public:
             for (Slot& slot : slots_) slot.epoch = 0;
             epoch_ = 1;
         }
+        // Item generations are intentionally 32-bit to avoid 64-bit stamps
+        // for every ModelItem in a large city. At wrap, explicitly reset
+        // stamps once so no stale group or mode can become current again.
+        if (++itemEpoch_ == 0) {
+            std::fill(groupStamp_.begin(), groupStamp_.end(), uint32_t{0});
+            std::fill(modeStamp_.begin(), modeStamp_.end(), uint32_t{0});
+            itemEpoch_ = 1;
+        }
         groups_.clear(); // retain capacity, reset all per-pass group state
-        groupForItem_.assign(itemCount, kInvalidGroup);
-        modes_.clear(); // no full-frame clear until some group is actually ready
+        if (groupForItem_.size() < itemCount)
+            groupForItem_.resize(itemCount, kInvalidGroup);
+        if (groupStamp_.size() < itemCount)
+            groupStamp_.resize(itemCount, uint32_t{0});
+        modesActive_ = false;
+        activeItemCount_ = itemCount;
+        // No group-index or mode-array clear is necessary. Their generation
+        // stamps make old values inaccessible in this pass.
     }
 
-    // Keep the per-item mode vector dormant for views without any ready
-    // cross-model groups; most small/fragmented scenes need no promotion map.
+    // Only grow the mode storage if some group actually qualifies; all
+    // unwritten entries logically read zero through their epoch stamps.
     void activateModes(size_t itemCount) {
-        modes_.assign(itemCount, uint8_t{0});
+        if (modes_.size() < itemCount)
+            modes_.resize(itemCount, uint8_t{0});
+        if (modeStamp_.size() < itemCount)
+            modeStamp_.resize(itemCount, uint32_t{0});
+        modesActive_ = true;
     }
-    // Inexpensive when preflight is disabled; preserve high-water capacities.
-    void clearModes() { modes_.clear(); }
+    // Called even when no preflight is run (reflection/other phases). This
+    // is a logical clear, not a linear write over all scene items.
+    void clearModes() { modesActive_ = false; }
 
     uint16_t findOrCreate(const StaticCrossModelPreflightKey& key) {
         if (slots_.empty()) return kInvalidGroup; // beginPass() required
@@ -144,20 +163,30 @@ public:
 
     void rememberItem(uint32_t index, uint16_t groupIndex) {
         groupForItem_[index] = groupIndex;
+        groupStamp_[index] = itemEpoch_;
     }
     uint16_t groupForItem(uint32_t index) const {
-        return groupForItem_[index];
+        return index < activeItemCount_ && groupStamp_[index] == itemEpoch_
+            ? groupForItem_[index] : kInvalidGroup;
+    }
+    void rememberMode(uint32_t index, uint8_t mode) {
+        modes_[index] = mode;
+        modeStamp_[index] = itemEpoch_;
+    }
+    uint8_t modeOf(uint32_t index) const {
+        return modesActive_ && index < activeItemCount_ &&
+               modeStamp_[index] == itemEpoch_ ? modes_[index] : uint8_t{0};
     }
     std::vector<Entry>& groups() { return groups_; }
     const std::vector<Entry>& groups() const { return groups_; }
-    std::vector<uint8_t>& modes() { return modes_; }
-    const std::vector<uint8_t>& modes() const { return modes_; }
 
     size_t retainedBytes() const {
         return slots_.capacity() * sizeof(Slot) +
                groups_.capacity() * sizeof(Entry) +
                groupForItem_.capacity() * sizeof(uint16_t) +
-               modes_.capacity() * sizeof(uint8_t);
+               groupStamp_.capacity() * sizeof(uint32_t) +
+               modes_.capacity() * sizeof(uint8_t) +
+               modeStamp_.capacity() * sizeof(uint32_t);
     }
 
     // Explicit full-scene reload / renderer shutdown: release the high-water
@@ -166,8 +195,13 @@ public:
         std::vector<Slot>().swap(slots_);
         std::vector<Entry>().swap(groups_);
         std::vector<uint16_t>().swap(groupForItem_);
+        std::vector<uint32_t>().swap(groupStamp_);
         std::vector<uint8_t>().swap(modes_);
+        std::vector<uint32_t>().swap(modeStamp_);
         epoch_ = 0;
+        itemEpoch_ = 0;
+        activeItemCount_ = 0;
+        modesActive_ = false;
     }
 
 private:
@@ -177,9 +211,14 @@ private:
     };
     std::vector<Slot> slots_; // allocated once when the feature is first used
     std::vector<Entry> groups_;
-    std::vector<uint16_t> groupForItem_; // by ModelItem index, current pass only
-    std::vector<uint8_t> modes_;        // 0=ordinary, 1=MDI, 2=instancing
-    uint64_t epoch_ = 0;
+    std::vector<uint16_t> groupForItem_; // contents guarded by groupStamp_
+    std::vector<uint32_t> groupStamp_;
+    std::vector<uint8_t> modes_; // 0=ordinary, 1=MDI, 2=instancing
+    std::vector<uint32_t> modeStamp_;
+    uint64_t epoch_ = 0;        // hash-directory generation
+    uint32_t itemEpoch_ = 0;    // stamped item-index generation
+    size_t activeItemCount_ = 0;
+    bool modesActive_ = false;
 };
 
 } // namespace aiverse::render
