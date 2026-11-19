@@ -257,6 +257,81 @@ const std::string& AnimationGraphInstance::state() const {
     static const std::string empty;
     return graph_?graph_->states()[size_t(state_)].id:empty;
 }
+// Stage 40: preserve presentation time only when the compiled graph has no
+// mutable CPU simulation state other than its state timer and clip clocks.
+// This snapshot contains no GPU handles, Model pointers, poses or callbacks.
+std::optional<AnimationGraphInstance::PreviewClockSnapshot>
+AnimationGraphInstance::snapshotPreviewClocks() const {
+    if (!graph_ || !healthy_ || !std::isfinite(time_) || time_ < 0 ||
+        (fadeDuration_ > 0 && fadeTime_ < fadeDuration_))
+        return std::nullopt;
+    const Model* model = graph_->model();
+    if (!model || clocks_.size() != graph_->nodes().size()) return std::nullopt;
+    PreviewClockSnapshot snapshot;
+    snapshot.state = state();
+    snapshot.stateTime = time_;
+    for (const auto& st : graph_->states()) snapshot.stateIds.push_back(st.id);
+    for (const auto& bone : model->nodes)
+        snapshot.skeleton.emplace_back(bone.name, bone.parent);
+    for (size_t i = 0; i < graph_->nodes().size(); ++i) {
+        const auto& n = graph_->nodes()[i];
+        // No hidden state: native operations, traits, rigs, controllers,
+        // subgraphs and motion matching have additional mutable state.
+        switch (n.kind) {
+        case AnimationGraph::Kind::Bind:
+        case AnimationGraph::Kind::Clip:
+        case AnimationGraph::Kind::Blend:
+        case AnimationGraph::Kind::Additive:
+        case AnimationGraph::Kind::TwoBoneIK: break;
+        default: return std::nullopt;
+        }
+        if (!n.traits.empty() || n.operation || n.subgraph || n.rig ||
+            n.motion || n.controller) return std::nullopt;
+        snapshot.nodeKinds.emplace_back(n.id, n.kind);
+        if (n.kind != AnimationGraph::Kind::Clip) continue;
+        if (n.clip < 0 || size_t(n.clip) >= model->clips.size()) return std::nullopt;
+        const auto& clip = model->clips[size_t(n.clip)];
+        const double clock = clocks_[i], duration = double(clip.duration);
+        if (!std::isfinite(clock) || !std::isfinite(duration) || duration < 0 ||
+            clock < 0 || clock > duration + 1e-4) return std::nullopt;
+        snapshot.clips.push_back({n.id, clip.name, duration, clock, n.loop});
+    }
+    return snapshot;
+}
+bool AnimationGraphInstance::restorePreviewClocks(const PreviewClockSnapshot& snapshot) {
+    // Validate ALL state and model layout before mutating the live instance.
+    // The caller must also verify the full authored graph program key.
+    const auto current = snapshotPreviewClocks();
+    if (!current || current->skeleton != snapshot.skeleton ||
+        current->stateIds != snapshot.stateIds ||
+        current->nodeKinds != snapshot.nodeKinds ||
+        current->clips.size() != snapshot.clips.size() ||
+        !std::isfinite(snapshot.stateTime) || snapshot.stateTime < 0 ||
+        snapshot.stateTime > 1000000.f) return false;
+    int nextState = -1;
+    for (size_t i = 0; i < current->stateIds.size(); ++i)
+        if (current->stateIds[i] == snapshot.state) {
+            nextState = int(i); break;
+        }
+    if (nextState < 0) return false;
+    for (size_t i = 0; i < current->clips.size(); ++i) {
+        const auto& a = current->clips[i];
+        const auto& b = snapshot.clips[i];
+        if (a.nodeId != b.nodeId || a.clipName != b.clipName ||
+            a.loop != b.loop || std::abs(a.duration - b.duration) > 1e-4 ||
+            !std::isfinite(b.clock) || b.clock < 0 ||
+            b.clock > a.duration + 1e-4) return false;
+    }
+    state_ = nextState;
+    time_ = snapshot.stateTime;
+    fadeTime_ = fadeDuration_ = 0;
+    source_.clear();
+    size_t clipIndex = 0;
+    for (size_t i = 0; i < graph_->nodes().size(); ++i)
+        if (graph_->nodes()[i].kind == AnimationGraph::Kind::Clip)
+            clocks_[i] = snapshot.clips[clipIndex++].clock;
+    return true;
+}
 void AnimationGraphInstance::update(float dt) {
     if(!graph_||!std::isfinite(dt)||dt<0) return;
     dt=std::min(dt,1.f); // bound work and clocks after a suspended host resumes
