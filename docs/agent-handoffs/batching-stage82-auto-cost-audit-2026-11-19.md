@@ -596,3 +596,56 @@ The forced CPU MDI median 0.7739ms vs sequential Direct baseline 1.2233ms implie
 **Next experiment without changing renderer:** repeat the *same* compiled Stage 91 forced-MDI process at least three times with `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=160`, no SLOT filter, `AIVERSE_ICB_SLOW_TRACE_MS=0.08`, each with a unique output capture prefix and `AIVERSE_BATCH_FRAME_TIMELINE=1`. A trace capturing all late submission slots will reveal whether a slow recurrence arises in slot0 or another slot, and the generated per-frame CSV can establish whether slow `renderer.render()` coincides with CPU submission stages. Compare against an untraced control to exclude logging effects; preserve submitted count and screenshot parity. Do not rename/rewrite any existing worktree or remove an unfinished rebase.
 
 If repeated runs remain consistently fast, defer further micro-optimizations and proceed to representative 2k/4k load, then controlled 10k with GPU timestamps/memory metrics. Keep CPU MDI/AUTO default-off and PR #39 Draft until validated.
+
+
+---
+
+## Stage 93 — owner three late forced-MDI runs: two slow, one fast; stage timing evidence (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119` (Draft PR #39). **Tested code:** Stage 91 through `77ab4bb94cf848f8cd3327c22f8a60e2e38a5c2a`. Owner ran three forced CPU-MDI processes with `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=160`, all slots and 0.08ms threshold. **This stage is evidence/handoff only; no production or diagnostic C++ changes.**
+
+### Actual native Mac Studio evidence
+
+All three forced MDI runs executed `aiverse_material_batches` and produced `material palette CPU checks=38 result=passed`, real MDI raster `actual MDI pixel parity frame=100 changed_channels=0`, final image parity `changed_channels=0`, 81/81 measured frames submitted 810 CPU MDI groups, 0 GPU ICB, and saved 106-row per-frame CSVs:
+- `build/batching-stage91/late-probes/mdi-1-frames.csv`
+- `build/batching-stage91/late-probes/mdi-2-frames.csv`
+- `build/batching-stage91/late-probes/mdi-3-frames.csv`
+
+CPU `renderer.render()` medians / P95 / late-36-frame medians (ms):
+
+| Trial | Median | P95 | Late median |
+|---|---:|---:|---:|
+| Forced MDI1 | 1.3936 | 1.8735 | 1.3254 |
+| Forced MDI2 | 1.3699 | 1.9353 | 1.2674 |
+| Forced MDI3 | 0.8277 | 0.9210 | 0.8297 |
+
+The 24-line `[metal-icb-slow]` output limit was consumed on frames 160..164 for slow MDI1/MDI2, so later intervals **were not observed** by the detailed trace, despite the slow median being sustained. Fast MDI3 reported only three >0.08ms slow samples from frames 190, 193 and 196 (frame 196 is beyond the CSV capture window ending frame 195, so do not attempt to correlate it with the sampled 81-frame benchmark).
+
+For 227-command warm samples from slow MDI1 and MDI2, `encode` frequently ~0.08–0.10ms, with occasional ~0.13–0.15ms. `icb_reset` normally ~0.005–0.008ms and `uniforms` ~0.003–0.005ms; `residency_execute` usually ~0.005–0.02ms. This indicates **sampled warm ICB calls are primarily CPU encoding rather than allocations**, contrary to initial frames 91..93, where cold allocations dominate. It does **not** prove whether all per-frame slowdowns come from encoding because nine or ten submissions and renderer CPU preparation add up, and the trace contains only the first 24 events.
+
+### Interpretation
+
+The intermittent slowdown occurs in forced CPU MDI without AUTO, so further adjusting the AUTO selector is unjustified. There are at least two CPU cost profiles: fast process `renderer.render()` median ~0.83ms and slow processes ~1.37–1.39ms. Causes such as process scheduling, GPU queue waits/CPU state, GPU and CPU thermal/frequency conditions or driver overhead remain **hypotheses**; no GPU timing, system utilization or OS waiting instrumentation collected. Both slow and fast processes pass pixel parity on this fixed 1,024-unique-primitive scene.
+
+### Next exact diagnostic procedure — no source change required
+
+Existing `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME` flag already supports beginning output after frame 175; it does not require another source commit. Use the existing Stage 91 executable and a fresh prefix; either trace just `slot=0` over 175..195 or all slots (24 messages cap can still fill in ~3 frames). Prefer slot 0 to compare same group across frames, but if full backend attribution is required use the existing per-frame CSV that accumulates both passes without the 24-line cap.
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage91 || exit 1
+mkdir -p build/batching-stage91/late175
+set -o pipefail
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 AIVERSE_BATCH_STRESS_POLICY=mdi \
+AIVERSE_METAL_CPU_MDI=1 AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_FRAME_TIMELINE=1 AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+AIVERSE_ICB_SLOW_TRACE=1 AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=175 \
+AIVERSE_ICB_SLOW_TRACE_SLOT=0 AIVERSE_ICB_SLOW_TRACE_MS=0.08 \
+build/batching-stage91/aiverse_material_batches unused.obj \
+  build/batching-stage91/late175/mdi-175 \
+  2>&1 | tee build/batching-stage91/late175/mdi-175.log
+```
+
+Require `checks=38 passed`, actual MDI pixel parity 0, final pixel parity 0, real MDI frame count 81/81 and process exit 0. For a more informative answer with **no further GPU runs**, request the three already created `mdi-1-frames.csv`, `mdi-2-frames.csv`, `mdi-3-frames.csv` for the CPU stage time series. In particular, compare same frame ranges and whether both shadow and opaque backend submit costs increase together. Do not equate backend CPU wall with GPU execution. PR #39 stays Draft; experimental flags remain OFF by default.
+
+**Validation truth:** owner-provided Mac native logs were analyzed; GitHub handoff updated. Assistant did not compile/run Mac renderer or perform GPU timing.
