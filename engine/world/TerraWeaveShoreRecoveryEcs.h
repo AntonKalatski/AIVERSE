@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveShoreRecovery.h"
 #include "engine/world/TerraWeaveShorelineRaster.h"
+#include "engine/world/TerraWeaveForestDeadwood.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <algorithm>
 #include <array>
@@ -110,11 +111,32 @@ inline ShoreEcologyEcsReport advanceShoreEcologyEcs(
     auto nextAuthority=*authoritative;
     const auto ground=materializeEcsTerrain(nextAuthority,config);
     const lib::nereid::WaterQueryIndex water(ecs);
+    const auto* deadwood=ecs.resourceConst<ForestDeadwoodResource>();
     auto report=advanceShoreRecovery(
         recovery,nextAuthority.grass,completedTick,
         [&](const GrassPatch& patch){
-            return sampleShorePatchClimate(
+            ShorePatchClimate sample=sampleShorePatchClimate(
                 patch,ground,water,extra);
+            if(deadwood){
+                // Five deterministic aggregate samples, not one ECS
+                // record or ecological update per grass blade. A patch
+                // may overlap several 32m nutrient cells.
+                const int64_t w=patch.bounds.maxX-patch.bounds.minX;
+                const int64_t h=patch.bounds.maxZ-patch.bounds.minZ;
+                const int64_t x=patch.bounds.minX,z=patch.bounds.minZ;
+                const std::array<std::pair<int64_t,int64_t>,5> positions{{
+                    {x+w/2,z+h/2},
+                    {x+w/4,z+h/4},{x+3*w/4,z+h/4},
+                    {x+w/4,z+3*h/4},{x+3*w/4,z+3*h/4}
+                }};
+                uint32_t total=0;
+                for(const auto& point:positions)
+                    total+=deadwoodNutrientsPermille(
+                        *deadwood,point.first,point.second,
+                        sample.nutrientsPermille);
+                sample.nutrientsPermille=total/5;
+            }
+            return sample;
         },settings);
     if(!report.changed.empty()){
         if(nextAuthority.stateRevision==UINT64_MAX)
