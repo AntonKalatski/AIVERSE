@@ -29,6 +29,12 @@ int main() {
     assert(tagged[0].resource==RetirementResourceKind::Model);
     assert(tagged[1].resource==RetirementResourceKind::Image);
     assert(ring->overflowCount()==3);
+    observer({RetirementDiagnosticKind::TokenSubmitted,13,1,
+              RetirementResourceKind::Target});
+    const auto targetTagged=ring->snapshot();
+    assert(targetTagged.size()==2);
+    assert(targetTagged.back().resource==RetirementResourceKind::Target);
+    assert(ring->overflowCount()==4);
     auto empty=std::make_shared<RetirementDiagnosticRing>(0);
     RetirementDiagnosticRing::observe(empty)(
         {RetirementDiagnosticKind::Failed,12,1});
