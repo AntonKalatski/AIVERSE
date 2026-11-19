@@ -256,6 +256,12 @@ public:
                     0x54eaa75eedc0de11ULL);
                 if (draw.persistentId == 0) draw.persistentId = 1;
                 draw.flags = render::kDrawStatic;
+                if(gpuCrownWindActive()) {
+                    // Bound is also required for leafless bark-only draws:
+                    // graph materials remain attached to the model even when
+                    // primitiveMaterialFilter suppresses the leaf primitive.
+                    draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
+                }
                 if(gpuCrownWindActive() && canopyCover>0u) {
                     const float tier=batch.lod==TreeLOD::High ? 1.0f :
                                      batch.lod==TreeLOD::Medium ? 0.75f :
@@ -263,7 +269,6 @@ public:
                     draw.vertexParameters=canopyWindVertexParameters(
                         wind_,presentationTick_,yaw,tier);
                     draw.useVertexParameters=true;
-                    draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
                 }
                 emit(draw);
             }
