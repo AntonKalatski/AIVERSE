@@ -131,17 +131,12 @@ int main(int argc,char** argv) {
 
     const uint64_t after=benchmark::residentBytes();
     const st::SharedReadView<benchmark::Config> sharedView(world);
-    const st::StaticReadView<benchmark::Config> staticView(
-        world,mode=="static"?*staticTable:
-        // The view is never accessed in other modes; use a null-free
-        // fallback by building an empty table instead of dereferencing.
-        *([]() -> const st::StaticTable<benchmark::Config>* {
-            static auto empty=[] {
-                st::StaticTableBuilder<benchmark::Config> b;
-                return b.seal();
-            }();
-            return empty.get();
-        })());
+    // Create the static view only for static mode. No dummy table is
+    // allocated in the ordinary/shared measurement processes.
+    std::unique_ptr<st::StaticReadView<benchmark::Config>> staticView;
+    if(mode=="static")
+        staticView=std::make_unique<st::StaticReadView<benchmark::Config>>(
+            world,*staticTable);
 
     auto readAll=[&]{
         uint64_t sum=0;
@@ -160,16 +155,13 @@ int main(int argc,char** argv) {
         } else {
             world.eachExistingConst<st::StaticRef<benchmark::Config>>(
                 [&](Entity,const st::StaticRef<benchmark::Config>& ref) {
-                    const auto* config=staticView.get(ref);
+                    const auto* config=staticView->get(ref);
                     if(!config) throw std::runtime_error("bad static ref");
                     sum+=uint64_t(config->values[0])+uint64_t(config->values[31]);
                 });
         }
         return sum;
     };
-    const uint64_t expected=uint64_t(n/unique) *
-        (uint64_t(unique)*64+31)*uint64_t(unique);
-    (void)expected; // Cross-process checksum is compared by validation script.
     const uint64_t checksum=readAll();
     if(checksum==0) throw std::runtime_error("empty benchmark checksum");
     const double median=benchmark::medianMs(readAll);
