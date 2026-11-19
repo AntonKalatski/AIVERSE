@@ -162,6 +162,7 @@ inline size_t seedFallenForestDeadwoodEventsEcs(
         log.xCm=plant.anchor.xCm;log.zCm=plant.anchor.zCm;
         log.createdTick=log.lastEvaluatedTick=completedTick;
         log.remainingUnits=units;
+        log.initialUnits=units;
         log.fromFall=true;
         additions.push_back(log);
     }
