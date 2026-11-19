@@ -103,14 +103,31 @@ int main() {
     const auto* billboard = forest.billboardPrototype(oak.speciesId);
     assert(billboard && billboard != shared);
     assert(billboard->nodes.size() == 1 && billboard->meshes.size() == 1);
-    assert(billboard->indices.size() == 6 && billboard->vertices.size() == 4);
-    assert(billboard->materials[0].alpha == aiverse::render::AlphaMode::Mask);
-    assert(!billboard->materials[0].castShadow);
+    // The current impostor has separate bark and foliage cards so winter
+    // can hide leaves without removing the opaque trunk. They still share
+    // ONE atlas texture and ONE mesh/node per species.
+    assert(billboard->indices.size() == 12 && billboard->vertices.size() == 8);
+    assert(billboard->materials.size() == 2);
+    assert(billboard->meshes[0].primitives.size() == 2);
+    for (size_t layer = 0; layer < 2; ++layer) {
+        const auto& p = billboard->meshes[0].primitives[layer];
+        assert(p.material == layer);
+        assert(p.firstVertex == layer * 4 && p.vertexCount == 4);
+        assert(p.firstIndex == layer * 6 && p.indexCount == 6);
+        assert(billboard->materials[layer].alpha ==
+               aiverse::render::AlphaMode::Mask);
+        assert(!billboard->materials[layer].castShadow);
+        for (size_t k = p.firstIndex; k < p.firstIndex + p.indexCount; ++k) {
+            assert(billboard->indices[k] >= p.firstVertex);
+            assert(billboard->indices[k] < p.firstVertex + p.vertexCount);
+        }
+    }
     assert(billboard->images.size() == 1);
     assert(forest.billboardAzimuthCount(oak.speciesId) == 8);
-    assert(billboard->images[0].width == 128 * 8);
+    // The left eight tiles hold bark azimuths; the right eight hold foliage.
+    assert(billboard->images[0].width == 128 * 8 * 2);
     assert(billboard->images[0].height == 256);
-    assert(billboard->images[0].rgba.size() == 128u * 8u * 256u * 4u);
+    assert(billboard->images[0].rgba.size() == 128u * 8u * 2u * 256u * 4u);
     bool duplicateRejected = false;
     try { forest.addPrototype(oak, 18); }
     catch (const std::invalid_argument&) { duplicateRejected = true; }
@@ -164,11 +181,22 @@ int main() {
     assert(billboardRepeat.model->images[0].rgba == billboard->images[0].rgba);
     assert(billboardRepeat.model->indices == billboard->indices);
     assert(billboardRepeat.viewMaterials.size() == 8);
-    assert(billboardRepeat.viewMaterials[0][0].baseTex == 0);
-    assert(billboardRepeat.viewMaterials[0][0].uvScale.x < 0.125f);
-    for (size_t i = 1; i < billboardRepeat.viewMaterials.size(); ++i)
-        assert(billboardRepeat.viewMaterials[i][0].uvOffset.x >
-               billboardRepeat.viewMaterials[i - 1][0].uvOffset.x);
+    for (size_t i = 0; i < billboardRepeat.viewMaterials.size(); ++i) {
+        const auto& layers = billboardRepeat.viewMaterials[i];
+        assert(layers.size() == 2);
+        for (size_t layer = 0; layer < 2; ++layer) {
+            assert(layers[layer].baseTex == 0);
+            assert(layers[layer].uvScale.x > 0.0f);
+            assert(layers[layer].uvScale.x < 1.0f / 16.0f);
+        }
+        // The two azimuth pages occupy disjoint halves of one texture.
+        assert(layers[0].uvOffset.x < 0.5f);
+        assert(layers[1].uvOffset.x > 0.5f);
+        if (i > 0)
+            for (size_t layer = 0; layer < 2; ++layer)
+                assert(layers[layer].uvOffset.x >
+                       billboardRepeat.viewMaterials[i - 1][layer].uvOffset.x);
+    }
     assert(selectArborImpostorAzimuth(0, 0, 0, 0, 1000, 8) == 0);
     assert(selectArborImpostorAzimuth(0, 0, 0, 1000, 0, 8) == 2);
     assert(selectArborImpostorAzimuth(90000, 0, 0, 1000, 0, 8) == 0);
