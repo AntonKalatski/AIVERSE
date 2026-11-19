@@ -280,9 +280,13 @@ void Prisma::shutdown() {
 }
 
 void Prisma::setImageLoader(ImageLoader fn) {
-    for(auto& [path,l]:luts_)release(l.tex);
-    for(auto& [path,t]:graphTextures_)release(t);
-    luts_.clear();graphTextures_.clear();loader_=std::move(fn);
+    // Project reload can happen while the previous frame's LUTs/graph
+    // textures remain referenced by GPU commands. Fence-retire them rather
+    // than destroying live borrowed inputs as soon as a new loader arrives.
+    for (auto& [path,l] : luts_) retireTarget(l.tex);
+    for (auto& [path,t] : graphTextures_) retireTarget(t);
+    luts_.clear(); graphTextures_.clear();
+    loader_ = std::move(fn);
 }
 
 void Prisma::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
