@@ -264,6 +264,13 @@ struct Viewer {
     }
 
     void shutdown() {
+        // Standalone Gallery/ModelView uses a single Device and exits as one
+        // owner. Synchronize last submitted GPU work before destroying any
+        // Portrait, model GPU buffer or Renderer3D pipeline from its UI.
+        // On an unsupported backend this cannot certify idle; preserve
+        // the existing platform device-teardown lifecycle requirement.
+        if (dev && dev->gpuHealthy())
+            (void)dev->waitForSubmittedGpuWork();
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
         if (gallery) gallery->shutdown(*dev);
         dev->destroyBuffer(ground.vb); dev->destroyBuffer(ground.ib);
