@@ -454,6 +454,63 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const BakedSample& b = *d.baked;
         anim = {float(bakedRow(*m, b.clipA, b.timeA, b.loopA)), float(bakedRow(*m, b.clipB, b.timeB, b.loopB)), std::clamp(b.mix, 0.0f, 1.0f), 0};
     }
+    // Persistent *CPU packet* replay (not a saved GPU submission).
+    // The caller explicitly owns the revision of any in-place appearance
+    // mutations. No LOD, pose or baked GI is reused across frames here.
+    const bool packetEligible = staticRenderPacketsEnabled_ &&
+        staticRenderPacketCandidate(d, activeDisplacement, bakedActive(),
+                                    lodDiagnosticsEnabled_);
+    const size_t packetStart = modelItems_.size();
+    if (packetEligible) {
+        auto found = staticRenderPackets_.find(d.persistentId);
+        if (found != staticRenderPackets_.end()) {
+            StaticPacketEntry& packet = found->second;
+            if (packet.geometryRevision == m->geometryRevision &&
+                packet.vertexBuffer == m->vb.id &&
+                packet.indexBuffer == m->ib.id &&
+                packet.materialData == m->materials.data() &&
+                packet.materialCount == m->materials.size() &&
+                equivalentStaticRenderPacketDraw(packet.draw, d)) {
+                ++staticRenderPacketStats_.hits;
+                packet.seen = staticRenderPacketEpoch_;
+                // ModelItem sources remain ordered by the model's node order.
+                // Recompute all camera- and shadow-dependent bits each draw.
+                size_t itemIndex = 0;
+                for (int n : m->order) {
+                    const Node& node = m->nodes[size_t(n)];
+                    if (node.mesh < 0) continue;
+                    ++modelStats_.nodes;
+                    ++modelStats_.lodNodes[0];
+                    const MeshDef& mesh = m->meshes[size_t(node.mesh)];
+                    const mat4 nodeWorld = cache ? cache->transforms[size_t(n)]
+                                                 : d.world * world[size_t(n)];
+                    bool nodeView = inView, nodeShadow = inShadow;
+                    if (modelCullingEnabled_) {
+                        nodeView = inView && modelBoxVisible(viewProj_ * nodeWorld,
+                                                             mesh.boundsMin, mesh.boundsMax);
+                        nodeShadow = inShadow && modelBoxVisible(lightViewProj_ * nodeWorld,
+                                                                   mesh.boundsMin, mesh.boundsMax);
+                        if (!nodeView && !nodeShadow) ++modelStats_.culledNodes;
+                    }
+                    while (itemIndex < packet.items.size() &&
+                           packet.items[itemIndex].sourceNode == n) {
+                        ModelItem item = packet.items[itemIndex++];
+                        item.inView = item.shadowRole != 2 && nodeView;
+                        item.inShadow = nodeShadow && item.castShadow;
+                        const float3 center = item.world.transformPoint(
+                            (item.prim->boundsMin + item.prim->boundsMax) * 0.5f);
+                        item.depth = cam_.ortho
+                            ? dot(center - camPos_, normalize(cam_.target - camPos_))
+                            : length(center - camPos_);
+                        modelItems_.push_back(std::move(item));
+                    }
+                }
+                return;
+            }
+        }
+    } else if (staticRenderPacketsEnabled_) {
+        ++staticRenderPacketStats_.declined;
+    }
     for (int n : m->order) {
         const Node& node = m->nodes[size_t(n)];
         if (node.mesh < 0) continue;
@@ -553,6 +610,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
             ModelItem it;
+            it.sourceNode = n;
             it.geometry = d.geometry;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
@@ -651,7 +709,26 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (shadowBatch) addItem(drawMesh.shadowBatch, 2);
         }
     }
-
+    if (packetEligible) {
+        // Excessive per-object packet storage can cost more than reassembly.
+        constexpr size_t kMaxPacketItems = 128;
+        if (modelItems_.size() - packetStart <= kMaxPacketItems) {
+            StaticPacketEntry& packet = staticRenderPackets_[d.persistentId];
+            packet.draw = d;
+            packet.draw.staticCache = nullptr; // the owner may free its cache
+            packet.geometryRevision = m->geometryRevision;
+            packet.vertexBuffer = m->vb.id;
+            packet.indexBuffer = m->ib.id;
+            packet.materialData = m->materials.data();
+            packet.materialCount = m->materials.size();
+            packet.seen = staticRenderPacketEpoch_;
+            packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
+            ++staticRenderPacketStats_.rebuilds;
+        } else {
+            ++staticRenderPacketStats_.declined;
+            staticRenderPackets_.erase(d.persistentId);
+        }
+    }
 }
 
 void Renderer3D::packModelInstance(const ModelItem& x, int phase,
