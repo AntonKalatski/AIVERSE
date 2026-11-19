@@ -138,6 +138,21 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
     if(textures_)textures_->trim(device);
 }
+render::GpuOwnedMemoryStats WorldScene::ownedGpuMemoryStats(
+        const gfx::Device& device) const {
+    render::GpuOwnedMemoryCounter counter(device);
+    // Models can be shared by several active chunks. Count the actual
+    // owned RHI handles once across all resident cells; borrowed cached
+    // images and global pooled pages remain with their external owners.
+    for (const auto& [cell, chunk] : resident_) {
+        (void)cell;
+        if (!chunk) continue;
+        for (const auto& model : chunk->models)
+            if (model) render::appendModelOwnedGpuMemory(*model,counter);
+    }
+    return counter.stats();
+}
+
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
