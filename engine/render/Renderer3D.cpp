@@ -434,7 +434,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
                 it.model.transformPoint((it.mesh->boundsMin+
                                          it.mesh->boundsMax)*0.5f).y,
                 reflectionPlaneY_);
-        u.params[0] = markedWater ? (otherPlane ? -2.f : -1.f) :
+        u.params[0] = markedWater ?
+                      ((it.flags & kDrawNereidCascade) ? -3.f :
+                       (otherPlane ? -2.f : -1.f)) :
                       ((it.flags & kDrawUnlit) ? 1.f : 0.f);
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
