@@ -356,3 +356,13 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_rhi$'
   ```
 - **After real RHI parity:** integrate opt-in extended facial morph stream with MotionWeave skeleton and common `Renderer3D` material/shadow passes using stable buffer ownership. The existing `render::Model` eight-target path must remain unchanged for non-VIVID assets until visual parity and runtime benchmarks prove the transition. Record numerical/screenshot/real GPU measurements in the handoff after each bounded stage.
+
+## User-verified macOS Metal RHI — 2026-11-19 — Stage 4F accepted
+
+- **Exact checked source SHA:** `22b60c4714c257e9714bcfd48943f4f62f1fb9d5`; user explicitly reported detached worktree HEAD `22b60c471`.
+- **User-executed build:** `cmake` configured in 5.3 s, generated in 1.2 s; `aiverse_vivid_gpu` and real `aiverse_vivid_metal_rhi_tests` (including Objective-C++ `tests/vivid/metal_rhi.mm` and existing `GfxMetal.mm`) compiled and linked successfully.
+- **User-executed test:** `ctest -R '^vivid_metal_rhi$'` → `vivid_metal_rhi` **Passed** (1.17 s), **1/1 passed, 0 failed**, total real 1.18 s. No errors, notes or warnings in supplied output.
+- **Meaning:** on the tested Apple hardware, the existing AIVERSE Metal `gfx::Device` path successfully created GPU resources, encoded multiple VIVID CSR morph compute frames and read back results within the test's 5e-4 CPU `SparseMorphLibrary::evaluateGather` tolerance. This is stronger than the direct-Metal-kernel test (Stage 4D); both are now user-confirmed PASS at their respective SHA.
+- **Verification provenance:** Mac test executed by user; this agent is recording the reported terminal output, not claiming an independent device run. No full 9-test CTest run on this SHA, graphics mesh render, shadows, MotionWeave skinning integration, performance benchmarks or Vulkan/GL verification yet.
+- **Compatibility:** this checkpoint changes documentation only; no model ABI or genre-specific code was modified.
+- **Next exact step:** inspect the actual `render::Vertex` / `Model` / `Renderer3D` layout and GPU skinning order. Build an opt-in VIVID render-stream integration adapter preserving the original model path, with explicit buffer ownership and a regression fixture. Only after native build + screenshots may it be enabled for characters.
