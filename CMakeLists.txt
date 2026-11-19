@@ -2192,6 +2192,20 @@ if(AIVERSE_BUILD_TESTS)
     set_tests_properties(vfx_ecs_presentation PROPERTIES LABELS "SpectraFX")
 endif()
 
+# Standalone SpectraFX API compile smoke and GPU-free authored contract checks.
+# Keep these separate from the large monolithic runtime tests: missing C++
+# symbols/API mismatches in new inline headers must fail immediately.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_library(aiverse_spectrafx_header_smoke OBJECT tests/spectrafx_compile_smoke.cpp)
+    target_include_directories(aiverse_spectrafx_header_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_header_smoke PRIVATE aiverse_runtime aiverse_fx)
+    add_executable(aiverse_spectrafx_contract_tests tests/spectrafx_contract_test.cpp)
+    target_include_directories(aiverse_spectrafx_contract_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_contract_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_contract COMMAND aiverse_spectrafx_contract_tests)
+    set_tests_properties(spectrafx_contract PROPERTIES LABELS "SpectraFX")
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
