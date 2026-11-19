@@ -647,11 +647,14 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             objectMotionMaskedPipeline_ = dev_->createPipeline(pipeline);
         }
     }
-    if (history.target.valid() && history.depth.valid() &&
-        objectMotionPipeline_.valid()) {
+    if (history.target.valid() && history.depth.valid()) {
         struct MotionU {
             float current[16], previous[16], params[4];
         };
+        // The reactive pass is independent from object-velocity shaders:
+        // transparent water/particles providers must still run if a rigid
+        // motion pipeline is unavailable on a particular backend.
+        if (objectMotionPipeline_.valid()) {
         gfx::PassDesc pass;
         pass.colorTarget = history.target;
         pass.depthTarget = history.depth; // NEVER sample and attach scene depth
@@ -912,6 +915,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         dev_->endPass();
         objectMotionStats_.submitted = true;
         post.acceptObjectMotionVectors(history.target);
+        } // optional object-velocity rendering
 
         // Conservative translucent coverage: surfaces whose true motion
         // cannot be reconstructed suppress blur locally via a reactive mask.
