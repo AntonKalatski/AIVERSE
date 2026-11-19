@@ -50,7 +50,7 @@ if(AIVERSE_BUILD_TESTS)
     # Real Metal execution/readback, separate from the fake-RHI GPU contract.
     # Keep Objective-C++ and Apple frameworks out of non-macOS targets.
     if(AIVERSE_PLATFORM STREQUAL "macos")
-        enable_language(OBJCXX)
+        # Root CMake enables OBJCXX before add_subdirectory; never do it here.
         add_executable(aiverse_vivid_metal_gpu_tests ${PROJECT_SOURCE_DIR}/tests/vivid/metal_gpu.mm)
         set_source_files_properties(${PROJECT_SOURCE_DIR}/tests/vivid/metal_gpu.mm
             PROPERTIES COMPILE_FLAGS "-fobjc-arc")
