@@ -69,6 +69,7 @@ public:
     // host's submission decision; it does not call Metal or guarantee success.
     bool markSpawnSubmitted(ParticleId id) {
         if(!needsSpawn(id))return false;
+        if(!parameters_.acknowledgeSpawn(id.slot))return false;
         slots_[id.slot].spawnPending=false;
         return true;
     }
