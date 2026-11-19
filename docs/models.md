@@ -1339,3 +1339,31 @@ specific system moved into the generic View.
 **NOT RUN:** CMake/C++ build, CTest, GPU visual tests,
 ASan/TSan, eviction failure-injection or benchmarks.
 [Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
+
+## Stage 130 — Model cache read guard diagnostics and device rebind
+
+`ModelResourceCache::ModelReadSafetyStats` reports
+`activeReaders`, `peakReaders` and
+`blockedMutations`. This is a CPU owner-lifecycle
+diagnostic, not resource residency or GPU completion.
+The count increments when a mutation is attempted
+while read leases are active; denied operations include
+source invalidation, `replace`, `trimUnused`
+and `shutdown`. Active readers prevent unique-owned
+CPU Model destruction; GPU Device safety remains
+under the existing fenced retirement queue.
+
+After a FULL successful shutdown, the cache clears
+the previous read-owner thread ID so it can be
+bound on a new render thread with a new Device.
+Reader leases MUST NOT survive this boundary. Both
+`ModelReadLease` and `ModelCacheReadScope`
+fail closed with process termination if released
+from a different thread, rather than silently
+decrementing readers while a Model may still
+be borrowed. Model assets are not made thread-safe
+for concurrent mutation.
+
+This is a Stage 130 source-only change:
+**NOT RUN** native compiler, CTest, Metal GPU, fault injection
+or sanitizer tests. [Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
