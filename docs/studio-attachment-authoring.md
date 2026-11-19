@@ -100,3 +100,20 @@ Models/textures can temporarily occupy VRAM. `ModelAssetProvider::shutdown`
 itself still waits for GPU idle. Preview and retirement have NOT yet been
 compiled or run on Metal, Vulkan or GLES; see
 [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
+
+
+
+## Stage 158: common attachment document with affine transforms
+
+Studio Attachments now shares exactly the same `AttachmentLayoutCodec` JSON
+format as native ModelView, including full column-major affine `local`
+(socket offset/rotation/scale) and `childWorld` (child model-local placement).
+Existing files without matrices remain valid with identity transforms. The
+editor exposes basic **Socket offset** X/Y/Z and an **Advanced affine
+transforms** section for the 3x3 basis of both local/child matrices and child
+translation. On publishing the layout, these matrices are applied through
+the generic `ImportedAttachmentAuthoring::childFromLayout`, not just
+serialized as notes. Invalid/non-affine values fail before replacing the
+last-good authored document. See [the shared attachment JSON format](attachment-layout.md)
+and [Stage 158 handoff](agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md).
+Actual Studio GUI, native compile/CTest and GPU visual/lifetime checks **NOT RUN**.
