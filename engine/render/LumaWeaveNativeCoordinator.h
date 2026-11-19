@@ -119,6 +119,7 @@ public:
            !std::isfinite(cameraFocus.z) ||
            !std::isfinite(viewRadius) || viewRadius<=0 || viewRadius>100000)
             throw std::invalid_argument("invalid LumaWeave native view or geometry");
+        const bool wasMetalDirect=stats_.route==LumaDirectRoute::MetalGpu;
         stats_.route=LumaDirectRoute::Disabled;
         stats_.gpuExclusive=false;
         stats_.backendUnavailable=false;
@@ -190,6 +191,11 @@ public:
             // a distinct host/prerequisite decision, not a failed backend.
             stats_.backendUnavailable=true;
         }
+
+        // One formerly active Metal view has stopped using its output. The
+        // in-flight command's true completion must still be observed, but its
+        // old temporal image must not come back when re-enabling this route.
+        if(wasMetalDirect)gpu_.invalidateHistory();
 
         // The same source may already be present in an externally managed
         // LightSystem. If that map is nonempty, do not add this registry again:
