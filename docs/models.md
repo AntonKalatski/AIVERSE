@@ -1279,3 +1279,30 @@ concepts; never substitute one for another.
 
 **NOT RUN:** native CMake/C++ build/link, CTest,
 GPU visual tests, sanitizers or benchmarks.
+
+## Stage 128 — native CPU Model pinning versus GPU retirement
+
+The existing `AppearanceAssetRegistry::Snapshot` pins appearance
+materials and graph CPU values but does NOT own its borrowed Model.
+Native projects with genuine `shared_ptr<const Model>` owners can
+now use `PinnedAppearanceBatch::addOwned` to keep Models alive
+through their `View::update` and `View::submit` transaction.
+When packets reference other source/LOD/attachment Models, call
+`pinRelatedModel` and `validatedSpan()` before drawing. Strong
+Model pins are deduplicated for crowds referencing shared assets.
+
+This is **CPU ownership only**. A `RenderDeviceLifetime::Lease`
+may be checked with `validatedSpan(device,lease)` to reject a
+foreign/expired Device epoch, but it does not prove completed GPU
+work. Release Model GPU resources only through the host's actual
+fenced retirement and after its own resource owner confirms safety.
+The generic `ModelResourceCache` continues to use `unique_ptr`,
+so its native clients cannot conjure an owning shared_ptr alias
+to satisfy this API; they must keep the original explicit
+detach/retire barrier.
+
+No new Model importer, LOD authoring format, morph solver or
+GPU device resource owner was introduced.
+**NOT RUN:** native CMake/CTest, real Model replacement or GPU fault
+injection, sanitizers or FPS/RTS/editor visual parity.
+[Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
