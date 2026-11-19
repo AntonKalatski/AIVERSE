@@ -1224,6 +1224,7 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
     gpuIcbPerCommandVtExecuted_ = gpuIcbMixedVtExecuted_ = 0;
     gpuIcbPerCommandPbrSubmitted_ = gpuIcbMixedPbrSubmitted_ = 0;
+    gpuIcbGraphSubmitted_ = gpuIcbMixedGraphSubmitted_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
     // Invalidate previous-frame resource indices even when GPU ICB is off.
@@ -1770,6 +1771,8 @@ void Renderer3D::prepareGpuModelDraws() {
                 group.token = token;
                 group.perCommandVt = materialMode;
                 group.perCommandPbr = pbrMode;
+                group.shaderGraph = pbrMode &&
+                    modelItems_[indices[first]].mat->shaderGraph != nullptr;
                 if (pbrMode)
                     group.pbrPipelineSnapshot=*modelItems_[indices[first]].mat;
                 if (materialMode) {
@@ -1791,7 +1794,9 @@ void Renderer3D::prepareGpuModelDraws() {
                             firstSignature.graphTextureCount != candidate.graphTextureCount ||
                             firstSignature.graphTextures != candidate.graphTextures) {
                             group.mixedPbrResources=true;
-                            break;
+                            if (firstSignature.graphTextureCount != candidate.graphTextureCount ||
+                                firstSignature.graphTextures != candidate.graphTextures)
+                                group.mixedGraphSources=true;
                         }
                     }
                 }
@@ -2177,6 +2182,9 @@ void Renderer3D::renderModels(int phase) {
             if (group.perCommandPbr) ++gpuIcbPerCommandPbrSubmitted_;
             if (group.perCommandPbr && group.mixedPbrResources)
                 ++gpuIcbMixedPbrSubmitted_;
+            if (group.shaderGraph) ++gpuIcbGraphSubmitted_;
+            if (group.shaderGraph && group.mixedGraphSources)
+                ++gpuIcbMixedGraphSubmitted_;
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
             ++drawCalls_;
