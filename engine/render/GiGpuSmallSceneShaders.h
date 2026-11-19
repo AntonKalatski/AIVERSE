@@ -1,5 +1,5 @@
-// Minimal Metal-only first-bounce GI compute prototype.
-// 1 GPU thread processes one dirty probe, tracing a bounded triangle set and
+// BVH accelerated Metal-only first-bounce GI compute prototype.
+// 1 GPU thread processes one dirty probe, traversing bounded GPU BVH nodes and
 // writing directional RGB L1 into a 384-wide RGBA16F storage texture.
 // No CPU readback and no dynamic GI enabled by default.
 // This deliberately starts with a bounded flat triangle list; large scenes
@@ -11,6 +11,10 @@ inline constexpr const char* kMetalSmallScene = R"MSL(
 using namespace metal;
 struct Tri {
     float4 a, b, c, albedo;
+};
+struct Node {
+    float4 lo, hi;
+    uint4 meta; // left, right, first, count; count > 0 means leaf
 };
 struct Lamp {
     float4 posRadius;
@@ -26,34 +30,70 @@ struct Params {
     uint jobs;
     uint samples;
     float traceDistance;
-    float pad0, pad1, pad2;
+    uint nodes;
+    float pad1, pad2;
 };
 struct Hit {
     float distance;
     float3 normal;
     float3 albedo;
 };
-static Hit traceTriangles(float3 origin, float3 direction, float limit,
-                          device const Tri* tris, uint count) {
+static bool hitsBox(float3 o,float3 d,float radius,Node node) {
+    float entry=0.0f, exit=radius;
+    for(uint axis=0;axis<3u;++axis) {
+        float p=o[axis],v=d[axis],mn=node.lo[axis],mx=node.hi[axis];
+        if(abs(v)<1e-10f) {
+            if(p<mn || p>mx)return false;
+            continue;
+        }
+        float t0=(mn-p)/v,t1=(mx-p)/v;
+        if(t0>t1) {float tmp=t0;t0=t1;t1=tmp;}
+        entry=max(entry,t0);
+        exit=min(exit,t1);
+        if(entry>exit)return false;
+    }
+    return true;
+}
+static Hit traceBvh(float3 origin,float3 direction,float limit,
+                    device const Tri* tris,device const Node* nodes,uint nodeCount) {
     Hit hit{limit,float3(0.0),float3(0.0)};
-    for (uint j=0; j<count; ++j) {
-        Tri t=tris[j];
-        float3 e1=t.b.xyz-t.a.xyz,e2=t.c.xyz-t.a.xyz;
-        float3 crossD=cross(direction,e2);
-        float det=dot(e1,crossD);
-        if (abs(det)<1e-10f) continue;
-        float inv=1.0f/det;
-        float3 s=origin-t.a.xyz;
-        float u=dot(s,crossD)*inv;
-        if (u<0.0f||u>1.0f) continue;
-        float3 q=cross(s,e1);
-        float v=dot(direction,q)*inv;
-        if (v<0.0f||u+v>1.0f) continue;
-        float d=dot(e2,q)*inv;
-        if(d>0.001f && d<hit.distance) {
-            hit.distance=d;
-            hit.normal=normalize(cross(e1,e2));
-            hit.albedo=t.albedo.xyz;
+    if(nodeCount==0u)return hit;
+    uint stack[64];
+    uint top=1u;
+    stack[0]=0u;
+    while(top!=0u) {
+        uint nodeIndex=stack[--top];
+        if(nodeIndex>=nodeCount)continue;
+        Node node=nodes[nodeIndex];
+        if(!hitsBox(origin,direction,hit.distance,node))continue;
+        uint count=node.meta.w;
+        if(count!=0u) {
+            for(uint j=node.meta.z;j<node.meta.z+count;++j) {
+                Tri t=tris[j];
+                float3 e1=t.b.xyz-t.a.xyz,e2=t.c.xyz-t.a.xyz;
+                float3 crossD=cross(direction,e2);
+                float det=dot(e1,crossD);
+                if(abs(det)<1e-10f)continue;
+                float inv=1.0f/det;
+                float3 s=origin-t.a.xyz;
+                float u=dot(s,crossD)*inv;
+                if(u<0.0f||u>1.0f)continue;
+                float3 q=cross(s,e1);
+                float v=dot(direction,q)*inv;
+                if(v<0.0f||u+v>1.0f)continue;
+                float d=dot(e2,q)*inv;
+                if(d>0.001f && d<hit.distance) {
+                    hit.distance=d;
+                    hit.normal=normalize(cross(e1,e2));
+                    hit.albedo=t.albedo.xyz;
+                }
+            }
+        } else {
+            // Median splits cap tree depth; 64 entries far exceeds the maximum.
+            if(top+2u<=64u) {
+                stack[top++]=node.meta.x;
+                stack[top++]=node.meta.y;
+            }
         }
     }
     return hit;
@@ -62,6 +102,7 @@ kernel void cs_main(uint thread [[thread_position_in_grid]],
                     device const Tri* tris [[buffer(0)]],
                     device const Lamp* lamps [[buffer(1)]],
                     device const Job* jobs [[buffer(2)]],
+                    device const Node* nodes [[buffer(3)]],
                     constant Params& p [[buffer(8)]],
                     texture2d<float, access::write> output [[texture(0)]]) {
     if(thread>=p.jobs) return;
@@ -75,7 +116,7 @@ kernel void cs_main(uint thread [[thread_position_in_grid]],
         float phi=float(i)*2.39996323f;
         float r=sqrt(max(0.0f,1.0f-y*y));
         float3 ray=float3(r*cos(phi),y,r*sin(phi));
-        Hit first=traceTriangles(position,ray,p.traceDistance,tris,p.triangles);
+        Hit first=traceBvh(position,ray,p.traceDistance,tris,nodes,p.nodes);
         if(first.distance>=p.traceDistance || first.distance<=.05f ||
            dot(first.normal,first.normal)<.5f) continue;
         float3 n=first.normal;
@@ -93,7 +134,7 @@ kernel void cs_main(uint thread [[thread_position_in_grid]],
             float3 L=toLight/d;
             float ndl=max(0.0f,dot(n,L));
             if(ndl==0.0f)continue;
-            if(traceTriangles(surface,L,d,tris,p.triangles).distance<d-.03f)continue;
+            if(traceBvh(surface,L,d,tris,nodes,p.nodes).distance<d-.03f)continue;
             float falloff=1.0f-d2/(radius*radius);
             float energy=light.colorIntensity.w*ndl*falloff*falloff/(1.0f+d2);
             outgoing+=light.colorIntensity.xyz*first.albedo*energy;
