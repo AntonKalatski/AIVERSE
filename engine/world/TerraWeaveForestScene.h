@@ -7,6 +7,7 @@
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/world/TerraWeaveExclusions.h"
+#include "engine/world/TerraWeaveVegetationSoil.h"
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
@@ -69,6 +70,13 @@ struct ForestRegrowthSchedule {
     uint64_t matureAtTick = 0;   // fully grown on/after this tick
     uint32_t initialScalePermille = 150; // relative to generated tree size
     constexpr bool operator==(const ForestRegrowthSchedule&) const = default;
+};
+
+// Optional sparse author/simulation overrides; default per-plant age and
+// environmental values come from seeded FoliageInstance placement.
+struct ForestPlantCondition {
+    ForestTreeIdentity tree{};
+    PlantEnvironment environment{};
 };
 
 // Header-only native-project API. Call addSpecies before streamAt/uploadModels.
@@ -337,6 +345,70 @@ public:
         return out;
     }
 
+    // Age/light/moisture/nutrients may change without rescattering foliage
+    // or allocating ECS components for cosmetic plants. Stable identities are
+    // caller-owned for save, replay and replication. Grass uses GrassPatch.
+    void setPlantEnvironment(ForestTreeIdentity id,PlantEnvironment environment) {
+        if(!id.speciesId)throw std::invalid_argument("TerraWeave plant id");
+        (void)plantAppearance(environment); // validate before insertion
+        if(conditions_.size()>=1000000u && !conditions_.contains(id))
+            throw std::length_error("TerraWeave condition budget");
+        conditions_[id]=environment;
+    }
+    void clearPlantEnvironment(ForestTreeIdentity id) {conditions_.erase(id);}
+    void setPlantConditions(const std::vector<ForestPlantCondition>& conditions) {
+        if(conditions.size()>1000000u)
+            throw std::length_error("TerraWeave condition budget");
+        std::map<ForestTreeIdentity,PlantEnvironment> next;
+        for(const auto& condition:conditions) {
+            if(!condition.tree.speciesId)
+                throw std::invalid_argument("TerraWeave plant id");
+            (void)plantAppearance(condition.environment);
+            if(!next.emplace(condition.tree,condition.environment).second)
+                throw std::invalid_argument("TerraWeave duplicate plant condition");
+        }
+        conditions_.swap(next);
+    }
+    std::vector<ForestPlantCondition> plantConditions() const {
+        std::vector<ForestPlantCondition> out;
+        out.reserve(conditions_.size());
+        for(const auto& [id,environment]:conditions_)
+            out.push_back({id,environment});
+        return out;
+    }
+
+    // Root support is calculated by the game/terrain owner *only when* a
+    // soil region changes. Each tree/shrub gets one small RootState, not
+    // repeated sampling on every frame. Gameplay consumes fall events.
+    void setRootStates(const std::vector<RootState>& states) {
+        if(states.size()>1000000u)
+            throw std::length_error("TerraWeave root-state budget");
+        std::map<ForestTreeIdentity,RootState> next;
+        for(const auto& state:states) {
+            if(!state.speciesId || state.habit==PlantHabit::Grass ||
+               state.supportPermille>1000u)
+                throw std::invalid_argument("TerraWeave invalid root state");
+            if(!next.emplace(ForestTreeIdentity{state.plantKey,state.speciesId},
+                             state).second)
+                throw std::invalid_argument("TerraWeave duplicate root state");
+        }
+        rootStates_.swap(next);
+    }
+    std::optional<RootState> rootState(ForestTreeIdentity id)const {
+        const auto it=rootStates_.find(id);
+        return it==rootStates_.end()?std::nullopt:
+            std::optional<RootState>(it->second);
+    }
+    std::vector<RootState> rootStates()const {
+        std::vector<RootState> out;
+        out.reserve(rootStates_.size());
+        for(const auto& [id,state]:rootStates_) {
+            (void)id;
+            out.push_back(state);
+        }
+        return out;
+    }
+
     // Gameplay systems can call this on the owning update thread when a
     // tree is harvested/destroyed; the stable key survives chunk unloading.
     // This is a presentation filter, NOT a substitute for authoritative ECS
@@ -535,18 +607,33 @@ private:
             const FoliageInstance& instance) const {
         const ForestTreeIdentity id{instance.key,instance.speciesId};
         if(removed_.contains(id))return std::nullopt;
-        const auto it=regrowth_.find(id);
-        if(it==regrowth_.end())return instance;
-        const auto& growth=it->second;
-        if(presentationTick_<growth.regrowAtTick)return std::nullopt;
         FoliageInstance scaled=instance;
-        uint32_t factor=1000;
-        if(presentationTick_<growth.matureAtTick &&
-           growth.matureAtTick>growth.regrowAtTick){
-            const uint64_t duration=growth.matureAtTick-growth.regrowAtTick;
-            const uint64_t elapsed=presentationTick_-growth.regrowAtTick;
-            factor=growth.initialScalePermille+static_cast<uint32_t>(
-                elapsed*(1000u-growth.initialScalePermille)/duration);
+        PlantEnvironment environment{
+            instance.ageTicks,instance.matureTicks,instance.lifespanTicks,
+            instance.lightPermille,instance.waterPermille,
+            instance.nutrientsPermille};
+        if(const auto condition=conditions_.find(id);condition!=conditions_.end())
+            environment=condition->second;
+        const PlantAppearance appearance=plantAppearance(environment);
+        scaled.ageTicks=environment.ageTicks;
+        scaled.lightPermille=environment.lightPermille;
+        scaled.waterPermille=environment.waterPermille;
+        scaled.nutrientsPermille=environment.nutrientsPermille;
+        scaled.foliagePermille=appearance.foliagePermille;
+        uint32_t factor=appearance.sizePermille;
+        const auto it=regrowth_.find(id);
+        if(it!=regrowth_.end()) {
+            const auto& growth=it->second;
+            if(presentationTick_<growth.regrowAtTick)return std::nullopt;
+            uint32_t regrowFactor=1000;
+            if(presentationTick_<growth.matureAtTick &&
+               growth.matureAtTick>growth.regrowAtTick){
+                const uint64_t duration=growth.matureAtTick-growth.regrowAtTick;
+                const uint64_t elapsed=presentationTick_-growth.regrowAtTick;
+                regrowFactor=growth.initialScalePermille+static_cast<uint32_t>(
+                    elapsed*(1000u-growth.initialScalePermille)/duration);
+            }
+            factor=uint32_t(uint64_t(factor)*regrowFactor/1000u);
         }
         scaled.scalePermille=std::max<uint32_t>(1u,
             uint32_t(uint64_t(instance.scalePermille)*factor/1000u));
@@ -707,6 +794,8 @@ private:
     std::vector<FoliageSpecies> species_;
     std::set<ForestTreeIdentity> removed_;
     std::map<ForestTreeIdentity,ForestRegrowthSchedule> regrowth_;
+    std::map<ForestTreeIdentity,PlantEnvironment> conditions_;
+    std::map<ForestTreeIdentity,RootState> rootStates_;
     uint64_t presentationTick_ = 0;
     std::vector<RectCm> exclusions_;
     HeightSource heightSource_;
