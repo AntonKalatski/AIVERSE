@@ -245,7 +245,7 @@ struct CreatorApp {
             const auto filename=std::filesystem::absolute(
                 std::filesystem::path(path)).parent_path()/entry.mappingPath;
             const auto mapping=MorphLodMapping::fromJson(
-                Json::parse(fileContents(filename,64ull*1024ull*1024ull)));
+                Json::parse(fileContents(filename.string(),64ull*1024ull*1024ull)));
             if(mapping.targetVertexIds!=targets || targets.empty())
                 throw std::runtime_error("VIVID LOD: indexed target vertex IDs changed");
             for(auto id:targets)if(id>=model.vertices.size())
@@ -274,17 +274,18 @@ struct CreatorApp {
             throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
         syncDraft();
         morphSourceVertices=imported.sourceVertexCount;
-        morphSourcePositions.clear();
-        morphSourcePositions.reserve(morphSourceVertices);
+        std::vector<MorphVec3> originalPositions;
+        originalPositions.reserve(morphSourceVertices);
         for(std::size_t i=0;i<morphSourceVertices;++i) {
             const auto& p=imported.model->vertices[i].pos;
-            morphSourcePositions.push_back({p.x,p.y,p.z});
+            originalPositions.push_back({p.x,p.y,p.z});
         }
         auto pendingMorph=std::make_unique<MorphAuthoring>(
             MorphAuthoring::fromCompiled(imported.facialShapes));
         const auto importedLods=readIndexedLods(
-            manifest,*imported.model,path,morphSourcePositions,
+            manifest,*imported.model,path,originalPositions,
             imported.facialShapes);
+        morphSourcePositions=std::move(originalPositions);
         morphDraft=std::move(pendingMorph);
         morphTargetIndex=0;
         morphVertexIndex=0;
