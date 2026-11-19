@@ -723,6 +723,9 @@ private:
     // Backend colour-target warmup may be asynchronous even when it returns
     // no ShaderJob/PipelineJob. Poll these handles without reloading Models.
     std::vector<gfx::PipelineHandle> pendingColorWarms_;
+    // Do not re-poll or repeatedly count an HDR variant rejected by its backend.
+    // Invalidated alongside its original model pipeline generation.
+    std::vector<gfx::PipelineHandle> failedColorWarms_;
     uint64_t colorWarmPollAttempts_=0,colorWarmReady_=0,colorWarmFailed_=0;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
