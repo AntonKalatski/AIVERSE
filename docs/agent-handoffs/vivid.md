@@ -414,3 +414,11 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
     cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests aiverse_vivid_metal_gpu_tests -j 4 &&
     ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_(rhi|gpu)$'
   ```
+
+## Stage 5B validation checkpoint — 2026-11-19 — 60-byte Metal vertex stream PASS
+
+- **Source revision under test:** user followed the latest `feature/vivid-digital-humans` fetch/checkout after Stage 5B (`60f95a95e32dda1886833cbce374f7238e0481be`). The supplied terminal excerpt does not independently repeat `git rev-parse HEAD`; attribute this to the latest user-instructed branch revision, not to future commits.
+- **Mac build evidence supplied by user:** `aiverse_models`, `aiverse_vivid_mesh`, `aiverse_vivid_metal_rhi_tests`, and `aiverse_vivid_metal_gpu_tests` compiled/linked. No compiler `error:`, `warning:` or `note:` shown.
+- **Native GPU test results (user executed):** `vivid_metal_gpu` PASS (0.94 s); `vivid_metal_rhi` PASS (0.75 s); **2/2 Passed, 0 Failed; total real 1.71 s.** The extended real RHI test checks the packed 60-byte `ModelVertex` stream for four GPU frames, CPU numeric parity and bitwise preservation of UV, colour, tangent sign, joint indices and skin weights.
+- **Limitations:** no full 9-test suite executed after this shader fix, no Renderer3D draw/visual, no shadow and LOD parity, and no measured FPS or GPU time. Apple Metal only; Vulkan/GL and MotionWeave full suite remain separate gates.
+- **Next exact step:** implement a strictly opt-in `ModelDraw` vertex-buffer override (same 60-byte ModelVertex format) with explicit capability, lifetime and fallback validation, routing both colour and shadow direct draws while bypassing unsafe shared geometry pool/MDI/ICB paths. Add a targeted regression test and test on Mac before enabling it for characters.
