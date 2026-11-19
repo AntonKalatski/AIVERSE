@@ -156,7 +156,7 @@ public:
         // Rejected map allocation/tree hide can clean up the newly created
         // body without leaving a body that has no authoritative identity.
         try {
-            const auto [it,inserted]=bodies_.emplace(fall.id,
+            const bool inserted=bodies_.emplace(fall.id,
                 FallenPlantBodyInfo{fall.id,created,fall.tick,
                                     fall.sourceSoilRevision,
                                     spec.heightCm,spec.modelScalePermille});
