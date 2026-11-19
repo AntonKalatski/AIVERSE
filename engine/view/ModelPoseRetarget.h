@@ -26,6 +26,22 @@ struct ModelPoseRetarget {
     float translationScale=1.f;
 };
 
+// Optional authoring convenience: builds an explicit mapping by exact
+// model node names. Missing names become -1 (target bind pose), never
+// silently match by array index. Do not create a morph map automatically:
+// mesh-local morph channels have no stable index correspondence across LODs.
+// Validate and compile the result at asset publication, not each draw.
+inline ModelPoseRetarget makeNamedModelPoseRetarget(
+        const render::Model& source,const render::Model& visual,
+        float translationScale=1.f) {
+    ModelPoseRetarget map;
+    map.translationScale=translationScale;
+    map.sourceNodeForVisual.reserve(visual.nodes.size());
+    for(const auto& node:visual.nodes)
+        map.sourceNodeForVisual.push_back(source.findNode(node.name));
+    return map;
+}
+
 inline bool validModelPoseRetarget(const render::Model& source,
                                   const render::Model& visual,
                                   const ModelPoseRetarget& map) {
