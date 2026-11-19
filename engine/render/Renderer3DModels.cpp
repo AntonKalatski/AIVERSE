@@ -2134,8 +2134,16 @@ void Renderer3D::renderModels(int phase) {
                 if (usesVt) live.virtualTexture = current;
                 live.alphaCoverage = alpha;
                 if (group.perCommandPbr) {
-                    if (!pipelineMaterialCompatible(
-                            group.pbrPipelineSnapshot,*item.mat)) {
+                    // prepareGpuModelDraws() has a local grouping lambda.
+                    // Submission runs in a different method: repeat its
+                    // exact pipeline-only contract here before using an
+                    // encoded ICB with potentially changed materials.
+                    const Material& frozen = group.pbrPipelineSnapshot;
+                    const bool compatible = (frozen.shaderGraph ||
+                                             item.mat->shaderGraph)
+                        ? equivalentGpuIcbGraphPipelineMaterial(frozen,*item.mat)
+                        : equivalentGpuIcbPbrPipelineMaterial(frozen,*item.mat);
+                    if (!compatible) {
                         stable=false;
                         break;
                     }
