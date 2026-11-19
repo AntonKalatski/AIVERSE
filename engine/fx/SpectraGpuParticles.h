@@ -98,6 +98,7 @@ struct ComputeStats {
     uint32_t gpuKillUploadFailures=0;
     uint32_t gpuComputeBeginFailures=0;
     uint32_t gpuPassOrderRejections=0;
+    uint32_t gpuResetFailures=0;
     uint32_t gpuKillScatterDispatches=0;
     size_t gpuKillIndexBytes=0;
     uint32_t gpuKillFencesPending=0; // host estimate, not GPU observed
@@ -123,7 +124,10 @@ public:
 
     bool init(gfx::Device* device, const ComputeEmitterDesc& description = {});
     void shutdown();
-    void clear();                            // inside GPU frame, before render pass
+    void clear(); // compatibility API; inspect reason() on GPU failure
+    // Checked whole-emitter reset. Metal must have an OPEN graphics frame,
+    // outside encoders. Never alters CPU slot bookkeeping on upload failure.
+    bool tryClear();
     bool burstAt(fx::float3 position, fx::float3 direction = {0,1,0},
                  fx::float4 tint = {1,1,1,1},uint64_t sourceToken=0);
     // Renderer-only source token. 0 means unowned one-shot particles.
@@ -228,6 +232,7 @@ private:
     fx::float3 eye_{}, right_{1,0,0}, up_{0,1,0};
     bool initialized_ = false, viewReady_ = false, verticesReady_ = false;
     bool gpuIndirectActive_ = false;
+    bool gpuResetDirty_ = false; // failed partial GPU clear; block new births/steps
     ComputeStats stats_;
     std::string reason_;
     std::shared_ptr<uint64_t> readbackLifetime_ = std::make_shared<uint64_t>(0);
