@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/render/Model.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/SpriteBatch.h"
 #include "../../../engine/render/TextureCache.h"
@@ -26,6 +27,10 @@ public:
     // rules "roadTypes" (composed rules.json); reader for the game's textures / models
     void init(gfx::Device& dev, const Json& roadTypes, render::FileReader reader);
     void shutdown(gfx::Device& dev);
+    // Called only at a frame boundary, BEFORE this frame's scene submissions.
+    // Polls actual GPU retirement tokens, never frame-count heuristics.
+    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    size_t pendingModelRetirements() const noexcept {return retirement_.pending();}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().
     void setMap(const Json& map);
     void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; }
@@ -100,6 +105,10 @@ private:
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void release(gfx::Device& dev);
+    void retireSpriteBuffer(gfx::Device& dev,render::SpriteMesh& mesh) {
+        retirement_.retireBuffer(dev,mesh.vb);
+        mesh={};
+    }
     int propModel(gfx::Device& dev, const std::string& path);
     int paintedMaterial(gfx::Device& dev, int type, int variant);   // carriageway texture with its lines, made on demand
     std::map<std::pair<int, int>, int> painted_;
@@ -113,6 +122,7 @@ private:
     std::vector<std::string> replaces_;
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
+    render::NativePresentationRetirement retirement_;
     std::vector<Chunk> chunks_;
     BatchStats batchStats_;
     uint64_t surfaceGeneration_ = 1; // increments whenever road geometry/surface is rebuilt
