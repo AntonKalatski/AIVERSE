@@ -5,7 +5,7 @@
 #include <stdexcept>
 using namespace aiverse;
 struct FakeDevice: gfx::Device {
-    struct Texture {int w,h;std::vector<render::float4> data;};
+    struct Texture {int w,h;std::vector<render::float4> data;gfx::PixelFormat format=gfx::PixelFormat::RGBA32F;std::vector<uint8_t> r8;};
     gfx::DeviceInfo info_;std::string error;uint32_t next=1,instances=0,indices=0;
     bool computeEnabled=false,inFrame=false,inCompute=false;unsigned dispatchCount=0;
     std::map<uint32_t,std::vector<uint8_t>> buffers;
@@ -16,10 +16,29 @@ struct FakeDevice: gfx::Device {
     gfx::BufferHandle createBuffer(const gfx::BufferDesc& d)override{auto id=next++;auto& b=buffers[id];b.resize(d.size);if(d.data)std::memcpy(b.data(),d.data,d.size);return {id};}
     void updateBuffer(gfx::BufferHandle h,const void* p,size_t size,size_t offset)override{auto& b=buffers.at(h.id);if(offset+size>b.size())throw std::runtime_error("buffer overflow");std::memcpy(b.data()+offset,p,size);}
     void destroyBuffer(gfx::BufferHandle h)override{buffers.erase(h.id);}
-    gfx::TextureHandle createTexture(const gfx::TextureDesc& d)override{auto id=next++;textures.emplace(id,Texture{d.width,d.height,std::vector<render::float4>(size_t(d.width*d.height))});return {id};}
+    gfx::TextureHandle createTexture(const gfx::TextureDesc& d)override{
+        auto id=next++;
+        Texture t{d.width,d.height,std::vector<render::float4>(size_t(d.width*d.height))};
+        t.format=d.format;
+        if(d.format==gfx::PixelFormat::R8) {
+            t.r8.resize(size_t(d.width)*size_t(d.height));
+            if(d.data)std::memcpy(t.r8.data(),d.data,t.r8.size());
+        }
+        textures.emplace(id,std::move(t));
+        return {id};
+    }
     void updateTexture(gfx::TextureHandle t,int x,int y,int w,int h,const void* p,int pitch)override{
-        auto& dest=textures.at(t.id);if(x+w>dest.w||y+h>dest.h)throw std::runtime_error("texture overflow");
-        for(int row=0;row<h;++row)std::memcpy(dest.data.data()+size_t((y+row)*dest.w+x),static_cast<const char*>(p)+row*pitch,size_t(w)*sizeof(render::float4));
+        auto& dest=textures.at(t.id);if(x<0||y<0||w<0||h<0||x+w>dest.w||y+h>dest.h)throw std::runtime_error("texture overflow");
+        if(dest.format==gfx::PixelFormat::R8) {
+            if(pitch<w)throw std::runtime_error("R8 row pitch too small");
+            for(int row=0;row<h;++row)
+                std::memcpy(dest.r8.data()+size_t((y+row)*dest.w+x),
+                            static_cast<const uint8_t*>(p)+size_t(row)*size_t(pitch),size_t(w));
+        } else {
+            for(int row=0;row<h;++row)
+                std::memcpy(dest.data.data()+size_t((y+row)*dest.w+x),
+                            static_cast<const char*>(p)+row*pitch,size_t(w)*sizeof(render::float4));
+        }
     }
     void destroyTexture(gfx::TextureHandle t)override{textures.erase(t.id);}
     gfx::ShaderHandle createShader(const gfx::ShaderDesc& d)override{if(d.textureSlots!=2)throw std::runtime_error("missing instance texture");return {next++};}
