@@ -133,6 +133,11 @@ public:
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
             ed.renderer().pendingTargetRetirements());
+        if(ed.renderer().targetRetirementOrphanPairs() ||
+           ed.renderer().targetRetirementEnqueueFailures())
+            ImGui::TextDisabled("GPU RenderTargets: ошибок очереди %llu · сиротских пар %llu",
+                (unsigned long long)ed.renderer().targetRetirementEnqueueFailures(),
+                (unsigned long long)ed.renderer().targetRetirementOrphanPairs());
         const auto warm=ed.renderer().gpuWarmStats();
         if(warm.shaderJobs || warm.pipelineJobs || warm.colorVariants)
             ImGui::TextDisabled(
