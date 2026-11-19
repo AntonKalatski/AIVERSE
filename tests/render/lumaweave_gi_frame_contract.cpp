@@ -22,6 +22,13 @@ static_assert(std::is_same_v<decltype(LumaNativeViewInput{}.indirectGi),
                               GiGpuCascadeRuntime*>);
 static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.giFrame),
                               GiCascadeFrame>);
+static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.giPollFrame),
+                              GiCascadeFrame>);
+static_assert(requires(LumaWeaveNativeDriver& driver,
+                       LumaWeaveNativeCoordinator& coordinator) {
+    driver.resetGiSourceSync();
+    coordinator.resetGiSourceSync();
+});
 static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.priorGpuCompletion),
                               LumaWeaveScreenMetal::Completion>);
 
