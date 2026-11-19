@@ -139,6 +139,19 @@ vec3 planarNormal(vec3 n, vec3 tn) {
     vec3 B = cross(T, n);
     return normalize(T * tn.x - B * tn.y + n * tn.z);
 }
+#if TERRAIN_GL_NORMAL_ATLAS
+// Atlas uses four repeatable padded 2D tiles. t_blend.w contains the
+// content-tile UV scale. Explicit gradients avoid derivatives of fract()
+// at wrap seams (which otherwise select a wrong high mip).
+vec3 terrainLayerNormal(int layer, vec2 uv) {
+    float tileScale=t_blend.w;
+    float inset=(0.5-tileScale)*0.5;
+    vec2 quadrant=vec2(float(layer % 2),float(layer / 2))*0.5;
+    vec2 atlasUv=quadrant+vec2(inset)+fract(uv)*tileScale;
+    return unpackN(textureGrad(tex9,atlasUv,
+        dFdx(uv)*tileScale,dFdy(uv)*tileScale));
+}
+#endif
 #endif
 
 void main() {
@@ -205,10 +218,34 @@ void main() {
 #if TERRAIN_TIER >= 2
         if (t_mode.z > 0.5) {
             vec3 tn = vec3(0.0, 0.0, 0.001);
-            if (w.r > 0.002) tn += w.r * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex9, p / t_scale.x)), t_tint[0].w);
-            if (w.g > 0.002) tn += w.g * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex10, p / t_scale.y)), t_tint[1].w);
-            if (w.b > 0.002) tn += w.b * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex11, p / t_scale.z)), t_tint[2].w);
-            if (w.a > 0.002) tn += w.a * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex12, p / t_scale.w)), t_tint[3].w);
+            if (w.r > 0.002) tn += w.r * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(0, p / t_scale.x)
+#else
+                unpackN(texture(tex9, p / t_scale.x))
+#endif
+                ), t_tint[0].w);
+            if (w.g > 0.002) tn += w.g * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(1, p / t_scale.y)
+#else
+                unpackN(texture(tex10, p / t_scale.y))
+#endif
+                ), t_tint[1].w);
+            if (w.b > 0.002) tn += w.b * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(2, p / t_scale.z)
+#else
+                unpackN(texture(tex11, p / t_scale.z))
+#endif
+                ), t_tint[2].w);
+            if (w.a > 0.002) tn += w.a * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(3, p / t_scale.w)
+#else
+                unpackN(texture(tex12, p / t_scale.w))
+#endif
+                ), t_tint[3].w);
             n = planarNormal(n, normalize(tn));
         }
 #endif
