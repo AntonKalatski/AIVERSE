@@ -158,11 +158,15 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
     case HumanSurface::Skin:
         m=basic("VIVID skin",dna.skin.melaninColor,dna.skin.roughness);
         m.shaderGraph=skinGraph(dna.skin);
+        m.shading=render::ShadingModel::Skin;
+        m.humanProfile={dna.skin.scatteringMm/6.0f,dna.skin.wetness};
         m.roughness=std::clamp(dna.skin.roughness-dna.skin.oiliness*0.23f,0.04f,1.0f);
         break;
     case HumanSurface::Iris:
         m=basic("VIVID layered iris",dna.eyes.irisColor,0.19f);
         m.shaderGraph=irisGraph(dna.eyes);
+        m.shading=render::ShadingModel::Eye;
+        m.humanProfile={dna.eyes.corneaIor,dna.eyes.tearFilm};
         break;
     case HumanSurface::Sclera:
         m=basic("VIVID sclera",{0.92f,0.89f,0.86f},0.24f);
@@ -173,15 +177,21 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
         m.baseColor.w=std::clamp(0.07f+0.09f*dna.eyes.tearFilm,0.01f,0.22f);
         m.castShadow=false;
         m.doubleSided=true;
+        m.shading=render::ShadingModel::Eye;
+        m.humanProfile={dna.eyes.corneaIor,dna.eyes.tearFilm};
         break;
     case HumanSurface::Hair:
         m=basic("VIVID groom",dna.groom.color,dna.groom.roughness);
         m.shaderGraph=hairGraph(dna.groom);
+        m.shading=render::ShadingModel::Hair;
+        m.humanProfile={0.65f+dna.groom.clump*0.30f,dna.groom.roughness};
         m.doubleSided=true;
         break;
     case HumanSurface::Eyelash:
         m=basic("VIVID eyelash",dna.groom.color,0.52f);
         m.doubleSided=true;
+        m.shading=render::ShadingModel::Hair;
+        m.humanProfile={0.35f,0.55f};
         break;
     case HumanSurface::Teeth:
         m=basic("VIVID teeth",{0.88f,0.83f,0.72f},0.25f);
