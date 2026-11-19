@@ -308,3 +308,22 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 18: interactive canvas for canonical particle graphs
+- **Branch:** `feature/spectrafx-generic-cue-queue`, 0 commits behind main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at start.
+- **Implementation commits:** `0dce554832b3b7c358e53c8920c5ea530a714285` and `fb64f2a94c9313d0be5bc48e359980715d9d1b1b`.
+- **Changed:** `apps/editor/windows/SpectraFxGraphWindow.cpp`. Added visual node canvas with grid, selectable title bars, draggable node positions, middle-mouse panning, Bezier links, output/input port clicks for rewiring (existing `relink` compiles a temporary graph before mutation), and cancel via Escape. The second commit defers rewiring until node iteration ends to avoid invalidating the referenced JSON vector mid-loop. Node screen positions are editor-only transient state, not part of canonical `fx/graphs/*.vfx.json` schema.
+- **Compatibility:** existing AIVERSE particle-graph compiler `compileSpectraGraph` remains the source of truth. No ECS, CPU particle simulation, RHI, PRISMA or gameplay modifications.
+- **Actual validation:** **NOT RUN**, per user's all-features-before-tests instruction. Native editor build, ImGui interaction, actual graph save/reload, UI smoke, GPU and CI are unverified. Do not claim the canvas works until host execution.
+- **Limitations:** node positions are not persisted across restart, no drag-connect wire preview, typed ports, box selection or built-in GPU preview; topological constraints still enforced by the canonical compiler.
+- **Next:** persist editor-only canvas layout separately from the canonical VFX graph; then embedded preview in the editor using the existing ParticleSystem/renderer pattern. Finish required functional features before broad test execution.
+
+Pull-first command:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
