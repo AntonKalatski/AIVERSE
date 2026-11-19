@@ -17,6 +17,7 @@ struct NativeWaterPipelineConfig {
     bool enableInteractions=false;
     bool enableCascades=false;
     bool enableCurrentField=false;
+    bool enableVortices=false;
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
 };
@@ -31,6 +32,7 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     if(config.enableInteractions)registerNereidInteractionPersistence(sim);
     if(config.enableCascades)registerNereidCascadePersistence(sim);
     if(config.enableCurrentField)registerNereidCurrentPersistence(sim);
+    if(config.enableVortices)registerNereidVortexPersistence(sim);
     if(config.probeFromTransform)
         addWaterProbeFromTransformSystem(sim,prefix+".probe");
     addAdaptiveWaterSamplingSystem(sim,prefix+".sample",config.adaptive);
