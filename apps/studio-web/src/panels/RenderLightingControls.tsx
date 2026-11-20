@@ -6,9 +6,12 @@ import type { RenderLightingSettings } from '../types';
 export default function RenderLightingControls({ projectPath }: { projectPath: string }) {
   const [settings, setSettings] = useState<RenderLightingSettings | null>(null);
   const [error, setError] = useState('');
+  const [status, setStatus] = useState('Waiting for native viewport…');
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
-  useEffect(() => onNativeEvent(event => {
+  useEffect(() => onNativeEvent((event, payload) => {
+    if (event === 'lighting.status' && payload && typeof payload === 'object' && 'message' in payload)
+      setStatus(String(payload.message));
     if (event === 'document.changed' || event === 'workspace.changed') setRevision(n => n + 1);
   }), []);
   useEffect(() => {
@@ -60,6 +63,7 @@ export default function RenderLightingControls({ projectPath }: { projectPath: s
               if (Number.isFinite(value) && value !== settings[key]) void update({ [key]: value });
             }} onKeyDown={event => { if(event.key === 'Enter') event.currentTarget.blur(); }}/>
         </StudioField>)}
+      <StudioAlert>{status}</StudioAlert>
       <StudioAlert>Settings are stored with the map. Use Save in the main toolbar.</StudioAlert>
     </>}
   </StudioSection>;

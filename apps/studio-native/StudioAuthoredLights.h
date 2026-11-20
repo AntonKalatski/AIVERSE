@@ -23,13 +23,13 @@ inline PreviewDayLighting previewDocumentDay(const editor::MapDoc& doc, bool fps
         lightScalar(block,"nightLevel",.18f),lightScalar(block,"clouds",0),lightScalar(block,"storm",0));
 }
 inline std::vector<render::PointLight> studioAuthoredLights(
-    const editor::MapDoc& doc,bool fpsProject,float levelHeight=1.5f) {
+    const editor::MapDoc& doc,bool fpsProject,float levelHeight=1.5f,size_t limit=render::LightSystem::kMaxLights) {
     const Json& source=fpsProject ? doc.data.fps : doc.data.extra;
     const Json& list=source["lights"];
     const auto day=previewDocumentDay(doc,fpsProject);
     std::vector<render::PointLight> lights;
     if (!list.isArray()) return lights;
-    const size_t count=std::min(list.size(),render::LightSystem::kMaxLights);
+    const size_t count=std::min(list.size(),limit);
     lights.reserve(count);
     for(size_t i=0;i<count;++i) {
         const Json& item=list[i];

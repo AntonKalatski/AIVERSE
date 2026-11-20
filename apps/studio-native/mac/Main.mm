@@ -46,6 +46,7 @@
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
+    unsigned lightingStatusTicks_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -174,6 +175,8 @@
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
                 session_->previewMaterialRevision(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()));
+            if((lightingStatusTicks_++ % 60)==0)
+                [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
