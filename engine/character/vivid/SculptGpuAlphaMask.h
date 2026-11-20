@@ -196,7 +196,8 @@ inline bool appendSculptGpuMaterialGeometry(
         if(p.firstIndex>model.indices.size() ||
            p.indexCount>model.indices.size()-p.firstIndex ||
            p.indexCount%3u ||
-           p.material<0 || std::size_t(p.material)>=model.materials.size())
+           (!model.materials.empty() &&
+            (p.material<0 || std::size_t(p.material)>=model.materials.size())))
             return false;
         count+=p.indexCount/3u;
         if(count>maxTriangles || triangles>maxTriangles-count)return false;
@@ -206,7 +207,9 @@ inline bool appendSculptGpuMaterialGeometry(
     stagedOpaque.reserve(count*3u);
     std::uint32_t ordinal=0;
     for(const auto& primitive:model.meshes[surface.mesh].primitives) {
-        const auto& material=model.materials[std::size_t(primitive.material)];
+        const render::Material defaultMaterial{};
+        const auto& material=model.materials.empty()?defaultMaterial:
+            model.materials[std::size_t(primitive.material)];
         const bool sampleMask=sculptGpuMaskEligible(model,material) &&
                               masks.size()+stagedMasks.size()<256u;
         SculptGpuMaskBatch mask;
