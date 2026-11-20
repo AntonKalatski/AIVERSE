@@ -1110,3 +1110,46 @@ Use the existing `bash tools/vivid-validate.sh --full` consolidated
 host acceptance only when the branch is ready; Vulkan/GLES3 GPU source
 expansion, late GPU culling, colour/material parity and custom
 vertex displacement remain unfinished.
+
+
+### Stage 7AV — source GPU skin parity against native Renderer3D row convention
+
+Metal selected GPU triangle IDs now evaluate the same **three float4
+matrix rows per skin palette entry** used in
+`engine/render/ModelShaders.h` (`SKINNED` and non-baked path).
+`sculptGpuRendererSkinRows` packs one model-space joint
+`nodeWorld[joint] * inverseBind[joint]` into 48B
+`SculptGpuSkinRows`. The GPU kernels for both opaque 16B and
+sampled Mask 32B output blend the original four UNORM8 converted
+weights, calculate three row–source-position dot products, and
+multiply the finished skin position by the renderer's **single**
+current `ModelViewPrimitive::world` transform. The actor's morphed
+positions still come directly from its borrowed current-frame
+60-byte GPU buffer. This matches the native vertex shader's
+arithmetic ordering, rather than claiming that mathematically
+equivalent matrix multiplication will necessarily round identically.
+
+The Creator requires the renderer-selected primitive set to share
+one actual world matrix and skinning mode. Source preparation rejects
+a per-primitive palette exceeding `kMaxPaletteJoints=80` because
+Renderer3D only uploads 80×3×float4 rows to U3. A stale/mismatched
+original-source UV/alpha mapping in the selected GPU Mask path is
+also rejected before recording the draw. Rejections preserve CPU
+BVH authoring results.
+
+The native C++ source-fixture now tests two unequal-weight joints,
+source U8 weighting, matrix-row packing, nonidentity `I.model`
+world application, Renderer3D shader string contracts, and oversized
+skin-palette rollback. Metal fixture source tests weighted actor
+skinning shifting a pixel off-screen and a compensating model world
+transform restoring the same original triangle ID, plus rejecting
+stale sampled-mask UV metadata.
+
+**Actual tests: NOT RUN.** These are source-level changes and
+unexecuted fixtures. Renderer3D's final-colour visibility, material
+blend/depth order, ICB/MDI culling and hardware pixel results are
+not claimed to match yet. Run the deferred one-pass macOS native
+suite when implementation milestones are complete, then validate
+native Vulkan/GLES3 on their own supported drivers. The next
+stage is a renderer-owned submitted-command/final-depth parity
+probe without duplicating a VIVID-specific renderer.
