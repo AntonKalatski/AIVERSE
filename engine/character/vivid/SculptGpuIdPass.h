@@ -123,12 +123,34 @@ public:
            request.meshId!=surface.mesh ||
            !pending_.empty() || retiredWithoutCallback_.size()>=512u ||
            request.width>4096u || request.height>4096u ||
-           !device_->gpuHealthy() ||
-           !buildSculptGpuIdVertices(model,surface,authorCount,
-                                      authorIds,vertices_) ||
-           vertices_.empty() || vertices_.size()>3000000u ||
-           occluders.size()>3000000u-vertices_.size())
-            return false;
+           !device_->gpuHealthy())return false;
+        vertices_.clear();
+        std::vector<SculptGpuMaskBatch> grouped;
+        if(!appendSculptGpuMaterialGeometry(
+                model,surface,authorCount,authorIds,true,
+                vertices_,grouped))return false;
+        if(maskedOccluders.size()+grouped.size()>256u)return false;
+        std::size_t total=vertices_.size()+occluders.size();
+        if(total>3000000u)return false;
+        for(const auto& batch:grouped) {
+            if(batch.vertices.size()>3000000u-total)return false;
+            total+=batch.vertices.size();
+        }
+        for(const auto& batch:maskedOccluders) {
+            if(!batch.baseTexture.valid() || batch.vertices.empty() ||
+               batch.vertices.size()%3u ||
+               batch.vertices.size()>3000000u-total)
+                return false;
+            for(const auto& v:batch.vertices)
+                if(v.rgba[0]||v.rgba[1]||v.rgba[2]||v.rgba[3]||
+                   !std::isfinite(v.world.x)||
+                   !std::isfinite(v.world.y)||
+                   !std::isfinite(v.world.z))return false;
+            total+=batch.vertices.size();
+        }
+        if(!total)return false;
+        for(const auto& batch:maskedOccluders)
+            grouped.push_back(batch);
         // Explicit scene occluders must never carry a selectable ID.
         // Reject mismatched data instead of accidentally returning the
         // ordinal of a hair/floor/background triangle.
