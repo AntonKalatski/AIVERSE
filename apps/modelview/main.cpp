@@ -573,8 +573,16 @@ struct Viewer {
         watchElapsed=0.;
         std::set<std::string> observed;
         for(const auto& actor:inst)observed.insert(actor.path);
-        for(const auto& child:attachmentSpecs)
-            if(child.enabled)observed.insert(child.modelSource);
+        for(const auto& child:attachmentSpecs) {
+            if(!child.enabled)continue;
+            observed.insert(child.modelSource);
+            // Independent MotionWeave children are authored through an
+            // external AnimationGraph asset. Monitor its file separately:
+            // a Graph edit must invalidate the staged native generation
+            // even if the child Model bytes have not changed.
+            if(child.animated && !child.animationGraph.empty())
+                observed.insert(child.animationGraph);
+        }
         bool changed=false;
         for(const auto& path:observed) {
             std::error_code ec;
