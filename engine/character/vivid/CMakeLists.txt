@@ -50,6 +50,16 @@ target_link_libraries(aiverse_vivid_motionweave PUBLIC aiverse_vivid_render AIVE
 target_compile_features(aiverse_vivid_motionweave PUBLIC cxx_std_20)
 
 
+option(AIVERSE_VIVID_SCULPT_BENCH
+    "Build optional 10k/100k/1M CPU sculpt picking benchmark (not a CTest)" OFF)
+if(AIVERSE_VIVID_SCULPT_BENCH)
+    add_executable(aiverse_vivid_sculpt_pick_bench
+        ${PROJECT_SOURCE_DIR}/tools/vivid-creator/sculpt_pick_bench.cpp)
+    target_link_libraries(aiverse_vivid_sculpt_pick_bench PRIVATE
+        aiverse_vivid_human aiverse_zstd_dec)
+    target_compile_features(aiverse_vivid_sculpt_pick_bench PRIVATE cxx_std_20)
+endif()
+
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vivid_human_rig_tests
         ${PROJECT_SOURCE_DIR}/tests/vivid/human_rig.cpp)
