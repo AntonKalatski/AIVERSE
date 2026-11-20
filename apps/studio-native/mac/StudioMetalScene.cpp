@@ -89,13 +89,15 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const bool facialRequested = facialBinding.bound() && !materialRequested;
     if(facialMode_!=facialRequested) {
         facialMode_=facialRequested;
+        shadowResolution_={};
+        if(facialRequested)renderer_.setShadowQuality(ShadowQuality::High);
         cameraInitialized_=false;
     }
     // A real imported Model is drawn through the SAME Metal Renderer3D used
     // for native materials and the map; no HTML fake character, no second
     // Animator/Graph clock. CPU import is asynchronous; GPU publication and
     // retirement remain on this owner thread before frame submissions.
-    if(!facialRequested){renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
+    if(!facialRequested){renderer_.clearShadowBounds();renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
     if(facialRequested) {
         std::string reason;
         if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
@@ -121,7 +123,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             const float h=std::max(.01f,extent.y*scale);
             const float3 foot{0,-extent.y*.5f*scale,0};
             vivid::applyHumanStudioLighting(renderer_,facialBinding.studioLighting,foot,h);
-            renderer_.setShadowQuality(ShadowQuality::Medium);
+            vivid::updateHumanStudioShadows(renderer_,shadowResolution_,h,framebufferHeight);
             const auto bg=facialBinding.studioLighting.rig().background;
             if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},0,0);
 

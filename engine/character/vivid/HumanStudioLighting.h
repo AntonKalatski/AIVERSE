@@ -1,6 +1,7 @@
 #pragma once
 // Presentation-only authoring light rigs. No scene/gameplay state or asset mutation.
 #include "engine/render/Renderer3D.h"
+#include "engine/render/AdaptiveShadowResolution.h"
 #include "engine/data/Json.h"
 #include <array>
 #include <string>
@@ -40,11 +41,29 @@ struct HumanStudioLighting {
  Json describe()const {auto j=Json::object(),items=Json::array();for(const auto& p:humanStudioPresets()){auto item=Json::object();item.set("id",Json::string(p.id));item.set("label",Json::string(p.label));item.set("sources",Json::number(int64_t(4)));items.push(item);}j.set("settings",toJson());j.set("presets",items);return j;}
 };
 inline void applyHumanStudioLighting(render::Renderer3D& renderer,const HumanStudioLighting& settings,render::float3 foot,float height){
+ // Character-stage shadow coverage: independent of camera zoom, includes
+ // outstretched arms and nearby floor. Do not spend facial texels on the room.
+ const float sh=std::max(.01f,height);
+ renderer.setShadowBounds(foot+render::float3{-.75f,-.05f,-.75f}*sh,
+                          foot+render::float3{.75f,1.15f,.75f}*sh);
  const auto& p=settings.rig();const float a=settings.rotation*.01745329252f;
  auto rotate=[&](render::float3 v){return render::float3{std::cos(a)*v.x+std::sin(a)*v.z,v.y,-std::sin(a)*v.x+std::cos(a)*v.z};};
- renderer.lighting=render::Lighting{};auto& l=renderer.lighting;l.fogDensity=0;l.sunDir=rotate(p.keyDirection);l.sunColor=p.keyColor;l.sunIntensity=p.key*settings.gain;l.skyColor=p.ambient*settings.gain;l.groundColor=p.ambient*(.55f*settings.gain);l.shadowSoftness=.12f*height;
+ renderer.lighting=render::Lighting{};auto& l=renderer.lighting;l.fogDensity=0;l.sunDir=rotate(p.keyDirection);l.sunColor=p.keyColor;l.sunIntensity=p.key*settings.gain;l.skyColor=p.ambient*settings.gain;l.groundColor=p.ambient*(.55f*settings.gain);// Portrait rigs use a broad fixed soft key. The general PCSS path uses a
+ // small fixed angular emitter and collapsed nose shadows to almost hard edges.
+ l.shadowContactHardening=false;l.shadowSoftness=.012f*height;
  renderer.lights.setQuality(render::LightQuality::High);
  for(size_t i=0;i<p.lights.size();++i){auto light=p.lights[i];light.pos=foot+rotate(light.pos)*height;light.radius*=height;light.intensity*=settings.gain;light.key=uint32_t(0x564900+i);renderer.lights.add(light);}
+}
+// Call once per presented view after lighting setup. Coverage includes the
+// renderer fitting margin and the diagonal of our fixed character-stage box.
+inline void updateHumanStudioShadows(render::Renderer3D& renderer,
+                                    render::AdaptiveShadowResolution& policy,
+                                    float height,int viewportHeight) {
+ if(renderer.shadowQuality()!=render::ShadowQuality::High)return;
+ const auto& camera=renderer.camera();
+ const float coverage=2.44f*std::max(.01f,height)+2.f;
+ const float demand=render::shadowTexelDemand(coverage,float(viewportHeight),camera.distance,camera.fovY);
+ if(policy.update(demand)) (void)renderer.setShadowMapSize(policy.resolution);
 }
 // Unit-height cyclorama: smooth quarter circle from horizontal floor to wall.
 inline render::MeshBuilder humanStudioCyclorama(render::float3 foot={},float height=1){

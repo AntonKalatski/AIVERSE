@@ -1932,3 +1932,14 @@ UVs and skinning. This addresses black lighting bands from malformed exported
 morph normals; it does not replace RigLogic. Creator diagnostic captures accept
 `--shadow-quality off|medium|high` (default medium) to distinguish shadow-map
 artifacts from morph shading. See eye optics QA report for native evidence.
+
+### Adaptive character-stage shadows
+
+Creator and native Studio use High-tier maps selected at1024/2048/4096 from
+viewport density, camera distance/FOV and character-stage coverage. The selection
+has hysteresis and delayed downsizing; no texture-UV dependence. General reusable
+policy: `engine/render/AdaptiveShadowResolution.h`. Portrait lighting uses soft
+fixed PCF with bounds fitted to the character instead of a room-sized shadow
+volume. Ordinary game views keep their existing shadow behavior. This is a
+single-map adaptation, not virtual shadow maps. See
+`docs/qa/vivid-adaptive-shadows-2026-11-21.md` for actual verification and limits.

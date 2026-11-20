@@ -99,7 +99,9 @@ struct CreatorApp {
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
     bool previewHeadSweep=false;
-    ShadowQuality captureShadowQuality=ShadowQuality::Medium;
+    float captureCameraDistance=0;
+    ShadowQuality captureShadowQuality=ShadowQuality::High;
+    render::AdaptiveShadowResolution shadowResolution;
     render::Animator sequenceAnimator; // offline diagnostic only; no runtime clock
 
     bool studioLightingEnabled=false;
@@ -204,7 +206,7 @@ struct CreatorApp {
         // Frontal authoring key keeps eye optics visible below the brow.
         renderer.lighting.sunDir={0.25f,0.4f,1.0f};
         camera.target={0,-0.65f,0};
-        camera.distance=eyeDetailCapture?.85f:closeupCapture?1.05f:portraitCapture?2.1f:6.4f;
+        camera.distance=captureCameraDistance>0?captureCameraDistance:eyeDetailCapture?.85f:closeupCapture?1.05f:portraitCapture?2.1f:6.4f;
         if(portraitCapture)camera.target={0,0.96f,0};
         if(eyeDetailCapture)camera.target={0,.96f,0};
         camera.minDistance=eyeDetailCapture?.2f:closeupCapture?.5f:2.0f;
@@ -2120,7 +2122,7 @@ struct CreatorApp {
         // vertex overrides and material batches BEFORE the separate ID
         // diagnostic is allowed to corroborate a CPU-picked source vertex.
         // drawModel stages colour commands; render() executes them below.
-        if(studioLightingEnabled){vivid::applyHumanStudioLighting(renderer,studioLighting,studioFoot,studioHeight);const auto bg=studioLighting.rig().background;renderer.drawMesh(floor,{}, {bg.x,bg.y,bg.z,1},0,0);}
+        if(studioLightingEnabled){vivid::applyHumanStudioLighting(renderer,studioLighting,studioFoot,studioHeight);vivid::updateHumanStudioShadows(renderer,shadowResolution,studioHeight,dev.framebufferHeight());const auto bg=studioLighting.rig().background;renderer.drawMesh(floor,{}, {bg.x,bg.y,bg.z,1},0,0);}
         else renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
         ModelDraw draw;
         draw.model=human.head.get();
@@ -2283,6 +2285,7 @@ struct CreatorApp {
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
+            if(sequenceFrame==0)std::printf("VIVID shadow map=%d adaptive=%d cameraDistance=%.3f\n",renderer.shadowMapSize(),shadowResolution.resolution,camera.distance);
             if(sequenceFrame==0)for(const auto& mat:human.head->materials)if(mat.eyeOptics.z>0)
                 std::printf("VIVID optical material %s shading=%d radius=%.4f depth=%.4f ior=%.3f tear=%.2f\n",mat.name.c_str(),int(mat.shading),mat.eyeOptics.z,mat.eyeOptics.w,mat.humanProfile.x,mat.humanProfile.y);
                 smokeCaptureRequested=true;
@@ -2369,6 +2372,10 @@ int aiverseMain(int argc,char** argv) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
+        }else if(std::strcmp(argv[i],"--camera-distance")==0 && i+1<argc) {
+            try{application->captureCameraDistance=std::stof(argv[++i]);
+                if(!std::isfinite(application->captureCameraDistance)||application->captureCameraDistance<.5f||application->captureCameraDistance>120.f)return 2;
+            }catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--shadow-quality")==0 && i+1<argc) {
             const std::string quality=argv[++i];
             if(quality=="off")application->captureShadowQuality=ShadowQuality::Off;
