@@ -331,6 +331,7 @@ public:
         bool gpuLodConditional=false,lodFade=false,batched=false;
         bool alternativeMeshLod=false;
         bool skinning=false,baked=false,shaderVertexOffset=false;
+        bool translucent=false; // real colour-pass tint/material/flag classification
         bool customGpuStream=false;
         mat4 world{};
     };
