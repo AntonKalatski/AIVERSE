@@ -2211,3 +2211,13 @@ mitigation, multi-source terrain boundary coordination, Stage18
 performance optimizations and the owner's single combined final
 build/GPU acceptance run. Do NOT enable the Vulkan manual parity
 gates based solely on this CPU offline certificate.
+
+
+**Stage17.2 UV-island refinement:** the spatial source checker also
+handles disconnected triangle-edge components inside a *single*
+material/primitive. A split UV island with duplicate vertex IDs is
+certified only when its exact physical contour meets the neighboring
+island, and existing sub-edge T-junctions/nearby gaps cause Legacy
+fallback. Two components touching at one vertex are not incorrectly
+treated as fully edge-connected. This refinement and its regression
+fixture are committed but still **not compiled or executed**.
