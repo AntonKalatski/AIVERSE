@@ -44,6 +44,30 @@ void projectFileRecoveryWorkflow() {
     }
     fs::remove_all(root);
 }
+void authoredEntityWorkflow() {
+   using namespace aiverse;namespace fs=std::filesystem;
+   const auto root=fs::temp_directory_path()/("studio-authored-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+   const auto project=root/"fixture";fs::create_directories(project/"maps");
+   std::ofstream(project/"game.json")<<R"({"module":"rts","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
+   std::ofstream(project/"rules.json")<<R"({"types":{"tree":{"health":{"max":100}}}})";
+   editor::MapDoc map;map.reset(16,16);editor::DocEntity e;e.id="first";e.type="tree";e.x=2;e.z=3;
+   e.extra=Json::parse(R"({"components":{"Transform":{"y":4,"yaw":0,"scale":1},"StaticModel":{"asset":"content/tree.gltf"}}})");map.data.entities.push_back(e);e.id="second";map.data.entities.push_back(e);
+   AIVERSE_TEST_CHECK(map.save((project/"maps/scene.json").string(),nullptr));
+   studio::StudioSession session(root.string(),project.string());
+   auto call=[&](const char* method,const char* params="{}") {auto request=Json::object();request.set("id",Json::number(int64_t(1)));request.set("method",Json::string(method));request.set("params",Json::parse(params));return session.dispatch(request);};
+   AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","key":"y","value":9})").has("error"));
+   AIVERSE_TEST_CHECK(session.workspace().map.data.entities[1].extra["components"]["Transform"]["y"].integer()==9);
+   AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));AIVERSE_TEST_CHECK(session.workspace().map.data.entities[1].extra["components"]["Transform"]["y"].integer()==4);
+   AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@first"})").has("error"));
+   AIVERSE_TEST_CHECK(!call("studio.entityDelete",R"({"entityId":"entity:@first"})").has("error"));
+   AIVERSE_TEST_CHECK(!call("studio.select",R"({"id":"entity:@second"})").has("error"));AIVERSE_TEST_CHECK(session.selectedEntityIndex()==0);
+   AIVERSE_TEST_CHECK(!call("studio.entityDuplicate",R"({"entityId":"entity:@second"})").has("error"));
+   AIVERSE_TEST_CHECK(session.selectedObjectId().rfind("entity:@",0)==0 && session.selectedObjectId()!="entity:@second");
+   AIVERSE_TEST_CHECK(!call("studio.save").has("error"));session.openProject(project.string());
+   AIVERSE_TEST_CHECK(session.workspace().map.data.entities[1].extra["components"]["StaticModel"].getStr("asset")=="content/tree.gltf");
+   fs::remove_all(root);
+}
 void entityWorkflow() {
     using namespace aiverse;
     namespace fs=std::filesystem;
@@ -221,6 +245,7 @@ int main() {
     try { session.openProject("/nonexistent/aiverse-project"); }
     catch (const std::exception&) { openRejected = true; }
     AIVERSE_TEST_CHECK(openRejected);
+    authoredEntityWorkflow();
     entityWorkflow();
     projectFileRecoveryWorkflow();
     std::cout << "studio session contract PASS\n";

@@ -404,6 +404,7 @@ public:
     void setTerrainMaterial(const Json& rows, int w, int h) { terrain_.setMaterialLayer(parseMaterialRows(rows, w, h)); }
     // Visual detail heightmap of the map (terrain.detail, docs/terrain.md; files read with the view's
     // reader). Without one, terrain.style "smooth" synthesises the detail. Takes effect at buildTerrain().
+    void setMapSurfaceEnabled(bool enabled){terrain_.setMapSurfaceEnabled(enabled);}
     void setTerrainDetail(const Json& map);
     void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }

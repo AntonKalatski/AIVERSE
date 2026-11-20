@@ -86,6 +86,7 @@ void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReade
 
 void TerrainRenderer::parseLook(const Json& t) {
     if (!t.isObject()) return;
+    look_.render=t.getBool("render",look_.render);
     if (t["layers"].isArray()) {
         look_.layers.clear();
         for (auto& l : t["layers"].items()) {
@@ -880,6 +881,7 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
 }
 
 void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool) {
+    if(!look_.render||!mapSurfaceEnabled_){r.setHeightField({});return;}
     if (!built_ || !dev_ || g.w != mapW_ || g.h != mapH_) return;
     gfx::Device& dev = *dev_;
     updateDynamic(dev, g, false);
@@ -1003,7 +1005,7 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (apron) drawLod(*apron, 1e9f, 2e9f);
         for (auto& it : *items) drawLod(*it.lod, it.morphStart, it.morphEnd);
     });
-    if (hasWater_ && water_.indexCount) r.drawMesh(water_, mat4{}, look_.waterColor, kDrawNoCastShadow, 0.9f);
+    if (look_.render && mapSurfaceEnabled_ && hasWater_ && water_.indexCount) r.drawMesh(water_, mat4{}, look_.waterColor, kDrawNoCastShadow, 0.9f);
     // AIVERSE_TERRAIN_STATS=1: chunks / triangles / frame time every 60 frames (stderr; perf checks on big maps)
     static const bool printStats = std::getenv("AIVERSE_TERRAIN_STATS") != nullptr;
     if (printStats) {

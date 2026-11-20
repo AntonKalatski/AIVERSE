@@ -1,3 +1,4 @@
+#include "apps/editor/AuthoringWater.h"
 #include "StudioSession.h"
 #include "engine/world/NereidFlowAuthoring.h"
 #include "apps/editor/core/ProjectFile.h"
@@ -47,7 +48,7 @@ Json numericProp(const char* key, const char* label, Json value, bool integer = 
     if (integer) r.set("integer", Json::fromBool(true));
     return r;
 }
-std::string nodeId(const editor::DocumentEntityRef& ref) { return studioDocumentId(ref); }
+std::string nodeId(const editor::DocumentEntityRef& ref,const editor::MapDoc& map) { return studioDocumentId(ref,map); }
 // Resolve native picker/CLI inputs before locating the project-local journal.
 // Workspace supports directories, manifest/project files and sample template IDs.
 std::string recoveredProjectDir(const editor::Workspace& ws,const std::string& input) {
@@ -76,30 +77,30 @@ StudioSession::StudioSession(const std::string& engineRoot, const std::string& p
     }
 }
 int StudioSession::indexFor(const std::string& id) const {
-    if (id.compare(0, 7, "entity:") != 0 || id.size() == 7) throw std::runtime_error("Invalid entity ID");
-    uint64_t n = 0;
-    for (size_t i = 7; i < id.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(id[i]);
-        if (!std::isdigit(c)) throw std::runtime_error("Invalid entity ID");
-        const uint64_t digit = uint64_t(c - '0');
-        const uint64_t limit = uint64_t(std::numeric_limits<int>::max());
-        if (n > (limit - digit) / 10) throw std::runtime_error("Entity index overflow");
-        n = n * 10 + digit;
-    }
-    if (n >= ws_.map.data.entities.size()) throw std::runtime_error("Entity does not exist");
-    return int(n);
+    const int index=studioMapEntityIndex(id,ws_.map);
+   if(index<0)throw std::runtime_error("Invalid or missing entity ID");
+   return index;
 }
 Json StudioSession::propertiesFor(const std::string& entityId) const {
     if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
     Json fields = Json::array();
     for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-        if (nodeId(node.ref) != entityId) continue;
+        if (nodeId(node.ref,ws_.map) != entityId) continue;
         if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
             const auto& e = ws_.map.data.entities.at(node.ref.index);
             fields.push(prop("type", "Type", "text", str(e.type)));
             fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
             fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
             fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
+           if(editor::authoredEntity(e)) {
+               const auto& transform=e.extra["components"]["Transform"];
+               fields.push(numericProp("y","Position Y",transform.has("y")?transform["y"]:Json::number(0.0)));
+               if(!e.extra["components"].has("NereidWater")) {
+                   fields.push(numericProp("yaw","Rotation Y",transform.has("yaw")?transform["yaw"]:Json::number(0.0)));
+                   auto scale=numericProp("scale","Uniform scale",transform.has("scale")?transform["scale"]:Json::number(1.0));scale.set("min",Json::number(.001));scale.set("max",Json::number(10000.0));fields.push(scale);
+               }
+               fields.push(prop("asset","Model","text",str(editor::authoredModelAsset(e)),false));
+           }
         } else if (node.hasPosition) {
             fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
             fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
@@ -122,7 +123,7 @@ Json StudioSession::snapshot() const {
     const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
     for (const auto& node : nodes) {
         Json row = Json::object();
-        row.set("id", str(nodeId(node.ref)));
+        row.set("id", str(nodeId(node.ref,ws_.map)));
         row.set("name", str(node.label));
         // UI receives only generic display kind; document source names remain native.
         row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
@@ -134,7 +135,7 @@ Json StudioSession::snapshot() const {
     scene.set("entities", std::move(rows));
     result.set("scene", std::move(scene));
     const bool valid = !selected_.empty() && std::any_of(nodes.begin(), nodes.end(),
-        [&](const auto& node) { return nodeId(node.ref) == selected_; });
+        [&](const auto& node) { return nodeId(node.ref,ws_.map) == selected_; });
     result.set("selectedId", valid ? str(selected_) : Json());
     result.set("properties", valid ? propertiesFor(selected_) : Json::array());
     Json logs = Json::array();
@@ -433,10 +434,9 @@ Json StudioSession::dispatch(const Json& request) {
             if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
             if(method=="studio.nereidFlowSet"){
                 if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
-                auto candidate=world::editNereidFlow(ws_.map.data.extra,params);
-                ws_.map.beginEdit();ws_.map.data.extra=std::move(candidate);ws_.map.touched();
+                editor::editAuthoredWaterFlow(ws_.map,params);
             }
-            reply.set("result",world::nereidFlowState(ws_.map.data.extra));
+            reply.set("result",world::nereidFlowState(editor::authoredWaterDocument(ws_.map)));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
@@ -673,7 +673,7 @@ Json StudioSession::dispatch(const Json& request) {
             if (!next.empty()) {
                 bool found = false;
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
-                    if (nodeId(node.ref) == next) { found = true; break; }
+                    if (nodeId(node.ref,ws_.map) == next) { found = true; break; }
                 }
                 if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
             }
@@ -766,7 +766,7 @@ Json StudioSession::dispatch(const Json& request) {
                 } else {
                     const auto copies=editor::worldedit::duplicate(ws_.map,{index});
                     if (copies.empty()) throw std::runtime_error("Unable to duplicate entity");
-                    selected_="entity:"+std::to_string(copies.front());
+                    selected_=studioDocumentId(editor::DocumentEntityRef::mapEntity(size_t(copies.front())),ws_.map);
                 }
             }
             reply.set("result",snapshot());
@@ -812,7 +812,7 @@ Json StudioSession::dispatch(const Json& request) {
                 editor::DocumentEntityRef ref;
                 editor::DocumentTransform target{};
                 for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
-                    if (nodeId(node.ref) != entityId) continue;
+                    if (nodeId(node.ref,ws_.map) != entityId) continue;
                     if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
                         !node.hasPosition)
                         throw std::runtime_error("Document position is unavailable");
@@ -847,7 +847,12 @@ Json StudioSession::dispatch(const Json& request) {
                 return reply;
             }
             const int index = indexFor(entityId);
-            if (key == "type") {
+            if((key=="y"||key=="yaw"||key=="scale")&&editor::authoredEntity(ws_.map.data.entities[size_t(index)])) {
+               auto candidate=editor::editAuthoredPlacement(ws_.map.data.entities[size_t(index)],key,value);
+               if(candidate.extra!=ws_.map.data.entities[size_t(index)].extra){ws_.map.beginEdit();ws_.map.data.entities[size_t(index)]=std::move(candidate);ws_.map.touched();}
+               reply.set("result",snapshot());return reply;
+           }
+           if (key == "type") {
                 if (!value.isString() || value.str().empty()) throw std::runtime_error("Invalid type");
             } else if (key == "x" || key == "z" || key == "owner") {
                 if (!value.isNumber()) throw std::runtime_error("Expected number");

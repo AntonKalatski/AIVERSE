@@ -1,3 +1,4 @@
+#include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
 #include "apps/editor/SceneRenderable.h"
 #include "apps/studio-native/StudioVisualPicking.h"
@@ -57,20 +58,17 @@ void StudioMetalScene::syncDocumentModels(
     std::set<std::string> active;
     for (const auto& proxy:proxies) {
         if (proxy.id.rfind("entity:",0)!=0) continue;
-        const std::string ordinal=proxy.id.substr(7);
-        if (ordinal.empty() || ordinal.find_first_not_of("0123456789")!=std::string::npos)
-            continue;
-        const unsigned long index=std::stoul(ordinal);
-        if (index>=entities.size()) continue;
-        const auto& view=rules["types"][entities[index].type]["view"];
-        const Json& raw=view["model"];
-        std::string path;
-        if (raw.isString()) path=raw.str();
-        else if (raw.isArray() && raw.size()) {
-            const Json& first=raw[std::size_t(0)];
-            if (first.isString()) path=first.str();
-            else if (first.isObject()) path=first.getStr("file");
-        }
+        const int index=studioMapEntityIndex(proxy.id,doc);
+       if(index<0)continue;
+       const auto& entity=entities[size_t(index)];
+       if(entity.extra["components"].has("NereidWater"))continue;
+       const auto& view=rules["types"][entity.type]["view"];
+       const Json& raw=view["model"];
+       std::string path=editor::authoredModelAsset(entity);
+       if(path.empty()) {
+           if(raw.isString())path=raw.str();
+           else if(raw.isArray()&&raw.size()){const auto& first=raw[size_t(0)];path=first.isString()?first.str():first.getStr("file");}
+       }
         // Never load project-root arbitrary files or external paths.
         if (path.rfind("content/",0)!=0 || path.size()>512) continue;
         const std::string relative=path.substr(8);
@@ -86,7 +84,7 @@ void StudioMetalScene::syncDocumentModels(
             if (ec || fs::is_symlink(status)) {allowed=false;break;}
         }
         if (!allowed || !fs::is_regular_file(current)) continue;
-        if (modelInstances_.size()>=256) break;
+        if (modelInstances_.size()>=2000) break;
         active.insert(path);
         std::error_code modifiedError;
         const auto modified=fs::last_write_time(current,modifiedError);
@@ -103,7 +101,7 @@ void StudioMetalScene::syncDocumentModels(
         }
         documentModelTimes_[path]=modified;
         if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
-            if (documentModels_.size()>=32) continue;
+            if (documentModels_.size()>=512) continue;
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
             auto read=[root](const std::string& name,std::string& out)->bool {
@@ -137,15 +135,14 @@ void StudioMetalScene::syncDocumentModels(
                 }
                 bool deformable=false;
                 for (const auto& mesh:model->meshes) deformable |= mesh.deformable;
-                // Only bind-pose rigid opaque geometry has exact CPU-to-render
-                // correspondence. Alpha-tested, transparent and LOD-switched
-                // geometry need GPU depth/ID picking and stay proxy-rendered.
-                bool nonOpaque=false,hasLods=false;
+                // Rigid opaque/masked models render with their authored LODs.
+                // CPU picking uses base geometry; alpha holes/LOD silhouette
+                // are approximate until GPU ID/depth picking is available.
+                bool nonOpaque=false;
                 for(const auto& material:model->materials)
-                    nonOpaque |= material.alpha!=render::AlphaMode::Opaque ||
+                    nonOpaque |= material.alpha==render::AlphaMode::Blend ||
                                  material.transparent || material.baseColor.w<.999f;
-                for(const auto& mesh:model->meshes) hasLods |= !mesh.lods.empty();
-                if (deformable || nonOpaque || hasLods ||
+                if (deformable || nonOpaque ||
                     model->vertices.size()>1000000 || model->indices.size()>3000000) {
                     rejectedDocumentModels_.insert(path);
                     continue;
@@ -172,8 +169,9 @@ void StudioMetalScene::syncDocumentModels(
         // Anchor model to the same authored entity location as its proxy.
         // The source file's own node transforms are applied by drawModel and picker.
         modelInstances_.push_back({proxy.id,found->second.get(),
-            render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
-            render::mat4::rotateY(proxy.yaw)});
+           editor::authoredEntity(entity)?editor::authoredModelMatrix(entity):
+           render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
+           render::mat4::rotateY(proxy.yaw)});
     }
     for (auto it=documentModelTimes_.begin();it!=documentModelTimes_.end();) {
         if (!active.count(it->first)) it=documentModelTimes_.erase(it);
@@ -213,7 +211,11 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
     // Pick the oriented cube mesh that Renderer3D actually draws, not its
     // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
-    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
+        const int index=studioMapEntityIndex(proxy.id,map);
+        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+    }),proxies.end());
     // These are the exact model instances submitted by the previous frame.
     return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
 }
@@ -270,7 +272,11 @@ void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
         camera_.distance=std::clamp(std::max({size.x,size.y,size.z,1.0f})*2.5f,2.0f,100000.0f);
         return;
     }
-    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    proxies.erase(std::remove_if(proxies.begin(),proxies.end(),[&](const auto& proxy){
+        const int index=studioMapEntityIndex(proxy.id,map);
+        return index>=0 && map.data.entities[size_t(index)].extra["components"].has("NereidWater");
+    }),proxies.end());
     for (const auto& proxy:proxies) {
         if (proxy.id != selectedId) continue;
         camera_.target=(proxy.boundsMin+proxy.boundsMax)*0.5f;
@@ -351,12 +357,12 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         return;
     }
     const auto& map = doc.data;
-    if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight) {
+    const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
+    if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {
         terrainLevelHeight_ = levelHeight;
         MeshBuilder source;
-        const auto stats = buildTerrainPreview(map, source, levelHeight);
         Mesh replacement;
-        if (stats.quads) replacement = source.upload(*device_);
+        if(showTerrain){const auto stats=buildTerrainPreview(map,source,levelHeight);if(stats.quads)replacement=source.upload(*device_);}
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         terrain_ = replacement;
@@ -372,7 +378,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
     syncDocumentModels(doc,projectPath,rules,proxies);
     device_->beginFrame(framebufferWidth, framebufferHeight);
-    nereid_.configure(fpsProject?Json::object():doc.data.extra);
+    nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,camera_.eye());
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
     renderer_.lighting=Lighting{}; // reset when project and lighting settings change
@@ -391,6 +397,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     // Temporary primitive preview (NOT legacy editor terrain, animation or materials).
     const float w = float(std::max(map.w, 1));
     const float h = float(std::max(map.h, 1));
+    if(showTerrain){
     if (terrain_.vb.valid() && terrain_.ib.valid()) {
         renderer_.drawMesh(terrain_, mat4{}, {1,1,1,1}, kDrawNoCastShadow);
     } else {
@@ -406,7 +413,11 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     for (int z=0; z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
+    } // external/Terra surface suppresses the default plane and grid
+
     for(const auto& entity:proxies) {
+        const int sourceIndex=studioMapEntityIndex(entity.id,doc);
+        if(sourceIndex>=0 && doc.data.entities[size_t(sourceIndex)].extra["components"].has("NereidWater"))continue;
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;

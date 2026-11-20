@@ -34,4 +34,6 @@ int main() {
     auto limit=buildTerrainPreview(huge,reduced);
     AIVERSE_TEST_CHECK(limit.step==4 && limit.quads==size_t(256*192));
     std::cout<<"StudioTerrainGeometry PASS\n";
+    editor::MapDoc blank;blank.reset(32,32);render::MeshBuilder noSurface;
+    AIVERSE_TEST_CHECK(buildTerrainPreview(blank.data,noSurface).quads==0);
 }

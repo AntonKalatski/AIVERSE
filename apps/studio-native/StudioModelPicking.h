@@ -2,7 +2,9 @@
 // This is an opt-in geometry adapter: only select surfaces which are actually
 // rendered with the SAME world/node transform. Do not fall back to AABB for
 // missing CPU vertices (uploadModel often releases them). Skinning, morphing,
-// per-material alpha masks and rendered LOD selection require GPU ID/depth pick.
+// per-material alpha masks and rendered LOD selection require GPU ID/depth pick
+// for pixel accuracy. Hosts allowing rigid masked/LOD models use base geometry
+// as an explicitly approximate authoring selection surface.
 #pragma once
 #include "engine/render/Model.h"
 #include "apps/studio-native/StudioVisualPicking.h"

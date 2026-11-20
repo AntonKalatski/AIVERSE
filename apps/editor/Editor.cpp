@@ -886,6 +886,7 @@ void Editor::syncGrid() {
             worldHash_ = h;
         }
     }
+    view_.setMapSurfaceEnabled(d.extra.getStr("terrainPresentation","legacy")!="entities");
     view_.setTerrainMaterial(d.extra["terrainMaterial"], d.w, d.h);
     if (!d.detail.empty() && d.detailScale > 0) {   // visual detail layer (TerrainOps sculpt / import)
         game::terrain::DetailSurface ds;
@@ -1013,6 +1014,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
         o.pos = {e.x, 0, e.z};
+        if(authoredEntity(e)){if(e.extra["components"].has("NereidWater"))continue;const auto local=authoredLocalTransform(e);o.pos.y=float(local.position.y.toDouble());o.parented=true;o.parentFrame=authoredModelMatrix(e);}
         if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
             const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
             o.facing = {std::sin(a), 0, -std::cos(a)};

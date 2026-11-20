@@ -71,7 +71,8 @@ void Editor::pollAgentLink() {
             if (args.has("pitch")) sceneCam.pitch = std::clamp(float(args["pitch"].toDouble()), 10.0f, 89.0f) * 0.0174533f;   // degrees over the horizon
             if (args.has("yaw")) sceneCam.yaw = float(args["yaw"].toDouble()) * 0.0174533f;
             shots_.push_back({m.client, id.integer(), args.getStr("window", args.has("device") ? "game" : "all"), Json::object()});
-            ws_.log("agent", "Скриншот редактора");
+            // Do not put a notification over the requested scene/game image.
+            if(args.getStr("window","all")=="all")ws_.log("agent", "Скриншот редактора");
             continue;
         }
         if ((name == "modeling_preview" || name == "animation_preview") && (!shots_.empty() || captureArmed_)) {
@@ -111,6 +112,8 @@ void Editor::deliverShots(gfx::Device& dev) {
             Json r = pending[k].metadata.isObject() ? pending[k].metadata : Json::object();
             if (w <= 0 || px.empty()) {
                 r.set("error", Json::string("screenshots are not supported by this graphics backend"));
+            } else if((pending[k].device=="scene"||pending[k].device=="game") && (crops[k].w<=0||crops[k].h<=0)) {
+                r.set("error",Json::string("Requested viewport is unavailable; full editor capture refused"));
             } else {
                 Crop c = crops[k];
                 if (c.w <= 0 || c.h <= 0) c = {0, 0, w, h};
