@@ -1001,9 +1001,19 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
-        const bool shadowBatch = !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        // A GPU-indexed source has separate GPU command packets for each
+        // original primitive. Never replace those originals with the CPU
+        // shadow/material batch proxy: one ModelItem must own one material.
+        // If Vulkan indirect is rejected later, original items still draw
+        // through the exact conventional material/instance code path.
+        const bool gpuPacketSource = d.gpuIndexed.valid() ||
+                                     !d.gpuIndexedPrimitives.empty();
+        const bool shadowBatch = !gpuPacketSource && !m->geometry &&
+                                 !d.nodeMaterial && d.variant < 0 &&
+                                 shadowBatchCompatible(drawMesh,mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (!m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (!gpuPacketSource && !m->geometry && !d.nodeMaterial &&
+            d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
@@ -1014,11 +1024,28 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             ModelItem it;
             it.sourceNode = n;
             it.geometry = d.geometry;
-            // Production packet is borrowed only for this frame and only
-            // for the original single unbatched source primitive. The draw
-            // route still validates ALL material/transform/live RHI state.
-            if(shadowRole==0 && materialRole==0 && part==0)
-                it.gpuIndexed=d.gpuIndexed;
+            // Copy GPU packets BY VALUE into the renderer's immutable
+            // ModelItem list. Mesh/material identities come from original
+            // primitives, not from the atomic GPU output order. CPU batch
+            // proxies and alternate authored LODs never borrow a packet.
+            if(shadowRole!=2 && materialRole==0 && part==0) {
+                if(!d.gpuIndexedPrimitives.empty()) {
+                    const uint32_t primitiveId=uint32_t(
+                        &p-drawMesh.primitives.data());
+                    for(const auto& packet:d.gpuIndexedPrimitives) {
+                        if(packet.sourceMesh==uint32_t(meshIndex) &&
+                           packet.sourcePrimitive==primitiveId &&
+                           packet.sourceFirstIndex==p.firstIndex &&
+                           packet.sourceIndexCount==p.indexCount &&
+                           packet.expectedMaterial==uint32_t(p.material)){
+                            it.gpuIndexed=packet;
+                            break;
+                        }
+                    }
+                }else{
+                    it.gpuIndexed=d.gpuIndexed;
+                }
+            }
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             // Restrict GPU LOD to a single compatible rigid primitive in each
@@ -2673,17 +2700,25 @@ void Renderer3D::renderModels(int phase) {
                 strataItem.model->geometryPoolPage &&
                 !strataItem.model->geometry &&
                 strataItem.model->meshes.size()==1 &&
-                strataItem.model->materials.size()==1 &&
+                !strataItem.model->materials.empty() &&
                 strataItem.model->nodes.size()==1 &&
-                strataItem.model->meshes[0].primitives.size()==1 &&
-                strataItem.prim==&strataItem.model->meshes[0].primitives[0] &&
+                packet.sourceMesh==0 &&
+                packet.sourcePrimitive<
+                    strataItem.model->meshes[0].primitives.size() &&
+                strataItem.model->meshes[0].primitives.size()<=16 &&
+                strataItem.prim==&strataItem.model->meshes[0].primitives[
+                    packet.sourcePrimitive] &&
+                packet.expectedMaterial<
+                    strataItem.model->materials.size() &&
+                strataItem.mat==&strataItem.model->materials[
+                    packet.expectedMaterial] &&
                 strataItem.rigid && strataItem.joints<0 &&
                 strataItem.morph<0 && !strataItem.baked &&
                 !strataItem.mat->shaderGraph &&
                 strataItem.mat->alpha==AlphaMode::Opaque &&
                 !strataItem.mat->transparent &&
                 strataItem.gi==0 && !strataItem.materialRole &&
-                !strataItem.shadowRole && !strataItem.paletteMaterials &&
+                strataItem.shadowRole!=2 && !strataItem.paletteMaterials &&
                 strataItem.lodThreshold>=1.f && !strataItem.lodInvert &&
                 strataItem.tint.w>=.99f &&
                 strataItem.dissolve<=0.f &&
