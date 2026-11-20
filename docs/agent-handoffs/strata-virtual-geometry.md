@@ -3413,3 +3413,154 @@ selected clusters; no unrelated earlier main-view output is accepted.
 This tests selection and GPU argument generation, **NOT** actual
 `Renderer3D` spot-depth or planar RTT pixel-parity. These new
 assertions have NOT been compiled or run in this stage.
+
+
+---
+
+## Stage 17.1 — exact crack-free welded mesh LOD seam topology (2026-11-20)
+
+**Repository/branch**: `chromealex/AIVERSE`,
+`feature/strata-virtual-geometry`. The project is concurrent with
+many other branches; **do not merge to main** without the final combined
+integration build. **NO actual CMake, CTest, Vulkan/Metal/GLES3 device
+test or screenshot/depth parity was executed for this stage.**
+Source changes below are committed, **not yet hardware-certified**.
+
+### Problem and conservative implementation
+
+AIVERSE already used `meshopt_SimplifyLockBorder`, but that option
+alone did not prove that a hierarchy parent preserved every original
+boundary edge segment. Adjacent groups may draw at different LODs;
+removing an outer border vertex of one group creates a T-junction
+against a neighbor still rendering finer triangles.
+
+The new `engine/render/StrataSeamTopology.h/.cpp` provides two
+genre/backend-independent CPU-only routines:
+
+- `sameSeamContour(originalIndices,originalCount,
+  candidateIndices,candidateCount,error)` computes the exact
+  **oriented topological boundary** of two triangle sets, using
+  original **global vertex IDs** (not float-position epsilon).
+  Every undirected edge may appear at most once per direction.
+  An edge with one forward and one reverse incidence is manifold
+  interior; single-incidence edges form the boundary. Duplicate
+  same-direction incidence, nonmanifold edges, repeated triangle
+  indices, truncated streams, and candidates with missing, split,
+  reversed or extra boundary edges fail closed.
+- `auditSeamHierarchy(asset,report,error)` independently checks
+  every nonempty node index span, its manifold topology, and
+  the boundary of each parent's indexed triangles against the
+  **UNION of its immediate child triangle streams**. Report
+  (`verifiedParents`, `checkedNodes`, `contourEdges`) is
+  *transactional*: any malformed input leaves the caller's previous
+  output unchanged. The proof is inductive: if all parents exactly
+  preserve their children's combined boundary, any mixed-depth
+  parent/child frontier preserves the SAME original material
+  partition boundary segmentation. The checker must run while
+  the indexed CPU triangles are still in memory; Stage 15.4 later
+  may discard duplicate CPU payloads after archive/root admission.
+
+`StrataBuilder.cpp` now applies the contour checker to every newly
+simplified parent candidate, AFTER meshoptimizer and BEFORE creating
+the node. A rejected candidate creates **NO parent**: its original
+child IDs are retained in the frontier, source vertex IDs and LOD0
+indices are unchanged. A `seamRejectedParents` count records these
+failed parent candidates. After complete BFS hierarchy remap, the
+builder runs `auditSeamHierarchy`; if it fails it returns false
+transactionally, allowing the SceneStaging owner to keep the original
+Legacy model. Only on full success does the builder set
+`Asset::seamCertified=true` (false on direct/default construction).
+
+`SceneStaging::stage` refuses any un-certified primitive, and
+tracks `seamCertifiedPrimitives` and `seamRejectedParents`.
+`GeometryScene` exposes corresponding statistics and requires
+seam certification at **three production boundaries**:
+portable STRATA source load, GPU metadata source load and the
+Vulkan GPU indirect scene route. Failure retains the exact Legacy
+source/renderer, never a cracked parent. Direct lower-level
+`PortableSource::stage` or `GpuMetadataScene::stage` calls made
+outside `GeometryScene` are *not* automatically production-certified;
+native library callers must explicitly use the new checker or a
+builder-certified Asset before opting into such paths.
+
+No extra geometry/skirt shader, duplicated VB, fragment visibility
+pass, ECS/world dependency, nonportable Metal technique or
+source-material rewrite has been introduced. Both GPU and
+CPU-selected LOD paths reuse the exact SAME certified immutable
+hierarchy and original global vertex indices.
+
+### Exact changed files / commits
+
+- New `engine/render/StrataSeamTopology.h`:
+  `3dd57b5c9391e8e9fd553ab4178b44820bc0d0d3`.
+- New `engine/render/StrataSeamTopology.cpp`:
+  `305fc9adfa76162f8da55707637c161ee7a0ad04`.
+- `engine/render/StrataBuilder.h`:
+  `557ada7920c95ad53eb0963dcb85a2f261825aab`
+  (`Asset::seamCertified`, `seamRejectedParents`).
+- `engine/render/StrataBuilder.cpp`:
+  `481ae0fa02ade0501bdb91f16cefdbec6b1f2674`
+  (reject unsafe parents before insertion; final audit).
+- `CMakeLists.txt`:
+  `2ed62a436b0e26706a89ebefc867bb6e8c2bccc3` links checker,
+  `89005831a57a49dfc0602c16f5b5edd1277b3b1a` adds
+  `aiverse_strata_seams_tests` CTest named `strata_seams`.
+- New `tests/render/strata_seams.cpp`:
+  `99db90232e8f031db83a0ecfad10b983470795f2`.
+- `engine/render/StrataModelAdapter.h`:
+  `5a9b5f991db24cb5404a59835a93bc586d4ea43e`.
+- `engine/render/StrataModelAdapter.cpp`:
+  `a919dbcec0b12facea83f6b53810d6f721ef7ead`.
+- `engine/render/GeometryScene.h`:
+  `1de26095dac4a3d1dde59d2e187ebf11d5b52428`.
+- `engine/render/GeometryScene.cpp`:
+  `a6ca36ba71cc0d951212ab29ad49b2737f521582`.
+
+### New tests authored — NOT RUN
+
+`strata_seams` (new CPU CTest) covers exact lossless perimeter
+preservation when interior vertices disappear, T-junction due to
+removed boundary vertex, reversed perimeter winding, duplicate
+nonmanifold oriented edges, degenerate triangles, null/truncated
+triangle streams, fully transaction-safe parent hierarchy failure
+and invalid child spans, and the full off-line build of a 33×33
+welded, wavy square grid. It checks that resulting leaf triangle
+coverage equals the original input exactly and every accepted
+hierarchy parent passed an independent post-build audit.
+
+`strata_builder`, `strata_view`, disk/index residency, Vulkan
+compute/indirect and Renderer3D tests remain part of the **later**
+combined native validation. No GPU seam screenshot, wireframe
+adjacency A/B, crack histogram or frame-time measurement is
+available yet.
+
+### Current Stage 17.1 table
+
+| Function | Source | Tests |
+| --- | --- | --- |
+| Exact topological boundary matching | IMPLEMENTED | NOT RUN |
+| Parent simplification rejected if seam changes | IMPLEMENTED | NOT RUN |
+| Independent full hierarchy certification | IMPLEMENTED | NOT RUN |
+| Production scene certification gates / Legacy fallback | IMPLEMENTED | NOT RUN |
+| Seam rejection and certification stats | IMPLEMENTED | NOT RUN |
+| Mixed-LOD welded partition guarantee | By topological construction | NOT HARDWARE VERIFIED |
+| Cross-material duplicate-position seams | NOT FULLY CERTIFIED | N/A |
+| Preexisting source T-junction repair | NOT IMPLEMENTED | N/A |
+| Pixel/depth parity at dynamic mixed LOD | NOT VERIFIED | N/A |
+
+### Scope and next bounded stage
+
+The current proof is **topological by identical original vertex IDs
+within ONE material partition**. It does not repair cracks already
+present in the imported source geometry, independently authored
+meshes/material partitions with duplicated seam vertices, or
+different-world terrain chunks whose border coordinates disagree.
+It does not guarantee pixel-identical lossy LOD *interior* shading
+or hide normal LOD popping; those are separate geomorph/perceptual
+problems. For suspect cross-material/mesh borders, Stage 17.2 should
+add a source-wide shared-position seam certificate (or decline
+unsafe parent LODs) and explicit multi-partition/stitching fixtures.
+Only then perform real Metal/Vulkan/GLES3 GPU mixed-level visual
+acceptance and Stage18 profiling. Maintain original Renderer3D
+submission ownership and conservative fallback on every unsupported
+case.
