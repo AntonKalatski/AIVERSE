@@ -65,6 +65,10 @@ class SpriteBatch {
 public:
     bool init(gfx::Device& dev);
     void shutdown();
+    // For failure recovery and ordinary host teardown: never release an
+    // in-flight GPU allocation unless the device confirms an idle boundary.
+    // On failure, retain handles for a later retry.
+    bool shutdownAfterGpuIdle();
 
     void begin() { quads_.clear(); verts_.clear(); casters_.clear(); drawUploadValid_ = casterUploadValid_ = false; }
     // Corners in order top-left, top-right, bottom-right, bottom-left (as seen on screen);
