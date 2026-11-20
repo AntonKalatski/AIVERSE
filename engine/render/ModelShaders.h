@@ -430,16 +430,23 @@ void main() {
         float tear = clamp(m_uv1.w, 0.0, 1.0);
         float cornealIor = clamp(m_uv1.z, 1.0, 2.0);
         float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
+        // Schlick grazing response for the wet dielectric coat. Keep the
+        // existing analytic highlight as the finite-cost mobile fallback.
+        float coatFresnel = iorF0 + (1.0 - iorF0) * pow(1.0 - clamp(ndv, 0.0, 1.0), 5.0);
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
         col += sun * sh * vec3(cornealGlint) *
-               (0.15 + 0.68 * tear) * (0.25 + 4.0 * iorF0);
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
     } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
         vec3 strandT = normalize(v_tan.xyz);
         float alignment = dot(strandT, H);
         float ring = max(1.0 - alignment * alignment, 0.0);
         float width = clamp(m_uv1.w, 0.0, 1.0);
-        float lobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
-        col += sun * sh * base.rgb * lobe * clamp(m_uv1.z, 0.0, 1.0) * 0.85;
+        // Dual longitudinal highlights approximate primary reflection and
+        // a broader secondary fiber lobe without additional hair geometry.
+        float primaryLobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        float secondaryLobe = pow(ring, mix(5.0, 22.0, 1.0 - width));
+        float lobe = primaryLobe * 0.72 + secondaryLobe * 0.18;
+        col += sun * sh * base.rgb * lobe * clamp(m_uv1.z, 0.0, 1.0);
     }
     if (m_uv1.y > 0.5 && m_uv1.y < 1.5) col = m_light.w > 0.5 ? base.rgb * (m_uv1.z + m_uv1.w * clamp(dot(normalize(v_nrm), m_light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + nightGlow()) + v_team.a * vec3(1.0, 0.85, 0.7) + edge * vec3(1.0, 0.45, 0.12) * 3.0 + v_team.rgb * (v_draw.w * teamW);
@@ -921,16 +928,21 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float tear = clamp(m.uv1.w, 0.0, 1.0);
         float cornealIor = clamp(m.uv1.z, 1.0, 2.0);
         float iorF0 = pow((cornealIor - 1.0) / (cornealIor + 1.0), 2.0);
+        // Matched GLSL dielectric Fresnel; no platform-specific extra lobe.
+        float coatFresnel = iorF0 + (1.0 - iorF0) * pow(1.0 - clamp(ndv, 0.0, 1.0), 5.0);
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
         col += sun * sh * float3(cornealGlint) *
-               (0.15 + 0.68 * tear) * (0.25 + 4.0 * iorF0);
+               (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
     } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
         float3 strandT = normalize(in.tan.xyz);
         float alignment = dot(strandT, H);
         float ring = max(1.0 - alignment * alignment, 0.0);
         float width = clamp(m.uv1.w, 0.0, 1.0);
-        float lobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
-        col += sun * sh * base.rgb * lobe * clamp(m.uv1.z, 0.0, 1.0) * 0.85;
+        // Same two-lobe approximation and coefficients as GLSL.
+        float primaryLobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        float secondaryLobe = pow(ring, mix(5.0, 22.0, 1.0 - width));
+        float lobe = primaryLobe * 0.72 + secondaryLobe * 0.18;
+        col += sun * sh * base.rgb * lobe * clamp(m.uv1.z, 0.0, 1.0);
     }
     if (m.uv1.y > 0.5 && m.uv1.y < 1.5) col = m.light.w > 0.5 ? base.rgb * (m.uv1.z + m.uv1.w * clamp(dot(normalize(in.nrm), m.light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + lu.info.w) + in.team.a * float3(1.0, 0.85, 0.7) + edge * float3(1.0, 0.45, 0.12) * 3.0 + in.team.rgb * (in.draw.w * teamW);
