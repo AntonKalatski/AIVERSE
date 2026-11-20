@@ -55,6 +55,10 @@ void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
+    // A sprite view created on one RHI device cannot be safely retired by a
+    // different device's idle barrier or destroyBuffer/destroyTexture calls.
+    if (twoD_ && dev_ && dev_ != &dev)
+        throw std::logic_error("RtsView reload: sprite resources belong to a different GPU device");
     if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
         throw std::logic_error("RTS view stale GPU device generation");
     // Establish completion before modifying *any* reload-owned presentation
