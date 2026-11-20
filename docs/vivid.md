@@ -1002,3 +1002,43 @@ No C++ compiler, CTest, GPU test, Metal shader compile, pixel capture,
 or actual performance measurement was executed by the assistant
 on this stage's new source. See Stage 7AO in
 `docs/agent-handoffs/vivid.md` for file/commit-level handoff.
+
+
+## Stage 7AP — conservative scene depth occlusion (2026-11-20)
+
+The experimental Metal GPU ID pass now receives occluding triangles
+from all *currently drawn VIVID Creator preview geometry*: the selected
+imported model mesh, other node-attached head/body meshes, the static
+floor and any dynamically simulated procedural hair cards. Other
+imported meshes use the published face morph CSR and MotionWeave pose,
+with `prepareSkinnedWeightSurface` reconstructing their world-space
+vertices. The floor retains its CPU `MeshBuilder` triangles and the
+procedural groom uses the same current vertex positions and rigid-head
+transform as the normal colour pass.
+
+The shared depth-tested offscreen draw writes actual selectable IDs
+only for fully opaque selected primitives. Other geometry writes
+zero-ID depth; alpha-masked or translucent cards/cornea are
+**conservative whole-polygon blockers**, without texture alpha
+discard. Thus the GPU validation can deliberately fail to confirm
+a CPU-selected vertex through an alpha hole; this does not fabricate
+a visible GPU hit. This is a safe diagnostic policy, not exact visual
+alpha parity. A failed/skipped other-mesh skinning reconstruction,
+invalid geometry, missing source pose or exceeded triangle budget
+fails closed to the established CPU BVH path. The existing callback
+token must still match the captured mesh, frame, actor publication
+and viewport dimensions.
+
+New pure C++ regression sources assert material eligibility and
+zero-ID depth of other meshes, procedural hair and floor. The real
+Metal fixture adds closer/farther zero-ID scene blockers to the
+selected depth-tested triangles. All new fixture and GPU work is
+source-only so far: **actual compilation, CTest, driver/shader pixel
+oracles and performance profiling have NOT RUN** on these commits.
+
+Remaining gaps: exact per-material alpha masking and transparency
+ordering, shared renderer GPU-deformed vertex override, true LOD
+selection/culling, arbitrary external scene geometry outside Creator,
+and cross-platform Vulkan/GLES async pixel readback. This stage does
+not merge with Texture RHI or claim complete GPU-visible parity.
+Handoff: `docs/agent-handoffs/vivid.md` Stage 7AP.
