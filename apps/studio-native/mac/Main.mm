@@ -180,6 +180,7 @@
                    session_->facialPreview().generation &&
                facialReadyEmitted_!=session_->facialPreview().generation) {
                 facialReadyEmitted_=session_->facialPreview().generation;
+                session_->markFacialPreviewReady(facialReadyEmitted_);
                 [self sendStudioEvent:"facial.preview.ready" message:"Native GPU face pose rendered"];
             }
             if (!readyEmitted_) {
