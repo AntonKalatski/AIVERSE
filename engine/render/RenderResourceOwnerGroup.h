@@ -47,7 +47,7 @@ struct RenderResourceGroupStats {
     // budget or total GPU heap consumption.
     uint64_t estimatedKnownBytes() const noexcept {
         const auto max=std::numeric_limits<uint64_t>::max();
-        auto add=[max](uint64_t lhs,uint64_t rhs) {
+        auto add=[](uint64_t lhs,uint64_t rhs) {
             return rhs>max-lhs?max:lhs+rhs;
         };
         return add(add(add(residentModelKnownBytes,retiredModelKnownBytes),
@@ -126,7 +126,7 @@ public:
         cache.bindResourceDevice(device);
         boundDevice_=&device;
         const uint64_t id=nextRegistration_++;
-        owners_.push_back({&cache,cache.lifetimeToken(),&device,id});
+        owners_.push_back({&cache,cache.lifetimeToken(),&device,id,{}});
         return ScopedRegistration(scopedState_,id);
     }
 
@@ -160,7 +160,7 @@ public:
         if(boundDevice_)cache.bindResourceDevice(*boundDevice_);
         for(const auto& entry:owners_)
             if(!entry.lifetime.expired() && entry.cache==&cache)return;
-        owners_.push_back({&cache,cache.lifetimeToken(),boundDevice_,nextRegistration_++});
+        owners_.push_back({&cache,cache.lifetimeToken(),boundDevice_,nextRegistration_++,{}});
     }
     void clear() {checkThread();owners_.clear();}
     size_t size() const {
@@ -201,7 +201,7 @@ public:
         std::set<const Model*> visitedModels;
         std::set<const ModelTextureCache*> visitedTextureOwners;
         const auto max=std::numeric_limits<uint64_t>::max();
-        auto add=[max](uint64_t& dst,uint64_t amount) {
+        auto add=[](uint64_t& dst,uint64_t amount) {
             dst=amount>max-dst?max:dst+amount;
         };
         for(const auto& entry:owners_) {
