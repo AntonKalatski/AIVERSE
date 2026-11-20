@@ -12638,6 +12638,58 @@ TEST(native_mesh_batch_same_target_replacement_is_coalesced) {
     dev.destroyBuffer(mesh.vb);dev.destroyBuffer(mesh.ib);
 }
 
+TEST(groundfx_visible_road_chunks_commit_together_or_rollback_on_late_upload_failure) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    rules.territory.enabled=false;
+    rules.diggables.clear();
+    rules.rooms.clear();
+    rules.roadNetwork.enabled=true;
+    rules.foundation.enabled=false;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::RtsGroundFx fx;
+    fx.init(dev,rules,missing,"");
+    game::MapGrid grid;
+    grid.init(65,4);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.flags[size_t(grid.index(1,1))] |= game::kCellRoad;
+    grid.flags[size_t(grid.index(40,1))] |= game::kCellRoad;
+    game::RtsScene scene;
+    scene.viewer=0;
+    render::RTSCamera cam;
+    cam.target={32,0,2};
+    cam.distance=150;
+    cam.pitch=1.1f;
+    renderer.beginScene(cam,1280,720);
+    fx.draw(renderer,scene,0.0,nullptr,grid,view);
+    renderer.render(gfx::PassDesc{});
+    CHECK(fx.pendingMeshGpuRetirements()==0);
+
+    grid.flags[size_t(grid.index(2,1))] |= game::kCellRoad;
+    grid.flags[size_t(grid.index(41,1))] |= game::kCellRoad;
+    const auto destroyedBefore=dev.destroyedBuffers;
+    renderer.beginScene(cam,1280,720);
+    dev.failBuffer=dev.bufferAttempts+4; // second GPU mesh index, after first replacement pair
+    bool failed=false;
+    try {fx.draw(renderer,scene,1.0,nullptr,grid,view);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(fx.pendingMeshGpuRetirements()==0); // neither published road has been retired
+    CHECK(dev.destroyedBuffers==destroyedBefore+3);
+    dev.failBuffer=0;
+    renderer.beginScene(cam,1280,720);
+    fx.draw(renderer,scene,1.1,nullptr,grid,view);
+    CHECK(fx.pendingMeshGpuRetirements()>=4);
+    renderer.render(gfx::PassDesc{});
+    fx.shutdown(dev);
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(texture_cache_swap_transfers_gpu_owner_without_invalidating_handles) {
     fogfaulttest::Device dev;
     render::TextureCache first,second;
