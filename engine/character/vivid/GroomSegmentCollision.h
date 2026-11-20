@@ -16,42 +16,13 @@
 namespace aiverse::vivid {
 class GroomSegmentCollision final {
     using V=render::float3;
-    struct Cell {
-        int x=0,y=0,z=0;
-        bool operator<(const Cell& b) const noexcept {
-            if(x!=b.x)return x<b.x;
-            if(y!=b.y)return y<b.y;
-            return z<b.z;
-        }
-    };
+    using Cell=GroomSegmentWorkspace::Cell;
     struct Segment {
         std::size_t guide=0,first=0;
         V a{},b{};
     };
-    struct Entry {
-        Cell cell{};
-        std::size_t segment=0;
-        bool operator<(const Entry& b)const noexcept {
-            if(cell<b.cell)return true;
-            if(b.cell<cell)return false;
-            return segment<b.segment;
-        }
-    };
 public:
-    // Reuse all broadphase and Jacobi allocations across display frames.
-    // One instance belongs to one groom/runtime and must not be shared
-    // between simultaneously evaluated render workers.
-    struct Workspace {
-        std::vector<Entry> cells;
-        std::vector<std::pair<std::size_t,std::size_t>> pairs;
-        std::vector<std::size_t> offsets;
-        std::vector<V> displacements;
-        std::vector<float> counts;
-        void reset() noexcept {
-            cells.clear();pairs.clear();offsets.clear();
-            displacements.clear();counts.clear();
-        }
-    };
+    using Workspace=GroomSegmentWorkspace;
 private:
     static bool finite(V p) noexcept {
         return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);
