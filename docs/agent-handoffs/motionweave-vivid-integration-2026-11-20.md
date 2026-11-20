@@ -1161,3 +1161,30 @@ iris, black pupil present (centerRGB10), so investigate overlay layers/UV/render
 binding. Source eyeShell blend alpha.35, eyeEdge alpha.25. Latest files extracted
 to full-character/eye-review. Do not silently paint over screenshot or claim
 fix until matched native captures; retain completed shoulder/groom work.
+
+
+## 2026-11-20 — Gray eye glare repair and native comparison
+
+Code `8f76aa33aefc796791361bc54eb52d0eddef74d5`, branch
+integration/motionweave-studio-facial-stage184. HumanAppearance eye roughness
+default .6; importer uses same portable single-layer PBR baseline, occlusion
+alpha .12 / wet edge .04. Creator --closeup adds actual native camera close-up.
+Existing explicit appearance values and save schema preserved; no renderer
+shader edits, no final unlit material, no repainted iris pixels.
+
+Source brown atlas/pupil were valid. Native no-shell diagnostic remained gray;
+unlit/matte and .45/.65 roughness pair recovered contrast. Matched catalog
+before-closeup.png/final-closeup.png confirms brown iris/dark pupil restored.
+Neutral-light168frame head sweep completed, inspected turn36/blink41; eyes
+close, hair follows, contrast retained. Jagged lash/eyelid edges, bright sclera,
+coarse iris detail and no refractive cornea still limit quality. No UE parity.
+
+All artifacts full-character/eye-review on KINGSTON. New Ada-Eyes-Reviewed
+assembled model; working content/Ada factors/default updated with source-backup.
+Historical assembled assets unchanged. Native Studio/Creator/session targets
+built PASS. Node test_bake_materials.cjs PASS incl overlay regression. Scoped
+studio_human_appearance_session PASS1/1 report20261120-193153-13311.
+Native captures pipelineFailures0; GUI/CI NOT RUN; not realtime performance.
+See docs/qa/vivid-eyes-2026-11-20.md. No push this stage.
+Next: correct eyelid/lash edge coverage/deformation and improve iris detail plus
+separate optical cornea response, retaining matched native before/after evidence.
