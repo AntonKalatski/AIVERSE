@@ -422,3 +422,20 @@ main-integration-build-3.log (MAKEFLAGS=-k, --parallel 6).
 registered test, animation_graphs PASS (1.61s); view_packets was not a registered
 name (correct name view_scene_packets), so no View test claim. Next: finish
 build, run correct targeted fixtures and continue owner staging.
+
+
+## LENS overlay frame candidate — 2026-11-20
+
+Branch codex/lens-completion, code `e6870d64429713dd1b3f0a625a9e27cfaee2b97b`.
+RtsOverlays::beginFramePreparation captures CPU popup/event/definition/UI frame
+state before drawWorld. A newly allocated VB remains private; old VB retires
+only at commitFramePreparation. Discard restores old buffer/capacity and CPU
+state after renderer queues are cleared. Reject a second growing upload in one
+preparation scope before allocation. RtsView capture lease now owns this guard.
+Noncapture legacy path unchanged; actual GPU draw/update failures during later
+Renderer3D::render remain outside this preparation-stage transaction.
+Tests add popup cancellation and same-tick retry/commit to existing overlay
+fixture. `git diff --check` PASS. Current full build still RUNNING with -k on
+KINGSTON; observed next error AnimationAssetLoader.h ambiguous findNodePath.
+New overlay/core tests NOT RUN, GPU tests NOT RUN. Next repair integration,
+complete Sprite and surface owner barrier, run final native/GPU gates.
