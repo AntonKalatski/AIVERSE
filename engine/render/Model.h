@@ -63,6 +63,7 @@ struct Material {
     // (prop shaders of art pipelines that light every instance by its own world normals); w = 0: off
     float4 fixedLight{0, 0, 0, 0};          // xyz direction towards the light (normalized), w 1 = on
     float2 fixedShade{1, 0};                // ambient, diffuse
+    float shadowDiffusion = 0;            // extra received sun-shadow radius in world units [0,1]; medium/high only
 };
 
 struct Image {

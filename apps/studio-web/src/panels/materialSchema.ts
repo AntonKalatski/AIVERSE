@@ -3,7 +3,7 @@ export type FieldValue=string|number|boolean;
 export type MaterialData=Record<string,unknown>;
 export interface MaterialLibrary {library:Record<string,MaterialData>}
 export const MATERIAL_EDIT_KEYS=[
-  'metallic','roughness','cutoff','teamStrength','occlusionStrength',
+  'metallic','roughness','shadowDiffusion','cutoff','teamStrength','occlusionStrength',
   'emissiveStrength','normalScale','doubleSided','unlit','castShadow',
   'receiveShadow','vertexColors','alpha','team','description'
 ] as const;
@@ -14,11 +14,14 @@ export type MaterialPatch=Partial<Record<MaterialKey,FieldValue>>;
 export interface MaterialField {
   key:MaterialKey; label:string; type:'text'|'number'|'boolean'; value:FieldValue;
   editable:true; min?:number; max?:number; step?:number;
+  description?:string;
   options?:Array<{label:string;value:string|number}>;
 }
 const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
  {key:'metallic',label:'Metallic',type:'number',min:0,max:1,step:.01},
  {key:'roughness',label:'Roughness',type:'number',min:0,max:1,step:.01},
+ {key:'shadowDiffusion',label:'Shadow diffusion (world units)',type:'number',min:0,max:1,step:.005,
+  description:'Extra received sun-shadow softness. 0 preserves the original shadow; Medium/High shadows only.'},
  {key:'cutoff',label:'Alpha cutoff',type:'number',min:0,max:1,step:.01},
  {key:'teamStrength',label:'Team strength',type:'number',min:0,max:1,step:.01},
  {key:'occlusionStrength',label:'Occlusion strength',type:'number',min:0,max:1,step:.01},
@@ -34,7 +37,7 @@ const fields:Array<Omit<MaterialField,'value'|'editable'>>=[
  {key:'description',label:'Description',type:'text'}
 ];
 const defaults:Record<MaterialKey,FieldValue>={
- metallic:0,roughness:1,cutoff:.5,teamStrength:1,occlusionStrength:1,
+ metallic:0,roughness:1,shadowDiffusion:0,cutoff:.5,teamStrength:1,occlusionStrength:1,
  emissiveStrength:0,normalScale:1,doubleSided:false,unlit:false,castShadow:true,
  receiveShadow:true,vertexColors:false,alpha:'opaque',team:'none',description:''
 };

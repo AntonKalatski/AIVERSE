@@ -56,6 +56,12 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_studio_material_validation_tests tests/StudioMaterialValidationTests.cpp)
     target_include_directories(aiverse_studio_material_validation_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     add_test(NAME studio_material_validation COMMAND aiverse_studio_material_validation_tests)
+    find_program(AIVERSE_STUDIO_NODE node)
+    if(AIVERSE_STUDIO_NODE)
+        add_test(NAME studio_material_schema
+            COMMAND "${AIVERSE_STUDIO_NODE}" --experimental-strip-types --test
+            "${PROJECT_SOURCE_DIR}/apps/studio-web/tests/materialSchema.test.mjs")
+    endif()
     set_tests_properties(studio_material_validation PROPERTIES LABELS "EDITOR")
     add_executable(aiverse_studio_lighting_validation_tests tests/StudioLightingValidationTests.cpp)
     target_include_directories(aiverse_studio_lighting_validation_tests PRIVATE "${PROJECT_SOURCE_DIR}")

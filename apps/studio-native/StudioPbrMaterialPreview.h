@@ -32,6 +32,7 @@ inline render::Material studioPbrPreviewMaterial(const Json& resolved,
         out.baseColor.w=previewScalar(resolved["color"][3],1,0,1);
     out.metallic=previewScalar(resolved["metallic"],0,0,1);
     out.roughness=previewScalar(resolved["roughness"],.8f,.04f,1);
+    out.shadowDiffusion=previewScalar(resolved["shadowDiffusion"],0,0,1);
     out.normalScale=previewScalar(resolved["normalScale"],1,0,16);
     out.occlusionStrength=previewScalar(resolved["occlusionStrength"],1,0,1);
     out.emissive=previewRgb(resolved["emissive"],{0,0,0});

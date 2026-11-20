@@ -24,3 +24,10 @@ test('patch output strips unsupported fields',()=>{
 test('creation preset registry stays within native whitelist',()=>{
  assert.deepEqual([...MATERIAL_PRESETS],['matte','metal','glass']);
 });
+
+test('receiver shadow diffusion defaults to zero and survives authoring patches',()=>{
+ const field=materialFields({}).find(f=>f.key==='shadowDiffusion');
+ assert.equal(field.value,0);assert.equal(field.min,0);assert.equal(field.max,1);
+ assert.equal(materialFields({shadowDiffusion:.025}).find(f=>f.key==='shadowDiffusion').value,.025);
+ assert.deepEqual(editablePatch({shadowDiffusion:.125}),{shadowDiffusion:.125});
+});

@@ -289,7 +289,7 @@ namespace aiverse::render::shaders {
     "    vec2(-0.29853255, 0.78175370), vec2(-0.31085520, -0.78546678), vec2(0.76719649, 0.37279801), vec2(-0.82576636, 0.24579628),\n" \
     "    vec2(0.44750035, -0.74678107), vec2(0.17638381, 0.86228870), vec2(-0.72078458, -0.52266675), vec2(0.89551311, -0.10274371),\n" \
     "    vec2(-0.59891828, 0.68988219), vec2(-0.02475624, -0.92716389), vec2(0.65623978, 0.67904063), vec2(-0.96645424, -0.05887443));\n" \
-    "float shadowAt(vec3 wpos, vec3 n) {\n" \
+    "float shadowAtSurface(vec3 wpos, vec3 n, float diffusion) {\n" \
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);          // grazing surfaces need the most offset\n" \
@@ -320,15 +320,20 @@ namespace aiverse::render::shaders {
     "            float delta = d + dot(gradient, o) - sunDepth(uv + o);\n" \
     "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
     "        }\n" \
-    "        if (blockers == 0.0) return 1.0;\n" \
+    "        if (blockers == 0.0 && diffusion <= 0.0) return 1.0;\n" \
     "        float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;\n" \
     "        float uvPerWorld = 0.5 * length(vec3(u_lightViewProj[0].x, u_lightViewProj[1].x, u_lightViewProj[2].x));\n" \
-    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        float penumbra = (gap / max(blockers, 1.0)) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, u_shadow.w * 0.5), r);\n" \
     "    }\n" \
     "    // Per-pixel rotation requires temporal resolve; without it the noise remains visible as stipple.\n" \
     "    // Without TAA use a denser tapered disk; small temporal kernels keep a fixed disk.\n" \
     "    // Temporal sampling rotates the PCSS disk between frames only when HDR TAA is active.\n" \
+    "    // Receiver-only spread approximates surface fibres; it never changes caster geometry.\n" \
+    "    if (diffusion > 0.0) {\n" \
+    "        float receiverRadius = clamp(diffusion, 0.0, 1.0) * 0.5 * length(vec3(u_lightViewProj[0].x, u_lightViewProj[1].x, u_lightViewProj[2].x));\n" \
+    "        r = sqrt(r * r + receiverRadius * receiverRadius);\n" \
+    "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
     "    if (fract(u_quality.x) <= 0.25) {\n" \
@@ -354,7 +359,8 @@ namespace aiverse::render::shaders {
     "        s += sunCompare(uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(n_);\n" \
-    "}\n"
+    "}\n" \
+    "float shadowAt(vec3 wpos, vec3 n) { return shadowAtSurface(wpos, n, 0.0); }\n"
 
 #define AIVERSE_MSL_SHADOW \
     AIVERSE_MSL_SUN_FILTER \
@@ -400,7 +406,7 @@ namespace aiverse::render::shaders {
     "    float2(-0.29853255, 0.78175370), float2(-0.31085520, -0.78546678), float2(0.76719649, 0.37279801), float2(-0.82576636, 0.24579628),\n" \
     "    float2(0.44750035, -0.74678107), float2(0.17638381, 0.86228870), float2(-0.72078458, -0.52266675), float2(0.89551311, -0.10274371),\n" \
     "    float2(-0.59891828, 0.68988219), float2(-0.02475624, -0.92716389), float2(0.65623978, 0.67904063), float2(-0.96645424, -0.05887443)};\n" \
-    "static float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) {\n" \
+    "static float shadowAtSurface(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss, float diffusion) {\n" \
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);\n" \
@@ -431,11 +437,16 @@ namespace aiverse::render::shaders {
     "            float delta = d + dot(gradient, o) - sunDepth(sm, uv + o);\n" \
     "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
     "        }\n" \
-    "        if (blockers == 0.0) return 1.0;\n" \
+    "        if (blockers == 0.0 && diffusion <= 0.0) return 1.0;\n" \
     "        float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;\n" \
     "        float uvPerWorld = 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
-    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        float penumbra = (gap / max(blockers, 1.0)) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, f.shadow.w * 0.5), r);\n" \
+    "    }\n" \
+    "    // Receiver-only spread approximates surface fibres; it never changes caster geometry.\n" \
+    "    if (diffusion > 0.0) {\n" \
+    "        float receiverRadius = clamp(diffusion, 0.0, 1.0) * 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
+    "        r = sqrt(r * r + receiverRadius * receiverRadius);\n" \
     "    }\n" \
     "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
     "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
@@ -462,7 +473,8 @@ namespace aiverse::render::shaders {
     "        s += sunCompare(sm, uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(cnt);\n" \
-    "}\n"
+    "}\n" \
+    "float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) { return shadowAtSurface(f, wpos, n, fragCoord, sm, ss, 0.0); }\n"
 
 inline const char* kLitVS =
     AIVERSE_GLSL_BLOCKS

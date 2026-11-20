@@ -22,6 +22,7 @@
 //                 vec4 lod (x incoming coverage, y outgoing flag); 144 bytes per instance
 //   U1 per frame: as the lit shader (Shaders.h)
 //   U2 material:  vec4 base; vec4 emissive (rgb, linear, premultiplied by strength);
+//                 emissive.w: received sun-shadow diffusion radius in world units (0 = legacy).
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
 //                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, fixed shade ambient, diffuse);
@@ -353,7 +354,7 @@ void main() {
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && v_draw.x > 0.5) ? min(shadowAt(v_wpos, shadowNormal), terrainShadow(v_wpos)) : 1.0;
+    float sh = (ndl > 0.0 && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
@@ -821,7 +822,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float3 V = normalize(f.camPos.xyz - in.wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && in.draw.x > 0.5) ? min(shadowAt(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
+    float sh = (ndl > 0.0 && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
     sh *= cloudShade(lu, in.wpos);
     float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
     float3 sky = rtsDecodeScene(f.skyColor.rgb), ground = rtsDecodeScene(f.groundColor.rgb);

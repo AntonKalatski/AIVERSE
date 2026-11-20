@@ -1,27 +1,33 @@
 #include "apps/studio-native/StudioMaterialValidation.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <iostream>
 #include <limits>
 using namespace aiverse::studio;
 int main(){
-  assert(validStudioMaterialPreset("matte"));
-  assert(validStudioMaterialPreset("metal"));
-  assert(validStudioMaterialPreset("glass"));
-  assert(!validStudioMaterialPreset("../../../shader"));
-  assert(!validStudioMaterialPreset("custom"));
-  assert(validStudioMaterialName("steel_1"));
-  assert(!validStudioMaterialName("../bad")); assert(!validStudioMaterialName(""));
-  assert(validStudioMaterialNumber("metallic",0));
-  assert(validStudioMaterialNumber("roughness",1));
-  assert(!validStudioMaterialNumber("metallic",1.001));
-  assert(!validStudioMaterialNumber("metallic",std::numeric_limits<double>::infinity()));
-  assert(!validStudioMaterialNumber("texture",.5));
-  assert(validStudioMaterialNumber("normalScale",12));
-  assert(!validStudioMaterialNumber("emissiveStrength",101));
-  assert(validStudioMaterialBoolean("doubleSided")); assert(!validStudioMaterialBoolean("delete"));
-  assert(validStudioMaterialText("alpha","blend"));
-  assert(!validStudioMaterialText("alpha","transparent"));
-  assert(validStudioMaterialText("team","tint"));
-  assert(!validStudioMaterialText("base","../x"));
+  AIVERSE_TEST_CHECK(validStudioMaterialPreset("matte"));
+  AIVERSE_TEST_CHECK(validStudioMaterialPreset("metal"));
+  AIVERSE_TEST_CHECK(validStudioMaterialPreset("glass"));
+  AIVERSE_TEST_CHECK(!validStudioMaterialPreset("../../../shader"));
+  AIVERSE_TEST_CHECK(!validStudioMaterialPreset("custom"));
+  AIVERSE_TEST_CHECK(validStudioMaterialName("steel_1"));
+  AIVERSE_TEST_CHECK(!validStudioMaterialName("../bad")); AIVERSE_TEST_CHECK(!validStudioMaterialName(""));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("metallic",0));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("roughness",1));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("shadowDiffusion",0));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("shadowDiffusion",.025));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("shadowDiffusion",1));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",-1));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",1.001));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("shadowDiffusion",std::numeric_limits<double>::quiet_NaN()));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("metallic",1.001));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("metallic",std::numeric_limits<double>::infinity()));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("texture",.5));
+  AIVERSE_TEST_CHECK(validStudioMaterialNumber("normalScale",12));
+  AIVERSE_TEST_CHECK(!validStudioMaterialNumber("emissiveStrength",101));
+  AIVERSE_TEST_CHECK(validStudioMaterialBoolean("doubleSided")); AIVERSE_TEST_CHECK(!validStudioMaterialBoolean("delete"));
+  AIVERSE_TEST_CHECK(validStudioMaterialText("alpha","blend"));
+  AIVERSE_TEST_CHECK(!validStudioMaterialText("alpha","transparent"));
+  AIVERSE_TEST_CHECK(validStudioMaterialText("team","tint"));
+  AIVERSE_TEST_CHECK(!validStudioMaterialText("base","../x"));
   std::cout<<"Studio material validation PASS\n";
 }
