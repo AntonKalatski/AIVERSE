@@ -12,7 +12,7 @@
 |---|---|---|
 | `746ef806`, `9f2f2e81`, `a3c517bd`, `2be174b7`, `86c5c788` | `apps/studio-native/StudioFacialRigDocument.h` | New bounded project-local Facial Rig v1 schema validation, listing/read/save, explicit sanitized file names, no-follow descriptor-relative exclusive staging, fsync, same-directory publish; syntax/portability corrections |
 | `37ab50a2` | `apps/studio-native/StudioSession.cpp` | Strict native bridge whitelist for `studio.facialRigList/Get/Validate/Save`; returns runtimeVerified=false |
-| `6cad1c5b` | `apps/studio-web/src/panels/facialRigSchema.ts` | Typed Stage 180-compatible JSON v1 morph+IK DTO, explicit ARKit 52 semantic names, pure client-side bounded validation |
+| `6cad1c5b`, `f8d83ccd` | `apps/studio-web/src/panels/facialRigSchema.ts` | Typed Stage 180-compatible JSON v1 morph+IK DTO, explicit ARKit 52 semantic names, pure client-side bounded validation |
 | `d5ee8d3b` | `apps/studio-web/src/types.ts` | Four typed method params/results, no arbitrary path or untyped access |
 | `ea740657` | `apps/studio-web/src/mock.ts` | Browser preview has honest empty catalog; native-only writes/get/validation reject |
 | `9eea4e7e`, `379e9b49`, `c393647b` | `apps/studio-web/src/panels/FacialRigPanel.tsx` | New standalone UI-kit-driven Facial Rig panel with 52-morph template, search, dedicated editor, per-channel gain sliders, optional eye Aim authoring, schema validate, save/discard and errors |
