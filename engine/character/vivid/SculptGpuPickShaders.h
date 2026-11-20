@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -52,13 +53,24 @@ inline bool buildSculptGpuIdVertices(
     candidate.reserve(triangles*3u);
     std::uint32_t ordinal=0;
     for(const auto& p:model.meshes[surface.mesh].primitives) {
+        // Only surfaces that Renderer3D treats as fully opaque may return
+        // selectable IDs. Masked hair, translucent cornea and partially
+        // transparent materials still write conservative zero-ID depth.
+        // A missing material table is allowed for standalone test fixtures.
+        if(!model.materials.empty() &&
+           (p.material<0 || std::size_t(p.material)>=model.materials.size()))
+            return false;
+        const bool materialEditable=model.materials.empty() ||
+            (model.materials[std::size_t(p.material)].alpha==render::AlphaMode::Opaque &&
+             !model.materials[std::size_t(p.material)].transparent &&
+             model.materials[std::size_t(p.material)].baseColor.w>=0.999f);
         for(std::size_t i=p.firstIndex;
             i<std::size_t(p.firstIndex)+p.indexCount;i+=3u) {
             const std::array<std::uint32_t,3> ids{{
                 model.indices[i],model.indices[i+1],model.indices[i+2]
             }};
             std::array<std::uint8_t,4> rgba{};
-            bool editable=true;
+            bool editable=materialEditable;
             for(auto vertex:ids) {
                 if(vertex>=surface.world.size() ||
                    !surface.included[vertex])return false;
