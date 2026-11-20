@@ -76,3 +76,25 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 - Commits: `bd56c98eaac3d2becd0aa33006a096cfda9aa096`, `0de7402c9b85c57986516ccde5c740ca82f91fa8`, `27f53a184d4c72ea65e9de2dc898ee42e47f7659`, `b1f1fdcbd39c3062ccc7c436a62657ab1fc51615`.
 - **Validation:** inspected source and wrote source-level regression contracts. No JS/TS/Python test executed, no native CMake compile and no manual macOS UI/GPU verification. Run listed commands and exercise two inspector locks + UI zoom before merging.
 - Next step: identify genuine persisted references in C++ native DTOs (texture binding, particle asset, prefab, animation asset), expose them over typed Studio bridge with per-kind validity checks and GUID resolution, then adopt shared picker. No fake data or unsupported write paths.
+
+## Stage 5: real Material texture binding authoring (2026-11-20)
+### Verified existing engine data shape
+- `apps/editor/core/MaterialOps.cpp`: material library supports six texture path keys: `texture`, `normalMap`, `emissiveMap`, `teamMask`, `metallicRoughnessMap`, `occlusionMap`. Engine persists strings as paths relative to the project root; it does not consume GUID directly.
+- `StudioAssetCatalog`: .meta GUID is authoritative; `byGuid()` resolves to content-relative path and importer. GUID must resolve to `texture` importer and non-directory.
+### Changes made
+- `apps/studio-native/StudioMaterialValidation.h`: `studioMaterialTextureKey` explicitly allowlists six texture fields.
+- `apps/studio-native/StudioSession.cpp`: `studio.materialPatch` accepts bounded texture GUID string values, validates GUID through native catalog with `rebuild`, validates importer and file, and converts to `content/<relative path>` before delegating to existing engine `material_set`. Empty string clears a slot. Rejects all arbitrary non-GUID paths sent by browser. Existing safe numeric/boolean/text handling preserved; patch field cap raised from 15 to 24.
+- `apps/studio-web/src/panels/materialSchema.ts`: exposes six texture-backed fields as `type:'asset',assetKinds:['image']` in Material Library inspector, with default blank strings. Existing material path values remain legible until replaced.
+- `AssetReferencePicker.tsx`: only accepts GUID-backed catalog entries; for image-only picks honors native importer `texture`, rejects stale/missing GUID, highlights existing material path values alongside GUID.
+- Tests: `apps/studio-web/tests/materialSchema.test.mjs` now reflects safe allowlist of texture slots and checks asset field types/defaults; `tools/studio/test_reference_pin_zoom.py` checks source-level native validation and conversion.
+- Commits: `ffa22d920923587275c49062a2158fdea07466ec`, `6e721c837ed282f00aee43a23f1efd51d54b4198`, `2923a92a251e24d674ccc5e8c0d17135c75986a2`, `eece5f2487056703c0e306a64c0f5de0b83cdd03`, `eeb9b6536dfa335e29fbb2a2d4799c954b1b0666`, `706c1b6ca88766846ed40a30accdaf0e12c14313`, `8d21a6014fc90c4f7fbcb89d47e00d473263651d`.
+### Important limitations
+- Native material files **continue storing paths**, not GUIDs; asset moves can break existing references unless migration/rewriting is added. The GUID resolves at the authoring boundary only. Do not promise automatic reference repair after moves.
+- Asset Picker currently filters by `assetKind` as well as optional native importer; some texture formats known to the native importer but not `assetTree.ts` may be hidden until the extension lists are aligned.
+- No VFX/animation/model reference panel is integrated as they currently do not expose an appropriate persisted native reference write API.
+- If material text field holds an old `content/...` path, it can be replaced by selecting the catalog entry; the browser does not send the old path back in a new patch unless the user edits it.
+### Checks
+- **Actual:** verified GitHub source references, pushed commits, added source/test files.
+- **Not run:** `npm run typecheck`, `npm run test:web`, `npm run build`, Python tests, native CMake/CTest, Metal screenshot QA. Container's git network fails DNS; cannot honestly mark green.
+### Next step
+- Typecheck and compile on Mac; test successful texture selection/apply, unsupported GUID, dropped non-texture, clear field, cross-project GUID, absent .meta, undo limitations. Then implement a durable GUID reference format or safe remapping/rewrite when assets move, preserving compatibility with the runtime's project-relative path loader. Only then extend actual model/VFX reference schemas.
