@@ -10,6 +10,7 @@
 #include "LumaWeaveVulkanHdrShader.h"
 #include "LumaWeaveQuality.h"
 #include "Renderer3D.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
