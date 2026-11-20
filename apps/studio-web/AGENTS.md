@@ -1,5 +1,16 @@
 # AIVERSE Studio Web — AI authoring rules
 
+## Approved visual direction — do not reinterpret
+**The selected design is the FIRST cinematic concept, approved 2026-11-20.** It has a dominant real 3D Scene, premium layered dark-navy editor surfaces, blue/periwinkle focused highlights, softly raised panels, a practical Hierarchy/Inspector and a bottom Assets grid. The later stricter/flat mockup was **not** selected.
+
+Before editing any new or existing panel, read:
+- `docs/studio-visual-direction.md` — exact design/visual goal.
+- `docs/studio-ui-agent-guide.md` — paths, library usage, generation, examples and verification.
+- `docs/studio-design-system.md` — real shared React/CSS API.
+- `skills/editor/studio-ui/SKILL.md` — repeatable workflow.
+
+Use the shared `src/ui` library. Do not hardcode another palette, fake ECS components, substitute a mock image for Renderer3D, or change Metal viewport layering to satisfy a visual mock. Keep the current frontend functional and improve it incrementally with screenshots.
+
 ## Product
 This is the **editor**, not an in-game interface. Everything shared across windows is genre-independent. The old ImGui editor is temporary; do not add new UI features there.
 
