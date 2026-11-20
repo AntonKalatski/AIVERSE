@@ -135,6 +135,43 @@ public:
     View(const View&)=delete;
     View& operator=(const View&)=delete;
 
+    // Owner-thread candidate for an all-owner frame transaction. Copying World
+    // alone is insufficient: AnimationPlayer contains a mutable shared graph.
+    // External host components/callbacks must not mutate shared external state.
+    // Keep the source Models/Graphs leased until candidate submission completes.
+    std::unique_ptr<View> cloneForPreparation() const {
+        if(retargetScratchBusy_)
+            throw std::logic_error("View preparation during model submission");
+        auto next=std::make_unique<View>(workerCount_);
+        next->presentation_=presentation_;
+        next->presentation_.eachExisting<lib::animation::AnimationPlayerComponent>(
+            [](Entity,auto& player) {
+                if(player.instance)player.instance=player.instance->cloneForPreparation();
+            });
+        next->bridge_=bridge_;
+        next->budgets_=budgets_;
+        next->minimumParallelActors_=minimumParallelActors_;
+        next->stats_=stats_;
+        next->retargetStats_=retargetStats_;
+        next->retargetScratchBudgetBytes_=retargetScratchBudgetBytes_;
+        next->frameStamp_=frameStamp_;
+        next->lodState_=lodState_;
+        next->cameraLodState_=cameraLodState_;
+        // Scheduler workers and per-submit scratch have no persistent pose
+        // authority. Build them lazily in the independent candidate.
+        return next;
+    }
+    std::unique_ptr<View> prepareUpdate(std::span<const Object> objects,float dt) const {
+        auto next=cloneForPreparation();
+        next->update(objects,dt);
+        return next; // publish via the host's noexcept unique_ptr swap
+    }
+    std::unique_ptr<View> prepareUpdate(const ScenePacketBatch& batch,float dt) const {
+        auto next=cloneForPreparation();
+        next->update(batch,dt);
+        return next;
+    }
+
     // Canonical genre-independent camera entry. Renderer3D keeps ownership
     // of the frame and the RHI, View forwards a camera with no game rules.
     void beginScene(render::Renderer3D& renderer,
