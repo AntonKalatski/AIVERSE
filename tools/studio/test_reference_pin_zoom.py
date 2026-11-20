@@ -65,6 +65,17 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('str("content/" + asset->path)', native)
         self.assertIn('std::move(validatedPatch)', native)
 
+    def test_asset_moves_repair_material_paths_using_guid(self):
+        native = NATIVE.read_text(encoding="utf-8")
+        self.assertIn("oldPathByGuid.emplace(asset.guid,asset.path)", native)
+        self.assertIn("relocated.emplace(\"content/\"+found->second,\"content/\"+asset.path)", native)
+        self.assertIn("editor::saveMaterialLibrary(ws_,library", native)
+        self.assertIn("pendingMaterialUpdates.emplace_back(", native)
+        self.assertIn("repairedMaterialReferences", native)
+        self.assertIn("could not repair references", native)
+        assets = self.source("components/AssetsPanel.tsx")
+        self.assertIn("response.repairedMaterialReferences", assets)
+
     def test_import_settings_lock_preserves_asset_context(self):
         assets = self.source("components/AssetsPanel.tsx")
         settings = self.source("components/AssetImportSettings.tsx")
