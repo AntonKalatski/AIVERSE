@@ -917,7 +917,7 @@ add_library(AIVERSE::view ALIAS aiverse_view)
 add_library(AIVERSE::View ALIAS aiverse_view)
 target_compile_features(aiverse_view INTERFACE cxx_std_20)
 target_include_directories(aiverse_view INTERFACE "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
-target_link_libraries(aiverse_view INTERFACE AIVERSE::MotionWeave)
+target_link_libraries(aiverse_view INTERFACE AIVERSE::MotionWeave aiverse_shader_graph)
 
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_view_core_tests tests/view/view.cpp)
