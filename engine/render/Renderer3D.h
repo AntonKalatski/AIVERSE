@@ -496,6 +496,11 @@ public:
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    // Diagnostic only: control which *model* phases emit GPU draws while
+    // retaining both render encoders, other scene draws and pass clears.
+    // Bit 0 = shadow models, bit 1 = main opaque models. Defaults to both.
+    // Do not expose this as a quality setting or use it for production frames.
+    void setDiagnosticModelPassMask(uint8_t mask) { diagnosticModelPassMask_ = mask & 3u; }
     // Explicit editor-view override for the opt-in pooled static CPU MDI
     // feature. Environment preserves the process-level opt-in (OFF by
     // default), and Forbid/Enable are scoped by the caller to one view.
@@ -956,6 +961,7 @@ private:
     void retireIndirectLayoutsFor(const Model* model);
     void maintainIndirectLayoutCaches();
     bool modelMultiDrawEnabled_ = true;
+    uint8_t diagnosticModelPassMask_ = 3u; // full output by default
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.
     bool staticCrossModelBatchesEnabled_ = false;
