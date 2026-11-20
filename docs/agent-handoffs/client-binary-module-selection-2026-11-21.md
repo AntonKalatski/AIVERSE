@@ -265,3 +265,29 @@ is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
 Windows, runtime OBJ smoke, and CI were NOT RUN (no CI URL). Next: inspect
 other importer/decoder linkage and project-data-driven module selection, then
 measure a representative optimized Web build when the toolchain is available.
+
+## 2026-11-21 continuation: optional runtime BLP decoder
+
+Branch `feature/studio-html5`; implementation commit `8e0d5d09e`. Affected
+paths: `CMakeLists.txt`, `engine/render/Model.cpp`,
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. The new `blp` name passes
+`AIVERSE_BLP` to packaged clients. OFF removes `ImageBlp.cpp` and returns a
+decode failure for BLP1/BLP2 bytes. An omitted module list preserves the ON
+default. Other image decoders, public model APIs, host conversion tools and
+save formats are unchanged. BLP images referenced by other model formats
+require this module or prior texture conversion.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. Fixture `--check-engine-modules` for web PASS with
+`["blp"]` (`AIVERSE_BLP=ON`) and `[]` (OFF). macOS configure and `cmake --build
+/private/tmp/aiverse-client-modules-check --target aiverse_client -j 6` PASS
+both OFF and ON, with FBX/legacy/OBJ ON. OFF executable measured 80,883,080
+bytes without a `decodeBlp` symbol; ON measured 80,898,328 bytes with the
+symbol. Diagnostic reduction: 15,248 bytes. `git diff --check` PASS on stage
+paths (line-ending warnings only).
+
+The shared worktree contained unrelated changes; none was staged. Emscripten
+is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
+Windows, runtime BLP smoke and CI were NOT RUN (no CI URL). Next: focus on
+larger linked client components and project-data-driven selection rather than
+additional tiny decoder switches; measure optimized Web once available.
