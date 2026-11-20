@@ -1,7 +1,7 @@
 // Stage 176: compile-time native game-host integration fixture.
 // No GPU device required. Full CMake/CTest and actual scene load exercise
 // are deferred to the coordinated Mac acceptance campaign.
-#include "engine/view/MotionWeaveSceneGameHost.h"
+#include "engine/view/MotionWeaveSceneAssetBuilder.h"
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -34,6 +34,12 @@ bool instantiateCommitPath(view::MotionWeaveSceneGameHost& host,
 int main() {
     using Host=view::MotionWeaveSceneGameHost;
     static_assert(!std::is_copy_constructible_v<Host>);
+    static_assert(!std::is_copy_constructible_v<
+        view::MotionWeaveSceneAssetBuilder>);
+    static_assert(std::is_constructible_v<
+        view::MotionWeaveSceneAssetBuilder,gfx::Device&,
+        render::RenderDeviceLifetime::Lease,
+        render::FileReader,view::MotionWeaveSceneAssetBuilder::Resolve>);
     static_assert(std::is_constructible_v<
         Host,Simulation&,scene::SceneLoadCoordinator&,gfx::Device&,
         render::RenderDeviceLifetime::Lease>);
