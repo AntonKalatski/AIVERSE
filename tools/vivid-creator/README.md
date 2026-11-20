@@ -543,3 +543,87 @@ invalid depth, seam-clone resolution, linear fragment layout and
 source stream preparation are added in `vivid_human_creator`, but
 **native build, CTest, GLSL/MSL compiler, Metal/Vulkan/GLES GPU
 capture and real pixel parity have NOT RUN** on Stage 7AN.
+
+
+## Stage 7AO — experimental Metal ID/depth renderer
+
+Stage 7AN's GPU ID/depth format now has **an opt-in real Metal pass**.
+It is not a complete all-backend or all-scene visibility solution.
+By default Creator continues to pick using the CPU morph+skin BVH.
+
+In imported sculpt authoring, enable **Experimental Metal GPU ID check**
+before selecting a source vertex. After the CPU picker finds a vertex,
+the Creator prepares the same-frame surface with a publication/frame
+stamp. The optional `SculptGpuIdPass` (in
+`engine/character/vivid/SculptGpuIdPass.h`) expands the **selected mesh**
+into triangle-ID vertices, draws it using the canonical `gfx::Device`
+offscreen `RGBA8` colour and `Depth` attachments, applies hardware
+depth testing, and requests an asynchronous pixel readback. A later
+frame correlates the returned RGBA bytes with the exact click,
+published character, frame and viewport before resolving the source
+ID via the original morph/skin CPU surface.
+
+The new shared RHI method is:
+
+```cpp
+using PixelReadFn = std::function<void(std::vector<uint8_t>)>;
+virtual bool gfx::Device::readTexturePixelAsync(
+    gfx::TextureHandle texture,int topLeftX,int topLeftY,
+    PixelReadFn callback);
+```
+
+It returns `false` on unsupported implementations. For now only
+`engine/gfx/metal/GfxMetal.mm` overrides it, using a Metal
+texture-to-shared-buffer blit with a 256-byte padded row, asynchronous
+command-buffer completion, owner-thread callback on a later frame,
+and explicit **BGRA8 → canonical RGBA8** channel conversion.
+It rejects offscreen pixels outside the image, non-linear/non-RGBA8
+textures, active encoders, missing command buffers and unbounded
+callback queues. No synchronous pixel readback is performed on the
+click path. GLES3, GL33 and Vulkan currently return unsupported;
+CPU BVH remains the fallback for them.
+
+The native platform CTest `vivid_metal_sculpt_id` is defined in
+`tests/vivid/metal_sculpt_id.mm`. It creates two overlapping triangles
+at different depths in an actual Metal offscreen pass, checks that the
+nearest triangle's ID survives hardware depth test, checks a zero
+background pixel, and verifies the owner-thread async readback
+and Metal colour-channel conversion. The CTest and focused build target
+`aiverse_vivid_metal_sculpt_id_tests` are included in the final
+`tools/vivid-validate.sh` flow.
+
+### Important limits — this is not yet full GPU picking
+
+- **Only the selected imported mesh** is currently written to the ID pass.
+  Other geometry, floor, hair, transparent objects and masked
+  material visibility are not represented as zero-ID occluders. The
+  hardware depth test is valid within the selected mesh only.
+- The GPU ID stream is generated from the CPU morph+skin reference
+  positions, **not the actual Renderer3D vertex-override GPU stream**.
+  Therefore a numerical CPU/GPU deform difference or another deformer
+  can still make the selected surface disagree with the normal
+  scene colour pass.
+- The GPU check is optional and disabled by default. It corroborates
+  the CPU selection; if its draw/readback/token/deformation comparison
+  fails, the CPU BVH result is retained.
+- Framebuffer dimensions for this experimental mode are capped at
+  4096×4096. GPU ID vertices are expanded to three records per
+  triangle (max one million triangles), which can be expensive.
+  Program/target/buffer lifetimes are owned by `SculptGpuIdPass`;
+  pending per-click vertex allocations are released after true GPU
+  completion and unsupported/failing jobs retain their buffers
+  until a verified idle barrier, with a small bounded queue.
+- A fresh pixel response is validated by model publication, exact
+  captured pose frame, viewport dimensions and click generation.
+  A new click or character publication invalidates older readbacks.
+  No gameplay ECS, DNA, animation scheduler or texture streaming
+  semantics are changed.
+
+**Real verification remains pending:** although the native Metal
+test and the operational rendering code have been added, no macOS
+compiler, CTest, Metal pipeline compilation, GPU readback, Vulkan
+or GLES driver check has been executed on this new commit. The
+actual hardware performance and correct pixels are unknown.
+The next stage should add proper complete-scene occlusion,
+GPU-vertex-override parity and async GLES/Vulkan implementations
+on a separate, carefully reviewed shared-RHI integration path.
