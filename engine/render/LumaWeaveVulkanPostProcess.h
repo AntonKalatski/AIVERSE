@@ -11,6 +11,7 @@
 #include "LumaWeaveQuality.h"
 #include "Renderer3D.h"
 #include <cstdint>
+#include <stdexcept>
 
 namespace aiverse::render {
 class LumaWeaveVulkanPostProcess final : public PostProcess {
