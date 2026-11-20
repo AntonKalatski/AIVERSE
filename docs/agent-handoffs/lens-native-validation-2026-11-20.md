@@ -130,3 +130,12 @@ findNodePath declaration. Humanoid/ragdoll targets now compile. Full CTest
 NOT RUN. Commit `8aec846519fa902f5e1932493fa57f84ca13ed99` includes ModelClips.h in that tool; no
 API/format change. Branch codex/lens-completion; CI NOT RUN. Next: repeat
 native build on KINGSTON. Feature and GPU validation gaps remain as above.
+
+## Pass 9 — View shader graph linkage
+
+Quick runner at `4403028dc`, report `20261120-144000-4957` on KINGSTON:
+configure PASS, build FAIL linking three appearance fixtures (graph::compile).
+Full CTest NOT RUN. Commit `5effe65ed6dd2f2f90e15a90f45c700ded2b8c61` adds aiverse_shader_graph to
+the public aiverse_view INTERFACE because its inline appearance authoring API
+requires it. CMakeLists.txt only; no runtime/save change. Branch codex/lens-completion;
+CI NOT RUN. Next: repeat native build on KINGSTON; retain all open feature gates.
