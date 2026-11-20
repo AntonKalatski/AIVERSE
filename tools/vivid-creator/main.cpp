@@ -14,6 +14,7 @@
 #include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SculptGpuIdPass.h"
+#include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
 #include "engine/character/vivid/SkinLodSeamRemap.h"
@@ -58,6 +59,8 @@ struct CreatorApp {
     Renderer3D renderer;
     ImGuiLayer ui;
     Mesh floor;
+    std::vector<float3> floorCpuVertices;
+    std::vector<std::uint32_t> floorCpuIndices;
     HumanCreatorSession session;
     HumanDNA draft;
     HumanPreviewAsset human;
@@ -187,6 +190,11 @@ struct CreatorApp {
         retiredHumans=std::make_unique<HumanRetirementQueue>(dev);
         MeshBuilder ground;
         ground.box({0,-1.20f,0},{12,0.16f,12});
+        floorCpuVertices.clear();
+        floorCpuVertices.reserve(ground.vertices().size());
+        for(const auto& vertex:ground.vertices())
+            floorCpuVertices.push_back(vertex.pos);
+        floorCpuIndices=ground.indices();
         floor=ground.upload(dev);
         if(!floor.vb.valid()||!floor.ib.valid())
             throw std::runtime_error("VIVID Creator: floor upload failed");
@@ -2001,17 +2009,48 @@ struct CreatorApp {
         }
         renderer.beginScene(camera,dev.framebufferWidth(),dev.framebufferHeight());
         if(gpuSculptToRecord.valid()) {
-            // The currently prepared CPU surface belongs to exactly this
-            // pose/publication. Render the isolated selected-mesh ID pass
-            // before the main Renderer3D colour pass starts.
-            const bool submitted=gpuSculptPass.record(
+            // Build zero-ID depth geometry for every other imported model
+            // mesh referenced by a visible node, for the actual floor, and
+            // for the current procedurally simulated groom. All pieces are
+            // from the same current morph/skin pose as the selected surface.
+            // Masked/blended materials conservatively block by polygon
+            // silhouette; they cannot produce a falsely selectable ID.
+            std::vector<SculptGpuIdVertex> occluders;
+            bool complete=true;
+            std::vector<std::uint8_t> visited(human.head->meshes.size(),0);
+            SkinnedWeightSurface otherSurface;
+            for(const auto& node:human.head->nodes) {
+                if(node.mesh<0)continue;
+                const auto meshId=std::size_t(node.mesh);
+                if(meshId>=visited.size()) {complete=false;break;}
+                if(meshId==gpuSculptToRecord.meshId || visited[meshId])
+                    continue;
+                visited[meshId]=1;
+                if(!prepareSkinnedWeightSurface(
+                       *human.head,meshId,facePose,otherSurface,
+                       sculptPicker.morphedBindPositions()) ||
+                   !appendSculptGpuMeshOccluder(*human.head,otherSurface,
+                                                occluders)) {
+                    complete=false;break;
+                }
+            }
+            if(complete)
+                complete=appendSculptGpuWorldOccluder(
+                    floorCpuVertices,floorCpuIndices,mat4::identity(),
+                    occluders);
+            if(complete && human.hair)
+                complete=appendSculptGpuWorldOccluder(
+                    human.hair->vertices,human.hair->indices,
+                    rigidHeadMatrix(facePose[std::size_t(human.rig.head)]),
+                    occluders);
+            const bool submitted=complete && gpuSculptPass.record(
                 *human.head,sculptPicker.worldSurface(),
                 morphSourceVertices,sculptSourceIds,
-                renderer.viewProj(),gpuSculptToRecord);
+                renderer.viewProj(),gpuSculptToRecord,occluders);
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
-                status="GPU ID unavailable; CPU BVH selection retained";
+                status="GPU scene ID unavailable; CPU BVH selection retained";
             }
         }
         renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
