@@ -299,7 +299,8 @@ bool PortableSource::prepareModel(
         const mat4& instanceWorld,
         const std::vector<PortablePassView>& passes,
         bool forceFinestForUnspecifiedPass,
-        Model& output,std::string* error){
+        Model& output,std::string* error,
+        PortableLodHistory* temporalHistory,float hysteresisFraction){
     if(error)error->clear();
     const auto reject=[&](const char* reason){
         ++stats_.fallbackPreparations;
@@ -307,7 +308,10 @@ bool PortableSource::prepareModel(
     };
     if(!source_ || !validFor(*source_) || !safeSource(*source_) ||
        (!forceFinestForUnspecifiedPass && passes.empty()) ||
-       passes.size()>8)
+       passes.size()>8 ||
+       !std::isfinite(hysteresisFraction) || hysteresisFraction<0.f ||
+       hysteresisFraction>.45f ||
+       (hysteresisFraction>0.f && !temporalHistory))
         return reject("stale Strata source or unsupported pass configuration");
     for(const auto& p:passes)
         if(p.width<=0 || p.height<=0 ||
@@ -352,6 +356,10 @@ bool PortableSource::prepareModel(
         m.shadowBatch={};
         m.materialBatches.clear();
     }
+    // Staged writeback only: output and hysteresis history must remain
+    // unchanged if even the LAST material/primitive cannot render.
+    using HistoryKey=PortableLodHistory::Key;
+    std::vector<std::pair<HistoryKey,std::vector<uint8_t>>> historyUpdates;
     uint64_t selected=0;
     for(size_t i=0;i<asset_->primitives.size();++i){
         const auto& entry=asset_->primitives[i];
@@ -389,7 +397,8 @@ bool PortableSource::prepareModel(
             for(size_t n=0;n<source_->nodes.size();++n){
                 if(source_->nodes[n].mesh!=int(entry.mesh))continue;
                 wasUsed=true;
-                for(const auto& pass:passes){
+                for(size_t passSlot=0;passSlot<passes.size();++passSlot){
+                    const auto& pass=passes[passSlot];
                     ViewConfig view{};
                     view.objectToClip=pass.viewProjection*instanceWorld*
                                       source_->bindWorld[n];
@@ -397,6 +406,15 @@ bool PortableSource::prepareModel(
                     view.height=pass.height;
                     view.clipDepthZeroToOne=pass.clipDepthZeroToOne;
                     view.errorThresholdPixels=pass.errorThresholdPixels;
+                    if(hysteresisFraction>0.f){
+                        view.hysteresisFraction=hysteresisFraction;
+                        view.previousRefined=temporalHistory->previous(
+                            asset_,sourceGeometryRevision_,
+                            uint32_t(passes.size()),
+                            HistoryKey{uint32_t(i),uint32_t(n),
+                                       uint32_t(passSlot)},
+                            g.nodes.size());
+                    }
                     // The existing renderer independently culls the per-pass
                     // model primitives. Never select only main-camera geometry.
                     view.frustumCull=false;
@@ -406,6 +424,11 @@ bool PortableSource::prepareModel(
                                  streaming_ ? &gpuMask : nullptr) ||
                        plan.budgetExceeded)
                         return reject("portable Strata CPU LOD plan failed");
+                    if(hysteresisFraction>0.f)
+                        historyUpdates.emplace_back(
+                            HistoryKey{uint32_t(i),uint32_t(n),
+                                       uint32_t(passSlot)},
+                            std::move(plan.refinedNodes));
                     for(const auto& range:plan.ranges){
                         uint32_t ancestor=parent[range.node];
                         while(ancestor!=invalidNode){
@@ -456,6 +479,30 @@ bool PortableSource::prepareModel(
         }
     }
     if(!selected)return reject("no resident selected Strata clusters");
+    // Publication boundary: all primitive ranges are drawable, so it is
+    // finally safe to swap temporal states. A change in source/pass layout
+    // discards every older per-camera record instead of reusing stale LODs.
+    if(temporalHistory){
+        if(forceFinestForUnspecifiedPass || hysteresisFraction==0.f){
+            temporalHistory->reset();
+        }else{
+            if(temporalHistory->source!=asset_ ||
+               temporalHistory->geometryRevision!=sourceGeometryRevision_ ||
+               temporalHistory->passCount!=passes.size()){
+                temporalHistory->reset();
+                temporalHistory->source=asset_;
+                temporalHistory->geometryRevision=sourceGeometryRevision_;
+                temporalHistory->passCount=uint32_t(passes.size());
+            }
+            for(auto& [key,refined]:historyUpdates){
+                auto& previous=temporalHistory->states[key];
+                if(previous.size()==refined.size())
+                    for(size_t id=0;id<refined.size();++id)
+                        stats_.hysteresisTransitions+=previous[id]!=refined[id];
+                previous=std::move(refined);
+            }
+        }
+    }
     output=std::move(alias); // transaction: original output untouched on error
     ++stats_.drawPreparations;
     stats_.selectedClusters+=selected;
