@@ -2331,3 +2331,42 @@ Vulkan `GpuSelectionSubmission`. This work remains isolated on
 - Next: add real Vulkan Renderer3D main-view pixel parity fixture,
   then extend multi-material/multi-instance support while retaining
   exclusive pass ownership, before tackling crack-free LOD.
+
+
+## STRATA Stage 16.4 — multi-material, instance and camera GPU routing (2026-11-20)
+
+Read Stage16.4a, 16.4b and 16.4c of
+`docs/agent-handoffs/strata-virtual-geometry.md` before editing
+Vulkan GPU selection, `GeometryScene` or `Renderer3D`. The
+complete implementation remains on
+`feature/strata-virtual-geometry`; do NOT merge directly to main.
+
+- Stage16.4a supports up to 16 opaque primitives/materials and up
+  to 16 source instances, with independent GPU indexed packets;
+  Renderer3D binds each original PBR/material/U0 state and owns the
+  ONLY actual draw. CPU material/shadow proxy batching is disabled
+  for selected GPU packet sources, not for Legacy sources.
+- Stage16.4b prepares a separate sun-camera selection before
+  the shadow render pass, with strict pass/projection/resolution
+  identity checks and same-model Legacy fallback.
+- Stage16.4c prepares **spot and planar reflection** GPU selection
+  only after their actual camera matrices are known in
+  `Renderer3DReflect.cpp`, **before opening render encoders**.
+  A separate `GpuIndexedSelectionPacket` is owned by each
+  Renderer3D ModelItem for every camera. Never reuse a main-view
+  command buffer in sun, spot or mirrored reflection.
+- EXPLICIT acceptance flags are all default FALSE:
+  `setStrataVulkanGpuParityGates(selection,mainRaster)` and
+  `setStrataVulkanGpuAuxiliaryParityGates(sun,spot,reflection)`.
+  The user must establish separate real Vulkan main RGBA and
+  sun/spot DEPTH, planar reflection RTT pixel parity for the
+  exact source SHA before accepting each pass. A manual flag is
+  not a test result.
+- `GpuClusterCulling` is borrowed from GeometryScene by ModelItems
+  only until `Renderer3D::render` completes; scene Model/metadata
+  cannot be destroyed between draw and render.
+- All 16.4 source + recording fixtures are committed but **NONE
+  WERE COMPILED OR EXECUTED**. Next stage: Stage17 crack-free lossy
+  cluster LOD boundaries, then Stage18 performance, then one full
+  native CMake/CTest and real hardware acceptance run. Preserve
+  genre independence and Metal/Vulkan/GLES3 fallback behavior.
