@@ -16,6 +16,7 @@ public:
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
     const StudioFacialPreviewState& facialPreview() const noexcept {return facialPreview_;}
     void failFacialPreview(const std::string& reason) noexcept;
+    void markFacialPreviewReady(uint64_t generation) noexcept;
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
 private:
     Json snapshot() const;
