@@ -2089,10 +2089,19 @@ struct CreatorApp {
                     if(primitive.meshIndex!=gpuSculptToRecord.meshId)
                         continue;
                     if(!selected)selected=&primitive;
-                    else if(primitive.vertexOverride!=selected->vertexOverride ||
-                            primitive.vertexOverrideCount!=
-                                selected->vertexOverrideCount)
-                        complete=false;
+                    else {
+                        if(primitive.vertexOverride!=selected->vertexOverride ||
+                           primitive.vertexOverrideCount!=
+                               selected->vertexOverrideCount ||
+                           primitive.skinning!=selected->skinning)
+                            complete=false;
+                        // One GPU skin compute dispatch uses one I.model.
+                        // Every selected renderer primitive must have the
+                        // identical submitted model transform.
+                        for(std::size_t c=0;c<16u;++c)
+                            if(primitive.world.m[c]!=selected->world.m[c])
+                                complete=false;
+                    }
                 }
                 if(!selected || !gpuSculptPass.supportsActualGpuVertexStream() ||
                    !selected->vertexOverride.valid() ||
@@ -2102,6 +2111,9 @@ struct CreatorApp {
                        selected->world,selected->vertexOverride,
                        selected->vertexOverrideCount,sculptSourceIds,
                        morphSourceVertices,actualStream))
+                    complete=false;
+                if(complete && selected->skinning!=
+                       (actualStream.params.skinned!=0u))
                     complete=false;
                 if(complete && actualStream.maskedSelection &&
                    !gpuSculptPass.supportsActualGpuMaskedStream())
