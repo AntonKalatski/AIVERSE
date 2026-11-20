@@ -55,6 +55,20 @@ inline bool validModelPoseRetarget(const render::Model& source,
 // from different meshes, arbitrary index orders, or a source animation state.
 using ModelMorphChannelNames=std::vector<std::vector<std::string>>;
 
+// Read only importer-originated semantic metadata. This deliberately does
+// NOT synthesize names for FBX/OBJ or unnamed glTF morph channels. Models
+// with incomplete names will fail closed in compileNamedModelMorphRetarget.
+inline ModelMorphChannelNames importedModelMorphChannelNames(
+        const render::Model& model) {
+    ModelMorphChannelNames result(model.nodes.size());
+    for(size_t i=0;i<model.nodes.size();++i) {
+        const int mesh=model.nodes[i].mesh;
+        if(mesh>=0 && size_t(mesh)<model.meshes.size())
+            result[i]=model.meshes[size_t(mesh)].morphTargetNames;
+    }
+    return result;
+}
+
 // One-time asset-publication helper. It compiles a name-based semantic map
 // into the existing compact integer channel indices consumed by the cached
 // CompiledModelPoseRetarget. Unknown target names preserve target bind weight.
@@ -126,6 +140,16 @@ inline bool compileNamedModelMorphRetarget(
         if(error)*error=ex.what();
         return false;
     }
+}
+
+// Convenience for models carrying real glTF extras.targetNames. No
+// importer-specific JSON headers leak into the universal visual LOD API.
+inline bool compileImportedModelMorphRetarget(
+        const render::Model& source,const render::Model& visual,
+        ModelPoseRetarget& inOut,std::string* error=nullptr) {
+    return compileNamedModelMorphRetarget(
+        source,visual,importedModelMorphChannelNames(source),
+        importedModelMorphChannelNames(visual),inOut,error);
 }
 
 inline bool validModelPoseRetarget(const render::Model& source,
