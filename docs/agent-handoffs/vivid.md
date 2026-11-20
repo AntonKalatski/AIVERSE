@@ -1780,3 +1780,73 @@ shared animation scheduler or GPU ABI changed. Next actionable step: expand the
 explicit adapter to original skeleton/skin weights and RigLogic behavior with
 real reference-pose tests; obtain companion texture/groom assets separately.
 Do not call this complete MetaHuman runtime support or a production character.
+
+
+## Full Ada companion-character capture — 2026-11-20
+
+User requested a full character because the preceding DNA sample showed only the
+head. Code `3699a445d1383fe7048f9fa8afe6443575b77272` on
+`integration/motionweave-studio-facial-stage184`, parent
+`25d60660c4f17089d8b5c68e57f8338fb7ca29fa`.
+
+Discovery: Epic's old Ada.dna contains no full-body mesh. Its public data/body
+folder contains skeleton Maya files only. Found separately published full Ada
+export by CreateGameCharacters:
+https://creategamecharacters.github.io/metahuman-to-glb/characters/ada/ada.glb
+Repository https://github.com/creategamecharacters/metahuman-to-glb
+SHA256 `70ad5d190e3cdfb54e88d405b75d7b4731547f2bd93d5cbad0ce4720946d99de`.
+This is a separate UE 5.6 companion GLB, NOT a body generated from the previous
+legacy DNA file. The user was told this distinction before and after import.
+
+Changes: new tools/vivid-dna-import/prepare_full_character.cjs decodes Draco via
+external pinned tooling (@gltf-transform/core + extensions 4.2.1, draco3dgltf 1.5.7),
+preserves mesh/skin/texture data, assigns unique duplicate garment bone names and
+selects the actual face skin head. A parent frame normalizes the whole figure,
+with optional yaw. Published mh_materials.json provides uniform cloth colours,
+roughness/metallic fallback because the GLB base-colour input is a UE RGB region
+mask. This is not complete original UE cloth-detail shader reconstruction.
+Authored hair tags prevent Creator from adding procedural hair. Documentation
+updated in adapter README and docs/vivid.md. Creator's demo idle translation now
+uses bind + bob instead of absolute zero, preserving nonzero imported head offsets.
+No new scheduler, authoritative gameplay, DNA schema or shared renderer edits.
+
+Actual checks (all artifacts in
+/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/):
+- `cmake --build .../native --target aiverse_vivid_creator -j 8`: PASS, build.log.
+- Node preparation front/quarter: PASS, prepare-final.log, prepare-quarter.log.
+  node --check script and git diff --check PASS.
+- Input/output asset structural checks: preserved **7 meshes, 15 primitives,
+  5 skins with unchanged joint-count multiset, 16 texture images**, removed Draco
+  requirement. Source has 119916 vertices; native skin-palette splitting gives
+  125302 displayed vertices. Garments include shirt, slacks, flats, full body,
+  face, eyebrow cards and hair cards.
+- `aiverse_vivid_creator --smoke --still --asset <manifest>` final front and ¾
+  GPU captures PASS; front with --cpu-morph PASS. Logs/images:
+  ada-front-final.{log,ppm,png}, ada-quarter-final.{log,ppm,png},
+  ada-cpu-final.{log,ppm}. Actual tracked head/model commands=47,
+  shadow=41, colour=41, pass=1, pipelineFailures=0.
+- Both final GPU PNGs visually inspected: full head-to-shoe character framed,
+  hands/legs/garments/hair visible, body/face remain attached in rest pose.
+  Earlier ada-front.png showed RGB clothing masks as red/green/purple colours;
+  final uniform author-colour fallback fixes those diagnostic mask colours.
+- SOURCE.json records URL, hash and companion-export distinction. SDK/sample and
+  npm package-lock/dependencies remain external on KINGSTON, none vendored.
+
+A read attempt at sparse checkout UnrealFest.zip failed because sparse checkout
+excluded it; no asset depended on that archive. Full source and final snapshots
+are retained externally for reproducibility. No source code from the external
+pipeline scripts was executed; only downloaded data and standard pinned decoder
+libraries were used by our preparation script.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Full Ada companion export in VIVID | implemented in source; real Metal captures passed | Broader asset/backend parity |
+| Imported head bind translation | implemented in source; full rest-pose capture verified | Comprehensive moving full-rig tests |
+| Original UE materials / RigLogic | partial / not implemented | Cloth mask-detail, exact eye/hair shader and facial solver parity |
+| Full body animation / other backends | not tested | Actual clips, skinning/retarget reference tests |
+
+Full engine tests, Studio UI screenshots, Vulkan/GLES and complete MetaHuman
+animation parity NOT RUN. No CI/push/main checkout changes. Next step: bring
+actual body clips and validated facial routing into this full asset, then check
+pose/retarget and material fidelity independently. Do not conflate this successful
+full-body rest-pose import with full binary body-DNA/RigLogic support.
