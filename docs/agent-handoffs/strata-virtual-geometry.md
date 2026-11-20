@@ -3071,3 +3071,21 @@ mock-RHI tests; keep parity gates OFF until real screenshots and
 timings are reviewed. Finish remaining STRATA Stage 17 crack-free
 LOD and Stage 18 performance optimization before the owner's
 single final compilation/test pass.
+
+### Stage 16.3 follow-up: validated local source index offset and docs
+
+A follow-up source change avoids re-reading the input mesh arrays after
+GPU validation: `GeometryScene.cpp` commit
+`9e73ec424ebce3bb4f1c611427db0a55f30b46a7` derives
+`ModelDraw::gpuIndexed.sourceFirstIndex` directly from the
+already checked `VulkanIndirectContract::originalFirstIndex` and
+`Model::gpuFirstIndex`. This preserves the absolute pooled vs
+primitive-local index ABI and eliminates a second mutable mesh lookup.
+The public documentation was updated in `docs/strata.md` commit
+`286b315f8c7b91654fdb1b6f2efc10471da160d7`, and the next agent's
+entry point in `AGENTS.md` commit
+`4563bef79bb01eda2aab632246df00dcf3df0711`.
+
+**No Stage 16.3 test was executed.** Work remains default OFF with
+manual parity gates both false; an indirect argument packet is not a
+hardware image parity result.
