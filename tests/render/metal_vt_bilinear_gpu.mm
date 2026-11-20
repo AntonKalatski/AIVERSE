@@ -237,7 +237,19 @@ fragment float4 fs_main(BilinearOut in [[stage_in]],
     texture2d_array<float,access::read> table [[texture(1)]],
     sampler atlasSampler [[sampler(0)]],
     constant float4& uvLayerGutter [[buffer(1)]],
-    constant float4& wrapModes [[buffer(2)]]) {
+    constant float4& wrapModes [[buffer(2)]],
+    constant float4& derivatives [[buffer(3)]]) {
+    if (wrapModes.z == 1.0f)
+        return aiverse_sample_virtual_trilinear(atlas,table,atlasSampler,
+            uvLayerGutter.xy,uint(uvLayerGutter.z),uvLayerGutter.w,
+            float4(0.02f,0.03f,0.04f,1.0f),derivatives.xy,derivatives.zw,
+            wrapModes.y,2u,uint(wrapModes.x),0u);
+    if (wrapModes.z == 2.0f)
+        return aiverse_sample_virtual_anisotropic(atlas,table,atlasSampler,
+            uvLayerGutter.xy,uint(uvLayerGutter.z),uvLayerGutter.w,
+            float4(0.02f,0.03f,0.04f,1.0f),derivatives.xy,derivatives.zw,
+            float2(12.0f,6.0f),wrapModes.y,2u,uint(wrapModes.w),
+            uint(wrapModes.x),0u);
     return aiverse_sample_virtual(atlas,table,atlasSampler,
         uvLayerGutter.xy,uint(uvLayerGutter.z),uvLayerGutter.w,
         float4(0.02f,0.03f,0.04f,1.0f),
@@ -248,7 +260,7 @@ fragment float4 fs_main(BilinearOut in [[stage_in]],
         sd.msl=msl.c_str();
         sd.label="MetalCanonicalVirtualTextureBilinear";
         sd.textureSlots=2;
-        sd.uniformSlots=2;
+        sd.uniformSlots=3;
         shader=device.createShader(sd);
         if(shader.valid()) {
             PipelineDesc pd;
@@ -271,7 +283,9 @@ fragment float4 fs_main(BilinearOut in [[stage_in]],
         return true;
     }
     bool sample(TextureHandle atlas,TextureHandle table,
-                int layer,int wrap,float u,float v,Color& found) {
+                int layer,int wrap,float u,float v,Color& found,
+                float lod=0,int mode=0,int taps=1,
+                std::array<float,4> derivatives={}) {
         device.beginFrame(16,16);
         RenderTargetPassDesc pass;
         pass.colorCount=1;
@@ -288,9 +302,10 @@ fragment float4 fs_main(BilinearOut in [[stage_in]],
         device.setTexture(0,atlas);
         device.setTexture(1,table);
         const std::array<float,4> coord{u,v,float(layer),float(kGutter)};
-        const std::array<float,4> modes{float(wrap),0,0,0};
+        const std::array<float,4> modes{float(wrap),lod,float(mode),float(taps)};
         device.setUniforms(0,coord.data(),sizeof(coord));
         device.setUniforms(1,modes.data(),sizeof(modes));
+        device.setUniforms(2,derivatives.data(),sizeof(derivatives));
         device.draw(3);
         device.endPass();
         device.endFrame();
@@ -314,6 +329,83 @@ fragment float4 fs_main(BilinearOut in [[stage_in]],
     }
     ~Probe(){shutdown();}
 };
+// Deliberately authored colors give closed-form expectations, independent of
+// shader lookup/LOD code. Physical slice order differs from logical mip order.
+void indexedOracle(Device& device,Probe& probe) {
+    const std::array<Color,4> colors{{{0,0,240,255},{0,200,0,255},
+                                    {240,0,0,255},{200,160,40,255}}};
+    TextureDesc desc;
+    desc.width=8;desc.height=8;desc.arrayLayers=4;desc.mipLevels=1;
+    desc.dimension=TextureDimension::Texture2DArray;
+    auto atlas=device.createTexture(desc);
+    desc.width=2;desc.height=1;desc.filter=Filter::Nearest;
+    auto table=device.createTexture(desc);
+    require(atlas.valid() && table.valid(),"indexed oracle array allocation");
+    if(!atlas.valid() || !table.valid()) {
+        if(atlas.valid())device.destroyTexture(atlas);
+        if(table.valid())device.destroyTexture(table);
+        return;
+    }
+    for(int slice=0;slice<4;++slice) {
+        std::array<Color,64> pixels;
+        pixels.fill(colors[size_t(slice)]);
+        TextureUploadDesc upload;
+        upload.arrayLayer=slice;upload.width=8;upload.height=8;
+        upload.rowPitchBytes=32;upload.slicePitchBytes=256;upload.data=pixels.data();
+        require(device.updateTextureRegion(atlas,upload),"indexed oracle physical page upload");
+    }
+    // Logical layer 0: red/blue at mip 0, green at mip 1.
+    // Logical layer 1: yellow at mip 0, one missing mip-1 entry.
+    std::array<std::array<Color,2>,4> entries{{
+        {{{2,0,0,255},{0,0,0,255}}},
+        {{{1,0,1,255},{1,0,1,255}}},
+        {{{3,0,0,255},{3,0,0,255}}},
+        {{{0,0,0,0},{1,0,1,255}}}
+    }};
+    for(int slice=0;slice<4;++slice) {
+        TextureUploadDesc upload;
+        upload.arrayLayer=slice;upload.width=2;upload.height=1;
+        upload.rowPitchBytes=8;upload.slicePitchBytes=8;upload.data=entries[size_t(slice)].data();
+        require(device.updateTextureRegion(table,upload),"indexed oracle table upload");
+    }
+    unsigned samples=0;
+    auto check=[&](const char* name,Color expected,int layer,int wrap,float u,
+                   float lod,int mode=1,int taps=1,std::array<float,4> gradients={}) {
+        Color actual{};
+        if(!probe.sample(atlas,table,layer,wrap,u,.5f,actual,lod,mode,taps,gradients)) {
+            require(false,name);return;
+        }
+        ++samples;
+        for(size_t c=0;c<4;++c)if(std::abs(int(actual[c])-int(expected[c]))>2) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: indexed %s channel=%zu expected=%u got=%u\n",
+                name,c,unsigned(expected[c]),unsigned(actual[c]));
+        }
+    };
+    check("fine left",colors[2],0,0,.25f,0);
+    check("fine right",colors[0],0,0,.75f,0);
+    check("quarter mip blend",{180,50,0,255},0,0,.25f,.25f);
+    check("half mip blend",{0,100,120,255},0,0,.75f,.5f);
+    check("upper LOD clamp",colors[1],0,0,.25f,20);
+    check("negative LOD clamp",colors[2],0,0,.25f,-3);
+    check("logical layer stride",colors[3],1,0,.25f,0);
+    check("missing entry fallback",{5,8,10,255},1,0,.25f,1);
+    check("missing entry blend",{103,84,25,255},1,0,.25f,.5f);
+    check("invalid logical layer",{5,8,10,255},2,0,.25f,0);
+    check("repeat addressing",colors[2],0,1,1.25f,0);
+    check("mirror addressing",colors[0],0,2,1.25f,0);
+    // A two-texel footprint with one tap chooses mip 1. With two or
+    // more taps it straddles the red/blue page boundary at mip 0.
+    check("one tap coarse",colors[1],0,0,.5f,0,2,1,{2.f/12,0,0,1.f/6});
+    for(int taps:{2,4,8})
+        check("cross-page anisotropic",{120,0,120,255},0,0,.5f,0,2,taps,
+              {float(taps)/12,0,0,1.f/6});
+    check("anisotropic bias",colors[1],0,0,.5f,1,2,2,{2.f/12,0,0,1.f/6});
+    check("Y-major derivative",{120,0,120,255},0,0,.5f,0,2,2,{0,1.f/6,2.f/12,0});
+    require(samples==18,"all indexed mip/anisotropic native pixel probes completed");
+    std::printf("VT indexed independent color oracle: samples=%u\n",samples);
+    device.destroyTexture(table);device.destroyTexture(atlas);
+}
 int run() {
     id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
     if(!metal) {
@@ -439,6 +531,7 @@ int run() {
     require(samples==uPoints.size()*vPoints.size()*2,
             "all Repeat/MirrorRepeat native bilinear GPU probes completed");
     require(seamSamples>=20,"multiple page and wrap boundary probes really sampled");
+    indexedOracle(*device,probe);
     require(device->gpuHealthy(),"Metal command buffers completed without GPU errors");
     std::printf("VT bilinear independent CPU oracle: samples=%u seam_samples=%u max_delta=%d\n",
                 samples,seamSamples,largestDelta);
