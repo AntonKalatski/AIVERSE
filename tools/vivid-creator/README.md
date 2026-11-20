@@ -478,3 +478,68 @@ joint movement, invalid pose rollback, morph and seam-clone behavior.
 Actual macOS build, CPU timing and Metal/Vulkan/GLES parity are **NOT RUN**
 at this source stage. Continue with the deferred consolidated acceptance
 before merging anything to main.
+
+
+## GPU triangle-ID/depth selection contract (Stage 7AN)
+
+The optional **GPU ID/depth selection format is now specified in code**,
+but real per-pixel readback and integration into Creator's live offscreen
+render pass remain separate work. The safe CPU BVH picker is still the
+active, functional Creator path. Do **not** claim Metal/Vulkan/GLES GPU
+picking is live merely because shader sources and a token codec exist.
+
+`engine/character/vivid/SculptGpuPickContract.h` contains:
+
+- `packSculptTriangleId(ordinal)` and `unpackSculptTriangleId(rgba)`:
+  the *mesh-local* ordinal is encoded as `ordinal+1` little-endian into
+  **linear RGBA8**; zero = no hit/occluder clear, max one million triangles.
+  No sRGB conversion, tone mapping, blending, dithering or MSAA is allowed
+  in an ID render target.
+- `SculptGpuPickProtocol`: one pending click at a time with a full token
+  `(generation, modelPublicationSerial, capturedFrameSerial, mesh,
+  viewportWidth/Height, topLeftPixelX/Y)`. Another click/model
+  publication invalidates all older callbacks. Exact token, actor
+  publication, frame ordering, viewport and optional normalized depth
+  are checked on readback.
+- `resolveSculptGpuTriangle`: given that selected triangle and a CPU
+  surface sampled from the **same exact morph/skin frame**, intersects
+  only that triangle and maps an actual seam clone to its original
+  source vertex; generated/LOD vertices and non-matching ray positions
+  fail closed.
+
+`SculptGpuPickShaders.h` provides paired GLSL ES 3.00 and MSL
+`vs_main/fs_main` shader sources, 16-byte `SculptGpuIdVertex` and
+standard `gfx::ShaderDesc`/`gfx::PipelineDesc` builders. This GPU
+input is one expanded 3-vertex record per *rendered triangle*, all
+three vertices carrying the exact same encoded ID, preventing
+provoking-vertex ambiguity. The shader writes an RGBA8 ID color
+with the ordinary hardware depth test; the host must render all
+other relevant occluders into that depth target with zero ID.
+`buildSculptGpuIdVertices` assembles that stream from *already
+morphed and skinned* world coordinates and keeps inactive/LOD triangles
+as zero-ID depth occluders. It never edits the source Model.
+
+`DeformedSculptWorkspace::resolveGpuTriangle` is an opt-in bridge to
+the existing CPU pose and source-ID mapping. For asynchronous GPU
+results the workspace's matching `pick(...,sourceIds,frameSerial,
+publicationSerial)` must have prepared the pose; a different frame,
+different model publication or `reset()` rejects the result. Generic
+CPU picks (without stamps) cannot be reinterpreted as GPU readbacks.
+
+**RHI integration still missing:** the current VIVID branch has
+`gfx::Device::captureNextFrame()` (presented screen) and
+`readBufferAsync()` for GPU buffers, but no generally supported
+asynchronous per-pixel offscreen texture readback used by this tool.
+No ID pass resources are allocated, no draw command is recorded,
+and no GPU callback is registered by VIVID yet. Building this
+renderer-owned pipeline with proper occlusion, GPU morph/skin
+vertex override, device-dependent depth, frame fencing, mobile
+support and a real readback is the next integration step,
+preferably alongside the stabilized shared Texture RHI work.
+Do not use a screen screenshot workaround or stall each click.
+
+CPU fixture assertions for ID encode/decode, stale queries,
+invalid depth, seam-clone resolution, linear fragment layout and
+source stream preparation are added in `vivid_human_creator`, but
+**native build, CTest, GLSL/MSL compiler, Metal/Vulkan/GLES GPU
+capture and real pixel parity have NOT RUN** on Stage 7AN.
