@@ -1,6 +1,21 @@
 # TerraWeave — current agent handoff entry point
 
 
+> **Stage70 new-main Prisma/MotionWeave two-parent integration (2026-11-20):**
+> Merge `c27085af` has real parents main
+> `fc42156b` and Terra `e8656add`. Full-tree three-way audit:
+> **4 overlapping paths resolved** (CMake, Renderer3DModels,
+> ECS replay checks, monolithic FBX tests), all new Prisma,
+> MotionWeave and universal View targets preserved.
+> `main` is ancestor, behind=0 at merge.
+> [Standalone merge/QA handoff](qa-2026-11-20-stage70-prisma-motionweave-main-merge-handoff.md).
+> **NEW MERGE CMAKE / C++ / CTEST NOT RUN.** Historical 191/191 PASS
+> belongs to exact premerge tested source `346dc66a`.
+> Test first native PHYSIS/Terra fall bridge, then all-target CTest.
+> GPU backend parity and prolonged ecology simulation remain open.
+>
+
+
 > **Stage70 Mac 191/191 full native acceptance (2026-11-20):**
 > User reported a fresh **one-pass unfiltered 191/191 PASS**, 0 fail,
 > wall 945.76s for merged SpectraFX + TerraWeave / native/editor/Box3D
