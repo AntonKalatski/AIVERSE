@@ -68,7 +68,11 @@ class TerrainRenderer {
 public:
     void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     void init(gfx::Device& dev, const Rules& rules, const render::FileReader& read, const std::string& contentBase);
+    // Explicit safe teardown when the caller has not yet established RHI
+    // completion. A failed barrier preserves the published GPU owner.
+    bool shutdownAfterGpuIdle(gfx::Device& dev);
     void shutdown(gfx::Device& dev);
+    bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
     // Optional per-cell material layer painted on the map (0..3, 255 = by cell kind). Next build().
     void setMaterialLayer(std::vector<uint8_t> layer) { materialLayer_ = std::move(layer); }
     // (Re)builds the chunks whose inputs changed. Returns true when any geometry changed.
