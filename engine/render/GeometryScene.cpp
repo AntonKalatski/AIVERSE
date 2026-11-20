@@ -695,6 +695,20 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
     stats_.strataDiskPending=0;
     stats_.strataDiskReadyBytes=0;
     stats_.strataStreamingGpuTransferBytes=0;
+    // A zero/unavailable serial is not a reliable frame identity: reset
+    // per invocation rather than silently accumulate across unknown epochs.
+    const uint64_t telemetrySerial=strataPortableDevice_
+        ? strataPortableDevice_->frameSerial() : 0;
+    if(!telemetrySerial || stats_.strataStreamFrameSerial!=telemetrySerial){
+        stats_.strataStreamFrameSerial=telemetrySerial;
+        stats_.strataStreamFrameDemandRecords=0;
+        stats_.strataStreamFrameGpuTransferBytes=0;
+        stats_.strataStreamFrameUploadedBytes=0;
+        stats_.strataStreamFramePromotions=0;
+        stats_.strataStreamFrameEvictions=0;
+        stats_.strataStreamFrameDeferrals=0;
+        stats_.strataStreamFrameFailedUploads=0;
+    }
     const size_t frameCap=strataStreamingFrameUploadBudgetBytes_;
     if(frameCap && strataPortableDevice_){
         const uint64_t serial=strataPortableDevice_->frameSerial();
@@ -722,6 +736,12 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             std::string error;
             const auto* before=source->residencyStats();
             const uint64_t beforeTransfer=before ? before->gpuTransferBytes : 0;
+            const uint64_t beforeUploaded=before ? before->uploadedBytes : 0;
+            const uint64_t beforePromotions=before ? before->uploads : 0;
+            const uint64_t beforeEvictions=before ? before->evictions : 0;
+            const uint64_t beforeDeferred=before ? before->deferredDemands : 0;
+            const uint64_t beforeFailures=before ? before->failedUploads : 0;
+            stats_.strataStreamFrameDemandRecords+=requests[model].size();
             const bool incremental=before && before->incremental;
             size_t allowance=frameCap && incremental
                 ? strataStreamingFrameBudgetLeft_ : SIZE_MAX;
@@ -738,6 +758,23 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             if(const auto* status=source->residencyStats()){
                 const uint64_t copied=status->gpuTransferBytes>=beforeTransfer
                     ? status->gpuTransferBytes-beforeTransfer : 0;
+                // Counters are monotonic within a resident source lifetime.
+                // Clamp defensive diffs if an implementation changes to
+                // reset its accounting on a new GPU generation.
+                const auto delta=[](uint64_t after,uint64_t beforeValue){
+                    return after>=beforeValue ? after-beforeValue : 0;
+                };
+                stats_.strataStreamFrameGpuTransferBytes+=copied;
+                stats_.strataStreamFrameUploadedBytes+=
+                    delta(status->uploadedBytes,beforeUploaded);
+                stats_.strataStreamFramePromotions+=
+                    delta(status->uploads,beforePromotions);
+                stats_.strataStreamFrameEvictions+=
+                    delta(status->evictions,beforeEvictions);
+                stats_.strataStreamFrameDeferrals+=
+                    delta(status->deferredDemands,beforeDeferred);
+                stats_.strataStreamFrameFailedUploads+=
+                    delta(status->failedUploads,beforeFailures);
                 if(frameCap && incremental){
                     strataStreamingFrameBudgetLeft_=
                         copied>=strataStreamingFrameBudgetLeft_
@@ -760,6 +797,12 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             }
         }
     }
+    stats_.strataStreamPeakGpuTransferBytes=std::max(
+        stats_.strataStreamPeakGpuTransferBytes,
+        stats_.strataStreamFrameGpuTransferBytes);
+    stats_.strataStreamPeakActiveIndexBytes=std::max(
+        stats_.strataStreamPeakActiveIndexBytes,
+        stats_.strataStreamingIndexBytes);
     if(strataPortableDevice_){
         const auto shared=strata::deviceIndexBudgetStats(*strataPortableDevice_);
         stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
