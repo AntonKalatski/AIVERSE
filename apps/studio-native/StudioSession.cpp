@@ -2,6 +2,7 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioAssetReferences.h"
+#include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -46,6 +47,7 @@ std::string nodeId(const editor::DocumentEntityRef& ref) { return studioDocument
 StudioSession::StudioSession(const std::string& engineRoot, const std::string& project) {
     ws_.engineDir = engineRoot;
     if (!project.empty()) {
+        StudioMoveJournal::recover(project);
         std::string error;
         if (!ws_.openGame(project, &error)) throw std::runtime_error(error.empty() ? "Cannot open project" : error);
         // A project opened from the CLI follows the same content policy as
@@ -150,6 +152,7 @@ void StudioSession::refreshMaterialPreview() {
 }
 Json StudioSession::openProject(const std::string& path) {
     if (path.empty()) throw std::runtime_error("Project path is empty");
+    StudioMoveJournal::recover(path);
     std::string error;
     if (!ws_.openGame(path, &error))
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
