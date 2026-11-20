@@ -1560,3 +1560,19 @@ and true driver memory lifetime; GI cancellation alone does not restore
 the physical GPU. FakeDevice test source covers device loss without
 completed serial and prevention of new compute. Native builds/CTest/real
 device-loss hardware tests NOT RUN.
+
+
+## GI Stage 53 — opt-in full-source CPU fallback for local GPU BVH overflow (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage53-optional-near-overflow-cpu-fallback-2026-11-20.md`.
+`GiTransportConfig::cpuFallbackOnLocalGpuOverflow` is DEFAULT FALSE;
+when the bounded 8192-triangle GPU BVH cannot admit all potentially
+light-blocking local geometry, a host may explicitly opt into a one-way
+GPU→CPU fallback after REAL GPU work has completed. It carries the FULL
+immutable world collision snapshot, accepted stable-key point/spot and
+sun/sky sources into the existing bounded `GiDynamicRuntime`, preserving
+source revision and no-truncation correctness. Pending GPU compute
+continues to block stale GI and defers migration until authentic fence.
+The CPU per-frame budget is soft and this path is NOT proven fast on
+very complex worlds. Caller MUST clear any Renderer3D borrowed old GPU
+overlay before this transition. C++/CTest/GPU tests NOT EXECUTED.
