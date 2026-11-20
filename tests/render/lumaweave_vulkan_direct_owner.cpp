@@ -35,6 +35,15 @@ int main() {
     (void)sources.publish({light});
     AIVERSE_TEST_CHECK(direct.setSources(sources));
     AIVERSE_TEST_CHECK(direct.sourceCount()==1);
+    // Two independent registries can have identical revisions but different
+    // emitters. Never silently reuse old GPU source energy.
+    LumaWeaveRegistry foreign;
+    LumaLight changed=light;
+    changed.color={0,0,1};
+    (void)foreign.publish({changed});
+    AIVERSE_TEST_CHECK(foreign.revision()==sources.revision());
+    AIVERSE_TEST_CHECK(!direct.setSources(foreign));
+    AIVERSE_TEST_CHECK(direct.sourceCount()==1);
     GiGpuBvh empty;
     AIVERSE_TEST_CHECK(direct.setGeometry(empty,1));
     AIVERSE_TEST_CHECK(direct.geometryRevision()==1);
@@ -74,6 +83,7 @@ int main() {
     GiGpuBvh corrupt;
     corrupt.nodes.push_back({});
     const uint32_t before=device.next;
+    AIVERSE_TEST_CHECK(!direct.setGeometry(corrupt,1)); // duplicate rev, different content
     AIVERSE_TEST_CHECK(!direct.setGeometry(corrupt,2));
     AIVERSE_TEST_CHECK(device.next==before);
     AIVERSE_TEST_CHECK(direct.geometryRevision()==1);
@@ -100,7 +110,9 @@ int main() {
     device.endFrame();
 
     // Input validation must not encode invalid receivers.
-    std::array<LumaGpuReceiver,1> invalid{{{{0,0,0,1},{0,0,0,0}}}};
+    std::array<LumaGpuReceiver,1> invalid{};
+    invalid[0].worldPosition={0,0,0,1};
+    invalid[0].normal={0,0,0,0};
     device.beginFrame(64,64);device.current=11;
     AIVERSE_TEST_CHECK(!direct.dispatch(invalid,1,1).encoded);
     device.endFrame();
