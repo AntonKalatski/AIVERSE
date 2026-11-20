@@ -195,6 +195,7 @@ struct CreatorApp {
         if(!renderer.init(dev))throw std::runtime_error("VIVID Creator: renderer init failed");
         rendererReady=true;
         renderer.setModelLodEnabled(automaticLod);
+        renderer.setLodDiagnosticsEnabled(true);
         if(!antialiasing.init(dev))throw std::runtime_error("VIVID anti-aliasing init failed");
         antialiasingReady=true;
         PostFxSettings aa;aa.hdr=HdrMode::Off;aa.enabled=aaEnabled;
@@ -2296,6 +2297,7 @@ struct CreatorApp {
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
+            if(sequenceFrame==0){const auto& lod=renderer.modelStats();std::printf("VIVID LOD auto=%d levels=%llu,%llu,%llu,%llu chains=%llu blocked=%llu\n",int(automaticLod),(unsigned long long)lod.lodNodes[0],(unsigned long long)lod.lodNodes[1],(unsigned long long)lod.lodNodes[2],(unsigned long long)lod.lodNodes[3],(unsigned long long)lod.cameraLodChains,(unsigned long long)lod.cameraLodBlocked);}
             if(sequenceFrame==0)std::printf("VIVID AA enabled=%d passes=%d\n",int(aaEnabled),antialiasing.stats().passes);
             if(sequenceFrame==0)std::printf("VIVID shadow map=%d adaptive=%d cameraDistance=%.3f\n",renderer.shadowMapSize(),shadowResolution.resolution,camera.distance);
             if(sequenceFrame==0)for(const auto& mat:human.head->materials)if(mat.eyeOptics.z>0)

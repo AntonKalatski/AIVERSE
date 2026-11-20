@@ -25,7 +25,7 @@ if(require.main===module)(async()=>{
  const [tooling,input,config,output]=process.argv.slice(2);
  if(!output||fs.existsSync(output))throw Error('Expected tooling input config new-output');
  const load=createRequire(path.resolve(tooling,'package.json')),{NodeIO}=load('@gltf-transform/core');
- const io=new NodeIO(),doc=await io.read(input),root=doc.getRoot(),meshes=root.listMeshes();
+ const io=new NodeIO().registerExtensions(load('@gltf-transform/extensions').ALL_EXTENSIONS),doc=await io.read(input),root=doc.getRoot(),meshes=root.listMeshes();
  const info=meshes.map(m=>{const owners=root.listNodes().filter(n=>n.getMesh()===m);const skins=[...new Set(owners.map(n=>n.getSkin()).filter(Boolean))];return {name:m.getName(),skinned:skins.length>0,skins:skins.map(s=>root.listSkins().indexOf(s)).sort().join(','),morphs:m.getExtras().targetNames||[]};});
  for(const [i,m] of meshes.entries())for(const p of m.listPrimitives()) {
   const count=p.listTargets().length;

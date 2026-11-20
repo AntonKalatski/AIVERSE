@@ -105,8 +105,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     // for native materials and the map; no HTML fake character, no second
     // Animator/Graph clock. CPU import is asynchronous; GPU publication and
     // retirement remain on this owner thread before frame submissions.
-    if(!facialRequested){renderer_.clearShadowBounds();renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
+    if(!facialRequested){renderer_.setModelLodEnabled(true);renderer_.clearShadowBounds();renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
     if(facialRequested) {
+        renderer_.setModelLodEnabled(facialBinding.previewAnimation.automaticLod);
         std::string reason;
         if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
             // Spans both pose evaluation and the deferred renderer draw list.

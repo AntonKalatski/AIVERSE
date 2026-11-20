@@ -10,7 +10,21 @@ void names(const Json& list){need(list.isArray()&&list.size()<=256,"Invalid hidd
 float3 vec(const Json& j,float3 fallback){if(j.isNull())return fallback;need(j.isArray()&&j.size()==3,"Expected XYZ vector");float v[3];for(int k=0;k<3;++k){need(j[size_t(k)].isNumber()&&std::isfinite(j[size_t(k)].toDouble())&&std::abs(j[size_t(k)].toDouble())<=100,"Invalid transform");v[k]=float(j[size_t(k)].toDouble());}return {v[0],v[1],v[2]};}
 void known(const Json& j,std::initializer_list<const char*> fields){need(j.isObject(),"Expected wardrobe object");for(const auto& [k,v]:j.members()){bool ok=false;for(auto f:fields)ok|=k==f;need(ok,"Unknown wardrobe field: "+k);}}
 void hide(Model& model,const Json& list){for(const auto& name:list.items()) {bool found=false;for(const auto& mesh:model.meshes)found|=mesh.name==name.str();for(auto& node:model.nodes)if(node.mesh>=0&&model.meshes[size_t(node.mesh)].name==name.str()){node.mesh=-1;node.skin=-1;found=true;}need(found,"Hidden mesh not found: "+name.str());}}
-void prune(Model& m){std::vector<int> remap(m.meshes.size(),-1);std::vector<MeshDef> meshes;for(auto& n:m.nodes)if(n.mesh>=0){auto& id=remap.at(size_t(n.mesh));if(id<0){id=int(meshes.size());meshes.push_back(m.meshes[size_t(n.mesh)]);meshes.back().lods.clear();meshes.back().materialBatches.clear();meshes.back().shadowBatch={};}n.mesh=id;}m.meshes=std::move(meshes);}
+void prune(Model& m){
+ std::vector<int> remap(m.meshes.size(),-1);std::vector<MeshDef> meshes;
+ auto retain=[&](auto&& self,int source)->int {
+  need(source>=0&&size_t(source)<m.meshes.size(),"Invalid wardrobe LOD reference");
+  if(remap[size_t(source)]>=0)return remap[size_t(source)];
+  const int target=int(meshes.size());remap[size_t(source)]=target;
+  meshes.push_back(m.meshes[size_t(source)]);
+  meshes[size_t(target)].materialBatches.clear();meshes[size_t(target)].shadowBatch={};
+  const auto levels=m.meshes[size_t(source)].lods;
+  for(size_t i=0;i<levels.size();++i){const int mapped=self(self,levels[i].mesh);meshes[size_t(target)].lods[i].mesh=mapped;}
+  return target;
+ };
+ for(auto& n:m.nodes)if(n.mesh>=0)n.mesh=retain(retain,n.mesh);
+ m.meshes=std::move(meshes);
+}
 void compactMaterials(Model& m) {
  std::vector<int> mm(m.materials.size(),-1),im(m.images.size(),-1);std::vector<Material> materials;std::vector<Image> images;
  for(auto& mesh:m.meshes)for(auto& p:mesh.primitives){auto& target=mm.at(size_t(p.material));if(target<0){auto material=m.materials.at(size_t(p.material));need(!material.shaderGraph&&(material.shading==ShadingModel::Pbr||(material.shading==ShadingModel::Eye&&material.eyeOptics.z>0)),"Final character contains an unbaked shader");for(auto* t:{&material.baseTex,&material.mrTex,&material.normalTex,&material.occlusionTex,&material.emissiveTex,&material.teamTex})if(*t>=0){auto& mapped=im.at(size_t(*t));if(mapped<0){mapped=int(images.size());images.push_back(m.images[size_t(*t)]);}*t=mapped;}target=int(materials.size());materials.push_back(std::move(material));}p.material=target;p.variantMaterial.clear();}
@@ -56,7 +70,7 @@ void append(Model& dst,Model src,const Json& item) {
  for(auto& node:src.nodes){node.name="wardrobe/"+id+"/"+node.name;node.parent=node.parent<0?wrapperIndex:node.parent+no;for(auto& c:node.children)c+=no;if(node.mesh>=0)node.mesh+=mo;if(node.skin>=0)node.skin+=so;dst.nodes.push_back(std::move(node));}
  for(int n=no;n<wrapperIndex;++n)if(dst.nodes[size_t(n)].parent==wrapperIndex)wrapper.children.push_back(n);
  if(parent>=0)dst.nodes[size_t(parent)].children.push_back(wrapperIndex);dst.nodes.push_back(std::move(wrapper));
- for(auto& mesh:src.meshes){mesh.name="wardrobe/"+id+"/"+mesh.name;mesh.lods.clear();mesh.materialBatches.clear();mesh.shadowBatch={};for(auto& p:mesh.primitives){p.firstVertex+=vo;p.firstIndex+=ix;p.material+=ma;p.variantMaterial.clear();}dst.meshes.push_back(std::move(mesh));}
+ for(auto& mesh:src.meshes){mesh.name="wardrobe/"+id+"/"+mesh.name;for(auto& lod:mesh.lods)lod.mesh+=mo;mesh.materialBatches.clear();mesh.shadowBatch={};for(auto& p:mesh.primitives){p.firstVertex+=vo;p.firstIndex+=ix;p.material+=ma;p.variantMaterial.clear();}dst.meshes.push_back(std::move(mesh));}
  for(auto& m:src.materials){m.name="wardrobe/"+id+"/"+m.name;for(auto* tex:{&m.baseTex,&m.mrTex,&m.normalTex,&m.occlusionTex,&m.emissiveTex,&m.teamTex})if(*tex>=0)*tex+=io;need(!m.shaderGraph,"Clothing shader must be baked PBR");dst.materials.push_back(std::move(m));}
  if(independent)for(auto& clip:src.clips){clip.name="wardrobe/"+id+"/"+clip.name;for(auto& c:clip.channels)c.node+=no;dst.clips.push_back(std::move(clip));}
  dst.vertices.insert(dst.vertices.end(),src.vertices.begin(),src.vertices.end());for(auto index:src.indices)dst.indices.push_back(index+vo);
@@ -86,7 +100,10 @@ void body(Model& m,const HumanAppearance& look) {
  for(size_t ni=0;ni<m.nodes.size();++ni){const auto& node=m.nodes[ni];if(node.mesh<0)continue;need(owners.insert(node.mesh).second,"Body bake requires unique mesh owners");
   auto local=next[ni].inverse();
   if(node.skin>=0){const auto& skin=m.skins.at(size_t(node.skin));need(!skin.joints.empty(),"Empty character skin");const auto rest=old.at(size_t(skin.joints[0]))*skin.inverseBind.at(0);for(size_t j=1;j<skin.joints.size();++j){const auto check=old.at(size_t(skin.joints[j]))*skin.inverseBind.at(j);for(int k=0;k<16;++k)need(std::abs(check.m[k]-rest.m[k])<.003f,"Nonuniform skin bind space cannot bake body");}local=rest.inverse();}
-  auto& mesh=m.meshes[size_t(node.mesh)];
+  std::vector<int> levels{node.mesh};
+  for(const auto& lod:m.meshes[size_t(node.mesh)].lods)levels.push_back(lod.mesh);
+  for(int meshIndex:levels){
+  auto& mesh=m.meshes.at(size_t(meshIndex));
   for(auto& p:mesh.primitives){std::vector<bool> referenced(p.vertexCount);for(uint32_t ii=0;ii<p.indexCount;++ii){const auto vertex=m.indices.at(p.firstIndex+ii);need(vertex>=p.firstVertex&&vertex-p.firstVertex<p.vertexCount,"Primitive vertex range invalid");referenced[vertex-p.firstVertex]=true;}
   for(uint32_t vi=0;vi<p.vertexCount;++vi){if(!referenced[vi])continue;auto& v=m.vertices.at(p.firstVertex+vi);v=sourceVertices.at(p.firstVertex+vi);mat4 deform;
    // Quantized UNORM weights can sum to 254 or 256. Match the GPU
@@ -97,6 +114,7 @@ void body(Model& m,const HumanAppearance& look) {
    v.pos=deform.transformPoint(v.pos);const auto normal=skinned?deform:deform.normalMatrix();v.nrm=normalize(direction(normal,v.nrm));const auto tangent=normalize(direction(deform,{v.tangent.x,v.tangent.y,v.tangent.z}));v.tangent={tangent.x,tangent.y,tangent.z,v.tangent.w};
    for(int target=0;target<p.morphTargets;++target){const size_t off=(size_t(target)*p.vertexCount+vi)*6;need(off+6<=p.morphDeltas.size(),"Missing CPU morphs");auto& d=p.morphDeltas;const auto dp=direction(deform,{d[off],d[off+1],d[off+2]}),dn=direction(normal,{d[off+3],d[off+4],d[off+5]});d[off]=dp.x;d[off+1]=dp.y;d[off+2]=dp.z;d[off+3]=dn.x;d[off+4]=dn.y;d[off+5]=dn.z;}
   }}
+  }
  }
  for(auto& skin:m.skins)for(size_t j=0;j<skin.joints.size();++j){const size_t n=size_t(skin.joints[j]);skin.inverseBind[j]=next[n].inverse()*old[n]*skin.inverseBind[j];}
  for(auto& clip:m.clips)for(auto& c:clip.channels)if(c.path==AnimChannel::Translation){const auto d=offsets.at(size_t(c.node));const size_t stride=c.interp==AnimChannel::CubicSpline?9:3,start=c.interp==AnimChannel::CubicSpline?3:0;for(size_t k=start;k+2<c.values.size();k+=stride){c.values[k]+=d.x;c.values[k+1]+=d.y;c.values[k+2]+=d.z;}}

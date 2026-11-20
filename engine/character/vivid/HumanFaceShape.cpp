@@ -20,12 +20,13 @@ float3 vector(const Json& j){require(j.isArray()&&j.size()==3,"Facial landmark r
 Json json(float3 v){auto a=Json::array();for(float f:{v.x,v.y,v.z})a.push(Json::number(double(f),8));return a;}
 struct Point {uint32_t vertex;mat4 bind;};
 struct Surface {std::vector<Point> points;float3 lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};};
-Surface surface(const Model& m,const std::vector<std::string>& names){Surface out;std::set<std::string> found;std::set<uint32_t> seen;
+Surface surface(const Model& m,const std::vector<std::string>& names,bool includeLods=false){Surface out;std::set<std::string> found;std::set<uint32_t> seen;
  for(size_t ni=0;ni<m.nodes.size();++ni){const auto& n=m.nodes[ni];if(n.mesh<0)continue;const auto& mesh=m.meshes.at(size_t(n.mesh));if(!names.empty()&&std::find(names.begin(),names.end(),mesh.name)==names.end())continue;found.insert(mesh.name);
-  for(const auto& p:mesh.primitives)for(uint32_t ii=0;ii<p.indexCount;++ii){const auto id=m.indices.at(p.firstIndex+ii);if(!seen.insert(id).second)continue;const auto& v=m.vertices.at(id);auto bind=m.bindWorld.at(ni);
+  std::vector<int> levels{n.mesh};if(includeLods)for(const auto& lod:mesh.lods)levels.push_back(lod.mesh);
+  for(int level:levels){for(const auto& p:m.meshes.at(size_t(level)).primitives)for(uint32_t ii=0;ii<p.indexCount;++ii){const auto id=m.indices.at(p.firstIndex+ii);if(!seen.insert(id).second)continue;const auto& v=m.vertices.at(id);auto bind=m.bindWorld.at(ni);
    if(n.skin>=0&&!p.jointPalette.empty()){for(auto& x:bind.m)x=0;const auto& skin=m.skins.at(size_t(n.skin));const float total=float(v.weights[0])+v.weights[1]+v.weights[2]+v.weights[3];require(total>0,"Unweighted face vertex");for(int k=0;k<4;++k)if(v.weights[k]){const auto j=p.jointPalette.at(v.joints[k]);auto b=m.bindWorld.at(size_t(skin.joints.at(j)))*skin.inverseBind.at(j);for(int c=0;c<16;++c)bind.m[c]+=b.m[c]*v.weights[k]/total;}}
    const auto world=bind.transformPoint(v.pos);out.lo=min3(out.lo,world);out.hi=max3(out.hi,world);out.points.push_back({id,bind});
-  }
+  }}
  }
  for(const auto& name:names)require(found.contains(name),"Selected facial mesh missing");require(!out.points.empty(),"Empty facial surface");return out;
 }
@@ -39,7 +40,7 @@ HumanFaceShape HumanFaceShape::fromJson(const Json& j){require(j.isObject()&&j["
 }
 Json HumanFaceShape::toJson() const{auto j=Json::object(),m=Json::array(),v=Json::object(),l=Json::array();j.set("version",Json::number(int64_t(1)));for(auto& n:meshes)m.push(Json::string(n));for(auto& [k,f]:values)v.set(k,Json::number(double(f),8));for(auto& p:landmarks){auto a=Json::object();a.set("from",json(p.from));a.set("to",json(p.to));a.set("radius",Json::number(double(p.radius),8));a.set("weight",Json::number(double(p.weight),8));l.push(a);}j.set("meshes",m);j.set("values",v);j.set("landmarks",l);return j;}
 Json HumanFaceShape::schema(){auto a=Json::array();for(auto f:fields){auto j=Json::object();j.set("key",Json::string(f.key));j.set("label",Json::string(f.label));j.set("min",Json::number(double(f.min)));j.set("max",Json::number(double(f.max)));a.push(j);}return a;}
-void applyHumanFaceShape(Model& model,const HumanFaceShape& recipe){(void)HumanFaceShape::fromJson(recipe.toJson());bool active=false;for(const auto& [k,v]:recipe.values)active|=v!=0;for(const auto& l:recipe.landmarks)active|=l.weight>0&&length(l.to-l.from)>0;if(!active)return;const auto s=surface(model,recipe.meshes);const auto extent=s.hi-s.lo;require(extent.x>1e-5f&&extent.y>1e-5f&&extent.z>1e-5f,"Facial mesh has degenerate bounds");
+void applyHumanFaceShape(Model& model,const HumanFaceShape& recipe){(void)HumanFaceShape::fromJson(recipe.toJson());bool active=false;for(const auto& [k,v]:recipe.values)active|=v!=0;for(const auto& l:recipe.landmarks)active|=l.weight>0&&length(l.to-l.from)>0;if(!active)return;const auto s=surface(model,recipe.meshes,true);const auto extent=s.hi-s.lo;require(extent.x>1e-5f&&extent.y>1e-5f&&extent.z>1e-5f,"Facial mesh has degenerate bounds");
  auto value=[&](const char* key){auto i=recipe.values.find(key);return i==recipe.values.end()?0.f:i->second;};
  auto field=[&](float3 p){const auto q=normalized(p,s);auto r=q;const float x=q.x-.5f,y=q.y;auto bell=[](float v,float c,float w){const float t=(v-c)/w;return std::exp(-t*t);};
   const float front=std::clamp((q.z-.25f)*2,0.f,1.f),face=std::clamp((y-.15f)*5,0.f,1.f);

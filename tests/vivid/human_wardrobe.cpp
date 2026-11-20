@@ -9,6 +9,11 @@ void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 int main(){try{
  auto doc=modeling::emptyDocument();doc.set("nodes",Json::parse(R"([{"id":"root"},{"id":"body","geometry":{"kind":"box"},"skin":"skin","bindJoint":"root"},{"id":"shirt","geometry":{"kind":"box"}}])"));doc.set("skins",Json::parse(R"([{"id":"skin","joints":["root"]}])"));
  auto built=modeling::build(doc);built.model->materials[0].name="Skin";auto& mesh=built.model->meshes[0];mesh.morphTargetNames={"jawOpen"};for(auto& p:mesh.primitives){p.morphTargets=1;p.morphDeltas.resize(size_t(p.vertexCount)*6,.01f);}
+ // Authored alternatives have no scene owner; assembly must retain/remap them.
+ const int faceLod=int(built.model->meshes.size());
+ built.model->meshes.push_back(built.model->meshes[0]);
+ built.model->meshes.back().name="body_lod1";
+ built.model->meshes[0].lods.push_back({faceLod,200,{0}});
  auto one=modeling::build(doc),shared=modeling::build(doc);
  shared.model->meshes[0].primitives.push_back(shared.model->meshes[0].primitives[0]);
  vivid::HumanAppearance proportions;proportions.values["body.height"]=1.2f;
@@ -19,18 +24,25 @@ int main(){try{
  for(size_t i=0;i<one.model->vertices.size();++i)check(length(one.model->vertices[i].pos-quantized.model->vertices[i].pos)<1e-5f,"body bake did not normalize packed skin weights like GPU");
  const auto shirtName=built.model->meshes[size_t(built.model->nodes[size_t(built.model->findNode("shirt"))].mesh)].name;
  auto accessory=modeling::build(modeling::robotDocument());accessory.model->clips.clear();
+ const int watchLod=int(accessory.model->meshes.size());
+ accessory.model->meshes.push_back(accessory.model->meshes[0]);accessory.model->meshes.back().name="watch_lod1";
+ accessory.model->meshes[0].lods.push_back({watchLod,180,{}});
  std::map<std::string,std::string> files;files["base.glb"]=modeling::exportGlb(*built.model);files["watch.glb"]=modeling::exportGlb(*accessory.model);
  branding::Image mask;mask.width=2;mask.height=2;mask.rgba={0,0,0,255,255,255,255,255,0,0,0,255,255,255,255,255};files["mask.png"]=branding::encodePng(mask);
  auto reader=[&](const std::string& key,std::string& bytes){auto i=files.find(key);if(i==files.end())return false;bytes=i->second;return true;};
  auto recipe=Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[{"id":"watch","asset":"watch.glb","slot":"wrist_left","enabled":true,"bone":"root","translation":[0,1,0],"scale":[0.1,0.1,0.1],"hideMeshes":[],"masks":[{"material":"Skin","texture":"mask.png"}]}]})");recipe.member("hiddenMeshes").push(Json::string(shirtName));
  vivid::HumanAppearance look;look.materials["Skin"]="skin";look.values["body.height"]=1.2f;
  auto result=vivid::assembleHumanCharacter("base.glb",reader,recipe,look,16);
+ check(!result->meshes[0].lods.empty(),"body LOD lost on prune");
+ check(result->meshes.at(size_t(result->meshes[0].lods[0].mesh)).name=="body_lod1","LOD index not remapped");
+ check(result->meshes.at(size_t(result->meshes[0].lods[0].mesh)).morphTargetNames==std::vector<std::string>{"jawOpen"},"LOD morph names lost");
  check(result->findNode("wardrobe/watch")>=0,"accessory missing");check(result->nodes[size_t(result->findNode("wardrobe/watch"))].parent==result->findNode("root"),"accessory socket lost");
+ bool clothingLod=false;for(const auto& m:result->meshes)if(m.name.starts_with("wardrobe/watch/")&&!m.lods.empty()){clothingLod=true;check(result->meshes.at(size_t(m.lods[0].mesh)).name=="wardrobe/watch/watch_lod1","appended clothing LOD index lost");}check(clothingLod,"clothing LOD chain dropped");
  for(const auto& m:result->meshes)check(m.name!=shirtName,"hidden clothing retained");
  const auto& material=result->materials[0];check(!material.shaderGraph&&material.baseTex>=0&&material.alpha==AlphaMode::Mask,"appearance or mask not baked");const auto& image=result->images[size_t(material.baseTex)];check(image.rgba[3]==0&&image.rgba[(image.width-1)*4+3]==255,"mask coverage incorrect");
  result->materials[0].shading=ShadingModel::Eye;
  result->materials[0].eyeOptics={.488f,.504f,.14f,.012f};result->materials[0].humanProfile={1.376f,.7f};
- auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->materials[0].shading==ShadingModel::Eye&&std::abs(roundtrip->materials[0].eyeOptics.w-.012f)<1e-6f&&std::abs(roundtrip->materials[0].humanProfile.x-1.376f)<1e-6f,"layered eye optics lost on assembly export");check(roundtrip->meshes[0].morphTargetNames==mesh.morphTargetNames,"assembled facial names lost");
+ auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->materials[0].shading==ShadingModel::Eye&&std::abs(roundtrip->materials[0].eyeOptics.w-.012f)<1e-6f&&std::abs(roundtrip->materials[0].humanProfile.x-1.376f)<1e-6f,"layered eye optics lost on assembly export");check(roundtrip->meshes[0].morphTargetNames==std::vector<std::string>{"jawOpen"},"assembled facial names lost");
  files["optics.glb"]=bytes;
  auto reassembled=vivid::assembleHumanCharacter("optics.glb",reader,Json::parse(R"({"version":1,"items":[],"hiddenMeshes":[]})"),vivid::HumanAppearance{},16);
  check(reassembled->materials[0].shading==ShadingModel::Eye&&reassembled->materials[0].eyeOptics.z>.1f,"assembly rejected or flattened persisted eye optics");
