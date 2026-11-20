@@ -1,5 +1,6 @@
 #include "HumanGroom.h"
 #include "GroomSelfCollision.h"
+#include "GroomSegmentCollision.h"
 #include "HumanMaterials.h"
 #include <algorithm>
 #include <array>
@@ -521,6 +522,50 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
         selfCollisionStats_.contacts+=collisions.contacts;
         selfCollisionStats_.budgetHit|=
             collisions.budgetHit;
+        if(selfCollision_.segmentEnabled) {
+            GroomSelfCollisionStats segmentContacts;
+            if(!GroomSegmentCollision::resolve(
+                guides_,selfCollision_,segmentContacts))return false;
+            selfCollisionStats_.pairChecks+=segmentContacts.pairChecks;
+            selfCollisionStats_.contacts+=segmentContacts.contacts;
+            selfCollisionStats_.budgetHit|=segmentContacts.budgetHit;
+
+            // Reproject length constraints and the authored rest curvature
+            // after inter-strand separation. Avoid moving the fixed root.
+            for(auto& guide:guides_) {
+                for(int iteration=0;iteration<2;++iteration) {
+                    for(std::size_t j=2;j<guide.position.size();++j) {
+                        const auto restCurvature=
+                            guide.rest[j]-guide.rest[j-1]*2.f+
+                            guide.rest[j-2];
+                        const auto expected=
+                            guide.position[j-1]*2.f-guide.position[j-2]+
+                            restCurvature;
+                        const auto bend=(expected-guide.position[j])*
+                            (selfCollision_.bendPreservation*0.20f);
+                        const float bendLength=length(bend);
+                        const float limit=selfCollision_.separation*0.5f;
+                        const auto correction=bendLength>limit
+                            ?bend*(limit/bendLength):bend;
+                        if(!good(guide.position[j]+correction))return false;
+                        guide.position[j]+=correction;
+                        guide.previous[j]+=correction;
+                    }
+                    for(std::size_t j=1;j<guide.position.size();++j) {
+                        const auto d=guide.position[j]-guide.position[j-1];
+                        const float len=length(d);
+                        const float restLen=
+                            length(guide.rest[j]-guide.rest[j-1]);
+                        if(len<=1.e-6f || !std::isfinite(len))return false;
+                        const auto correction=d*((len-restLen)/len);
+                        const auto previous=guide.position[j];
+                        guide.position[j]-=correction*(j==1?1.f:0.75f);
+                        if(j>1)guide.position[j-1]+=correction*0.25f;
+                        guide.previous[j]+=guide.position[j]-previous;
+                    }
+                }
+            }
+        }
         // The collision solver resolves inter-guide contacts, but the
         // scalp proxy and the ellipsoidal fallback remain authoritative.
         for(auto& guide:guides_)
