@@ -20,6 +20,7 @@ def load_meta():
 
 # Search vocabulary is routing metadata, not another copy of skill instructions.
 ALIASES = {
+ 'aiverse-ecs-shared-static':'ecs shared static immutable configuration prefab interned dedup memory snapshot rollback staticref sharedref scene read-only component component storage game editor общие статические компоненты префаб память конфиг дедупликация снапшот откат',
  'aiverse-voxel-world':'voxel voxels block blocks chunk chunks minecraft dig mine place raycast region save воксел блок чанк майнкрафт копат ставит регион',
  'aiverse-voxel-light':'voxel light skylight blocklight torch shadow flood свет освещен факел тень воксел',
  'aiverse-voxel-mesh':'voxel mesh meshing greedy ambient occlusion chunk render меш воксел затенен рендер чанк',
@@ -119,7 +120,9 @@ WORKFLOWS=[
  ('aiverse-docs-upkeep','README and translations, translated docs, format sections, readme check','tools/readme/check.py'),
  ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/genre-implementation.json'),
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
+ ('aiverse-terraweave','Procedural world terrain, biomes, Arbor/Flora, Horizon HLOD, authored seams and native C++ scene integration','docs/terrain/TERRAWEAVE.md'),
  ('aiverse-water','Spline straits, rivers and open sea with shore types, bridges and the water window','docs/water.md'),
+ ('aiverse-physis','Genre-neutral nature, climate, wind, gravity, storms, ECS and Box3D adapter with editor diagnostics','docs/physis.md'),
  ('aiverse-city-blocks','City block paving, curb elevations, planting beds and street furniture','skills/world/aiverse-city-blocks/SKILL.md'),
  ('aiverse-city-planner','Procedural city maps with the city / metropolis generator preset','docs/city-planner.md'),
  ('aiverse-city-economy','City-game commerce, careers and the top-down hero arsenal','docs/commerce.md'),
@@ -143,6 +146,7 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
  'aiverse-replica':'replica replication server authoritative snapshot delta interest budget prediction interpolation schema репликация сервер авторитетный снапшот предсказание',
@@ -164,6 +168,7 @@ WORKFLOW_ALIASES={
  'aiverse-docs-upkeep':'docs readme documentation translation документац ридми перевод',
  'aiverse-capability-audit':'capability audit gap gaps missing feasibility estimate limits can engine genre minecraft voxel sandbox чего не хватает оценк можно ли сделать возможност ограничен пробел жанр движок умеет',
  'aiverse-terrain':'terrain relief heightfield heightmap sculpt cliff detail splat рельеф высот скульпт обрыв ландшафт',
+ 'aiverse-terraweave':'terraweave terra weave terrain foliage forest arbor flora horizon hlod canopy biome tree generation seam near far генерация лес деревья биомы ландшафт',
  'aiverse-water':'water river strait sea shore beach cliff embankment вода река пролив море берег пляж набережн',
  'aiverse-city-blocks':'city blocks plaza courtyard curb sidewalk planter flowerbed paving zfight квартал площадь двор бордюр тротуар клумб мощение',
  'aiverse-city-planner':'city town streets blocks district generator gta город улиц квартал генератор',
@@ -230,6 +235,15 @@ def generate():
     entries.append(dict(id='aiverse-roads',package=None,path='skills/world/aiverse-roads/SKILL.md',domain='gameplay',
         summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
         side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
+    # Native ECS opt-in engine feature, not a separately installed library.
+    # Register it as a gameplay recipe (runtime=none) so skill routing reads
+    # its native headers without inventing a duplicate CMake library target.
+    entries.append(dict(id='aiverse-ecs-shared-static',package=None,
+        path='skills/gameplay/aiverse-ecs-shared-static/SKILL.md',
+        domain='gameplay',
+        summary='Immutable SharedRef and StaticRef ECS configs, prefab dedup, snapshots and multi-world scene integration',
+        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],
+        source='engine/sim/SharedStaticComponents.h'))
     for name,summary,source in WORKFLOWS:
         entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))
