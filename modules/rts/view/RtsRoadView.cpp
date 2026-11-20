@@ -2430,6 +2430,95 @@ void RtsRoadView::buildUnpublished(gfx::Device& dev,
     }
 }
 
+void RtsRoadView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt) {
+    if(dev_!=&dev)
+        throw std::logic_error("RtsRoadView rebuild: GPU owner mismatch");
+    // Stage all coupled road presentation state, including the road surface
+    // used by wheel placement, decals, material images and rain meshes.
+    // The candidate borrows the existing kit textures and owns only its
+    // newly created images, models and standalone sprite buffers.
+    RtsRoadView staged;
+    staged.dev_=&dev;
+    staged.strictStaging_=true;
+    staged.read_=read_;
+    staged.types_=types_;
+    staged.cellMeters_=cellMeters_;
+    staged.net_=net_;
+    staged.hasNet_=hasNet_;
+    staged.ghost_=ghost_;
+    staged.ghostDirty_=true;
+    staged.wet_=wet_;
+    staged.puddles_=puddles_;
+    staged.weatherSet_=weatherSet_;
+    staged.mapWet_=mapWet_;
+    staged.mapPuddles_=mapPuddles_;
+    staged.images_=images_;
+    staged.materials_=materials_;
+    staged.painted_=painted_;
+    staged.warnings_=warnings_;
+    const size_t existingImageCount=images_.size();
+    // Old handles belong only to the live owner; destroying a candidate
+    // must never release these shared textures.
+    for(size_t i=0;i<existingImageCount;++i)
+        staged.images_[i].borrowedTexture=true;
+    auto discard=[&]() noexcept {
+        for(auto& c:staged.chunks_)
+            if(c.model)releaseModel(dev,*c.model);
+        for(auto& p:staged.propModels_)
+            if(p.model)releaseModel(dev,*p.model);
+        if(staged.ghostModel_)releaseModel(dev,*staged.ghostModel_);
+        for(auto* m:{&staged.decalMesh_,&staged.vergeMesh_,
+                      &staged.filmMesh_,&staged.puddleMesh_}) {
+            if(m->vb.valid()){dev.destroyBuffer(m->vb);*m={};}
+        }
+        for(size_t i=existingImageCount;i<staged.images_.size();++i) {
+            auto& img=staged.images_[i];
+            if(img.tex.valid() && !img.borrowedTexture) {
+                dev.destroyTexture(img.tex);
+                img.tex={};
+            }
+        }
+    };
+    try {
+        staged.buildUnpublished(dev,heightAt);
+        staged.buildWeather(dev);
+        if(staged.ghost_.on)staged.buildGhost(dev,heightAt);
+    }catch(...) {
+        // New candidate resources have never been rendered by any camera.
+        // Published resources and its wheel-surface sample tiles are intact.
+        discard();
+        throw;
+    }
+    // All RHI allocations have succeeded. Keep previous images alive for
+    // retired models, and publish only the already-prepared new handles.
+    release(dev);
+    for(auto& p:propModels_)retirement_.retireModel(dev,p.model);
+    propModels_.clear();
+    chunks_.swap(staged.chunks_);
+    props_.swap(staged.props_);
+    propModels_.swap(staged.propModels_);
+    images_.swap(staged.images_);
+    materials_.swap(staged.materials_);
+    painted_.swap(staged.painted_);
+    geom_.swap(staged.geom_);
+    surface_.swap(staged.surface_);
+    film_.swap(staged.film_);
+    spots_.swap(staged.spots_);
+    std::swap(batchStats_,staged.batchStats_);
+    decalMesh_=std::exchange(staged.decalMesh_,SpriteMesh{});
+    vergeMesh_=std::exchange(staged.vergeMesh_,SpriteMesh{});
+    filmMesh_=std::exchange(staged.filmMesh_,SpriteMesh{});
+    puddleMesh_=std::exchange(staged.puddleMesh_,SpriteMesh{});
+    ghostModel_=std::move(staged.ghostModel_);
+    wetStep_=staged.wetStep_;
+    puddleStep_=staged.puddleStep_;
+    ghostDirty_=false;
+    warnings_.swap(staged.warnings_);
+    dirty_=false;
+    ++surfaceGeneration_;
+}
+
 void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
     ghostDirty_ = false;
     retirement_.retireModel(dev,ghostModel_);
