@@ -14029,6 +14029,94 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::Rules rules=skirmishRules();
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&visible,grid);
+    CHECK(view.publishedVisualFrame().ready());
+    const uint64_t prior=view.publishedVisualFrame().id;
+    renderer.render(gfx::PassDesc{});
+
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,2.0,&visible,grid));
+    CHECK(!view.publishedVisualFrame().ready());
+    CHECK(!view.visualFrameReadyFor(grid,1.0));
+    CHECK(!view.visualFrameReadyFor(grid,2.0));
+    CHECK(view.surfacePresentationMapReady(grid));
+
+    // A prewarm does not submit a scene or authorize secondary captures.
+    // Only the full primary draw finishes and publishes the frame epoch.
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    CHECK(view.publishedVisualFrame().id>prior);
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48b2a_late_fog_failure_rolls_back_scene_prewarm) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::Rules rules=skirmishRules();
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    std::vector<uint8_t> unseen(size_t(grid.w)*size_t(grid.h),0);
+    std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&unseen,grid);
+    renderer.render(gfx::PassDesc{});
+
+    const auto oldRetire=view.pendingModelRetirements();
+    const auto oldTerrainRetire=view.terrainRenderer().pendingMeshGpuRetirements();
+    const uint64_t oldRoadGeneration=view.roads().surfaceGeneration();
+    dev.failTexture=dev.textureAttempts+1; // late R8 Fog candidate allocation
+    bool rejected=false;
+    renderer.beginScene(camera,640,480);
+    try {
+        (void)view.prepareMapFrame(renderer,scene,2.0,&visible,grid);
+    }catch(const std::runtime_error&){rejected=true;}
+    dev.failTexture=0;
+    CHECK(rejected);
+    CHECK(!view.publishedVisualFrame().ready());
+    CHECK(view.roads().surfaceGeneration()==oldRoadGeneration);
+    CHECK(view.pendingModelRetirements()==oldRetire);
+    CHECK(view.terrainRenderer().pendingMeshGpuRetirements()==oldTerrainRetire);
+
+    // Retrying the same scene after a private GPU failure must work, with
+    // no publication of a secondary-camera epoch until primary draw.
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,2.0,&visible,grid));
+    CHECK(!view.publishedVisualFrame().ready());
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();

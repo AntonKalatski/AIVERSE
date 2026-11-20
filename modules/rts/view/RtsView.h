@@ -392,6 +392,12 @@ public:
                groundFx_.mapMatches(grid.w,grid.h) &&
                fog_.sheetMatches(grid.w,grid.h);
     }
+    // Optional render-owner prewarm for a built map: prepares the SAME
+    // GroundFX/Roads/Shores/Fog/Terrain cohort as draw(), without submitting
+    // scene commands, advancing animation, or publishing a camera epoch.
+    bool prepareMapFrame(render::Renderer3D& renderer,const RtsScene& scene,
+                         double time,const std::vector<uint8_t>* vision,
+                         const MapGrid& grid);
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
     // The generic frame fence is committed ONLY after all primary-frame
     // owners finish. Secondary RT cameras must consume exactly this epoch.
@@ -855,6 +861,11 @@ private:
         animDt = dt;
         return age + dt;
     }
+    // Internal two-phase owner transaction, also used by prepareMapFrame().
+    // Returning does not indicate readiness for secondary cameras.
+    bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,
+                             double time,const std::vector<uint8_t>* vision,
+                             const MapGrid& grid);
     std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
     // Staged GPU kits may still own RHI handles after a refused full-idle

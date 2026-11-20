@@ -443,129 +443,13 @@ void RtsView::drawPreparedTerrainFog(Renderer3D& r,const MapGrid& grid,
     }
 }
 
-void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
-    // Resource retirement is driven by the explicit owner frame hook,
-    // never by this draw function (which can be called several times).
-    const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
-    const auto viewStart = std::chrono::steady_clock::now();
-    using Epoch=render::FramePublicationEpoch;
-    constexpr uint32_t kSceneMask=Epoch::Geometry|Epoch::Terrain|
-        Epoch::Ground|Epoch::Roads|Epoch::Shores|Epoch::Fog|
-        Epoch::Sprites|Epoch::Animation|Epoch::Lighting|Epoch::Overlays;
-    auto publication=framePublication_.begin(
-        planets_.active()?uint32_t(Epoch::Geometry):kSceneMask,
-        frame_+1,grid.w,grid.h,time);
-    // Script spawns, reinforcements and restored entities need not exist at
-    // map load time. Build the active type set once for both lazy residency
-    // and contact-animation detection, without allocating/clearing an array
-    // proportional to the entire rules catalog every frame.
-    if (drawTypeStamps_.size() != loadedTypes_.size()) {
-        drawTypeStamps_.assign(loadedTypes_.size(), 0);
-        drawTypeEpoch_ = 0;
-    }
-    if (++drawTypeEpoch_ == 0) {
-        std::fill(drawTypeStamps_.begin(), drawTypeStamps_.end(), 0);
-        drawTypeEpoch_ = 1;
-    }
-    drawTypes_.clear();
-    for (const auto& o : input.objects) {
-        if (o.isProjectile || o.type >= drawTypeStamps_.size() ||
-            drawTypeStamps_[o.type] == drawTypeEpoch_) continue;
-        drawTypeStamps_[o.type] = drawTypeEpoch_;
-        drawTypes_.push_back(o.type);
-        if (!streamingTypes_) loadType(o.type);
-    }
-    // All synchronous Model loads above must finish BEFORE this scope.
-    // The cache owns unique_ptr<Model>; the reader guard blocks
-    // replace/invalidate/trim/shutdown until the View's graph evaluation
-    // and synchronous Renderer3D model submissions have completed.
-    // GPU work remains owned by the separate fenced retirement queue.
-    [[maybe_unused]] const auto modelReadScope=resources_.acquireFrameReadScope();
-    RtsScene resolved;
-    const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
-    if(hierarchy) {
-        resolved=input;
-        std::map<uint64_t,mat4> bases,effects;
-        for(const auto& o:input.objects) {
-            if(!o.entity.valid() || o.type>=looks_.size() || o.body!=-1)continue;
-            const auto& look=looks_[o.type];EntityFxValues fx;input.entityFx->lookup(o.entity.packed(),fx);
-            constexpr float deg=.017453292f;
-            auto effect=mat4::translate({0,(look.air?look.flyHeight:0)+fx.v[EntityFxValues::kLift],0})
-                *mat4::rotateZ(-fx.v[EntityFxValues::kPitch]*deg)*mat4::rotateX(-fx.v[EntityFxValues::kRoll]*deg)
-                *mat4::scale({fx.scale(0),fx.scale(1),fx.scale(2)});
-            effects[o.entity.packed()]=effect;
-            auto external=input.entityFrames.find(o.entity.packed());
-            bases[o.entity.packed()]=external!=input.entityFrames.end()?external->second:
-                mat4::translate({o.pos.x,heightAt(grid,o.pos.x,o.pos.z),o.pos.z})
-                *mat4::rotateY(std::atan2(-o.facing.z,o.facing.x))*effect;
-        }
-        auto frames=input.entityFx->hierarchy.resolve(bases,effects);
-        for(auto& o:resolved.objects)if(input.entityFx->hierarchy.parents.count(o.entity.packed())) {
-            auto it=frames.find(o.entity.packed());
-            if(it==frames.end()){o.visible=false;continue;}
-            o.parented=true;o.parentFrame=it->second;o.pos=it->second.transformPoint({0,0,0});
-            o.facing=it->second.transformPoint({1,0,0})-o.pos;
-        }
-    }
-    const RtsScene& s=hierarchy?resolved:input;
-    fx_ = s.entityFx.get();   // view.entity_fx
-    if (planets_.active()) {
-        // Planet geometry is a host-owned provider of the same generic
-        // View layer pipeline, not a special mode inside engine View.
-        ::aiverse::view::ViewLayerProviders providers;
-        providers.add("planet scene",[&](auto& q,const auto&){
-            q.append("planet scene",::aiverse::view::LayerPhase::Geometry,
-                [&]{
-                    drawPlanets(r,s,time,vision,grid);
-                    publication.mark(Epoch::Geometry);
-                });
-        });
-        // Universal View owns the synchronous presentation barrier.
-        ::aiverse::View::submitLayers(providers,{time,0.f,frame_});
-        if(!publication.finish())
-            throw std::logic_error("RtsView: incomplete planet visual frame publication");
-        return;
-    }
-    animationObstacles_.clear();
-    bool contacts = fx_ && !fx_->animations.empty();
-    if (!contacts) {
-        // A graph on an unused library type cannot produce contacts in this
-        // scene. Avoid scanning hundreds of unrelated types and variants
-        // every frame (especially in the eager-loading editor).
-        for (uint16_t type : drawTypes_) {
-            if (type >= looks_.size()) continue;
-            const auto& look = looks_[type];
-            if (std::any_of(look.models.begin(), look.models.end(),
-                            [](const ModelChoice& ch) {
-                                return ch.graph && ch.graph->hasContacts();
-                            })) { contacts = true; break; }
-        }
-    }
-    // AnimationEnvironment handles a null frame-map (id 1 = world ground).
-    // Avoid allocating an empty shared map on every ordinary static frame.
-    animationSurfaceFrames_ = contacts
-        ? std::make_shared<std::map<uint64_t,mat4>>() : nullptr;
-    for(size_t oi=0;contacts&&oi<s.objects.size();++oi){const auto& o=s.objects[oi];if(!o.visible||o.isProjectile||o.body!=-1||o.type>=looks_.size())continue;
-        const auto& look=looks_[o.type];if(look.models.empty())continue;uint64_t key=o.entity.valid()?o.entity.packed():(uint64_t(1)<<63)|oi;auto state=anims_.find(key);
-        size_t choice=state!=anims_.end()&&size_t(state->second.choice)<look.models.size()?size_t(state->second.choice):0;const ModelChoice* ch=&look.models[choice];
-        const Stage* stage=nullptr;for(const auto& sg:look.stages){if(o.build<1&&look.construction==Construction::Stages&&sg.build>=0&&sg.build<=o.build&&(!stage||sg.build>stage->build))stage=&sg;if(o.build>=1&&sg.hp>=0&&o.hp<=sg.hp&&(!stage||sg.hp<stage->hp))stage=&sg;}if(stage)ch=&stage->choice;if(!ch->model)continue;
-        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;float3 position{o.pos.x,heightAt(grid,o.pos.x,o.pos.z)+(look.air?look.flyHeight:0)+lift,o.pos.z};
-        float yaw=state!=anims_.end()?state->second.yaw:std::atan2(-o.facing.z,o.facing.x);float k=look.scale,grow=look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
-        mat4 base;if(look.structure&&look.shape&&!stage)base=mat4::translate(position)*mat4::scale({look.sx*k,k*std::max(look.sx,look.sz)*.75f*grow,look.sz*k});else base=mat4::translate(position)*mat4::rotateY(yaw)*mat4::scale({k,k*(look.structure?grow:1),k});
-        if(hasFx){auto tilt=mat4::rotateZ(-values.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-values.v[EntityFxValues::kRoll]*.017453292f);base=mat4::translate(position)*mat4::rotateY(yaw)*tilt*mat4::rotateY(-yaw)*mat4::translate(-position)*base*mat4::scale({values.scale(0),values.scale(1),values.scale(2)});}
-        if(o.parented)base=o.parentFrame*mat4::scale({k,k*(look.structure?grow:1),k});
-        if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
-        const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
-        for(size_t node=0;node<model.nodes.size()&&node<matrices.size();++node){int mesh=model.nodes[node].mesh;if(mesh<0||size_t(mesh)>=model.meshes.size())continue;auto transform=base*matrices[node];const auto& primitives=model.meshes[size_t(mesh)].primitives;
-            for(size_t part=0;part<primitives.size()&&part<256;++part){auto a=primitives[part].boundsMin,b=primitives[part].boundsMax;
-                const auto bounds=::aiverse::view::transformAabb(a,b,transform);
-                if(!bounds.valid)continue; // skip malformed visual bounds
-                const auto lo=bounds.min,hi=bounds.max;
-                uint64_t id=key^((node+1)*0x9e3779b97f4a7c15ull)^((part+1)*0xbf58476d1ce4e5b9ull);id^=id>>30;id*=0xbf58476d1ce4e5b9ull;id^=id>>27;id=(id&0x3fffffffffffffffull)+2;
-                animationObstacles_.push_back({&o,o.entity,lo,hi,a,b,id,transform});(*animationSurfaceFrames_)[id]=transform;
-            }
-        }
-    }
+// Shared render-owner prepare/commit path for scene-aware warmup and draw.
+// Neither a successful warmup nor this helper publishes FramePublicationEpoch.
+bool RtsView::publishSurfaceFrame(Renderer3D& r,const RtsScene& s,
+        double time,const std::vector<uint8_t>* vision,
+        const MapGrid& grid) {
+    if(!dev_ || !terrain_.mapMatches(grid.w,grid.h))
+        throw std::logic_error("RtsView: build Terrain before surface preflight");
     // LENS: stage Roads, Shores, Fog height-sheet AND visibility field
     // together. A late Fog GPU failure can no longer publish the sheet or
     // any earlier owner. In-flight cameras retain the old buffers via the
@@ -715,6 +599,154 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     ownerTransaction.prepareAll(); // any error automatically rolls all back
     if(!ownerTransaction.publish())
         throw std::logic_error("RtsView: owner frame publication incomplete");
+    return fogFieldChanged;
+}
+
+bool RtsView::prepareMapFrame(Renderer3D& renderer,const RtsScene& scene,
+        double time,const std::vector<uint8_t>* vision,
+        const MapGrid& grid) {
+    if(!dev_ || planets_.active() ||
+       !terrain_.mapMatches(grid.w,grid.h))return false;
+    if(framePublication_.active())
+        throw std::logic_error("RtsView: prewarm during active publication");
+    // Hierarchy resolution needs the primary frame's animation graph; callers
+    // with hierarchical scenes use normal draw() rather than this prewarm.
+    if(scene.entityFx && !scene.entityFx->hierarchy.parents.empty())
+        return false;
+    // A prewarm may replace published GPU owner generations. Do not allow
+    // replay of any old camera epoch until a new primary draw completes.
+    framePublication_.invalidate();
+    (void)publishSurfaceFrame(renderer,scene,time,vision,grid);
+    return true;
+}
+
+void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    // Resource retirement is driven by the explicit owner frame hook,
+    // never by this draw function (which can be called several times).
+    const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+    const auto viewStart = std::chrono::steady_clock::now();
+    using Epoch=render::FramePublicationEpoch;
+    constexpr uint32_t kSceneMask=Epoch::Geometry|Epoch::Terrain|
+        Epoch::Ground|Epoch::Roads|Epoch::Shores|Epoch::Fog|
+        Epoch::Sprites|Epoch::Animation|Epoch::Lighting|Epoch::Overlays;
+    auto publication=framePublication_.begin(
+        planets_.active()?uint32_t(Epoch::Geometry):kSceneMask,
+        frame_+1,grid.w,grid.h,time);
+    // Script spawns, reinforcements and restored entities need not exist at
+    // map load time. Build the active type set once for both lazy residency
+    // and contact-animation detection, without allocating/clearing an array
+    // proportional to the entire rules catalog every frame.
+    if (drawTypeStamps_.size() != loadedTypes_.size()) {
+        drawTypeStamps_.assign(loadedTypes_.size(), 0);
+        drawTypeEpoch_ = 0;
+    }
+    if (++drawTypeEpoch_ == 0) {
+        std::fill(drawTypeStamps_.begin(), drawTypeStamps_.end(), 0);
+        drawTypeEpoch_ = 1;
+    }
+    drawTypes_.clear();
+    for (const auto& o : input.objects) {
+        if (o.isProjectile || o.type >= drawTypeStamps_.size() ||
+            drawTypeStamps_[o.type] == drawTypeEpoch_) continue;
+        drawTypeStamps_[o.type] = drawTypeEpoch_;
+        drawTypes_.push_back(o.type);
+        if (!streamingTypes_) loadType(o.type);
+    }
+    // All synchronous Model loads above must finish BEFORE this scope.
+    // The cache owns unique_ptr<Model>; the reader guard blocks
+    // replace/invalidate/trim/shutdown until the View's graph evaluation
+    // and synchronous Renderer3D model submissions have completed.
+    // GPU work remains owned by the separate fenced retirement queue.
+    [[maybe_unused]] const auto modelReadScope=resources_.acquireFrameReadScope();
+    RtsScene resolved;
+    const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
+    if(hierarchy) {
+        resolved=input;
+        std::map<uint64_t,mat4> bases,effects;
+        for(const auto& o:input.objects) {
+            if(!o.entity.valid() || o.type>=looks_.size() || o.body!=-1)continue;
+            const auto& look=looks_[o.type];EntityFxValues fx;input.entityFx->lookup(o.entity.packed(),fx);
+            constexpr float deg=.017453292f;
+            auto effect=mat4::translate({0,(look.air?look.flyHeight:0)+fx.v[EntityFxValues::kLift],0})
+                *mat4::rotateZ(-fx.v[EntityFxValues::kPitch]*deg)*mat4::rotateX(-fx.v[EntityFxValues::kRoll]*deg)
+                *mat4::scale({fx.scale(0),fx.scale(1),fx.scale(2)});
+            effects[o.entity.packed()]=effect;
+            auto external=input.entityFrames.find(o.entity.packed());
+            bases[o.entity.packed()]=external!=input.entityFrames.end()?external->second:
+                mat4::translate({o.pos.x,heightAt(grid,o.pos.x,o.pos.z),o.pos.z})
+                *mat4::rotateY(std::atan2(-o.facing.z,o.facing.x))*effect;
+        }
+        auto frames=input.entityFx->hierarchy.resolve(bases,effects);
+        for(auto& o:resolved.objects)if(input.entityFx->hierarchy.parents.count(o.entity.packed())) {
+            auto it=frames.find(o.entity.packed());
+            if(it==frames.end()){o.visible=false;continue;}
+            o.parented=true;o.parentFrame=it->second;o.pos=it->second.transformPoint({0,0,0});
+            o.facing=it->second.transformPoint({1,0,0})-o.pos;
+        }
+    }
+    const RtsScene& s=hierarchy?resolved:input;
+    fx_ = s.entityFx.get();   // view.entity_fx
+    if (planets_.active()) {
+        // Planet geometry is a host-owned provider of the same generic
+        // View layer pipeline, not a special mode inside engine View.
+        ::aiverse::view::ViewLayerProviders providers;
+        providers.add("planet scene",[&](auto& q,const auto&){
+            q.append("planet scene",::aiverse::view::LayerPhase::Geometry,
+                [&]{
+                    drawPlanets(r,s,time,vision,grid);
+                    publication.mark(Epoch::Geometry);
+                });
+        });
+        // Universal View owns the synchronous presentation barrier.
+        ::aiverse::View::submitLayers(providers,{time,0.f,frame_});
+        if(!publication.finish())
+            throw std::logic_error("RtsView: incomplete planet visual frame publication");
+        return;
+    }
+    animationObstacles_.clear();
+    bool contacts = fx_ && !fx_->animations.empty();
+    if (!contacts) {
+        // A graph on an unused library type cannot produce contacts in this
+        // scene. Avoid scanning hundreds of unrelated types and variants
+        // every frame (especially in the eager-loading editor).
+        for (uint16_t type : drawTypes_) {
+            if (type >= looks_.size()) continue;
+            const auto& look = looks_[type];
+            if (std::any_of(look.models.begin(), look.models.end(),
+                            [](const ModelChoice& ch) {
+                                return ch.graph && ch.graph->hasContacts();
+                            })) { contacts = true; break; }
+        }
+    }
+    // AnimationEnvironment handles a null frame-map (id 1 = world ground).
+    // Avoid allocating an empty shared map on every ordinary static frame.
+    animationSurfaceFrames_ = contacts
+        ? std::make_shared<std::map<uint64_t,mat4>>() : nullptr;
+    for(size_t oi=0;contacts&&oi<s.objects.size();++oi){const auto& o=s.objects[oi];if(!o.visible||o.isProjectile||o.body!=-1||o.type>=looks_.size())continue;
+        const auto& look=looks_[o.type];if(look.models.empty())continue;uint64_t key=o.entity.valid()?o.entity.packed():(uint64_t(1)<<63)|oi;auto state=anims_.find(key);
+        size_t choice=state!=anims_.end()&&size_t(state->second.choice)<look.models.size()?size_t(state->second.choice):0;const ModelChoice* ch=&look.models[choice];
+        const Stage* stage=nullptr;for(const auto& sg:look.stages){if(o.build<1&&look.construction==Construction::Stages&&sg.build>=0&&sg.build<=o.build&&(!stage||sg.build>stage->build))stage=&sg;if(o.build>=1&&sg.hp>=0&&o.hp<=sg.hp&&(!stage||sg.hp<stage->hp))stage=&sg;}if(stage)ch=&stage->choice;if(!ch->model)continue;
+        EntityFxValues values;bool hasFx=fxFor(o,values);float lift=hasFx?values.v[EntityFxValues::kLift]:0;float3 position{o.pos.x,heightAt(grid,o.pos.x,o.pos.z)+(look.air?look.flyHeight:0)+lift,o.pos.z};
+        float yaw=state!=anims_.end()?state->second.yaw:std::atan2(-o.facing.z,o.facing.x);float k=look.scale,grow=look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
+        mat4 base;if(look.structure&&look.shape&&!stage)base=mat4::translate(position)*mat4::scale({look.sx*k,k*std::max(look.sx,look.sz)*.75f*grow,look.sz*k});else base=mat4::translate(position)*mat4::rotateY(yaw)*mat4::scale({k,k*(look.structure?grow:1),k});
+        if(hasFx){auto tilt=mat4::rotateZ(-values.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-values.v[EntityFxValues::kRoll]*.017453292f);base=mat4::translate(position)*mat4::rotateY(yaw)*tilt*mat4::rotateY(-yaw)*mat4::translate(-position)*base*mat4::scale({values.scale(0),values.scale(1),values.scale(2)});}
+        if(o.parented)base=o.parentFrame*mat4::scale({k,k*(look.structure?grow:1),k});
+        if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
+        const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
+        for(size_t node=0;node<model.nodes.size()&&node<matrices.size();++node){int mesh=model.nodes[node].mesh;if(mesh<0||size_t(mesh)>=model.meshes.size())continue;auto transform=base*matrices[node];const auto& primitives=model.meshes[size_t(mesh)].primitives;
+            for(size_t part=0;part<primitives.size()&&part<256;++part){auto a=primitives[part].boundsMin,b=primitives[part].boundsMax;
+                const auto bounds=::aiverse::view::transformAabb(a,b,transform);
+                if(!bounds.valid)continue; // skip malformed visual bounds
+                const auto lo=bounds.min,hi=bounds.max;
+                uint64_t id=key^((node+1)*0x9e3779b97f4a7c15ull)^((part+1)*0xbf58476d1ce4e5b9ull);id^=id>>30;id*=0xbf58476d1ce4e5b9ull;id^=id>>27;id=(id&0x3fffffffffffffffull)+2;
+                animationObstacles_.push_back({&o,o.entity,lo,hi,a,b,id,transform});(*animationSurfaceFrames_)[id]=transform;
+            }
+        }
+    }
+    // Primary and optional scene-aware warmup reuse the same atomic
+    // surface-owner transaction; only draw publishes a complete camera epoch.
+    const bool fogFieldChanged=publishSurfaceFrame(r,s,time,vision,grid);
+    const bool tiles=twoD_ && twoD_->hasTiles();
     const auto afterSetup = std::chrono::steady_clock::now();
     // Legacy game-specific inputs are translated to engine-owned generic
     // presentation passes. Every callback executes immediately in its
