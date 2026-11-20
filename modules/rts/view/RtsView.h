@@ -1,5 +1,6 @@
 #include "engine/render/ModelTextureCache.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/FramePublicationEpoch.h"
 #include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/view/AppearanceAssetRegistry.h"
 // LEGACY compatibility adapter for historical RTS/editor scene presentation.
@@ -372,13 +373,27 @@ public:
     void buildTerrain(gfx::Device& dev, const MapGrid& grid);
     // Optional painted material layer per cell (map key "terrainMaterial": rows of digits 0..3, '.' =
     // by cell kind; see docs/game-format.md). Takes effect at the next buildTerrain().
-    void setTerrainMaterial(const Json& rows, int w, int h) { terrain_.setMaterialLayer(parseMaterialRows(rows, w, h)); }
+    void setTerrainMaterial(const Json& rows, int w, int h) {
+        framePublication_.invalidate();
+        terrain_.setMaterialLayer(parseMaterialRows(rows, w, h));
+    }
     // Visual detail heightmap of the map (terrain.detail, docs/terrain.md; files read with the view's
     // reader). Without one, terrain.style "smooth" synthesises the detail. Takes effect at buildTerrain().
     void setTerrainDetail(const Json& map);
-    void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
+    void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) {
+        framePublication_.invalidate();
+        terrain_.setDetail(d, splat);
+    }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
+    // The generic frame fence is committed ONLY after all primary-frame
+    // owners finish. Secondary RT cameras must consume exactly this epoch.
+    render::FramePublicationEpoch::Snapshot publishedVisualFrame() const noexcept {
+        return framePublication_.published();
+    }
+    bool visualFrameReadyFor(const MapGrid& grid,double seconds) const noexcept {
+        return framePublication_.readyFor(grid.w,grid.h,seconds);
+    }
     // Secondary camera: emits prepared terrain and fog without updating
     // simulation, animation clocks, field textures or fog transitions.
     // Requires a primary draw() in the same presentation frame.
@@ -797,6 +812,7 @@ private:
     double lastTime_ = -1;
     uint32_t lastTick_ = ~0u;
     uint64_t frame_ = 0;
+    render::FramePublicationEpoch framePublication_;
     uint32_t placementCacheHits_ = 0, placementCacheMisses_ = 0;
     uint32_t groundCacheHits_ = 0, groundCacheMisses_ = 0;
     uint64_t terrainGeneration_ = 1;
