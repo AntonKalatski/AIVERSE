@@ -402,6 +402,9 @@ public:
         outputValid_=true;
         if(pendingFilterSlot_>=0 &&
            pendingHistoryGeneration_==historyGeneration_ &&
+           pendingHistoryStamp_.viewKey!=0 &&
+           pendingHistoryStamp_.sourceRevision!=0 &&
+           pendingHistoryStamp_.geometryRevision!=0 &&
            dev_->gpuHealthy()) {
             historySlot_=pendingFilterSlot_;
             historyStamp_=pendingHistoryStamp_;
