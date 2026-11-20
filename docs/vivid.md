@@ -1140,3 +1140,70 @@ requested one consolidated test pass only after feature closure.
 See `tools/vivid-creator/README.md` and the detailed Stage 7AR
 handoff for independent Linux/Vulkan/GLES commands, exact commit SHAs
 and remaining renderer-stream integration work.
+
+
+## Stage 7AS — real Renderer3D source geometry provenance (2026-11-20)
+
+The opt-in VIVID GPU ID/depth diagnostic now queries the actual
+Renderer3D source view rather than reconstructing visible meshes
+and LOD decisions independently. The genre-neutral renderer gained
+`Renderer3D::modelViewProvenance(const Model&)`: a lightweight,
+read-only, **current-scene** record derived directly from the
+`ModelItem` primitive list after `drawModel()` has applied
+actual source frustum culling, selected mesh/LOD, batching,
+skin/morph and `ModelDraw::vertexOverride` decisions.
+
+Each record includes the actual renderer-selected mesh and
+primitive index range, owning node, one invocation identity per
+`drawModel()` submission (distinct model instances can share
+mesh/node IDs), GPU override handle and count, alternate LOD,
+GPU-conditional LOD, fade, batching, baked skin and
+ShaderGraph vertex-offset flags. It is a **pre-render submission
+snapshot**, not a promise that a later GPU pipeline or postfx
+shows a particular pixel. All borrowed model/handle metadata is
+invalidated at the next `beginScene()` or candidate publication;
+it is not persisted into gameplay ECS or save files.
+
+`SculptGpuRendererView.h` validates that snapshot against the
+immediate CPU pick's original source mesh, frame and every source
+primitive index range. It accepts an asset that *contains*
+authored LOD levels when Renderer3D actually selected LOD0
+without fade and still draws the original source index ranges.
+It refuses alternative selected meshes, missing/incomplete
+primitives, multi-instance reuse, GPU conditional LOD, material
+batches, unsupported vertex shader offsets, baked deformers,
+unknown node ownership and mismatched frame. Other visible
+model mesh occluders are taken from the renderer snapshot
+instead of walking all nodes and accidentally introducing
+invisible GPU depth blockers.
+
+Creator now stages its normal floor/head/hair `drawModel`
+calls **before** the experimental ID draw (the regular
+`renderer.render` still owns actual colour/shadow execution).
+Its immediate CPU BVH selection stays authoritative: the
+GPU ID from a CPU-expanded pose may corroborate that selected
+vertex only, and the UI specifically states when the main
+Renderer3D draw used an actual 60-byte GPU `vertexOverride`
+stream that the ID pass has **not** matched. Late or canceled
+asynchronous GPU callbacks no longer overwrite a newer CPU
+selection's status message. Nothing here secretly enables
+a full GPU-only vertex stream picker.
+
+New unit fixtures in `tests/vivid/human_creator.cpp` cover
+exact node/mesh/primitive ranges, same-frame identity,
+actual renderer-selected LOD0 eligibility, alternative
+LOD/fade/batching/ShaderGraph rejection, single vs multiple
+Renderer3D instance ownership and preserved GPU override
+provenance. The existing real Metal
+`tests/vivid/renderer_preview.cpp` now queries the renderer
+during a single-actor preview and checks that its GPU actor
+vertex override is actually represented in the selected
+model source view.
+
+**Native compiler, CMake/CTest, Metal/Vulkan/GLES shaders,
+actual GPU ID pixels and performance testing remain NOT RUN**
+on Stage 7AS. The real GPU vertex-buffer/deformation and
+post-culling visible command stream still need a fully
+fenced Renderer3D-owned integration, plus isolated Texture
+RHI conflict resolution before main merge. See the 7AS
+handoff and Creator README for exact API and limits.
