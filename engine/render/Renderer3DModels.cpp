@@ -925,6 +925,47 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
         const bool rigid = node.skin < 0 && !baseMesh.deformable && !unboundedDisplacement;
+        const bool baseHasMorph=std::any_of(
+            baseMesh.primitives.begin(),baseMesh.primitives.end(),
+            [](const Primitive& p){return p.morphTargets>0;});
+        int maxMorphChannels=0;
+        bool morphWeightsBounded=true,morphMappingsReady=true;
+        if(baseHasMorph) {
+            for(const auto& p:baseMesh.primitives)
+                maxMorphChannels=std::max(maxMorphChannels,p.morphTargets);
+            if(maxMorphChannels>kMaxMorphTargets)
+                morphWeightsBounded=morphMappingsReady=false;
+            else {
+                const float* weights=usePose
+                    ? (*d.pose)[size_t(n)].w:node.weights;
+                for(int ch=0;ch<maxMorphChannels;++ch)
+                    if(!std::isfinite(weights[ch]) ||
+                       weights[ch]<0.f || weights[ch]>1.f) {
+                        morphWeightsBounded=false;break;
+                    }
+            }
+            for(const auto& lod:baseMesh.lods) {
+                if(lod.mesh<0 || size_t(lod.mesh)>=m->meshes.size()) {
+                    morphMappingsReady=false;break;
+                }
+                int targetChannels=0;
+                for(const auto& p:m->meshes[size_t(lod.mesh)].primitives)
+                    targetChannels=std::max(targetChannels,p.morphTargets);
+                if(targetChannels<=0 ||
+                   lod.morphSourceForTarget.size()<size_t(targetChannels)) {
+                    morphMappingsReady=false;break;
+                }
+                for(int ch=0;ch<targetChannels;++ch) {
+                    const int source=lod.morphSourceForTarget[size_t(ch)];
+                    if(source<0 || source>=maxMorphChannels) {
+                        morphMappingsReady=false;break;
+                    }
+                }
+                if(!morphMappingsReady)break;
+            }
+        }
+        const bool morphLod=node.skin<0 && !unboundedDisplacement &&
+            baseHasMorph && morphWeightsBounded && morphMappingsReady;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -936,8 +977,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ModelLodBlend lodBlend{node.mesh};
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
-        const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
-        const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
+        const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose &&
+            !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size() &&
+            (!baseHasMorph || (morphWeightsBounded && morphMappingsReady));
+        const bool lodEligible = (rigid || skinLod || morphLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
@@ -1011,6 +1054,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
+        const ModelLod* morphMapping=nullptr;
+        if(baseHasMorph && meshIndex!=node.mesh)
+            for(const auto& lod:baseMesh.lods)
+                if(lod.mesh==meshIndex) {morphMapping=&lod;break;}
         const bool shadowBatch = d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
         if (d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
@@ -1097,12 +1144,23 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             }
             if (p.morphTargets > 0 &&
                 p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
-                const float* weights = usePose ? (*d.pose)[size_t(n)].w : node.weights;
+                const float* weights=usePose
+                    ?(*d.pose)[size_t(n)].w:node.weights;
+                const auto sourceForTarget=[&](int target)->int {
+                    if(!morphMapping)return target;
+                    const auto& channels=morphMapping->morphSourceForTarget;
+                    return size_t(target)<channels.size()?
+                        channels[size_t(target)]:-1;
+                };
                 bool valid=true;
                 int active=0;
                 for(int ch=0;ch<p.morphTargets;++ch) {
-                    if(!std::isfinite(weights[ch])){valid=false;break;}
-                    active += weights[ch]!=0.f;
+                    const int source=sourceForTarget(ch);
+                    if(source<0 || source>=kMaxMorphTargets ||
+                       !std::isfinite(weights[source])) {
+                        valid=false;break;
+                    }
+                    active+=weights[source]!=0.f;
                 }
                 if(valid && active>0) {
                     it.morph=int32_t(morphData_.size());
@@ -1110,8 +1168,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                     morphData_.resize(offset+2u*size_t(kMaxMorphTargets)+1u,0.f);
                     int slot=0;
                     for(int ch=0;ch<p.morphTargets;++ch) {
-                        if(weights[ch]==0.f)continue;
-                        morphData_[offset+size_t(slot)]=weights[ch];
+                        const float weight=weights[sourceForTarget(ch)];
+                        if(weight==0.f)continue;
+                        morphData_[offset+size_t(slot)]=weight;
                         morphData_[offset+size_t(kMaxMorphTargets)+size_t(slot)]=float(ch);
                         ++slot;
                     }
