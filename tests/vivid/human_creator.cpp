@@ -374,11 +374,26 @@ void test() {
             std::fabs(hit.worldPosition.x-0.4f)<1.e-5f &&
             std::fabs(hit.worldPosition.z-2.0f)<1.e-5f,
             "seam clone did not resolve to original source vertex");
+        DeformedSculptWorkspace cached;
+        const auto accelerated=cached.pick(
+            model,0,pose,library,binding,face,
+            {0.42f,0.05f,4.f},{0,0,-1},3,authorIds);
+        req(accelerated.hit && accelerated.vertex==hit.vertex &&
+            std::fabs(accelerated.worldPosition.x-hit.worldPosition.x)<1.e-5f &&
+            std::fabs(accelerated.rayDistance-hit.rayDistance)<1.e-5f,
+            "accelerated BVH failed seam clone original-source ID remapping");
         model.indices[0]=4; // same triangle geometry, only LOD index changes
         req(!pickDeformedSculptVertex(
             model,0,pose,library,binding,face,
             {0.05f,0.05f,4.f},{0,0,-1},3,authorIds).hit,
             "generated LOD triangle leaked into original sculpt vertex selection");
+        // Changing topology in-place requires a BVH reset; normal Creator
+        // candidate publication always performs it before any new click.
+        cached.reset();
+        req(!cached.pick(model,0,pose,library,binding,face,
+            {0.05f,0.05f,4.f},{0,0,-1},3,authorIds).hit,
+            "BVH selected an unauthorable generated LOD triangle");
+
         const std::array<SkinSeamSplit::Clone,2> sourceAndLodClones{{
             {0,3,0,0},{4,5,0,1}
         }};
