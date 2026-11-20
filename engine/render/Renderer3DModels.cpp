@@ -2033,6 +2033,11 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
+    // Avoid experimental Metal GPU-authored ICB while an L1 atlas is bound.
+    // Its fragment argument buffer occupies Metal buffer8, also used by
+    // U7 far cascade. Ordinary instancing/CPU MDI preserve GI correctly.
+    // This is a per-view opt-in quality decision, never a global toggle.
+    if(dynamicGiOverlay_)return;
 
     // Feedback from the previous completed pass, sampled before counters reset.
     // This is CPU submission feedback, not measured GPU busy-time.
@@ -2945,7 +2950,7 @@ void Renderer3D::renderModels(int phase) {
         }
     }
     if (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
-        !drawCallDebug_ && gpuModelCommandsReady_) {
+        !dynamicGiOverlay_ && !drawCallDebug_ && gpuModelCommandsReady_) {
         for (auto& group : gpuEncodedBatches_) {
             if (group.items.size() < 2) continue;
             // Force all inherited parent state to be bound from this group.
@@ -2997,7 +3002,8 @@ void Renderer3D::renderModels(int phase) {
         }();
         if (!adaptiveGpuIcbFallback &&
             phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ &&
-            !auxiliaryModelPass_ && gpuModelCommandsReady_ && !drawCallDebug_ &&
+            !auxiliaryModelPass_ && !dynamicGiOverlay_ &&
+            gpuModelCommandsReady_ && !drawCallDebug_ &&
             modelIndex < gpuModelSlots_.size() &&
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
             (modelItems_[modelIndex].flags & kDrawStatic) &&
