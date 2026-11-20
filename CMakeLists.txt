@@ -657,6 +657,17 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine Threads::Threads)
     add_test(NAME animation_scene_game_host_api
         COMMAND aiverse_animation_scene_game_host_api_tests)
+
+    # Stage 179: fixture validates real showcase SceneAsset/preloaded GLB
+    # paths. The graphical --scene-preview is compiled with ModelView itself.
+    add_executable(aiverse_animation_scene_preview_assets_tests
+        tests/animation/scene_preview_assets.cpp)
+    target_compile_definitions(aiverse_animation_scene_preview_assets_tests
+        PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(aiverse_animation_scene_preview_assets_tests
+        PRIVATE aiverse_engine)
+    add_test(NAME animation_scene_preview_assets
+        COMMAND aiverse_animation_scene_preview_assets_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_retirement_pressure_tests
