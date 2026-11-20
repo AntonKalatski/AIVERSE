@@ -749,3 +749,11 @@ Metal/GL fixtures and GLSL/MSL compilers. Full details and failures/limits:
 [fog billows handoff](prisma-stage-fog-billows-2026-11-20.md).
 User requires **all further builds on KINGSTON**, including compiler temp/cache;
 use the paths/env recorded there. No new CI/full-suite/backend parity claim.
+
+
+## 2026-11-20 — lighting/fog main synchronization
+
+Merge 73c5849b9ba7ac77404cdbdcc4b4e3b129cea800 preserves peer structured fog
+and Stage36 lighting. Fresh Metal HDR 54/54 and scoped integration 10/10 PASS.
+See docs/agent-handoffs/lighting-main-stage37-main-sync-2026-11-20.md.
+Remote push awaits explicit authorization required by automatic approval review.
