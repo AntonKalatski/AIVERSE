@@ -44,7 +44,7 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
   return new Promise<StudioResult[M]>((resolve, reject) => {
     const id = nextId++;
     // Interactive native sheets wait for a person, including dirty-document prompts.
-    const interactive = ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save'].includes(method);
+    const interactive = ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save','studio.assetImportPreview'].includes(method);
     const timer = interactive ? null : setTimeout(() => {
       pending.delete(id);
       reject(new Error('Native bridge timeout: ' + method));

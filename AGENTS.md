@@ -5,6 +5,8 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
 ## HTML5 Studio UI design system (all future editor windows)
+**Approved appearance (user decision 2026-11-20): FIRST Cinematic Concept, not the second stricter/minimalist mockup.** The portable visual specification is [docs/studio-visual-direction.md](docs/studio-visual-direction.md), and the exact path/API workflow is [docs/studio-ui-agent-guide.md](docs/studio-ui-agent-guide.md). Future agents MUST read both before creating editor UI; use the existing `src/ui` kit. A pretty reference screenshot is not evidence of implemented scene assets or ECS features.
+
 For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
 **Studio UI v1** style library, not a panel-specific visual language:
 - Handbook: \`docs/studio-design-system.md\`; implementation: \`apps/studio-web/src/ui/\`.

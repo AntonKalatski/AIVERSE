@@ -3,9 +3,11 @@
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
 import {
-  Activity, Box, ChevronDown, FolderOpen, MoreHorizontal, SlidersHorizontal
+  Activity, Box, ChevronDown, FolderOpen,
+  SlidersHorizontal, Focus, RotateCcw, Lock, LockOpen
 } from 'lucide-react';
-import type { StudioEntity, StudioSnapshot } from '../types';
+import type { StudioEntity, StudioProperty, StudioSnapshot } from '../types';
+import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import PanelTitle from '../components/PanelTitle';
 import PropertyField from '../components/PropertyField';
@@ -14,6 +16,7 @@ import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
 import ShaderGraphPanel from './ShaderGraphPanel';
+import FacialRigPanel from './FacialRigPanel';
 import { studioSceneMode } from './sceneState';
 import HierarchyPanel from './HierarchyPanel';
 
@@ -30,12 +33,15 @@ export interface StudioPanelContext {
   setSearch: (value: string) => void;
   rows: Array<{node: StudioEntity; depth: number}>;
   selected: StudioEntity | undefined;
+  inspectorProperties: StudioProperty[];
+  inspectorPinned: boolean;
+  toggleInspectorPin: () => void;
   select: (id: string | null) => Promise<void>;
   changeProperty: (key: string, value: string | number | boolean) => Promise<void>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,selected,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,selected,inspectorProperties,inspectorPinned,toggleInspectorPin,changeProperty}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
@@ -45,8 +51,11 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'inspector':
         return <>
           <PanelTitle title="INSPECTOR" right={
-            <button className="icon-button" disabled aria-label="Inspector menu">
-              <MoreHorizontal size={16}/>
+            <button className="icon-button" onClick={toggleInspectorPin}
+              disabled={!selected} aria-pressed={inspectorPinned}
+              title={inspectorPinned ? 'Unpin Inspector from selected object' : 'Lock Inspector to current object'}
+              aria-label={inspectorPinned ? 'Unlock Inspector' : 'Lock Inspector'}>
+              {inspectorPinned ? <Lock size={16}/> : <LockOpen size={16}/>}
             </button>}/>
           {selected ? <>
             <div className="selected-object">
@@ -55,7 +64,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             </div>
             <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>
-              {snapshot?.properties.map(property =>
+              {inspectorProperties.map(property =>
                 <PropertyField key={selected.id + ':' + property.key}
                   property={property} disabled={busy || property.editable === false}
                   onChange={value => void changeProperty(property.key, value)}/>)}
@@ -70,6 +79,14 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
                 <SlidersHorizontal size={15}/></button>
               <span className="toolbar-divider"/>
               <span className="viewport-label">Perspective</span>
+              <button type="button" className="viewport-control" title="Focus selected object (F)"
+                aria-label="Focus selected Scene object" disabled={!connected || !selected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn)}>
+                <Focus size={15}/></button>
+              <button type="button" className="viewport-control" title="Reset Scene camera (Home)"
+                aria-label="Reset Scene camera" disabled={!connected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'reset'}).catch(console.warn)}>
+                <RotateCcw size={15}/></button>
             </div>
             <span className="render-badge"><Activity size={13}/>
               {sceneMode === 'welcome' ? 'Open project to render' : 'Native Renderer3D (experimental)'}
@@ -102,6 +119,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'shader_graph':
         return <ShaderGraphPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'project': return <ProjectPanel {...ctx}/>;
+      case 'facial_rig':
+        return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
       case 'animation':

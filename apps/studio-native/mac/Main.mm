@@ -13,19 +13,25 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <vector>
+#include <filesystem>
 
 #ifndef AIVERSE_STUDIO_SOURCE_DIR
 #define AIVERSE_STUDIO_SOURCE_DIR "."
 #endif
 
-// Transparent WKWebView is opt-in: the normal Metal-over-WebView host stays as fallback.
-@interface StudioTransparentWebView : WKWebView
+@class StudioHost;
+// A native drop receiver is required because Finder drags local file URLs,
+// not JavaScript-provided paths. These are trusted only after NSDraggingDestination
+// resolves them and the drop falls inside the HTML5 Assets panel.
+@interface StudioFileDropWebView : WKWebView <NSDraggingDestination>
+@property(nonatomic, assign) StudioHost* studioHost;
+@end
+@interface StudioTransparentWebView : StudioFileDropWebView
 @end
 @implementation StudioTransparentWebView
 - (BOOL)isOpaque { return NO; }
 @end
-
-@class StudioHost;
 @interface StudioMetalView : NSView {
     NSPoint press_;
     BOOL dragged_;
@@ -51,14 +57,49 @@
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
+- (void)panX:(CGFloat)dx y:(CGFloat)dy;
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy;
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward;
+- (void)focusSceneSelection;
+- (void)resetSceneView;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point;
 - (void)sendStudioReply:(const aiverse::Json&)reply;
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
 - (BOOL)confirmDiscardChanges;
 - (void)saveMapSheetForRequestId:(int64_t)requestId;
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
+@end
+
+@implementation StudioFileDropWebView
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingEntered:sender];
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingUpdated:sender];
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSArray<NSURL*>* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost){
+        [self.studioHost importDroppedFileURLs:urls atWindowPoint:sender.draggingLocation];
+        return YES; // native plan + explicit UI confirmation, NEVER direct file copy
+    }
+    return [super performDragOperation:sender];
+}
 @end
 
 @implementation StudioMetalView
@@ -87,7 +128,26 @@
     if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
         [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
-- (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
+- (void)rightMouseDragged:(NSEvent*)event { [self.host lookX:event.deltaX y:event.deltaY]; }
+- (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
+- (void)keyDown:(NSEvent*)event {
+    NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
+    if (!keys.length) { [super keyDown:event]; return; }
+    const unichar key=[keys characterAtIndex:0];
+    const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    switch(key) {
+        case 'w': [self.host moveRight:0 up:0 forward:scale]; break;
+        case 's': [self.host moveRight:0 up:0 forward:-scale]; break;
+        case 'a': [self.host moveRight:-scale up:0 forward:0]; break;
+        case 'd': [self.host moveRight:scale up:0 forward:0]; break;
+        case 'q': [self.host moveRight:0 up:-scale forward:0]; break;
+        case 'e': [self.host moveRight:0 up:scale forward:0]; break;
+        case 'f': [self.host focusSceneSelection]; break;
+        case NSHomeFunctionKey: [self.host resetSceneView]; break;
+        default: [super keyDown:event]; break;
+    }
+}
+
 - (void)scrollWheel:(NSEvent*)event {
     const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
     [self.host zoom:wheel];
@@ -138,7 +198,9 @@
     if (htmlComposite_) {
         web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
         if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
-    } else web_=[[WKWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    } else web_=[[StudioFileDropWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    ((StudioFileDropWebView*)web_).studioHost=self;
+    [web_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
     web_.navigationDelegate=self;
     web_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     [window_.contentView addSubview:web_];
@@ -177,7 +239,9 @@
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
                 session_->previewMaterialRevision(),
-                float(session_->workspace().project.rules.levelHeight.toDouble()));
+                float(session_->workspace().project.rules.levelHeight.toDouble()),
+                session_->workspace().project.dir,
+                session_->workspace().project.rulesJson);
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
@@ -199,6 +263,24 @@
 - (void)zoom:(CGFloat)amount {
     if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
 }
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->look(float(dx),float(dy));
+}
+- (void)panX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->pan(float(dx),float(dy));
+}
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward {
+    if (preview_ && std::isfinite(double(right)) && std::isfinite(double(up)) &&
+        std::isfinite(double(forward)))
+        preview_->move(float(right),float(up),float(forward));
+}
+- (void)focusSceneSelection {
+    if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
+        session_->workspace().project.isFps(),session_->selectedObjectId());
+}
+- (void)resetSceneView { if (preview_) preview_->resetView(); }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
@@ -318,6 +400,95 @@
         [self sendStudioReply:reply];
     }];
 }
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination {
+    if(session_->workspace().project.dir.empty()){
+        aiverse::Json response=aiverse::Json::object();
+        response.set("id",aiverse::Json::number(requestId));
+        response.set("error",aiverse::Json::string("Open a project before importing assets"));
+        [self sendStudioReply:response];
+        return;
+    }
+    NSOpenPanel* panel=[NSOpenPanel openPanel];
+    panel.canChooseFiles=YES;
+    panel.canChooseDirectories=YES;
+    panel.allowsMultipleSelection=YES;
+    panel.canCreateDirectories=NO;
+    panel.prompt=@"Import into content";
+    panel.message=@"Select files or folders to copy into the project's content directory.";
+    panel.directoryURL=[NSURL fileURLWithPath:
+        [NSString stringWithUTF8String:session_->workspace().project.dir.c_str()] isDirectory:YES];
+    NSString* safeDestination=[destination copy];
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse code) {
+        aiverse::Json reply=aiverse::Json::object();
+        reply.set("id",aiverse::Json::number(requestId));
+        if(code==NSModalResponseOK && panel.URLs.count){
+            try {
+                std::vector<std::filesystem::path> sources;
+                if(panel.URLs.count>64)throw std::runtime_error("Select at most 64 assets");
+                for(NSURL* url in panel.URLs){
+                    if(!url.isFileURL)throw std::runtime_error("Expected a local file");
+                    sources.emplace_back(url.path.UTF8String);
+                }
+                reply.set("result",session_->previewExternalAssets(sources,
+                    safeDestination.UTF8String ?: ""));
+            }catch(const std::exception& error){
+                reply.set("error",aiverse::Json::string(error.what()));
+            }
+        }else{
+            aiverse::Json cancelled=aiverse::Json::object();
+            cancelled.set("cancelled",aiverse::Json::fromBool(true));
+            reply.set("result",std::move(cancelled));
+        }
+        [self sendStudioReply:reply];
+    }];
+}
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point {
+    if(urls.count==0 || urls.count>64 || session_->workspace().project.dir.empty())return;
+    NSPoint local=[web_ convertPoint:point fromView:nil];
+    const double x=double(local.x),y=web_.isFlipped?double(local.y):
+        double(web_.bounds.size.height-local.y);
+    if(!std::isfinite(x)||!std::isfinite(y))return;
+    // The native handler reads a destination from the currently displayed
+    // HTML Assets pane only. No browser-provided source filesystem paths.
+    NSString* js=[NSString stringWithFormat:
+        @"(function(){const el=document.elementFromPoint(%f,%f);"
+        @"const root=el&&el.closest('[data-content-drop-root]');"
+        @"if(!root)return null;"
+        @"const dest=el.closest('[data-content-drop-target]');"
+        @"return dest?dest.getAttribute('data-content-drop-target'):"
+        @"root.getAttribute('data-content-drop-target');})()",
+        x,y];
+    NSArray<NSURL*>* safeURLs=[urls copy];
+    [web_ evaluateJavaScript:js completionHandler:^(id result,NSError* error) {
+        if(error || ![result isKindOfClass:[NSString class]])return;
+        const std::string folder=[(NSString*)result UTF8String];
+        try{
+            std::vector<std::filesystem::path> sources;
+            sources.reserve(safeURLs.count);
+            for(NSURL* url in safeURLs){
+                if(!url.isFileURL)throw std::runtime_error("Only local files can be imported");
+                sources.emplace_back(url.path.UTF8String);
+            }
+            const auto preview=session_->previewExternalAssets(sources,folder);
+            [self sendStudioEventPayload:"assets.importPreview" payload:preview];
+        }catch(const std::exception& ex){
+            aiverse::Json payload=aiverse::Json::object();
+            payload.set("message",aiverse::Json::string(ex.what()));
+            [self sendStudioEventPayload:"assets.importError" payload:payload];
+        }
+    }];
+}
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload {
+    aiverse::Json packet=aiverse::Json::object();
+    packet.set("event",aiverse::Json::string(event));
+    packet.set("payload",payload);
+    const std::string bytes=packet.dump(-1);
+    NSString* text=[[NSString alloc]initWithBytes:bytes.data()
+        length:bytes.size() encoding:NSUTF8StringEncoding];
+    if(text)[web_ evaluateJavaScript:[NSString stringWithFormat:
+        @"window.__aiverseReceive && window.__aiverseReceive(%@);",text]
+        completionHandler:nil];
+}
 - (void)sendStudioEvent:(const char*)event message:(const char*)message {
     aiverse::Json packet=aiverse::Json::object();
     packet.set("event",aiverse::Json::string(event));
@@ -396,6 +567,29 @@
                 if (!std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx)>1000 || std::abs(dy)>1000)
                     reply.set("error",aiverse::Json::string("Invalid orbit delta"));
                 else { [self orbitX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="look" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid look delta"));
+                else { [self lookX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="pan" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid pan delta"));
+                else { [self panX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="move" && input["right"].isNumber() &&
+                       input["up"].isNumber() && input["forward"].isNumber()) {
+                const double right=input["right"].toDouble(),up=input["up"].toDouble(),
+                             forward=input["forward"].toDouble();
+                if (!std::isfinite(right)||!std::isfinite(up)||!std::isfinite(forward)||
+                    std::abs(right)>50||std::abs(up)>50||std::abs(forward)>50)
+                    reply.set("error",aiverse::Json::string("Invalid camera movement"));
+                else { [self moveRight:right up:up forward:forward];
+                       result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="focus") {
+                [self focusSceneSelection]; result.set("ok",aiverse::Json::fromBool(true));
+            } else if (kind=="reset") {
+                [self resetSceneView]; result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="zoom" && input["amount"].isNumber()) {
                 const double wheel=input["amount"].toDouble();
                 if (!std::isfinite(wheel) || std::abs(wheel)>1000)
@@ -429,6 +623,21 @@
                 auto cancelled=req;cancelled.set("method",aiverse::Json::string("studio.snapshot"));
                 [self sendStudioReply:session_->dispatch(cancelled)];return;
             }
+        }
+        if (req.getStr("method")=="studio.assetImportPreview" && req["id"].isNumber()) {
+            // The browser can choose a verified relative DESTINATION only.
+            // The local SOURCE paths come exclusively from a native NSOpenPanel.
+            const std::string destination=req["params"].getStr("destination");
+            if(destination.size()>512){
+                aiverse::Json reply=aiverse::Json::object();
+                reply.set("id",req["id"]);
+                reply.set("error",aiverse::Json::string("Invalid import destination"));
+                [self sendStudioReply:reply];
+            }else{
+                NSString* folder=[NSString stringWithUTF8String:destination.c_str()];
+                [self openAssetImportForRequestId:req["id"].integer() destination:folder];
+            }
+            return;
         }
         aiverse::Json reply;
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {

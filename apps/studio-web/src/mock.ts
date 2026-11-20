@@ -24,6 +24,22 @@ let snapshot: StudioSnapshot = {
   mode: 'edit',
   history: { canUndo: false, canRedo: false }
 };
+const entityFields = new Map<string, StudioSnapshot['properties']>();
+const fieldsFor = (id: string): StudioSnapshot['properties'] => {
+  const cached = entityFields.get(id);
+  if (cached) return cached;
+  const entity = snapshot.scene.entities.find(item => item.id === id);
+  if (!entity) throw Error('Unknown entity: ' + id);
+  const fields: StudioSnapshot['properties'] = [
+    { key: 'name', label: 'Name', type: 'text', value: entity.name },
+    { key: 'x', label: 'Position X', type: 'number', value: 0 },
+    { key: 'y', label: 'Position Y', type: 'number', value: 0 },
+    { key: 'z', label: 'Position Z', type: 'number', value: 0 },
+    { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
+  ];
+  entityFields.set(id, fields);
+  return fields;
+};
 const undoStack: StudioSnapshot[] = [];
 const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
@@ -39,6 +55,13 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.entityCatalog') return {types: [], mapEntities: false};
   if (method === 'studio.entityCreate' || method === 'studio.entityDelete' || method === 'studio.entityDuplicate')
     throw Error('Entity authoring requires a native project');
+  if (method === 'studio.facialRigList')return {rigs: []};
+  if (method === 'studio.facialRigGet' || method === 'studio.facialRigSave')
+    throw Error('Facial Rig project files require the native AIVERSE host');
+  if (method === 'studio.facialRigValidate') {
+    // Browser demo never claims native compile/model/morph verification.
+    throw Error('Facial Rig native validation requires the AIVERSE host');
+  }
   if (method === 'studio.materials') {
     return { library: {} };
   }
@@ -60,24 +83,35 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
     throw Error('Editing map lights requires the native AIVERSE host');
   }
+  if (method === 'studio.assetByGuid' || method === 'studio.assetMetaPatch' ||
+      method === 'studio.assetFolderCreate' ||
+      method === 'studio.assetMovePreview' || method === 'studio.assetImportPreview' ||
+      method === 'studio.assetTransferCommit') {
+    throw Error('Project asset operations require the native AIVERSE host');
+  }
+  if (method === 'studio.assetReferences') {
+    // Demo cannot inspect an actual project's materials/rules.
+    return [];
+  }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
-    return { files: [] };
+    return { files: [], folders: [], root: 'content' };
   }
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.
   }
+  if (method === 'studio.propertiesFor') {
+    const id = (params as StudioParams['studio.propertiesFor']).entityId;
+    return structuredClone(fieldsFor(id));
+  }
   if (method === 'studio.select') {
     const id = (params as StudioParams['studio.select']).id;
     if (id !== null && !snapshot.scene.entities.some(entity => entity.id === id)) throw Error('Unknown entity: ' + id);
+    if (snapshot.selectedId && !entityFields.has(snapshot.selectedId)) {
+      entityFields.set(snapshot.selectedId, structuredClone(snapshot.properties));
+    }
     snapshot.selectedId = id;
-    snapshot.properties = id === null ? [] : [
-      { key: 'name', label: 'Name', type: 'text', value: snapshot.scene.entities.find(e => e.id === id)?.name ?? '' },
-      { key: 'x', label: 'Position X', type: 'number', value: 0 },
-      { key: 'y', label: 'Position Y', type: 'number', value: 0 },
-      { key: 'z', label: 'Position Z', type: 'number', value: 0 },
-      { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
-    ];
+    snapshot.properties = id === null ? [] : structuredClone(fieldsFor(id));
   } else if (method === 'studio.openProject') {
     throw Error('Opening projects requires the native AIVERSE host');
   } else if (method === 'studio.save') {
@@ -92,8 +126,8 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
     snapshot = redoStack.pop()!;
   } else if (method === 'studio.setProperty') {
     const { entityId, key, value } = params as StudioParams['studio.setProperty'];
-    if (entityId !== snapshot.selectedId) throw Error('Selection changed while editing');
-    const property = snapshot.properties.find(p => p.key === key);
+    const target = fieldsFor(entityId);
+    const property = target.find(p => p.key === key);
     if (!property) throw Error('Unknown property: ' + key);
     if (typeof value !== property.type.replace('text', 'string').replace('number', 'number').replace('boolean', 'boolean')) {
       throw Error('Property type mismatch');
@@ -101,6 +135,7 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
     undoStack.push(clone());
     redoStack.length = 0;
     property.value = value;
+    if (snapshot.selectedId === entityId) snapshot.properties = structuredClone(target);
     if (key === 'name') {
       const entity = snapshot.scene.entities.find(e => e.id === entityId);
       if (entity) entity.name = String(value);

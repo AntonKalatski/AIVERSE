@@ -21,7 +21,7 @@ function bridge() {
   return { ...context, sent, timers };
 }
 
-for (const method of ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save']) {
+for (const method of ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save','studio.assetImportPreview']) {
   test(`${method} waits for native interaction without an RPC timeout`, async () => {
     const b = bridge();
     const result = b.invoke(method, {});

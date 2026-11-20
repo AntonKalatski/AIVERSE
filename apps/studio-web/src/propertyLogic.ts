@@ -1,5 +1,5 @@
 /** Pure field validation shared by all AI-authored Studio inspectors. */
-export type PropertyType = 'text' | 'number' | 'boolean';
+export type PropertyType = 'text' | 'number' | 'boolean' | 'asset';
 export interface FieldOption { label: string; value: string | number }
 export interface FieldDescriptor {
   key: string;
@@ -13,6 +13,8 @@ export interface FieldDescriptor {
   integer?: boolean;
   options?: FieldOption[];
   description?: string;
+  /** Optional asset kinds accepted by reference-picker fields. */
+  assetKinds?: Array<'image' | 'model' | 'audio' | 'code' | 'document'>;
 }
 export type ParsedField = { ok: true; value: string | number | boolean } | { ok: false; error: string };
 
@@ -20,7 +22,7 @@ export type ParsedField = { ok: true; value: string | number | boolean } | { ok:
 export function parseFieldDraft(field: FieldDescriptor, draft: string): ParsedField {
   if (field.editable === false) return { ok: false, error: 'Field is read-only' };
   if (field.type === 'boolean') return { ok: false, error: 'Boolean fields must use the checkbox control' };
-  if (field.type === 'text') {
+  if (field.type === 'text' || field.type === 'asset') {
     if (field.options?.length && !field.options.some(option => option.value === draft)) {
       return { ok: false, error: 'Select an available option' };
     }

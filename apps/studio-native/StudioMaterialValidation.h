@@ -4,6 +4,10 @@
 #include <cmath>
 #include <string_view>
 namespace aiverse::studio {
+inline bool studioMaterialTextureKey(std::string_view key) {
+    return key=="texture" || key=="normalMap" || key=="emissiveMap" ||
+           key=="teamMask" || key=="metallicRoughnessMap" || key=="occlusionMap";
+}
 inline bool validStudioMaterialPreset(std::string_view preset) {
     return preset=="matte" || preset=="metal" || preset=="glass";
 }

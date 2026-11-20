@@ -18,7 +18,7 @@ test('color swatch clamps invalid channels',()=>{
  assert.equal(materialSwatchColor({color:[20,-1,NaN]}),'rgb(255 0 160)');
 });
 test('patch output strips unsupported fields',()=>{
- assert.deepEqual(editablePatch({roughness:.4,shaderGraph:'unsafe',texture:'../x'}),{roughness:.4});
+ assert.deepEqual(editablePatch({roughness:.4,shaderGraph:'unsafe',texture:'0123456789abcdef0123456789abcdef'}),{roughness:.4,texture:'0123456789abcdef0123456789abcdef'});
 });
 
 test('creation preset registry stays within native whitelist',()=>{
@@ -30,4 +30,19 @@ test('receiver shadow diffusion defaults to zero and survives authoring patches'
  assert.equal(field.value,0);assert.equal(field.min,0);assert.equal(field.max,1);
  assert.equal(materialFields({shadowDiffusion:.025}).find(f=>f.key==='shadowDiffusion').value,.025);
  assert.deepEqual(editablePatch({shadowDiffusion:.125}),{shadowDiffusion:.125});
+});
+
+test('texture reference slots share typed asset picker and have string defaults',()=>{
+ const keys=['texture','normalMap','emissiveMap','teamMask','metallicRoughnessMap','occlusionMap'];
+ const fields=materialFields({});
+ for(const key of keys){
+  const field=fields.find(f=>f.key===key);
+  assert.equal(field?.type,'asset');
+  assert.deepEqual(field?.assetKinds,['image']);
+  assert.equal(field?.value,'');
+ }
+ const withPaths=materialFields({texture:'content/textures/stone.png'},{
+  texture:'0123456789abcdef0123456789abcdef'
+ });
+ assert.equal(withPaths.find(f=>f.key==='texture')?.value,'0123456789abcdef0123456789abcdef');
 });
