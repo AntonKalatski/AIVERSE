@@ -46,6 +46,9 @@ struct Params {
     uint instanceCount, outputCapacity, width, height;
     float thresholdPixels;
     uint clipDepthZeroToOne, frustumCull, reserved;
+    uint temporalNodeCount, temporalHasPrevious;
+    float hysteresisFraction;
+    uint temporalReserved;
 };
 
 inline float projectError(float4x4 clip, Node node, Params params) {
@@ -100,6 +103,8 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
                     device const Instance* instances [[buffer(1)]],
                     device Selected* output [[buffer(2)]],
                     device atomic_uint* counters [[buffer(3)]],
+                    device const uint* previousRefined [[buffer(5)]],
+                    device uint* nextRefined [[buffer(6)]],
                     constant Params& params [[buffer(8)]],
                     uint tid [[thread_position_in_grid]]) {
     if (tid >= params.instanceCount) return;
@@ -162,8 +167,17 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
                 markInvalid(counters); // parent/root residency promise broken
                 return;
             }
+            float threshold=params.thresholdPixels;
+            if(params.hysteresisFraction>0.0f &&
+               params.temporalHasPrevious!=0u &&
+               id<params.temporalNodeCount){
+                const bool wasFine=previousRefined[id]!=0u;
+                threshold*=wasFine
+                    ? (1.0f-params.hysteresisFraction)
+                    : (1.0f+params.hysteresisFraction);
+            }
             bool refine = node.childCount != 0 &&
-                projectError(objectToClip, node, params) > params.thresholdPixels;
+                projectError(objectToClip, node, params) > threshold;
             if (refine) {
                 if (node.firstChild < primitive.nodeBase ||
                     node.firstChild >= primitive.nodeBase + primitive.nodeCount ||
@@ -182,6 +196,9 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
                     return;
                 }
             }
+            if(params.hysteresisFraction>0.0f &&
+               id<params.temporalNodeCount)
+                nextRefined[id]=refine?1u:0u;
             if (refine) {
                 for (uint c = node.childCount; c > 0; --c)
                     stack[top++] = node.firstChild + c - 1u;
@@ -216,6 +233,39 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
             output[at] = selected;
         }
     }
+}
+)MSL";
+// The GPU resets ALL refined bits for the current frame; only traversed
+// parent nodes are set. This is exactly CPU SelectionOutput::refinedNodes.
+constexpr const char* kMetalTemporalReset=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct Params { uint count; };
+kernel void cs_main(device uint* state [[buffer(0)]],
+                    constant Params& p [[buffer(8)]],
+                    uint id [[thread_position_in_grid]]) {
+    if(id<p.count)state[id]=0u;
+}
+)MSL";
+
+// Restore the entire previous GPU history after invalid/capacity-overflow
+// selection. Unlike CPU readback this happens in the same GPU command queue
+// and never changes Renderer3D's chosen draw owner.
+constexpr const char* kMetalTemporalSafety=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct Params { uint count, hasPrevious; };
+kernel void cs_main(device const atomic_uint* counters [[buffer(0)]],
+                    device const uint* previous [[buffer(1)]],
+                    device uint* next [[buffer(2)]],
+                    constant Params& p [[buffer(8)]],
+                    uint id [[thread_position_in_grid]]) {
+    if(id>=p.count)return;
+    const uint produced=atomic_load_explicit(counters,memory_order_relaxed);
+    const uint overflow=atomic_load_explicit(counters+1,memory_order_relaxed);
+    const uint invalid=atomic_load_explicit(counters+3,memory_order_relaxed);
+    if(overflow!=0u || invalid!=0u)
+        next[id]=p.hasPrevious!=0u?previous[id]:0u;
 }
 )MSL";
 } // namespace
