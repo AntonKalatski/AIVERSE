@@ -863,3 +863,16 @@ on a lost device. Stage52 extends `gi_gpu_ticket_queue` source regression.
 This does NOT assert driver resource teardown safety or successful RHI
 recreation. Native CTest, Vulkan/Metal device-loss and full acceptance
 are NOT RUN.
+
+
+## Stage 53 — 2026-11-20 — optional full-world CPU GI after local GPU budget overflow (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage53-optional-near-overflow-cpu-fallback-2026-11-20.md`.
+Added explicit `cpuFallbackOnLocalGpuOverflow` source option in the
+genre-neutral transport controller. With all GPU jobs fence-complete and
+healthy RHI, a near-scene triangle admission failure may migrate the
+FULL immutable collision source, current point/spotlights and sun/sky
+into the existing adaptive CPU reference; never silently clip relevant
+GPU occluders. One-way until reinitialize, default OFF to avoid surprise
+CPU cost. `gi_gpu_residency_planner` regression source extended.
+Native CMake/CTest and GPU/CPU performance NOT RUN.
