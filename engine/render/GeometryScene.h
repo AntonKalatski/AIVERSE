@@ -1,6 +1,7 @@
 #pragma once
 #include "Geometry.h"
 #include "Renderer3D.h"
+#include <cmath>
 #include <map>
 #include <memory>
 #include <functional>
@@ -11,6 +12,7 @@ namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
     struct GpuSelectionReadback; class GpuClusterCulling;
     class PortableSource;
+    struct PortableLodHistory;
     struct RenderCandidate; enum class RenderPass : uint8_t; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
@@ -36,6 +38,8 @@ public:
         uint32_t strataPortableSources=0, strataPortableDeclined=0;
         uint64_t strataPortableDraws=0, strataPortableFallbacks=0;
         uint64_t strataPortableClusters=0;
+        uint64_t strataLodHysteresisTransitions=0;
+        uint32_t strataLodHysteresisHistories=0;
         uint32_t strataStreamedSources=0;
         uint64_t strataStreamingIndexBytes=0, strataStreamingEvictions=0;
         uint64_t strataStreamingPrepareFailures=0;
@@ -99,6 +103,20 @@ public:
     // Scene must be reloaded after changing this option.
     void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
     bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
+    // Stage17.3: opt-in temporal stabilization ONLY for the portable
+    // cross-backend CPU LOD selector. 0 disables and preserves old behavior;
+    // Vulkan GPU selector remains independent until a native parity gate.
+    // Per-instance/main/sun histories reset on source/pass changes and
+    // force-finest reflection. Safe to change this setting at runtime.
+    bool setStrataLodHysteresisFraction(float fraction) {
+        if(!std::isfinite(fraction) || fraction<0.f || fraction>.45f)
+            return false;
+        strataLodHysteresisFraction_=fraction;
+        return true;
+    }
+    float strataLodHysteresisFraction() const {
+        return strataLodHysteresisFraction_;
+    }
     // Stage16.3 Vulkan-only production experiment. Requires staging,
     // GPU metadata and GPU culling enabled plus EXPLICIT independent
     // selection and raster parity acceptance for the exact deployed build.
@@ -277,6 +295,8 @@ private:
     // Reservation tokens are released AFTER GPU sidecars are destroyed.
     std::map<const Model*,uint64_t> strataGlobalIndexLeases_;
     std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
+    std::map<const Instance*,std::shared_ptr<strata::PortableLodHistory>>
+        strataPortableLodHistories_;
     gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
@@ -288,6 +308,7 @@ private:
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
+    float strataLodHysteresisFraction_=0.f;
     bool strataVulkanGpuIndirectEnabled_=false;
     bool strataVulkanGpuSelectionParityVerified_=false;
     bool strataVulkanGpuRasterParityVerified_=false;
