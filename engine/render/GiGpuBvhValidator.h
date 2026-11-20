@@ -44,6 +44,23 @@ inline GiGpuBvhValidation giValidateGpuBvh(const GiGpuBvh& bvh) {
     const auto xyz=[](float4 value) {
         return float3{value.x,value.y,value.z};
     };
+    // A malformed but in-bounds index can still reference a child whose
+    // physical box sits OUTSIDE its parent's box. The shader would prune
+    // that child, causing false sunlight/visibility and light leaks.
+    const auto contains=[](float3 parentLo,float3 parentHi,
+                           float3 childLo,float3 childHi) {
+        for(int axis=0;axis<3;++axis) {
+            const auto get=[&](float3 v) {
+                return axis==0?v.x:axis==1?v.y:v.z;
+            };
+            const float a=get(parentLo),b=get(parentHi);
+            const float scale=std::max(1.f,std::max(std::abs(a),std::abs(b)));
+            const float tolerance=1e-5f*scale;
+            if(get(childLo)<a-tolerance || get(childHi)>b+tolerance)
+                return false;
+        }
+        return true;
+    };
     std::vector<uint8_t> status(bvh.nodes.size(),0);
     const auto visit=[&](auto&& self,uint32_t index,size_t depth)->bool {
         if(index>=bvh.nodes.size()) {
@@ -81,6 +98,8 @@ inline GiGpuBvhValidation giValidateGpuBvh(const GiGpuBvh& bvh) {
                 const float3 a=xyz(tri.a),b=xyz(tri.b),c=xyz(tri.c);
                 const float3 color=xyz(tri.albedo);
                 if(!finite(a)||!finite(b)||!finite(c)||!finite(color)||
+                   !contains(lo,hi,a,a) || !contains(lo,hi,b,b) ||
+                   !contains(lo,hi,c,c) ||
                    color.x<0||color.y<0||color.z<0||
                    color.x>10000||color.y>10000||color.z>10000) {
                     result.error="GPU GI BVH leaf contains invalid triangle";
@@ -92,6 +111,16 @@ inline GiGpuBvhValidation giValidateGpuBvh(const GiGpuBvh& bvh) {
             const uint32_t left=node.meta[0],right=node.meta[1];
             if(left==index || right==index) {
                 result.error="GPU GI BVH self-cycle";
+                return false;
+            }
+            const auto containedChild=[&](uint32_t child) {
+                if(child>=bvh.nodes.size())return true; // visit reports bad ID
+                return contains(lo,hi,xyz(bvh.nodes[child].lo),
+                                xyz(bvh.nodes[child].hi));
+            };
+            if(!containedChild(left) ||
+               (right!=UINT32_MAX && !containedChild(right))) {
+                result.error="GPU GI BVH child AABB escapes parent";
                 return false;
             }
             if(!self(self,left,depth+1))return false;
