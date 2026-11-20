@@ -1,0 +1,202 @@
+// Opt-in VIVID hardware ID pass, currently Metal-only.
+// Uses the canonical gfx::Device and an ordinary offscreen RGBA8 + depth
+// pass, with one true asynchronous pixel readback. Non-Metal backends
+// deliberately fail closed until their RHI pixel readback is implemented.
+// This does not replace the CPU BVH picker, GPU actor pose, or ECS.
+#pragma once
+#include "SculptGpuPickShaders.h"
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <utility>
+#include <vector>
+
+namespace aiverse::vivid {
+
+class SculptGpuIdPass final {
+    struct Reply {
+        std::vector<std::uint8_t> rgba;
+        bool ready=false;
+    };
+public:
+    struct Completed {
+        SculptGpuPickRequest request{};
+        std::vector<std::uint8_t> rgba;
+    };
+private:
+    struct Pending {
+        gfx::BufferHandle vertex;
+        std::shared_ptr<Reply> reply;
+        SculptGpuPickRequest request{};
+    };
+    gfx::Device* device_=nullptr; // render-owner thread, borrowed
+    gfx::ShaderHandle shader_{};
+    gfx::PipelineHandle pipeline_{};
+    gfx::TextureHandle color_,depth_;
+    int width_=0,height_=0;
+    std::vector<Pending> pending_;
+    std::vector<SculptGpuIdVertex> vertices_;
+    bool supported_=false;
+public:
+    SculptGpuIdPass()=default;
+    SculptGpuIdPass(const SculptGpuIdPass&)=delete;
+    SculptGpuIdPass& operator=(const SculptGpuIdPass&)=delete;
+
+    bool initialize(gfx::Device& device) {
+        if(device_ || device.info().backend!=gfx::Backend::Metal)return false;
+        const auto shaderDesc=sculptGpuIdShaderDesc();
+        auto shader=device.createShader(shaderDesc);
+        if(!shader.valid())return false;
+        auto pipeline=device.createPipeline(sculptGpuIdPipelineDesc(shader));
+        if(!pipeline.valid()) {
+            device.destroyShader(shader);
+            return false;
+        }
+        device_=&device;
+        shader_=shader;
+        pipeline_=pipeline;
+        supported_=true;
+        return true;
+    }
+    bool supported() const noexcept {return supported_;}
+    bool pending() const noexcept {return !pending_.empty();}
+    bool hasTargets() const noexcept {return color_.valid()&&depth_.valid();}
+
+    // Pixel callback marks Reply only: never captures CreatorApp or accesses
+    // the Device off-thread. A later owner frame polls and retires buffers.
+    bool takeCompleted(Completed& out) {
+        if(!device_ || pending_.empty() ||
+           !pending_.front().reply->ready)return false;
+        auto p=std::move(pending_.front());
+        pending_.erase(pending_.begin());
+        // The completed callback proves the corresponding command buffer
+        // finished, so its immutable vertex allocation can be released.
+        if(p.vertex.valid())device_->destroyBuffer(p.vertex);
+        out.request=p.request;
+        out.rgba=std::move(p.reply->rgba);
+        return true;
+    }
+
+    // Recording occurs only on the owner thread during a frame, outside any
+    // other render/compute pass. x/y use top-left frame coordinates. Callback
+    // will be delivered on a later beginFrame and consumed on an owner frame.
+    // Submits only the selected mesh: other scene occluders are NOT drawn yet.
+    // Because of this limitation, results are experimental diagnostics and
+    // must be checked against CPU BVH selection, not treated as full-scene
+    // authoritative visibility.
+    bool record(const render::Model& model,
+                const SkinnedWeightSurface& surface,
+                std::size_t authorCount,
+                std::span<const std::uint32_t> authorIds,
+                const render::mat4& viewProj,
+                const SculptGpuPickRequest& request) {
+        if(!device_||!supported_||!request.valid()||
+           !device_->frameSerial() ||
+           device_->frameSerial()!=request.frameSerial ||
+           request.meshId!=surface.mesh ||
+           !pending_.empty() ||
+           request.width>4096u || request.height>4096u ||
+           !device_->gpuHealthy() ||
+           !buildSculptGpuIdVertices(model,surface,authorCount,
+                                      authorIds,vertices_) ||
+           vertices_.empty() || vertices_.size()>3000000u)
+            return false;
+        for(float v:viewProj.m)if(!std::isfinite(v))return false;
+        const int w=int(request.width),h=int(request.height);
+        if((!color_.valid()||!depth_.valid()) || w!=width_ || h!=height_) {
+            // Resizing is rare. GPU owner must prove the prior submitted
+            // frame no longer uses old RTs before reallocating them.
+            if((color_.valid()||depth_.valid()) &&
+               !device_->waitForResourceIdle())return false;
+            if(color_.valid())device_->destroyTexture(color_);
+            if(depth_.valid())device_->destroyTexture(depth_);
+            color_=depth_={};
+            width_=height_=0;
+            gfx::TextureDesc d;
+            d.width=w;d.height=h;
+            d.renderTarget=true;
+            d.filter=gfx::Filter::Nearest;
+            d.format=gfx::PixelFormat::RGBA8;
+            d.label="VIVID sculpt ID color RT";
+            auto color=device_->createTexture(d);
+            d.format=gfx::PixelFormat::Depth;
+            d.label="VIVID sculpt depth RT";
+            auto depth=device_->createTexture(d);
+            if(!color.valid()||!depth.valid()) {
+                if(color.valid())device_->destroyTexture(color);
+                if(depth.valid())device_->destroyTexture(depth);
+                return false;
+            }
+            color_=color;depth_=depth;
+            width_=w;height_=h;
+        }
+        gfx::BufferDesc v;
+        v.type=gfx::BufferType::Vertex;
+        v.usage=gfx::Usage::Immutable;
+        v.size=vertices_.size()*sizeof(SculptGpuIdVertex);
+        v.data=vertices_.data();
+        v.label="VIVID expanded triangle IDs (one click)";
+        const auto vertex=device_->createBuffer(v);
+        if(!vertex.valid())return false;
+        auto reply=std::make_shared<Reply>();
+        // The present-frame GL/Metal scissor is top-left, like request x/y.
+        gfx::PassDesc pass;
+        pass.colorTarget=color_;
+        pass.depthTarget=depth_;
+        pass.clearColor[0]=pass.clearColor[1]=
+            pass.clearColor[2]=pass.clearColor[3]=0;
+        device_->beginPass(pass);
+        device_->setViewport({0,0,w,h});
+        device_->setScissor({int(request.x),int(request.y),1,1});
+        device_->setPipeline(pipeline_);
+        device_->setVertexBuffer(vertex);
+        device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
+        device_->draw(std::uint32_t(vertices_.size()));
+        device_->endPass();
+        // Completion is genuinely asynchronous on Metal. This may fail if
+        // a device is unsupported/lost, but the draw already references the
+        // buffer; retain it until a verified idle barrier on shutdown.
+        bool read=device_->readTexturePixelAsync(
+            color_,int(request.x),int(request.y),
+            [reply](std::vector<std::uint8_t> bytes) {
+                reply->rgba=std::move(bytes);
+                reply->ready=true;
+            });
+        if(!read) {
+            retiredWithoutCallback_.push_back(vertex);
+            return false;
+        }
+        pending_.push_back({vertex,std::move(reply),request});
+        return true;
+    }
+
+    // Caller must be at a safe render-owner shutdown/idle point. If native
+    // GPU completion cannot be proven, do not release in-flight allocations.
+    bool shutdownAfterIdle() {
+        if(!device_)return true;
+        if(!device_->waitForResourceIdle())return false;
+        for(auto& p:pending_)
+            if(p.vertex.valid())device_->destroyBuffer(p.vertex);
+        pending_.clear();
+        for(auto b:retiredWithoutCallback_)device_->destroyBuffer(b);
+        retiredWithoutCallback_.clear();
+        if(color_.valid())device_->destroyTexture(color_);
+        if(depth_.valid())device_->destroyTexture(depth_);
+        if(pipeline_.valid())device_->destroyPipeline(pipeline_);
+        if(shader_.valid())device_->destroyShader(shader_);
+        color_=depth_={};
+        pipeline_= {};
+        shader_={};
+        device_=nullptr;
+        supported_=false;
+        width_=height_=0;
+        return true;
+    }
+private:
+    // Rare command submission failures: retain these GPU buffers until
+    // a verified idle barrier. Never free a buffer in the same GPU frame
+    // merely because the async readback request was rejected.
+    std::vector<gfx::BufferHandle> retiredWithoutCallback_;
+};
+
+} // namespace aiverse::vivid
