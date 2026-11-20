@@ -239,10 +239,14 @@ bool PortableSource::collectResidencyDemands(
         const mat4& instanceWorld,
         const std::vector<PortablePassView>& passes,
         bool forceFinestForUnspecifiedPass,
-        std::vector<IndexDemand>& output) const {
+        std::vector<IndexDemand>& output,
+        const PortableLodHistory* temporalHistory,
+        float hysteresisFraction) const {
     if (!streaming_ || !source_ || !validFor(*source_) ||
         (!forceFinestForUnspecifiedPass && passes.empty()) ||
-        passes.size()>8) return false;
+        passes.size()>8 || !std::isfinite(hysteresisFraction) ||
+        hysteresisFraction<0.f || hysteresisFraction>.45f ||
+        (hysteresisFraction>0.f && !temporalHistory))return false;
     for(float v:instanceWorld.m)if(!std::isfinite(v))return false;
     std::vector<IndexDemand> demands;
     for (size_t i=0;i<asset_->primitives.size();++i) {
@@ -258,7 +262,8 @@ bool PortableSource::collectResidencyDemands(
         for(size_t node=0;node<source_->nodes.size();++node) {
             if(source_->nodes[node].mesh!=int(entry.mesh))continue;
             used=true;
-            for(const auto& pass:passes) {
+            for(size_t passSlot=0;passSlot<passes.size();++passSlot) {
+                const auto& pass=passes[passSlot];
                 ViewConfig view{};
                 view.objectToClip=pass.viewProjection*instanceWorld*
                                   source_->bindWorld[node];
@@ -266,6 +271,14 @@ bool PortableSource::collectResidencyDemands(
                 view.height=pass.height;
                 view.clipDepthZeroToOne=pass.clipDepthZeroToOne;
                 view.errorThresholdPixels=pass.errorThresholdPixels;
+                if(hysteresisFraction>0.f){
+                    view.hysteresisFraction=hysteresisFraction;
+                    view.previousRefined=temporalHistory->previous(
+                        asset_,sourceGeometryRevision_,uint32_t(passes.size()),
+                        PortableLodHistory::Key{uint32_t(i),uint32_t(node),
+                                                 uint32_t(passSlot)},
+                        g.nodes.size());
+                }
                 view.frustumCull=false; // shadow/reflection keep coverage
                 view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
                 ViewPlan plan;
