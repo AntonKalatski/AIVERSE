@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -43,7 +44,58 @@ public:
     struct Statistics {
         size_t sources=0;
         lib::animation::AnimationBridgeStats bridge;
+        size_t playbackSeeded=0;
+        size_t playbackDeclined=0;
     };
+
+    // Portable, pointer-free playback only. Parent Model/Graph owners are
+    // NEVER included, nor are notifies, physics state or evaluated poses.
+    struct PlaybackHandoff {
+        render::AnimationGraphInstance::PlaybackSnapshot playback;
+        std::vector<std::pair<std::string,int>> rig;
+    };
+
+    std::optional<PlaybackHandoff> capturePlayback(const Key& key) const {
+        const auto it=active_.find(key);
+        if(it==active_.end() || !it->second.childAppearance ||
+           !it->second.childAppearance->model)return std::nullopt;
+        const Entity source=bridge_.find(it->second.sourceId);
+        const auto* player=animationWorld_.tryGetConst<
+            lib::animation::AnimationPlayerComponent>(source);
+        const auto* link=animationWorld_.tryGetConst<
+            lib::animation::AnimationSourceLinkComponent>(source);
+        const auto& asset=it->second.childAppearance;
+        if(!player || !link || link->generation!=it->second.generation ||
+           link->modelPublicationGeneration!=asset->modelPublicationGeneration ||
+           player->restart || !player->instance ||
+           !player->instance->healthy() || player->active!=asset->graph ||
+           player->instance->graph()!=asset->graph.get())
+            return std::nullopt;
+        auto playback=player->instance->snapshotPlayback();
+        if(playback.state.empty())return std::nullopt;
+        PlaybackHandoff saved;
+        saved.playback=std::move(playback);
+        saved.rig.reserve(asset->model->nodes.size());
+        for(const auto& node:asset->model->nodes)
+            saved.rig.emplace_back(node.name,node.parent);
+        return saved;
+    }
+
+    // Queue a handoff on a BRAND NEW generation before its first sync.
+    // The caller validates stable scene/object/child authored identity.
+    // A mismatched rig declines without touching the existing graph state.
+    bool queuePlayback(const Key& key,const PlaybackHandoff& snapshot,
+                       const render::Model& incoming) {
+        if(key.scene==0 || key.object.empty() || key.child.empty() ||
+           snapshot.playback.state.empty() ||
+           snapshot.rig.size()!=incoming.nodes.size() ||
+           active_.find(key)!=active_.end())return false;
+        for(size_t i=0;i<incoming.nodes.size();++i)
+            if(snapshot.rig[i].first!=incoming.nodes[i].name ||
+               snapshot.rig[i].second!=incoming.nodes[i].parent)
+                return false;
+        return pendingPlayback_.emplace(key,snapshot.playback).second;
+    }
 
     // Move-only, frame-scoped CPU model leases. The borrowed local pose and
     // matrices reside inside animationWorld_ and remain valid ONLY until
@@ -167,9 +219,26 @@ public:
             // each active ID in animationWorld_ and no View::update later.
             const auto bridgeStats=bridge_.sync(
                 animationWorld_,frames,true);
+            size_t seeded=0,declined=0;
+            for(const auto& [key,playback]:pendingPlayback_) {
+                const auto entry=next.find(key);
+                if(entry==next.end()) {++declined;continue;}
+                const Entity entity=bridge_.find(entry->second.sourceId);
+                auto* player=animationWorld_.tryGet<
+                    lib::animation::AnimationPlayerComponent>(entity);
+                if(!player || player->instance || player->pendingPlayback) {
+                    ++declined;
+                    continue;
+                }
+                player->pendingPlayback=playback;
+                ++seeded;
+            }
+            // A seed is one-shot even if the Graph declines a named
+            // state/clip in restorePlayback. Never replay old notifies.
+            pendingPlayback_.clear();
             lib::animation::stepAnimationPresentation(animationWorld_,dt);
             active_.swap(next);
-            stats={active_.size(),bridgeStats};
+            stats={active_.size(),bridgeStats,seeded,declined};
             return true;
         }catch(const std::exception& ex) {
             // Preflight errors leave active_ intact. If the underlying ECS
@@ -271,6 +340,7 @@ public:
     void clear() {
         bridge_.clear(animationWorld_);
         active_.clear();
+        pendingPlayback_.clear();
     }
     size_t size() const noexcept{return active_.size();}
     uint64_t sourceId(const Key& key) const {
@@ -289,6 +359,8 @@ private:
         std::shared_ptr<const CompiledModelSocket> socket;
     };
     std::map<Key,Entry,KeyLess> active_;
+    std::map<Key,render::AnimationGraphInstance::PlaybackSnapshot,KeyLess>
+        pendingPlayback_;
     uint64_t nextSourceId_=1; // monotonic; NEVER reuses a retired source ID
     World animationWorld_;
     lib::animation::MotionWeaveSourceBridge bridge_;
