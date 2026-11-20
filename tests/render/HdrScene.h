@@ -28,6 +28,10 @@ struct HdrScene {
     std::unique_ptr<Model> probeBg, probeFg;
     bool captured = false, failed = false, temporalVerify = false;
     bool prismaMultiViewVerify = false; // opt-in Stage 97 real-GPU camera lifetime probe
+    bool prismaStressVerify = false; // Stage 98 repeated camera churn + actual fence drain
+    int prismaStressCycle = 0, prismaStressTicks = 0, prismaStressWait = 0;
+    uint64_t prismaStressSubmittedFence = 0;
+    uint64_t prismaStressMaxLiveBytes = 0;
     float temporalMinX=1e9f,temporalMaxX=-1e9f,temporalMinY=1e9f,temporalMaxY=-1e9f;
     std::string path;
     gfx::PassDesc output;
@@ -37,15 +41,17 @@ struct HdrScene {
         if (!renderer.init(d) || !post.init(d)) { failed = true; return; }
         temporalVerify=std::getenv("AIVERSE_TAA_VERIFY")!=nullptr;
         prismaMultiViewVerify=std::getenv("AIVERSE_PRISMA_MULTIVIEW_VERIFY")!=nullptr;
+        prismaStressVerify=std::getenv("AIVERSE_PRISMA_STRESS_VERIFY")!=nullptr;
         advanced = temporalVerify || std::getenv("AIVERSE_SCREEN_LIGHTING") != nullptr;
-        if (prismaMultiViewVerify && (temporalVerify ||
+        if ((prismaMultiViewVerify || prismaStressVerify) && (temporalVerify ||
+            (prismaMultiViewVerify && prismaStressVerify) ||
             std::getenv("AIVERSE_HDR_VERIFY") ||
             std::getenv("AIVERSE_SCREEN_LIGHTING"))) {
             std::fprintf(stderr, "PRISMA multiview: conflicting GPU fixture mode\n");
             failed = true;
             return;
         }
-        if (prismaMultiViewVerify) {
+        if (prismaMultiViewVerify || prismaStressVerify) {
             // A test must explicitly turn on canonical temporal; the legacy
             // ScreenLighting TAA would test a different history owner.
             const auto enabled=[](const char* key) {
@@ -91,7 +97,7 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
-        if (prismaMultiViewVerify) {
+        if (prismaMultiViewVerify || prismaStressVerify) {
             post.setSettings(parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"temporalResolve","historyWeight":0.86,"jitterPixels":0.5,"minQuality":"high"}]})"),Json()));
             post.setQuality(PrismaQuality::High);
         }
@@ -123,6 +129,7 @@ struct HdrScene {
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
         if (prismaMultiViewVerify) { drawPrismaMultiView(d,w,h); return; }
+        if (prismaStressVerify) { drawPrismaStress(d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(ownsFrame)d.beginFrame(w,h);
@@ -279,6 +286,125 @@ struct HdrScene {
             fail("unexpected frame beyond test completion");
         }
         if (ownsFrame) d.endFrame();
+        ++frame;
+    }
+
+    // Stage 98: two independent 24-frame camera churn cycles, each followed
+    // by real backend GPU completion and ZERO pending resources. No CPU frame
+    // number is used as proof of GPU completion; this is still a metadata/
+    // allocation test, not a physical VRAM residency query.
+    void drawPrismaStress(gfx::Device& d,int w,int h) {
+        constexpr uint64_t a=31001, b=32002;
+        if(ownsFrame) d.beginFrame(w,h);
+        const auto fail=[this](const char* msg) {
+            std::fprintf(stderr,"PRISMA stress FAIL cycle=%d tick=%d: %s\n",
+                         prismaStressCycle,prismaStressTicks,msg);
+            failed=true;
+        };
+        if(prismaStressTicks<24 && !prismaStressSubmittedFence) {
+            auto drawView=[&](uint64_t id,int width,int height,float offset) {
+                post.setViewId(id);
+                const auto dims=post.renderSizeForOutput(width,height);
+                if(dims.first!=width || dims.second!=height) {
+                    fail("temporal render dimensions unavailable");return;
+                }
+                auto cam=camera;
+                cam.yaw+=offset;
+                renderer.beginScene(post.jitteredCamera(cam,width,height),width,height);
+                renderer.drawMesh(cube,mat4::translate({offset,0,0}),
+                                  {0.7f,0.24f,0.12f,1},kDrawUnlit);
+                gfx::PassDesc out=output;
+                out.clearColor[0]=out.clearColor[1]=out.clearColor[2]=0;
+                renderer.render(out,&post);
+                renderer.resolvePrisma();
+                d.endPass();
+                if(!post.stats().temporalResolved || !post.lastError().empty())
+                    fail("GPU temporal pass not encoded");
+            };
+            if(prismaStressTicks%5==0) {
+                post.resetMotionHistory(a);
+                renderer.resetObjectMotionHistory(a);
+            }
+            if(prismaStressTicks%7==0) {
+                post.resetMotionHistory(b);
+                renderer.resetObjectMotionHistory(b);
+            }
+            drawView(a,640,480,0.f);
+            constexpr int widths[4]={512,640,384,768};
+            constexpr int heights[4]={384,480,288,512};
+            const int choice=prismaStressTicks%4;
+            if(!failed) drawView(b,widths[choice],heights[choice],0.1f);
+            const auto retired=post.retireUnreferencedSizeCaches();
+            post.collectGpuRetirements();
+            renderer.collectCompletedObjectMotion(d.gpuCompletedFence());
+            const auto mem=post.memoryStats();
+            prismaStressMaxLiveBytes=std::max(prismaStressMaxLiveBytes,
+                                             mem.liveKnownBytes);
+            const auto active=post.retirementStats();
+            if(!failed && (active.temporalViews!=2 || active.activeSizes>3))
+                fail("unbounded active camera or shared size-cache count");
+            if(!failed && prismaStressTicks==23) {
+                const auto views=post.retireUnregisteredViews({});
+                renderer.retireUnregisteredObjectMotionViews({});
+                post.retireUnreferencedSizeCaches();
+                prismaStressSubmittedFence=d.gpuSubmissionFence();
+                if(!prismaStressSubmittedFence || views!=2)
+                    fail("no GPU submission fence or missing registered views");
+                std::printf("PRISMA stress: cycle=%d retirementFence=%llu "
+                            "maxKnownLive=%llu pending=%zu\n",prismaStressCycle,
+                            static_cast<unsigned long long>(prismaStressSubmittedFence),
+                            static_cast<unsigned long long>(prismaStressMaxLiveBytes),
+                            post.retirementStats().fencedTextures);
+            }
+            ++prismaStressTicks;
+        } else {
+            // Empty submissions allow the previous GPU work to complete. The
+            // backend token must advance through the LAST retired frame.
+            post.collectGpuRetirements();
+            renderer.collectCompletedObjectMotion(d.gpuCompletedFence());
+            const auto stats=post.retirementStats();
+            const auto motion=renderer.motionRetirementStats();
+            const auto memory=post.memoryStats();
+            const bool completed=prismaStressSubmittedFence!=0 &&
+                d.gpuCompletedFence()>=prismaStressSubmittedFence;
+            const bool drained=completed && stats.retiredSizes==0 &&
+                stats.fencedTextures==0 && stats.unfencedTextures==0 &&
+                stats.graphRetiredTextures==0 && stats.knownPendingBytes==0 &&
+                stats.activeSizes==0 && stats.temporalViews==0 &&
+                motion.fencedTextures==0 && motion.unfencedTextures==0 &&
+                motion.liveViews==0 &&
+                memory.views.empty() && memory.liveKnownBytes==0;
+            if(drained) {
+                std::printf("PRISMA stress: drained cycle=%d completedFence=%llu "
+                            "liveBytes=%llu pendingBytes=%llu\n",prismaStressCycle,
+                            static_cast<unsigned long long>(d.gpuCompletedFence()),
+                            static_cast<unsigned long long>(memory.liveKnownBytes),
+                            static_cast<unsigned long long>(stats.knownPendingBytes));
+                ++prismaStressCycle;
+                prismaStressTicks=0;
+                prismaStressWait=0;
+                prismaStressSubmittedFence=0;
+                prismaStressMaxLiveBytes=0;
+                if(prismaStressCycle==2) {
+                    std::printf("PRISMA stress: PASS cycles=2 gpuFenceDrained=2 "
+                                "liveKnownBytes=0 pendingKnownBytes=0\n");
+                    captured=true;
+                }
+            } else if(++prismaStressWait>120) {
+                std::fprintf(stderr,
+                    "PRISMA stress pending: completed=%llu needed=%llu "
+                    "fenced=%zu unfenced=%zu size=%zu motion=%zu "
+                    "knownPending=%llu live=%llu\n",
+                    static_cast<unsigned long long>(d.gpuCompletedFence()),
+                    static_cast<unsigned long long>(prismaStressSubmittedFence),
+                    stats.fencedTextures,stats.unfencedTextures,
+                    stats.retiredSizes,motion.fencedTextures,
+                    static_cast<unsigned long long>(stats.knownPendingBytes),
+                    static_cast<unsigned long long>(memory.liveKnownBytes));
+                fail("retired textures not reclaimed after confirmed GPU fence");
+            }
+        }
+        if(ownsFrame) d.endFrame();
         ++frame;
     }
 
