@@ -168,6 +168,28 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("injected material write failure",transfer)
         self.assertIn("assert(replaceRejected)",transfer)
 
+    def test_real_scene_model_render_and_pick_share_instances(self):
+        scene=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
+        api=(ROOT/"apps/studio-native/mac/StudioMetalScene.h").read_text(encoding="utf-8")
+        host=(ROOT/"apps/studio-native/mac/Main.mm").read_text(encoding="utf-8")
+        self.assertIn('const auto& view=rules["types"][entities[index].type]["view"]',scene)
+        self.assertIn('path.rfind("content/",0)!=0',scene)
+        self.assertIn('fs::is_symlink(status)',scene)
+        self.assertIn('render::loadModel(path,read)',scene)
+        self.assertIn('render::uploadModel(*device_,*model,true)',scene)
+        self.assertIn('syncDocumentModels(doc,projectPath,rules,proxies)',scene)
+        self.assertIn('studioPickModelInstances(modelInstances_,origin,direction)',scene)
+        self.assertIn('renderer_.drawModel(draw)',scene)
+        self.assertIn('draw.world=instance.world',scene)
+        self.assertIn('modelInstances_.push_back({proxy.id',scene)
+        self.assertIn('if (hasModel) continue;',scene)
+        self.assertIn('clearDocumentModels();',scene)
+        self.assertIn('model->skinned()',scene)
+        self.assertIn('material.alpha!=render::AlphaMode::Opaque',scene)
+        self.assertIn('model->batching.autoLod=false',scene)
+        self.assertIn('rejectedDocumentModels_',api)
+        self.assertIn('session_->workspace().project.rulesJson',host)
+
     def test_rigid_cpu_model_triangle_picking_adapter(self):
         adapter=(ROOT/"apps/studio-native/StudioModelPicking.h").read_text(encoding="utf-8")
         cases=(ROOT/"apps/studio-native/tests/StudioModelPickingTests.cpp").read_text(encoding="utf-8")
