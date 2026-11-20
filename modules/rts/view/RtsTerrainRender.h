@@ -23,6 +23,7 @@
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/TextureCache.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/RenderDeviceLifetime.h"
 #include "../RtsData.h"
 #include "../RtsMap.h"
@@ -73,6 +74,14 @@ public:
     bool shutdownAfterGpuIdle(gfx::Device& dev);
     void shutdown(gfx::Device& dev);
     bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
+    // Poll only at the host pre-render retirement boundary, never in a draw.
+    bool collectRetiredMeshBuffers(gfx::Device& dev) {
+        checkGpuDevice(dev);
+        return retiredMeshes_.collect(dev);
+    }
+    size_t pendingMeshGpuRetirements() const noexcept {
+        return retiredMeshes_.pending();
+    }
     // Optional per-cell material layer painted on the map (0..3, 255 = by cell kind). Next build().
     void setMaterialLayer(std::vector<uint8_t> layer) { materialLayer_ = std::move(layer); }
     // (Re)builds the chunks whose inputs changed. Returns true when any geometry changed.
@@ -149,6 +158,7 @@ private:
     }
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
+    render::NativePresentationRetirement retiredMeshes_;
     const Rules* rules_ = nullptr;
     std::string base_;
     render::FileReader read_;
