@@ -249,3 +249,12 @@ Code `1fd380b6fe0ad1325162bc3c0a32e5c3eb1dab53` on
 PASS 7 targeted CTests, GLSL/MSL compile, Metal forest/valley/wind/reveal fixtures
 and GL forest smoke. Full suite/editor/client/Vulkan/mobile/performance NOT RUN.
 This is an opt-in extension of the existing PRISMA fog pass, not a new owner.
+
+## 2026-11-20 — fog billow/shadow validation and external build storage
+
+`19d2d8f1a2f2357b235dc9ef6dd08da70d243cb9` adds opt-in eroded 3D fog banks and
+bounded sun self-shadowing in the existing PRISMA pass. PASS 7 targeted CTests,
+Metal/GL fixtures and GLSL/MSL compilers. Full details and failures/limits:
+[fog billows handoff](prisma-stage-fog-billows-2026-11-20.md).
+User requires **all further builds on KINGSTON**, including compiler temp/cache;
+use the paths/env recorded there. No new CI/full-suite/backend parity claim.
