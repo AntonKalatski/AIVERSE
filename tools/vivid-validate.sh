@@ -44,6 +44,9 @@ run_logged() {
     printf '\n===== %s =====\n' "$label"
     "$@" 2>&1 | tee "$LOGDIR/$label.log"
 }
+# Run lightweight CPU fixture checks in the same final acceptance sweep.
+run_logged optical-python-tests python3 -m unittest discover \
+    -s "$ROOT/tools/vivid-creator" -p "test_optical_ab.py"
 run_logged cmake-configure cmake -S "$ROOT" -B "$BUILD" \
     -DAIVERSE_BUILD_TESTS=ON
 
@@ -184,21 +187,27 @@ if [[ "$GUI" -eq 1 ]]; then
         "$ROOT/tools/vivid-creator/optical_ab.py" \
         "$LOGDIR/optical-skin-scatter-low.ppm" \
         "$LOGDIR/optical-skin-scatter-high.ppm" \
-        --label skin-scattering --roi 0.20,0.16,0.81,0.91 \
+        --label skin-scattering --parameter skin.scatteringMm \
+        --reference-value 0.10 --candidate-value 4.0 \
+        --roi 0.20,0.16,0.81,0.91 \
         --threshold 4 --min-changed 1 \
         --output "$LOGDIR/optical-skin-scattering.json"
     run_logged creator-optical-eye-ab python3 \
         "$ROOT/tools/vivid-creator/optical_ab.py" \
         "$LOGDIR/optical-eye-ior-low.ppm" \
         "$LOGDIR/optical-eye-ior-high.ppm" \
-        --label cornea-ior --roi 0.25,0.20,0.75,0.70 \
+        --label cornea-ior --parameter eyes.corneaIor \
+        --reference-value 1.25 --candidate-value 1.45 \
+        --roi 0.25,0.20,0.75,0.70 \
         --threshold 4 --min-changed 1 \
         --output "$LOGDIR/optical-cornea-ior.json"
     run_logged creator-optical-hair-ab python3 \
         "$ROOT/tools/vivid-creator/optical_ab.py" \
         "$LOGDIR/optical-hair-rough-low.ppm" \
         "$LOGDIR/optical-hair-rough-high.ppm" \
-        --label hair-roughness --roi 0.15,0.04,0.85,0.62 \
+        --label hair-roughness --parameter groom.roughness \
+        --reference-value 0.08 --candidate-value 0.90 \
+        --roi 0.15,0.04,0.85,0.62 \
         --threshold 4 --min-changed 1 \
         --output "$LOGDIR/optical-hair-roughness.json"
 
