@@ -95,6 +95,9 @@ def main():
     parser.add_argument("--min-changed", type=int, default=400)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--label", default="viewport")
+    parser.add_argument("--parameter", default="")
+    parser.add_argument("--reference-value", type=float)
+    parser.add_argument("--candidate-value", type=float)
     parser.add_argument("--roi", help="ROI left,top,right,bottom fractions within viewport")
     args = parser.parse_args()
     if not 0 <= args.threshold <= 765 or args.min_changed < 0:
@@ -103,6 +106,9 @@ def main():
         roi = parse_roi(args.roi) if args.roi else None
         result = compare(args.reference, args.candidate, args.threshold, roi)
         result["label"] = args.label
+        result["parameter"] = args.parameter
+        result["reference_value"] = args.reference_value
+        result["candidate_value"] = args.candidate_value
         result["reference"] = str(args.reference)
         result["candidate"] = str(args.candidate)
         result["min_changed"] = args.min_changed
