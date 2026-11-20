@@ -857,7 +857,7 @@ void test() {
     // or an inferred depth sample. This tests the pure helper only;
     // actual same-frame Metal pixels are checked in renderer_preview.
     {
-        using Pixel=vivid::SculptGpuColorPixelResult;
+        using Pixel=SculptGpuColorPixelResult;
         const std::array<std::uint8_t,3> clear{{20,26,33}};
         const auto covered=compareSculptGpuColorIdCoverage(
             {{182,93,66,255}},{{1,0,0,0}},clear);
