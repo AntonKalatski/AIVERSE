@@ -438,3 +438,55 @@ unfinished; this is a soft-coverage correction, not a photorealism completion.
 Next action: validate full-body clips and moving-camera/animated hair layers,
 then refine original skin/eye and strand-lighting fidelity. Keep all builds and
 artifacts on KINGSTON. Untracked web dist/node_modules symlinks left unchanged.
+
+
+## Imported appearance profiles and matte correction — 2026-11-20
+
+Implementation fdf3c8d22cede2ca3ff9a382c7f18fdcb081a76a on
+`integration/motionweave-studio-facial-stage184`, parent d113d8a5d.
+User requested matte clothes, adjustable skin/hair/eyes/textures/tones and body.
+Root cause: shirt authored roughness .30; packed skin roughness can approach
+zero; old skin/eye DNA controls were not bound to Ada materials.
+
+HumanAppearance.h adds a separate version-1 bounded 72-scalar recipe with
+explicit role mapping. HumanMaterials.cpp builds portable <=128-node graphs
+over source colour/coverage with explicit roughness; no extra fixed human
+highlight lobes. Skin tone/saturation/contrast/exposure/normal/cavity/procedural
+freckles/pores; hair melanin/redness/dye/gray/root/ombre/highlights/coverage;
+eyes radial iris/pupil/limbus/sclera/detail; cloth roughness/normal/colour;
+10 Y-up skin-joint body proportions. Material application is transactional on
+fresh models. Body deformation is post-animation and includes garment joints,
+never canonical physics/skeleton data. Bounds are bind-pose; animated extremes
+and clipping remain unverified. Hair uses sRGB-encoded root/seed in baked R/G
+and coverage A, not raw data interpreted as albedo. Existing old companion
+packages need regeneration to enable new hair colour controls correctly.
+
+HumanImport manifest accepts optional relative appearance path (old v1 readers
+reject this new key). VIVID DNA/52-channel order unchanged. Creator auto-loads
+profile and supports --appearance override.json. No new ImGui UI. Next stage
+is Studio UI with real native apply/save/load, not yet present in this commit.
+Touched engine/character/vivid/{HumanAppearance.h,HumanMaterials.cpp,HumanImport.*},
+tools/vivid-creator/main.cpp, tools/vivid-dna-import scripts/README, tests/vivid/
+human_appearance.cpp and docs/vivid.md.
+
+Executed on KINGSTON under AIVERSE-builds/motionweave-vivid/full-character:
+- build-look-final.log: Creator, appearance/import tests build PASS.
+- test-look-final.log: run-tests.sh --no-build --filter
+  '^vivid_human_(appearance|import)$' --ctest-jobs 1, 2/2 PASS. Tests cover
+  profile roundtrip/range rejection, graph budget/texture+alpha preservation,
+  cloth roughness, changed skin roughness, identity body and skin-joint-only
+  height change. Earlier compile attempts failed due to an overbroad text
+  replacement and test API typos, corrected before final PASS.
+- test-look-bake.log: node material bake tests PASS, including root/seed packing.
+- prepare-look.log: ada-look-controls/manifest.json and appearance.json produced.
+- ada-matte-portrait.{log,ppm,png}: real Metal --smoke --still --portrait PASS,
+  commands49/shadow43/colour43/pipelineFailures0. Viewed: matte shirt and softer
+  face lighting. Capture predates addition of neutral cloth tint controls only.
+- git diff --check PASS. Full suite/CI/push/Vulkan/GLES/animated shape QA NOT RUN.
+
+References read: Epic docs /metahuman/hair-overrides and /skin-material-tools;
+external companion viewer-reference.js. This is an implemented portable subset,
+not all MH controls: no original texture-index library, authored accent masks,
+geometry hair grooming, corneal refraction or complete UE scattering parity.
+Next: Studio native profile UI, final contrasting look/body frames and persistence
+checks. All build outputs/assets/logs/screens remain on KINGSTON.
