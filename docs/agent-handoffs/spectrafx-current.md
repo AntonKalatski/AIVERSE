@@ -1,5 +1,22 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 119 — local Mac CMake conflict is absent from remote integration (QA pending)
+
+Mac reports `CMakeLists.txt:623 <<<<<<<` and whitespace
+in `AGENTS.md` + Texture RHI files. Source inspection at integration
+`5682c60360c29b9fc0484f4a19a9fac8d53407d5` shows
+**no CMake conflict markers**; remote CMake line 623 is
+`target_compile_options(native_app_glue PRIVATE -w)`.
+`AGENTS.md` matches main byte-for-byte; named texture files
+do not exist on either remote branch. This is a local checkout/ref
+mismatch or uncommitted worktree contamination, NOT a verified source
+error in this SpectraFX integration commit. Avoid destructive cleanup;
+create a **new clean dedicated worktree**, verify exact SHA/blob
+hashes, then run CMake and full acceptance. No engine source changed.
+See
+`docs/agent-handoffs/spectrafx-stage119-local-checkout-isolation-2026-11-20.md`.
+
+
 ## Stage 118 — integration Markdown trailing whitespace cleanup (Mac QA pending)
 
 Integration QA found Git `diff --check` trailing whitespace
