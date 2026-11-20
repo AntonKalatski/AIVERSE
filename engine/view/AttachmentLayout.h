@@ -27,6 +27,9 @@ struct AttachmentLayoutItem {
     // Keep appended to preserve legacy aggregate initializers.
     // Empty in old files: position/ordinal remains its only identity.
     std::string id;
+    // Independent MotionWeave graph source, never a static parent-pose
+    // attachment. Requires a nonempty stable authored ID when enabled.
+    bool animated=false;
 };
 struct AttachmentLayout {
     std::string parent;
@@ -89,6 +92,12 @@ public:
             item.model=field.getStr("model");
             item.socket=field.getStr("socket");
             item.enabled=field.getBool("enabled",true);
+            if(field.has("animated")) {
+                if(field["animated"].type()!=Json::Type::Bool)
+                    throw std::invalid_argument(
+                        "attachment animated flag must be boolean");
+                item.animated=field["animated"].boolean();
+            }
             if(field.has("id")) {
                 if(!field["id"].isString())
                     throw std::invalid_argument(
@@ -103,6 +112,9 @@ public:
             if(item.model.empty() || item.socket.empty())
                 throw std::invalid_argument(
                     "attachment entry needs model path and named socket");
+            if(item.animated && item.enabled && item.id.empty())
+                throw std::invalid_argument(
+                    "enabled animated attachment needs stable child id");
             item.local=readMatrix(field["local"]);
             item.childWorld=readMatrix(field["childWorld"]);
             next.attachments.push_back(std::move(item));
@@ -123,7 +135,11 @@ public:
                 !authoredIds.insert(item.id).second))
                 throw std::invalid_argument(
                     "attachment stable id too long or duplicated");
+            if(item.animated && item.enabled && item.id.empty())
+                throw std::invalid_argument(
+                    "enabled animated attachment needs stable child id");
             Json entry=Json::object();
+            if(item.animated)entry.set("animated",Json::fromBool(true));
             if(!item.id.empty())
                 entry.set("id",Json::string(item.id));
             entry.set("model",Json::string(item.model));
