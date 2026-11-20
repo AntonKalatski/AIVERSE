@@ -1,5 +1,21 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 Vulkan + GLES3 Linux forest acceptance authored (2026-11-20):**
+> Real Metal forest was **1/1 PASS** on tested
+> `0133eb21b211af62d205952db77c50589ae55a13`
+> with six hardware PPM captures, 0 pipeline failures.
+> New Linux backend source `48414952`, CMake tests `75e37067`,
+> strict runner `bf01d955` and isolated Mesa/Xvfb CI
+> `15a1fbee` now provide real Vulkan offscreen and EGL/GLES3
+> `Renderer3D`+Arbor forest rendering, three readback PPMs each
+> and non-skippable backend identity checks.
+> [New standalone Linux handoff](qa-2026-11-20-stage70-linux-vulkan-gles-forest-handoff.md).
+> **Linux configure, compiler, Vulkan/GLES run and CI NOT VERIFIED**;
+> Stage70 v3 simulation and renderer architecture unchanged.
+> Sustained authentic PHYSIS/NEREID/TerraWeave/Box3D remains open.
+> Draft PR #53 is not ready for promotion.
+>
+>
 > **Stage70 real Metal forest GPU acceptance PASS (2026-11-20):**
 > Mac Studio tested **exact SHA**
 > `0133eb21b211af62d205952db77c50589ae55a13`.
