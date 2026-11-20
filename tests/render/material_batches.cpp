@@ -299,6 +299,14 @@ int aiverseMain(int argc, char** argv) {
     };
     std::vector<FrameCpuSample> frameCpuTimeline;
     if (frameTimeline) frameCpuTimeline.reserve(128);
+    // Existing RHI command-buffer GPU timestamps are asynchronous. Tag the
+    // command buffer from this fixture, then collect completed tags later.
+    // This is whole-frame GPU command-buffer time, NOT model-pass GPU time.
+    const bool gpuTimeline = stress && std::getenv("AIVERSE_BATCH_GPU_TIMELINE") &&
+        std::string(std::getenv("AIVERSE_BATCH_GPU_TIMELINE")) == "1";
+    std::vector<gfx::Device::GpuTiming> gpuTimelineSamples;
+    bool gpuTimingUnsupported = false;
+    if (gpuTimeline) gpuTimelineSamples.reserve(96);
     // Stage 76: do not conflate AUTO exploration frames with its learned
     // Direct frames. Retain CPU samples for *actual* successful MDI frames.
     std::vector<double> stressDirectFallbackMs, stressSuccessfulMdiMs;
@@ -389,7 +397,17 @@ int aiverseMain(int argc, char** argv) {
         for (const auto& mesh:model->meshes) batches.push_back(mesh.materialBatches);
     };
     cb.frame=[&](gfx::Device& d,double) {
+        if (gpuTimeline) {
+            auto completed = d.takeGpuTimings();
+            gpuTimelineSamples.insert(gpuTimelineSamples.end(),
+                                      completed.begin(), completed.end());
+        }
         if(failed||finished||frame>maximumFrame){platform::requestQuit();return;}
+        // Stop tagging early enough for GPU completion results to be polled
+        // over the remaining fixture frames without a blocking GPU wait.
+        if (gpuTimeline && frame >= 115 && frame <= 180 &&
+            !d.timeGpuFrame(uint64_t(frame)))
+            gpuTimingUnsupported = true;
         const bool batch=frame>=startBatchFrame;
         // In cpu_mdi mode explicitly exclude GPU-authored draws, regardless
         // of process flags. In gpu_icb mode the original real GPU ICB path is
@@ -945,6 +963,42 @@ int aiverseMain(int argc, char** argv) {
         }
         failed|=!renderer.modelError().empty();d.endPass();++frame;
     };
-    cb.shutdown=[&]{device->destroyBuffer(floor.vb);device->destroyBuffer(floor.ib);if(secondModel)render::releaseModel(*device,*secondModel);render::releaseModel(*device,*model);renderer.shutdown();};
+    cb.shutdown=[&]{
+        if (gpuTimeline) {
+            auto completed = device->takeGpuTimings();
+            gpuTimelineSamples.insert(gpuTimelineSamples.end(),
+                                      completed.begin(), completed.end());
+            std::sort(gpuTimelineSamples.begin(), gpuTimelineSamples.end(),
+                      [](const auto& x, const auto& y) { return x.tag < y.tag; });
+            const std::string path = prefix + "-gpu-frames.csv";
+            std::ofstream out(path);
+            out << "frame,gpu_command_buffer_ms,valid\n";
+            size_t validCount = 0;
+            uint64_t previousTag = 0;
+            for (const auto& sample : gpuTimelineSamples) {
+                if (sample.tag < 115 || sample.tag > 180 ||
+                    sample.tag <= previousTag) { failed = true; continue; }
+                previousTag = sample.tag;
+                if (sample.valid && std::isfinite(sample.milliseconds) &&
+                    sample.milliseconds > 0.0) ++validCount;
+                else failed = true;
+                out << sample.tag << ',' << sample.milliseconds << ','
+                    << (sample.valid ? 1 : 0) << '\n';
+            }
+            out.close();
+            if (!out || gpuTimingUnsupported || validCount != 66) {
+                std::fprintf(stderr,
+                    "GPU command-buffer timeline INVALID: valid=%zu expected=66 unsupported=%d\n",
+                    validCount, int(gpuTimingUnsupported));
+                failed = true;
+            } else {
+                std::printf("GPU command-buffer timeline samples=%zu path=%s\n",
+                            validCount, path.c_str());
+            }
+        }
+        device->destroyBuffer(floor.vb);device->destroyBuffer(floor.ib);
+        if(secondModel)render::releaseModel(*device,*secondModel);
+        render::releaseModel(*device,*model);renderer.shutdown();
+    };
     platform::run(cfg,cb);return failed||!finished?1:0;
 }
