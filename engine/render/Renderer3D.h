@@ -281,6 +281,8 @@ struct ModelRenderStats {
     uint64_t strataGpuSunShadowSubmitted=0;
     uint64_t strataGpuSpotShadowSubmitted=0;
     uint64_t strataGpuReflectionSubmitted=0;
+    uint64_t strataGpuSpotShadowPrepared=0;
+    uint64_t strataGpuReflectionPrepared=0;
     // Submitted indexed MDI batches using an exact validated persistent
     // layout, without copying cached CPU commands into transient scratch.
     uint64_t mdiLayoutZeroCopySubmissions = 0;
