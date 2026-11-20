@@ -2160,6 +2160,13 @@ void Renderer3D::prepareStrataAuxiliaryGpuPackets(
         config.frustumCull=true;
         config.errorThresholdPixels=source.errorThresholdPixels;
         config.maxOutputClusters=source.commandCapacity;
+        if(source.lodHysteresisFraction>0.f){
+            config.hysteresisFraction=source.lodHysteresisFraction;
+            config.temporalNodeCount=source.temporalNodeCount;
+            config.temporalRevision=source.temporalRevision;
+            config.temporalPassId=pass==GpuIndexedPass::SpotShadow
+                ? 3u : 4u; // separate spot and mirrored-camera masks
+        }
         config.baseVertex=source.sourceBaseVertex;
         config.gpuFallbackEnabled=true;
         config.gpuFallbackFirstIndex=uint32_t(originalFirstIndex);
