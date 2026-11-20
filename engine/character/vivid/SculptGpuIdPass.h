@@ -194,11 +194,34 @@ public:
         gfx::BufferDesc v;
         v.type=gfx::BufferType::Vertex;
         v.usage=gfx::Usage::Immutable;
-        v.size=vertices_.size()*sizeof(SculptGpuIdVertex);
-        v.data=vertices_.data();
-        v.label="VIVID expanded triangle IDs (one click)";
-        const auto vertex=device_->createBuffer(v);
-        if(!vertex.valid())return false;
+        gfx::BufferHandle vertex{};
+        if(!vertices_.empty()) {
+            v.size=vertices_.size()*sizeof(SculptGpuIdVertex);
+            v.data=vertices_.data();
+            v.label="VIVID opaque triangle IDs (one click)";
+            vertex=device_->createBuffer(v);
+            if(!vertex.valid())return false;
+        }
+        std::vector<gfx::BufferHandle> maskBuffers;
+        maskBuffers.reserve(grouped.size());
+        for(const auto& batch:grouped) {
+            if(!batch.baseTexture.valid() || batch.vertices.empty() ||
+               batch.vertices.size()%3u) {
+                if(vertex.valid())device_->destroyBuffer(vertex);
+                for(auto handle:maskBuffers)device_->destroyBuffer(handle);
+                return false;
+            }
+            v.size=batch.vertices.size()*sizeof(SculptGpuMaskVertex);
+            v.data=batch.vertices.data();
+            v.label="VIVID masked triangle IDs (one click)";
+            auto buffer=device_->createBuffer(v);
+            if(!buffer.valid()) {
+                if(vertex.valid())device_->destroyBuffer(vertex);
+                for(auto handle:maskBuffers)device_->destroyBuffer(handle);
+                return false; // no GPU commands have been recorded
+            }
+            maskBuffers.push_back(buffer);
+        }
         auto reply=std::make_shared<Reply>();
         // Metal viewport/scissor use the top-left convention exposed by
         // gfx::Device; no framebuffer origin conversion belongs in VIVID.
@@ -210,10 +233,23 @@ public:
         device_->beginPass(pass);
         device_->setViewport({0,0,w,h});
         device_->setScissor({int(request.x),int(request.y),1,1});
-        device_->setPipeline(pipeline_);
-        device_->setVertexBuffer(vertex);
-        device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
-        device_->draw(std::uint32_t(vertices_.size()));
+        if(vertex.valid()) {
+            device_->setPipeline(pipeline_);
+            device_->setVertexBuffer(vertex);
+            device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
+            device_->draw(std::uint32_t(vertices_.size()));
+        }
+        // Masked fragments use native GPU sampling and discard. Draw AFTER
+        // opaque/zero-ID blockers, sharing their hardware depth buffer.
+        for(std::size_t i=0;i<grouped.size();++i) {
+            const auto& batch=grouped[i];
+            device_->setPipeline(maskPipeline_);
+            device_->setVertexBuffer(maskBuffers[i]);
+            device_->setTexture(0,batch.baseTexture);
+            device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
+            device_->setUniforms(1,&batch.uniform,sizeof(batch.uniform));
+            device_->draw(std::uint32_t(batch.vertices.size()));
+        }
         device_->endPass();
         // Completion is genuinely asynchronous on Metal. This may fail if
         // a device is unsupported/lost, but the draw already references the
@@ -225,10 +261,13 @@ public:
                 reply->ready=true;
             });
         if(!read) {
-            retiredWithoutCallback_.push_back(vertex);
+            if(vertex.valid())retiredWithoutCallback_.push_back(vertex);
+            retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
+                                           maskBuffers.begin(),maskBuffers.end());
             return false;
         }
-        pending_.push_back({vertex,std::move(reply),request});
+        pending_.push_back({vertex,std::move(maskBuffers),
+                            std::move(reply),request});
         return true;
     }
 
@@ -237,18 +276,24 @@ public:
     bool shutdownAfterIdle() {
         if(!device_)return true;
         if(!device_->waitForResourceIdle())return false;
-        for(auto& p:pending_)
+        for(auto& p:pending_) {
             if(p.vertex.valid())device_->destroyBuffer(p.vertex);
+            for(auto buffer:p.masked)device_->destroyBuffer(buffer);
+        }
         pending_.clear();
         for(auto b:retiredWithoutCallback_)device_->destroyBuffer(b);
         retiredWithoutCallback_.clear();
         if(color_.valid())device_->destroyTexture(color_);
         if(depth_.valid())device_->destroyTexture(depth_);
+        if(maskPipeline_.valid())device_->destroyPipeline(maskPipeline_);
+        if(maskShader_.valid())device_->destroyShader(maskShader_);
         if(pipeline_.valid())device_->destroyPipeline(pipeline_);
         if(shader_.valid())device_->destroyShader(shader_);
         color_=depth_={};
         pipeline_= {};
         shader_={};
+        maskPipeline_={};
+        maskShader_={};
         device_=nullptr;
         supported_=false;
         width_=height_=0;
