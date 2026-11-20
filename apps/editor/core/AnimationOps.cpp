@@ -2,6 +2,7 @@
 #include "AnimationDocument.h"
 #include "engine/render/AnimationAsset.h"
 #include "engine/render/AnimationGraph.h"
+#include "engine/render/ModelClips.h"
 #include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/HumanoidProfile.h"
 #include "libraries/include/aiverselib/animation/RagdollAsset.h"
@@ -49,7 +50,7 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         spec.blendOut=float(doc["blendOut"].toDouble(.1));
         const auto mask=doc.getStr("maskRoot");
         if(!mask.empty()) {
-            spec.maskRoot=motionweave::findNodePath(*model,mask);
+            spec.maskRoot=render::findNodePath(*model,mask);
             if(spec.maskRoot<0)throw std::invalid_argument("unknown montage mask bone");
         }
         if(!doc["sections"].isArray())
@@ -116,7 +117,7 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         Json::object(),[&ws](const Json& p){
             auto model=loadAnimationModel(ws,p.getStr("model"));
             const int clip=model->findClip(p.getStr("clip"));
-            const int root=motionweave::findNodePath(*model,p.getStr("root"));
+            const int root=render::findNodePath(*model,p.getStr("root"));
             if(clip<0 || root<0)throw std::invalid_argument("clip or root bone not found");
             motionweave::RootMotionTracksResource library;
             library.clips.push_back(motionweave::bakeRootMotion(

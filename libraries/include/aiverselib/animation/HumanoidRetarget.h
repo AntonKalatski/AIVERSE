@@ -2,6 +2,7 @@
 // Native C++ policy shared by RPG/FPS/RTS; no Unity muscle curves are assumed.
 #pragma once
 #include "GenericRetarget.h"
+#include "engine/render/ModelClips.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -36,7 +37,7 @@ struct HumanoidAvatar {
             const auto index=size_t(role);
             if(index>=kHumanoidBoneCount || path.empty())
                 throw std::invalid_argument("avatar: invalid role/path");
-            const int node=findNodePath(m,path);
+            const int node=render::findNodePath(m,path);
             if(node<0 || !used.insert(node).second)
                 throw std::invalid_argument("avatar: missing or duplicated bone "+path);
             a.nodes[index]=node;

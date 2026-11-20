@@ -775,8 +775,8 @@ struct CreatorApp {
             syncDraft();
         }
     }
-    void slider(const char* label,float& value,float lo,float hi) {
-        ImGui::SliderFloat(label,&value,lo,hi,"%.3f");
+    void slider(const char* label,float* value,float lo,float hi) {
+        ImGui::SliderFloat(label,value,lo,hi,"%.3f");
         editCommit();
     }
     void color(const char* label,std::array<float,3>& rgb) {

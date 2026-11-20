@@ -3,6 +3,7 @@
 #pragma once
 #include "AnimationMontage.h"
 #include "GenericRetarget.h"
+#include "engine/render/ModelClips.h"
 #include "engine/data/Json.h"
 #include <cmath>
 #include <stdexcept>
@@ -28,7 +29,7 @@ inline std::shared_ptr<const MontageDefinition> compileMontageAsset(
     def.blendOut=finiteAnimationNumber(document["blendOut"],.1f);
     const auto mask=document.getStr("maskRoot");
     if(!mask.empty()) {
-        def.maskRoot=findNodePath(model,mask);
+        def.maskRoot=render::findNodePath(model,mask);
         if(def.maskRoot<0)
             throw std::invalid_argument("montage mask bone not found: "+mask);
     }

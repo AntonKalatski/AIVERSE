@@ -563,7 +563,7 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                         if(len<=1.e-6f || !std::isfinite(len))return false;
                         const auto correction=d*((len-restLen)/len);
                         const auto previous=guide.position[j];
-                        guide.position[j]-=correction*(j==1?1.f:0.75f);
+                        guide.position[j]=guide.position[j]-correction*(j==1?1.f:0.75f);
                         if(j>1)guide.position[j-1]+=correction*0.25f;
                         guide.previous[j]+=guide.position[j]-previous;
                     }

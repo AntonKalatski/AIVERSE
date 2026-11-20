@@ -785,7 +785,7 @@ void test() {
         req(prepareSculptGpuRendererMaskOccluder(
                 maskView,maskSubmitted,candidate,79,{70},preparedOccluder) &&
             preparedOccluder.maskedSelection &&
-            preparedOccluder.actualVertexOverride==gfx::BufferHandle{71},
+            preparedOccluder.actualVertexOverride==aiverse::gfx::BufferHandle{71},
             "accepted Renderer3D Mask source was rejected by GPU collector");
         const auto publishedCount=preparedOccluder.indices.size();
         maskSubmitted.commands[0].source.maskCutoff=.6f;
