@@ -29,6 +29,8 @@ This is *not* a flat monochrome black admin panel, a mobile dashboard, a generic
 
 These are *visual guidance*, not fixed coordinates. Docking remains flexible, supports user changes and 240px-wide panels. Never rework the native Metal rect just to match a concept screenshot.
 
+**Implementation checkpoint (Stage 63):** new default dock layout places Assets and Console at the bottom, Hierarchy on the left, Inspector/Lighting on the right and the Scene in the center. Existing persisted layouts are preserved; users can apply the new default through **Reset layout**. The approved first-concept presentation rules live in `apps/studio-web/src/ui/first-concept.css` loaded after the compatibility skin, while semantic values live in `src/theme/tokens.css`.
+
 ## Approved visual tokens (reference values)
 The values below describe the first concept. The **single source of truth in code** remains `apps/studio-web/src/theme/tokens.css`. Reuse existing semantic tokens; introduce new ones THERE rather than scattering hex literals through panels.
 

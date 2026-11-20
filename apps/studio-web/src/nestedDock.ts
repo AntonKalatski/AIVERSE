@@ -7,7 +7,7 @@ export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   materials: 'Materials', animation: 'Animation', inspector: 'Inspector', console: 'Console', lighting: 'Lighting', shader_graph: 'Shader Graph'
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
-  hierarchy: 'dock-left', assets: 'dock-left', scene: 'dock-center', game: 'dock-center',
+  hierarchy: 'dock-left', assets: 'dock-bottom', scene: 'dock-center', game: 'dock-center',
   materials: 'dock-center', animation: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right', shader_graph: 'dock-center'
 };
 
@@ -38,12 +38,12 @@ function split(id: string, axis: DockAxis, ratio: number, first: DockNode, secon
 }
 export function defaultDockTree(): DockTree {
   return { version:3, root:split('root','vertical',.76,
-    split('split-body-left','horizontal',.21,
-      stack('dock-left',['hierarchy','assets'],'hierarchy'),
-      split('split-body-right','horizontal',.77,
+    split('split-body-left','horizontal',.19,
+      stack('dock-left',['hierarchy'],'hierarchy'),
+      split('split-body-right','horizontal',.72,
         stack('dock-center',['scene','game','materials','animation','shader_graph'],'scene'),
         stack('dock-right',['inspector','lighting'],'inspector'))),
-    stack('dock-bottom',['console'],'console')) };
+    stack('dock-bottom',['assets','console'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {
   visitor(node);

@@ -11,6 +11,9 @@ test('default tree has 4 nested stacks and exactly one copy of each panel',()=>{
   assert.equal(s.length,4);
   assert.deepEqual(s.flatMap(x=>x.tabs).sort(),[...STUDIO_PANELS].sort());
   assert.equal(panelStack(t,'scene'),'dock-center');
+  assert.equal(panelStack(t,'assets'),'dock-bottom');
+  assert.deepEqual(findDockStack(t,'dock-left')?.tabs,['hierarchy']);
+  assert.deepEqual(findDockStack(t,'dock-bottom')?.tabs,['assets','console']);
 });
 test('move reorders within a tab stack',()=>{
   const t=moveTab(defaultDockTree(),'animation','dock-center','scene');
