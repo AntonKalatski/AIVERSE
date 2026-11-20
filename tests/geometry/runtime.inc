@@ -288,3 +288,77 @@ TEST(geometry_transactional_reload_preserves_hlod_after_proxy_source_failure) {
     CHECK(scene.stats().instances==1);
     scene.shutdown(dev);
 }
+
+
+namespace geometrytest {
+struct GpuUploadFailDevice : entityfxtest::RecordingDevice {
+    size_t attempts=0, failAt=0, refused=0;
+    bool allowIdle=true;
+    gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
+        ++attempts;
+        if(failAt && attempts==failAt)return {};
+        return RecordingDevice::createBuffer(desc);
+    }
+    bool waitForResourceIdle() override {
+        ++refused;
+        return allowIdle;
+    }
+};
+}
+
+TEST(geometry_transactional_gpu_source_upload_failure_preserves_live) {
+    using namespace render;
+    geometrytest::GpuUploadFailDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"old","model":"old.obj"}]})");
+    const auto replacement=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj"}]})");
+    const auto reader=[](const std::string&,std::string& bytes) {
+        bytes=geometrytest::boxObj();return true;
+    };
+    scene.loadTransactional(dev,original,reader);
+    CHECK(scene.stats().instances==1);
+    const auto before=scene.stats();
+    // A source model's first GPU buffer allocation must fail.
+    dev.failAt=dev.attempts+1;
+    bool rejected=false;
+    try {scene.loadTransactional(dev,replacement,reader);}
+    catch(const std::exception&) {rejected=true;}
+    CHECK(rejected);
+    CHECK(dev.attempts>=dev.failAt);
+    CHECK(scene.stats().instances==before.instances);
+    CHECK(scene.stats().groups==before.groups);
+    CHECK(scene.stats().proxies==before.proxies);
+    CHECK(scene.pendingGpuRetirements()==0);
+    dev.failAt=0;
+    scene.loadTransactional(dev,replacement,reader);
+    CHECK(scene.stats().instances==2);
+    scene.shutdown(dev);
+}
+
+TEST(geometry_transactional_gpu_hlod_proxy_upload_failure_preserves_live) {
+    using namespace render;
+    geometrytest::GpuUploadFailDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"old","model":"old.obj"}]})");
+    const auto candidate=Json::parse(R"({"version":1,"hlod":{"enabled":true},
+        "instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj","position":[4,0,0]}]})");
+    const auto reader=[](const std::string&,std::string& bytes) {
+        bytes=geometrytest::boxObj();return true;
+    };
+    scene.loadTransactional(dev,original,reader);
+    const auto before=scene.stats();
+    // HLOD proxy upload precedes source uploads when the proxy is created.
+    dev.failAt=dev.attempts+1;
+    bool rejected=false;
+    try {scene.loadTransactional(dev,candidate,reader);}
+    catch(const std::exception&) {rejected=true;}
+    CHECK(rejected);
+    CHECK(dev.attempts>=dev.failAt);
+    CHECK(scene.stats().instances==before.instances);
+    CHECK(scene.stats().groups==before.groups);
+    CHECK(scene.stats().proxies==before.proxies);
+    dev.failAt=0;
+    scene.loadTransactional(dev,candidate,reader);
+    CHECK(scene.stats().instances==2);
+    scene.shutdown(dev);
+}
