@@ -392,13 +392,33 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         stats_.buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         return changed;
     }
-    detailOn_ = false;
-    for (auto& c : chunks_) {
-        uint64_t h = chunkHash(g, c, flatDig);
-        if (c.valid && h == c.hash) continue;
-        c.hash = h;
-        if (heightfield_) buildHeightChunk(dev, g, c); else buildLevelsChunk(dev, g, c, flatDig);
-        c.valid = true;
+    detailOn_=false;
+    for(auto& c:chunks_) {
+        const uint64_t h=chunkHash(g,c,flatDig);
+        if(c.valid && h==c.hash)continue;
+        // Build every LOD into private buffers. A late LOD failure must not
+        // replace an earlier LOD of the published chunk or its bounds/hash.
+        Chunk next;
+        next.x0=c.x0; next.y0=c.y0;
+        next.x1=c.x1; next.y1=c.y1;
+        next.hash=h;
+        try {
+            if(heightfield_)buildHeightChunk(dev,g,next);
+            else buildLevelsChunk(dev,g,next,flatDig);
+        }catch(...) {
+            // No renderer has ever submitted a staged chunk buffer.
+            for(auto& l:next.lods) {
+                if(l.vb.valid())dev.destroyBuffer(l.vb);
+                if(l.ib.valid())dev.destroyBuffer(l.ib);
+            }
+            throw;
+        }
+        next.valid=true;
+        for(auto& old:c.lods) {
+            retiredMeshes_.retireBuffer(dev,old.vb);
+            retiredMeshes_.retireBuffer(dev,old.ib);
+        }
+        c=std::move(next);
         ++stats_.rebuilt;
     }
     const bool changed = all || stats_.rebuilt > 0;
