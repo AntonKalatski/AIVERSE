@@ -3201,3 +3201,25 @@ single evaluation and commit only after all owners prepare.
 | Complete graph candidate | implemented in source | native tests |
 | Multi-owner frame rollback | partial | integrate Sprite/View/light/overlay candidates |
 | GPU validation | not tested | actual Metal/Vulkan runs |
+
+
+## LENS independent View preparation — 2026-11-20
+
+Branch `codex/lens-completion`, code `aae133564e950be9cda1210ad053addcf61704da`.
+`View::cloneForPreparation` copies the presentation World and source bridge,
+then deep-clones every mutable graph player. Copies budget, frame identity and
+LOD histories; scheduler workers and submission scratch are recreated lazily.
+`prepareUpdate` evaluates only this candidate; host publication is a noexcept
+unique_ptr swap. Immutable asset lifetime remains host-owned; custom external
+mutable callback/component state is outside the contract. No simulation/save
+format changes. Tests exercise native graph isolation, discard/retry and invalid
+source rejection. Paths engine/view/View.h and tests/view/packets.cpp.
+`git diff --check` PASS; integrated native build still RUNNING on KINGSTON,
+new tests/GPU tests NOT RUN yet. No full RtsView atomicity claim: connect the
+candidate at the host along with legacy animation, Sprite/light/overlay staging.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Generic View frame candidate | implemented in source | native test execution |
+| Legacy multi-owner frame | partial | host staging integration |
+| Metal/Vulkan parity | not tested | actual GPU tests |

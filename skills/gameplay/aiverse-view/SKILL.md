@@ -102,3 +102,14 @@ When orienting triangular surfaces relative to a host
 normal, reuse `engine/view/TriangleFacing.h` and
 `view::orientTriangleTo` instead of duplicating
 degenerate checks, winding reversal and normalization.
+
+## Transactional animation preparation
+
+For a multi-owner frame, call `View::prepareUpdate(objects, dt)` to get an
+independent candidate. It copies the source bridge, presentation components
+and LOD state and detaches mutable AnimationGraphInstance players recursively.
+Discard on failure; publish with the host's `unique_ptr<View>::swap` only after
+all owners prepare. Retain immutable Model/Graph leases through submission.
+This API does not roll back external callback side effects or arbitrary shared
+host components; host callbacks must be read-only outside supplied state.
+A World copy or PlaybackSnapshot alone is not a complete animation checkpoint.
