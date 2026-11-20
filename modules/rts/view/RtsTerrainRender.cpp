@@ -1844,7 +1844,7 @@ void TerrainRenderer::commitMapVisible(PreparedMap& candidate) noexcept {
 
 void TerrainRenderer::drawCandidate(const std::shared_ptr<PreparedFrame>& next,
         Renderer3D& r,const MapGrid& g,const std::vector<uint8_t>* vision) {
-    if(!next){drawPrepared(r,g,vision);return;}
+    if(!next){drawPrepared(r,g,vision);drawWater(r);return;}
     if(next->owner_!=this || next->revision_!=publicationRevision_ || next->committed_)
         throw std::logic_error("Terrain: stale candidate draw");
     const bool dynamic=next->dynamic_.valid(),visible=next->vision_.valid();
@@ -1857,7 +1857,7 @@ void TerrainRenderer::drawCandidate(const std::shared_ptr<PreparedFrame>& next,
         if(pipeline)swap(pipes_[next->pipelineSlot_],next->pipeline_);
         for(auto& item:next->lods_)swap(chunks_[item.chunk].lods[item.level],item.mesh);
     };
-    exchange();try {drawPrepared(r,g,vision);}catch(...) {exchange();throw;}exchange();
+    exchange();try {drawPrepared(r,g,vision);drawWater(r);}catch(...) {exchange();throw;}exchange();
 }
 void TerrainRenderer::drawMapCandidate(const std::shared_ptr<PreparedMap>& c,
         Renderer3D& r,const MapGrid& g,const std::vector<uint8_t>* vision) {
