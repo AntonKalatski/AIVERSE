@@ -20,6 +20,11 @@ struct ViewConfig {
     bool frustumCull = true;
     float errorThresholdPixels = 1.0f;
     uint32_t maxSelectedNodes = 65536;
+    // Optional temporal refinement history for this ONE original
+    // source-node, pass index and scene instance. A null pointer means
+    // cold-start selection with the unchanged legacy LOD threshold.
+    float hysteresisFraction = 0.f;
+    const std::vector<uint8_t>* previousRefined = nullptr;
 };
 // These ranges reference Asset::indices and CANNOT be interpreted as valid
 // GPU draw offsets without allocating/uploading that index stream through
@@ -37,6 +42,9 @@ struct ViewPlan {
     uint32_t culledNodes = 0;
     uint32_t missingRefinements = 0;
     bool budgetExceeded = false;
+    // Nodes successfully refined BEFORE view frustum culling, so a caller
+    // can retain one independent temporal history per source+camera.
+    std::vector<uint8_t> refinedNodes;
 };
 // The provided Asset must be an immutable, already-built per-material source.
 // On malformed input return false, preserving 'out' and describing the issue.
