@@ -315,6 +315,32 @@ public:
     GpuWarmStats gpuWarmStats() const noexcept;
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Frame-local provenance of Renderer3D's ACTUAL drawModel geometry/LOD
+    // decisions, taken after a source model was submitted to this scene.
+    // It is pre-render submission data, NOT proof an eventual draw passed
+    // GPU occlusion or pipeline compilation. Never cache pointers across
+    // beginScene, asset republish or Device resource retirement.
+    struct ModelViewPrimitive {
+        const Model* model=nullptr;
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint32_t firstIndex=0,indexCount=0;
+        gfx::BufferHandle vertexOverride{};
+        uint32_t vertexOverrideCount=0;
+        bool visible=false,colourCandidate=false;
+        bool gpuLodConditional=false,lodFade=false,batched=false;
+        bool skinning=false,baked=false,shaderVertexOffset=false;
+        bool customGpuStream=false;
+        mat4 world{};
+    };
+    struct ModelViewProvenance {
+        uint64_t frameSerial=0;
+        bool hasModel=false;
+        bool complete=false; // false if renderer source view is unsuitable
+        std::vector<ModelViewPrimitive> primitives;
+    };
+    // Source-owned introspection; no cached parallel picking scene database.
+    // Does not dereference async data or issue RHI operations.
+    ModelViewProvenance modelViewProvenance(const Model& model) const;
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -484,6 +510,11 @@ private:
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
+        // Captured at selection time, before colour/LOD batching. Stores
+        // real renderer-selected mesh and source primitive ordinals.
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint32_t vertexOverrideCount=0;
+        bool displacedVertexSource=false;
         // Full per-instance ModelVertex buffer; empty for the legacy path.
         gfx::BufferHandle vertexOverride{};
         bool rigid = false, castShadow = false;
