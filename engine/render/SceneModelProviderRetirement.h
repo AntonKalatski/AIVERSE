@@ -144,8 +144,8 @@ public:
     uint64_t enqueueFailures() const noexcept{return enqueueFailures_;}
     uint64_t pollFailures() const noexcept{return pollFailures_;}
     uint64_t shutdownFailures() const noexcept{return shutdownFailures_;}
-    uint64_t tokenApprovedShutdowns() const noexcept {
-        return tokenApprovedShutdowns_;
+    uint64_t completionProvenShutdowns() const noexcept {
+        return completionProvenShutdowns_;
     }
     uint64_t cpuQueueShutdownFailures() const noexcept {
         return cpuQueueShutdownFailures_;
@@ -173,7 +173,7 @@ private:
                     // waitForResourceIdle fallback. No nested pending cache
                     // queue may bypass its own GPU-completion barrier.
                     owner->shutdownAfterCompletedSceneToken(device);
-                    ++tokenApprovedShutdowns_;
+                    ++completionProvenShutdowns_;
                 }else {
                     // An explicit full-idle drain owns the proof; use the
                     // existing public shutdown for fallback/error paths.
@@ -190,7 +190,7 @@ private:
     std::unique_ptr<Queue> queue_;
     uint64_t enqueueFailures_=0,pollFailures_=0;
     uint64_t shutdownFailures_=0,cpuQueueShutdownFailures_=0;
-    uint64_t tokenApprovedShutdowns_=0;
+    uint64_t completionProvenShutdowns_=0;
     uint64_t orphanedOwners_=0;
 };
 
