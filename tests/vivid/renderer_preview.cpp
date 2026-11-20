@@ -238,9 +238,14 @@ struct Preview {
             }
             if(actorCount==1 && number>0) {
                 auto& probe=pixelProbes[std::size_t(number)];
-                require(probe.requested && !probe.colourReady &&
-                        probe.x<uint32_t(w) && probe.y<uint32_t(h),
-                        "VIVID colour capture did not match GPU ID request");
+                if(!probe.requested || probe.colourReady ||
+                   probe.x>=uint32_t(w) || probe.y>=uint32_t(h)) {
+                    failed=true;
+                    std::fprintf(stderr,
+                        "VIVID parity: colour callback missing/mismatched GPU frame token\n");
+                    platform::requestQuit();
+                    return;
+                }
                 const auto offset=(size_t(probe.y)*size_t(w)+probe.x)*4u;
                 for(int c=0;c<4;++c)probe.colour[std::size_t(c)]=pixels[offset+size_t(c)];
                 probe.colourReady=true;
@@ -466,7 +471,8 @@ struct Preview {
         }
         const bool motionReady = stage != 2 || (motionFrames >= 18 && animated);
         bool recordParityPixel=false;
-        if (!capturePending && stage < 3 && readyFrames >= 4 && motionReady) {
+        if (!capturePending && stage < 3 && readyFrames >= 4 &&
+            motionReady && (!pixelIdReady || !pixelIdPass.pending())) {
             capturePending = true;
             recordParityPixel=actorCount==1 && stage>0;
             const char* suffix = stage == 0 ? "-baseline" :
