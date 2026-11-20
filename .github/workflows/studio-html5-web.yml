@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# Rapid AI iterations can trigger multiple pushes. Cancel stale checks.
+concurrency:
+  group: studio-html5-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web-build:
     name: TypeScript and Vite
@@ -56,3 +61,37 @@ jobs:
         run: c++ -std=c++17 -Wall -Wextra -Werror -I . apps/studio-native/tests/StudioViewportLayoutTests.cpp -o /tmp/aiverse_studio_viewport_layout
       - name: Run headless native viewport layout contract
         run: /tmp/aiverse_studio_viewport_layout
+
+  macos-native:
+    name: macOS HTML5 + Metal native compiler / contracts
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build HTML5 assets for WKWebView bundle
+        working-directory: apps/studio-web
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm run build
+      - name: Configure experimental Studio
+        run: |
+          cmake -S . -B build/studio-native-ci \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DAIVERSE_BUILD_EDITOR=ON \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_BUILD_TESTS=ON \
+            -DAIVERSE_BUILD_STUDIO_HTML5=ON
+      - name: Compile Metal host and native contracts
+        run: |
+          cmake --build build/studio-native-ci \
+            --target aiverse_studio aiverse_studio_session_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
+            --parallel 3
+      - name: Run native contract tests
+        run: ctest --test-dir build/studio-native-ci --output-on-failure -R '^studio_(session|viewport_layout|terrain_geometry)$'
