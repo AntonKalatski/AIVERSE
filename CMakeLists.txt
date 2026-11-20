@@ -3431,3 +3431,16 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_luma_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_luma_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-luma-host gpu)
+    set_tests_properties(lighting_luma_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 240)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_luma_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_luma_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-luma-host-gl legacy)
+        set_tests_properties(lighting_luma_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 240)
+    endif()
+endif()

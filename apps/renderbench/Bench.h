@@ -9,6 +9,7 @@
 #include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
 #include "DynamicGiHost.h"
+#include "LumaHost.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
 #include "SunStudy.h"
@@ -63,6 +64,7 @@ struct Bench {
     PrismaScreenLighting screen;
     SceneAssets additions;
     DynamicGiHost dynamicGi;
+    LumaHost luma;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
     std::vector<RTSCamera> cameras;
@@ -143,8 +145,8 @@ struct Bench {
                 throw std::runtime_error("dynamicGI cannot duplicate baked probeGI/staticPointBounce sources");
             const bool collectShadows=bakePointShadows&&options.readLightCache.empty();
             if(config.has("sunStudy")&&!collectShadows)throw std::runtime_error("sunStudy requires an uncached probe/shadow bake and a non-low profile");
-            if(collectShadows || config.has("dynamicGI"))appendShadowGeometry(additions.shadowGeometry,*model);
-            additions.load(d,config,warn,notes,collectShadows || config.has("dynamicGI"));
+            if(collectShadows || config.has("dynamicGI") || config.has("luma"))appendShadowGeometry(additions.shadowGeometry,*model);
+            additions.load(d,config,warn,notes,collectShadows || config.has("dynamicGI") || config.has("luma"));
             const size_t primaryLightCount=additions.lights.size();
             if(config.has("staticPointBounce")&&!bakePointShadows&&options.profile!="low")throw std::runtime_error("staticPointBounce requires static point shadows");
             std::vector<StaticPointShadow> pointShadows;
@@ -187,6 +189,15 @@ struct Bench {
                     report.set("staticDiffuseProbes",Json::number(int64_t(diffuseField.probes.size())));
                 }
                 report.set("staticPointShadowMaps",Json::number(int64_t(pointShadows.size())));
+            }
+            if(config.has("luma")) {
+                if(config.getBool("staticPointLightGrid",false)||config.has("staticPointBounce")||config.has("probeGI"))
+                    throw std::runtime_error("luma cannot duplicate baked/static direct ownership");
+                luma.initialize(d,config["luma"],options.profile=="full"?static_cast<PostProcess&>(screen):static_cast<PostProcess&>(post),
+                    renderer.lights,additions.shadowGeometry,additions.lights,options.profile!="low");
+                report.set("lumaBackend",Json::string(luma.enabled?"gpu":"legacy"));
+                report.set("lumaFallback",Json::string(luma.fallback));
+                report.set("lumaSources",Json::number(int64_t(additions.lights.size())));
             }
             if(config.has("dynamicGI")) {
                 dynamicGi.initialize(d,config["dynamicGI"],std::move(additions.shadowGeometry),additions.lights);
@@ -238,7 +249,7 @@ struct Bench {
             renderer.setShadowQuality(options.profile=="low"?ShadowQuality::Low:ShadowQuality::High);
             renderer.setMaterialQuality(options.profile=="low"?MaterialQuality::Medium:MaterialQuality::High);
             renderer.setTraceEnabled(options.profile=="full");renderer.setModelReflectionsEnabled(options.profile=="full");
-            renderer.lights.setQuality(options.profile=="low"||(additions.lights.empty()&&!config.has("probeGI"))?LightQuality::Off:LightQuality::High);
+            renderer.lights.setQuality(luma.enabled||options.profile=="low"||(additions.lights.empty()&&!config.has("probeGI"))?LightQuality::Off:LightQuality::High);
             // "look": presentation-only overrides applied after the light-cache key (sun/sky colours,
             // fog and runtime GI radiance are not bake inputs), so caches survive look tuning.
             Json view=config;
@@ -336,6 +347,7 @@ struct Bench {
         const int ci=std::min(view,int(cameras.size())-1);
         const auto start=Clock::now();if(ownsFrame)d.beginFrame(width,height);const auto encodeStart=Clock::now();
         try {
+            luma.update(d);
             if(!dynamicGi.update(d,cameras[size_t(ci)].eye())){if(ownsFrame)d.endFrame();return;}
         } catch(const std::exception& e) {fail(e.what());if(ownsFrame)d.endFrame();return;}
         const uint64_t thisTag=++tag;
@@ -360,9 +372,10 @@ struct Bench {
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
-        additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
+        additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low" && !luma.enabled);
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
-        renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
+        renderer.render(pass,luma.enabled?static_cast<PostProcess*>(luma.pipeline.get()):options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
+        try {luma.presented();} catch(const std::exception& e){fail(e.what());}
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
@@ -453,6 +466,8 @@ struct Bench {
             d.gpuTimingRouter().unsubscribe(timingSubscriber);
             timingSubscriber=0;
         }
+        report.set("lumaComposedFrames",Json::number(int64_t(luma.composedFrames)));
+        if(!luma.shutdown(d))fail("Luma GPU idle teardown failed");
         if(!dynamicGi.shutdownAfterGpuIdle(d,renderer))fail("dynamicGI GPU idle teardown failed");
         report.set("dynamicGiConvergenceMs",Json::number(dynamicGi.convergenceMs));
         report.set("gpuTimingSupported",Json::fromBool(gpuSupported));

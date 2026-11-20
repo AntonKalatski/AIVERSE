@@ -44,3 +44,22 @@ on/off, source removal, diffuse-only metallic rejection, legacy ownership,
 GGX, BVH blockage and geometry restoration. Build/test artifacts go to KINGSTON.
 Native host/editor adoption, mobile/Vulkan implementations and production
 performance are separate stages, not implied by this renderer integration.
+
+## Native renderbench scene recipe
+
+Add `"luma":{"backend":"auto","quality":"high"}` to a scene containing
+`pointLights` (linear RGB) or imported glTF lights. Quality accepts balanced,
+high, ultra. `backend:"gpu"` rejects unsupported devices/capacity; auto retains
+the legacy LightSystem and reports the fallback. This host owns a fixed source
+snapshot and static caster geometry. It rejects simultaneous static light grid,
+baked probeGI and staticPointBounce ownership. `dynamicGI` remains independent.
+
+The native host waits for previously committed GPU work before a new Luma frame;
+it never waits for an uncommitted current frame. Each requested view must actually
+compose, otherwise the report is incomplete with an error. This removes missing
+contributions during camera movement at the cost of synchronization; it is not a
+measured performance optimization. Reports expose lumaBackend, lumaFallback,
+lumaSources and lumaComposedFrames. No editor integration is implied yet.
+
+`lighting_luma_host` / `_gl` load a real glTF and verify report completion,
+on/off pixels, moving-camera continuity, ownership rejection and GL fallback.
