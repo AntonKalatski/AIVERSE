@@ -282,3 +282,52 @@ The new profile JSON roundtrip/unknown-field tests and the final Mac
 smoke capture using the mobile config have been **added but NOT RUN**.
 The renderer/Creator and texture branch must undergo real CMake/CTest/
 Metal/Vulkan/GLES checks before any tested-compatibility claim.
+
+
+## Renderer3D / game-host material quality bridge (Stage 7AH)
+
+The shared renderer already owns `render::MaterialQuality` and
+`Renderer3D::setMaterialQuality`. VIVID does **not** add a second
+renderer-wide quality switch. The header-only
+`engine/character/vivid/VividRendererQuality.h` supplies a host adapter.
+It never changes HumanDNA, gameplay ECS or texture residency budgets.
+
+An ordinary project/game host can keep its own render quality policy and
+resolve a *snapshot* for each generated human asset:
+
+```cpp
+#include "engine/character/vivid/VividRendererQuality.h"
+#include "engine/character/vivid/HumanPreview.h"
+
+// Call after initializing a Renderer3D and deciding its quality.
+const auto rendererTier =
+    aiverse::render::Renderer3D::defaultMaterialQualityFor(device, mobile);
+renderer.setMaterialQuality(rendererTier);
+const auto projectVisuals =
+    aiverse::vivid::VividPresentationSettings::loadFile(
+        "content/vivid-presentation.json");
+const auto effective = aiverse::vivid::resolveVividPresentation(
+    projectVisuals,renderer.materialQuality());
+auto character = aiverse::vivid::generateHumanPreview(dna,effective);
+```
+
+`resolveVividPresentation` never increases `materialQuality` beyond the
+current Renderer3D tier, preserving independent `groomQuality` so the host
+can budget CPU guide simulation and hair geometry separately. A renderer
+quality change requires the host to rebuild/rebind affected Material and
+Model GPU state at a safe frame boundary; it cannot mutate existing in-flight
+models. Normal gameplay ECS and MotionWeave animation remain untouched.
+
+The standalone Creator intentionally keeps its material graph tier and
+Renderer3D tier in sync via `applyVividMaterialQuality(renderer,presentation)`
+on initialization and on a subsequent render-frame-boundary quality change.
+The engine renderer already retires old pipelines through its normal path.
+The VIVID model candidate still uses `HumanRetirementQueue` for GPU-safe
+old-actor/resource retirement. Game hosts that do not use VIVID are unaffected.
+
+This bridge is **not** Texture RHI integration. The texture agent still owns
+compressed KTX2/DDS formats, samplers, mip residency, streaming, VT and GPU
+material resource identity. Read
+`docs/agent-handoffs/vivid-texture-rhi-integration-2026-11-20.md` before
+merging. No Vulkan/GLES/Metal runtime validation or performance benchmarking
+has been run on this stage's sources.
