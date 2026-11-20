@@ -128,6 +128,64 @@ void test() {
             {2,2,2},{0,0,-1},3).hit,
             "viewport sculpt accepted ray missing the triangle");
     }
+    // 7AM: a cached palette plan must match the original reference
+    // under animated joint updates and non-unit integer-weight totals.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(3);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        for(auto& v:model.vertices) {
+            v.joints[0]=0;v.weights[0]=128;
+            v.joints[1]=1;v.weights[1]=64;
+        }
+        model.indices={0,1,2};
+        Primitive prim;
+        prim.firstIndex=0;prim.indexCount=3;
+        prim.jointPalette={0,1};
+        MeshDef mesh;
+        mesh.primitives.push_back(prim);
+        model.meshes.push_back(std::move(mesh));
+        model.nodes.resize(3);
+        model.nodes[0].mesh=0;
+        model.nodes[0].skin=0;
+        model.skins.resize(1);
+        model.skins[0].joints={1,2};
+        model.skins[0].inverseBind={mat4{},mat4{}};
+        SculptSkinningPlan plan;
+        req(plan.build(model,0) && plan.ready() &&
+            plan.jointCount()==2,"cached skin palette plan build failed");
+        SkinnedWeightSurface reference,cached,scratch;
+        for(float offset:{1.f,-2.f,3.f}) {
+            const std::array<mat4,3> pose{{
+                mat4{},mat4::translate({0,0,offset}),
+                mat4::translate({0,0,offset*2.f})
+            }};
+            req(prepareSkinnedWeightSurface(model,0,pose,reference) &&
+                plan.evaluate(model,pose,{},cached,scratch) &&
+                cached.ready && cached.included==reference.included,
+                "cached skin plan failed to reconstruct reference surface");
+            for(std::size_t i=0;i<model.vertices.size();++i)
+                req(std::fabs(reference.world[i].x-cached.world[i].x)<1.e-5f &&
+                    std::fabs(reference.world[i].y-cached.world[i].y)<1.e-5f &&
+                    std::fabs(reference.world[i].z-cached.world[i].z)<1.e-5f,
+                    "cached joint transforms changed skinned CPU geometry");
+        }
+        const auto good=cached.world[0];
+        auto invalid=std::array<mat4,3>{mat4{},mat4{},mat4{}};
+        invalid[1].at(0,3)=std::numeric_limits<float>::infinity();
+        req(!plan.evaluate(model,invalid,{},cached,scratch) &&
+            cached.ready && cached.world[0].z==good.z,
+            "invalid joint pose mutated last-good skin-pick surface");
+        // Existing plan must be rebuilt if a new candidate's joint
+        // palette/weights change, even at the same Model pointer.
+        plan.clear();
+        model.meshes[0].primitives[0].jointPalette={0};
+        req(!plan.build(model,0) && !plan.ready(),
+            "invalid cached skin palette must fail closed");
+    }
     // 7AL: the accelerated picker must be equivalent to the original
     // triangle-order reference for neutral and animated morph poses.
     // On a dense planar grid a narrow ray should visit far fewer triangles
