@@ -23,7 +23,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `fog` | `apps/editor/windows/FogWindow.cpp` | Missing functional HTML5 implementation |
 | `FpsWindow` | `apps/editor/windows/FpsWindow.cpp` | Missing functional HTML5 implementation |
 | `effects` | `apps/editor/windows/FxWindow.cpp` | Missing functional HTML5 implementation |
-| `game` | `apps/editor/windows/GameWindow.cpp` | Partial: native shared GameClient Play map/menu/Stop, Metal surface, keyboard/mouse, runtime menu pause/resume visually verified (80); editor pause/step, device profiles, runtime inspection, FPS still pending |
+| `game` | `apps/editor/windows/GameWindow.cpp` | Partial: native shared GameClient Play map/menu/Stop, Metal surface, keyboard/mouse, runtime menu pause/resume visually verified (80); editor pause/step/restart verified (81); device profiles, runtime inspection, FPS still pending |
 | `generate` | `apps/editor/windows/GenWindow.cpp` | Missing functional HTML5 implementation |
 | `hierarchy` | `apps/editor/windows/HierarchyWindow.cpp` | Partial: map entity create/duplicate/delete, single selection/search, undo/save/reopen tested (Stage 69); grouping/multiselect/FPS authoring and visual QA pending |
 | `project_import` | `apps/editor/windows/ImportProjectWindow.cpp` | Missing functional HTML5 implementation |
