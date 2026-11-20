@@ -3395,3 +3395,21 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
             TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
     endif()
 endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    set(_lighting_auto_backend any)
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        set(_lighting_auto_backend gpu)
+    endif()
+    add_test(NAME lighting_native_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_native_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-native-host ${_lighting_auto_backend})
+    set_tests_properties(lighting_native_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 330)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_native_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_native_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-native-host-gl cpu)
+        set_tests_properties(lighting_native_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 330)
+    endif()
+endif()

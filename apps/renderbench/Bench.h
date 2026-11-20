@@ -8,6 +8,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
+#include "DynamicGiHost.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
 #include "SunStudy.h"
@@ -61,6 +62,7 @@ struct Bench {
     Prisma post;
     PrismaScreenLighting screen;
     SceneAssets additions;
+    DynamicGiHost dynamicGi;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
     std::vector<RTSCamera> cameras;
@@ -137,10 +139,12 @@ struct Bench {
             additions.applyGraphs(*model,config["materialGraphs"]);
             const bool bakePointShadows=(config.getBool("staticPointShadows",false)||config.has("probeGI"))&&options.profile!="low";
             if(options.profile!="low"&&(!options.readLightCache.empty()||!options.writeLightCache.empty())&&!config.getBool("staticPointLightGrid",false))throw std::runtime_error("light cache requires staticPointLightGrid");
+            if(config.has("dynamicGI") && (config.has("probeGI")||config.has("staticPointBounce")))
+                throw std::runtime_error("dynamicGI cannot duplicate baked probeGI/staticPointBounce sources");
             const bool collectShadows=bakePointShadows&&options.readLightCache.empty();
             if(config.has("sunStudy")&&!collectShadows)throw std::runtime_error("sunStudy requires an uncached probe/shadow bake and a non-low profile");
-            if(collectShadows)appendShadowGeometry(additions.shadowGeometry,*model);
-            additions.load(d,config,warn,notes,collectShadows);
+            if(collectShadows || config.has("dynamicGI"))appendShadowGeometry(additions.shadowGeometry,*model);
+            additions.load(d,config,warn,notes,collectShadows || config.has("dynamicGI"));
             const size_t primaryLightCount=additions.lights.size();
             if(config.has("staticPointBounce")&&!bakePointShadows&&options.profile!="low")throw std::runtime_error("staticPointBounce requires static point shadows");
             std::vector<StaticPointShadow> pointShadows;
@@ -183,6 +187,12 @@ struct Bench {
                     report.set("staticDiffuseProbes",Json::number(int64_t(diffuseField.probes.size())));
                 }
                 report.set("staticPointShadowMaps",Json::number(int64_t(pointShadows.size())));
+            }
+            if(config.has("dynamicGI")) {
+                dynamicGi.initialize(d,config["dynamicGI"],std::move(additions.shadowGeometry),additions.lights);
+                report.set("dynamicGiBackend",Json::string(dynamicGi.useGpu?"gpu":"cpu"));
+                report.set("dynamicGiFallback",Json::string(dynamicGi.fallback));
+                report.set("dynamicGiTriangles",Json::number(int64_t(dynamicGi.scene->triangleCount())));
             }
             additions.shadowGeometry=StaticShadowGeometry{};
             if(config.getBool("staticPointLightGrid",false)&&options.profile!="low"){
@@ -248,7 +258,8 @@ struct Bench {
             if(!renderer.lights.setStaticRadiance(SceneAssets::vector3(gi["points"],{1,1,1}),SceneAssets::vector3(gi["sun"],{}),SceneAssets::vector3(gi["sky"],{})))throw std::runtime_error("invalid probeGI radiance");
             if(report.getBool("probeEnvironmentPrecombined",false))renderer.lights.setStaticRadiance(SceneAssets::vector3(gi["points"],{1,1,1}),{1,1,1},{});
             renderer.setShadowBounds(model->boundsMin,model->boundsMax);
-            renderer.lighting.sunDir=v3(view.has("sunDirection")?view["sunDirection"]:config["sunDirection"]);   // look.sunDirection: direct light only; baked GI keeps the recipe sunrenderer.lighting.sunColor=v3(view["sunColor"]);
+            renderer.lighting.sunDir=v3(view.has("sunDirection")?view["sunDirection"]:config["sunDirection"]);   // direct sun may differ from explicit indirect settings
+            renderer.lighting.sunColor=v3(view["sunColor"]);
             renderer.lighting.sunIntensity=float(view["sunIntensity"].toDouble());
             renderer.lighting.skyColor=v3(view["skyColor"]);renderer.lighting.groundColor=v3(view["groundColor"]);
             renderer.lighting.fogDensity=float(view["fogDensity"].toDouble(0));
@@ -265,6 +276,7 @@ struct Bench {
             if(options.profile!="low"&&config.has("postfx"))s=parsePrisma(config["postfx"],Json());
             // Screen bounce adds near-field light from visible surfaces; probe GI scenes opt in via look.screenBounce.
             screen.setDiffuseBounceEnabled(config["look"].getBool("screenBounce",!(bakePointShadows&&(config.has("staticPointBounce")||config.has("probeGI")))));
+            if(dynamicGi.enabled)screen.setDiffuseBounceEnabled(false);
             screen.setEnabled(options.profile=="full");
             if(config.has("volumetricLight")){
                 const auto& v=config["volumetricLight"];VolumetricLight light;light.enabled=v.getBool("enabled",true);
@@ -323,6 +335,9 @@ struct Bench {
         const bool measuring=options.previewSeconds<=0&&view<int(cameras.size())&&frame>=options.warmup&&frame<options.warmup+options.samples;
         const int ci=std::min(view,int(cameras.size())-1);
         const auto start=Clock::now();if(ownsFrame)d.beginFrame(width,height);const auto encodeStart=Clock::now();
+        try {
+            if(!dynamicGi.update(d,cameras[size_t(ci)].eye())){if(ownsFrame)d.endFrame();return;}
+        } catch(const std::exception& e) {fail(e.what());if(ownsFrame)d.endFrame();return;}
         const uint64_t thisTag=++tag;
         bool timed=false;
         if(measuring){
@@ -343,6 +358,7 @@ struct Bench {
             if(shot!=tourShot){screen.reset();additions.selectLights(camera.eye());tourShot=shot;}
         }
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
+        if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
         additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
@@ -363,6 +379,7 @@ struct Bench {
             settings.set("probeGIVisibilityTaps",Json::number(int64_t(indirectEnabled?4:0)));
             settings.set("probeGIMaxProbeEvaluations",Json::number(int64_t(indirectEnabled?8:0)));
             if(config.has("probeGI")&&!indirectEnabled)settings.set("gi",Json::string("probe GI disabled"));
+            if(dynamicGi.enabled)settings.set("gi",Json::string(dynamicGi.useGpu?"bounded compute one-bounce GI":"budgeted CPU one-bounce GI"));
             settings.set("taa",Json::fromBool(screen.running()));
             settings.set("volumetricLight",Json::fromBool(screen.running()&&screen.volumetricLight().enabled));
             settings.set("bloom",Json::fromBool(options.profile=="hdr"||options.profile=="full"));
@@ -436,6 +453,8 @@ struct Bench {
             d.gpuTimingRouter().unsubscribe(timingSubscriber);
             timingSubscriber=0;
         }
+        if(!dynamicGi.shutdownAfterGpuIdle(d,renderer))fail("dynamicGI GPU idle teardown failed");
+        report.set("dynamicGiConvergenceMs",Json::number(dynamicGi.convergenceMs));
         report.set("gpuTimingSupported",Json::fromBool(gpuSupported));
         report.set("complete",Json::fromBool(done&&!failed));
         report.set("error",Json::string(error));report.set("frames",rows);
