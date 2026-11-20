@@ -2490,6 +2490,10 @@ void RtsRoadView::rebuild(gfx::Device& dev,
         discard();
         throw;
     }
+    // Transfer the kit texture ownership flags back to the active owner.
+    // Candidate copies were borrowed solely for failure cleanup.
+    for(size_t i=0;i<existingImageCount;++i)
+        staged.images_[i].borrowedTexture=images_[i].borrowedTexture;
     // All RHI allocations have succeeded. Keep previous images alive for
     // retired models, and publish only the already-prepared new handles.
     release(dev);
@@ -2501,7 +2505,8 @@ void RtsRoadView::rebuild(gfx::Device& dev,
     images_.swap(staged.images_);
     materials_.swap(staged.materials_);
     painted_.swap(staged.painted_);
-    geom_.swap(staged.geom_);
+    using std::swap;
+    swap(geom_,staged.geom_);
     surface_.swap(staged.surface_);
     film_.swap(staged.film_);
     spots_.swap(staged.spots_);
