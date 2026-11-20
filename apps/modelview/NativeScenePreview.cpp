@@ -114,6 +114,13 @@ bool NativeScenePreview::registerVisuals(const std::string& text,
                     reason="native Model load failed: "+modelPath;
                     return false;
                 }
+                // A newly created provider may reuse a retired Model*
+                // address. Invalidate any stale publication before the
+                // registry decides whether the Model epoch can be reused.
+                if(const auto old=appearances_.find(key);
+                   old && old->model &&
+                   !provider.resources().acquireModelRead(old->model))
+                    (void)appearances_.invalidateSources({modelPath});
                 view::AppearanceAssetRegistry::Request authored;
                 authored.model=model;
                 authored.sources.push_back(modelPath);
@@ -383,7 +390,10 @@ void NativeScenePreview::restoreSnapshot(std::string& error) {
     }
     // Real Simulation rollback, not a new World pretending to restore.
     simulation_->loadState(snapshot_);
+    hierarchy_->rebuild(simulation_->world());
+    hierarchy_->update(simulation_->world());
     clearPresentation();
+    appearances_.clear(); // source generations/Graphs cannot outlive old GPU pack
     pending_.clear(); // old tickets belong to the pre-rollback epoch
     const auto tickets=host_->restoreResidencyAfterRollback();
     for(const auto ticket:tickets) {
@@ -421,6 +431,7 @@ bool NativeScenePreview::shutdown(std::string& error) {
     error.clear();
     if(shutdownComplete_)return true;
     clearPresentation();
+    appearances_.clear();
     pending_.clear();
     if(host_) {
         if(!host_->completeForShutdown()) {
