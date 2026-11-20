@@ -3946,3 +3946,181 @@ GPU selection and pixel parity should stage18 profiling/optimization
 compare hysteresis to the baseline. Never substitute a smooth
 global-threshold animation for a real per-node history or invent a
 performance result. Leave Vulkan GPU production parity switches OFF.
+
+
+---
+
+## Stage 17.4 — GPU temporal LOD history on Metal/Vulkan (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`; not merged into main.
+**State:** committed code and new regression fixtures, **NOT compiled,
+NOT CTest-executed, NOT tested on real Metal/Vulkan hardware**. This
+is an implementation handoff, NOT a passing acceptance certificate.
+
+### Architecture and API
+
+- `GpuPassConfig` adds `hysteresisFraction` (0..0.45, default 0),
+  `temporalPassId` (1 main, 2 sun, 3 spot, 4 reflection),
+  `temporalNodeCount` (all nodes in metadata buffer), and
+  `temporalRevision` (source/material/policy generation).
+  `GpuSelectionUniforms` grows from 96 to **112 bytes** with four
+  32-bit temporal fields appended, preserving every original field's
+  offset and fitting the existing Vulkan minimum 128-byte push
+  constant size. Metal shares the exact layout at buffer slot 8.
+  Nonzero hysteresis requires one enabled GpuSceneInstance per dispatch,
+  nonzero stable instance token, pass ID, revision and node count.
+  Default zero leaves the old stateless GPU selector active without
+  allocating any temporal state.
+- `GpuClusterCulling` owns a GPU-only cache keyed by metadata buffer,
+  original primitive ordinal, scene-instance token, camera/pass ID,
+  and source/policy revision. Each entry has three separate Storage
+  buffers, one `uint32_t` mask bit per GLOBAL GPU metadata node:
+  0 means parent/coarse, 1 means refined. Current-frame writes NEVER
+  overwrite a previous-frame read buffer; GPU queue order preserves
+  dependency without CPU readback. Slot reuse is guarded by
+  `completedFrameSerial()`, including GPU work that was partially
+  encoded before an error. Same-key duplicate dispatch within one
+  frame declines. Cold start uses the original threshold; the
+  previous one/two frame(s) can warm-start if source, camera,
+  viewport, clip-depth and hysteresis policy match. A gap of >=3
+  RHI serials deliberately resets to cold (no stale read).
+- Limits: at most **262,144 global nodes**, **256 independent
+  history keys**, **32 MiB** GPU logical temporal storage per
+  `GpuClusterCulling` owner. If allocation/fences/capability fail,
+  the original portable/Legacy path remains. Inactive caches are
+  released after >120 frames and GPU completion. `shutdown(device)`
+  destroys all temporal masks through existing RHI lifetime handling.
+  The 32-MiB cap excludes implicit Vulkan/Metal in-flight copies,
+  model indices, metadata, GPU indirect argument buffers and other
+  worlds. No global physical VRAM accounting is claimed.
+- GPU kernels implement **reset → select → safety rollback**.
+  `StrataVulkanCullingShaders.h`: `kVulkanTemporalReset`;
+  selection reads prev mask at binding 5 and writes next at binding 6;
+  existing indirect safety pass restores prev mask (or cold zeros)
+  on invalid metadata, overflow or oversized produced counter.
+  `StrataGpuCulling.cpp`: Metal equivalent
+  `kMetalTemporalReset`, extended `kMetalCulling`, and
+  `kMetalTemporalSafety`. Next mask is reset to ZERO for every
+  metadata node before traversal, matching CPU
+  `SelectionOutput::refinedNodes` for unvisited nodes.
+  Refinement bits only publish after residence and bounded-stack
+  checks. No synchronous readback is part of normal rendering.
+  When h=0, Metal and Vulkan bind harmless valid dummy storage
+  descriptors to declared temporal slots, with no accesses.
+- `GeometryScene::setStrataLodHysteresisFraction(h)` now applies
+  the same threshold band to Stage17.3 CPU portable and Stage17.4
+  Metal/Vulkan compute selection. A changed h increments a
+  monotonic policy epoch rather than destroying GPU in-flight
+  buffers; previous GPU records are evicted when safe.
+  Each scene instance+primitive+main/sun/spot/reflection receives
+  an independent GPU key, propagated into
+  `Renderer3D::prepareStrataAuxiliaryGpuPackets` before spot or
+  reflected graphics passes. `GpuTemporalStats` and
+  `GeometryScene::Stats` count live GPU mask bytes, history
+  records, submissions, cold starts, refusals and expirations.
+- **NEW independent default-FALSE production acceptance gate:**
+  `GeometryScene::setStrataGpuTemporalParityVerified(bool)`.
+  Existing stateless CPU/GPU selection and raster parity flags do
+  NOT certify this new warm-history behavior. If h>0 and temporal
+  parity is not independently accepted for the actual build,
+  `tryStrataVulkanGpuDraw` declines and retains portable CPU/Legacy.
+  Vulkan and Metal lower-level GPU diagnostic culling still permit
+  explicit temporal dispatches without renderer ownership changes.
+  No source geometry, PBR material, Metal/GLES raster ownership or
+  SceneStaging certification was modified for this stage.
+
+### Changed files and exact implementation commits
+
+- `engine/render/StrataGpuCulling.h`:
+  `04cb033f363b6b870ada7b7c7b3179b94df3e6c2`
+  (API and bounded GPU temporal records),
+  `f426a06d269c9754548998808785d8e2ab4f0fa3`
+  (attempted-frame fence tracking),
+  `172ffd421a7b0c10363be15cd3d72558540373d8`
+  (diagnostic previous-mask oracle).
+- `engine/render/StrataGpuCulling.cpp`:
+  `8c6b9dca04f9396cabdc28dfc1a1c0db06f615ff`
+  (Metal shaders),
+  `19a06ff560720ff975a0f547b51f2e382265a8ed`
+  (bounded temporal GPU cache),
+  `3d0208507fa87b15a7d8fec5fc0238601845f1e8`
+  (dispatch integration),
+  `643743b1ddff0cbf32dd39a72bb2cf4ae4ddce66`
+  (failed-encode frame-fence safety),
+  `ef31f82ba442f493a18b3c6a1ccac602184f09ee`
+  (cold/warm CPU oracle),
+  `4c4b613b39c05267b8ef558c265cdeaea1b0b99c`
+  (failed allocation cleanup),
+  `2c7d19e290f199e154765be7ed82cfc3481a9ac0`,
+  `6d1a1ae3ff8379afdda94feeb63f72cecdb33a0c`
+  (Metal/Vulkan stateless binding compatibility),
+  `4e17100b902868ccb503478cb9148f380687a243`
+  (Metal unused-variable cleanup).
+- `engine/render/StrataVulkanCullingShaders.h`:
+  `bb3c4a8ad46a294f59f5a57ee296f0a6ffaeceb7`.
+- `engine/render/GeometryScene.h/.cpp`:
+  `b152a38ba0a6246e6f9e3890b83a3982f302f013`,
+  `e12e3d04472e7866213e8a81851f672ef78074fe`,
+  `9bb4dd7a79c8ed42ce2a382f622d210e22181d2e`,
+  `7029cc49f144e04c64253583e2148e8f09c7260b`,
+  `97437a8f7d412e62fcb5a37e0838d9c0b2ce255a`.
+- `engine/render/Renderer3D.h`:
+  `ea5b01a6058602f67666e7c106a33bb39824057d`.
+  `engine/render/Renderer3DModels.cpp`:
+  `5dd3d460b43cfd4e7846b237cd5be2cfc436eb29`.
+
+### Tests authored, NEVER executed
+
+- `tests/render/strata_gpu_culling.cpp`:
+  `4f26675eb3207d33a301aab9b1ab1f28e50279f5`,
+  `5051c21079caba1141fcaff6ffb331d058ca9029`,
+  `50467b1a111c513ef9562972903917bf42d708a6`.
+  Recording RHI verifies cold/warm dispatch flags, independent
+  source/pass/revision history keys, 3-frame fence reuse, no
+  duplicate same-frame write, no write to an in-flight failed
+  attempt and 32-MiB cache limit. Recording does NOT execute GPU
+  shaders or prove image parity.
+- `tests/render/strata_vulkan_kernel.cpp`:
+  `7c71dd59055ec249d52053fbb36e7815050c8fd8`,
+  `a4f318598be49c73acd8f4edf6582aefe58061ea`.
+  Real Vulkan optional driver test now enqueues 4 CONSECUTIVE
+  temporal GPU frames with error factors 0.95/1.08/1.30/0.70,
+  then asynchronously compares both GPU selected ranges AND
+  GPU refined masks to the CPU cold/warm `planView` history.
+  No CPU GPU-wait is inserted between the four frames.
+- **New** `tests/render/strata_metal_temporal.cpp`:
+  `a15038bb9338242374c48093b7c4b6a3717c8ec3`.
+  Runs three consecutive real Metal temporal selection frames
+  with asynchronous status/mask readback, CPU oracle, original
+  shared GeometryPool, no second graphics draw owner.
+  `CMakeLists.txt` opt-in macOS GPU test target
+  `aiverse_strata_metal_temporal`:
+  `2d195a95e62d70b35292a1d0ea25d227638aed21`.
+  Existing Vulkan test target unchanged, still conditional on
+  `AIVERSE_VULKAN`. Both are authored, uncompiled and unrun.
+
+### Stage 17.4 completion and next agent
+
+| Workstream | Code | Real acceptance |
+| --- | --- | --- |
+| Metal GPU per-node temporal state | WRITTEN | NOT RUN |
+| Vulkan GPU per-node temporal state | WRITTEN | NOT RUN |
+| Per-instance/per-pass revisions | WRITTEN | NOT RUN |
+| Triple-buffer GPU fence protection | WRITTEN | NOT RUN |
+| GPU invalid/overflow history rollback | WRITTEN | NOT RUN |
+| Bounded allocation, expiration and cleanup | WRITTEN | NOT RUN |
+| Independent GPU temporal production parity gate | WRITTEN, default OFF | NOT RUN |
+| Native Metal/Vulkan cold/warm readback fixtures | AUTHORED | NOT RUN |
+| GLES3/GL33 fallback, h=0 stateless behavior | Code path retained | NOT RECHECKED |
+| Actual main RGBA/shadows/reflection GPU pixel parity | NOT VERIFIED | N/A |
+| Vertex geomorph/dithered interior LOD transitions | NOT IMPLEMENTED | N/A |
+| GPU performance/popping profile and benchmarks | NOT MEASURED | N/A |
+
+**Next:** Stage18 performance instrumentation and optimization:
+whole-node reset traffic per primitive, Vulkan descriptors and compute
+dispatch overhead, Metal encoder count, temporal cache high-water,
+staged GPU page churn and lossless vs lossy LOD frame times.
+Collect a true h=0 baseline. Then Stage19 clean integration worktree,
+full CMake/CTest and real Metal/Vulkan/GLES GPU acceptance. Never
+enable GPU temporal parity switch without evidence from an actual
+tested source SHA; never overwrite concurrent main render work.
