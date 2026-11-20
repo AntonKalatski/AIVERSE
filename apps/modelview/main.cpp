@@ -51,6 +51,8 @@ struct AttachmentSpec {
     render::mat4 local{};
     render::mat4 childWorld{};
     std::string id; // optional scene/prefab-stable authored child identity
+    bool animated=false;
+    std::string animationGraph;
 };
 struct Instance {
     Model* model = nullptr;
@@ -287,7 +289,8 @@ struct Viewer {
             for(const auto& entry:document.attachments)
                 fromFile.push_back({
                     entry.model,entry.socket,entry.enabled,
-                    entry.local,entry.childWorld,entry.id});
+                    entry.local,entry.childWorld,entry.id,
+                    entry.animated,entry.animationGraph});
             fromFile.insert(fromFile.end(),attachmentSpecs.begin(),attachmentSpecs.end());
             attachmentSpecs=std::move(fromFile);
         }catch(const std::exception& e) {
@@ -305,7 +308,8 @@ struct Viewer {
             for(const auto& entry:attachmentSpecs)
                 document.attachments.push_back({
                     entry.modelSource,entry.socketName,entry.enabled,
-                    entry.local,entry.childWorld,entry.id});
+                    entry.local,entry.childWorld,entry.id,
+                    entry.animated,entry.animationGraph});
             // Validate duplicate authored IDs and transform matrices BEFORE
             // opening/truncating a previously valid on-disk layout file.
             const auto root=::aiverse::view::AttachmentLayoutCodec::write(document);
@@ -338,8 +342,16 @@ struct Viewer {
             for(const auto& child:attachmentSpecs)
                 check.attachments.push_back({
                     child.modelSource,child.socketName,child.enabled,
-                    child.local,child.childWorld,child.id});
+                    child.local,child.childWorld,child.id,
+                    child.animated,child.animationGraph});
             (void)::aiverse::view::AttachmentLayoutCodec::write(check);
+            // ModelView currently has a parent-only Animator. Do not
+            // secretly submit animated children as static socket draws;
+            // use Studio's independent MotionWeave Graph owner.
+            for(const auto& child:attachmentSpecs)
+                if(child.enabled && child.animated)
+                    throw std::invalid_argument(
+                        "independent animated child preview requires Studio");
             // Import every real child Model before taking any source read
             // lease: the cache cannot evict/replace under active readers.
             for(const auto& entry:attachmentSpecs) {
@@ -379,7 +391,8 @@ struct Viewer {
                     requested.push_back(Imported::childFromLayout(
                         ::aiverse::view::AttachmentLayoutItem{
                             entry.modelSource,entry.socketName,entry.enabled,
-                            entry.local,entry.childWorld,entry.id},
+                            entry.local,entry.childWorld,entry.id,
+                            entry.animated,entry.animationGraph},
                         children.at(entry.modelSource)));
                 }
                 Imported::Compiled compiled;
