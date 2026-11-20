@@ -11,6 +11,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace aiverse;
@@ -58,8 +59,13 @@ Result run(int side,int warmIterations) {
     const std::array<mat4,1> pose{{mat4{}}};
     const FaceFrame face{};
     const float3 dir{0,0,-1};
-    // Stay clear of grid cell corners, which introduce triangle tie cases.
-    const float3 origin{0.5051f,0.5149f,2.f};
+    // Choose an existing checkerboard cell for every grid dimension.
+    // A constant XY position can hit a checkerboard hole or an edge.
+    int cx=(side-1)/2,cy=(side-1)/2;
+    if((cx+cy)&1)--cx;
+    const float3 origin{
+        (float(cx)+0.25f)/float(side-1),
+        (float(cy)+0.25f)/float(side-1),2.f};
     DeformedSculptWorkspace workspace;
     Result result;
     result.vertices=vertexCount;
@@ -84,11 +90,10 @@ Result run(int side,int warmIterations) {
     const auto reference=pickDeformedSculptVertex(
         model,0,pose,morphs,binding,face,origin,dir,vertexCount);
     result.referenceMs=milliseconds(refStart,Clock::now());
-    result.parity=first.hit==reference.hit && last.hit==reference.hit &&
-                  (!reference.hit ||
-                   (first.vertex==reference.vertex &&
-                    last.vertex==reference.vertex &&
-                    std::fabs(last.rayDistance-reference.rayDistance)<1.e-5f));
+    result.parity=first.hit && reference.hit && last.hit &&
+                  first.vertex==reference.vertex &&
+                  last.vertex==reference.vertex &&
+                  std::fabs(last.rayDistance-reference.rayDistance)<1.e-5f;
     result.checks=workspace.stats().testedTriangles;
     result.boxes=workspace.stats().visitedNodes;
     return result;
