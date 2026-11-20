@@ -240,7 +240,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 12; ++i) {
         if (pipes_[i].valid()) dev.destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev.destroyShader(shaders_[i]);
         pipes_[i] = {}; shaders_[i] = {}; shaderFailed_[i] = false;
@@ -835,21 +835,24 @@ int TerrainRenderer::tierFor(const Renderer3D& r) const {
     return std::min(tier(r.materialQuality()), deviceTier);
 }
 
-gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
+gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi) {
     const int dbase = variant >= 3 ? 3 : 0;
     for (int tier = variant - dbase; tier >= 0; --tier) {
-        const int slot = dbase + tier;
+        const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
         const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) +
             "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) +
+            (dynamicGi ? "\n#define DYNAMIC_GI 1\n#define DYNAMIC_GI_TERRAIN 1" : "") +
             "\n#define TERRAIN_GL_NORMAL_ATLAS " +
             std::to_string(layerNormalAtlas_.valid() && dev.info().backend ==
                            gfx::Backend::GL33 ? 1 : 0) + "\n";
         const std::string vs = def + shaders::kTerrainVS, fs = def + shaders::kTerrainFS, msl = def + shaders::kTerrainMSL;
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
-        sd.uniformSlots = 4; sd.textureSlots = 21; sd.label = "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
+        sd.uniformSlots = dynamicGi ? 7 : 4;
+        sd.textureSlots = dynamicGi ? 22 : 21;
+        sd.label = dynamicGi ? "terrain + dynamic GI" : "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
         shaders_[slot] = dev.createShader(sd);
         if (!shaders_[slot].valid()) {
             std::fprintf(stderr, "[terrain] tier %d%s shader: %s\n", tier, dbase ? " detail" : "", dev.lastError().c_str());
@@ -874,9 +877,11 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
     // A Metal backend which compiled the detailed shader retains it.
     if (dbase) {
         std::fprintf(stderr, "[terrain] detail shader unavailable; falling back to non-detail tier %d\n", variant - dbase);
-        return pipeline(dev, variant - dbase);
+        return pipeline(dev, variant - dbase, dynamicGi);
     }
-    return {};
+    // If the optional GI shader cannot compile, keep the original terrain
+    // rather than losing a whole chunk or sampling an unbound tex21.
+    return dynamicGi ? pipeline(dev, variant, false) : gfx::PipelineHandle{};
 }
 
 void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool) {
@@ -928,8 +933,14 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     }
     stats_.geometryBytes = geoBytes_;
     const int tier = tierFor(r);
-    gfx::PipelineHandle pipe = pipeline(dev, tier + (detailOn_ ? 3 : 0));
+    const bool giRequest = r.dynamicGiOverlayEnabled() &&
+        (dev.info().backend==gfx::Backend::Metal ||
+         dev.info().backend==gfx::Backend::Vulkan);
+    gfx::PipelineHandle pipe = pipeline(dev, tier + (detailOn_ ? 3 : 0),giRequest);
     if (!pipe.valid()) return;
+    bool giPipeline=false;
+    for (int i=6;i<12;++i) if (pipes_[i].valid() && pipes_[i]==pipe)
+        giPipeline=true;
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
     u.mode[0] = 0.05f;
@@ -977,11 +988,12 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, pipe, apron](gfx::Device& d) {
+    r.drawCustomOpaque([this, &r, items, u, pipe, apron, giPipeline](gfx::Device& d) {
         d.setPipeline(pipe);
         r.bindLitFrame();
         r.bindTrace(18);
         r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
+        if (giPipeline) (void)r.bindDynamicGiForCustom();
         d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
         for (int i = 0; i < 4; ++i) {
             d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);

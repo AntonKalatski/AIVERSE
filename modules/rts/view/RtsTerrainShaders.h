@@ -27,6 +27,7 @@
 #pragma once
 #include "../../../engine/render/Shaders.h"
 #include "../../../engine/render/BakedShaders.h"
+#include "../../../engine/render/GiDynamicShaders.h"
 
 namespace aiverse::game::shaders {
 
@@ -84,6 +85,11 @@ void main() {
 inline const char* kTerrainFS =
     AIVERSE_TERRAIN_GLSL_U0 AIVERSE_GLSL_FRAME AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS AIVERSE_GLSL_TRACE_AT("tex18")
     AIVERSE_GLSL_BAKED_TERRAIN("U3", "tex19", "tex20")
+    // The built-in terrain owns tex13 (cliff albedo). Remap the shared L1
+    // GI sampler to tex21 only for this explicit Metal/Vulkan permutation.
+    "#if defined(DYNAMIC_GI_TERRAIN)\n#define tex13 tex21\n#endif\n"
+    AIVERSE_GLSL_DYNAMIC_GI
+    "#if defined(DYNAMIC_GI_TERRAIN)\n#undef tex13\n#endif\n"
     R"(
 uniform sampler2D tex4;
 uniform sampler2D tex5;
@@ -313,6 +319,9 @@ void main() {
     float spec = pow(max(dot(n, H), 0.0), 40.0) * t_mode.x;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
+#if defined(DYNAMIC_GI_TERRAIN)
+    col += base * dynamicGiAt(v_wpos,n);
+#endif
     col += base * dynamicLight(v_wpos, n, V, t_mode.x);
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
@@ -340,7 +349,7 @@ void main() {
 inline const char* kTerrainMSL =
     "#include <metal_stdlib>\nusing namespace metal;\n"
     "struct TU0 { float4 lod; float4 mode; float4 scale; float4 cliff; float4 fog; float4 tint[4]; float4 cliffTint; float4 fogColor; float4 fogGrid; float4 detail; float4 rock; float4 blend; };\n"
-    AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_BAKED_TERRAIN
+    AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_BAKED_TERRAIN AIVERSE_MSL_DYNAMIC_GI
     R"(
 
 #if TERRAIN_TIER >= 1
@@ -432,6 +441,9 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #endif
                         , texture2d<float> tex18 [[texture(18)]]
                         , constant BakedTerrainU& bt [[buffer(4)]], texture2d<float> tex19 [[texture(19)]], texture2d<float> tex20 [[texture(20)]]
+#if defined(DYNAMIC_GI_TERRAIN)
+                        , constant GiDynamicU& dgi [[buffer(7)]], texture2d<float> tex21 [[texture(21)]]
+#endif
                         ) {
 #if TERRAIN_DETAIL
     // Metal has sampler slots 0..15 per stage: the detail textures use constant samplers
@@ -567,6 +579,9 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u.mode.x;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
+#if defined(DYNAMIC_GI_TERRAIN)
+    col += base * dynamicGiAt(tex21,dgi,in.wpos,n);
+#endif
     col += base * dynamicLight(l, tex1, s1, in.wpos, n, V, u.mode.x);
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
