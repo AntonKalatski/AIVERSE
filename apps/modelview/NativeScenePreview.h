@@ -8,6 +8,7 @@
 #include "engine/sim/SceneHierarchy.h"
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,6 +66,8 @@ private:
     render::RenderDeviceLifetime::Lease deviceLease_;
     std::string root_;
     std::string firstScene_;
+    std::set<std::string> visualPrefabs_;
+    std::map<std::string,std::string> clipNames_;
     render::FileReader modelReader_;
     scene::SceneLoadCoordinator::ReadAsset sceneReader_;
     ::aiverse::view::MotionWeaveScenePrefabBindings bindings_;
