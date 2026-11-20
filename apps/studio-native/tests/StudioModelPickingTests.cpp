@@ -73,5 +73,21 @@ int main() {
     assert(studioPickModelInstances({
         {"hidden",nullptr,mat4::identity()}
     },origin,direction).id.empty());
+    StudioDocumentProxy fallback;
+    fallback.id="cube";
+    fallback.center={.25f,.25f,2};
+    fallback.half={.5f,.5f,.5f};
+    fallback.calculateBounds();
+    StudioDocumentProxy hiddenProxy=fallback;
+    hiddenProxy.id="front";
+    hiddenProxy.center.z=4;
+    hiddenProxy.calculateBounds();
+    const std::vector<StudioModelPickInstance> instances{
+        {"front",&front,mat4::translate({0,0,-1})}
+    };
+    // The frontmost visible fallback cube wins over a farther model triangle.
+    assert(studioPickSceneSurfaces(instances,{fallback,hiddenProxy},origin,direction)=="cube");
+    // A proxy replaced by a real rendered model must NOT steal the selection.
+    assert(studioPickSceneSurfaces(instances,{hiddenProxy},origin,direction)=="front");
     std::cout<<"PASS studio CPU model triangle picking\n";
 }
