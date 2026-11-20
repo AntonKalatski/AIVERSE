@@ -21,7 +21,13 @@ for item in catalog['materials']:
  assert maps['roughness'].min()>=127 and maps['ao'].min()>=183,name
  if name!='checkerboard':
   for kind in ('basecolor','height'):
-   a=maps[kind];assert np.array_equal(a[0],a[-1]) and np.array_equal(a[:,0],a[:,-1]),(name,kind)
+   a=maps[kind].astype(float)
+   # Repeat joins adjacent texel centres, not duplicate endpoints. A forced
+   # equal row creates a narrow band; wrap gradients must match interior detail.
+   for axis in (0,1):
+    step=np.abs(np.diff(a,axis=axis)).mean()
+    wrap=np.abs(np.take(a,0,axis=axis)-np.take(a,-1,axis=axis)).mean()
+    assert wrap<=step*1.6+1,(name,kind,axis,wrap,step)
  m=library['terrain_'+name];assert m['metallic']==0 and not m['vertexColors']
  for k in ('texture','normalMap','metallicRoughnessMap','occlusionMap'):assert (ROOT/'engine/assets'/m[k]).is_file(),m[k]
 # Distant repeats must not expose broad directional source illumination.

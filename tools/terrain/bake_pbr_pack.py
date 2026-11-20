@@ -21,9 +21,14 @@ def tile(a):
     if a.ndim==3:den=den[...,None]
     f=np.fft.fft2(v,axes=(0,1))/den;f[0,0]=0
     p=a-np.fft.ifft2(f,axes=(0,1)).real
-    # Match the actual endpoint texels too, before periodic derivative baking.
-    edge=(p[0]+p[-1])/2;p[0]=edge;p[-1]=edge
-    edge=(p[:,0]+p[:,-1])/2;p[:,0]=edge;p[:,-1]=edge
+    # A single matched endpoint row leaves a visible narrow seam in mips.
+    # Blend overlapping half-period copies with zero weight at each copy's
+    # boundary. Both value and slope cross the wrap smoothly over a broad area.
+    for axis in (0,1):
+        n=p.shape[axis]
+        weight=np.sin(np.pi*(np.arange(n)+.5)/n)**2
+        shape=[1]*p.ndim;shape[axis]=n;weight=weight.reshape(shape)
+        p=p*weight+np.roll(p,n//2,axis=axis)*(1-weight)
     return np.clip(p,0,1)
 
 def blur_periodic(a,r):
