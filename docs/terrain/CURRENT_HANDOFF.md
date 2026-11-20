@@ -1,5 +1,20 @@
 # TerraWeave — current agent handoff entry point
 
+> **SpectraFX main two-parent merge + Stage70 live weather/water QA (2026-11-20):**
+> Two-parent merge `40ed8606` incorporates new main
+> `b80601eb` (SpectraFX and related concurrent changes) while
+> preserving all Stage70 files. Only CMake overlapped; its two
+> disjoint Terra inserts were composed with all main SpectraFX
+> registrations. GitHub compare confirmed `behind=0`.
+> Live PHYSIS+NEREID 4m nutrient COW/rollback test source
+> `5ccba305` is now integrated into the merged tree.
+> [Full handoff](qa-2026-11-20-stage70-spectrafx-main-merge-live-nutrients-handoff.md).
+> **IMPORTANT: NEW MERGE AND TEST HAVE NOT BEEN COMPILED/TESTED.**
+> Previous 181/181 Mac PASS was on premerge `f55d8d4e`.
+> Run focused `physis_terraweave_fall_bridge` then new full CTest.
+>
+
+
 
 > **Stage70 live NEREID/PHYSIS nutrient test — 2026-11-20:**
 > C++ source `2a7c5b66` and lifetime/soil comparison correction
