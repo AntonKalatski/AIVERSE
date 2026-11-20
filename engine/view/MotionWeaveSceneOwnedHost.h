@@ -188,6 +188,16 @@ public:
         return retirement_.completeForShutdown(device);
     }
 
+    // Short-lived view of the real GPU resource owner for a committed
+    // scene. Never retain across stage/commit/unload/rollback or GPU epoch
+    // changes. The native host uses it only at a presentation frame barrier.
+    const render::ModelResourceCache* liveResources(
+            uint64_t sceneId) const noexcept {
+        const auto it=slots_.find(sceneId);
+        return it!=slots_.end() && it->second.live &&
+               visuals_.contains(sceneId)
+            ?&it->second.live->resources():nullptr;
+    }
     Publisher& visuals() noexcept{return visuals_;}
     const Publisher& visuals() const noexcept{return visuals_;}
     bool contains(uint64_t sceneId) const noexcept {
