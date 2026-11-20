@@ -1095,13 +1095,27 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             } else {
                 it.world = cache?cache->transforms[size_t(n)]:d.world * world[size_t(n)];
             }
-            if (p.morphTargets > 0 && m->morphTex.valid()) {
-                const float* w = usePose ? (*d.pose)[size_t(n)].w : node.weights;
-                bool any = false;
-                for (int k = 0; k < p.morphTargets; ++k) any |= w[k] != 0;
-                if (any) {
-                    it.morph = int32_t(morphData_.size());
-                    morphData_.insert(morphData_.end(), w, w + kMaxMorphTargets);
+            if (p.morphTargets > 0 &&
+                p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
+                const float* weights = usePose ? (*d.pose)[size_t(n)].w : node.weights;
+                bool valid=true;
+                int active=0;
+                for(int ch=0;ch<p.morphTargets;++ch) {
+                    if(!std::isfinite(weights[ch])){valid=false;break;}
+                    active += weights[ch]!=0.f;
+                }
+                if(valid && active>0) {
+                    it.morph=int32_t(morphData_.size());
+                    const size_t offset=morphData_.size();
+                    morphData_.resize(offset+2u*size_t(kMaxMorphTargets)+1u,0.f);
+                    int slot=0;
+                    for(int ch=0;ch<p.morphTargets;++ch) {
+                        if(weights[ch]==0.f)continue;
+                        morphData_[offset+size_t(slot)]=weights[ch];
+                        morphData_[offset+size_t(kMaxMorphTargets)+size_t(slot)]=float(ch);
+                        ++slot;
+                    }
+                    morphData_[offset+2u*size_t(kMaxMorphTargets)]=float(slot);
                 }
             }
             float3 wc = it.world.transformPoint((p.boundsMin + p.boundsMax) * 0.5f);
@@ -1348,11 +1362,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(3, pal, sizeof pal);
     }
     if (it.morph >= 0) {
-        float mo[16] = {};
-        std::memcpy(mo, morphData_.data() + it.morph, 8 * sizeof(float));
-        mo[8] = float(it.prim->morphTexel); mo[9] = float(it.prim->firstVertex); mo[10] = float(it.prim->vertexCount); mo[11] = float(it.prim->morphTargets);
-        mo[12] = float(it.model->morphTexWidth);
-        dev_->setUniforms(4, mo, sizeof mo);
+        static_assert(kMaxMorphTargets==64, "ModelShaders.h U4 must match native sparse morph layout");
+        constexpr size_t slots=size_t(kMaxMorphTargets);
+        float mo[2*kMaxMorphTargets+8] = {};
+        std::memcpy(mo,morphData_.data()+it.morph,2u*slots*sizeof(float));
+        mo[2*slots+0]=float(it.prim->morphTexel);
+        mo[2*slots+1]=float(it.prim->firstVertex);
+        mo[2*slots+2]=float(it.prim->vertexCount);
+        mo[2*slots+3]=float(it.prim->morphTargets);
+        mo[2*slots+4]=float(it.model->morphTexWidth);
+        mo[2*slots+5]=morphData_[size_t(it.morph)+2*slots];
+        dev_->setUniforms(4,mo,sizeof mo);
     }
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);

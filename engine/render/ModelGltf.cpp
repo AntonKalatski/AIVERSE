@@ -412,7 +412,9 @@ private:
                 parentOf_[ci] = int(i);
             }
             if (const Json& w = j["weights"]; w.size() > 0) {
-                for (size_t k = 0; k < std::min<size_t>(w.size(), kMaxMorphTargets); ++k) n.weights[k] = float(num(w[k], 0));
+                if(w.size()>size_t(kMaxMorphTargets))
+                    fail("node '"+n.name+"': morph weights exceed 64-channel limit");
+                for(size_t k=0;k<w.size();++k)n.weights[k]=float(num(w[k],0));
                 nodeWeights_.insert(int(i));
             }
             if (j.has("camera")) warn("node '" + n.name + "': cameras are ignored");
@@ -479,8 +481,31 @@ private:
             MeshDef md;
             md.name = jm.getStr("name", "mesh" + std::to_string(mi));
             const auto& prims = jm["primitives"].items();
-            for (size_t pi = 0; pi < prims.size(); ++pi) loadPrimitive(prims[pi], md, skinOfMesh.count(int(mi)) > 0);
-            for (const auto& w : jm["weights"].items()) md.weights.push_back(float(num(w, 0)));
+            // Semantic names are optional in glTF but REQUIRED when a native
+            // FacialControlRig resolves expressions. Never fabricate ARKit
+            // channel IDs from ordinal slots.
+            const Json& names=jm["extras"]["targetNames"];
+            if(!names.isNull()) {
+                if(!names.isArray())fail("morph targetNames must be an array");
+                std::set<std::string> seen;
+                for(const auto& name:names.items()) {
+                    if(!name.isString() || name.str().empty() ||
+                       !seen.insert(name.str()).second)
+                        fail("invalid/duplicate mesh morph targetNames");
+                    md.morphTargetNames.push_back(name.str());
+                }
+                if(md.morphTargetNames.size()>size_t(kMaxMorphTargets))
+                    fail("named morph targets exceed 64");
+                for(const auto& prim:prims)
+                    if(prim["targets"].size()!=md.morphTargetNames.size())
+                        fail("morph targetNames count differs from primitive");
+            }
+            for (size_t pi = 0; pi < prims.size(); ++pi)
+                loadPrimitive(prims[pi],md,skinOfMesh.count(int(mi))>0);
+            if(jm["weights"].size()>size_t(kMaxMorphTargets))
+                fail("mesh morph weights exceed 64");
+            for (const auto& w : jm["weights"].items())
+                md.weights.push_back(float(num(w, 0)));
             float previousPixels = 1e30f;
             for (const auto& level : jm["extras"]["rtsLods"].items()) {
                 if (!level["mesh"].isNumber() || !level["maxPixels"].isNumber()) fail("LOD requires mesh and maxPixels numbers");
@@ -570,8 +595,9 @@ private:
         std::vector<float> morph;
         int nt = 0;
         if (const Json& tg = p["targets"]; tg.size() > 0) {
-            nt = int(std::min<size_t>(tg.size(), kMaxMorphTargets));
-            if (tg.size() > size_t(kMaxMorphTargets)) warn(where + ": only the first 8 morph targets are used");
+            if(tg.size()>size_t(kMaxMorphTargets))
+                fail(where+": more than 64 morph targets are unsupported");
+            nt = int(tg.size());
             morph.assign(size_t(nt) * n * 6, 0.0f);
             for (int t = 0; t < nt; ++t) {
                 const Json& tj = tg[size_t(t)];

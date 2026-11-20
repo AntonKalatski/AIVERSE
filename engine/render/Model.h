@@ -98,7 +98,9 @@ struct ModelVertex {
 static_assert(sizeof(ModelVertex) == 60, "ModelVertex layout is shared with the shaders");
 
 constexpr int kMaxPaletteJoints = 80;  // joint matrices per draw (3 x vec4 each, fits a 4 KB uniform block)
-constexpr int kMaxMorphTargets = 8;    // morph targets applied on the GPU per primitive
+// Studio/MotionWeave 64-channel facial capacity. CPU and GLSL/MSL U4
+// packing MUST be updated together; 52 ARKit + 12 spare channels.
+constexpr int kMaxMorphTargets = 64;
 
 struct Primitive {
     uint32_t firstIndex = 0, indexCount = 0;
@@ -127,6 +129,9 @@ struct MeshDef {
     std::string name;
     std::vector<Primitive> primitives;
     std::vector<float> weights;          // default morph weights
+    // Exact, ordered, importer-authored mesh-local semantic channels.
+    // Empty means unknown: never treat target slot indices as ARKit names.
+    std::vector<std::string> morphTargetNames;
     std::vector<ModelLod> lods;          // coarse alternatives, descending maximum projected diameter
     // One index range covering the shadowBatched primitives (contiguous, opaque, same culling):
     // drawn once in shadow passes instead of each part. Not part of `primitives`. indexCount 0 = none.
