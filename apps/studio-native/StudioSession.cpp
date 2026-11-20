@@ -162,7 +162,8 @@ void StudioSession::failFacialPreview(const std::string& reason) noexcept {
     facialPreview_.active=false;
     facialPreview_.gpuReady=false;
     ++facialPreview_.generation;
-    facialPreviewError_=reason;
+    try{facialPreviewError_=reason;}
+    catch(...){facialPreviewError_.clear();}
 }
 void StudioSession::markFacialPreviewReady(uint64_t generation) noexcept {
     if(facialPreview_.active && facialPreview_.generation==generation)
