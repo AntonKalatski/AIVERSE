@@ -3315,6 +3315,16 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     # Sparse editor terrain is genre independent: click-to-create, shared
     # height borders, camera-dependent visual LOD and flat 4-vertex quad.
     # Colliders remain based on the normal fixed-resolution TerrainPatch.
+    if(TARGET aiverse_editor_core)
+        add_executable(aiverse_terraweave_sparse_editor_test
+            tests/terraweave_sparse_editor_test.cpp)
+        target_link_libraries(aiverse_terraweave_sparse_editor_test PRIVATE
+            aiverse_editor_core)
+        add_test(NAME terraweave_sparse_editor
+            COMMAND aiverse_terraweave_sparse_editor_test)
+        set_tests_properties(terraweave_sparse_editor PROPERTIES
+            LABELS "TERRAWEAVE;EDITOR")
+    endif()
     add_executable(aiverse_terraweave_sparse_authoring_lod_test
         tests/terraweave_sparse_authoring_lod_test.cpp)
     target_link_libraries(aiverse_terraweave_sparse_authoring_lod_test PRIVATE
