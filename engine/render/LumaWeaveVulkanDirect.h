@@ -1,7 +1,7 @@
 // Explicit, opt-in Vulkan DIRECT point/spot GPU owner. It does not modify
 // Renderer3D/LightSystem, write ECS state or compose bounced GI/baked lighting.
-// Provides a bounded per-receiver reference first; screen-space/GGX/denoise
-// require a separate material-aware native presentation integration.
+// Provides a bounded explicit-receiver path and opt-in PBR screen-space
+// direct with spatial/temporal denoising through VulkanPostProcess.
 // Requires the four-SSBO/one RGBA16F Vulkan compute RHI and a real fence serial.
 // NEVER treat dispatch/endFrame as GPU completion.
 #pragma once
