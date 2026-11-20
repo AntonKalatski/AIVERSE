@@ -4,6 +4,7 @@
 // authoring tool; never mutates the game ECS or source Model.
 #pragma once
 #include "SkinnedWeightPick.h"
+#include "SkinSeamSplit.h"
 #include "FaceShapeBinding.h"
 #include <cmath>
 #include <limits>
@@ -11,6 +12,33 @@
 #include <vector>
 
 namespace aiverse::vivid {
+// Build once per successful imported-model candidate publication. Generated
+// LOD vertices remain unselectable; only seam-split clones map back to an
+// original authorable vertex. Reject invalid/duplicated clone destinations
+// without modifying the currently published mapping.
+inline bool buildSculptSourceVertexMap(
+        std::size_t modelVertices,std::size_t sourceVertices,
+        std::span<const SkinSeamSplit::Clone> clones,
+        std::vector<std::uint32_t>& output) {
+    if(!sourceVertices || sourceVertices>modelVertices ||
+       modelVertices>1000000u ||
+       sourceVertices>std::numeric_limits<std::uint32_t>::max())
+        return false;
+    std::vector<std::uint32_t> mapped(
+        modelVertices,std::numeric_limits<std::uint32_t>::max());
+    for(std::size_t i=0;i<sourceVertices;++i)
+        mapped[i]=static_cast<std::uint32_t>(i);
+    for(const auto& clone:clones) {
+        if(clone.source>=sourceVertices || clone.target<sourceVertices ||
+           clone.target>=modelVertices ||
+           mapped[clone.target]!=std::numeric_limits<std::uint32_t>::max())
+            return false;
+        mapped[clone.target]=clone.source;
+    }
+    output=std::move(mapped);
+    return true;
+}
+
 
 // Returns false without changing output on any invalid library/link, weight
 // or nonfinite bind-space result. The GPU's active published morph library
@@ -65,7 +93,8 @@ inline SculptPick pickDeformedSculptVertex(
         const FaceFrame& face,
         render::float3 origin,
         render::float3 direction,
-        std::size_t sourceVertexCount) {
+        std::size_t sourceVertexCount,
+        std::span<const std::uint32_t> sourceVertexIds={}) {
     SculptPick none;
     if(sourceVertexCount==0 || sourceVertexCount>model.vertices.size() ||
        binding.targets()!=morphs.targets())return none;
@@ -78,7 +107,7 @@ inline SculptPick pickDeformedSculptVertex(
     if(!prepareSkinnedWeightSurface(model,meshId,nodeWorld,
                                     surface,deformedBind))return none;
     return pickSkinnedWeightVertex(model,surface,origin,direction,
-                                   sourceVertexCount);
+                                   sourceVertexCount,sourceVertexIds);
 }
 
 } // namespace aiverse::vivid
