@@ -54,3 +54,11 @@ Code `62b295196a0e5c600bdf59cf3a781b391c169d8f`, same integration branch: tests/
 ## 2026-11-20 — pending Vulkan readback lifetime
 
 Code `3b212557766e7afd37234feb02d60aa57085fd71`: avoid self-move of PendingComputeRead when no completed entries precede a still-pending read. A self-moved std::function need not preserve its callback; retain unchanged entries in place. Resource ownership, serial completion and public API unchanged. Existing/new Vulkan parity fixtures require actual callback delivery after repeated frames; runtime GPU check pending CI, native compilation underway on KINGSTON. Next step unchanged: full integration acceptance and Linux Vulkan CI.
+
+## 2026-11-20 — indexed VT follow-up from concurrent main
+
+Merge `e077940b85a6b09b6b8e01d16048c9ce90bdf062` includes main `d19180bc6c9ef9d79dce646d7c006854ee928663` (PR #96), conflict-free. Changes: Renderer3D rejects indexed VT before legacy ICB admission; strengthened bilinear and indexed-fallback GPU oracles; eight Texture GPU CTests are serial. No new production default/API/save changes. Read indexed-admission handoff first.
+
+Before this merge, source d52dbd0c0: full Debug build with Vulkan backend PASS with no warnings; 6 STRATA Metal + batching unit/CPU MDI/static packets/GPU ICB + 7 Texture Metal tests = 17/17 PASS, actual pixel/ICB execution markers inspected. Reflection PNG visually inspected. Evidence `gpu-final/`, `final-build.log` on KINGSTON. Full CTest currently 308/309 PASS; only aiverse_tests still running against the pre-merge binary (do not claim final completion yet). Local strata_vulkan_kernel compiles GLSL but GPU runtime SKIP: loader not found. Linux CI ARM64 compiling; focused Vulkan queued.
+
+Next: rebuild affected Renderer3D/GPU binaries on KINGSTON and rerun 6 STRATA + 4 batching + 8 Texture cases, collect pending full regression and CI, then final integration handoff. Do not confuse the pending old-binary CTest run with this delta validation.
