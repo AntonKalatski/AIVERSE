@@ -169,6 +169,9 @@ void completePendingBatch() {
     GpuActorRetirementQueue retirement(dev);
     auto a=createActor(dev,fixture),b=createActor(dev,fixture);
     require(dev.buffers.size()==16,"two actors did not own independent buffers");
+    FaceFrame beforeFrame{};
+    require(!a->dispatch(beforeFrame,fixture.mapping),
+            "actor dispatch before the first frame must fail");
     dev.beginFrame(16,16);
     FaceFrame face{};face.values[static_cast<size_t>(Channel::JawOpen)]=0.5f;
     require(a->dispatch(face,fixture.mapping),"actor A dispatch");

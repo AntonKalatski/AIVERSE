@@ -27,7 +27,7 @@ void contract() {
     reject([] {
         HumanImportManifest m;
         m.modelPath="head.obj";
-        m.scalpColliderMesh="head\\nproxy";
+        m.scalpColliderMesh="head\nproxy";
         m.validate();
     });
 

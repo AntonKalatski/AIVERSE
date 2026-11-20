@@ -32,9 +32,10 @@ bool GpuActorStream::initializeShared(gfx::Device& device,
     }
     error_.clear();
     if(!asset || !asset->ready() || asset->device()!=&device ||
-       !device.supportsCompute() || !device.gpuHealthy() ||
-       !device.frameSerial()) {
-        error_="VIVID actor: shared GPU asset missing or compute/frame serial unavailable";
+       !device.supportsCompute() || !device.gpuHealthy()) {
+        // Buffers can be prepared before the first frame. A nonzero serial
+        // is required by dispatch(), not by resource initialization.
+        error_="VIVID actor: shared GPU asset missing or compute unavailable";
         return false;
     }
     if(asset->vertexCount()==0 ||

@@ -51,10 +51,13 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     req.width=req.height=64;
     req.x=x;req.y=y;
     const auto viewProj=render::mat4::identity();
-    require(pass.record(model,surface,model.vertices.size(),{},
+    const bool recorded=pass.record(model,surface,model.vertices.size(),{},
                         viewProj,req,occluders,masks,gpuSource,
-                        actualDepth!=nullptr,actualMaskOccluder,extraMasks),
-            "VIVID Metal offscreen ID pass could not record");
+                        actualDepth!=nullptr,actualMaskOccluder,extraMasks);
+    if(!recorded)throw std::runtime_error(
+        "VIVID Metal offscreen ID pass could not record frame="+
+        std::to_string(req.frameSerial)+" gpuSource="+
+        std::to_string(gpuSource!=nullptr)+" error="+device.lastError());
     device.endFrame();
     SculptGpuIdPass::Completed completed;
     for(int attempt=0;attempt<60;++attempt) {

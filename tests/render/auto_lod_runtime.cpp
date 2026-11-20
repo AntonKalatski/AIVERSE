@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
 #include <vector>
 
 using namespace aiverse::render;
@@ -213,7 +214,10 @@ int main() {
           "anonymous morph channels must not get guessed LOD mapping");
     auto badLayout=makeMorphFace();
     badLayout.meshes[0].primitives[0].morphDeltas.pop_back();
-    generateMissingModelLods(badLayout);
+    bool rejectedMalformed=false;
+    try { generateMissingModelLods(badLayout); }
+    catch(const std::runtime_error&) { rejectedMalformed=true; }
+    check(rejectedMalformed,"malformed morph envelope must be rejected");
     check(badLayout.meshes[0].lods.empty(),
           "malformed morph data must not enter simplifier");
     std::puts("auto LOD regression: rigid/morph channels, aliases, envelopes, indices and opt-outs passed");

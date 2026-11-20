@@ -19,7 +19,9 @@ class ContentProjectLayoutTests(unittest.TestCase):
     def test_existing_project_opens_ensure_directory_in_studio(self):
         source=(ROOT/"apps/studio-native/StudioSession.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(source.count('studioContentRoot(ws_.project.dir)'),2)
-        self.assertIn('studioContentFiles(ws_.project.dir)',source)
+        self.assertIn('StudioAssetCatalog catalog(ws_.project.dir)',source)
+        self.assertIn('catalog.rebuild()',source)
+        self.assertIn('catalog.all()',source)
         self.assertNotIn('ws_.call("asset_list", Json::object()',source)
 
     def test_content_is_not_a_new_project_manifest_schema(self):

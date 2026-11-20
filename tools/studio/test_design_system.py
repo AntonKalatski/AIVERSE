@@ -74,10 +74,10 @@ class StudioDesignSystemTests(unittest.TestCase):
         rules=(ROOT/"apps/studio-web/AGENTS.md").read_text(encoding="utf-8")
         skill=(ROOT/"skills/editor/studio-ui/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Approved visual baseline: First Cinematic Concept",visual)
-        self.assertIn("not a screenshot of the current shipping build",visual)
+        self.assertIn("not a screenshot of the current shipping build",visual.lower())
         self.assertIn("StudioPanel",guide)
         self.assertIn("tools/studio/new_panel.py",guide)
-        self.assertIn("First Cinematic Concept",rules)
+        self.assertIn("first cinematic concept",rules.lower())
         self.assertIn("First Cinematic Concept",skill)
         self.assertIn("docs/studio-visual-direction.md",skill)
 

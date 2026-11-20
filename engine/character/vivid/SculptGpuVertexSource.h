@@ -343,7 +343,7 @@ inline bool sculptGpuMaskSourceSetValid(
 inline constexpr const char* kSculptGpuSourceExpandMSL=R"MSL(
 #include <metal_stdlib>
 using namespace metal;
-struct Input { uint vertex; uint triangleId; };
+struct Input { uint vertexIndex; uint triangleId; };
 struct Skin { uint4 joints; float4 weights; };
 struct SkinRows { float4 row0, row1, row2; };
 struct Output { packed_float3 world; uchar4 rgba; };
@@ -357,17 +357,17 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     device const SkinRows* joints [[buffer(3)]],
                     device Output* output [[buffer(4)]],
                     constant Params& params [[buffer(8)]],
-                    uint thread [[thread_position_in_grid]]) {
-    if(thread>=params.count)return;
-    const Input request=triangles[thread];
-    if(request.vertex>=params.vertices)return;
-    const uint offset=request.vertex*15u;
+                    uint threadIndex [[thread_position_in_grid]]) {
+    if(threadIndex>=params.count)return;
+    const Input request=triangles[threadIndex];
+    if(request.vertexIndex>=params.vertices)return;
+    const uint offset=request.vertexIndex*15u;
     const float4 bind=float4(as_type<float>(source[offset]),
                              as_type<float>(source[offset+1u]),
                              as_type<float>(source[offset+2u]),1.0);
     float4 world;
     if(params.skinned!=0u) {
-        const Skin influence=influences[request.vertex];
+        const Skin influence=influences[request.vertexIndex];
         const float4 weights=influence.weights /
             max(dot(influence.weights,float4(1.0)),1.0e-5);
         float4 r0=float4(0.0),r1=float4(0.0),r2=float4(0.0);
@@ -388,8 +388,8 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
         world=params.rigidWorld*bind;
     }
     const uint id=request.triangleId;
-    output[thread].world=packed_float3(world.xyz);
-    output[thread].rgba=uchar4(uchar(id&255u),
+    output[threadIndex].world=packed_float3(world.xyz);
+    output[threadIndex].rgba=uchar4(uchar(id&255u),
                                uchar((id>>8u)&255u),
                                uchar((id>>16u)&255u),
                                uchar((id>>24u)&255u));
@@ -402,7 +402,7 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
 inline constexpr const char* kSculptGpuSourceMaskExpandMSL=R"MSL(
 #include <metal_stdlib>
 using namespace metal;
-struct Input { uint vertex; uint triangleId; };
+struct Input { uint vertexIndex; uint triangleId; };
 struct Skin { uint4 joints; float4 weights; };
 struct SkinRows { float4 row0, row1, row2; };
 struct MaskInput { float4 uvAlpha; };
@@ -418,17 +418,17 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     device Output* output [[buffer(4)]],
                     device const MaskInput* masks [[buffer(5)]],
                     constant Params& params [[buffer(8)]],
-                    uint thread [[thread_position_in_grid]]) {
-    if(thread>=params.count)return;
-    const Input request=triangles[thread];
-    if(request.vertex>=params.vertices)return;
-    const uint offset=request.vertex*15u;
+                    uint threadIndex [[thread_position_in_grid]]) {
+    if(threadIndex>=params.count)return;
+    const Input request=triangles[threadIndex];
+    if(request.vertexIndex>=params.vertices)return;
+    const uint offset=request.vertexIndex*15u;
     const float4 bind=float4(as_type<float>(source[offset]),
                              as_type<float>(source[offset+1u]),
                              as_type<float>(source[offset+2u]),1.0);
     float4 world;
     if(params.skinned!=0u) {
-        const Skin influence=influences[request.vertex];
+        const Skin influence=influences[request.vertexIndex];
         const float4 weights=influence.weights /
             max(dot(influence.weights,float4(1.0)),1.0e-5);
         float4 r0=float4(0.0),r1=float4(0.0),r2=float4(0.0);
@@ -449,12 +449,12 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
         world=params.rigidWorld*bind;
     }
     const uint id=request.triangleId;
-    output[thread].world=packed_float3(world.xyz);
-    output[thread].rgba=uchar4(uchar(id&255u),
+    output[threadIndex].world=packed_float3(world.xyz);
+    output[threadIndex].rgba=uchar4(uchar(id&255u),
                                uchar((id>>8u)&255u),
                                uchar((id>>16u)&255u),
                                uchar((id>>24u)&255u));
-    output[thread].uvAlpha=masks[request.vertex].uvAlpha;
+    output[threadIndex].uvAlpha=masks[request.vertexIndex].uvAlpha;
 }
 )MSL";
 } // namespace aiverse::vivid

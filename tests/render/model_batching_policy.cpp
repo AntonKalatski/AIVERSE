@@ -793,7 +793,7 @@ int main() {
         model.finalize();
         CHECK(model.bindWorld.size() == model.nodes.size());
         CHECK(staticModelCacheCandidate(draw, false));
-        draw.vertexOverride = gfx::BufferHandle{17};
+        draw.vertexOverride = aiverse::gfx::BufferHandle{17};
         draw.vertexOverrideCount = 3;
         CHECK(!staticModelCacheCandidate(draw, false));
         draw.staticPacketRevision = 1;

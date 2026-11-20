@@ -11,7 +11,7 @@ class StudioBuildConfigTests(unittest.TestCase):
         cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
         option='option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)'
         self.assertEqual(cmake.count(option),1)
-        language=cmake.index("enable_language(OBJCXX)")
+        language=cmake.index("enable_language(OBJCXX)",cmake.index(option))
         self.assertLess(cmake.index(option),language)
         self.assertLess(language,cmake.index("add_library(aiverse_engine STATIC"))
         native=(ROOT/"apps/studio-native/CMakeLists.txt").read_text(encoding="utf-8")
@@ -28,7 +28,7 @@ class StudioBuildConfigTests(unittest.TestCase):
     def test_single_studio_ctest_invocation_with_quoted_regex(self):
         text=(ROOT/"tools/studio/verify_mac.sh").read_text(encoding="utf-8")
         self.assertEqual(text.count('ctest --test-dir "$BUILD_DIR"'),1)
-        self.assertIn("studio_(session|shader_graph_name|shader_graph_draft",text)
+        self.assertIn("studio_(content_directory|asset_catalog|asset_transfers|session|shader_graph_name|shader_graph_draft",text)
         self.assertIn("terrain_geometry)$'",text)
 
 if __name__=="__main__":

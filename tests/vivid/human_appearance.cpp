@@ -847,7 +847,7 @@ void test() {
                shallowA.shaderGraph->msl!=shallowB.shaderGraph->msl,
                "skin scatter depth must change GLSL and MSL optical graphs");
         auto irisWide=neutral,irisNarrow=neutral;
-        irisWide.eyes.irisRadius=0.8f;
+        irisWide.eyes.irisRadius=0.75f; // upper bound of the public DNA schema
         irisNarrow.eyes.irisRadius=0.3f;
         const auto irisA=humanMaterial(HumanSurface::Iris,irisWide);
         const auto irisB=humanMaterial(HumanSurface::Iris,irisNarrow);

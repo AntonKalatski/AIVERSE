@@ -42,7 +42,7 @@ def verify_bundle(dist: Path) -> list[str]:
             errors.append(f"Invalid {tag} asset path: {url}")
             continue
         destination=(root/relative).resolve()
-        if not destination.is_relative_to(root) or not destination.is_file():
+        if root not in destination.parents or not destination.is_file():
             errors.append(f"Missing or escaping {tag} asset: {url}")
     return errors
 
