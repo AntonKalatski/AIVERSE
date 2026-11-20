@@ -83,7 +83,7 @@ void StudioMetalScene::syncDocumentModels(
         if (!documentModels_.count(path)) {
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
-            auto read=[project,root](const std::string& name,std::string& out)->bool {
+            auto read=[root](const std::string& name,std::string& out)->bool {
                 if (name.rfind("content/",0)!=0 || name.size()>512) return false;
                 const fs::path rel(name.substr(8));
                 if (rel.empty() || rel.is_absolute()) return false;
@@ -108,7 +108,17 @@ void StudioMetalScene::syncDocumentModels(
                     model->indices.empty()) continue;
                 bool deformable=false;
                 for (const auto& mesh:model->meshes) deformable |= mesh.deformable;
-                if (deformable) continue; // cannot match animated geometry with CPU bind pose
+                // Only bind-pose rigid opaque geometry has exact CPU-to-render
+                // correspondence. Alpha-tested, transparent and LOD-switched
+                // geometry need GPU depth/ID picking and stay proxy-rendered.
+                bool nonOpaque=false,hasLods=false;
+                for(const auto& material:model->materials)
+                    nonOpaque |= material.alpha!=render::AlphaMode::Opaque ||
+                                 material.transparent || material.baseColor.w<.999f;
+                for(const auto& mesh:model->meshes) hasLods |= !mesh.lods.empty();
+                if (deformable || nonOpaque || hasLods ||
+                    model->vertices.size()>1000000 || model->indices.size()>3000000)
+                    continue;
                 model->batching.autoLod=false;
                 model->batching.mergeRigid=false;
                 model->batching.allowGeometryPool=false;
@@ -311,6 +321,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         lastMapWidth_ = map.w;
         lastMapHeight_ = map.h;
     }
+    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    syncDocumentModels(doc,projectPath,rules,proxies);
     device_->beginFrame(framebufferWidth, framebufferHeight);
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
     renderer_.lighting=Lighting{}; // reset when project and lighting settings change
@@ -344,8 +356,6 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     for (int z=0; z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
-    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
-    syncDocumentModels(doc,projectPath,rules,proxies);
     for(const auto& entity:proxies) {
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
