@@ -12506,6 +12506,38 @@ private:
 };
 } // namespace entityfxtest
 
+TEST(view_reload_checks_gpu_idle_before_mutating_overlay_and_fog_state) {
+    struct Device : entityfxtest::RecordingDevice {
+        bool idleAllowed=true;
+        unsigned idleRequests=0;
+        bool waitForResourceIdle() override {
+            ++idleRequests;
+            return idleAllowed;
+        }
+    } dev,foreign;
+    game::Rules rules=skirmishRules();
+    game::RtsView view;
+    const render::FileReader noAssets=[](const std::string&,std::string&){return false;};
+    CHECK(view.init(dev,rules,noAssets));
+    const auto overlaysBefore=view.overlays().set().defs.size();
+    const auto fogModeBefore=view.fogLook().mode;
+    dev.idleAllowed=false;
+    bool refused=false;
+    try {(void)view.init(dev,rules,noAssets);}
+    catch(const std::runtime_error&){refused=true;}
+    CHECK(refused);
+    CHECK(dev.idleRequests>0);
+    CHECK(view.overlays().set().defs.size()==overlaysBefore);
+    CHECK(view.fogLook().mode==fogModeBefore);
+    bool foreignRejected=false;
+    try {(void)view.init(foreign,rules,noAssets);}
+    catch(const std::logic_error&){foreignRejected=true;}
+    CHECK(foreignRejected);
+    CHECK(foreign.idleRequests==0);
+    dev.idleAllowed=true;
+    view.shutdown(dev);
+}
+
 TEST(selection_outline_mask_pipeline_preserves_scene_depth) {
     using namespace entityfxtest;
     RecordingDevice dev;
