@@ -27,10 +27,23 @@ public:
         draft_=Json();
         values_.clear();
         vectors_.clear();
+        gpuReady_=false;
+        gpuError_.clear();
         ++revision_;
     }
     bool bound() const {return !guid_.empty();}
     uint64_t revision() const {return revision_;}
+    const std::string& guid() const noexcept{return guid_;}
+    const std::string& path() const noexcept{return path_;}
+    const Json& document() const noexcept{return draft_;}
+    const std::map<std::string,float>& scalars() const noexcept{return values_;}
+    const std::map<std::string,std::array<float,3>>& vectors() const noexcept{return vectors_;}
+    // Called solely by the native Metal owner after a real render attempt.
+    // Ready != QA-verified pixels; external HTML cannot set this flag.
+    void setGpuStatus(bool ready,const std::string& reason) {
+        gpuReady_=bound() && ready;
+        gpuError_=reason;
+    }
 
     // Use ONLY native catalog GUIDs, not browser-provided file paths.
     // File must still be inside project/content with no symlink segments.
@@ -96,6 +109,8 @@ public:
         draft_=draft;
         values_=std::move(defaults);
         vectors_=std::move(vectors);
+        gpuReady_=false;
+        gpuError_.clear();
         ++revision_;
         return describe();
     }
@@ -156,13 +171,15 @@ public:
             vectors.set(name,std::move(coords));
         }
         result.set("vectors",std::move(vectors));
-        result.set("runtimeReady",Json::fromBool(false));
+        result.set("runtimeReady",Json::fromBool(gpuReady_));
         result.set("runtimeVerified",Json::fromBool(false));
         result.set("rendererChannelCapacity",
                    Json::number(int64_t(render::kMaxMorphTargets)));
-        result.set("reason",Json::string(
-            "Current Studio renderer has "+std::to_string(render::kMaxMorphTargets)+
-            " morph slots; full MotionWeave 64-channel Model/Renderer3D and FacialPreviewSession must be integrated before GPU facial preview"));
+        result.set("reason",Json::string(gpuReady_?
+            "Native Metal Renderer3D submitted a facial frame; pixel/backend QA not run":
+            (gpuError_.empty()?
+            "Model selected; waiting for native 64-channel import and facial GPU frame":
+            gpuError_)));
         return result;
     }
 private:
@@ -171,6 +188,8 @@ private:
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;
+    bool gpuReady_=false;
+    std::string gpuError_;
 };
 
 } // namespace aiverse::studio

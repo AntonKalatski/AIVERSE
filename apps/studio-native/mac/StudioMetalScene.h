@@ -8,6 +8,7 @@
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "apps/studio-native/mac/StudioFacialGpuPreview.h"
 
 namespace aiverse::studio {
 class StudioMetalScene final {
@@ -19,7 +20,11 @@ public:
     void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
-               uint64_t previewRevision, float levelHeight = 1.5f);
+               uint64_t previewRevision, float levelHeight,
+               const std::string& projectRoot,
+               const StudioFacialPreviewBinding& facialBinding);
+    bool facialReady() const noexcept{return facialReady_;}
+    const std::string& facialError() const noexcept{return facialError_;}
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -31,6 +36,9 @@ private:
     render::Mesh cube_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;
+    StudioFacialGpuPreview facialGpu_;
+    bool facialMode_=false,facialReady_=false;
+    std::string facialError_;
     uint64_t materialRevision_ = std::numeric_limits<uint64_t>::max();
     bool materialMode_ = false;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();

@@ -18,6 +18,12 @@ public:
     const std::string& previewMaterialName() const { return previewMaterialName_; }
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
+    const StudioFacialPreviewBinding& facialPreviewBinding() const noexcept {
+        return facialPreview_;
+    }
+    void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
+        facialPreview_.setGpuStatus(rendered,reason);
+    }
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
     Json previewExternalAssets(const std::vector<std::filesystem::path>& files,
                                const std::string& destination); // native picker ONLY

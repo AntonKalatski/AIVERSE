@@ -25,6 +25,7 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
 }
 StudioMetalScene::~StudioMetalScene() {
     if (device_) {
+        (void)facialGpu_.clear(*device_);
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -65,9 +66,60 @@ void StudioMetalScene::zoom(float wheel) {
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
-                             uint64_t previewRevision, float levelHeight) {
+                             uint64_t previewRevision, float levelHeight,
+                             const std::string& projectRoot,
+                             const StudioFacialPreviewBinding& facialBinding) {
+    facialReady_=false;
+    facialError_.clear();
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
+    const bool facialRequested = facialBinding.bound() && !materialRequested;
+    if(facialMode_!=facialRequested) {
+        facialMode_=facialRequested;
+        cameraInitialized_=false;
+    }
+    // A real imported Model is drawn through the SAME Metal Renderer3D used
+    // for native materials and the map; no HTML fake character, no second
+    // Animator/Graph clock. All CPU imports and GPU ownership are owner-thread.
+    if(facialRequested) {
+        std::string reason;
+        if(facialGpu_.sync(*device_,projectRoot,facialBinding,reason)) {
+            if(!cameraInitialized_) {
+                camera_.target={0,0,0};
+                camera_.distance=4.2f;
+                camera_.pitch=.4f;
+                camera_.yaw=.25f;
+                cameraInitialized_=true;
+            }
+            device_->beginFrame(framebufferWidth,framebufferHeight);
+            renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+            renderer_.lighting=render::Lighting{};
+            renderer_.lighting.sunIntensity=1.1f;
+            renderer_.lighting.skyColor={.42f,.5f,.64f};
+            renderer_.lighting.groundColor={.22f,.25f,.3f};
+            renderer_.lighting.fogDensity=0.f;
+            renderer_.lights.add({2.f,3.f,2.f},6.f,{1.f,.9f,.78f},2.4f);
+            const bool submitted=facialGpu_.submit(
+                renderer_,facialBinding,1.f/60.f,reason);
+            gfx::PassDesc pass;
+            pass.clearColor[0]=.038f;
+            pass.clearColor[1]=.064f;
+            pass.clearColor[2]=.098f;
+            pass.clearColor[3]=1.f;
+            renderer_.render(pass);
+            device_->endPass();
+            device_->endFrame();
+            facialReady_=submitted;
+            facialError_=submitted?std::string{}:reason;
+            return;
+        }
+        // Failed bind never displays stale model from a different GUID.
+        // The ordinary map remains visible while a diagnostic is returned.
+        facialError_=reason;
+    }else if(!facialBinding.bound()) {
+        if(!facialGpu_.clear(*device_))
+            facialError_="Previous facial Model retirement lacks GPU completion";
+    }
     if (materialRevision_ != previewRevision) {
         materialRevision_ = previewRevision;
         if (materialRequested) {
