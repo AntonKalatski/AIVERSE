@@ -37,13 +37,23 @@ public:
     bool zeroPadding() const override { return true; }
     ImGuiWindowFlags flags() const override { return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse; }
 
+    void update(Editor& ed, double) override {
+        // Hidden dock tab / closed Scene window: release its framebuffer
+        // without waiting for destruction. Retired handles survive until
+        // ImGui and the GPU finish reading them.
+        if ((!open || vp_.drawnFrame < ImGui::GetFrameCount()-1) &&
+            vp_.color.valid())
+            vp_.release(ed.device());
+    }
     void draw(Editor& ed) override {
         const bool traceScene = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
         const auto sceneStart = std::chrono::steady_clock::now();
         toolbar(ed); // Same scene tools and selection controls in every genre.
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
-        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi));
+        vp_.setGpuDeviceLease(ed.gpuDeviceLease());
+        vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi), ed.viewportRetirement(), "Scene");
+
         ImVec2 p = ImGui::GetCursorScreenPos();
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it

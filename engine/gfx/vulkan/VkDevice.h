@@ -7,6 +7,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,7 @@ public:
         items_.push_back(std::move(v)); alive_.push_back(1); return uint32_t(items_.size());
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
+    const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; items_[id - 1] = T{}; free_.push_back(id - 1); } }
     template <class F> void each(F&& f) { for (size_t i = 0; i < items_.size(); ++i) if (alive_[i]) f(items_[i]); }
 private:
@@ -121,10 +123,12 @@ public:
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
     bool updateSharedBufferChecked(BufferHandle h, const void* data,
                                    size_t size, size_t offset) override;
+    bool bufferInfo(BufferHandle h, BufferInfo& out) const override;
     void destroyBuffer(BufferHandle h) override;
     BufferUpdateStats bufferUpdateStats(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
+    bool textureInfo(TextureHandle h, TextureInfo& out) const override;
     void destroyTexture(TextureHandle h) override;
     ShaderHandle createShader(const ShaderDesc& d) override;
     void destroyShader(ShaderHandle h) override;
@@ -132,6 +136,22 @@ public:
     void destroyPipeline(PipelineHandle h) override;
     bool copyColor(TextureHandle from, TextureHandle to) override;
     bool gpuHealthy() const override { return healthy_; }
+    // serial_ names the currently recording VkFence-backed frame. This is
+    // NOT evidence of completion. completed_ advances only after a real
+    // vkWaitForFences return of VK_SUCCESS for its recorded frame slot.
+    uint64_t gpuSubmissionFence() const override {
+        return recording_ && healthy_ ? serial_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return healthy_ ? completed_ : 0;
+    }
+    bool waitForSubmittedGpuWork() override;
+    bool waitForResourceIdle() override;
+    uint64_t beginResourceRetirement() override;
+    bool resourceRetirementComplete(uint64_t token) override;
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override;
+    void endResourceRetirement(uint64_t token) override;
+    void abandonRetirementTokenAfterIdle(uint64_t token) override;
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
@@ -234,6 +254,8 @@ private:
     std::array<FrameSlot, kFramesInFlight> slots_;
     int slot_ = 0;
     uint64_t serial_ = 1, completed_ = 0;
+    uint64_t nextRetirementToken_ = 1;
+    std::map<uint64_t,VkFence> retirementFences_;
     bool recording_ = false;
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;

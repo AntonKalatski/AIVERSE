@@ -23,6 +23,7 @@
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/TextureCache.h"
+#include "../../../engine/render/RenderDeviceLifetime.h"
 #include "../RtsData.h"
 #include "../RtsMap.h"
 #include "RtsTerrainDetail.h"
@@ -65,6 +66,7 @@ std::vector<uint8_t> parseMaterialRows(const Json& rows, int w, int h);
 
 class TerrainRenderer {
 public:
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     void init(gfx::Device& dev, const Rules& rules, const render::FileReader& read, const std::string& contentBase);
     void shutdown(gfx::Device& dev);
     // Optional per-cell material layer painted on the map (0..3, 255 = by cell kind). Next build().
@@ -91,6 +93,41 @@ public:
 
     struct Stats { int chunks = 0, drawn = 0, lodMax = 0, detailK = 0; uint64_t triangles = 0; double buildMs = 0; int rebuilt = 0; size_t geometryBytes = 0; };
     const Stats& stats() const { return stats_; }
+    // Terrain owns chunk LOD buffers, water/apron geometry, map/vision,
+    // detail/height-field textures and its local terrain material cache.
+    // Called on the graphics owner thread, never GPU readback.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter counter(*dev_);
+        for (const auto& chunk : chunks_)
+            for (const auto& lod : chunk.lods) {
+                counter.buffer(lod.vb);
+                counter.buffer(lod.ib);
+            }
+        counter.buffer(apron_.vb);
+        counter.buffer(apron_.ib);
+        counter.buffer(water_.vb);
+        counter.buffer(water_.ib);
+        for (auto texture : {cellTex_,dynTex_,splatTex_,visionTex_,
+                white_,flatN_,gray_,heightField_.tex,
+                detailNrmTex_,detailSplatTex_,layerNormalAtlas_})
+            counter.texture(texture);
+        // TextureCache owns layers/cliffs. TextureRef aliases are borrowed.
+        const auto cache = textures_.ownedGpuMemoryStats();
+        auto stats=counter.stats();
+        stats.textureKnownBytes =
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                stats.textureKnownBytes,cache.textureKnownBytes);
+        stats.bufferKnownBytes =
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                stats.bufferKnownBytes,cache.bufferKnownBytes);
+        stats.textures+=cache.textures;
+        stats.buffers+=cache.buffers;
+        stats.unknownTextures+=cache.unknownTextures;
+        stats.unknownBuffers+=cache.unknownBuffers;
+        stats.multiVersionBuffers+=cache.multiVersionBuffers;
+        return stats;
+    }
 
 private:
     struct TV { render::float3 pos, nrm; uint32_t rgba; float morph[2]; };
@@ -130,6 +167,11 @@ private:
     int tierFor(const render::Renderer3D& r) const;
     int tierFor0() const;                       // device / env tier without a renderer (detail sample count)
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("TerrainRenderer GPU device generation expired");
+    }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     const Rules* rules_ = nullptr;
     std::string base_;
@@ -149,6 +191,9 @@ private:
     bool visionInit_ = false;
     std::vector<uint8_t> materialLayer_;
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;
+    // GL33: four repeatable layer normals packed into one atlas sampler.
+    gfx::TextureHandle layerNormalAtlas_;
+    int layerNormalAtlasSize_ = 0;
     bool texturesLoaded_ = false;
 
     std::vector<Chunk> chunks_;

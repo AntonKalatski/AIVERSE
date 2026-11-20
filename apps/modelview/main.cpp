@@ -17,22 +17,37 @@
 #include "../../engine/render/ImGuiLayer.h"
 #include "../../engine/render/ModelMerge.h"
 #include "../../engine/render/Renderer3D.h"
+#include "../../engine/render/ModelAssetProvider.h"
+#include "../../engine/render/FailedModelUpload.h"
+#include "../../engine/view/View.h"
+#include "../../engine/view/ImportedAttachmentAuthoring.h"
 #include "imgui.h"
 #include "Gallery.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <memory>
 #include <sstream>
+#include <set>
+#include <stdexcept>
 
 using namespace aiverse;
 using namespace aiverse::render;
 
 namespace {
 
+using Imported = ::aiverse::view::ImportedAttachmentAuthoring;
+struct AttachmentSpec {
+    std::string modelSource;
+    std::string socketName;
+    bool enabled=true;
+};
 struct Instance {
     Model* model = nullptr;
     std::string path;
@@ -41,6 +56,18 @@ struct Instance {
     std::vector<mat4> world;
     int clip = -1, variant = -1;
     mat4 fix;
+    ::aiverse::view::AppearanceAssetRegistry::Snapshot publishedAppearance;
+    Imported::Compiled compiledAttachments;
+    bool attachmentsReady=false;
+    std::string lastAttachmentError;
+};
+
+// All parent Animator objects and their borrowed Model* stay with the
+// provider that created them until a GPU completion proof permits retirement.
+struct RetiredNativeScene {
+    std::unique_ptr<ModelAssetProvider> provider;
+    std::unique_ptr<::aiverse::view::AppearanceAssetRegistry> appearances;
+    std::vector<Instance> instances;
 };
 
 struct Viewer {
@@ -51,6 +78,7 @@ struct Viewer {
     ShadowQuality shadowQuality=ShadowQuality::High;
     bool native = false;
     bool merge = true;   // static batching of parts that share a material (--no-merge: as authored)
+    bool providerMode=false; // --provider uses the genre-free owner for static raw files
     float seek = -1, height = 0, spacing = 2.2f, distance = 0, yawDeg = 25, pitchDeg = 32;
     float3 team{0.92f * 0.92f, 0.22f * 0.22f, 0.20f * 0.20f};
     MaterialQuality quality = MaterialQuality::High;
@@ -65,6 +93,21 @@ struct Viewer {
     ImGuiLayer gui;
     RTSCamera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
+    std::unique_ptr<ModelAssetProvider> nativeModels=
+        std::make_unique<ModelAssetProvider>();
+    std::unique_ptr<::aiverse::view::AppearanceAssetRegistry> attachmentsRegistry=
+        std::make_unique<::aiverse::view::AppearanceAssetRegistry>();
+    std::vector<std::unique_ptr<RetiredNativeScene>> retiredNativeScenes;
+    static constexpr size_t kRetiredNativeLimit=8;
+    bool reimportRequested=false, watchModelFiles=false;
+    double watchElapsed=0.;
+    std::map<std::string,std::filesystem::file_time_type> sourceStamps;
+    std::string nativeReloadError;
+    ::aiverse::View attachmentView; // compose borrowed precomputed poses only
+    std::vector<AttachmentSpec> attachmentSpecs;
+    std::string attachmentConfigPath;
+    char newAttachmentModel[512]{},newAttachmentSocket[256]{};
+    bool attachmentPreview=false,attachmentsDirty=false;
     std::map<std::string, std::string> mergeInfo;   // path -> "parts 47 -> 14" or why not merged
     std::vector<Instance> inst;
     std::vector<std::string> log;
@@ -82,6 +125,20 @@ struct Viewer {
 
     void init(gfx::Device& d) {
         dev = &d;
+        loadAttachmentConfig();
+        // This attachment preview uses ONE real ModelAssetProvider for both
+        // source rig and imported children. The original comparison/gallery
+        // paths remain unchanged unless the user opts into attachments.
+        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty() ||
+           watchModelFiles) {
+            if(!gameDir.empty())
+                throw std::invalid_argument(
+                    "attachment preview takes model files, not --game gallery");
+            attachmentPreview=true;
+            providerMode=true;
+            merge=false;
+            baked=false;
+        }
         r3d.init(d);
         r3d.setProfiling(lodReport);
         r3d.setModelLodEnabled(!noLod);
@@ -108,14 +165,38 @@ struct Viewer {
                 return;
             }
         }
+        // The standalone native provider deliberately keeps source geometry
+        // untouched. Existing merged/animated comparisons retain their
+        // historic loader and all of its authoring/animation semantics.
+        if(providerMode)nativeModels->setReader(readFile);
         float x = -spacing * float(files.size() - 1) * 0.5f, maxH = 1;
         for (auto& [path, clip] : files) {
+            Model* resolved=nullptr;
+            if(providerMode && !merge && !baked &&
+               ((clip.empty() && clipAll.empty()) || attachmentPreview)) {
+                resolved=nativeModels->load(d,path);
+                if(resolved) {
+                    for(auto& mt:resolved->materials) {
+                        std::string n=mt.name;
+                        for(auto& ch:n)
+                            ch=char(std::tolower(static_cast<unsigned char>(ch)));
+                        if(n.find("team")!=std::string::npos &&
+                           mt.team==TeamMode::None)mt.team=TeamMode::Tint;
+                    }
+                    log.push_back(path+": generic native source provider");
+                }
+            }
             auto it = models.find(path);
-            if (it == models.end()) {
+            if(!resolved && it == models.end()) {
+                // Create map storage before any GPU upload; a later
+                // allocation failure must never destroy GPU-live Models.
+                it = models.try_emplace(path).first;
                 std::unique_ptr<Model> m;
+                bool uploadStarted=false;
                 try {
                     std::vector<std::string> warn;
                     m = loadModel(path, readFile, &warn);
+                    if(!m)throw std::runtime_error("model import returned no data");
                     for (auto& w : warn) log.push_back(w);
                     if (merge) {
                         const auto mr = mergeStaticPrimitives(*m);
@@ -124,7 +205,9 @@ struct Viewer {
                                                     : "parts not merged: " + mr.reason;
                         log.push_back(path + ": " + mergeInfo[path]);
                     }
-                    uploadModel(d, *m);
+                    uploadStarted=true;
+                    if(!uploadModel(d, *m))
+                        throw std::runtime_error("GPU Model upload returned false");
                 // as the game view does by default: materials named "*team*" take the team colour
                 for (auto& mt : m->materials) {
                     std::string n = mt.name;
@@ -139,11 +222,18 @@ struct Viewer {
                     for (auto& im : m->images) if (im.gpuCompressed) log.push_back("  texture '" + im.name + "' stays GPU-compressed");
                     if (m->baked.tex.valid() || bakeAnimations(d, *m)) log.push_back("  clips baked: " + std::to_string(m->baked.rows) + " rows at " + std::to_string(int(m->baked.fps)) + " fps");
                     for (auto& v : m->variants) log.push_back("  variant '" + v + "'");
-                } catch (const std::exception& e) { log.push_back(e.what()); }
-                it = models.emplace(path, std::move(m)).first;
+                } catch (const std::exception& e) {
+                    if(uploadStarted) {
+                        const auto status=abortFailedModelUpload(d,m);
+                        if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
+                            log.push_back(path+": GPU completion unavailable; partial Model quarantined");
+                    } else m.reset();
+                    log.push_back(path+": "+e.what());
+                }
+                it->second = std::move(m);
             }
             Instance in;
-            in.model = it->second.get();
+            in.model = resolved ? resolved : it->second.get();
             in.path = path;
             if (in.model) {
                 Model& m = *in.model;
@@ -168,12 +258,310 @@ struct Viewer {
             inst.push_back(std::move(in));
             x += spacing;
         }
+        if(attachmentPreview)rebuildAttachments();
         for (auto& l : log) std::printf("%s\n", l.c_str());
         cam.target = {0, maxH * 0.45f, 0};
         cam.distance = distance > 0 ? distance : std::max(4.0f, spacing * float(files.size()) * 1.1f + maxH);
         cam.yaw = yawDeg * 3.14159265f / 180.0f;
         cam.pitch = pitchDeg * 3.14159265f / 180.0f;
         cam.minDistance = 1;
+    }
+
+    // ModelView is an actual file-backed authoring host. It never stores
+    // permanent read leases in its compiled bundles: only the provider owns
+    // Models and the draw-scoped Prepared object holds temporary leases.
+    void loadAttachmentConfig() {
+        if(attachmentConfigPath.empty())return;
+        std::string contents;
+        if(!readFile(attachmentConfigPath,contents))return; // new file
+        try {
+            const auto authored=Json::parse(contents);
+            if(!authored["attachments"].isArray())
+                throw std::invalid_argument("attachment config requires an attachments array");
+            std::vector<AttachmentSpec> fromFile;
+            for(const auto& entry:authored["attachments"].items()) {
+                const auto child=entry.getStr("model");
+                const auto socket=entry.getStr("socket");
+                if(child.empty() || socket.empty())
+                    throw std::invalid_argument("attachment needs model and named socket");
+                fromFile.push_back({child,socket,entry.getBool("enabled",true)});
+            }
+            fromFile.insert(fromFile.end(),attachmentSpecs.begin(),attachmentSpecs.end());
+            attachmentSpecs=std::move(fromFile);
+        }catch(const std::exception& e) {
+            log.push_back(std::string("attachment config rejected: ")+e.what());
+        }
+    }
+
+    void saveAttachmentConfig() {
+        if(attachmentConfigPath.empty())
+            attachmentConfigPath=files.empty()?"attachments.json":
+                files.front().first+".attachments.json";
+        auto root=Json::object();
+        auto items=Json::array();
+        for(const auto& entry:attachmentSpecs) {
+            auto item=Json::object();
+            item.set("model",Json::string(entry.modelSource));
+            item.set("socket",Json::string(entry.socketName));
+            item.set("enabled",Json::fromBool(entry.enabled));
+            items.push(item);
+        }
+        root.set("attachments",items);
+        std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
+        if(!file || !(file<<root.dump(2)))
+            log.push_back("failed to save attachment config: "+attachmentConfigPath);
+        else log.push_back("saved attachment config: "+attachmentConfigPath);
+    }
+
+    // Compile an entire attachment configuration in any provider generation.
+    // Both normal layout edits and on-disk Model hot-reimport call this same
+    // genre-neutral API. No live instance is mutated before all entries pass.
+    bool buildAttachmentLayout(
+            ModelAssetProvider& provider,
+            ::aiverse::view::AppearanceAssetRegistry& registry,
+            std::vector<Instance>& actors,std::string& error) {
+        std::vector<Imported::Compiled> staged;
+        std::vector<::aiverse::view::AppearanceAssetRegistry::Snapshot> parents;
+        staged.reserve(actors.size());
+        parents.reserve(actors.size());
+        std::map<std::string,::aiverse::view::AppearanceAssetRegistry::Snapshot> children;
+        try {
+            // Import every real child Model before taking any source read
+            // lease: the cache cannot evict/replace under active readers.
+            for(const auto& entry:attachmentSpecs) {
+                if(!entry.enabled)continue;
+                if(entry.modelSource.empty() || entry.socketName.empty())
+                    throw std::invalid_argument(
+                        "attachment needs a Model file and named socket");
+                if(children.count(entry.modelSource))continue;
+                ::aiverse::view::AppearanceAssetRegistry::Snapshot published;
+                ::aiverse::view::AppearanceAssetRegistry::Request request;
+                if(!Imported::importChild(
+                        provider,*dev,registry,
+                        "modelview/child/"+entry.modelSource,
+                        entry.modelSource,std::move(request),published,{},&error))
+                    throw std::runtime_error(error);
+                children.emplace(entry.modelSource,std::move(published));
+            }
+            for(size_t i=0;i<actors.size();++i) {
+                auto& actor=actors[i];
+                if(!actor.model)
+                    throw std::invalid_argument("parent Model is unavailable");
+                auto lease=provider.resources().acquireModelRead(actor.model);
+                if(!lease)
+                    throw std::invalid_argument(
+                        "parent Model must belong to the same provider");
+                ::aiverse::view::AppearanceAssetRegistry::Request req;
+                req.model=actor.model;
+                req.sources.push_back(actor.path);
+                const auto key="modelview/source/"+std::to_string(i);
+                if(!registry.publish(key,req,{}, {},&error))
+                    throw std::runtime_error(error);
+                auto parent=registry.find(key);
+                std::vector<Imported::ChildRequest> requested;
+                requested.reserve(attachmentSpecs.size());
+                for(const auto& entry:attachmentSpecs) {
+                    if(!entry.enabled)continue;
+                    Imported::ChildRequest child;
+                    child.appearance=children.at(entry.modelSource);
+                    child.socketName=entry.socketName;
+                    requested.push_back(std::move(child));
+                }
+                Imported::Compiled compiled;
+                if(!Imported::compile(parent,provider.resources(),
+                                      requested,compiled,&error))
+                    throw std::runtime_error(error);
+                staged.push_back(std::move(compiled));
+                parents.push_back(std::move(parent));
+            }
+            for(size_t i=0;i<actors.size();++i) {
+                actors[i].compiledAttachments=std::move(staged[i]);
+                actors[i].publishedAppearance=std::move(parents[i]);
+                actors[i].attachmentsReady=true;
+                actors[i].lastAttachmentError.clear();
+            }
+            return true;
+        }catch(const std::exception& e) {
+            error=e.what();
+            return false;
+        }
+    }
+
+    bool rebuildAttachments() {
+        if(!dev || !attachmentPreview || gallery)return false;
+        std::string error;
+        if(buildAttachmentLayout(*nativeModels,*attachmentsRegistry,inst,error)) {
+            log.push_back("attachment layout compiled for "+
+                          std::to_string(inst.size())+" source Models");
+            return true;
+        }
+        log.push_back("attachment update rejected; last good retained: "+error);
+        return false;
+    }
+
+    // A provider generation cannot be freed until its LAST queued draw
+    // is GPU-complete. Both old Animators and every published appearance
+    // snapshot stay with the old provider while completion is uncertain.
+    void deferNativeScene(std::unique_ptr<RetiredNativeScene> scene) noexcept {
+        if(!scene)return;
+        try {retiredNativeScenes.push_back(std::move(scene));}
+        catch(...) {
+            // No proof of completed GPU work: leaking this provider is safer
+            // than its destructor releasing potentially GPU-live buffers.
+            (void)scene.release();
+        }
+    }
+
+    // The owner thread calls this only at a frame boundary, never while a
+    // Renderer3D draw uses Prepared ModelReadLease or an Animator Model*.
+    // The cap is advisory; a failed GPU idle proof keeps old resources.
+    bool collectRetiredNativeScenes(bool force=false) noexcept {
+        if(!dev || retiredNativeScenes.empty())return true;
+        if(!force && retiredNativeScenes.size()<kRetiredNativeLimit)
+            return false;
+        try {
+            if(!dev->waitForResourceIdle()) {
+                nativeReloadError="old Model providers retained: GPU idle unavailable";
+                return false;
+            }
+            for(auto& retired:retiredNativeScenes) {
+                if(!retired)continue;
+                try {
+                    retired->instances.clear();
+                    retired->appearances.reset();
+                    if(retired->provider)
+                        retired->provider->shutdown(*dev);
+                    retired.reset();
+                }catch(...) {
+                    // A provider with failed shutdown still owns GPU models:
+                    // never permit its destructor to destroy those objects.
+                    (void)retired.release();
+                }
+            }
+            retiredNativeScenes.clear();
+            return true;
+        }catch(...) {
+            nativeReloadError="GPU retirement failed; old providers kept";
+            return false;
+        }
+    }
+
+    // Replace the ENTIRE ModelView source generation, never a Model* alone:
+    // the parent Animator, its named clip phase, the child source snapshots
+    // and compiled sockets are all rebound against new CPU Model objects.
+    bool reimportModelFiles() {
+        if(!dev || !attachmentPreview || gallery || !nativeModels)
+            return false;
+        auto candidate=std::make_unique<RetiredNativeScene>();
+        candidate->provider=std::make_unique<ModelAssetProvider>(readFile);
+        candidate->appearances=
+            std::make_unique<::aiverse::view::AppearanceAssetRegistry>();
+        std::string error;
+        try {
+            if(nativeModels->resources().activeModelReaders()!=0)
+                throw std::logic_error(
+                    "source reload requested while old Model readers are active");
+            candidate->instances.reserve(inst.size());
+            for(const auto& old:inst) {
+                if(!old.model)
+                    throw std::runtime_error(
+                        "cannot reload an instance without a valid old Model");
+                Model* replacement=candidate->provider->load(*dev,old.path);
+                if(!replacement)
+                    throw std::runtime_error(
+                        "on-disk Model reload failed: "+old.path);
+                Instance next;
+                next.model=replacement;
+                next.path=old.path;
+                next.fix=old.fix; // keep user-authored world placement
+                next.variant=variantName.empty()
+                    ?old.variant:replacement->findVariant(variantName);
+                const int oldClip=old.clip;
+                if(oldClip>=0 && size_t(oldClip)<old.model->clips.size()) {
+                    const auto& previous=old.model->clips[size_t(oldClip)];
+                    next.clip=replacement->findClip(previous.name);
+                } else next.clip=-1;
+                next.anim.setModel(replacement);
+                if(next.clip>=0) {
+                    Animator::Play playing;
+                    playing.fade=0.f;
+                    playing.restart=true;
+                    next.anim.play(0,next.clip,playing);
+                    const auto oldClipIndex=old.clip;
+                    if(oldClipIndex>=0 &&
+                       size_t(oldClipIndex)<old.model->clips.size()) {
+                        const float oldDuration=
+                            old.model->clips[size_t(oldClipIndex)].duration;
+                        const float newDuration=
+                            replacement->clips[size_t(next.clip)].duration;
+                        if(std::isfinite(oldDuration) && oldDuration>0.f &&
+                           std::isfinite(newDuration) && newDuration>0.f) {
+                            const float phase=std::clamp(
+                                old.anim.time(0)/oldDuration,0.f,0.999999f);
+                            (void)next.anim.seek(0,phase*newDuration);
+                        }
+                    }
+                }
+                next.anim.evaluate(next.pose);
+                worldMatrices(*replacement,next.pose,next.world);
+                candidate->instances.push_back(std::move(next));
+            }
+            if(!buildAttachmentLayout(*candidate->provider,
+                                      *candidate->appearances,
+                                      candidate->instances,error))
+                throw std::runtime_error("compiled attachment reload: "+error);
+            // Allocate the old-session owner BEFORE the atomic move/commit.
+            auto retired=std::make_unique<RetiredNativeScene>();
+            retired->provider=std::move(nativeModels);
+            retired->appearances=std::move(attachmentsRegistry);
+            retired->instances=std::move(inst);
+            nativeModels=std::move(candidate->provider);
+            attachmentsRegistry=std::move(candidate->appearances);
+            inst=std::move(candidate->instances);
+            deferNativeScene(std::move(retired));
+            nativeReloadError.clear();
+            log.push_back("reimported "+
+                          std::to_string(inst.size())+
+                          " ModelView sources and socket attachments from disk");
+            return true;
+        }catch(const std::exception& e) {
+            nativeReloadError=e.what();
+            log.push_back("on-disk reimport rejected; last-good retained: "+
+                          nativeReloadError);
+            // Partially GPU-uploaded scratch Models remain owned until the
+            // same fenced retirement boundary as any old visible source.
+            deferNativeScene(std::move(candidate));
+            return false;
+        }
+    }
+
+    // Poll on-disk file revisions only when explicitly opted in. An edit
+    // schedules ONE complete staged import at the next owner frame boundary,
+    // never from a file-watcher worker or Renderer3D submission callback.
+    void pollModelSourceChanges(double seconds) {
+        if(!attachmentPreview || !watchModelFiles || gallery)return;
+        watchElapsed+=std::max(0.,seconds);
+        if(watchElapsed<1.)return;
+        watchElapsed=0.;
+        std::set<std::string> observed;
+        for(const auto& actor:inst)observed.insert(actor.path);
+        for(const auto& child:attachmentSpecs)
+            if(child.enabled)observed.insert(child.modelSource);
+        bool changed=false;
+        for(const auto& path:observed) {
+            std::error_code ec;
+            const auto stamp=std::filesystem::last_write_time(path,ec);
+            if(ec)continue; // assets from non-filesystem providers are not watched
+            const auto [it,inserted]=sourceStamps.try_emplace(path,stamp);
+            if(!inserted && it->second!=stamp) {
+                it->second=stamp;
+                changed=true;
+            }
+        }
+        for(auto it=sourceStamps.begin();it!=sourceStamps.end();)
+            if(!observed.count(it->first))it=sourceStamps.erase(it);
+            else ++it;
+        if(changed)reimportRequested=true;
     }
 
     void play(Instance& in) {
@@ -188,6 +576,28 @@ struct Viewer {
     void frame(gfx::Device& d, double dt) {
         if (fixedDt > 0) dt = fixedDt;
         if (!paused && seek < 0) time += dt;
+        // Explicit Device-owner frame boundary. Gallery may draw a portrait
+        // and scene within ONE RHI frame; neither draw is a safe retirement
+        // hook. Poll model and paint token queues before any GPU pass.
+        if(gallery)gallery->collectRetiredGpuResources();
+        if(nativeModels->resources().pendingRetirements()!=0 ||
+           nativeModels->pendingRolledBackImages()!=0)
+            nativeModels->collectRetired(d);
+        pollModelSourceChanges(dt);
+        // All staged on-disk imports and old-provider cleanup happen on
+        // this owner boundary, before d.beginFrame or any model draw.
+        if(reimportRequested) {
+            reimportRequested=false;
+            (void)reimportModelFiles();
+        }
+        (void)collectRetiredNativeScenes();
+        // All UI attachment edits are applied at the next OWNER frame
+        // boundary, before any Renderer3D GPU submission and after prior
+        // draw-scoped ModelReadLeases have been released.
+        if(attachmentsDirty) {
+            (void)rebuildAttachments();
+            attachmentsDirty=false;
+        }
         d.beginFrame(platform::framebufferWidth(), platform::framebufferHeight());
         gui.newFrame(dt);
         gfx::TextureHandle portrait = gallery ? gallery->portrait(time) : gfx::TextureHandle{}; // before the scene pass
@@ -212,7 +622,37 @@ struct Viewer {
                 bs = {b.clipA, b.clipB, b.timeA, b.timeB, b.w, b.loopA, b.loopB};
                 md.baked = &bs;
             }
-            r3d.drawModel(md);
+            // Existing host Animator is the only writer: generic View
+            // consumes its precomputed pose and composes imported children.
+            // Keep owner-thread ModelReadLeases until submitOne returns.
+            bool presented=false;
+            if(attachmentPreview && in.attachmentsReady) {
+                Imported::Prepared prepared;
+                std::string error;
+                if(Imported::prepare(
+                        in.compiledAttachments,nativeModels->resources(),
+                        in.fix,nullptr,prepared,
+                        Imported::AnimationOwner::HostPrecomputed,&error)) {
+                    auto& draw=prepared.object.draw;
+                    draw.pose=md.pose;
+                    draw.nodeWorld=md.nodeWorld;
+                    draw.baked=md.baked;
+                    draw.variant=md.variant;
+                    draw.team=md.team;
+                    // Stable per-viewer-instance visual draw identity; the
+                    // parent asset's registry key identifies a RESOURCE,
+                    // not every visible instance using that resource.
+                    prepared.object.id=uint64_t(&in-inst.data())+1;
+                    attachmentView.submitOne(r3d,prepared.object);
+                    presented=true;
+                    in.lastAttachmentError.clear();
+                } else if(error!=in.lastAttachmentError) {
+                    in.lastAttachmentError=error;
+                    log.push_back(in.path+": attachment packet: "+error);
+                }
+            }
+            if(!presented)
+                ::aiverse::View::submitModel(r3d,md);
         }
         gfx::PassDesc pass;
         pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
@@ -235,6 +675,53 @@ struct Viewer {
         if (gallery) for (auto& ev : gallery->recentEvents()) ImGui::TextColored(ImVec4(1, 0.5f, 0.85f, 1), "event: %s", ev.c_str());
         if (!r3d.modelError().empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.3f, 1), "%s", r3d.modelError().c_str());
         ImGui::End();
+        if(attachmentPreview) {
+            ImGui::Begin("Attachments");
+            ImGui::TextUnformatted("Real imported child Models on named sockets");
+            ImGui::TextUnformatted("Changes apply next frame; models remain provider-owned");
+            for(size_t i=0;i<attachmentSpecs.size();++i) {
+                ImGui::PushID(int(i));
+                auto& spec=attachmentSpecs[i];
+                if(ImGui::Checkbox("##enabled",&spec.enabled))
+                    attachmentsDirty=true;
+                ImGui::SameLine();
+                ImGui::Text("%s @ %s",spec.modelSource.c_str(),spec.socketName.c_str());
+                ImGui::SameLine();
+                if(ImGui::SmallButton("Detach")) {
+                    attachmentSpecs.erase(attachmentSpecs.begin()+i);
+                    attachmentsDirty=true;
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            ImGui::InputText("Child model file",newAttachmentModel,
+                             sizeof(newAttachmentModel));
+            ImGui::InputText("Socket name",newAttachmentSocket,
+                             sizeof(newAttachmentSocket));
+            if(ImGui::Button("Attach") && newAttachmentModel[0] &&
+               newAttachmentSocket[0]) {
+                attachmentSpecs.push_back(
+                    {newAttachmentModel,newAttachmentSocket,true});
+                newAttachmentModel[0]=newAttachmentSocket[0]='\0';
+                attachmentsDirty=true;
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Rebuild"))attachmentsDirty=true;
+            ImGui::SameLine();
+            if(ImGui::Button("Reload model files"))reimportRequested=true;
+            ImGui::Checkbox("Watch source files",&watchModelFiles);
+            if(ImGui::Button("Save"))saveAttachmentConfig();
+            ImGui::Text("Retired provider generations: %zu",
+                        retiredNativeScenes.size());
+            if(!attachmentConfigPath.empty())
+                ImGui::TextWrapped("Config: %s",attachmentConfigPath.c_str());
+            if(!nativeReloadError.empty())
+                ImGui::TextWrapped("Reload: %s",nativeReloadError.c_str());
+            if(!log.empty())
+                ImGui::TextWrapped("%s",log.back().c_str());
+            ImGui::End();
+        }
         gui.render();
         d.endPass();
         d.endFrame();
@@ -264,7 +751,47 @@ struct Viewer {
     }
 
     void shutdown() {
+        if(!dev)return;
+        // Both Prisma fence completion and MotionWeave model/resource idle
+        // must be proven before native models or graphics owners are destroyed.
+        if (!dev->gpuHealthy() || !dev->waitForSubmittedGpuWork() ||
+            !dev->waitForResourceIdle()) {
+            std::fprintf(stderr,
+                "aiverse_modelview: GPU shutdown barrier failed; GPU owners quarantined\n");
+            // Viewer is static. A mere early return would allow its
+            // unique_ptr members to destroy GPU-live Models on process
+            // teardown. Explicitly orphan owners when idle cannot be proven.
+            for(auto& [key,model]:models) {
+                (void)key;
+                (void)model.release();
+            }
+            (void)nativeModels.release();
+            for(auto& scene:retiredNativeScenes)(void)scene.release();
+            retiredNativeScenes.clear();
+            return;
+        }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
+        // Old Animators and published snapshots must be destroyed BEFORE
+        // their owning ModelProvider releases Model CPU/GPU storage.
+        inst.clear();
+        attachmentsRegistry.reset();
+        if(nativeModels) {
+            try {
+                nativeModels->shutdown(*dev);
+                nativeModels.reset();
+            }catch(...) {
+                // Preserve partial uploads rather than invoking an unsafe
+                // destructor when provider shutdown reports GPU failure.
+                (void)nativeModels.release();
+                std::fprintf(stderr,
+                    "aiverse_modelview: provider shutdown failed; GPU owner retained\n");
+            }
+        }
+        (void)collectRetiredNativeScenes(true);
+        // If even full-idle shutdown could not complete, retain old GPU
+        // owners rather than letting unique_ptr destruct GPU-visible Models.
+        for(auto& retired:retiredNativeScenes)(void)retired.release();
+        retiredNativeScenes.clear();
         if (gallery) gallery->shutdown(*dev);
         dev->destroyBuffer(ground.vb); dev->destroyBuffer(ground.ib);
         gui.shutdown();
@@ -312,6 +839,26 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--distance") v.distance = std::stof(next());
         else if (a == "--native") v.native = true;
         else if (a == "--no-merge") v.merge = false;
+        else if (a == "--provider") v.providerMode = true;
+        else if (a == "--watch-model-files")v.watchModelFiles=true;
+        else if (a == "--attachments-file") {
+            v.attachmentConfigPath=next();
+            if(v.attachmentConfigPath.empty()) {
+                std::fprintf(stderr,"--attachments-file requires a JSON path\n");
+                return 2;
+            }
+        }
+        else if (a == "--attach") {
+            auto authored=next();
+            const auto at=authored.rfind('@');
+            if(at==std::string::npos || at==0 || at+1>=authored.size()) {
+                std::fprintf(stderr,
+                    "--attach expects imported-child.glb@NamedSocket\n");
+                return 2;
+            }
+            v.attachmentSpecs.push_back({
+                authored.substr(0,at),authored.substr(at+1),true});
+        }
         else if (a == "--yaw") v.yawDeg = std::stof(next());
         else if (a == "--pitch") v.pitchDeg = std::stof(next());
         else if (a == "--quality") {
@@ -324,7 +871,8 @@ int aiverseMain(int argc, char** argv) {
         }
     }
     if (v.files.empty() && v.gameDir.empty()) {
-        std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge]\n"
+        std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
+                    "       aiverse_modelview parent.glb@Walk --attach child.glb@Hand.R [--attachments-file file.json]\n"
                     "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n");
         return 1;
     }

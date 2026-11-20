@@ -42,6 +42,11 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
+// Pending != failed: a renderer must never infer GPU fence failure
+// from normal in-flight work or elapsed frame counters.
+enum class ResourceRetirementStatus : uint8_t {
+    Pending, Complete, Failed
+};
 enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
@@ -67,6 +72,11 @@ struct DrawIndexedIndirectCommand {
     uint32_t firstInstance = 0;
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
+
+struct BufferInfo {
+    size_t logicalBytes = 0; // lower bound: excludes ring snapshots/driver padding
+    uint32_t versions = 1;   // dynamic GPU versions may occupy more VRAM
+};
 
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
@@ -149,6 +159,11 @@ inline void accumulateBufferUpdateCounters(BufferUpdateStats& total,
     total.allocations += delta.allocations;
     total.reused += delta.reused;
 }
+
+struct TextureInfo {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
+};
 
 struct TextureDesc {
     int width = 0, height = 0;
@@ -252,11 +267,21 @@ public:
     // Optional per-buffer diagnostics. No GPU stall/readback, and never
     // authoritatively measures GPU memory bandwidth or execution.
     virtual BufferUpdateStats bufferUpdateStats(BufferHandle) { return {}; }
+    // CPU-only live RHI buffer metadata, same contract as textureInfo.
+    // No GPU readback or synchronization; false if unsupported/stale.
+    virtual bool bufferInfo(BufferHandle h, BufferInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
+    // CPU-only RHI metadata lookup; no readback, synchronization or texture
+    // sampling. Unsupported providers return false and leave out unchanged.
+    virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     virtual ShaderHandle createShader(const ShaderDesc& d) = 0;   // returns invalid handle on failure (see lastError())
     // Start on the device thread, then poll on that same thread. Jobs must not outlive
     // the device. Dropping a job cancels publication; backend callbacks own their data.
@@ -271,7 +296,16 @@ public:
     virtual void destroyShader(ShaderHandle h) = 0;
     virtual PipelineHandle createPipeline(const PipelineDesc& d) = 0;
     // Poll preparation of a backend-selected colour-target variant. Device thread only.
+    // Legacy bool means "no longer pending", not "compiled successfully".
+    // Implementations may override the status API to distinguish permanent
+    // compilation failures from asynchronous Pending. Default preserves the
+    // behavior of older backends and third-party gfx::Device implementations.
+    enum class PipelineColorWarmStatus : uint8_t { Ready, Pending, Failed };
     virtual bool warmPipelineColor(PipelineHandle, PixelFormat) { return true; }
+    virtual PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) {
+        return warmPipelineColor(h, format) ? PipelineColorWarmStatus::Ready
+                                            : PipelineColorWarmStatus::Pending;
+    }
     virtual void destroyPipeline(PipelineHandle h) = 0;
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
@@ -296,6 +330,15 @@ public:
     struct GpuTiming { uint64_t tag = 0; double milliseconds = 0; bool valid = false; };
     virtual bool timeGpuFrame(uint64_t tag) { (void)tag; return false; }
     virtual std::vector<GpuTiming> takeGpuTimings() { return {}; }
+    // Optional exact GPU timeline of a bounded portion of ONE graphics frame.
+    // Begin outside a render pass, end after its last encoder/pass. These
+    // samples are asynchronous and kept separate from full-frame benchmark
+    // timing consumers. Unsupported backends must return false/empty, NEVER
+    // return whole-command-buffer timings falsely labeled as per-view.
+    // No nested scopes: overlapping queries are rejected by the backend.
+    virtual bool beginGpuScope(uint64_t tag) { (void)tag; return false; }
+    virtual void endGpuScope() {}
+    virtual std::vector<GpuTiming> takeGpuScopeTimings() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
@@ -324,6 +367,55 @@ public:
     // this value is nonzero and >= that retirement serial. This does not
     // imply any safety for races on a live Model or unsubmitted GPU work.
     virtual uint64_t completedFrameSerial() const { return 0; }
+    // GPU-completion timeline for safe nonblocking resource retirement.
+    // gpuSubmissionFence() returns a token covering commands encoded in
+    // the CURRENT GPU frame, including commands still to be submitted.
+    // It is valid only during a GPU frame. Zero means unsupported.
+    // gpuCompletedFence() is the greatest *contiguous* GPU-completed
+    // token observed by this device. It must never use a CPU frame index
+    // as a proxy for completion; zero means no verified completion yet.
+    virtual uint64_t gpuSubmissionFence() const { return 0; }
+    virtual uint64_t gpuCompletedFence() const { return 0; }
+    // Explicit memory-pressure synchronization. Call only on the graphics
+    // owner thread at a PRE-RENDER frame boundary, before encoding any work
+    // that could reference textures awaiting destruction. The backend waits
+    // for already SUBMITTED GPU commands; it must not require current-frame
+    // unsubmitted commands to finish. May block; never use every frame.
+    virtual bool waitForSubmittedGpuWork() { return false; }
+    // Explicit retirement barrier for old model/texture GPU allocations.
+    // Call on the device owner thread BEFORE recording any draw/transfer
+    // referring to retired resources in the CURRENT frame, outside passes.
+    // Blocks until all previously SUBMITTED GPU commands have completed.
+    // A false result MUST prevent hot-reload destruction; frameSerial()
+    // alone does not prove completion. May stall; never call per draw.
+    virtual bool waitForResourceIdle() { return false; }
+    // Nonblocking retirement token: enqueue an ordered GPU completion marker
+    // after all PREVIOUSLY SUBMITTED work. Call at a frame boundary before
+    // current-frame commands can reference retired objects.
+    // 0 means unsupported/failed: hosts may use waitForResourceIdle().
+    virtual uint64_t beginResourceRetirement() { return 0; }
+    // Poll on the device thread. False means pending OR failed; NEVER
+    // destroy resources based solely on frameSerial() or elapsed time.
+    virtual bool resourceRetirementComplete(uint64_t token) {
+        (void)token; return false;
+    }
+    // Backend-specific implementations can report an actual failed
+    // completion marker. The legacy default conservatively treats false
+    // as Pending; old Device subclasses remain source-compatible.
+    virtual ResourceRetirementStatus resourceRetirementStatus(uint64_t token) {
+        return resourceRetirementComplete(token) ?
+            ResourceRetirementStatus::Complete:
+            ResourceRetirementStatus::Pending;
+    }
+    // Release a COMPLETED token after checking resourceRetirementComplete().
+    // No backend may free a still-in-flight native fence here.
+    virtual void endResourceRetirement(uint64_t token) { (void)token; }
+    // Call ONLY after a successful waitForResourceIdle() barrier. This
+    // disposes native marker bookkeeping even when its status callback
+    // failed. Never use it to justify deleting an in-flight GPU resource.
+    virtual void abandonRetirementTokenAfterIdle(uint64_t token) {
+        (void)token;
+    }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;

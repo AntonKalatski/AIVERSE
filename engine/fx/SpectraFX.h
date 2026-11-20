@@ -2,11 +2,13 @@
 // Public entry for graph compilation, asset variants and CPU effect rendering.
 // This is the supported public name; prior Vfx* symbols are compatibility APIs.
 // A basic v1 node canvas exists in the AIVERSE Editor; full graph dataflow and
-// GPU simulation remain separate workstreams.
+// A limited opt-in Metal compute backend is available; full Niagara dataflow
+// and production GPU parity remain future work.
 #pragma once
 #include "VfxGraphAssets.h"
 #include "SpectraModuleSchema.h"
 #include "SpectraGpuParticles.h"
+#include "SpectraGraphRuntime.h"
 
 namespace aiverse::spectra {
 
