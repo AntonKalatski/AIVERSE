@@ -665,8 +665,21 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
            !it->second->streamingEnabled() ||
            failed.count(instance.model))continue;
         auto& list=requests[instance.model];
+        const strata::PortableLodHistory* history=nullptr;
+        if(strataLodHysteresisFraction_>0.f){
+            const auto state=strataPortableLodHistories_.find(&instance);
+            if(state!=strataPortableLodHistories_.end())
+                history=state->second.get();
+        }
+        // A cold or newly visible instance must still be able to request
+        // the unmodified reference frontier before any history is stored.
+        // A temporary empty history has exactly cold-start semantics.
+        const strata::PortableLodHistory cold{};
         if(!it->second->collectResidencyDemands(
-               instance.world,views,forceFinest,list)){
+               instance.world,views,forceFinest,list,
+               strataLodHysteresisFraction_>0.f
+                   ? (history ? history:&cold):nullptr,
+               strataLodHysteresisFraction_)){
             failed.insert(instance.model);
             list.clear(); // keep roots; don't promote a partial view plan
         }
