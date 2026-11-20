@@ -243,7 +243,31 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
 
 int aiverseMain(int argc, char** argv) {
     if (!unitChecks()) return 1;
-    if (argc == 2 && std::string(argv[1]) == "--unit") return 0;
+    if (argc == 2 && std::string(argv[1]) == "--unit") {
+        // CPU-only topology sanity: N subdivisions must generate N*N triangles
+        // per primitive without changing the number of meshes or model nodes.
+        for (uint32_t subdivisions : {1u, 2u, 4u, 8u}) {
+            auto fixture = indirectFixture(false, 16, subdivisions);
+            const uint32_t verticesPerPrimitive = 3u * subdivisions * subdivisions;
+            if (fixture->meshes.size() != 16 || fixture->nodes.size() != 16 ||
+                fixture->vertices.size() != size_t(16u * verticesPerPrimitive) ||
+                fixture->indices.size() != size_t(16u * verticesPerPrimitive)) {
+                std::fprintf(stderr, "mesh subdivision CPU topology FAILED N=%u\\n",
+                             unsigned(subdivisions));
+                return 1;
+            }
+            for (const auto& mesh : fixture->meshes)
+                if (mesh.primitives.size() != 1 ||
+                    mesh.primitives[0].indexCount != verticesPerPrimitive ||
+                    mesh.primitives[0].vertexCount != verticesPerPrimitive) {
+                    std::fprintf(stderr, "mesh subdivision primitive FAILED N=%u\\n",
+                                 unsigned(subdivisions));
+                    return 1;
+                }
+        }
+        std::printf("mesh subdivision CPU checks=passed\\n");
+        return 0;
+    }
     if (argc != 3) { std::fprintf(stderr, "usage: material_batches MODEL OUTPUT_PREFIX\n"); return 2; }
     auto read = [](const std::string& path, std::string& bytes) {
         std::ifstream f(path, std::ios::binary); if (!f) return false;
