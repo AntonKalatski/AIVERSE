@@ -1,15 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, Square, Pause, StepForward, RotateCcw } from 'lucide-react';
 import { invoke } from '../bridge';
-import type { StudioGameState } from '../types';
+import type { StudioGameState, StudioGameDevice, StudioGameDeviceOption } from '../types';
 import type { StudioPanelContext } from './StudioPanelRenderer';
-import { StudioPanel, StudioButton, StudioAlert, StudioEmptyState, StudioBadge } from '../ui';
+import { StudioPanel, StudioButton, StudioAlert, StudioEmptyState, StudioBadge, StudioSelect, StudioField, StudioCheckbox } from '../ui';
 import './GamePanel.css';
+import { gameViewportSize } from './gameViewport';
 
 export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelContext) {
   const [state,setState]=useState<StudioGameState|null>(null);
   const [error,setError]=useState('');
+  const [devices,setDevices]=useState<StudioGameDeviceOption[]>([]);
+  const [areaSize,setAreaSize]=useState({width:0,height:0});
+  const area=useRef<HTMLDivElement>(null);
   const surface=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    let live=true;
+    if(connected)void invoke('studio.gameDevices',{}).then(v=>{if(live)setDevices(v);}).catch(e=>{if(live)setError(String(e));});
+    return ()=>{live=false;};
+  },[connected]);
+  useEffect(()=>{
+    if(!area.current)return;
+    const observer=new ResizeObserver(entries=>{
+      const b=entries[0].contentRect;setAreaSize({width:b.width,height:b.height});
+    });observer.observe(area.current);return ()=>observer.disconnect();
+  },[]);
+  const device=state?.device;
+  const fitted=gameViewportSize(areaSize.width,areaSize.height,device?.width||0,device?.height||0);
   const loaded=connected && !!snapshot?.project.path;
   useEffect(()=>{
     let live=true,inFlight=false;
@@ -56,6 +73,12 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
     catch(e){setError(e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
+  const configure=async(change:Partial<Pick<StudioGameDevice,'id'|'landscape'|'safeArea'>>)=>{
+    if(busy)return;setBusy(true);setError('');
+    try{setState(await invoke('studio.gameDevice',{id:device?.id||'none',landscape:device?.landscape??true,safeArea:device?.safeArea??true,...change}));}
+    catch(e){setError(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
+  };
   return <StudioPanel title="Game" className="studio-game" flush
     actions={<>
       <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('map')}><Play size={14}/> Play map</StudioButton>
@@ -67,9 +90,20 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
     </>}
     footer={<><StudioBadge>{state?.active?(state.loading?`Loading ${Math.round(state.progress*100)}%`:state.inMatch?`${state.paused?'Paused':'Running'} · tick ${state.tick}`:'Project menu'):'Stopped'}</StudioBadge><span>Native game client · click the viewport to focus input</span></>}>
     {(error||state?.error) && <StudioAlert tone="danger">{error||state?.error}</StudioAlert>}
-    <div ref={surface} className="studio-game__surface" aria-label="Native Game viewport">
+    <div className="studio-game__devices">
+      <StudioField label="Device" htmlFor="studio-game-device"><StudioSelect id="studio-game-device" aria-label="Game device" value={device?.id||'none'} disabled={!connected||busy} onChange={e=>void configure({id:e.target.value})}>
+        {!devices.length && <option value="none">Free size</option>}
+        {devices.map(d=><option key={d.id} value={d.id}>{d.group?`${d.group} · `:''}{d.name}</option>)}
+      </StudioSelect></StudioField>
+      <StudioButton disabled={!device?.width||busy} onClick={()=>void configure({landscape:!device?.landscape})}>{device?.landscape?'Landscape':'Portrait'}</StudioButton>
+      <StudioCheckbox label="Safe area" checked={device?.safeArea??true} disabled={!device?.width||busy} onChange={e=>void configure({safeArea:e.target.checked})}/>
+      {!!device?.width && <StudioBadge>{device.width} × {device.height} · {device.touch?'Touch':'Mouse'}</StudioBadge>}
+    </div>
+    <div ref={area} className="studio-game__area">
+    <div style={fitted} ref={surface} className="studio-game__surface" aria-label="Native Game viewport">
       {!state?.active && <StudioEmptyState title={loaded?'Ready to play':'Open a project'}
         description={loaded?'Run the saved map or open the project’s own menus. Stop returns to authoring without copying runtime changes into the map.':'Play uses the native game client and renderer.'}/>}
+    </div>
     </div>
   </StudioPanel>;
 }

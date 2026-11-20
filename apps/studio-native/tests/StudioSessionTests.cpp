@@ -2,6 +2,7 @@
 #include "tests/TestCheck.h"
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "apps/studio-native/StudioGameInput.h"
+#include "apps/studio-native/StudioGameDevice.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
 #include <filesystem>
@@ -142,6 +143,16 @@ int main() {
     try { (void)studio::studioGameLaunch(session.workspace(),false); }
     catch(const std::exception&) {playRejected=true;}
     AIVERSE_TEST_CHECK(playRejected);
+    auto phone=studio::StudioGameDevice::parse(Json::parse(R"({"id":"iphone-x","landscape":false,"safeArea":true})"));
+    AIVERSE_TEST_CHECK(phone.size(800,600)==std::make_pair(375.f,812.f));
+    AIVERSE_TEST_CHECK(phone.insets().top==44 && phone.insets().bottom==34);
+    phone.landscape=true;
+    AIVERSE_TEST_CHECK(phone.size(800,600)==std::make_pair(812.f,375.f));
+    AIVERSE_TEST_CHECK(phone.insets().left==44 && phone.insets().bottom==21);
+    phone.safeArea=false;AIVERSE_TEST_CHECK(phone.insets().left==0);
+    phone.id="none";AIVERSE_TEST_CHECK(phone.size(800,600)==std::make_pair(800.f,600.f));
+    bool badProfile=false;try {studio::StudioGameDevice::parse(Json::parse(R"({"id":"unknown","landscape":true,"safeArea":true})"));}catch(...){badProfile=true;}
+    AIVERSE_TEST_CHECK(badProfile);
     AIVERSE_TEST_CHECK(studio::studioGameKey("w")==platform::Key::W);
     AIVERSE_TEST_CHECK(studio::studioGameKey("Escape")==platform::Key::Escape);
     AIVERSE_TEST_CHECK(studio::studioGameKey("ArrowDown")==platform::Key::Down);

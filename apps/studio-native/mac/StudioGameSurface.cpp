@@ -19,6 +19,9 @@ void StudioGameSurface::start(const StudioGameLaunch& plan,const std::string& as
     host_->start(*device_,plan.project,assets,lifetime_->lease(),plan.map);
 }
 void StudioGameSurface::stop() { host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
+void StudioGameSurface::setDevice(const StudioGameDevice& profile) {
+    (void)profile.profile();host_->suspendInput();profile_=profile;
+}
 void StudioGameSurface::control(const std::string& action) {
     if (action=="restart") {
         if (!host_->active()) throw std::runtime_error("Start a game before restarting");
@@ -33,18 +36,20 @@ void StudioGameSurface::event(const platform::Event& event) {
     if (!host_->active()) return;
     if (event.type==platform::EventType::FocusLost) { suspend();return; }
     if (event.type==platform::EventType::MouseDown || event.type==platform::EventType::FocusGained)
-        host_->place(0,0,1,true);
+        host_->place(0,0,inputScale_,true);
     host_->event(event);
 }
 void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focused) {
     host_->collectGpuRetirements();
     if (!host_->active() || w<2 || h<2) return;
-    host_->place(0,0,1,focused);
+    const auto logical=profile_.size(pw,ph);
+    inputScale_=pw/std::max(1.0f,logical.first);
+    host_->place(0,0,inputScale_,focused);
     device_->beginFrame(w,h);
     try {
         // A loading step may not draw yet; initialize the actual drawable.
         gfx::PassDesc clear;device_->beginPass(clear);device_->endPass();
-        host_->frame(std::clamp(dt,0.0,0.1),{}, {},w,h,pw,ph,false,{});
+        host_->frame(std::clamp(dt,0.0,0.1),{}, {},w,h,logical.first,logical.second,profile_.profile().touch,profile_.insets());
         device_->endFrame();
         if (host_->quitRequested()) stop();
         if (!host_->errorText().empty()) error_=host_->errorText();
@@ -53,7 +58,7 @@ void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focus
     }
 }
 Json StudioGameSurface::state() const {
-    Json out=Json::object();
+    Json out=Json::object();out.set("device",profile_.json());
     out.set("active",Json::fromBool(host_->active()));
     out.set("paused",Json::fromBool(host_->paused()));
     out.set("canControl",Json::fromBool(host_->canControl()));

@@ -325,7 +325,8 @@
 }
 - (aiverse::Json)gameState {
     if(game_)return game_->state();
-    return aiverse::Json::parse(R"({"paused":false,"canControl":false,"canStep":false,"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+    auto out=aiverse::Json::parse(R"({"paused":false,"canControl":false,"canStep":false,"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+    out.set("device",aiverse::studio::StudioGameDevice{}.json());return out;
 }
 - (void)gameEvent:(const aiverse::platform::Event&)event {
     if(game_ && !gameViewport_.hidden)game_->event(event);
@@ -743,10 +744,18 @@
             return;
         }
         const auto gameMethod=req.getStr("method");
-        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState" || gameMethod=="studio.gameControl") && req["id"].isNumber()) {
+        if(gameMethod=="studio.gameDevices" && req["id"].isNumber()) {
+            auto reply=aiverse::Json::object();reply.set("id",req["id"]);
+            reply.set("result",aiverse::studio::studioGameDevices());[self sendStudioReply:reply];return;
+        }
+        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState" || gameMethod=="studio.gameControl" || gameMethod=="studio.gameDevice") && req["id"].isNumber()) {
             aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
             try {
-                if(gameMethod=="studio.gameStart") {
+                if(gameMethod=="studio.gameDevice") {
+                    const auto profile=aiverse::studio::StudioGameDevice::parse(req["params"]);
+                    if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
+                    game_->setDevice(profile);
+                }else if(gameMethod=="studio.gameStart") {
                     const auto entry=req["params"].getStr("entry");
                     if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
                     const auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");

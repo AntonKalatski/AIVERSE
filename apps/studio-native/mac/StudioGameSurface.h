@@ -2,6 +2,7 @@
 #include "apps/client/HostedClient.h"
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "engine/data/Json.h"
+#include "apps/studio-native/StudioGameDevice.h"
 
 namespace aiverse::studio {
 // Independent native surface; the authoring Scene keeps its own device/epoch.
@@ -11,6 +12,7 @@ public:
     ~StudioGameSurface();
     void start(const StudioGameLaunch& plan,const std::string& engineAssets);
     void stop();
+    void setDevice(const StudioGameDevice& device);
     void control(const std::string& action);
     void frame(int width,int height,float pointsW,float pointsH,double dt,bool focused);
     void suspend();
@@ -22,5 +24,7 @@ private:
     std::unique_ptr<client::HostedClient> host_;
     std::string error_, assets_;
     StudioGameLaunch launch_;
+    StudioGameDevice profile_;
+    float inputScale_=1;
 };
 }
