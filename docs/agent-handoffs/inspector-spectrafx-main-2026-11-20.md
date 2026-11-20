@@ -65,7 +65,7 @@ Compiler: AppleClang 17.0.0.17000604. Hardware: Apple M3 Ultra. Configuration: D
 Build/test commands used `TMPDIR=$B/tmp`.
 
 1. `cmake -S . -B $B/debug -DCMAKE_BUILD_TYPE=Debug -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_PRECOMPILE_METAL=OFF -DAIVERSE_CLIENT_BUNDLE_CONTENT=OFF` — PASS (`configure.log`).
-2. `cmake --build $B/debug --target aiverse_vfx_graph_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests aiverse_spectrafx_header_smoke aiverse_vfx_spfx_diagnostics_test aiverse_editor --parallel 8` — PASS (`build.log`). Full editor linked. Three pre-existing warnings in unchanged RtsView.cpp/RtsGroundFx.cpp (unused local/parameters); no new warning in changed sources.
+2. `cmake --build $B/debug --target aiverse_vfx_graph_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests aiverse_spectrafx_header_smoke aiverse_vfx_spfx_diagnostics_test aiverse_editor --parallel 8` — PASS (`build.log`). Full editor linked. Three pre-existing warnings in unchanged RtsView.cpp/RtsGroundFx.cpp (unused local/parameters), plus two unused GraphWindow helper warnings discovered in the complete log; those helpers are removed and rebuilt in the lighting-sync follow-up.
 3. Initial focused CTest: 4/6 PASS, graph compiler and GPU recording mock FAILED.
    Corrected outdated version expectation and missing checked-upload mock contract;
    focused rebuild/retest **2/2 PASS** (`focused-rebuild.log`, `focused-tests.log`).
@@ -101,3 +101,12 @@ Next: publish this reviewed merge and separate handoff with normal fast-forward
 protection; verify both original tips are ancestors of origin/main. Then run focused
 interactive preview replacement/stop/reload/two-view QA and remaining platform CI.
 Original dirty Studio worktree was never edited or switched by this integration.
+
+
+## 2026-11-20 — Inspector revalidated with lighting main
+
+Combined implementation `4acfb482742d2bb1d615c3eaae60308af09ffa1b` preserves incoming main `d84e958b1`.
+Editor build PASS; SpectraFX 20/20 PASS (16.78s), five real Metal checks with
+no skips; actual PRISMA frame review 5/5 PASS. Two unused GraphWindow helpers
+removed; cleanup build has zero warnings. Full repository/platform/manual UI
+coverage remains unrun. Exact commands and integration decisions: `docs/agent-handoffs/inspector-spectrafx-lighting-sync-2026-11-20.md`.

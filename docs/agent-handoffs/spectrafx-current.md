@@ -1,3 +1,12 @@
+## 2026-11-20 — Inspector revalidated with lighting main
+
+Combined implementation `4acfb482742d2bb1d615c3eaae60308af09ffa1b` preserves incoming main `d84e958b1`.
+Editor build PASS; SpectraFX 20/20 PASS (16.78s), five real Metal checks with
+no skips; actual PRISMA frame review 5/5 PASS. Two unused GraphWindow helpers
+removed; cleanup build has zero warnings. Full repository/platform/manual UI
+coverage remains unrun. Exact commands and integration decisions: `docs/agent-handoffs/inspector-spectrafx-lighting-sync-2026-11-20.md`.
+
+
 ## 2026-11-20 — Inspector graph-v2 integration with current main
 
 Implementation `9db6d2014137e41cd67ff82dc187cf1136f73bb3`; branch `feature/aiv20261120_perf_inspector_integration`.
