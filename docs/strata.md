@@ -1998,3 +1998,70 @@ turn. New test fixtures:
 See Stage 16.1 and Stage 16.2 in
 `docs/agent-handoffs/strata-virtual-geometry.md` for code commits,
 explicit limitations and the next agent handoff.
+
+
+## Stage 16.3 — single-primitive Vulkan Renderer3D GPU indirect route (experimental)
+
+A strictly bounded **production Renderer3D path** is now authored for
+Vulkan GPU-authored STRATA cluster commands. Unlike Stage 16.2's
+diagnostic-only packet, `GeometryScene` may attach an approved
+`GpuIndexedSelectionPacket` to its **existing** `ModelDraw` (one
+per source). `Renderer3D::renderModels(opaque)` then binds the
+original model shader pipeline, PBR material textures, lighting and
+U0 instance transform with `drawModelBatch(...,submit=false)`.
+Only after a final frame/resource/material/world validity check does
+it invoke Vulkan's indexed indirect RHI command. On success, the
+normal original draw is **skipped**; on any failure, the same item
+follows the original CPU/Legacy draw path. No duplicate render owner
+or second vertex allocator is created.
+
+### Explicit opt-in and parity acceptance
+
+```cpp
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true);
+scene.setStrataGpuCullingEnabled(true);
+scene.setStrataVulkanGpuIndirectEnabled(true);
+
+// IMPORTANT: leave both FALSE until actual CPU/GPU selection parity
+// and Renderer3D Vulkan pixel parity are verified for this exact build.
+scene.setStrataVulkanGpuParityGates(false,false);
+scene.load(device,sceneJson,readFile);
+```
+
+The route is **default OFF**, and the two separate parity gates
+are never enabled automatically. To activate, both must be accepted
+explicitly after native A/B checks. The route currently supports
+only ONE source model, ONE scene instance, ONE static rigid opaque
+primitive/material/node, ONE active main view, and pooled GPU
+geometry with matching model revisions. No morph/skin/other author
+LOD, shadow batches, shader graph, extra material state or unstable
+transforms. With sun shadows or planar reflections enabled, GPU
+selection is declined and the complete Legacy or portable CPU
+path remains authoritative for the same source across all passes.
+Metal and GLES3 continue through their previous paths.
+
+The RHI `Device::drawIndexedGpuIndirect` primitive still exists
+for other validated uses, but the Stage16.3 Renderer3D route submits
+a bounded GPU-authored multi-command array through its existing
+`drawIndexedIndirect` call, so all visible clusters are represented.
+The Stage16.2 GPU clear/select/safety chain means empty and invalid
+slots are harmless, and its explicit fallback can restore the entire
+original primitive when selection metadata is invalid.
+
+Diagnostics: `GeometryScene::Stats` exposes the number of Vulkan
+GPU candidates, prepared packets, and declines; `ModelRenderStats`
+exposes Renderer3D candidates, successful GPU submissions, rejected
+packets and regular-draw fallbacks. GPU output triangle counts
+remain unknown without asynchronous readback, not guessed from
+CPU-selected LODs.
+
+**Stage 16.3 implementation has not been compiled or tested yet.**
+Its packet copying and eligibility behavior have authored recording
+test cases, but an actual native Renderer3D main-camera RGBA
+Legacy-vs-GPU A/B fixture is still required before enabling
+`setStrataVulkanGpuParityGates(true,true)`. Multiple independent
+materials/instances, shadow/reflection GPU routing and optimized
+GPU page workloads remain further functionality work. Complete
+file/commit/API handoff: `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage 16.3.
