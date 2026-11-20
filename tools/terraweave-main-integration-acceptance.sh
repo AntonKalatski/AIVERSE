@@ -21,6 +21,38 @@ printf 'git_sha=%s\n' "$(git rev-parse HEAD)" | tee -a "$reports/provenance.txt"
 printf 'git_branch=%s\n' "$(git branch --show-current)" | tee -a "$reports/provenance.txt"
 git status --short | tee "$reports/git-status.txt"
 
+# A PASS must be attributable to one clean, immutable source tree.
+# A detached QA checkout is fine; uncommitted changes are not.
+if [[ -s "$reports/git-status.txt" ]]; then
+  echo '[integration] FAIL: source worktree has uncommitted/untracked changes' >&2
+  exit 1
+fi
+
+# The default is the last audited main ancestor. Callers can pin a newer
+# main or an exact target HEAD without rewriting this QA script.
+required_main="${AIVERSE_ACCEPTANCE_REQUIRED_MAIN_SHA:-d6c8fa4646cf6aa205eea5f6a0b7c0c34ac479cb}"
+actual_head="$(git rev-parse HEAD)"
+if [[ -n "${AIVERSE_ACCEPTANCE_REQUIRED_HEAD:-}" && "$actual_head" != "$AIVERSE_ACCEPTANCE_REQUIRED_HEAD" ]]; then
+  echo "[integration] FAIL: unexpected HEAD $actual_head" >&2
+  exit 1
+fi
+if ! git cat-file -e "${required_main}^{commit}" 2>/dev/null ||
+   ! git merge-base --is-ancestor "$required_main" HEAD; then
+  echo "[integration] FAIL: required main ancestor $required_main is missing" >&2
+  exit 1
+fi
+# On local Mac QA, fetch origin/main before running. Do not silently
+# accept a branch that is behind an already-visible newer main.
+if git show-ref --verify --quiet refs/remotes/origin/main &&
+   ! git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
+  echo '[integration] FAIL: origin/main is newer than this Terra checkout' >&2
+  exit 1
+fi
+printf 'required_main_sha=%s\n' "$required_main" | tee -a "$reports/provenance.txt"
+printf 'observed_origin_main_sha=%s\n' \
+  "$(git rev-parse refs/remotes/origin/main 2>/dev/null || echo unavailable)" \
+  | tee -a "$reports/provenance.txt"
+
 # Prevent a source checkout that predates one side of the 2026-11-20 merge
 # from being mistaken for its integrated descendant.
 git merge-base --is-ancestor d9de76dcd8aa4e7b4e01a42e183a0b9c98c4854b HEAD || {
@@ -56,6 +88,24 @@ cmake --build "$build" --parallel "$jobs" \
 echo '========== registered native tests =========='
 ctest --test-dir "$build" -N \
   2>&1 | tee "$reports/inventory.log"
+
+# CTest exits successfully even when no tests are registered. Explicitly
+# require the primary end-to-end and saved-nutrient fixtures before running.
+required_tests=(
+  aiverse_tests
+  terraweave
+  terraweave_micro_nutrient
+  physis_terraweave_fall_bridge
+)
+for test_name in "${required_tests[@]}"; do
+  if ! grep -Eq "^[[:space:]]*Test[[:space:]]*#[0-9]+:[[:space:]]*${test_name}[[:space:]]*$" \
+       "$reports/inventory.log"; then
+    echo "[integration] FAIL: required CTest is missing: $test_name" >&2
+    exit 1
+  fi
+done
+echo '[integration] PASS: four mandatory native CTests registered' \
+  | tee "$reports/required-tests.txt"
 
 echo '========== run ONE complete CTest =========='
 ctest --test-dir "$build" --output-on-failure --parallel "$ctest_jobs" \
