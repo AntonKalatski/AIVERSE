@@ -162,8 +162,15 @@ Model pointer will be rejected on those changes. It is not a GPU
 fence or an automatic asset-loader.
 
 MotionWeave detaches facial **write pools before worker jobs**; no
-two graph workers may write one actor's facial state. Facial state
-is cosmetic and never serialized, hashed or replayed as gameplay.
+two graph workers may write one actor's facial state. The
+`MotionWeaveScheduler` dispatches **morph-only** rigs without an
+environment through its normal worker-safe graph path, but any facial
+rig using the existing native IK (or host environment callbacks)
+runs at the serial owner-thread barrier. Runtime IK vectors and named
+scalar weights required by the compiled rig must be present; missing
+controls fail atomically instead of silently using default targets.
+Facial state is cosmetic and never serialized, hashed or replayed as
+gameplay.
 The user has deferred native tests to the final coordinated Mac pass;
 `animation_facial_control_rig` is newly registered but NOT RUN.
 
