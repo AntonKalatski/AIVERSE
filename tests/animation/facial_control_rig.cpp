@@ -2,6 +2,7 @@
 // All checks execute in Release (NDEBUG) via AlwaysCheck.
 #include <aiverselib/animation/FacialControlRig.h>
 #include <aiverselib/animation/EcsAnimationSystems.h>
+#include <aiverselib/animation/MotionWeaveScheduler.h>
 #include "tests/AlwaysCheck.h"
 #include <cmath>
 #include <limits>
@@ -175,6 +176,19 @@ void testEcsComposition() {
     const auto& status=presentation.get<AnimationDiagnosticsComponent>(e);
     AIVERSE_TEST_CHECK(!status.healthy && !status.error.empty());
     AIVERSE_TEST_CHECK(pose.valid); // safe Graph fallback; face pose unchanged
+    auto& current=presentation.get<AnimationFacialControlComponent>(e);
+    current.controls=faceParams;
+    MotionWeaveScheduler scheduler(1);
+    const auto serial=scheduler.update(presentation,.016f);
+    AIVERSE_TEST_CHECK(serial.serialEntities==1 && serial.parallelEntities==0);
+    // Without native IK, the SAME actor/Graph becomes worker-eligible.
+    auto onlyMorph=authored();
+    onlyMorph.erase("rig");
+    current.rig=std::make_shared<const FacialControlRig>(
+        FacialControlRig::compile(model,onlyMorph,faceParams));
+    current.state.reset();
+    const auto parallel=scheduler.update(presentation,.016f);
+    AIVERSE_TEST_CHECK(parallel.serialEntities==0 && parallel.parallelEntities==1);
 }
 } // namespace
 int main() {
