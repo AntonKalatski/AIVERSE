@@ -143,7 +143,9 @@ public:
     // Conservative preflight, queried by the native driver BEFORE excluding
     // legacy raster direct sources for this view. No GPU mutation.
     bool canAcquireFrame() const {
-        if(!ready() || !owner_.canSubmitScreen())return false;
+        if(!ready() || !owner_.canSubmitScreen() ||
+           !dev_->frameSerial() ||
+           dev_->frameSerial()<=dev_->completedFrameSerial())return false;
         const auto completed=dev_->completedFrameSerial();
         for(const auto& slot:receiverSlots_)
             if(slot.retireSerial<=completed)return true;
@@ -261,43 +263,86 @@ public:
     }
 
 private:
-    bool ensurePair(int w,int h,gfx::TextureHandle& color,
-                    gfx::TextureHandle& depth,int& storedW,int& storedH) {
-        if(!dev_ || owner_.busy() || w<=0 || h<=0)return false;
-        if(color.valid() && depth.valid() &&
-           storedW==w && storedH==h)return true;
-        gfx::TextureDesc desc;
-        desc.width=w;desc.height=h;
-        desc.format=gfx::PixelFormat::RGBA16F;
-        desc.filter=gfx::Filter::Nearest;
-        desc.renderTarget=true;
-        desc.label="LumaWeave Vulkan opaque material/surface receiver";
-        const auto next=dev_->createTexture(desc);
-        if(!next.valid())return false;
-        desc.format=gfx::PixelFormat::Depth;
-        desc.label="LumaWeave Vulkan receiver depth";
-        const auto nextDepth=dev_->createTexture(desc);
-        if(!nextDepth.valid()){dev_->destroyTexture(next);return false;}
-        if(color.valid())dev_->destroyTexture(color);
-        if(depth.valid())dev_->destroyTexture(depth);
-        color=next;depth=nextDepth;
-        storedW=w;storedH=h;
+    struct ReceiverSlot {
+        gfx::TextureHandle material{},materialDepth{};
+        gfx::TextureHandle surface{},surfaceDepth{},composeDepth{};
+        int width=0,height=0;
+        uint64_t retireSerial=0; // ALL five images held until real frame fence
+    };
+
+    bool acquireReceiverSlot(int w,int h) {
+        if(!dev_ || w<=0 || h<=0)return false;
+        const uint64_t frame=dev_->frameSerial();
+        const uint64_t completed=dev_->completedFrameSerial();
+        if(!frame || frame<=completed)return false;
+        int chosen=-1;
+        // Prefer a size-matched safe slot. A newly selected viewport or
+        // different in-flight frame never overwrites earlier receiver data.
+        for(size_t i=0;i<receiverSlots_.size();++i) {
+            const auto& slot=receiverSlots_[i];
+            if(slot.retireSerial>completed)continue;
+            if(chosen<0)chosen=int(i);
+            if(slot.width==w && slot.height==h && slot.material.valid() &&
+               slot.materialDepth.valid() && slot.surface.valid() &&
+               slot.surfaceDepth.valid() && slot.composeDepth.valid()) {
+                chosen=int(i);break;
+            }
+        }
+        if(chosen<0)return false;
+        auto& slot=receiverSlots_[size_t(chosen)];
+        if(slot.width!=w || slot.height!=h || !slot.material.valid() ||
+           !slot.materialDepth.valid() || !slot.surface.valid() ||
+           !slot.surfaceDepth.valid() || !slot.composeDepth.valid()) {
+            gfx::TextureDesc desc;
+            desc.width=w;desc.height=h;
+            desc.format=gfx::PixelFormat::RGBA16F;
+            desc.filter=gfx::Filter::Nearest;desc.renderTarget=true;
+            desc.label="LumaWeave Vulkan per-frame opaque receiver";
+            std::array<gfx::TextureHandle,5> replacement{};
+            for(size_t i=0;i<replacement.size();++i) {
+                desc.format=(i==0 || i==2) ?
+                    gfx::PixelFormat::RGBA16F:gfx::PixelFormat::Depth;
+                replacement[i]=dev_->createTexture(desc);
+                if(!replacement[i].valid()) {
+                    for(auto t:replacement)
+                        if(t.valid())dev_->destroyTexture(t);
+                    return false;
+                }
+            }
+            for(auto t:{slot.material,slot.materialDepth,slot.surface,
+                        slot.surfaceDepth,slot.composeDepth})
+                if(t.valid())dev_->destroyTexture(t);
+            slot.material=replacement[0];
+            slot.materialDepth=replacement[1];
+            slot.surface=replacement[2];
+            slot.surfaceDepth=replacement[3];
+            slot.composeDepth=replacement[4];
+            slot.width=w;slot.height=h;
+        }
+        slot.retireSerial=frame;
+        activeReceiverSlot_=chosen;
+        materialTarget_=slot.material;
+        materialDepth_=slot.materialDepth;
+        surfaceTarget_=slot.surface;
+        surfaceDepth_=slot.surfaceDepth;
+        composeDepth_=slot.composeDepth;
+        materialW_=surfaceW_=composeWidth_=w;
+        materialH_=surfaceH_=composeHeight_=h;
         return true;
     }
-    bool ensureComposeDepth(int w,int h) {
-        if(!dev_ || owner_.busy() || w<=0 || h<=0)return false;
-        if(composeDepth_.valid() && composeWidth_==w && composeHeight_==h)
-            return true;
-        gfx::TextureDesc td;
-        td.width=w;td.height=h;td.format=gfx::PixelFormat::Depth;
-        td.filter=gfx::Filter::Nearest;td.renderTarget=true;
-        td.label="LumaWeave Vulkan independent composite depth";
-        const auto next=dev_->createTexture(td);
-        if(!next.valid())return false;
-        if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
-        composeDepth_=next;composeWidth_=w;composeHeight_=h;
-        return true;
+
+    bool ensurePair(int w,int h,gfx::TextureHandle color,
+                    gfx::TextureHandle depth,int storedW,int storedH) const {
+        return dev_ && activeReceiverSlot_>=0 && w>0 && h>0 &&
+               color.valid() && depth.valid() &&
+               storedW==w && storedH==h;
     }
+
+    bool ensureComposeDepth(int w,int h) const {
+        return dev_ && activeReceiverSlot_>=0 && composeDepth_.valid() &&
+               w>0 && h>0 && composeWidth_==w && composeHeight_==h;
+    }
+
     bool additiveCompose(gfx::Device& dev,gfx::TextureHandle direct) const {
         if(!pipeline_.valid() || !scene_.colorTarget.valid() ||
            !scene_.depthTarget.valid() || !composeDepth_.valid())
@@ -331,6 +376,8 @@ private:
     gfx::BufferHandle vertex_{};
     gfx::TextureHandle materialTarget_{},materialDepth_{};
     gfx::TextureHandle surfaceTarget_{},surfaceDepth_{},composeDepth_{};
+    std::array<ReceiverSlot,LumaWeaveVulkanDirect::kScreenSlotCount> receiverSlots_{};
+    int activeReceiverSlot_=-1;
     gfx::PassDesc scene_{};
     int width_=0,height_=0;
     int materialW_=0,materialH_=0,surfaceW_=0,surfaceH_=0;
