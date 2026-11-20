@@ -418,8 +418,10 @@ void VulkanDevice::deliverComputeReadbacks() {
     for(size_t i=0;i<computeReads_.size();++i){
         if(computeReads_[i].serial<=completed_)
             finished.push_back(std::move(computeReads_[i]));
-        else
-            computeReads_[kept++]=std::move(computeReads_[i]);
+        else {
+            if (kept!=i) computeReads_[kept]=std::move(computeReads_[i]);
+            ++kept;
+        }
     }
     computeReads_.resize(kept);
     for(auto& pending:finished){
