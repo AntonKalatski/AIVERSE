@@ -29,6 +29,31 @@ struct SculptGpuSkinInfluence {
 };
 static_assert(sizeof(SculptGpuSkinInfluence)==32);
 
+// Renderer3D's SKINNED shaders use exactly three float4 ROWS per
+// local-palette matrix (U3), not a full 4x4 array in the vertex shader.
+// The ID compute reuses the identical 48-byte row layout and arithmetic.
+struct alignas(16) SculptGpuSkinRows {
+    float row0[4]{};
+    float row1[4]{};
+    float row2[4]{};
+};
+static_assert(sizeof(SculptGpuSkinRows)==48);
+inline std::vector<SculptGpuSkinRows> sculptGpuRendererSkinRows(
+        std::span<const render::mat4> matrices) {
+    std::vector<SculptGpuSkinRows> rows;
+    rows.reserve(matrices.size());
+    for(const auto& matrix:matrices) {
+        SculptGpuSkinRows value;
+        for(std::size_t c=0;c<4;++c) {
+            value.row0[c]=matrix.at(0,int(c));
+            value.row1[c]=matrix.at(1,int(c));
+            value.row2[c]=matrix.at(2,int(c));
+        }
+        rows.push_back(value);
+    }
+    return rows;
+}
+
 // Layout matches the 64-byte float4x4 following four uint32 in MSL.
 struct alignas(16) SculptGpuSourceParams {
     std::uint32_t count=0,vertices=0,skinned=0,jointMatrices=0;
@@ -109,7 +134,10 @@ inline bool prepareSculptGpuVertexSource(
         for(std::size_t j=0;j<skin->joints.size();++j) {
             const auto joint=skin->joints[j];
             if(joint<0 || std::size_t(joint)>=nodeWorld.size())return false;
-            const auto matrix=selectedWorld*
+            // Match Renderer3D::paletteMatrices: GPU shader first skins
+            // in model space using packed 3x4 rows, THEN I.model applies
+            // selectedWorld. Precomposing world here changed rounding.
+            const auto matrix=
                 nodeWorld[std::size_t(joint)]*skin->inverseBind[j];
             for(float value:matrix.m)
                 if(!std::isfinite(value))return false;
@@ -155,7 +183,12 @@ inline bool prepareSculptGpuVertexSource(
                 material->shaderGraph)))return false;
             sawOpaque=true;
         }
-        if(skin && primitive.jointPalette.empty())return false;
+        // Renderer3D uploads only kMaxPaletteJoints 3x4 matrices into
+        // its fixed 4 KB U3 block. Larger primitive palettes would be
+        // truncated by the colour shader but silently accepted by ID.
+        if(skin && (primitive.jointPalette.empty() ||
+                    primitive.jointPalette.size()>std::size_t(kMaxPaletteJoints)))
+            return false;
         for(std::size_t i=first;i<first+primitive.indexCount;++i) {
             const auto id=model.indices[i];
             if(id>=model.vertices.size())return false;
@@ -174,11 +207,12 @@ inline bool prepareSculptGpuVertexSource(
                     const auto joint=primitive.jointPalette[local];
                     if(std::size_t(joint)>=skin->joints.size())return false;
                     influence.joints[k]=joint;
+                    // Same UNORM8 -> float4 conversion as ModelShaders
+                    // before the GPU's own dot(weight) normalization.
                     influence.weights[k]=float(weight)/255.f;
                     weightSum+=influence.weights[k];
                 }
                 if(!(weightSum>0.f) || !std::isfinite(weightSum))return false;
-                for(auto& weight:influence.weights)weight/=weightSum;
             }else if(model.meshes[meshId].primitives[firstPalette[id]]
                      .jointPalette!=primitive.jointPalette)return false;
         }
@@ -236,6 +270,7 @@ inline constexpr const char* kSculptGpuSourceExpandMSL=R"MSL(
 using namespace metal;
 struct Input { uint vertex; uint triangleId; };
 struct Skin { uint4 joints; float4 weights; };
+struct SkinRows { float4 row0, row1, row2; };
 struct Output { packed_float3 world; uchar4 rgba; };
 struct Params {
     uint count, vertices, skinned, jointMatrices;
@@ -244,7 +279,7 @@ struct Params {
 kernel void cs_main(device const uint* source [[buffer(0)]],
                     device const Input* triangles [[buffer(1)]],
                     device const Skin* influences [[buffer(2)]],
-                    device const float4x4* joints [[buffer(3)]],
+                    device const SkinRows* joints [[buffer(3)]],
                     device Output* output [[buffer(4)]],
                     constant Params& params [[buffer(8)]],
                     uint thread [[thread_position_in_grid]]) {
@@ -258,12 +293,22 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
     float4 world;
     if(params.skinned!=0u) {
         const Skin influence=influences[request.vertex];
-        world=float4(0.0);
+        const float4 weights=influence.weights /
+            max(dot(influence.weights,float4(1.0)),1.0e-5);
+        float4 r0=float4(0.0),r1=float4(0.0),r2=float4(0.0);
         for(uint k=0u;k<4u;++k) {
-            const float weight=influence.weights[k];
-            if(weight>0.0 && influence.joints[k]<params.jointMatrices)
-                world+=(joints[influence.joints[k]]*bind)*weight;
+            const float weight=weights[k];
+            if(weight<=0.0)continue;
+            const uint joint=influence.joints[k];
+            if(joint>=params.jointMatrices)return;
+            const SkinRows rows=joints[joint];
+            r0+=rows.row0*weight;
+            r1+=rows.row1*weight;
+            r2+=rows.row2*weight;
         }
+        const float4 skinned=float4(dot(r0,bind),dot(r1,bind),
+                                    dot(r2,bind),1.0);
+        world=params.rigidWorld*skinned;
     }else{
         world=params.rigidWorld*bind;
     }
@@ -284,6 +329,7 @@ inline constexpr const char* kSculptGpuSourceMaskExpandMSL=R"MSL(
 using namespace metal;
 struct Input { uint vertex; uint triangleId; };
 struct Skin { uint4 joints; float4 weights; };
+struct SkinRows { float4 row0, row1, row2; };
 struct MaskInput { float4 uvAlpha; };
 struct Output { packed_float3 world; uchar4 rgba; float4 uvAlpha; };
 struct Params {
@@ -293,7 +339,7 @@ struct Params {
 kernel void cs_main(device const uint* source [[buffer(0)]],
                     device const Input* triangles [[buffer(1)]],
                     device const Skin* influences [[buffer(2)]],
-                    device const float4x4* joints [[buffer(3)]],
+                    device const SkinRows* joints [[buffer(3)]],
                     device Output* output [[buffer(4)]],
                     device const MaskInput* masks [[buffer(5)]],
                     constant Params& params [[buffer(8)]],
@@ -308,12 +354,22 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
     float4 world;
     if(params.skinned!=0u) {
         const Skin influence=influences[request.vertex];
-        world=float4(0.0);
+        const float4 weights=influence.weights /
+            max(dot(influence.weights,float4(1.0)),1.0e-5);
+        float4 r0=float4(0.0),r1=float4(0.0),r2=float4(0.0);
         for(uint k=0u;k<4u;++k) {
-            const float weight=influence.weights[k];
-            if(weight>0.0 && influence.joints[k]<params.jointMatrices)
-                world+=(joints[influence.joints[k]]*bind)*weight;
+            const float weight=weights[k];
+            if(weight<=0.0)continue;
+            const uint joint=influence.joints[k];
+            if(joint>=params.jointMatrices)return;
+            const SkinRows rows=joints[joint];
+            r0+=rows.row0*weight;
+            r1+=rows.row1*weight;
+            r2+=rows.row2*weight;
         }
+        const float4 skinned=float4(dot(r0,bind),dot(r1,bind),
+                                    dot(r2,bind),1.0);
+        world=params.rigidWorld*skinned;
     }else{
         world=params.rigidWorld*bind;
     }
