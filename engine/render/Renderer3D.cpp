@@ -268,8 +268,8 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     modelDrawInvocation_=0; // frame-scoped Renderer3D source instance IDs
-    modelSubmissionTarget_=nullptr;
-    modelSubmissionSecondary_=nullptr;
+    trackedModels_.fill(nullptr);
+    trackedModelCount_=0;
     modelSubmitted_.clear();
     modelSubmissionTruncated_=false;
     modelSubmissionMainEncoded_=false;
