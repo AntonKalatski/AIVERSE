@@ -492,9 +492,15 @@ void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
 
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
-    if (vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX) == VK_ERROR_DEVICE_LOST) healthy_ = false;
-    completed_ = std::max(completed_, s.serial);
-    collectGarbage();
+    const VkResult result=vkWaitForFences(device_,1,&s.fence,VK_TRUE,UINT64_MAX);
+    if(result!=VK_SUCCESS) {
+        healthy_=false;
+        // Do not publish "completed" serials when fence completion failed.
+        // Requests will be delivered as empty/invalid pixel callbacks.
+    }else{
+        completed_=std::max(completed_,s.serial);
+        collectGarbage();
+    }
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;
