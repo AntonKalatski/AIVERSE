@@ -135,6 +135,10 @@ private:
     void buildHeightChunk(gfx::Device& dev, const MapGrid& g, Chunk& c);
     // detail mode (RtsTerrainDetailMesh.cpp)
     bool buildDetail(gfx::Device& dev, const MapGrid& g, bool flatDig, bool all);
+    // Same-map detail edits: stage only affected coarse chunk LODs, preserve
+    // unchanged published meshes, and publish CPU/GPU images atomically.
+    bool tryBuildDetailIncremental(gfx::Device& dev,const MapGrid& g,bool flatDig);
+
     void buildDetailLod(gfx::Device& dev, const MapGrid& g, Chunk& c, int lod);
     void updateDetailTextures(gfx::Device& dev, int i0, int j0, int i1, int j1);
     uint64_t detailHash(const Chunk& c) const;
