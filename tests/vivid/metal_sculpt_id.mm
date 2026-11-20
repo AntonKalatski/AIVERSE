@@ -10,6 +10,7 @@
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/gfx/Gfx.h"
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -37,7 +38,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     std::span<const SculptGpuIdVertex> occluders={},
                                     const SculptGpuVertexSource* gpuSource=nullptr,
                                     bool* usedGpuSource=nullptr,
-                                    std::span<const SculptGpuMaskBatch> masks={}) {
+                                    std::span<const SculptGpuMaskBatch> masks={},
+                                    float* actualDepth=nullptr) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -48,7 +50,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     req.x=x;req.y=y;
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
-                        viewProj,req,occluders,masks,gpuSource),
+                        viewProj,req,occluders,masks,gpuSource,
+                        actualDepth!=nullptr),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -61,6 +64,12 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                     completed.rgba.size()==4,
                     "VIVID Metal async ID callback missing or stale");
             if(usedGpuSource)*usedGpuSource=completed.actualOverride;
+            if(actualDepth) {
+                require(completed.depthValid &&
+                        std::isfinite(completed.depth01),
+                        "VIVID Metal native GPU depth pixel callback invalid");
+                *actualDepth=completed.depth01;
+            }
             return completed.rgba;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -110,7 +119,11 @@ void test() {
         SculptGpuIdPass pass;
         require(pass.initialize(*device),
                 "VIVID Metal shader/pipeline for ID pass unavailable");
-        const auto center=runSample(*device,pass,model,surface,32,32);
+        float centreDepth=-1.f;
+        const auto center=runSample(*device,pass,model,surface,32,32,
+                                    {},nullptr,nullptr,{},&centreDepth);
+        require(std::fabs(centreDepth-0.2f)<0.001f,
+                "VIVID Metal ID target native depth was not near triangle");
         require(center[0]==2 && center[1]==0 &&
                 center[2]==0 && center[3]==0,
                 "VIVID Metal ID/depth pixel oracle did not select nearer face");
@@ -124,7 +137,11 @@ void test() {
             {{ 0.7f,-0.7f,0.1f},{0,0,0,0}},
             {{ 0.0f, 0.7f,0.1f},{0,0,0,0}}
         }};
-        const auto blocked=runSample(*device,pass,model,surface,32,32,blocker);
+        float blockedDepth=-1.f;
+        const auto blocked=runSample(*device,pass,model,surface,32,32,
+                                     blocker,nullptr,nullptr,{},&blockedDepth);
+        require(std::fabs(blockedDepth-0.1f)<0.001f,
+                "VIVID Metal native depth lost nearer zero-ID blocker");
         require(blocked==std::vector<std::uint8_t>({0,0,0,0}),
                 "VIVID Metal ignored nearer zero-ID depth occluder");
         const std::array<SculptGpuIdVertex,3> behind{{
@@ -184,15 +201,21 @@ void test() {
         }
         std::array<SculptGpuMaskBatch,1> unrelatedMask{foreground};
         device->updateTexture(alphaTexture,0,0,1,1,alphaHole.data(),4);
+        float holeDepth=-1.f;
         const auto visibleBehindHole=runSample(
             *device,pass,model,surface,32,32,{},nullptr,nullptr,
-            unrelatedMask);
+            unrelatedMask,&holeDepth);
+        require(std::fabs(holeDepth-0.2f)<0.001f,
+                "VIVID actual Metal hole depth did not retain source");
         require(visibleBehindHole==std::vector<std::uint8_t>({2,0,0,0}),
                 "Metal GPU alpha-hole occluder incorrectly hid a selected face");
         device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
+        float solidDepth=-1.f;
         const auto hiddenBehindSolid=runSample(
             *device,pass,model,surface,32,32,{},nullptr,nullptr,
-            unrelatedMask);
+            unrelatedMask,&solidDepth);
+        require(std::fabs(solidDepth-0.1f)<0.001f,
+                "VIVID actual Metal solid-mask depth did not block source");
         require(hiddenBehindSolid==std::vector<std::uint8_t>({0,0,0,0}),
                 "Metal nearer sampled alpha occluder failed depth/zero-ID blocking");
 
