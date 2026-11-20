@@ -117,6 +117,7 @@ public:
         lastTriangles_.clear();
         lastNodes_.clear();
         geometryUpload_={};
+        geometryUploadValid_=false;
         triCapacity_=nodeCapacity_=0;
     }
 
@@ -197,23 +198,25 @@ public:
             }
         }
         const auto triPlan=giGpuPlanSparsePatch(
-            lastTriangles_,bvh.triangles,growTri);
+            lastTriangles_,bvh.triangles,growTri || !geometryUploadValid_);
         const auto nodePlan=giGpuPlanSparsePatch(
-            lastNodes_,bvh.nodes,growNode);
+            lastNodes_,bvh.nodes,growNode || !geometryUploadValid_);
+        geometryUploadValid_=false;
         const auto upload=[&](const auto& data,const GiGpuPatchPlan& plan,
                               gfx::BufferHandle target) {
             using Element=typename std::decay_t<decltype(data)>::value_type;
             for(const auto& range:plan.ranges) {
-                dev_->updateBuffer(target,data.data()+range.first,
+                if(!dev_->updateSharedBufferChecked(target,data.data()+range.first,
                                    range.count*sizeof(Element),
-                                   range.first*sizeof(Element));
+                                   range.first*sizeof(Element)))return false;
                 stats.bytes+=range.count*sizeof(Element);
                 ++stats.regions;
             }
+            return true;
         };
-        upload(bvh.triangles,triPlan,growTri?newTri:triBuffer_);
-        upload(bvh.nodes,nodePlan,growNode?newNode:nodeBuffer_);
-        if(!dev_->gpuHealthy()) {
+        const bool uploaded=upload(bvh.triangles,triPlan,growTri?newTri:triBuffer_) &&
+            upload(bvh.nodes,nodePlan,growNode?newNode:nodeBuffer_);
+        if(!uploaded || !dev_->gpuHealthy()) {
             if(newTri.valid())retireBuffer(newTri);
             if(newNode.valid())retireBuffer(newNode);
             return false;
@@ -238,6 +241,7 @@ public:
         nodeCount_=bvh.nodes.size();
         geometryRevision_=revision;
         geometryUpload_=stats;
+        geometryUploadValid_=true;
         return true;
     }
 
@@ -294,7 +298,8 @@ public:
                 return result;
             packed.push_back({t.index,t.position.x,t.position.y,t.position.z});
         }
-        dev_->updateBuffer(jobBuffer_,packed.data(),packed.size()*sizeof(GpuJob));
+        if(!dev_->updateSharedBufferChecked(jobBuffer_,packed.data(),packed.size()*sizeof(GpuJob)))
+            return result;
         // With zero geometry the kernel overwrites requested probes with zero RGB
         // (the cache is initialized to zero; old light must not survive).
         if (!dev_->beginCompute(compute_)) return result;
@@ -353,6 +358,7 @@ private:
     void retireBuffer(gfx::BufferHandle h) {
         if(dev_ && h.valid())retirement_.retire(*dev_,h);
     }
+    bool geometryUploadValid_=false;
     GpuResourceRetirement retirement_;
     gfx::Device* retirementDevice_=nullptr;
     gfx::Device* dev_=nullptr;

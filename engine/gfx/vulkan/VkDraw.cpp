@@ -133,6 +133,7 @@ VkFramebuffer VulkanDevice::framebufferFor(VkImageView color, VkImageView depth,
 }
 
 void VulkanDevice::beginPass(const PassDesc& d) {
+    if (activeCompute_) endCompute();
     if (!recording_ || inPass_) return;
     VTexture* color = nullptr;
     VTexture* depth = nullptr;

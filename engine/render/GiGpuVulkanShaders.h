@@ -1,6 +1,6 @@
 // Vulkan 1.1/SPIR-V version of GiGpuSmallSceneShaders.h one-bounce GI.
-// ABI: std430 Tri=64 B, Node=48 B, Lamp=32 B, Job=16 B;
-// push constants=32 B, exactly GiGpuSmallScene::Uniforms.
+// ABI: std430 Tri=64 B, Node=48 B, Lamp=64 B, Job=16 B;
+// push constants=80 B, exactly GiGpuSmallScene::Uniforms.
 // Descriptor set 0: storage buffers 0..3, rgba16f storage image 4.
 // Local size X=64. No Vulkan shader extension or subgroup dependency.
 // This is independent INDIRECT transport; it never produces direct light.

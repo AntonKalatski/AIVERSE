@@ -37,17 +37,19 @@ public:
         blocked_=false;diagnostic_="";return true;
     }
     bool publishLights(std::vector<GiMovingLight> lights) {
-        blocked_=true;
+        blocked_=true;lightsCurrent_=false;
         if(!canMutate())return false;
         if(!gpu_.setLights(std::move(lights))) {
             diagnostic_="GI GPU light capacity or source rejected";return false;
         }
+        lightsCurrent_=true;
         scheduler_.invalidateAll(GiDirtyReason::Lighting);
         blocked_=false;diagnostic_="";return true;
     }
     bool publishEnvironment(GiEnvironmentLight environment) {
-        blocked_=true;
+        blocked_=true;environmentCurrent_=false;
         if(!canMutate() || !gpu_.setEnvironment(environment))return false;
+        environmentCurrent_=true;
         scheduler_.invalidateAll(GiDirtyReason::Environment);
         blocked_=false;diagnostic_="";return true;
     }
@@ -68,7 +70,7 @@ public:
     }
     bool updateFrame(float3 focus,size_t maxProbes=32) {
         poll();
-        if(!ready() || !scene_ || !geometryCurrent_ || blocked_ || !canMutate())return false;
+        if(!ready() || !scene_ || !geometryCurrent_ || !lightsCurrent_ || !environmentCurrent_ || blocked_ || !canMutate())return false;
         if(!scheduler_.pending())return true;
         auto jobs=scheduler_.claim(std::min(maxProbes,GiGpuSmallScene::kMaxJobs),focus);
         if(jobs.empty())return false;
@@ -87,7 +89,7 @@ public:
         return true;
     }
     bool canPresent() const {
-        return ready() && scene_ && geometryCurrent_ && !blocked_ && !pendingFence_ &&
+        return ready() && scene_ && geometryCurrent_ && lightsCurrent_ && environmentCurrent_ && !blocked_ && !pendingFence_ &&
             !scheduler_.pending() && device_->gpuHealthy();
     }
     // Called by renderer admission; its token covers every later draw in this
@@ -124,6 +126,7 @@ private:
     uint64_t revision_=0,pendingFence_=0;
     mutable uint64_t sampledFence_=0;
     bool blocked_=true,geometryCurrent_=false;
+    bool lightsCurrent_=true,environmentCurrent_=true;
     const char* diagnostic_="";
 };
 }

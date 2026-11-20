@@ -75,6 +75,7 @@ struct VTexture {
     PixelFormat format = PixelFormat::RGBA8;
     VkFormat vkFormat = VK_FORMAT_UNDEFINED;
     int width = 0, height = 0, levels = 1;
+    bool storage = false;
     bool depth = false, renderTarget = false, generateMips = false, compressed = false;
 };
 
@@ -92,6 +93,13 @@ struct VPipeline {
     std::vector<Variant> variants;               // per render pass format (and HDR shader)
 };
 
+struct VCompute {
+    VkShaderModule shader = VK_NULL_HANDLE;
+    VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+};
+
 struct FrameSlot {
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer pre = VK_NULL_HANDLE, main = VK_NULL_HANDLE;
@@ -101,6 +109,8 @@ struct FrameSlot {
     uint64_t serial = 0;                         // frame submitted with the fence
     std::vector<VkDescriptorPool> descriptorPools;
     size_t descriptorPool = 0;
+    std::vector<VkDescriptorPool> computePools;
+    size_t computePool = 0;
     VkBuffer uniforms = VK_NULL_HANDLE;
     Allocation uniformAlloc;
     size_t uniformSize = 0, uniformOffset = 0;
@@ -174,6 +184,17 @@ public:
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
 
+    bool canUpdateSharedBuffers() const override { return healthy_ && !inPass_ && !activeCompute_; }
+    bool supportsCompute() const override { return computeAvailable_; }
+    ComputeHandle createCompute(const ComputeDesc& d) override;
+    void destroyCompute(ComputeHandle h) override;
+    bool beginCompute(ComputeHandle h) override;
+    void setComputeBuffer(int slot, BufferHandle b) override;
+    void setComputeTexture(int slot, TextureHandle t) override;
+    void setComputeUniforms(const void* data,size_t size) override;
+    void dispatch(uint32_t logicalX,uint32_t logicalY=1) override;
+    void endCompute() override;
+    bool computeDispatchSucceeded() const override { return computeDispatchSucceeded_; }
 private:
     // GfxVulkan.cpp
     bool createInstance(bool wantSurface, std::string& error);
@@ -266,6 +287,15 @@ private:
     Pool<VTexture> textures_;
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
+    Pool<VCompute> computes_;
+    bool computeAvailable_ = false;
+    uint32_t activeCompute_ = 0;
+    std::array<BufferHandle,4> computeBuffers_{};
+    TextureHandle computeTexture_{};
+    std::array<uint8_t,128> computeUniforms_{};
+    size_t computeUniformSize_ = 0;
+    bool computeImageWriting_ = false;
+    bool computeDispatchSucceeded_ = false;
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
