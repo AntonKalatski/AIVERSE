@@ -1115,6 +1115,15 @@ public:
     void endPass() override {
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
     }
+    void pushGpuDebugGroup(const char* label) override {
+        if (gpuTraceActive_ && enc_ && label) {
+            NSString* text = [NSString stringWithUTF8String:label];
+            if (text) [enc_ pushDebugGroup:text];
+        }
+    }
+    void popGpuDebugGroup() override {
+        if (gpuTraceActive_ && enc_) [enc_ popDebugGroup];
+    }
 
     void setViewport(const Rect& r) override {
         if (enc_) [enc_ setViewport:MTLViewport{double(r.x), double(r.y), double(r.w), double(r.h), 0.0, 1.0}];
