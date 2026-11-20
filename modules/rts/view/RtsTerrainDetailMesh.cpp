@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainRender.h"
 #include "RtsTerrainSurface.h"
