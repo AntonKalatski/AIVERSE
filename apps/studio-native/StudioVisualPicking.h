@@ -4,6 +4,7 @@
 // Unlike world AABBs, this never selects the empty corners of a rotated proxy.
 #pragma once
 #include "apps/studio-native/StudioDocumentVisuals.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
