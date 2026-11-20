@@ -161,3 +161,20 @@ reimport/reordering. Duplicate IDs fail layout compilation before importing
 Models and fail Save before opening/truncating a previously valid JSON file.
 See [SceneAttachmentHost](scene-attachment-host.md). Native GUI/CTest/GPU
 validation remains NOT RUN.
+
+
+
+## Stage 161 — animated child JSON compatibility
+
+ModelView now preserves the optional `animated` Boolean and
+`animationGraph` source key when loading or saving attachments. Enabling
+`animated=true` requires a stable child ID and a Graph asset reference.
+**Important:** this standalone viewer still has a parent-only Animator,
+so an enabled independent animated child is explicitly rejected during
+layout compilation instead of incorrectly being submitted as a static
+parent socket draw. Use the Studio child Graph preview or the native
+`AnimatedSceneAttachmentSources` integration API until ModelView
+receives its own child MotionWeave source host. See
+[animated child architecture](animated-scene-attachments.md) and
+[Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+No native CMake/CTest/Metal/Vulkan/GLES runtime checks have been run.
