@@ -528,7 +528,7 @@ int aiverseMain(int,char**) {
         }
         if(prepared && gpu) {
             const auto stats=renderer.gpuModelDrawStats();
-            if(indexed && stats.shaderGraphIcbSubmissions==0 &&
+            if(indexed && stats.eligible==0 && stats.shaderGraphIcbSubmissions==0 &&
                stats.perCommandVtExecutions==0 && stats.gpuEncodedCommands==0 &&
                stats.gpuIcbExecuteFailed==0)actualIcb[size_t(sample)]=true;
             if(!indexed && stats.shaderGraphIcbSubmissions>=1 &&

@@ -1965,7 +1965,9 @@ SOURCE ADDED entries above. Consult the newest texture handoff.
 physical-mip and bounded streamed-LRU pixel oracles.
 `metal_renderer_indexed_vt_gpu` checks production graph sampling with the
 48-byte uniform contract and safe direct fallback under ICB opt-in;
-indexed graph ICB acceleration is intentionally unsupported. Preserve this
+indexed graph ICB acceleration is intentionally unsupported. Reject indexed
+bindings during GPU draw admission, before command staging; a late backend
+rejection is not an acceptable steady-state fallback. Preserve this
 guard, legacy ICB execution checks and serial native GPU tests.
 The final verifier requires an absolute `--build-root`, supports
 `--expected-ref` (default HEAD), and builds Debug. On the owner's machine

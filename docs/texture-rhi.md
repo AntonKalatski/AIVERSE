@@ -4633,7 +4633,9 @@ physical-mip color probes check derivative-selected hardware mip blending.
 Shader Graph scene with indexed table slices and the 48-byte sampling
 uniforms. It compares direct draws with ICB opt-in enabled, verifies the
 independent scene-color oracle, and requires zero GPU-encoded commands:
-indexed graph VT deliberately uses the safe direct fallback. This is the
+indexed graph VT deliberately uses the safe direct fallback. GPU admission
+excludes indexed bindings before preflight and command-cache construction;
+unsupported 48-byte parameters never enter the legacy 16-byte ICB ABI. This is the
 supported behavior; it is not evidence of indexed ICB acceleration. Legacy
 mixed-material ICB tests continue to require actual indirect submissions.
 All eight native Metal tests are serial in CTest, including full-suite runs.
