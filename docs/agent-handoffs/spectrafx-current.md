@@ -1,5 +1,34 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 117 — main merged into isolated integration branch (NATIVE NOT RUN)
+
+**Merge SHA** `7ef385060956b73e131821e66e3a8b515da6ac32`
+on `integration/spectrafx-main-sync-20261120` has both
+parents: SpectraFX `ba4b126fd533cdbcb8443f46a68c6d8afe76867f`
+and main `e4129c5062a6ab47e7c70f3fdd483392fde1f679`.
+Three-way merge preserved **77 new files, 5 unchanged-main edits,
+6 concurrent edited files**, resolving one overlapping
+`apps/fps/client.cpp::shutdown` line preserving TerraWeave timing
+detach **and** SpectraFX shutdown.
+Static tree review: expected 88 changed files vs main, no foreign
+paths; two parents confirmed. **No native Mac build/CTest for merge**.
+Read
+`docs/agent-handoffs/spectrafx-stage117-main-merge-2026-11-20.md`
+and run final QA in a NEW dedicated worktree before updating the
+original feature or main.
+
+## Stage 116 — pre-merge Apple M3 Ultra acceptance PASS
+
+User native evidence at SHA
+`ba4b126fd533cdbcb8443f46a68c6d8afe76867f`:
+**128/128 full CTests, 13/13 SpectraFX, 4/4 real MetalGPU,
+5/5 visual pixel assertions**, all 10 acceptance stages exit 0,
+failed 0/skipped 0, Editor integration/full builds PASS.
+The prior `dt` scope regression is fixed. These results apply
+**only to the pre-main-merge SHA**.
+Read `docs/agent-handoffs/spectrafx-stage116-editor-native-acceptance-2026-11-20.md`.
+
+
 ## Stage 115 — focused Editor/FPS/RTS native rebuild PASS (reported)
 
 User reports successful Mac Studio focused build of

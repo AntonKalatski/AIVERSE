@@ -104,3 +104,15 @@ The documentation branch head at this report was
 full `ctest_full`, strict 4/4 MetalGPU evidence and 5/5 screenshot
 review. Run the full strict `tools/spectrafx/acceptance.sh` next,
 then record its exact compiled SHA and all exit statuses.
+
+## Stage 116 native follow-up: full acceptance PASS (pre-main-merge)
+
+The user completed a new full Darwin Apple M3 Ultra acceptance against
+`ba4b126fd533cdbcb8443f46a68c6d8afe76867f`:
+**128/128 full CTest**, **13/13 focused SpectraFX**,
+**4/4 real MetalGPU**, **5/5 visual assertions**, all ten
+acceptance stages exit 0, failed 0 / skipped 0. Both
+`host_integration_build` and `full_build` passed.
+See Stage 116 handoff. This evidence predates the Stage 117 merge
+of 1957 newer main commits and must **not** be represented as
+native acceptance of the merged tree.
