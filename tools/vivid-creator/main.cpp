@@ -14,6 +14,7 @@
 #include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SculptGpuIdPass.h"
+#include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
@@ -1898,7 +1899,10 @@ struct CreatorApp {
                 bool hardwareCandidate=false;
                 if(gpuSculptEnabled && !gpuSculptPass.pending() &&
                    dev.info().backend==gfx::Backend::Metal &&
-                   dev.frameSerial()) {
+                   dev.frameSerial() &&
+                   sculptGpuPickEligibility(
+                       *human.head,std::size_t(sculptMeshIndex))==
+                        SculptGpuPickEligibility::Eligible) {
                     hardwareCandidate=gpuSculptPass.supported() ||
                                       gpuSculptPass.initialize(dev);
                 }
@@ -1924,6 +1928,12 @@ struct CreatorApp {
                         std::to_string(sculptPicker.stats().testedTriangles)+
                         "/"+std::to_string(sculptPicker.stats().triangles)+
                         " / CPU "+std::to_string(pickMs)+" ms";
+                    if(gpuSculptEnabled && !hardwareCandidate) {
+                        const auto eligibility=sculptGpuPickEligibility(
+                            *human.head,std::size_t(sculptMeshIndex));
+                        status+=" / GPU ID disabled: "+
+                            std::string(sculptGpuPickEligibilityReason(eligibility));
+                    }
                     if(hardwareCandidate) {
                         const auto pixelX=int(mouse.x),pixelY=int(mouse.y);
                         const auto req=gpuSculptToken.begin(
