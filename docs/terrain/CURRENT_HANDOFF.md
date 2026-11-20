@@ -1,5 +1,19 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 full Mac native/editor/Box3D CTest 271/271 PASS (2026-11-20):**
+> User supplied real unfiltered acceptance output: **271/271 tests
+> passed, 0 failed, 882.51s wall**. `aiverse_tests` (856.37s),
+> `place` (26.12s), PHYSIS, NEREID, MetalGPU, SpectraFX and editor
+> groups all passed. This confirms the earlier shared Metal and
+> SpectraFX viewport compiler blockers were passed by this local build.
+> [New standalone 271-test QA handoff](qa-2026-11-20-stage70-mac-271-full-ctest-pass-handoff.md).
+> **Exact tested SHA must still be read from the Mac acceptance
+> `provenance.txt`**; current remote HEAD at report time was
+> `b17e775a922d9dc50981011c8f6e25d85fc7adec`.
+> GPU pixel parity, Vulkan/GLES, sustained four-owner ecology,
+> and exact-SHA CI remain separate gates. PR #53 remains Draft.
+>
+>
 > **Stage70 SpectraFX preview/editor compile fix (2026-11-20):**
 > User's full Mac build reached 95% but FAILED on two outdated
 > `Viewport::ensure` call sites in SpectraFX GPU Assets and Graph windows.
