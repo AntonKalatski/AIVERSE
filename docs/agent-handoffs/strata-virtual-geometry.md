@@ -3757,3 +3757,192 @@ without mutating the previously certified output.
 This extends Stage17.2 beyond multiple materials/meshes to duplicated
 position seams inside ONE original primitive. The other limitations
 remain: no cross-source/world stitching or source geometry repair.
+
+
+---
+
+## Stage 17.3 — temporal LOD hysteresis and streaming-demand consistency (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`.
+**Feature branch:** `feature/strata-virtual-geometry` (NOT merged).
+**Evidence:** all listed changes are **committed source and authored
+regression fixtures**. This stage has **NOT been compiled, CTest'd,
+GPU-rendered or benchmarked**. Older Stage13 lossless Metal image parity
+does not certify the new temporal, streaming or Stage16 Vulkan code.
+The owner requested one final combined build/test pass after features.
+
+### Architecture, semantics and public API
+
+- `StrataGeometry.h` extends backend-neutral
+  `SelectionInput` with optional
+  `hysteresisFraction` (validated 0..0.45), borrowed
+  `previousRefined` mask and count. A previously refined node
+  remains fine until its projected error falls below
+  `thresholdPixels*(1-h)`; a previously coarse node refines only
+  above `thresholdPixels*(1+h)`. **Cold start uses the original
+  threshold**, not the wider admission band. Missing GPU children,
+  invalid roots, or a selected-node budget still force the prior
+  conservative resident-parent fallback; temporal history cannot
+  override safety. An optional `SelectionOutput::refinedNodes`
+  bitmap tracks actually refined hierarchy nodes BEFORE frustum
+  culling. At h=0 no bitmap is allocated and original CPU selection
+  behavior stays unchanged.
+- `StrataView.h/.cpp`: matching optional
+  `ViewConfig::hysteresisFraction` and
+  `previousRefined` pointer. `planView` validates source topology,
+  history mask dimensions, error threshold and camera matrix,
+  applies the backend-neutral refinement policy and exposes a
+  per-node `ViewPlan::refinedNodes` snapshot. Invalid history leaves
+  the caller's prior `ViewPlan` unchanged. It accepts the existing
+  physical-residency mask, so it cannot display an unresident child.
+  No GPU memory allocation or scene ownership is added.
+- `StrataPortableRender.h` defines
+  `PortableLodHistory` — one persistent history per
+  **scene instance** and separate indexed records keyed by
+  (staged primitive ordinal, original Model source-node index,
+  render-pass slot). History includes borrowed asset identity,
+  geometry revision and pass count; a different source, model
+  revision or changed number of passes gets a cold start.
+  `PortableSource::prepareModel(...,history,fraction)` uses the
+  independent view-specific history for each pass when computing
+  its conservative union frontier, but publishes **all** history
+  changes only after EVERY material/primitive alias has been
+  successfully prepared, and after confirming all selected GPU
+  index pages are resident. A failed GPU upload, invalid material
+  or malformed view leaves the previous drawn alias and all
+  temporal histories untouched. Force-finest selection for the
+  late-known water reflection camera deliberately **resets** the
+  histories only after successful alias preparation.
+  `PortableRenderStats::hysteresisTransitions` counts actual
+  refined-state bit flips between successful plans.
+- `PortableSource::collectResidencyDemands` also optionally
+  consumes the SAME history/fraction. This is essential: a
+  previously refined node kept fine by hysteresis must still
+  request its children from the Stage15 GPU page manager even
+  when the raw no-history threshold would now prefer its coarse
+  parent. Without this, scene-wide streaming evictions could
+  undo hysteresis. The routine remains nonmutating; it appends
+  demands only on complete success.
+- `GeometryScene` provides
+  `bool setStrataLodHysteresisFraction(float value)` (0..0.45;
+  0/default disables). Invalid values are rejected without
+  changing the current policy. Changing the policy clears all
+  histories for a safe cold start. Runtime keeps one
+  reference-counted `PortableLodHistory` for each stable
+  `GeometryScene::Instance*`; histories are not shared
+  between objects or cameras and are released on scene shutdown.
+  A GPU Vulkan indirect route or HLOD/surface proxy drops the
+  stale portable history, while a successful portable alias
+  **retains** the same original instance's history. Failed
+  alias construction does not invalidate it. Per-instance
+  history is also read in `updateStrataStreamingBeforeDraw`
+  before the immutable GPU index residency update. Scene stats
+  include current histories and successful LOD transitions.
+- This is an **opt-in CPU/portable selector** for all Metal,
+  Vulkan and GLES3/GL33/WebGL2 fallback raster backends. Stage16
+  GPU Vulkan/Metal compute selector remains its original
+  **stateless camera threshold**. Do not claim CPU/GPU temporal
+  selection equivalence or enable manual Vulkan GPU parity
+  gates on this basis. LOD hysteresis stabilizes the choice of
+  already crack-certified geometry; it does NOT interpolate
+  vertices, blend normals/UVs, or guarantee visually invisible
+  sudden LOD jumps after large camera motion.
+
+### API example
+
+```cpp
+scene.setStrataPortableRenderingEnabled(true);
+const bool accepted=scene.setStrataLodHysteresisFraction(0.2f);
+// Stage15 index budgets and optional disk streaming remain independent.
+// Main and sun have separate slot histories, 1 per scene instance.
+// Later reflection camera forces finest available LOD and resets histories.
+scene.load(device,sceneJson,fileReader);
+```
+
+Cold behavior `h=0` preserves legacy CPU selection and does not
+allocate/retain per-node temporal vectors.
+
+### Changed files and exact commits
+
+- `engine/render/StrataGeometry.h`:
+  `9d847f1c042d669d7272d3aa9e8c41920f921f05`
+  (optional per-node hysteresis and actual refinement-state bitmap).
+- `engine/render/StrataView.h`:
+  `1bb8bee8839be8aa86c71d72833478aa1ffae147`.
+- `engine/render/StrataView.cpp`:
+  `6994fd66bbf565e3e8550c7292d83e084b30cdab`.
+- `engine/render/StrataPortableRender.h`:
+  `9e5598d89a1f644b5e2a7eac28c856d754cb3e7a`,
+  `f8cdc35a3304040f89843995c65dcc64fb5eda32`.
+- `engine/render/StrataPortableRender.cpp`:
+  `5de489a2b65869ecd8b2abe494a90ec0d6a2e3c9`,
+  `ca7edf9f6516f83189a8ccd2149f6df7f95e96c4`.
+- `engine/render/GeometryScene.h`:
+  `1e96df7eb05443d112bace6a5f1c5b632b9c693b`,
+  `079f4310e5a313a13c61d1ef7d818f76c42d0737`.
+- `engine/render/GeometryScene.cpp`:
+  `5078e9c7424b627c883869f487a2d1db5cc5ca36`,
+  `10d795915ba3b2e9f13bbdbe38a699f8d0791b07`,
+  `7563f09e883727b3ed77164edc14aa15a4847a59`
+  (per-instance state, successful-alias retention and streaming
+  planner history consumption).
+- `tests/render/strata_view.cpp`:
+  `69f17fee62da315916459f411653a9487861a85e`,
+  `4c4c48c899f944be616f8be5442e97e87a15ea44`.
+- `tests/render/strata_portable.cpp`:
+  `151435281f7fbbf1c2f9e33aa52525b0fc657136`,
+  `c2148e142f2487d45f3ede97417f0ee5c3494ef3`.
+
+No new CMake target is needed; existing
+`aiverse_strata_view_tests` and
+`aiverse_strata_portable_tests` already compile the changed code
+when the STRATA option and tests are enabled.
+
+### Authored validation matrix (NOT RUN)
+
+- CPU selector: repeated noisy projected error values around the
+  threshold; different up/down transition bands; no history on
+  cold start; missing physical child/selected-node budget forces
+  the same safe parent; invalid masks/policy fail closed; h=0
+  retains original output shape without allocating the history
+  bitmap.
+- CPU view: rejected malformed per-view historical mask does not
+  modify previous successful `ViewPlan`; subsequent valid
+  history and h=0 paths behave as expected.
+- Portable alias on mock Metal/Vulkan/GLES3: independent
+  history of two scene instances using the same source,
+  multiple camera slots, exact warm-hysteresis transitions,
+  aborted GPU preparation leaves old alias and history unchanged,
+  force-finest reflection resets history and zero policy remains
+  backward-compatible.
+- GPU-index streaming: when a warmed fine LOD is retained at the
+  wider coarsening threshold, the residency demand planner still
+  requests BOTH children instead of evicting them like a cold
+  no-history plan would. Checks that subsequent alias stays fine.
+
+No actual GPU capture, peak-memory, LOD switching frequency,
+flicker rate, frame-time benchmark or macOS native pass/fail exists
+for Stage17.3 yet.
+
+### Stage 17.3 completion table
+
+| Function | Source | Native verification |
+| --- | --- | --- |
+| Two-sided per-node CPU LOD hysteresis | IMPLEMENTED | NOT RUN |
+| Per-instance/per-camera history | IMPLEMENTED | NOT RUN |
+| History transactional on failure | IMPLEMENTED | NOT RUN |
+| Shared streaming/raster temporal demands | IMPLEMENTED | NOT RUN |
+| Force-finest reflection policy and reset | IMPLEMENTED | NOT RUN |
+| Default OFF and mutable runtime policy | IMPLEMENTED | NOT RUN |
+| GPU Vulkan temporal LOD hysteresis | NOT IMPLEMENTED | N/A |
+| GPU Metal temporal LOD hysteresis | NOT IMPLEMENTED | N/A |
+| Continuous geomorph/dithered transition | NOT IMPLEMENTED | N/A |
+| Crack-free mixed-depth hardware visuals | NOT VERIFIED | N/A |
+
+**Next bounded step:** Stage17.4 GPU-compute per-pass temporal
+refinement history with bounded scene/instance storage, GPU-fence
+lifetime and CPU/GPU cold/warm parity. Only after verified native
+GPU selection and pixel parity should stage18 profiling/optimization
+compare hysteresis to the baseline. Never substitute a smooth
+global-threshold animation for a real per-node history or invent a
+performance result. Leave Vulkan GPU production parity switches OFF.
