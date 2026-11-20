@@ -3285,3 +3285,17 @@ so both the injected allocation and old fog-sheet assertions are meaningful.
 a passing report. Build-5 still finishing; corrected fixture NOT RUN yet.
 No save/API changes; git diff --check PASS. Next rebuild core and run corrected
 fault/retry + native Metal fixture, then consolidated CTest on KINGSTON.
+
+
+## Full-suite merge regressions — 2026-11-20
+Code `2387b3996ef5888297e5087cac453e751782b520`, codex/lens-completion. Full CTest found two failures while
+324/326 tests had completed: animation_model_dependencies and
+animation_ragdoll_asset. Automatic merge combined two independently correct
+dependency predicates with different recursion levels. Restore main commit
+042fca8f1 complete usesLibrary/choicesUseLibrary pair, preserving exclusion of
+literal normalMap/texture strings. Ragdoll production already supports missing
+Neck via Chest-to-Head capsule (96c42b253); update stale sparse test expectation
+to 3 bodies/2 joints. No new persistence/API changes. git diff --check PASS.
+Corrected native tests NOT RUN yet; full suite still running, not all passing.
+Next rebuild affected targets/client, rerun two regressions and impacted view
+fixtures, retain the complete consolidated results.
