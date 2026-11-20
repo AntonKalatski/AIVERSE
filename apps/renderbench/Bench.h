@@ -422,6 +422,10 @@ struct Bench {
             r.set("gpuMs",Json());r.set("drawCalls",Json::number(int64_t(renderer.drawCalls())));
             const auto& stats=renderer.modelStats();
             r.set("submittedModelTriangles",Json::number(int64_t(stats.triangles)));
+            r.set("cameraModelTriangles",Json::number(int64_t(renderer.profile().cameraModelTriangles)));
+            r.set("sunShadowModelTriangles",Json::number(int64_t(renderer.profile().triangles[0])));
+            Json cameraLods=Json::array();for(auto n:stats.cameraLodNodes)cameraLods.push(Json::number(int64_t(n)));r.set("cameraLodNodes",cameraLods);
+            r.set("cameraShadowLimitedLod",Json::number(int64_t(stats.cameraShadowLimitedLod)));
             r.set("culledModelNodes",Json::number(int64_t(stats.culledNodes)));
             r.set("instancedModelDraws",Json::number(int64_t(stats.instancedDraws)));
             Json lods=Json::array();for(auto n:stats.lodNodes)lods.push(Json::number(int64_t(n)));r.set("modelLodNodes",lods);
