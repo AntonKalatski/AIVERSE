@@ -119,6 +119,13 @@ public:
         }
     }
     ~GLDevice() override {
+#if !defined(AIVERSE_GL_LOADER) && !defined(__EMSCRIPTEN__)
+        for(auto& pending:pixelReads_) {
+            if(pending.fence)glDeleteSync(pending.fence);
+            if(pending.pbo)glDeleteBuffers(1,&pending.pbo);
+        }
+        pixelReads_.clear();
+#endif
         for(const auto& [token,sync]:retirementFences_) {
             (void)token;
             if(sync)glDeleteSync(sync);
@@ -423,6 +430,7 @@ public:
     }
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
+        deliverPixelReads();
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
@@ -452,6 +460,85 @@ public:
         fn(fbW_, fbH_, std::move(px));
     }
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
+
+    // Native GLES3/GL33: one-pixel async PBO readback guarded by GLsync.
+    // Emscripten/WebGL2 and WGL loader return unsupported; they retain the
+    // CPU BVH picker until a correct platform-specific delivery path exists.
+    bool readTexturePixelAsync(TextureHandle h,int x,int y,
+                               PixelReadFn callback) override {
+#if defined(AIVERSE_GL_LOADER) || defined(__EMSCRIPTEN__)
+        (void)h;(void)x;(void)y;(void)callback;
+        return false;
+#else
+        auto* texture=textures_.get(h.id);
+        if(!texture||texture->fmt!=PixelFormat::RGBA8||
+           !callback || x<0 || y<0 ||
+           x>=texture->w || y>=texture->h ||
+           pixelReads_.size()>=32u)return false;
+        GLint previousRead=0,previousPack=0,previousAlignment=0;
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&previousRead);
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&previousPack);
+        glGetIntegerv(GL_PACK_ALIGNMENT,&previousAlignment);
+        auto restore=[&]() {
+            glBindBuffer(GL_PIXEL_PACK_BUFFER,GLuint(previousPack));
+            glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(previousRead));
+            glPixelStorei(GL_PACK_ALIGNMENT,previousAlignment);
+        };
+        const auto framebuffer=framebufferFor(h.id,0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER,framebuffer);
+        if(glCheckFramebufferStatus(GL_READ_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) {
+            restore();
+            return false;
+        }
+        GLuint pbo=0;
+        glGenBuffers(1,&pbo);
+        if(!pbo){restore();return false;}
+        glBindBuffer(GL_PIXEL_PACK_BUFFER,pbo);
+        glBufferData(GL_PIXEL_PACK_BUFFER,4,nullptr,GL_STREAM_READ);
+        glPixelStorei(GL_PACK_ALIGNMENT,1);
+        // Native GLES/GL framebuffers use bottom-left coordinates.
+        glReadPixels(x,texture->h-1-y,1,1,
+                     GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+        GLsync fence=glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+        glFlush();
+        restore();
+        if(!fence) {
+            glDeleteBuffers(1,&pbo);
+            return false;
+        }
+        pixelReads_.push_back({pbo,fence,std::move(callback)});
+        return true;
+#endif
+    }
+    void deliverPixelReads() {
+#if !defined(AIVERSE_GL_LOADER) && !defined(__EMSCRIPTEN__)
+        std::vector<std::pair<PixelReadFn,std::vector<std::uint8_t>>> ready;
+        for(auto it=pixelReads_.begin();it!=pixelReads_.end();) {
+            const GLenum status=glClientWaitSync(it->fence,0,0);
+            if(status==GL_TIMEOUT_EXPIRED){++it;continue;}
+            std::vector<std::uint8_t> rgba;
+            if(status==GL_ALREADY_SIGNALED ||
+               status==GL_CONDITION_SATISFIED) {
+                GLint previousPack=0;
+                glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&previousPack);
+                glBindBuffer(GL_PIXEL_PACK_BUFFER,it->pbo);
+                auto* bytes=static_cast<const std::uint8_t*>(
+                    glMapBufferRange(GL_PIXEL_PACK_BUFFER,0,4,GL_MAP_READ_BIT));
+                if(bytes) {
+                    rgba.assign(bytes,bytes+4);
+                    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                }
+                glBindBuffer(GL_PIXEL_PACK_BUFFER,GLuint(previousPack));
+            }
+            glDeleteSync(it->fence);
+            glDeleteBuffers(1,&it->pbo);
+            ready.emplace_back(std::move(it->callback),std::move(rgba));
+            it=pixelReads_.erase(it);
+        }
+        // Deliver after mutation so callbacks can schedule additional work.
+        for(auto& item:ready)if(item.first)item.first(std::move(item.second));
+#endif
+    }
 
     void beginPass(const PassDesc& d) override {
         const auto* color = textures_.get(d.colorTarget.id);
@@ -665,6 +752,14 @@ private:
     std::vector<GLFramebuffer> fbos_;
     uint64_t nextRetirementToken_=1;
     std::map<uint64_t,GLsync> retirementFences_;
+#if !defined(AIVERSE_GL_LOADER) && !defined(__EMSCRIPTEN__)
+    struct PixelRead {
+        GLuint pbo=0;
+        GLsync fence=nullptr;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
+#endif
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLShader> shaders_;
