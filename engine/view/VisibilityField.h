@@ -98,6 +98,7 @@ public:
     gfx::TextureHandle texture() const { return tex_; }
     size_t pendingGpuRetirements() const noexcept {return retired_.pending();}
     bool collectRetired(gfx::Device& dev) {
+        if(!dev_)return true;
         if(dev_!=&dev)throw std::logic_error("VisibilityField retirement: wrong device");
         return retired_.collect(dev);
     }
