@@ -66,6 +66,7 @@ struct Bench {
     PrismaScreenLighting screen;
     SceneAssets additions;
     world::NereidManifestHost water;
+    double previousWaterPreviewTime=-1;
     DynamicGiHost dynamicGi;
     LumaHost luma;
     AnimatedLightingGeometry animatedGeometry;
@@ -394,7 +395,10 @@ struct Bench {
         renderer.setLodDiagnosticsEnabled(true);
         water.configure(config);
         water.prepare(d,camera.eye());
-        water.updateUnderwater(post,1.f/60.f);
+        const float waterDelta=options.previewSeconds>0&&previousWaterPreviewTime>=0
+            ?float(std::max(0.0,previewTime-previousWaterPreviewTime)):1.f/60.f;
+        water.updateUnderwater(post,waterDelta);
+        previousWaterPreviewTime=previewTime;
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
@@ -456,6 +460,15 @@ struct Bench {
         }
         if(view>=int(cameras.size())&&!captureRequested&&!options.capture.empty()) {
             captureRequested=true;
+            Json effects=Json::array();
+            if(const auto* status=post.effectReport(post.viewId()))for(const auto& effect:status->effects){
+                Json state=Json::object();state.set("type",Json::string(prismaType(effect.type).id));
+                state.set("requested",Json::fromBool(effect.requested));state.set("encoded",Json::fromBool(effect.encoded));
+                state.set("reason",Json::string(effect.reason));effects.push(state);
+            }
+            report.set("capturedPrismaEffects",effects);
+            report.set("cameraUnderwater",Json::fromBool(water.underwater().submerged));
+            report.set("underwaterBlend",Json::number(double(post.underwater().blend)));
             auto cb=[this](int w,int h,std::vector<uint8_t> px){
                 if(w!=width||h!=height||px.size()!=size_t(w*h*4)){fail("invalid capture");return;}
                 std::ofstream f(options.capture,std::ios::binary);f<<"P6\n"<<w<<" "<<h<<"\n255\n";
