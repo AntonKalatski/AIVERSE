@@ -268,6 +268,10 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     modelDrawInvocation_=0; // frame-scoped Renderer3D source instance IDs
+    modelSubmissionTarget_=nullptr;
+    modelSubmitted_.clear();
+    modelSubmissionTruncated_=false;
+    modelSubmissionMainEncoded_=false;
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
     // material identity across frames, asset reloads or another viewport.
@@ -577,6 +581,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // twice when the same visible surface is drawn for another target.
     const uint32_t opaqueStart = profile_.triangles[1];
     renderModels(1);
+    // This is the actual main-camera opaque pass; before this point
+    // modelViewProvenance describes staging decisions only.
+    modelSubmissionMainEncoded_=true;
     profile_.cameraModelTriangles += uint32_t(profile_.triangles[1] - opaqueStart);
     if (!sceneSelectionOutline_) renderModels(3); // legacy game outline; editor uses a depth-tested mask
     if (capture) {
