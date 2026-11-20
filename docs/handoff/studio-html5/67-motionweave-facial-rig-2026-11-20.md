@@ -15,7 +15,7 @@
 | `6cad1c5b`, `f8d83ccd` | `apps/studio-web/src/panels/facialRigSchema.ts` | Typed Stage 180-compatible JSON v1 morph+IK DTO, explicit ARKit 52 semantic names, pure client-side bounded validation |
 | `d5ee8d3b` | `apps/studio-web/src/types.ts` | Four typed method params/results, no arbitrary path or untyped access |
 | `ea740657` | `apps/studio-web/src/mock.ts` | Browser preview has honest empty catalog; native-only writes/get/validation reject |
-| `9eea4e7e`, `379e9b49`, `c393647b` | `apps/studio-web/src/panels/FacialRigPanel.tsx` | New standalone UI-kit-driven Facial Rig panel with 52-morph template, search, dedicated editor, per-channel gain sliders, optional eye Aim authoring, schema validate, save/discard and errors |
+| `9eea4e7e`, `379e9b49`, `c393647b`, `017e9008` | `apps/studio-web/src/panels/FacialRigPanel.tsx` | New standalone UI-kit-driven Facial Rig panel with 52-morph template, search, dedicated editor, per-channel gain sliders, optional eye Aim authoring, schema validate, save/discard and errors |
 | `4cd0ed4c`, `d4c48263`, `6862add4` | `FacialRigPanel.css` | Narrow-dock-safe layout using existing `--au-*` semantic tokens; no new palette, no viewport manipulation |
 | `c625a8ec`, `1cc0c030` | `apps/studio-web/src/panels/StudioPanelRenderer.tsx` | Imported and registered Facial Rig; kept original Animation timeline placeholder intact |
 | `2deb5506` | `apps/studio-web/src/nestedDock.ts` | Separate typed `facial_rig` dock tab; existing Animation, Scene and Game tabs retained |
@@ -47,3 +47,5 @@
 4. Finish automatic morph-preserving LOD geometry and the requested one-pass full Mac test campaign. PR #22 remains draft/unmerged until validated.
 
 **Blocked intentionally:** live 3D facial preview and named morph bone validation cannot truthfully be declared implemented on `studio-html5` before source/runtime integration. Do not silently replace this with web canvas mock rendering or duplicate the MotionWeave runtime algorithms.
+
+**Follow-up edit:** `017e9008` removes automatic `workspace.changed` refresh while the facial panel is mounted; it prevented unrelated editor changes from silently dropping an unsaved facial draft. Manual refresh remains disabled while dirty. Native CMake/CTest and web typecheck remain **NOT RUN**.
