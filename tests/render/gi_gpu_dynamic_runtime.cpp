@@ -47,6 +47,8 @@ int main() {
     AIVERSE_TEST_CHECK(runtime.pendingProbes()==4);
     auto walled=scene(true);
     AIVERSE_TEST_CHECK(runtime.setGeometry(walled,1));
+    AIVERSE_TEST_CHECK(!runtime.setGeometry(walled,1));
+    AIVERSE_TEST_CHECK(!runtime.setGeometry(walled,0));
     AIVERSE_TEST_CHECK(runtime.gpuPages().pageCount()==1);
     AIVERSE_TEST_CHECK(runtime.lastGpuPageStats().added==1);
     AIVERSE_TEST_CHECK(runtime.backend().nodeCount()>=
@@ -137,6 +139,8 @@ int main() {
     auto empty=scene(false);
     const GiBounds edit{{0,-4,2},{4,4,2}};
     AIVERSE_TEST_CHECK(runtime.setGeometryRegion(empty,2,edit));
+    AIVERSE_TEST_CHECK(!runtime.setGeometryRegion(empty,1,edit));
+    AIVERSE_TEST_CHECK(!runtime.setGeometryRegion(empty,2,edit));
     AIVERSE_TEST_CHECK(runtime.gpuPages().pageCount()==0);
     AIVERSE_TEST_CHECK(runtime.lastGpuPageStats().removed==1);
     AIVERSE_TEST_CHECK(runtime.pendingProbes()>0);
