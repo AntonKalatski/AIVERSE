@@ -79,7 +79,7 @@ public:
         std::vector<uint8_t> target_,cur_,field_;
         std::vector<uint16_t> tmp_;
         double lastTime_=-1;
-        bool dirty_=false,fading_=false,changed_=false;
+        bool dirty_=false,fading_=false,changed_=false,unchangedOnly_=false;
     };
     std::unique_ptr<PreparedUpdate> prepareUpdate(
         std::span<const uint8_t> vision,int w,int h,double time);
