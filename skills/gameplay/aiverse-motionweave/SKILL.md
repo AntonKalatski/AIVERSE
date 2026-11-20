@@ -102,3 +102,25 @@ Deferred executable/CTest:
 `aiverse_animation_facial_control_rig_tests` /
 `animation_facial_control_rig`. **NOT RUN**; no native compile/Metal/
 Vulkan/GLES, QA or crowd benchmark pass was claimed.
+
+
+## Stage 183: reusable facial preview session for native hosts (source-only)
+
+For an artist-generated `facial-rigs/*.json` document from the HTML5 Studio
+branch, use `<aiverselib/animation/FacialPreviewSession.h>` and
+`aiverse::lib::animation::FacialPreviewSession`. Compile a new session
+transactionally from the real imported `render::Model`, JSON v1 and typed
+named float/vector overrides. Use `scalar()/vector()` for live expression
+changes; `apply(model,alreadyEvaluatedPose,dt,error)` goes AFTER one
+Animator/Graph evaluation and BEFORE `worldMatrices`. The per-instance
+session owns its own smoothing; it does NOT own the Model or GPU lifetime.
+Do not reimplement expressions, IK or Graph evaluation in Studio.
+
+The native ModelView host demonstrates `--facial-rig project/facial-rigs/name.json`,
+`--face jawOpen=.8` and `--face-vector lookAt=2,1,3` with read-only saved
+JSON hot reload; unknown Model nodes/channels reject. The native
+`aiverse_modelview` window is NOT the HTML5 Studio embedded GPU viewport.
+Studio still needs a separate typed IPC/real asset-selection integration
+after branches can be safely combined. Docs:
+`docs/motionweave-facial-native-preview.md`, Stage 183 handoff. The
+extended `animation_facial_control_rig` source fixture is **NOT RUN**.

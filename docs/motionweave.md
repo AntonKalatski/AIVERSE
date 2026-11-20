@@ -716,3 +716,23 @@ See [facial authoring and runtime](motionweave-facial-control-rig.md) and
 [Stage 180 handoff](agent-handoffs/animation-stage180-facial-control-rig-2026-11-20.md).
 This is source implementation only: CMake/CTest, real face/glTF/FBX
 assets, Metal/Vulkan/GLES GPU parity and performance **NOT RUN**.
+
+
+## Stage 183 — native facial preview from Studio-authored JSON (source-only)
+
+`<aiverselib/animation/FacialPreviewSession.h>` exposes a reusable
+host-facing compiled expression/IK session that consumes **real**
+imported Model morph/rig signatures and the existing HTML5 Studio
+`facial-rigs/<name>.json` v1 schema. It applies after a single parent
+Animator/Graph pose and before final matrices; invalid presets or
+model revisions retain the last-good cosmetic rig or fail closed.
+`apps/modelview/main.cpp` now supports `--facial-rig <path>`,
+`--face jawOpen=0.8` and `--face-vector lookAt=2,1,3` for native
+GPU ModelView preview and project-saved-JSON hot reload.
+
+**Not yet** integrated into the embedded HTML5 Studio Scene viewport:
+`feature/studio-html5` is still separate, and the native IPC and
+Model/GPU lifetime coupling are Stage 184 work. Details:
+[Stage 183 native preview](motionweave-facial-native-preview.md) and
+[Stage 183 handoff](agent-handoffs/animation-stage183-studio-facial-native-preview-2026-11-20.md).
+No native CMake/CTest/Metal/Vulkan/GLES validation has been run.
