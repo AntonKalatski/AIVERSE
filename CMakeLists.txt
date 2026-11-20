@@ -2284,6 +2284,19 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Pure native Editor Preview controls: pause/step, invalid JSON and failed
+# revision retries. No ImGui, platform or Metal backend needed for this gate.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_preview_policy_tests
+        tests/spectrafx_preview_policy.cpp)
+    target_include_directories(aiverse_spectrafx_preview_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME spectrafx_preview_policy
+        COMMAND aiverse_spectrafx_preview_policy_tests)
+    set_tests_properties(spectrafx_preview_policy PROPERTIES
+        LABELS "SpectraFX;EDITOR;Architecture")
+endif()
+
 # Real HybridPlayback retirement policy with a controlled Metal-capable RHI.
 # This checks slot/fence ownership and reset semantics, not hardware shaders.
 if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)

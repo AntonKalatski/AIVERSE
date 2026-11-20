@@ -1,5 +1,20 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 114 — Editor Preview state correctness and deterministic policy test (NOT RUN)
+
+Pure new `SpectraFxGpuPreviewPolicy` controls Pause/Step, nonfinite
+or long UI-clock deltas, revision caching, explicit Restart and
+retry after failed emitter dispatch. Editor GPU Assets window no
+longer marks failed GPU/CPU Play as successfully applied; switching
+assets with identical authored JSON restarts preview. A new desktop
+`spectrafx_preview_policy` CTest covers these state transitions.
+No changes to genre-neutral `engine/fx`, RHI or PRISMA.
+**Stage 114 source authored but not yet native CMake/CTest/UI tested**;
+the previous 10/10 acceptance is tied to Stage 113's SHA.
+Handoff:
+`docs/agent-handoffs/spectrafx-stage114-editor-preview-controls-2026-11-20.md`.
+
+
 ## Stage 113 — actual screenshot + Metal timing inspection complete
 
 User uploaded `spectrafx-visual-review.ppm` and `ctest_metal.log`.

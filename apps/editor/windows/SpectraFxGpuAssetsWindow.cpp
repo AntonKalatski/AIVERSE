@@ -13,6 +13,7 @@
 #include "engine/fx/SpectraFxGpuEmitterLibrary.h"
 #include "engine/fx/SpectraFxGpuRoutes.h"
 #include "engine/fx/SpectraFxSceneHost.h"
+#include "SpectraFxGpuPreviewPolicy.h"
 #include "engine/render/Renderer3D.h"
 #include <cmath>
 #include <cstdint>
@@ -126,18 +127,14 @@ public:
         if(selected_!="@routes") {
             ImGui::Separator();
             ImGui::TextUnformatted("Live CPU/GPU emitter preview");
-            if(ImGui::Button("Restart live preview")) {
-                previewHash_=0;
-                previewRestartRequested_=true;
-            }
+            if(ImGui::Button("Restart live preview"))
+                previewPolicy_.requestRestart();
             ImGui::SameLine();
-            if(ImGui::Button(previewPaused_?"Resume":"Pause"))
-                previewPaused_=!previewPaused_;
+            if(ImGui::Button(previewPolicy_.paused()?"Resume":"Pause"))
+                previewPolicy_.togglePause();
             ImGui::SameLine();
-            if(ImGui::Button("Step 1/60 s")) {
-                previewPaused_=true;
-                previewStepRequested_=true;
-            }
+            if(ImGui::Button("Step 1/60 s"))
+                previewPolicy_.requestStep();
             ImGui::SameLine();
             if(ImGui::Button("Reset view"))
                 previewCamera_={{0,0.8f,0},9.0f,0.45f,0.7f};
@@ -425,13 +422,9 @@ private:
         if(previewDevice_)
             previewViewport_.release(*previewDevice_);
         previewDevice_=nullptr;
-        previewHash_=0;
         previewInitialized_=false;
-        previewRestartRequested_=true;
         previewInvalidated_=false;
-        previewLastTime_=-1;
-        previewPaused_=false;
-        previewStepRequested_=false;
+        previewPolicy_.reset();
         previewMessage_.clear();
     }
     static uint64_t previewHash(const std::string& text) {
@@ -487,35 +480,29 @@ private:
         const auto view=fx::SpectraFxView::fromCamera(
             previewCamera_,viewProj,viewW,viewH);
         const double now=ed.time();
-        float dt=previewLastTime_<0?0:float(now-previewLastTime_);
-        previewLastTime_=now;
-        dt=std::clamp(dt,0.0f,0.05f);
-        if(previewStepRequested_) {
-            dt=1.0f/60.0f;
-            previewStepRequested_=false;
-        } else if(previewPaused_) dt=0.0f;
         fx::SpectraFxHybridEmitter::Config candidate;
         std::string error;
         const bool valid=fx::SpectraFxGpuEmitterAsset::readText(
             text_,candidate,&error);
-        bool canDraw=valid && previewInitialized_;
+        bool canDraw=false;
         if(!valid) {
+            (void)previewPolicy_.advance(now,false);
+            previewPolicy_.invalidDraft();
             previewMessage_=error;
-            canDraw=false;
             // Reset exactly once per invalid draft transition. Reset can
             // be retried if the RHI rejected an unsafe encoder boundary,
             // but do not spam resets and epoch increments every UI frame.
             if(previewInitialized_ && !previewInvalidated_) {
                 if(previewHost_.resetScene()) {
-                    previewHash_=0;
                     previewInvalidated_=true;
                 } else previewMessage_="GPU preview reset deferred to safe frame";
             }
         } else {
             initPreview(ed);
+            const float dt=previewPolicy_.advance(now,previewInitialized_);
             if(previewInitialized_) {
                 const uint64_t hash=previewHash(text_);
-                if(previewRestartRequested_ || previewHash_!=hash) {
+                if(previewPolicy_.needsStart(hash)) {
                     if(previewHost_.resetScene()) {
                         fx::SpectraFxCue cue{};
                         cue.id=1;
@@ -524,19 +511,23 @@ private:
                         cue.position={0,0.7f,0};
                         cue.direction={0,1,0};
                         if(previewHost_.dispatch(cue)) {
+                            previewPolicy_.didStart(hash);
                             previewMessage_.clear();
-                        } else previewMessage_="Preview effect unavailable: "
-                            "check CPU effect asset and GPU backend compatibility";
-                        previewHash_=hash;
-                        previewRestartRequested_=false;
+                        } else {
+                            // No stale "successful" hash: unsupported GPU
+                            // or missing authored CPU fallback must not
+                            // silently suppress an explicit retry.
+                            previewPolicy_.didFail(hash);
+                            previewMessage_="Preview effect unavailable: "
+                                "check CPU effect asset and GPU compatibility; "
+                                "edit the draft or press Restart to retry";
+                        }
                         previewInvalidated_=false;
                     } else {
                         previewMessage_="GPU preview reset deferred to safe frame";
-                        canDraw=false;
                     }
                 }
-                if(canDraw || (previewInitialized_ &&
-                   !previewRestartRequested_ && previewHash_==hash)) {
+                if(previewPolicy_.canDraw(hash)) {
                     canDraw=true;
                     previewHost_.prepareGpu(dt,view);
                 }
@@ -595,7 +586,7 @@ private:
                 static_cast<unsigned long long>(snapshot.activeGpuSlots),
                 static_cast<unsigned long long>(snapshot.retiredGpuSlots),
                 static_cast<unsigned long long>(snapshot.nominalGpuBytes/1024));
-            if(previewPaused_)
+            if(previewPolicy_.paused())
                 ImGui::TextDisabled(
                     "Paused: existing GPU particle state is re-rendered; "
                     "new spawns need a nonzero frame step");
@@ -623,6 +614,7 @@ private:
     void create(const std::string& name) {
         if(!fx::SpectraFxGpuEmitterLibrary::validName(name)) return;
         selected_=name;
+        previewPolicy_.requestRestart();
         text_=defaultAsset();
         saved_.clear();
         dirty_=true;
@@ -654,6 +646,7 @@ private:
             }
         }
         selected_=name;text_=saved_=std::move(content);
+        previewPolicy_.requestRestart();
         dirty_=false;message_.clear();
         return true;
     }
@@ -757,11 +750,9 @@ private:
     fx::SpectraFxSceneHost previewHost_{};
     Viewport previewViewport_{};
     render::RTSCamera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
-    uint64_t previewHash_=0;
-    double previewLastTime_=-1;
-    bool previewInitialized_=false,previewRestartRequested_=true;
+    SpectraFxGpuPreviewPolicy previewPolicy_{};
+    bool previewInitialized_=false;
     bool previewInvalidated_=false;
-    bool previewPaused_=false,previewStepRequested_=false;
     std::string previewMessage_;
 };
 AIVERSE_EDITOR_WINDOW(SpectraFxGpuAssetsWindow);
