@@ -376,3 +376,28 @@ candidate at the host along with legacy animation, Sprite/light/overlay staging.
 | Generic View frame candidate | implemented in source | native test execution |
 | Legacy multi-owner frame | partial | host staging integration |
 | Metal/Vulkan parity | not tested | actual GPU tests |
+
+
+## LENS captured animation/event rollback — 2026-11-20
+
+Branch `codex/lens-completion`, code `e378c94da9c52d86251d1016032f036fc7595a41`.
+For frames with CameraPreparedCapture, legacy RtsView animation state is cloned
+alongside generic View and retained until whole-frame success. On failure restore
+clocks, tick/event cursor, entity poses/graphs/procedural state, reload seeds,
+streaming choices, tracers, emitted events/effects, bars/shadows and RtsLights
+CPU state. LightSystem::swapPrepared restores camera-neutral light inputs without
+allocation. Renderer3D::discardSceneSubmission clears borrowed CPU draw queues
+before destroying failed candidate poses, and camera capture is cleared.
+Ordinary noncapture frames retain the established fast path. This is NOT yet
+full Surface/Sprite/Overlay rollback. Added late overlay allocation failure/retry
+fixture with frame sequence and empty-capture checks. No save/JSON change.
+`git diff --check` PASS. Native all-target build stopped at root_motion_bake.cpp:32,
+ambiguous findNodePath after merging main; tests for this stage NOT RUN. KINGSTON
+log main-integration-build.log. Metal/Vulkan runtime NOT RUN. Next repair build
+ambiguity, test this rollback, then stage remaining owners before final publish.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Captured animation/events/lights rollback | implemented in source | run native fault fixture |
+| Full surface/Sprite/Overlay transaction | partial | stage remaining owners |
+| Integrated native build | partial | repair root_motion_bake ambiguity |
