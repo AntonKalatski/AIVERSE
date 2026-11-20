@@ -24,6 +24,8 @@ public:
         uint64_t strataSeamCertifiedPrimitives=0,
                  strataSeamRejectedParents=0;
         uint32_t strataSeamUnsafeDeclined=0;
+        uint32_t strataCrossMaterialCertifiedSources=0;
+        uint64_t strataCrossMaterialMatchedSeams=0;
         uint32_t strataGpuMetadataSources=0, strataGpuMetadataDeclined=0,
                  strataGpuMetadataFailures=0;
         uint64_t strataGpuMetadataBytes=0;
