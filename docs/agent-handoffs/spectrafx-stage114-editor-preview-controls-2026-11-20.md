@@ -68,3 +68,17 @@ clang++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -I. \
 ```
 
 This verifies the **standalone pure CPU policy**, not a full Editor GUI build, macOS native Metal RHI or live input interactions. Those remain **NOT RUN** at the current Stage 114 SHA.
+
+## Stage 114 native follow-up: Editor host build FAILED, fixed in Stage 115
+
+User-provided Mac Studio full acceptance for source
+`c5dd5914edac64f8071f4bd6a5ffd8eb5e6353e3` showed all four real
+MetalGPU and visual review tests PASS, but `host_integration_build=2`,
+`full_build=2`, `ctest_full=SKIP`. The full acceptance was not green.
+Source inspection revealed `dt` was declared only within the valid
+JSON branch of `drawPreview` but referenced later by
+`previewHost_.prepareCpu(dt,view)` outside that scope. Source fix
+`fc08834e1744a0a50d272043167515a635b70565` moves the shared
+`dt` declaration to the outer scope. The compiler log was not attached;
+more errors may exist. This fix **has not yet been retested on macOS**.
+See `docs/agent-handoffs/spectrafx-stage115-editor-dt-build-fix-2026-11-20.md`.

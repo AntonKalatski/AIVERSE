@@ -1,5 +1,25 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 115 — Stage 114 Editor build regression: C++ dt scope fixed (NOT RETESTED)
+
+User tested SHA `c5dd5914edac64f8071f4bd6a5ffd8eb5e6353e3`:
+focused SpectraFX/4 MetalGPU/visual review PASS, **host integration
+build exit 2, full build exit 2, full CTest SKIP** (failed stages 2,
+skipped 1). Overall full acceptance therefore **FAILED**.
+
+Source inspection found an unambiguous Editor compiler defect:
+`drawPreview` declared `const float dt` inside a nested valid-JSON
+branch but later called `previewHost_.prepareCpu(dt,view)` outside
+its scope. Fixed in code commit
+`fc08834e1744a0a50d272043167515a635b70565` by defining shared
+`float dt=0` in the outer function scope and assigning it inside
+the valid branch. The **exact compile log was not provided**; other
+compiler errors remain possible. **No native recompilation has run on
+the fix SHA**. First rebuild the Editor/FPS/RTS targets, then run
+full acceptance if they pass.
+Read `docs/agent-handoffs/spectrafx-stage115-editor-dt-build-fix-2026-11-20.md`.
+
+
 ## Stage 114 follow-up — exact-source Clang policy test PASS (Mac GUI NOT RUN)
 
 Code `9c387ed9559b07196e40814ad753d212db248115` introduces the
