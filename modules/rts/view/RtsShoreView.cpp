@@ -750,8 +750,9 @@ int RtsShoreView::propModel(gfx::Device& dev, const std::string& path) {
     return propModels_.back().model ? int(propModels_.size() - 1) : -1;
 }
 
-void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
-    release(dev);
+void RtsShoreView::buildUnpublished(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
+    // Invoked ONLY on a private candidate owner whose published containers
+    // are empty. Do not retire or mutate the live ShoreView here.
     dirty_ = false;
     builtWaterY_ = waterY; builtW_ = w; builtH_ = h;
     if (net_.empty()) return;
@@ -781,6 +782,7 @@ void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, fl
             if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                 warnings_.push_back("shore chunk: GPU completion unavailable; partial Model quarantined");
             warnings_.push_back(std::string("shore chunk: ")+e.what());
+            throw; // one late upload must cancel the entire candidate
         }
     }
     if (!mesh.foam.empty()) {
@@ -796,9 +798,51 @@ void RtsShoreView::rebuild(gfx::Device& dev, const std::function<float(float, fl
                 if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                     warnings_.push_back("shore foam: GPU completion unavailable; partial Model quarantined");
                 warnings_.push_back(std::string("shore foam: ")+e.what());
+                throw; // never publish partial foam/bank scenery
             }
         }
     }
+}
+
+void RtsShoreView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt,
+        float waterY,int w,int h) {
+    if(dev_!=&dev)
+        throw std::logic_error("RtsShoreView rebuild: GPU owner mismatch");
+    // The candidate borrows the published texture/material kit. Only its
+    // newly uploaded Models and prop Models are owned privately. No previous
+    // published model is touched by a failed candidate build.
+    RtsShoreView staged;
+    staged.dev_=&dev;
+    staged.read_=read_;
+    staged.types_=types_;
+    staged.net_=net_;
+    staged.images_=images_;
+    staged.materials_=materials_;
+    staged.dirty_=true;
+    try {
+        staged.buildUnpublished(dev,heightAt,waterY,w,h);
+    }catch(...) {
+        // Candidate Model GPU handles were never submitted to any camera.
+        // They are not passed to the published retirement queue.
+        for(auto& m:staged.chunks_)if(m)releaseModel(dev,*m);
+        for(auto& m:staged.transparent_)if(m)releaseModel(dev,*m);
+        for(auto& p:staged.propModels_)if(p.model)releaseModel(dev,*p.model);
+        throw;
+    }
+    // All GPU uploads succeeded. The following operations only retire
+    // old owners and swap already allocated containers (no new RHI).
+    release(dev);
+    for(auto& p:propModels_)retirement_.retireModel(dev,p.model);
+    propModels_.swap(staged.propModels_);
+    chunks_.swap(staged.chunks_);
+    transparent_.swap(staged.transparent_);
+    props_.swap(staged.props_);
+    warnings_.swap(staged.warnings_);
+    builtWaterY_=waterY;
+    builtW_=w;
+    builtH_=h;
+    dirty_=false;
 }
 
 void RtsShoreView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
