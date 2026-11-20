@@ -1,5 +1,19 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 exact Mac native provenance CONFIRMED (2026-11-20):**
+> User provided `acceptance-reports/provenance.txt` with tested
+> `git_sha=b17e775a922d9dc50981011c8f6e25d85fc7adec`,
+> required/observed `main=d6c8fa4646cf6aa205eea5f6a0b7c0c34ac479cb`.
+> The same isolated checkout reported **271/271 PASS, zero failures,
+> 882.51s**. GitHub comparison from that exact tested SHA to
+> `ddb7f2ef` confirmed **only two documentation files changed**
+> afterward. No native retest needed for documentation-only commits.
+> [Standalone verification and outstanding gates](qa-2026-11-20-stage70-exact-provenance-271-confirmed-handoff.md).
+> **Native CTest accepted on the exact SHA**; Metal visual parity,
+> Vulkan/GLES runtime, sustained ecology/world simulations and
+> completed CI are still NOT VERIFIED. PR #53 remains Draft.
+>
+>
 > **Stage70 full Mac native/editor/Box3D CTest 271/271 PASS (2026-11-20):**
 > User supplied real unfiltered acceptance output: **271/271 tests
 > passed, 0 failed, 882.51s wall**. `aiverse_tests` (856.37s),
