@@ -55,6 +55,10 @@ public:
     bool init(gfx::Device& dev, const Rules& rules, const std::string& contentBase, const SpriteDefaults& defaults = {}, bool deferTypes = false);
     void loadType(uint16_t type);
     void shutdown(gfx::Device& dev);
+    // Retryable recovery for partial initialization or host teardown.
+    // Returns false and keeps all GPU resources owned when idle cannot
+    // be established; never call shutdown() on an in-flight device.
+    bool shutdownAfterGpuIdle(gfx::Device& dev);
     bool hasSprite(uint16_t type) const { return type < looks_.size() && looks_[type].valid; }
     const SpriteLook& look(uint16_t type) const { return looks_[type]; }
 
