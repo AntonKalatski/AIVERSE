@@ -82,6 +82,10 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         assets = self.source("components/AssetsPanel.tsx")
         self.assertIn("response.repairedMaterialReferences", assets)
 
+    def test_clearing_texture_reference_does_not_validate_empty_game_path(self):
+        material_ops=(ROOT/"apps/editor/core/MaterialOps.cpp").read_text(encoding="utf-8")
+        self.assertIn("!mat.getStr(k).empty()", material_ops)
+
     def test_shared_reference_registry_inventory_and_usage_panel(self):
         registry=(ROOT/"apps/studio-native/StudioAssetReferences.h").read_text(encoding="utf-8")
         native=NATIVE.read_text(encoding="utf-8")
