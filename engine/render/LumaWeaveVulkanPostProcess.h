@@ -424,6 +424,27 @@ public:
     }
 
 private:
+    bool snapshotReactiveMask(MotionTextureInput input) {
+        if(!dev_ || !eligible_ || activeReceiverSlot_<0 || !viewKey_ ||
+           !input.hasMetadata || reactiveSnapshotCopied_ ||
+           !input.validFor(width_,height_,gfx::PixelFormat::RGBA8) ||
+           !dev_->frameSerial())return false;
+        auto& slot=receiverSlots_[size_t(activeReceiverSlot_)];
+        if(!slot.reactive.valid() || slot.reactive.id==input.texture.id)
+            return false;
+        // MAIN PRISMA rendered the RGBA8 reactive mask in this recording
+        // frame. Format-exact GPU transfer to a per-view, fence-owned image:
+        // never keep the producer's borrowed temporary render target.
+        if(!dev_->copyColor(input.texture,slot.reactive))return false;
+        reactiveMask_=MotionTextureInput::declared(
+            slot.reactive,width_,height_,gfx::PixelFormat::RGBA8);
+        reactiveFrameSerial_=dev_->frameSerial();
+        reactiveViewKey_=viewKey_;
+        reactiveViewEpoch_=viewEpoch_;
+        autoReactiveCaptured_=reactiveSnapshotCopied_=true;
+        return true;
+    }
+
     bool snapshotObjectMotion(MotionTextureInput input,bool automaticallyProduced) {
         if(!dev_ || !eligible_ || activeReceiverSlot_<0 ||
            !viewKey_ || !input.hasMetadata ||
