@@ -530,8 +530,9 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
             selfCollisionStats_.contacts+=segmentContacts.contacts;
             selfCollisionStats_.budgetHit|=segmentContacts.budgetHit;
 
-            // Reproject length constraints and the authored rest curvature
-            // after inter-strand separation. Avoid moving the fixed root.
+            // Reproject only if the segment pass actually moved guides.
+            // A budget-skipped pass must not perturb existing curls.
+            if(segmentContacts.contacts>0)
             for(auto& guide:guides_) {
                 for(int iteration=0;iteration<2;++iteration) {
                     for(std::size_t j=2;j<guide.position.size();++j) {
