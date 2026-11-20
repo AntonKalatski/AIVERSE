@@ -24,7 +24,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewStart' | 'studio.facialPreviewStop' | 'studio.facialPreviewScalar' | 'studio.facialPreviewVector' | 'studio.facialPreviewState';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -43,6 +43,11 @@ export interface StudioParams {
   'studio.facialRigGet': { name: string };
   'studio.facialRigValidate': { rig: import('./panels/facialRigSchema').FacialRigDocument };
   'studio.facialRigSave': { name: string; rig: import('./panels/facialRigSchema').FacialRigDocument };
+  'studio.facialPreviewStart': { name: string; model: string };
+  'studio.facialPreviewStop': Record<string, never>;
+  'studio.facialPreviewState': Record<string, never>;
+  'studio.facialPreviewScalar': { parameter: string; value: number };
+  'studio.facialPreviewVector': { parameter: string; x: number; y: number; z: number };
   'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
   'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };
   'studio.lighting': Record<string, never>;
@@ -73,6 +78,11 @@ export interface StudioResult {
   'studio.facialRigGet': import('./panels/facialRigSchema').FacialRigResult;
   'studio.facialRigValidate': import('./panels/facialRigSchema').FacialRigValidation;
   'studio.facialRigSave': import('./panels/facialRigSchema').FacialRigResult;
+  'studio.facialPreviewStart': StudioFacialPreviewStatus;
+  'studio.facialPreviewStop': StudioFacialPreviewStatus;
+  'studio.facialPreviewState': StudioFacialPreviewStatus;
+  'studio.facialPreviewScalar': StudioFacialPreviewStatus;
+  'studio.facialPreviewVector': StudioFacialPreviewStatus;
   'studio.shaderGraphValidate': StudioShaderGraphDocument;
   'studio.shaderGraphSave': StudioShaderGraphDocument;
   'studio.lighting': StudioLightingState;
@@ -84,4 +94,16 @@ export interface StudioResult {
   'studio.setProperty': StudioSnapshot;
   'studio.viewportRect': { ok: boolean };
   'studio.viewportInput': { ok: boolean };
+}
+
+/** Native state only; gpuReady is false until a separate actual RHI frame
+ * emits facial.preview.ready. Never equate request acceptance to pixels. */
+export interface StudioFacialPreviewStatus {
+  active:boolean;
+  model:string;
+  name:string;
+  generation:number;
+  controlsRevision:number;
+  gpuReady:boolean;
+  error:string;
 }
