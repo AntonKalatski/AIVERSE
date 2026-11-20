@@ -504,3 +504,16 @@ current Editor::viewportRetirement owner to Viewport::ensure; removed obsolete
 setTargetOwner call. No persistence change. git diff --check PASS. Build-3
 failed on these obsolete calls; fresh integrated build and tests next.
 GPU validation NOT RUN; main not pushed.
+
+
+## Private surface packet assembly — 2026-11-20
+Code `48e07aafa04b4971bee0eef99ac840dc36379b58`, branch codex/lens-completion. Terrain, GroundFX, Road, Shore
+and VisibilityField expose candidate packet assembly without commit. Reversible
+bindings restore live state on exception; queued custom commands capture handles
+by value, Models retain heap identity. Renderer drawMeshSnapshot retains Mesh
+values for the current submission; CameraModelSnapshot independently owns copied
+mesh metadata across renderer beginScene. GPU ownership stays with existing
+fenced retirement owners. discardSceneSubmission also clears heightfield binding.
+No save-format changes. git diff --check PASS. Build-4 still running on KINGSTON;
+these edits NOT YET built/tested. Next wire host final publication barrier, add
+late failure/retry fixtures and run fresh build. Real GPU/CI NOT RUN.
