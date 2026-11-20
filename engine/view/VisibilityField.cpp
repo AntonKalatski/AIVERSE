@@ -233,6 +233,8 @@ bool VisibilityField::shutdownAfterGpuIdle() {
 
 void VisibilityField::shutdown() {
     if (!dev_) return;
+    if(!retired_.completeForShutdown(*dev_))
+        throw std::runtime_error("VisibilityField: GPU retirement idle proof failed");
     for (auto* b : {&vb_, &ib_}) if (b->valid()) { dev_->destroyBuffer(*b); *b = {}; }
     if (tex_.valid()) { dev_->destroyTexture(tex_); tex_ = {}; }
     if (pipe_.valid()) dev_->destroyPipeline(pipe_);
@@ -240,6 +242,7 @@ void VisibilityField::shutdown() {
     pipe_ = {}; shader_ = {};
     dev_ = nullptr;
     w_ = h_ = 0;
+    ++revision_;
 }
 
 void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height) {
@@ -328,44 +331,98 @@ void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<
         dirty_=true;
         fading_=false;
     }
+    ++revision_;
+}
+
+std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
+        std::span<const uint8_t> vision,int w,int h,double time) {
+    if(!dev_ || w!=w_ || h!=h_ || vision.size()!=target_.size())
+        return {};
+    auto next=std::make_unique<PreparedUpdate>();
+    next->owner_=this;
+    next->dev_=dev_;
+    next->revision_=revision_;
+    next->target_=target_;
+    next->cur_=cur_;
+    next->field_=field_;
+    next->tmp_=tmp_;
+    next->lastTime_=time;
+    next->dirty_=dirty_;
+    next->fading_=fading_;
+    const float dt=lastTime_<0 ? 1e6f :
+        float(std::max(0.0,time-lastTime_));
+    bool changed=dirty_;
+    for(size_t i=0;i<vision.size();++i) {
+        const uint8_t t=vision[i]>=2?255:vision[i]==1?128:0;
+        if(next->target_[i]!=t) {
+            next->target_[i]=t;
+            changed=true;
+            next->fading_=true;
+        }
+    }
+    if(next->fading_ || next->dirty_) {
+        const int stepPx=look_.fade<=0?255:
+            std::max(1,int(dt*255.0f/look_.fade));
+        bool any=false;
+        for(size_t i=0;i<next->cur_.size();++i) {
+            int c=next->cur_[i],t=next->target_[i];
+            if(c==t)continue;
+            c=c<t?std::min(t,c+stepPx):std::max(t,c-stepPx);
+            next->cur_[i]=uint8_t(c);
+            any=any || c!=t;
+            changed=true;
+        }
+        next->fading_=any;
+    }
+    next->changed_=changed;
+    if(changed) {
+        next->field_=next->cur_;
+        if(look_.style==VisibilityLook::Smooth ||
+           look_.style==VisibilityLook::Pattern) {
+            if(blur_)blur_(next->field_,look_.softness);
+            else boxBlur(next->field_,next->tmp_,w_,h_,look_.softness);
+        }
+        // Copy-on-write GPU texture generation. Never mutate a texture
+        // referenced by an already queued primary or RT camera.
+        gfx::TextureDesc td;
+        td.width=w_;td.height=h_;
+        td.format=gfx::PixelFormat::R8;
+        td.filter=gfx::Filter::Linear;
+        td.data=nullptr;
+        td.label="fog of war staged";
+        next->tex_=dev_->createTexture(td);
+        if(!next->tex_.valid())
+            throw std::runtime_error("VisibilityField: staged texture allocation failed");
+        // An injected/real upload exception destroys only this private texture.
+        dev_->updateTexture(next->tex_,0,0,w_,h_,next->field_.data(),w_);
+    }
+    return next;
+}
+
+bool VisibilityField::commitPreparedUpdate(
+        std::unique_ptr<PreparedUpdate> next) {
+    if(!next || next->owner_!=this || next->dev_!=dev_ ||
+       next->revision_!=revision_)
+        throw std::logic_error("VisibilityField: stale prepared update");
+    const bool changed=next->changed_;
+    if(changed) {
+        retired_.retireTexture(*dev_,tex_);
+        tex_=std::exchange(next->tex_,gfx::TextureHandle{});
+    }
+    target_.swap(next->target_);
+    cur_.swap(next->cur_);
+    field_.swap(next->field_);
+    tmp_.swap(next->tmp_);
+    lastTime_=next->lastTime_;
+    dirty_=false;
+    fading_=next->fading_;
+    ++revision_;
+    return changed;
 }
 
 bool VisibilityField::update(std::span<const uint8_t> vision,int w,int h,double time) {
-    if (w != w_ || h != h_ || vision.size() != target_.size()) return false;
-    const float dt = lastTime_ < 0 ? 1e6f : float(std::max(0.0, time - lastTime_));
-    lastTime_ = time;
-    bool changed = dirty_;
-    for (size_t i = 0; i < vision.size(); ++i) {
-        uint8_t t = vision[i] >= 2 ? 255 : vision[i] == 1 ? 128 : 0;
-        if (target_[i] != t) { target_[i] = t; changed = true; fading_ = true; }
-    }
-    if (fading_ || dirty_) {
-        // fade every cell towards its target at 255 / fade per second
-        const int stepPx = look_.fade <= 0 ? 255 : std::max(1, int(dt * 255.0f / look_.fade));
-        bool any = false;
-        for (size_t i = 0; i < cur_.size(); ++i) {
-            int c = cur_[i], t = target_[i];
-            if (c == t) continue;
-            c = c < t ? std::min(t, c + stepPx) : std::max(t, c - stepPx);
-            cur_[i] = uint8_t(c);
-            any = any || c != t;
-            changed = true;
-        }
-        fading_ = any;
-    }
-    if (!changed) return false;
-    field_ = cur_;
-    if (look_.style == VisibilityLook::Smooth || look_.style == VisibilityLook::Pattern) {
-        if (blur_) blur_(field_, look_.softness);
-        else boxBlur(field_, tmp_, w_, h_, look_.softness);
-    }
-    dirty_ = false;
-    upload();
-    return true;
-}
-
-void VisibilityField::upload() {
-    if (dev_ && tex_.valid()) dev_->updateTexture(tex_, 0, 0, w_, h_, field_.data(), w_);
+    auto candidate=prepareUpdate(vision,w,h,time);
+    return candidate?commitPreparedUpdate(std::move(candidate)):false;
 }
 
 void VisibilityField::draw(Renderer3D& r, double time, bool lowTier) {
