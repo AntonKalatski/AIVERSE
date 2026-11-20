@@ -2275,3 +2275,34 @@ Only existing untracked dist/node_modules symlinks should remain in worktree.
 Next: unlocked Studio interaction/narrow dock checks, animation/morph-pose
 wardrobe and body tests; live garment preview, LOD/atlas optimization and
 automatic fitting are separate unfinished features. Preserve all source assets.
+
+## Face identity deformation core — 2026-11-20
+
+Code `be6bfcb2e5a837d073c056cb13416d1c07cac782`, branch integration/motionweave-studio-facial-stage184.
+HumanFaceShape defines strict v1 selected-mesh identity recipe, 18 bounded
+region controls and <=256 normalized XYZ landmark displacements. CPU candidate
+geometry uses GPU-normalized bind skin weights; UVs/topology/skin ownership stay
+unchanged. Morph direction vectors follow the deformation Jacobian. It changes
+identity shape, not the fixed 52 expression semantics or authoritative ECS.
+A coarse aligned-scan nearest-vertex correspondence helper produces <=128
+landmarks; it is NOT automatic registration, dense surface reconstruction or
+MetaHuman RigLogic. Front-photo XY landmark displacement preserves template
+depth. No photographic texture extraction, landmark detector or UI implemented
+yet. Face bones are not anatomically refitted. Models must be Y-up, +Z forward.
+
+User explicitly expanded request to include scan/photo creation, not only
+separate head/body import. Clarification answered 'Также создание по скану/фото'.
+Explained planned template fitting and preservation of unseen photo geometry.
+Official references researched: Epic metahuman-creator-from-dna-tool-in-unreal-engine,
+metahuman-creator-import-tools-in-unreal-engine, head-controls. These describe
+separate DNA/template/Identity flows; do not claim full Unreal feature parity.
+Current DNA adapter still legacy head diagnostic only; its limitations remain.
+
+Verification: cmake builds aiverse_vivid_human and aiverse_vivid_face_shape_tests
+PASS. Unified run-tests.sh --no-build --build-dir <KINGSTON>/native --filter
+'^vivid_face_shape$' --ctest-jobs 1 PASS. Logs full-character/build-face-shape-
+{core,test}.log and test-face-shape-core.log on KINGSTON. Fixture verifies
+recipe validation, neutral identity, width, unchanged topology, photo depth,
+scan correspondences. No UI/actual Ada visual/animated-pose acceptance yet.
+No CI/push. Next: Studio native preview/build persistence, photo landmark UI,
+scan fitting, and separate head/body import with rig-safe attachment.
