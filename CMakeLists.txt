@@ -3350,3 +3350,17 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         set_tests_properties(lighting_${lighting_fixture} PROPERTIES LABELS "Lighting")
     endforeach()
 endif()
+
+# Exercise the real CPU GI atlas -> PBR receiver, beyond source-string checks.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_dynamic_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_dynamic_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE)
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_dynamic_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_dynamic_gi_gl PROPERTIES
+            ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
+            TIMEOUT 120 RUN_SERIAL TRUE)
+    endif()
+endif()

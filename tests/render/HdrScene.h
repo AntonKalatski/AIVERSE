@@ -3,6 +3,8 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "HdrShaders.h"
+#include "engine/render/GiMainCpuBridge.h"
+#include "engine/render/GiDynamicSampling.h"
 #include "engine/render/graph/ShaderGraph.h"
 #include <cstdio>
 #include <cstdlib>
@@ -13,8 +15,11 @@ using namespace render;
 struct HdrScene;
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
+void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
 struct HdrScene {
     Renderer3D renderer;
+    GiMainCpuBridge dynamicGi;
+    bool dynamicGiVerify=false;
     Prisma post;
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
@@ -67,7 +72,8 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
-        verify = std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
+        dynamicGiVerify=std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
+        verify = dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
 #ifdef _WIN32
@@ -94,6 +100,7 @@ struct HdrScene {
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
+        if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(ownsFrame)d.beginFrame(w,h);
@@ -319,6 +326,10 @@ struct HdrScene {
         d.endPass();if(ownsFrame)d.endFrame();++frame;
     }
     void shutdown(gfx::Device& d) {
+        renderer.clearDynamicGiOverlay();
+        if(dynamicGi.ready()) {
+            if(!d.waitForResourceIdle() || !dynamicGi.shutdownAfterGpuIdle())failed=true;
+        }
         if(probeBg)releaseModel(d,*probeBg);
         if(probeFg)releaseModel(d,*probeFg);
         if(spheres) releaseModel(d,*spheres);
@@ -329,3 +340,5 @@ struct HdrScene {
 }
 
 #include "ContactShadowScene.h"
+
+#include "DynamicGiScene.h"
