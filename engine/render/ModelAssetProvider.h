@@ -18,6 +18,8 @@
 
 namespace aiverse::render {
 
+class SceneModelProviderRetirement;
+
 class ModelAssetProvider final {
 public:
     explicit ModelAssetProvider(FileReader reader={})
@@ -159,6 +161,23 @@ public:
         resources_.shutdown(device);
     }
 private:
+    friend class SceneModelProviderRetirement;
+    // Only an owner holding a completed, ordered OUTER scene GPU token
+    // can call this. If nested cache/rollback batches exist, the normal
+    // device-wide idle barrier remains mandatory for their independent
+    // tokens. This method is NOT a public 'skip wait' switch.
+    void shutdownAfterCompletedSceneToken(gfx::Device& device) {
+#ifndef __EMSCRIPTEN__
+        cpuQueue_.shutdown();
+#endif
+        bindDevice(device);
+        if(imageRollback_.pendingImages()!=0 ||
+           resources_.pendingRetirements()!=0) {
+            shutdown(device);
+            return;
+        }
+        resources_.shutdownAfterCompletedSceneToken(device);
+    }
     void bindDevice(gfx::Device& device) {
         if(gpuLease_.device())
             resources_.bindResourceDevice(device,gpuLease_);
