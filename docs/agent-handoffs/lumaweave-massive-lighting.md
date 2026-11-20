@@ -468,3 +468,12 @@ Source commits: `75072cc30f721717e7c98755b6d98779a0ed658a` (bounded GPU texture 
 Old branch lacks `Device::gpuSubmissionFence/gpuCompletedFence`: zero-token images stay quarantined, never freed based on CPU-frame count or compute readback completion. Bounds cap at 48 retired texture handles per owner; further resize fails closed. Host must establish actual full graphics queue idle then call `post.drainRetiredAfterGpuIdle()` before shutdown; remaining active pipelines/targets still require a host GPU-idle precondition. Current-main RHI fence API can supply genuine tokens after integration. Direct/indirect lighting ownership and no-default-on behavior are unchanged.
 
 Native CMake, CTest, Metal, Vulkan and GLES GPU execution: **NOT RUN**. More work: current-main reconciliation, strict ACTIVE owner teardown and actual GPU/compile/screenshot/performance acceptance.
+
+
+## Stage 27 — 2026-11-20 — ACTIVE graphics resource safe shutdown gate (SOURCE; NOT RUN)
+
+Per-stage handoff `docs/agent-handoffs/lumaweave-stage27-active-gpu-shutdown-2026-11-20.md`.
+
+Source commits `a0dd77fc853c94ba73b57e47d2d51f37147aed03` (graphics-use fence gate), `a5df6206993275e9c50483e3651c4bfe8a8eb37a` (material/surface/compose use recording and fail-closed `shutdown`), `ddf47303fcc2485a50fec4f64af256a210684b8a` (native driver `shutdownAfterGpuIdle`) and `84354aa395896487132208f4d9af04de1efbbb35` (regression fixture). Unlike compute completion callbacks, only real graphics completed-fence or external FULL GPU idle authorizes destruction of active render resources. Old RHI returns zero tokens and thus requires explicit host-proven idle; no unsafe automatic timeout/frame-age release.
+
+**NOT RUN:** native compiler, CTest, Metal shader/driver visual, Vulkan/GLES or whole AIVERSE acceptance. Current main merge is still blocked on cross-branch reconciliation and hardware evidence.
