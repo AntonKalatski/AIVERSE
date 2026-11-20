@@ -113,9 +113,12 @@ VkFormat VulkanDevice::vkFormat(PixelFormat f) const {
 bool VulkanDevice::supports(PixelFormat f) const {
     VkFormatProperties fp;
     vkGetPhysicalDeviceFormatProperties(gpu_, vkFormat(f), &fp);
-    const VkFormatFeatureFlags need = f == PixelFormat::RGBA16F ? VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
-                                                                : VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-    return (fp.optimalTilingFeatures & need) == need;
+    // Device::supports(format) checks general sampled-texture support.
+    // Requiring COLOR_ATTACHMENT for RGBA16F here incorrectly disables GI
+    // storage images on devices whose format supports sampled + storage
+    // images but cannot act as an FP16 framebuffer color attachment.
+    // Render-target use is validated separately in createTexture().
+    return (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
 }
 
 void VulkanDevice::barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels, uint32_t baseLevel) {
@@ -420,6 +423,14 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     t.storage = d.storage;
     t.compressed = isCompressed(d.format);
     if (!supports(d.format) && !t.depth) { error_ = "texture format unsupported"; return {}; }
+    if (d.renderTarget && !t.depth) {
+        VkFormatProperties targetFormat{};
+        vkGetPhysicalDeviceFormatProperties(gpu_,t.vkFormat,&targetFormat);
+        if (!(targetFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
+            error_="Vulkan: color render-target format unsupported";
+            return {};
+        }
+    }
     if (d.storage) {
         VkFormatProperties fp{};
         vkGetPhysicalDeviceFormatProperties(gpu_,t.vkFormat,&fp);
