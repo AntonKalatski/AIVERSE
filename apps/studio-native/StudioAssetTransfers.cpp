@@ -296,8 +296,14 @@ Json StudioTransferPlan::apply(const std::string& token,
         // outside content/ and persists until a committed marker is published.
         journal.begin(journalOps);
         try {
-            for (const auto& operation:operations)
+            for (const auto& operation:operations) {
                 fs::rename(operation.source,operation.destination);
+                // Persist both directory entries before publishing the final
+                // committed marker. A power loss replays the pending journal.
+                StudioMoveJournal::syncPath(operation.source.parent_path());
+                if (operation.source.parent_path()!=operation.destination.parent_path())
+                    StudioMoveJournal::syncPath(operation.destination.parent_path());
+            }
             StudioAssetCatalog catalog(project_); catalog.rebuild();
             if (beforeCommit) beforeCommit();
             journal.commit();
