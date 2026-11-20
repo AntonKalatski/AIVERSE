@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include "tools/vivid-creator/OpticalCaptureCases.h"
@@ -1814,11 +1815,14 @@ struct CreatorApp {
             const float height=float(dev.framebufferHeight());
             float3 origin{},direction{};
             if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
+                const auto beforePick=std::chrono::steady_clock::now();
                 const auto pick=sculptPicker.pick(
                     *human.head,std::size_t(sculptMeshIndex),facePose,
                     human.facialShapes,human.facialBinding,
                     controller.frame(),origin,direction,morphSourceVertices,
                     sculptSourceIds);
+                const auto pickMs=std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-beforePick).count();
                 if(pick.hit) {
                     morphVertexIndex=int(pick.vertex);
                     sculptPickMarkerWorld=pick.worldPosition;
@@ -1830,7 +1834,8 @@ struct CreatorApp {
                         std::to_string(morphVertexIndex)+
                         " / BVH tris "+
                         std::to_string(sculptPicker.stats().testedTriangles)+
-                        "/"+std::to_string(sculptPicker.stats().triangles);
+                        "/"+std::to_string(sculptPicker.stats().triangles)+
+                        " / CPU "+std::to_string(pickMs)+" ms";
                 }else {
                     sculptPickMarkerValid=false;
                     status="No valid deformed source triangle under cursor";
