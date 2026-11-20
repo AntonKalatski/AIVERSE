@@ -2088,6 +2088,12 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
         add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        add_executable(aiverse_strata_source_seams_tests
+            tests/render/strata_source_seams.cpp)
+        target_link_libraries(aiverse_strata_source_seams_tests PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
+        add_test(NAME strata_source_seams
+            COMMAND aiverse_strata_source_seams_tests)
         add_executable(aiverse_strata_view_tests tests/render/strata_view.cpp)
         target_link_libraries(aiverse_strata_view_tests PRIVATE aiverse_strata_view aiverse_zstd_dec)
         add_test(NAME strata_view COMMAND aiverse_strata_view_tests)
