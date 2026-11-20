@@ -340,7 +340,6 @@ private:
         std::make_shared<game::Portrait>();
     render::GpuResourceRetirement* gpuResourceOwner_ = nullptr;
     gfx::Device* portraitDev_ = nullptr;
-    std::map<std::string, fs::file_time_type> stamps_;
     // Owned by the editor Model panel; the default type preview does not
     // borrow from this independent native-source cache.
     render::ModelAssetProvider rawModels_;
