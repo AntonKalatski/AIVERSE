@@ -48,6 +48,11 @@ struct Asset {
     std::vector<ClusterNode> nodes;
     std::vector<ClusterBounds> bounds; // one per node
     std::vector<uint32_t> roots;
+    // Stage17: only the builder may set this after a COMPLETE exact
+    // child-union/parent boundary proof. Directly constructed legacy test
+    // assets start uncertified and must not opt into crack-free production.
+    bool seamCertified = false;
+    uint32_t seamRejectedParents = 0;
     std::vector<uint32_t> indices; // global vertex ids for indexed raster
     // Stage 15.4: once the full .strataidx archive has been authenticated
     // against this import asset and the GPU pinned roots are resident, the
