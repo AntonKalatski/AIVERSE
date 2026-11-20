@@ -8,6 +8,7 @@
 #include "engine/render/Model.h"
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -85,9 +86,9 @@ public:
                     std::array<float,3>{0.f,0.f,0.f});
             }
         }
-        for(const auto& [name,_]:vectors)
-            if(defaults.contains(name))
-                throw std::invalid_argument("Facial input declared as both scalar and vector: "+name);
+        for(const auto& item:vectors)
+            if(defaults.contains(item.first))
+                throw std::invalid_argument("Facial input declared as both scalar and vector: "+item.first);
         // Publish the COMPLETE new binding only after native GUID and
         // authoring schema checks. This is NOT a Model/Graph/GPU compile.
         guid_=guid;
@@ -160,7 +161,8 @@ public:
         result.set("rendererChannelCapacity",
                    Json::number(int64_t(render::kMaxMorphTargets)));
         result.set("reason",Json::string(
-            "Studio renderer has 8 morph slots; MotionWeave 64-channel Model/Renderer3D and FacialPreviewSession must be integrated before GPU facial preview"));
+            "Current Studio renderer has "+std::to_string(render::kMaxMorphTargets)+
+            " morph slots; full MotionWeave 64-channel Model/Renderer3D and FacialPreviewSession must be integrated before GPU facial preview"));
         return result;
     }
 private:
