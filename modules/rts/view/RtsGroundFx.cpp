@@ -9,6 +9,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 
 namespace aiverse::game {
 
@@ -104,7 +107,45 @@ bool boxVisible(const mat4& vp, float3 mn, float3 mx) {
 
 void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& read, const std::string& contentBase) {
     checkGpuDevice(dev);
-    if (dev_) shutdown(*dev_);
+    if(dev_ && dev_!=&dev)
+        throw std::logic_error("RtsGroundFx: GPU device owner mismatch");
+    // Build a complete replacement on a private, never-submitted owner.
+    // This preserves the live overlay/terrain state if shader, pipeline,
+    // white fallback or optional texture decoding/allocation throws.
+    auto staged=std::make_unique<RtsGroundFx>();
+    try {
+        staged->initUnpublished(dev,rules,read,contentBase);
+        if(dev_ && !dev.waitForResourceIdle())
+            throw std::runtime_error("RtsGroundFx: reload GPU idle barrier failed");
+        if(dev_)shutdown(dev);
+    } catch(...) {
+        // No commands have ever referenced staging resources. Release only
+        // the staging owner, even when the old live device is not idle.
+        if(staged->dev_)staged->shutdown(dev);
+        throw;
+    }
+    // No GPU allocation after this point. Swap the prepared kit, look and
+    // refs into the live owner; all previous mesh state has been shut down.
+    dev_=&dev;
+    rules_=&rules;
+    base_.swap(staged->base_);
+    textures_.swap(staged->textures_);
+    using std::swap;
+    swap(terr_,staged->terr_);
+    swap(dig_,staged->dig_);
+    swap(lane_,staged->lane_);
+    swap(road_,staged->road_);
+    swap(conc_,staged->conc_);
+    shader_=std::exchange(staged->shader_,{});
+    pipe_=std::exchange(staged->pipe_,{});
+    white_=std::exchange(staged->white_,{});
+    useT_=staged->useT_; useD_=staged->useD_;
+    useR_=staged->useR_; useC_=staged->useC_;
+    invalid_=true;
+    staged->dev_=nullptr;
+}
+
+void RtsGroundFx::initUnpublished(gfx::Device& dev, const Rules& rules, const FileReader& read, const std::string& contentBase) {
     dev_ = &dev;
     rules_ = &rules;
     base_ = contentBase;
@@ -152,10 +193,13 @@ void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& r
         p.label = "groundfx";
         pipe_ = dev.createPipeline(p);
     }
-    if (!pipe_.valid()) std::fprintf(stderr, "groundfx: %s\n", dev.lastError().c_str());
+    if (!pipe_.valid())
+        throw std::runtime_error("RtsGroundFx: pipeline creation failed");
     const uint32_t w = 0xffffffffu;
     gfx::TextureDesc td; td.width = 1; td.height = 1; td.data = &w; td.label = "groundfx white";
     white_ = dev.createTexture(td);
+    if(!white_.valid())
+        throw std::runtime_error("RtsGroundFx: white texture allocation failed");
     invalid_ = true;
 }
 
