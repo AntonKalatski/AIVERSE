@@ -611,3 +611,20 @@ to 3 bodies/2 joints. No new persistence/API changes. git diff --check PASS.
 Corrected native tests NOT RUN yet; full suite still running, not all passing.
 Next rebuild affected targets/client, rerun two regressions and impacted view
 fixtures, retain the complete consolidated results.
+
+
+### Final build and integration checkpoint — 2026-11-20
+Documentation stage `275ff1cabb05d1a0444b7255d2d8a3f3bdc01331`, codex/lens-completion: AGENTS now points to the
+current LENS contract; removed one inherited trailing blank line from Stage 47
+handoff. git diff --check origin/main...HEAD now PASS. Build-8 PASS with client
+enabled, all configured targets compiled on KINGSTON. Fixed ragdoll and model
+dependency native executables each exit 0 (ragdoll-retry.log, dependencies-retry.log).
+Client QA copy with lens.enabled=true, cameras.json and copied engine/assets
+ran 120 frames on Metal, exited 0, 76 pipelines/0 failures. Screenshot
+lens-client-enabled.png visually checked: game scene and HUD rendered. The
+first QA attempt used Python strict JSON on a commented manifest and failed
+before enabling LENS; it is NOT the enabled-camera test. Corrected JSONC copy
+was used for the successful second run. No source template/user project changed.
+Full CTest still waits on CPU-active aiverse_tests; 325/326 complete, with the
+two now-fixed regressions and one opt-in GPU skip. Do not call it all passing
+until core completes and CTest reruns record repaired cases. Main not pushed.
