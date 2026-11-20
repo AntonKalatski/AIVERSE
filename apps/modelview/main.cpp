@@ -638,6 +638,11 @@ struct Viewer {
         gui.newFrame(dt);
         gfx::TextureHandle portrait = gallery ? gallery->portrait(time) : gfx::TextureHandle{}; // before the scene pass
         r3d.beginScene(cam, d.framebufferWidth(), d.framebufferHeight());
+        // All graphics-visible borrowed models must stay pinned until
+        // Renderer3D::render, not just until View::submitOne returns.
+        attachmentView.beginPreparedFrame();
+        std::vector<Imported::Prepared> attachmentPackets;
+        attachmentPackets.reserve(inst.size());
         if (gallery) { gallery->update(time); gallery->draw(r3d, time); }
         else r3d.drawMesh(ground, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 0.05f);
         for (auto& in : inst) {
@@ -680,6 +685,7 @@ struct Viewer {
                     // not every visible instance using that resource.
                     prepared.object.id=uint64_t(&in-inst.data())+1;
                     attachmentView.submitOne(r3d,prepared.object);
+                    attachmentPackets.push_back(std::move(prepared));
                     presented=true;
                     in.lastAttachmentError.clear();
                 } else if(error!=in.lastAttachmentError) {
@@ -693,6 +699,9 @@ struct Viewer {
         gfx::PassDesc pass;
         pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
         r3d.render(pass);
+        // All submitted GPU input has now been synchronously encoded;
+        // ModelResourceCache retains ownership for actual GPU completion.
+        attachmentPackets.clear();
         ImGui::SetNextWindowPos(ImVec2(8, 8));
         ImGui::SetNextWindowBgAlpha(0.55f);
         ImGui::Begin("info", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);
