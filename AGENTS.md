@@ -1576,3 +1576,18 @@ continues to block stale GI and defers migration until authentic fence.
 The CPU per-frame budget is soft and this path is NOT proven fast on
 very complex worlds. Caller MUST clear any Renderer3D borrowed old GPU
 overlay before this transition. C++/CTest/GPU tests NOT EXECUTED.
+
+
+## GI Stage 54 — reused Metal/Vulkan BVH storage streams (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage54-persistent-bvh-streams-2026-11-20.md`.
+The normal GPU GI runtime now reuses immutable per-chunk CPU BLAS via
+`GiGpuChunkBvhCache` rather than rebuilding a single combined BVH
+from scratch. `GiGpuSmallScene` keeps triangle/node storage-buffer
+handles resident across changing chunk counts within grow-only capacity;
+`GiGpuSparsePatch` plans bounded contiguous changed-range uploads and
+full update if too fragmented. The shader still consumes a flat, bounded
+TLAS/BLAS packet and exact logical triangle/node counts. This is NOT
+true individual GPU BLAS pages or unbounded GPU world streaming. All
+writes remain behind real Metal/Vulkan ticket fences. No native
+CMake/CTest or GPU performance/pixel PASS in this stage; source only.
