@@ -57,6 +57,7 @@
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
 - (void)panX:(CGFloat)dx y:(CGFloat)dy;
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy;
 - (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward;
 - (void)focusSceneSelection;
 - (void)resetSceneView;
@@ -124,7 +125,7 @@
     if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
         [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
-- (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
+- (void)rightMouseDragged:(NSEvent*)event { [self.host lookX:event.deltaX y:event.deltaY]; }
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
 - (void)keyDown:(NSEvent*)event {
     NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
@@ -255,6 +256,10 @@
 }
 - (void)zoom:(CGFloat)amount {
     if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
+}
+- (void)lookX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->look(float(dx),float(dy));
 }
 - (void)panX:(CGFloat)dx y:(CGFloat)dy {
     if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
@@ -510,6 +515,11 @@
                 if (!std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx)>1000 || std::abs(dy)>1000)
                     reply.set("error",aiverse::Json::string("Invalid orbit delta"));
                 else { [self orbitX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="look" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid look delta"));
+                else { [self lookX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
             } else if (kind=="pan" && input["dx"].isNumber() && input["dy"].isNumber()) {
                 const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
                 if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
