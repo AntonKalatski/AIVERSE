@@ -1,4 +1,5 @@
 #include "StudioSession.h"
+#include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -43,6 +44,9 @@ StudioSession::StudioSession(const std::string& engineRoot, const std::string& p
     if (!project.empty()) {
         std::string error;
         if (!ws_.openGame(project, &error)) throw std::runtime_error(error.empty() ? "Cannot open project" : error);
+        // A project opened from the CLI follows the same content policy as
+        // projects chosen through the native Open Project panel.
+        (void)studioContentRoot(ws_.project.dir);
     }
 }
 int StudioSession::indexFor(const std::string& id) const {
@@ -145,6 +149,7 @@ Json StudioSession::openProject(const std::string& path) {
     std::string error;
     if (!ws_.openGame(path, &error))
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
+    (void)studioContentRoot(ws_.project.dir);
     selected_.clear();
     previewMaterialName_.clear();
     refreshMaterialPreview();
@@ -423,12 +428,22 @@ Json StudioSession::dispatch(const Json& request) {
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
         } else if (method == "studio.assets") {
-            // Never accept a browser-selected directory. The existing Workspace
-            // operation is called with an empty argument object, restricting this
-            // read-only listing to the project's own root.
-            const Json r = ws_.call("asset_list", Json::object(), "studio");
-            if (r.has("error")) throw std::runtime_error(r.getStr("error"));
-            reply.set("result", r);
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            // Browser input cannot specify a filesystem directory. This scan
+            // sees ONLY regular files beneath project/content (no symlinks).
+            // Return content-relative paths, so the UI's root is "content".
+            const auto catalog = studioContentFiles(ws_.project.dir);
+            Json r = Json::object();
+            r.set("root", str("content"));
+            Json entries = Json::array();
+            for (const auto& asset : catalog) {
+                Json item = Json::object();
+                item.set("path", str(asset.path));
+                item.set("bytes", Json::number(asset.bytes));
+                entries.push(std::move(item));
+            }
+            r.set("files", std::move(entries));
+            reply.set("result", std::move(r));
         } else if (method == "studio.select") {
             const Json& id = params["id"];
             if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
