@@ -261,6 +261,8 @@ public:
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
+    // Negative resumes the steady presentation clock; nonnegative freezes fog advection.
+    void setLocalFogTime(double seconds) { fogTime_=seconds; }
     void setLocalFog(LocalFogSettings s) { fogSettings_=s; }
     LocalFogScene& localFog() { return fogScene_; }
     const LocalFogScene& localFog() const { return fogScene_; }
@@ -496,6 +498,7 @@ private:
     PrismaUnderwaterState underwater_{};
     gfx::Device* dev_ = nullptr;
     PrismaSettings settings_;
+    double fogTime_=-1,fogEpoch_=-1;
     LocalFog fog_;
     LocalFogSettings fogSettings_;
     LocalFogScene fogScene_;
