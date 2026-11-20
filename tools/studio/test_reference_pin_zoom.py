@@ -189,6 +189,9 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('material.alpha!=render::AlphaMode::Opaque',scene)
         self.assertIn('model->batching.autoLod=false',scene)
         self.assertIn('rejectedDocumentModels_',api)
+        self.assertIn('documentModelTimes_',api)
+        self.assertIn('fs::last_write_time(current,modifiedError)',scene)
+        self.assertIn('previousTime->second!=modified',scene)
         self.assertIn('session_->workspace().project.rulesJson',host)
 
     def test_rigid_cpu_model_triangle_picking_adapter(self):
