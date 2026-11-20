@@ -214,6 +214,9 @@ void TerrainRenderer::loadTextures(gfx::Device&) {
 
 void TerrainRenderer::shutdown(gfx::Device& dev) {
     checkGpuDevice(dev);
+    if(!dev_)return;
+    if(dev_!=&dev)
+        throw std::logic_error("TerrainRenderer shutdown: GPU device owner mismatch");
     for (auto& c : chunks_) freeChunk(dev, c);
     chunks_.clear();
     for (auto* l : {&apron_}) { dev.destroyBuffer(l->vb); dev.destroyBuffer(l->ib); *l = {}; }
@@ -222,7 +225,8 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
-    for (int i = 0; i < 3; ++i) {
+    // High/detail variants can allocate all six shader/pipeline slots.
+    for (int i = 0; i < 6; ++i) {
         if (pipes_[i].valid()) dev.destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev.destroyShader(shaders_[i]);
         pipes_[i] = {}; shaders_[i] = {}; shaderFailed_[i] = false;
