@@ -113,6 +113,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         cameraInitialized_=false;
     }
     if (materialMode_) {
+        lightingStatus_="Material preview · GI: off · Direct: standard";
         if (!cameraInitialized_) {
             camera_.target={0,0,0};
             camera_.distance=4.3f;
@@ -158,13 +159,6 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         terrain_ = replacement;
         terrainRevision_ = doc.revision;
     }
-    if (!cameraInitialized_ || lastMapWidth_ != map.w || lastMapHeight_ != map.h) {
-        camera_.target = {map.w * .5f, 0.0f, map.h * .5f};
-        camera_.distance = std::clamp(float(std::max(map.w, map.h)) * 1.4f, 16.0f, 100000.0f);
-        cameraInitialized_ = true;
-        lastMapWidth_ = map.w;
-        lastMapHeight_ = map.h;
-    }
     const Json settings=renderLightingSettings((fpsProject?doc.data.fps:doc.data.extra)["renderLighting"]);
     const bool useLighting=settings.getStr("indirect")!="off" || settings.getStr("direct")!="legacy";
     const auto activeLights=studioAuthoredLights(doc,fpsProject,levelHeight,std::numeric_limits<size_t>::max());
@@ -184,7 +178,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         }
         lightingRevision_=doc.revision;
         lightingStatus_="Preview geometry · GI: off · Direct: standard";
-        if(useLighting) {
+        if(useLighting || fpsProject) {
             lightingModel_=studioLightingPreview(doc,fpsProject,levelHeight);
             if(!lightingModel_)throw std::runtime_error("Studio lighting geometry missing");
             prepareModelUpload(*lightingModel_);
@@ -193,13 +187,25 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             const float3 center{(lightingModel_->boundsMin.x+lightingModel_->boundsMax.x)*.5f,
                 lightingModel_->boundsMin.y+.25f,(lightingModel_->boundsMin.z+lightingModel_->boundsMax.z)*.5f};
             try {
-                lightingRuntime_.initialize(*device_,renderer_,post_,settings,geometry,activeLights,center,environment);
+                if(useLighting)lightingRuntime_.initialize(*device_,renderer_,post_,settings,geometry,activeLights,center,environment);
             } catch(const std::exception& e) {
                 const std::string reason=e.what();
                 if(!lightingRuntime_.shutdown(*device_,renderer_))throw;
                 lightingStatus_="Lighting rejected: "+reason+" · standard preview retained";
             }
         }
+    }
+    if (!cameraInitialized_ || lastMapWidth_ != map.w || lastMapHeight_ != map.h) {
+        camera_.target = {map.w * .5f, 0.0f, map.h * .5f};
+        camera_.distance = std::clamp(float(std::max(map.w, map.h)) * 1.4f, 16.0f, 100000.0f);
+        if(fpsProject && lightingModel_) {
+            const auto lo=lightingModel_->boundsMin,hi=lightingModel_->boundsMax;
+            camera_.target=(lo+hi)*.5f;
+            camera_.distance=std::clamp(std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z})*1.4f,16.f,100000.f);
+        }
+        cameraInitialized_ = true;
+        lastMapWidth_ = map.w;
+        lastMapHeight_ = map.h;
     }
     device_->beginFrame(framebufferWidth, framebufferHeight);
     StudioFrameScope scope{*device_};
@@ -230,9 +236,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     const int xStep = std::max(1, map.w / 48);
     const int zStep = std::max(1, map.h / 48);
-    for (int x=0; x<=map.w; x+=xStep)
+    for (int x=0; !fpsProject && x<=map.w; x+=xStep)
         renderer_.line({float(x),.01f,0},{float(x),.01f,h},rgba(55,84,109,120));
-    for (int z=0; z<=map.h; z+=zStep)
+    for (int z=0; !fpsProject && z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);

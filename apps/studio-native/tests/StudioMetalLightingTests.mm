@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include "apps/studio-native/mac/StudioMetalScene.h"
+#include "apps/studio-native/StudioLightingPreview.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -21,7 +22,8 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         editor::MapDoc doc;doc.reset(8,8);
         doc.data.extra.set("lights",Json::parse(R"([{"x":4,"z":4,"height":2,"radius":12,"intensity":6,"color":[1,0.3,0.1]}])"));
         const Json empty;
-        auto frame=[&](){scene.frame(160,160,doc,false,"","",empty,0);};
+        bool fps=false;
+        auto frame=[&](){scene.frame(160,160,doc,fps,"","",empty,0);};
         std::vector<uint8_t> litPixels,unlitPixels;
         for(const char* mode:{"cpu","gpu","off","unlit"}) {
             const std::string indirect=std::string(mode)=="unlit"?"off":mode;
@@ -63,6 +65,38 @@ int aiverseMain(int argc,char** argv) { @autoreleasepool {
         // Turn off and restore to exercise resource retirement and view invalidation.
         doc.data.extra.set("renderLighting",Json::object());doc.touched();frame();
         if(scene.lightingStatus().find("GI: off · Direct: standard")==std::string::npos)throw std::runtime_error("disable failed");
+        // FPS has no RTS size and may live entirely in negative coordinates.
+        std::string error;
+        if(!doc.loadJson(Json::parse(R"({"name":"Negative FPS",
+          "colliders":[{"min":[-24,-0.2,-16],"max":[-16,0,-8]}],
+          "spawns":[[-20,1,-12]],"players":[{"name":"P1","team":1}],
+          "lights":[{"x":-20,"z":-12,"height":2,"radius":12,"intensity":6,"color":[1,0.3,0.1]}],
+          "renderLighting":{"indirect":"gpu","direct":"luma","probes":4,"layers":2,"spacing":3,"samples":8}
+        })"),&error))throw std::runtime_error(error);
+        const auto preview=studio::studioLightingPreview(doc,true,1.5f);
+        if(!preview || preview->boundsMax.x>=0 || preview->boundsMax.z>=0 ||
+           preview->boundsMin.x>-24 || preview->boundsMin.z>-16)
+            throw std::runtime_error("FPS preview includes unrelated RTS terrain");
+        fps=true;scene.resetCamera();
+        for(int i=0;i<150;++i) {
+            frame();
+            if(scene.lightingStatus().find("converging")==std::string::npos)break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        if(scene.lightingStatus().find("GI: GPU")==std::string::npos ||
+           scene.lightingStatus().find("Direct: Luma")==std::string::npos ||
+           scene.lightingStatus().find("converging")!=std::string::npos)
+            throw std::runtime_error("FPS GPU convergence: "+scene.lightingStatus());
+        // A center-screen hit proves that the camera follows the negative scene.
+        if(scene.pick(80,80,160,160,doc,true).empty())
+            throw std::runtime_error("FPS camera misses authored scene");
+        scene.frame(160,160,doc,true,"","Material",Json::object(),1);
+        if(scene.lightingStatus().find("Material preview · GI: off")==std::string::npos)
+            throw std::runtime_error("material preview reports stale GI");
+        frame();
+        if(scene.lightingStatus().find("Material preview")!=std::string::npos)
+            throw std::runtime_error("scene status not restored");
+        std::cout<<"Negative-coordinate FPS and material transition PASS\n";
         std::cout<<"Studio Metal lighting PASS\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Studio Metal lighting FAIL: "<<e.what()<<"\n";return 1;}
 } }
