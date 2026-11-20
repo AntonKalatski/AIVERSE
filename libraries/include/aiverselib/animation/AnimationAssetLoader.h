@@ -3,6 +3,7 @@
 #pragma once
 #include "AnimationMontage.h"
 #include "GenericRetarget.h"
+#include "engine/render/ModelClips.h"
 #include "engine/data/Json.h"
 #include <cmath>
 #include <stdexcept>
