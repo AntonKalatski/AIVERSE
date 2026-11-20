@@ -126,4 +126,44 @@ inline SculptGpuSubmittedViewCheck validateSculptGpuSubmittedView(
     out.accepted=true;
     return out;
 }
+// Stage 7AZ: verify both actually encoded independent actor draws
+// before an ID pass borrows two separate renderer-owned 60B streams.
+// This checks frame/primitive/LOD/instance provenance, not hardware
+// depth or pixel visibility (which the native Metal test measures).
+inline bool sculptGpuPairedRendererViewsAccepted(
+        const render::Renderer3D::ModelViewProvenance& selectedView,
+        const render::Renderer3D::ModelSubmissionProvenance& selectedEncoded,
+        const render::Model& selectedModel,std::size_t selectedMesh,
+        const render::Renderer3D::ModelViewProvenance& blockerView,
+        const render::Renderer3D::ModelSubmissionProvenance& blockerEncoded,
+        const render::Model& blockerModel,std::size_t blockerMesh,
+        std::uint64_t frame) {
+    if(&selectedModel==&blockerModel || !frame ||
+       !validateSculptGpuSubmittedView(
+           selectedView,selectedEncoded,selectedModel,selectedMesh,frame).accepted ||
+       !validateSculptGpuSubmittedView(
+           blockerView,blockerEncoded,blockerModel,blockerMesh,frame).accepted)
+        return false;
+    const auto originalStream=[](
+            const render::Renderer3D::ModelViewProvenance& view,
+            const render::Model& model,
+            std::size_t mesh) noexcept -> gfx::BufferHandle {
+        gfx::BufferHandle stream{};
+        bool found=false;
+        for(const auto& p:view.primitives) {
+            if(p.model!=&model || p.meshIndex!=mesh)continue;
+            if(!p.customGpuStream || !p.vertexOverride.valid() ||
+               !p.vertexOverrideCount ||
+               (stream.valid() && stream!=p.vertexOverride))
+                return {};
+            stream=p.vertexOverride;
+            found=true;
+        }
+        return found?stream:gfx::BufferHandle{};
+    };
+    const auto a=originalStream(selectedView,selectedModel,selectedMesh);
+    const auto b=originalStream(blockerView,blockerModel,blockerMesh);
+    return a.valid() && b.valid() && a!=b;
+}
+
 } // namespace aiverse::vivid
