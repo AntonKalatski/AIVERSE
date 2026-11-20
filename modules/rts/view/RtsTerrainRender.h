@@ -132,6 +132,12 @@ public:
         const std::vector<uint8_t>* vision,
         const std::vector<uint8_t>* filteredVisibility=nullptr);
     void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
+    // Prepare camera resources against unpublished topology. The map owns
+    // this frame until commitMap publishes both, or rollback discards both.
+    void prepareMapVisible(const std::shared_ptr<PreparedMap>& candidate,
+        const render::Renderer3D& renderer,const MapGrid& grid,
+        const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility=nullptr);
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
     // darken in the shader; levels maps keep the classic fog sheet drawn by RtsView).
     void draw(render::Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool flatDig);
@@ -169,6 +175,7 @@ private:
         bool valid = false;
         std::vector<uint32_t> lastUse;               // detail mode: frame each LOD was last drawn (LRU)
     };
+    void commitMapVisible(PreparedMap& candidate) noexcept;
     bool buildInternal(gfx::Device& dev,const MapGrid& g,bool flatDig);
     void parseLook(const Json& t);
     void loadTextures(gfx::Device& dev);

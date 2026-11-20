@@ -402,6 +402,7 @@ private:
     uint64_t revision_=0;
     bool committed_=false;
     std::unique_ptr<TerrainRenderer> staged_;
+    std::shared_ptr<PreparedFrame> frame_;
 };
 
 std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
@@ -430,6 +431,11 @@ std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
     // A fully prepared, *published* material kit stays in its current owner.
     // No material cache, shader or pipeline allocations are made in staging.
     staged.texturesLoaded_=true;
+    // Borrow the immutable live kit; the frame candidate owns only misses.
+    std::copy(std::begin(shaders_),std::end(shaders_),std::begin(staged.shaders_));
+    std::copy(std::begin(pipes_),std::end(pipes_),std::begin(staged.pipes_));
+    std::copy(std::begin(shaderFailed_),std::end(shaderFailed_),
+              std::begin(staged.shaderFailed_));
     (void)staged.build(dev,grid,flatDig); // complete private rebuild
     return candidate;
 }
@@ -510,6 +516,7 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     fogFieldChanged_=true;
     candidate->committed_=true;
     ++publicationRevision_;
+    commitMapVisible(*candidate);
     return true;
 }
 
@@ -1685,6 +1692,35 @@ TerrainRenderer::prepareFrameVisible(
         }
     }
     return pending;
+}
+
+void TerrainRenderer::prepareMapVisible(
+        const std::shared_ptr<PreparedMap>& candidate,
+        const Renderer3D& renderer,const MapGrid& grid,
+        const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility) {
+    if(!candidate || candidate->owner_!=this || candidate->device_!=dev_ ||
+       candidate->committed_ || candidate->revision_!=publicationRevision_ ||
+       !candidate->staged_ || candidate->frame_ ||
+       !candidate->staged_->mapMatches(grid.w,grid.h))
+        throw std::logic_error("TerrainRenderer: stale topology frame prepare");
+    candidate->frame_=candidate->staged_->prepareFrameVisible(
+        renderer,grid,vision,filteredVisibility);
+    if(!candidate->frame_)
+        throw std::runtime_error("TerrainRenderer: topology frame prepare failed");
+}
+
+void TerrainRenderer::commitMapVisible(PreparedMap& candidate) noexcept {
+    if(!candidate.frame_)return;
+    // commitMap has just transferred the exact staged chunk/texture layout.
+    // No intervening owner mutation or external frame rebinding is allowed.
+    auto frame=std::move(candidate.frame_);
+    if(frame->owner_!=candidate.staged_.get() || frame->device_!=dev_ ||
+       frame->revision_!=candidate.staged_->publicationRevision_)
+        std::terminate();
+    frame->owner_=this;
+    frame->revision_=publicationRevision_;
+    commitFrame(std::move(frame));
 }
 
 void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept {

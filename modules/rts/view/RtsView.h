@@ -916,7 +916,7 @@ private:
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,
                              double time,const std::vector<uint8_t>* vision,
                              const MapGrid& grid);
-    void publishPendingTerrainFrame(render::Renderer3D& renderer,
+    std::optional<bool> publishPendingTerrainFrame(render::Renderer3D& renderer,
         const RtsScene& scene,double time,
         const std::vector<uint8_t>* vision,const MapGrid& grid);
     // Must be defined out-of-line: the opaque lease owns private GPU handles.

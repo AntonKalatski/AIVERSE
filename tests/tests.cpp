@@ -16324,6 +16324,96 @@ TEST(model_shadow_batches_material_overrides) {
     CHECK(!shadowBatchCompatible(mesh, {}));
 }
 
+TEST(lens_topology_frame_uploads_once_and_keeps_live_state_on_failure) {
+    struct Device final : fogfaulttest::Device {
+        bool rejectVisibility=false;
+        size_t terrainUploads=0;
+        gfx::TextureHandle createTexture(const gfx::TextureDesc& desc) override {
+            const std::string label=desc.label?desc.label:"";
+            if(label.starts_with("terrain "))++terrainUploads;
+            if(rejectVisibility && label=="terrain visibility COW")return {};
+            return fogfaulttest::Device::createTexture(desc);
+        }
+    } dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),0);
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&vision,grid);
+    renderer.render(gfx::PassDesc{});
+    const auto oldRoad=view.roads().surfaceGeneration();
+    grid.corner.assign(grid.corner.size(),32);
+    renderer.beginScene(camera,640,480);
+    dev.rejectVisibility=true;
+    bool failed=false;
+    try {view.prepareTerrainAtomicFrame(dev,grid,renderer,scene,2.0,&vision);}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(std::fabs(view.heightAt(grid,4,3))<1e-5f);
+    CHECK(view.roads().surfaceGeneration()==oldRoad);
+    dev.rejectVisibility=false;
+    CHECK(view.prepareTerrainAtomicFrame(dev,grid,renderer,scene,2.0,&vision));
+    CHECK(std::fabs(view.heightAt(grid,4,3))<1e-5f);
+    const auto uploads=dev.terrainUploads;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&vision,grid);
+    CHECK(dev.terrainUploads==uploads);
+    CHECK(std::fabs(view.heightAt(grid,4,3)-2.0f)<1e-5f);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_topology_prepared_trace_transfers_without_reupload) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    renderer.setShadowQuality(render::ShadowQuality::High);
+    renderer.setTraceEnabled(true);
+    game::TerrainRenderer terrain;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.corner.assign(25,0);
+    CHECK(terrain.build(dev,grid,false));
+    render::RTSCamera camera;
+    camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    grid.corner.assign(25,48);
+    auto map=terrain.prepareMap(dev,grid,false);
+    terrain.prepareMapVisible(map,renderer,grid,nullptr);
+    CHECK(!terrain.heightField().tex.valid());
+    const auto uploads=dev.textureAttempts;
+    const auto buffers=dev.bufferAttempts;
+    const auto pipelines=dev.pipelineAttempts;
+    CHECK(terrain.commitMap(std::move(map)));
+    if(renderer.traceActive()) {
+        CHECK(terrain.heightField().tex.valid());
+        CHECK(std::fabs(terrain.heightField().heightMin-3.0f)<1e-5f);
+    }
+    terrain.draw(renderer,grid,nullptr,false);
+    CHECK(dev.textureAttempts==uploads);
+    CHECK(dev.bufferAttempts==buffers);
+    CHECK(dev.pipelineAttempts==pipelines);
+    renderer.render(gfx::PassDesc{});
+    terrain.shutdown(dev);
+    renderer.shutdown();
+}
+
 int main(int argc, char** argv) {
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]

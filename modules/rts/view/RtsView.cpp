@@ -723,26 +723,27 @@ bool RtsView::prepareTerrainAtomicFrame(
         },
         [next] {next->groundCandidate.reset();});
     add(
-        [this,next,&dev,&grid,&nextHeight,&unexplored] {
+        [this,next,&dev,&grid,&nextHeight,&unexplored,vision,time] {
             next->fogSheet=fog_.prepareSheet(
                 dev,grid.w,grid.h,nextHeight);
             if(!next->fogSheet)
                 throw std::runtime_error(
                     "RtsView: topology Fog sheet prewarm failed");
-            if(!next->preserveFogHistory) {
+            if((vision && !vision->empty()) || !next->preserveFogHistory) {
+                const auto& field=(vision && !vision->empty())?*vision:unexplored;
                 next->fogUpdate=fog_.prepareUpdate(
-                    unexplored,grid.w,grid.h,0.0,next->fogSheet.get());
+                    field,grid.w,grid.h,time,next->fogSheet.get());
                 if(!next->fogUpdate)
                     throw std::runtime_error(
                         "RtsView: topology Fog R8 prewarm failed");
             }
         },
         [this,next] {
-            if(next->preserveFogHistory) {
+            if(!next->fogUpdate) {
                 (void)fog_.commitPreparedSheet(
                     std::move(next->fogSheet));
             }else{
-                (void)fog_.commitPreparedFrame(
+                next->fogChanged=fog_.commitPreparedFrame(
                     std::move(next->fogSheet),
                     std::move(next->fogUpdate));
             }
@@ -751,6 +752,18 @@ bool RtsView::prepareTerrainAtomicFrame(
             next->fogUpdate.reset();
             next->fogSheet.reset();
         });
+    add(
+        [this,next,&renderer,&grid,vision] {
+            const std::vector<uint8_t>* processed=nullptr;
+            if(next->fogUpdate && next->fogUpdate->changed())
+                processed=&next->fogUpdate->field();
+            else if(next->preserveFogHistory)
+                processed=&fog_.field();
+            terrain_.prepareMapVisible(next->topologyCandidate,
+                renderer,grid,vision,processed);
+        },
+        [] {}, // owned and published by the Terrain map participant
+        [] {});
     // A callback can mutate the map, camera, scene or fog bytes during GPU
     // preparation. Verify AFTER the late Fog stage and BEFORE publication.
     next->transaction->prepareAll();
@@ -768,10 +781,10 @@ bool RtsView::prepareTerrainAtomicFrame(
 // Called before the primary-frame camera epoch begins and BEFORE any model
 // or animation reads the published height. On a stale prewarm, stage the
 // current source synchronously once; NEVER publish the old GPU candidates.
-void RtsView::publishPendingTerrainFrame(
+std::optional<bool> RtsView::publishPendingTerrainFrame(
         Renderer3D& renderer,const RtsScene& scene,double time,
         const std::vector<uint8_t>* vision,const MapGrid& grid) {
-    if(!pendingSurfaceLease_ || !pendingSurfaceLease_->topology)return;
+    if(!pendingSurfaceLease_ || !pendingSurfaceLease_->topology)return std::nullopt;
     auto lease=std::move(pendingSurfaceLease_);
     if(!lease->matches(*this,renderer,scene,time,vision,grid)) {
         lease.reset(); // reverse-order rollback before new allocations
@@ -780,7 +793,7 @@ void RtsView::publishPendingTerrainFrame(
             throw std::logic_error("RtsView: missing GPU device for topology");
         buildTerrainAtomicScene(
             *dev_,grid,renderer,scene,time,vision);
-        return;
+        return std::nullopt;
     }
     if(!lease->transaction->publish())
         throw std::logic_error("RtsView: topology prewarm not prepared");
@@ -793,6 +806,7 @@ void RtsView::publishPendingTerrainFrame(
     fogMeshDirty_=false;
     if(twoD_)twoD_->buildTiles(*dev_,grid,
         rules_?float(rules_->levelHeight.toDouble()):1.5f);
+    return lease->fogChanged;
 }
 
 // Stage every surface owner into a private, one-shot transaction. All input
@@ -955,7 +969,7 @@ bool RtsView::prepareMapFrame(Renderer3D& renderer,const RtsScene& scene,
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
     // A matching topology prewarm MUST publish before even the first
     // hierarchy/animation height query or FramePublicationEpoch::begin().
-    publishPendingTerrainFrame(r,input,time,vision,grid);
+    const auto topologyFrame=publishPendingTerrainFrame(r,input,time,vision,grid);
     // Resource retirement is driven by the explicit owner frame hook,
     // never by this draw function (which can be called several times).
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
@@ -1080,7 +1094,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
     // Primary and optional scene-aware warmup reuse the same atomic
     // surface-owner transaction; only draw publishes a complete camera epoch.
-    const bool fogFieldChanged=publishSurfaceFrame(r,s,time,vision,grid);
+    const bool fogFieldChanged=topologyFrame?*topologyFrame:
+        publishSurfaceFrame(r,s,time,vision,grid);
     const bool tiles=twoD_ && twoD_->hasTiles();
     const auto afterSetup = std::chrono::steady_clock::now();
     // Legacy game-specific inputs are translated to engine-owned generic
