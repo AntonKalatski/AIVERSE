@@ -1971,13 +1971,18 @@ target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsViewScript.cpp modu
 target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp modules/rts/view/RtsPaintLayers.cpp modules/rts/view/RtsGroundCanvas.cpp)
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
+option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientRegionInput.cpp)
         target_sources(${t} PRIVATE apps/client/ClientTopDown.cpp)   # top-down heroes (agent-topdown-control)
         target_sources(${t} PRIVATE apps/client/ClientCommerce.cpp)   # city economy (agent-gta2)
-        target_sources(${t} PRIVATE apps/client/ClientCity.cpp)       # a seat in a city on a server (agent-gta2)
-        target_link_libraries(${t} PRIVATE aiverse_net_city)
+        if(AIVERSE_CLIENT_WITH_CITY)
+            target_sources(${t} PRIVATE apps/client/ClientCity.cpp)   # a seat in a city on a server
+            target_link_libraries(${t} PRIVATE aiverse_net_city)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientCityStub.cpp)
+        endif()
     endif()
 endforeach()
 

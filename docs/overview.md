@@ -146,14 +146,14 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all ten selectable modules. The supported names are
+empty array disables all eleven selectable modules. The supported names are
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
 at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
 animation and its Lua API), `gamepad` (controller input and action bindings),
 `fx` (SpectraFX particles and the RTS effect bridge), `fbx` (runtime FBX
 import using ufbx), `legacy-models` (runtime VOX/VXL, PLY/STL, 3DS,
-DAE, MDX/MDL, 3DO and W3D loaders), `obj` (runtime OBJ loader), and `blp`
-(BLP1/BLP2 texture decoding).
+DAE, MDX/MDL, 3DO and W3D loaders), `obj` (runtime OBJ loader), `blp`
+(BLP1/BLP2 texture decoding), and `city-client` (persistent city server client).
 A target-specific
 `packaging.targets.web.engineModules` or similar overrides the shared list.
 For example, `"packaging": {"engineModules": [], "targets":
@@ -180,6 +180,8 @@ to GLB before packaging. Host conversion tools retain OBJ support.
 Declare `blp` if the client reads BLP textures, including BLP images referenced
 by model files. Without it, convert those textures before packaging. Host
 conversion tools retain BLP support.
+Declare `city-client` if the game uses the `AIVERSE_CITY` server connection.
+With the module excluded, setting `AIVERSE_CITY` produces a startup error.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 
