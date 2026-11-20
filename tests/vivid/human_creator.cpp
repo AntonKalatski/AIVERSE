@@ -10,6 +10,7 @@
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
 #include "engine/character/vivid/SculptGpuSubmittedView.h"
+#include "engine/character/vivid/SculptGpuRendererMaskSources.h"
 #include "engine/character/vivid/SculptGpuColorPixelOracle.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
 #include "engine/render/ModelShaders.h"
@@ -705,6 +706,35 @@ void test() {
         blocker.actualVertexOverride={72};
         req(sculptGpuMaskedOccluderInputsValid(blocker,{71}),
             "valid independent GPU masked occluder source was rejected");
+        // Stage 7BA: up to four distinct independent Mask GPU sources
+        // in one depth-target ID pass, with no partial acceptance.
+        std::array<SculptGpuVertexSource,5> masks{};
+        std::array<const SculptGpuVertexSource*,5> refs{};
+        for(std::size_t i=0;i<masks.size();++i) {
+            masks[i]=blocker;
+            masks[i].actualVertexOverride={
+                std::uint32_t(72u+i)};
+            refs[i]=&masks[i];
+        }
+        req(sculptGpuMaskSourceSetValid(
+                std::span<const SculptGpuVertexSource* const>(
+                    refs.data(),4u),{71}),
+            "four valid GPU Mask occluders exceeded the source limit");
+        req(!sculptGpuMaskSourceSetValid(refs,{71}),
+            "fifth GPU Mask occluder bypassed fixed scene budget");
+        masks[1].actualVertexOverride=masks[0].actualVertexOverride;
+        req(!sculptGpuMaskSourceSetValid(
+                std::span<const SculptGpuVertexSource* const>(
+                    refs.data(),4u),{71}),
+            "duplicate 60B GPU Mask stream was accepted twice");
+        masks[1].actualVertexOverride={73};
+        masks[3].maskInputs[0].uvAlpha[0]=
+            std::numeric_limits<float>::quiet_NaN();
+        req(!sculptGpuMaskSourceSetValid(
+                std::span<const SculptGpuVertexSource* const>(
+                    refs.data(),4u),{71}),
+            "invalid last Mask source was silently ignored");
+
         req(!sculptGpuMaskedOccluderInputsValid(blocker,{72}),
             "selected GPU actor cannot be its own unrelated occluder");
         blocker.indices[0].vertex=999999u;
