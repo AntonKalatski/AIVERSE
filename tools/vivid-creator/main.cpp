@@ -16,6 +16,7 @@
 #include "engine/character/vivid/SculptGpuIdPass.h"
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
+#include "engine/character/vivid/SculptGpuSubmittedView.h"
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
@@ -2038,6 +2039,10 @@ struct CreatorApp {
                              human.hair->vertices.size()*sizeof(ModelVertex));
         }
         renderer.beginScene(camera,dev.framebufferWidth(),dev.framebufferHeight());
+        // Opt-in only for this frame's selected human; other game Models
+        // do not pay for per-command provenance collection.
+        if(gpuSculptToRecord.valid() && human.head)
+            renderer.trackModelSubmissions(human.head.get());
         // Renderer3D must select the view's actual model meshes, LODs,
         // vertex overrides and material batches BEFORE the separate ID
         // diagnostic is allowed to corroborate a CPU-picked source vertex.
@@ -2060,11 +2065,21 @@ struct CreatorApp {
             hair.world=headRigid;
             renderer.drawModel(hair);
         }
+        gfx::PassDesc pass;
+        pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
+        renderer.render(pass);
+        // Stage 7AW: only AFTER the renderer has actually encoded its
+        // opaque pass may the ID diagnostic corroborate a picked source.
+        // The normal pass is resumed for the UI by the optional block below.
         if(gpuSculptToRecord.valid()) {
             const auto actualView=renderer.modelViewProvenance(*human.head);
             const auto viewCheck=validateSculptGpuRendererView(
                 actualView,*human.head,gpuSculptToRecord.meshId,
                 gpuSculptToRecord.frameSerial);
+            const auto acceptedView=renderer.modelSubmissionProvenance(*human.head);
+            const auto submittedCheck=validateSculptGpuSubmittedView(
+                actualView,acceptedView,*human.head,
+                gpuSculptToRecord.meshId,gpuSculptToRecord.frameSerial);
             // Build zero-ID depth geometry for every other imported model
             // mesh referenced by a visible node, for the actual floor, and
             // for the current procedurally simulated groom. All pieces are
@@ -2077,7 +2092,8 @@ struct CreatorApp {
             std::vector<SculptGpuMaskBatch> maskedOccluders;
             // The render-source decision, not a second duplicated mesh
             // enumerator, determines which other model meshes can block.
-            bool complete=viewCheck.canRenderDiagnostic;
+            bool complete=viewCheck.canRenderDiagnostic &&
+                          submittedCheck.accepted;
             SculptGpuVertexSource actualStream;
             const SculptGpuVertexSource* actualStreamPtr=nullptr;
             if(complete && viewCheck.gpuVertexOverridePresent) {
@@ -2142,24 +2158,37 @@ struct CreatorApp {
                     human.hair->vertices,human.hair->indices,
                     rigidHeadMatrix(facePose[std::size_t(human.rig.head)]),
                     occluders);
+            if(complete)dev.endPass(); // Renderer3D leaves the UI pass open
             const bool submitted=complete && gpuSculptPass.record(
                 *human.head,sculptPicker.worldSurface(),
                 morphSourceVertices,sculptSourceIds,
                 renderer.viewProj(),gpuSculptToRecord,
                 occluders,maskedOccluders,actualStreamPtr);
+            if(complete) {
+                // Restore the exact screen pass without wiping either depth
+                // or colour. Also undo the ID pass's 1-pixel scissor.
+                gfx::PassDesc resume=pass;
+                resume.clearColorEnabled=false;
+                resume.clearDepthEnabled=false;
+                dev.beginPass(resume);
+                dev.setViewport({0,0,dev.framebufferWidth(),
+                                dev.framebufferHeight()});
+                dev.setScissor({0,0,dev.framebufferWidth(),
+                               dev.framebufferHeight()});
+            }
             gpuSculptRendererUsedOverride=submitted &&
                 actualStreamPtr!=nullptr;
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
                 status="GPU scene ID unavailable ("+
-                    std::string(sculptGpuRendererViewReasonText(
-                        viewCheck.reason))+"); CPU BVH retained";
+                    std::string(!viewCheck.canRenderDiagnostic?
+                        sculptGpuRendererViewReasonText(viewCheck.reason):
+                        sculptGpuSubmittedViewReasonText(
+                            submittedCheck.reason))+"); CPU BVH retained";
             }
         }
-        gfx::PassDesc pass;
-        pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
-        renderer.render(pass);
+
         if(smoke) {
             const auto& p=renderer.profile();
             if(!renderer.modelError().empty())
