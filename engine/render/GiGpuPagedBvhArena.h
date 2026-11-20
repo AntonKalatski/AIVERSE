@@ -48,6 +48,7 @@ public:
         size_t reused=0,rewritten=0,relocated=0,added=0,removed=0;
         size_t relevantTriangles=0,physicalTriangles=0,physicalNodes=0;
         size_t tlasNodes=0,suballocatedPages=0,freeTriangleSlots=0,freeNodeSlots=0;
+        bool compacted=false;
     };
 
 private:
@@ -75,16 +76,34 @@ public:
         return it==state_.pages.end()?nullptr:&it->second;
     }
 
-    // Build transactionally: no permanent page offset/CPU cache changes until
-    // the GPU backend has accepted all requisite uploads for this Plan.
+    // Build transactionally. If previous churn fragmented the physical
+    // address space, make ONE fresh compact layout after a genuine completed
+    // compute fence. The compacted candidate is STILL NOT COMMITTED until the
+    // RHI has accepted its complete relocated BVH upload.
     Plan plan(const GiChunkedGeometrySnapshot& snapshot,
               const GiGpuChunkBvhCache& blasCache) const {
+        try {
+            return planOnce(snapshot,blasCache,false);
+        } catch(const AddressSpaceExhausted&) {
+            auto compacted=planOnce(snapshot,blasCache,true);
+            compacted.stats.compacted=true;
+            return compacted;
+        }
+    }
+
+private:
+    struct AddressSpaceExhausted : std::runtime_error {
+        AddressSpaceExhausted() : std::runtime_error("GI GPU physical page slots exhausted") {}
+    };
+    Plan planOnce(const GiChunkedGeometrySnapshot& snapshot,
+                  const GiGpuChunkBvhCache& blasCache,
+                  bool compact) const {
         if(snapshot.triangleCount()>kTriangleLimit ||
            snapshot.chunkCount()>kMaxChunks)
             throw std::invalid_argument("GI GPU paged source limit exceeded");
         Plan publication;
         State& next=publication.next;
-        next=state_;
+        next=compact ? State{} : state_;
         if(next.nodes.empty())
             next.nodes.resize(kTlasCapacity); // unreachable TLAS reserve
         auto& stats=publication.stats;
@@ -230,6 +249,7 @@ public:
         return publication;
     }
 
+public:
     void commit(Plan&& plan) {
         if(!plan.accepted)
             throw std::invalid_argument("unaccepted GI GPU page layout");
@@ -266,7 +286,7 @@ private:
             }
         }
         if(end>limit || capacity>limit-end)
-            throw std::invalid_argument("GPU GI logical page address limit");
+            throw AddressSpaceExhausted{};
         const Span result{end,capacity};
         end+=capacity;
         return result;
