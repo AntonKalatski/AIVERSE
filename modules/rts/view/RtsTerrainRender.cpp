@@ -357,6 +357,9 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     checkGpuDevice(dev);
     auto t0 = std::chrono::steady_clock::now();
     if (g.w <= 0 || g.h <= 0) return false;
+    const float previousLh=lh_;
+    const bool previousHeightfield=heightfield_;
+    const int previousLodLevels=lodLevels_;
     lh_ = rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f;
     heightfield_ = g.hasCorners() && g.corner.size() == size_t((g.w + 1) * (g.h + 1));
     const bool lod = heightfield_ && (look_.lod == 1 || (look_.lod < 0 && std::max(g.w, g.h) > 256));
@@ -366,6 +369,86 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     gh.add(uint64_t(g.w)); gh.add(uint64_t(g.h)); gh.add(uint64_t(heightfield_)); gh.add(uint64_t(detail ? 99 : lodLevels_));
     uint32_t lhBits; std::memcpy(&lhBits, &lh_, 4); gh.add(lhBits);
     bool all = gh.h != globalHash_ || !built_;
+    // Whole-map non-detail rebuild is transactional across every chunk, the
+    // apron and water. Never retire any published GPU handle until the final
+    // replacement upload has succeeded. The detail path is handled separately.
+    if (all && !detail) {
+        TerrainRenderer staged;
+        staged.dev_=&dev;
+        staged.gpuDeviceLease_=gpuDeviceLease_;
+        try {
+            staged.rules_=rules_;
+            staged.look_=look_;
+            staged.lh_=lh_;
+            staged.heightfield_=heightfield_;
+            staged.lodLevels_=lodLevels_;
+            staged.detailOn_=false;
+            staged.mapW_=g.w;
+            staged.mapH_=g.h;
+            staged.cw_=(g.w+kChunk-1)/kChunk;
+            staged.ch_=(g.h+kChunk-1)/kChunk;
+            staged.chunks_.resize(size_t(staged.cw_*staged.ch_));
+            for (int cy=0; cy<staged.ch_; ++cy)
+                for (int cx=0; cx<staged.cw_; ++cx) {
+                    Chunk& c=staged.chunks_[size_t(cy*staged.cw_+cx)];
+                    c.x0=cx*kChunk;
+                    c.y0=cy*kChunk;
+                    c.x1=std::min(g.w,c.x0+kChunk);
+                    c.y1=std::min(g.h,c.y0+kChunk);
+                    c.hash=staged.chunkHash(g,c,flatDig);
+                    if (staged.heightfield_) staged.buildHeightChunk(dev,g,c);
+                    else staged.buildLevelsChunk(dev,g,c,flatDig);
+                    c.valid=true;
+                }
+            staged.buildApron(dev,g);
+            staged.buildWater(dev,g,flatDig);
+        } catch (...) {
+            // These buffers belong exclusively to a not-yet-submitted map.
+            // Unlike old published buffers they can be destroyed immediately.
+            for (auto& c:staged.chunks_)
+                for (auto& l:c.lods) {
+                    if (l.vb.valid()) dev.destroyBuffer(l.vb);
+                    if (l.ib.valid()) dev.destroyBuffer(l.ib);
+                }
+            if (staged.apron_.vb.valid()) dev.destroyBuffer(staged.apron_.vb);
+            if (staged.apron_.ib.valid()) dev.destroyBuffer(staged.apron_.ib);
+            if (staged.water_.vb.valid()) dev.destroyBuffer(staged.water_.vb);
+            if (staged.water_.ib.valid()) dev.destroyBuffer(staged.water_.ib);
+            lh_=previousLh;
+            heightfield_=previousHeightfield;
+            lodLevels_=previousLodLevels;
+            throw;
+        }
+        // Publish only after the last map buffer (including water) is ready.
+        for (auto& c:chunks_) freeChunk(dev,c);
+        retiredMeshes_.retireBuffer(dev,apron_.vb);
+        retiredMeshes_.retireBuffer(dev,apron_.ib);
+        retiredMeshes_.retireBuffer(dev,water_.vb);
+        retiredMeshes_.retireBuffer(dev,water_.ib);
+        chunks_=std::move(staged.chunks_);
+        apron_=staged.apron_;
+        water_=staged.water_;
+        hasWater_=staged.hasWater_;
+        waterSheet_=staged.waterSheet_;
+        mapW_=g.w;
+        mapH_=g.h;
+        cw_=staged.cw_;
+        ch_=staged.ch_;
+        globalHash_=gh.h;
+        detailOn_=false;
+        geoBytes_=0;
+        if (!texturesLoaded_) loadTextures(dev);
+        updateCellTextures(dev,g,flatDig);
+        updateDynamic(dev,g,true);
+        heightDirty_=true;
+        built_=true;
+        stats_.rebuilt=int(chunks_.size());
+        stats_.chunks=int(chunks_.size());
+        stats_.lodMax=lodLevels_;
+        stats_.buildMs=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-t0).count();
+        return true;
+    }
     if (all) {
         for (auto& c : chunks_) freeChunk(dev, c);
         mapW_ = g.w; mapH_ = g.h;
