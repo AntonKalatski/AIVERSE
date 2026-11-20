@@ -35,7 +35,7 @@ def analyze(folder):
     rows = []
     for label in ORDER:
         mode = "direct" if label.startswith("direct") else "mdi"
-        cap = 0 if mode == "direct" or label.startswith("default") else int(label[3:][:2 if label.startswith("cap32") or label.startswith("cap64") else 3])
+        cap = 0 if mode == "direct" or label.startswith("default") else int(label[3:-1])
         prefix = folder / f"2048-{label}"
         gpu = sample(pathlib.Path(str(prefix)+"-gpu-frames.csv"),
                      ("frame", "gpu_command_buffer_ms", "valid"), range(115,181))
