@@ -1609,6 +1609,41 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setTexture(8, it.model->morphTex.valid() ? it.model->morphTex : white_);
     }
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
+    if(dynamicGiEligible(it,phase,gpuInstances,instancePalette)) {
+        // Dynamic L1 is EXTRA bounced indirect radiance only; current baked
+        // atlas/probe uniform U4 and direct lighting are not replaced.
+        const float giData[12]={
+            dynamicGiOrigin_.x,dynamicGiOrigin_.y,dynamicGiOrigin_.z,dynamicGiOrigin_.w,
+            dynamicGiSize_.x,dynamicGiSize_.y,dynamicGiSize_.z,dynamicGiSize_.w,
+            dynamicGiRing_.x,dynamicGiRing_.y,dynamicGiRing_.z,dynamicGiRing_.w
+        };
+        dev_->setUniforms(6,giData,sizeof giData);
+        dev_->setTexture(13,dynamicGiOverlay_->texture());
+        if(dynamicGiValidity_)
+            dev_->setTexture(14,dynamicGiValidity_->texture());
+        if(dynamicGiFarOverlay_) {
+            const float far[12]={
+                dynamicGiFarOrigin_.x,dynamicGiFarOrigin_.y,dynamicGiFarOrigin_.z,dynamicGiFarOrigin_.w,
+                dynamicGiFarSize_.x,dynamicGiFarSize_.y,dynamicGiFarSize_.z,dynamicGiFarSize_.w,
+                dynamicGiFarRing_.x,dynamicGiFarRing_.y,dynamicGiFarRing_.z,dynamicGiFarRing_.w
+            };
+            dev_->setUniforms(7,far,sizeof far);
+            dev_->setTexture(15,dynamicGiFarOverlay_->texture());
+        }
+        if(dynamicGiThirdOverlay_ &&
+           dev_->info().backend==gfx::Backend::Metal) {
+            const float distant[12]={
+                dynamicGiThirdOrigin_.x,dynamicGiThirdOrigin_.y,
+                dynamicGiThirdOrigin_.z,dynamicGiThirdOrigin_.w,
+                dynamicGiThirdSize_.x,dynamicGiThirdSize_.y,
+                dynamicGiThirdSize_.z,dynamicGiThirdSize_.w,
+                dynamicGiThirdRing_.x,dynamicGiThirdRing_.y,
+                dynamicGiThirdRing_.z,dynamicGiThirdRing_.w
+            };
+            dev_->setUniforms(8,distant,sizeof distant);
+            dev_->setTexture(16,dynamicGiThirdOverlay_->texture());
+        }
+    }
     if (instancePalette) {
         float palette[kMaxMaterialPalette * 8] = {};
         for (size_t i = 0; i < instanceMaterialSlotCount; ++i) {
