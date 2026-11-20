@@ -40,10 +40,14 @@ public:
             quarantine(owner);
             return;
         }
-        // No async CPU loader may retain a borrowed project file-reader
-        // callback after its native scene host releases that project.
-        // Join outstanding import jobs before entering GPU retirement.
+        // A failed visual builder can return a partially uploaded owner
+        // BEFORE MotionWeaveSceneOwnedHost::stage() has bound its lease.
+        // Bind it to the verified epoch here too. Existing bindings to a
+        // DIFFERENT epoch fail closed instead of reaching that RHI owner.
+        // Stop CPU jobs before the host destroys the project file reader.
         try {
+            owner->setGpuDeviceLease(device_);
+            owner->resources().bindResourceDevice(device,device_);
             owner->setReader({});
         }catch(...) {
             ++cpuQueueShutdownFailures_;
