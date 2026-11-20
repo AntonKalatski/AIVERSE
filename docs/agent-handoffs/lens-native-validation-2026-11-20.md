@@ -199,3 +199,22 @@ with existing Editor offscreen target owner/lease (collected before submissions)
 Affected: RtsView.h, Editor.cpp, StudioCamerasWindow.cpp, tests/tests.cpp.
 No save-format change; public API adds setter only. Branch codex/lens-completion.
 CI/GPU screenshots NOT RUN. Next: reproducible full quick runner from this HEAD.
+
+## Native build PASS; regression repair
+
+Source `74f076f42`: full quick configure/build **PASS**, including native editor,
+KINGSTON report `20261120-145546-38984`; its 214-test CTest run still in progress
+at this checkpoint (do not call it passing). Focused 57-test MotionWeave/View
+run `20261120-145558-39850`: 54 PASS, 3 FAIL. Commit `1df2a8edda2875df228c5cad6e99015254a73cf8` fixes:
+- ModelSourceDependencies falsely treated material texture/shader strings as
+  library references; only assignment values and use/base chains now count.
+- Cost fixture ignored default cost gate; now checks serial default and explicit
+  low-cost parallel opt-in separately. Source-bridge fixture removed an entity
+  before testing duplicate rejection; removed that unrelated mutating sync.
+Affected three paths above; branch codex/lens-completion; no save/API changes.
+Fixes not rebuilt yet. Existing topology tests at 74f076f42: **19 checks PASS**,
+log `test-reports/lens-topology-74f076f42.log` via aiverse_tests lens_topology.
+Camera client adapter and sprite GPU fault tests **2/2 PASS**, report
+`20261120-145907-44577`. All paths under KINGSTON build root. CI and real GPU
+visual validation NOT RUN. Next: finish full CTest, rebuild affected targets,
+retest; transient topology budget and complete frame-owner rollback still open.
