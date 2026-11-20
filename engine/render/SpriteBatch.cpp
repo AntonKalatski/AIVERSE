@@ -126,13 +126,26 @@ bool SpriteBatch::init(gfx::Device& dev) {
     return initialized;
 }
 
+bool SpriteBatch::shutdownAfterGpuIdle() {
+    if (!dev_) return true;
+    if (!dev_->waitForResourceIdle()) return false;
+    shutdown();
+    return true;
+}
+
 void SpriteBatch::shutdown() {
     drawUploadValid_ = casterUploadValid_ = false;
     if (!dev_) return;
-    dev_->destroyBuffer(vb_); dev_->destroyBuffer(ib_); dev_->destroyBuffer(casterVb_);
+    for (auto h : {vb_, ib_, casterVb_})
+        if (h.valid()) dev_->destroyBuffer(h);
     for (auto p : {blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_})
         if (p.valid()) dev_->destroyPipeline(p);
-    for (auto sh : {shader_, litShader_, casterShader_, waterShader_}) if (sh.valid()) dev_->destroyShader(sh);
+    for (auto sh : {shader_, litShader_, casterShader_, waterShader_})
+        if (sh.valid()) dev_->destroyShader(sh);
+    vb_ = ib_ = casterVb_ = {};
+    blendPipe_ = groundPipe_ = decalPipe_ = litGroundPipe_ = {};
+    litPipe_ = litDecalPipe_ = casterPipe_ = waterPipe_ = {};
+    shader_ = litShader_ = casterShader_ = waterShader_ = {};
     dev_ = nullptr;
 }
 
