@@ -35,7 +35,7 @@ class StudioDesignSystemTests(unittest.TestCase):
         css=(SRC/"ui/studio-ui.css").read_text(encoding="utf-8")
         for component in COMPONENTS:
             with self.subTest(component=component):
-                signature=r"export\\s+function\\s+"+re.escape(component)+r"(?:<[^\\n]+>)?\\s*\\("
+                signature=r"export\s+function\s+"+re.escape(component)+r"(?:<[^\n]+>)?\s*\("
                 self.assertRegex(ts,signature)
         for class_name in SHARED_CLASSES:
             with self.subTest(css=class_name):
