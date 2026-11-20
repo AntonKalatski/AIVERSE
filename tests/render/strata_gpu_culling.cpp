@@ -127,7 +127,125 @@ public:
     }
 };
 
+static void testGpuTemporalHistory(gfx::Backend backend) {
+    RecordingComputeDevice dev;
+    dev.deviceInfo.backend=backend;
+    dev.currentFrame=301;
+    dev.completed=300;
+    GpuClusterCulling compute;
+    const auto instance=makeGpuSceneInstance(
+        mat4::identity(),0,19,true);
+    GpuPassConfig camera{};
+    camera.viewProjection=mat4::identity();
+    camera.width=800;camera.height=600;
+    camera.maxOutputClusters=16;
+    camera.hysteresisFraction=.2f;
+    camera.temporalNodeCount=3;
+    camera.temporalPassId=1;
+    camera.temporalRevision=41;
+    GpuSelectionSubmission first{},second{};
+    assert(compute.dispatch(dev,{99},{instance},camera,301,first));
+    assert(first.temporalApplied && first.temporalState.valid());
+    assert(dev.lastUniforms.temporalNodeCount==3);
+    assert(dev.lastUniforms.temporalHasPrevious==0);
+    assert(dev.lastUniforms.hysteresisFraction==.2f);
+    assert(compute.temporalStats().retainedBytes==3*sizeof(uint32_t));
+    assert(compute.temporalStats().histories==1);
+    // No two writes to one key in the SAME RHI frame may alias its
+    // previous/output resources. This second attempt is transactional.
+    GpuSelectionSubmission unchanged=first;
+    assert(!compute.dispatch(dev,{99},{instance},camera,301,unchanged));
+    assert(unchanged.temporalState==first.temporalState);
+
+    dev.currentFrame=302;dev.completed=301;
+    assert(compute.dispatch(dev,{99},{instance},camera,302,second));
+    assert(second.temporalApplied && second.temporalState!=first.temporalState);
+    assert(dev.lastUniforms.temporalHasPrevious==1);
+    assert(compute.temporalStats().retainedBytes==6*sizeof(uint32_t));
+
+    // Separate camera/pass uses its OWN temporal state and cold start;
+    // both can be recorded in the same frame with different GPU slots.
+    auto sun=camera;sun.temporalPassId=2;
+    GpuSelectionSubmission shadow{};
+    assert(compute.dispatch(dev,{99},{instance},sun,302,shadow));
+    assert(shadow.temporalApplied);
+    assert(dev.lastUniforms.temporalHasPrevious==0);
+    assert(shadow.temporalState!=second.temporalState);
+    assert(compute.temporalStats().histories==2);
+
+    // A changed scene/source/policy revision must cold-start rather than
+    // trusting refinement decisions from a different asset generation.
+    auto revised=camera;revised.temporalRevision=42;
+    GpuSelectionSubmission fresh{};
+    assert(compute.dispatch(dev,{99},{instance},revised,302,fresh));
+    assert(fresh.temporalApplied);
+    assert(dev.lastUniforms.temporalHasPrevious==0);
+    assert(compute.temporalStats().histories==3);
+
+    dev.currentFrame=303;dev.completed=302;
+    GpuSelectionSubmission third{};
+    assert(compute.dispatch(dev,{99},{instance},camera,303,third));
+    assert(third.temporalState!=first.temporalState &&
+           third.temporalState!=second.temporalState);
+    assert(dev.lastUniforms.temporalHasPrevious==1);
+    dev.currentFrame=304;dev.completed=302; // frame301 slot completed
+    GpuSelectionSubmission fourth{};
+    assert(compute.dispatch(dev,{99},{instance},camera,304,fourth));
+    assert(fourth.temporalState==first.temporalState);
+    assert(dev.lastUniforms.temporalHasPrevious==1);
+
+    // A frame-307 attempt would overwrite frame304's history output.
+    // Decline until the actual RHI completion serial confirms safety.
+    dev.currentFrame=307;dev.completed=303;
+    GpuSelectionSubmission blocked=fourth;
+    assert(!compute.dispatch(dev,{99},{instance},camera,307,blocked));
+    assert(blocked.temporalState==fourth.temporalState);
+    dev.completed=304;
+    assert(compute.dispatch(dev,{99},{instance},camera,307,blocked));
+    assert(blocked.temporalApplied);
+    assert(dev.lastUniforms.temporalHasPrevious==0); // 3 idle frames
+    assert(compute.temporalStats().coldStarts>=3);
+    assert(compute.temporalStats().submitted>=7);
+    compute.shutdown(dev);
+    assert(dev.buffers.empty());
+}
+
+static void testGpuTemporalMemoryBound() {
+    RecordingComputeDevice dev;
+    dev.deviceInfo.backend=gfx::Backend::Metal;
+    dev.currentFrame=400;dev.completed=399;
+    GpuClusterCulling compute;
+    GpuPassConfig config{};
+    config.width=320;config.height=240;
+    config.maxOutputClusters=16;
+    config.hysteresisFraction=.2f;
+    config.temporalPassId=1;
+    config.temporalNodeCount=262144; // 1 MiB per ring slot
+    config.temporalRevision=1;
+    for(uint32_t i=1;i<=32;++i){
+        const auto instance=makeGpuSceneInstance(
+            mat4::identity(),0,i,true);
+        GpuSelectionSubmission result{};
+        assert(compute.dispatch(dev,{99},{instance},config,400,result));
+        assert(result.temporalApplied);
+    }
+    assert(compute.temporalStats().retainedBytes==
+           32u*1024u*1024u);
+    const auto extra=makeGpuSceneInstance(
+        mat4::identity(),0,33,true);
+    GpuSelectionSubmission refused{};
+    assert(!compute.dispatch(dev,{99},{extra},config,400,refused));
+    assert(!refused.valid());
+    assert(compute.temporalStats().histories==32);
+    assert(compute.temporalStats().refused>=1);
+    compute.shutdown(dev);
+    assert(dev.buffers.empty());
+}
+
 int main() {
+    testGpuTemporalHistory(gfx::Backend::Metal);
+    testGpuTemporalHistory(gfx::Backend::Vulkan);
+    testGpuTemporalMemoryBound();
     RecordingComputeDevice dev;
     GpuClusterCulling compute;
     auto one = makeGpuSceneInstance(mat4::translate({2, 3, 4}), 3, 101);
