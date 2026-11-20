@@ -51,6 +51,13 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     report.push({material:material.getName(),mode:'source '+key,path:t[key],width:raw.width,height:raw.height});
    }
   }
+  if(spec.face_slot==='head_skin' && p.neck_albedo_smoothing!==undefined) {
+   const source=material.getBaseColorTexture();
+   if(!source)throw Error('Neck color filter requires a face atlas');
+   const image=await require('./filter_neck_albedo.cjs').filterNeckAlbedo(source.getImage(),sharp,{strength:p.neck_albedo_smoothing});
+   material.setBaseColorTexture(doc.createTexture(material.getName()+'_neck_evenness').setMimeType('image/png').setImage(image));
+   report.push({material:material.getName(),mode:'opt-in lower-atlas neck color smoothing',strength:p.neck_albedo_smoothing});
+  }
   // UE occlusion/lacrimal shaders are not reproduced by flat opaque colors.
   // Retain the geometry with a restrained portable translucent fallback.
   if(spec.face_slot==='eye_occlusion'||spec.face_slot==='wet') {

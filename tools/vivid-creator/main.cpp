@@ -1,3 +1,4 @@
+#include "engine/render/PostFx.h"
 #include "engine/character/vivid/HumanPreviewAnimation.h"
 #include "engine/character/vivid/HumanStudioLighting.h"
 // VIVID Creator: standalone non-destructive digital-human authoring and
@@ -98,6 +99,7 @@ struct CreatorApp {
     bool previewMotion=false;int previewPose=0;float previewTime=-1;
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
+    render::PostFx antialiasing;bool antialiasingReady=false,aaEnabled=true;
     bool previewHeadSweep=false;
     float captureCameraDistance=0;
     ShadowQuality captureShadowQuality=ShadowQuality::High;
@@ -191,6 +193,11 @@ struct CreatorApp {
         device=&dev;
         if(!renderer.init(dev))throw std::runtime_error("VIVID Creator: renderer init failed");
         rendererReady=true;
+        if(!antialiasing.init(dev))throw std::runtime_error("VIVID anti-aliasing init failed");
+        antialiasingReady=true;
+        PostFxSettings aa;aa.hdr=HdrMode::Off;aa.enabled=aaEnabled;
+        aa.effects.push_back(defaultPostFxEffect(PostFxType::Fxaa));
+        antialiasing.setSettings(std::move(aa));antialiasing.setQuality(PostFxQuality::Medium);
         applyVividMaterialQuality(renderer,presentation);
         if(!ui.init(dev,AIVERSE_SOURCE_DIR "/engine/assets/fonts/ui.ttf",16.0f))
             throw std::runtime_error("VIVID Creator: ImGui init failed");
@@ -1727,6 +1734,7 @@ struct CreatorApp {
         ImGui::End();
     }
     void frame(gfx::Device& dev,double dt) {
+        if(antialiasing.pendingTargetRetirements())antialiasing.collectRetiredTargets();
         // Animated characters may move after a ray sample; do not display
         // a stale sampled world-space marker across animation frames.
         if(animate)sculptPickMarkerValid=false;
@@ -2148,7 +2156,8 @@ struct CreatorApp {
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
         if(studioLightingEnabled){const auto bg=studioLighting.rig().background;pass.clearColor[0]=bg.x;pass.clearColor[1]=bg.y;pass.clearColor[2]=bg.z;}
-        renderer.render(pass);
+        renderer.render(pass,&antialiasing);
+        renderer.resolvePostFx();
         // Stage 7AW: only AFTER the renderer has actually encoded its
         // opaque pass may the ID diagnostic corroborate a picked source.
         // The normal pass is resumed for the UI by the optional block below.
@@ -2285,6 +2294,7 @@ struct CreatorApp {
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
+            if(sequenceFrame==0)std::printf("VIVID AA enabled=%d passes=%d\n",int(aaEnabled),antialiasing.stats().passes);
             if(sequenceFrame==0)std::printf("VIVID shadow map=%d adaptive=%d cameraDistance=%.3f\n",renderer.shadowMapSize(),shadowResolution.resolution,camera.distance);
             if(sequenceFrame==0)for(const auto& mat:human.head->materials)if(mat.eyeOptics.z>0)
                 std::printf("VIVID optical material %s shading=%d radius=%.4f depth=%.4f ior=%.3f tear=%.2f\n",mat.name.c_str(),int(mat.shading),mat.eyeOptics.z,mat.eyeOptics.w,mat.humanProfile.x,mat.humanProfile.y);
@@ -2333,6 +2343,7 @@ struct CreatorApp {
         if(floor.vb.valid())device->destroyBuffer(floor.vb);
         if(floor.ib.valid())device->destroyBuffer(floor.ib);
         if(uiReady)ui.shutdown();
+        if(antialiasingReady)antialiasing.shutdown();
         if(rendererReady)renderer.shutdown();
         // A failed drain means the device cannot safely release pending
         // GPU resources. Keep the owner alive rather than running a
@@ -2372,6 +2383,8 @@ int aiverseMain(int argc,char** argv) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
+        }else if(std::strcmp(argv[i],"--no-aa")==0) {
+            application->aaEnabled=false;
         }else if(std::strcmp(argv[i],"--camera-distance")==0 && i+1<argc) {
             try{application->captureCameraDistance=std::stof(argv[++i]);
                 if(!std::isfinite(application->captureCameraDistance)||application->captureCameraDistance<.5f||application->captureCameraDistance>120.f)return 2;

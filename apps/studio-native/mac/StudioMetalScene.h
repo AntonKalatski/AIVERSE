@@ -8,6 +8,7 @@
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/PostFx.h"
 #include "engine/render/AdaptiveShadowResolution.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "apps/studio-native/mac/StudioFacialGpuPreview.h"
@@ -47,6 +48,7 @@ private:
     bool materialMode_ = false;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();
     float terrainLevelHeight_ = 1.5f;
+    render::PostFx antialiasing_;
     render::RTSCamera camera_;
     render::AdaptiveShadowResolution shadowResolution_;
     bool cameraInitialized_ = false;

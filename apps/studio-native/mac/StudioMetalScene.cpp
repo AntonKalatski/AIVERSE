@@ -17,6 +17,12 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     facialGpu_.setDeviceLease(deviceLifetime_->lease());
     renderer_.setGpuDeviceLease(deviceLifetime_->lease());
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
+    antialiasing_.setGpuDeviceLease(deviceLifetime_->lease());
+    if(!antialiasing_.init(*device_))throw std::runtime_error("Studio anti-aliasing init failed");
+    PostFxSettings aa;aa.hdr=HdrMode::Off;
+    aa.effects.push_back(defaultPostFxEffect(PostFxType::Fxaa));
+    antialiasing_.setSettings(std::move(aa));
+    antialiasing_.setQuality(PostFxQuality::Medium);
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
     builder.color(rgba(255,255,255));
@@ -41,6 +47,7 @@ StudioMetalScene::~StudioMetalScene() {
         }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
+        antialiasing_.shutdown();
         renderer_.shutdown();
         if(deviceLifetime_)deviceLifetime_->retire();
     }
@@ -82,6 +89,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     facialReady_=false;
     facialError_.clear();
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
+    if(antialiasing_.pendingTargetRetirements())antialiasing_.collectRetiredTargets();
     if (renderer_.pendingProgramRetirements()) renderer_.collectRetiredPrograms();
     if (renderer_.pendingTargetRetirements()) renderer_.collectRetiredTargets();
     if (renderer_.hasPendingModelPipelineJobs()) renderer_.pollPendingModelPipelineJobs();
@@ -134,7 +142,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             pass.clearColor[1]=bg.y;
             pass.clearColor[2]=bg.z;
             pass.clearColor[3]=1.f;
-            renderer_.render(pass);
+            renderer_.render(pass,&antialiasing_);
+            renderer_.resolvePostFx();
             device_->endPass();
             device_->endFrame();
             facialReady_=submitted;
@@ -202,7 +211,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         previewPass.clearColor[0]=.07f;
         previewPass.clearColor[1]=.09f;
         previewPass.clearColor[2]=.135f;
-        renderer_.render(previewPass);
+        renderer_.render(previewPass,&antialiasing_);
+        renderer_.resolvePostFx();
         device_->endPass();
         device_->endFrame();
         return;
@@ -288,7 +298,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
-    renderer_.render(pass);
+    renderer_.render(pass,&antialiasing_);
+    renderer_.resolvePostFx();
     device_->endPass();
     device_->endFrame();
 }
