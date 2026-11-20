@@ -150,6 +150,7 @@ Json StudioSession::openProject(const std::string& path) {
     previewMaterialName_.clear();
     ++facialPreview_.generation;
     facialPreview_.active=false;
+    facialPreview_.gpuReady=false;
     facialPreview_.modelKey.clear();
     facialPreview_.authoredRig=Json::object();
     facialPreview_.controls={};
@@ -159,8 +160,13 @@ Json StudioSession::openProject(const std::string& path) {
 }
 void StudioSession::failFacialPreview(const std::string& reason) noexcept {
     facialPreview_.active=false;
+    facialPreview_.gpuReady=false;
     ++facialPreview_.generation;
     facialPreviewError_=reason;
+}
+void StudioSession::markFacialPreviewReady(uint64_t generation) noexcept {
+    if(facialPreview_.active && facialPreview_.generation==generation)
+        facialPreview_.gpuReady=true;
 }
 int StudioSession::selectedEntityIndex() const {
     if (selected_.empty()) return -1;
@@ -194,6 +200,7 @@ Json StudioSession::dispatch(const Json& request) {
                 const Json saved=readStudioFacialRig(ws_.project.dir,name);
                 StudioFacialPreviewState next=facialPreview_;
                 next.active=true;
+                next.gpuReady=false;
                 next.projectRoot=ws_.project.dir;
                 next.modelKey=key;
                 next.rigName=name;
@@ -227,6 +234,7 @@ Json StudioSession::dispatch(const Json& request) {
             } else if(method=="studio.facialPreviewStop") {
                 ++facialPreview_.generation;
                 facialPreview_.active=false;
+                facialPreview_.gpuReady=false;
                 facialPreview_.controls={};
             } else if(method=="studio.facialPreviewScalar") {
                 if(!facialPreview_.active)
@@ -266,7 +274,7 @@ Json StudioSession::dispatch(const Json& request) {
                 int64_t(facialPreview_.controlsRevision)));
             // A successful request only stages parameters. The Metal host
             // separately emits facial.preview.ready/error after actual render.
-            result.set("gpuReady",Json::fromBool(false));
+            result.set("gpuReady",Json::fromBool(facialPreview_.gpuReady));
             result.set("error",Json::string(facialPreviewError_));
             reply.set("result",std::move(result));
         } else if (method == "studio.facialRigList" ||
