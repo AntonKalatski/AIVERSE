@@ -1109,3 +1109,60 @@ Recommended shift in test strategy: instead of indefinite repetition of the same
 ### Validation truth
 
 **Actually performed:** extracted exact owner archive, read all 8 per-frame CSVs, checked frame count/MDI count/command count and computed pooled/run medians and worst case, read manifest/representative native log, documented evidence. **Not performed:** new native compilation in assistant environment, full CTest, GPU timestamp, Vulkan/GLES parity, representative 2k/4k load test, any production code changes.
+
+
+---
+
+## Stage 104 — matched native Direct vs CPU MDI scaling on 2K/4K primitives (2026-11-20)
+
+**Repo / branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, **Draft PR #39**.
+**Commits:** `2cf5930847106400109b5ef4a791ced6ee0b4c13` adds `tools/batching-stage104-analyze.py`; `607a2f88f389754ce3c004e289834eb2ba07fc08` adds `tools/batching-stage104-trials.sh`. This handoff is a separate follow-up commit.
+
+### Motivation / verified earlier owner evidence
+
+Stage 103 extracted 8 real Mac Studio forced CPU MDI processes from archive `capture-20261120T071121Z-92097.tar.gz`. All 648 measured 1K-primitive MDI frames (81 per process) had 10 MDI submissions and 2048 commands per measured frame, no frames exceeding 1.2ms, pooled median CPU `renderer.render()` wall `0.8466875ms`. Each test passed 38 CPU invariants and actual-MDI/final image parity; Mach thread CPU closely followed wall. The owner previously also recorded intermittent slower 1K forced-MDI runs, so no claim of definitive resolution or always-fast behavior is justified. There is still no GPU duration/FPS/large-production-scene evidence.
+
+### New tools and architecture
+
+**No C++ or renderer code changed in Stage 104.** Existing `tests/render/material_batches.cpp` already accepts `AIVERSE_BATCH_STRESS_ITEMS` in 64..100000 and supports `AIVERSE_BATCH_STRESS_POLICY=direct|mdi`, optional `AIVERSE_BATCH_THREAD_CPU_TIMING=1`, deferred per-frame CSV and raster snapshots. In `direct` mode, the fixture disables batch-model MDI and should submit 0 indirect commands; in `mdi` mode it should submit the full 2x shadow+opaque primitive command count.
+
+`tools/batching-stage104-trials.sh`:
+- Tests **2,048 and 4,096 unique primitives** using separate processes in order **Direct1 / MDI1 / MDI2 / Direct2** for each size (8 native processes total). This is a matched process-order control, not randomized per-frame A/B/A.
+- Explicitly disables inherited experimental GPU ICB, AUTO, profiling logs, and sets forced policy and CPU MDI flags; enables Mach CPU + synchronous wall and per-frame buffered CSV.
+- Requires native CPU invariants result PASS, end-image pixel parity `changed_channels=0`, 106-frame timeline and a nonempty CSV. For MDI, also requires actual successful real MDI screenshot parity, 81 MDI-active frames and zero Direct measured frames. For Direct, requires 81 Direct measured frames and zero indirect commands/submissions. The latter mode must **not** set the actual MDI capture flag.
+- Creates a **unique non-overwriting run directory** `build/batching-stage98/stage104/capture-UTC-PID` with 8 per-process logs and frame timelines, a provenance manifest (git checkout head, binary, sizes, order), the aggregate report and one `tar.gz` bundle.
+- Uses the same pre-built Stage98 fixture on the owner's Mac; no rebuild should be necessary because Stage104 modifies scripts only.
+
+`tools/batching-stage104-analyze.py`:
+- Validates each CSV has 106 ordered frames 90..195 and 81 measured frames 115..195.
+- Validates finite/nonnegative wall/Mach/backend and actual mode: Direct must have **0** indirect commands/submissions; CPU MDI must have >0 submissions and **2 * items** commands per measured frame (shadow + opaque).
+- Computes CPU `renderer.render()` median, P95, max; Mach calling-thread CPU median; wall-minus-Mach offcpu median; CPU backend submission median; and group/command counts.
+- Computes the difference of the medians of the two process medians for each mode, then reports `(MDI-Direct)/Direct*100%` with negative meaning lower measured CPU wall for MDI. These metrics must **not** be presented as GPU execution time/FPS.
+- Saves `stage104-summary.csv` with all eight per-run entries, and prints CPU wall comparisons for 2K and 4K.
+
+### Validation truth
+
+**Performed:** read code of existing fixture's stress policy and input parsing, created both Stage104 tools via GitHub, updated handoff. **Not performed:** the new runner's native Mac execution, native Direct 2K/4K parity, `bash -n` on Mac, script analyzer with actual 2K/4K CSV, 4K native performance, GPU timestamp collection, full CTest, Vulkan/GLES parity. If the expected 2*items MDI command count differs due to legitimate chunking, record actual CSV and adapt the validation only with evidence; do not hide errors. PR #39 remains Draft, production flags remain OFF by default.
+
+### Exact Mac Studio invocation (without switching checkout or rebuilding engine)
+
+The old detached `/Users/aleksandrfeer/Projects/AIVERSE-batching-stage98` already contains a compiled fixture and may be used by fetching two script objects individually. Do not reset any worktree with an unresolved rebase.
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage98 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage104-trials.sh \
+  > tools/batching-stage104-trials-local.sh || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage104-analyze.py \
+  > tools/batching-stage104-analyze.py || exit 1
+bash -n tools/batching-stage104-trials-local.sh || exit 1
+python3 -m py_compile tools/batching-stage104-analyze.py || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
+  bash tools/batching-stage104-trials-local.sh
+```
+
+At the end share the **new Stage104 `capture-*.tar.gz`**, or `stage104-summary.csv` plus offending log if an assertion fails. If the shell runner detects a native error, it exits nonzero immediately and leaves its unique capture directory intact. It does not alter other worktrees. For accurate comparison, avoid treating process execution order as causal randomization; GPU timestamps and variance under representative workloads remain the next stage. Do not merge PR #39 yet.
+
+### Agent continuation
+
+Read this handoff and parse native owner archive. Check the 8 per-process CSVs for 81 measured frames, real Direct/MDI mode and screenshot parity. Compare CPU median/P95/worst and per-pass backend across 2K/4K; inspect Mach CPU vs wall for potential contention. If 4K direct mode causes performance or memory pressure, bound the test and document. Only propose low-level batching optimization after seeing actual scaling and preserving correct Metal pipeline states, uniforms, and resource residency.
