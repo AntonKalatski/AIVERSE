@@ -32,7 +32,7 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
   if (method === 'studio.materials') {
     return { library: {} } as StudioResult[M];
   }
-  if (method === 'studio.materialPatch') {
+  if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
     throw Error('Editing materials requires the native AIVERSE host');
   }
   if (method === 'studio.lighting') {

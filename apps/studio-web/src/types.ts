@@ -15,7 +15,7 @@ export interface StudioSnapshot {
   mode: 'edit' | 'play';
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -25,6 +25,7 @@ export interface StudioParams {
   'studio.assets': Record<string, never>;
   'studio.materials': Record<string, never>;
   'studio.materialPatch': { name: string; patch: import('./panels/materialSchema').MaterialPatch };
+  'studio.materialCreate': { name: string; preset: import('./panels/materialSchema').MaterialPreset };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
   'studio.lightAdd': Record<string, never>;
@@ -44,6 +45,7 @@ export interface StudioResult {
   'studio.assets': StudioAssetList;
   'studio.materials': StudioMaterialLibrary;
   'studio.materialPatch': StudioMaterialLibrary;
+  'studio.materialCreate': StudioMaterialLibrary;
   'studio.lighting': StudioLightingState;
   'studio.lightingSet': StudioLightingState;
   'studio.lightAdd': StudioLightingState;

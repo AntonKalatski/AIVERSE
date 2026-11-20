@@ -4,6 +4,9 @@
 #include <cmath>
 #include <string_view>
 namespace aiverse::studio {
+inline bool validStudioMaterialPreset(std::string_view preset) {
+    return preset=="matte" || preset=="metal" || preset=="glass";
+}
 inline bool validStudioMaterialName(std::string_view name) {
     if(name.empty()||name.size()>64)return false;
     for(char c:name)

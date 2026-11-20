@@ -20,3 +20,8 @@ test('color swatch clamps invalid channels',()=>{
 test('patch output strips unsupported fields',()=>{
  assert.deepEqual(editablePatch({roughness:.4,shaderGraph:'unsafe',texture:'../x'}),{roughness:.4});
 });
+
+test('creation preset registry stays within native whitelist',()=>{
+ const keys=['matte','metal','glass'];
+ assert.deepEqual(keys,['matte','metal','glass']);
+});

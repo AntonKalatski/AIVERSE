@@ -4,6 +4,11 @@
 #include <limits>
 using namespace aiverse::studio;
 int main(){
+  assert(validStudioMaterialPreset("matte"));
+  assert(validStudioMaterialPreset("metal"));
+  assert(validStudioMaterialPreset("glass"));
+  assert(!validStudioMaterialPreset("../../../shader"));
+  assert(!validStudioMaterialPreset("custom"));
   assert(validStudioMaterialName("steel_1"));
   assert(!validStudioMaterialName("../bad")); assert(!validStudioMaterialName(""));
   assert(validStudioMaterialNumber("metallic",0));

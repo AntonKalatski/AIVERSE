@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Layers, RefreshCw, Save, Search, ShieldAlert } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import PropertyField from '../components/PropertyField';
-import { editablePatch, materialFields, materialNames, materialSwatchColor } from './materialSchema';
-import type { MaterialData, MaterialKey, MaterialLibrary, MaterialPatch } from './materialSchema';
+import { editablePatch, materialFields, materialNames, materialSwatchColor, MATERIAL_PRESETS } from './materialSchema';
+import type { MaterialData, MaterialKey, MaterialLibrary, MaterialPatch, MaterialPreset } from './materialSchema';
 import './MaterialsPanel.css';
 
 const EMPTY:MaterialLibrary={library:{}};
@@ -11,6 +11,9 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
  const [library,setLibrary]=useState<MaterialLibrary>(EMPTY);
  const [name,setName]=useState('');
  const [query,setQuery]=useState('');
+ const [newName,setNewName]=useState('');
+ const [newPreset,setNewPreset]=useState<MaterialPreset>('matte');
+ const [creating,setCreating]=useState(false);
  const [draft,setDraft]=useState<MaterialPatch>({});
  const [pending,setPending]=useState<string|null>(null);
  const [loading,setLoading]=useState(true);
@@ -53,6 +56,18 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
   setDraft(current=>({...current,[key as MaterialKey]:value}));
   setMessage('');
  };
+ const create=async()=>{
+  if(busy||loading||!connected||!projectPath)return;
+  if(changes>0){setError('Apply or discard the current material draft first.');return;}
+  if(!/^[A-Za-z0-9_-]{1,64}$/.test(newName)){setError('Use 1–64 letters, digits, underscore or hyphen.');return;}
+  setBusy(true);setError('');setMessage('');
+  try{
+   const response=await invoke('studio.materialCreate',{name:newName,preset:newPreset});
+   setLibrary(response);setName(newName);setDraft({});setPending(null);setNewName('');setCreating(false);
+   setMessage('New material saved to materials.json. MapDoc Undo does not include this edit.');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
  const apply=async()=>{
   if(!name||changes===0||busy||!connected)return;
   setBusy(true);setError('');setMessage('');
@@ -82,6 +97,17 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
   {message&&<p role="status" className="materials-notice">{message}</p>}
   <div className="materials-main">
    <aside className="materials-list">
+    <button className="materials-new-button" disabled={!connected||!projectPath||busy}
+      onClick={()=>setCreating(value=>!value)}>{creating?'Cancel new material':'+ New material'}</button>
+    {creating&&<div className="materials-new-form">
+      <label>Name<input aria-label="New material name" value={newName}
+        placeholder="matte_stone" maxLength={64} onChange={e=>setNewName(e.target.value)}/></label>
+      <label>Preset<select aria-label="Material preset" value={newPreset}
+        onChange={e=>setNewPreset(e.target.value as MaterialPreset)}>
+        {MATERIAL_PRESETS.map(p=><option key={p} value={p}>{p}</option>)}
+      </select></label>
+      <button disabled={busy||!newName||changes>0} onClick={()=>void create()}>Create and save</button>
+    </div>}
     <label className="materials-search"><Search size={14}/>
      <input placeholder="Filter materials…" aria-label="Filter materials"
       value={query} onChange={e=>setQuery(e.target.value)}/>

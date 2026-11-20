@@ -142,9 +142,36 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
-        } else if (method == "studio.materials" || method == "studio.materialPatch") {
+        } else if (method == "studio.materials" || method == "studio.materialPatch" ||
+                   method == "studio.materialCreate") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (method == "studio.materialPatch") {
+            if (method == "studio.materialCreate") {
+                const std::string name=params.getStr("name");
+                const std::string preset=params.getStr("preset");
+                if (!validStudioMaterialName(name) || !validStudioMaterialPreset(preset))
+                    throw std::runtime_error("Invalid material name or preset");
+                const Json existing=editor::loadMaterialLibrary(ws_);
+                if (existing.has(name)) throw std::runtime_error("A material with this name already exists");
+
+                Json material=Json::object();
+                Json color=Json::array();
+                const double rgb[3] = {
+                    preset=="metal" ? .78 : preset=="glass" ? .8 : .65,
+                    preset=="metal" ? .8 : preset=="glass" ? .92 : .68,
+                    preset=="metal" ? .85 : preset=="glass" ? 1.0 : .72
+                };
+                for(double v:rgb) color.push(Json::number(v,3));
+                material.set("color",std::move(color));
+                material.set("metallic",Json::number(preset=="metal" ? 1.0 : 0.0,3));
+                material.set("roughness",Json::number(preset=="metal" ? .32 : preset=="glass" ? .08 : .85,3));
+                material.set("alpha",str(preset=="glass" ? "blend" : "opaque"));
+                if (preset=="glass") material.set("doubleSided",Json::fromBool(true));
+                Json request=Json::object();
+                request.set("name",str(name));
+                request.set("material",std::move(material));
+                const Json saved=ws_.call("material_set",request,"studio");
+                if (saved.has("error")) throw std::runtime_error(saved.getStr("error"));
+            } else if (method == "studio.materialPatch") {
                 const std::string name=params.getStr("name");
                 if (!validStudioMaterialName(name))
                     throw std::runtime_error("Invalid material name");

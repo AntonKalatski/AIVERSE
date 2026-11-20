@@ -8,6 +8,8 @@ export const MATERIAL_EDIT_KEYS=[
   'receiveShadow','vertexColors','alpha','team','description'
 ] as const;
 export type MaterialKey=typeof MATERIAL_EDIT_KEYS[number];
+export const MATERIAL_PRESETS=['matte','metal','glass'] as const;
+export type MaterialPreset=typeof MATERIAL_PRESETS[number];
 export type MaterialPatch=Partial<Record<MaterialKey,FieldValue>>;
 export interface MaterialField {
   key:MaterialKey; label:string; type:'text'|'number'|'boolean'; value:FieldValue;
