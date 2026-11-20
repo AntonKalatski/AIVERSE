@@ -292,6 +292,13 @@ public:
         // already supplied a real velocity pass, do not replace it.
         if(!motionSnapshotCopied_ && objectMotion_.texture.valid())
             (void)snapshotObjectMotion(objectMotion_,false);
+        if(!motionSnapshotCopied_) {
+            // Failed/unsupported snapshot copy must NEVER fall through to
+            // sampling an unfenced borrowed motion image. Spatial-only
+            // lighting remains available on every GPU.
+            objectMotion_={};
+            motionFrameSerial_=motionViewKey_=motionViewEpoch_=0;
+        }
         stats_.motionAutoCaptured=autoMotionCaptured_;
         stats_.motionSnapshotCopied=motionSnapshotCopied_;
         stats_.materialAvailable=readyMaterial_;
