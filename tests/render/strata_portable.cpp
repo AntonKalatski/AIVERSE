@@ -26,11 +26,13 @@ public:
     gfx::DeviceInfo info_{};
     bool mdi_=false;
     bool healthy_=true, failNextIndex_=false;
+    uint64_t testFrameSerial_=0;
     uint32_t next_=1;
     uint32_t draws=0, allocs=0, releases=0;
     std::map<uint32_t,std::vector<uint8_t>> data_;
     std::string error_;
     const gfx::DeviceInfo& info() const override {return info_;}
+    uint64_t frameSerial() const override {return testFrameSerial_;}
     const std::string& lastError() const override {return error_;}
     bool supportsMultiDrawIndirect() const override {return mdi_;}
     bool gpuHealthy() const override {return healthy_;}
@@ -369,7 +371,14 @@ static void testIncrementalPortable(gfx::Backend backend) {
     assert(alias.meshes[0].primitives.size()==2);
     assert(alias.meshes[0].primitives[0].firstIndex==6);
     assert(alias.meshes[0].primitives[1].firstIndex==9);
+    // Unknown frame serial: keep GPU-visible children resident.
     assert(staged.updateResidency({},&error));
+    assert(staged.residencyStats()->activeBytes==48);
+    assert(staged.residencyStats()->fenceReuseDeferrals>0);
+    // Valid serial: retire children without reusing in-flight slots.
+    dev.testFrameSerial_=1;
+    assert(staged.updateResidency({},&error));
+    assert(staged.residencyStats()->activeBytes==24);
     assert(staged.indexBuffer()==indexBuffer);
     assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
     assert(alias.meshes[0].primitives.size()==1);
