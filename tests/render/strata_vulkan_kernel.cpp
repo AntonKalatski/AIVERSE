@@ -120,6 +120,37 @@ int main() {
     assert(callbackCalled && result.valid());
     assert(result.counters.invalid==0 && result.counters.overflow==0);
     assert(compareGpuSelection(asset,{instance},view,400,result,&error));
+    // Stage16.4c: real headless GPU selection on two *different* cameras
+    // (spot-depth projection and mirrored planar view). No main-view
+    // range or indirect buffer may be treated as their valid output.
+    const mat4 auxiliaryCameras[]={
+        mat4::scale({.75f,.65f,1.f}),
+        mat4::scale({-1.f,1.f,1.f})
+    };
+    for(const auto& projection:auxiliaryCameras){
+        auto perPass=view;
+        perPass.viewProjection=projection;
+        bool passReady=false;
+        GpuSelectionReadback selected{};
+        device->beginFrame(64,64);
+        GpuSelectionSubmission submitted{};
+        assert(culling.dispatch(*device,gpuMetadata,{instance},perPass,
+                                device->frameSerial(),submitted));
+        assert(submitted.gpuIndirectPrepared());
+        assert(culling.requestReadback(*device,submitted,
+            [&](GpuSelectionReadback read){
+                selected=std::move(read);
+                passReady=true;
+            }));
+        device->endFrame();
+        for(int n=0;n<3 && !passReady;++n){
+            device->beginFrame(64,64);
+            device->endFrame();
+        }
+        assert(passReady && selected.valid());
+        assert(compareGpuSelection(asset,{instance},perPass,400,
+                                   selected,&error));
+    }
     assert(commandsReady && commands.size()==
            sizeof(gfx::DrawIndexedIndirectCommand)*view.maxOutputClusters);
     gfx::DrawIndexedIndirectCommand first{};
