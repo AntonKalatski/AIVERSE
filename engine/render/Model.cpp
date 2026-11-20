@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 // stb_image with static linkage: the UI layer has its own copy, both may end up in one binary.
@@ -700,6 +701,27 @@ void prepareModelUpload(Model& m) {
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
                  bool publishSharedTextures) {
+    // Check morph layout BEFORE creating any GPU buffers or textures.
+    // Prevent shader out-of-bounds access and partially uploaded assets.
+    for(const auto& mesh:m.meshes)
+        for(const auto& primitive:mesh.primitives) {
+            if(primitive.morphTargets<0 ||
+               primitive.morphTargets>kMaxMorphTargets)return false;
+            if(primitive.morphTargets==0) {
+                if(!primitive.morphDeltas.empty())return false;
+                continue;
+            }
+            if(primitive.vertexCount==0)return false;
+            if(primitive.morphDeltas.empty()) {
+                if(!m.morphTex.valid())return false;
+                continue;
+            }
+            const size_t channels=size_t(primitive.morphTargets);
+            const size_t vertices=size_t(primitive.vertexCount);
+            if(vertices>std::numeric_limits<size_t>::max()/6u/channels ||
+               primitive.morphDeltas.size()!=vertices*channels*6u)
+                return false;
+        }
     // Remember whether this call started with unuploaded indexed geometry:
     // clearing CPU arrays on success must NEVER turn a failed GPU allocation
     // into a false-positive upload result.
