@@ -1067,3 +1067,46 @@ native GLES3 retain their Stage 7AR CPU-fed ID diagnostics and
 CPU BVH selection. Neither Vulkan compute expansion nor full
 WebGL2 support is claimed. Exact pixel/skinning parity and
 performance require the deferred consolidated native acceptance.
+
+
+### Stage 7AU — selected standard Mask reads real GPU actor positions
+
+Stage 7AT's earlier fully-opaque restriction is extended for one safe
+material case. If every selected primitive uses **the same supported
+`AlphaMode::Mask` material**, the Metal source picker combines:
+
+- The normal Renderer3D-selected, borrowed 60-byte GPU actor vertex
+  override for morphed positions (no CPU position substitution).
+- Immutable original per-source UV coordinates and vertex-colour alpha
+  (`SculptGpuSourceMaskInput`, 16B). Rigid or MotionWeave-joint
+  transforms are evaluated by the additional Metal compute kernel.
+- A 32-byte compute output with the identical stride/attributes as
+  `SculptGpuMaskVertex`, drawn using the existing sampled alpha
+  ID/depth fragment pipeline and exact base texture/cutoff/UV uniform.
+  The GPU output buffer and optional fifth mask-input buffer are
+  retired after asynchronous readback or a verified GPU-idle barrier.
+
+Implementation: `SculptGpuVertexSource::maskedSelection`,
+`maskBaseTexture`, `maskUniform`, `maskInputs`;
+`kSculptGpuSourceMaskExpandMSL`;
+`SculptGpuIdPass::supportsActualGpuMaskedStream()`. The Creator checks
+that the additional native compute pipeline is available before
+recording; the CPU BVH authoring hit is not overwritten by the ID reply.
+
+All selected primitives must share a valid GPU alpha-texture/material.
+Mixed opaque/masked or distinct masked materials, Blend, ShaderGraph,
+unavailable texture, nonfinite UV/alpha and unsupported render sources
+are rejected without claiming exact GPU visibility. Unselected scene
+occluders may still use CPU world positions and sampled GPU masks;
+this does not guarantee whole-screen colour-pass parity.
+
+The unexecuted `vivid_human_creator` tests check indexed triangle
+IDs, mask UV and vertex alpha, mixed/custom material and invalid-UV
+rollback, and the 32B MSL output contract. The unexecuted native
+`vivid_metal_sculpt_id` fixture now checks actual displaced GPU
+positions under a sampled Mask plus transparent and opaque texture
+pixels. **No CMake/CTest/Metal hardware tests have been run for 7AU.**
+Use the existing `bash tools/vivid-validate.sh --full` consolidated
+host acceptance only when the branch is ready; Vulkan/GLES3 GPU source
+expansion, late GPU culling, colour/material parity and custom
+vertex displacement remain unfinished.
