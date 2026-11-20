@@ -476,3 +476,23 @@ lighting ShaderRecorder and deferred-loading fake. Main already added equivalent
 true responses; preserve one each. Build-3 reported these three redeclarations.
 Rebuild/retests pending on KINGSTON; no production/API change. Next finish
 remaining build diagnostics and rerun the actual integrated binaries.
+
+
+## LENS Sprite/tile/overlay owner integration — 2026-11-20
+
+Code `2ee8b420b50233d4a8a72fe3d3866b44a9e24dd8`, codex/lens-completion.
+Rts2D frame guard captures camera basis, seen/corpse clocks, prepared sprite
+packets, painter batch and tile metadata. Captured frames prepare tile refresh
+and private SpriteBatch uploads before queuing draw-only callbacks. Failed
+frames restore old CPU/tile resources; successful frames retire old GPU handles
+at host completion boundaries. buildTiles now constructs local metadata/mesh
+first and retains the old mesh on allocation/atlas failure; normal replacements
+also use deferred retirement. RtsView polls sprite/tile queues and owns the
+frame guard alongside animation and overlay guards. LENS overlay uploads now
+use a private VB every prepared frame, upload before publication and replay
+without a later write; ordinary path remains snapshotUpdates-backed.
+No asset/save format change. `git diff --check` PASS. Native build-3 is finishing
+with previously identified/repaired compile errors; this stage and GPU tests
+NOT RUN yet. Main not pushed. Next: defer surface cohort publication until all
+other owners prepare, retain staged height queries, then rebuild on KINGSTON
+and execute fault/retry, full native and actual GPU checks.
