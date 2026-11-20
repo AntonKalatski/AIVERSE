@@ -54,6 +54,24 @@ skip_gpu() {
   fi
 }
 
+# Current main Physical Sky/Local Fog real-device modes. Each variant runs
+# through the full HDR fixture and writes a separate nonempty P6 image.
+# A successful P6 capture proves execution, not aesthetic/pixel parity.
+scene_variant() {
+  local name="$1" backend="$2" flag="$3" variant="$4" executable="$5"
+  local capture="$LOG/$name.ppm"
+  if stage "$name" env AIVERSE_AUDIO=off "$flag=$variant" \
+      "AIVERSE_HDR_CAPTURE=$capture" "$executable"; then
+    if grep -q "^GPU: $backend " "$LOG/$name.log" \
+        && [[ -s "$capture" ]] \
+        && [[ "$(head -c 2 "$capture")" == P6 ]]; then
+      record "${name}_evidence" PASS "$backend $flag=$variant P6 capture"
+    else
+      record "${name}_evidence" FAIL "missing backend marker or P6 capture"
+    fi
+  fi
+}
+
 if ! stage configure cmake -S "$ROOT" -B "$BUILD" \
      -DCMAKE_BUILD_TYPE=Release -DAIVERSE_BUILD_TESTS=ON \
      -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_HDR_TESTS=ON; then
@@ -97,7 +115,7 @@ fi
 # Important: AIVERSE_HDR_VERIFY exercises GPU probes and deliberately DOES
 # NOT write AIVERSE_HDR_CAPTURE. A separate normal-scene pass writes a PPM.
 if [[ "$OS" != Darwin || "$RUN_GPU" == 0 ]]; then
-  for name in metal_hdr metal_capture metal_taa metal_multiview metal_stress metal_ghost gl33_hdr gl33_capture gl33_multiview gl33_stress gl33_ghost; do
+  for name in metal_hdr metal_capture metal_taa metal_multiview metal_stress metal_ghost gl33_hdr gl33_capture gl33_multiview gl33_stress gl33_ghost metal_sky_fog_matrix gl33_sky_fog_matrix; do
     skip_gpu "$name" "not run: requires macOS and RUN_GPU=1"
   done
 else
@@ -164,8 +182,16 @@ else
         record metal_ghost_evidence FAIL "missing ghost pixel acceptance marker"
       fi
     fi
+    # All authored sky/fog variant switches from main's GPU fixture.
+    # This stays inside ONE acceptance invocation, not 44 manual commands.
+    for variant in clouds clear medium ortho night no-rays sunset inside above physis-dry physis-storm; do
+      scene_variant "metal_sky_$variant" "Metal" AIVERSE_PHYSICAL_SKY_TEST "$variant" "$metal"
+    done
+    for variant in off sphere reveal move obb obb-reveal behind inside medium ortho combined; do
+      scene_variant "metal_fog_$variant" "Metal" AIVERSE_LOCAL_FOG_TEST "$variant" "$metal"
+    done
   else
-    for name in metal_hdr metal_capture metal_taa metal_multiview metal_stress metal_ghost; do
+    for name in metal_hdr metal_capture metal_taa metal_multiview metal_stress metal_ghost metal_sky_fog_matrix; do
       skip_gpu "$name" "aiverse_hdr_scene missing"
     done
   fi
@@ -219,8 +245,16 @@ else
         record gl33_ghost_evidence FAIL "missing ghost pixel acceptance marker"
       fi
     fi
+    # All authored sky/fog variant switches from main's GPU fixture.
+    # This stays inside ONE acceptance invocation, not 44 manual commands.
+    for variant in clouds clear medium ortho night no-rays sunset inside above physis-dry physis-storm; do
+      scene_variant "gl33_sky_$variant" "GL33" AIVERSE_PHYSICAL_SKY_TEST "$variant" "$gl"
+    done
+    for variant in off sphere reveal move obb obb-reveal behind inside medium ortho combined; do
+      scene_variant "gl33_fog_$variant" "GL33" AIVERSE_LOCAL_FOG_TEST "$variant" "$gl"
+    done
   else
-    for name in gl33_hdr gl33_capture gl33_multiview gl33_stress gl33_ghost; do
+    for name in gl33_hdr gl33_capture gl33_multiview gl33_stress gl33_ghost gl33_sky_fog_matrix; do
       skip_gpu "$name" "aiverse_hdr_gl missing"
     done
   fi
