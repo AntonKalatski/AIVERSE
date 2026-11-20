@@ -151,7 +151,15 @@ public:
     template<class Coordinator,class Ticket>
     bool cancel(Coordinator& coordinator,const Ticket& ticket) {
         if(!ticket.valid())return false;
-        const bool success=coordinator.cancel(ticket);
+        bool success=false;
+        try {
+            success=coordinator.cancel(ticket);
+        }catch(...) {
+            // The candidate has no authority over gameplay if native
+            // cancellation throws. Never leak its GPU Model provider.
+            host_.discard(device_,ticket.scene.value);
+            throw;
+        }
         host_.discard(device_,ticket.scene.value);
         return success;
     }
