@@ -323,6 +323,7 @@ public:
     struct ModelViewPrimitive {
         const Model* model=nullptr;
         uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0; // one renderer drawModel() instance
         uint32_t firstIndex=0,indexCount=0;
         gfx::BufferHandle vertexOverride{};
         uint32_t vertexOverrideCount=0;
@@ -514,6 +515,7 @@ private:
         // Captured at selection time, before colour/LOD batching. Stores
         // real renderer-selected mesh and source primitive ordinals.
         uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0;
         uint32_t vertexOverrideCount=0;
         bool displacedVertexSource=false;
         // Full per-instance ModelVertex buffer; empty for the legacy path.
@@ -683,6 +685,7 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
