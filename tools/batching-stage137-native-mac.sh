@@ -61,8 +61,7 @@ printf 'binary_sha256=%s\n' "$(shasum -a 256 "$BIN" | awk '{print $1}')" >> "$PR
 bash -n tools/batching-stage137-trials.sh
 bash -n tools/batching-stage137-native-mac.sh
 python3 -m py_compile tools/batching-stage127-analyze.py \
-  tools/batching-stage137-analyze.py \
-  
+  tools/batching-stage137-analyze.py
 python3 tools/batching-stage137-analyze.py --self-test
 "$BIN" --unit
 
