@@ -158,8 +158,10 @@ const Format kFormats[] = {
 #if !defined(AIVERSE_NO_FBX)
     {".fbx", loadFbx},
 #endif
+#if !defined(AIVERSE_NO_LEGACY_MODELS)
     {".vox", loadVox}, {".vxl", loadVxl}, {".ply", loadPly}, {".stl", loadStl}, {".3ds", load3ds}, {".dae", loadDae},
     {".mdx", loadMdx}, {".mdl", loadMdl}, {".3do", load3do}, {".w3d", loadW3d},
+#endif
 };
 std::string extOf(const std::string& path) {
     const size_t dot = path.find_last_of('.'), slash = path.find_last_of("/\\");
@@ -258,6 +260,11 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         }
 #if defined(AIVERSE_NO_FBX)
         if (ext == ".fbx") throw std::runtime_error(path + ": FBX import is disabled in this build (AIVERSE_FBX=OFF); convert to .glb");
+#endif
+#if defined(AIVERSE_NO_LEGACY_MODELS)
+        if (ext == ".vox" || ext == ".vxl" || ext == ".ply" || ext == ".stl" || ext == ".3ds" ||
+            ext == ".dae" || ext == ".mdx" || ext == ".mdl" || ext == ".3do" || ext == ".w3d")
+            throw std::runtime_error(path + ": legacy model import is disabled in this build (AIVERSE_LEGACY_MODELS=OFF); convert to .glb");
 #endif
         if (!read(path, bytes)) throw std::runtime_error(path + ": file not found");
         throw std::runtime_error(path + ": unsupported model format '" + ext + "' (convert it with tools/models/modelconv, "

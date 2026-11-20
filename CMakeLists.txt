@@ -484,18 +484,19 @@ add_library(aiverse_models STATIC
     engine/render/ModelObj.cpp
     engine/render/Animation.cpp
     engine/render/TextureCodec.cpp
-    # more formats (docs/models.md): voxels, interchange, classic RTS formats, their textures
-    engine/render/ModelVox.cpp
-    engine/render/ModelPly.cpp
-    engine/render/Model3ds.cpp
-    engine/render/ModelDae.cpp
-    engine/render/ModelMdx.cpp
-    engine/render/ModelMdl.cpp
-    engine/render/Model3do.cpp
-    engine/render/ModelW3d.cpp
     engine/render/ImageBlp.cpp
     engine/render/ImageDds.cpp
     engine/render/TextureGen.cpp)
+option(AIVERSE_LEGACY_MODELS "Runtime VOX/VXL, PLY/STL, 3DS, DAE, MDX/MDL, 3DO and W3D import" ON)
+if(AIVERSE_LEGACY_MODELS)
+    target_sources(aiverse_models PRIVATE
+        engine/render/ModelVox.cpp engine/render/ModelPly.cpp
+        engine/render/Model3ds.cpp engine/render/ModelDae.cpp
+        engine/render/ModelMdx.cpp engine/render/ModelMdl.cpp
+        engine/render/Model3do.cpp engine/render/ModelW3d.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_LEGACY_MODELS=1)
+endif()
 # baked lighting, CPU side (agent-lightbake): lightmap UVs of models (+ .lmuv sidecars), bake folder reader
 target_sources(aiverse_models PRIVATE engine/render/LightmapUv.cpp engine/bake/LightmapData.cpp)
 # ufbx (MIT / public domain): FBX parser, compiled as its own C library without warnings.
