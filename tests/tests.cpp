@@ -2689,6 +2689,10 @@ public:
     aiverse::gfx::DeviceInfo info_;
     std::string err_;
     const aiverse::gfx::DeviceInfo& info() const override { return info_; }
+    // This recording backend executes all mock work synchronously. A device
+    // idle check is therefore successful unless a fault-injection subclass
+    // explicitly overrides it to simulate an unresponsive GPU.
+    bool waitForResourceIdle() override { return true; }
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc&) override { return {}; }
     void updateBuffer(aiverse::gfx::BufferHandle, const void*, size_t, size_t) override {}
     void destroyBuffer(aiverse::gfx::BufferHandle) override {}
