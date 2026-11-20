@@ -92,7 +92,7 @@ fi
 # Important: AIVERSE_HDR_VERIFY exercises GPU probes and deliberately DOES
 # NOT write AIVERSE_HDR_CAPTURE. A separate normal-scene pass writes a PPM.
 if [[ "$OS" != Darwin || "$RUN_GPU" == 0 ]]; then
-  for name in metal_hdr metal_capture metal_taa gl33_hdr gl33_capture; do
+  for name in metal_hdr metal_capture metal_taa metal_multiview gl33_hdr gl33_capture gl33_multiview; do
     skip_gpu "$name" "not run: requires macOS and RUN_GPU=1"
   done
 else
@@ -126,8 +126,20 @@ else
         record metal_taa_evidence FAIL "missing Metal backend or TAA PASS"
       fi
     fi
+    # Stage 97: real Renderer3D + canonical PRISMA dual-view temporal,
+    # cut, resize and deferred GPU-retirement submission. It does not
+    # assert GPU fence completion before the backend reports that fence.
+    if stage metal_multiview env AIVERSE_PRISMA_MULTIVIEW_VERIFY=1 \
+        AIVERSE_PRISMA_TEMPORAL=1 AIVERSE_PRISMA_JITTER=1 "$metal"; then
+      if grep -q '^GPU: Metal ' "$LOG/metal_multiview.log" \
+          && grep -q '^PRISMA multiview: PASS cameras=2' "$LOG/metal_multiview.log"; then
+        record metal_multiview_evidence PASS "Metal two-camera lifecycle encoded"
+      else
+        record metal_multiview_evidence FAIL "missing backend or multiview lifecycle PASS"
+      fi
+    fi
   else
-    for name in metal_hdr metal_capture metal_taa; do
+    for name in metal_hdr metal_capture metal_taa metal_multiview; do
       skip_gpu "$name" "aiverse_hdr_scene missing"
     done
   fi
@@ -151,8 +163,17 @@ else
         record gl33_capture_evidence FAIL "missing backend or P6 capture"
       fi
     fi
+    if stage gl33_multiview env AIVERSE_PRISMA_MULTIVIEW_VERIFY=1 \
+        AIVERSE_PRISMA_TEMPORAL=1 AIVERSE_PRISMA_JITTER=1 "$gl"; then
+      if grep -q '^GPU: GL33 ' "$LOG/gl33_multiview.log" \
+          && grep -q '^PRISMA multiview: PASS cameras=2' "$LOG/gl33_multiview.log"; then
+        record gl33_multiview_evidence PASS "GL33 two-camera lifecycle encoded"
+      else
+        record gl33_multiview_evidence FAIL "missing backend or multiview lifecycle PASS"
+      fi
+    fi
   else
-    for name in gl33_hdr gl33_capture; do
+    for name in gl33_hdr gl33_capture gl33_multiview; do
       skip_gpu "$name" "aiverse_hdr_gl missing"
     done
   fi
