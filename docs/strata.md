@@ -2065,3 +2065,73 @@ materials/instances, shadow/reflection GPU routing and optimized
 GPU page workloads remain further functionality work. Complete
 file/commit/API handoff: `docs/agent-handoffs/strata-virtual-geometry.md`,
 Stage 16.3.
+
+
+## Stage 16.4 — bounded multi-material / multi-instance / multi-camera GPU rendering
+
+The experimental Vulkan Renderer3D path now supports **up to 16
+opaque source primitives/materials** in one immutable pooled mesh
+and **up to 16 source instances** (further limited by the global
+64 compute-submissions-per-frame pool). GPU packets are strictly
+per original primitive and per instance. Renderer3D retains the
+original PBR texture/material state and one U0 transform per
+ModelItem; it never groups different materials into one state
+or submits the same primitive twice. Incompatible authored LOD,
+deformation/skin, transparency or GPU resource revisions always
+fall through to existing Legacy or portable CPU-selected geometry.
+
+### Per-camera GPU selections
+
+The main camera and sun shadow have independent selections before
+`Renderer3D::render`. Spot-shadow and mirrored planar-water
+reflection cameras are only finalized later in
+`Renderer3DReflect.cpp`: STRATA now performs bounded GPU compute
+selection **after computing the actual spot/mirror matrix but
+before each GPU render pass begins**. The renderer checks pass
+identity, target dimensions, source material/transform and current
+RHI frame before consuming any GPU indirect buffer. If compute
+fails, the same original ModelItem is rendered through Legacy
+in that pass. Nothing performs a synchronous GPU readback in the
+production renderer. Metal/GLES3/GL33 remain on their established
+selection/fallback routes.
+
+### Explicit opt-in; never enable unverified passes by default
+
+```cpp
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true);
+scene.setStrataGpuCullingEnabled(true);
+scene.setStrataVulkanGpuIndirectEnabled(true);
+
+// All stay FALSE until actual native A/B pixel/depth parity is verified
+// for this precise source SHA, device and shader configuration.
+scene.setStrataVulkanGpuParityGates(false,false);
+scene.setStrataVulkanGpuAuxiliaryParityGates(
+    false,  // sun shadow depth
+    false,  // spot shadow depth
+    false); // planar-reflection RTT image
+```
+
+The base two gates guard source GPU/CPU selection and main-image
+raster parity; the other three independently certify sun/spot
+depth and mirrored reflection. Setting flags merely records
+manual acceptance: it does **not** execute or prove a test. A
+scene that requests sun shadow or water reflections declines
+GPU source routing until the corresponding pass gate is accepted;
+spot shadows may independently stay on Legacy. `Renderer3D`
+records GPU candidate, preparation and submitted draw counters
+for all cameras; GPU triangle counts cannot be inferred without
+asynchronous readback.
+
+**Validation status:** all Stage16.4 implementations are committed,
+but CMake and CTest have NOT run and real Vulkan raster/depth/RTT
+pixel parity is NOT verified. Recording fixtures were extended
+for two separate opaque materials, independent instance transforms,
+correct main/sun/spot/reflection packet identity, unique Vulkan
+compute slots, alpha rejection, and material-revision invalidation.
+These tests also remain **unexecuted**. Production acceptance
+requires a real Vulkan Renderer3D legacy/GPU A/B fixture covering
+the exact colors, shadows and planar RTT; finish Stage17 crack-free
+lossy LOD and Stage18 profiling before the owner's combined final
+suite. Full Stage16.4a/b/c file and test handoffs are in
+`docs/agent-handoffs/strata-virtual-geometry.md`.
