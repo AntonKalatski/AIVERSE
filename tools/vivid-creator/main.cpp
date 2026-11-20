@@ -82,8 +82,9 @@ struct CreatorApp {
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
     GroomQuality groomQuality=GroomQuality::High;
-    bool groomSelfCollision=true;
+    bool groomSelfCollision=true,groomSegmentCollision=true;
     float groomSelfSeparation=0.014f,groomSelfResponse=0.6f;
+    float groomFriction=0.25f,groomCurlPreservation=0.3f;
     float jaw=0.0f, smile=0.0f, blink=0.0f, yaw=0.18f;
     float wind=0.15f;
     int draftGuides=512,draftSegments=8;
@@ -1000,8 +1001,13 @@ struct CreatorApp {
         }
         if(ImGui::CollapsingHeader("Hair / groom")) {
             ImGui::Checkbox("Hair self-collision",&groomSelfCollision);
+            ImGui::Checkbox("Continuous strand segment collision",
+                            &groomSegmentCollision);
             ImGui::SliderFloat("Strand separation",&groomSelfSeparation,
                                0.002f,0.045f,"%.4f");
+            ImGui::SliderFloat("Strand friction",&groomFriction,0,1,"%.2f");
+            ImGui::SliderFloat("Curl shape preservation",&groomCurlPreservation,
+                               0,1,"%.2f");
             ImGui::SliderFloat("Strand collision response",&groomSelfResponse,
                                0.05f,1.0f,"%.2f");
             if(human.groom.stats().guides) {
@@ -1798,6 +1804,9 @@ struct CreatorApp {
             strandSettings.enabled=groomSelfCollision;
             strandSettings.separation=groomSelfSeparation;
             strandSettings.response=groomSelfResponse;
+            strandSettings.segmentEnabled=groomSegmentCollision;
+            strandSettings.friction=groomFriction;
+            strandSettings.bendPreservation=groomCurlPreservation;
             if(!human.groom.setSelfCollision(strandSettings))
                 status="VIVID groom: invalid strand collision settings";
             if(!human.groom.step(step,{wind,0,wind*0.3f}))
