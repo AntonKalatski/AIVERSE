@@ -218,3 +218,73 @@ TEST(geometry_prepared_scene_rejects_null_source_and_recovers) {
     models["a.obj"]=std::make_unique<Model>(geometrytest::grid(2));scene.loadPrepared(dev,json,std::move(models));
     CHECK(scene.stats().instances==1);scene.shutdown(dev);
 }
+
+
+TEST(geometry_transactional_reload_preserves_live_scene_on_source_failure) {
+    using namespace render;
+    entityfxtest::RecordingDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"old.obj"}]})");
+    const auto candidate=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"new.obj"},{"id":"b","model":"missing.obj"}]})");
+    const auto good=[](const std::string&,std::string& out) {
+        out=geometrytest::boxObj();return true;
+    };
+    scene.loadTransactional(dev,original,good);
+    CHECK(scene.stats().instances==1);
+    const auto before=scene.stats();
+    bool requestedNew=false,rejected=false;
+    try {
+        scene.loadTransactional(dev,candidate,[&](const std::string& file,std::string& out) {
+            if(file=="new.obj"){requestedNew=true;out=geometrytest::boxObj();return true;}
+            return false; // Fault injection AFTER the first source was decoded.
+        });
+    } catch(const std::exception&) {rejected=true;}
+    CHECK(requestedNew&&rejected);
+    CHECK(scene.stats().instances==before.instances);
+    CHECK(scene.stats().groups==before.groups);
+    CHECK(scene.stats().proxies==before.proxies);
+    CHECK(scene.pendingGpuRetirements()==0); // No old source retired.
+    // A previously built model/cache must remain draw-capable.
+    Renderer3D renderer;CHECK(renderer.init(dev));renderer.setShadowQuality(ShadowQuality::Off);
+    RTSCamera cam;cam.distance=20;cam.pitch=0;
+    renderer.beginScene(cam,800,600);
+    scene.draw(renderer);
+    renderer.render(gfx::PassDesc{});
+    CHECK(scene.stats().submitted==1);
+    renderer.shutdown();
+    scene.loadTransactional(dev,candidate,good);
+    CHECK(scene.stats().instances==2);
+    scene.shutdown(dev);
+}
+
+TEST(geometry_transactional_reload_preserves_hlod_after_proxy_source_failure) {
+    using namespace render;
+    entityfxtest::RecordingDevice dev;
+    GeometryScene scene;
+    const auto oldScene=Json::parse(R"({"version":1,"hlod":{"enabled":true},
+        "instances":[{"id":"a","model":"old-a.obj"},{"id":"b","model":"old-b.obj","position":[4,0,0]}]})");
+    const auto newScene=Json::parse(R"({"version":1},
+        "instances":[{"id":"a","model":"new.obj",
+        "proxy":{"model":"missing-proxy.obj","maxPixels":96}}]})");
+    const auto good=[](const std::string&,std::string& out){
+        out=geometrytest::boxObj();return true;
+    };
+    scene.loadTransactional(dev,oldScene,good);
+    const auto before=scene.stats();
+    CHECK(before.instances==2);
+    CHECK(before.groups>0);
+    bool failed=false;
+    try {
+        scene.loadTransactional(dev,newScene,[&](const std::string& file,std::string& out) {
+            if(file=="missing-proxy.obj")return false;
+            out=geometrytest::boxObj();return true;
+        });
+    }catch(const std::exception&){failed=true;}
+    CHECK(failed);
+    CHECK(scene.stats().instances==before.instances);
+    CHECK(scene.stats().groups==before.groups);
+    CHECK(scene.stats().proxies==before.proxies);
+    scene.loadTransactional(dev,newScene,good);
+    CHECK(scene.stats().instances==1);
+    scene.shutdown(dev);
+}
