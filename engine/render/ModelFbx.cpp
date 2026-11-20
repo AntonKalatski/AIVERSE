@@ -504,6 +504,11 @@ private:
             for (auto& [j, slot] : palette) prim.jointPalette[size_t(slot)] = uint16_t(j);
             if (prim.jointPalette.empty()) prim.jointPalette.push_back(0);
         }
+        // Morph delta arrays are indexed by the FINAL per-primitive vertex
+        // span, not face-corner IDs or the pre-split FBX control point IDs.
+        // Required by GPU morph texel lookup and Model upload preflight.
+        prim.firstVertex=base;
+        prim.vertexCount=uint32_t(m.vertices.size()-size_t(base));
         if(!activeShapes_.empty()) {
             prim.morphTargets=int(activeShapes_.size());
             const size_t count=m.vertices.size()-size_t(base);
