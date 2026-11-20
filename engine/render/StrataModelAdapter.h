@@ -49,6 +49,9 @@ struct StagingStats {
     uint64_t clusterNodes = 0;
     uint64_t meshlets = 0;
     uint64_t indexBytes = 0; // auxiliary Strata flat index storage only
+    // Stage17: offline-only seam certification; not an estimate of
+    // actual VRAM or shader-level pixel/depth parity.
+    uint64_t seamCertifiedPrimitives = 0, seamRejectedParents = 0;
 };
 
 class SceneStaging {
