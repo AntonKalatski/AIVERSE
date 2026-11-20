@@ -135,3 +135,40 @@ Next: isolate other genuinely optional client features with explicit fallback
 contracts, then validate WebAssembly Release output and representative game
 startup. The general `GameClient` remains mostly monolithic; do not infer that
 all unused engine code has been eliminated.
+
+## 2026-11-21 continuation: selectable SpectraFX client module
+
+Branch `feature/studio-html5`; implementation commit `7d92031a3`.
+Affected paths: `CMakeLists.txt`, `apps/client/ClientFx.h`,
+`apps/client/GameClient.cpp`, `tools/aiversebuild/main.cpp`,
+`docs/overview.md`. `fx` is a sixth explicit `packaging.engineModules`
+name. With no explicit list, full FX remains enabled. With an explicit list
+omitting `fx`, the packaged client uses a small no-FX adapter, does not compile
+`ClientFx.cpp`, and does not link `aiverse_game_fx` or `aiverse_fx`. The
+editor-hosted client retains full FX. The GameClient-to-FX boundary now uses
+`playEffect`, `hasReactiveGeometry`, and `renderReactive`; this preserves the
+existing full-FX call order while allowing the adapter to omit the particle
+implementation. An effect request when FX is excluded emits one warning and
+draws no particle. The packager rejects known FX resources (`fx/fx.json`,
+`fx/gpu/routes.json`, `fx/graphs`) when the module is excluded. Script-only
+effect requests must be declared manually. No ECS simulation, save format,
+`postfx` key, PRISMA ownership or FX asset format changed.
+
+Actual checks: CMake configure and `cmake --build
+/private/tmp/aiverse-client-modules-check --target aiverse_client -j 6`
+PASS with `AIVERSE_CLIENT_WITH_FX=OFF` and ON. With Spine and gamepad ON,
+the diagnostic macOS executable was 80,872,368 bytes with FX and 78,454,632
+bytes without, saving 2,417,736 bytes. The OFF link command contained no
+`ClientFx.cpp.o`, `libaiverse_game_fx.a` or `libaiverse_fx.a`.
+`cmake --build build/studio-html5-verify --target aiversebuild -j 6` PASS.
+The `--check-engine-modules` fixture with FX resources and no `fx` exited 1
+with the intended error; adding `fx` printed ON. `cmake --build
+build/studio-html5-verify --target aiverse_hosted_client -j 6` PASS with full
+FX. `git diff --check` PASS (line-ending warnings only). WebAssembly, Android,
+iOS, Windows, Linux, gameplay/browser visual parity, GPU acceptance, full
+CTest and CI NOT RUN; no CI URL exists for this local stage.
+
+Next: identify further optional client features and make their dependencies
+explicit without removing core gameplay. Install/provide Emscripten before
+claiming HTML5 size or startup gains. Keep hosted-editor FX and PRISMA
+composition contracts unchanged.

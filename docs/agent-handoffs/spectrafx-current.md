@@ -1,5 +1,16 @@
 # SpectraFX — handoff for the next implementation agent
 
+## 2026-11-21 packaged client build selection
+
+On `feature/studio-html5`, implementation `7d92031a3` adds opt-in `fx` to
+`packaging.engineModules`; omitting it from an explicit packaged-client list
+excludes the client FX host and SpectraFX libraries. The editor-hosted client
+and default legacy client retain full FX. macOS client builds with FX ON/OFF,
+the hosted client build and the packager build passed; WebAssembly and GPU
+visual parity were NOT RUN. See
+`docs/agent-handoffs/spectrafx-stage121-client-build-pruning-2026-11-21.md`
+for exact measurements and risks.
+
 ## Stage 120 — merged main + SpectraFX full native acceptance PASS (M3 Ultra)
 
 **Validated merged code SHA:**
