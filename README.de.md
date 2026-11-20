@@ -220,7 +220,7 @@ Jede Vorlage ist ein vollständig spielbares Spiel mit Bots. Im Editor öffnen u
 
 **Werkzeuge**
 - Andockbarer Editor im Unity-Stil: Szene, Inspector, Terrain, Effekte, Beleuchtung, UI, Testspiel und Gerätesimulator
-- `aiversemcp` – MCP-Server für Agenten
+- `aiversemcp` – MCP-Server für Agenten – PHYSIS-Kartenkonfiguration, Validierung und Undo/Redo
 - Assistent **Spiel erstellen**
 - 200 Skills für Agenten und Genre-Kits mit Abnahme-Checklisten
 - Importer für Assets klassischer Spiele aus Ihrer eigenen Kopie

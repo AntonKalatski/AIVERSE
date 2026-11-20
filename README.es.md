@@ -220,7 +220,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 
 **Herramientas**
 - Editor acoplable al estilo de Unity: escena, inspector, terreno, efectos, iluminación, UI, prueba de juego y simulador de dispositivos
-- `aiversemcp`: servidor MCP para agentes
+- `aiversemcp`: servidor MCP para agentes — configuración PHYSIS de mapas, validación y Undo/Redo
 - Asistente **Crear un juego**
 - 200 habilidades para agentes y kits de género con listas de aceptación
 - Importadores de recursos de juegos clásicos desde tu propia copia

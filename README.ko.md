@@ -215,7 +215,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **도구**
 - Unity 스타일 도킹 에디터: 씬, 인스펙터, 지형, 이펙트, 조명, UI, 테스트 플레이, 기기 시뮬레이터
-- `aiversemcp` — 에이전트용 MCP 서버
+- `aiversemcp` — 에이전트용 MCP 서버 — 맵 PHYSIS 설정, 검증 및 Undo/Redo
 - **"게임 만들기"** 마법사
 - 에이전트용 스킬 200개와 인수 체크리스트가 있는 장르 키트
 - 직접 소유한 사본에서 고전 게임 에셋을 가져오는 임포터

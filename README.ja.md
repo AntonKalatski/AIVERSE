@@ -218,7 +218,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **ツール**
 - Unity 風のドッキング式エディター：シーン、インスペクター、地形、エフェクト、ライティング、UI、テストプレイ、デバイスシミュレーター
-- `aiversemcp`：エージェント向け MCP サーバー
+- `aiversemcp`：エージェント向け MCP サーバー — マップの PHYSIS 設定、検証、Undo/Redo
 - **「ゲームを作る」**ウィザード
 - エージェント向けの 200 のスキルと、受け入れチェックリスト付きのジャンルキット
 - 手持ちのコピーから名作ゲームのアセットを取り込むインポーター
