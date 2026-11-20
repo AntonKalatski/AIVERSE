@@ -53,22 +53,31 @@ bool GeometryScene::collectRetired(gfx::Device& dev) {
     bool ok=retirement_.collect(dev);
     for(auto it=failedStages_.begin();it!=failedStages_.end();) {
         auto& stage=**it;
-        if(!stage.retirement_.collect(dev))ok=false;
-        if(stage.retirement_.pending()==0)
+        const bool complete=stage.retirement_.collect(dev);
+        if(!complete)ok=false;
+        // Never erase an owner if collection reported a failure, even if
+        // an unusual backend leaves the pending count at zero.
+        if(complete && stage.retirement_.pending()==0)
             it=failedStages_.erase(it);
         else ++it;
     }
     return ok;
 }
-void GeometryScene::shutdown(gfx::Device& dev) {
-    retireResident(dev);
-    // Failed staging owners retain GPU-live models until a proven idle.
-    // Keep ownership intact when a barrier cannot be established.
+bool GeometryScene::recoverFailedStagesAfterGpuIdle(gfx::Device& dev) {
+    // Explicit recovery point: a failed barrier leaves the current stage
+    // and all following stages owned for a subsequent retry. Earlier stages
+    // may already have been safely released.
     for(auto it=failedStages_.begin();it!=failedStages_.end();) {
         if(!(*it)->retirement_.completeForShutdown(dev))
-            throw std::runtime_error("geometry scene: failed-stage GPU shutdown barrier failed");
+            return false;
         it=failedStages_.erase(it);
     }
+    return true;
+}
+void GeometryScene::shutdown(gfx::Device& dev) {
+    retireResident(dev);
+    if(!recoverFailedStagesAfterGpuIdle(dev))
+        throw std::runtime_error("geometry scene: failed-stage GPU shutdown barrier failed");
     // Unlike source reload, final teardown is allowed to block until all
     // recorded GPU submissions and the retirement queue have completed.
     if(!retirement_.completeForShutdown(dev))
@@ -76,6 +85,13 @@ void GeometryScene::shutdown(gfx::Device& dev) {
 }
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
 void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const FileReader& read) {
+    // The host may call recoverFailedStagesAfterGpuIdle() explicitly when
+    // the device becomes responsive. Do not block here or create more GPU
+    // work while the retained failure budget is exhausted.
+    if(failedStages_.size()>=kMaxFailedStages) {
+        ++rejectedFailedStageLoads_;
+        throw std::runtime_error("geometry scene: failed-stage retirement backpressure");
+    }
     // Reserve recovery ownership *before* any new GPU allocation. The
     // catch path can then retain the failed staging scene without allocating.
     failedStages_.reserve(failedStages_.size()+1);
