@@ -6,6 +6,7 @@
 #include "engine/render/ModelShaders.h"
 #include "tests/cloth/FakeDevice.h"
 #include "tests/AlwaysCheck.h"
+#include <concepts>
 #include <limits>
 #include <string>
 #include <type_traits>
