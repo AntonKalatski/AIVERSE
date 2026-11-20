@@ -24,6 +24,10 @@ public:
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
     void zoom(float wheel);
+    void pan(float dx, float dy);
+    void move(float right, float up, float forward);
+    void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
+    void resetView();
     void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); }
 private:
     std::unique_ptr<gfx::Device> device_;
