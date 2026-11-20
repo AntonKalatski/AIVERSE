@@ -10,6 +10,7 @@
 #include "engine/gfx/vulkan/VkShaderCompiler.h"
 #include "engine/gfx/vulkan/Vulkan.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -105,58 +106,81 @@ static void testVulkanTemporalParity(gfx::Device& device) {
         pass.width,pass.height,pass.clipDepthZeroToOne);
     assert(std::isfinite(errorPixels) && errorPixels>0.f);
 
+    // The GPU must see four CONSECUTIVE frame serials to retain history.
+    // Never block between frames to read the previous temporal state; all
+    // four RHI reads are queued and delivered after GPU completion.
+    struct FrameResult {
+        GpuPassConfig config{};
+        GpuSelectionReadback clusters{};
+        std::vector<uint8_t> historyBytes;
+        std::vector<uint8_t> previousCpuHistory;
+        std::vector<uint8_t> expectedCpuHistory;
+        bool clustersReady=false, historyReady=false;
+    };
+    std::array<FrameResult,4> frames{};
     GpuClusterCulling culling;
     std::vector<uint8_t> previous;
     const float factors[]{.95f,1.08f,1.30f,.70f};
     const uint32_t expectedRanges[]{2,2,1,2};
-    for(size_t sampleIndex=0;sampleIndex<4;++sampleIndex){
-        pass.errorThresholdPixels=errorPixels*factors[sampleIndex];
-        bool clustersReady=false,historyReady=false;
-        GpuSelectionReadback gpu{};
-        std::vector<uint8_t> stateBytes;
+    for(size_t index=0;index<frames.size();++index){
+        FrameResult& target=frames[index];
+        target.config=pass;
+        target.config.errorThresholdPixels=errorPixels*factors[index];
+        target.previousCpuHistory=previous;
+        ViewConfig cpuView=cpuReferenceView(target.config,instance);
+        if(!previous.empty())cpuView.previousRefined=&previous;
+        ViewPlan reference{};
+        assert(planView(model.primitives[0].geometry,cpuView,reference,&error));
+        assert(reference.refinedNodes.size()==3);
+        assert(reference.ranges.size()==expectedRanges[index]);
+        target.expectedCpuHistory=reference.refinedNodes;
+        previous=reference.refinedNodes;
+
         device.beginFrame(64,64);
         GpuSelectionSubmission selection{};
-        assert(culling.dispatch(device,metadata,{instance},pass,
+        assert(culling.dispatch(device,metadata,{instance},target.config,
                                device.frameSerial(),selection));
         assert(selection.temporalApplied && selection.temporalState.valid());
         assert(culling.requestReadback(device,selection,
-            [&](GpuSelectionReadback read) {
-                gpu=std::move(read);
-                clustersReady=true;
+            [&,index](GpuSelectionReadback read) {
+                frames[index].clusters=std::move(read);
+                frames[index].clustersReady=true;
             }));
         assert(device.readBufferAsync(selection.temporalState,
             3*sizeof(uint32_t),
-            [&](std::vector<uint8_t> data) {
-                stateBytes=std::move(data);
-                historyReady=true;
+            [&,index](std::vector<uint8_t> data) {
+                frames[index].historyBytes=std::move(data);
+                frames[index].historyReady=true;
             }));
-        assert(!clustersReady && !historyReady);
         device.endFrame();
-        for(int n=0;n<3 && (!clustersReady || !historyReady);++n){
-            device.beginFrame(64,64);
-            device.endFrame();
-        }
-        assert(clustersReady && gpu.valid());
-        assert(historyReady && stateBytes.size()==3*sizeof(uint32_t));
-        assert(gpu.ranges.size()==expectedRanges[sampleIndex]);
-        assert(compareGpuSelection(model,{instance},pass,400,gpu,&error,
-            previous.empty()?nullptr:&previous));
-
-        ViewConfig cpuView=cpuReferenceView(pass,instance);
-        if(!previous.empty())cpuView.previousRefined=&previous;
-        ViewPlan expected{};
-        assert(planView(model.primitives[0].geometry,cpuView,expected,&error));
-        assert(expected.refinedNodes.size()==3);
+    }
+    for(int n=0;n<5;++n){
+        bool all=true;
+        for(const auto& frame:frames)
+            all &= frame.clustersReady && frame.historyReady;
+        if(all)break;
+        device.beginFrame(64,64);
+        device.endFrame();
+    }
+    for(size_t i=0;i<frames.size();++i){
+        const auto& frame=frames[i];
+        assert(frame.clustersReady && frame.clusters.valid());
+        assert(frame.historyReady &&
+               frame.historyBytes.size()==3*sizeof(uint32_t));
+        assert(frame.clusters.ranges.size()==expectedRanges[i]);
+        assert(compareGpuSelection(model,{instance},frame.config,400,
+            frame.clusters,&error,
+            frame.previousCpuHistory.empty()
+                ? nullptr:&frame.previousCpuHistory));
         std::vector<uint8_t> observed(3,0);
         for(size_t node=0;node<3;++node){
             uint32_t flag=0;
-            std::memcpy(&flag,stateBytes.data()+node*sizeof(flag),
-                        sizeof(flag));
+            std::memcpy(&flag,
+                frame.historyBytes.data()+node*sizeof(flag),sizeof(flag));
             assert(flag<=1);
             observed[node]=uint8_t(flag);
         }
-        assert(observed==expected.refinedNodes);
-        previous=std::move(observed);
+        assert(observed==frame.expectedCpuHistory);
     }
     culling.shutdown(device);
     device.destroyBuffer(metadata);
