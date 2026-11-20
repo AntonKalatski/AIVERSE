@@ -4,6 +4,7 @@
 #include "engine/gfx/vulkan/VkShaderCompiler.h"
 #include "engine/render/LumaWeaveVulkanDirectShader.h"
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
