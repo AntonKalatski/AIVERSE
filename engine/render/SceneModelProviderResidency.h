@@ -25,8 +25,19 @@ public:
             :key(std::move(id)),generation(epoch) {}
         Lease(const Lease&)=delete;
         Lease& operator=(const Lease&)=delete;
-        Lease(Lease&&)=default;
-        Lease& operator=(Lease&&)=default;
+        Lease(Lease&& other) noexcept
+            :key(std::move(other.key)),
+             generation(std::exchange(other.generation,0)) {
+            other.key.clear();
+        }
+        Lease& operator=(Lease&& other) noexcept {
+            if(this!=&other) {
+                key=std::move(other.key);
+                generation=std::exchange(other.generation,0);
+                other.key.clear();
+            }
+            return *this;
+        }
         explicit operator bool() const noexcept {
             return generation!=0 && !key.empty();
         }
