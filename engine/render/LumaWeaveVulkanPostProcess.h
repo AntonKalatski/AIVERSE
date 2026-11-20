@@ -85,7 +85,8 @@ public:
         dev_=nullptr;shader_={};pipeline_={};vertex_={};
         materialTarget_={};materialDepth_={};
         surfaceTarget_={};surfaceDepth_={};composeDepth_={};
-        width_=height_=targetWidth_=targetHeight_=0;
+        width_=height_=materialW_=materialH_=surfaceW_=surfaceH_=0;
+        composeWidth_=composeHeight_=0;
         readyMaterial_=readySurface_=eligible_=enabled_=false;
         scene_={};stats_={};last_={};
         return true;
@@ -127,7 +128,7 @@ public:
     }
     gfx::PassDesc materialReceiverPass(int w,int h) override {
         if(!wantsMaterialReceiverPass() ||
-           !ensurePair(w,h,materialTarget_,materialDepth_))return {};
+           !ensurePair(w,h,materialTarget_,materialDepth_,materialW_,materialH_))return {};
         gfx::PassDesc pass;
         pass.colorTarget=materialTarget_;pass.depthTarget=materialDepth_;
         pass.clearColorEnabled=pass.clearDepthEnabled=true;
@@ -145,7 +146,7 @@ public:
     }
     gfx::PassDesc surfaceReceiverPass(int w,int h) override {
         if(!wantsSurfaceReceiverPass() ||
-           !ensurePair(w,h,surfaceTarget_,surfaceDepth_))return {};
+           !ensurePair(w,h,surfaceTarget_,surfaceDepth_,surfaceW_,surfaceH_))return {};
         gfx::PassDesc pass;
         pass.colorTarget=surfaceTarget_;pass.depthTarget=surfaceDepth_;
         pass.clearColorEnabled=pass.clearDepthEnabled=true;
@@ -203,10 +204,10 @@ public:
 
 private:
     bool ensurePair(int w,int h,gfx::TextureHandle& color,
-                    gfx::TextureHandle& depth) {
+                    gfx::TextureHandle& depth,int& storedW,int& storedH) {
         if(!dev_ || owner_.busy() || w<=0 || h<=0)return false;
         if(color.valid() && depth.valid() &&
-           targetWidth_==w && targetHeight_==h)return true;
+           storedW==w && storedH==h)return true;
         gfx::TextureDesc desc;
         desc.width=w;desc.height=h;
         desc.format=gfx::PixelFormat::RGBA16F;
@@ -222,7 +223,7 @@ private:
         if(color.valid())dev_->destroyTexture(color);
         if(depth.valid())dev_->destroyTexture(depth);
         color=next;depth=nextDepth;
-        targetWidth_=w;targetHeight_=h;
+        storedW=w;storedH=h;
         return true;
     }
     bool ensureComposeDepth(int w,int h) {
@@ -273,7 +274,8 @@ private:
     gfx::TextureHandle materialTarget_{},materialDepth_{};
     gfx::TextureHandle surfaceTarget_{},surfaceDepth_{},composeDepth_{};
     gfx::PassDesc scene_{};
-    int width_=0,height_=0,targetWidth_=0,targetHeight_=0;
+    int width_=0,height_=0;
+    int materialW_=0,materialH_=0,surfaceW_=0,surfaceH_=0;
     int composeWidth_=0,composeHeight_=0;
     uint32_t seed_=0;
     bool enabled_=false,eligible_=false,readyMaterial_=false,readySurface_=false;
