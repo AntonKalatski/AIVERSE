@@ -56,6 +56,10 @@ public:
         // Stage16.3 opt-in exclusive GPU indexed raster routing.
         uint64_t strataVulkanGpuCandidates=0, strataVulkanGpuPrepared=0;
         uint64_t strataVulkanGpuDeclined=0;
+        uint64_t strataGpuTemporalSubmissions=0;
+        uint32_t strataGpuTemporalHistories=0;
+        uint64_t strataGpuTemporalBytes=0, strataGpuTemporalColdStarts=0;
+        uint64_t strataGpuTemporalRefused=0;
         // All live GeometryScenes sharing one gfx::Device contribute to the
         // same reservation ledger. Excludes source model buffers and in-flight
         // internal backend copies; see Stage 15.4 handoff.
@@ -103,16 +107,23 @@ public:
     // Scene must be reloaded after changing this option.
     void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
     bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
-    // Stage17.3: opt-in temporal stabilization ONLY for the portable
-    // cross-backend CPU LOD selector. 0 disables and preserves old behavior;
-    // Vulkan GPU selector remains independent until a native parity gate.
+    // Stage17.3/17.4: one opt-in hysteresis fraction drives BOTH portable
+    // CPU and Metal/Vulkan GPU LOD selectors. GPU history is independent,
+    // GPU-resident, per-instance/pass, and requires native parity acceptance
+    // before enabling production GPU raster. 0 preserves old behavior.
     // Per-instance/main/sun histories reset on source/pass changes and
     // force-finest reflection. Safe to change this setting at runtime.
     bool setStrataLodHysteresisFraction(float fraction) {
         if(!std::isfinite(fraction) || fraction<0.f || fraction>.45f)
             return false;
-        if(strataLodHysteresisFraction_!=fraction)
+        if(strataLodHysteresisFraction_!=fraction) {
             strataPortableLodHistories_.clear(); // policy change -> cold start
+            // Do not destroy GPU history during an active renderer epoch.
+            // A new key revision forces a cold next-frame GPU selection;
+            // old GPU resources expire after their completed-frame fence.
+            ++strataGpuLodPolicyEpoch_;
+            if(!strataGpuLodPolicyEpoch_)++strataGpuLodPolicyEpoch_;
+        }
         strataLodHysteresisFraction_=fraction;
         return true;
     }
@@ -311,6 +322,7 @@ private:
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
     float strataLodHysteresisFraction_=0.f;
+    uint64_t strataGpuLodPolicyEpoch_=1;
     bool strataVulkanGpuIndirectEnabled_=false;
     bool strataVulkanGpuSelectionParityVerified_=false;
     bool strataVulkanGpuRasterParityVerified_=false;
