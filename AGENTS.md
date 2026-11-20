@@ -1654,3 +1654,19 @@ GiLightingController monotonic publication contract. Preserve completed
 Metal/Vulkan GPU ticket fences and transactional Stage56/57 page maps.
 Regression assertions added to the existing `gi_gpu_dynamic_runtime`
 CTest source, but NATIVE/GPU TESTS ARE NOT EXECUTED.
+
+
+## GI Stage 59 — GPU TLAS/BLAS packet validation before resource upload (2026-11-20)
+
+See `docs/agent-handoffs/gi-stage59-gpu-bvh-packet-validation-2026-11-20.md`.
+`GiGpuBvhValidator.h` now preflights the common flat Metal/Vulkan BVH
+packet BEFORE any compute geometry buffer upload. It checks root-reachable
+child/leaf ranges, cycles, a 64-level GPU stack bound, finite triangle
+positions/albedos, valid node bounding boxes, parent-child/leaf spatial
+containment and hard physical limits. Paged BVH unreachable reserved/free
+slots are intentionally ignored. `GiGpuSmallScene::setPackedGeometry`
+also rejects duplicate/stale/zero revisions. Never silently publish a
+malformed candidate or roll back accepted geometry after bad input.
+The new `gi_gpu_bvh_validation` regression is REGISTERED BUT NOT RUN;
+real native Clang/CMake/CTest and Metal/Vulkan device validation remain
+required before main integration.
