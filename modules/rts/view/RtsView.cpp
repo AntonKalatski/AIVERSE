@@ -71,23 +71,27 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         FileReader([](const std::string& p,std::string& out) {
             return platform::readContentFile(p,out);
         });
-    SpriteDefaults incomingSpriteDefaults{};
+    // Parse once for both the staged sprites and the remaining presentation
+    // owners. Re-reading mutable files halfway through reload can produce a
+    // sprite set configured differently from fog, overlays and roads.
+    Json incomingGame, incomingRules;
     {
         std::string text, rulesPath="rules.json";
-        Json game, rj;
         try {
             if(incomingRead("game.json",text)) {
-                game=Json::parse(text);
-                rulesPath=game.getStr("rules","rules.json");
+                incomingGame=Json::parse(text);
+                rulesPath=incomingGame.getStr("rules","rules.json");
             }
         } catch (...) {}
         try {
-            rj=readComposedJson(rulesPath,[&](const std::string& p,std::string& out) {
-                return incomingRead(p,out);
-            });
+            incomingRules=readComposedJson(rulesPath,
+                [&](const std::string& p,std::string& out) {
+                    return incomingRead(p,out);
+                });
         } catch (...) {}
-        incomingSpriteDefaults=parseSpriteDefaults(rj["sprites"],game["sprites"]);
     }
+    const SpriteDefaults incomingSpriteDefaults=
+        parseSpriteDefaults(incomingRules["sprites"],incomingGame["sprites"]);
     auto nextSprites=std::make_unique<Rts2DView>();
     if(!nextSprites->init(dev,rules,contentBase_,incomingSpriteDefaults,deferredLoading_))
         return false;
@@ -110,14 +114,12 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     fieldView_.shutdown();
     fieldView_.init(dev);
     fieldDefsSeen_ = nullptr;
-    read_ = reader ? std::move(reader) : FileReader([](const std::string& p, std::string& out) { return platform::readContentFile(p, out); });
-    {   // fog of war look: rules "fogOfWar" (visual keys), game.json "fogOfWar" overrides
-        std::string text, rulesPath = "rules.json";
-        Json game, rj;
-        try { if (read_("game.json", text)) { game = Json::parse(text); rulesPath = game.getStr("rules", "rules.json"); } } catch (...) {}
-        try { rj = readComposedJson(rulesPath, [this](const std::string& p, std::string& o) { return read_(p, o); }); } catch (...) {}
+    read_ = incomingRead;
+    {   // Reuse the exact parsed snapshot used for sprite staging.
+        const Json& game=incomingGame;
+        const Json& rj=incomingRules;
         fog_.setLook(parseFogLook(rj["fogOfWar"], game["fogOfWar"]));
-        spriteDefaults_ = parseSpriteDefaults(rj["sprites"], game["sprites"]);   // 2D: shadow mode, lit
+        spriteDefaults_ = incomingSpriteDefaults;   // same snapshot as staged sprites
         fogMeshDirty_ = true;
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
         overlays_.init(rules, rj["overlays"], game["overlays"], contentBase_);
