@@ -81,7 +81,7 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
         defaults_ = defaults;
         textures_.init(dev);
         if (!batch_.init(dev)) {
-            std::fprintf(stderr, "[sprites] pipeline: %s\\n", dev.lastError().c_str());
+            std::fprintf(stderr, "[sprites] pipeline: %s\n", dev.lastError().c_str());
             if (!shutdownAfterGpuIdle(dev))
                 throw std::runtime_error("Rts2DView init: GPU idle barrier failed");
             return false;
