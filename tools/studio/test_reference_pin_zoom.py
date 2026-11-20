@@ -78,9 +78,26 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('"view.model"', refs)
         self.assertIn("ref.writable = writable", refs)
         self.assertIn("repairedMaterialReferences", native)
-        self.assertIn("could not repair references", native)
+        self.assertIn("const std::function<void()> commitHook", native)
+        self.assertIn("pendingAssetTransfer_->apply(token,decisions,commitHook)", native)
         assets = self.source("components/AssetsPanel.tsx")
         self.assertIn("response.repairedMaterialReferences", assets)
+
+    def test_internal_move_rolls_back_file_and_meta_before_commit(self):
+        transfer=(ROOT/"apps/studio-native/StudioAssetTransfers.cpp").read_text(encoding="utf-8")
+        api=(ROOT/"apps/studio-native/StudioAssetTransfers.h").read_text(encoding="utf-8")
+        native=NATIVE.read_text(encoding="utf-8")
+        ui=self.source("components/AssetsPanel.tsx")
+        self.assertIn("const std::function<void()>& beforeCommit", api)
+        self.assertIn("if (type_==StudioTransferType::Move)", transfer)
+        self.assertIn("if (beforeCommit) beforeCommit();", transfer)
+        self.assertIn("done.rbegin()", transfer)
+        self.assertIn("fs::rename(it->destination,it->source)", transfer)
+        self.assertIn("std::rethrow_exception(failure)", transfer)
+        self.assertIn("StudioAssetCatalog catalog(project_); catalog.rebuild();", transfer)
+        self.assertIn("Internal move only supports import, keep-both or skip", transfer)
+        self.assertIn("source==='external' && !item.directory", ui)
+        self.assertIn("editor::saveMaterialLibrary(ws_,library", native)
 
     def test_clearing_texture_reference_does_not_validate_empty_game_path(self):
         material_ops=(ROOT/"apps/editor/core/MaterialOps.cpp").read_text(encoding="utf-8")
