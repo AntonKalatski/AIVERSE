@@ -43,7 +43,6 @@ public:
     }
     void draw(Editor& ed) override {
         preview_.setGpuDeviceLease(ed.gpuDeviceLease());
-        preview_.setTargetOwner(ed.offscreenTargets());
         const std::string project=ed.ws().project.dir;
         if(project.empty()) {
             ImGui::TextDisabled("Open a project to edit camera entities.");
@@ -202,7 +201,7 @@ public:
                 const int requested=std::max(8,int(side));
                 if(preview_.color.valid() && (preview_.w!=requested || preview_.h!=requested))
                     retirePreview(ed.device());
-                preview_.ensure(ed.device(),requested,requested);
+                preview_.ensure(ed.device(),requested,requested,ed.viewportRetirement(),"LENS Camera");
             }
             if(lens && lens->physicalFov && render::validCameraLens(*lens)) {
                 const float sensor=float(lens->sensorHeightMm.toDouble());
