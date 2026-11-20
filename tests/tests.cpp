@@ -1,5 +1,6 @@
 #include <chrono>
 #include "engine/view/VisibilityField.h"
+#include "engine/render/NativeMeshBatch.h"
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -12553,6 +12554,88 @@ struct Device : entityfxtest::RecordingDevice {
     }
     bool waitForResourceIdle() override {++idleRequests;return idleAllowed;}
 };
+}
+
+TEST(native_mesh_batch_second_upload_failure_preserves_all_published_handles) {
+    fogfaulttest::Device dev;
+    render::NativePresentationRetirement retirement;
+    render::MeshBuilder builder;
+    builder.quad({0,0,0},{1,0,0},{1,0,1},{0,0,1});
+    render::Mesh first=builder.upload(dev);
+    render::Mesh second=builder.upload(dev);
+    const auto firstId=first.vb.id, secondId=second.vb.id;
+    const auto destroyedBefore=dev.destroyedBuffers;
+    bool failed=false;
+    {
+        render::NativeMeshBatch batch(dev,retirement);
+        batch.stage(first,builder);
+        CHECK(first.vb.id==firstId && second.vb.id==secondId);
+        CHECK(batch.stagedMeshes()==1);
+        CHECK(batch.stagedBytes()>0);
+        // Late index allocation failure after a complete first replacement.
+        dev.failBuffer=dev.bufferAttempts+2;
+        try {batch.stage(second,builder);}
+        catch(const std::runtime_error&){failed=true;}
+        CHECK(failed);
+        CHECK(first.vb.id==firstId && second.vb.id==secondId);
+        CHECK(retirement.pending()==0);
+        dev.failBuffer=0;
+    }
+    // Private first pair + failed second VB, no published retirement.
+    CHECK(dev.destroyedBuffers==destroyedBefore+3);
+    CHECK(retirement.pending()==0);
+    dev.destroyBuffer(first.vb);dev.destroyBuffer(first.ib);
+    dev.destroyBuffer(second.vb);dev.destroyBuffer(second.ib);
+}
+
+TEST(native_mesh_batch_success_retires_old_buffers_only_on_publish) {
+    fogfaulttest::Device dev;
+    render::NativePresentationRetirement retirement;
+    render::MeshBuilder builder;
+    builder.quad({0,0,0},{1,0,0},{1,0,1},{0,0,1});
+    render::Mesh first=builder.upload(dev);
+    render::Mesh second=builder.upload(dev);
+    const auto oldFirst=first.vb.id, oldSecond=second.vb.id;
+    const auto destroyedBefore=dev.destroyedBuffers;
+    {
+        render::NativeMeshBatch batch(dev,retirement);
+        batch.stage(first,builder);
+        batch.stage(second,builder);
+        CHECK(batch.stagedMeshes()==2);
+        CHECK(retirement.pending()==0);
+        CHECK(first.vb.id==oldFirst && second.vb.id==oldSecond);
+        batch.publish();
+        CHECK(first.vb.id!=oldFirst && second.vb.id!=oldSecond);
+        CHECK(retirement.pending()==4);
+        CHECK(dev.destroyedBuffers==destroyedBefore);
+    }
+    CHECK(retirement.pending()==4);
+    CHECK(retirement.completeForShutdown(dev));
+    CHECK(retirement.pending()==0);
+    CHECK(dev.destroyedBuffers==destroyedBefore+4);
+    dev.destroyBuffer(first.vb);dev.destroyBuffer(first.ib);
+    dev.destroyBuffer(second.vb);dev.destroyBuffer(second.ib);
+}
+
+TEST(native_mesh_batch_same_target_replacement_is_coalesced) {
+    fogfaulttest::Device dev;
+    render::NativePresentationRetirement retirement;
+    render::MeshBuilder builder;
+    builder.quad({0,0,0},{1,0,0},{1,0,1},{0,0,1});
+    render::Mesh mesh=builder.upload(dev);
+    const auto original=mesh.vb.id, destroyedBefore=dev.destroyedBuffers;
+    {
+        render::NativeMeshBatch batch(dev,retirement);
+        batch.stage(mesh,builder);
+        batch.stage(mesh,builder);
+        CHECK(batch.stagedMeshes()==1);
+        CHECK(dev.destroyedBuffers==destroyedBefore+2);
+        CHECK(mesh.vb.id==original && retirement.pending()==0);
+        batch.publish();
+    }
+    CHECK(mesh.vb.id!=original && retirement.pending()==2);
+    CHECK(retirement.completeForShutdown(dev));
+    dev.destroyBuffer(mesh.vb);dev.destroyBuffer(mesh.ib);
 }
 
 TEST(texture_cache_swap_transfers_gpu_owner_without_invalidating_handles) {
