@@ -115,6 +115,7 @@ struct CreatorApp {
     SculptGpuPickRequest gpuSculptToRecord{};
     float3 gpuSculptRayOrigin{},gpuSculptRayDirection{};
     std::uint64_t gpuSculptPublication=1;
+    int gpuSculptExpectedSourceVertex=-1;
     bool gpuSculptEnabled=false;
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
@@ -731,6 +732,7 @@ struct CreatorApp {
             sculptSourceIds=std::move(proposedSculptSourceIds);
             gpuSculptToken.cancel();
             gpuSculptToRecord={};
+            gpuSculptExpectedSourceVertex=-1;
             if(++gpuSculptPublication==0)gpuSculptPublication=1;
             sculptPicker.reset(); // published Model owns new mesh topology
             sculptPickMarkerValid=false;
@@ -1237,15 +1239,16 @@ struct CreatorApp {
                     if(ImGui::Button(sculptPickArmed
                         ?"Cancel viewport picking":"Pick vertex in 3D viewport"))
                         sculptPickArmed=!sculptPickArmed;
-                    if(ImGui::Checkbox("Experimental Metal GPU ID check",
+                    if(ImGui::Checkbox("Experimental GPU ID check",
                                        &gpuSculptEnabled)) {
                         gpuSculptToken.cancel();
                         gpuSculptToRecord={};
                     }
                     ImGui::TextWrapped(
-                        "GPU check is Metal-only and limited to selected mesh; "
-                        "CPU BVH remains fallback. Other mesh/hair occluders "
-                        "are not included in this experimental ID pass.");
+                        "Experimental ID/depth check: Metal, Vulkan, native "
+                        "GLES3/GL33 when supported. GPU renders a CPU-fed "
+                        "morph/skin snapshot, not the Renderer3D vertexOverride; "
+                        "it never silently replaces the CPU BVH selection.");
                     ImGui::TextWrapped("Select the source face mesh, click Pick, "
                         "then click its visible triangles outside inspector.");
                 }
@@ -1711,24 +1714,23 @@ struct CreatorApp {
                     morphSourceVertices,sculptSourceIds,
                     gpuReply.request.frameSerial,
                     gpuReply.request.modelRevision);
-                if(verified.hit) {
-                    morphVertexIndex=int(verified.vertex);
-                    sculptPickMarkerVertex=morphVertexIndex;
-                    sculptPickMarkerMesh=int(gpuReply.request.meshId);
-                    sculptPickMarkerWorld=verified.worldPosition;
-                    sculptPickMarkerValid=!animate;
-                    status="Metal GPU triangle confirmed: source vertex "+
-                        std::to_string(morphVertexIndex);
-                }else status="Metal GPU ID/ray mismatch; CPU BVH retained";
+                if(verified.hit &&
+                   int(verified.vertex)==gpuSculptExpectedSourceVertex) {
+                    // Do NOT replace the CPU vertex: this experimental GPU
+                    // pass draws a CPU-expanded morph/skin snapshot, not the
+                    // actual Renderer3D GPU vertex-override stream/LOD.
+                    status="GPU ID confirmed CPU snapshot / vertex "+
+                        std::to_string(gpuSculptExpectedSourceVertex);
+                }else status="GPU/CPU ID mismatch; CPU BVH selection retained";
             }else if(gpuReply.rgba.empty()) {
                 gpuSculptToken.cancel();
-                status="Metal GPU ID readback failed; CPU BVH retained";
+                status="GPU ID readback failed; CPU BVH retained";
             }else if(tokenWasPending && !gpuSculptToken.pending() &&
                      gpuReply.rgba.size()==4) {
                 // Zero means background, unselectable LOD/alpha material,
                 // or another scene mesh covering the selected triangle.
                 // Preserve the CPU selection, but do not claim GPU success.
-                status="Metal GPU scene blocker/zero ID; CPU BVH retained";
+                status="GPU scene blocker/zero ID; CPU BVH retained";
             }
         }
         guiControls();
@@ -1898,7 +1900,6 @@ struct CreatorApp {
                 const auto beforePick=std::chrono::steady_clock::now();
                 bool hardwareCandidate=false;
                 if(gpuSculptEnabled && !gpuSculptPass.pending() &&
-                   dev.info().backend==gfx::Backend::Metal &&
                    dev.frameSerial() &&
                    sculptGpuPickEligibility(
                        *human.head,std::size_t(sculptMeshIndex))==
@@ -1947,7 +1948,8 @@ struct CreatorApp {
                             gpuSculptToRecord=req;
                             gpuSculptRayOrigin=origin;
                             gpuSculptRayDirection=direction;
-                            status+=" / GPU Metal ID pending";
+                            gpuSculptExpectedSourceVertex=morphVertexIndex;
+                            status+=" / GPU ID diagnostic pending";
                         }
                     }
                 }else {
