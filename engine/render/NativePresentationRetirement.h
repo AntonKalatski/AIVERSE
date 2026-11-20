@@ -20,6 +20,7 @@ class NativePresentationRetirement final {
     struct Resource {
         std::unique_ptr<Model> model;
         gfx::BufferHandle buffer;
+        gfx::TextureHandle texture;
     };
     using Queue=AsyncResourceRetirementQueue<Resource>;
 
@@ -81,6 +82,31 @@ public:
                 }
             }catch(...) {}
             ++orphaned_; // never free without proof of completed GPU work
+        }
+    }
+
+    // Same ordered GPU completion as buffers: old map textures may still be
+    // sampled by an in-flight secondary camera or render-target capture.
+    void retireTexture(gfx::Device& device,gfx::TextureHandle& texture) noexcept {
+        if(!texture.valid())return;
+        if(!bind(device)) {
+            texture={};
+            ++orphaned_;
+            return;
+        }
+        Resource resource;
+        resource.texture=std::exchange(texture,gfx::TextureHandle{});
+        try {
+            queue_->enqueueFrom(resource);
+        }catch(...) {
+            try {
+                if(device.waitForResourceIdle()) {
+                    device.destroyTexture(resource.texture);
+                    resource.texture={};
+                    return;
+                }
+            }catch(...) {}
+            ++orphaned_; // keep old GPU-live textures if idle cannot be proved
         }
     }
 
@@ -153,6 +179,10 @@ private:
         if(resource.buffer.valid()) {
             device.destroyBuffer(resource.buffer);
             resource.buffer={};
+        }
+        if(resource.texture.valid()) {
+            device.destroyTexture(resource.texture);
+            resource.texture={};
         }
     }
     bool bind(gfx::Device& device) noexcept {
