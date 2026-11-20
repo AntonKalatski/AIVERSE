@@ -993,7 +993,7 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         r.bindLitFrame();
         r.bindTrace(18);
         r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
-        if (giPipeline) (void)r.bindDynamicGiForCustom();
+        if (giPipeline) (void)r.bindDynamicGiForCustomAt(21);
         d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
         for (int i = 0; i < 4; ++i) {
             d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);

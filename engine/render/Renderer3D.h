@@ -413,11 +413,16 @@ public:
     // U6 + tex13 (GLSL) / buffer(7) + texture(13) (Metal). No implicit
     // material inference, no sampling during a shadow/depth-only pass.
     // The producer must stay alive through the GPU completion fence.
-    bool bindDynamicGiForCustom() {
-        if(!dev_ || !dynamicGiAtlas_.valid())return false;
+    bool bindDynamicGiForCustom() { return bindDynamicGiForCustomAt(13); }
+    // Reserve the sampled atlas texture slot explicitly. Models use 13;
+    // the stock high-terrain shaders already own 13 for cliff albedo,
+    // so their Metal/Vulkan GI variant must use 21 instead.
+    bool bindDynamicGiForCustomAt(int textureSlot) {
+        if(!dev_ || !dynamicGiAtlas_.valid() ||
+           (textureSlot!=13 && textureSlot!=21))return false;
         dev_->setUniforms(6,dynamicGiUniforms_.data(),
                           dynamicGiUniforms_.size()*sizeof(float));
-        dev_->setTexture(13,dynamicGiAtlas_);
+        dev_->setTexture(textureSlot,dynamicGiAtlas_);
         return true;
     }
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);

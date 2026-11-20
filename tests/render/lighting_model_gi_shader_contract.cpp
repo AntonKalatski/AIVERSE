@@ -8,6 +8,8 @@
 using namespace aiverse::render;
 static_assert(std::is_same_v<decltype(&Renderer3D::bindDynamicGiForCustom),
                              bool (Renderer3D::*)()>);
+static_assert(std::is_same_v<decltype(&Renderer3D::bindDynamicGiForCustomAt),
+                             bool (Renderer3D::*)(int)>);
 int main() {
     const std::string glsl=shaders::kModelFS;
     const std::string metal=shaders::kModelMSL;
