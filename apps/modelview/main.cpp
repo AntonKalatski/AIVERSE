@@ -77,6 +77,9 @@ struct NativeAttachmentGeneration {
     World world;
     std::unique_ptr<::aiverse::view::SceneAttachmentHost> scenes;
     ::aiverse::view::AnimatedSceneAttachmentSources animations;
+    // Host-owned live overrides, distinct from immutable Graph defaults.
+    std::map<std::pair<size_t,std::string>,render::AnimationParameters>
+        parameterOverrides;
     std::vector<std::map<std::string,
         ::aiverse::view::AppearanceAssetRegistry::Snapshot>> childGraphs;
     NativeAttachmentGeneration()
@@ -85,6 +88,7 @@ struct NativeAttachmentGeneration {
         animations.clear();
         scenes->clear();
         childGraphs.clear();
+        parameterOverrides.clear();
     }
     ~NativeAttachmentGeneration() { clear(); }
 };
@@ -640,6 +644,31 @@ struct Viewer {
                     }
                 }
             }
+            // Preserve ONLY explicitly host-authored, name+type compatible
+            // inputs. Never copy old transient AnimationGraphParameters or
+            // implicit graph defaults over a changed authored asset.
+            if(attachmentGeneration && candidate->generation) {
+                for(const auto& [id,overrides]:
+                    attachmentGeneration->parameterOverrides) {
+                    const auto actor=id.first;
+                    if(actor>=candidate->generation->childGraphs.size())continue;
+                    const auto& nextChildren=candidate->generation->childGraphs[actor];
+                    const auto child=nextChildren.find(id.second);
+                    if(child==nextChildren.end() || !child->second ||
+                       !child->second->graph)continue;
+                    const auto& defaults=child->second->graph->defaults();
+                    render::AnimationParameters accepted;
+                    for(const auto& [name,value]:overrides.values)
+                        if(defaults.values.count(name))
+                            accepted.values.emplace(name,value);
+                    for(const auto& [name,value]:overrides.vectors)
+                        if(defaults.vectors.count(name))
+                            accepted.vectors.emplace(name,value);
+                    if(!accepted.values.empty() || !accepted.vectors.empty())
+                        candidate->generation->parameterOverrides.emplace(
+                            id,std::move(accepted));
+                }
+            }
             // Allocate the old-session owner BEFORE the atomic move/commit.
             auto retired=std::make_unique<RetiredNativeScene>();
             retired->provider=std::move(nativeModels);
@@ -763,10 +792,19 @@ struct Viewer {
         if(attachmentGeneration) {
             std::vector<::aiverse::view::AnimatedSceneAttachmentSources::Input> inputs;
             for(size_t i=0;i<attachmentGeneration->childGraphs.size();++i)
-                for(const auto& [id,published]:attachmentGeneration->childGraphs[i])
+                for(const auto& [id,published]:attachmentGeneration->childGraphs[i]) {
+                    auto parameters=published->parameters;
+                    const auto it=attachmentGeneration->parameterOverrides.find({i,id});
+                    if(it!=attachmentGeneration->parameterOverrides.end()) {
+                        for(const auto& [name,value]:it->second.values)
+                            parameters.values[name]=value;
+                        for(const auto& [name,value]:it->second.vectors)
+                            parameters.vectors[name]=value;
+                    }
                     inputs.push_back({
                         {1,"actor-"+std::to_string(i),id},
-                        published,published->parameters});
+                        published,std::move(parameters)});
+                }
             childPackets.reserve(inputs.size());
             ::aiverse::view::AnimatedSceneAttachmentSources::Statistics stats;
             std::string error;
