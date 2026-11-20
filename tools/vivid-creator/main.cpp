@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include "tools/vivid-creator/OpticalCaptureCases.h"
 #include <fstream>
 #include <filesystem>
 #include <iterator>
@@ -1892,12 +1893,17 @@ struct CreatorApp {
 }
 int aiverseMain(int argc,char** argv) {
     auto application=std::make_shared<CreatorApp>();
+    std::string opticalCase;
+    bool presetSupplied=false;
     for(int i=1;i<argc;++i) {
         if(std::strcmp(argv[i],"--smoke")==0) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--optical-case")==0 && i+1<argc) {
+            opticalCase=argv[++i];
         }else if(std::strcmp(argv[i],"--preset")==0 && i+1<argc) {
+            presetSupplied=true;
             const std::string preset=argv[++i];
             std::string error;
             if(!application->session.preset(preset,&error)) {
@@ -1918,6 +1924,32 @@ int aiverseMain(int argc,char** argv) {
             std::fprintf(stderr,"VIVID Creator: unsupported argument %s\n",argv[i]);
             return 2;
         }
+    }
+    // Optical A/B captures use one fixed neutral human, camera and light.
+    // They cannot be combined with a preset or external mesh, since either
+    // would invalidate one-variable attribution in the resulting image.
+    if(!opticalCase.empty()) {
+        if(!application->smoke || presetSupplied || application->commandLineAsset) {
+            std::fprintf(stderr,
+                "VIVID optical capture requires --smoke and forbids --preset/--asset\\n");
+            return 2;
+        }
+        HumanDNA variant=HumanDNA::preset("neutral");
+        if(!OpticalCaptureCases::apply(variant,opticalCase)) {
+            std::fprintf(stderr,"VIVID: unknown optical case %s\\n",opticalCase.c_str());
+            return 2;
+        }
+        std::string error;
+        if(!application->session.edit([&](HumanDNA& dna){dna=variant;},&error)) {
+            std::fprintf(stderr,"VIVID optical capture: %s\\n",error.c_str());
+            return 2;
+        }
+        application->syncDraft();
+        application->animate=false;
+        application->inspectGroom=false;
+        application->wind=0.0f;
+        std::printf("VIVID optical case=%s staticCamera=1 staticLighting=1 frozenMotion=1\\n",
+                    opticalCase.c_str());
     }
     platform::AppConfig config;
     config.title="AIVERSE VIVID Creator - Digital Human";
