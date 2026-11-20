@@ -901,6 +901,20 @@ void test() {
             {{182,93,66,255}},{{1,0,0,0}},clear,766);
         req(invalid.verdict==Pixel::Verdict::Inconclusive,
             "invalid colour coverage threshold was accepted");
+        const auto depthOk=compareSculptGpuDepthPixels(0.2f,0.2008f);
+        req(depthOk.samplesValid && depthOk.matching &&
+            depthOk.absoluteDifference<0.003f,
+            "same-frame native depth tolerance rejected valid GPU samples");
+        const auto depthBad=compareSculptGpuDepthPixels(0.2f,0.4f);
+        req(depthBad.samplesValid && !depthBad.matching,
+            "unrelated nearer occluder depth was incorrectly confirmed");
+        const auto depthClear=compareSculptGpuDepthPixels(1.f,1.f);
+        req(!depthClear.samplesValid && !depthClear.matching,
+            "two clear depth pixels cannot confirm a foreground actor");
+        const auto depthNaN=compareSculptGpuDepthPixels(
+            std::numeric_limits<float>::quiet_NaN(),0.2f);
+        req(!depthNaN.samplesValid && !depthNaN.matching,
+            "invalid GPU depth values were accepted as measured parity");
     }
     // 7AW: staging a ModelItem is NOT proof its real colour pipeline
     // emitted a draw. Match one-to-one against the actual renderer-owned
