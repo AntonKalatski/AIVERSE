@@ -10,6 +10,7 @@
 #include "GiLightBridge.h"
 #include "GiEnvironmentBridge.h"
 #include "GiGpuResidencyPlanner.h"
+#include "GiBorrowedPresentation.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,9 @@ public:
     // If shutdown returns false, keep calling updateFrame() until the fence is
     // complete, unbind any Renderer3D, then shutdown again.
     bool shutdown() {
+        // Renderer3D still owns a borrowed reference to the atlas. Never
+        // destroy or replace the owner until the host unbinds every reader.
+        if (!borrowers_.canRetire()) return false;
         if (mode_==GiTransportMode::GpuCompute && !gpu_.shutdown()) return false;
         if (mode_==GiTransportMode::CpuProbes) cpu_.shutdown();
         scene_.reset();
@@ -119,6 +123,7 @@ public:
     bool presentationBlocked() const {
         return pendingGeometry_ || pendingLights_ || pendingEnvironment_;
     }
+    size_t borrowedRendererCount() const { return borrowers_.readers(); }
 
     // Publisher owns a read-barrier-frozen immutable scene snapshot. The
     // controller retains its shared ownership across all CPU pointer borrows.
@@ -299,15 +304,22 @@ public:
     bool bind(Renderer3D& renderer) const {
         if (!scene_ || !ready() || presentationBlocked()) {
             renderer.clearDynamicGiOverlay();
+            borrowers_.release(&renderer);
             return false;
         }
         const bool ok=mode_==GiTransportMode::GpuCompute
             ? gpu_.bind(renderer) : cpu_.bind(renderer);
-        if (!ok) renderer.clearDynamicGiOverlay();
-        return ok;
+        if (!ok) {
+            renderer.clearDynamicGiOverlay();
+            borrowers_.release(&renderer);
+            return false;
+        }
+        (void)borrowers_.acquire(&renderer);
+        return true;
     }
     void unbind(Renderer3D& renderer) const {
         renderer.clearDynamicGiOverlay();
+        borrowers_.release(&renderer);
     }
 
     // Only for external Metal completion sources where readBufferAsync is
@@ -337,7 +349,8 @@ private:
             uint64_t revision) {
         if(!config_.cpuFallbackOnLocalGpuOverflow ||
            mode_!=GiTransportMode::GpuCompute || !device_ ||
-           !device_->gpuHealthy() || gpu_.busy() || !full)
+           !device_->gpuHealthy() || gpu_.busy() ||
+           !borrowers_.canRetire() || !full)
             return false;
         try {
             cpu_.cpuTraceBudget().configure(config_.cpuFrameBudgetMs,
@@ -389,6 +402,7 @@ private:
     bool pendingGeometry_=false;
     bool pendingLights_=false;
     bool pendingEnvironment_=false;
+    GiBorrowedPresentation borrowers_{};
 };
 
 } // namespace aiverse::render
