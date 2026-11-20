@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <map>
 #include <cstring>
@@ -42,6 +43,7 @@ public:
         items_.push_back(std::move(v)); alive_.push_back(1); return uint32_t(items_.size());
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
+    const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { items_[id - 1] = T{}; alive_[id - 1] = 0; free_.push_back(id - 1); } }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
@@ -101,6 +103,93 @@ public:
     uint64_t completedFrameSerial() const override {
         return gpuHealthy_->load(std::memory_order_acquire)
             ? completedFrame_->load(std::memory_order_acquire) : 0;
+    uint64_t gpuSubmissionFence() const override {
+        return cmd_ && gpuHealthy_->load(std::memory_order_acquire) ? frame_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return gpuHealthy_->load(std::memory_order_acquire)
+            ? completedGpuFrame_->load(std::memory_order_acquire) : 0;
+    }
+    bool waitForSubmittedGpuWork() override {
+        if (!queue_ || !gpuHealthy_->load(std::memory_order_acquire) ||
+            enc_ || compute_ || gpuIcbEncoder_)
+            return false;
+        // Do not create/commit a new barrier behind cmd_: cmd_ was already
+        // created by beginFrame but is not committed yet, and Metal queues
+        // may preserve command-buffer creation order. Waiting such a barrier
+        // could deadlock. Instead wait for the last ACTUALLY committed frame.
+        if (lastCommittedGpuFrameBuffer_) {
+            [lastCommittedGpuFrameBuffer_ waitUntilCompleted];
+            if (lastCommittedGpuFrameBuffer_.status !=
+                MTLCommandBufferStatusCompleted) return false;
+        }
+        // Main graphics submissions are in-order on this queue; the last
+        // committed frame covers all earlier frame viewport/ImGui uses.
+        const uint64_t latest = lastCommittedGpuFrame_;
+        uint64_t seen = completedGpuFrame_->load(std::memory_order_relaxed);
+        while (seen < latest &&
+               !completedGpuFrame_->compare_exchange_weak(
+                    seen,latest,std::memory_order_release,
+                    std::memory_order_relaxed)) {}
+        return true;
+    }
+    bool waitForResourceIdle() override {
+        // A separate command buffer on the same ordered queue completes
+        // only AFTER all previously committed frames and uploads. It does
+        // not flush currently recording draw commands; the host invokes
+        // this before recording resource uses in its current frame.
+        if(enc_ || compute_ || gpuIcbEncoder_ || !queue_)return false;
+        id<MTLCommandBuffer> barrier=[queue_ commandBuffer];
+        if(!barrier)return false;
+        [barrier commit];
+        [barrier waitUntilCompleted];
+        if(barrier.status!=MTLCommandBufferStatusCompleted)return false;
+        // A successfully completed queue-tail marker proves that all older
+        // retirement markers have finished. Their completion-handler atomics
+        // can still be waiting for callback dispatch on another thread.
+        for(auto& [token,state]:retirementTokens_) {
+            (void)token;
+            state->store(1);
+        }
+        return true;
+    }
+    uint64_t beginResourceRetirement() override {
+        // This marker is ordered after previously committed GPU work, but
+        // NOT after the current frame's uncommitted command buffer.
+        if(!queue_ || enc_ || compute_ || gpuIcbEncoder_ ||
+           !gpuHealthy_->load())return 0;
+        id<MTLCommandBuffer> marker=[queue_ commandBuffer];
+        if(!marker)return 0;
+        const auto state=std::make_shared<std::atomic<int>>(0);
+        const uint64_t token=nextRetirementToken_++;
+        retirementTokens_.emplace(token,state);
+        [marker addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            state->store(completed.status==MTLCommandBufferStatusCompleted ? 1 : -1);
+        }];
+        [marker commit];
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        return it!=retirementTokens_.end() && it->second->load()==1;
+    }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it==retirementTokens_.end())return ResourceRetirementStatus::Failed;
+        const int status=it->second->load();
+        if(status>0)return ResourceRetirementStatus::Complete;
+        if(status<0)return ResourceRetirementStatus::Failed;
+        return ResourceRetirementStatus::Pending;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it!=retirementTokens_.end() && it->second->load()==1)
+            retirementTokens_.erase(it);
+    }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // Only after a successful ordered queue-tail idle marker.
+        // The completion handler retains its own shared atomic reference.
+        retirementTokens_.erase(token);
     }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
@@ -324,6 +413,12 @@ public:
         }
         memcpy(static_cast<uint8_t*>(current(*b).contents) + offset, data, size);
     }
+    bool bufferInfo(BufferHandle h, BufferInfo& out) const override {
+        const auto* b = buffers_.get(h.id);
+        if (!b) return false;
+        out = {b->size,uint32_t(b->count)};
+        return true;
+    }
     void destroyBuffer(BufferHandle h) override { buffers_.remove(h.id); }
     BufferUpdateStats bufferUpdateStats(BufferHandle h) override {
         auto* b = buffers_.get(h.id);
@@ -496,6 +591,12 @@ public:
         [blit generateMipmapsForTexture:tex];
         [blit endEncoding];
         [cb commit];
+    }
+    bool textureInfo(TextureHandle h, TextureInfo& out) const override {
+        const auto* t = textures_.get(h.id);
+        if (!t || !t->tex) return false;
+        out = {int(t->tex.width),int(t->tex.height),t->fmt};
+        return true;
     }
     void destroyTexture(TextureHandle h) override { textures_.remove(h.id); }
 
@@ -756,19 +857,36 @@ public:
             if (shader.valid()) destroyShader(shader);
         }
     }
+    // Old bool API retains terminal-completion semantics for existing clients;
+    // use the explicit status API to distinguish a GPU compiler rejection.
     bool warmPipelineColor(PipelineHandle h, PixelFormat format) override {
+        return warmPipelineColorStatus(h, format) != PipelineColorWarmStatus::Pending;
+    }
+    PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) override {
         auto* p=pipelines_.get(h.id);
-        if (!p || format!=PixelFormat::RGBA16F || p->desc.depthOnly || p->desc.colorFormat==format || p->hdr.valid() || p->hdrFailed) return true;
+        if (!p) { error_="HDR warmup: invalid pipeline handle"; return PipelineColorWarmStatus::Failed; }
+        if (format!=PixelFormat::RGBA16F || p->desc.depthOnly ||
+            p->desc.colorFormat==format) return PipelineColorWarmStatus::Ready;
+        if (p->hdr.valid()) return PipelineColorWarmStatus::Ready;
+        if (p->hdrFailed) return PipelineColorWarmStatus::Failed;
         if (!p->hdrShader.valid()) {
             if (!p->hdrShaderJob) {
                 auto* shader=shaders_.get(p->desc.shader.id);
-                if (!shader) { p->hdrFailed=true; return true; }
+                if (!shader) {
+                    error_="HDR warmup: missing source shader";
+                    p->hdrFailed=true;
+                    return PipelineColorWarmStatus::Failed;
+                }
                 ShaderDesc desc; desc.msl=shader->source.c_str(); desc.linearTarget=true;
                 p->hdrShaderJob=createShaderAsync(desc);
             }
-            if (!p->hdrShaderJob(p->hdrShader)) return false;
+            if (!p->hdrShaderJob(p->hdrShader)) return PipelineColorWarmStatus::Pending;
             p->hdrShaderJob={};
-            if (!p->hdrShader.valid()) { p->hdrFailed=true; std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str()); return true; }
+            if (!p->hdrShader.valid()) {
+                p->hdrFailed=true;
+                std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str());
+                return PipelineColorWarmStatus::Failed;
+            }
         }
         if (!p->hdrPipelineJob) {
             auto desc=p->desc; desc.shader=p->hdrShader; desc.colorFormat=format;
@@ -776,11 +894,19 @@ public:
         }
         // Publishing may reallocate the pool, including the job itself. Poll a local copy.
         auto job=p->hdrPipelineJob; PipelineHandle result;
-        if (!job(result)) return false;
+        if (!job(result)) return PipelineColorWarmStatus::Pending;
         p=pipelines_.get(h.id);
+        if (!p) {
+            // A destroyed base pipeline cannot publish its asynchronous variant.
+            if (result.valid()) destroyPipeline(result);
+            error_="HDR warmup: pipeline retired before variant completion";
+            return PipelineColorWarmStatus::Failed;
+        }
         p->hdrPipelineJob={}; p->hdr=result; p->hdrFailed=!result.valid();
-        if (p->hdrFailed) std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
-        return true;
+        if (p->hdrFailed)
+            std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
+        return p->hdrFailed ? PipelineColorWarmStatus::Failed
+                            : PipelineColorWarmStatus::Ready;
     }
     PipelineHandle hdrPipeline(PipelineHandle h) {
         auto* p = pipelines_.get(h.id);
@@ -925,6 +1051,19 @@ public:
         cmd_ = [queue_ commandBuffer];
         __block dispatch_semaphore_t sem = frameSemaphore_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer>) { dispatch_semaphore_signal(sem); }];
+        const uint64_t gpuToken = frame_;
+        auto completed = completedGpuFrame_;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> command) {
+            // Callback runs after the GPU command buffer has actually
+            // finished. Command buffers from this Metal queue complete in
+            // submission order; never substitute frame_ on the CPU thread.
+            if (command.status != MTLCommandBufferStatusCompleted) return;
+            uint64_t seen = completed->load(std::memory_order_relaxed);
+            while (seen < gpuToken &&
+                   !completed->compare_exchange_weak(
+                       seen,gpuToken,std::memory_order_release,
+                       std::memory_order_relaxed)) {}
+        }];
         auto timing=gpuMs_;auto health=gpuHealthy_;
         auto completedSerial=completedFrame_;
         const uint64_t submittedFrame=frame_;
@@ -949,6 +1088,148 @@ public:
         }];
         firstPass_ = true;
     }
+    // Dedicated GPU-hardware timestamp scope, never whole-command-buffer
+    // GPUEndTime minus GPUStartTime labeled as a viewport interval.
+    // A start and end sample are recorded in the SAME command buffer,
+    // resolved only after that command buffer reports GPU completion.
+    struct ScopedCommand {
+        uint64_t tag = 0;
+        id<MTLCommandBuffer> command = nil;
+        id<MTLCounterSampleBuffer> sample = nil;
+        MTLTimestamp cpuStart = 0, gpuStart = 0;
+        bool ended = false;
+    };
+    std::vector<ScopedCommand> scopedCommands_;
+    bool gpuScopeActive_ = false;
+    bool timestampScopeChecked_ = false;
+    id<MTLCounterSet> timestampCounterSet_ = nil;
+    // 1 = explicit blit-command samples, 2 = blit stage-boundary samples
+    int timestampScopeMode_ = 0;
+
+    bool encodeGpuScopeTimestamp(id<MTLCounterSampleBuffer> samples,
+                                 NSUInteger index) {
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !samples)
+            return false;
+        if (timestampScopeMode_ == 1) {
+            id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+            if (!blit) return false;
+            [blit sampleCountersInBuffer:samples atSampleIndex:index withBarrier:YES];
+            [blit endEncoding];
+            return true;
+        }
+        if (timestampScopeMode_ == 2) {
+            MTLBlitPassDescriptor* descriptor=[MTLBlitPassDescriptor blitPassDescriptor];
+            auto* attachment=descriptor.sampleBufferAttachments[0];
+            attachment.sampleBuffer=samples;
+            attachment.startOfEncoderSampleIndex=index;
+            attachment.endOfEncoderSampleIndex=MTLCounterDontSample;
+            id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoderWithDescriptor:descriptor];
+            if (!blit) return false;
+            [blit endEncoding];
+            return true;
+        }
+        }
+        return false;
+    }
+    bool beginGpuScope(uint64_t tag) override {
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ ||
+            gpuScopeActive_ || scopedCommands_.size()>=64 ||
+            !gpuHealthy_->load(std::memory_order_acquire))
+            return false;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            if (!timestampScopeChecked_) {
+                timestampScopeChecked_=true;
+                // Do not create an unsupported counter buffer or assume a
+                // driver provides nanosecond timestamps on every GPU.
+                const bool blit=[device_ supportsCounterSampling:
+                    MTLCounterSamplingPointAtBlitBoundary];
+                const bool stage=[device_ supportsCounterSampling:
+                    MTLCounterSamplingPointAtStageBoundary];
+                if (blit || stage) {
+                    for (id<MTLCounterSet> entry in device_.counterSets) {
+                        if ([entry.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+                            timestampCounterSet_=entry;
+                            timestampScopeMode_=blit ? 1 : 2;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!timestampCounterSet_ || !timestampScopeMode_) return false;
+            MTLCounterSampleBufferDescriptor* desc=
+                [[MTLCounterSampleBufferDescriptor alloc] init];
+            desc.counterSet=timestampCounterSet_;
+            desc.sampleCount=2;
+            desc.storageMode=MTLStorageModeShared;
+            desc.label=@"AIVERSE scoped GPU timestamps";
+            NSError* error=nil;
+            id<MTLCounterSampleBuffer> samples=
+                [device_ newCounterSampleBufferWithDescriptor:desc error:&error];
+            if (!samples) return false;
+            ScopedCommand entry;
+            entry.tag=tag;
+            entry.command=cmd_;
+            entry.sample=samples;
+            [device_ sampleTimestamps:&entry.cpuStart gpuTimestamp:&entry.gpuStart];
+            if (!entry.cpuStart || !entry.gpuStart ||
+                !encodeGpuScopeTimestamp(samples,0))
+                return false;
+            scopedCommands_.push_back(entry);
+            gpuScopeActive_=true;
+            return true;
+        }
+        return false;
+    }
+    void endGpuScope() override {
+        if (!gpuScopeActive_) return;
+        gpuScopeActive_=false;
+        if (scopedCommands_.empty()) return;
+        auto& entry=scopedCommands_.back();
+        // Encoder boundaries are a strict host contract: do not silently
+        // end someone else's render/compute pass to acquire a timestamp.
+        entry.ended=encodeGpuScopeTimestamp(entry.sample,1);
+    }
+    std::vector<GpuTiming> takeGpuScopeTimings() override {
+        std::vector<GpuTiming> result;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            for (size_t i=0;i<scopedCommands_.size();) {
+                const auto& t=scopedCommands_[i];
+                const auto status=t.command.status;
+                if (status!=MTLCommandBufferStatusCompleted &&
+                    status!=MTLCommandBufferStatusError) {++i;continue;}
+                bool valid=false;
+                double elapsedMs=0.0;
+                if (t.ended && status==MTLCommandBufferStatusCompleted) {
+                    NSData* data=[t.sample resolveCounterRange:NSMakeRange(0,2)];
+                    if (data && data.length>=sizeof(MTLCounterResultTimestamp)*2) {
+                        const auto* samples=
+                            static_cast<const MTLCounterResultTimestamp*>(data.bytes);
+                        MTLTimestamp cpuEnd=0,gpuEnd=0;
+                        [device_ sampleTimestamps:&cpuEnd gpuTimestamp:&gpuEnd];
+                        if (samples[0].timestamp>0 && samples[1].timestamp>samples[0].timestamp &&
+                            samples[0].timestamp!=MTLCounterErrorValue &&
+                            samples[1].timestamp!=MTLCounterErrorValue &&
+                            gpuEnd>t.gpuStart && cpuEnd>t.cpuStart) {
+                            // GPU clock ticks may be frequency-scaled; use
+                            // TWO simultaneous CPU/GPU clock samples to
+                            // convert the measured GPU delta to CPU ns.
+                            const double ratio=double(cpuEnd-t.cpuStart)/
+                                               double(gpuEnd-t.gpuStart);
+                            elapsedMs=double(samples[1].timestamp-
+                                samples[0].timestamp)*ratio/1000000.0;
+                            valid=std::isfinite(elapsedMs) &&
+                                elapsedMs>0.0 && elapsedMs<=250.0;
+                        }
+                    }
+                }
+                result.push_back({t.tag,valid?elapsedMs:0.0,valid});
+                scopedCommands_.erase(scopedCommands_.begin()+i);
+            }
+        }
+        return result;
+    }
+
     struct TimedCommand { uint64_t tag; id<MTLCommandBuffer> command; };
     std::vector<TimedCommand> timedCommands_;
     bool timeGpuFrame(uint64_t tag) override {
@@ -972,6 +1253,8 @@ public:
         finishGpuEncodedIcbPreparation();
         endCompute();
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
+        // Balanced even if a client omits its explicit endGpuScope.
+        if (gpuScopeActive_) endGpuScope();
         if (capture_ && drawable_ && captureDelay_-- <= 0 && !drawable_.texture.framebufferOnly) {
             // copy the finished frame into a shared buffer before presenting it
             const NSUInteger w = drawable_.texture.width, h = drawable_.texture.height, row = w * 4;
@@ -995,6 +1278,8 @@ public:
             }];
         }
         if (drawable_) [cmd_ presentDrawable:drawable_];
+        lastCommittedGpuFrameBuffer_ = cmd_;
+        lastCommittedGpuFrame_ = frame_;
         [cmd_ commit];
         cmd_ = nil;
         drawable_ = nil;
@@ -1717,6 +2002,8 @@ private:
     id<MTLDevice> device_;
     id<MTLCommandQueue> queue_;
     id<MTLCommandBuffer> cmd_;
+    id<MTLCommandBuffer> lastCommittedGpuFrameBuffer_ = nil;
+    uint64_t lastCommittedGpuFrame_ = 0;
     id<MTLRenderCommandEncoder> enc_;
     id<MTLComputeCommandEncoder> compute_;
     Pool<id<MTLComputePipelineState>> computes_;
@@ -1729,6 +2016,14 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    // Shared with asynchronous MTL completion handlers; safe even if the
+    // command buffer finishes after the MetalDevice owner has been released.
+    std::shared_ptr<std::atomic<uint64_t>> completedGpuFrame_ =
+        std::make_shared<std::atomic<uint64_t>>(0);
+    uint64_t nextRetirementToken_ = 1;
+    // Only the GPU callback modifies the atomic status. The token map is
+    // accessed exclusively on the Metal device owner thread.
+    std::map<uint64_t,std::shared_ptr<std::atomic<int>>> retirementTokens_;
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.

@@ -1,13 +1,13 @@
 # AIVERSE Universal Niagara-style VFX — agent handoff
 
-**Date:** 2026-11-18  
-**Working branch:** `feature/universal-entity-inspector-fps`  
+**Date:** 2026-11-18
+**Working branch:** `feature/universal-entity-inspector-fps`
 **Goal:** universal, composable VFX for RTS, FPS, racing, RPG, strategy and native games. Never create an FPS-only or RTS-only particle system. Extend existing `engine/fx/ParticleSystem`; keep VFX presentation-only and authoritative ECS/rollback deterministic.
 
 ## Stage 1 — versioned graph frontend (COMMITTED, TESTS NOT RUN)
 
-**Implementation SHA:** `5afe37d4ee6418897b49ee5ac3e27cbe32362c40`  
-**Standalone test source SHA:** `b17ba98f0675be2f628b2177b83d8b210f9250eb`  
+**Implementation SHA:** `5afe37d4ee6418897b49ee5ac3e27cbe32362c40`
+**Standalone test source SHA:** `b17ba98f0675be2f628b2177b83d8b210f9250eb`
 **CTest registration SHA:** `43f0090c681f5826746a62e51df55fa33c553b50`
 
 ### Files
@@ -59,8 +59,8 @@ Every completed stage must follow `AGENTS.md`: implementation commit(s), then a 
 
 ## Stage 2 — cross-genre ECS presentation system (COMMITTED, TESTS NOT RUN)
 
-**Implementation SHA:** `60657dded40c58bd07b701df7c7ea1bd34b94120`  
-**Standalone test SHA:** `7c743f48a6c92112a9756392d1965bf964be1620`  
+**Implementation SHA:** `60657dded40c58bd07b701df7c7ea1bd34b94120`
+**Standalone test SHA:** `7c743f48a6c92112a9756392d1965bf964be1620`
 **CTest registration SHA:** `e19a0ac9074bd3c4aa714396e748f68eedb95b63`
 
 ### Files
@@ -109,8 +109,8 @@ ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs
 
 ## Stage 3 — graph assets, exposed-parameter variants and hot reload (COMMITTED, TESTS NOT RUN)
 
-**Implementation SHA:** `582763839d818e04287723cba6143453648680d0`  
-**Standalone test SHA:** `26a3acb7f2d6511ef9a070539e56ed7528ca1214`  
+**Implementation SHA:** `582763839d818e04287723cba6143453648680d0`
+**Standalone test SHA:** `26a3acb7f2d6511ef9a070539e56ed7528ca1214`
 **CTest registration SHA:** `cd5f25b784a1beab1af2c5177376e239338fcf57`
 
 ### Files
@@ -158,8 +158,8 @@ ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs
 
 ## Stage 2 corrective checkpoint — rollback one-shot cleanup
 
-**Implementation SHA:** `9cc82382781e852f307b7cf7ca083aff36ad07a4`  
-**File:** `libraries/include/aiverselib/genre/EcsVfxPresentation.h`  
+**Implementation SHA:** `9cc82382781e852f307b7cf7ca083aff36ad07a4`
+**File:** `libraries/include/aiverselib/genre/EcsVfxPresentation.h`
 The presenter now retains up to 65,536 recent event-spawned `FxHandle` values and kills those handles during `reset()`; this prevents recent one-shot remnants being left in the scene after rollback. Beyond this bounded history, very old handles cannot be retracted by the presenter: the cap keeps bookkeeping bounded. For effects older than the cap that must disappear, the host may reset its entire particle world at new-match boundaries.
 
 **Tests:** NOT RUN. The stage-2 test currently exercises event playback and reset cursor, but does not assert old one-shot particle removal; extend `tests/vfx_ecs_presentation_test.cpp` before declaring rollback fully verified. The `FxHandle` cleanup also needs a high-volume profiling pass.
@@ -168,9 +168,9 @@ The presenter now retains up to 65,536 recent event-spawned `FxHandle` values an
 
 ## Stage 4 — AI skill, AGENTS rule and discovery registration (COMMITTED, TESTS NOT RUN)
 
-**Skill SHA:** `040a283087f3d28a2939d260909dccdc480a6292`  
-**AGENTS.md SHA:** `14230d7c1e7dbbfb5c4f8f0e70bdcac252faad76`  
-**Skill generator SHA:** `b054038ef1bd1c51b02a1a74cc5245a204d9cdf8`  
+**Skill SHA:** `040a283087f3d28a2939d260909dccdc480a6292`
+**AGENTS.md SHA:** `14230d7c1e7dbbfb5c4f8f0e70bdcac252faad76`
+**Skill generator SHA:** `b054038ef1bd1c51b02a1a74cc5245a204d9cdf8`
 **Generated catalog SHA:** `d48037587ec193a2e46133a8e629caa641d0df50`
 
 Files: `skills/visuals/aiverse-niagara-vfx/SKILL.md` (new), `AGENTS.md`, `tools/skills/catalog.py`, `skills/catalog.json`. AI agents now have a durable skill with versioned graph JSON example, current CPU backend and ECS API, cross-genre integration rules, outstanding tasks and reproducible test commands. AGENTS.md links this handoff and forbids genre forks or false claims that the GPU/editor portion is done. The skill generator and catalog both list `aiverse-niagara-vfx` with explicit search aliases.
@@ -181,7 +181,7 @@ Files: `skills/visuals/aiverse-niagara-vfx/SKILL.md` (new), `AGENTS.md`, `tools/
 
 ## Stage 5 — bounded O(1) event handle tracking and rollback test (COMMITTED, TESTS NOT RUN)
 
-**Implementation SHA:** `d1766010fffc405578c2b41c5d0e4e812fb9b3e0`  
+**Implementation SHA:** `d1766010fffc405578c2b41c5d0e4e812fb9b3e0`
 **Test patch SHA:** `ce19be88d787ee26ce851bf1fc43d99b4734de27`
 
 - `libraries/include/aiverselib/genre/EcsVfxPresentation.h`: replaced `erase(begin)` in recent one-shot handle history with a bounded ring overwrite; each event capture is now O(1) even after the 65,536-handle limit. Rollback reset still kills all handles retained in the ring.
@@ -192,7 +192,7 @@ Files: `skills/visuals/aiverse-niagara-vfx/SKILL.md` (new), `AGENTS.md`, `tools/
 
 ## Stage 6 — official product identity: AIVERSE SpectraFX (COMMITTED, TESTS NOT RUN)
 
-**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
 **User request:** invent a distinctive VFX-system name, actually use it in the engine's code and leave a durable handoff. **Decision: AIVERSE SpectraFX** (public namespace `aiverse::spectra`; skill `aiverse-spectrafx`). Unreal Niagara remains an inspiration/reference, **not** the product name.
 
 ### Commits and files (in implementation order)
@@ -262,7 +262,7 @@ python3 tools/skills/catalog.py check
 
 ## Stage 7 — SpectraFX MCP graph authoring and CPU preview bake (COMMITTED, TESTS NOT RUN)
 
-**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
 **Goal:** make SpectraFX graph-v1 frontend available through both editor Workspace and headless MCP without genre-specific simulation dependencies.
 
 ### Implementation and documentation commits
@@ -301,7 +301,7 @@ Review the new `SpectraGraphOps.cpp` and `vfx_graph_ops_test.cpp` for actual bui
 
 ## Stage 8 — visual SpectraFX node canvas and in-memory preview (COMMITTED, TESTS NOT RUN)
 
-**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
 **Scope:** Basic authoring/preview of the existing graph-v1 format for **all genres**; no additional gameplay authority, no forked FPS/RTS renderer and no GPU compute claims.
 
 ### Implementation commits / paths
@@ -356,7 +356,7 @@ Then launch AIVERSE Editor, open **Графика → SpectraFX**, verify create
 
 ## Stage 9 — typed SpectraFX module inspector and source preservation (COMMITTED, TESTS NOT RUN)
 
-**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
 **Goal:** replace blind raw-JSON edits for common graph-v1 fields with shared, validated field metadata, without losing unrecognized/complex emitter properties or binding logic to one game genre.
 
 ### Exact committed changes
@@ -402,6 +402,91 @@ Manual editor QA: open **Графика → SpectraFX**; test each typed control
 3. The typed schema is intentionally a convenience layer; `parseEffect` is the final authority when saving an entire graph. Typed edits can leave an incomplete graph until connected.
 4. No GPU backend or GPU execution is present. The next independent stage should **first verify and repair stage 7–9 builds/tests**, then design and implement RHI compute capabilities, GPU simulation buffers and a CPU/GPU execution selector with GLES3/WebGL fallback. Do not merge genre-specific VFX engines, alter deterministic ECS ownership, or make unverified performance/parity claims.
 5. After the next bounded code stage, append another **separate handoff commit** to this file with implementation SHA, actual test results, risks and precise continuation steps. Preserve all concurrent agents' work.
+
+## Stage 10 — Metal GPU compute particle subset with CPU fallback (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.
+**Goal:** take the first bounded step from CPU-only SpectraFX to a GPU compute particle backend using the existing RHI, preserving CPU compatibility and all RTS/FPS gameplay/event behavior.
+
+### Verified source findings before design
+
+- The RHI `engine/gfx/Gfx.h` already defines an optional compute contract: `supportsCompute`, `createCompute`, `beginCompute`, `setComputeBuffer`, `setComputeUniforms`, `dispatch`, `endCompute`, storage buffers and debug readback.
+- Current `engine/gfx/metal/GfxMetal.mm` implements compute and guarantees per-dispatch barriers; storage `MTLBuffer` can be bound through `setVertexBuffer` in the render encoder. The existing `engine/cloth/ClothGpu.cpp` uses this API.
+- Vulkan, GL33 and GLES3 in this branch do **not** expose a functional general RHI compute implementation. Do not activate the GPU path there on the basis of GLSL source alone.
+- Existing CPU emitter contract is in `engine/fx/ParticleSystem.*`; `modules/rts/fx/RtsFx.*` remains production.
+
+### Implementation commits
+
+| SHA | File | Change |
+|---|---|---|
+| `c0e79b7b77c61898f34512cae431ac65c8deacc3` | `engine/fx/SpectraGpuShaders.h` | Metal compute kernel for spawn, integration, GPU billboard expansion; matching GLSL 430 source held for future Vulkan backend (NOT USED) |
+| `397cd205d7a84e9555d96cb9d4c68188807d0395` | `engine/fx/SpectraGpuParticles.h` | Public opt-in CPU/Metal selection, config, stats, lifecycle and emitter API |
+| `4f1c84f436979130bbc187d4df5f1630d2542a3e` | `engine/fx/SpectraGpuParticles.cpp` | GPU buffer allocation, compute queue, additive GPU render, CPU `fx::ParticleSystem` fallback |
+| `c9cfd28ad1d98dc2c17a646332d7eb02176eed3f` | `tests/vfx_gpu_backend_test.cpp` | Pure backend-selection and headless CPU fallback regression |
+| `a67b0194c9b4bd5c1c53bc661ede89bf92b9fd4b` | `CMakeLists.txt` | Link new .cpp into `aiverse_fx`, register CTest `vfx_gpu_backend` with SpectraFX label |
+| `c340bbf90479744b71940263a14183d2e2ac3a04` | `engine/fx/SpectraFX.h` | Expose the optional GPU emitter through the existing public native header |
+| `c791f75567aae2e3456163272d990164e062cac4` | `tests/vfx_gpu_backend_test.cpp` | Add recording Metal RHI mock checking dispatch order and draw command contract |
+| `1a0521ba3a4df37f58bd49ff614becb35889541c` | `docs/spectrafx.md` | Native usage, supported subset, RHI requirements and explicit limitations |
+| `6f595a58643c95e57248e4945837797d3e9e7517` | `docs/spectrafx.md` | Document mock RHI coverage without claiming actual GPU execution |
+| `2714f57d6be439f88aba36e5c19194ec18eb6461` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent instructions for GPU prototype, fallback, invocation and testing |
+| `368a5522c2d42d957d1a3ca6c11fe90bfc45e18f` | `AGENTS.md` | Preserve shared ECS/CPU contract and warn against unverified production GPU enablement |
+
+### Public API, layout and platform behavior
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+aiverse::spectra::ComputeParticles emitter;
+aiverse::spectra::ComputeEmitterDesc cfg; // capacity 1..4096, burst 1..64
+cfg.backend = aiverse::spectra::ComputePreference::Automatic;
+cfg.lifetime = 0.8f;
+cfg.speed = 3.0f;
+cfg.size = 0.35f;
+cfg.gravityY = -9.81f;
+if (!emitter.init(device, cfg)) { /* emitter.reason() */ }
+// Per presentation frame: AFTER Device::beginFrame and BEFORE render pass:
+emitter.setView(camera, viewProj, width, height);
+emitter.burstAt({0,2,0}, {0,1,0}, {1,0.4f,0.1f,1});
+if (!emitter.step(1.f / 60)) { /* timing / resource error */ }
+// INSIDE open render pass:
+emitter.draw();
+// Shutdown before gfx::Device destruction.
+emitter.shutdown();
+```
+
+- `ComputePreference`: `Automatic`, `CpuOnly`, `PreferGpu`, `RequireGpu`. `RequireGpu` returns an error on unsupported GPU or shader initialization failure; `Automatic` and `PreferGpu` fall back to the original CPU ParticleSystem. Current GPU choice is Metal only when `Device::supportsCompute()` and quality is at least Medium.
+- `ComputeBackend`: `Cpu`, `Metal`; pure `chooseComputeBackend` available for native use/tests. Device pointer may be null for CPU-only headless tests.
+- `ComputeEmitterDesc` supports the **narrow** additive billboard effect subset: bounded capacity/burst count, lifetime, speed, size, Y gravity, drag, quality, backend policy. `burstAt` supplies world-space position/direction/tint; this is not general graph-v1 automatic GPU execution.
+- Persistent Metal storage buffers: 64-byte particle `positionAge/velocityLife/tint/size` state, 64-byte seed records, uint32 spawn slots, and 40-byte expanded GPU vertex per quad corner; static 16-bit indices and a soft RGBA8 texture. The renderer reuses existing vertex/fragment particle shaders and RHI draw/pass bindings.
+- Each `step`: enqueue CPU-written seed+slot arrays as Metal blits, dispatch compute mode 0 (birth), mode 1 (age, speed, gravity/drag, position), mode 2 (expand billboard geometry), then draw without GPU→CPU readback. A CPU-side time-to-live/free-slot pool is bookkeeping only (particle motion is computed on Metal).
+- GPU render currently draws the full allocated slot index array; inactive slots emit degenerate zero-alpha quads. There is **NO GPU compaction, indirect count or per-particle occlusion/culling/sorting**. Maximum 4096 slots prevents unbounded GPU work.
+- All existing `fx/*.json`, `fx/graphs/*.vfx.json`, `RtsFx`, native API aliases and ECS save/rollback formats are unchanged. There is **no production RTS/FPS integration** in this stage.
+
+### Actual verification (DO NOT OVERSTATE)
+
+**NOT RUN:** No local AIVERSE checkout/compiler was available from the GitHub connector environment. GitHub commits succeeded, but neither native CMake build nor CTest nor Apple Metal shader compilation/Apple Silicon frame output was performed. A recording RHI mock was authored, not executed; it does not stand in for a real GPU test.
+
+CI checked on commit `a67b0194c9b4bd5c1c53bc661ede89bf92b9fd4b`: GPU batching regression, ECS experimental checks and Studio validation were **queued**, the general CI run was **cancelled**, and the commit status endpoint contained no success statuses. No passing CI claim is authorized.
+
+Local commands for next agent:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Then run a **real Metal** offscreen smoke: execute `step()` in a frame *before* `beginPass`, inspect MSL compilation output, render several consecutive bursts in one scene, capture frames and compare with CPU for correct birth/death, alpha fade, position and depth. Run the same native example with `CpuOnly` and on GLES3/Vulkan fallback. Stress repeated `clear`, resize/reinit, GPU allocation failure, GPU encoder failure, multiple frames in flight, quality tiers, and owner thread.
+
+### Limitations and exact next stage
+
+1. **Compilation/Metal output unverified.** Resolve real build errors, RHI shader errors and cross-frame buffer hazards before enabling the GPU path in any production project. The mock verifies only host API ordering if it compiles/runs; no GPU execution.
+2. **No GPU graph execution.** `CompileParticles` (correct spelling: **`ComputeParticles`**) is a manual opt-in simple billboard emitter. Complex FX remain the CPU backend. Do not claim Niagara parity or convert graph-v1 assets to GPU automatically.
+3. **Single pool and material.** Implement a reusable emitter scheduler, per-emitter storage ranges, batching by material, dead-particle compaction, scalable indirect draw, alpha sort and transparent rendering before targeting large particle counts.
+4. **CPU-only backends.** Vulkan compute is not wired through the current RHI; GLSL 430 kernel text is only a placeholder. Do not pretend it runs under GL33/GLES3/WebGL2.
+5. **Next bounded stage:** native compile/CTest/Apple Metal validation and fixes, then opt-in integration of `ComputeParticles` into native presentation/ECS bridge with explicit GPU eligibility/fallback for graph-v1 effects. Record actual benchmark numbers only after using GPU timing and representative scenes; update this same handoff with a separate commit after each bounded stage.
 
 ## Stage 45.4 — SpectraFX upstream header compile fix selected for water integration
 
