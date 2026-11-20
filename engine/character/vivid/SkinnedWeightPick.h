@@ -25,11 +25,14 @@ struct SkinnedWeightSurface {
 inline bool prepareSkinnedWeightSurface(
     const render::Model& model, std::size_t meshId,
     std::span<const render::mat4> nodeWorld,
-    SkinnedWeightSurface& out) {
+    SkinnedWeightSurface& out,
+    std::span<const render::float3> deformedBindPositions={}) {
     using namespace render;
     if(meshId>=model.meshes.size() ||
        nodeWorld.size()!=model.nodes.size() ||
-       model.vertices.empty())return false;
+       model.vertices.empty() ||
+       (!deformedBindPositions.empty() &&
+        deformedBindPositions.size()!=model.vertices.size()))return false;
     int owner=-1;
     for(std::size_t i=0;i<model.nodes.size();++i)
         if(model.nodes[i].mesh==int(meshId)) {
@@ -74,9 +77,13 @@ inline bool prepareSkinnedWeightSurface(
     for(std::size_t id=0;id<model.vertices.size();++id) {
         if(!next.included[id])continue;
         const auto& v=model.vertices[id];
+        const float3 bind=deformedBindPositions.empty()
+            ?v.pos:deformedBindPositions[id];
+        if(!std::isfinite(bind.x)||!std::isfinite(bind.y)||
+           !std::isfinite(bind.z))return false;
         float3 position{};
         if(!skin) {
-            position=nodeWorld[std::size_t(owner)].transformPoint(v.pos);
+            position=nodeWorld[std::size_t(owner)].transformPoint(bind);
         }else{
             float total=0;
             for(unsigned influence=0;influence<4;++influence) {
@@ -90,7 +97,7 @@ inline bool prepareSkinnedWeightSurface(
                 if(joint<0||std::size_t(joint)>=nodeWorld.size())return false;
                 const float share=float(weight)/255.f;
                 position+=(nodeWorld[std::size_t(joint)]*
-                           skin->inverseBind[index]).transformPoint(v.pos)*share;
+                           skin->inverseBind[index]).transformPoint(bind)*share;
                 total+=share;
             }
             if(total<=0)return false;
@@ -107,7 +114,8 @@ inline bool prepareSkinnedWeightSurface(
 
 inline SculptPick pickSkinnedWeightVertex(
     const render::Model& model,const SkinnedWeightSurface& surface,
-    render::float3 origin,render::float3 direction) noexcept {
+    render::float3 origin,render::float3 direction,
+    std::size_t sourceVertexCount=std::numeric_limits<std::size_t>::max()) noexcept {
     using namespace render;
     SculptPick best;
     if(!surface.ready||surface.mesh>=model.meshes.size()||
@@ -123,6 +131,8 @@ inline SculptPick pickSkinnedWeightVertex(
         for(std::size_t i=start;i+2<start+prim.indexCount;i+=3) {
             const auto ia=model.indices[i],ib=model.indices[i+1],
                 ic=model.indices[i+2];
+            if(ia>=sourceVertexCount || ib>=sourceVertexCount ||
+               ic>=sourceVertexCount)continue; // authored source vertices only
             if(ia>=surface.world.size()||ib>=surface.world.size()||
                ic>=surface.world.size()||
                !surface.included[ia]||!surface.included[ib]||
