@@ -13,6 +13,7 @@
 #include "LumaWeaveQuality.h"
 #include "LumaWeaveAdaptiveBudget.h"
 #include "LumaWeaveHdrCompositeShader.h"
+#include "LumaWeaveTextureRetirement.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -79,7 +80,12 @@ public:
         return true;
     }
 
+    // Host must prove full graphics GPU idle before releasing the remaining
+    // ACTIVE program/targets. An uncollected retired texture is never freed
+    // just because the compute readback completed or CPU frames advanced.
     bool shutdown() {
+        if(retiredTextures_.pendingCount() || producer_.pendingRetiredTextures())
+            return false;
         if(!producer_.shutdown())return false;
         if(dev_) {
             if(vertex_.valid())dev_->destroyBuffer(vertex_);
@@ -105,6 +111,28 @@ public:
         requestedQuality_=quality_=LumaWeaveQuality::Balanced;
         adaptiveEnabled_=false;
         frame_={};last_={};
+        return true;
+    }
+
+    size_t pendingRetiredTextures() const {
+        return retiredTextures_.pendingCount()+producer_.pendingRetiredTextures();
+    }
+    size_t unfencedRetiredTextures() const {
+        return retiredTextures_.unfencedCount()+producer_.unfencedRetiredTextures();
+    }
+    size_t collectRetiredTextures() {
+        if(!dev_)return 0;
+        const size_t count=retiredTextures_.collect(lumaWeaveCompletedFence(*dev_),
+            [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
+        return count+producer_.collectRetiredTextures();
+    }
+    // Host MUST prove full GPU device/queue idle before calling, outside
+    // render passes and with all previous submissions finished. This is not
+    // a CPU-frame-count or a compute-marker completion shortcut.
+    bool drainRetiredAfterGpuIdle() {
+        if(producer_.busy() || !producer_.drainRetiredAfterGpuIdle())return false;
+        if(dev_)retiredTextures_.drainAfterGpuIdle(
+            [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
         return true;
     }
 
@@ -276,6 +304,7 @@ public:
     }
 
     gfx::PassDesc scenePass(const gfx::PassDesc& out,int w,int h) override {
+        collectRetiredTextures();
         if(!sceneToken_)sceneToken_=++autoViewSerial_;
         // Each view must explicitly populate its material side channel; a
         // different viewport's cached albedo must never be reused.
@@ -386,6 +415,9 @@ private:
         if(materialTarget_.valid() && materialDepth_.valid() &&
            receiverWidth_==w && receiverHeight_==h)return true;
         if(producer_.busy())return false;
+        const size_t previousCount=size_t(materialTarget_.valid())+
+                                   size_t(materialDepth_.valid());
+        if(!retiredTextures_.prepare(previousCount))return false;
         gfx::TextureDesc materialDesc;
         materialDesc.width=w;materialDesc.height=h;
         materialDesc.format=gfx::PixelFormat::RGBA16F;
@@ -401,8 +433,9 @@ private:
         if(!newDepth.valid()) {
             dev_->destroyTexture(newMaterial);return false;
         }
-        if(materialTarget_.valid())dev_->destroyTexture(materialTarget_);
-        if(materialDepth_.valid())dev_->destroyTexture(materialDepth_);
+        const uint64_t fence=lumaWeaveSubmittedFence(*dev_);
+        retiredTextures_.retire(materialTarget_,fence);
+        retiredTextures_.retire(materialDepth_,fence);
         materialTarget_=newMaterial;materialDepth_=newDepth;
         receiverWidth_=w;receiverHeight_=h;
         return true;
@@ -412,6 +445,9 @@ private:
         if(surfaceTarget_.valid() && surfaceDepth_.valid() &&
            surfaceWidth_==w && surfaceHeight_==h)return true;
         if(producer_.busy())return false;
+        const size_t previousCount=size_t(surfaceTarget_.valid())+
+                                   size_t(surfaceDepth_.valid());
+        if(!retiredTextures_.prepare(previousCount))return false;
         gfx::TextureDesc desc;
         desc.width=w;desc.height=h;
         desc.format=gfx::PixelFormat::RGBA16F;
@@ -424,8 +460,9 @@ private:
         desc.label="LumaWeave PBR surface receiver depth";
         const auto depth=dev_->createTexture(desc);
         if(!depth.valid()){dev_->destroyTexture(next);return false;}
-        if(surfaceTarget_.valid())dev_->destroyTexture(surfaceTarget_);
-        if(surfaceDepth_.valid())dev_->destroyTexture(surfaceDepth_);
+        const uint64_t fence=lumaWeaveSubmittedFence(*dev_);
+        retiredTextures_.retire(surfaceTarget_,fence);
+        retiredTextures_.retire(surfaceDepth_,fence);
         surfaceTarget_=next;surfaceDepth_=depth;
         surfaceWidth_=w;surfaceHeight_=h;
         return true;
@@ -433,6 +470,7 @@ private:
 
     bool makeComposeDepth(int w,int h) {
         if(!dev_ || producer_.busy() || w<=0 || h<=0)return false;
+        if(!retiredTextures_.prepare(size_t(composeDepth_.valid())))return false;
         gfx::TextureDesc td;
         td.width=w;td.height=h;
         td.format=gfx::PixelFormat::Depth;
@@ -441,7 +479,8 @@ private:
         td.label="LumaWeave HDR compositing depth (not sampled)";
         const auto next=dev_->createTexture(td);
         if(!next.valid())return false;
-        if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
+        const uint64_t fence=lumaWeaveSubmittedFence(*dev_);
+        retiredTextures_.retire(composeDepth_,fence);
         composeDepth_=next;depthWidth_=w;depthHeight_=h;
         return true;
     }
@@ -474,6 +513,7 @@ private:
     PostProcess& downstream_;
     LightSystem& legacy_;
     LumaWeaveScreenMetal producer_;
+    LumaWeaveTextureRetirement retiredTextures_;
     gfx::Device* dev_=nullptr;
     gfx::ShaderHandle shader_{};
     gfx::PipelineHandle pipeline_{};
