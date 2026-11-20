@@ -1,5 +1,20 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 postmerge Stage114 Mac Release tests 2/2 PASS (2026-11-20):**
+> User's local Release build compiled
+> `aiverse_resource_retirement_tests` and
+> `aiverse_async_resource_retirement_tests`, then CTest
+> `resource_retirement_queue` and
+> `async_resource_retirement_queue` both PASS (0 failed,
+> 0.88 sec). [Executed-test handoff](qa-2026-11-20-stage70-stage114-mac-release-retirement-green-handoff.md).
+> The terminal excerpt did not contain a new git SHA; branch head
+> at documentation time was `2a8fb8bd8ee405eda670adb6a847a9f2c12cabf2`
+> and `main` was an ancestor (behind=0).
+> Linux ARM64 GCC `-Werror` CI, forest GPU, Vulkan/GLES and
+> sustained real four-owner ecology are still unverified.
+> PR #53 remains Draft.
+>
+>
 > **Stage70 strict GPU/runtime PASS + latest-main sync (2026-11-20):**
 > Mac-tested exact `b1bb27c8f1e9f803ff49af29ea7dc0769b9cb264`:
 > focused runtime PASS, **4/4 actual Metal GPU PASS** (0 SKIP),
