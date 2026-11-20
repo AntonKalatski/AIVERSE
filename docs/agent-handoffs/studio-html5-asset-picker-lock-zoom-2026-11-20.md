@@ -236,3 +236,28 @@ Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python sou
 - `Main.mm` adds validated `kind=="look"` to the WKWebView bridge and routes native `rightMouseDragged:` to this method. `ViewportPlaceholder.tsx` uses right-button free look and left-button orbit; middle/Shift+left remains pan. The typed bridge union includes `look`.
 - `tools/studio/test_reference_pin_zoom.py` now checks for the distinct look path and preserved eye computation. Source changes committed but **not compiled or tested**.
 - Commits: `e8fdeb7fa1a8d5ae269df6ce494b38999fd32320`, `7352c8e3209a112a23216b863ee5ee71ccf17c7e`, `39d32a674a39f6c3c558265734b291bb33ab608c`, `cb519f9710c50dd3ee7d143a6cfa8d40ca6a1602`, `8f604bbaa39850f845e441d477d617b3203b22c1`, `7d420f215cfd370ff0ae355a800d2f23579f9cf5`.
+
+## Stage 11 — executable recovery tests and continuous Scene navigation (2026-11-20)
+- Added `apps/studio-native/tests/StudioMoveJournalTests.cpp`: temp-project tests of interrupted content rename, interrupted file+meta+material write, committed marker, idempotent recovery and collision refusal.
+- Registered the `studio_move_journal` CTest target in `apps/studio-native/CMakeLists.txt`.
+- Extended `apps/studio-native/tests/StudioAssetTransferTests.cpp` with injected completion-callback failure, GUID/meta rollback check, retry, and forbidden internal replace.
+- Reworked `apps/studio-web/src/components/ViewportPlaceholder.tsx` held-key Scene movement to requestAnimationFrame with bounded cadence, one in-flight bridge operation, keyup/blur/visibility cleanup, and Shift boost. Commands remain editor camera only.
+- Updated source contract suite `tools/studio/test_reference_pin_zoom.py`.
+- Commits: `e8e8b7b6c7e0543c6c59c7ffa4bdbb2971d68c42`, `f914b837d7d457399f891616bdc95f5cb95b18cf`, `fc6c79cc3ac89a69d9904f7c6228de34cbfa5fea`, `ce487413a7a107b80dbafc78bc38a2b50b2dd023`, `55f79c839df6eaaa4d85ea2fc746035d13102a68`.
+
+## Stage 12 — Scene selection by visible proxy geometry (2026-11-20)
+### Root cause and implementation
+- Existing `StudioMetalScene::pick` passed axis-aligned bounding boxes to `editor::pickSceneRenderable`. The Scene renderer actually draws `cube_` with `translate(center) * rotateY(yaw) * scale(half*2)`, so FPS colliders rotated by yaw had AABB-only empty corners that incorrectly selected an object.
+- Added `apps/studio-native/StudioVisualPicking.h`: exact ray/oriented-box slab intersection in the proxy's local coordinate system. Filters invalid rays, measures positive nearest visible cube surface, returns the nearest document ID among candidates. The mathematical transform matches `render::mat4::rotateY` used for drawing.
+- Updated `apps/studio-native/mac/StudioMetalScene.cpp` to call `studioPickVisibleProxy(proxies,origin,direction).id`, replacing the AABB candidate loop. Clicks outside actual proxy geometry now deselect instead of selecting empty corners. No change to click screen coordinates or native/HTML5 event routing.
+- Added `apps/studio-native/tests/StudioVisualPickingTests.cpp`: rotated thin box with a ray inside AABB but outside the oriented visual shape; central hit, nearest front object despite iteration order, inside-out intersection, invalid ray and empty scene hit. Registered `studio_visual_picking` in `apps/studio-native/CMakeLists.txt`.
+- Added corresponding source contract to `tools/studio/test_reference_pin_zoom.py`.
+- Implementation SHAs: `d09f4f453b1eee148f4d409f98099b54025847b8`, `073b13394c3f0eccd42c4070125e58f034c10221`, `dad3a77c0b1e2595084a51796f0cf203d80ff049`, `15e7758fbf4834330d8fd9ff75ed041a9e1a8761`, `fe400799cce6157ee1dbf78f0dedd76c1d65cb8a`, `04c062a9b69fb694976d7ec3e591d4c7daa5c9c5`.
+### Important limitations
+- This is exact **for the current HTML5 Studio rendered document proxy cubes**, not actual imported Model triangle geometry, animation-deformed meshes or terrain occlusion. The Metal Scene preview currently draws cubes for authored proxies. When real meshes are rendered, picking must be upgraded to mesh triangle/BVH or GPU ID/depth pass to select the visually frontmost triangle, with transparent-object policy.
+- Do not confuse a selected bounding outline with pickable cube surface. The selection outline remains a visual box; the picking volume is the rotated cube itself.
+- No native C++ compilation, CTest execution, browser typecheck or interactive Metal verification executed in this turn. Source files were inspected through GitHub and updated remotely. Tests have been added to the repository but are **not yet passing evidence**.
+### Next QA
+- macOS: configure/build HTML5 Studio and targets `aiverse_studio_move_journal_tests`, `aiverse_studio_asset_transfer_tests`, `aiverse_studio_visual_picking_tests`; run `ctest --test-dir <build-dir> -R 'studio_(move_journal|asset_transfers|visual_picking)'`.
+- Verify clicks on rotated collider visible faces, empty AABB corners, overlapping front/back proxies, blank Scene, UI zoom 75/100/150/200, both WebKit-composite and native overlay input modes. Confirm camera navigation remains independent of selection and game view.
+- Execute `npm run typecheck && npm run test:web && npm run build` and Python source suite; fix any failures before merging.
