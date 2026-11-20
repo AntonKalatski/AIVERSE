@@ -885,8 +885,10 @@ Renderer3D::ModelSubmissionProvenance Renderer3D::modelSubmissionProvenance(
 void Renderer3D::recordModelSubmission(
         const ModelItem& it,int phase,ModelSubmissionKind kind,
         gfx::PipelineHandle pipeline) {
-    if((modelSubmissionTarget_!=it.model &&
-        modelSubmissionSecondary_!=it.model) || !geometryMainView_ ||
+    bool tracked=false;
+    for(std::size_t i=0;i<trackedModelCount_;++i)
+        tracked |= trackedModels_[i]==it.model;
+    if(!tracked || !geometryMainView_ ||
        (phase!=1 && phase!=2 && phase!=4))return;
     if(modelSubmitted_.size()>=4096u) {
         modelSubmissionTruncated_=true;
