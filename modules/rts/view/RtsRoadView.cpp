@@ -2170,6 +2170,8 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
         materials_.push_back(m);
         mat = int(materials_.size() - 1);
     }
+    if(strictStaging_ && mat<0)
+        throw std::runtime_error("road staged painted material: GPU image allocation failed");
     painted_[key] = mat;
     return mat;
 }
@@ -2196,6 +2198,7 @@ int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
                     ": GPU completion unavailable; partial Model quarantined");
         } else pm.model.reset(); // CPU-only load, no GPU handles created
         warnings_.push_back("road prop " + path + ": " + e.what());
+        if(strictStaging_ && uploadStarted)throw;
     }
     propModels_.push_back(std::move(pm));
     return propModels_.back().model ? int(propModels_.size() - 1) : -1;
@@ -2266,9 +2269,10 @@ void addShapes(Acc& a, const std::string& shape, const mat4& xf, float worldPerM
 
 } // namespace
 
-void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
-    ++surfaceGeneration_;
-    release(dev);
+void RtsRoadView::buildUnpublished(gfx::Device& dev,
+        const std::function<float(float, float)>& heightAt) {
+    // Build only on a private candidate; the currently published road GPU
+    // models, materials, surface samples and decals must remain untouched.
     dirty_ = false;
     ghostDirty_ = true;
     if (net_.empty()) return;
@@ -2284,8 +2288,16 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
         const int64_t cx = int64_t(std::floor(at.x / float(kChunk))), cz = int64_t(std::floor(at.z / float(kChunk)));
         addShapes(mesh.chunks[(cx << 32) ^ (cz & 0xffffffff)], p.shape, p.xf, 1.0f / cm, shapes);
     }
-    if (!mesh.decals.empty()) decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
-    if (!mesh.verges.empty()) vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
+    if (!mesh.decals.empty()) {
+        decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
+        if(!decalMesh_.vb.valid())
+            throw std::runtime_error("road staged decal buffer upload failed");
+    }
+    if (!mesh.verges.empty()) {
+        vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
+        if(!vergeMesh_.vb.valid())
+            throw std::runtime_error("road staged verge buffer upload failed");
+    }
     film_ = std::move(mesh.film);
     spots_ = std::move(mesh.spots);
     rasterSurface(mesh.surf, heightAt);
@@ -2384,6 +2396,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
             if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
                 warnings_.push_back("road chunk: GPU completion unavailable; partial Model quarantined");
             warnings_.push_back(std::string("road chunk: ")+e.what());
+            if(strictStaging_)throw; // no partially published batch
         }
     }
     batchStats_.uploadedChunks = chunks_.size();
