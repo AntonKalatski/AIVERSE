@@ -496,3 +496,11 @@ with previously identified/repaired compile errors; this stage and GPU tests
 NOT RUN yet. Main not pushed. Next: defer surface cohort publication until all
 other owners prepare, retain staged height queries, then rebuild on KINGSTON
 and execute fault/retry, full native and actual GPU checks.
+
+
+### LENS editor viewport integration — 2026-11-20
+Code `6c815c4903769cb06d1806dacb51ffbe921e27fe`, branch codex/lens-completion. StudioCamerasWindow passes the
+current Editor::viewportRetirement owner to Viewport::ensure; removed obsolete
+setTargetOwner call. No persistence change. git diff --check PASS. Build-3
+failed on these obsolete calls; fresh integrated build and tests next.
+GPU validation NOT RUN; main not pushed.
