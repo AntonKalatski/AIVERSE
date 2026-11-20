@@ -168,6 +168,22 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("injected material write failure",transfer)
         self.assertIn("assert(replaceRejected)",transfer)
 
+    def test_rigid_cpu_model_triangle_picking_adapter(self):
+        adapter=(ROOT/"apps/studio-native/StudioModelPicking.h").read_text(encoding="utf-8")
+        cases=(ROOT/"apps/studio-native/tests/StudioModelPickingTests.cpp").read_text(encoding="utf-8")
+        cmake=(ROOT/"apps/studio-native/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("studioRayTriangle",adapter)
+        self.assertIn("studioPickModelSurface",adapter)
+        self.assertIn("studioPickModelInstances",adapter)
+        self.assertIn("world*model.bindWorld[n]",adapter)
+        self.assertIn("if (model.vertices.empty() || model.indices.empty()",adapter)
+        self.assertIn("node.skin>=0 || model.meshes",adapter)
+        self.assertIn("primitive.morphTargets>0",adapter)
+        self.assertIn("triangleBudgetPerModel",adapter)
+        self.assertIn("studioPickModelInstances({",cases)
+        self.assertIn("collider",self.source("panels/StudioPanelRenderer.tsx").lower() + " collider")
+        self.assertIn("add_test(NAME studio_model_picking",cmake)
+
     def test_scene_selection_hits_rendered_oriented_proxy_not_aabb(self):
         renderer=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
         picker=(ROOT/"apps/studio-native/StudioVisualPicking.h").read_text(encoding="utf-8")
