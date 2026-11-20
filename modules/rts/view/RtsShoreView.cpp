@@ -644,7 +644,7 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
     // materials: the road kit's, then the shore kit's; the game's textures replace a surface's
     std::map<int, std::string> custom;
     for (auto& t : types_.list) for (auto& [surface, path] : t.textures) if (!custom.count(surfaceMat(surface))) custom[surfaceMat(surface)] = path;
-    Model kit;
+    buildingKit_=std::make_unique<Model>();
     materials_.assign(size_t(kShoreMatEnd), Material{});
     for (int m = 0; m < kShoreMatEnd; ++m) {
         if (m >= RV::kMatCount && m < kStone) continue;
@@ -655,19 +655,31 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             else { warnings_.push_back("shore texture '" + it->second + "': cannot read"); img = Image{}; }
         }
         if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m, m == kRock ? 512 : 256) : Image{});
-        const int tex = (!img.rgba.empty() || img.compressed) ? addImage(dev, kit, std::move(img)) : -1;
+        const bool upload=!img.rgba.empty() || img.compressed;
+        const int tex=upload?addImage(dev,*buildingKit_,std::move(img)):-1;
+        if(upload && tex<0)
+            throw std::runtime_error("shore View: GPU kit texture allocation failed");
         Material mt = m < RV::kMatCount ? roadkit::material(m) : material(m);
         if (m != kFoam) { mt.alpha = AlphaMode::Opaque; mt.transparent = false; }   // the road kit's verge grass is blended; shores are solid
         if (custom.count(m)) mt.baseColor = {1, 1, 1, mt.baseColor.w};
         mt.baseTex = tex;
         materials_[size_t(m)] = mt;
     }
-    images_ = std::move(kit.images);
-    for (auto& img : images_) img.borrowedTexture = false;
+    images_=std::move(buildingKit_->images);
+    buildingKit_.reset();
+    for(auto& img:images_)img.borrowedTexture=false;
     if (netJson_.isObject()) {   // new types: parse the network again
         try { net_ = parseNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = Network{}; }
     }
+}
+
+void RtsShoreView::inheritRuntimeStateForReload(const RtsShoreView& old) {
+    // The old GPU meshes and materials are never copied. Parsing the new
+    // shore type kit will rebuild the water network against the new rules.
+    netJson_=old.netJson_;
+    net_=old.net_;
+    dirty_=true;
 }
 
 void RtsShoreView::release(gfx::Device& dev) {
@@ -692,6 +704,10 @@ void RtsShoreView::shutdown(gfx::Device& dev) {
         // Do not let RtsView::shutdown() continue and tear down other GPU
         // owners after this host failed to establish a completion barrier.
         throw std::runtime_error("shore View GPU retirement barrier failed");
+    }
+    if(buildingKit_) {
+        releaseModel(dev,*buildingKit_);
+        buildingKit_.reset();
     }
     for (auto& img : images_) if (img.tex.valid()) {
         dev.destroyTexture(img.tex); img.tex = {};
