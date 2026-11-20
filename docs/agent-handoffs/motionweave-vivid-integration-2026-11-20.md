@@ -1107,3 +1107,22 @@ using an explicit head attachment, then exaggerate head tilt/turn in native vide
 Do not infer attached hair from a few near-static frontal frames. Existing shared
 submesh reweighting, vertex-picking/gizmo, cloth collision and independent child
 animation playback remain outside this bounded assembly stage.
+
+
+## 2026-11-20 — Modular head shoulder pose synchronization
+
+Code `eb4cc813bf48e782232600ca4a8b5a82517e0e94`, integration/motionweave-studio-facial-stage184.
+HumanPreviewAnimation resolves missing lowerarm directions from complete matching
+upperarm bind-world frames only (relative1e-3, reject conflicting donors). Ada head
+upperarms1052/1061 were skipped before; head includes exposed shoulder geometry.
+No mask or vertex removal. StudioHumanLookSessionTests asserts truncated joint
+follows complete arm and distant same-name joint does not. Builds aiverse_studio,
+aiverse_vivid_creator, session tests PASS on KINGSTON (build-shoulder-sync.log);
+scoped studio_human_appearance_session PASS1/1 report20261120-191116-6147.
+Actual native Metal shoulder-sync/t-pose.png inspected: large shoulder patches gone;
+minor collar-edge skin still visible. pass1/pipelineFailures0. No full outfit QA,
+UI/CI NOT RUN. No save/API changes. docs/vivid-preview-animation.md updated.
+Next: hair2264 and brows2263 are unskinned children of vivid_full_root2265, not
+vivid_face_head1848. Fix their bind-preserving hierarchy and test exaggerated
+head motion; lashes already belong to skinned face1915. New user question answered
+honestly: those grooms were NOT yet attached. Do not claim this shoulder fix does it.
