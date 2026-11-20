@@ -9,7 +9,7 @@
 // missing), UV0, vertex colours, tangents, one primitive per material, PBR material maps (base
 // colour, roughness, metalness, normal, emission, opacity), external and embedded textures,
 // skin deformers (4 strongest influences per vertex, split into kMaxPaletteJoints palettes),
-// animation stacks baked to linear TRS channels. Not supported (warning, skipped): blend shapes,
+// animation stacks baked to linear TRS channels. Not supported: blendshape in-betweens/weight animation,
 // vertex caches, extra UV / colour sets, more than 4 influences, cameras, lights.
 #include "Model.h"
 #include "LightmapUv.h"
@@ -69,6 +69,7 @@ struct RawVertex {
     ModelVertex v;
     int joints[4] = {0, 0, 0, 0};
     float weights[4] = {0, 0, 0, 0};
+    uint32_t sourceVertex = 0; // FBX control point after corner dedup
 };
 
 class FbxReader {
@@ -273,7 +274,28 @@ private:
         meshNode_ = meshNode;
         rigidJoint_ = -1;
         const std::string where = "mesh '" + md.name + "'";
-        if (mesh.blend_deformers.count) warn(where + ": blend shapes are ignored");
+        activeShapes_.clear();
+        std::set<std::string> seen;
+        for(size_t di=0;di<mesh.blend_deformers.count;++di) {
+            const auto* deform=mesh.blend_deformers.data[di];
+            for(size_t ci=0;ci<deform->channels.count;++ci) {
+                const auto* ch=deform->channels.data[ci];
+                if(activeShapes_.size()>=size_t(kMaxMorphTargets))
+                    fail(where+": too many blendshape channels");
+                if(ch->keyframes.count!=1 || !ch->keyframes.data[0].shape)
+                    fail(where+": in-between blendshape targets unsupported");
+                const std::string name=str(ch->name);
+                if(name.empty() || !seen.insert(name).second)
+                    fail(where+": empty or duplicate blendshape channel name");
+                const double target=ch->keyframes.data[0].target_weight;
+                if(!std::isfinite(target) || target<=0 ||
+                   !std::isfinite(ch->weight))
+                    fail(where+": invalid blendshape weight");
+                activeShapes_.push_back(ch->keyframes.data[0].shape);
+                md.morphTargetNames.push_back(name);
+                md.weights.push_back(float(std::clamp(ch->weight/target,0.0,1.0)));
+            }
+        }
         if (mesh.cache_deformers.count) warn(where + ": vertex caches are ignored");
         if (mesh.uv_sets.count > 2) warn(where + ": only the first two UV sets are used (the second is the lightmap set)");
         // second UV set = lightmap UVs (Unity UV2) of unskinned meshes, packed into joints (LightmapUv.h)
@@ -336,6 +358,7 @@ private:
         std::memset(static_cast<void*>(&rv), 0, sizeof rv);
         ModelVertex& v = rv.v;
         v = ModelVertex{};
+        rv.sourceVertex=mesh.vertex_indices.data[ix];
         v.pos = f3(ufbx_get_vertex_vec3(&mesh.vertex_position, ix));
         if (mesh.vertex_normal.exists) v.nrm = normalize(f3(ufbx_get_vertex_vec3(&mesh.vertex_normal, ix)));
         if (mesh.vertex_uv.exists) {
@@ -417,6 +440,37 @@ private:
             prim.jointPalette.resize(palette.size());
             for (auto& [j, slot] : palette) prim.jointPalette[size_t(slot)] = uint16_t(j);
             if (prim.jointPalette.empty()) prim.jointPalette.push_back(0);
+        }
+        if(!activeShapes_.empty()) {
+            prim.morphTargets=int(activeShapes_.size());
+            const size_t count=m.vertices.size()-size_t(base);
+            prim.morphDeltas.assign(activeShapes_.size()*count*6u,0.f);
+            // The vertex remap is FINAL (including palette splits). FBX
+            // shape offsets index control points, not face corners.
+            for(size_t original=0;original<remap.size();++original) {
+                if(remap[original]<0)continue;
+                const size_t dst=size_t(remap[original]);
+                const uint32_t control=verts[original].sourceVertex;
+                for(size_t channel=0;channel<activeShapes_.size();++channel) {
+                    const auto* shape=activeShapes_[channel];
+                    const auto p=ufbx_get_blend_shape_vertex_offset(shape,control);
+                    const uint32_t index=ufbx_get_blend_shape_offset_index(shape,control);
+                    ufbx_vec3 n{};
+                    if(index!=UFBX_NO_INDEX &&
+                       size_t(index)<shape->normal_offsets.count)
+                        n=shape->normal_offsets.data[index];
+                    for(double v:{p.x,p.y,p.z,n.x,n.y,n.z})
+                        if(!std::isfinite(v))
+                            fail("nonfinite FBX blendshape offset");
+                    const size_t at=(channel*count+dst)*6u;
+                    prim.morphDeltas[at]=float(p.x);
+                    prim.morphDeltas[at+1]=float(p.y);
+                    prim.morphDeltas[at+2]=float(p.z);
+                    prim.morphDeltas[at+3]=float(n.x);
+                    prim.morphDeltas[at+4]=float(n.y);
+                    prim.morphDeltas[at+5]=float(n.z);
+                }
+            }
         }
         if (needTangents) generateTangents(m.vertices, m.indices, prim.firstIndex, prim.indexCount);
         md.primitives.push_back(std::move(prim));
@@ -509,6 +563,7 @@ private:
     std::map<uint32_t, int> texCache_;       // ufbx texture element_id -> image index
     const ufbx_vertex_vec2* uv2_ = nullptr;   // current mesh: lightmap UV set (unskinned meshes with two UV sets)
     int defaultMat_ = -1;
+    std::vector<const ufbx_blend_shape*> activeShapes_; // current mesh, importer-owned
     int meshNode_ = -1, rigidJoint_ = -1;   // current mesh: its node, extra joint for unweighted vertices
 };
 
