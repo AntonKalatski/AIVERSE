@@ -415,15 +415,17 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 // LENS secondary camera: primary RtsView::draw has prepared the terrain,
 // GPU fog texture, visual clocks and all animation packets already. Do not
 // call fog_.update, terrain_.draw or any scene event/FX producers again.
-void RtsView::drawPreparedSprites(Renderer3D& renderer) {
-    if(framePublication_.published().ready() && twoD_)
+void RtsView::drawPreparedSprites(Renderer3D& renderer,uint64_t expectedEpoch) {
+    const auto published=framePublication_.published();
+    if(published.ready() && (!expectedEpoch || published.id==expectedEpoch) && twoD_)
         twoD_->submitPrepared(renderer);
 }
 
 void RtsView::drawPreparedTerrainFog(Renderer3D& r,const MapGrid& grid,
                                      const std::vector<uint8_t>* vision,
-                                     double seconds) {
+                                     double seconds,uint64_t expectedEpoch) {
     if(!dev_ || !framePublication_.readyFor(grid.w,grid.h,seconds))return;
+    if(expectedEpoch && framePublication_.published().id!=expectedEpoch)return;
     const bool tiles=twoD_ && twoD_->hasTiles();
     if(hasTerrain_ && !tiles && terrain_.built())
         terrain_.drawPrepared(r,grid,vision);
