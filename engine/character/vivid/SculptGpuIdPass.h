@@ -174,6 +174,23 @@ public:
                 return false;
             // Require exact topology/triangle IDs from the CPU-side
             // renderer-selected source, but do not read CPU vertex positions.
+            std::size_t sourceOrdinal=0;
+            for(const auto& prim:model.meshes[request.meshId].primitives) {
+                for(std::size_t i=prim.firstIndex;
+                    i<std::size_t(prim.firstIndex)+prim.indexCount;++i) {
+                    if(sourceOrdinal>=source.indices.size() ||
+                       source.indices[sourceOrdinal++].vertex!=model.indices[i])
+                        return false;
+                }
+            }
+            if(sourceOrdinal!=selectedOpaqueCount)return false;
+            for(const auto& matrix:source.jointMatrices)
+                for(float value:matrix.m)
+                    if(!std::isfinite(value))return false;
+            for(const auto& v:source.influences)
+                for(float weight:v.weights)
+                    if(!std::isfinite(weight) ||
+                       weight<0.f || weight>1.f)return false;
             for(std::size_t i=0;i<selectedOpaqueCount;++i) {
                 const auto& requestVertex=source.indices[i];
                 if(requestVertex.vertex>=model.vertices.size())return false;
