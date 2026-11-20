@@ -307,6 +307,10 @@ public:
             borrowers_.release(&renderer);
             return false;
         }
+        // Register before passing the raw atlas into Renderer3D: if set
+        // allocation fails there must never be a successfully bound but
+        // untracked borrower that shutdown() could destroy underneath.
+        (void)borrowers_.acquire(&renderer);
         const bool ok=mode_==GiTransportMode::GpuCompute
             ? gpu_.bind(renderer) : cpu_.bind(renderer);
         if (!ok) {
@@ -314,7 +318,6 @@ public:
             borrowers_.release(&renderer);
             return false;
         }
-        (void)borrowers_.acquire(&renderer);
         return true;
     }
     void unbind(Renderer3D& renderer) const {
