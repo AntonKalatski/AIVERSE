@@ -3273,3 +3273,15 @@ Build-4 nearly complete but predates this stage; fresh rebuild required.
 Paint layers/field visual caches remain legacy host providers outside the declared
 surface cohort; this is preparation atomicity, not rollback of GPU execution.
 Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.
+
+
+### Contact rollback and fault-fixture correction — 2026-11-20
+Code `2abab22275e953af6dbaf11ce95ae20a343c0b6d`, codex/lens-completion. PreparedAnimationLease now preserves
+contact obstacles/surface-frame maps and Renderer heightfield binding on abort.
+First integrated lens_ run found late-overlay fixture never emitted an overlay
+(default rules only); configure an explicit selected ring and initial visibility
+so both the injected allocation and old fog-sheet assertions are meaningful.
+10 failed checks in that fixture; remaining lens_ run in progress. This is not
+a passing report. Build-5 still finishing; corrected fixture NOT RUN yet.
+No save/API changes; git diff --check PASS. Next rebuild core and run corrected
+fault/retry + native Metal fixture, then consolidated CTest on KINGSTON.
