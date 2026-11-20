@@ -958,3 +958,47 @@ parity or hardware tests. Source regression checks in
 `vivid_human_creator` were added but NOT RUN. Do not advertise the
 feature as full GPU picking until these gates pass. See Stage 7AN
 handoff and `tools/vivid-creator/README.md` for exact API contract.
+
+
+## Stage 7AO — Metal offscreen ID/depth pass (2026-11-20)
+
+The Stage 7AN ID/depth ABI has advanced from source-only shader and
+callback token definitions into an **opt-in real Metal offscreen pass**.
+A new portable virtual method `gfx::Device::readTexturePixelAsync`
+returns four RGBA8 pixel bytes on a later render-owner frame, or returns
+`false` on an unsupported backend. The Metal implementation blits
+one top-left-origin pixel to padded shared memory and converts
+BGRA8 memory ordering to canonical RGBA8. It does not stall
+the renderer to read the pixel.
+
+`SculptGpuIdPass` creates the standard RHI ID/depth attachments,
+GLSL/MSL ID shader and depth-tested pipeline, and records a
+selected-mesh draw using the already morphed+skinned CPU reference.
+The imported Creator supports **Experimental Metal GPU ID check**,
+disabled by default. The existing CPU BVH result is immediately
+available; a later GPU response confirms it only if the captured
+click/frame/publication/viewport and source triangle agree.
+GPU resources are not destroyed before completion; the owner
+performs GPU idle retirement at shutdown. Hardware readback is
+implemented **for Metal only**; on GLES3, GL33 and Vulkan, the
+new RHI method explicitly returns unsupported and the CPU BVH
+continues to work.
+
+A real native macOS GPU test `vivid_metal_sculpt_id` now covers two
+overlapping depth-tested triangles, a cleared ID pixel and the
+asynchronous Metal pixel callback, with channel-order validation.
+The test is registered in the VIVID CMake target and included in
+the final one-pass validation script.
+
+**Important:** this optional ID pass includes only the selected
+mesh. It does not yet render unrelated scene occluders, hair,
+transparent materials or exact alpha masks, and does not read the
+actor's actual GPU-deformed vertex-override stream. It therefore
+does **not** establish final-scene pixel visibility parity.
+The CPU-derived expanded ID mesh can consume substantial memory.
+Portability and mobile performance require further work on shared
+Renderer3D/Texture RHI integration, not a second VIVID-specific RHI.
+No C++ compiler, CTest, GPU test, Metal shader compile, pixel capture,
+or actual performance measurement was executed by the assistant
+on this stage's new source. See Stage 7AO in
+`docs/agent-handoffs/vivid.md` for file/commit-level handoff.
