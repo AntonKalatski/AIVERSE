@@ -1126,3 +1126,38 @@ Next: hair2264 and brows2263 are unskinned children of vivid_full_root2265, not
 vivid_face_head1848. Fix their bind-preserving hierarchy and test exaggerated
 head motion; lashes already belong to skinned face1915. New user question answered
 honestly: those grooms were NOT yet attached. Do not claim this shoulder fix does it.
+
+
+## 2026-11-20 — Actual Ada groom binding and capture lifetime fix
+
+Code `440a57d56b63b700d626b04675a95cc482f88328`, integration/motionweave-studio-facial-stage184.
+New attach_grooms.cjs bind-preserves unskinned cards using inverse TRS chains;
+prepare_full_character applies it to Hair_/Eyebrows_ nodes after framing.
+Working KINGSTON Ada/model.gltf hierarchy corrected with backup; new assembled
+Ada-Groom-Bound used for testing. Both cards now descend from vivid_face_head;
+brows46 morph targets retained, eyelashes remain skinned face. Actual bind error
+<4.4e-7. No copied animation, shaders, vertex edits, binary Git assets or save API.
+Generic skinned meshes must use independent SKM attachment, not this rigid helper.
+
+Node test PASS (bind, rotate/scale, morph ownership, idempotence, cycle/skin reject,
+GLB roundtrip). Full original companion preparation PASS to groom-binding/prepared-pipeline.
+Creator builds PASS (build-groom-binding.log, build-groom-capture-lifetime.log).
+Diagnostic --preview-head-sweep gives ±0.45rad yaw/±0.20rad pitch on pose copy.
+Initial7s capture succeeded; initial body recording crashed after238frames.
+System report capture-crash.ips points to Animator::advance reading retired model;
+failed-last.png shows revision2/headscale0.964 during interactive edit. Fixed
+sequenceAnimator lifetime on publication/release; offline sequences omit controls
+and reject unexpected model rebuilds. LLDB launch stalled under Rosetta and was
+stopped, system report provided stack. No unrelated processes stopped.
+Final head-final168 and poses-final360 native frames completed successfully;
+encoded7s/15s videos on KINGSTON, pipelineFailures0. Inspected turn/tilt/blinks/T:
+hair follows head; large shoulder protrusions gone; small collar intersections,
+coarse hair silhouette and GRAY EYES still fail. Not universal groom/UE parity.
+See docs/qa/vivid-head-binding-2026-11-20.md and groom-binding/gallery.html.
+No frontend/GUI/CI/push; true strand physics, all rigs and realtime pacing NOT RUN.
+
+Next USER STEERING: fix gray colorless eyes. Read actual eye baked PNG: brown
+iris, black pupil present (centerRGB10), so investigate overlay layers/UV/render
+binding. Source eyeShell blend alpha.35, eyeEdge alpha.25. Latest files extracted
+to full-character/eye-review. Do not silently paint over screenshot or claim
+fix until matched native captures; retain completed shoulder/groom work.
