@@ -55,3 +55,26 @@ The generator creates a component and CSS under `src/panels/generated/`, registe
 
 ## Existing panels — gradual migration
 The old App shell and NestedDockWorkspace use `src/ui/editor-shell.css` to inherit shared tokens without changing their event handling or native Metal geometry. Migrate each panel to true Studio UI components gradually, with macOS screenshots. Do not duplicate shell overrides in panel CSS or alter .viewport/.viewport-native rules to change the native renderer.
+
+## Integrated MotionWeave Facial Rig preview (Stage 182, separate branch)
+
+When working on `integration/motionweave-studio-face-20261120`,
+do NOT replace `src/panels/FacialLivePreview.tsx` with a canvas,
+screenshot, fake character or browser-side animation. It sends typed
+`studio.facialPreviewStart/Stop/Scalar/Vector/State` calls to the
+native `StudioSession`. Actual Model import, semantic 64-channel
+morph bindings, IK and one parent pose writer live in
+`apps/studio-native/mac/StudioFacialGpuPreview.cpp`
+using `AIVERSE::MotionWeave`. The real Scene is the native Metal
+sibling surface. A request accepted by C++ is not GPU-ready;
+`facial.preview.ready` is emitted only after `Renderer3D`
+submits a frame. Even that does not prove GPU pixel parity.
+No synthetic DEMO GPU success is permitted.
+
+Use the existing Studio UI components, tokens, dock and bridge types.
+Stop preview before modifying the saved immutable rig. Keep native
+project-only asset path validation and full GPU owner retirement.
+This source integration is NOT a full semantic merge of all Studio
+and Animation branch changes and has NOT passed native tests.
+See `docs/studio-motionweave-facial-live-preview.md` and
+`docs/handoff/studio-html5/68-motionweave-native-facial-preview-2026-11-20.md`.
