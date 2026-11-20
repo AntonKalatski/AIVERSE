@@ -126,6 +126,24 @@
 }
 - (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
+- (void)keyDown:(NSEvent*)event {
+    NSString* keys=event.charactersIgnoringModifiers.lowercaseString;
+    if (!keys.length) { [super keyDown:event]; return; }
+    const unichar key=[keys characterAtIndex:0];
+    const CGFloat scale=(event.modifierFlags & NSEventModifierFlagShift)?3.0:1.0;
+    switch(key) {
+        case 'w': [self.host moveRight:0 up:0 forward:scale]; break;
+        case 's': [self.host moveRight:0 up:0 forward:-scale]; break;
+        case 'a': [self.host moveRight:-scale up:0 forward:0]; break;
+        case 'd': [self.host moveRight:scale up:0 forward:0]; break;
+        case 'q': [self.host moveRight:0 up:-scale forward:0]; break;
+        case 'e': [self.host moveRight:0 up:scale forward:0]; break;
+        case 'f': [self.host focusSceneSelection]; break;
+        case NSHomeFunctionKey: [self.host resetSceneView]; break;
+        default: [super keyDown:event]; break;
+    }
+}
+
 - (void)scrollWheel:(NSEvent*)event {
     const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
     [self.host zoom:wheel];
