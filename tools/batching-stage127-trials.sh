@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Stage127: inherited Metal ICB pipeline OFF vs ON. 2048 authored
-# primitives, no production code changes, 8 mirrored independent processes.
+# primitives, opt-in backend experiment, 8 mirrored independent processes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BIN="${AIVERSE_BATCH_BENCH_BIN:-build/batching-stage121/aiverse_material_batches}"
-BASE="${AIVERSE_BATCH_CAPTURE_ROOT:-build/batching-stage121/stage127}"
+BIN="${AIVERSE_BATCH_BENCH_BIN:-build/batching-stage127/aiverse_material_batches}"
+BASE="${AIVERSE_BATCH_CAPTURE_ROOT:-build/batching-stage127/captures}"
 if [[ ! -x "$BIN" ]]; then
- echo "Missing Stage121 benchmark executable: $BIN" >&2
+ echo "Missing rebuilt Stage127 benchmark executable: $BIN" >&2
  exit 2
 fi
 mkdir -p "$BASE"
@@ -22,7 +22,7 @@ mkdir "$OUT"
  echo "icb_inherit_pipeline_on=1"
  echo "order=off-direct1,off-mdi1,on-direct1,on-mdi1,on-mdi2,on-direct2,off-mdi2,off-direct2"
  echo "gpu=whole_completed_Metal_command_buffer_timestamps"
- echo "note=no_shader_instruction_count_profiling"
+ echo "note=shared_pipeline_inheritance_only_all_ICB_buffers_explicit"
 } > "$OUT/manifest.txt"
 CURRENT_LOG=""
 on_error() {
@@ -50,7 +50,7 @@ for entry in off:direct:1 off:mdi:1 on:direct:1 on:mdi:1 on:mdi:2 on:direct:2 of
       -u AIVERSE_GPU_AUTHORED_DRAWS -u AIVERSE_GPU_ICB_RIGID \
       -u AIVERSE_METAL_TRACE_FRAME -u AIVERSE_METAL_TRACE_PATH \
       -u AIVERSE_METAL_MDI_MIN_COMMANDS -u AIVERSE_BATCH_BENCH_MODE \
-      -u AIVERSE_MATERIALS \
+      -u AIVERSE_MATERIALS -u AIVERSE_PALETTE_TEST_QUALITY \
       AIVERSE_PALETTE_TEST_CASE=auto_stress \
       AIVERSE_BATCH_STRESS_ITEMS=2048 \
       AIVERSE_BATCH_STRESS_POLICY="$mode" \
