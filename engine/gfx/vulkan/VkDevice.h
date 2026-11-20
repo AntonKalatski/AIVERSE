@@ -112,6 +112,7 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
+    uint64_t frameSerial() const override { return recording_ ? serial_ : 0; }
     bool supports(PixelFormat f) const override;
 
     BufferHandle createBuffer(const BufferDesc& d) override;
@@ -136,6 +137,7 @@ public:
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
+    bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) override;
 
     void beginPass(const PassDesc& d) override;
     void endPass() override;
@@ -162,6 +164,7 @@ private:
     void ensureBackBuffer(int w, int h);
     void prepareSlot();                          // waits for the slot's previous frame, resets its pools
     void collectGarbage();
+    void deliverPixelReads();  // called on owner thread at next beginFrame
     void present();
     void readBackBuffer();
     // VkResources.cpp
@@ -234,6 +237,13 @@ private:
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
     CaptureFn capture_;
+    struct PixelRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc{};
+        uint64_t serial = 0;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
 
     // resources
     Pool<VBuffer> buffers_;
