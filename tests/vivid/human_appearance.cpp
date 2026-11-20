@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/VividPresentationSettings.h"
+#include "engine/character/vivid/VividRendererQuality.h"
 #include "tools/vivid-creator/OpticalCaptureCases.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GroomSelfCollision.h"
@@ -113,6 +114,47 @@ void test() {
         const auto stats=human.groom.stats();
         expect(stats.triangles==human.hair->indices.size()/3,
                "groom card triangle stats mismatch");
+    }
+    // Stage 7AH: existing renderer is the sole global material-quality
+    // owner. VIVID can choose a cheaper appearance, but never a more
+    // expensive one than the actual renderer tier selected by its host.
+    {
+        const auto original=HumanDNA::preset("neutral").toJson();
+        VividPresentationSettings requested;
+        requested.materialQuality=HumanMaterialQuality::High;
+        requested.groomQuality=GroomQuality::High;
+        for(const auto rendererTier:{render::MaterialQuality::Low,
+                                     render::MaterialQuality::Medium,
+                                     render::MaterialQuality::High}) {
+            const auto expected=vividMaterialQuality(rendererTier);
+            expect(rendererMaterialQuality(expected)==rendererTier,
+                   "VIVID->Renderer3D quality mapping is not reversible");
+            const auto resolved=resolveVividPresentation(requested,rendererTier);
+            expect(resolved.materialQuality==expected &&
+                   resolved.groomQuality==GroomQuality::High &&
+                   requested.materialQuality==HumanMaterialQuality::High,
+                   "project quality clamp changed caller or groom geometry");
+            const auto material=humanMaterial(
+                HumanSurface::Skin,HumanDNA::preset("neutral"),
+                resolved.materialQuality);
+            expect(material.shaderGraph && material.shaderGraph->nodes<=
+                   humanMaterialBudget(expected).maxNodes,
+                   "renderer-capped VIVID skin exceeded material budget");
+        }
+        requested.materialQuality=HumanMaterialQuality::Low;
+        for(const auto rendererTier:{render::MaterialQuality::Medium,
+                                     render::MaterialQuality::High})
+            expect(resolveVividPresentation(requested,rendererTier)
+                       .materialQuality==HumanMaterialQuality::Low,
+                   "host capability resolution must not increase quality");
+        auto invalid=requested;
+        invalid.materialQuality=static_cast<HumanMaterialQuality>(127);
+        bool rejected=false;
+        try { (void)resolveVividPresentation(invalid,render::MaterialQuality::High); }
+        catch(const std::invalid_argument&) {rejected=true;}
+        expect(rejected,"invalid VIVID appearance tier must fail closed");
+        expect(HumanDNA::preset("neutral").toJson()==original,
+               "renderer quality resolution must not modify human DNA");
     }
     // Stage 7AG project-level profile is independent of the human recipe.
     {
