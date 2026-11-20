@@ -161,6 +161,47 @@ if [[ "$GUI" -eq 1 ]]; then
         "$CREATOR_PPM" "$WARM_PPM" \
         --output "$LOGDIR/creator-optical-ab.json"
 
+    # Stage 7AE: a fixed neutral procedural model, camera and light, with
+    # MotionWeave/hair animation paused. Exactly ONE DNA scalar varies
+    # between low and high screenshots for each optical material sweep.
+    # ROI fractions are provisional until calibrated against real captures.
+    for optical_case in reference \
+        skin-scatter-low skin-scatter-high \
+        eye-ior-low eye-ior-high \
+        hair-rough-low hair-rough-high; do
+        optical_ppm="$LOGDIR/optical-$optical_case.ppm"
+        rm -f "$optical_ppm"
+        run_logged "creator-optical-$optical_case" env \
+            AIVERSE_VIVID_CREATOR_CAPTURE="$optical_ppm" \
+            "$CREATOR" --smoke --optical-case "$optical_case"
+        if [[ ! -s "$optical_ppm" ]] || \
+           ! grep -q 'pass=1' "$LOGDIR/creator-optical-$optical_case.log"; then
+            printf 'VIVID optical case failed: %s\n' "$optical_case" >&2
+            exit 1
+        fi
+    done
+    run_logged creator-optical-skin-ab python3 \
+        "$ROOT/tools/vivid-creator/optical_ab.py" \
+        "$LOGDIR/optical-skin-scatter-low.ppm" \
+        "$LOGDIR/optical-skin-scatter-high.ppm" \
+        --label skin-scattering --roi 0.20,0.16,0.81,0.91 \
+        --threshold 4 --min-changed 1 \
+        --output "$LOGDIR/optical-skin-scattering.json"
+    run_logged creator-optical-eye-ab python3 \
+        "$ROOT/tools/vivid-creator/optical_ab.py" \
+        "$LOGDIR/optical-eye-ior-low.ppm" \
+        "$LOGDIR/optical-eye-ior-high.ppm" \
+        --label cornea-ior --roi 0.25,0.20,0.75,0.70 \
+        --threshold 4 --min-changed 1 \
+        --output "$LOGDIR/optical-cornea-ior.json"
+    run_logged creator-optical-hair-ab python3 \
+        "$ROOT/tools/vivid-creator/optical_ab.py" \
+        "$LOGDIR/optical-hair-rough-low.ppm" \
+        "$LOGDIR/optical-hair-rough-high.ppm" \
+        --label hair-roughness --roi 0.15,0.04,0.85,0.62 \
+        --threshold 4 --min-changed 1 \
+        --output "$LOGDIR/optical-hair-roughness.json"
+
     # Exercise the OPEN external OBJ+manifest+named morph importer in a
     # real window. No bundled copyrighted scanned human assets required.
     IMPORT_PPM="$LOGDIR/vivid-imported-head.ppm"
@@ -188,6 +229,7 @@ fi
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
         printf 'VIVID Creator neutral-vs-warm actual material pixel A/B=PASS\n'
         printf 'VIVID Creator quantitative optical A/B report=PASS\n'
+        printf 'VIVID isolated optical DNA captures and regional A/B=PASS\n'
         printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
