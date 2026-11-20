@@ -1,6 +1,21 @@
 # TerraWeave — current agent handoff entry point
 
 
+> **Stage70 Mac 191/191 full native acceptance (2026-11-20):**
+> User reported a fresh **one-pass unfiltered 191/191 PASS**, 0 fail,
+> wall 945.76s for merged SpectraFX + TerraWeave / native/editor/Box3D
+> checkout. This resolves the prior ENOSPC-contaminated 188/191 run
+> on the tested build, with no test filter or weakened assertions.
+> PHYSIS, NEREID, TerraWeave, SpectraFX and 4 MetalGPU CTests passed.
+> [Executed full-suite QA handoff](qa-2026-11-20-stage70-mac-191-unfiltered-ctest-pass-handoff.md).
+> **Exact run SHA pending `acceptance-reports/provenance.txt`.**
+> Newer GitHub `main` `d6942dde` is NOT included in that
+> accepted SpectraFX checkpoint; initial comparison found 2177
+> newer main commits. Latest-main integration and GPU Vulkan/GLES
+> still require separate review/testing. Do NOT merge PR #53 yet.
+>
+
+
 > **Focused native live-nutrient+fall CTest PASS — 2026-11-20:**
 > Mac Studio user reports `aiverse_physis_terraweave_fall_bridge_test`
 > built successfully; `physis_terraweave_fall_bridge` **1/1 PASS,
