@@ -414,6 +414,106 @@ public:
     }
 
 private:
+    gfx::TextureHandle encodeDenoise(
+        const ScreenInputs& inputs,const ScreenView& view,
+        uint32_t width,uint32_t height,uint64_t frame,
+        const DenoiseRequest& request) {
+        if(!denoiseAvailable() || !LumaVulkanDenoiseSettings::valid(request.settings))
+            return {};
+        // Fail closed when a host forgets to give this frame a coherent
+        // camera matrix; temporal history must never be trusted blindly.
+        for(float value:request.currentVP.m)
+            if(!std::isfinite(value))return {};
+        if(!finite(request.eye))return {};
+        LumaVulkanHistoryStamp current;
+        current.viewKey=request.viewKey;
+        current.viewEpoch=request.viewEpoch;
+        current.sourceRevision=sourceRevision_;
+        current.geometryRevision=geometryRevision_;
+        current.width=width;
+        current.height=height;
+        current.viewProjection=request.currentVP;
+        current.eye=request.eye;
+
+        if(!filtered_[0].valid() || !filtered_[1].valid() ||
+           filteredWidth_!=width || filteredHeight_!=height) {
+            gfx::TextureDesc desc;
+            desc.width=int(width);desc.height=int(height);
+            desc.format=gfx::PixelFormat::RGBA16F;
+            desc.filter=gfx::Filter::Nearest;desc.storage=true;
+            desc.label="LumaWeave Vulkan temporal/spatial direct history";
+            std::array<gfx::TextureHandle,2> replacements{};
+            for(auto& h:replacements) {
+                h=dev_->createTexture(desc);
+                if(!h.valid()) {
+                    for(auto allocated:replacements)
+                        if(allocated.valid())dev_->destroyTexture(allocated);
+                    return {};
+                }
+            }
+            for(auto h:filtered_)
+                if(h.valid())dev_->destroyTexture(h);
+            filtered_=replacements;
+            filteredWidth_=width;filteredHeight_=height;
+            historySlot_=-1;
+            invalidateHistory();
+        }
+        const auto reason=LumaVulkanHistoryPolicy::compare(
+            historyStamp_,current,request.settings,
+            historyValid_ && historySlot_>=0);
+        const bool usePrevious=reason==LumaVulkanHistoryReason::Accepted &&
+            historySlot_>=0 && filtered_[size_t(historySlot_)].valid();
+        denoiseStatus_.reason=reason;
+        const int next=historySlot_>=0 ? 1-historySlot_ : 0;
+
+        DenoiseView uniforms;
+        uniforms.inverseCurrentVP=view.inverseViewProjection;
+        uniforms.previousVP=usePrevious?historyStamp_.viewProjection:
+                                           request.currentVP;
+        uniforms.eye={request.eye.x,request.eye.y,request.eye.z,0};
+        uniforms.dimensions={float(width),float(height),
+                             view.resolution.z,view.resolution.w};
+        uniforms.settings={request.settings.spatialDepthTolerance,
+                           request.settings.normalAgreement,
+                           request.settings.historyWeight,
+                           request.settings.historyClamp};
+        uniforms.flags={usePrevious?1.f:0.f,
+                        request.settings.reprojectionDepthTolerance,0,0};
+        // The receiver dynamic SSBO has an independent snapshot per GPU
+        // version. The preceding raw compute still sees its old ScreenView.
+        if(!dev_->updateSharedBufferChecked(receiverBuffer_,&uniforms,
+                                             sizeof(uniforms)))return {};
+        if(!dev_->beginCompute(denoiseShader_))return {};
+        const bool coherentFrame=dev_->frameSerial()==frame && frame!=0;
+        if(!coherentFrame){dev_->endCompute();return {};}
+        dev_->setComputeBuffer(0,lightBuffer_);
+        dev_->setComputeBuffer(1,receiverBuffer_);
+        dev_->setComputeBuffer(2,triangleBuffer_);
+        dev_->setComputeBuffer(3,nodeBuffer_);
+        dev_->setComputeTexture(0,filtered_[size_t(next)]);
+        dev_->setComputeSampledTexture(0,screenOutput_);
+        dev_->setComputeSampledTexture(1,usePrevious?
+            filtered_[size_t(historySlot_)]:screenOutput_);
+        dev_->setComputeSampledTexture(2,inputs.sceneDepth);
+        dev_->setComputeSampledTexture(3,inputs.surface);
+        dev_->setComputeSampledTexture(4,inputs.surfaceDepth);
+        Params params{};
+        params.counts={0,width*height,0,0};
+        params.control={0,width,0,0};
+        dev_->setComputeUniforms(&params,sizeof(params));
+        dev_->dispatch(width*height,1);
+        const bool accepted=dev_->computeDispatchSucceeded();
+        dev_->endCompute();
+        if(!accepted)return {};
+
+        pendingFilterSlot_=next;
+        pendingHistoryStamp_=current;
+        pendingHistoryGeneration_=historyGeneration_;
+        denoiseStatus_.encoded=true;
+        denoiseStatus_.historyUsed=usePrevious;
+        return filtered_[size_t(next)];
+    }
+
     static uint64_t geometryFingerprint(const GiGpuBvh& bvh) {
         uint64_t h=1469598103934665603ull;
         const auto hashBytes=[&](const void* data,size_t size) {
