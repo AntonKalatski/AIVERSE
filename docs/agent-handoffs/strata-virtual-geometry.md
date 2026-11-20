@@ -4421,3 +4421,74 @@ add camera/asset captures with strict image-diff quality budgets.
 Then Stage19 merge latest main into isolated integration worktree and
 perform one complete native CMake/CTest/real-device acceptance pass.
 No automatic switch of unverified parity flags.
+
+
+---
+
+## Stage 18.5 — raw-capture visual quality audit foundation (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`, not merged to main.
+**Validation:** Code and documentation committed; **NO hardware capture,
+native compilation, Python self-test, GPU visual parity or CTest was
+executed in this session.** Stage18.5 provides audit infrastructure and
+acceptance matrix, NOT completed Metal/Vulkan/GLES proof.
+
+### Changes and commits
+- `4191141aa457b06baa59ad3df1b9fab51276f3b7` —
+  new `tools/strata-stage18-image-audit.py`, offline raw tightly
+  packed RGBA8 and little-endian Depth32Float A/B image comparator
+  with strict dimensions, ROI, tolerance checks, max error, failed
+  pixels, JSON reporting, exit status 1 on failed comparison, and
+  self-test cases. This tool does not capture or render.
+- `0abb80324761945ea18c610b85ee26b4d46fc991` —
+  add optional manifest `--manifest` mode with expected
+  backend/pass/view/LOD keys. Reject duplicate observations,
+  missing expected captures, unsupported format and wrong binary
+  payloads, retaining per-case JSON results. A tiny manifest
+  proves ONLY its own listed cases, not the full acceptance matrix.
+- `98ea85f16ad257a2aa04c5a58e041d8282304cb3` —
+  new `docs/strata-stage18-visual-acceptance.md`: required
+  lossless/lossy scenarios, two-camera main/sun/spot/reflection
+  hardware captures, seam ROI checks, threshold/popping acceptance,
+  capture format, provenance and example commands.
+
+### Boundaries, status and safety
+The existing seam builder / Stage17.2 source audit and Metal Stage13
+lossless render fixture were NOT changed. No new RHI rendering,
+shader, ECS component, geometry ownership, parity flag toggle,
+asset serialization or production route is introduced. Fail-closed
+checks apply only to supplied raw data. The script cannot detect
+fake captures, blank-frame parity or visual artefacts automatically.
+No assertion is made that authored lossy LOD parents render crack-free
+at mixed depths on actual hardware. Existing CPU structural seam
+certification is distinct from real visual proof.
+
+### Completion table
+| Feature | Code | Real acceptance |
+| --- | --- | --- |
+| RGBA8 ROI exact/tolerant comparison | IMPLEMENTED | NOT RUN |
+| Depth32Float ROI comparison + nonfinite rejection | IMPLEMENTED | NOT RUN |
+| Deterministic JSON and failed-comparison exit status | IMPLEMENTED | NOT RUN |
+| Manifest required capture coverage | IMPLEMENTED | NOT RUN |
+| Metal two-camera lossless main/sun/reflection | Earlier fixture | Current SHA NOT RUN |
+| Vulkan main/sun/spot/reflection lossy seam capture | NOT CAPTURED | N/A |
+| GLES3 portable visual fallback | NOT CAPTURED | N/A |
+| Temporal flicker and popping visual acceptance | NOT CAPTURED | N/A |
+| Full hardware image diff evidence | NOT AVAILABLE | N/A |
+
+### Next exact actions
+1. At Stage19, merge current main into an isolated integration branch,
+   checking concurrent batching/Renderer3D changes; never blindly
+   overwrite main or force-push.
+2. Run `python3 tools/strata-stage18-image-audit.py --self-test`
+   and all CMake/CTest Strata builds on the owner's Mac; fix actual
+   compiler and test failures.
+3. Capture genuine GPU output for Metal/Vulkan/GLES from the tested
+   commit (main, sun, spot, reflection where supported). Compare
+   each same-scene Legacy/STRATA pair with a full manifest and
+   nonblank checks, review visual seams/temporal flicker.
+4. Only after independent hardware acceptance may the corresponding
+   GPU parity gate be considered for opt-in production use.
+   Existing default OFF flags remain unchanged.
+
+**Do not describe Stage18.5 as proof of hardware image parity.**
