@@ -101,7 +101,7 @@ struct CreatorApp {
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
     bool automaticLod=true;
     render::PostFx antialiasing;bool antialiasingReady=false,aaEnabled=true;
-    bool previewHeadSweep=false,previewFixedPose=false;
+    bool previewHeadSweep=false,previewFixedPose=false,previewBindPose=false;
     float captureCameraDistance=0;
     ShadowQuality captureShadowQuality=ShadowQuality::High;
     render::AdaptiveShadowResolution shadowResolution;
@@ -1815,6 +1815,7 @@ struct CreatorApp {
                 if(sequenceSampled>=0)sequenceAnimator.update(1.f/24);
                 previewCapturePose=sourcePose;
                 sequenceAnimator.evaluate(previewCapturePose.local);
+                if(previewBindPose)bindPose(*human.head,previewCapturePose.local);
                 worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);
                 if(previewHeadSweep){
                     const int head=human.head->findNode(session.dna().rig.headBone);
@@ -2378,6 +2379,8 @@ int aiverseMain(int argc,char** argv) {
             const std::string mode=argv[++i];
             if(mode!="auto" && mode!="highest")return 2;
             application->automaticLod=mode=="auto";
+        }else if(std::strcmp(argv[i],"--preview-bind-pose")==0) {
+            application->previewBindPose=true;
         }else if(std::strcmp(argv[i],"--preview-fixed-pose")==0) {
             application->previewFixedPose=true;
         }else if(std::strcmp(argv[i],"--no-aa")==0) {

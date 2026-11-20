@@ -224,3 +224,19 @@ pose; no copied animation or independent clock is introduced.
 Test: `node tools/vivid-dna-import/test_attach_grooms.cjs <KINGSTON tooling dir>`.
 Checks bind preservation, rotation/nonuniform scale following, morph ownership,
 idempotence, cycle/skinned rejection and GLB hierarchy roundtrip.
+
+### Explicit clothing repair fixtures
+
+`smooth_clothing_weights.cjs TOOLING INPUT MATERIAL NEW.glb [ITERATIONS] [STRENGTH]`
+provides an offline weight-smoothing fallback for authored clothing lacking pose
+correctives. It changes only the selected material's four skin influences and
+rejects morphing cloth. Defaults4/.65; maximum16iterations. It does not simulate
+cloth or replace authored Unreal pose correctives. Keep the original asset.
+
+`mask_covered_skin.cjs TOOLING INPUT MASK.json NEW.glb` bakes an outfit-specific
+visibility mask into indices. Schema: `{version:1,aboveY:number,materials:string[],
+neckBand?:{minY:number,halfWidth:number,requireNeckWeight?:boolean}}`. Coordinates
+are bind-world; lower-neck band is centered on world X0. Hands are retained by
+hand-joint ancestry. This is intended for an explicitly closed upper-body outfit,
+not a general clothes detector. Rebuild from original for another outfit, and
+regenerate external vertex-index/LOD sidecars after import topology changes.

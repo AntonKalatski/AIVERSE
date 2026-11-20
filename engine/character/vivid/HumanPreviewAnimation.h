@@ -104,7 +104,18 @@ inline render::AnimClip humanPreviewClip(const render::Model& model,int poseInde
     if(b>=0)for(size_t k=0;k<names.size();++k)if(names[k]==std::string("foot_")+side&&model.nodes[k].parent==b)c=int(k);
     if(c>=0)legs.push_back({a,b,c});
    }
-   if(legs.size()!=2)continue;
+   if(legs.size()!=2){
+    // Modular head skins may share the pelvis bind frame but omit both legs.
+    // Follow the same presentation root shift; only the complete rig solves IK.
+    bool donor=false;
+    for(size_t other=0;other<names.size();++other)if(other!=hip&&names[other]=="pelvis"){
+     bool same=true;for(int k=0;k<16;++k)if(std::abs(model.bindWorld[hip].m[k]-model.bindWorld[other].m[k])>1e-3f*(1+std::abs(model.bindWorld[other].m[k])))same=false;
+     if(!same)continue;int complete=0;
+     for(const auto* side:{"l","r"})for(size_t a=0;a<names.size();++a)if(names[a]==std::string("thigh_")+side&&model.nodes[a].parent==int(other))for(size_t b=0;b<names.size();++b)if(names[b]==std::string("calf_")+side&&model.nodes[b].parent==int(a))for(size_t c=0;c<names.size();++c)if(names[c]==std::string("foot_")+side&&model.nodes[c].parent==int(b))++complete;
+     donor|=complete==2;
+    }
+    if(!donor)continue;legs.clear();
+   }
    AnimChannel move;move.node=int(hip);move.path=AnimChannel::Translation;
    std::vector<AnimChannel> rotations;
    for(const auto& leg:legs)for(int node:{leg.thigh,leg.knee,leg.foot}){AnimChannel c;c.node=node;c.path=AnimChannel::Rotation;c.comps=4;rotations.push_back(c);}
