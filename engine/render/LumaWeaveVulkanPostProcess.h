@@ -11,6 +11,7 @@
 #include "LumaWeaveQuality.h"
 #include "Renderer3D.h"
 #include "PrismaMotionTextureInput.h"
+#include "LumaWeaveVulkanMotionPolicy.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -270,12 +271,10 @@ public:
                 temporal.currentVP=frame.viewProj;
                 temporal.eye=frame.cameraPos;
                 temporal.settings=denoiseSettings_;
-                const bool sameViewMotion=objectMotion_.hasMetadata &&
-                    objectMotion_.validFor(width_,height_,
-                                           gfx::PixelFormat::RGBA16F) &&
-                    motionFrameSerial_==dev.frameSerial() &&
-                    motionViewKey_!=0 && motionViewKey_==viewKey_ &&
-                    motionViewEpoch_==viewEpoch_;
+                const bool sameViewMotion=LumaVulkanMotionPolicy::current(
+                    objectMotion_,width_,height_,motionFrameSerial_,
+                    dev.frameSerial(),motionViewKey_,viewKey_,
+                    motionViewEpoch_,viewEpoch_);
                 temporal.motionVectors=sameViewMotion?
                     objectMotion_.texture:gfx::TextureHandle{};
                 temporal.motionFrameSerial=sameViewMotion?
