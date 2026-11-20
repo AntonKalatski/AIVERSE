@@ -1,0 +1,65 @@
+{
+  "oak_bark": {
+    "description": "Authored PBR vegetation: oak_bark",
+    "texture": "materials/vegetation/textures/oak_bark_basecolor.png",
+    "normalMap": "materials/vegetation/textures/oak_bark_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/oak_bark_orm.png",
+    "occlusionMap": "materials/vegetation/textures/oak_bark_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": false,
+    "alpha": "opaque",
+    "cutoff": 0.5
+  },
+  "oak_leaves": {
+    "description": "Authored PBR vegetation: oak_leaves",
+    "texture": "materials/vegetation/textures/oak_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/oak_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/oak_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/oak_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
+  },
+  "shrub_leaves": {
+    "description": "Authored PBR vegetation: shrub_leaves",
+    "texture": "materials/vegetation/textures/shrub_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/shrub_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/shrub_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/shrub_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
+  }
+}
