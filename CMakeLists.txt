@@ -3245,3 +3245,8 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_modeling AND TARGET aiverse_vivid_huma
     target_link_libraries(aiverse_vivid_human_wardrobe_tests PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
     add_test(NAME vivid_human_wardrobe COMMAND aiverse_vivid_human_wardrobe_tests)
 endif()
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_modeling AND TARGET aiverse_vivid_human)
+    add_executable(aiverse_vivid_face_shape_tests tests/vivid/human_face_shape.cpp)
+    target_link_libraries(aiverse_vivid_face_shape_tests PRIVATE aiverse_vivid_human aiverse_modeling aiverse_zstd_dec)
+    add_test(NAME vivid_face_shape COMMAND aiverse_vivid_face_shape_tests)
+endif()

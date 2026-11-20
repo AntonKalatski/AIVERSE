@@ -30,7 +30,7 @@ target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
 # gameplay ECS and with the same runtime native C++20 asset contract.
 add_library(aiverse_vivid_human STATIC
     HumanDNA.cpp HumanRig.cpp HumanMaterials.cpp HumanGroom.cpp
-    HumanPreview.cpp HumanCreatorSession.cpp HumanImport.cpp HumanWardrobe.cpp)
+    HumanPreview.cpp HumanCreatorSession.cpp HumanImport.cpp HumanWardrobe.cpp HumanFaceShape.cpp)
 add_library(AIVERSE::vivid_human ALIAS aiverse_vivid_human)
 target_include_directories(aiverse_vivid_human PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(aiverse_vivid_human PUBLIC aiverse_vivid aiverse_models aiverse_shader_graph)
