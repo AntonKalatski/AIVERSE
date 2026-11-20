@@ -10,11 +10,11 @@
 .facial-preview-note { display:flex; gap:var(--au-space-2); align-items:flex-start; }
 .facial-preview-note svg { flex:none; margin-top:2px; }
 .facial-morphs { display:grid; grid-template-columns:minmax(156px,35%) minmax(0,1fr); gap:var(--au-space-3); min-height:260px; }
-.facial-morph-list { min-width:0; max-height:390px; overflow:auto; border:1px solid var(--au-border); border-radius:var(--au-radius-md); }
+.facial-morph-list { min-width:0; max-height:390px; overflow:auto; border:1px solid var(--au-line); border-radius:var(--au-radius-md); }
 .facial-morph-item { display:flex; flex-direction:column; width:100%; border:0; background:transparent; color:var(--au-text); padding:var(--au-space-2) var(--au-space-3); text-align:left; gap:var(--au-space-1); cursor:pointer; }
-.facial-morph-item+.facial-morph-item { border-top:1px solid var(--au-border); }
-.facial-morph-item.active { background:var(--au-surface-selected); }
-.facial-morph-item:focus-visible { outline:2px solid var(--au-focus); outline-offset:-2px; }
+.facial-morph-item+.facial-morph-item { border-top:1px solid var(--au-line); }
+.facial-morph-item.active { background:var(--au-active); }
+.facial-morph-item:focus-visible { outline:2px solid var(--au-accent); outline-offset:-2px; }
 .facial-morph-item span, .facial-morph-item small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .facial-morph-item small { color:var(--au-text-muted); font-size:var(--au-font-xs); }
 .facial-morph-detail { min-width:0; display:flex; flex-direction:column; gap:var(--au-space-3); }
