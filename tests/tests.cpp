@@ -12550,6 +12550,81 @@ struct Device : entityfxtest::RecordingDevice {
 };
 }
 
+TEST(overlays_gpu_init_is_atomic_and_retryable) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::RtsOverlays overlays;
+    overlays.init(rules,Json(),Json(),"");
+    dev.failShader=1;
+    bool failed=false;
+    try {overlays.initGpu(dev);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(!overlays.gpuReady());
+    CHECK(dev.destroyedShaders==0);
+
+    dev.failShader=0;
+    dev.failPipeline=dev.pipelineAttempts+3;
+    failed=false;
+    try {overlays.initGpu(dev);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(!overlays.gpuReady());
+    CHECK(dev.destroyedPipelines==2);
+    CHECK(dev.destroyedShaders==1);
+    dev.failPipeline=0;
+
+    dev.failTexture=dev.textureAttempts+1;
+    failed=false;
+    try {overlays.initGpu(dev);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(!overlays.gpuReady());
+    CHECK(dev.destroyedPipelines==6);
+    CHECK(dev.destroyedShaders==2);
+    dev.failTexture=0;
+
+    overlays.initGpu(dev);
+    CHECK(overlays.gpuReady());
+    const auto priorShadersDestroyed=dev.destroyedShaders;
+    const auto priorPipelinesDestroyed=dev.destroyedPipelines;
+    const auto priorTexturesDestroyed=dev.destroyedTextures;
+
+    dev.idleAllowed=false;
+    failed=false;
+    try {overlays.initGpu(dev);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(overlays.gpuReady()); // previous published pipelines still valid
+    CHECK(dev.destroyedShaders==priorShadersDestroyed+1);
+    CHECK(dev.destroyedPipelines==priorPipelinesDestroyed+4);
+    CHECK(dev.destroyedTextures==priorTexturesDestroyed+1);
+    CHECK(!overlays.shutdownAfterGpuIdle(dev));
+    CHECK(overlays.gpuReady());
+
+    fogfaulttest::Device foreign;
+    bool wrongDevice=false;
+    try {overlays.initGpu(foreign);}
+    catch(const std::logic_error&){wrongDevice=true;}
+    CHECK(wrongDevice);
+    CHECK(!foreign.shaderAttempts);
+    wrongDevice=false;
+    try {(void)overlays.shutdownAfterGpuIdle(foreign);}
+    catch(const std::logic_error&){wrongDevice=true;}
+    CHECK(wrongDevice);
+    CHECK(foreign.idleRequests==0);
+
+    dev.idleAllowed=true;
+    overlays.initGpu(dev);
+    CHECK(overlays.gpuReady());
+    CHECK(dev.destroyedShaders==priorShadersDestroyed+2);
+    CHECK(dev.destroyedPipelines==priorPipelinesDestroyed+8);
+    CHECK(dev.destroyedTextures==priorTexturesDestroyed+2);
+    CHECK(overlays.shutdownAfterGpuIdle(dev));
+    CHECK(!overlays.gpuReady());
+    CHECK(overlays.shutdownAfterGpuIdle(dev));
+}
+
 TEST(visibility_field_gpu_init_failure_is_retryable) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;
