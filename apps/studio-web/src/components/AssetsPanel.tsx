@@ -43,7 +43,7 @@ function choicesFor(item:StudioAssetTransferItem,source:StudioAssetTransferPlan[
   if(!collision)return ACTIONS.filter(a=>a.value==='import'||a.value==='skip');
   return ACTIONS.filter(a=>{
     if(a.value==='skip'||a.value==='keep-both')return true;
-    if(a.value==='replace')return !item.directory && collision.includes('name');
+    if(a.value==='replace')return source==='external' && !item.directory && collision.includes('name');
     if(a.value==='new-guid')return source==='external' && !item.directory && !collision.includes('name');
     return false;
   });
