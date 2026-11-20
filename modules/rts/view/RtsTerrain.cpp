@@ -46,6 +46,8 @@ void RtsView::setTerrainDetail(const Json& map) {
 }
 
 void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
+    // Any map rebuild invalidates the previous primary-frame publication.
+    framePublication_.invalidate();
     ++terrainGeneration_; // conservative invalidation: cell edits can retain the MapGrid address
     paintLayers_.shutdown();
     if (planets_.active()) { // planet maps: the grid holds the stacked faces of every body (RtsSurface.h)
