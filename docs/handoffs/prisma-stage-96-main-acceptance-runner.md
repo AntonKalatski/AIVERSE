@@ -101,3 +101,22 @@ Optional:
    and GLES independently on suitable devices/runners.
 4. Do NOT merge this test-runner branch to main or label it GPU-PASS until
    native validation and explicit user approval.
+
+## Final change log for Stage 96
+
+- tools/prisma/acceptance.sh: new Release/CTest and real backend fixture
+  acceptance script; final source commit 4fa4beda488672f562c34e8efd21b77962501452.
+- skills/visuals/aiverse-prisma/SKILL.md: updated old Stage 66 default
+  handoff and static-only native guidance to Stage 96, actual post-main
+  status, correct probe-vs-PPM separation, new handoff naming requirement.
+  Skill update commit b3906b9a592c4f25d3e243b3a6bedd08c4917dd9.
+- This document records current branch state. No production engine or
+  simulation sources were edited and main was not mutated.
+
+### Static review before local execution
+Fetched and inspected the final script content from GitHub (166 lines),
+confirmed expected configure/build/CTest stages, pinned-SHA guard, explicit
+backend assertions and fail/skip reporting. A native `bash -n` command
+was attempted through a container download, but GitHub raw content
+could not be retrieved because DNS resolution failed. Therefore shell
+syntax is **NOT VERIFIED**, and it remains the first real acceptance gate.
