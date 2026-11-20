@@ -40,6 +40,16 @@ public:
             quarantine(owner);
             return;
         }
+        // No async CPU loader may retain a borrowed project file-reader
+        // callback after its native scene host releases that project.
+        // Join outstanding import jobs before entering GPU retirement.
+        try {
+            owner->setReader({});
+        }catch(...) {
+            ++cpuQueueShutdownFailures_;
+            quarantine(owner);
+            return;
+        }
         try {
             queue_->enqueueFrom(owner);
         }catch(...) {
@@ -122,6 +132,9 @@ public:
     uint64_t enqueueFailures() const noexcept{return enqueueFailures_;}
     uint64_t pollFailures() const noexcept{return pollFailures_;}
     uint64_t shutdownFailures() const noexcept{return shutdownFailures_;}
+    uint64_t cpuQueueShutdownFailures() const noexcept {
+        return cpuQueueShutdownFailures_;
+    }
     uint64_t orphanedOwners() const noexcept{return orphanedOwners_;}
 
 private:
@@ -149,7 +162,8 @@ private:
     RenderDeviceLifetime::Lease device_;
     std::unique_ptr<Queue> queue_;
     uint64_t enqueueFailures_=0,pollFailures_=0;
-    uint64_t shutdownFailures_=0,orphanedOwners_=0;
+    uint64_t shutdownFailures_=0,cpuQueueShutdownFailures_=0;
+    uint64_t orphanedOwners_=0;
 };
 
 } // namespace aiverse::render
