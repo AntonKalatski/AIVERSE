@@ -170,11 +170,8 @@ public:
                 post=nullptr;
                 result.diagnostics.push_back({view.entity,CameraExecutionIssue::SharedPostProcess});
             }
-            // Isolate per-camera adaptive geometry feedback even when several
-            // captures share one Renderer3D and the same geometry pages.
-            auto policy=renderer_.cpuMdiPolicyOverrides();
-            policy.adaptiveScope=view.entity.packed();
-            Renderer3D::ScopedCpuMdiPolicyOverride scope(renderer_,policy);
+            // This renderer revision has no adaptive CPU-MDI policy owner.
+            // Camera LOD state remains scoped by the prepared-frame adapter.
             renderer_.beginScene(view.camera,width,height);
             submit(view,renderer_); // renderer must be initialized by the host
             renderer_.render(pass,post);

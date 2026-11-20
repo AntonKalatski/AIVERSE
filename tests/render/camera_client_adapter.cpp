@@ -3,7 +3,7 @@
 #include "engine/render/CameraClientAdapter.h"
 #include <stdexcept>
 using namespace aiverse;
-static void check(bool ok){if(!ok)throw std::runtime_error("camera client adapter");}
+static void check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
 int main() {
     World source;SceneHierarchy hierarchy;
     Entity e=source.create();
