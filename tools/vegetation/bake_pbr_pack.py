@@ -13,8 +13,8 @@ N=1024
 
 def bake():
     out=OUT/'textures';out.mkdir(parents=True,exist_ok=True);materials={};entries=[]
-    for name in ('oak_bark','oak_leaves','shrub_leaves'):
-        leaf=name!='oak_bark'
+    for name in ('oak_bark','pine_bark','birch_bark','spruce_bark','oak_leaves','shrub_leaves','spruce_leaves','pine_leaves'):
+        leaf=name.endswith('_leaves')
         a=np.asarray(Image.open(SOURCE/(name+'_basecolor.png')).convert('RGBA').resize((N,N),Image.Resampling.LANCZOS),dtype=float)/255
         rgb=a[:,:,:3];alpha=a[:,:,3] if leaf else np.ones((N,N))
         if leaf:
@@ -26,7 +26,7 @@ def bake():
             trans=np.clip((rgb[:,:,1]-rgb[:,:,0])*.8+.35,0,.65)*alpha
         else:
             rgb=tile(rgb);h=tile(np.asarray(Image.open(SOURCE/(name+'_height.png')).convert('L').resize((N,N),Image.Resampling.LANCZOS),dtype=float)/255)
-            meters=1.5;height_m=.035;cavity=np.maximum(blur_periodic(h,7)-h,0)
+            meters=1.5;height_m={'birch_bark':.004,'spruce_bark':.015,'pine_bark':.028}.get(name,.035);cavity=np.maximum(blur_periodic(h,7)-h,0)
             rough=np.clip(.9+(h-.5)*.08,.78,.97);ao=np.clip(1-cavity,.78,1)
         dx=(np.roll(h,-1,1)-np.roll(h,1,1))*height_m*N/(2*meters)
         dy=(np.roll(h,-1,0)-np.roll(h,1,0))*height_m*N/(2*meters)
@@ -40,5 +40,5 @@ def bake():
         entries.append({'id':name,'layout':'2x2 sprig atlas' if leaf else 'repeat','normalConvention':'+Y','repeatMeters':meters,'heightMeters':height_m,'optionalTranslucencyMap':prefix+'_translucency.png' if leaf else None})
     (OUT/'materials.json').write_text(json.dumps(materials,indent=2)+'\n')
     (OUT/'catalog.json').write_text(json.dumps({'version':1,'basecolorSpace':'sRGB','dataSpace':'linear','materials':entries},indent=2)+'\n')
-    print('Baked 3 PBR vegetation materials / 25 texture maps')
+    print('Baked',len(entries),'PBR vegetation materials /',sum(9 if m['layout']=='2x2 sprig atlas' else 7 for m in entries),'texture maps')
 if __name__=='__main__':bake()

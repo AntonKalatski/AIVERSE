@@ -8,7 +8,7 @@ import json, argparse
 import numpy as np
 from PIL import Image
 
-MATERIALS={'grass':(2.0,.004,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'checkerboard':(4.0,0,.68)}
+MATERIALS={'grass':(2.0,.004,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'forest_floor':(2.0,.025,.91),'wet_soil':(2.0,.022,.59),'gravel_soil':(2.0,.045,.85),'snow_crust':(2.0,.006,.66),'checkerboard':(4.0,0,.68)}
 SIZE=1024
 
 def tile(a):
@@ -43,6 +43,12 @@ def bake(root):
             base=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_basecolor.png').convert('RGB').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
             height=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_height.png').convert('L').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
             base=tile(base);height=tile(height)
+            if name=='grass':
+                # Remove source-wide illumination/colour drift before repetition.
+                # The blade detail stays; broad dark/light bands must not become
+                # a visible 2m lattice when distant mips average that detail.
+                low=np.stack([blur_periodic(base[...,c],32) for c in range(3)],axis=2)
+                base=tile(np.clip(base-low+base.mean(axis=(0,1)),0,1))
         dx=(np.roll(height,-1,axis=1)-np.roll(height,1,axis=1))*height_m*SIZE/(2*meters)
         dy=(np.roll(height,-1,axis=0)-np.roll(height,1,axis=0))*height_m*SIZE/(2*meters)
         normal=np.stack([-dx,dy,np.ones_like(dx)],axis=2);normal/=np.linalg.norm(normal,axis=2,keepdims=True);normal=normal*.5+.5
@@ -61,6 +67,6 @@ def bake(root):
     checker=catalog[-1]['terrainLayer']
     config={'pbr':{'enabled':True,'packedMaps':True,'roughness':.68},'layers':[checker],'cells':{k:{'layer':'checkerboard','color':[1,1,1]} for k in ('grass','sand','ramp','rock','blocked','lakebed','shallows','dug')},'splatStrength':1}
     (root/'default-terrain.json').write_text(json.dumps(config,indent=2)+'\n')
-    print('Baked 6 PBR materials / 54 texture maps')
+    print(f'Baked {len(MATERIALS)} PBR materials / {len(MATERIALS)*9} texture maps')
 if __name__=='__main__':
     ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2]/'engine/assets/materials/terrain');bake(ap.parse_args().root)

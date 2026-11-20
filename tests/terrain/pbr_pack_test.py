@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 ROOT=Path(__file__).resolve().parents[2];pack=ROOT/'engine/assets/materials/terrain'
 catalog=json.loads((pack/'catalog.json').read_text());library=json.loads((pack/'materials.json').read_text())
-assert catalog['default']=='checkerboard' and len(catalog['materials'])==6
+assert catalog['default']=='checkerboard' and {m['id'] for m in catalog['materials']}=={'grass','soil','sand','rock','snow','forest_floor','wet_soil','gravel_soil','snow_crust','checkerboard'}
 for item in catalog['materials']:
  name=item['id'];prefix=pack/'textures'/name
  maps={k:np.asarray(Image.open(str(prefix)+'_'+k+'_repeat.png')) for k in ('basecolor','normal','roughness','metallic','ao','orm','height','terrain_color','terrain_normal')}
@@ -24,7 +24,12 @@ for item in catalog['materials']:
    a=maps[kind];assert np.array_equal(a[0],a[-1]) and np.array_equal(a[:,0],a[:,-1]),(name,kind)
  m=library['terrain_'+name];assert m['metallic']==0 and not m['vertexColors']
  for k in ('texture','normalMap','metallicRoughnessMap','occlusionMap'):assert (ROOT/'engine/assets'/m[k]).is_file(),m[k]
-print('PASS: 54 maps, dimensions, dielectric channels, normal lengths, packed parity, tile boundaries, material paths')
+# Distant repeats must not expose broad directional source illumination.
+g=np.asarray(Image.open(pack/'textures/grass_basecolor_repeat.png')).mean(2)/255
+fy=np.fft.fftfreq(1024)[:,None];fx=np.fft.fftfreq(1024)[None,:]
+low=np.fft.ifft2(np.fft.fft2(g)*np.exp(-2*np.pi**2*64**2*(fx*fx+fy*fy))).real
+assert low.std()<.001, 'grass low-frequency contrast repeats as visible bands'
+print('PASS:',len(catalog['materials'])*9,'maps, dimensions, dielectric channels, normal lengths, packed parity, tile boundaries, material paths')
 with tempfile.TemporaryDirectory() as d:
  p=Path(d);(p/'game.json').write_text('{"name":"fixture","terrain":{"existing":true}}');(p/'materials.json').write_text('{"custom":{"roughness":0.5}}')
  cmd=[sys.executable,str(ROOT/'tools/terrain/install_pbr_pack.py'),d]

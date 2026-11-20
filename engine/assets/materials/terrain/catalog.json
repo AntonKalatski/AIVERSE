@@ -95,6 +95,74 @@
       }
     },
     {
+      "id": "forest_floor",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.025,
+      "heightMap": "materials/terrain/textures/forest_floor_height_repeat.png",
+      "terrainLayer": {
+        "id": "forest_floor",
+        "texture": "materials/terrain/textures/forest_floor_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/forest_floor_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "wet_soil",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.022,
+      "heightMap": "materials/terrain/textures/wet_soil_height_repeat.png",
+      "terrainLayer": {
+        "id": "wet_soil",
+        "texture": "materials/terrain/textures/wet_soil_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/wet_soil_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "gravel_soil",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.045,
+      "heightMap": "materials/terrain/textures/gravel_soil_height_repeat.png",
+      "terrainLayer": {
+        "id": "gravel_soil",
+        "texture": "materials/terrain/textures/gravel_soil_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/gravel_soil_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "snow_crust",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.006,
+      "heightMap": "materials/terrain/textures/snow_crust_height_repeat.png",
+      "terrainLayer": {
+        "id": "snow_crust",
+        "texture": "materials/terrain/textures/snow_crust_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/snow_crust_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
       "id": "checkerboard",
       "repeatMeters": 4.0,
       "heightMeters": 0,

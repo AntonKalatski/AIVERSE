@@ -11,3 +11,10 @@ Checkerboard is mathematically generated (8x8 cells, flat normal, AO=1, metallic
 Baking uses periodic-plus-smooth boundary correction and periodic height derivatives for +Y normals.
 Roughness and local cavity AO are tuned approximations from the authored height, never claimed scanned.
 Run: python3 tools/terrain/bake_pbr_pack.py (numpy + Pillow).
+
+2026-11-20 expansion: forest_floor, wet_soil, gravel_soil and snow_crust
+were generated as aligned left-albedo/right-height source pairs using the
+built-in OpenAI image generator. Original `*_source_pair.png` files are
+preserved; halves are extracted losslessly before deterministic runtime baking.
+These are authored approximations, not measured scans. Grass baking removes
+broad source colour drift before tiling to avoid repeated distant brightness bands.

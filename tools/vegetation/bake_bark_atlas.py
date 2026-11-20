@@ -4,13 +4,14 @@ Authoring only: xatlas unwraps the welded surface; projection blends texture
 samples, never unrelated UV coordinates. Runtime remains standard PBR.
 """
 from pathlib import Path
+import json
 import numpy as np
 from PIL import Image
 from scipy.ndimage import map_coordinates, distance_transform_edt
 import xatlas
 
 
-def bake_bark_atlas(part, output, name, resolution=2048):
+def bake_bark_atlas(part, output, name, resolution=2048, material="oak_bark"):
     positions, normals, _, faces = part
     # The previous exporter splits triangles at cylindrical seams. Weld by
     # geometric position before asking xatlas to find connected charts.
@@ -28,9 +29,12 @@ def bake_bark_atlas(part, output, name, resolution=2048):
     p = points[mapping]
     n = normals[mapping]
     source = Path(__file__).resolve().parents[2] / 'engine/assets/materials/vegetation/textures'
+    catalog=json.loads((source.parent/'catalog.json').read_text())
+    entry=next(m for m in catalog['materials'] if m['id']==material and m['layout']=='repeat')
+    repeat_m=entry['repeatMeters']; relief_m=entry['heightMeters']*.35
     textures = {}
     for key in ('basecolor', 'height', 'roughness', 'ao'):
-        a = np.asarray(Image.open(source / ('oak_bark_' + key + '.png')))
+        a = np.asarray(Image.open(source / (material + '_' + key + '.png')))
         textures[key] = a.astype(float) / (65535 if key == 'height' else 255)
 
     def sample(key, pos, normal):
@@ -40,8 +44,8 @@ def bake_bark_atlas(part, output, name, resolution=2048):
         result = np.zeros((len(pos), 3)) if a.ndim == 3 else np.zeros(len(pos))
         # Vertical grain on both side projections. Top uses X/Z.
         for axis, (u, v) in enumerate(((2, 1), (0, 2), (0, 1))):
-            coords = np.array([np.mod(-pos[:, v] / 1.5, 1) * (a.shape[0]-1),
-                               np.mod(pos[:, u] / 1.5, 1) * (a.shape[1]-1)])
+            coords = np.array([np.mod(-pos[:, v] / repeat_m, 1) * (a.shape[0]-1),
+                               np.mod(pos[:, u] / repeat_m, 1) * (a.shape[1]-1)])
             if a.ndim == 3:
                 value = np.stack([map_coordinates(a[:, :, c], coords, order=1,
                                                  mode='wrap') for c in range(3)], axis=1)
@@ -83,8 +87,8 @@ def bake_bark_atlas(part, output, name, resolution=2048):
         dpdv = (dp2*e1[0]-dp1*e2[0])/det
         bitangent *= np.where(bitangent @ dpdv < 0, -1, 1)[:, None]
         epsilon = .002
-        gx = (sample('height', pos+tangent*epsilon, nor)-sample('height', pos-tangent*epsilon, nor))*.012/(2*epsilon)
-        gy = (sample('height', pos+bitangent*epsilon, nor)-sample('height', pos-bitangent*epsilon, nor))*.012/(2*epsilon)
+        gx = (sample('height', pos+tangent*epsilon, nor)-sample('height', pos-tangent*epsilon, nor))*relief_m/(2*epsilon)
+        gy = (sample('height', pos+bitangent*epsilon, nor)-sample('height', pos-bitangent*epsilon, nor))*relief_m/(2*epsilon)
         nt = np.c_[-gx, -gy, np.ones(len(gx))]
         nt /= np.linalg.norm(nt, axis=1, keepdims=True)
         color[y, x] = sample('basecolor', pos, nor)

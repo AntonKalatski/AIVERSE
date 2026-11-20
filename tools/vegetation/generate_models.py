@@ -135,6 +135,6 @@ def save_glb(path,parts,kind):
     path.write_bytes(struct.pack('<4sII',b'glTF',2,28+len(js)+len(binary))+struct.pack('<I4s',len(js),b'JSON')+js+struct.pack('<I4s',len(binary),b'BIN\0')+binary)
 
 if __name__=='__main__':
-    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap.add_argument('--seed',type=int,default=414);ap.add_argument('--kind',choices=['oak','shrub'],default='oak');ap.add_argument('--step',type=float,default=.025);a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
-    plant=Plant(a.seed);plant.build(a.kind);wood=plant.wood(a.step,9000 if a.kind=='oak' else 1400);leaf=plant.foliage(a.kind);wood=bake_bark_atlas(wood,a.out,a.kind);save_glb(a.out/(a.kind+'.glb'),[wood,leaf],a.kind)
+    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap.add_argument('--seed',type=int,default=414);ap.add_argument('--kind',choices=['oak','shrub'],default='oak');ap.add_argument('--bark',choices=['oak_bark','pine_bark','spruce_bark','birch_bark'],default='oak_bark');ap.add_argument('--step',type=float,default=.025);a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
+    plant=Plant(a.seed);plant.build(a.kind);wood=plant.wood(a.step,9000 if a.kind=='oak' else 1400);leaf=plant.foliage(a.kind);wood=bake_bark_atlas(wood,a.out,a.kind,material=a.bark);save_glb(a.out/(a.kind+'.glb'),[wood,leaf],a.kind)
     print(json.dumps({'kind':a.kind,'seed':a.seed,'spines':len(plant.spines),'sprigs':len(plant.leaves),'woodTriangles':len(wood[3]),'leafTriangles':len(leaf[3])}))

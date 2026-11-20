@@ -20,6 +20,6 @@ def install(project,default=False):
     shutil.copytree(source,target)
     (project/'materials.json').write_text(json.dumps(dict(existing,**bundled),indent=2)+'\n')
     if default:manifest.write_text(json.dumps(game,indent=2)+'\n')
-    print('Installed six PBR materials in',project)
+    print('Installed',len(bundled),'PBR materials in',project)
 if __name__=='__main__':
     ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('project',type=Path);ap.add_argument('--default-checkerboard',action='store_true');a=ap.parse_args();install(a.project,a.default_checkerboard)
