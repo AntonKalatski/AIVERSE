@@ -613,6 +613,24 @@ void test() {
                render::length(output[0]-first)<0.0001f,
                "bad MotionWeave pose modified last-good scalp vertices");
     }
+    // 7AC contract: shader-model optical lobes must exist in both
+    // backends. Source checks complement (do not replace) GPU image tests.
+    {
+        const std::string glsl=render::shaders::kModelFS;
+        const std::string msl=render::shaders::kModelMSL;
+        for(const auto& shader:{glsl,msl}) {
+            expect(shader.find("coatFresnel")!=std::string::npos &&
+                   shader.find("primaryLobe")!=std::string::npos &&
+                   shader.find("secondaryLobe")!=std::string::npos,
+                   "VIVID corneal Fresnel or secondary hair BRDF missing");
+            expect(shader.find("primaryLobe * 0.72 + secondaryLobe * 0.18")
+                       !=std::string::npos,
+                   "VIVID hair lobe weights differ from shared contract");
+        }
+        expect(glsl.find("m_uv1.z")!=std::string::npos &&
+               msl.find("m.uv1.z")!=std::string::npos,
+               "VIVID packed material profile not consumed consistently");
+    }
     // Stage 7AB material-graph variation must reach both shader backends.
     {
         auto neutral=HumanDNA::preset("neutral");
