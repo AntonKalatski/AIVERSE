@@ -910,3 +910,8 @@ AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
 ```
 
 Expected runner builds three forced real CPU MDI trials, asserts native CPU checks, raster parity and 81/81 measured CPU MDI frames, and analyzes each measured frame's `wall`, `thread`, `procCPU`, `machThr`. If the earlier ~0.024 ratio persists and Mach agrees with POSIX thread while process CPU is much larger, consider work happening on other threads; if Mach and POSIX agree and process CPU is also tiny, investigate blocking/driver waits with Instruments. If Mach and POSIX disagree, investigate per-clock measurement semantics and/or fixture instrumentation. If thread CPU approaches wall, the earlier Stage95 anomaly was transient; use system trace to explain differences. Do not claim causality based on one process. Preserve all older worktrees and Git state.
+
+
+### Stage 98 portability correction
+
+Source `da49fb94074dc1cab1295ed6aaf701a857061536` changes `cpuClockNs` to take a simple `bool processClock` argument rather than a cross-platform `clockid_t` parameter. The POSIX `clockid_t` type and `CLOCK_{THREAD,PROCESS}_CPUTIME_ID` references are now inside Apple/Linux compile guards. Windows builds still mark the optional clock unavailable, as before, rather than failing to parse the fixture. Source-level correction only; native compilation and runtime validation remain pending.
