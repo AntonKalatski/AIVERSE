@@ -812,6 +812,18 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
     // rather than silently sampling the wrong channel on large facial rigs.
     constexpr size_t kMorphWidth=2048u;
     constexpr size_t kMaxMorphTexels=1u<<24; // 256 MiB RGBA32F, float-exact offsets
+    size_t morphBudgetTexels=kMaxMorphTexels;
+    // Optional project/device GPU morph budget in MiB. Smaller budgets
+    // reject an oversized asset BEFORE allocation; no silent morph
+    // channel truncation or LOD-pose corruption. RHI may impose even lower
+    // maximum texture dimensions and can still reject createTexture().
+    if(const char* budget=std::getenv("AIVERSE_MORPH_TEXTURE_MIB")) {
+        char* end=nullptr;
+        const unsigned long mib=std::strtoul(budget,&end,10);
+        if(end==budget || *end!='\\0' || mib<1 || mib>256)return false;
+        morphBudgetTexels=std::min(
+            morphBudgetTexels,size_t(mib)*(1u<<20)/16u);
+    }
     size_t texels=0;
     for(const auto& mesh:m.meshes)
         for(const auto& primitive:mesh.primitives)
