@@ -13,6 +13,8 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <vector>
+#include <filesystem>
 
 #ifndef AIVERSE_STUDIO_SOURCE_DIR
 #define AIVERSE_STUDIO_SOURCE_DIR "."
@@ -56,6 +58,7 @@
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
 @end
 
 @implementation StudioMetalView
@@ -268,6 +271,48 @@
         [self sendStudioReply:reply];
     }];
 }
+- (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination {
+    if(session_->workspace().project.dir.empty()){
+        aiverse::Json response=aiverse::Json::object();
+        response.set("id",aiverse::Json::number(requestId));
+        response.set("error",aiverse::Json::string("Open a project before importing assets"));
+        [self sendStudioReply:response];
+        return;
+    }
+    NSOpenPanel* panel=[NSOpenPanel openPanel];
+    panel.canChooseFiles=YES;
+    panel.canChooseDirectories=YES;
+    panel.allowsMultipleSelection=YES;
+    panel.canCreateDirectories=NO;
+    panel.prompt=@"Import into content";
+    panel.message=@"Select files or folders to copy into the project's content directory.";
+    panel.directoryURL=[NSURL fileURLWithPath:
+        [NSString stringWithUTF8String:session_->workspace().project.dir.c_str()] isDirectory:YES];
+    NSString* safeDestination=[destination copy];
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse code) {
+        aiverse::Json reply=aiverse::Json::object();
+        reply.set("id",aiverse::Json::number(requestId));
+        if(code==NSModalResponseOK && panel.URLs.count){
+            try {
+                std::vector<std::filesystem::path> sources;
+                if(panel.URLs.count>64)throw std::runtime_error("Select at most 64 assets");
+                for(NSURL* url in panel.URLs){
+                    if(!url.isFileURL)throw std::runtime_error("Expected a local file");
+                    sources.emplace_back(url.path.UTF8String);
+                }
+                reply.set("result",session_->previewExternalAssets(sources,
+                    safeDestination.UTF8String ?: ""));
+            }catch(const std::exception& error){
+                reply.set("error",aiverse::Json::string(error.what()));
+            }
+        }else{
+            aiverse::Json cancelled=aiverse::Json::object();
+            cancelled.set("cancelled",aiverse::Json::fromBool(true));
+            reply.set("result",std::move(cancelled));
+        }
+        [self sendStudioReply:reply];
+    }];
+}
 - (void)sendStudioEvent:(const char*)event message:(const char*)message {
     aiverse::Json packet=aiverse::Json::object();
     packet.set("event",aiverse::Json::string(event));
@@ -367,6 +412,21 @@
         if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
             // Path is chosen by AppKit, never accepted from untrusted JavaScript.
             [self openProjectSheetForRequestId:req["id"].integer()];
+            return;
+        }
+        if (req.getStr("method")=="studio.assetImportPreview" && req["id"].isNumber()) {
+            // The browser can choose a verified relative DESTINATION only.
+            // The local SOURCE paths come exclusively from a native NSOpenPanel.
+            const std::string destination=req["params"].getStr("destination");
+            if(destination.size()>512){
+                aiverse::Json reply=aiverse::Json::object();
+                reply.set("id",req["id"]);
+                reply.set("error",aiverse::Json::string("Invalid import destination"));
+                [self sendStudioReply:reply];
+            }else{
+                NSString* folder=[NSString stringWithUTF8String:destination.c_str()];
+                [self openAssetImportForRequestId:req["id"].integer() destination:folder];
+            }
             return;
         }
         aiverse::Json reply;

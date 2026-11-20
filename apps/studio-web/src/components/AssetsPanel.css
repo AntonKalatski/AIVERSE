@@ -77,3 +77,59 @@
   .studio-assets-items--grid{grid-template-columns:repeat(auto-fill,minmax(86px,1fr))}
   .studio-assets-search{width:120px}
 }
+
+.studio-assets{position:relative}
+.studio-assets-tool-action{height:31px;width:31px;flex:none;display:grid;place-items:center;
+  background:var(--au-field);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-md);color:var(--au-text-soft)}
+.studio-assets-tool-action:hover:not(:disabled){background:var(--au-active);color:var(--au-text)}
+.studio-assets-tool-action:disabled{opacity:.45}
+.studio-assets-create-folder,.studio-assets-status{
+  display:flex;align-items:center;gap:8px;padding:7px 12px;
+  background:var(--au-panel-raised);border-bottom:1px solid var(--au-line);
+  color:var(--au-text-soft);font-size:var(--au-font-sm)}
+.studio-assets-create-folder input{
+  min-width:80px;max-width:260px;flex:1;background:var(--au-field);
+  border:1px solid var(--au-line-strong);border-radius:var(--au-radius-sm);
+  padding:6px 9px;color:var(--au-text)}
+.studio-assets-create-folder button{background:var(--au-active);border:1px solid var(--au-line);
+  color:var(--au-text);border-radius:var(--au-radius-sm);padding:6px 9px}
+.studio-assets-error{color:var(--au-danger)}
+.studio-assets-folder[data-content-drop-target]:hover,
+.studio-assets-item--folder[data-content-drop-target]:hover{
+  outline:1px solid var(--au-accent)}
+.studio-asset-dialog-overlay{position:absolute;z-index:60;inset:0;display:flex;align-items:center;
+  justify-content:center;background:#030a15db;padding:10px}
+.studio-asset-dialog{display:flex;flex-direction:column;width:min(100%,720px);max-height:100%;
+  min-height:0;background:var(--au-panel-raised);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-lg);box-shadow:var(--au-popover-shadow);color:var(--au-text)}
+.studio-asset-dialog header{display:flex;justify-content:space-between;gap:12px;
+  padding:12px 15px;border-bottom:1px solid var(--au-line)}
+.studio-asset-dialog h3{font-size:var(--au-font-lg);margin:0 0 4px}
+.studio-asset-dialog p{font-size:var(--au-font-sm);color:var(--au-text-muted);margin:0}
+.studio-asset-dialog header button{height:26px;width:26px;display:grid;place-items:center;
+  background:transparent;border:0;color:var(--au-text-muted)}
+.studio-asset-conflicts{min-height:0;overflow:auto;padding:8px 12px}
+.studio-asset-conflict{display:grid;grid-template-columns:minmax(0,1fr) minmax(170px,40%);
+  gap:12px;align-items:center;padding:8px 3px;border-bottom:1px solid var(--au-line)}
+.studio-asset-conflict-info{display:flex;flex-direction:column;gap:3px;min-width:0}
+.studio-asset-conflict-info strong,.studio-asset-conflict-info span{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-asset-conflict-info strong{font-size:var(--au-font-md)}
+.studio-asset-conflict-info span,.studio-asset-conflict-info small{
+  font-size:var(--au-font-sm);color:var(--au-text-faint)}
+.studio-asset-conflict-info .studio-asset-conflict-warning{color:var(--au-warning)}
+.studio-asset-conflict-choice{display:flex;flex-direction:column;gap:4px;
+  color:var(--au-text-muted);font-size:var(--au-font-sm)}
+.studio-asset-conflict-choice select{height:32px;min-width:0;width:100%;
+  padding:5px 7px;background:var(--au-field);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-sm);color:var(--au-text)}
+.studio-asset-dialog footer{display:flex;gap:8px;align-items:center;justify-content:flex-end;
+  padding:9px 13px;border-top:1px solid var(--au-line);font-size:var(--au-font-sm)}
+.studio-asset-dialog footer span{margin-right:auto;color:var(--au-text-muted)}
+.studio-asset-dialog footer button{padding:7px 11px;border-radius:var(--au-radius-sm);
+  border:1px solid var(--au-line-strong);background:var(--au-field);color:var(--au-text)}
+.studio-asset-dialog footer button.studio-asset-confirm{
+  border-color:var(--au-accent);background:var(--au-accent-strong);color:var(--au-accent-ink)}
+@media(max-width:650px){.studio-asset-conflict{grid-template-columns:minmax(0,1fr)}
+  .studio-assets-create-folder>span{display:none}}

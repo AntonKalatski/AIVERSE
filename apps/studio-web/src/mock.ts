@@ -61,9 +61,14 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
     throw Error('Editing map lights requires the native AIVERSE host');
   }
+  if (method === 'studio.assetByGuid' || method === 'studio.assetFolderCreate' ||
+      method === 'studio.assetMovePreview' || method === 'studio.assetImportPreview' ||
+      method === 'studio.assetTransferCommit') {
+    throw Error('Project asset operations require the native AIVERSE host');
+  }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
-    return { files: [], root: 'content' };
+    return { files: [], folders: [], root: 'content' };
   }
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.

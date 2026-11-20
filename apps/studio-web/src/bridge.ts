@@ -43,10 +43,13 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
   if (!native) return mockInvoke(method, params);
   return new Promise<StudioResult[M]>((resolve, reject) => {
     const id = nextId++;
+    // Native AppKit pickers can remain open while a user browses folders.
+    // The ordinary 8s deadline must not cancel a valid picker selection.
+    const picker = method === 'studio.openProject' || method === 'studio.assetImportPreview';
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error('Native bridge timeout: ' + method));
-    }, 8000);
+    }, picker ? 30 * 60 * 1000 : 8000);
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
     try { native.postMessage({ id, method, params }); }
     catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }

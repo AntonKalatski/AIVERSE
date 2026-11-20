@@ -3,8 +3,32 @@ export type { FacialRigDocument, FacialRigList, FacialRigResult, FacialRigValida
 export type StudioProperty = import('./propertyLogic').FieldDescriptor;
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
-export interface StudioAsset { path: string; bytes: number }
-export interface StudioAssetList { files: StudioAsset[]; root?: 'content' }
+export interface StudioAsset {
+  path: string;
+  bytes: number;
+  guid?: string;
+  importer?: string;
+}
+export interface StudioAssetList {
+  files: StudioAsset[];
+  folders?: StudioAsset[];
+  root?: 'content';
+}
+export interface StudioAssetTransferItem {
+  id: number; name: string; from: string; to: string; directory: boolean;
+  conflict: string; guid: string | null;
+}
+export interface StudioAssetTransferPlan {
+  token: string; source: 'internal' | 'external'; items: StudioAssetTransferItem[];
+}
+export type StudioAssetConflictAction =
+  'import' | 'skip' | 'keep-both' | 'replace' | 'new-guid';
+export interface StudioAssetTransferResult {
+  files: string[]; issues: Array<{name: string; message: string}>;
+}
+export interface StudioAssetDetail extends StudioAsset {
+  importer: string; guid: string; directory: boolean; settings: Record<string,unknown>;
+}
 export type StudioLightingState = import('./panels/lightingSchema').LightingState;
 export type StudioMaterialLibrary = import('./panels/materialSchema').MaterialLibrary;
 export interface StudioShaderGraphList { graphs: string[] }
@@ -24,7 +48,8 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetFolderCreate' |
+  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -32,6 +57,11 @@ export interface StudioParams {
   'studio.redo': Record<string, never>;
   'studio.openProject': Record<string, never>;
   'studio.assets': Record<string, never>;
+  'studio.assetByGuid': { guid: string };
+  'studio.assetFolderCreate': { parent: string; name: string };
+  'studio.assetMovePreview': { paths: string[]; destination: string };
+  'studio.assetImportPreview': { destination: string };
+  'studio.assetTransferCommit': { token: string; decisions: Array<{id:number;action:StudioAssetConflictAction}> };
   'studio.materials': Record<string, never>;
   'studio.materialPatch': { name: string; patch: import('./panels/materialSchema').MaterialPatch };
   'studio.materialCreate': { name: string; preset: import('./panels/materialSchema').MaterialPreset };
@@ -62,6 +92,11 @@ export interface StudioResult {
   'studio.redo': StudioSnapshot;
   'studio.openProject': { cancelled: boolean; snapshot: StudioSnapshot | null };
   'studio.assets': StudioAssetList;
+  'studio.assetByGuid': StudioAssetDetail;
+  'studio.assetFolderCreate': { path: string };
+  'studio.assetMovePreview': StudioAssetTransferPlan;
+  'studio.assetImportPreview': StudioAssetTransferPlan | { cancelled: true };
+  'studio.assetTransferCommit': StudioAssetTransferResult;
   'studio.materials': StudioMaterialLibrary;
   'studio.materialPatch': StudioMaterialLibrary;
   'studio.materialCreate': StudioMaterialLibrary;
