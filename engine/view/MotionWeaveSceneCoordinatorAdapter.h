@@ -33,6 +33,22 @@ public:
     MotionWeaveSceneCoordinatorAdapter& operator=(
         const MotionWeaveSceneCoordinatorAdapter&)=delete;
 
+    // Native scene::SceneState lives on a peer branch. This helper accepts
+    // its actual stateView()/World.resourceConst pointer without copying or
+    // linking its authoritative types into presentation code. SceneRecord
+    // has an enum ScenePhase with Active; map traversal is canonical by ID.
+    template<class State>
+    static std::vector<uint64_t> canonicalActiveSceneIds(
+            const State* state) {
+        std::vector<uint64_t> ids;
+        if(!state)return ids;
+        ids.reserve(state->scenes.size());
+        for(const auto& [id,record]:state->scenes)
+            if(record.phase==decltype(record.phase)::Active)
+                ids.push_back(id);
+        return ids;
+    }
+
     // Builder signature:
     // bool(const scene::SceneAsset&, Owner& outProvider,
     //      std::vector<Object>& outObjects, std::string& error)
