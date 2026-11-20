@@ -154,14 +154,14 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     // Final teardown continues to call the blocking shutdown barrier.
     geometryScene_.clear(dev);
     try {
-        std::string text;
-        if (read_("game.json", text)) {
-            const auto game = Json::parse(text);
-            const auto file = game.getStr("geometryScene");
-            if (!file.empty()) {
-                if (!read_(file, text)) throw std::runtime_error("geometryScene: file not found: " + file);
-                geometryScene_.load(dev, Json::parse(text), read_);
-            }
+        // Reuse the same game.json snapshot as sprite/fog/overlay staging.
+        // Re-reading game.json could switch the geometry file mid-reload.
+        const auto file=incomingGame.getStr("geometryScene");
+        if (!file.empty()) {
+            std::string text;
+            if (!read_(file,text))
+                throw std::runtime_error("geometryScene: file not found: " + file);
+            geometryScene_.load(dev,Json::parse(text),read_);
         }
     } catch (const std::exception& e) { warnings_.push_back(e.what()); }
 
