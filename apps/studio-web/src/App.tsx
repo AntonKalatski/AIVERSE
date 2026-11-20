@@ -5,6 +5,7 @@ import type { StudioEntity, StudioSnapshot } from './types';
 import PanelTitle from './components/PanelTitle';
 import PropertyField from './components/PropertyField';
 import ViewportPlaceholder from './components/ViewportPlaceholder';
+import AssetsPanel from './components/AssetsPanel';
 
 type Section = 'scene' | 'game' | 'materials' | 'animation';
 const sections: { id: Section; title: string }[] = [
@@ -22,6 +23,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [selectedTab, setSelectedTab] = useState<Section>('scene');
   const [search, setSearch] = useState('');
+  const [leftTab, setLeftTab] = useState<'hierarchy' | 'assets'>('hierarchy');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showConsole, setShowConsole] = useState(true);
@@ -115,6 +117,11 @@ export default function App() {
     {error && <div role="alert" className="error-banner">{error} <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
     <div className="editor-grid" style={{ gridTemplateColumns: leftSize + 'px 5px minmax(260px, 1fr) 5px ' + rightSize + 'px' }}>
       <aside className="panel panel-hierarchy">
+        <div className="sidebar-tabs">
+          <button className={leftTab === 'hierarchy' ? 'active' : ''} onClick={() => setLeftTab('hierarchy')}>Hierarchy</button>
+          <button className={leftTab === 'assets' ? 'active' : ''} onClick={() => setLeftTab('assets')}>Assets</button>
+        </div>
+        {leftTab === 'assets' ? <AssetsPanel projectPath={snapshot?.project.path ?? ''}/> : <>
         <PanelTitle title="HIERARCHY" right={<><button className="icon-button" disabled title="Create entity (pending)"><Plus size={16}/></button><button className="icon-button" disabled title="Hierarchy menu (pending)"><MoreHorizontal size={16}/></button></>}/>
         <label className="search-box"><Search size={15}/><input aria-label="Search hierarchy" placeholder="Search objects..." value={search} onChange={e => setSearch(e.target.value)}/><kbd>⌘ K</kbd></label>
         <div className="tree-label"><ChevronDown size={14}/><FolderTree size={15}/><span>{snapshot?.scene.name ?? 'Scene'}</span></div>
@@ -125,6 +132,7 @@ export default function App() {
           </button>
         )}</div>
         <div className="panel-footer">{snapshot?.scene.entities.length ?? 0} objects</div>
+        </>}
       </aside>
       <div className="resize-handle" role="separator" aria-orientation="vertical" onPointerDown={e => beginResize('left', e.clientX)}/>
       <main className="work-area">

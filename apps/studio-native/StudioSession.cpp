@@ -133,6 +133,13 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.assets") {
+            // Never accept a browser-selected directory. The existing Workspace
+            // operation is called with an empty argument object, restricting this
+            // read-only listing to the project's own root.
+            const Json r = ws_.call("asset_list", Json::object(), "studio");
+            if (r.has("error")) throw std::runtime_error(r.getStr("error"));
+            reply.set("result", r);
         } else if (method == "studio.select") {
             const Json& id = params["id"];
             if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");

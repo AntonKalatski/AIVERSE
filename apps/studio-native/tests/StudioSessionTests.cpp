@@ -18,6 +18,8 @@ int main() {
     assert(call(R"({"id":7,"method":"studio.undo","params":{}})").has("error"));
     assert(call(R"({"id":8,"method":"studio.redo","params":{}})").has("error"));
     assert(session.selectedEntityIndex() == -1);
+    // Asset listing must never expose a filesystem root without an open project.
+    assert(call(R"({"id":9,"method":"studio.assets","params":{"dir":"../../"}})").has("error"));
     bool openRejected = false;
     try { session.openProject("/nonexistent/aiverse-project"); }
     catch (const std::exception&) { openRejected = true; }
