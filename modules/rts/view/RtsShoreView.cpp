@@ -820,13 +820,13 @@ struct RtsShoreView::PreparedRebuild {
     }
 };
 
-std::unique_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
+std::shared_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt,
         float waterY,int w,int h) {
     if(dev_!=&dev)
         throw std::logic_error("RtsShoreView prepare: GPU owner mismatch");
     if(!needsVisualPreparation(waterY,w,h))return {};
-    auto candidate=std::make_unique<PreparedRebuild>();
+    auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
     candidate->staged=std::make_unique<RtsShoreView>();
     RtsShoreView& staged=*candidate->staged;
@@ -842,7 +842,7 @@ std::unique_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
     return candidate;
 }
 
-void RtsShoreView::commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept {
+void RtsShoreView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
     if(!candidate)return;
     RtsShoreView& staged=*candidate->staged;
     release(*dev_);
