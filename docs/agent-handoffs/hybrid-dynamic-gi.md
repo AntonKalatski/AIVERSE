@@ -919,3 +919,17 @@ logical GPU pages, not separate driver `VkBuffer`/`MTLBuffer` objects.
 Added CPU ray parity, relocation, reuse and reject test source and CMake
 registration. NO native C++ compiler, CTest or real Metal/Vulkan/GLES
 GPU tests have run, and page compaction on address fragmentation remains.
+
+
+## Stage 57 — 2026-11-20 — transactional GPU page defragmentation (SOURCE; NOT RUN)
+
+Read `docs/agent-handoffs/gi-stage57-page-defragmentation-2026-11-20.md`.
+After stable logical per-chunk GPU BLAS pages (Stage56), high-water address
+exhaustion may be caused by fragmentation. Stage57 retries by constructing
+an entirely NEW compacted candidate with every live BLAS absolute reference
+and root TLAS rewritten. It does not alter the accepted map until queued
+upload success + commit; near-scene over-budget failures still do not truncate
+relevant occlusion. Added deterministic small-capacity source test and CTest
+registration. This is still two suballocated GPU SSBO streams, NOT separate
+physical device memory pages. No real C++ build/CTest/Metal/Vulkan/GLES
+execution or performance validation performed.
