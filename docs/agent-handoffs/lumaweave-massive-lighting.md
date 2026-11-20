@@ -445,3 +445,15 @@ Lifecycle: callbacks are cleared at every Renderer3D::beginScene so editor Game/
 Validation: current GitHub source fetch/update commits acknowledged. Native C++ build, CTest, GPU shader compilation/visual screenshots and any benchmark are **NOT RUN** in this stage by the owner's explicit one consolidated test request. Do not claim verified per-material coverage until an actual target game tests both callback paths and depth matching.
 
 Next: source-review draw state and material capture lifetime for custom terrain; finish remaining correctness barriers, then execute tools/lumaweave_acceptance.sh --run only when feature development is complete and the owner asks for the single consolidated validation. A native visual fixture should include a custom terrain patch in front of an opaque metal model, and verify no material/direct light leak through mismatched depth. Add exact native source SHA and outcomes after executing.
+
+
+## Stage 25 — 2026-11-20 — camera-grid CSR regression and disabled HDR-depth allocation (SOURCE; NOT RUN)
+
+Full separate handoff:
+`docs/agent-handoffs/lumaweave-stage25-camera-clusters-disabled-depth-2026-11-20.md`.
+
+Source commits:
+- `3fc1ddf94579df82ef0e415dc102b71e17f0d663` — `tests/render/lumaweave_gpu_packet.cpp`: verifies moving the camera-following cluster grid increments `clusterGeneration` and re-packs correct CSR indices even if the stable light source revision is unchanged.
+- `d8698d8f0b5a6eb202c34d8b9a83cdaa024748a2` — `engine/render/LumaWeavePostProcess.h`: require all enabled HDR/source/scene prerequisites before allocating compositor depth; disabled/mobile/incomplete views no longer allocate unneeded HDR depth.
+
+No public ABI or ECS persistence changes; one direct-light owner and opt-in default are preserved. **NOT RUN:** Clang/GCC build, CTest, Metal/GLES/Vulkan hardware visual, shader compilation, GPU-fence safety or full benchmark. The known per-view resized target in-flight lifetime audit remains open. Next: complete lifetime audit and cross-branch integration, then native consolidated acceptance only after code freeze.
