@@ -12714,6 +12714,93 @@ TEST(overlays_gpu_init_is_atomic_and_retryable) {
     CHECK(overlays.shutdownAfterGpuIdle(dev));
 }
 
+TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::TerrainRenderer terrain;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    dev.failTexture=2;
+    bool failed=false;
+    try {terrain.init(dev,rules,missing,"");}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(!terrain.ownsGpuResources());
+    CHECK(dev.destroyedTextures==1); // unpublished first fallback
+    dev.failTexture=0;
+    terrain.init(dev,rules,missing,"");
+    CHECK(terrain.ownsGpuResources());
+
+    const size_t previousDestroyed=dev.destroyedTextures;
+    dev.idleAllowed=false;
+    failed=false;
+    try {terrain.init(dev,rules,missing,"");}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(terrain.ownsGpuResources());
+    CHECK(dev.destroyedTextures==previousDestroyed+3); // only staging kit
+    CHECK(!terrain.shutdownAfterGpuIdle(dev));
+    CHECK(terrain.ownsGpuResources());
+
+    fogfaulttest::Device foreign;
+    bool wrongDevice=false;
+    try {terrain.init(foreign,rules,missing,"");}
+    catch(const std::logic_error&) {wrongDevice=true;}
+    CHECK(wrongDevice);
+    CHECK(!foreign.textureAttempts);
+
+    dev.idleAllowed=true;
+    terrain.init(dev,rules,missing,"");
+    CHECK(terrain.ownsGpuResources());
+    CHECK(terrain.shutdownAfterGpuIdle(dev));
+    CHECK(!terrain.ownsGpuResources());
+}
+
+TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::RtsGroundFx fx;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    dev.failPipeline=1;
+    bool failed=false;
+    try {fx.init(dev,rules,missing,"");}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(!fx.ownsGpuResources());
+    CHECK(dev.destroyedShaders==1);
+    dev.failPipeline=0;
+
+    dev.failTexture=dev.textureAttempts+1;
+    failed=false;
+    try {fx.init(dev,rules,missing,"");}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(!fx.ownsGpuResources());
+    dev.failTexture=0;
+
+    fx.init(dev,rules,missing,"");
+    CHECK(fx.ownsGpuResources());
+    const size_t previousShaders=dev.destroyedShaders;
+    const size_t previousPipes=dev.destroyedPipelines;
+    const size_t previousTextures=dev.destroyedTextures;
+    dev.idleAllowed=false;
+    failed=false;
+    try {fx.init(dev,rules,missing,"");}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(fx.ownsGpuResources());  // old kit still published
+    CHECK(dev.destroyedShaders==previousShaders+1);
+    CHECK(dev.destroyedPipelines==previousPipes+1);
+    CHECK(dev.destroyedTextures==previousTextures+1);
+    CHECK(!fx.shutdownAfterGpuIdle(dev));
+    CHECK(fx.ownsGpuResources());
+
+    dev.idleAllowed=true;
+    fx.init(dev,rules,missing,"");
+    CHECK(fx.ownsGpuResources());
+    CHECK(fx.shutdownAfterGpuIdle(dev));
+    CHECK(!fx.ownsGpuResources());
+}
+
 TEST(visibility_field_gpu_init_failure_is_retryable) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;
