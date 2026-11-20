@@ -11,6 +11,7 @@
 #include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
+#include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
 #include "engine/character/vivid/SkinLodSeamRemap.h"
@@ -113,6 +114,9 @@ struct CreatorApp {
     std::vector<AuthoredFacialLod> authoredFacialLods;
     bool lodGpuMorphEnabled=false;
     bool sculptPickArmed=false;
+    render::float3 sculptPickMarkerWorld{};
+    bool sculptPickMarkerValid=false;
+    int sculptPickMarkerVertex=-1,sculptPickMarkerMesh=-1;
     int morphTargetIndex=0,morphVertexIndex=0;
     int routeChannelIndex=0;
     char newMorphName[129]="newCorrective";
@@ -1625,6 +1629,9 @@ struct CreatorApp {
         ImGui::End();
     }
     void frame(gfx::Device& dev,double dt) {
+        // Animated characters may move after a ray sample; do not display
+        // a stale sampled world-space marker across animation frames.
+        if(animate)sculptPickMarkerValid=false;
         ui.newFrame(dt);
         guiControls();
         // A material tier is also a Renderer3D pipeline setting. Apply at
@@ -1776,33 +1783,38 @@ struct CreatorApp {
             const float height=float(dev.framebufferHeight());
             float3 origin{},direction{};
             if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
-                const auto pick=pickSculptVertex(*human.head,
-                    std::size_t(sculptMeshIndex),facePose,
-                    origin,direction,morphSourceVertices);
+                const auto pick=pickDeformedSculptVertex(
+                    *human.head,std::size_t(sculptMeshIndex),facePose,
+                    human.facialShapes,human.facialBinding,
+                    controller.frame(),origin,direction,morphSourceVertices);
                 if(pick.hit) {
                     morphVertexIndex=int(pick.vertex);
+                    sculptPickMarkerWorld=pick.worldPosition;
+                    sculptPickMarkerValid=true;
+                    sculptPickMarkerVertex=morphVertexIndex;
+                    sculptPickMarkerMesh=sculptMeshIndex;
                     sculptPickArmed=false;
-                    status="Picked face source vertex "+
+                    status="Picked deformed face source vertex "+
                         std::to_string(morphVertexIndex);
-                }else status="No source face triangle under cursor";
+                }else {
+                    sculptPickMarkerValid=false;
+                    status="No valid deformed source triangle under cursor";
+                }
             }
         }
         if(externalMode && morphSourceVertices && human.head &&
            morphVertexIndex>=0 &&
            std::size_t(morphVertexIndex)<morphSourceVertices) {
-            // Visible marker is screen-space only; no extra model/GPU draw.
+            // Snapshot of the *picked* morphed+skinned vertex, not an
+            // undeformed bind-pose marker. Animated snapshots are displayed
+            // only in the click frame; paused previews retain the marker.
             float2 screen{};
-            const auto p=human.head->vertices[std::size_t(morphVertexIndex)].pos;
-            bool found=false;
-            for(std::size_t i=0;i<human.head->nodes.size();++i) {
-                if(sculptMeshIndex>=0 &&
-                   human.head->nodes[i].mesh==sculptMeshIndex) {
-                    found=camera.worldToScreen(facePose[i].transformPoint(p),
-                         float(dev.framebufferWidth()),
-                         float(dev.framebufferHeight()),screen);
-                    break;
-                }
-            }
+            const bool found=sculptPickMarkerValid &&
+                sculptPickMarkerVertex==morphVertexIndex &&
+                sculptPickMarkerMesh==sculptMeshIndex &&
+                camera.worldToScreen(sculptPickMarkerWorld,
+                    float(dev.framebufferWidth()),
+                    float(dev.framebufferHeight()),screen);
             if(found && std::isfinite(screen.x) && std::isfinite(screen.y)) {
                 ImGui::GetForegroundDrawList()->AddCircle(
                     ImVec2(screen.x,screen.y),7.0f,IM_COL32(255,190,50,255),20,2.0f);
