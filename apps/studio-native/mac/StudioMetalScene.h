@@ -51,6 +51,7 @@ private:
     // triangle picking. The draw list and hit list share the exact instances.
     std::map<std::string,std::unique_ptr<render::Model>> documentModels_;
     std::set<std::string> rejectedDocumentModels_;
+    std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
