@@ -7,6 +7,7 @@
 #include "engine/render/Model.h"
 #include "engine/render/Renderer3D.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -69,27 +70,53 @@ inline std::unique_ptr<render::Model> makeEarthworksTerrainModel(
     const int64_t cellX=int64_t(patch.cell.x)*patch.cellSizeMetres;
     const int64_t cellZ=int64_t(patch.cell.z)*patch.cellSizeMetres;
     const Vec3 chunkOrigin{Fixed::fromInt(cellX),{},Fixed::fromInt(cellZ)};
-    model->vertices.reserve(patch.collision.size()*3u);
-    model->indices.reserve(patch.collision.size()*3u);
     const float uvX=float(cellX)*uvScale,uvZ=float(cellZ)*uvScale;
-    for(const auto& tri:patch.collision) {
-        const auto a=tri.a-chunkOrigin,b=tri.b-chunkOrigin,
-                   c=tri.c-chunkOrigin;
-        const render::float3 v[3]={
-            {float(a.x.toDouble()),float(a.y.toDouble()),float(a.z.toDouble())},
-            {float(b.x.toDouble()),float(b.y.toDouble()),float(b.z.toDouble())},
-            {float(c.x.toDouble()),float(c.y.toDouble()),float(c.z.toDouble())}
-        };
-        const auto normal=render::normalize(
-            render::cross(v[1]-v[0],v[2]-v[0]));
-        for(const auto& p:v) {
-            render::ModelVertex vertex;
-            vertex.pos=p;
-            vertex.nrm=normal;
-            vertex.uv={uvX+p.x*uvScale,uvZ+p.z*uvScale};
-            model->indices.push_back(
-                static_cast<uint32_t>(model->vertices.size()));
-            model->vertices.push_back(vertex);
+    // A flat tile must ALWAYS be a single indexed quad, regardless of
+    // camera distance, previous LOD or neighboring tile resolution.
+    // Four vertices and two triangles, not six duplicated vertices
+    // or an unnecessarily subdivided heightfield.
+    const bool flatQuad=patch.resolution==2 &&
+        patch.heightsCm.size()==4 &&
+        std::all_of(patch.heightsCm.begin(),patch.heightsCm.end(),
+                    [&](int32_t h){return h==patch.heightsCm.front();});
+    if(flatQuad) {
+        const float side=float(patch.cellSizeMetres);
+        const float y=float(patch.heightsCm.front())*0.01f;
+        const std::array<render::float3,4> corners{{
+            {0.0f,y,0.0f},{side,y,0.0f},
+            {side,y,side},{0.0f,y,side}
+        }};
+        model->vertices.reserve(4);
+        for(const auto& p:corners) {
+            render::ModelVertex v;
+            v.pos=p;
+            v.nrm={0,1,0};
+            v.uv={uvX+p.x*uvScale,uvZ+p.z*uvScale};
+            model->vertices.push_back(v);
+        }
+        model->indices={0,2,1,0,3,2};
+    } else {
+        model->vertices.reserve(patch.collision.size()*3u);
+        model->indices.reserve(patch.collision.size()*3u);
+        for(const auto& tri:patch.collision) {
+            const auto a=tri.a-chunkOrigin,b=tri.b-chunkOrigin,
+                       c=tri.c-chunkOrigin;
+            const render::float3 v[3]={
+                {float(a.x.toDouble()),float(a.y.toDouble()),float(a.z.toDouble())},
+                {float(b.x.toDouble()),float(b.y.toDouble()),float(b.z.toDouble())},
+                {float(c.x.toDouble()),float(c.y.toDouble()),float(c.z.toDouble())}
+            };
+            const auto normal=render::normalize(
+                render::cross(v[1]-v[0],v[2]-v[0]));
+            for(const auto& p:v) {
+                render::ModelVertex vertex;
+                vertex.pos=p;
+                vertex.nrm=normal;
+                vertex.uv={uvX+p.x*uvScale,uvZ+p.z*uvScale};
+                model->indices.push_back(
+                    static_cast<uint32_t>(model->vertices.size()));
+                model->vertices.push_back(vertex);
+            }
         }
     }
     render::Primitive prim;
