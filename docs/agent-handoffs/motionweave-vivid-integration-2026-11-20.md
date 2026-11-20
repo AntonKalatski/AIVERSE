@@ -1065,3 +1065,45 @@ iris/eye-shell shading and hair coverage/filtering; then orbit/continuous UI che
 Do not hide entire body or mark existing synthetic BodyVisibility test patch as
 artist-approved clothing coverage. Root/legs stay bind: no weight-transfer/foot IK,
 cloth collision or physically simulated hair was added. Preserve source backups.
+
+
+## 2026-11-20 — Named sockets and independent SKM attachments
+
+Code `9e9f43bb32c46314046548c8afc7c5b870c4d740`, integration/motionweave-studio-facial-stage184.
+HumanWardrobe.cpp/.h adds optional sockets and item.socket/attachmentRule to
+version1 recipes. Existing recipes retain semantics; old strict readers reject
+new fields. Rules keep_world and snap require independentRig, preserving imported
+child joints/skins/morphs/clips rather than name-remapping. Shared-skeleton clothing
+still validates matching bind frames. Sockets are ordinary socket/<name> nodes
+compatible with generic Model/View traversal and GLB export, not a new scheduler.
+Keep-world exact inverse TRS chain follows rotated/nonuniform-scaled parents;
+explicit offset is socket-local, legacy offset order unchanged. Duplicate/missing/
+ambiguous parents and invalid transforms reject. Multiple attachments on a bone
+use distinct arbitrary slot names. Limits128 sockets/32 assets remain explicit.
+
+HumanWardrobeControls/types expose socket name/bone/local TRS editing, separate
+skeleton mode, rules, slot input and draft undo via shared Studio UI. StudioSession
+normalizes omitted socket TRS on loading. Existing native async assemble/show
+flow publishes changes, not live gizmos. No new bridge allowlist or browser writes.
+Docs: vivid-skm-attachments.md, Studio stage91; vivid.md and motion QA explicitly
+WITHDRAW the previous hair-attachment conclusion after user reported hair detached.
+This stage does NOT claim Ada hair is repaired; no new character assets changed.
+
+Actual checks: all builds/caches/output KINGSTON. Native aiverse_studio,
+aiverse_vivid_human_wardrobe_tests, aiverse_studio_human_appearance_session_tests
+PASS (build-skm-final.log). CTest2/2 PASS, final report
+native/test-reports/20261120-175028-57514, test-skm-final.log; earlier scoped run
+also2/2. Added real snap/local-offset/keep-world, parent rotation+scale, independent
+skin and exported GLB socket roundtrip, duplicate/missing socket rejection checks.
+npm typecheck + existing75 web tests + incremental tsc(KINGSTON cache) + vite PASS;
+final typecheck/vite repeated after selector adjustment; dist copied into KINGSTON
+native app. Python UI29 PASS(test-skm-ui.log); diff --check PASS.
+verify_mac.sh NOT RUN because it hardcodes internal build output contrary to user;
+used scoped KINGSTON checks instead. Native UI/screenshots and visual SKM motion
+NOT RUN. No CI/push/main change. No imported Unreal .uasset parsing or full parity.
+
+Next: fix Ada's actual hair attachment by locating/extracting its mesh/rig and
+using an explicit head attachment, then exaggerate head tilt/turn in native video.
+Do not infer attached hair from a few near-static frontal frames. Existing shared
+submesh reweighting, vertex-picking/gizmo, cloth collision and independent child
+animation playback remain outside this bounded assembly stage.
