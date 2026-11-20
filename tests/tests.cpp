@@ -12509,8 +12509,8 @@ private:
 
 namespace fogfaulttest {
 struct Device : entityfxtest::RecordingDevice {
-    size_t shaderAttempts=0,pipelineAttempts=0,bufferAttempts=0,textureAttempts=0;
-    size_t failShader=0,failPipeline=0,failBuffer=0,failTexture=0;
+    size_t shaderAttempts=0,pipelineAttempts=0,bufferAttempts=0,textureAttempts=0,textureUpdates=0;
+    size_t failShader=0,failPipeline=0,failBuffer=0,failTexture=0,failTextureUpdate=0;
     size_t destroyedShaders=0,destroyedPipelines=0,destroyedBuffers=0,destroyedTextures=0;
     unsigned idleRequests=0;
     bool idleAllowed=true;
@@ -12529,6 +12529,11 @@ struct Device : entityfxtest::RecordingDevice {
     gfx::TextureHandle createTexture(const gfx::TextureDesc& desc) override {
         if(++textureAttempts==failTexture)return {};
         return entityfxtest::RecordingDevice::createTexture(desc);
+    }
+    void updateTexture(gfx::TextureHandle tex,int x,int y,int w,int h,const void* pixels,int pitch) override {
+        if(++textureUpdates==failTextureUpdate)
+            throw std::runtime_error("injected texture update failure");
+        entityfxtest::RecordingDevice::updateTexture(tex,x,y,w,h,pixels,pitch);
     }
     void destroyShader(gfx::ShaderHandle h) override {
         if(h.valid())++destroyedShaders;
@@ -12813,6 +12818,55 @@ TEST(terrain_full_map_stages_all_chunks_apron_and_water_before_publish) {
     CHECK(terrain.build(dev,replacement,false));
     CHECK(terrain.stats().chunks==3);
     CHECK(terrain.pendingMeshGpuRetirements()>=4); // old chunk and apron held until GPU completion
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
+TEST(terrain_full_map_texture_allocation_and_upload_failure_preserve_old_frame) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::TerrainRenderer terrain;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid previous;
+    previous.init(4,4);
+    for(auto& flag:previous.flags)flag=game::kCellGround;
+    CHECK(terrain.build(dev,previous,false));
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    game::MapGrid next;
+    next.init(65,4); // three chunks + apron, eight private buffers
+    for(auto& flag:next.flags)flag=game::kCellGround;
+
+    size_t oldTextures=dev.destroyedTextures;
+    size_t oldBuffers=dev.destroyedBuffers;
+    dev.failTexture=dev.textureAttempts+3; // after allocating two staging textures
+    bool failed=false;
+    try {(void)terrain.build(dev,next,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built() && terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==oldTextures+2);
+    CHECK(dev.destroyedBuffers==oldBuffers+8);
+    dev.failTexture=0;
+    CHECK(!terrain.build(dev,previous,false)); // old map still owns its textures and hash
+
+    oldTextures=dev.destroyedTextures;
+    oldBuffers=dev.destroyedBuffers;
+    dev.failTextureUpdate=dev.textureUpdates+2; // staged cell upload succeeds, splat fails
+    failed=false;
+    try {(void)terrain.build(dev,next,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built() && terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==oldTextures+4);
+    CHECK(dev.destroyedBuffers==oldBuffers+8);
+    dev.failTextureUpdate=0;
+
+    CHECK(terrain.build(dev,next,false));
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()>=8); // old 4 textures + old chunk/apron buffers
     terrain.shutdown(dev);
     CHECK(terrain.pendingMeshGpuRetirements()==0);
 }
