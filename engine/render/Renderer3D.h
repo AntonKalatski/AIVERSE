@@ -157,6 +157,8 @@ struct GpuIndexedSelectionPacket {
     mat4 selectedWorld{};
     uint64_t frameSerial=0, geometryRevision=0, materialRevision=0;
     uint32_t commandCapacity=0, sourceFirstIndex=0, sourceIndexCount=0;
+    // Source-local primitive identity, NOT GPU atomic output order.
+    uint32_t sourceMesh=0, sourcePrimitive=0, expectedMaterial=0;
     int32_t sourceBaseVertex=0;
     bool exclusive=false;
     bool valid() const {
@@ -203,6 +205,10 @@ struct ModelDraw {
     float4 outline{0, 0, 0, 0};                    // rgb (linear) + width in world units; a = 0: none
     // Appended to preserve existing positional aggregate ModelDraw callers.
     GpuIndexedSelectionPacket gpuIndexed{};
+    // Stage16.4a: one independent packet per original material/primitive.
+    // Appended to keep every preexisting ModelDraw aggregate initializer
+    // backwards compatible. Copies into renderer-owned ModelItems by value.
+    std::vector<GpuIndexedSelectionPacket> gpuIndexedPrimitives;
 };
 
 enum DrawFlags : uint32_t {
