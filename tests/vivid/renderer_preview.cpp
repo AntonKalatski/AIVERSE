@@ -513,8 +513,30 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
         camera.distance=5.8f;
         camera.pitch=0.25f;
         camera.yaw=0.18f;
+        // The second Mask actor is deformed by a real Metal compute shader
+        // BEFORE Renderer3D consumes its own 60B vertexOverride. Its CPU
+        // bind triangle never receives this displacement.
+        if(maskParityEnabled && stage>=1) {
+            require(maskModel && maskDeformCompute.valid() &&
+                    maskDeformedVertices.valid() &&
+                    dev.supportsCompute() && dev.frameSerial()!=0,
+                    "7AZ independent native Metal Mask producer unavailable");
+            const render::float4 deformation{
+                stage==1?.075f:-.065f,0.f,0.f,0.f};
+            require(dev.beginCompute(maskDeformCompute),
+                    "7AZ GPU Mask source producer could not begin");
+            dev.setComputeBuffer(0,maskModel->vb);
+            dev.setComputeBuffer(1,maskDeformedVertices);
+            dev.setComputeUniforms(&deformation,sizeof(deformation));
+            dev.dispatch(std::uint32_t(maskModel->vertices.size()));
+            dev.endCompute();
+            maskGpuDeformedFrame=dev.frameSerial();
+            maskModel->materials[0].baseTex=stage==1?0:1;
+        }
         renderer.beginScene(camera,kWidth,kHeight);
-        if(actorCount==1)renderer.trackModelSubmissions(model.get());
+        if(actorCount==1)
+            renderer.trackModelSubmissions(model.get(),
+                maskParityEnabled && stage>=1?maskModel.get():nullptr);
         renderer.drawMesh(floor,{}, {0.32f,0.38f,0.45f,1});
         const int columns=std::min(actorCount,4);
         const int rows=(actorCount+columns-1)/columns;
@@ -532,6 +554,19 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                 require(actors[std::size_t(i)]->attach(draw),
                         "VIVID character refused same-frame 60B render override");
             renderer.drawModel(draw);
+        }
+        if(maskParityEnabled && stage>=1) {
+            render::ModelDraw maskDraw;
+            maskDraw.model=maskModel.get();
+            maskDraw.vertexOverride=maskDeformedVertices;
+            maskDraw.vertexOverrideCount=
+                std::uint32_t(maskModel->vertices.size());
+            require(render::modelVertexOverrideStatus(
+                    *maskModel,maskDraw.vertexOverride,
+                    maskDraw.vertexOverrideCount)==
+                        render::ModelVertexOverrideStatus::Ready,
+                    "7AZ Renderer3D rejected GPU-produced mask source");
+            renderer.drawModel(maskDraw);
         }
         // Stage 7AS: inspect the actual current-frame Renderer3D staging
         // rather than re-deriving visibility/LOD from the source Model.
