@@ -1840,6 +1840,19 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+## Validation follow-up for CPU MDI GPU safety (2026-11-19)
+
+The Vulkan `writableVersion` API now returns `nullptr` when a
+new GPU-safe version could not be allocated, **never** a writable
+reference to an in-flight VkBuffer. `updateBuffer` must select a
+safe destination BEFORE modifying its CPU shadow, and transactional
+growth must preserve the old allocations on failure. Do not revert
+to overwriting the previous serial's memory to avoid an OOM. Existing
+`tests/render/model_batching_policy.cpp` now exercises Stage 21–24
+preflight rank/bucket/generation behavior and Stage 28–29 monotonic
+RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
+CI results must be reported only when the corresponding workflow run
+actually completes, not inferred from test source or staging.
 
 
 ## PRISMA post-processing rules (short reference)
@@ -4816,3 +4829,26 @@ Plain PBR keeps GI tex13/U6. Graph/VT + GI fall back from experimental ICB to
 ordinary GPU shading. Preserve LENS staged terrain publication and immutable
 captured bindings; GI variants occupy terrain slots6..12. Read the Stage36
 lighting handoff and docs/dynamic-gi.md before changing these shared contracts.
+
+**Structured fog:** `FogVolume::structure` is opt-in cosmetic 3D noise/height/wind.
+Preserve `amount=0,heightFalloff=0` uniform compatibility and CPU `densityAt(p,t)`
+semantics. World-Y height does not imply terrain following. Noise is a periodic
+256-cell integer lattice; time wrap must preserve its phase. Reveals apply after
+structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
+presentation only. Structured 48/96-step budgets are separate from uniform 32/64.
+
+## Build storage — user instruction 2026-11-20
+
+All further build outputs, compiler/module caches, shader binaries and temporary
+compiler files must reside on `/Volumes/KINGSTON`. This feature uses
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky` and sibling `tmp` /
+`modules` directories. Set TMPDIR and CLANG_MODULE_CACHE_PATH there. Keep source
+worktrees intact; do not silently fall back to the internal drive if unmounted.
+
+**Local fog billows/self-shadowing:** `FogStructure::{heightVariation,warp,edgeErosion}`
+shape density in world space and preserve CPU/GPU query semantics. New values
+must be validated transactionally. `LocalFogSettings::selfShadow` defaults to 0;
+when enabled, integrate all volumes AND reveal holes toward the sun with bounded
+4/6 light samples and `shadowDistance`. Do not substitute a 2D darkening overlay.
+Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping,
+8+8 volume caps and separate handoffs; no multiple-scattering or perf claim.
