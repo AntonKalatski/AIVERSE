@@ -12,7 +12,11 @@ Ada's external companion package now uses decoded material textures instead of
 uniform cloth colours and raw RGB attribute masks. Cloth colour/detail/AO, iris
 masks, hair coverage, skin cavity and teeth maps are handled by the offline baker;
 original colour/normal images are preserved. VIVID hair graphs preserve sampled
-alpha through colour and shadow evaluation. A portrait capture mode permits
+alpha through colour and shadow evaluation. The companion baker now preserves
+soft coverage with blended lashes and a masked hair core plus blended fringe;
+the earlier all-MASK conversion lost fractional edge coverage. Core primitives
+share interchange accessors, but native import currently duplicates their vertices.
+A portrait capture mode permits
 close visual inspection. Full UE refraction/hair/skin shader parity is still not
 established. See [texture conversion](../tools/vivid-dna-import/README.md).
 

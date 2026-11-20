@@ -18,6 +18,7 @@ function sample(map,u,v,c=0,decode=false,repeat=true) {
 }
 async function bakeMaterials(doc,mapping,directory,sharp) {
  const report=[];
+ const hairMaterials=new Set();
  const cache=new Map();
  async function read(relative) {
   if(!relative)return null;
@@ -87,17 +88,19 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     .setRoughnessFactor(p.roughness).setMetallicRoughnessTexture(null);
    mode='cloth mask + authored colours + available detail/macro/AO';
   } else if(spec.kind==='hair'||/eyelashes/.test(material.getName())) {
-   const source=spec.kind==='hair'?await read(t.alpha_r||t.alpha):await read(t.basecolor||t.alpha);
+   const source=spec.kind==='hair'?await read(t.alpha_r||t.alpha):await read(t.alpha||t.basecolor);
    if(!source)throw Error('Coverage texture missing: '+material.getName());
    w=source.width;h=source.height;output=Buffer.alloc(w*h*4);
    const channel={r:0,g:1,b:2,a:3}[p.alpha_channel||'r'];
+   if(channel===undefined)throw Error('Unknown coverage channel');
    for(let k=0;k<output.length;k+=4) {
     output[k]=output[k+1]=output[k+2]=255;
     output[k+3]=source.data[k+channel];
    }
    material.setBaseColorFactor(spec.kind==='hair'?[1,1,1,1]:[...p.base_color.slice(0,3),1])
-    .setAlphaMode('MASK').setAlphaCutoff(.35).setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(p.roughness);
-   mode='source coverage channel -> alpha; neutral RGB';
+    .setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(p.roughness);
+   if(spec.kind==='hair')hairMaterials.add(material);
+   mode='source coverage channel -> alpha; smooth blended fringe';
   } else if(p.eye_pole_uv) {
    const atlas=await read(t.basecolor);if(!atlas)throw Error('Missing iris atlas');
    w=h=1024;output=Buffer.alloc(w*h*4);
@@ -125,6 +128,22 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     const ext=info.getExtension('KHR_texture_transform');if(ext)ext.dispose();
    }
    report.push({material:material.getName(),mode,width:w,height:h,pixelSha256:crypto.createHash('sha256').update(output).digest('hex')});
+  }
+ }
+ // Shared accessors and textures, separate depth-writing core and blended fringe.
+ // Do not use a hard cutoff for lashes: it removes subpixel strand coverage.
+ const cores=new Map();
+ for(const mesh of doc.getRoot().listMeshes()) {
+  for(const primitive of mesh.listPrimitives().slice()) {
+   const outer=primitive.getMaterial();
+   if(!hairMaterials.has(outer))continue;
+   let core=cores.get(outer);
+   if(!core) {
+    core=outer.clone().setName(outer.getName()+'__coverage_core')
+      .setAlphaMode('MASK').setAlphaCutoff(.5);
+    cores.set(outer,core);
+   }
+   mesh.addPrimitive(primitive.clone().setMaterial(core));
   }
  }
  return report;

@@ -90,7 +90,7 @@ const {createRequire} = require('node:module');
   const manifest = {version:1,model:'model.gltf',dna:'vivid-dna.json',
     materials:Object.fromEntries(hair.map(m=>[m.getName(),'hair']))};
   const dna={version:1,id:'ada-full-companion-export',displayName:'Ada — full character export',
-    groom:{color:[0.03676008,0.02233289,0.01274758]},
+    groom:{color:[0.03676008,0.02233289,0.01274758],roughness:0.55},
     rig:{rootBone:'vivid_full_root',headBone:'vivid_face_head',jawBone:'unused_jaw',leftEyeBone:'unused_eye_l',rightEyeBone:'unused_eye_r'}};
   const provenance={source:path.basename(source),sha256:crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex'),
     sourceKind:'published MetaHuman companion GLB; not body reconstructed from legacy Ada.dna',vertices,

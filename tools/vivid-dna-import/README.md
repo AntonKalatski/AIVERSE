@@ -139,7 +139,12 @@ argument the former uniform-cloth fallback is replaced by `bake_materials.cjs`:
   detail/macro maps and AO. High-frequency detail is prefiltered for the bake's
   texel footprint to avoid moiré. The result is encoded to an sRGB colour texture.
 - Hair, eyebrows and eyelashes: source coverage is packed into alpha; RGB is
-  neutral so attribute channels cannot tint the hair. MASK cutoff is 0.35.
+  neutral so attribute channels cannot tint the hair. Eyelashes use BLEND with
+  no depth write. Hair/brows use a BLEND fringe plus a MASK core (cutoff 0.5),
+  sharing glTF accessors/textures. Native import currently duplicates core
+  vertices, so this adds geometry memory and draws. The preview groom uses a
+  0.55 roughness floor, following the companion viewer, to reduce pin glints.
+  The former universal 0.35 cutoff discarded soft strand coverage.
 - Eyes: the original iris atlas R/B channels, per-eye UV pole, iris/limbus/pupil
   ramps and authored colours are baked in original mesh UV. The atlas transform
   is removed from the resulting texture to avoid applying it twice.
@@ -158,7 +163,8 @@ adds a close camera preset for this normalized full-character package. Default
 full-body framing is unchanged.
 
 Tests: `node test_bake_materials.cjs "$TOOLING" "$TMPDIR"` checks red-channel
-coverage against deliberately different source alpha, linear/sRGB cloth colours,
+fractional coverage against deliberately different source alpha, blended lashes,
+shared masked-core accessors/textures, linear/sRGB cloth colours,
 colour roundtrip and path escape rejection. Native vivid_human_appearance passes
 all material quality budgets after the alpha fix. Real Metal full/portrait captures
 are recorded in the feature handoff. Cloth/iris baking remains an approximation:
