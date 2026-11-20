@@ -10,7 +10,81 @@
 using namespace aiverse::render;
 using namespace aiverse::render::strata;
 
+static void hysteresisSelectorAndCoverage() {
+    // An independent projected-error series across frames: cold start uses
+    // the exact threshold. Once refined, coarsen only below 0.8x; once
+    // coarse, refine only above 1.2x. No new GPU/residency assumptions.
+    std::vector<ClusterNode> nodes(3);
+    nodes[0].firstChild=1;
+    nodes[0].childCount=2;
+    nodes[0].indexCount=6;
+    nodes[0].resident=true;
+    for(int i=1;i<3;++i){
+        nodes[size_t(i)].indexCount=3;
+        nodes[size_t(i)].resident=true;
+    }
+    const std::vector<uint32_t> roots{0};
+    float errors[3]{1.05f,0.f,0.f};
+    SelectionInput input{};
+    input.errorPixels=errors;
+    input.errorCount=3;
+    input.thresholdPixels=1.f;
+    input.hysteresisFraction=.2f;
+    SelectionOutput selected;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==2);
+    assert(selected.refinedNodes.size()==3);
+    assert(selected.refinedNodes[0]==1);
+
+    const auto savedRefined=selected.refinedNodes;
+    input.previousRefined=savedRefined.data();
+    input.previousRefinedCount=uint32_t(savedRefined.size());
+    errors[0]=.85f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==2); // stay fine below normal threshold
+    errors[0]=.79f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==1); // below 0.8 => coarse
+    auto coarse=selected.refinedNodes;
+    input.previousRefined=coarse.data();
+    errors[0]=1.1f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==1); // coarse stays below 1.2
+    errors[0]=1.21f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==2);
+
+    // A physically missing child always overrides hysteresis. The
+    // coarser resident parent must still cover the entire region.
+    nodes[2].resident=false;
+    input.previousRefined=savedRefined.data();
+    errors[0]=3.f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==1 && selected.nodes[0]==0);
+    assert(selected.missingRefinements==1);
+    nodes[2].resident=true;
+    input.maxVisibleNodes=1;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==1 && selected.budgetExceeded);
+
+    // The backend-neutral selector must still reject invalid options.
+    input.maxVisibleNodes=100;
+    input.hysteresisFraction=.5f;
+    assert(!select(nodes,roots,input,selected));
+    input.hysteresisFraction=.2f;
+    input.previousRefinedCount=1;
+    assert(!select(nodes,roots,input,selected));
+    input.previousRefined=nullptr;
+    input.previousRefinedCount=0;
+    input.hysteresisFraction=0;
+    errors[0]=1.05f;
+    assert(select(nodes,roots,input,selected));
+    assert(selected.nodes.size()==2);
+    assert(selected.refinedNodes.empty()); // default cost-free path
+}
+
 int main() {
+    hysteresisSelectorAndCoverage();
     Asset asset;
     // Parent is a coarser rendering of two adjacent child patches.
     asset.nodes.resize(3);
