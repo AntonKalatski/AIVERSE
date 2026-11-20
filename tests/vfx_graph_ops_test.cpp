@@ -78,7 +78,7 @@ int main() {
     require(refused.has("error"), "bake overwrote an effect without permission");
 
     Json invalid = graph;
-    invalid.set("version", Json::number(int64_t(2)));
+    invalid.set("version", Json::number(int64_t(3))); // v2 is now supported
     create.set("graph", invalid);
     const auto rejected = call("fx_graph_set", create);
     require(!rejected.getBool("ok"), "invalid graph should not be saved");

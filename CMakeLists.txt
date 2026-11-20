@@ -445,6 +445,13 @@ add_library(aiverse_fx STATIC engine/fx/FxEffect.cpp engine/fx/ParticleSystem.cp
 # Metal compute subset + portable CPU fallback (opt-in SpectraFX v1).
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuParticles.cpp)
 target_sources(aiverse_fx PRIVATE engine/fx/SpectraGraphRuntime.cpp)
+# Shared presentation world unifies compatible effects across graph instances.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraBatchWorld.cpp)
+# Optional generic tick-cue/attachment scheduler over shared CPU BatchWorld.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraCueScheduler.cpp)
+# Genre-neutral pooled GPU emitter resource groups with shared CPU fallback.
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuPoolWorld.cpp)
+target_sources(aiverse_fx PRIVATE engine/fx/SpectraGpuCueBridge.cpp)
 target_link_libraries(aiverse_fx PUBLIC aiverse_engine aiverse_shader_graph)
 # SpectraFX is the official public name; retain aiverse_fx for existing clients.
 add_library(AIVERSE::spectrafx ALIAS aiverse_fx)
@@ -3631,6 +3638,7 @@ endif()
 # It is deliberately independent of RTS/FPS and reuses the CPU EffectDef compiler.
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraGraphOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraFunctionOps.cpp)
 endif()
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     add_executable(aiverse_vfx_ops_tests tests/vfx_graph_ops_test.cpp)
@@ -3638,6 +3646,19 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     target_link_libraries(aiverse_vfx_ops_tests PRIVATE aiverse_editor_core aiverse_fx)
     add_test(NAME vfx_graph_ops COMMAND aiverse_vfx_ops_tests)
     set_tests_properties(vfx_graph_ops PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Stage 44 — pure C++20 SPFX-V2 checkpoint/ZIP/privacy diagnostics, no GPU.
+# Keep this test runnable on headless Linux and macOS without Metal hardware.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_spfx_diagnostics_test
+        tests/vfx_spfx_diagnostics_test.cpp)
+    target_include_directories(aiverse_vfx_spfx_diagnostics_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME vfx_spfx_diagnostics
+        COMMAND aiverse_vfx_spfx_diagnostics_test)
+    set_tests_properties(vfx_spfx_diagnostics
+        PROPERTIES LABELS "SpectraFX")
 endif()
 
 # SpectraFX GPU backend policy and legacy CPU fallback must be testable headlessly.
@@ -4019,4 +4040,35 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core AND AIVERSE_BUILD_STRATA)
     add_executable(aiverse_strata_editor_test tests/strata_editor_test.cpp)
     target_link_libraries(aiverse_strata_editor_test PRIVATE aiverse_editor_core)
     add_test(NAME strata_editor COMMAND aiverse_strata_editor_test)
+endif()
+
+# Stage 14: genuine Apple Metal compute/argument smoke (not a software mock).
+# When the macOS runner has no Metal device it exits 77 => CTest SKIP, not PASS.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_vfx_metal_smoke tests/vfx_metal_compaction_smoke.mm)
+    target_include_directories(aiverse_vfx_metal_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_source_files_properties(tests/vfx_metal_compaction_smoke.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(aiverse_vfx_metal_smoke PRIVATE "-framework Metal" "-framework Foundation")
+    add_test(NAME vfx_metal_compaction_smoke COMMAND aiverse_vfx_metal_smoke)
+    set_tests_properties(vfx_metal_compaction_smoke PROPERTIES
+        LABELS "SpectraFX;Metal" SKIP_RETURN_CODE 77)
+endif()
+
+# Independent graph instances must share compatible RHI draw submissions.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_shared_batch_tests tests/vfx_shared_batch_world_test.cpp)
+    target_include_directories(aiverse_vfx_shared_batch_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_vfx_shared_batch_tests PRIVATE AIVERSE::spectrafx)
+    add_test(NAME vfx_shared_batch_world COMMAND aiverse_vfx_shared_batch_tests)
+    set_tests_properties(vfx_shared_batch_world PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Stage 15 — generic bounded tick cues, ECS attachments, generation and rollback.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_cue_scheduler_tests tests/vfx_cue_scheduler_test.cpp)
+    target_include_directories(aiverse_vfx_cue_scheduler_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_vfx_cue_scheduler_tests PRIVATE AIVERSE::spectrafx)
+    add_test(NAME vfx_cue_scheduler COMMAND aiverse_vfx_cue_scheduler_tests)
+    set_tests_properties(vfx_cue_scheduler PROPERTIES LABELS "SpectraFX")
 endif()
