@@ -151,10 +151,18 @@ struct StaticModelCache {
 // GeometryScene supplies this ONLY for validated one-primitive Vulkan
 // sources, and keeps the buffer/metadata alive through the render epoch.
 // Failure to consume this packet falls back to the same Legacy ModelDraw.
+enum class GpuIndexedPass : uint8_t {
+    MainOpaque=0, SunShadow=1, PlanarReflection=2
+};
 struct GpuIndexedSelectionPacket {
     gfx::BufferHandle commands{};
     gfx::BufferHandle vertex{}, index{};
     mat4 selectedWorld{};
+    // Each GPU selection has its own camera. Shadow or reflection passes
+    // must NEVER consume another camera's main-view cluster list.
+    mat4 viewProjection{};
+    GpuIndexedPass pass=GpuIndexedPass::MainOpaque;
+    int viewWidth=0, viewHeight=0;
     uint64_t frameSerial=0, geometryRevision=0, materialRevision=0;
     uint32_t commandCapacity=0, sourceFirstIndex=0, sourceIndexCount=0;
     // Source-local primitive identity, NOT GPU atomic output order.
@@ -164,7 +172,8 @@ struct GpuIndexedSelectionPacket {
     bool valid() const {
         return exclusive && commands.valid() && vertex.valid() &&
                index.valid() && frameSerial && commandCapacity &&
-               commandCapacity<=2048 && sourceIndexCount;
+               commandCapacity<=2048 && sourceIndexCount &&
+               viewWidth>0 && viewHeight>0;
     }
 };
 struct ModelDraw {
@@ -209,6 +218,10 @@ struct ModelDraw {
     // Appended to keep every preexisting ModelDraw aggregate initializer
     // backwards compatible. Copies into renderer-owned ModelItems by value.
     std::vector<GpuIndexedSelectionPacket> gpuIndexedPrimitives;
+    // Stage16.4b: distinct sun-shadow camera selections. Spot shadows and
+    // water reflections retain CPU/Legacy until their own view epochs
+    // can be selected before render passes.
+    std::vector<GpuIndexedSelectionPacket> gpuShadowPrimitives;
 };
 
 enum DrawFlags : uint32_t {
@@ -243,6 +256,7 @@ struct ModelRenderStats {
     // Stage 16.3: main opaque, one-primitive Vulkan STRATA route only.
     uint64_t strataGpuCandidates=0, strataGpuSubmitted=0;
     uint64_t strataGpuRejected=0, strataGpuFallbackDraws=0;
+    uint64_t strataGpuSunShadowSubmitted=0;
     // Submitted indexed MDI batches using an exact validated persistent
     // layout, without copying cached CPU commands into transient scratch.
     uint64_t mdiLayoutZeroCopySubmissions = 0;
@@ -852,6 +866,7 @@ private:
         // Copied by value from a transient ModelDraw into this frame's
         // renderer-owned item. Never stores a pointer to GeometryScene.
         GpuIndexedSelectionPacket gpuIndexed{};
+        GpuIndexedSelectionPacket gpuShadowIndexed{};
         size_t geometryPrimitive = 0;
         uint32_t firstIndex = 0, indexCount = 0;
         // Optional two-level, single-primitive GPU LOD choice. Always preserve
