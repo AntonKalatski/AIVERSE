@@ -18,7 +18,7 @@ class RecordingComputeDevice final : public gfx::Device {
 public:
     gfx::DeviceInfo deviceInfo{gfx::Backend::Metal, true, false, "Strata test"};
     std::map<uint32_t, std::vector<uint8_t>> buffers;
-    gfx::BufferHandle bound[5]{};
+    gfx::BufferHandle bound[8]{};
     GpuSelectionUniforms lastUniforms{};
     std::string shaderText, error;
     std::vector<std::string> shaderSources;
@@ -88,7 +88,7 @@ public:
         active = true; return true;
     }
     void setComputeBuffer(int index, gfx::BufferHandle h) override {
-        assert(active && index >= 0 && index < 5 && h.valid());
+        assert(active && index >= 0 && index < 8 && h.valid());
         bound[index] = h;
     }
     void setComputeUniforms(const void* data, size_t size) override {
