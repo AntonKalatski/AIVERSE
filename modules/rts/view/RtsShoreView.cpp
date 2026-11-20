@@ -804,46 +804,65 @@ void RtsShoreView::buildUnpublished(gfx::Device& dev, const std::function<float(
     }
 }
 
-void RtsShoreView::rebuild(gfx::Device& dev,
-        const std::function<float(float,float)>& heightAt,
+struct RtsShoreView::PreparedRebuild {
+    gfx::Device* device=nullptr;
+    std::unique_ptr<RtsShoreView> staged;
+    ~PreparedRebuild() noexcept {
+        if(!device || !staged)return;
+        // These replacements never reached a submitted camera. The borrowed
+        // shore material textures continue to belong to the active kit.
+        for(auto& model:staged->chunks_)
+            if(model)releaseModel(*device,*model);
+        for(auto& model:staged->transparent_)
+            if(model)releaseModel(*device,*model);
+        for(auto& prop:staged->propModels_)
+            if(prop.model)releaseModel(*device,*prop.model);
+    }
+};
+
+std::unique_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
         float waterY,int w,int h) {
     if(dev_!=&dev)
-        throw std::logic_error("RtsShoreView rebuild: GPU owner mismatch");
-    // The candidate borrows the published texture/material kit. Only its
-    // newly uploaded Models and prop Models are owned privately. No previous
-    // published model is touched by a failed candidate build.
-    RtsShoreView staged;
+        throw std::logic_error("RtsShoreView prepare: GPU owner mismatch");
+    if(!needsVisualPreparation(waterY,w,h))return {};
+    auto candidate=std::make_unique<PreparedRebuild>();
+    candidate->device=&dev;
+    candidate->staged=std::make_unique<RtsShoreView>();
+    RtsShoreView& staged=*candidate->staged;
     staged.dev_=&dev;
     staged.read_=read_;
     staged.types_=types_;
     staged.net_=net_;
     staged.images_=images_;
     staged.materials_=materials_;
-    staged.warnings_=warnings_; // preserve init/type diagnostics on commit
+    staged.warnings_=warnings_;
     staged.dirty_=true;
-    try {
-        staged.buildUnpublished(dev,heightAt,waterY,w,h);
-    }catch(...) {
-        // Candidate Model GPU handles were never submitted to any camera.
-        // They are not passed to the published retirement queue.
-        for(auto& m:staged.chunks_)if(m)releaseModel(dev,*m);
-        for(auto& m:staged.transparent_)if(m)releaseModel(dev,*m);
-        for(auto& p:staged.propModels_)if(p.model)releaseModel(dev,*p.model);
-        throw;
-    }
-    // All GPU uploads succeeded. The following operations only retire
-    // old owners and swap already allocated containers (no new RHI).
-    release(dev);
-    for(auto& p:propModels_)retirement_.retireModel(dev,p.model);
+    staged.buildUnpublished(dev,heightAt,waterY,w,h);
+    return candidate;
+}
+
+void RtsShoreView::commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept {
+    if(!candidate)return;
+    RtsShoreView& staged=*candidate->staged;
+    release(*dev_);
+    for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
     propModels_.swap(staged.propModels_);
     chunks_.swap(staged.chunks_);
     transparent_.swap(staged.transparent_);
     props_.swap(staged.props_);
     warnings_.swap(staged.warnings_);
-    builtWaterY_=waterY;
-    builtW_=w;
-    builtH_=h;
+    builtWaterY_=staged.builtWaterY_;
+    builtW_=staged.builtW_;
+    builtH_=staged.builtH_;
     dirty_=false;
+}
+
+void RtsShoreView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt,
+        float waterY,int w,int h) {
+    auto prepared=prepareRebuild(dev,heightAt,waterY,w,h);
+    commitRebuild(std::move(prepared));
 }
 
 void RtsShoreView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
