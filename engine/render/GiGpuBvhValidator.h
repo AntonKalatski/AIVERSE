@@ -6,6 +6,7 @@
 // stack depth reach MSL/SPIR-V storage-buffer readers.
 #pragma once
 #include "GiGpuBvh.h"
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
