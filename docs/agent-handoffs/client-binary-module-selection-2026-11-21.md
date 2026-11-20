@@ -320,3 +320,39 @@ is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
 Windows and CI were NOT RUN (no CI URL). Next: inspect the largest remaining
 client dependencies, particularly UI/render support that can be cleanly
 selected by game capabilities, and measure optimized Web once available.
+
+## 2026-11-21 continuation: conservative automatic module selection
+
+Branch `feature/studio-html5`; implementation commit
+`b59729ce6bd07cf761af657380284dcb16f89f95`. Affected paths:
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. The new `"auto"` entry in
+`packaging.engineModules` selects detectable modules from the project tree:
+Spine and gamepad from `game.json`, FX from project JSON/known FX resources,
+runtime model loaders from source formats without a valid GLB v2 sidecar,
+and BLP from `.blp` files. Other array entries are additive (for example
+`["auto", "city-client"]`). Target-specific lists still override the shared
+list. An absent list retains legacy defaults; `[]` remains an explicit OFF
+selection. Public APIs, CMake module switches, content/save formats and
+runtime code are unchanged.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS after final source edits. `--check-engine-modules`
+on a copied `templates/showcase` fixture PASS: `auto` selected FX, legacy
+models and OBJ; an invalid OBJ `.glb` sidecar did not suppress OBJ; replacing
+it with an existing valid GLB did suppress OBJ; adding Spine/gamepad settings
+and a BLP file selected those modules; adding `city-client` selected it.
+A target-specific Web `[]` overrode shared `auto` and rejected the fixture's
+required Spine setting as expected; a separate `[]` fixture with no required
+modules produced all OFF. A template with no module declaration reported
+legacy defaults. `git diff --check` PASS on stage paths (line-ending warnings
+only).
+
+This is deliberately conservative: unused source assets can retain loaders,
+and runtime-generated asset paths or script-only module use cannot be proven
+from files and must be declared explicitly. The scan parses project JSON but
+does not evaluate scripts. No new client binary was built in this stage; the
+individual CMake switches were built in previous stages. Emscripten was
+unavailable; Web build/wasm size/startup, other platform builds and CI were
+NOT RUN (no CI URL). The shared worktree had unrelated changes; none was
+staged. Next: test `auto` with a representative real project and compare
+optimized client builds, then assess further large features for safe pruning.
