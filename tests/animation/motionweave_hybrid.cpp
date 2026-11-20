@@ -31,7 +31,7 @@ int main(){
     auto unsafe=AnimationGraph::compile(model,Json::parse(R"({
         "nodes":[{"id":"bind","kind":"bind"},
                  {"id":"custom","kind":"native","input":"bind","operation":"test"}],
-        "output":"custom"})",{{"test",operation}});
+        "output":"custom"})"),{{"test",operation}});
     World a,b;
     auto populate=[&](World& world){
         std::vector<Entity> entities;
