@@ -529,7 +529,8 @@ bool GpuClusterCulling::prepareTemporal(
     key={metadata.id,instance.instanceToken,instance.primitiveIndex,
          config.temporalPassId,config.temporalRevision};
     auto it=temporal_.find(key);
-    if(it==temporal_.end()){
+    const bool newlyCreated=it==temporal_.end();
+    if(newlyCreated){
         if(temporal_.size()>=kMaxTemporalHistories)return false;
         TemporalRecord fresh{};
         fresh.nodes=config.temporalNodeCount;
@@ -564,8 +565,10 @@ bool GpuClusterCulling::prepareTemporal(
     }
     const size_t bytes=size_t(record.nodes)*sizeof(uint32_t);
     if(!record.state[slot].valid()){
-        if(bytes>kMaxTemporalBytes-temporalStats_.retainedBytes)
+        if(bytes>kMaxTemporalBytes-temporalStats_.retainedBytes){
+            if(newlyCreated)temporal_.erase(it);
             return false;
+        }
         std::vector<uint32_t> zeros(record.nodes,0);
         gfx::BufferDesc desc{};
         desc.type=gfx::BufferType::Storage;
@@ -574,7 +577,10 @@ bool GpuClusterCulling::prepareTemporal(
         desc.data=zeros.data();
         desc.label="STRATA GPU temporal LOD refined mask";
         record.state[slot]=dev.createBuffer(desc);
-        if(!record.state[slot].valid())return false;
+        if(!record.state[slot].valid()){
+            if(newlyCreated)temporal_.erase(it);
+            return false;
+        }
         temporalStats_.retainedBytes+=bytes;
     }
     next=record.state[slot];
