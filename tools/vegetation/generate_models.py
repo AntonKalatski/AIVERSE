@@ -83,7 +83,11 @@ class Plant:
             if not mask.any():continue
             u=unit(np.cross(v,[0,0,1]));w=np.cross(v,u)
             uv[mask,0]=np.arctan2(radial[mask]@w,radial[mask]@u)/(2*math.pi)
-            uv[mask,1]=(along+t[mask]*l)/1.5;best[mask]=score[mask]
+            # Project onto the unbounded local tangent for UV arclength.
+            # Clamping this projection to each capsule endpoint creates flat
+            # UV bands every spine segment when taper selects its thicker neighbour.
+            projected=(positions[mask]-a)@v
+            uv[mask,1]=(along+projected)/1.5;best[mask]=score[mask]
         # Confirm outward winding against computed normals.
         cross=np.cross(positions[faces[:,1]]-positions[faces[:,0]],positions[faces[:,2]]-positions[faces[:,0]])
         flip=np.einsum('ij,ij->i',cross,normals[faces[:,0]])<0;faces[flip]=faces[flip][:,[0,2,1]]
@@ -91,7 +95,7 @@ class Plant:
         # across the whole bark tile, producing a visible stretched seam.
         pf=positions[faces].reshape(-1,3);nf=normals[faces].reshape(-1,3);uf=uv[faces].copy()
         wrapped=np.ptp(uf[:,:,0],axis=1)>.5
-        uf[wrapped,:,0]=np.where(uf[wrapped,:,0]<.5,uf[wrapped,:,0]+1,uf[wrapped,:,0])
+        uf[wrapped,:,0]=np.where(uf[wrapped,:,0]<0,uf[wrapped,:,0]+1,uf[wrapped,:,0])
         return pf,nf,uf.reshape(-1,2),np.arange(len(pf)).reshape(-1,3)
     def foliage(self,kind):
         roots=[(.39,.94),(.03,.70),(.42,.95),(.04,.84)] if kind=='oak' else [(.44,.98),(.50,.95),(.47,.98),(.45,.99)]
