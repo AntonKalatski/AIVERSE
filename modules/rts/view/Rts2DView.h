@@ -130,6 +130,8 @@ private:
     std::vector<SpriteLook> looks_;
     std::vector<bool> loadedTypes_;
     const Rules* rules_ = nullptr;
+    // Borrowed GPU device identity, retained through failed init for later recovery.
+    gfx::Device* resourceDevice_ = nullptr;
     bool ready_ = false;
 
     render::RTSCamera cam_;
