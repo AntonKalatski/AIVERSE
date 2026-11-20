@@ -85,6 +85,10 @@ void testCompiledRig() {
     AIVERSE_TEST_CHECK(near(pose[0].w[0],savedPose[0].w[0]));
     AIVERSE_TEST_CHECK(state.smoothed==savedState);
     params.values.at("jawOpen")=1.f;
+    params.vectors.erase("lookAt");
+    AIVERSE_TEST_CHECK(!rig.apply(model,params,pose,state,.1f,1.f,&error));
+    AIVERSE_TEST_CHECK(near(pose[0].w[0],savedPose[0].w[0]));
+    params.vectors.emplace("lookAt",float3{2,1,3});
     AIVERSE_TEST_CHECK(!rig.apply(model,params,pose,state,-1.f,1.f,&error));
     AIVERSE_TEST_CHECK(near(pose[0].w[0],savedPose[0].w[0]));
     // Re-import into a previously used pointer invalidates the compiled
