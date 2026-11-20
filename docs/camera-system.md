@@ -1,15 +1,51 @@
 # AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
-Date: 2026-11-19
-Branch: `feature/universal-multicamera-render-targets`
+Updated: 2026-11-20. Current integration: `codex/lens-completion`.
 
-> **Status: PARTIALLY IMPLEMENTED, NOT BUILD-VALIDATED.** Stage 1 renamed `render::Camera`; Stage 2 extracted `render::PortraitRenderer`; Stage 3 added native ECS camera components and read-only snapshots. Scheduling, output allocation, RenderGraph integration and all P1/P2 features below are still proposals. See the dated handoffs; keep common engine code genre-independent.
+## Current implementation and validation
+
+LENS now includes ECS camera assets, scheduling and dependency checks, managed
+color/depth targets, camera rigs, per-camera temporal state, capture/readback,
+PNG output and the Studio camera authoring window. The native client replays
+one prepared presentation frame into secondary cameras without updating
+simulation, animation or visual events again. Generic camera infrastructure
+remains independent of RTS/FPS modules.
+
+Captured RTS frames prepare Terrain, GroundFX, Roads, Shores and Fog privately.
+MotionWeave/View state, Sprite/tile uploads, lighting and world-overlay state
+join the final publication boundary. A preparation failure clears queued
+packets and restores animation/event clocks and published surface resources.
+Topology candidates supply temporary height queries during preparation. Mesh
+metadata in camera snapshots is owned; GPU resources remain governed by the
+host's completion-token retirement queues. Poll retirement at the host frame
+boundary and use confirmed GPU-idle shutdown.
+
+The integration compiles on macOS Debug. The native Metal fixture compares
+primary/prepared replay pixels, verifies a distinct secondary-camera image and
+checks that replay preserves the source epoch. Fault fixtures exercise private
+GPU allocation failures and topology retry. Exact executed commands, commits,
+results and logs are maintained in
+[the native validation handoff](agent-handoffs/lens-native-validation-2026-11-20.md).
+Run the native acceptance with `AIVERSE_LENS_METAL_VALIDATE=1`; without it,
+`lens_metal_frame` explicitly skips rather than claiming GPU validation.
+
+This boundary covers preparation, not rollback of already submitted GPU work.
+Legacy material-paint and field-visual caches are host providers outside that
+transaction. The ordinary noncapture host path is preserved. Vulkan/GLES
+runtime parity, broad genre acceptance and camera-count performance stress
+must be verified on their target platforms before making those claims.
+Physical exposure/DOF, EXR/video export, stereo/OpenXR and the complete P2 list
+below are roadmap items, not implied by completion of this integration.
+
+The sections below retain the original design and staged implementation
+history. Their older “planned / NOT RUN” labels describe those checkpoints;
+use the dated validation handoff for the current tested status.
 
 ## Stage 4–5 implementation (2026-11-19)
 
 The reusable core has now been committed in the feature branch (NOT hardware-validated):
 
 - `engine/render/CameraRenderScheduler.h`: ECS entity-driven scheduling with priorities, dependency DAG, duplicate-output and cycle diagnostics; `EveryFrame`, `EveryNFrames`, `FixedRate`, `OnDirty`, `Manual`. The highest-priority screen camera is last, after offscreen cameras. Until split-screen is implemented, additional full-screen cameras are suppressed.
-- `engine/render/RenderTargetPool.h`: on-demand RGBA8/RGBA16F and depth attachment allocation by asset key; lazy resize; completion-serial deferred retirement; unknown completion retains targets until confirmed GPU-idle teardown.
+- `engine/render/RenderTargetPool.h`: on-demand RGBA8/RGBA16F and depth attachment allocation by asset key; lazy resize; completion-token deferred retirement; unknown completion retains targets until confirmed GPU-idle teardown.
 - `engine/render/CameraRenderPipeline.h`: executes `CameraRenderPlan` into `Renderer3D::render(gfx::PassDesc)`, lets the host submit scene geometry and supply per-camera postprocess instances, and exposes sampleable color/depth textures.
 - CTest source fixtures (NOT RUN): `ecs_camera`, `camera_scheduler`, `camera_rt_pool`. GPU pixel tests and full editor/native integration remain pending.
 
@@ -59,7 +95,7 @@ For per-camera PostFX, retain a distinct `PostProcess` instance per Entity and c
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.
 - `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `modules/rts/view/RtsPortrait.cpp` is its RTS-specific adapter.
-- `engine/render/PostFx`, `ScreenLighting`, `Lights`, existing Metal, GL, Vulkan RHI are reused rather than replaced.
+- `engine/render/Prisma`, `ScreenLighting`, `Lights`, existing Metal, GL, Vulkan RHI are reused rather than replaced.
 - Shared `aiverselib/gameplay/Camera.h` is a camera controller helper, not a render/capture scheduler; avoid conflating the concepts.
 
 ## 3. Implemented foundations and proposed modules
