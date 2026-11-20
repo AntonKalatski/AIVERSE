@@ -12714,6 +12714,60 @@ TEST(overlays_gpu_init_is_atomic_and_retryable) {
     CHECK(overlays.shutdownAfterGpuIdle(dev));
 }
 
+TEST(mesh_builder_upload_releases_unpublished_vertex_buffer_on_index_failure) {
+    fogfaulttest::Device dev;
+    render::MeshBuilder b;
+    b.quad({0,0,0},{1,0,0},{1,0,1},{0,0,1});
+    const auto before=dev.destroyedBuffers;
+    dev.failBuffer=dev.bufferAttempts+2;
+    bool failed=false;
+    try {(void)b.upload(dev);}
+    catch(const std::runtime_error&) {failed=true;}
+    CHECK(failed);
+    CHECK(dev.destroyedBuffers==before+1);
+    dev.failBuffer=0;
+    const auto mesh=b.upload(dev);
+    CHECK(mesh.vb.valid() && mesh.ib.valid());
+    CHECK(mesh.indexCount==6);
+    dev.destroyBuffer(mesh.vb);
+    dev.destroyBuffer(mesh.ib);
+}
+
+TEST(terrain_chunk_rebuild_preserves_old_gpu_mesh_on_index_failure) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::TerrainRenderer terrain;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;
+    grid.init(4,4);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.built());
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    const auto initialChunks=terrain.stats().chunks;
+    const auto destroyedBefore=dev.destroyedBuffers;
+
+    // Changes in static material/rock geometry trigger a chunk rebuild.
+    grid.flags[0] |= game::kCellRock;
+    dev.failBuffer=dev.bufferAttempts+2;
+    bool failed=false;
+    try {(void)terrain.build(dev,grid,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built());
+    CHECK(terrain.stats().chunks==initialChunks);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedBuffers==destroyedBefore+1);
+
+    dev.failBuffer=0;
+    CHECK(terrain.build(dev,grid,false)); // unchanged old hash must retry
+    CHECK(terrain.stats().rebuilt>=1);
+    CHECK(terrain.pendingMeshGpuRetirements()>=2);
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
 TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
