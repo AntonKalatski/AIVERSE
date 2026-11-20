@@ -219,3 +219,66 @@ on Vulkan/GLES must be measured on real target devices.
 The final one-pass macOS acceptance now includes Low and Medium Creator
 GPU smoke captures; none has been executed for this source stage.
 See `docs/agent-handoffs/vivid.md` Stage 7AF.
+
+
+## Project presentation profile (Stage 7AG)
+
+The reusable, genre-independent `VividPresentationSettings` type is declared
+in `engine/character/vivid/VividPresentationSettings.h`. It is a versioned
+**presentation policy**, distinct from `HumanDNA`: project and editor hosts
+choose material quality and groom geometry quality without changing character
+recipes, authoritative ECS checksums or network saves.
+
+Schema v1 (strict; unknown fields/tiers are rejected):
+
+```json
+{
+  "version": 1,
+  "materialQuality": "medium",
+  "groomQuality": "low"
+}
+```
+
+Examples:
+`tools/vivid-creator/vivid-presentation.example.json` (High/High) and
+`tools/vivid-creator/vivid-presentation.mobile.json` (Low/Low).
+
+C++ host:
+
+```cpp
+#include "engine/character/vivid/VividPresentationSettings.h"
+#include "engine/character/vivid/HumanPreview.h"
+auto visual = aiverse::vivid::VividPresentationSettings::loadFile(
+    "content/vivid-presentation.json");
+auto head = aiverse::vivid::generateHumanPreview(dna, visual);
+```
+
+Creator GUI now has a **Presentation config** filename and
+**Save presentation config / Load presentation config** controls, plus
+the existing Material Low/Medium/High and Hair High/Med/Low buttons.
+The selected profile is used when rebuilding both procedural preview
+and imported material/groom candidates. CLI flags:
+
+```bash
+build/vivid-onepass/aiverse_vivid_creator --smoke \
+  --presentation-config tools/vivid-creator/vivid-presentation.mobile.json
+# Flags are applied in command-line order; later overrides take precedence:
+build/vivid-onepass/aiverse_vivid_creator --smoke \
+  --presentation-config tools/vivid-creator/vivid-presentation.mobile.json \
+  --material-quality high --groom-quality medium
+```
+
+Old two-/three-argument preview and material APIs are still available and
+default to High. The profile is not automatically read by unrelated game
+modules: each host opts in explicitly. Rendering receives the resulting
+material and groom models; this is **not** a global GPU-wide
+`Renderer3D::setQuality` change. No texture residency/mip settings are
+persisted yet, because their canonical implementation is on the parallel,
+currently unmerged `feature/texture-rhi-unification` branch. Read
+`docs/agent-handoffs/vivid-texture-rhi-integration-2026-11-20.md` before
+sharing texture policies or modifying GPU retirement.
+
+The new profile JSON roundtrip/unknown-field tests and the final Mac
+smoke capture using the mobile config have been **added but NOT RUN**.
+The renderer/Creator and texture branch must undergo real CMake/CTest/
+Metal/Vulkan/GLES checks before any tested-compatibility claim.
