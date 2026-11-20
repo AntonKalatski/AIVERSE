@@ -10,6 +10,7 @@
 #include <iterator>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <ctime>
 #include <vector>
 #if defined(__APPLE__)
