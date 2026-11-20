@@ -156,3 +156,28 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 - Real `material_set` in `apps/editor/core/MaterialOps.cpp` previously called `gameFile(..., "")` while collecting missing texture warnings. `gameFile` intentionally rejects empty paths, so clearing a material texture slot via the HTML5 picker would throw. The warning check now skips empty texture paths; empty string remains valid for clearing slots.
 - Commit `d57b8d3b768e23ff751b9db078371ee0612db8ad`, regression source contract `22f76a14d88836385bac7161b2fce62bd1f7b386`.
 - Native runtime behavior remains untested; exercise empty texture slots on Mac native QA.
+
+## Stage 8 — dependency-aware move preview and safe blocker (2026-11-20)
+### Implemented on feature/studio-html5
+- `apps/studio-native/StudioAssetReferences.h`: `studioMoveReferenceImpact(plan,refs)` maps documented reference paths against selected internal file or folder moves. Matches exact source or descendants with path-segment boundary; reports transfer item ID, document, owner, field, previous and prospective new path, and whether native currently knows how to rewrite the reference.
+- `apps/studio-native/StudioSession.cpp`: `studio.assetMovePreview` emits `references` alongside conflict items. On `studio.assetTransferCommit`, native re-derives the impact graph and checks the *actual submitted decisions*, preventing clients from bypassing the read-only rules model warning. An item with affected `rules.json` model reference may only be skipped, rather than silently moved. This handles folder descendants as well.
+- `apps/studio-web/src/types.ts`: typed optional `references` array on `StudioAssetTransferPlan`.
+- `apps/studio-web/src/components/AssetsPanel.tsx`: transfer confirmation displays impacted material fields and read-only rules model references per item. Apply is disabled while any non-skipped item has read-only dependencies.
+- `tools/studio/test_reference_pin_zoom.py`: source-level contract guards added for preview schema, native commit-side enforcement, and UI blocking.
+### Commits
+- `c9b9a663c3185d0bcb01a674a14ede09045e8015` impact mapper.
+- `a20990c057dc1d6636c0d1ad6dce1c972d25e57f` native preview and commit safety enforcement.
+- `333a194087e7ce317d9af13dad7c730945040e0d` typed response.
+- `c6f91d7f5d6862badce241a7e2ff7874a460efe8` UI.
+- `db0820109d0195541c4566f05c18e5a9f4b10b0c` test source contracts.
+### Verified scope and limitations
+- Reviewed source of `StudioTransferPlan::describe/apply`, GUID catalogs, rules origin-aware `Project::saveRules()`, material persistence and HTML5 transfer UI.
+- Actual source edits have been pushed through GitHub connector. **No local TS/Python/C++ build or tests executed**. Regression tests are written but must be run on developer machine.
+- This stage deliberately **does not claim transactional move/rollback or automatic rules rewriting**. `Project::saveRules()` uses split composed rules and multiple writes, not an atomic unit; naive JSON rewrites would corrupt included/inherited sources. Blocking a known read-only model dependency is safer until a verified multi-file journal/rollback is built.
+- Existing material repair after move remains best-effort and may partially fail. External imports and destructive replace collision handling also remain nontransactional.
+- Impact mapper currently covers the explicit registered material texture fields and `view.model` only; other reference schemas are NOT indexed or protected. Legacy model paths not under `content/` will not match until declared path mapping is supported.
+- Keep-both destinations may differ from the plan's original `to` field; the projected `to` in preview should not be interpreted as the final actual path in those cases.
+### Next
+1. Run `cd apps/studio-web && npm ci && npm run typecheck && npm run test:web && npm run build`; `python3 -m unittest discover -s tools/studio -p 'test_*.py'`; native macOS Studio CMake build/CTest.
+2. Add native integration tests for selected vs skipped impacted moves, folder children, same-prefix nonmatches, stale catalog, and failed material repair.
+3. Implement a durable preflight + staged journal that covers assets/.meta plus material/rules source documents with restoration semantics and crash recovery. Extend rules source-aware edits only after testing composed-file provenance and rollback.
