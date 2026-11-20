@@ -777,10 +777,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if(temporal){
         dev.setComputeBuffer(5,previousTemporal);
         dev.setComputeBuffer(6,nextTemporal);
-    }else if(vulkan){
-        // Vulkan requires every statically declared storage descriptor
-        // to be valid even when the temporal uniform branch is disabled.
-        // The shaders NEVER access these dummy bindings at fraction=0.
+    }else{
+        // Keep GPU shader resource slots valid on BOTH Vulkan and Metal
+        // even while the optional temporal branch is disabled. The kernel
+        // never touches these counters at hysteresisFraction=0.
         dev.setComputeBuffer(5,slot.counters);
         dev.setComputeBuffer(6,slot.counters);
     }
