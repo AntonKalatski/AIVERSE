@@ -2097,6 +2097,12 @@ if(AIVERSE_BUILD_STRATA)
         add_executable(aiverse_strata_view_tests tests/render/strata_view.cpp)
         target_link_libraries(aiverse_strata_view_tests PRIVATE aiverse_strata_view aiverse_zstd_dec)
         add_test(NAME strata_view COMMAND aiverse_strata_view_tests)
+        # Stage18.4: opt-in CPU-only deterministic trace; not GPU timing/FPS.
+        add_executable(aiverse_strata_lod_benchmark
+            tests/render/strata_lod_benchmark.cpp)
+        target_include_directories(aiverse_strata_lod_benchmark PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME strata_lod_benchmark COMMAND aiverse_strata_lod_benchmark)
         add_executable(aiverse_strata_gpu_scene_tests tests/render/strata_gpu_scene.cpp)
         target_link_libraries(aiverse_strata_gpu_scene_tests PRIVATE
             aiverse_strata_gpu_scene aiverse_zstd_dec)
