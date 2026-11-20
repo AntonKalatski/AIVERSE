@@ -64,3 +64,11 @@
 .studio-editor-settings input[type=range]{width:100%;accent-color:var(--au-accent)}
 .studio-editor-settings button{background:var(--au-field);border:1px solid var(--au-line-strong);
   border-radius:var(--au-radius-sm);padding:8px;color:var(--au-text);cursor:pointer}
+
+/* Editor-only Scene camera controls; overlay must never intercept GPU gestures. */
+.studio-scene-nav-help{position:absolute;left:12px;bottom:12px;z-index:3;
+  pointer-events:none;max-width:calc(100% - 24px);padding:7px 10px;
+  border:1px solid var(--au-line-strong);border-radius:var(--au-radius-sm);
+  background:var(--au-overlay);color:var(--au-text-muted);
+  font-size:var(--au-font-xs);line-height:1.4}
+.viewport:focus-visible{outline:1px solid var(--au-accent);outline-offset:-1px}
