@@ -160,7 +160,10 @@ bool TerrainRenderer::buildDetail(gfx::Device& dev, const MapGrid& g, bool flatD
         c.bmin = {float(c.x0), std::min(mn, kApronY) - 1.0f, float(c.y0)};
         c.bmax = {float(c.x1), mx + 0.1f, float(c.y1)};
         if (c.valid && gh == c.geoHash) continue;
-        for (auto& l : c.lods) { geoBytes_ -= std::min<size_t>(geoBytes_, size_t(l.indexCount) * 4 + size_t(l.vertexCount) * sizeof(TV)); dev.destroyBuffer(l.vb); dev.destroyBuffer(l.ib); l = {}; }
+        for (auto& l : c.lods) { geoBytes_ -= std::min<size_t>(geoBytes_, size_t(l.indexCount) * 4 + size_t(l.vertexCount) * sizeof(TV));
+            retiredMeshes_.retireBuffer(dev,l.vb);
+            retiredMeshes_.retireBuffer(dev,l.ib);
+            l={}; }
         c.geoHash = gh;
         c.valid = true;
         changed = true;
