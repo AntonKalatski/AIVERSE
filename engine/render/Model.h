@@ -98,7 +98,7 @@ struct ModelVertex {
 static_assert(sizeof(ModelVertex) == 60, "ModelVertex layout is shared with the shaders");
 
 constexpr int kMaxPaletteJoints = 80;  // joint matrices per draw (3 x vec4 each, fits a 4 KB uniform block)
-constexpr int kMaxMorphTargets = 8;    // morph targets applied on the GPU per primitive
+constexpr int kMaxMorphTargets = 16;   // morph targets supported by GLSL/MSL U4 (4 vec4 weights)
 
 struct Primitive {
     uint32_t firstIndex = 0, indexCount = 0;
