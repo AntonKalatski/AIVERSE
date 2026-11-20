@@ -143,6 +143,26 @@ if(AIVERSE_BUILD_TESTS)
             OBJCXX_EXTENSIONS OFF)
         add_test(NAME vivid_metal_rhi COMMAND aiverse_vivid_metal_rhi_tests)
         set_tests_properties(vivid_metal_rhi PROPERTIES SKIP_RETURN_CODE 77)
+
+        # Actual Metal ID/depth raster oracle + async offscreen pixel readback.
+        # Uses production gfx::Device; separate from pure source/CPU tests.
+        add_executable(aiverse_vivid_metal_sculpt_id_tests
+            ${PROJECT_SOURCE_DIR}/tests/vivid/metal_sculpt_id.mm
+            ${PROJECT_SOURCE_DIR}/engine/gfx/metal/GfxMetal.mm)
+        set_source_files_properties(
+            ${PROJECT_SOURCE_DIR}/tests/vivid/metal_sculpt_id.mm
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(aiverse_vivid_metal_sculpt_id_tests PRIVATE
+            aiverse_vivid_human aiverse_zstd_dec
+            "-framework Metal" "-framework QuartzCore" "-framework Foundation")
+        set_target_properties(aiverse_vivid_metal_sculpt_id_tests PROPERTIES
+            OBJCXX_STANDARD 20
+            OBJCXX_STANDARD_REQUIRED ON
+            OBJCXX_EXTENSIONS OFF)
+        add_test(NAME vivid_metal_sculpt_id
+            COMMAND aiverse_vivid_metal_sculpt_id_tests)
+        set_tests_properties(vivid_metal_sculpt_id
+            PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
     # Whole-character retirement: old Model and GPU actor resources share
