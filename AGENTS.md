@@ -2867,3 +2867,16 @@ advection follows committed ticks, resets on rollback/source changes, and is not
 saved ECS state. PHYSIS remains renderer-independent; no automatic weather
 installation or genre-host attachment. See `docs/physical-sky.md` and stage 2
 in the physical-sky handoff. Native tests `physis_sky` / `physical_sky`.
+
+## Local volumetric fog (2026-11-20, opt-in)
+
+Use `engine/render/LocalFog.h` through `PostFx::setLocalFog/localFog` for cosmetic
+sphere/OBB fog and runtime reveal, documented in `docs/local-volumetric-fog.md`.
+Keep the 8+8 region bounds, validated transactional upsert, normalized OBB rotation,
+world-unit extinction and max-union reveal contract. No gameplay FoW/PHYSIS state
+writes. Configure/shutdown clear transient regions; native hosts must recreate
+them. HDR Medium/High only; shared GLSL/MSL depth-clipped pass after sky. Preserve
+separate sampled scene depth and writable scratch depth. No Studio/JSON authoring,
+automatic game installation, transparent-depth or multiple-scattering parity is
+claimed. Test `local_fog` and opt-in `AIVERSE_LOCAL_FOG_TEST` GPU fixtures; append
+stages to `docs/agent-handoffs/physical-sky-clouds-2026-11-20.md` in separate commits.

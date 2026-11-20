@@ -207,7 +207,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 
 **Gráficos y audio**
 - RHI propio: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opcional)
-- PBR, glTF/OBJ, animación esquelética y procedural, cables procedurales, renderizado de entidades con jerarquía, cielo físico, nubes volumétricas y rayos solares
+- PBR, glTF/OBJ, animación esquelética y procedural, cables procedurales, renderizado de entidades con jerarquía, cielo físico, nubes volumétricas y rayos solares, niebla volumétrica local en esferas/OBB con despeje en tiempo de ejecución
 - Sombras, luces dinámicas, noche, posprocesado, Shader Graph
 - Partículas con los módulos de Unity ParticleSystem e importador desde Unity
 - 2D: sprites, mapas de tiles con autotiling

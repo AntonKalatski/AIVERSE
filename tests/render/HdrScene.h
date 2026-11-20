@@ -121,12 +121,39 @@ struct HdrScene {
                 world::applyPhysisSkyFrame(post,binding.update(weatherWorld,location,1,1.0/30,sky));
             }
         }
+        if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST")) {
+            advanced=false;renderer.setModelReflectionsEnabled(false);
+            post.configure(Json::parse(R"({"hdr":"on","effects":[{"type":"fxaa"}]})"),{});
+            post.setQuality(PostFxQuality::High);
+            LocalFogSettings settings;settings.enabled=true;post.setLocalFog(settings);
+            const std::string which=fogCase;
+            FogVolume volume;volume.id=1;volume.region.center={0,1,0};volume.region.radius=7;
+            volume.region.feather=2;volume.density=.3f;volume.color={.65f,.78f,.95f};
+            if(which=="obb"||which=="obb-reveal") {
+                volume.region.shape=FogShape::Obb;volume.region.halfExtents={6,3,2};
+                volume.region.orientation={0,.38268343f,0,.92387953f};
+            }
+            if(which=="behind"){volume.region.center={0,-4,0};volume.region.radius=1;volume.region.feather=.1f;}
+            if(which=="inside"){camera.target={0,1,0};camera.distance=1;camera.pitch=.1f;}
+            if(!post.localFog().upsert(volume)){failed=true;return;}
+            if(which=="reveal"||which=="obb-reveal"||which=="move") {
+                FogReveal reveal;reveal.id=1;reveal.region=volume.region;reveal.region.feather=0;post.localFog().upsert(reveal);
+            }
+            if(which=="off") { settings.enabled=false;post.setLocalFog(settings); }
+            if(which=="medium")post.setQuality(PostFxQuality::Medium);
+            if(which=="ortho")camera.ortho=true;
+            if(which=="combined"){PhysicalSkySettings sky;sky.enabled=true;post.setPhysicalSky(sky);post.setPhysicalSkyTime(0);}
+        }
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
+        if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
+            FogReveal reveal=post.localFog().reveals()[0];reveal.region.center={100,0,0};
+            if(!post.localFog().upsert(reveal)){failed=true;return;}
+        }
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
         renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});

@@ -139,3 +139,6 @@ or RTS/FPS host attachment in this stage; the real native GPU fixture demonstrat
 the complete World -> bridge -> PostFx path with `physis-dry` / `physis-storm`.
 
 Tests: `./run-tests.sh --filter '^(physical_sky|physis_sky|physis_presentation)$'`.
+
+Local sphere/OBB fog with runtime reveal is a separate opt-in pass; see
+[local volumetric fog](local-volumetric-fog.md). It works with or without sky.

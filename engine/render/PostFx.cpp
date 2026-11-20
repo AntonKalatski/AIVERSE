@@ -24,7 +24,7 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
                           "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kPhysicalSky = 50 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kPhysicalSky = 50, kLocalFog = 51 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
@@ -118,6 +118,7 @@ void PostFx::shutdown() {
         for (auto& [k, d] : s.depths) release(d);
     }
     sizes_.clear();
+    fog_.shutdown(*dev_);fogSettings_={};fogScene_.clear();
     sky_.shutdown(*dev_);skySettings_={};skyTime_=skyEpoch_=-1;clearPhysicalSkyAdvection();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
@@ -147,6 +148,7 @@ void PostFx::setImageLoader(ImageLoader fn) {
 void PostFx::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
     std::vector<std::string> local;
     setSettings(parsePostFx(game, map, issues ? issues : &local));
+    fogSettings_={};fogScene_.clear();
     skySettings_=parsePhysicalSky(game,map,issues?issues:&local);
     skyEpoch_=-1;skyTime_=-1;clearPhysicalSkyAdvection();
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
@@ -425,6 +427,13 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                      skyAdvection_?&skyDisplacement_:nullptr)) {
             src=skyTarget;++stats_.passes;++stats_.effects;
         } else if(!sky_.lastError().empty())error_=sky_.lastError();
+    }
+    if(fogSettings_.enabled&&hdrFrame_) {
+        const Target fogTarget=target(set,kLocalFog,w,h);
+        if(fog_.draw(dev,f,fogSettings_,fogScene_,int(quality_),src.tex,depthFor(set,w,h),
+                     fogTarget.tex,depthFor(set,w,h,2),triangle_)) {
+            src=fogTarget;++stats_.passes;++stats_.effects;
+        } else if(!fog_.lastError().empty())error_=fog_.lastError();
     }
     if (const PostFxEffect* e = find(PostFxType::Fxaa); !hdrFrame_ && e && program(kFxaa).valid()) {
         SimpleU u{};

@@ -207,7 +207,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 
 **Gráficos e áudio**
 - RHI próprio: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opcional)
-- PBR, glTF/OBJ, animação esquelética e procedural, cabos procedurais, renderização de entidades com hierarquia, céu físico, nuvens volumétricas e raios solares
+- PBR, glTF/OBJ, animação esquelética e procedural, cabos procedurais, renderização de entidades com hierarquia, céu físico, nuvens volumétricas e raios solares, névoa volumétrica local em esferas/OBB com dissipação em tempo de execução
 - Sombras, luzes dinâmicas, noite, pós-processamento, Shader Graph
 - Partículas com os módulos do Unity ParticleSystem e importador do Unity
 - 2D: sprites, mapas de tiles com autotile

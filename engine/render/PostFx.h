@@ -16,6 +16,7 @@
 #include <vector>
 #include "PostFxData.h"
 #include "PhysicalSky.h"
+#include "LocalFog.h"
 #include "Renderer3D.h"
 
 namespace aiverse::render {
@@ -117,6 +118,9 @@ public:
     const PostFxUnderwaterState& underwater()const{return underwater_;}
     void resetUnderwater(){underwater_={};}
 
+    void setLocalFog(LocalFogSettings s) { fogSettings_=s; }
+    LocalFogScene& localFog() { return fogScene_; }
+    const LocalFogScene& localFog() const { return fogScene_; }
     void setPhysicalSky(PhysicalSkySettings s) { skySettings_=sanitizePhysicalSky(s); }
     // Positive displacement moves clouds along positive world X/Z (metres).
     void setPhysicalSkyAdvection(float2 meters) { skyDisplacement_=meters;skyAdvection_=true; }
@@ -170,6 +174,9 @@ private:
 
     gfx::Device* dev_ = nullptr;
     PostFxSettings settings_;
+    LocalFog fog_;
+    LocalFogSettings fogSettings_;
+    LocalFogScene fogScene_;
     PhysicalSky sky_;
     PhysicalSkySettings skySettings_;
     double skyTime_=-1,skyEpoch_=-1;
