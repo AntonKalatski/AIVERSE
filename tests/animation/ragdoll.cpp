@@ -27,7 +27,8 @@ int main(){
     auto sparse=avatar;
     sparse.nodes[size_t(HumanoidBone::Neck)]=-1;
     const auto sparseRag=RagdollAsset::compile(sparse);
-    AIVERSE_TEST_CHECK(sparseRag.scene()["bodies"].size()==2);
-    AIVERSE_TEST_CHECK(sparseRag.scene()["joints"].size()==0);
+    // Neckless avatars retain a Chest-to-Head torso capsule.
+    AIVERSE_TEST_CHECK(sparseRag.scene()["bodies"].size()==3);
+    AIVERSE_TEST_CHECK(sparseRag.scene()["joints"].size()==2);
     return 0;
 }
