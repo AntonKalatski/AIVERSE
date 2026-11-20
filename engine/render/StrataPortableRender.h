@@ -10,6 +10,8 @@
 #include "StrataIndexResidency.h"
 
 #include <memory>
+#include <map>
+#include <tuple>
 
 #include <cstdint>
 #include <string>
@@ -26,6 +28,33 @@ struct PortablePassView {
     bool clipDepthZeroToOne = true;
     float errorThresholdPixels = 1.0f;
 };
+// Opt-in temporal history of the SELECTED LOD frontier. Its owner is ONE
+// GeometryScene instance, not the shared source ModelAsset: two instances
+// can have different camera distances without fighting over node state.
+// A separate record is maintained for every primitive, source node and
+// ordered pass slot. Never persists into another source revision/pass count.
+struct PortableLodHistory {
+    using Key=std::tuple<uint32_t,uint32_t,uint32_t>;
+    const ModelAsset* source=nullptr; // borrowed identity, never dereferenced
+    uint64_t geometryRevision=0;
+    uint32_t passCount=0;
+    std::map<Key,std::vector<uint8_t>> states;
+    void reset() {
+        source=nullptr;
+        geometryRevision=0;
+        passCount=0;
+        states.clear();
+    }
+    const std::vector<uint8_t>* previous(const ModelAsset* asset,
+        uint64_t revision,uint32_t passes,const Key& key,
+        size_t expectedNodes) const {
+        if(source!=asset || geometryRevision!=revision ||
+           passCount!=passes)return nullptr;
+        const auto it=states.find(key);
+        return it!=states.end() && it->second.size()==expectedNodes
+            ? &it->second:nullptr;
+    }
+};
 struct PortableRenderStats {
     uint64_t drawPreparations = 0;
     uint64_t selectedClusters = 0;
@@ -34,6 +63,7 @@ struct PortableRenderStats {
     bool dedicatedIndices = false;
     bool streamingIndices = false;
     uint64_t residentIndexBytes = 0;
+    uint64_t hysteresisTransitions=0;
     bool forcedFinest = false;
 };
 
@@ -76,7 +106,9 @@ public:
     bool prepareModel(const mat4& instanceWorld,
                       const std::vector<PortablePassView>& passes,
                       bool forceFinestForUnspecifiedPass,
-                      Model& output, std::string* error = nullptr);
+                      Model& output, std::string* error = nullptr,
+                      PortableLodHistory* temporalHistory = nullptr,
+                      float hysteresisFraction = 0.f);
     bool validFor(const Model& source) const;
     // Must be called with the same live device used by stage(). A wrong
     // device is refused without destroying foreign RHI buffer handles.
