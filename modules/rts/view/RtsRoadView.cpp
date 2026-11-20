@@ -2568,48 +2568,79 @@ float RtsRoadView::puddleScale(const PuddleSpot& p, float puddles) {
 }
 
 void RtsRoadView::buildWeather(gfx::Device& dev) {
-    const int ws = int(std::lround(wet_ * 32)), ps = int(std::lround(puddles_ * 32));
-    if (ws != wetStep_) {
-        wetStep_ = ws;
-        retireSpriteBuffer(dev,filmMesh_);
-        filmMesh_ = {};
-        if (ws > 0 && !film_.empty()) {
-            // wet asphalt / dirt: darker and a little cooler (the sky's colour in the water film)
-            std::vector<SpriteVertex> v = film_;
-            const uint32_t a = uint32_t(std::lround(0.55f * float(ws) / 32.0f * 255.0f));
-            for (auto& x : v) x.color = (x.color & 0xffffffu) | (a << 24);
-            filmMesh_ = decalBatch_.buildMesh(dev, v);
+    const int ws=int(std::lround(wet_*32)),ps=int(std::lround(puddles_*32));
+    const bool updateFilm=ws!=wetStep_,updatePuddles=ps!=puddleStep_;
+    if(!updateFilm && !updatePuddles)return;
+    SpriteMesh stagedFilm{},stagedPuddles{};
+    try {
+        if(updateFilm && ws>0 && !film_.empty()) {
+            std::vector<SpriteVertex> vertices=film_;
+            const uint32_t alpha=uint32_t(std::lround(
+                0.55f*float(ws)/32.0f*255.0f));
+            for(auto& v:vertices)
+                v.color=(v.color&0xffffffu)|(alpha<<24);
+            stagedFilm=decalBatch_.buildMesh(dev,vertices);
+            if(!stagedFilm.vb.valid())
+                throw std::runtime_error("RoadView: wet film GPU upload failed");
         }
-    }
-    if (ps != puddleStep_) {
-        puddleStep_ = ps;
-        retireSpriteBuffer(dev,puddleMesh_);
-        puddleMesh_ = {};
-        const float level = float(ps) / 32.0f;
-        std::vector<SpriteVertex> v;
-        const float u0 = float(roadkit::kVergePuddleSlot) / float(roadkit::kVergeSlots) + 0.001f, u1 = float(roadkit::kVergePuddleSlot + 1) / float(roadkit::kVergeSlots) - 0.001f;
-        for (size_t i = 0; i < spots_.size() && ps > 0; ++i) {
-            const PuddleSpot& p = spots_[i];
-            const float k = puddleScale(p, level);
-            if (k <= 0.02f) continue;
-            const float3 dl{p.dir.x * p.len * 0.5f * k, 0, p.dir.y * p.len * 0.5f * k}, dw{-p.dir.y * p.width * 0.5f * k, 0, p.dir.x * p.width * 0.5f * k};
-            float3 c = p.c;
-            c.y += 0.0025f;
-            const float3 q[4] = {c - dl - dw, c + dl - dw, c + dl + dw, c - dl + dw};
-            // a different part of the round pool for every spot: flip / swap the texture's axes
-            const bool fu = (i & 1) != 0, fv = (i & 2) != 0;
-            const float a0 = fu ? u1 : u0, a1 = fu ? u0 : u1, b0 = fv ? 1.0f : 0.0f, b1 = fv ? 0.0f : 1.0f;
-            const float2 uv[4] = {{a0, b0}, {a1, b0}, {a1, b1}, {a0, b1}};
-            const uint32_t alpha = uint32_t(std::lround(std::min(1.0f, 0.35f + k) * 255.0f));
-            const uint32_t tint = p.dirt ? 0xd2e2f0u : 0xffffffu;   // muddy water on dirt (abgr)
-            for (int c4 = 0; c4 < 4; ++c4) {
-                SpriteVertex x;
-                x.pos = q[c4]; x.uv = uv[c4]; x.color = tint | (alpha << 24); x.team = 0;
-                x.rpos = {x.pos.x, x.pos.y, x.pos.z, 0};
-                v.push_back(x);
+        if(updatePuddles) {
+            const float level=float(ps)/32.0f;
+            std::vector<SpriteVertex> vertices;
+            const float u0=float(roadkit::kVergePuddleSlot)/
+                float(roadkit::kVergeSlots)+0.001f;
+            const float u1=float(roadkit::kVergePuddleSlot+1)/
+                float(roadkit::kVergeSlots)-0.001f;
+            for(size_t i=0;i<spots_.size() && ps>0;++i) {
+                const PuddleSpot& p=spots_[i];
+                const float k=puddleScale(p,level);
+                if(k<=0.02f)continue;
+                const float3 dl{p.dir.x*p.len*0.5f*k,0,
+                                p.dir.y*p.len*0.5f*k};
+                const float3 dw{-p.dir.y*p.width*0.5f*k,0,
+                                  p.dir.x*p.width*0.5f*k};
+                float3 c=p.c;
+                c.y+=0.0025f;
+                const float3 q[4]={c-dl-dw,c+dl-dw,c+dl+dw,c-dl+dw};
+                const bool fu=(i&1)!=0,fv=(i&2)!=0;
+                const float a0=fu?u1:u0,a1=fu?u0:u1;
+                const float b0=fv?1.0f:0.0f,b1=fv?0.0f:1.0f;
+                const float2 uv[4]={{a0,b0},{a1,b0},{a1,b1},{a0,b1}};
+                const uint32_t alpha=uint32_t(std::lround(
+                    std::min(1.0f,0.35f+k)*255.0f));
+                const uint32_t tint=p.dirt?0xd2e2f0u:0xffffffu;
+                for(int j=0;j<4;++j) {
+                    SpriteVertex v{};
+                    v.pos=q[j];
+                    v.uv=uv[j];
+                    v.color=tint|(alpha<<24);
+                    v.team=0;
+                    v.rpos={v.pos.x,v.pos.y,v.pos.z,0};
+                    vertices.push_back(v);
+                }
+            }
+            if(!vertices.empty()) {
+                stagedPuddles=decalBatch_.buildMesh(dev,vertices);
+                if(!stagedPuddles.vb.valid())
+                    throw std::runtime_error("RoadView: puddle GPU upload failed");
             }
         }
-        if (!v.empty()) puddleMesh_ = decalBatch_.buildMesh(dev, v);
+    }catch(...) {
+        // All candidates are never submitted, so no RHI fence is required.
+        if(stagedFilm.vb.valid())dev.destroyBuffer(stagedFilm.vb);
+        if(stagedPuddles.vb.valid())dev.destroyBuffer(stagedPuddles.vb);
+        throw;
+    }
+    // Commit both replacements only when every requested GPU upload
+    // succeeded, preserving the former film/puddles on late failures.
+    if(updateFilm) {
+        retireSpriteBuffer(dev,filmMesh_);
+        filmMesh_=stagedFilm;
+        wetStep_=ws;
+    }
+    if(updatePuddles) {
+        retireSpriteBuffer(dev,puddleMesh_);
+        puddleMesh_=stagedPuddles;
+        puddleStep_=ps;
     }
 }
 
