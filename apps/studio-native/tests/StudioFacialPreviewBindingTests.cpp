@@ -42,33 +42,52 @@ int main() {
                            !info["runtimeVerified"].boolean());
         AIVERSE_TEST_CHECK(info["rendererChannelCapacity"].integer()==8);
         const auto generation=uint64_t(info["revision"].integer());
-        AIVERSE_TEST_CHECK(preview.controls(generation,Json::parse(
-            R"({"jawOpen":0.8})")),Json::object())["values"]["jawOpen"].toDouble()>0.79);
+        Json scalar=Json::object();
+        scalar.set("jawOpen",Json::number(0.8,3));
+        AIVERSE_TEST_CHECK(preview.controls(generation,scalar,Json::object())
+            ["values"]["jawOpen"].toDouble()>0.79);
         bool rejected=false;
-        try {preview.controls(generation,Json::parse(
-            R"({"jawOpen":2})")),Json::object());}catch(const std::exception&){rejected=true;}
+        Json invalidScalar=Json::object();
+        invalidScalar.set("jawOpen",Json::number(int64_t(2)));
+        try {(void)preview.controls(generation,invalidScalar,Json::object());}
+        catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         AIVERSE_TEST_CHECK(preview.describe()["values"]["jawOpen"].toDouble()>0.79);
         AIVERSE_TEST_CHECK(preview.describe()["vectors"]["lookAt"].isArray());
-        const Json changed=preview.controls(generation,Json::object(),
-            Json::parse(R"({"lookAt":[2,1,3]})"));
+
+        Json gaze=Json::object(),coordinates=Json::array();
+        coordinates.push(Json::number(int64_t(2)));
+        coordinates.push(Json::number(int64_t(1)));
+        coordinates.push(Json::number(int64_t(3)));
+        gaze.set("lookAt",std::move(coordinates));
+        const Json changed=preview.controls(generation,Json::object(),gaze);
         AIVERSE_TEST_CHECK(changed["vectors"]["lookAt"][size_t(0)].toDouble()>1.9);
+
+        Json invalidGaze=Json::object(),invalidCoordinates=Json::array();
+        invalidCoordinates.push(Json::number(int64_t(0)));
+        invalidCoordinates.push(Json::number(int64_t(1000001)));
+        invalidCoordinates.push(Json::number(int64_t(2)));
+        invalidGaze.set("lookAt",std::move(invalidCoordinates));
         rejected=false;
-        try {preview.controls(generation,Json::parse(R"({"jawOpen":0.1})")),
-            Json::parse(R"({"lookAt":[0,1000001,2]})"));}catch(const std::exception&){rejected=true;}
+        try {(void)preview.controls(generation,invalidScalar,invalidGaze);}
+        catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         AIVERSE_TEST_CHECK(preview.describe()["values"]["jawOpen"].toDouble()>0.79);
         AIVERSE_TEST_CHECK(preview.describe()["vectors"]["lookAt"][size_t(0)].toDouble()>1.9);
+
+        Json undeclared=Json::object();
+        undeclared.set("unknown",Json::number(0.2,3));
         rejected=false;
-        try {preview.controls(generation,Json::parse(
-            R"({"unknown":0.2})")),Json::object());}catch(const std::exception&){rejected=true;}
+        try {(void)preview.controls(generation,undeclared,Json::object());}
+        catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         rejected=false;
-        try {preview.bind(assets,image->guid,rig);}catch(const std::exception&){rejected=true;}
+        try {(void)preview.bind(assets,image->guid,rig);}
+        catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected && preview.describe()["guid"].str()==model->guid);
         rejected=false;
-        try {preview.controls(generation+1,Json::parse(
-            R"({"jawOpen":0})")),Json::object());}catch(const std::exception&){rejected=true;}
+        try {(void)preview.controls(generation+1,scalar,Json::object());}
+        catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         preview.reset();
         AIVERSE_TEST_CHECK(!preview.describe()["bound"].boolean());
