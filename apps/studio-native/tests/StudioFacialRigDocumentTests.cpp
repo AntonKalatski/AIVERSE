@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 using namespace aiverse;
 using namespace aiverse::studio;
@@ -42,10 +43,10 @@ int main() {
     AIVERSE_TEST_CHECK(!validStudioFacialRigDraft(invalid,&error));
 
     const fs::path root=fs::temp_directory_path()/
-        "aiverse-studio-facial-rig-contract";
+        ("aiverse-studio-facial-rig-contract-"+std::to_string(::getpid()));
     std::error_code ec;
-    fs::remove_all(root,ec);
-    fs::create_directory(root);
+    if(!fs::create_directory(root))
+        throw std::runtime_error("Studio facial rig fixture directory already exists");
     try {
         const Json saved=saveStudioFacialRig(root.string(),"hero",valid);
         AIVERSE_TEST_CHECK(saved["name"].str()=="hero");
