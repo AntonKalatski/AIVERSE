@@ -127,6 +127,7 @@ inline SculptPick resolveSculptGpuTriangle(
     using namespace render;
     SculptPick result;
     if(!surface.ready || surface.mesh>=model.meshes.size() ||
+       sourceVertexCount==0 || sourceVertexCount>model.vertices.size() ||
        surface.world.size()!=model.vertices.size() ||
        surface.included.size()!=model.vertices.size() ||
        (!authorIds.empty() && authorIds.size()!=model.vertices.size()) ||
@@ -158,7 +159,11 @@ inline SculptPick resolveSculptGpuTriangle(
         if(!(magnitude>1.e-8f)||!std::isfinite(magnitude))return {};
         direction=direction*(1.f/magnitude);
         const auto a=surface.world[ia],b=surface.world[ib],
-                   c=surface.world[ic],ab=b-a,ac=c-a;
+                   c=surface.world[ic];
+        for(const auto vertex:{a,b,c})
+            if(!std::isfinite(vertex.x)||!std::isfinite(vertex.y)||
+               !std::isfinite(vertex.z))return {};
+        const auto ab=b-a,ac=c-a;
         const auto p=cross(direction,ac);
         const float det=dot(ab,p);
         if(std::fabs(det)<=1.e-8f)return {};
