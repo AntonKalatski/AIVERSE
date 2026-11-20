@@ -196,6 +196,24 @@ int main() {
     config.objectToClip=mat4::identity();
     assert(planView(asset,config,result,&error));
     const auto reference=result;
+    // The per-view API also rejects malformed temporal masks without
+    // modifying a previous successful render plan.
+    config.hysteresisFraction=.2f;
+    std::vector<uint8_t> invalidHistory{1,0};
+    config.previousRefined=&invalidHistory;
+    assert(!planView(asset,config,result,&error));
+    assert(result.ranges.size()==reference.ranges.size());
+    config.previousRefined=nullptr;
+    assert(planView(asset,config,result,&error));
+    assert(result.refinedNodes.size()==asset.nodes.size());
+    auto saved=result.refinedNodes;
+    config.previousRefined=&saved;
+    assert(planView(asset,config,result,&error));
+    assert(result.refinedNodes.size()==saved.size());
+    config.previousRefined=nullptr;
+    config.hysteresisFraction=0.f;
+    assert(planView(asset,config,result,&error));
+    assert(result.refinedNodes.empty()); // disabled cost-free by default
     const size_t originalIndices=asset.indices.size();
     const size_t released=asset.discardCpuIndexPayload();
     assert(released==originalIndices*sizeof(uint32_t));
