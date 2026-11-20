@@ -84,10 +84,19 @@ public:
         };
         for(const auto& d:desc) {
             int node=avatar.node(d.role);
-            int end=avatar.node(d.end);
+            // A compact humanoid skeleton can omit Neck while keeping
+            // Chest and Head. In that case use the Head as the endpoint
+            // for the torso capsule, retaining a separate Head sphere.
+            HumanoidBone endRole=d.end;
+            int end=avatar.node(endRole);
+            if(d.role==HumanoidBone::Chest && end<0 &&
+               avatar.node(HumanoidBone::Head)>=0) {
+                endRole=HumanoidBone::Head;
+                end=avatar.node(endRole);
+            }
             if (node<0 || (end<0 && !d.sphere)) continue;
             const auto start=at(d.role);
-            const auto finish=d.sphere?start:at(d.end);
+            const auto finish=d.sphere?start:at(endRole);
             const auto delta=finish-start;
             const float span=render::length(delta);
             if (!d.sphere && span<.05f)continue;

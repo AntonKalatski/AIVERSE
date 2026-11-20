@@ -35,7 +35,12 @@ int main(){
             hint.mainThread=true;
         }
     }
-    MotionWeaveScheduler scheduler(3);
+    // This one-node bind graph is intentionally cheap (< 256 total
+    // estimated work). Lower the cost threshold to exercise the actual
+    // parallel dispatch path rather than only the sequential fallback.
+    MotionWeaveScheduleOptions options;
+    options.minimumParallelCost=1;
+    MotionWeaveScheduler scheduler(3,options);
     const auto stats=scheduler.update(w,.01f);
     AIVERSE_TEST_CHECK(stats.eligible==96);
     AIVERSE_TEST_CHECK(stats.serialEntities==1);
