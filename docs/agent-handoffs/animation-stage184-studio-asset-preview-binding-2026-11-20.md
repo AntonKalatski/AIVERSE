@@ -76,3 +76,12 @@ The original Stage 184 code commit sequence now also includes:
 - `f29a7665d5637014632932365e0b468024d4b759`: self-contained C++ includes, unambiguous scalar/vector type-conflict inspection, and renderer capacity diagnostics from the **actual** native `render::kMaxMorphTargets`.
 
 **Validation remains NOT RUN**: these are authored source commits; C++ compilation, the new CTest and HTML5 typecheck/build/UI remain unverified. This addendum deliberately does not change the earlier claims that Studio GPU facial rendering is blocked by the separate 64-slot MotionWeave runtime/renderer branch. The follow-on merge must consume `FacialPreviewSession::vector` for real typed eye gaze/IK without reintroducing a second solver. Stage 184 completion here means the **host-asset and input-binding boundary only**, not the full live visual preview.
+
+
+## PR and final handoff checkpoint
+
+- **Draft PR #89:** https://github.com/chromealex/AIVERSE/pull/89
+- **Head when PR was opened:** `55eebbc4edbed8ab427cfcb5ce5a64d1b304dc2f`
+- **PR base:** `feature/studio-html5`; head: `integration/motionweave-studio-facial-stage184`. At creation the branches had diverged: 9 head-only commits and 8 base-only commits. This is a **review/integration draft**, not approved for merge without conflict-aware updates.
+- **Parallel animation PR #22** remains distinct and in Draft. Stage 184 does not bring the 64-channel renderer into Studio and does not imply built/green GPU previews.
+- **CI/CTest/typecheck:** no successful run was observed or claimed. Next agent must check current PR #89 mergeability, fresh base commits, source build, and run deferred Mac checks as recorded above before merging.
