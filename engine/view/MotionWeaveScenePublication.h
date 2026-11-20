@@ -104,9 +104,11 @@ public:
 
                 Entity visualParent=next->presentation.create();
                 std::string reason;
-                const Resolver resolver=object.resolveStaticChild
-                    ?object.resolveStaticChild
-                    :[](const std::string&) -> Snapshot {return {};};
+                Resolver resolver=object.resolveStaticChild;
+                if(!resolver)
+                    resolver=[](const std::string&) -> Snapshot {
+                        return {};
+                    };
                 if(!next->attachments.activate(
                        {sceneId,object.objectKey},visualParent,authored,
                        object.parent,cache,resolver,&reason))
