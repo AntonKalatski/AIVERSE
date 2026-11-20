@@ -37,6 +37,8 @@
 #pragma once
 #include "Shaders.h"
 #include "BakedShaders.h"
+#include "GiDynamicShaders.h"
+#include "GiCascadeShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -191,7 +193,7 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI AIVERSE_GLSL_CASCADE_GI
     R"(
 uniform mediump sampler2D tex1;
 uniform mediump sampler2D tex2;
@@ -389,6 +391,15 @@ void main() {
     giOcc = clamp(luma(lm) / max(luma(amb), 1e-4), 0.0, 1.0);
     amb = lm;
 #endif
+#if defined(DYNAMIC_GI)
+    // Bounced indirect only: preserve the baked indirect atlas and never
+    // duplicate a direct point/sun term in this material stage.
+#if defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiCascadedAt(v_wpos,n);
+#else
+    amb += dynamicGiAt(v_wpos,n);
+#endif
+#endif
     vec3 diff = base.rgb * (1.0 - metallic);
     vec3 F0 = mix(vec3(0.04), base.rgb, metallic);
     vec3 H = normalize(L + V);
@@ -580,7 +591,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_DYNAMIC_GI AIVERSE_MSL_CASCADE_GI AIVERSE_MSL_MODEL_VERTEX
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -693,7 +704,23 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
-                        GI_FARGS) {
+                        GI_FARGS
+#if defined(DYNAMIC_GI)
+                        , constant GiDynamicU& dgi [[buffer(7)]],
+                          texture2d<float> tex13 [[texture(13)]]
+#endif
+#if defined(DYNAMIC_GI_VALIDITY)
+                        , texture2d<float> tex14 [[texture(14)]]
+#endif
+#if defined(DYNAMIC_GI_CASCADES)
+                        , constant GiDynamicU& farGi [[buffer(8)]],
+                          texture2d<float> tex15 [[texture(15)]]
+#endif
+#if defined(DYNAMIC_GI_TRIPLE)
+                        , constant GiDynamicU& thirdGi [[buffer(9)]],
+                          texture2d<float> tex16 [[texture(16)]]
+#endif
+                        ) {
 #if defined(AIVERSE_ICB_PBR)
 #define tex0 icbTextures.tex0
 #define s0 icbTextures.s0
@@ -862,6 +889,17 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     if (giMode == 2) sh = min(sh, tex8.sample(s8, in.uv2).r);
     giOcc = clamp(luma(lm) / max(luma(amb), 1e-4), 0.0, 1.0);
     amb = lm;
+#endif
+#if defined(DYNAMIC_GI)
+#if defined(DYNAMIC_GI_TRIPLE) && defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiTripleAt(tex13,tex14,tex15,tex16,dgi,farGi,thirdGi,in.wpos,n);
+#elif defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiCascadedAt(tex13,tex14,tex15,dgi,farGi,in.wpos,n);
+#elif defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiAt(tex13,dgi,tex14,in.wpos,n);
+#else
+    amb += dynamicGiAt(tex13,dgi,in.wpos,n);
+#endif
 #endif
     float3 diff = base.rgb * (1.0 - metallic);
     float3 F0 = mix(float3(0.04), base.rgb, metallic);
