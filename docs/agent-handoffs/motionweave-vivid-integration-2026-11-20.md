@@ -1346,3 +1346,24 @@ Residual hard neck shadow at blink frame41 UNRESOLVED; unoffset receiver-plane
 derivative experiment failed visually and was reverted (background seams).
 Next: test user-requested elderly wrinkled model, then isolate neck shadow edge.
 All builds/media: /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/.
+
+## 2026-11-21 — older male skin QA (visual acceptance failed)
+
+Code/QA commit `a8414da4bca3ff8f2dc14e376696692feea6de26`, same branch
+`integration/motionweave-studio-facial-stage184`. Added only fixture preparation
+tool and QA report; no renderer/schema changes. External Patchbay MakeHuman older
+male, not MetaHuman DNA or a scan. Provenance/license/SHA and exact paths in
+docs/qa/vivid-elder-skin-2026-11-21.md. Asset/media on KINGSTON elder-skin/.
+
+Initial native import FAILED:67 named morph targets exceed64. Tool now removes
+speech visemes retaining52 ARKit shapes, remaps weights, decodes meshopt/WebP,
+adds framing wrapper and VIVID skin mapping. No Ada neck filter, no synthetic
+normal maps. Native catalog48frames, dramatic144frames, shadow-off1frame PASS;
+AA1/passes2/map4096/pipelineFailures0. PNG/morph/frame-count validation PASS.
+144frame24fps video encoded and selected front/turn/blink/opposite stills inspected.
+Severe triangle shadow patches reproduce independently of Ada, disappear with
+shadows off. Eyebrow/lash edges coarse; source2K diffuse lacks normal/roughness
+maps and cannot prove skin microdetail. Visual quality FAIL, no MH parity.
+No GUI/Vulkan/mobile/CI/performance check; no push. Latest native binary is
+restored-shader FXAA build from preceding stage. Next: isolate shadow bias/receiver
+plane discontinuity against both fixtures, then acquire higher-detail elder scan.
