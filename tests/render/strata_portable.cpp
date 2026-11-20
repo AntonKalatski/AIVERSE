@@ -8,6 +8,7 @@
 #include "engine/render/Geometry.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -381,7 +382,94 @@ static void testIncrementalPortable(gfx::Backend backend) {
     assert(dev.data_.empty());
 }
 
+static void testPortableTemporalHysteresis(gfx::Backend backend) {
+    Recorder dev(backend,false);
+    Model original=makeModel();
+    const ModelAsset asset=makeAsset();
+    gfx::BufferDesc desc{};
+    desc.type=gfx::BufferType::Vertex;
+    desc.size=original.vertices.size()*sizeof(ModelVertex);
+    desc.data=original.vertices.data();
+    original.vb=dev.createBuffer(desc);
+    desc.type=gfx::BufferType::Index;
+    desc.size=original.indices.size()*sizeof(uint32_t);
+    desc.data=original.indices.data();
+    original.ib=dev.createBuffer(desc);
+    std::string error;
+    PortableSource staged;
+    assert(staged.stage(dev,original,asset,&error));
+    PortableLodHistory cameraA,cameraB;
+    PortablePassView pass{mat4::identity(),800,600,true,1.f};
+    const auto& bounds=asset.primitives[0].geometry.bounds[0];
+    const float errorPixels=geometryErrorPixels(
+        pass.viewProjection,
+        {bounds.min[0],bounds.min[1],bounds.min[2]},
+        {bounds.max[0],bounds.max[1],bounds.max[2]},
+        asset.primitives[0].geometry.nodes[0].geometricError,
+        pass.width,pass.height,pass.clipDepthZeroToOne);
+    assert(std::isfinite(errorPixels) && errorPixels>0.f);
+    Model alias;
+    auto drawAt=[&](PortableLodHistory& state,float threshold) {
+        pass.errorThresholdPixels=errorPixels*threshold;
+        assert(staged.prepareModel(mat4::identity(),{pass},false,
+            alias,&error,&state,.2f));
+        return alias.meshes[0].primitives.size();
+    };
+    // Camera A remembers fine frontier when the noisy error crosses
+    // the ordinary threshold but NOT the wider coarsening threshold.
+    assert(drawAt(cameraA,.95f)==2);
+    assert(cameraA.states.size()==1);
+    assert(drawAt(cameraA,1.08f)==2);
+    assert(drawAt(cameraA,.99f)==2);
+    assert(drawAt(cameraA,1.30f)==1); // true coarsening threshold
+    assert(drawAt(cameraA,.94f)==1); // true refinement threshold
+    assert(drawAt(cameraA,.70f)==2);
+    assert(staged.stats().hysteresisTransitions>=2);
+
+    // Independent scene instance with same source and pass: cold-start
+    // selects coarse despite camera A remaining fine.
+    assert(drawAt(cameraB,1.08f)==1);
+    assert(drawAt(cameraA,1.08f)==2);
+    const auto snapshot=cameraA.states;
+    const auto previousAlias=alias.meshes[0].primitives.size();
+
+    // Mid-epoch RHI/source loss is transactional: last alias and history
+    // are unchanged, so no spurious next-frame LOD oscillation.
+    dev.healthy_=false;
+    assert(!staged.prepareModel(mat4::identity(),{pass},false,
+        alias,&error,&cameraA,.2f));
+    assert(alias.meshes[0].primitives.size()==previousAlias);
+    assert(cameraA.states==snapshot);
+    dev.healthy_=true;
+
+    // A different pass count (main+sun) creates independent camera slots;
+    // force-finest reflection resets all retained view histories.
+    assert(staged.prepareModel(mat4::identity(),{pass,pass},false,
+        alias,&error,&cameraA,.2f));
+    assert(cameraA.passCount==2 && cameraA.states.size()==2);
+    assert(staged.prepareModel(mat4::identity(),{},true,alias,
+        &error,&cameraA,.2f));
+    assert(cameraA.states.empty() && cameraA.source==nullptr);
+    assert(drawAt(cameraA,1.08f)==1); // reset -> true cold start
+
+    // Old direct API remains zero-hysteresis even with a history supplied;
+    // disabling the feature invalidates temporal state.
+    pass.errorThresholdPixels=errorPixels*.99f;
+    assert(staged.prepareModel(mat4::identity(),{pass},false,
+        alias,&error,&cameraA,0.f));
+    assert(alias.meshes[0].primitives.size()==2);
+    assert(cameraA.states.empty());
+    alias=Model{};
+    staged.shutdown(dev);
+    dev.destroyBuffer(original.vb);
+    dev.destroyBuffer(original.ib);
+    assert(dev.data_.empty());
+}
+
 int main(){
+    testPortableTemporalHysteresis(gfx::Backend::Metal);
+    testPortableTemporalHysteresis(gfx::Backend::Vulkan);
+    testPortableTemporalHysteresis(gfx::Backend::GLES3);
     testIncrementalPortable(gfx::Backend::Metal);
     testIncrementalPortable(gfx::Backend::Vulkan);
     testStreamedPortable(gfx::Backend::GLES3);
