@@ -4734,3 +4734,26 @@ Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,
 are revision-checked document edits with Undo/Redo, never live ECS writes.
 For physical sky and local fog/reveal use the atmosphere reference linked
 from `skills/visuals/aiverse-prisma/SKILL.md`; rendering remains PRISMA-owned.
+
+**Structured fog:** `FogVolume::structure` is opt-in cosmetic 3D noise/height/wind.
+Preserve `amount=0,heightFalloff=0` uniform compatibility and CPU `densityAt(p,t)`
+semantics. World-Y height does not imply terrain following. Noise is a periodic
+256-cell integer lattice; time wrap must preserve its phase. Reveals apply after
+structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
+presentation only. Structured 48/96-step budgets are separate from uniform 32/64.
+
+## Build storage — user instruction 2026-11-20
+
+All further build outputs, compiler/module caches, shader binaries and temporary
+compiler files must reside on `/Volumes/KINGSTON`. This feature uses
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky` and sibling `tmp` /
+`modules` directories. Set TMPDIR and CLANG_MODULE_CACHE_PATH there. Keep source
+worktrees intact; do not silently fall back to the internal drive if unmounted.
+
+**Local fog billows/self-shadowing:** `FogStructure::{heightVariation,warp,edgeErosion}`
+shape density in world space and preserve CPU/GPU query semantics. New values
+must be validated transactionally. `LocalFogSettings::selfShadow` defaults to 0;
+when enabled, integrate all volumes AND reveal holes toward the sun with bounded
+4/6 light samples and `shadowDistance`. Do not substitute a 2D darkening overlay.
+Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping,
+8+8 volume caps and separate handoffs; no multiple-scattering or perf claim.
