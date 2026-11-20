@@ -91,11 +91,15 @@ public:
             return true;
         }catch(const std::exception& ex) {
             visuals_.discardStaged(sceneId);
+            if(auto it=slots_.find(sceneId);it!=slots_.end())
+                releaseStaged(device,it->second);
             retirement_.retire(device,incoming);
             if(error)*error=ex.what();
             return false;
         }catch(...) {
             visuals_.discardStaged(sceneId);
+            if(auto it=slots_.find(sceneId);it!=slots_.end())
+                releaseStaged(device,it->second);
             retirement_.retire(device,incoming);
             if(error)*error="unknown scene provider staging failure";
             return false;
@@ -158,12 +162,16 @@ public:
             return true;
         }catch(const std::exception& ex) {
             visuals_.discardStaged(sceneId);
+            if(auto it=slots_.find(sceneId);it!=slots_.end())
+                releaseStaged(device,it->second);
             shared_.release(device,lease);
             retirement_.retire(device,incoming);
             if(error)*error=ex.what();
             return false;
         }catch(...) {
             visuals_.discardStaged(sceneId);
+            if(auto it=slots_.find(sceneId);it!=slots_.end())
+                releaseStaged(device,it->second);
             shared_.release(device,lease);
             retirement_.retire(device,incoming);
             if(error)*error="unknown shared scene stage failure";
