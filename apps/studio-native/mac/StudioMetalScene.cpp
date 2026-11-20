@@ -15,6 +15,7 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     if (!device_) throw std::runtime_error("Metal device unavailable");
     deviceLifetime_=std::make_unique<render::RenderDeviceLifetime>(*device_);
     facialGpu_.setDeviceLease(deviceLifetime_->lease());
+    renderer_.setGpuDeviceLease(deviceLifetime_->lease());
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
@@ -77,6 +78,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     facialReady_=false;
     facialError_.clear();
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
+    if (renderer_.pendingProgramRetirements()) renderer_.collectRetiredPrograms();
+    if (renderer_.pendingTargetRetirements()) renderer_.collectRetiredTargets();
+    if (renderer_.hasPendingModelPipelineJobs()) renderer_.pollPendingModelPipelineJobs();
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
     const bool facialRequested = facialBinding.bound() && !materialRequested;
     if(facialMode_!=facialRequested) {

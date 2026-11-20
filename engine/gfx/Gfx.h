@@ -42,6 +42,11 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
+// Pending != failed: a renderer must never infer GPU fence failure
+// from normal in-flight work or elapsed frame counters.
+enum class ResourceRetirementStatus : uint8_t {
+    Pending, Complete, Failed
+};
 enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
@@ -271,7 +276,16 @@ public:
     virtual void destroyShader(ShaderHandle h) = 0;
     virtual PipelineHandle createPipeline(const PipelineDesc& d) = 0;
     // Poll preparation of a backend-selected colour-target variant. Device thread only.
+    // Legacy bool means "no longer pending", not "compiled successfully".
+    // Implementations may override the status API to distinguish permanent
+    // compilation failures from asynchronous Pending. Default preserves the
+    // behavior of older backends and third-party gfx::Device implementations.
+    enum class PipelineColorWarmStatus : uint8_t { Ready, Pending, Failed };
     virtual bool warmPipelineColor(PipelineHandle, PixelFormat) { return true; }
+    virtual PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) {
+        return warmPipelineColor(h, format) ? PipelineColorWarmStatus::Ready
+                                            : PipelineColorWarmStatus::Pending;
+    }
     virtual void destroyPipeline(PipelineHandle h) = 0;
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
@@ -308,6 +322,24 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // Small, true asynchronous offscreen RGBA8 *linear* pixel readback.
+    // x/y are top-left source pixel coordinates, unlike native GL readPixels.
+    // Call on the owner thread after endPass and before endFrame. Completion
+    // is delivered on a later owner beginFrame, never inside a GPU encoder.
+    // Returns false on unsupported backends; callers must use CPU fallback.
+    // No colour-space conversion, tone mapping or depth values in this API.
+    using PixelReadFn=std::function<void(std::vector<uint8_t>)>; // 4 RGBA8 bytes; empty on failure
+    virtual bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) { return false; }
+    // Optional native depth readback for real GPU depth diagnostics.
+    // Invalid handle selects the current screen depth attachment; a valid
+    // handle MUST be a Depth render target (never silently use screen).
+    // Top-left coordinates, outside passes, same frame, async owner-thread
+    // callback on a later beginFrame. 'valid' is false on GPU failure;
+    // result is actual hardware depth in [0,1], not CPU-projected depth.
+    // Unsupported RHI backends reject without calling the callback.
+    using DepthPixelReadFn=std::function<void(bool valid,float depth01)>;
+    virtual bool readTextureDepthPixelAsync(TextureHandle,int,int,
+                                            DepthPixelReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
@@ -317,6 +349,40 @@ public:
     // this value is nonzero and >= that retirement serial. This does not
     // imply any safety for races on a live Model or unsubmitted GPU work.
     virtual uint64_t completedFrameSerial() const { return 0; }
+    // Explicit retirement barrier for old model/texture GPU allocations.
+    // Call on the device owner thread BEFORE recording any draw/transfer
+    // referring to retired resources in the CURRENT frame, outside passes.
+    // Blocks until all previously SUBMITTED GPU commands have completed.
+    // A false result MUST prevent hot-reload destruction; frameSerial()
+    // alone does not prove completion. May stall; never call per draw.
+    virtual bool waitForResourceIdle() { return false; }
+    // Nonblocking retirement token: enqueue an ordered GPU completion marker
+    // after all PREVIOUSLY SUBMITTED work. Call at a frame boundary before
+    // current-frame commands can reference retired objects.
+    // 0 means unsupported/failed: hosts may use waitForResourceIdle().
+    virtual uint64_t beginResourceRetirement() { return 0; }
+    // Poll on the device thread. False means pending OR failed; NEVER
+    // destroy resources based solely on frameSerial() or elapsed time.
+    virtual bool resourceRetirementComplete(uint64_t token) {
+        (void)token; return false;
+    }
+    // Backend-specific implementations can report an actual failed
+    // completion marker. The legacy default conservatively treats false
+    // as Pending; old Device subclasses remain source-compatible.
+    virtual ResourceRetirementStatus resourceRetirementStatus(uint64_t token) {
+        return resourceRetirementComplete(token) ?
+            ResourceRetirementStatus::Complete:
+            ResourceRetirementStatus::Pending;
+    }
+    // Release a COMPLETED token after checking resourceRetirementComplete().
+    // No backend may free a still-in-flight native fence here.
+    virtual void endResourceRetirement(uint64_t token) { (void)token; }
+    // Call ONLY after a successful waitForResourceIdle() barrier. This
+    // disposes native marker bookkeeping even when its status callback
+    // failed. Never use it to justify deleting an in-flight GPU resource.
+    virtual void abandonRetirementTokenAfterIdle(uint64_t token) {
+        (void)token;
+    }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;

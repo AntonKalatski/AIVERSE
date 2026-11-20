@@ -18,7 +18,7 @@ inline bool staticModelCacheDrawCandidate(const ModelDraw& d,
                                           ModelStaticEligibility model) {
     return model.transforms && d.model && d.persistentId &&
         (d.flags & kDrawStatic) && !activeDisplacement &&
-        !d.nodeWorld && !d.pose && !d.baked &&
+        !d.nodeWorld && !d.pose && !d.baked && !d.vertexOverride.valid() &&
         !d.useVertexParameters && d.primitiveMaterialFilter < 0;
 }
 
@@ -37,7 +37,7 @@ inline bool staticModelCacheGeometryCompatible(const StaticModelCache& cache,
                                                 const ModelDraw& d,
                                                 bool activeDisplacement) {
     const Model* m = d.model;
-    return m && cache.model == m && !activeDisplacement &&
+    return m && cache.model == m && !activeDisplacement && !d.vertexOverride.valid() &&
         !d.useVertexParameters && d.primitiveMaterialFilter < 0 &&
         !d.nodeWorld && !d.pose && !d.baked && m->skins.empty() &&
         m->bindWorld.size() == m->nodes.size() &&

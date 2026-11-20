@@ -26,7 +26,7 @@ struct GeometryData;
 struct GeometryPoolPage;
 
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
-enum class ShadingModel : uint8_t { Pbr, Unlit };
+enum class ShadingModel : uint8_t { Pbr, Unlit, Skin, Eye, Hair };
 // Where the team (player) colour goes:
 //   Tint        whole material multiplied by the team colour (procedural shapes, simple models)
 //   Mask        team mask texture, red channel 1 = team colour
@@ -63,6 +63,10 @@ struct Material {
     // (prop shaders of art pipelines that light every instance by its own world normals); w = 0: off
     float4 fixedLight{0, 0, 0, 0};          // xyz direction towards the light (normalized), w 1 = on
     float2 fixedShade{1, 0};                // ambient, diffuse
+    // Opt-in human BRDF parameters. Pbr/Unlit ignore these fields.
+    // Skin: scattering/wetness; Eye: corneal IOR/tear film;
+    // Hair: anisotropy/specular width.
+    float2 humanProfile{0, 0};
 };
 
 struct Image {
@@ -345,8 +349,16 @@ void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& 
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
-bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
+// A speculative model import may borrow already resident shared textures,
+// but must not create new entries in the live shared GPU texture cache.
+// Pass publishSharedTextures=false only when an external host owns a staged
+// Model and can retire the entire Model on abort after a real GPU barrier.
+bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false,
+                 bool publishSharedTextures = true);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
+// Upload one host-staged image without touching any live Model::images vector.
+// Returns false if the GPU did not create a valid texture handle.
+bool uploadStandaloneImage(gfx::Device& dev, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
 void releaseModel(gfx::Device& dev, Model& m);
 

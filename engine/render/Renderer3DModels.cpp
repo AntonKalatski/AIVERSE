@@ -10,6 +10,7 @@
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
+#include "ModelVertexStreamOverride.h"
 
 #include <algorithm>
 #include <array>
@@ -42,6 +43,25 @@ struct ProfileTimer {
 };
 
 bool transparentItem(uint32_t flags) { return (flags & kDrawTransparent) != 0; }
+// Freeze exactly the sampled Mask state of the actual selected
+// Renderer3D material, with no borrowed Material pointers in provenance.
+void fillModelMaskProvenance(
+        Renderer3D::ModelViewPrimitive& result,
+        const Model& model,const Material& material) {
+    result.maskedMaterial=material.alpha==AlphaMode::Mask;
+    if(!result.maskedMaterial)return;
+    if(material.baseTex>=0 &&
+       std::size_t(material.baseTex)<model.images.size())
+        result.maskBaseTexture=
+            model.images[std::size_t(material.baseTex)].tex;
+    result.maskAlpha=material.baseColor.w;
+    result.maskCutoff=material.alphaCutoff;
+    result.maskUvOffset=material.uvOffset;
+    result.maskUvScale=material.uvScale;
+    result.maskUvRotation=material.uvRotation;
+    result.maskVertexColors=material.vertexColors;
+}
+
 // Model fragment slots 0..6, 9..12 are taken (12: SSR scene depth); up to four graph textures follow.
 // Metal has sampler slots 0..15 only, so graph slots from 16 use a constexpr repeat/linear sampler.
 constexpr int kGraphTextureSlot = 13;
@@ -247,19 +267,47 @@ void Renderer3D::shutdownModels() {
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
-    for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
+    pendingModelPipes_.clear(); pendingColorWarms_.clear(); failedColorWarms_.clear();
+    modelPipes_.clear(); modelShaders_.clear();
+    for (auto t : {white_, black_, flatNormal_})
+        if(t.valid()) dev_->destroyTexture(t);
+    white_=black_=flatNormal_={};
+}
+
+void Renderer3D::retireModelPrograms() {
+    if(!dev_)return;
+    checkGpuDevice(*dev_);
+    if(!programRetirement_)
+        throw std::logic_error("Renderer3D shader retirement owner unavailable");
+    // Reserve BEFORE detaching any renderer pipeline/shader handles. An
+    // allocation failure leaves the previous material cache usable.
+    GpuProgramBatch resources;
+    resources.pipelines.reserve(modelPipes_.size());
+    resources.shaders.reserve(modelShaders_.size());
+    for(const auto& [key,pipeline]:modelPipes_) {
+        (void)key;
+        if(pipeline.valid())resources.pipelines.push_back(pipeline);
+    }
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.shader.valid())resources.shaders.push_back(shader.shader);
+    }
+    // Pending native compiler jobs own their own cancellation semantics.
+    // They are never mistaken for completed shader handles.
+    pendingModelPipes_.clear();
+    pendingColorWarms_.clear(); // invalidated pipeline handles must not be polled
+    failedColorWarms_.clear(); // failures belong to this retired pipeline generation
+    modelPipes_.clear();
+    modelShaders_.clear();
+    programRetirement_->retire(std::move(resources));
 }
 
 void Renderer3D::setInstanceLimit(uint32_t limit) {
     const auto maximum=dev_?uint32_t(std::clamp<size_t>(dev_->maxUniformBytes()/144,1,256)):32u;
     const auto next=limit?std::clamp(limit,1u,maximum):maximum;
     if(next==instanceLimit_)return;
+    if(dev_)retireModelPrograms();
     instanceLimit_=next;
-    if(!dev_)return;
-    for(auto& [key,p]:modelPipes_)dev_->destroyPipeline(p);
-    for(auto& [key,s]:modelShaders_)if(s.shader.valid())dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear();modelShaders_.clear();
 }
 void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     model=&source;world=transform;transforms.clear();primitiveOffsets.clear();
@@ -271,12 +319,9 @@ void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     for(int i=0;i<8;++i){auto p=world.transformPoint({c.x+(i&1?e.x:-e.x),c.y+(i&2?e.y:-e.y),c.z+(i&4?e.z:-e.z)});min=min3(min,p);max=max3(max,p);}
 }
 void Renderer3D::setMaterialQuality(MaterialQuality q) {
-    if (q == matQuality_) return;
-    matQuality_ = q;
-    if (!dev_) return;
-    for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
-    for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
+    if(q==matQuality_)return;
+    if(dev_)retireModelPrograms();
+    matQuality_=q;
 }
 
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced,
@@ -311,13 +356,19 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const auto* graph = selectedGraph.get();
     const ModelShaderKey skey{shaderKey, selectedGraph};
     const ModelShaderKey pkey{pipeKey, selectedGraph};
-    for (auto& [k, p] : modelPipes_) if (k == pkey) return p;
+    for (auto& [k, p] : modelPipes_) if (k == pkey) {
+        if(warmingPipelines_ && !p.valid())warmingFailed_=true;
+        return p;
+    }
 
     for (auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();++it) if(it->first==pkey) {
         gfx::PipelineHandle result;
         if (!it->second(result)) { warmingPending_=true; return {}; }
         pendingModelPipes_.erase(it);
-        if (!result.valid()) modelError_="model pipeline: "+dev_->lastError();
+        if (!result.valid()) {
+            modelError_="model pipeline: "+dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
         modelPipes_.push_back({pkey,result}); return result;
     }
     ShaderEntry* entry = nullptr;
@@ -420,6 +471,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         else e.shader = dev_->createShader(sd);
         if (!e.job && !e.shader.valid()) {
             e.failed = true;
+            if(warmingPipelines_)warmingFailed_=true;
             modelError_ = "model shader (" + defs + "): " + dev_->lastError();
             std::fprintf(stderr, "%s\n", modelError_.c_str());
         }
@@ -429,8 +481,13 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     if (entry->job) {
         if (!entry->job(entry->shader)) { warmingPending_=true; return {}; }
         entry->job={};
-        if (!entry->shader.valid()) { entry->failed=true; modelError_="model shader: "+dev_->lastError(); }
+        if (!entry->shader.valid()) {
+            entry->failed=true;
+            if(warmingPipelines_)warmingFailed_=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
     }
+    if(warmingPipelines_ && entry->failed)warmingFailed_=true;
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[stream-pipeline-state] key=%u phase=%d\n",pipeKey,phase);
     gfx::PipelineHandle ph;
     if (!entry->failed) {
@@ -463,17 +520,56 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             auto job=dev_->createPipelineAsync(pd);
             if (!job(ph)) { pendingModelPipes_.push_back({pkey,std::move(job)}); warmingPending_=true; return {}; }
         } else ph = dev_->createPipeline(pd);
-        if (!ph.valid()) modelError_ = "model pipeline: " + dev_->lastError();
+        if (!ph.valid()) {
+            modelError_ = "model pipeline: " + dev_->lastError();
+            if(warmingPipelines_)warmingFailed_=true;
+        }
     }
     modelPipes_.push_back({pkey, ph});
     return ph;
 }
 
-bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Material>* materials) {
-    warmingPipelines_=true; warmingPending_=false;
+Renderer3D::PipelineWarmStatus
+Renderer3D::warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials) {
+    if(dev_)checkGpuDevice(*dev_);
+    warmingPipelines_=true;
+    // Shader/pipeline jobs or user-authored graph generation may throw;
+    // never let an exception leak the temporary warming mode into the
+    // regular frame renderer.
+    struct WarmingScope {
+        bool& enabled;
+        ~WarmingScope(){enabled=false;}
+    } scope{warmingPipelines_};
+    warmingPending_=warmingFailed_=false;
     auto warm=[&](const ModelItem& item,int phase,bool instanced) {
         const auto pipe=modelPipeline(item,phase,instanced);
-        if (pipe.valid() && !dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) warmingPending_=true;
+        if(!pipe.valid())return;
+        // A pending colour variant has no backend ShaderJob to poll.
+        // Record its stable handle exactly once; all later owner frames
+        // advance it without regenerating the authored scratch Model.
+        if(std::find(failedColorWarms_.begin(),failedColorWarms_.end(),
+                     pipe)!=failedColorWarms_.end()) {
+            warmingFailed_=true;
+        }else if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
+                            pipe)!=pendingColorWarms_.end()) {
+            warmingPending_=true;
+        }else {
+            switch(dev_->warmPipelineColorStatus(pipe,gfx::PixelFormat::RGBA16F)) {
+            case gfx::Device::PipelineColorWarmStatus::Ready:
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Pending:
+                warmingPending_=true;
+                pendingColorWarms_.push_back(pipe);
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Failed:
+                warmingFailed_=true;
+                failedColorWarms_.push_back(pipe);
+                ++colorWarmFailed_;
+                modelError_="model HDR pipeline: "+dev_->lastError();
+                break;
+            }
+        }
     };
     const auto& mats = materials ? *materials : model.materials;
     bool lod = false, palette = false;
@@ -502,7 +598,85 @@ bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Materi
             }
         }
     }
-    warmingPipelines_=false; return !warmingPending_;
+    return warmingFailed_ ? PipelineWarmStatus::Failed :
+           warmingPending_ ? PipelineWarmStatus::Pending :
+                             PipelineWarmStatus::Ready;
+}
+
+bool Renderer3D::warmModelPipelines(
+        const Model& model,const std::vector<Material>* materials) {
+    return warmModelPipelinesChecked(model,materials)==PipelineWarmStatus::Ready;
+}
+
+Renderer3D::GpuWarmStats Renderer3D::gpuWarmStats() const noexcept {
+    GpuWarmStats out;
+    out.pipelineJobs=pendingModelPipes_.size();
+    out.colorVariants=pendingColorWarms_.size();
+    out.colorPollAttempts=colorWarmPollAttempts_;
+    out.colorVariantsReady=colorWarmReady_;
+    out.colorVariantsFailed=colorWarmFailed_;
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.job)++out.shaderJobs;
+    }
+    return out;
+}
+
+bool Renderer3D::hasPendingModelPipelineJobs() const noexcept {
+    if(!pendingModelPipes_.empty() || !pendingColorWarms_.empty())
+        return true;
+    for(const auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(entry.job)return true;
+    }
+    return false;
+}
+
+bool Renderer3D::pollPendingModelPipelineJobs() {
+    if(!dev_)return false;
+    checkGpuDevice(*dev_);
+    // Do not allocate or upload a Model, texture, or material merely to
+    // advance GPU compiler jobs that have already been submitted.
+    for(auto it=pendingColorWarms_.begin();it!=pendingColorWarms_.end();) {
+        ++colorWarmPollAttempts_;
+        switch(dev_->warmPipelineColorStatus(*it,gfx::PixelFormat::RGBA16F)) {
+        case gfx::Device::PipelineColorWarmStatus::Ready:
+            ++colorWarmReady_;
+            it=pendingColorWarms_.erase(it);
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Failed:
+            failedColorWarms_.push_back(*it);
+            ++colorWarmFailed_;
+            modelError_="model HDR pipeline: "+dev_->lastError();
+            it=pendingColorWarms_.erase(it);
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Pending:
+            ++it;
+            break;
+        }
+    }
+    for(auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(!entry.job)continue;
+        if(!entry.job(entry.shader))continue;
+        entry.job={};
+        if(!entry.shader.valid()) {
+            entry.failed=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
+    }
+    // Reserve room for all completed programs before polling a backend job:
+    // if vector allocation fails, the job is still in its original slot.
+    modelPipes_.reserve(modelPipes_.size()+pendingModelPipes_.size());
+    for(auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();) {
+        gfx::PipelineHandle pipeline{};
+        if(!it->second(pipeline)) {++it;continue;}
+        if(!pipeline.valid())
+            modelError_="model pipeline: "+dev_->lastError();
+        modelPipes_.push_back({it->first,pipeline});
+        it=pendingModelPipes_.erase(it);
+    }
+    return hasPendingModelPipelineJobs();
 }
 
 void Renderer3D::recordPersistentModel(const ModelDraw& d) {
@@ -705,7 +879,32 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
-    recordPersistentModel(d);
+    const auto overrideStatus = modelVertexOverrideStatus(
+        *m, d.vertexOverride, d.vertexOverrideCount);
+    if (overrideStatus != ModelVertexOverrideStatus::Ready &&
+        overrideStatus != ModelVertexOverrideStatus::Disabled) {
+        // An invalid override must not silently draw stale/unmorphed geometry.
+        modelError_ = "model vertex override: rejected invalid/pooled 60B stream";
+        return;
+    }
+    const bool customVertexStream = overrideStatus == ModelVertexOverrideStatus::Ready;
+    // Initial acceptance gate: only dedicated, dynamic Metal source geometry.
+    // Never participate in shared/static/persistent GPU command generation.
+    if (customVertexStream &&
+        (dev_->info().backend != gfx::Backend::Metal ||
+         (d.flags & kDrawStatic) || !m->ib.valid() || d.baked))
+        return;
+    const uint64_t drawInvocation=++modelDrawInvocation_;
+    if (customVertexStream && d.persistentId) {
+        // A character that switched from a static source VB to a dynamic
+        // override must not keep its previous persistent GPU draw record.
+        const auto stale = persistentIds_.find(d.persistentId);
+        if (stale != persistentIds_.end()) {
+            persistentScene_.erase(stale->second.handle);
+            persistentIds_.erase(stale);
+        }
+    }
+    if (!customVertexStream) recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
@@ -733,9 +932,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         d.persistentId && (d.flags & kDrawStatic))
         eligibility = cachedStaticModelEligibility(*m);
     const StaticModelCache* cache = d.staticCache;
+    if (customVertexStream) cache = nullptr;
     if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
         cache = nullptr;
-    if (!cache && staticModelCacheEnabled_) {
+    if (!customVertexStream && !cache && staticModelCacheEnabled_) {
         if (staticModelCacheDrawCandidate(d, activeDisplacement, eligibility)) {
             auto& entry = staticModelCaches_[d.persistentId];
             const bool unchanged =
@@ -771,9 +971,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                         d.maxVertexOffsetMetres : 0.0f;
     const bool unboundedDisplacement=displaced && offset==0.0f;
     const float3 margin{offset,offset,offset};
-    const bool inView = unboundedDisplacement || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e - margin, c + e + margin));
+    const bool inView = customVertexStream || unboundedDisplacement || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e - margin, c + e + margin));
     const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
-                          (unboundedDisplacement || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e - margin, c + e + margin)));
+                          (customVertexStream || unboundedDisplacement || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e - margin, c + e + margin)));
     if (!inView && !inShadow) return;
     const std::vector<mat4>& world = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
     const std::vector<Material>& mats = d.materials && d.materials->size() >= m->materials.size() ? *d.materials : m->materials;
@@ -791,7 +991,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_LOD");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
+    // Tracked draws need current-frame provenance, never cached invocation IDs.
+    const bool packetEligible = !customVertexStream && trackedModelCount_ == 0 &&
+        staticRenderPacketsEnabled_ && !gpuPacketLod &&
         staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
                                         lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();
@@ -924,7 +1126,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (node.mesh < 0) continue;
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
-        const bool rigid = node.skin < 0 && !baseMesh.deformable && !unboundedDisplacement;
+        const bool rigid = !customVertexStream && node.skin < 0 && !baseMesh.deformable && !unboundedDisplacement;
         const bool baseHasMorph=std::any_of(
             baseMesh.primitives.begin(),baseMesh.primitives.end(),
             [](const Primitive& p){return p.morphTargets>0;});
@@ -980,7 +1182,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose &&
             !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size() &&
             (!baseHasMorph || (morphWeightsBounded && morphMappingsReady));
-        const bool lodEligible = (rigid || skinLod || morphLod) && !baseMesh.lods.empty() &&
+        const bool lodEligible = !customVertexStream && (rigid || skinLod || morphLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
@@ -1058,12 +1260,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if(baseHasMorph && meshIndex!=node.mesh)
             for(const auto& lod:baseMesh.lods)
                 if(lod.mesh==meshIndex) {morphMapping=&lod;break;}
-        const bool shadowBatch = d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        const bool shadowBatch = !customVertexStream && d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (!customVertexStream && d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
-        auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
+        auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0,
+                           uint32_t originalPrimitive=UINT32_MAX) {
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;
@@ -1072,6 +1275,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
             ModelItem it;
             it.sourceNode = n;
+            it.nodeIndex=uint32_t(n);
+            it.meshIndex=uint32_t(meshIndex);
+            it.drawInvocation=drawInvocation;
+            it.primitiveIndex=originalPrimitive;
+            it.vertexOverrideCount=customVertexStream?
+                d.vertexOverrideCount:0;
+            it.displacedVertexSource=displaced;
             it.geometry = d.geometry;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
@@ -1119,6 +1329,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const int materialIndex = std::clamp(mi, 0, int(mats.size()) - 1);
             it.model = m; it.prim = &p; it.materialIndex = materialIndex;
             it.mat = &mats[size_t(materialIndex)];
+            it.vertexOverride = customVertexStream ? d.vertexOverride : gfx::BufferHandle{};
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
@@ -1142,7 +1353,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             } else {
                 it.world = cache?cache->transforms[size_t(n)]:d.world * world[size_t(n)];
             }
-            if (p.morphTargets > 0 &&
+            if (!customVertexStream && p.morphTargets > 0 &&
                 p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
                 const float* weights=usePose
                     ?(*d.pose)[size_t(n)].w:node.weights;
@@ -1198,7 +1409,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             bool covered = false;
             for (const auto* batch : colourBatches)
                 covered |= std::find(batch->parts.begin(), batch->parts.end(), i) != batch->parts.end();
-            addItem(p, shadowBatch && p.shadowBatched ? 1 : 0, covered ? 1 : 0);
+            addItem(p, shadowBatch && p.shadowBatched ? 1 : 0,
+                    covered ? 1 : 0,uint32_t(i));
         }
         for (const auto* batch : colourBatches) addItem(batch->primitive, 0, 2);
         if (shadowBatch) addItem(drawMesh.shadowBatch, 2);
@@ -1260,6 +1472,121 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             }
         }
     }
+}
+
+Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
+        const Model& source) const {
+    ModelViewProvenance snapshot;
+    snapshot.frameSerial=dev_?dev_->frameSerial():0;
+    snapshot.complete=snapshot.frameSerial!=0;
+    for(const auto& it:modelItems_) {
+        if(it.model!=&source)continue;
+        snapshot.hasModel=true;
+        // Provenance is built from Renderer3D's own selected ModelItems,
+        // after its actual per-node LOD/culling/material batching choices,
+        // not from a duplicate simulation of those algorithms.
+        const bool candidate=it.inView && it.tint.w>0.f &&
+                             it.shadowRole!=2 && it.materialRole!=1;
+        if(!candidate)continue;
+        ModelViewPrimitive primitive;
+        primitive.model=&source;
+        primitive.nodeIndex=it.nodeIndex;
+        primitive.meshIndex=it.meshIndex;
+        primitive.drawInvocation=it.drawInvocation;
+        primitive.primitiveIndex=it.primitiveIndex;
+        primitive.firstIndex=it.firstIndex;
+        primitive.indexCount=it.indexCount;
+        primitive.vertexOverride=it.vertexOverride;
+        primitive.vertexOverrideCount=it.vertexOverrideCount;
+        primitive.visible=it.inView;
+        primitive.colourCandidate=candidate;
+        primitive.gpuLodConditional=it.gpuLodAvailable;
+        primitive.lodFade=it.lodThreshold<1.f || it.lodInvert;
+        primitive.alternativeMeshLod=
+            it.nodeIndex>=source.nodes.size() ||
+            source.nodes[it.nodeIndex].mesh!=int(it.meshIndex);
+        primitive.batched=it.materialRole!=0 ||
+                          it.primitiveIndex==UINT32_MAX;
+        primitive.skinning=it.joints>=0;
+        primitive.baked=it.baked;
+        primitive.shaderVertexOffset=it.displacedVertexSource;
+        primitive.translucent=it.mat->alpha==AlphaMode::Blend ||
+            it.mat->transparent || it.tint.w<0.99f ||
+            transparentItem(it.flags);
+        primitive.customGpuStream=it.vertexOverride.valid();
+        fillModelMaskProvenance(primitive,*it.model,*it.mat);
+        primitive.world=it.world;
+        if(primitive.gpuLodConditional || primitive.lodFade ||
+           primitive.alternativeMeshLod || primitive.batched ||
+           primitive.shaderVertexOffset || primitive.baked ||
+           primitive.translucent)
+            snapshot.complete=false;
+        snapshot.primitives.push_back(primitive);
+    }
+    if(snapshot.primitives.empty())snapshot.complete=false;
+    return snapshot;
+}
+
+Renderer3D::ModelSubmissionProvenance Renderer3D::modelSubmissionProvenance(
+        const Model& source) const {
+    ModelSubmissionProvenance result;
+    result.frameSerial=dev_?dev_->frameSerial():0;
+    bool tracked=false;
+    for(std::size_t i=0;i<trackedModelCount_;++i)
+        tracked |= trackedModels_[i]==&source;
+    if(!tracked || !result.frameSerial)return result;
+    result.mainPassEncoded=modelSubmissionMainEncoded_;
+    result.truncated=modelSubmissionTruncated_;
+    for(const auto& command:modelSubmitted_)
+        if(command.source.model==&source)
+            result.commands.push_back(command);
+    return result;
+}
+
+void Renderer3D::recordModelSubmission(
+        const ModelItem& it,int phase,ModelSubmissionKind kind,
+        gfx::PipelineHandle pipeline) {
+    bool tracked=false;
+    for(std::size_t i=0;i<trackedModelCount_;++i)
+        tracked |= trackedModels_[i]==it.model;
+    if(!tracked || !geometryMainView_ ||
+       (phase!=1 && phase!=2 && phase!=4))return;
+    if(modelSubmitted_.size()>=4096u) {
+        modelSubmissionTruncated_=true;
+        return;
+    }
+    ModelSubmittedPrimitive out;
+    auto& p=out.source;
+    p.model=it.model;
+    p.nodeIndex=it.nodeIndex;
+    p.meshIndex=it.meshIndex;
+    p.primitiveIndex=it.primitiveIndex;
+    p.drawInvocation=it.drawInvocation;
+    p.firstIndex=it.firstIndex;
+    p.indexCount=it.indexCount;
+    p.vertexOverride=it.vertexOverride;
+    p.vertexOverrideCount=it.vertexOverrideCount;
+    p.visible=it.inView;
+    p.colourCandidate=phase==1 && it.inView;
+    p.gpuLodConditional=it.gpuLodAvailable;
+    p.lodFade=it.lodThreshold<1.f || it.lodInvert;
+    p.alternativeMeshLod=
+        it.nodeIndex>=it.model->nodes.size() ||
+        it.model->nodes[it.nodeIndex].mesh!=int(it.meshIndex);
+    p.batched=it.materialRole!=0 || it.primitiveIndex==UINT32_MAX;
+    p.skinning=it.joints>=0;
+    p.baked=it.baked;
+    p.shaderVertexOffset=it.displacedVertexSource;
+    p.translucent=it.mat->alpha==AlphaMode::Blend ||
+        it.mat->transparent || it.tint.w<0.99f ||
+        transparentItem(it.flags);
+    p.customGpuStream=it.vertexOverride.valid();
+    fillModelMaskProvenance(p,*it.model,*it.mat);
+    p.world=it.world;
+    out.phase=uint8_t(phase);
+    out.kind=kind;
+    out.pipeline=pipeline;
+    modelSubmitted_.push_back(std::move(out));
 }
 
 void Renderer3D::packModelInstance(const ModelItem& x, int phase,
@@ -1363,8 +1690,13 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
         mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
         mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
-        mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
-        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
+        mu.uv1[0] = mt.uvRotation;
+        mu.uv1[1] = float(int(mt.shading));  // 0 PBR, 1 Unlit, 2 Skin, 3 Eye, 4 Hair
+        if (mt.shading == ShadingModel::Pbr || mt.shading == ShadingModel::Unlit) {
+            mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
+        } else {
+            mu.uv1[2] = mt.humanProfile.x; mu.uv1[3] = mt.humanProfile.y;
+        }
         mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
         if (phase != 0 && geometryMainView_ && (it.flags & kDrawActorReveal) && actorReveal.w > 0) {
             mu.reveal[0]=actorReveal.x;mu.reveal[1]=actorReveal.y;mu.reveal[2]=actorReveal.z;mu.reveal[3]=actorReveal.w;
@@ -1433,7 +1765,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         mo[2*slots+5]=morphData_[size_t(it.morph)+2*slots];
         dev_->setUniforms(4,mo,sizeof mo);
     }
-    dev_->setVertexBuffer(it.model->vb);
+    dev_->setVertexBuffer(it.vertexOverride.valid() ? it.vertexOverride : it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
     if (!submit) {
         if (tracePreparation) {
@@ -1470,6 +1802,11 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     else
         dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
                           int32_t(it.model->gpuBaseVertex), count);
+    // A real gfx indexed draw was encoded, not merely staged/warmed.
+    for(uint32_t n=0;n<count;++n)
+        recordModelSubmission(modelItems_[items[n]],phase,
+                              count==1u?ModelSubmissionKind::Direct:
+                                  ModelSubmissionKind::DirectInstanced,ph);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
@@ -1691,6 +2028,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             drawModelBatch(items + n, 1, phase);
         return true;
     }
+    for(uint32_t n=0;n<count;++n)
+        recordModelSubmission(modelItems_[items[n]],phase,
+                              ModelSubmissionKind::IndexedIndirect,
+                              currentPipe_);
     const auto afterSubmit = std::chrono::steady_clock::now();
     if (cpuStages) {
         cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
@@ -1823,7 +2164,7 @@ void Renderer3D::prepareGpuModelDraws() {
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
             it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
             it.mat->transparent || it.mat->shaderGraph ||
-            it.joints >= 0 || it.morph >= 0 || it.baked ||
+            it.joints >= 0 || it.morph >= 0 || it.baked || it.vertexOverride.valid() ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
             // the CPU occlusion pipeline for geometry requiring its tests.
@@ -2193,10 +2534,10 @@ void Renderer3D::renderModels(int phase) {
                     visible && (phase == 2) == blended;
         if (phase != 0 && it.tint.w <= 0.f) take = false;
         if (it.shadowRole == (phase == 0 ? 1 : 2)) take = false;   // batched parts cast through their shadow batch
-        if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0)
+        if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0&&!it.vertexOverride.valid())
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
-        if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.vertexOverride.valid() || it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
         // Kingston water: ground models must not cover the mirrored city.
         // This flat city puts the rainwater at y=.045. Fully submerged primitives
         // are omitted only from the reflection, retaining normal and shadow draws.
@@ -2207,7 +2548,7 @@ void Renderer3D::renderModels(int phase) {
             if(top<=.055f)take=false;
         }
         if ((it.materialRole == 1 && phase == 1) || (it.materialRole == 2 && phase != 1)) take = false;
-        if (take && phase != 0 && geometryMainView_ && it.geometry.occlusion && !it.mat->shaderGraph && it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 &&
+        if (take && phase != 0 && geometryMainView_ && it.geometry.occlusion && !it.vertexOverride.valid() && !it.mat->shaderGraph && it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 &&
             geometryOcclusion_.hidden(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax)) {
             if (phase == 1 || phase == 2) ++geometryStats_.occluded;
             take = false;
@@ -2605,7 +2946,7 @@ void Renderer3D::renderModels(int phase) {
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);
     currentPipe_ = {};
     lastItem_ = nullptr;
-    auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && x.joints < 0 && x.morph < 0; };
+    auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && !x.vertexOverride.valid() && x.joints < 0 && x.morph < 0; };
     auto sameBatch = [&](uint32_t xIndex, uint32_t yIndex) {
         const ModelItem& x = modelItems_[xIndex];
         const ModelItem& y = modelItems_[yIndex];
@@ -2719,6 +3060,10 @@ void Renderer3D::renderModels(int phase) {
                 ++gpuIcbExecuteFailed_;
                 continue;
             }
+            for(const uint32_t idx:group.items)
+                recordModelSubmission(modelItems_[idx],phase,
+                                      ModelSubmissionKind::GpuIcb,
+                                      currentPipe_);
             lastItem_ = &modelItems_[group.items.back()];
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
@@ -2762,6 +3107,8 @@ void Renderer3D::renderModels(int phase) {
                     gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                     size_t(gpuModelSlots_[modelIndex]) * sizeof(gfx::DrawIndexedIndirectCommand))) {
                 const ModelItem& item = modelItems_[modelIndex];
+                recordModelSubmission(item,phase,
+                    ModelSubmissionKind::GpuIndirect,currentPipe_);
                 lastItem_ = &item;
                 ++gpuModelDrawn_;
                 ++drawCalls_;
@@ -2791,7 +3138,7 @@ void Renderer3D::renderModels(int phase) {
             ++mdiCandidates;
             const uint32_t firstIndex = order_[i];
             const auto& first = modelItems_[firstIndex];
-            const bool firstEligible = !first.model->geometry &&
+            const bool firstEligible = !first.vertexOverride.valid() && !first.model->geometry &&
                 first.gi == 0 && !first.materialRole && !first.shadowRole &&
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
@@ -2815,6 +3162,7 @@ void Renderer3D::renderModels(int phase) {
                     !first.materialRole && !y.materialRole &&
                     !first.shadowRole && !y.shadowRole &&
                     !first.baked && !y.baked &&
+                    !first.vertexOverride.valid() && !y.vertexOverride.valid() &&
                     first.joints < 0 && y.joints < 0 &&
                     first.morph < 0 && y.morph < 0 &&
                     !first.paletteMaterials && !y.paletteMaterials &&
@@ -3064,7 +3412,7 @@ void Renderer3D::drawGeometryBatch(const uint32_t* items, uint32_t count, int ph
     auto& it = modelItems_[items[0]];
     const bool shadow=phase==0;
     const bool selected=shadow?it.geometry.shadowClusters:(phase==1&&geometryMainView_&&it.geometry.clusters);
-    const bool eligible = count == 1 && selected && it.indexCount >= 6144 && !it.mat->shaderGraph && it.model->geometry &&
+    const bool eligible = count == 1 && !it.vertexOverride.valid() && selected && it.indexCount >= 6144 && !it.mat->shaderGraph && it.model->geometry &&
         it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 && it.dissolve == 0;
     if (!eligible) { drawModelBatch(items,count,phase); return; }
     const auto& clusters = it.model->geometry->primitives[it.geometryPrimitive];

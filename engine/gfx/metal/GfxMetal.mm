@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <map>
 #include <cstring>
@@ -101,6 +102,64 @@ public:
     uint64_t completedFrameSerial() const override {
         return gpuHealthy_->load(std::memory_order_acquire)
             ? completedFrame_->load(std::memory_order_acquire) : 0;
+    }
+    bool waitForResourceIdle() override {
+        // A separate command buffer on the same ordered queue completes
+        // only AFTER all previously committed frames and uploads. It does
+        // not flush currently recording draw commands; the host invokes
+        // this before recording resource uses in its current frame.
+        if(enc_ || compute_ || gpuIcbEncoder_ || !queue_)return false;
+        id<MTLCommandBuffer> barrier=[queue_ commandBuffer];
+        if(!barrier)return false;
+        [barrier commit];
+        [barrier waitUntilCompleted];
+        if(barrier.status!=MTLCommandBufferStatusCompleted)return false;
+        // A successfully completed queue-tail marker proves that all older
+        // retirement markers have finished. Their completion-handler atomics
+        // can still be waiting for callback dispatch on another thread.
+        for(auto& [token,state]:retirementTokens_) {
+            (void)token;
+            state->store(1);
+        }
+        return true;
+    }
+    uint64_t beginResourceRetirement() override {
+        // This marker is ordered after previously committed GPU work, but
+        // NOT after the current frame's uncommitted command buffer.
+        if(!queue_ || enc_ || compute_ || gpuIcbEncoder_ ||
+           !gpuHealthy_->load())return 0;
+        id<MTLCommandBuffer> marker=[queue_ commandBuffer];
+        if(!marker)return 0;
+        const auto state=std::make_shared<std::atomic<int>>(0);
+        const uint64_t token=nextRetirementToken_++;
+        retirementTokens_.emplace(token,state);
+        [marker addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            state->store(completed.status==MTLCommandBufferStatusCompleted ? 1 : -1);
+        }];
+        [marker commit];
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        return it!=retirementTokens_.end() && it->second->load()==1;
+    }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it==retirementTokens_.end())return ResourceRetirementStatus::Failed;
+        const int status=it->second->load();
+        if(status>0)return ResourceRetirementStatus::Complete;
+        if(status<0)return ResourceRetirementStatus::Failed;
+        return ResourceRetirementStatus::Pending;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it!=retirementTokens_.end() && it->second->load()==1)
+            retirementTokens_.erase(it);
+    }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // Only after a successful ordered queue-tail idle marker.
+        // The completion handler retains its own shared atomic reference.
+        retirementTokens_.erase(token);
     }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
@@ -412,6 +471,106 @@ public:
             read->ready.store(true,std::memory_order_release);
         }];
         bufferReads_.push_back(std::move(read));return true;
+    }
+    bool readTexturePixelAsync(TextureHandle h,int x,int y,PixelReadFn callback) override {
+        auto* source=textures_.get(h.id);
+        if(!cmd_ || enc_ || compute_ || !source || !source->tex ||
+           source->fmt!=PixelFormat::RGBA8 || !callback ||
+           (source->tex.usage & MTLTextureUsageRenderTarget)==0 ||
+           source->tex.sampleCount!=1 ||
+           x<0 || y<0 || x>=int(source->tex.width) ||
+           y>=int(source->tex.height) ||
+           bufferReads_.size()>=32)return false;
+        const MTLPixelFormat format=source->tex.pixelFormat;
+        if(format!=MTLPixelFormatBGRA8Unorm &&
+           format!=MTLPixelFormatRGBA8Unorm)return false;
+        // Metal texture->buffer blits require a padded row on many devices.
+        // Copy a single top-left-origin pixel; the command buffer keeps both
+        // texture and staging buffer alive through GPU completion.
+        constexpr NSUInteger rowBytes=256;
+        id<MTLBuffer> staging=[device_ newBufferWithLength:rowBytes
+                                options:MTLResourceStorageModeShared];
+        if(!staging)return false;
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit)return false;
+        [blit copyFromTexture:source->tex sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(NSUInteger(x),NSUInteger(y),0)
+                  sourceSize:MTLSizeMake(1,1,1)
+                    toBuffer:staging destinationOffset:0
+      destinationBytesPerRow:rowBytes destinationBytesPerImage:rowBytes];
+        [blit endEncoding];
+        auto read=std::make_shared<BufferRead>();
+        read->bytes.resize(4);
+        read->callback=std::move(callback);
+        const bool bgra=format==MTLPixelFormatBGRA8Unorm;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if(completed.status!=MTLCommandBufferStatusCompleted) {
+                read->bytes.clear();
+            }else{
+                const auto* px=static_cast<const uint8_t*>(staging.contents);
+                if(bgra) {
+                    read->bytes[0]=px[2];read->bytes[1]=px[1];
+                    read->bytes[2]=px[0];read->bytes[3]=px[3];
+                }else{
+                    std::copy_n(px,4,read->bytes.begin());
+                }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        bufferReads_.push_back(std::move(read));
+        return true;
+    }
+    bool readTextureDepthPixelAsync(TextureHandle h,int x,int y,
+                                    DepthPixelReadFn callback) override {
+        // Valid handle must reference an explicit retained offscreen depth
+        // attachment; invalid handle refers ONLY to the current screen
+        // depth buffer. Never substitute a missing model/ID target.
+        id<MTLTexture> source=nil;
+        if(h.valid()) {
+            auto* t=textures_.get(h.id);
+            if(!t || t->fmt!=PixelFormat::Depth)return false;
+            source=t->tex;
+        }else source=depth_;
+        if(!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !source ||
+           !callback || !gpuHealthy_->load() ||
+           source.pixelFormat!=MTLPixelFormatDepth32Float ||
+           source.sampleCount!=1 ||
+           x<0 || y<0 || x>=int(source.width) ||
+           y>=int(source.height) ||
+           bufferReads_.size()>=32)return false;
+        // Depth32Float native bits are read back as one IEEE-754 float.
+        // Metal texture-to-buffer blits require 256-byte row alignment.
+        constexpr NSUInteger rowBytes=256;
+        id<MTLBuffer> staging=[device_ newBufferWithLength:rowBytes
+                                options:MTLResourceStorageModeShared];
+        if(!staging)return false;
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit)return false;
+        [blit copyFromTexture:source sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(NSUInteger(x),NSUInteger(y),0)
+                  sourceSize:MTLSizeMake(1,1,1)
+                    toBuffer:staging destinationOffset:0
+      destinationBytesPerRow:rowBytes destinationBytesPerImage:rowBytes];
+        [blit endEncoding];
+        auto read=std::make_shared<BufferRead>();
+        read->bytes.resize(sizeof(float));
+        read->callback=[fn=std::move(callback)](std::vector<uint8_t> bytes) {
+            float depth=0.f;
+            if(bytes.size()!=sizeof(depth)) {
+                fn(false,depth);
+                return;
+            }
+            std::memcpy(&depth,bytes.data(),sizeof(depth));
+            fn(std::isfinite(depth) && depth>=0.f && depth<=1.f,depth);
+        };
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if(completed.status!=MTLCommandBufferStatusCompleted)
+                read->bytes.clear();
+            else std::memcpy(read->bytes.data(),staging.contents,sizeof(float));
+            read->ready.store(true,std::memory_order_release);
+        }];
+        bufferReads_.push_back(std::move(read));
+        return true;
     }
     void deliverBufferReads(){
         // Move ready entries before callbacks, allowing callbacks to enqueue other work.
@@ -756,19 +915,36 @@ public:
             if (shader.valid()) destroyShader(shader);
         }
     }
+    // Old bool API retains terminal-completion semantics for existing clients;
+    // use the explicit status API to distinguish a GPU compiler rejection.
     bool warmPipelineColor(PipelineHandle h, PixelFormat format) override {
+        return warmPipelineColorStatus(h, format) != PipelineColorWarmStatus::Pending;
+    }
+    PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) override {
         auto* p=pipelines_.get(h.id);
-        if (!p || format!=PixelFormat::RGBA16F || p->desc.depthOnly || p->desc.colorFormat==format || p->hdr.valid() || p->hdrFailed) return true;
+        if (!p) { error_="HDR warmup: invalid pipeline handle"; return PipelineColorWarmStatus::Failed; }
+        if (format!=PixelFormat::RGBA16F || p->desc.depthOnly ||
+            p->desc.colorFormat==format) return PipelineColorWarmStatus::Ready;
+        if (p->hdr.valid()) return PipelineColorWarmStatus::Ready;
+        if (p->hdrFailed) return PipelineColorWarmStatus::Failed;
         if (!p->hdrShader.valid()) {
             if (!p->hdrShaderJob) {
                 auto* shader=shaders_.get(p->desc.shader.id);
-                if (!shader) { p->hdrFailed=true; return true; }
+                if (!shader) {
+                    error_="HDR warmup: missing source shader";
+                    p->hdrFailed=true;
+                    return PipelineColorWarmStatus::Failed;
+                }
                 ShaderDesc desc; desc.msl=shader->source.c_str(); desc.linearTarget=true;
                 p->hdrShaderJob=createShaderAsync(desc);
             }
-            if (!p->hdrShaderJob(p->hdrShader)) return false;
+            if (!p->hdrShaderJob(p->hdrShader)) return PipelineColorWarmStatus::Pending;
             p->hdrShaderJob={};
-            if (!p->hdrShader.valid()) { p->hdrFailed=true; std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str()); return true; }
+            if (!p->hdrShader.valid()) {
+                p->hdrFailed=true;
+                std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str());
+                return PipelineColorWarmStatus::Failed;
+            }
         }
         if (!p->hdrPipelineJob) {
             auto desc=p->desc; desc.shader=p->hdrShader; desc.colorFormat=format;
@@ -776,11 +952,19 @@ public:
         }
         // Publishing may reallocate the pool, including the job itself. Poll a local copy.
         auto job=p->hdrPipelineJob; PipelineHandle result;
-        if (!job(result)) return false;
+        if (!job(result)) return PipelineColorWarmStatus::Pending;
         p=pipelines_.get(h.id);
+        if (!p) {
+            // A destroyed base pipeline cannot publish its asynchronous variant.
+            if (result.valid()) destroyPipeline(result);
+            error_="HDR warmup: pipeline retired before variant completion";
+            return PipelineColorWarmStatus::Failed;
+        }
         p->hdrPipelineJob={}; p->hdr=result; p->hdrFailed=!result.valid();
-        if (p->hdrFailed) std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
-        return true;
+        if (p->hdrFailed)
+            std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
+        return p->hdrFailed ? PipelineColorWarmStatus::Failed
+                            : PipelineColorWarmStatus::Ready;
     }
     PipelineHandle hdrPipeline(PipelineHandle h) {
         auto* p = pipelines_.get(h.id);
@@ -1674,6 +1858,10 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    uint64_t nextRetirementToken_ = 1;
+    // Only the GPU callback modifies the atomic status. The token map is
+    // accessed exclusively on the Metal device owner thread.
+    std::map<uint64_t,std::shared_ptr<std::atomic<int>>> retirementTokens_;
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.

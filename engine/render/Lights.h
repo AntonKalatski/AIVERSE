@@ -28,6 +28,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "StaticLightGrid.h"
+#include "OffscreenTargetLifetime.h"
 
 namespace aiverse::render {
 
@@ -90,6 +91,17 @@ public:
     static constexpr float kMapRange = 4.0f;
     static constexpr size_t kMaxLights = 1024;
 
+    // Borrow the owning Renderer3D pool; never create a second GPU epoch.
+    // Set before init, clear only after normal lights.shutdown().
+    void setTargetRetirement(OffscreenTargetRetirement* owner) noexcept {
+        targetRetirement_=owner;
+    }
+    // Standalone hosts without a renderer-owned GPU retirement queue may
+    // orphan a texture rather than free it without a proven idle barrier.
+    uint64_t standaloneTargetOrphans() const noexcept { return standaloneTargetOrphans_; }
+    uint64_t standaloneRetirementIdleFailures() const noexcept {
+        return standaloneRetirementIdleFailures_;
+    }
     bool init(gfx::Device& dev);
     void shutdown();
     void setQuality(LightQuality q);
@@ -147,6 +159,8 @@ private:
     struct MapVertex { float x, y, u, v, r, g, b, a, dx, dy, dz, h, co, ci, rad, pad, lx, lz, gy, sh; };
     struct HaloVertex { float x, y, z, u, v, r, g, b, a; };
     void createMap(int size);
+    void retireTarget(gfx::TextureHandle color,
+                      gfx::TextureHandle depth={}) noexcept;
     // Dynamic vertex data is appended (ring) instead of rewritten: Metal keeps one copy of a dynamic
     // buffer per frame in flight, so two uploads in one frame (water reflection + main pass, or the
     // editor's two views) would overwrite each other. Returns the byte offset to draw from.
@@ -154,6 +168,8 @@ private:
     void pickPixelLights();
 
     gfx::Device* dev_ = nullptr;
+    OffscreenTargetRetirement* targetRetirement_=nullptr; // borrowed
+    uint64_t standaloneTargetOrphans_=0,standaloneRetirementIdleFailures_=0;
     gfx::ShaderHandle shader_, haloShader_;
     gfx::PipelineHandle pipe_, haloPipe_;
     gfx::BufferHandle vb_, haloVB_;

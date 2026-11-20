@@ -8,6 +8,8 @@
 #include "Geometry.h"
 #include <algorithm>
 #include <array>
+#include <array>
+#include <span>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -23,6 +25,8 @@
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
+#include "RenderDeviceLifetime.h"
+#include "GpuProgramRetirement.h"
 #include <memory>
 #include <unordered_map>
 
@@ -193,6 +197,13 @@ struct ModelDraw {
     // Conservative local-metre vertexOffset envelope for safe frustum/LOD.
     // 0 means unknown deformation; retain conservative uncullable behavior.
     float maxVertexOffsetMetres = 0;
+    // Opt-in full ModelVertex (60 bytes) dynamic GPU stream for THIS instance.
+    // Bind only on the same gfx::Device, after compute submission and before
+    // render passes. Owner keeps resource alive through all colour/shadow draws.
+    // Experimental path: Metal dedicated per-model buffers only; no pooled
+    // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
+    gfx::BufferHandle vertexOverride{};
+    uint32_t vertexOverrideCount = 0;
 };
 
 enum DrawFlags : uint32_t {
@@ -310,19 +321,62 @@ struct ModelRenderStats {
 
 class Renderer3D {
 public:
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
+        gpuDeviceLease_=std::move(lease);
+    }
     bool init(gfx::Device& dev);
     void shutdown();
+    // Call only at a host frame boundary, outside any active graphics pass.
+    // A Pending or Failed token never authorizes GPU program destruction.
+    size_t pendingProgramRetirements() const noexcept {
+        return programRetirement_?programRetirement_->pendingBatches():0;
+    }
+    bool collectRetiredPrograms() {
+        if(!programRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return programRetirement_->collect();
+    }
+    size_t pendingTargetRetirements() const noexcept {
+        return targetRetirement_?targetRetirement_->pendingPairs():0;
+    }
+    uint64_t targetRetirementOrphanPairs() const noexcept {
+        return (targetRetirement_?targetRetirement_->orphanedPairs():0) +
+            unleasedTargetOrphans_;
+    }
+    // Exceptional use before shared target owner initialization: a failed
+    // true-idle barrier never authorizes deleting still-in-flight textures.
+    uint64_t unleasedTargetIdleFailures() const noexcept {
+        return unleasedTargetIdleFailures_;
+    }
+    uint64_t targetRetirementEnqueueFailures() const noexcept {
+        return targetRetirement_?targetRetirement_->enqueueFailures():0;
+    }
+    bool collectRetiredTargets() {
+        if(!targetRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return targetRetirement_->collect();
+    }
+    uint64_t programRetirementOrphanBatches() const noexcept {
+        return programRetirement_?programRetirement_->orphanBatches():0;
+    }
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
-    bool setShadowMapSize(int size) { highShadowSize_=size; setShadowQuality(quality_); return quality_!=ShadowQuality::High||shadowMap_.valid(); }
+    bool setShadowMapSize(int size) {
+        highShadowSize_=size;
+        setShadowQuality(quality_);
+        // A failed allocation keeps the previous shadow texture alive;
+        // report that the requested High resolution was not published.
+        return quality_!=ShadowQuality::High ||
+               (shadowMap_.valid() && shadowSize_==size);
+    }
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
-    void beginScene(const RTSCamera& cam, int fbW, int fbH);
+    void beginScene(const Camera3D& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Opt-in per-surface ripple normals. Positions are render-origin-relative
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
@@ -343,6 +397,22 @@ public:
     void triangle(float3 a, float3 b, float3 c, uint32_t color);    // flat, alpha-blended
     void quadXZ(float3 a, float3 b, float width, uint32_t color, float y = 0.02f);
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
+    enum class PipelineWarmStatus : uint8_t { Ready, Pending, Failed };
+    // Strict authoring preflight distinguishes an asynchronous GPU compiler
+    // still working from a rejected shader/pipeline. A rejected appearance
+    // must retain its last-good Model/Material/AnimationGraph publication.
+    PipelineWarmStatus warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials=nullptr);
+    // Poll only jobs already staged by a previous candidate. This lets
+    // editor hot-reload hold the last-good appearance without reimporting
+    // scratch Models/textures every time a GPU compiler is still Pending.
+    bool hasPendingModelPipelineJobs() const noexcept;
+    bool pollPendingModelPipelineJobs();
+    struct GpuWarmStats {
+        size_t shaderJobs=0,pipelineJobs=0,colorVariants=0;
+        uint64_t colorPollAttempts=0,colorVariantsReady=0,colorVariantsFailed=0;
+    };
+    GpuWarmStats gpuWarmStats() const noexcept;
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     // Opt-in CPU cache of per-node rigid bind transforms for stationary objects
@@ -412,6 +482,97 @@ public:
         s.retainedBytes = staticRenderPacketBytes_;
         return s;
     }
+    // Frame-local provenance of Renderer3D's ACTUAL drawModel geometry/LOD
+    // decisions, taken after a source model was submitted to this scene.
+    // It is pre-render submission data, NOT proof an eventual draw passed
+    // GPU occlusion or pipeline compilation. Never cache pointers across
+    // beginScene, asset republish or Device resource retirement.
+    struct ModelViewPrimitive {
+        const Model* model=nullptr;
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0; // one renderer drawModel() instance
+        uint32_t firstIndex=0,indexCount=0;
+        gfx::BufferHandle vertexOverride{};
+        uint32_t vertexOverrideCount=0;
+        bool visible=false,colourCandidate=false;
+        bool gpuLodConditional=false,lodFade=false,batched=false;
+        bool alternativeMeshLod=false;
+        bool skinning=false,baked=false,shaderVertexOffset=false;
+        bool translucent=false; // real colour-pass tint/material/flag classification
+        bool customGpuStream=false;
+        // Stage 7BA: exact sampled Mask state used by the normal colour
+        // draw. No raw Material* escapes the frame. A later model/material
+        // hot-reload must NOT silently alter VIVID's alpha/depth source.
+        bool maskedMaterial=false,maskVertexColors=true;
+        gfx::TextureHandle maskBaseTexture{};
+        float maskAlpha=1.f,maskCutoff=.5f,maskUvRotation=0.f;
+        float2 maskUvOffset{0,0},maskUvScale{1,1};
+        mat4 world{};
+    };
+    struct ModelViewProvenance {
+        uint64_t frameSerial=0;
+        bool hasModel=false;
+        bool complete=false; // false if renderer source view is unsuitable
+        std::vector<ModelViewPrimitive> primitives;
+    };
+    // Source-owned introspection; no cached parallel picking scene database.
+    // Does not dereference async data or issue RHI operations.
+    ModelViewProvenance modelViewProvenance(const Model& model) const;
+    // Stage 7AW: opt-in, frame-local record of *encoded main-colour*
+    // indexed commands, not an extrapolation from staged ModelItems.
+    // Only one queried model is tracked, avoiding a per-world audit cost.
+    enum class ModelSubmissionKind : uint8_t {
+        Direct, DirectInstanced, IndexedIndirect, GpuIndirect, GpuIcb
+    };
+    struct ModelSubmittedPrimitive {
+        ModelViewPrimitive source{};
+        ModelSubmissionKind kind=ModelSubmissionKind::Direct;
+        uint8_t phase=0; // 1 opaque main, 2 blended, 4 transparent depth
+        gfx::PipelineHandle pipeline{};
+    };
+    struct ModelSubmissionProvenance {
+        uint64_t frameSerial=0;
+        bool mainPassEncoded=false;
+        bool truncated=false;
+        std::vector<ModelSubmittedPrimitive> commands;
+    };
+    // Stage 7BA: at most 1 selected model + 4 candidate blockers.
+    // Opt-in bounded, frame-local diagnostics; no global scene registry.
+    // The producer supplies candidate model identities before staging
+    // draws. Every unique pointer is borrowed only through this frame.
+    static constexpr std::size_t kMaxTrackedSubmissionModels=5u;
+    void trackModelSubmissionsMany(
+        std::span<const Model* const> models) noexcept {
+        trackedModelCount_=0;
+        for(auto& model:trackedModels_)model=nullptr;
+        modelSubmitted_.clear();
+        modelSubmissionTruncated_=
+            modelDrawInvocation_!=0 || modelSubmissionMainEncoded_ ||
+            models.empty() || models.size()>trackedModels_.size();
+        if(modelSubmissionTruncated_)return;
+        for(const auto* model:models) {
+            if(!model) {
+                modelSubmissionTruncated_=true;
+                return;
+            }
+            for(std::size_t i=0;i<trackedModelCount_;++i)
+                if(trackedModels_[i]==model) {
+                    modelSubmissionTruncated_=true;
+                    return;
+                }
+            trackedModels_[trackedModelCount_++]=model;
+        }
+    }
+    // Compatible with existing 7AW single and 7AZ paired callers.
+    void trackModelSubmissions(const Model* model,
+                               const Model* occluder=nullptr) noexcept {
+        const std::array<const Model*,2> models{{model,occluder}};
+        trackModelSubmissionsMany(
+            std::span<const Model* const>(models.data(),
+                                        occluder?2u:1u));
+    }
+    ModelSubmissionProvenance modelSubmissionProvenance(
+        const Model& model) const;
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -466,7 +627,7 @@ public:
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
     const mat4& lightViewProj() const { return lightViewProj_; }
-    const RTSCamera& camera() const { return cam_; }
+    const Camera3D& camera() const { return cam_; }
     float4 actorReveal{}; // world-space actor centre + aperture radius, zero disables
 
     // Traced lighting ("trace" tier, Renderer3DTrace.cpp): sun rays marched over the terrain height
@@ -807,6 +968,14 @@ private:
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
         int32_t materialIndex = -1; // remap material pointers on packet replay
+        // Captured at selection time, before colour/LOD batching. Stores
+        // real renderer-selected mesh and source primitive ordinals.
+        uint32_t nodeIndex=0,meshIndex=0,primitiveIndex=0;
+        uint64_t drawInvocation=0;
+        uint32_t vertexOverrideCount=0;
+        bool displacedVertexSource=false;
+        // Full per-instance ModelVertex buffer; empty for the legacy path.
+        gfx::BufferHandle vertexOverride{};
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         size_t geometryPrimitive = 0;
@@ -835,8 +1004,16 @@ private:
     };
     void initModels();
     void shutdownModels();
+    void retireRenderTargets(gfx::TextureHandle color,
+                             gfx::TextureHandle depth={});
+    // Quality/instance-limit changes retire old shaders and pipelines
+    // without freeing GPU-visible handles until their own completion token.
+    void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
+    void recordModelSubmission(const ModelItem& item,int phase,
+                               ModelSubmissionKind kind,
+                               gfx::PipelineHandle pipeline);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
                         bool submit = true, bool gpuInstances = false,
                         bool instancePalette = false);
@@ -852,7 +1029,7 @@ private:
 
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
-    void computeShadowMatrix(const RTSCamera& cam, float aspect);
+    void computeShadowMatrix(const Camera3D& cam, float aspect);
     void uploadFrameUniforms(bool forShadow);
     // trace tier (Renderer3DTrace.cpp)
     bool initTrace();
@@ -862,6 +1039,16 @@ private:
     void bindSceneTextures(int colorSlot, int depthSlot);   // after the capture: the scene targets, else placeholders
     void bindTraceTextures();                                // lit pipeline: tex3 height, tex4/tex5 scene
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("Renderer3D GPU device generation expired");
+    }
+    RenderDeviceLifetime::Lease gpuDeviceLease_;
+    std::unique_ptr<GpuProgramRetirement> programRetirement_;
+    // One render-target owner is shared with LightSystem. It must outlive
+    // the light, trace and selection GPU resource owners.
+    std::unique_ptr<OffscreenTargetRetirement> targetRetirement_;
+    uint64_t unleasedTargetOrphans_=0,unleasedTargetIdleFailures_=0;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
@@ -885,7 +1072,7 @@ private:
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
-    RTSCamera cam_;
+    Camera3D cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
     uint32_t drawCalls_ = 0;
@@ -1115,6 +1302,12 @@ private:
     uint64_t staticEligibilityEpoch_ = 0;
     StaticEligibilityStats staticEligibilityStats_{};
     ModelStaticEligibility cachedStaticModelEligibility(const Model& source);
+    uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
+    std::array<const Model*,kMaxTrackedSubmissionModels> trackedModels_{};
+    std::size_t trackedModelCount_=0;
+    std::vector<ModelSubmittedPrimitive> modelSubmitted_;
+    bool modelSubmissionTruncated_=false;
+    bool modelSubmissionMainEncoded_=false;
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
@@ -1205,7 +1398,15 @@ private:
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
     bool warmingPipelines_ = false, warmingPending_ = false;
+    bool warmingFailed_ = false;
     std::vector<std::pair<ModelShaderKey, gfx::Device::PipelineJob>> pendingModelPipes_;
+    // Backend colour-target warmup may be asynchronous even when it returns
+    // no ShaderJob/PipelineJob. Poll these handles without reloading Models.
+    std::vector<gfx::PipelineHandle> pendingColorWarms_;
+    // Do not re-poll or repeatedly count an HDR variant rejected by its backend.
+    // Invalidated alongside its original model pipeline generation.
+    std::vector<gfx::PipelineHandle> failedColorWarms_;
+    uint64_t colorWarmPollAttempts_=0,colorWarmReady_=0,colorWarmFailed_=0;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;

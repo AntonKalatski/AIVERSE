@@ -793,6 +793,15 @@ int main() {
         model.finalize();
         CHECK(model.bindWorld.size() == model.nodes.size());
         CHECK(staticModelCacheCandidate(draw, false));
+        draw.vertexOverride = gfx::BufferHandle{17};
+        draw.vertexOverrideCount = 3;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.staticPacketRevision = 1;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.vertexOverride = {};
+        draw.vertexOverrideCount = 0;
+        draw.staticPacketRevision = 0;
+        CHECK(staticModelCacheCandidate(draw, false));
         draw.materials = &model.materials;
         std::vector<int> nodeOverrides(1, -1);
         draw.nodeMaterial = &nodeOverrides;

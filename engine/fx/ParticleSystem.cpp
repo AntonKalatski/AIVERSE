@@ -638,6 +638,10 @@ ParticleSystem::ParticleSystem() : impl_(std::make_unique<Impl>()) {}
 ParticleSystem::~ParticleSystem() { shutdown(); }
 
 bool ParticleSystem::init(gfx::Device* dev) {
+    if(dev && !deviceLeaseValid(*dev)) {
+        error_="particles: GPU device generation expired";
+        return false;
+    }
     shutdown();
     auto& I = *impl_;
     I.dev = dev;
@@ -697,6 +701,12 @@ bool ParticleSystem::init(gfx::Device* dev) {
 void ParticleSystem::shutdown() {
     if (!impl_) return;
     auto& I = *impl_;
+    if(I.dev && !deviceLeaseValid(*I.dev)) {
+        // Destructor-safe fail closed: no Device call with an expired epoch.
+        // Any orphaned GPU handles remain for device teardown, not early free.
+        error_="particles: GPU resource shutdown after device generation expired";
+        I.dev=nullptr;
+    }
     if (I.dev) {
         for (auto& b : I.batches) { for(auto p:b.graphPipe) if(p.valid()) I.dev->destroyPipeline(p); if(b.shader.valid()) I.dev->destroyShader(b.shader); }
         for (auto& p : I.pipe) if (p.valid()) I.dev->destroyPipeline(p);

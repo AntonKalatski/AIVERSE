@@ -21,7 +21,10 @@ static_assert(client::GameClient::kInitSteps == 6, "ClientHost::kSteps follows G
 ClientHost::ClientHost() = default;
 ClientHost::~ClientHost() { stop(); }
 
-void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets) {
+void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets,
+                       render::RenderDeviceLifetime::Lease deviceLease) {
+    if(deviceLease.device() && !deviceLease.validFor(dev))
+        throw std::logic_error("ClientHost GPU device generation mismatch");
     stop();
     dev_ = &dev;
     view_ = {};
@@ -29,6 +32,7 @@ void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const st
     view_.engineAssets = engineAssets;
     view_.width = 360; view_.height = 640; view_.fbWidth = 360; view_.fbHeight = 640;   // until the first frame
     client_ = std::make_unique<client::GameClient>();
+    client_->setGpuDeviceLease(std::move(deviceLease));
     step_ = 0;
     captured_ = finger_ = focused_ = false;
 }

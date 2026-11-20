@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace aiverse::gfx::vk {
 namespace {
@@ -270,9 +271,21 @@ VulkanDevice::~VulkanDevice() {
 
 void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
+    // Pending staging is safe to destroy only after the GPU idle barrier.
+    // Do not invoke editor callbacks during device teardown.
+    for(auto& read:pixelReads_) {
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+    }
+    pixelReads_.clear();
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    for(const auto& [token,fence]:retirementFences_) {
+        (void)token;
+        if(fence)vkDestroyFence(device_,fence,nullptr);
+    }
+    retirementFences_.clear();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
     textures_.each(killTex);
@@ -410,15 +423,84 @@ void VulkanDevice::ensureBackBuffer(int w, int h) {
     initImageLayout(backDepth_, cb, true);
 }
 
+bool VulkanDevice::waitForResourceIdle() {
+    // Frame serial counts submissions, NOT GPU completion. Only a
+    // successful device-wide wait establishes the retirement fence.
+    // Caller must be outside passes and before any current-frame packet
+    // can borrow a model scheduled for destruction.
+    if(!device_ || inPass_ || !healthy_)return false;
+    const VkResult result=vkDeviceWaitIdle(device_);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        return false;
+    }
+    completed_=std::max(completed_,serial_-1);
+    collectGarbage();
+    return true;
+}
+
+uint64_t VulkanDevice::beginResourceRetirement() {
+    // Enqueue an empty ordered queue submission. The fence completes only
+    // after earlier submitted graphics/transfer work on this same queue.
+    // Recorded-but-unsubmitted current-frame commands are NOT included.
+    if(!device_ || !healthy_ || inPass_ || !queue_)return 0;
+    VkFence fence=VK_NULL_HANDLE;
+    const auto info=vkStruct<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+    if(vkCreateFence(device_,&info,nullptr,&fence)!=VK_SUCCESS)return 0;
+    const VkResult result=vkQueueSubmit(queue_,0,nullptr,fence);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        vkDestroyFence(device_,fence,nullptr);
+        return 0;
+    }
+    const uint64_t token=nextRetirementToken_++;
+    retirementFences_.emplace(token,fence);
+    return token;
+}
+
+bool VulkanDevice::resourceRetirementComplete(uint64_t token) {
+    return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+}
+
+ResourceRetirementStatus VulkanDevice::resourceRetirementStatus(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_ || !healthy_)
+        return ResourceRetirementStatus::Failed;
+    const VkResult result=vkGetFenceStatus(device_,it->second);
+    if(result==VK_SUCCESS)return ResourceRetirementStatus::Complete;
+    if(result==VK_NOT_READY)return ResourceRetirementStatus::Pending;
+    if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+    return ResourceRetirementStatus::Failed;
+}
+
+void VulkanDevice::endResourceRetirement(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    if(vkGetFenceStatus(device_,it->second)!=VK_SUCCESS)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
+void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
+    // This API requires an earlier successful vkDeviceWaitIdle: it is
+    // forbidden for failed/vkDeviceLost paths with incomplete submissions.
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
-    const VkResult waited = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
-    // completed_ must mean a *successfully signalled fence*, not merely
-    // that a wait was attempted. On device loss/other errors disallow pool
-    // recycling: there is no proof earlier GPU readers finished.
-    if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
-    else healthy_ = false;
-    collectGarbage();
+    const VkResult result=vkWaitForFences(device_,1,&s.fence,VK_TRUE,UINT64_MAX);
+    if(result!=VK_SUCCESS) {
+        healthy_=false;
+        // Do not publish "completed" serials when fence completion failed.
+        // Requests will be delivered as empty/invalid pixel callbacks.
+    }else{
+        completed_=std::max(completed_,s.serial);
+        collectGarbage();
+    }
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;
@@ -448,8 +530,80 @@ VkCommandBuffer VulkanDevice::transferCmd() {
     return s.pre;
 }
 
+// Called on the gfx device-owner thread. A frame-slot fence, never a serial
+// alone, is the authority to read the asynchronous GPU transfer destination.
+void VulkanDevice::deliverPixelReads() {
+    std::vector<PixelRead> completed;
+    for(auto it=pixelReads_.begin();it!=pixelReads_.end();) {
+        if(!healthy_ || it->serial<=completed_) {
+            completed.push_back(std::move(*it));
+            it=pixelReads_.erase(it);
+        }else ++it;
+    }
+    for(auto& read:completed) {
+        std::vector<uint8_t> bytes;
+        if(healthy_ && read.serial<=completed_ && read.alloc.mapped) {
+            const auto* data=static_cast<const uint8_t*>(read.alloc.mapped);
+            bytes.assign(data,data+4);
+        }
+        // Pending record is already removed; callbacks may schedule work.
+        // A device-lost path reports an empty buffer, never fake pixels.
+        if(read.buffer)vkDestroyBuffer(device_,read.buffer,nullptr);
+        memory_.release(read.alloc);
+        if(read.callback)read.callback(std::move(bytes));
+    }
+}
+
+bool VulkanDevice::readTexturePixelAsync(TextureHandle texture,
+                                         int x,int y,PixelReadFn callback) {
+    if(!recording_ || inPass_ || !healthy_ || !callback ||
+       pixelReads_.size()>=32u || x<0 || y<0)return false;
+    const VTexture* image=textures_.get(texture.id);
+    if(!image || !image->renderTarget || image->compressed ||
+       image->depth || image->format!=PixelFormat::RGBA8 ||
+       image->levels!=1 || x>=image->width || y>=image->height)
+        return false;
+    VkBuffer staging=VK_NULL_HANDLE;
+    Allocation alloc;
+    if(!createBufferObject(4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,true,
+                           staging,alloc))return false;
+    if(!staging || !alloc.mapped) {
+        if(staging)vkDestroyBuffer(device_,staging,nullptr);
+        memory_.release(alloc);
+        return false;
+    }
+    VkCommandBuffer cb=slots_[size_t(slot_)].main;
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,1u,0u);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=0;
+    copy.bufferRowLength=0;
+    copy.bufferImageHeight=0;
+    copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    // Vulkan's current pass uses a bottom-left-oriented viewport, matching
+    // the legacy GL rendering contract. Public readback pixels are top-left.
+    copy.imageOffset={x,image->height-1-y,0};
+    copy.imageExtent={1,1,1};
+    vkCmdCopyImageToBuffer(cb,image->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging,1,&copy);
+    auto visibility=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+    visibility.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    visibility.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT,0,1,&visibility,
+                         0,nullptr,0,nullptr);
+    barrierImage(cb,image->image,false,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,1u,0u);
+    pixelReads_.push_back({staging,alloc,serial_,std::move(callback)});
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
+    deliverPixelReads(); // previous frame-slot fence proved completion
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

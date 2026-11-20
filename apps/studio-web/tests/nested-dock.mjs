@@ -17,7 +17,7 @@ test('default tree has 4 nested stacks and exactly one copy of each panel',()=>{
 });
 test('move reorders within a tab stack',()=>{
   const t=moveTab(defaultDockTree(),'animation','dock-center','scene');
-  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','shader_graph']);
+  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','facial_rig','shader_graph']);
   assert.equal(findDockStack(t,'dock-center').active,'animation');
 });
 test('dragging panels across stacks retains identity',()=>{
@@ -38,7 +38,7 @@ test('nested split adds a stack to left edge and preserves panels',()=>{
   assert.equal(panelStack(base,'inspector'),'dock-right');
 });
 test('cannot split away sole tab from its own stack',()=>{
-  const t=splitDockStack(defaultDockTree(),'console','dock-bottom','bottom');
+  const t=splitDockStack(defaultDockTree(),'hierarchy','dock-left','bottom');
   assert.deepEqual(t,defaultDockTree());
 });
 test('split every direction and preserve first stack',()=>{
@@ -58,7 +58,9 @@ test('activate tab does not create a ghost panel',()=>{
   let t=activateTab(defaultDockTree(),'dock-left','scene');
   assert.equal(findDockStack(t,'dock-left').active,'hierarchy');
   t=activateTab(t,'dock-left','assets');
-  assert.equal(findDockStack(t,'dock-left').active,'assets');
+  assert.equal(findDockStack(t,'dock-left').active,'hierarchy');
+  t=activateTab(t,'dock-bottom','console');
+  assert.equal(findDockStack(t,'dock-bottom').active,'console');
 });
 test('normalization guards malformed nodes, dup tabs and invalid ratios',()=>{
   const t=normalizeDockTree({root:{kind:'split',id:'root',axis:'horizontal',ratio:Infinity,

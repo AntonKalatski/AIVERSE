@@ -22,6 +22,7 @@
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/TextureCache.h"
+#include "../../../engine/render/RenderDeviceLifetime.h"
 #include "../RtsData.h"
 #include "../RtsMap.h"
 
@@ -81,6 +82,7 @@ public:
         Tex tex;
     };
 
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     void init(gfx::Device& dev, const Rules& rules, const render::FileReader& read, const std::string& contentBase);
     void shutdown(gfx::Device& dev);
     void invalidate() { geomDirty_ = true; }   // terrain rebuilt (heights may have changed): rebuild geometry
@@ -125,6 +127,11 @@ private:
     render::float3 ownerColor(int slot) const;
     void loadTex(Tex& t);
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("RtsGroundFx GPU device generation expired");
+    }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     const Rules* rules_ = nullptr;
     std::string base_;
