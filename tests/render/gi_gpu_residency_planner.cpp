@@ -95,4 +95,31 @@ int main() {
     AIVERSE_TEST_CHECK(!controller.updateFrame({0,0,0},0).canPresent);
     AIVERSE_TEST_CHECK(controller.shutdown());
     AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
+
+    // Explicit opt-in CPU fallback admits the SAME full authoritative scene
+    // without dropping nearby geometry just to satisfy the 8192 GPU cap.
+    settings.cpuFallbackOnLocalGpuOverflow=true;
+    AIVERSE_TEST_CHECK(controller.initialize(device,settings));
+    AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::GpuCompute);
+    AIVERSE_TEST_CHECK(controller.setGeometry(full,1));
+    AIVERSE_TEST_CHECK(controller.setLights({
+        GiMovingLight{17,{0,0,0},{1,1,1},16,20}}));
+    GiEnvironmentLight sky;
+    sky.skyColor={0,0,1};sky.skyIntensity=1;
+    AIVERSE_TEST_CHECK(controller.setEnvironment(sky));
+    AIVERSE_TEST_CHECK(controller.setGeometry(nearOverflow,2));
+    AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::CpuProbes);
+    AIVERSE_TEST_CHECK(controller.cpuRuntime()!=nullptr);
+    AIVERSE_TEST_CHECK(controller.gpuRuntime()==nullptr);
+    AIVERSE_TEST_CHECK(controller.gpuResidency().exceededBudget);
+    AIVERSE_TEST_CHECK(!controller.presentationBlocked());
+    AIVERSE_TEST_CHECK(controller.cpuRuntime()->reference().environment()==sky);
+    AIVERSE_TEST_CHECK(controller.cpuRuntime()->reference().scheduler().pending()>0);
+    // The CPU path traces the COMPLETE snapshot, including nearOverflow,
+    // under the ordinary per-frame bounded CPU probe budget.
+    const auto cpuFrame=controller.updateFrame({0,0,0});
+    AIVERSE_TEST_CHECK(cpuFrame.mode==GiTransportMode::CpuProbes);
+    AIVERSE_TEST_CHECK(cpuFrame.cpu.trace.claimed<=settings.cpuMaxProbes);
+    AIVERSE_TEST_CHECK(controller.shutdown());
+    AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
 }
