@@ -2,10 +2,16 @@
 // c++ -std=c++20 -O2 -pthread -I. tests/ecs_wave_replay_test.cpp -o /tmp/aiverse-ecs-replay
 // /tmp/aiverse-ecs-replay
 #include "engine/experiments/EcsGuardedWorld.h"
-#include <cassert>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <vector>
+// Keep replay parity assertions active in Release/NDEBUG builds.
+// An ordinary assert() drops the replay calls and causes unused variables
+// under -Werror, masking nondeterministic ECS worker behavior.
+#define CHECK(...) do { if (!(__VA_ARGS__)) { \
+    std::cerr << "ECS replay failed at " << __FILE__ << ":" << __LINE__ \
+              << ": " << #__VA_ARGS__ << "\n"; std::abort(); } } while(false)
 using namespace aiverse;
 using namespace aiverse::ecs_experiment;
 struct Position {int64_t x=0;};
@@ -84,9 +90,9 @@ int main() {
     const auto originalChecksum=fingerprint(original);
     auto snapshot=original;
     const uint64_t sequential=replay(snapshot,0);
-    assert(fingerprint(original)==originalChecksum);
-    assert(sequential==replay(original,3));
-    assert(sequential==replay(original,7));
-    assert(sequential==replay(snapshot,3));
+    CHECK(fingerprint(original)==originalChecksum);
+    CHECK(sequential==replay(original,3));
+    CHECK(sequential==replay(original,7));
+    CHECK(sequential==replay(snapshot,3));
     std::cout<<"PASS deterministic world snapshot replay across 0/3/7 workers\n";
 }
