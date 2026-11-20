@@ -3,11 +3,13 @@
 #pragma once
 #include "engine/world/TerraWeaveEarthworks.h"
 #include <aiverselib/water/NereidGeometry.h>
+#include <aiverselib/water/NereidRiverGrade.h>
 namespace aiverse::terraweave {
 inline EarthworkChange carveNereidRiverbed(EarthworksLayer& earth,
         const lib::nereid::WaterBodyComponent& body,
         const lib::nereid::WaterGeometryComponent& geometry,
-        RectCm bounds,int32_t bankWidthCm=500) {
+        RectCm bounds,int32_t bankWidthCm=500,
+        const lib::nereid::WaterRiverGradeComponent* grade=nullptr) {
     using namespace lib::nereid;
     if(!validWaterGeometry(geometry)||geometry.kind!=WaterGeometryKind::RiverSpline||
        body.surfaceY<=body.bottomY||body.bottomY< -10000_fx||body.surfaceY>10000_fx||bankWidthCm<100||bankWidthCm>10000||
@@ -38,15 +40,16 @@ inline EarthworkChange carveNereidRiverbed(EarthworksLayer& earth,
         if(best>=width+bank)continue;
         const EarthVertex key{x,z};const auto before=earth.heightAt(key);
         const auto original=Fixed::fromRatio(before,100);
+        const auto localBody=gradedWaterBody(body,grade,{p.x,{},p.y});
         Fixed requested;
         // Bury the mesh perimeter inside the bank instead of ending over
         // ground below water: the visible shoreline is the depth intersection.
         if(best<width){
             const auto t=fxClamp((best-width*Fixed::fromRatio(1,2))/(width*Fixed::fromRatio(1,2)),Fixed{},1_fx);
-            requested=body.bottomY+(body.surfaceY+Fixed::fromRatio(8,100)-body.bottomY)*t*t;
+            requested=localBody.bottomY+(localBody.surfaceY+Fixed::fromRatio(8,100)-localBody.bottomY)*t*t;
         }else{
             auto t=(best-width)/bank;t=t*t*(3_fx-2_fx*t);
-            requested=(body.surfaceY+Fixed::fromRatio(8,100))*(1_fx-t)+original*t;
+            requested=(localBody.surfaceY+Fixed::fromRatio(8,100))*(1_fx-t)+original*t;
         }
         const auto after=int32_t(std::max<int64_t>(earth.bedrockCm(),std::min<int64_t>(before,(requested*100_fx).floorInt())));
         if(after!=before)edits.push_back({key,before,after});

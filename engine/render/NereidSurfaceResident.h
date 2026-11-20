@@ -21,6 +21,8 @@ struct NereidSurfaceKey {
     double originX=0,originZ=0; // local vertex basis, retained with GPU mesh
     double originY=0;
     lib::nereid::WaterSurfaceStyle style{};
+    lib::nereid::WaterRiverGradeComponent grade{};
+    bool useGrade=false;
     bool infinite=false;
 };
 
@@ -48,6 +50,7 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
         lib::nereid::WaterSurfaceStyle style={}) {
     NereidSurfaceKey key;
     key.sourceRevision=revision;
+    key.grade=opts.grade;key.useGrade=opts.useGrade;
     key.originX=opts.originX;
     key.originZ=opts.originZ;
     key.originY=opts.originY;
@@ -73,7 +76,7 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
 inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
                                 const NereidSurfaceKey& b) {
     const auto& x=a.style;const auto& y=b.style;
-    return a.sourceRevision==b.sourceRevision &&
+    return a.useGrade==b.useGrade && (!a.useGrade||lib::nereid::sameWaterRiverGrade(a.grade,b.grade)) && a.sourceRevision==b.sourceRevision &&
         a.infinite==b.infinite && a.lod==b.lod &&
         a.uvScale==b.uvScale && a.foamWidth==b.foamWidth &&
         a.maxVertices==b.maxVertices &&

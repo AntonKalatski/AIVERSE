@@ -1,6 +1,8 @@
 #include "engine/world/TerraWeaveRiverbed.h"
 #include "engine/world/TerraWeaveAlpine.h"
 #include "engine/world/NereidManifestHost.h"
+#include "engine/world/NereidFlowAuthoring.h"
+#include <aiverselib/water/NereidQueryIndex.h>
 #include <cassert>
 using namespace aiverse;
 using namespace aiverse::terraweave;
@@ -37,4 +39,18 @@ int main(){
     bool invalid=false;try{host.configure(Json::parse(R"({"nereidWater":{"surfaces":[{}]}})"));}catch(const std::exception&){invalid=true;}
     assert(invalid&&host.configuredSurfaces()==1);
     host.configure(Json::object());assert(host.configuredSurfaces()==0);
+    auto config=Json::parse(R"({"nereidWater":{"surfaces":[{"id":1,"kind":"river","shape":"river","surfaceY":1,"bottomY":-1,"points":[[0,-20,3],[0,20,3]]}]}})");
+    auto settings=Json::parse(R"({"id":1,"mode":"automatic","slopeDegrees":1,"downhillHeadingDegrees":180})");
+    config=world::editNereidFlow(config,settings);auto slope=world::parseNereidWaterManifest(config).surfaces[0];
+    assert(slope.mesh.useGrade&&slope.mesh.grade.risePerMetre.y>Fixed{});
+    std::string savedGrade;Archive output(&savedGrade);output(slope.mesh.grade);lib::nereid::WaterRiverGradeComponent restored;Archive input(savedGrade);input(restored);assert(input.ok()&&lib::nereid::sameWaterRiverGrade(restored,slope.mesh.grade));
+    const auto local=lib::nereid::gradedWaterBody(slope.body,&slope.mesh.grade,{0_fx,0_fx,10_fx},&slope.geometry);
+    assert(local.surfaceY>slope.body.surfaceY&&local.flow.z<Fixed{});
+    World world;auto entity=world.create();world.add<lib::nereid::WaterBodyComponent>(entity,slope.body);world.add<lib::nereid::WaterGeometryComponent>(entity,slope.geometry);world.add<lib::nereid::WaterRiverGradeComponent>(entity,slope.mesh.grade);
+    const auto sample=lib::nereid::sampleWater(world,{0_fx,0_fx,10_fx});assert(sample.surfaceY==local.surfaceY&&sample.flow==local.flow);
+    lib::nereid::WaterQueryIndex index(world);const auto indexed=index.sample({0_fx,0_fx,10_fx});assert(indexed.surfaceY==sample.surfaceY&&indexed.flow==sample.flow);
+    settings=Json::parse(R"({"id":1,"mode":"manual","flow":[1,0,0]})");config=world::editNereidFlow(config,settings);slope=world::parseNereidWaterManifest(config).surfaces[0];assert(lib::nereid::gradedWaterBody(slope.body,&slope.mesh.grade,{}).flow.x==1_fx);
+    const auto mesh=lib::nereid::buildWaterSurfaceMesh(slope.body,&slope.geometry,slope.mesh);
+    assert(!mesh.empty());float lo=1e9f,hi=-1e9f;for(const auto& v:mesh.vertices){lo=std::min(lo,v.y);hi=std::max(hi,v.y);}assert(hi-lo>.5f);
+
 }

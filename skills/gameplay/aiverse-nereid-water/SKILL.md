@@ -719,3 +719,14 @@ Use `bash tools/nereid/validate.sh --focused` for repeated CPU checks of NEREID,
 ## Stage 50 — confirmed CPU pass, Release check follow-up
 
 On Mac Studio, Stage 49 `--full` at commit `65346f91` passed all 118 CTest cases and 16 focused checks. A later test-only commit (`8f426376ecb095017cefdd313cca5dd6c2d70186`) replaced 44 `assert()` calls across six unrelated ECS tests with always-on checks, eliminating Release warning root cause and enabling previously skipped invariants. Re-run `bash tools/nereid/validate.sh --full` on new head before accepting the branch; do not assume the previous success covers the strengthened checks. Full handoff: `docs/nereid/stage-50-release-assertion-correctness.md`.
+
+## River grade and authoring
+
+For inclined rivers use optional `WaterRiverGradeComponent` and register
+`registerNereidRiverGradePersistence` (or native config enableRiverGrade=true).
+Never derive gameplay flow from shader time. Manual mode uses WaterBody.flow;
+automatic mode uses the downhill grade and bounded linear-resistance estimate.
+Read the current river-grade section of docs/nereid/ARCHITECTURE.md. Native
+sampling and presentation consume the same grade. Editor typed operations
+nereid_water_state / nereid_flow_set are Undoable; HTML5 controls belong to Studio.
+Rebuild Terra bank/vegetation masks when changing an exported river's grade.

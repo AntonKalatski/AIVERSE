@@ -37,7 +37,12 @@ def bake(root,materials,size,part=0,parts=1):
    q=(grid[iz,ix]*(1-fx)+grid[iz,ix+1]*fx)*(1-fz)+(grid[iz+1,ix]*(1-fx)+grid[iz+1,ix+1]*fx)*fz
    H=q[...,0];ny=1/np.sqrt(1+q[...,1]**2+q[...,2]**2)
    variation=(np.sin(X*.081+np.sin(Z*.037)*2)+np.sin(Z*.12+X*.04))*.5
-   shore=1-smooth(.35,2.5,H+variation*.20)
+   water=cat.get('nereidWater',{}).get('surfaces',[{}])[0]
+   grade=water.get('grade',{});origin=grade.get('origin',[0,0]);rise=grade.get('risePerMetre',[0,0])
+   if 'slopeDegrees' in grade:
+    heading=np.deg2rad(grade.get('downhillHeadingDegrees',0));slope=np.tan(np.deg2rad(grade['slopeDegrees']));rise=[-np.sin(heading)*slope,-np.cos(heading)*slope]
+   surface=water.get('surfaceY',0)+(X-origin[0])*rise[0]+(Z-origin[1])*rise[1]
+   shore=1-smooth(.35,2.5,H-surface+variation*.20)
    stone=np.maximum(1-smooth(.55,.91,ny),smooth(18,48,H))
    scree=smooth(.62,.9,ny)*(.3+.20*variation)
    snow=smooth(100,155,H+variation*8)*smooth(.52,.88,ny)

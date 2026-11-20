@@ -63,8 +63,9 @@ inline Mesh uploadNereidWaterSurface(gfx::Device& device,
         lib::nereid::WaterSurfaceStyle style={}) {
     if(surface.empty() || !validNereidWaterStyle(style))return {};
     MeshBuilder builder;
+    const auto normal=normalize(float3{surface.normalX,1.f,surface.normalZ});
     for(const auto& v:surface.vertices)
-        builder.addVertex({v.x,v.y,v.z},{0.f,1.f,0.f},
+        builder.addVertex({v.x,v.y,v.z},normal,
                           nereidWaterVertexColor(v,style));
     for(size_t i=0;i<surface.indices.size();i+=3)
         builder.addTriangle(surface.indices[i],surface.indices[i+1],

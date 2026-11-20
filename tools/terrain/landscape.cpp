@@ -19,14 +19,15 @@ int main(int argc,char** argv){try{
     TerrainSettings settings;settings.seed=uint64_t(t.getInt("seed",42));settings.baseHeightCm=int32_t(t.getInt("baseHeightCm",300));settings.reliefCm=int32_t(t.getInt("reliefCm",500));settings.basePeriodCm=int32_t(t.getInt("basePeriodCm",6400));settings.octaves=uint32_t(t.getInt("octaves",5));
     std::vector<AlpinePeak> peaks;
     for(const auto& p:doc["peaks"].items())peaks.push_back({p.getInt("xCm"),p.getInt("zCm"),int32_t(p.getInt("radiusXcm",10000)),int32_t(p.getInt("radiusZcm",16000)),int32_t(p.getInt("heightCm",12000)),int32_t(p.getInt("shearPermille"))});
-    EarthworksLayer earth(50,[&](int64_t x,int64_t z){return alpineHeightCm(settings,peaks,x,z,int32_t(doc.getInt("valleyHalfWidthCm",0)),int32_t(doc.getInt("valleyBlendCm",10000)));});
+    const auto water=world::parseNereidWaterManifest(doc);
+    EarthworksLayer earth(50,[&](int64_t x,int64_t z){auto h=alpineHeightCm(settings,peaks,x,z,int32_t(doc.getInt("valleyHalfWidthCm",0)),int32_t(doc.getInt("valleyBlendCm",10000)));
+        if(doc.getBool("alignRiverGrade",false)&&!water.surfaces.empty()&&water.surfaces[0].mesh.useGrade)h+=int32_t((lib::nereid::waterGradeOffset(water.surfaces[0].mesh.grade,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)})*100_fx).floorInt());return h;});
     if(doc["brushes"].size()>64)throw std::runtime_error("too many terrain brushes");
     for(const auto& b:doc["brushes"].items())earth.sculpt({b.getInt("xCm"),b.getInt("zCm"),int32_t(b.getInt("radiusCm")),int32_t(b.getInt("depthCm")),b.getStr("mode","fill")=="dig"?EarthworkMode::Dig:EarthworkMode::Fill});
-    const auto water=world::parseNereidWaterManifest(doc);
     const auto& bounds=doc["tiles"];const int64_t x0=bounds.getInt("minX"),z0=bounds.getInt("minZ"),x1=bounds.getInt("maxX"),z1=bounds.getInt("maxZ");
     if(x0< -128||x1>128||z0< -128||z1>128||x1<=x0||z1<=z0||(x1-x0)*(z1-z0)>128)throw std::runtime_error("tile budget");
     for(const auto& w:water.surfaces)if(w.useGeometry&&w.geometry.kind==lib::nereid::WaterGeometryKind::RiverSpline)
-        for(auto z=z0;z<z1;++z)for(auto x=x0;x<x1;++x)carveNereidRiverbed(earth,w.body,w.geometry,{x*6400,z*6400,(x+1)*6400,(z+1)*6400},600);
+        for(auto z=z0;z<z1;++z)for(auto x=x0;x<x1;++x)carveNereidRiverbed(earth,w.body,w.geometry,{x*6400,z*6400,(x+1)*6400,(z+1)*6400},600,w.mesh.useGrade?&w.mesh.grade:nullptr);
     fs::create_directories(out/"textures");const std::vector<std::string> mats={"grass","rock","snow","gravel_soil"};
     for(const auto& name:mats)for(auto suffix:{"basecolor","normal","orm","ao"}){const auto base=name+"_"+suffix;fs::copy_file(materials/(base+"_repeat.png"),out/"textures"/(base+".png"));}
     auto catalog=Json::object(),tiles=Json::array();
@@ -45,7 +46,9 @@ int main(int argc,char** argv){try{
     // Same surface snapshot for vegetation and asset placement; no second noise.
     auto heights=Json::array(),cover=Json::array(),ground=Json::object(),grass=Json::array();
     const int64_t minX=x0*6400,minZ=z0*6400,nx=(x1-x0)*64+1,nz=(z1-z0)*64+1;
-    for(int64_t j=0;j<nz;++j)for(int64_t i=0;i<nx;++i){const int64_t x=minX+i*100,z=minZ+j*100;const auto h=earth.sampleHeightCm(x,z);heights.push(Json::number(int64_t(h)));bool wet=false;for(const auto& w:water.surfaces)wet|=lib::nereid::coversWaterBody(w.body,w.useGeometry?&w.geometry:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});cover.push(Json::number(int64_t(wet||h<45||h>2500?0:750)));}
+    for(int64_t j=0;j<nz;++j)for(int64_t i=0;i<nx;++i){const int64_t x=minX+i*100,z=minZ+j*100;const auto h=earth.sampleHeightCm(x,z);heights.push(Json::number(int64_t(h)));bool wet=false;for(const auto& w:water.surfaces)wet|=lib::nereid::coversWaterBody(w.body,w.useGeometry?&w.geometry:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});int64_t shoreHeight=h;
+        if(!water.surfaces.empty()){const auto& w=water.surfaces[0];const auto local=lib::nereid::gradedWaterBody(w.body,w.mesh.useGrade?&w.mesh.grade:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});shoreHeight=h-(local.surfaceY*100_fx).floorInt();}
+        cover.push(Json::number(int64_t(wet||shoreHeight<270||h>2500?0:950)));}
     ground.set("originXcm",Json::number(minX));ground.set("originZcm",Json::number(minZ));ground.set("stepCm",Json::number(int64_t(100)));ground.set("columns",Json::number(nx));ground.set("rows",Json::number(nz));ground.set("heightCm",heights);ground.set("coverPermille",cover);
     for(const auto& p:doc["grassPatches"].items())grass.push(p);ground.set("patches",grass);write(out/"ground.json",ground.dump());
     auto placements=Json::array(),stones=Json::array();

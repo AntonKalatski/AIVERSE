@@ -2221,6 +2221,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_nereid_geometry_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_geometry_test COMMAND aiverse_ecs_nereid_geometry_test)
+    add_executable(aiverse_ecs_nereid_river_grade_test tests/ecs_nereid_river_grade_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_river_grade_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_river_grade_test COMMAND aiverse_ecs_nereid_river_grade_test)
     # NEREID stage 4: transient spatial query index, parity and rollback.
     add_executable(aiverse_ecs_nereid_query_index_test tests/ecs_nereid_query_index_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_query_index_test PRIVATE

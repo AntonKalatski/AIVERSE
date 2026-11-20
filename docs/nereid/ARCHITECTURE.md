@@ -369,3 +369,35 @@ The official CPU validation entrypoint is `bash tools/nereid/validate.sh --focus
 ## Stage 50 — evidence and reliable Release tests
 
 Mac Studio at `65346f91`: full Release build and 118/118 CTest PASS, focused NEREID suite 16/16 PASS and skill audit 0 errors/warnings. The build log nevertheless had 18 warnings/3 contextual notes from standard `assert()` disappearing with `NDEBUG` in six ECS test sources. In `8f426376ecb095017cefdd313cca5dd6c2d70186`, converted 44 assertions to always-on `AIVERSE_TEST_CHECK`; no runtime logic changed. The new commit requires a fresh full CPU regression because checks previously compiled out will now execute. GPU/Metal quality and FPS/RTS visuals remain unverified. See `docs/nereid/stage-50-release-assertion-correctness.md`.
+
+## Opt-in river grade and current authoring
+
+`WaterRiverGradeComponent` (`nereid.river_grade` schema1) is an optional integer
+plane grade anchored in X/Z. Existing WaterBody and geometry bytes are unchanged.
+Call `registerNereidRiverGradePersistence`, or set the appended native pipeline
+`enableRiverGrade=true` (default false, preserving old registration/checksums).
+Reference and indexed sampling, contact depths and the native presentation snapshot
+read the same component. Downhill velocity projects onto the nearest river tangent.
+Manual mode retains WaterBody.flow; automatic mode estimates terminal velocity
+from gravity × grade × responseSeconds, bounded by maxSpeed. This is a linear
+resistance approximation, not a discharge-conserving hydraulic solver. Current
+fields/vortices still add their existing local behavior.
+
+Manifest/editor `grade` contains `origin:[x,z]`, `slopeDegrees` (±20),
+`downhillHeadingDegrees` (0=+Z), `automaticCurrent`, `responseSeconds` (0..60),
+`maxSpeed` (0..100). Advanced `risePerMetre:[dY/dX,dY/dZ]` is also accepted;
+explicit degrees win. Missing grade preserves flat legacy geometry and flow.
+GPU residency keys include grade; mesh vertices and normals use the inclined
+plane, and Terra riverbed carving can consume the exact same grade. Horizontal
+planar reflection remains an approximation for tilted water. Confluence/cascade
+connectors still use their authored reference levels; complex graded joins need
+separate validation and must not be called production parity.
+
+Typed `editNereidFlow` validates a candidate before the editor commits Undo/save.
+Legacy editor agent ops: `nereid_water_state`, `nereid_flow_set`. HTML5 Studio
+controls are implemented on feature/studio-html5 with native bridge methods
+studio.nereidFlow / studio.nereidFlowSet; actual frontend/native QA is recorded in
+that branch's stage handoff. Changing water grade does not rebuild an already
+exported terrain: rebuild from the Terra recipe using alignRiverGrade=true.
+Water animation uses render seconds; its velocity/direction come from NEREID
+configuration, independently of clouds/wind and foam intensity.

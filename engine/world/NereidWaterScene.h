@@ -54,6 +54,7 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        x.flow.x!=y.flow.x || x.flow.y!=y.flow.y ||
        x.flow.z!=y.flow.z || x.priority!=y.priority ||
        x.enabled!=y.enabled || a.useGeometry!=b.useGeometry ||
+       m.useGrade!=n.useGrade || (m.useGrade&&!lib::nereid::sameWaterRiverGrade(m.grade,n.grade)) ||
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth || m.oceanPatchRadius!=n.oceanPatchRadius ||
        m.maxVertices!=n.maxVertices ||
@@ -103,6 +104,7 @@ inline bool sameNereidSceneMeshSource(const NereidSceneSurface& a,
        x.bottomY!=y.bottomY || x.halfExtents!=y.halfExtents ||
        x.radius!=y.radius || x.enabled!=y.enabled ||
        a.useGeometry!=b.useGeometry ||
+       m.useGrade!=n.useGrade || (m.useGrade&&!lib::nereid::sameWaterRiverGrade(m.grade,n.grade)) ||
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth ||
        m.oceanPatchRadius!=n.oceanPatchRadius ||
@@ -245,7 +247,7 @@ public:
                                          slot.source.body.enabled) {
             const auto& src=slot.source;
             return lib::nereid::waterCurrentWithVortices(
-                src.body,src.useGeometry?&src.geometry:nullptr,
+                lib::nereid::gradedWaterBody(src.body,src.mesh.useGrade?&src.mesh.grade:nullptr,position,src.useGeometry?&src.geometry:nullptr),src.useGeometry?&src.geometry:nullptr,
                 src.useCurrentField?&src.currentField:nullptr,
                 src.useVortices?&src.vortices:nullptr,position);
         }
@@ -567,8 +569,6 @@ public:
             // geometry residency or the fixed ECS simulation.
             const auto whitewaterAt=[&](double x,double z) {
                 const auto& style=slot.source.style;
-                if(style.rapidFoamStrength<=0.f)
-                    return render::float4{};
                 const auto fixed=[](double value) {
                     const double bounded=std::clamp(value,-1e10,1e10);
                     return Fixed::fromRaw(int64_t(std::llround(
@@ -580,7 +580,7 @@ public:
                     fixed(z)};
                 const auto& source=slot.source;
                 const Vec3 ordinary=lib::nereid::waterCurrentWithVortices(
-                    source.body,source.useGeometry?&source.geometry:nullptr,
+                    lib::nereid::gradedWaterBody(source.body,source.mesh.useGrade?&source.mesh.grade:nullptr,position,source.useGeometry?&source.geometry:nullptr),source.useGeometry?&source.geometry:nullptr,
                     source.useCurrentField?&source.currentField:nullptr,
                     source.useVortices?&source.vortices:nullptr,position);
                 const Vec3 current=transferFlow?
