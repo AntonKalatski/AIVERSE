@@ -77,3 +77,15 @@ CMakeLists.txt and uses the runtime-provided platform entrypoint (`aiverseMain`)
 in tests/render/camera_client_adapter.cpp, matching existing native fixtures.
 No production source/API changes. Subsequent build/CTest NOT RUN at checkpoint.
 Next: rerun the same KINGSTON command. CI NOT RUN/no URL.
+
+## Focused camera execution — 12 PASS, 1 FAIL
+
+Ran the unified runner with `--no-build --filter '^(ecs_camera|camera_(scheduler|rt_pool|rig|temporal|layout|scene_asset|capture_views|capture_graph|oblique|png|frustum|hdr_resolve))$'` and the same KINGSTON build dir/env. Report `20261120-142751-75133`. Source HEAD `0a552ea5f`; selected binaries compiled during prior passes and unchanged at this HEAD. 12/13 PASS; camera_rig FAIL (`blend on camera switch`).
+
+The fixture changed local `second.priority` after copying it into `candidates`;
+CameraDirector correctly continued selecting the unchanged high-priority entry.
+Fix `329f65c89aa6303e7168b4225bc0eb8b043c6b8e` changes the actual candidate snapshot instead; production
+CameraDirector is untouched. Test source only, new binary/retest pending.
+Full build of `0a552ea5f` is separately running; this fixture was already built
+before the edit and needs a later explicit rebuild. No GPU parity or full-suite
+pass claim. Next: complete build and rerun this fixture.
