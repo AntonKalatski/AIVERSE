@@ -218,6 +218,27 @@ void test() {
             std::fabs(picked.worldPosition.x-0.4f)<1.e-5f &&
             std::fabs(picked.worldPosition.z-2.f)<1.e-5f,
             "GPU triangle ID did not resolve to seam-clone author vertex");
+        const std::array<ShapeRoute,1> routes{{
+            {Channel::JawOpen,"lift",1.f}
+        }};
+        const auto binding=FaceShapeBinding::compile(library,routes);
+        FaceFrame face;
+        face.values[std::size_t(Channel::JawOpen)]=1.f;
+        DeformedSculptWorkspace workspace;
+        const auto cpuPick=workspace.pick(
+            model,0,pose,library,binding,face,
+            {0.42f,0.05f,4.f},{0,0,-1},3,map);
+        const auto gpuResolved=workspace.resolveGpuTriangle(
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map);
+        req(cpuPick.hit && gpuResolved.hit &&
+            gpuResolved.vertex==cpuPick.vertex &&
+            std::fabs(gpuResolved.rayDistance-cpuPick.rayDistance)<1.e-5f,
+            "workspace GPU ID resolution diverges from CPU BVH pick");
+        workspace.reset();
+        req(!workspace.resolveGpuTriangle(
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map).hit,
+            "GPU ID resolver accepted a stale CPU surface after reset");
+
         req(!resolveSculptGpuTriangle(
             model,surface,2u,{0.42f,0.05f,4.f},{0,0,-1},3,map).hit &&
             !resolveSculptGpuTriangle(
