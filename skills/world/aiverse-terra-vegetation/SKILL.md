@@ -24,8 +24,14 @@ The whole-model adapter preserves the High skeleton through all three natural-co
 LOD tiers, reducing tube/spray detail. The per-branch adapter retains its existing
 independent branch LOD. Neither is proof of visually seamless transitions. Existing
 phenology, age and ecology owners remain authoritative; cosmetic mesh changes must
-not silently rewrite seeded skeleton/save state. This conifer presentation mode does
-not implement ten botanical species, seasonal snow or a new root-junction solver.
+not silently rewrite seeded skeleton/save state. Ten parameterized botanical recipes are now available in
+engine/world/TerraWeaveTreePresets.h and the exporter --catalog botanical. Read
+docs/terrain/vegetation-authoring.md for age/winter and shared PBR families.
+Recipes and leafless winter are implemented; seasonal snow coating, final art
+acceptance and smooth root/branch junction welding remain unfinished.
+For live ForestScene register the unscaled profile and let existing instance
+age/ecology size it once; offline treeProfileAtAge is for exports only.
+Larch has explicit Deciduous canopy habit despite its conifer crown shape.
 
 ## Grass
 

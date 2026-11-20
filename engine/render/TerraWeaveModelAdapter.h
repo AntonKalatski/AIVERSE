@@ -40,20 +40,26 @@ inline std::unique_ptr<render::Model> makeArborModel(
 
     for (TreeLOD tier : {TreeLOD::High, TreeLOD::Medium, TreeLOD::Low}) {
         auto tierSettings=meshSettings;
-        if(meshSettings.naturalConifer) {
+        if(meshSettings.naturalConifer||meshSettings.naturalBroadleaf) {
             tierSettings.longitudinalSegments=tier==TreeLOD::High?meshSettings.longitudinalSegments:tier==TreeLOD::Medium?3u:1u;
             tierSettings.radialSegments=tier==TreeLOD::High?meshSettings.radialSegments:tier==TreeLOD::Medium?4u:3u;
             tierSettings.sprayPairs=tier==TreeLOD::High?meshSettings.sprayPairs:tier==TreeLOD::Medium?std::max(2u,meshSettings.sprayPairs/2):2u;
+        }
+        if(meshSettings.naturalBroadleaf) {
+            tierSettings.radialSegments=tier==TreeLOD::High?8u:tier==TreeLOD::Medium?5u:3u;
+            tierSettings.sprayPairs=tier==TreeLOD::High?3u:tier==TreeLOD::Medium?2u:1u;
+            tierSettings.longitudinalSegments=tier==TreeLOD::High?4u:tier==TreeLOD::Medium?2u:1u;
+            tierSettings.leafPlanes=tier==TreeLOD::Low?1u:2u;
         }
         if(meshSettings.compactConifer) {
             tierSettings.doubleSidedLeaves=false; // material already draws both sides
             tierSettings.longitudinalSegments=tier==TreeLOD::High?3u:tier==TreeLOD::Medium?2u:1u;
             tierSettings.radialSegments=tier==TreeLOD::High?6u:tier==TreeLOD::Medium?4u:3u;
             tierSettings.sprayPairs=tier==TreeLOD::High?4u:tier==TreeLOD::Medium?3u:1u;
-            tierSettings.leafPlanes=tier==TreeLOD::High?2u:1u;
+            tierSettings.leafPlanes=tier==TreeLOD::Low?1u:2u;
         }
         const ArborMesh geometry = buildArborMesh(generateTree(profile, seed,
-            meshSettings.naturalConifer?TreeLOD::High:tier), tierSettings);
+            (meshSettings.naturalConifer||meshSettings.naturalBroadleaf)?TreeLOD::High:tier), tierSettings);
         const uint32_t baseVertex = static_cast<uint32_t>(model->vertices.size());
         const uint32_t baseIndex = static_cast<uint32_t>(model->indices.size());
         uint32_t barkVertices = 0;
@@ -110,7 +116,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
     }
     // Renderer3D uses screen-size LOD selection with its existing fade policy.
     // Future billboard atlas should be added as LOD3, not a naked empty mesh.
-    if(meshSettings.compactConifer)model->meshes[0].lods={{1,320.f},{2,112.f}};
+    if(meshSettings.compactConifer)model->meshes[0].lods={{1,180.f},{2,48.f}};
     else model->meshes[0].lods={{1,128.f},{2,32.f}};
     render::Node node;
     node.name = "TerraWeave Arbor";

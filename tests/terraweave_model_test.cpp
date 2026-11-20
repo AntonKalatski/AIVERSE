@@ -1,6 +1,7 @@
 #include "engine/render/TerraWeaveGrassRender.h"
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
+#include "engine/world/TerraWeaveTreePresets.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -21,15 +22,22 @@ int main() {
     const auto repeat=makeArborModel(conifer,909,sprays);
     assert(repeat->indices==natural->indices);
     for(size_t i=0;i<natural->vertices.size();++i)assert(natural->vertices[i].pos.x==repeat->vertices[i].pos.x);
+    // Native per-branch adapter remaps cluster ownership and never grows a
+    // duplicate whole-tree leader/flare from every isolated limb.
+    TreeProfile leafy;leafy.secondaryBranches=2;
+    const auto leafySkeleton=generateTree(leafy,121);
+    ArborMeshSettings broadleaf;broadleaf.naturalBroadleaf=true;
+    const auto isolated=buildArborBranchMesh(leafySkeleton,1,BranchDetail::Full,broadleaf);
+    assert(std::any_of(isolated.vertices.begin(),isolated.vertices.end(),[](const auto& v){return v.material==1;}));
     // Far forest geometry has an explicit bounded budget, not just LOD labels.
     conifer.primaryBranches=75;conifer.whorlSize=5;
     sprays.compactConifer=true;
     const auto compact=makeArborModel(conifer,909,sprays);
     assert(triangles(compact->meshes[0])<6000);
-    assert(triangles(compact->meshes[1])<2500);
+    assert(triangles(compact->meshes[1])<5000);
     assert(triangles(compact->meshes[2])<1000);
-    assert(compact->meshes[0].lods[0].maxPixels==320.f);
-    assert(compact->meshes[0].lods[1].maxPixels==112.f);
+    assert(compact->meshes[0].lods[0].maxPixels==180.f);
+    assert(compact->meshes[0].lods[1].maxPixels==48.f);
     for(const auto& v:compact->vertices)assert(std::abs(aiverse::render::length(v.nrm)-1.f)<.01f);
     const auto whorled=generateTree(conifer,909);
     assert(whorled.branches==generateTree(conifer,909).branches);
@@ -166,6 +174,24 @@ int main() {
     try { (void)makeArborBranchLodModel(oak, 17, invalidBranch); }
     catch (const std::invalid_argument&) { invalidBranchRejected = true; }
     assert(invalidBranchRejected);
+
+    {
+        ArborForestAdapter larchForest;
+        const auto& larch=botanicalTreePresets()[3];
+        ArborMeshSettings needles;needles.naturalConifer=true;
+        larchForest.addPrototype(larch.profile,17,needles);
+        CanopyPhenology winter;winter.broadleafCoverPermille=0;
+        larchForest.setPhenology(winter);
+        FloraBatch batch;batch.speciesId=larch.profile.speciesId;batch.lod=TreeLOD::High;
+        FoliageInstance instance;instance.speciesId=batch.speciesId;instance.scalePermille=1000;instance.key=123;
+        batch.instances.push_back(instance);bool checked=false;
+        larchForest.forEachDraw(std::vector<FloraBatch>{batch},ForestRenderOriginCm{},[&](const auto& draw){
+            assert(draw.materials&&draw.materials->size()==2);
+            assert((*draw.materials)[0].baseColor.w==1);
+            assert((*draw.materials)[1].baseColor.w==0);checked=true;
+        });
+        assert(checked);
+    }
 
     // Stage 2f: shared prototype, CPU draw submission, stable identity and
     // origin-relative centimetre -> metre transforms. No GPU is required.

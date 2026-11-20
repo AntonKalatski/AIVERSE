@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bake authored vegetation PBR data. Requires numpy/Pillow. No measured scan claim."""
 from pathlib import Path
-import sys,json
+import sys,json,argparse
 import numpy as np
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'terrain'))
@@ -11,9 +11,14 @@ SOURCE=Path(__file__).resolve().parent/'pbr_sources'
 OUT=ROOT/'engine/assets/materials/vegetation'
 N=1024
 
-def bake():
-    out=OUT/'textures';out.mkdir(parents=True,exist_ok=True);materials={};entries=[]
-    for name in ('oak_bark','pine_bark','birch_bark','spruce_bark','oak_leaves','shrub_leaves','spruce_leaves','pine_leaves'):
+def bake(names=None):
+    out=OUT/'textures';out.mkdir(parents=True,exist_ok=True)
+    materials=json.loads((OUT/'materials.json').read_text()) if names and (OUT/'materials.json').exists() else {}
+    entries=json.loads((OUT/'catalog.json').read_text())['materials'] if names and (OUT/'catalog.json').exists() else []
+    selected=names or ('oak_bark','pine_bark','birch_bark','spruce_bark','oak_leaves','shrub_leaves','spruce_leaves','pine_leaves','birch_leaves','maple_leaves','apple_leaves','willow_leaves')
+    entries=[entry for entry in entries if entry['id'] not in selected]
+    for name in selected:
+        if not name.replace('_','').isalnum() or not (SOURCE/(name+'_basecolor.png')).is_file():raise ValueError('unknown material: '+name)
         leaf=name.endswith('_leaves')
         a=np.asarray(Image.open(SOURCE/(name+'_basecolor.png')).convert('RGBA').resize((N,N),Image.Resampling.LANCZOS),dtype=float)/255
         rgb=a[:,:,:3];alpha=a[:,:,3] if leaf else np.ones((N,N))
@@ -41,4 +46,6 @@ def bake():
     (OUT/'materials.json').write_text(json.dumps(materials,indent=2)+'\n')
     (OUT/'catalog.json').write_text(json.dumps({'version':1,'basecolorSpace':'sRGB','dataSpace':'linear','materials':entries},indent=2)+'\n')
     print('Baked',len(entries),'PBR vegetation materials /',sum(9 if m['layout']=='2x2 sprig atlas' else 7 for m in entries),'texture maps')
-if __name__=='__main__':bake()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--only',nargs='+',help='bake these materials and preserve existing pack entries')
+    bake(parser.parse_args().only)

@@ -98,3 +98,54 @@ ribbon segments. This conserves approximate projected cover, not exact pixels.
 sourceSamples/sampleStride are presentation-only sampling controls used by the
 shared LOD builder; legacy full-detail placement with bladesPerTuft1 is preserved.
 Visual transitions and grass shadows/wind/species need separate acceptance.
+
+
+## Botanical recipes, age and winter
+
+`engine/world/TerraWeaveTreePresets.h` supplies ten parameterized recipes over
+one Arbor generator: spruce,pine,fir,larch,oak,birch,maple,apple,willow,poplar.
+New broadleaf recipes opt into bounded secondary/tertiary branching, rounded
+volumetric crowns and seed-specific growth points/inclinations. Existing
+TreeProfile defaults retain old generation. CanopyHabit defaultsAutomatic;
+explicitDeciduous fixes larch without treating every conifer as evergreen.
+Native ForestAdapter consumes this habit for seasonal materials.
+
+```
+aiverse_terraweave_vegetation --out NEW_DIR --materials engine/assets/materials/vegetation/textures --catalog botanical --variants 4 --seed 2718 --season summer --age-ticks 100 --mature-ticks 100
+```
+
+`--season winter` removes deciduous foliage while preserving bark; evergreen
+needles remain. This is not yet a snow-coated branch material. `--age-ticks 10`
+produces juveniles using existing plantAppearance; optional --lifespan-ticks
+activates its existing senescence policy. Host owns tick/calendar meaning.
+Catalog records species/seed/season/age/foliage and every LOD triangle count.
+Default --catalog conifers retains twelve existing prototype filenames.
+Botanical variants1..8per species; output always refuses an existing directory.
+
+Offline treeProfileAtAge applies the existing appearance size once. Live
+TerraWeaveForestScene already applies age/ecology per instance: register the
+UNSCALED preset.profile, supply existing FoliageSpecies age/maturity/lifespan
+fields, and let native Scene own size. Do not apply both. addSpecies now accepts
+an optional fourth ArborMeshSettings parameter; choose naturalBroadleaf for
+leafed recipes or naturalConifer/compactConifer for needles. Every field remains
+presentation/configuration; no floating mesh/GPU data enters authoritative ECS.
+
+New naturalBroadleaf cards anchor to their actual woody parent, use shared PBR
+sprig atlas and retain the same skeleton across whole-model LODs. Native
+per-branch extraction remaps leaf ownership and disables root flare/whole-tree
+leader on nontrunk sections. Compact conifer medium now retains crossed cards;
+thresholds180/48pixels delay coarse silhouettes and far bough cards are wider.
+These trade extra medium triangles for crown coverage; final forest GPU/art
+acceptance remains required. Branch junction welding and mature roots remain
+separate unfinished art work; do not call these source recipes SpeedTree parity.
+
+Four new bundled1024px PBR leaf families:birch/maple/apple/willow. Original
+AI-generated2x2 cutouts and prompt provenance are in tools/vegetation/pbr_sources.
+Bake new families without replacing existing tuned bark:
+
+```
+python3 tools/vegetation/bake_pbr_pack.py --only birch_leaves maple_leaves apple_leaves willow_leaves
+```
+
+Normal relief is authored from fine albedo variation, not a measured scan.
+PBR materials use dielectric metallic0, roughness/normal/ORM/AO and cutout alpha.

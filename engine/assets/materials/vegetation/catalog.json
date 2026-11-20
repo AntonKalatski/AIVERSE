@@ -66,6 +66,38 @@
       "repeatMeters": 0.8,
       "heightMeters": 0.0006,
       "optionalTranslucencyMap": "materials/vegetation/textures/pine_leaves_translucency.png"
+    },
+    {
+      "id": "birch_leaves",
+      "layout": "2x2 sprig atlas",
+      "normalConvention": "+Y",
+      "repeatMeters": 0.8,
+      "heightMeters": 0.0006,
+      "optionalTranslucencyMap": "materials/vegetation/textures/birch_leaves_translucency.png"
+    },
+    {
+      "id": "maple_leaves",
+      "layout": "2x2 sprig atlas",
+      "normalConvention": "+Y",
+      "repeatMeters": 0.8,
+      "heightMeters": 0.0006,
+      "optionalTranslucencyMap": "materials/vegetation/textures/maple_leaves_translucency.png"
+    },
+    {
+      "id": "apple_leaves",
+      "layout": "2x2 sprig atlas",
+      "normalConvention": "+Y",
+      "repeatMeters": 0.8,
+      "heightMeters": 0.0006,
+      "optionalTranslucencyMap": "materials/vegetation/textures/apple_leaves_translucency.png"
+    },
+    {
+      "id": "willow_leaves",
+      "layout": "2x2 sprig atlas",
+      "normalConvention": "+Y",
+      "repeatMeters": 0.8,
+      "heightMeters": 0.0006,
+      "optionalTranslucencyMap": "materials/vegetation/textures/willow_leaves_translucency.png"
     }
   ]
 }

@@ -1,4 +1,5 @@
 #include "engine/world/TerraWeaveArborMesh.h"
+#include "engine/world/TerraWeaveTreePresets.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -18,7 +19,7 @@ void sameTree(const TreeSkeleton& a, const TreeSkeleton& b) {
     assert(a.branches == b.branches);
     assert(a.leaves == b.leaves);
 }
-void validateGraph(const TreeSkeleton& tree) {
+void validateGraph(const TreeSkeleton& tree, bool weeping=false) {
     assert(!tree.branches.empty());
     assert(tree.branches.front().parent == -1);
     assert(tree.branches.front().y0 == 0);
@@ -28,7 +29,8 @@ void validateGraph(const TreeSkeleton& tree) {
         assert(b.parent >= 0 && static_cast<size_t>(b.parent) < i);
         assert(b.startRadiusCm > 0 && b.endRadiusCm > 0);
         assert(b.y0 >= 0 && b.y0 <= tree.heightCm);
-        assert(b.y1 >= b.y0);
+        assert(b.y1 >= 0);
+        if(!weeping)assert(b.y1 >= b.y0);
         assert(std::abs(static_cast<int64_t>(b.x1)) <= tree.crownRadiusCm);
         assert(std::abs(static_cast<int64_t>(b.z1)) <= tree.crownRadiusCm);
     }
@@ -133,6 +135,36 @@ void testInvalidProfiles() {
 }
 }
 int main() {
+    for(const auto& preset:botanicalTreePresets()) {
+        const auto full=generateTree(preset.profile,42);
+        sameTree(full,generateTree(preset.profile,42));validateGraph(full,preset.profile.roundedBroadleafCrown||preset.profile.branchDroopPermille>0);
+        PlantEnvironment mature;mature.ageTicks=100;mature.matureTicks=100;
+        PlantEnvironment young=mature;young.ageTicks=10;
+        assert(treeProfileAtAge(preset,young).maxHeightCm<treeProfileAtAge(preset,mature).maxHeightCm);
+        CanopyPhenology winter;winter.broadleafCoverPermille=0;
+        assert(treeCanopyAtAge(preset,mature,winter)==(treeIsEvergreen(preset.profile)?1000u:0u));
+        ArborMeshSettings mesh;mesh.doubleSidedLeaves=false;
+        mesh.naturalBroadleaf=preset.profile.shape!=CrownShape::Conifer;
+        mesh.naturalConifer=!mesh.naturalBroadleaf;
+        const auto summer=buildArborMesh(full,mesh);
+        mesh.leafCoveragePermille=0;const auto bare=buildArborMesh(full,mesh);
+        assert(bare.indices.size()<summer.indices.size());
+        assert(std::none_of(bare.vertices.begin(),bare.vertices.end(),[](const auto& v){return v.material==1;}));
+        assert(!bare.indices.empty());
+        for(size_t i=1;i<full.branches.size();++i) {
+            const auto& child=full.branches[i];
+            if(child.parent<=0)continue;
+            const auto& parent=full.branches[size_t(child.parent)];
+            // Integer interpolation stays on the parent's centreline to1cm.
+            const double dx=parent.x1-parent.x0,dy=parent.y1-parent.y0,dz=parent.z1-parent.z0;
+            const double length2=dx*dx+dy*dy+dz*dz;
+            if(length2<1)continue;
+            const double t=((child.x0-parent.x0)*dx+(child.y0-parent.y0)*dy+(child.z0-parent.z0)*dz)/length2;
+            assert(t>=-.01&&t<=1.01);
+            if(length2>=100)assert(t>.3&&t<.95);
+            assert(std::hypot(child.x0-parent.x0-t*dx,child.z0-parent.z0-t*dz)<2);
+        }
+    }
     testTreeShapesAndLods();
     testInstancesAndIndependentWorkers();
     testInvalidProfiles();

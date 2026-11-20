@@ -64,7 +64,7 @@ public:
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
         branchPivots_.emplace(profile.speciesId,std::move(pivots));
-        evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
+        evergreen_[profile.speciesId]=treeIsEvergreen(profile);
         prototypeSeeds_[profile.speciesId]=meshSeed;
         if(phenology_!=CanopyPhenology{} || gpuCrownWindActive())
             rebuildPhenologyMaterials();

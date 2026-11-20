@@ -38,8 +38,10 @@ inline ArborMesh buildArborBranchMesh(const TreeSkeleton& tree,
     section.branches[0].parent = -1;
     for (const LeafCluster& leaf : tree.leaves) {
         if (leaf.parentBranch != static_cast<int32_t>(branchIndex)) continue;
-        section.leaves.push_back(leaf);
+        auto localLeaf=leaf;localLeaf.parentBranch=0;section.leaves.push_back(localLeaf);
     }
+    base.trunkFlare=branchIndex==0;
+    base.includeLeader=branchIndex==0;
     if (detail != BranchDetail::Full && section.leaves.size() > 1) {
         // Keep the outermost cluster stable, not a globally selected half-tree.
         const LeafCluster far = section.leaves.back();

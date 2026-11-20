@@ -1,6 +1,8 @@
 // Authoring host for native Arbor/Grass APIs. No scene-specific morphology.
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveGrassRender.h"
+#include "engine/world/TerraWeaveTreePresets.h"
+#include <set>
 #include "tools/terrain/ExportModel.h"
 #include <filesystem>
 #include <fstream>
@@ -10,25 +12,45 @@ using aiverse::Json;
 using namespace aiverse::terraweave;
 using namespace aiverse::terrain_export;
 int main(int argc,char** argv){try{
-    fs::path out,materials,groundFile;uint64_t seed=42;
-    for(int i=1;i<argc;++i){const std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");const std::string v=argv[++i];if(k=="--out")out=v;else if(k=="--materials")materials=v;else if(k=="--ground")groundFile=v;else if(k=="--seed")seed=std::stoull(v);else throw std::runtime_error("unknown option: "+k);}
+    fs::path out,materials,groundFile;uint64_t seed=42;std::string catalogKind="conifers",season="summer";uint32_t variants=4;PlantEnvironment environment;environment.ageTicks=100;environment.matureTicks=100;
+    for(int i=1;i<argc;++i){const std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");const std::string v=argv[++i];if(k=="--out")out=v;else if(k=="--materials")materials=v;else if(k=="--ground")groundFile=v;else if(k=="--seed")seed=std::stoull(v);else if(k=="--catalog")catalogKind=v;else if(k=="--season")season=v;else if(k=="--variants"){const auto n=std::stoull(v);if(n<1||n>8)throw std::runtime_error("variants1..8");variants=uint32_t(n);}else if(k=="--age-ticks")environment.ageTicks=std::stoull(v);else if(k=="--mature-ticks")environment.matureTicks=std::stoull(v);else if(k=="--lifespan-ticks")environment.lifespanTicks=std::stoull(v);else throw std::runtime_error("unknown option: "+k);}
     if(out.empty() || materials.empty())throw std::runtime_error("usage: aiverse_terraweave_vegetation --out NEW_DIR --materials VEGETATION_TEXTURES [--ground HEIGHT_GRID_JSON --seed N]");
     if(fs::exists(out))throw std::runtime_error("output exists; refusing overwrite");
-    for(auto name:{"spruce_bark","spruce_leaves","pine_bark","pine_leaves"})for(auto suffix:{"basecolor","normal","orm","ao"})if(!fs::is_regular_file(materials/(std::string(name)+"_"+suffix+".png")))throw std::runtime_error("missing PBR map");
+    if((catalogKind!="conifers"&&catalogKind!="botanical")||(season!="summer"&&season!="winter")||variants<1||variants>8)throw std::runtime_error("catalog conifers|botanical; season summer|winter; variants1..8");
+    (void)plantAppearance(environment);
+    const bool botanical=catalogKind=="botanical";
+    std::set<std::string> stems={"spruce_bark","spruce_leaves","pine_bark","pine_leaves"};
+    if(botanical)for(const auto& p:botanicalTreePresets()){stems.insert(std::string(p.barkMaterial));stems.insert(std::string(p.leafMaterial));}
+    for(const auto& name:stems)for(auto suffix:{"basecolor","normal","orm","ao"})if(!fs::is_regular_file(materials/(name+"_"+suffix+".png")))throw std::runtime_error("missing PBR map: "+name);
     fs::create_directories(out/"textures");
-    for(auto name:{"spruce_bark","spruce_leaves","pine_bark","pine_leaves"})for(auto suffix:{"basecolor","normal","orm","ao"}){std::string f=std::string(name)+"_"+suffix+".png";fs::copy_file(materials/f,out/"textures"/f);}
+    for(const auto& name:stems)for(auto suffix:{"basecolor","normal","orm","ao"}){std::string f=name+"_"+suffix+".png";fs::copy_file(materials/f,out/"textures"/f);}
     auto catalog=Json::object(),trees=Json::array(),patches=Json::array();
-    for(uint32_t i=0;i<12;++i){
-        const bool pine=i%3==0;TreeProfile p;p.speciesId=pine?2:1;p.shape=CrownShape::Conifer;
-        p.minHeightCm=pine?1200:900;p.maxHeightCm=pine?1800:1600;p.trunkRadiusCm=pine?28:24;
-        p.crownStartPermille=pine?490:100;p.primaryBranches=pine?60:95;p.whorlSize=pine?3:5;p.roundedConiferCrown=pine;
-        p.branchLengthPermille=pine?620:440;p.branchRisePermille=pine?90:35;p.leafRadiusCm=45;
-        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.naturalConifer=true;mesh.compactConifer=true;mesh.sprayDroop=pine?.08f:.42f;mesh.sprayPairs=4;
-        auto model=makeArborModel(p,detail::mix64(seed^i),mesh);
+    const uint32_t count=botanical?uint32_t(botanicalTreePresets().size())*variants:12;
+    for(uint32_t i=0;i<count;++i){
+        const bool pine=i%3==0;TreeProfile p;TreePreset preset;
+        std::string kind,bark,leaves;
+        if(botanical) {
+            preset=botanicalTreePresets()[i/variants];p=treeProfileAtAge(preset,environment);
+            kind=std::string(preset.name);bark=std::string(preset.barkMaterial);leaves=std::string(preset.leafMaterial);
+        } else {
+            p.speciesId=pine?2:1;p.shape=CrownShape::Conifer;
+            p.minHeightCm=pine?1200:900;p.maxHeightCm=pine?1800:1600;p.trunkRadiusCm=pine?28:24;
+            p.crownStartPermille=pine?490:100;p.primaryBranches=pine?60:95;p.whorlSize=pine?3:5;p.roundedConiferCrown=pine;
+            p.branchLengthPermille=pine?620:440;p.branchRisePermille=pine?90:35;p.leafRadiusCm=45;
+            kind=pine?"pine":"spruce";bark=kind+"_bark";leaves=kind+"_leaves";
+        }
+        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;
+        mesh.naturalConifer=p.shape==CrownShape::Conifer;mesh.naturalBroadleaf=!mesh.naturalConifer;
+        mesh.compactConifer=mesh.naturalConifer;mesh.sprayDroop=mesh.naturalBroadleaf?(kind=="willow"?.85f:.12f):(kind=="pine"?.08f:kind=="larch"?.55f:.35f);mesh.sprayPairs=4;
+        CanopyPhenology phenology;if(season=="winter")phenology.broadleafCoverPermille=0;
+        mesh.leafCoveragePermille=botanical?treeCanopyAtAge(preset,environment,phenology):1000;
+        const uint64_t instanceSeed=detail::mix64(seed^i);
+        auto model=makeArborModel(p,instanceSeed,mesh);
         model->materials[0].baseColor={.68f,.62f,.53f,1};model->materials[0].roughness=1;
         model->materials[1].baseColor={.65f,.80f,.62f,1};model->materials[1].roughness=1;model->materials[1].alpha=aiverse::render::AlphaMode::Mask;model->materials[1].alphaCutoff=.38f;
-        const std::string name="tree-"+std::to_string(i),stem=pine?"pine":"spruce";save(out,name,*model,{stem+"_bark",stem+"_leaves"});
-        auto e=Json::object(),tri=Json::array();e.set("file",Json::string(name+".gltf"));e.set("kind",Json::string(stem));
+        const std::string name="tree-"+std::to_string(i);save(out,name,*model,{bark,leaves});
+        auto e=Json::object(),tri=Json::array();e.set("file",Json::string(name+".gltf"));e.set("kind",Json::string(kind));
+        e.set("speciesId",Json::number(int64_t(p.speciesId)));e.set("seed",Json::string(std::to_string(instanceSeed)));e.set("season",Json::string(season));e.set("ageTicks",Json::number(int64_t(environment.ageTicks)));e.set("matureTicks",Json::number(int64_t(environment.matureTicks)));e.set("lifespanTicks",Json::number(int64_t(environment.lifespanTicks)));e.set("foliagePermille",Json::number(int64_t(mesh.leafCoveragePermille)));
         for(const auto& m:model->meshes){uint32_t n=0;for(const auto& pr:m.primitives)n+=pr.indexCount/3;tri.push(Json::number(int64_t(n)));}e.set("triangles",tri);trees.push(e);
     }
     if(!groundFile.empty()){

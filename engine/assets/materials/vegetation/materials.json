@@ -166,5 +166,89 @@
     "doubleSided": true,
     "alpha": "mask",
     "cutoff": 0.5
+  },
+  "birch_leaves": {
+    "description": "Authored PBR vegetation: birch_leaves",
+    "texture": "materials/vegetation/textures/birch_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/birch_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/birch_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/birch_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
+  },
+  "maple_leaves": {
+    "description": "Authored PBR vegetation: maple_leaves",
+    "texture": "materials/vegetation/textures/maple_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/maple_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/maple_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/maple_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
+  },
+  "apple_leaves": {
+    "description": "Authored PBR vegetation: apple_leaves",
+    "texture": "materials/vegetation/textures/apple_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/apple_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/apple_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/apple_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
+  },
+  "willow_leaves": {
+    "description": "Authored PBR vegetation: willow_leaves",
+    "texture": "materials/vegetation/textures/willow_leaves_basecolor.png",
+    "normalMap": "materials/vegetation/textures/willow_leaves_normal.png",
+    "metallicRoughnessMap": "materials/vegetation/textures/willow_leaves_orm.png",
+    "occlusionMap": "materials/vegetation/textures/willow_leaves_ao.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "metallic": 0,
+    "roughness": 1,
+    "normalScale": 1,
+    "vertexColors": false,
+    "team": "none",
+    "doubleSided": true,
+    "alpha": "mask",
+    "cutoff": 0.5
   }
 }
