@@ -533,3 +533,15 @@ Build-4 nearly complete but predates this stage; fresh rebuild required.
 Paint layers/field visual caches remain legacy host providers outside the declared
 surface cohort; this is preparation atomicity, not rollback of GPU execution.
 Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.
+
+
+## Native Metal acceptance fixture — 2026-11-20
+Code `d960bc2fbe5a9bc08f09579a44ad7c54b995034a`, codex/lens-completion. New lens_metal_frame uses real native
+Metal Renderer3D, RtsView, topology staging, pooled color/depth targets and
+asynchronous captureTexture readback. Compares primary/prepared replay pixels
+(tolerance 2), requires nonblank output and different pixels for another camera;
+checks secondary replay never advances publication/source frame. Explicit
+AIVERSE_LENS_METAL_VALIDATE opt-in; default CTest SKIP 77. Snapshot CPU fixture
+checks temporary Mesh metadata and copied snapshot lifetime. No production/save
+change. git diff --check PASS. Build-5 running; new fixtures NOT RUN yet.
+Next rebuild added target, run native acceptance on KINGSTON, then full CTest.
