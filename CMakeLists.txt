@@ -1597,6 +1597,12 @@ if(AIVERSE_BUILD_TESTS)
         target_compile_definitions(aiverse_tests PRIVATE AIVERSE_TESTS_EDITOR_CORE=1)
     endif()
     target_compile_definitions(aiverse_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    # aiverse_models compiles out FBX privately when AIVERSE_FBX=OFF.
+    # Expose the same selection to its test runner, so a disabled loader
+    # checks its rejection path instead of trying to parse cube.fbx.
+    if(NOT AIVERSE_FBX)
+        target_compile_definitions(aiverse_tests PRIVATE AIVERSE_NO_FBX=1)
+    endif()
     add_test(NAME aiverse_tests COMMAND aiverse_tests)
     if(TARGET aiverse_editor_core)
         add_executable(aiverse_editor_scene_adapter_tests tests/editor/scene_entity_adapter_tests.cpp)
@@ -3270,6 +3276,47 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave COMMAND aiverse_terraweave_test)
+    # Stage70 sparse 4m per-NEREID-body nutrient and v2 archive migration.
+    # Source fixtures authored; first real C++ compile/CTest owned by QA.
+    add_executable(aiverse_terraweave_micro_nutrient_test
+        tests/terraweave_micro_nutrient_test.cpp)
+    target_link_libraries(aiverse_terraweave_micro_nutrient_test PRIVATE
+        aiverse_engine Threads::Threads)
+    target_compile_options(aiverse_terraweave_micro_nutrient_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_micro_nutrient
+        COMMAND aiverse_terraweave_micro_nutrient_test)
+    # Native headers must compile together: ECS, NEREID, 4m nutrient
+    # adapters and optional PHYSIS weather without that feature branch.
+    add_executable(aiverse_terraweave_native_micro_compile_test
+        tests/terraweave_native_micro_compile_test.cpp)
+    target_include_directories(aiverse_terraweave_native_micro_compile_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_terraweave_native_micro_compile_test PRIVATE
+        aiverse_models aiverse_world aiverse_zstd_dec)
+    target_compile_options(aiverse_terraweave_native_micro_compile_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_native_micro_compile
+        COMMAND aiverse_terraweave_native_micro_compile_test)
+    # The physics adapter is optional: Box3D include paths are provided
+    # transitively ONLY by the public AIVERSE::physics target, not by
+    # aiverse_world or aiverse_models. Test it separately when enabled.
+    if(TARGET aiverse_physics)
+        add_executable(aiverse_terraweave_native_micro_physics_compile_test
+            tests/terraweave_native_micro_compile_test.cpp)
+        target_include_directories(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+        target_compile_definitions(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS=1)
+        target_link_libraries(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE aiverse_models aiverse_world aiverse_zstd_dec AIVERSE::physics)
+        target_compile_options(aiverse_terraweave_native_micro_physics_compile_test
+            PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+        add_test(NAME terraweave_native_micro_physics_compile
+            COMMAND aiverse_terraweave_native_micro_physics_compile_test)
+    endif()
     add_executable(aiverse_terraweave_arbor_test tests/terraweave_arbor_test.cpp)
     target_link_libraries(aiverse_terraweave_arbor_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_arbor_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
