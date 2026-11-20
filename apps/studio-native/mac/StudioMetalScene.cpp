@@ -33,6 +33,7 @@ void StudioMetalScene::clearDocumentModels() {
         if (model) render::releaseModel(*device_,*model);
     modelInstances_.clear();
     documentModels_.clear();
+    rejectedDocumentModels_.clear();
 }
 
 void StudioMetalScene::syncDocumentModels(
@@ -80,7 +81,7 @@ void StudioMetalScene::syncDocumentModels(
         }
         if (!allowed || !fs::is_regular_file(current)) continue;
         active.insert(path);
-        if (!documentModels_.count(path)) {
+        if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
             auto read=[root](const std::string& name,std::string& out)->bool {
@@ -105,7 +106,10 @@ void StudioMetalScene::syncDocumentModels(
             try {
                 auto model=render::loadModel(path,read);
                 if (!model || model->skinned() || model->vertices.empty() ||
-                    model->indices.empty()) continue;
+                    model->indices.empty()) {
+                    rejectedDocumentModels_.insert(path);
+                    continue;
+                }
                 bool deformable=false;
                 for (const auto& mesh:model->meshes) deformable |= mesh.deformable;
                 // Only bind-pose rigid opaque geometry has exact CPU-to-render
@@ -117,20 +121,24 @@ void StudioMetalScene::syncDocumentModels(
                                  material.transparent || material.baseColor.w<.999f;
                 for(const auto& mesh:model->meshes) hasLods |= !mesh.lods.empty();
                 if (deformable || nonOpaque || hasLods ||
-                    model->vertices.size()>1000000 || model->indices.size()>3000000)
+                    model->vertices.size()>1000000 || model->indices.size()>3000000) {
+                    rejectedDocumentModels_.insert(path);
                     continue;
+                }
                 model->batching.autoLod=false;
                 model->batching.mergeRigid=false;
                 model->batching.allowGeometryPool=false;
                 render::prepareModelUpload(*model);
                 if (!render::uploadModel(*device_,*model,true)) {
                     render::releaseModel(*device_,*model);
+                    rejectedDocumentModels_.insert(path);
                     continue;
                 }
                 documentModels_.emplace(path,std::move(model));
             } catch (const std::exception&) {
                 // Invalid resource stays a visible proxy rather than hiding
                 // the map object or pretending a model was rendered.
+                rejectedDocumentModels_.insert(path);
                 continue;
             }
         }
@@ -141,6 +149,10 @@ void StudioMetalScene::syncDocumentModels(
         modelInstances_.push_back({proxy.id,found->second.get(),
             render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
             render::mat4::rotateY(proxy.yaw)});
+    }
+    for (auto it=rejectedDocumentModels_.begin();it!=rejectedDocumentModels_.end();) {
+        if (!active.count(*it)) it=rejectedDocumentModels_.erase(it);
+        else ++it;
     }
     for (auto it=documentModels_.begin();it!=documentModels_.end();) {
         if (!active.count(it->first)) {
