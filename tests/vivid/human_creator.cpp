@@ -9,6 +9,7 @@
 #include "engine/character/vivid/SculptGpuAlphaMask.h"
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
+#include "engine/character/vivid/SculptGpuSubmittedView.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
 #include "engine/render/ModelShaders.h"
 #include <string_view>
@@ -850,6 +851,89 @@ void test() {
         view.primitives.pop_back();
         req(check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot,
             "original valid renderer source snapshot was mutated");
+    }
+    // 7AW: staging a ModelItem is NOT proof its real colour pipeline
+    // emitted a draw. Match one-to-one against the actual renderer-owned
+    // accepted main-pass commands, reject pipeline/ICB/LOD/old frame.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.meshes.resize(1);
+        Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=3;
+        model.meshes[0].primitives={primitive};
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        Renderer3D::ModelViewProvenance staged;
+        staged.hasModel=true;
+        staged.complete=true;
+        staged.frameSerial=41u;
+        Renderer3D::ModelViewPrimitive p;
+        p.model=&model;
+        p.nodeIndex=0;
+        p.meshIndex=0;
+        p.primitiveIndex=0;
+        p.drawInvocation=1;
+        p.firstIndex=0;
+        p.indexCount=3;
+        p.visible=p.colourCandidate=true;
+        p.vertexOverride={71};
+        p.vertexOverrideCount=3;
+        p.customGpuStream=true;
+        p.world=mat4::identity();
+        staged.primitives={p};
+        Renderer3D::ModelSubmissionProvenance encoded;
+        encoded.frameSerial=41u;
+        Renderer3D::ModelSubmittedPrimitive item;
+        item.source=p;
+        item.kind=Renderer3D::ModelSubmissionKind::Direct;
+        item.phase=1;
+        item.pipeline={7};
+        encoded.commands={item};
+        encoded.mainPassEncoded=true;
+        req(validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "renderer encoded direct source was rejected");
+        encoded.mainPassEncoded=false;
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "staged ModelItem falsely claimed main pass submission");
+        encoded.mainPassEncoded=true;
+        encoded.commands[0].pipeline={};
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "missing compiled GPU pipeline accepted as colour draw");
+        encoded.commands[0].pipeline={7};
+        encoded.commands[0].kind=
+            Renderer3D::ModelSubmissionKind::GpuIcb;
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "GPU ICB visibility was falsely treated as direct primitive");
+        encoded.commands[0].kind=
+            Renderer3D::ModelSubmissionKind::Direct;
+        encoded.commands[0].source.firstIndex=3;
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "actual draw changed source primitive index range");
+        encoded.commands[0].source.firstIndex=0;
+        encoded.commands[0].source.world=mat4::translate({1,0,0});
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "actual draw changed source model/world transform");
+        encoded.commands[0].source.world=mat4::identity();
+        encoded.truncated=true;
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "truncated encoded renderer source was accepted");
+        encoded.truncated=false;
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,42)
+                .accepted,
+            "old frame GPU draw was accepted for new click");
+        encoded.commands.clear();
+        req(!validateSculptGpuSubmittedView(staged,encoded,model,0,41)
+                .accepted,
+            "no encoded colour draw was accepted as VIVID GPU hit");
     }
     // 7AQ: no false claim of hardware pixel parity when the normal
     // Renderer3D may draw an alternate authored LOD or an ambiguously
