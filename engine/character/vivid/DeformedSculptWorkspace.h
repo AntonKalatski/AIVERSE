@@ -36,6 +36,9 @@ public:
     }
     const SculptPickBvhStats& stats() const noexcept {return bvh_.stats();}
     const SkinnedWeightSurface& worldSurface() const noexcept {return surface_;}
+    std::span<const render::float3> morphedBindPositions() const noexcept {
+        return morphBind_;
+    }
     std::size_t vertexCapacity() const noexcept {
         return morphBind_.capacity()+morphScratch_.capacity()+
                surface_.world.capacity()+skinScratch_.staging.world.capacity();
