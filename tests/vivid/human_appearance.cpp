@@ -191,12 +191,17 @@ void test() {
             "reusable strand workspace failed initial contact");
         const auto originalCapacity=scratch.cells.capacity();
         const auto pairCapacity=scratch.pairs.capacity();
+        const auto segmentCapacity=scratch.segments.capacity();
+        expect(scratch.segments.size()==2 && segmentCapacity>=2,
+               "groom workspace did not retain segment snapshot");
         auto second=originals;
         GroomSelfCollisionStats secondStats;
         expect(GroomSegmentCollision::resolve(second,settings,
             secondStats,scratch) &&
             scratch.cells.capacity()==originalCapacity &&
             scratch.pairs.capacity()==pairCapacity &&
+            scratch.segments.capacity()==segmentCapacity &&
+            scratch.segments.size()==2 &&
             firstStats.contacts==secondStats.contacts &&
             firstStats.pairChecks==secondStats.pairChecks &&
             render::length(first[0].position[1]-second[0].position[1])<1.e-6f,
@@ -204,7 +209,9 @@ void test() {
         // Reset scratch and keep capacity; roots remain immutable.
         scratch.reset();
         expect(scratch.cells.empty() && scratch.pairs.empty() &&
-            scratch.cells.capacity()==originalCapacity,
+            scratch.cells.capacity()==originalCapacity &&
+            scratch.segments.empty() &&
+            scratch.segments.capacity()==segmentCapacity,
             "workspace reset unexpectedly freed reusable broadphase storage");
     }
     // Crossed line segments must repel even when their endpoint particles
