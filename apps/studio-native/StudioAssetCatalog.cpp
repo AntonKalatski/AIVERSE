@@ -119,6 +119,13 @@ StudioAssetCatalog::StudioAssetCatalog(const fs::path& project):project_(project
     (void)studioContentRoot(project_);
     const fs::path cache=project_/".aiverse-cache";
     std::error_code ec;
+    const auto cacheStatus=fs::symlink_status(cache,ec);
+    if(!ec && (fs::is_symlink(cacheStatus) ||
+       (fs::exists(cacheStatus)&&!fs::is_directory(cacheStatus))))
+        throw std::runtime_error("AssetIndex cache path must be a real directory");
+    if(ec && ec!=std::errc::no_such_file_or_directory)
+        throw std::runtime_error("Cannot inspect AssetIndex cache: "+ec.message());
+    ec.clear();
     fs::create_directories(cache,ec);
     if(ec)throw std::runtime_error("Cannot create AssetIndex cache: "+ec.message());
     // SQLite is regenerable: keep DB and WAL files out of version control.

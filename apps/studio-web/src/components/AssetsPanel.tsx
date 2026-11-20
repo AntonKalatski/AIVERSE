@@ -212,7 +212,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       event.preventDefault();event.dataTransfer.dropEffect='move';
     }
   };
-  const dropInternal=(event:React.DragEvent<HTMLElement>,destination:string)=>{
+  const dropInternal=(event:DragEvent<HTMLElement>,destination:string)=>{
     const path=event.dataTransfer.getData(ASSET_DRAG_MIME);
     if(!path)return;
     event.preventDefault();event.stopPropagation();
