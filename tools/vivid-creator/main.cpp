@@ -2181,11 +2181,13 @@ struct CreatorApp {
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
+                const char* reason=!viewCheck.canRenderDiagnostic?
+                    sculptGpuRendererViewReasonText(viewCheck.reason):
+                    !submittedCheck.accepted?
+                        sculptGpuSubmittedViewReasonText(submittedCheck.reason):
+                        "actor GPU source, material or scene blocker unsupported";
                 status="GPU scene ID unavailable ("+
-                    std::string(!viewCheck.canRenderDiagnostic?
-                        sculptGpuRendererViewReasonText(viewCheck.reason):
-                        sculptGpuSubmittedViewReasonText(
-                            submittedCheck.reason))+"); CPU BVH retained";
+                    std::string(reason)+"); CPU BVH retained";
             }
         }
 
