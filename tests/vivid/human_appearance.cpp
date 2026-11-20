@@ -613,6 +613,37 @@ void test() {
                render::length(output[0]-first)<0.0001f,
                "bad MotionWeave pose modified last-good scalp vertices");
     }
+    // Stage 7AB material-graph variation must reach both shader backends.
+    {
+        auto neutral=HumanDNA::preset("neutral");
+        auto skinLow=neutral,skinHigh=neutral;
+        skinLow.skin.scatteringMm=0.2f;
+        skinHigh.skin.scatteringMm=3.0f;
+        const auto shallowA=humanMaterial(HumanSurface::Skin,skinLow);
+        const auto shallowB=humanMaterial(HumanSurface::Skin,skinHigh);
+        expect(shallowA.shaderGraph && shallowB.shaderGraph &&
+               shallowA.shaderGraph->glsl!=shallowB.shaderGraph->glsl &&
+               shallowA.shaderGraph->msl!=shallowB.shaderGraph->msl,
+               "skin scatter depth must change GLSL and MSL optical graphs");
+        auto irisWide=neutral,irisNarrow=neutral;
+        irisWide.eyes.irisRadius=0.8f;
+        irisNarrow.eyes.irisRadius=0.3f;
+        const auto irisA=humanMaterial(HumanSurface::Iris,irisWide);
+        const auto irisB=humanMaterial(HumanSurface::Iris,irisNarrow);
+        expect(irisA.shaderGraph && irisB.shaderGraph &&
+               irisA.shaderGraph->glsl!=irisB.shaderGraph->glsl &&
+               irisA.shaderGraph->msl!=irisB.shaderGraph->msl,
+               "iris pupil/limbal size did not reach paired optical shaders");
+        auto hairDark=neutral,hairLight=neutral;
+        hairDark.groom.melanin=0.95f;
+        hairLight.groom.melanin=0.05f;
+        const auto hairA=humanMaterial(HumanSurface::Hair,hairDark);
+        const auto hairB=humanMaterial(HumanSurface::Hair,hairLight);
+        expect(hairA.shaderGraph && hairB.shaderGraph &&
+               hairA.shaderGraph->glsl!=hairB.shaderGraph->glsl &&
+               hairA.shaderGraph->msl!=hairB.shaderGraph->msl,
+               "hair melanin did not change GLSL/MSL optical graph");
+    }
     auto eyeHealthy=HumanDNA::preset("neutral");
     auto eyeRed=eyeHealthy;
     eyeHealthy.eyes.scleraRedness=0.0f;
