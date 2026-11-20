@@ -66,9 +66,9 @@ public:
     // Actual provider shutdown may still require a device idle wait.
     bool collect(gfx::Device& device) noexcept {
         if(!device_.validFor(device))return false;
-        if(!queue_ || queue_->empty())return true;
+        if(!queue_ || queue_->empty())return orphanedOwners_==0;
         try {
-            return queue_->collect(
+            const bool complete=queue_->collect(
                 [&]{return device.beginResourceRetirement();},
                 [&](uint64_t token){return device.resourceRetirementComplete(token);},
                 [&](uint64_t token){
@@ -84,6 +84,9 @@ public:
                     return device.resourceRetirementStatus(token)==
                            gfx::ResourceRetirementStatus::Failed;
                 });
+            // A provider shutdown exception is quarantined rather than
+            // freed, but does NOT constitute successful retirement.
+            return complete && orphanedOwners_==0;
         }catch(...) {
             // Never release a provider on an unproven token/poll failure.
             ++pollFailures_;
@@ -95,14 +98,15 @@ public:
     // destroying gfx::Device. A failed wait leaves queue owners untouched.
     bool completeForShutdown(gfx::Device& device) noexcept {
         if(!device_.validFor(device))return false;
-        if(!queue_ || queue_->empty())return true;
+        if(!queue_ || queue_->empty())return orphanedOwners_==0;
         try {
-            return queue_->drain(
+            const bool complete=queue_->drain(
                 [&]{return device.waitForResourceIdle();},
                 [&](uint64_t token){
                     if(token)device.abandonRetirementTokenAfterIdle(token);
                 },
                 [&](Owner& owner){shutdownOrQuarantine(device,owner);});
+            return complete && orphanedOwners_==0;
         }catch(...) {
             ++pollFailures_;
             return false;
