@@ -156,10 +156,23 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
         return false;
     }
     for (const auto& primitive : built.primitives) {
+        // A new builder is REQUIRED to supply exact seam certification
+        // before this asset is ever used by production STRATA. Raw legacy
+        // GPU/direct test fixtures can still use their separate APIs.
+        if(!primitive.geometry.seamCertified) {
+            ++stats_.failedSources;
+            warnings_.push_back("Strata staging '" + key +
+                "': LOD seam topology is not certified; retain Legacy");
+            return false;
+        }
+    }
+    for (const auto& primitive : built.primitives) {
         ++stats_.stagedPrimitives;
         stats_.clusterNodes += primitive.geometry.nodes.size();
         stats_.meshlets += primitive.geometry.meshlets.size();
         stats_.indexBytes += primitive.geometry.indices.size() * sizeof(uint32_t);
+        ++stats_.seamCertifiedPrimitives;
+        stats_.seamRejectedParents += primitive.geometry.seamRejectedParents;
     }
     assets_.emplace(key, std::move(built));
     ++stats_.stagedSources;
