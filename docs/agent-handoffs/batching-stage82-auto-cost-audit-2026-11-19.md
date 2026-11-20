@@ -1069,3 +1069,43 @@ AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
 ```
 
 The console prints the unique `Stage 102 summary:` and `Stage 102 archive:` paths plus whether a slow run reproduced. Ask for the **generated archive** and/or its summary. If the benchmark or Python assertions fail, share its current unique run `mdi-N.log`; never claim a successful trial. Upon receiving a confirmed slow CSV, compare medians of fast vs slow **Mach CPU vs wall CPU**, and backend wall vs other CPU. If Mach grows with wall, likely more CPU work or frequency/driver cost; if wall rises without Mach, investigate thread blocking and Instruments System Trace. Do not infer GPU cause without GPU timestamps. Maintain Draft PR #39.
+
+
+---
+
+## Stage 103 — actual Stage 102 archive: 8/8 fast forced CPU MDI runs (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`, **branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Evidence source:** owner-uploaded `capture-20261120T071121Z-92097.tar.gz`, containing a manifest, 8 process logs, 8 per-frame CSV files and PPM raster captures. **Changes:** handoff only; no production code, benchmark or test changes in this stage.
+
+### Provenance and test configuration
+
+The archive manifest confirms `stage=102`, UTC start `20261120T071121Z`, UTC end `20261120T071142Z`, Git HEAD `e2be90ee329f2a1268ced9175719ca6e719afcf4` (the **Stage 98 executable source checkout**, not the later diagnostic script commit), binary `build/batching-stage98/aiverse_material_batches`, `max_runs=8`, `items=1024`, diagnostic slow threshold `1.2ms` and slow-run detection threshold `10 slow frames`. Manifest result is `INCONCLUSIVE_NO_SLOW_RUN`.
+
+The assistant directly parsed **all eight** `mdi-N-frames.csv` from the uploaded archive and checked each has 81 measured frames 115..195, all with `mdi_submissions=10` and `mdi_commands=2048`. Total sample 648 MDI frames and **zero** frames with `renderer.render()` CPU wall >1.2ms. Maximum observed measured CPU wall frame across all eight was **1.17342ms** (run 4). Median across all 648 frames was **0.8466875ms**.
+
+### Exact measured per-run CPU medians in ms
+
+| Run | CPU wall median | Mach calling-thread CPU median | CPU backend submission median | Slow frames |
+|---|---:|---:|---:|---:|
+| 1 | 0.850084 | 0.837000 | 0.488000 | 0 |
+| 2 | 0.866583 | 0.855000 | 0.514542 | 0 |
+| 3 | 0.839834 | 0.826000 | 0.479373 | 0 |
+| 4 | 0.808375 | 0.797000 | 0.475834 | 0 |
+| 5 | 0.875625 | 0.865000 | 0.526748 | 0 |
+| 6 | 0.822667 | 0.810000 | 0.476126 | 0 |
+| 7 | 0.900166 | 0.887000 | 0.543082 | 0 |
+| 8 | 0.801792 | 0.791000 | 0.482709 | 0 |
+
+Per-run median off-CPU from **wall minus Mach** was 0.0100–0.0136ms. This supports that the fixture calling thread was largely on-CPU for these *fast* runs; it does not prove GPU queue idle or eliminate scheduling/frequency as causes of historical slow runs. **Do not use legacy POSIX raw offcpu values**, which were shown to be wrong in this Metal fixture.
+
+The logs include `material palette CPU checks=38 result=passed`, `actual MDI pixel parity frame=100 changed_channels=0`, measured 81/81 forced CPU MDI frames with 810 real submissions, and final `changed_channels=0` for each run. No renderer/GPU faults were reported. All pass assertions also required by the Stage102 script.
+
+### Conclusion and next technical work
+
+This is credible **new** test provenance, unlike earlier resubmissions of Stage98 CSVs. Eight independent processes all show CPU MDI wall ~0.80–0.90ms median on the 1k fixture, with 0/648 slow frames. However prior Mac tests recorded genuine forced-MDI medians ~1.37–1.60ms and dual shadow/opaque CPU stage increases. We cannot prove an actual performance bug is fixed, nor infer OS/Metal root cause from these eight fast processes.
+
+Recommended shift in test strategy: instead of indefinite repetition of the same 1k test, test representative 2k and 4k primitive loads in a bounded *matched* Direct vs MDI experiment; keep constant scene and pixel parity, capture full CPU wall distributions, actual MDI submissions, and Mach CPU. Eventually add native GPU completion timing/memory/thermal metrics and test 10k after controlling CPU/GPU workload. Any claim of improvement is limited to sampled CPU `renderer.render()` wall, not FPS or GPU. PR #39 remains Draft, CPU MDI/AUTO features opt-in by default, and all existing worktrees/rebase states should be preserved.
+
+### Validation truth
+
+**Actually performed:** extracted exact owner archive, read all 8 per-frame CSVs, checked frame count/MDI count/command count and computed pooled/run medians and worst case, read manifest/representative native log, documented evidence. **Not performed:** new native compilation in assistant environment, full CTest, GPU timestamp, Vulkan/GLES parity, representative 2k/4k load test, any production code changes.
