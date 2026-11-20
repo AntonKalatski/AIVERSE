@@ -77,7 +77,10 @@ public:
             cachedRevision_=doc.revision;
         }
         if(!authoring_ || !authoring_->chunkCount())return;
-        const auto view=authoring_->view(cameraXcm,cameraZcm);
+        // Visible-owned chunk radius is bounded before flatness sampling,
+        // even when a save contains tens of thousands of remote chunks.
+        const auto view=authoring_->view(
+            cameraXcm,cameraZcm,{},200000);
         struct Candidate {uint64_t distanceSq;terraweave::SparseTerrainView tile;};
         std::vector<Candidate> candidates;
         candidates.reserve(view.size());
