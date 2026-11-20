@@ -2417,3 +2417,12 @@ the user's final combined native validation run.
 
 All work stays genre-independent. Renderer3D remains the only draw
 authority; Metal/Vulkan/GLES and Legacy fallbacks must keep working.
+
+
+**Stage17.2 intra-material UV island note:** use
+`StrataSourceSeams` edge-connected triangle components, not just
+material IDs, when auditing spatial seams. Different UV islands
+inside the SAME primitive may have duplicated IDs and physically
+matching or mismatched boundary segments. See latest Stage17.2
+follow-up in the STRATA handoff; corresponding CTest source was
+written but not executed. Preserve Legacy on ambiguous source.
