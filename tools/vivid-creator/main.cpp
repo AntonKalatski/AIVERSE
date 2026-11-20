@@ -1697,6 +1697,7 @@ struct CreatorApp {
                     pixel.idRgba[i]=gpuReply.rgba[i];
             }
             std::uint32_t selectedTriangle=0;
+            const bool tokenWasPending=gpuSculptToken.pending();
             const bool valid=gpuSculptToken.consume(
                 gpuReply.request,pixel,gpuSculptPublication,
                 dev.frameSerial(),std::uint32_t(dev.framebufferWidth()),
@@ -1721,6 +1722,12 @@ struct CreatorApp {
             }else if(gpuReply.rgba.empty()) {
                 gpuSculptToken.cancel();
                 status="Metal GPU ID readback failed; CPU BVH retained";
+            }else if(tokenWasPending && !gpuSculptToken.pending() &&
+                     gpuReply.rgba.size()==4) {
+                // Zero means background, unselectable LOD/alpha material,
+                // or another scene mesh covering the selected triangle.
+                // Preserve the CPU selection, but do not claim GPU success.
+                status="Metal GPU scene blocker/zero ID; CPU BVH retained";
             }
         }
         guiControls();
