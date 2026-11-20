@@ -6,6 +6,7 @@
 // frame, and uses bind() rather than exposing incomplete atlas textures.
 #pragma once
 #include "GiGpuTicketQueue.h"
+#include "GiGpuChunkBvhCache.h"
 #include "GiWorldDirtyAccumulator.h"
 #include "Renderer3D.h"
 #include <algorithm>
@@ -63,6 +64,7 @@ public:
         gpu_.shutdown();
         scheduler_=GiUpdateScheduler{};
         scene_.reset();
+        chunkCache_=GiGpuChunkBvhCache{};
         lights_.clear();
         device_=nullptr;
         dims_[0]=dims_[1]=dims_[2]=0;
@@ -72,6 +74,7 @@ public:
     bool busy() const {return queue_.pending()!=0;}
     size_t pendingProbes() const {return scheduler_.pending();}
     const GiGpuSmallScene& backend() const {return gpu_;}
+    const GiGpuChunkBvhCache& chunkCache() const {return chunkCache_;}
     const GiUpdateScheduler& scheduler() const {return scheduler_;}
     // Read-only accepted source snapshot for safe one-way GPU->CPU transport
     // failover. Call only after outstanding GPU tickets are fence-acknowledged.
@@ -82,7 +85,7 @@ public:
     bool setGeometry(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
                      uint64_t revision) {
         if(!ready() || !scene || revision==0 || busy())return false;
-        if(!queue_.setGeometry(gpu_,*scene,revision))return false;
+        if(!publishPackedGeometry(*scene,revision))return false;
         scene_=std::move(scene);
         scheduler_.invalidateAll(GiDirtyReason::Geometry);
         return true;
@@ -93,7 +96,7 @@ public:
         if(!ready() || !scene_ || !scene || revision==0 || busy() ||
            !valid(changed) || !std::isfinite(extraRadius) || extraRadius<0)
             return false;
-        if(!queue_.setGeometry(gpu_,*scene,revision))return false;
+        if(!publishPackedGeometry(*scene,revision))return false;
         scene_=std::move(scene);
         float radius=maxTraceDistance_+extraRadius;
         for(const auto& light:lights_)
@@ -205,6 +208,22 @@ public:
     }
 
 private:
+    bool publishPackedGeometry(const GiChunkedGeometrySnapshot& snapshot,
+                               uint64_t revision) {
+        // Cache immutable per-chunk BLAS by source geometry identity, then
+        // pack a bounded TLAS/BLAS descriptor for the existing Metal/Vulkan
+        // GPU kernel. The compute queue's genuine completion fence is checked
+        // by both setGeometry callers before any GPU storage upload.
+        if(!ready() || busy())return false;
+        try {
+            chunkCache_.refresh(snapshot);
+            auto bvh=chunkCache_.pack();
+            return queue_.setPackedGeometry(gpu_,bvh,revision);
+        }catch(const std::exception&) {
+            return false; // scheduler/controller retain the old revision
+        }
+    }
+
     static bool valid(GiBounds b) {
         const auto finite=[](float3 v) {
             return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
@@ -221,6 +240,7 @@ private:
     gfx::Device* device_=nullptr;
     GiGpuSmallScene gpu_;
     GiGpuTicketQueue queue_;
+    GiGpuChunkBvhCache chunkCache_;
     GiUpdateScheduler scheduler_;
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;
     std::vector<GiMovingLight> lights_;
