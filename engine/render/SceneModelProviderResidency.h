@@ -20,6 +20,13 @@ public:
     struct Lease {
         std::string key;
         uint64_t generation=0;
+        Lease()=default;
+        Lease(std::string id,uint64_t epoch)
+            :key(std::move(id)),generation(epoch) {}
+        Lease(const Lease&)=delete;
+        Lease& operator=(const Lease&)=delete;
+        Lease(Lease&&)=default;
+        Lease& operator=(Lease&&)=default;
         explicit operator bool() const noexcept {
             return generation!=0 && !key.empty();
         }
