@@ -119,8 +119,45 @@ static void testGltfImport52() {
     AIVERSE_TEST_CHECK(rejected);
 }
 
+static void testAuthoredSemanticLod() {
+    // Two real glTF meshes: source uses 52 ordered names, visual LOD only
+    // carries expression51. The renderer must not read source index 0.
+    std::string bytes(72,'\0');
+    const float positions[9]={0,0,0,1,0,0,0,1,0};
+    std::memcpy(bytes.data(),positions,sizeof positions);
+    const FileReader read=[bytes](const std::string& path,std::string& out) {
+        if(path!="face.bin")return false;
+        out=bytes;
+        return true;
+    };
+    Json doc=Json::parse(gltf52(52));
+    Json coarse=Json::parse(R"({"name":"FaceLOD","primitives":[
+        {"attributes":{"POSITION":0},"targets":[{"POSITION":1}]}
+      ],"extras":{"targetNames":["expression51"]}})");
+    doc.member("meshes").push(std::move(coarse));
+    Json level=Json::object(),levels=Json::array();
+    level.set("mesh",Json::number(int64_t(1)));
+    level.set("maxPixels",Json::number(int64_t(96)));
+    levels.push(std::move(level));
+    doc.member("meshes").at(0).member("extras").set("aiverseLods",std::move(levels));
+    auto model=loadGltf("face.gltf",doc.dump(-1),read,nullptr);
+    AIVERSE_TEST_CHECK(model && model->meshes.size()==2);
+    AIVERSE_TEST_CHECK(model->meshes[0].lods.size()==1);
+    AIVERSE_TEST_CHECK(model->meshes[0].lods[0].morphSourceForTarget.size()==1);
+    AIVERSE_TEST_CHECK(model->meshes[0].lods[0].morphSourceForTarget[0]==51);
+    AIVERSE_TEST_CHECK(model->meshes[1].morphTargetNames.size()==1);
+    // An expression present only on the coarse mesh is a hard import error.
+    doc.member("meshes").at(1).member("extras").member("targetNames")
+       .at(0)=Json::string("inventedChannel");
+    bool rejected=false;
+    try {(void)loadGltf("face.gltf",doc.dump(-1),read,nullptr);}
+    catch(const std::exception&){rejected=true;}
+    AIVERSE_TEST_CHECK(rejected);
+}
+
 int main() {
     testGltfImport52();
+    testAuthoredSemanticLod();
     static_assert(kMaxMorphTargets==64,
                   "Studio native Renderer3D must share 64-channel MotionWeave ABI");
     auto model=makeFace();
