@@ -342,6 +342,20 @@ std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
     next->owner_=this;
     next->dev_=dev_;
     next->revision_=revision_;
+    next->lastTime_=time;
+    // The common unchanged frame only advances its clock. Avoid copying
+    // and reallocating the full CPU visibility field in that case.
+    if(!dirty_ && !fading_) {
+        bool identical=true;
+        for(size_t i=0;i<vision.size();++i) {
+            const uint8_t target=vision[i]>=2?255:vision[i]==1?128:0;
+            if(target_[i]!=target) {identical=false;break;}
+        }
+        if(identical) {
+            next->unchangedOnly_=true;
+            return next;
+        }
+    }
     next->target_=target_;
     next->cur_=cur_;
     next->field_=field_;
@@ -404,6 +418,11 @@ bool VisibilityField::commitPreparedUpdate(
     if(!next || next->owner_!=this || next->dev_!=dev_ ||
        next->revision_!=revision_)
         throw std::logic_error("VisibilityField: stale prepared update");
+    if(next->unchangedOnly_) {
+        lastTime_=next->lastTime_;
+        ++revision_;
+        return false;
+    }
     const bool changed=next->changed_;
     if(changed) {
         retired_.retireTexture(*dev_,tex_);
