@@ -27,7 +27,7 @@ On authoritative unload call GameHost unload(). Following Simulation::loadState,
 
 The framework cannot invent a game's prefab-to-Model/Graph asset policy, so the actual project must supply a resolver and instantiate this host in its own bootstrap. Do not put RTS, FPS or any genre dependencies in the animation core.
 
-Dedicated provider per scene is intentional. Shared ModelAssetProvider/cache between scenes needs a separate real-owner residency lease and must NOT be approximated by sharing AppearanceAsset pointers; it remains open.
+The original `commitReady()` still uses a dedicated provider per scene. Stage 177 adds **opt-in real-owner shared residency** via `commitReadyShared()` and `SceneModelProviderResidency`, with reference-counted leases to the actual ModelAssetProvider. This is not AppearanceAsset pointer sharing. The resident cache is treated as immutable while shared; the second/additive scene must use the read-only `MotionWeaveSceneAssetBuilder::buildResident()` resolver and an identical, versioned residency key. See [shared GPU scene residency](motionweave-shared-scene-gpu-residency.md). Shared residency across different hosts/RHI epochs, live cache mutation and native project-specific bootstrap remain outside this stage.
 
 ## Deferred compilation and validation
 
