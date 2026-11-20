@@ -35,6 +35,10 @@ struct GiTransportConfig {
     // rays. A larger source is rejected rather than silently dropping
     // relevant occluder chunks beyond the resident GPU BVH volume.
     float maxGpuMovingLightRadius=64;
+    // Explicit opt-in: when the bounded GPU BVH cannot admit ALL relevant
+    // geometry, migrate the complete immutable source to bounded CPU GI.
+    // This is a one-way quality fallback, not hidden GPU triangle truncation.
+    bool cpuFallbackOnLocalGpuOverflow=false;
 };
 
 class GiLightingController {
@@ -126,6 +130,9 @@ public:
             auto resident=planGpuResident(*next);
             if(!resident.admitted) {
                 gpuResidency_=std::move(resident);
+                if(gpuResidency_.exceededBudget &&
+                   tryCpuOverflowFallback(next,revision))
+                    return true;
                 pendingGeometry_=true; // never sample old bounce on new world
                 return false;
             }
@@ -152,6 +159,9 @@ public:
             auto resident=planGpuResident(*next);
             if(!resident.admitted) {
                 gpuResidency_=std::move(resident);
+                if(gpuResidency_.exceededBudget &&
+                   tryCpuOverflowFallback(next,revision))
+                    return true;
                 pendingGeometry_=true;
                 return false;
             }
@@ -316,6 +326,47 @@ public:
     }
 
 private:
+    // One-way GPU->CPU transport fallback for an over-budget LOCAL scene.
+    // No queue may be in flight and the underlying device must be healthy.
+    // Full immutable BVH, accepted point/spot sources and optional sun/sky
+    // are migrated; no relevant occluder is lost or a baked owner duplicated.
+    // The caller must unbind the old atlas from Renderer3D before a source
+    // publication that may shut down the GPU owner.
+    bool tryCpuOverflowFallback(
+            const std::shared_ptr<const GiChunkedGeometrySnapshot>& full,
+            uint64_t revision) {
+        if(!config_.cpuFallbackOnLocalGpuOverflow ||
+           mode_!=GiTransportMode::GpuCompute || !device_ ||
+           !device_->gpuHealthy() || gpu_.busy() || !full)
+            return false;
+        try {
+            cpu_.cpuTraceBudget().configure(config_.cpuFrameBudgetMs,
+                                            config_.cpuMaxProbes);
+            if(!cpu_.initialize(*device_,config_.origin,config_.spacing,
+                                config_.nx,config_.ny,config_.nz,
+                                int(config_.raysPerProbe),config_.traceDistance))
+                return false;
+            cpu_.setTraceGeometry(full->traceView(),revision);
+            cpu_.setLights(gpu_.lights());
+            (void)cpu_.setEnvironment(gpu_.environment());
+        } catch(...) {
+            cpu_.shutdown();
+            return false;
+        }
+        // No in-flight fence may reference the GPU scene at this point.
+        if(!gpu_.shutdown()) {
+            cpu_.shutdown();
+            return false;
+        }
+        mode_=GiTransportMode::CpuProbes;
+        scene_=full;
+        revision_=revision;
+        pendingGeometry_=false;
+        // Keep independently rejected light/environment gates until their
+        // real authoritative revisions have been accepted by the CPU path.
+        return true;
+    }
+
     GiGpuResidencyPlan planGpuResident(
             const GiChunkedGeometrySnapshot& scene) const {
         return GiGpuResidencyPlanner::plan(
