@@ -1153,3 +1153,51 @@ suite when implementation milestones are complete, then validate
 native Vulkan/GLES3 on their own supported drivers. The next
 stage is a renderer-owned submitted-command/final-depth parity
 probe without duplicating a VIVID-specific renderer.
+
+
+### Stage 7AW — inspect actual Renderer3D submissions before GPU ID readback
+
+The GPU ID diagnostic must not equate a staged `ModelItem` with a
+real colour-pass draw. Call `renderer.trackModelSubmissions(human.head.get())`
+**immediately after** `renderer.beginScene`, and stage the regular
+`renderer.drawModel(draw)`. The tracking API is intentionally opt-in
+and only records its selected model; a late opt-in, wrong frame, or
+over-limit scene is invalid rather than inferred.
+
+After `renderer.render(screenPass)`, compare
+`renderer.modelViewProvenance(*human.head)` with
+`renderer.modelSubmissionProvenance(*human.head)` using
+`validateSculptGpuSubmittedView`. The latter records actual encoded
+direct/instanced/MDI/GPU ICB and GPU indirect commands together with
+the pipeline handle, main pass, source primitive IDs and the same
+borrowed 60-byte GPU override. The current strict GPU-ID
+corroboration accepts **only** unique full-source main-colour
+`Direct` indexed draws with a compiled pipeline and matching frame,
+world transform and source IDs; indirect/instanced/LOD alternatives
+and missing pipeline commands are explicitly unsupported. These
+records are not proof of the final hardware fragment surviving.
+
+Renderer3D intentionally leaves the main pass open for UI. For an
+eligible pending GPU click, Creator now ends that pass, submits
+its separate GPU compute and offscreen ID/depth pass, and **resumes
+the screen pass without clearing colour or depth**. The scissor
+is restored to the full framebuffer size after the ID pass's
+one-pixel readback region. If preflight fails, the main pass is
+left untouched and CPU BVH authoring selection stays authoritative.
+
+New unit-fixture source: `tests/vivid/human_creator.cpp`
+checks no submitted commands, stale main frame, missing compiled
+pipeline, different source index/world, and GPU ICB rejection.
+The existing Metal `tests/vivid/renderer_preview.cpp` now
+checks actual accepted direct colour commands and staged
+source equality once the model pipeline is ready.
+
+**NOT RUN:** native build/CTest, Metal scene capture, actual
+GPU final pixels and the full validation runner. The new
+provenance distinguishes *GPU command encoding* from pre-submit
+staging, but does **not** establish final screen-colour/ID/depth
+parity, actual GPU completion or visibility behind postprocess,
+translucent cornea, ICB/MDI, other GPU-deformed occluders or
+ShaderGraph displacement. Preserve the CPU source picker and
+defer native Metal/Vulkan/GLES acceptance until the project
+performs its consolidated tests. See Stage 7AW handoff.
