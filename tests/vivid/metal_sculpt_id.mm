@@ -34,7 +34,9 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     const render::Model& model,
                                     const SkinnedWeightSurface& surface,
                                     std::uint32_t x,std::uint32_t y,
-                                    std::span<const SculptGpuIdVertex> occluders={}) {
+                                    std::span<const SculptGpuIdVertex> occluders={},
+                                    const SculptGpuVertexSource* gpuSource=nullptr,
+                                    bool* usedGpuSource=nullptr) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -45,7 +47,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     req.x=x;req.y=y;
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
-                        viewProj,req,occluders),
+                        viewProj,req,occluders,{},gpuSource),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -57,6 +59,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
             require(completed.request==req &&
                     completed.rgba.size()==4,
                     "VIVID Metal async ID callback missing or stale");
+            if(usedGpuSource)*usedGpuSource=completed.actualOverride;
             return completed.rgba;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -157,6 +160,83 @@ void test() {
         const auto solid=runSample(*device,pass,model,surface,32,32);
         require(solid==std::vector<std::uint8_t>({2,0,0,0}),
                 "Metal alpha-tested GPU triangle lost opaque texel ID");
+
+        // 7AT: the actual 60B GPU override is the positional authority.
+        // Move every GPU vertex completely off-screen WITHOUT changing the
+        // CPU SkinnedWeightSurface. A true GPU-sourced ID pass must clear at
+        // the center; a CPU-fed pose would incorrectly keep triangle ID 2.
+        model.materials[0].alpha=render::AlphaMode::Opaque;
+        std::vector<render::ModelVertex> actorBytes=model.vertices;
+        for(auto& vertex:actorBytes)vertex.pos.x+=2.0f;
+        gfx::BufferDesc gpuDesc;
+        gpuDesc.type=gfx::BufferType::Storage;
+        gpuDesc.usage=gfx::Usage::Immutable;
+        gpuDesc.size=actorBytes.size()*sizeof(render::ModelVertex);
+        gpuDesc.data=actorBytes.data();
+        gpuDesc.label="VIVID actual actor 60B vertex stream fixture";
+        auto displacedStream=device->createBuffer(gpuDesc);
+        require(displacedStream.valid(),"Metal fixture GPU 60B actor input missing");
+        SculptGpuVertexSource source;
+        require(prepareSculptGpuVertexSource(
+                    model,0,pose,render::mat4::identity(),
+                    displacedStream,std::uint32_t(actorBytes.size()),
+                    {},actorBytes.size(),source),
+                "Metal fixture GPU-source index/palette preparation failed");
+        bool usedOverride=false;
+        const auto fromActual=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                fromActual==std::vector<std::uint8_t>({0,0,0,0}),
+                "ID pass rendered CPU pose instead of exact 60B GPU override");
+        device->destroyBuffer(displacedStream);
+        gpuDesc.data=model.vertices.data();
+        auto originalStream=device->createBuffer(gpuDesc);
+        require(originalStream.valid(),"Metal original GPU actor source missing");
+        require(prepareSculptGpuVertexSource(
+                    model,0,pose,render::mat4::identity(),
+                    originalStream,std::uint32_t(model.vertices.size()),
+                    {},model.vertices.size(),source),
+                "Metal identity actor stream source preparation failed");
+        usedOverride=false;
+        const auto unchanged=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                unchanged==std::vector<std::uint8_t>({2,0,0,0}),
+                "ID pass did not render the actual in-view GPU ModelVertex");
+        device->destroyBuffer(originalStream);
+
+        // Same packed 60B input but a GPU compute skinning transform moves
+        // the triangles. This proves the ID pass does not silently bypass
+        // MotionWeave's current skeleton pose for an actor using GPU morph.
+        model.nodes.resize(2);
+        model.nodes[0].skin=0;
+        model.skins.resize(1);
+        model.skins[0].joints={1};
+        model.skins[0].inverseBind={render::mat4::identity()};
+        model.meshes[0].primitives[0].jointPalette={0};
+        for(auto& vertex:model.vertices) {
+            vertex.joints[0]=0;vertex.weights[0]=255;
+        }
+        gpuDesc.data=model.vertices.data();
+        auto skinStream=device->createBuffer(gpuDesc);
+        require(skinStream.valid(),"Metal GPU skinned actor buffer missing");
+        const std::array<render::mat4,2> animatedPose{{
+            render::mat4::identity(),
+            render::mat4::translate({2.0f,0.0f,0.0f})
+        }};
+        require(prepareSculptGpuVertexSource(
+                    model,0,animatedPose,render::mat4::identity(),
+                    skinStream,std::uint32_t(model.vertices.size()),
+                    {},model.vertices.size(),source) &&
+                source.params.skinned==1,
+                "Metal joint palette stream preparation failed");
+        usedOverride=false;
+        const auto animatedGpu=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                animatedGpu==std::vector<std::uint8_t>({0,0,0,0}),
+                "GPU ModelVertex ID pass ignored actual skinned joint pose");
+        device->destroyBuffer(skinStream);
 
         require(pass.shutdownAfterIdle(),
                 "VIVID Metal ID resources did not pass GPU idle retirement");
