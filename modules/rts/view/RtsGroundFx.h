@@ -22,6 +22,7 @@
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/TextureCache.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/RenderDeviceLifetime.h"
 #include "../RtsData.h"
 #include "../RtsMap.h"
@@ -89,6 +90,14 @@ public:
     bool shutdownAfterGpuIdle(gfx::Device& dev);
     void shutdown(gfx::Device& dev);
     bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
+    // Poll only at the host pre-render retirement boundary, never in a draw.
+    bool collectRetiredMeshBuffers(gfx::Device& dev) {
+        checkGpuDevice(dev);
+        return retiredMeshes_.collect(dev);
+    }
+    size_t pendingMeshGpuRetirements() const noexcept {
+        return retiredMeshes_.pending();
+    }
     void invalidate() { geomDirty_ = true; }   // terrain rebuilt (heights may have changed): rebuild geometry
     // Map roads / lanes between buildings are drawn here (RtsView skips its flat road quads).
     bool drawsLinks() const { return lane_.on && pipe_.valid(); }
@@ -141,6 +150,7 @@ private:
     }
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
+    render::NativePresentationRetirement retiredMeshes_;
     const Rules* rules_ = nullptr;
     std::string base_;
     render::TextureCache textures_;
