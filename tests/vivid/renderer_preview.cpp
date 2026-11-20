@@ -10,6 +10,7 @@
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/SculptGpuSubmittedView.h"
 #include "engine/character/vivid/SculptGpuIdPass.h"
+#include "engine/character/vivid/SculptGpuColorPixelOracle.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include <array>
@@ -309,17 +310,15 @@ struct Preview {
                 auto& probe=pixelProbes[std::size_t(stageIndex)];
                 if(!probe.requested || !probe.colourReady ||
                    !probe.idReady || probe.checked)continue;
-                const bool hit=probe.id[0]||probe.id[1]||
-                               probe.id[2]||probe.id[3];
-                const int delta=std::abs(int(probe.colour[0])-20)+
-                                std::abs(int(probe.colour[1])-26)+
-                                std::abs(int(probe.colour[2])-33);
-                require(hit && delta>36,
-                    "VIVID final Renderer3D colour and actual GPU actor ID do not cover the same pixel");
+                const auto comparison=vivid::compareSculptGpuColorIdCoverage(
+                    probe.colour,probe.id,{20,26,33},36);
+                require(comparison.verdict==
+                            vivid::SculptGpuColorPixelResult::Verdict::Covered,
+                    "VIVID same-frame Metal Renderer3D colour and GPU actor ID pixel coverage differ");
                 probe.checked=true;
-                std::printf("VIVID same-frame GPU colour/ID pixel parity stage=%d frame=%llu xy=%u,%u delta=%d id=%u,%u,%u,%u PASS\n",
+                std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u PASS\n",
                     stageIndex,static_cast<unsigned long long>(probe.frameSerial),
-                    probe.x,probe.y,delta,
+                    probe.x,probe.y,comparison.distanceFromClear,
                     unsigned(probe.id[0]),unsigned(probe.id[1]),
                     unsigned(probe.id[2]),unsigned(probe.id[3]));
             }
