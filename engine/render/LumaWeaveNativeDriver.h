@@ -192,7 +192,8 @@ public:
             input.sceneGeometry && input.geometryRevision &&
             !coordinator_.registry().lights().empty() &&
             vulkanPost_.ready() && vulkanDirect_.screenAvailable() &&
-            vulkanPost_.canAcquireFrame() && existing_.active() &&
+            vulkanPost_.canAcquireFrame(input.width,input.height) &&
+            existing_.active() &&
             existing_.linearScene() && decision.admitted &&
             renderer_.lights.count()==0 &&
             !renderer_.lights.staticPointLightsActive();
