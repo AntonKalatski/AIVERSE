@@ -8,6 +8,7 @@
 #include "engine/render/Renderer3D.h"
 #include <algorithm>
 #include <array>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -153,6 +154,10 @@ class TerrainPatchResident {
 public:
     bool resident() const {return bool(model_);}
     uint64_t revision() const {return revision_;}
+    uint32_t visualResolution() const {return visualResolution_;}
+    const std::array<uint32_t,4>& neighborResolution() const {
+        return neighborResolution_;
+    }
     world::Cell cell() const {return cell_;}
     const std::vector<TerrainPatchDirtyRegion>& pendingDirty() const {
         return dirty_;
@@ -170,11 +175,27 @@ public:
                  TerrainCollisionPublisher& collisions,
                  const TerrainPatch& patch,uint32_t firstColliderId,
                  const render::Model* materialSource=nullptr,
-                 float uvScale=0.05f) {
+                 float uvScale=0.05f,
+                 const TerrainPatch* adaptiveVisual=nullptr,
+                 std::array<uint32_t,4> neighbors={}) {
         if(model_ && !(patch.cell==cell_))
             throw std::invalid_argument("TerraWeave resident owns a different tile");
+        if(patch.presentationOnly)
+            throw std::invalid_argument("TerraWeave collision patch must be authoritative");
+        if(adaptiveVisual &&
+           (!adaptiveVisual->presentationOnly ||
+            adaptiveVisual->cell!=patch.cell ||
+            adaptiveVisual->sourceRevision!=patch.sourceRevision ||
+            adaptiveVisual->cellSizeMetres!=patch.cellSizeMetres))
+            throw std::invalid_argument("TerraWeave LOD/collision ownership mismatch");
+        // Adaptive geometry can replace model allocations referenced by an
+        // earlier GPU frame. Require a REAL completion barrier before
+        // proceeding. Never infer GPU completion from a CPU frame count.
+        if(model_ && adaptiveVisual && !device.waitForResourceIdle())
+            return false;
+        const TerrainPatch& visual=adaptiveVisual?*adaptiveVisual:patch;
         auto candidate=makeEarthworksTerrainModel(
-            patch,materialSource,uvScale);
+            visual,materialSource,uvScale);
         render::prepareModelUpload(*candidate);
         if(!render::uploadModel(device,*candidate) ||
            !candidate->vb.valid() || !candidate->ib.valid()) {
@@ -205,6 +226,8 @@ public:
         model_=std::move(candidate);
         cell_=patch.cell;
         cellSizeMetres_=patch.cellSizeMetres;
+        visualResolution_=visual.resolution;
+        neighborResolution_=adaptiveVisual?neighbors:std::array<uint32_t,4>{};
         revision_=patch.sourceRevision;
         return true;
     }
@@ -235,6 +258,8 @@ public:
         model_.reset();
         revision_=0;
         cellSizeMetres_=0;
+        visualResolution_=0;
+        neighborResolution_={};
         dirty_.clear();
     }
 private:
@@ -242,6 +267,8 @@ private:
     world::Cell cell_{};
     int32_t cellSizeMetres_=0;
     uint64_t revision_=0;
+    uint32_t visualResolution_=0;
+    std::array<uint32_t,4> neighborResolution_{};
     std::vector<TerrainPatchDirtyRegion> dirty_;
 };
 
