@@ -107,6 +107,10 @@ private:
     struct PropModel { std::string path; std::unique_ptr<render::Model> model; };
     struct PropInstance { int model = -1; render::mat4 xf; };
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
+    // Candidate-only build; never invoke on the published owner. The caller
+    // owns private rollback and final retirement/publication.
+    void buildUnpublished(gfx::Device& dev,
+                          const std::function<float(float,float)>& heightAt);
     void buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void release(gfx::Device& dev);
     void retireSpriteBuffer(gfx::Device& dev,render::SpriteMesh& mesh) {
@@ -129,6 +133,7 @@ private:
     std::vector<std::string> replaces_;
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
+    bool strictStaging_ = false; // never swallow failed candidate model uploads
     render::NativePresentationRetirement retirement_;
     std::vector<Chunk> chunks_;
     BatchStats batchStats_;
