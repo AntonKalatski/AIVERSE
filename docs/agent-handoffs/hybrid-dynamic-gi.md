@@ -903,3 +903,19 @@ bind/explicit unbind releases; readers are tracked by renderer identity.
 Source regression `gi_borrowed_presentation` registered with CTest.
 Clients must still unbind before destructor and real render-fence retire.
 Native compiler/CTest and GPU/device tests NOT RUN.
+
+
+## Stage 56 — 2026-11-20 — stable logical GPU BLAS pages and transactional TLAS (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage56-stable-paged-blas-tlas-2026-11-20.md`.
+The normal Metal/Vulkan GI runtime now uses `GiGpuPagedBvhArena` in
+addition to the immutable per-chunk CPU BLAS cache. Stable per-chunk
+absolute node/triangle offsets survive other chunk edits, the TLAS
+root stays at node0 in a reserved prefix, source page planning does not
+modify committed GPU state until upload accepted, and all reclaimed
+page spans require the existing real-completion GI ticket fence.
+Old shader and storage-buffer ABI remain; this is suballocated
+logical GPU pages, not separate driver `VkBuffer`/`MTLBuffer` objects.
+Added CPU ray parity, relocation, reuse and reject test source and CMake
+registration. NO native C++ compiler, CTest or real Metal/Vulkan/GLES
+GPU tests have run, and page compaction on address fragmentation remains.
