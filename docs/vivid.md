@@ -838,3 +838,40 @@ correctly ordered presentation approximation, not proven Metal/Vulkan/
 GLES pixel parity. **Native compilation, CTest, GPU/GUI screenshots and
 performance benchmarks for this stage are NOT RUN.** See
 `docs/agent-handoffs/vivid.md` Stage 7AJ for exact SHAs and next steps.
+
+
+## Stage 7AL — reusable deformed picking workspace and refitted BVH (2026-11-20)
+
+VIVID Creator's morphed+skinned source-ID picker now uses a persistent
+`DeformedSculptWorkspace`. The original brute-force
+`pickDeformedSculptVertex` remains a reference path for direct parity
+tests. A selected mesh's triangle topology is median-partitioned once
+into `SculptPickBvh` (up to 1,000,000 source/model vertices and 1,000,000
+selected-mesh triangles). Each user click computes the current deformed
+world-space surface from the published facial CSR and MotionWeave bone
+pose, refits the BVH bounds, then tests ray intersections only against
+candidate leaves. Picking still returns the source authoring ID after
+Stage 7AK seam-clone mapping; nonauthorable LOD triangles are skipped.
+Nearest-hit and equal-depth triangle tie-break semantics match the
+previous brute-force reference.
+
+The CPU scratch vectors for morphed positions, per-vertex skin palette
+identity and staged world positions are owned by the Creator and reused
+across clicks. Invalid input never publishes an incomplete replacement
+world surface or bind-space morph buffer. A candidate Model/mesh
+publication resets the BVH and invalidates cached model identity; the
+same cache also rebuilds when the selected mesh changes.
+
+This is bounded **CPU editing acceleration**, not a GPU ID/depth picking
+pass. Skin/morph reconstruction remains O(model vertices) per click and
+BVH refitting O(mesh triangles); source triangle BVH construction is
+O(triangles log triangles) on first click. `SculptPickBvhStats` counts
+nodes visited and triangles tested to support future performance profiling,
+but no wall-time or memory-speedup measurement has been made.
+
+The `human_creator` regression source compares BVH against the linear
+reference for a 41×41 grid in neutral and active morph poses, checks
+candidate filtering, capacity reuse, invalid pose rollback, recovery and
+seam-clone/LOD source-ID behavior after topology reset. **Native compiler,
+CTest, Metal/GLES/Vulkan capture and performance tests NOT RUN.** Exact
+source commits and handoff: `docs/agent-handoffs/vivid.md` Stage 7AL.
