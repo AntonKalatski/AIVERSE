@@ -26,7 +26,7 @@ public:
 
     explicit MotionWeaveSceneOwnedHost(
             render::RenderDeviceLifetime::Lease lease)
-        :retirement_(std::move(lease)) {}
+        :deviceLease_(lease),retirement_(std::move(lease)) {}
     MotionWeaveSceneOwnedHost(const MotionWeaveSceneOwnedHost&)=delete;
     MotionWeaveSceneOwnedHost& operator=(const MotionWeaveSceneOwnedHost&)=delete;
 
@@ -61,6 +61,11 @@ public:
             return false;
         }
         try {
+            // Adopt the SAME real device generation used by the host and
+            // retirement queue. Reject an old provider after RHI recreate
+            // even if the allocator reused the gfx::Device address.
+            incoming->setGpuDeviceLease(deviceLease_);
+            incoming->resources().bindResourceDevice(device,deviceLease_);
             auto [it,inserted]=slots_.try_emplace(sceneId);
             (void)inserted;
             // Discard a prior uncommitted candidate FIRST. It cannot be
@@ -201,6 +206,7 @@ private:
     };
     Publisher visuals_;
     std::map<uint64_t,Slot> slots_;
+    render::RenderDeviceLifetime::Lease deviceLease_;
     render::SceneModelProviderRetirement retirement_;
     uint64_t orphanedLive_=0;
 };
