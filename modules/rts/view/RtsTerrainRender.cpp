@@ -397,6 +397,19 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
             return false;
         }
 
+        // Small same-topology edits keep clean chunk VBs/IBs and only
+        // stage affected coarse LODs + copy-on-write texture generations.
+        if(!all && detailOn_) {
+            try {
+                if(tryBuildDetailIncremental(dev,g,flatDig))return true;
+            }catch(...) {
+                lh_=previousLh;
+                heightfield_=previousHeightfield;
+                lodLevels_=previousLodLevels;
+                throw;
+            }
+        }
+
         TerrainRenderer staged;
         staged.dev_=&dev;
         staged.gpuDeviceLease_=gpuDeviceLease_;
