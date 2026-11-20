@@ -100,6 +100,20 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("studio.assetReferences", ui)
         self.assertIn("interface StudioAssetReference", types)
 
+    def test_move_preview_marks_readonly_dependencies_and_guards_commit(self):
+        registry=(ROOT/"apps/studio-native/StudioAssetReferences.h").read_text(encoding="utf-8")
+        native=NATIVE.read_text(encoding="utf-8")
+        panel=self.source("components/AssetsPanel.tsx")
+        types=self.source("types.ts")
+        self.assertIn("studioMoveReferenceImpact", registry)
+        self.assertIn("ref.path[source.size()]=='/'", registry)
+        self.assertIn('preview.set("references",studioMoveReferenceImpact(preview,dependencies))', native)
+        self.assertIn("if (reference.getBool(\"writable\")) continue;", native)
+        self.assertIn("if (action!=\"skip\")", native)
+        self.assertIn("read-only reference(s) block this move", panel)
+        self.assertIn("disabled={busy||blocked.length>0}", panel)
+        self.assertIn("references?: Array<{ id: number", types)
+
     def test_import_settings_lock_preserves_asset_context(self):
         assets = self.source("components/AssetsPanel.tsx")
         settings = self.source("components/AssetImportSettings.tsx")
