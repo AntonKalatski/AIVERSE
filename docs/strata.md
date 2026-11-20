@@ -2135,3 +2135,79 @@ the exact colors, shadows and planar RTT; finish Stage17 crack-free
 lossy LOD and Stage18 profiling before the owner's combined final
 suite. Full Stage16.4a/b/c file and test handoffs are in
 `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Stage 17 — crack-resistant mixed-depth LOD contour certification (2026-11-20)
+
+The STRATA offline/import builder now performs **exact geometric
+boundary-preservation checks** rather than relying solely on the
+`meshopt_SimplifyLockBorder` option. A candidate coarser parent is
+accepted only if its oriented perimeter edge segments exactly match
+the perimeter of the UNION of its finer children, using the same
+original vertex IDs and winding. If one segment is removed, split,
+duplicated or reverses orientation, the builder **does not publish
+that parent**: its children remain in the renderable hierarchy.
+After construction, an independent
+`strata::auditSeamHierarchy(asset,report,error)` validates every
+parent-child relationship. Only a complete successful audit sets
+`Asset::seamCertified=true`. Mesh/texture/material ownership and
+the original unchanged LOD0 triangles remain the same.
+
+### Across UV seams, materials and source meshes
+
+Because material/UV seams may duplicate vertex IDs at the *same
+physical position*, the source-level
+`strata::auditModelSourceSeams(model,modelAsset,report,error)`
+performs a SECOND, import-time geometric boundary certification.
+It compares exact world/bind-space segment endpoints across
+eligible material partitions and independently transformed rigid
+Model meshes. A bounded 3-D BVH finds endpoints landing in the
+interior of another material boundary segment (existing T-junction)
+and positions extremely close to, but not identical to, neighboring
+material border endpoints (potential micro-cracks). Suspicious
+sources use Legacy instead of claiming a safe mixed-depth LOD.
+This geometry verifier **does not move vertices or rewrite UVs**;
+source positions must already match for exact certification.
+
+The full `buildModelAsset` API returns
+`ModelAsset::sourceSeamsCertified=true` only after all partitions
+have passed source-level seam checks, while each individual
+`Asset::seamCertified` covers its own parent-child hierarchy.
+`SceneStaging` refuses uncertified assets and
+`GeometryScene` requires both certificates before entering
+portable Metal/Vulkan/GLES or Vulkan indirect GPU rendering.
+Stats include per-partition certified source/mesh count,
+rejected unsafe coarser parents, successfully matched physical
+material boundaries and declined sources.
+
+### Guarantees, limitations and validation
+
+The guarantee is **topological segment continuity for compatible,
+already correctly stitched static source geometry**, not full
+pixel-identical lossy geometry, continuous normals/UV shading,
+smooth LOD morphing or source crack repair. Separately instantiated
+`Model` sources, other ECS worlds, independently generated terrain
+chunks and animated/skinned/deformable surfaces are outside the
+current source audit. Very close separate surfaces may be declined
+conservatively. The new source audit has a 250,000 boundary-edge
+limit and runs only during import/loading, not every render frame.
+The regular CPU/Legacy renderer is retained whenever the audit
+rejects a source.
+
+New CPU CTest targets `strata_seams` (within a material,
+mixed-depth parent/child proof, T-junctions, nonmanifold edges)
+and `strata_source_seams` (duplicated-vertex material seam,
+different transformed meshes, split physical edge and near-offset
+gap) were **authored but NOT RUN** in Stage17. The branch has
+not been natively compiled or rendered since these changes.
+Actual Vulkan/Metal/GLES3 pixel/depth and mixed-LOD visual
+acceptance is still required. Full architecture, specific commits,
+test cases and limitations:
+`docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.1 and Stage17.2.
+
+**Next functional work:** optional stable LOD hysteresis and popping
+mitigation, multi-source terrain boundary coordination, Stage18
+performance optimizations and the owner's single combined final
+build/GPU acceptance run. Do NOT enable the Vulkan manual parity
+gates based solely on this CPU offline certificate.
