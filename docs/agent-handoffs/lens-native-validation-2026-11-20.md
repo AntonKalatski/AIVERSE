@@ -448,3 +448,22 @@ path function, avoiding ADL ambiguity with ModelClips.h after main integration.
 No API/JSON/save change. Observed build-3 error fixed in source, rebuild pending;
 full native/GPU checks NOT RUN for this repair. Next: finish build-3 remaining
 target diagnostics, rebuild and run animation_assets plus View/LENS fixtures.
+
+
+## LENS private SpriteBatch uploads — 2026-11-20
+
+Code `2fba03953acfcc2cea78d2c4e1d72d0539457bcb`, branch codex/lens-completion.
+SpriteBatch beginFramePreparation captures CPU painter/caster/upload state.
+prepareFrameUploads allocates independent vertex/caster buffers and uploads
+before drawing; discard destroys private buffers and restores CPU/old handles.
+Commit retires old handles through NativePresentationRetirement; explicit
+collectRetired/shutdown own completion. Existing flushes reuse shared preparation
+helpers and avoid duplicate upload. Nontransactional path preserved. Added
+fault fixture: fail second candidate allocation, compare all previous GPU
+bytes/CPU count, retry and teardown with no leaks.
+Paths SpriteBatch.h/.cpp, tests/render/lens_sprite_gpu_fault_injection.cpp.
+No save/asset format change. `git diff --check` PASS; native test NOT RUN yet.
+Build-3 continues on KINGSTON with known duplicate fake idle methods and
+previously repaired montage ambiguity. Real GPU NOT RUN. Next integrate the
+SpriteBatch candidate with Rts2D CPU/tile state and host frame guard, poll its
+retirements at the owner boundary, then complete surface publication barrier.
