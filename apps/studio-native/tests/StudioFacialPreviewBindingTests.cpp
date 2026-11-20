@@ -40,7 +40,7 @@ int main() {
         AIVERSE_TEST_CHECK(info["path"].str()=="face.glb");
         AIVERSE_TEST_CHECK(!info["runtimeReady"].boolean() &&
                            !info["runtimeVerified"].boolean());
-        AIVERSE_TEST_CHECK(info["rendererChannelCapacity"].integer()==8);
+        AIVERSE_TEST_CHECK(info["rendererChannelCapacity"].integer()==64);
         const auto generation=uint64_t(info["revision"].integer());
         Json scalar=Json::object();
         scalar.set("jawOpen",Json::number(0.8,3));

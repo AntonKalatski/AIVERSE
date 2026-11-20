@@ -99,8 +99,11 @@ bool StudioFacialGpuPreview::sync(
             throw std::runtime_error("Imported facial Model has no geometry");
         candidate->batching.autoLod=false;
         lib::animation::FacialPreviewSession newSession;
+        lib::animation::FacialPreviewSession::Vectors ikTargets;
+        for(const auto& [name,v]:binding.vectors())
+            ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
         if(!newSession.configure(*candidate,binding.document(),
-                                 binding.scalars(),binding.vectors(),error))
+                                 binding.scalars(),ikTargets,error))
             throw std::runtime_error(error);
         // Source validation completed before publishing any GPU Model.
         // Preparation and upload remain on the owning native device thread.
@@ -162,7 +165,8 @@ bool StudioFacialGpuPreview::submit(
             return false;
         }
     for(const auto& [name,value]:binding.vectors())
-        if(!facial_.vector(name,value)) {
+        if(!facial_.vector(name,
+                render::float3{value[0],value[1],value[2]})) {
             error="Invalid IK vector input: "+name;
             return false;
         }
