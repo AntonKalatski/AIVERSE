@@ -1011,6 +1011,7 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    lensCameras_.collectRetiredTargets();
     // WorldScene unloads can retain a Model after its last resident cell
     // leaves; only the real Device owner frame hook can enqueue a final GPU
     // retirement token, never a streaming worker or View draw callback.

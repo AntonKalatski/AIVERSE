@@ -1,5 +1,5 @@
 // CPU-only gfx::Device recording stub: RT allocation, resize, HDR and
-// completed-serial deferred destruction (no Renderer3D/GPU needed).
+// completion-token deferred destruction (no Renderer3D/GPU needed).
 #include "engine/render/RenderTargetPool.h"
 #include <iostream>
 #include <stdexcept>
@@ -12,7 +12,8 @@ struct FakeDevice final : gfx::Device {
     gfx::DeviceInfo description{};
     std::string error;
     uint32_t handle=1;
-    uint64_t serial=9,completed=8;
+    uint64_t serial=9;
+    bool completed=false,idleAllowed=true;
     bool hdrAvailable=true, depthFail=false;
     std::vector<gfx::TextureHandle> released;
     std::vector<gfx::TextureDesc> requested;
@@ -36,7 +37,10 @@ struct FakeDevice final : gfx::Device {
         return f!=gfx::PixelFormat::RGBA16F||hdrAvailable;
     }
     uint64_t frameSerial() const override{return serial;}
-    uint64_t completedFrameSerial() const override{return completed;}
+    uint64_t beginResourceRetirement() override{return 1;}
+    bool resourceRetirementComplete(uint64_t) override{return completed;}
+    void endResourceRetirement(uint64_t) override{}
+    bool waitForResourceIdle() override{return idleAllowed;}
     void beginFrame(int,int)override{}
     void endFrame()override{}
     void beginPass(const gfx::PassDesc&)override{}
@@ -74,10 +78,10 @@ int main() {
           "old RT must wait for completed frame");
     pool.collectCompleted();
     check(dev.released.empty(),"not yet completed must not free textures");
-    dev.completed=9;
+    dev.completed=true;
     pool.collectCompleted();
     check(dev.released.size()==2&&pool.retiredTargets()==0,
-          "completed serial frees retired color+depth");
+          "completed token frees retired color+depth");
     dev.depthFail=true;
     auto* failure=pool.acquire(123,300,200);
     check(!failure && pool.find(123)->width==256,
@@ -89,6 +93,12 @@ int main() {
     pool.release(123);
     check(pool.activeTargets()==0&&pool.retiredTargets()==1,
           "RT retire on release");
+    dev.idleAllowed=false;
+    bool rejected=false;
+    try {pool.shutdownAfterGpuIdle();}catch(const std::runtime_error&){rejected=true;}
+    check(rejected && pool.retiredTargets()==1 && dev.released.size()==3,
+          "failed GPU idle retains targets for retry");
+    dev.idleAllowed=true;
     pool.shutdownAfterGpuIdle();
     check(dev.released.size()==5,"gpu-idle shutdown releases remaining resources");
     std::cout<<"AIVERSE LENS RT pool CPU contract passed\\n";

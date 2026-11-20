@@ -47,6 +47,11 @@ public:
     }
     CameraRenderTargetPool& targets() { return targets_; }
     const CameraRenderTargetPool& targets() const { return targets_; }
+    // Once at the host frame boundary, never from a camera draw callback.
+    void collectRetiredTargets() {
+        targets_.collectCompleted();
+        screenTargets_.collectCompleted();
+    }
     // Requires a host-confirmed GPU idle point (or final device teardown).
     void shutdownAfterGpuIdle() {
         hdrResolve_.shutdownAfterGpuIdle();panorama_.shutdownAfterGpuIdle();compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
@@ -81,7 +86,6 @@ public:
              Modifier&& modify,Vec3 renderOrigin={},
              AfterScene&& afterScene=nullptr) {
         CameraExecutionResult result;
-        targets_.collectCompleted();
         result.plan=scheduler_.buildPlan(world,frame,seconds,renderOrigin);
         // A full-screen view plus explicit viewports/overlays uses isolated
         // per-Entity screen RTs and a single final screen composite pass.

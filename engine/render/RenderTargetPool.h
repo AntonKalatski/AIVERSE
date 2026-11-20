@@ -2,11 +2,11 @@
 // Render targets are presentation resources, never ECS component fields.
 // An acquired target is stable while its specification remains unchanged.
 // Replacement textures are retired only after a confirmed GPU completion
-// serial; unknown completion defers destruction until explicitly safe shutdown.
+// token; unknown completion defers destruction until explicitly safe shutdown.
 #pragma once
-#include "../gfx/Gfx.h"
+#include "OffscreenTargetLifetime.h"
+#include <memory>
 #include <cstdint>
-#include <deque>
 #include <unordered_map>
 #include <utility>
 
@@ -28,6 +28,7 @@ public:
     CameraRenderTargetPool& operator=(const CameraRenderTargetPool&) = delete;
     bool init(gfx::Device& device) {
         if (device_ && device_!=&device) return false;
+        if (!retired_)retired_=std::make_unique<OffscreenTargetRetirement>(device);
         device_=&device;
         return true;
     }
@@ -69,6 +70,7 @@ public:
         depthDesc.label="lens camera depth";
         // Even color-only captures require a depth attachment for correct
         // 3D occlusion. exposedDepth controls public access, not attachment.
+        try {
         fresh.depth=device_->createTexture(depthDesc);
         if (!fresh.depth.valid()) {
             device_->destroyTexture(fresh.color); // not yet submitted to GPU
@@ -81,6 +83,10 @@ public:
         }
         auto inserted=targets_.emplace(key,fresh);
         return &inserted.first->second;
+        } catch (...) {
+            destroy(fresh); // private pair never submitted or published
+            throw;
+        }
     }
     void markReady(uint64_t key) {
         auto it=targets_.find(key);
@@ -96,40 +102,32 @@ public:
         retire(it->second);
         targets_.erase(it);
     }
+    // Call only at the owning GPU frame boundary, after prior submission.
     void collectCompleted() {
-        if (!device_) return;
-        const uint64_t completed=device_->completedFrameSerial();
-        if (!completed) return;
-        for(auto it=retired_.begin();it!=retired_.end();) {
-            if (it->serial && it->serial<=completed) {
-                destroy(it->target);
-                it=retired_.erase(it);
-            } else ++it;
-        }
+        if (retired_)retired_->collect();
     }
-    // Requires an *externally established* GPU-idle point. Gfx::Device does
-    // not provide a portable waitIdle API. Never call while GPU may sample RTs.
+    // Failure retains live targets and the retirement owner for retry.
     void shutdownAfterGpuIdle() {
         if (!device_) return;
+        if (!device_->waitForResourceIdle() || !retired_->drain())
+            throw std::runtime_error("LENS target shutdown: GPU completion unavailable");
         for(auto& [key,target]:targets_) { (void)key; destroy(target); }
         targets_.clear();
-        for(auto& retired:retired_) destroy(retired.target);
-        retired_.clear();
+        retired_.reset();
         device_=nullptr;
     }
     size_t activeTargets() const { return targets_.size(); }
-    size_t retiredTargets() const { return retired_.size(); }
+    size_t retiredTargets() const { return retired_?retired_->pendingPairs():0; }
 private:
-    struct Retired { Target target; uint64_t serial=0; };
     gfx::Device* device_=nullptr;
     std::unordered_map<uint64_t,Target> targets_;
-    std::deque<Retired> retired_;
+    std::unique_ptr<OffscreenTargetRetirement> retired_;
     void destroy(const Target& t) {
         if(t.color.valid()) device_->destroyTexture(t.color);
         if(t.depth.valid()) device_->destroyTexture(t.depth);
     }
     void retire(const Target& target) {
-        retired_.push_back({target,device_->frameSerial()});
+        retired_->retire(target.color,target.depth);
     }
 };
 

@@ -93,6 +93,8 @@ public:
                 (void)visual.submit(camera,renderer);
             },renderOrigin,std::forward<AfterScene>(afterScene));
     }
+    // Owner-frame hook before any new scene/camera submissions.
+    void collectRetiredTargets() {host_.collectRetiredTargets();}
     bool loaded()const{return loaded_;}
     CameraRuntimeHost& host(){return host_;}
     const CameraRuntimeHost& host()const{return host_;}

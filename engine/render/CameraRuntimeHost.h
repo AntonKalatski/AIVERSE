@@ -62,6 +62,9 @@ public:
             std::forward<Submit>(submit),rigs_,post_,renderOrigin,
             std::forward<AfterScene>(afterScene));
     }
+    void collectRetiredTargets() {
+        if(pipeline_)pipeline_->collectRetiredTargets();
+    }
     void requestCapture(Entity e) {scheduler_.requestCapture(e);}
     void markDirty(Entity e) {scheduler_.markDirty(e);}
     const std::vector<Entity>& entities()const{return entities_;}
