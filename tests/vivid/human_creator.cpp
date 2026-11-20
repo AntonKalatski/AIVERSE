@@ -179,10 +179,14 @@ void test() {
         req(!plan.evaluate(model,invalid,{},cached,scratch) &&
             cached.ready && cached.world[0].z==good.z,
             "invalid joint pose mutated last-good skin-pick surface");
-        // Existing plan must be rebuilt if a new candidate's joint
-        // palette/weights change, even at the same Model pointer.
-        plan.clear();
+        // A malformed candidate must not replace an already valid cached
+        // influence plan. A real editor rebuild explicitly resets it once
+        // the candidate is successfully published.
         model.meshes[0].primitives[0].jointPalette={0};
+        req(!plan.build(model,0) && plan.ready() &&
+            plan.jointCount()==2,
+            "failed skin plan build replaced the last-good plan");
+        plan.clear();
         req(!plan.build(model,0) && !plan.ready(),
             "invalid cached skin palette must fail closed");
     }
