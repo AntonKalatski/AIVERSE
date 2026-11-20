@@ -12,7 +12,7 @@
     {
       "id": "grass",
       "repeatMeters": 2.0,
-      "heightMeters": 0.018,
+      "heightMeters": 0.004,
       "heightMap": "materials/terrain/textures/grass_height_repeat.png",
       "terrainLayer": {
         "id": "grass",

@@ -8,7 +8,7 @@ import json, argparse
 import numpy as np
 from PIL import Image
 
-MATERIALS={'grass':(2.0,.018,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'checkerboard':(4.0,0,.68)}
+MATERIALS={'grass':(2.0,.004,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'checkerboard':(4.0,0,.68)}
 SIZE=1024
 
 def tile(a):
