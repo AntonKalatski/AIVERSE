@@ -134,6 +134,13 @@ std::string exportGlb(const Model &m) {
             auto transform=Json::object(),extensions=Json::object();transform.set("offset",floats({mt.uvOffset.x,mt.uvOffset.y}));transform.set("scale",floats({mt.uvScale.x,mt.uvScale.y}));transform.set("rotation",Json::number(double(mt.uvRotation),8));extensions.set("KHR_texture_transform",transform);pbr.member("baseColorTexture").set("extensions",extensions);
             auto used=Json::array();used.push(Json::string("KHR_texture_transform"));w.root.set("extensionsUsed",used);
         }
+        if(mt.shading==ShadingModel::Eye && mt.eyeOptics.z>0) {
+            auto extras=Json::object(),eye=Json::object();eye.set("version",num(1));
+            eye.set("optics",floats({mt.eyeOptics.x,mt.eyeOptics.y,mt.eyeOptics.z,mt.eyeOptics.w}));
+            eye.set("ior",Json::number(double(mt.humanProfile.x),8));
+            eye.set("tearFilm",Json::number(double(mt.humanProfile.y),8));
+            extras.set("aiverseEye",eye);j.set("extras",extras);
+        }
         j.set("pbrMetallicRoughness", pbr);
         j.set("emissiveFactor", floats({mt.emissive.x, mt.emissive.y, mt.emissive.z}));
         j.set("doubleSided", Json::fromBool(mt.doubleSided));

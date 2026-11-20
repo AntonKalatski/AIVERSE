@@ -448,14 +448,17 @@ static void appearanceImpl(render::Model& model,const HumanAppearance& look,int 
             alpha=g.scalarOp("clamp",mul(alpha,c(value("lashes.coverage"))));
         } else if(role=="eyes") {
             rough=value("eyes.roughness");
+            m.shading=render::ShadingModel::Eye;
+            m.humanProfile={value("eyes.corneaIor"),value("eyes.tearFilm")};
             const bool right=name.find("Right")!=std::string::npos || name.find("right")!=std::string::npos;
-            const auto center=g.add("constant",{},vector4(value(right?"eyes.rightU":"eyes.leftU"),value("eyes.centerV"),0,1));
+            m.eyeOptics={value(right?"eyes.rightU":"eyes.leftU"),value("eyes.centerV"),value("eyes.irisSize"),value("eyes.depth")};
+            const auto center=g.add("constant",{},vector4(m.eyeOptics.x,m.eyeOptics.y,0,1));
             const auto radius=g.scalarOp("length3",sub(uv,center));
             const float ir=value("eyes.irisSize"),pr=value("eyes.pupilSize");
             const auto iris=smooth(ir-.006f,ir+.006f,radius);
             const auto pupil=smooth(pr-.004f,pr+.004f,radius);
             const auto detail=g.binary("dot3",input,g.color({.2126f,.7152f,.0722f}));
-            const auto texture=mix(c(1),g.ternary("clampRange",mul(detail,c(9)),c(.5f),c(1.5f)),c(value("eyes.irisTexture")));
+            const auto texture=mix(c(1),g.ternary("clampRange",mul(detail,c(10)),c(.15f),c(2.2f)),c(value("eyes.irisTexture")));
             color=mul(rgb("eyes.irisR","eyes.irisG","eyes.irisB"),texture);
             color=mul(color,sub(c(1),mul(smooth(ir-value("eyes.limbusWidth"),ir,radius),c(value("eyes.limbus")))));
             const float light=value("eyes.scleraLightness"),red=value("eyes.redness");

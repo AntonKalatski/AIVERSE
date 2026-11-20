@@ -488,6 +488,10 @@ int main() {
     CHECK(&gpuA.materials[0] != &gpuB.materials[0]);
     CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) == gpuMaterialStateHash(gpuB, gpuB.materials[0]));
+    gpuB.materials[0].eyeOptics={.5f,.5f,.14f,.01f};
+    CHECK(!equivalentGpuMaterial(gpuA,gpuA.materials[0],gpuB,gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA,gpuA.materials[0])!=gpuMaterialStateHash(gpuB,gpuB.materials[0]));
+    gpuB.materials[0].eyeOptics={};
     gpuB.materials[0].roughness = .25f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));

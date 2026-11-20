@@ -28,7 +28,12 @@ int main(){try{
  check(result->findNode("wardrobe/watch")>=0,"accessory missing");check(result->nodes[size_t(result->findNode("wardrobe/watch"))].parent==result->findNode("root"),"accessory socket lost");
  for(const auto& m:result->meshes)check(m.name!=shirtName,"hidden clothing retained");
  const auto& material=result->materials[0];check(!material.shaderGraph&&material.baseTex>=0&&material.alpha==AlphaMode::Mask,"appearance or mask not baked");const auto& image=result->images[size_t(material.baseTex)];check(image.rgba[3]==0&&image.rgba[(image.width-1)*4+3]==255,"mask coverage incorrect");
- auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->meshes[0].morphTargetNames==mesh.morphTargetNames,"assembled facial names lost");
+ result->materials[0].shading=ShadingModel::Eye;
+ result->materials[0].eyeOptics={.488f,.504f,.14f,.012f};result->materials[0].humanProfile={1.376f,.7f};
+ auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->materials[0].shading==ShadingModel::Eye&&std::abs(roundtrip->materials[0].eyeOptics.w-.012f)<1e-6f&&std::abs(roundtrip->materials[0].humanProfile.x-1.376f)<1e-6f,"layered eye optics lost on assembly export");check(roundtrip->meshes[0].morphTargetNames==mesh.morphTargetNames,"assembled facial names lost");
+ files["optics.glb"]=bytes;
+ auto reassembled=vivid::assembleHumanCharacter("optics.glb",reader,Json::parse(R"({"version":1,"items":[],"hiddenMeshes":[]})"),vivid::HumanAppearance{},16);
+ check(reassembled->materials[0].shading==ShadingModel::Eye&&reassembled->materials[0].eyeOptics.z>.1f,"assembly rejected or flattened persisted eye optics");
  auto invalid=recipe;invalid.member("items").push(recipe["items"][0]);bool rejected=false;try{vivid::validateHumanWardrobe(invalid);}catch(...){rejected=true;}check(rejected,"duplicate ID accepted");
  invalid=recipe;invalid.member("items").at(0).set("bone",Json::string("missing"));rejected=false;try{vivid::assembleHumanCharacter("base.glb",reader,invalid,look,16);}catch(...){rejected=true;}check(rejected,"missing socket silently ignored");
  // Independent imported head keeps its skeleton and morphs, even with different names.

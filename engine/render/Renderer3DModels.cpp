@@ -27,7 +27,7 @@
 namespace aiverse::render {
 
 namespace {
-struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float misc[4]; float uv0[4]; float uv1[4]; float light[4]; float reveal[4]; float revealAxis[4]; };
+struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float misc[4]; float uv0[4]; float uv1[4]; float light[4]; float reveal[4]; float revealAxis[4]; float eyeOptics[4]; };
 constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec4 per joint
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
@@ -1698,6 +1698,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             mu.uv1[2] = mt.humanProfile.x; mu.uv1[3] = mt.humanProfile.y;
         }
         mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
+        mu.eyeOptics[0]=mt.eyeOptics.x;mu.eyeOptics[1]=mt.eyeOptics.y;
+        mu.eyeOptics[2]=mt.eyeOptics.z;mu.eyeOptics[3]=mt.eyeOptics.w;
         if (phase != 0 && geometryMainView_ && (it.flags & kDrawActorReveal) && actorReveal.w > 0) {
             mu.reveal[0]=actorReveal.x;mu.reveal[1]=actorReveal.y;mu.reveal[2]=actorReveal.z;mu.reveal[3]=actorReveal.w;
             const float3 centre{actorReveal.x,actorReveal.y,actorReveal.z};

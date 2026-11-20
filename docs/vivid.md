@@ -1898,3 +1898,29 @@ with restrained translucent factors because the original UE procedural shaders
 are unavailable. Existing authored appearance values are preserved. Creator
 `--closeup` captures the real native viewport at a shorter camera distance.
 See [native eye comparison](qa/vivid-eyes-2026-11-20.md).
+
+## Layered eye optics and eyelid material repair — 2026-11-20
+
+The previous single-layer fallback is superseded for opted-in eye materials.
+`Material::eyeOptics` stores iris UV centre, radius and optical depth. Zero radius
+keeps the legacy renderer unchanged. GLSL/MSL implement tangent-frame refracted
+UV displacement and a separate Fresnel wet coat with directional/point-light
+highlights. Medium/high evaluate the coat's point lobe separately; low reuses
+the existing lobe and skips parallax. This is a bounded real-time approximation,
+not a ray-traced volumetric cornea or a claim of Unreal visual parity.
+
+Material glTF `extras.aiverseEye` v1 stores `optics:[u,v,radius,depth]`, `ior` and
+`tearFilm`; import bounds invalid values and falls back with a warning. Export
+and character assembly preserve these settings plus portable PBR colour textures.
+The appended GPU uniform participates in material equality/hash and merge checks.
+Appearance adds `eyes.corneaIor`, `eyes.tearFilm`, `eyes.depth`; the native schema
+exposes all three. Existing explicit values are preserved. Default sclera
+lightness is now .59; source texture defaults retain authored fiber contrast.
+
+Companion baking fits the original iris fiber/crypt atlas inside the limbus,
+retains a dark pupil, and adds restrained peripheral vascularity. The blue radial
+mask no longer wipes out iris detail. A matte pigmented cartilage fallback fixes
+bright triangle-sized flecks along the eyelid strip; no eye/face geometry is
+deleted or shrunk. Existing eyelash alpha and all51 morph targets are retained.
+Creator `--eye-detail` provides a closer native capture; user-facing Studio
+remains the native viewport. See [QA evidence](qa/vivid-eye-optics-2026-11-20.md).

@@ -94,7 +94,7 @@ struct CreatorApp {
     bool pendingRebuild=true, rendererReady=false, uiReady=false;
     bool animate=true, inspectGroom=false, wetPreview=false;
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
-    bool portraitCapture=false,closeupCapture=false;
+    bool portraitCapture=false,closeupCapture=false,eyeDetailCapture=false;
     bool previewMotion=false;int previewPose=0;float previewTime=-1;
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
@@ -203,9 +203,10 @@ struct CreatorApp {
         // Frontal authoring key keeps eye optics visible below the brow.
         renderer.lighting.sunDir={0.25f,0.4f,1.0f};
         camera.target={0,-0.65f,0};
-        camera.distance=closeupCapture?1.05f:portraitCapture?2.1f:6.4f;
+        camera.distance=eyeDetailCapture?.85f:closeupCapture?1.05f:portraitCapture?2.1f:6.4f;
         if(portraitCapture)camera.target={0,0.96f,0};
-        camera.minDistance=closeupCapture?.5f:2.0f;
+        if(eyeDetailCapture)camera.target={0,.96f,0};
+        camera.minDistance=eyeDetailCapture?.2f:closeupCapture?.5f:2.0f;
         camera.pitch=0.08f;
         camera.yaw=0.08f;
         cache=std::make_unique<GpuMorphAssetCache>(dev);
@@ -2276,10 +2277,13 @@ struct CreatorApp {
             if(!headSubmitted)
                 throw std::runtime_error("VIVID Creator head was not submitted: "+status);
             const auto headSubmission=renderer.modelSubmissionProvenance(*human.head);
+
             const bool ready=p.draws[0]>0 && p.draws[1]>0 &&
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
+            if(sequenceFrame==0)for(const auto& mat:human.head->materials)if(mat.eyeOptics.z>0)
+                std::printf("VIVID optical material %s shading=%d radius=%.4f depth=%.4f ior=%.3f tear=%.2f\n",mat.name.c_str(),int(mat.shading),mat.eyeOptics.z,mat.eyeOptics.w,mat.humanProfile.x,mat.humanProfile.y);
                 smokeCaptureRequested=true;
                 dev.captureNextFrame([this,headCommands=headSubmission.commands.size(),
                         shadowDraws=p.draws[0],colourDraws=p.draws[1]]
@@ -2364,6 +2368,8 @@ int aiverseMain(int argc,char** argv) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
+        }else if(std::strcmp(argv[i],"--eye-detail")==0) {
+            application->portraitCapture=true;application->closeupCapture=true;application->eyeDetailCapture=true;
         }else if(std::strcmp(argv[i],"--closeup")==0) {
             application->portraitCapture=true;application->closeupCapture=true;
         }else if(std::strcmp(argv[i],"--portrait")==0) {

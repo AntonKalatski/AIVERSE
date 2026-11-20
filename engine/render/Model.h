@@ -67,6 +67,9 @@ struct Material {
     // Skin: scattering/wetness; Eye: corneal IOR/tear film;
     // Hair: anisotropy/specular width.
     float2 humanProfile{0, 0};
+    // Optional layered eye: UV centre, iris radius, refractive depth in UV units.
+    // z == 0 preserves legacy Eye shading. Only the colour pass uses parallax.
+    float4 eyeOptics{0, 0, 0, 0};
 };
 
 struct Image {

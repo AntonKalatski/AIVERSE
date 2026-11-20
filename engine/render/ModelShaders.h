@@ -45,7 +45,7 @@ namespace aiverse::render::shaders {
     "struct Inst { mat4 model; vec4 tint; vec4 team; vec4 draw; vec4 anim; vec4 lod; };\n" \
     "layout(std140) uniform U0 { Inst u_inst[AIVERSE_INST]; };\n" \
     AIVERSE_GLSL_FRAME \
-    "layout(std140) uniform U2 { vec4 m_base; vec4 m_emissive; vec4 m_pbr; vec4 m_misc; vec4 m_uv0; vec4 m_uv1; vec4 m_light; vec4 m_reveal; vec4 m_revealAxis; };\n" \
+    "layout(std140) uniform U2 { vec4 m_base; vec4 m_emissive; vec4 m_pbr; vec4 m_misc; vec4 m_uv0; vec4 m_uv1; vec4 m_light; vec4 m_reveal; vec4 m_revealAxis; vec4 m_eyeOptics; };\n" \
     "#if defined(SKINNED)\n" \
     "layout(std140) uniform U3 { vec4 u_joints[240]; };\n" \
     "#elif defined(BAKED)\n" \
@@ -296,7 +296,20 @@ void main() {
         if (nz < v_draw.y) discard;
         edge = 1.0 - smoothstep(0.0, 0.06, nz - v_draw.y);
     }
-    vec4 tb = texture(tex1, v_uv);
+    vec2 opticalUv = v_uv;
+#if AIVERSE_Q >= 1
+    if (m_uv1.y > 2.5 && m_uv1.y < 3.5 && m_eyeOptics.z > 0.0) {
+        vec3 on = normalize(v_nrm);
+        vec3 ot = normalize(v_tan.xyz - on * dot(on, v_tan.xyz));
+        vec3 ob = cross(on, ot) * v_tan.w;
+        vec3 ov = normalize(u_camPos.xyz - v_wpos);
+        vec3 ray = refract(-ov, on, 1.0 / clamp(m_uv1.z, 1.0, 2.0));
+        float mask = 1.0 - smoothstep(m_eyeOptics.z * 0.8, m_eyeOptics.z, length(v_uv - m_eyeOptics.xy));
+        opticalUv += vec2(dot(ray,ot),dot(ray,ob)) *
+                     (mask * m_eyeOptics.w / max(0.35, -dot(ray,on)));
+    }
+#endif
+    vec4 tb = texture(tex1, opticalUv);
     vec4 base = PALETTE_BASE * vec4(toLinear(tb.rgb), tb.a);
     if (mod(m_misc.w,2.0) > 0.5) base *= vec4(v_col.rgb, m_misc.w > 1.5 ? 1.0 : v_col.a);
     int teamMode = int(m_misc.y + 0.5);
@@ -438,6 +451,26 @@ void main() {
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
         col += sun * sh * vec3(cornealGlint) *
                (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
+        if (m_eyeOptics.z > 0.0) {
+            // A smooth wet dielectric coat over a diffuse iris, not a broad
+            // specular lobe added to the existing PBR lobe twice.
+            float coatRough = clamp(rough * 0.16 + (1.0-tear) * 0.06, 0.045, 0.22);
+            float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
+            float footprint = max(length(dFdx(n)), length(dFdy(n)));
+            exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
+            float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
+            vec3 coatDd, coatDs; float coatVisibility;
+#if AIVERSE_Q >= 1
+            dynLight(v_wpos,n,V,coatRough,coatDd,coatDs,coatVisibility,ao);
+#else
+            coatDs = ds;
+#endif
+            vec3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
+            // Match point-lobe normalization (.04 in dynLight) to .125 above.
+            col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
+                + sun * sh * glint * coatFresnel + coatDs * (coatFresnel * 3.125)
+                + coatEnv * coatFresnel * ao;
+        }
     } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
         vec3 strandT = normalize(v_tan.xyz);
         float alignment = dot(strandT, H);
@@ -510,7 +543,7 @@ void main() {
     "struct Inst { float4x4 model; float4 tint; float4 team; float4 draw; float4 anim; float4 lod; };\n" \
     "struct MU0 { Inst inst[AIVERSE_INST]; };\n" \
     AIVERSE_MSL_FRAME \
-    "struct MU2 { float4 base; float4 emissive; float4 pbr; float4 misc; float4 uv0; float4 uv1; float4 light; float4 reveal; float4 revealAxis; };\n" \
+    "struct MU2 { float4 base; float4 emissive; float4 pbr; float4 misc; float4 uv0; float4 uv1; float4 light; float4 reveal; float4 revealAxis; float4 eyeOptics; };\n" \
     "struct MU3 { float4 v[240]; };\n" \
     "struct MU4 { float4 w[16]; float4 channel[16]; float4 info; float4 info2; };\n" \
     AIVERSE_MSL_GI_BLOCK
@@ -799,7 +832,20 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         if (nz < in.draw.y) discard_fragment();
         edge = 1.0 - smoothstep(0.0, 0.06, nz - in.draw.y);
     }
-    float4 tb = tex1.sample(s1, in.uv);
+    float2 opticalUv = in.uv;
+#if AIVERSE_Q >= 1
+    if (m.uv1.y > 2.5 && m.uv1.y < 3.5 && m.eyeOptics.z > 0.0) {
+        float3 on = normalize(in.nrm);
+        float3 ot = normalize(in.tan.xyz - on * dot(on, in.tan.xyz));
+        float3 ob = cross(on, ot) * in.tan.w;
+        float3 ov = normalize(f.camPos.xyz - in.wpos);
+        float3 ray = refract(-ov, on, 1.0 / clamp(m.uv1.z, 1.0, 2.0));
+        float mask = 1.0 - smoothstep(m.eyeOptics.z * 0.8, m.eyeOptics.z, length(in.uv - m.eyeOptics.xy));
+        opticalUv += float2(dot(ray,ot),dot(ray,ob)) *
+                     (mask * m.eyeOptics.w / max(0.35, -dot(ray,on)));
+    }
+#endif
+    float4 tb = tex1.sample(s1, opticalUv);
     float4 base = m.base * float4(toLinear(tb.rgb), tb.a);
     if (fmod(m.misc.w,2.0) > 0.5) base *= float4(in.col.rgb, m.misc.w > 1.5 ? 1.0 : in.col.a);
     int teamMode = int(m.misc.y + 0.5);
@@ -937,6 +983,26 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
         col += sun * sh * float3(cornealGlint) *
                (0.15 + 0.68 * tear) * (0.25 + 4.0 * coatFresnel);
+        if (m.eyeOptics.z > 0.0) {
+            // A smooth wet dielectric coat over a diffuse iris, not a broad
+            // specular lobe added to the existing PBR lobe twice.
+            float coatRough = clamp(rough * 0.16 + (1.0-tear) * 0.06, 0.045, 0.22);
+            float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
+            float footprint = max(length(dfdx(n)), length(dfdy(n)));
+            exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
+            float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
+            float3 coatDd, coatDs; float coatVisibility;
+#if AIVERSE_Q >= 1
+            dynLight(lu,tex9,s9,in.wpos,n,V,coatRough,coatDd,coatDs,coatVisibility,ao);
+#else
+            coatDs = ds;
+#endif
+            float3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
+            // Match point-lobe normalization (.04 in dynLight) to .125 above.
+            col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
+                + sun * sh * glint * coatFresnel + coatDs * (coatFresnel * 3.125)
+                + coatEnv * coatFresnel * ao;
+        }
     } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
         float3 strandT = normalize(in.tan.xyz);
         float alignment = dot(strandT, H);

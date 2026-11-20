@@ -61,6 +61,14 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     .setRoughnessFactor(occlusion?.8:.12);
    report.push({material:material.getName(),mode:'portable eye overlay; original UE procedural shader unavailable'});
   }
+  if(spec.face_slot==='cartilage') {
+   // The exported lid strip has no UE cartilage shader. A pale glossy PBR
+   // substitute produced bright triangle-sized flecks around both eyelids.
+   material.setBaseColorTexture(null).setMetallicRoughnessTexture(null)
+    .setBaseColorFactor([.12,.035,.028,1]).setMetallicFactor(0).setRoughnessFactor(.8)
+    .setAlphaMode('OPAQUE');
+   report.push({material:material.getName(),mode:'pigmented matte lid cartilage; geometry and morphs retained'});
+  }
   let output=null,mode='',w=0,h=0;
   if(spec.kind==='cloth') {
    const mask=await read(t.mask),macro=await read(t.macro_overlay),ao=await read(t.ao);
@@ -126,22 +134,34 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
    mode='source coverage channel -> alpha; smooth blended fringe';
   } else if(p.eye_pole_uv) {
    const atlas=await read(t.basecolor);if(!atlas)throw Error('Missing iris atlas');
-   w=h=1024;output=Buffer.alloc(w*h*4);
+   w=h=2048;output=Buffer.alloc(w*h*4);
+   const radiusOuter=(p.iris_radius_in+p.iris_radius_out)*.5;
    for(let y=0;y<h;y++)for(let x=0;x<w;x++) {
     const u=(x+.5)/w,v=(y+.5)/h,k=(y*w+x)*4;
-    const au=.5+(u-p.eye_pole_uv[0])*p.uv_scale,av=.5+(v-p.eye_pole_uv[1])*p.uv_scale;
-    const fibril=mix(p.fibril_to_min,p.fibril_to_max,clamp((sample(atlas,au,av,0,false,false)-p.fibril_from_min)/(p.fibril_from_max-p.fibril_from_min)));
-    const limbus=clamp((sample(atlas,au,av,2,false,false)-p.limbus_start)/(1-p.limbus_start));
-    const radius=Math.hypot(u-p.eye_pole_uv[0],v-p.eye_pole_uv[1]);
+    const du=u-p.eye_pole_uv[0],dv=v-p.eye_pole_uv[1],radius=Math.hypot(du,dv);
+    // Fit the authored atlas' entire iris inside the limbus. Its B channel
+    // is a radial mask, not an all-over darkening amount for the iris.
+    const au=.5+du*.46/radiusOuter,av=.5+dv*.46/radiusOuter;
+    const fibers=sample(atlas,au,av,0,false,false),crypt=sample(atlas,au,av,1,false,false);
+    const fibril=.25+1.45*Math.pow(clamp(fibers),.8);
+    const limbus=smooth(radiusOuter*.83,radiusOuter,radius)*.8;
     const iris=smooth(p.iris_radius_in,p.iris_radius_out,radius);
-    const pupil=1-smooth(p.pupil_radius_in,p.pupil_radius_out,radius);
+    const pupilRadius=(p.pupil_radius_in+p.pupil_radius_out)*.5;
+    const pupil=1-smooth(pupilRadius-.003,pupilRadius+.003,radius);
+    const collar=Math.exp(-Math.pow((radius/radiusOuter-.34)/.12,2));
+    const angle=Math.atan2(dv,du);
+    // Restrained branching vascularity away from the limbus; never a white disc.
+    const vein=Math.pow(Math.max(0,Math.sin(angle*37+Math.sin(radius*160)*.65)),24)*smooth(radiusOuter*1.1,radiusOuter*2.3,radius)*.11;
     for(let c=0;c<3;c++) {
-     const base=mix(mix(p.iris_color[c]*fibril,p.iris_dark[c],limbus),p.sclera_color[c],iris);
-     output[k+c]=Math.round(clamp(srgb(mix(base,p.pupil_color[c],pupil)))*255);
+     const detail=p.iris_color[c]*fibril*(1+collar*(crypt-.3)*.7);
+     const sclera=p.sclera_color[c]*.64*(1-vein)+p.vein_color[c]*vein;
+     const base=mix(mix(detail,p.iris_dark[c]*.35,limbus),sclera,iris);
+     output[k+c]=Math.round(clamp(srgb(mix(base,.0015,pupil)))*255);
     } output[k+3]=255;
    }
    material.setBaseColorFactor([1,1,1,1]).setRoughnessFactor(.6).setMetallicFactor(0);
-   mode='source iris R/B + authored radial iris/pupil in mesh UV; no refraction';
+   material.setExtras({...material.getExtras(),aiverseEye:{version:1,optics:[...p.eye_pole_uv,radiusOuter,.012],ior:1.376,tearFilm:.7}});
+   mode='authored iris fibers/crypts, radial limbus, sclera vascularity; layered native cornea with portable PBR fallback';
   }
   if(output) {
    material.setBaseColorTexture(await texture(material.getName()+'_vivid_baked',output,w,h));
