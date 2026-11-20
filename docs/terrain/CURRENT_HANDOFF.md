@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 latest main sync, GCC ARM64 fix (2026-11-20):**
+> Real two-parent merge `3db80ef62fe` incorporates `main`
+> `d6c8fa4646cf` over Terra `3d657d976670`, changing only
+> `tests/animation/model_dependencies.cpp` and the upstream
+> Stage112 GCC compatibility handoff. GitHub compare confirmed
+> **ahead=144, behind=0** at merge time.
+> [New merge handoff](qa-2026-11-20-stage70-gcc-arm64-latest-main-sync-handoff.md).
+> **No CMake/CTest on this new source yet**; historical 191/191 PASS
+> remains tied to `346dc66a`. PR #53 stays Draft.
+
+
 
 > **Stage70 new-main Prisma/MotionWeave two-parent integration (2026-11-20):**
 > Merge `c27085af` has real parents main
