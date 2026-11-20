@@ -4036,3 +4036,13 @@ After **every** further MotionWeave / universal animation implementation stage, 
 
 
 **Stage 157 final correction:** `aa3f2300843610374fd3a393ded02f8d82d28624` activates provider-backed ModelView reload on `--watch-model-files` even without authored child attachments. The same staged provider+Animator swap works for an empty compiled socket layout. Source readback only, not a passing native test.
+
+## Physical sky and local fog integration
+
+PRISMA owns PhysicalSky and LocalFog HDR passes before exposure/temporal processing.
+See docs/physical-sky.md, docs/local-volumetric-fog.md and
+docs/agent-handoffs/physical-sky-clouds-2026-11-20.md.
+Physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal remain opt-in.
+PHYSIS bridge is read-only presentation; no gameplay visibility or simulation changes.
+Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
+and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.

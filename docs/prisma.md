@@ -4149,3 +4149,20 @@ Mac Studio — macOS GitHub runner проверяет
 ## Статус
 - Этап 01: имя C++ класса и совместимость. Этап 02: GPU-free `PrismaVolumeStack` (opt-in, ещё не подключён к камерному loop). Этап 03: физический перенос ядра postprocess в PRISMA. Этап 04: редактор/MCP и документирование владения системами. Этап 07: GPU-free RenderGraph planner. Этап 08: профили камер в рантайме и редакторе. Последующие этапы реализуют RHI graph execution, DoF, AutoExposure, motion vectors и GPU lifetime; актуальные детали и неподтверждённые проверки указаны в handoff 35–40.
 - Дальнейшие стадии смотреть в handoff-документах.
+
+## Opt-in physical atmosphere and local volumetric fog (2026-11-20)
+
+PRISMA owns `PhysicalSky` and `LocalFog` HDR passes. They run before exposure
+metering and motion/temporal processing, then normal bloom/tonemap. New target
+roles 200/201 do not overlap DoF (50), metering or motion buffers. Sample scene
+depth with the existing separate scratch depth attachment; size resources use
+PRISMA's normal fence-retirement path. Pipelines shut down after its GPU-idle
+barrier. No second PostFx implementation or SpectraFX emitter ownership.
+
+See [physical sky/clouds/god rays](physical-sky.md) and
+[local sphere/OBB fog with runtime reveal](local-volumetric-fog.md).
+The read-only PHYSIS bridge targets `Prisma&`; the legacy `PostFx` alias remains
+compatible. These features are disabled by default. Native region/settings APIs
+are owner-wide: a multi-camera host must set each view's cosmetic data before
+its resolve, or use a separate Prisma owner. Camera-volume profile blending does
+not yet author or interpolate these atmosphere settings. No gameplay changes.
