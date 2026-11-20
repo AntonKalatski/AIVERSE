@@ -44,6 +44,13 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_pbr_adapter_tests PRIVATE aiverse_editor_core)
     add_test(NAME studio_pbr_adapter COMMAND aiverse_studio_pbr_adapter_tests)
     set_tests_properties(studio_pbr_adapter PROPERTIES LABELS "EDITOR")
+    # Facial Control Rig authoring is project-local, native validated and
+    # independent of the unmerged MotionWeave runtime branch.
+    add_executable(aiverse_studio_facial_rig_tests tests/StudioFacialRigDocumentTests.cpp)
+    target_include_directories(aiverse_studio_facial_rig_tests PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_rig_tests PRIVATE aiverse_editor_core)
+    add_test(NAME studio_facial_rig_document COMMAND aiverse_studio_facial_rig_tests)
+    set_tests_properties(studio_facial_rig_document PROPERTIES LABELS "EDITOR")
     add_executable(aiverse_studio_shader_graph_draft_tests tests/StudioShaderGraphDraftTests.cpp)
     target_include_directories(aiverse_studio_shader_graph_draft_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_shader_graph_draft_tests PRIVATE aiverse_editor_core)
