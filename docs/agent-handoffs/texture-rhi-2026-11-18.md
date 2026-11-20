@@ -12721,3 +12721,18 @@ Require actual new SHA and `result=PASS`, `full_engine=1`, `safe_texture_tests=2
 **Regression:** extended `tests/render/virtual_texture_mip_pipeline.cpp` with two independent caches whose revision/geometry match but ready tile coordinates differ, and asserts table rebind invalidates stale samples. Existing streaming and indexed table CTests unchanged.
 
 **Validation:** GitHub source commit and ref update succeeded; new source/test not yet compiled/executed. The Linux feature-branch CI trigger is available, but prior run `44604340610` was only queued when last observed; a newer source push may cancel it and schedule a new run. Confirm exact SHA and individual job results before declaring a PASS. Full-engine Mac Studio and native Metal GPU tests remain outstanding.
+
+
+## 2026-11-20 - Stage 3 integration native acceptance
+
+Merge `38dbd0602119067425f4f1a776466e5e686131f5` on
+`integration/texture-rhi-main-stage3-20261120` preserves pinned main
+`f9aed9a705982e2c6b77b29869e309995ce8b163`. Existing owner-run full
+CTest 289/289 was confirmed in local logs. This agent built and ran seven
+native Texture RHI Metal tests: 7/7 PASS (23.54s), mandatory execution
+markers present, zero FAIL assertions. Skill checks passed. Unified runner
+no-build guard rejected unspecified build type; no wrapper PASS claimed.
+No runtime edits or production default changes during this acceptance.
+See [exact source, commands, log hashes and remaining gates](texture-rhi-stage3-native-acceptance-2026-11-20.md).
+Next: publish branch and inspect PR #86/CI/base; do not update main or infer
+Vulkan/GLES/WebGL/indexed-anisotropic GPU validation from these tests.
