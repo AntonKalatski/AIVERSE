@@ -520,14 +520,51 @@ private:
             }
             model_->meshes.push_back(std::move(md));
         }
-        for (const auto& mesh : model_->meshes) for (const auto& lod : mesh.lods) {
-            const auto& target = model_->meshes[size_t(lod.mesh)];
-            if (!target.lods.empty()) fail("nested or cyclic LOD chains are unsupported");
-            const bool sourceSkin = std::any_of(mesh.primitives.begin(), mesh.primitives.end(), [](const Primitive& p){return !p.jointPalette.empty();});
-            for (const auto& p : mesh.primitives) if (p.morphTargets) fail("morph LOD sources are unsupported");
-            for (const auto& p : target.primitives) {
-                if (p.morphTargets) fail("morph LOD targets are unsupported");
-                if (sourceSkin != !p.jointPalette.empty()) fail("LOD skin binding must match its source");
+        // Compile an immutable semantic morph mapping per source -> LOD
+        // edge, not per LOD mesh: the same visual mesh may be referenced by
+        // different source meshes with different channel ordering.
+        for (auto& mesh : model_->meshes) for (auto& lod : mesh.lods) {
+            const auto& target=model_->meshes[size_t(lod.mesh)];
+            if(!target.lods.empty())
+                fail("nested or cyclic LOD chains are unsupported");
+            const auto hasSkin=[](const MeshDef& m) {
+                return std::any_of(m.primitives.begin(),m.primitives.end(),
+                    [](const Primitive& p){return !p.jointPalette.empty();});
+            };
+            const auto hasMorph=[](const MeshDef& m) {
+                return std::any_of(m.primitives.begin(),m.primitives.end(),
+                    [](const Primitive& p){return p.morphTargets>0;});
+            };
+            const bool sourceSkin=hasSkin(mesh);
+            for(const auto& p:target.primitives)
+                if(sourceSkin!=!p.jointPalette.empty())
+                    fail("LOD skin binding must match its source");
+            const bool sourceMorph=hasMorph(mesh);
+            const bool targetMorph=hasMorph(target);
+            if(sourceMorph!=targetMorph)
+                fail("LOD must preserve presence of source morph deformation");
+            if(!sourceMorph)continue; // legacy non-morph LOD is unchanged
+            if(mesh.morphTargetNames.empty() ||
+               target.morphTargetNames.empty())
+                fail("morph LOD needs explicit mesh extras.targetNames on both levels");
+            for(const auto& p:mesh.primitives)
+                if(p.morphTargets>0 &&
+                   size_t(p.morphTargets)!=mesh.morphTargetNames.size())
+                    fail("source morph LOD channel count differs from names");
+            for(const auto& p:target.primitives)
+                if(p.morphTargets>0 &&
+                   size_t(p.morphTargets)!=target.morphTargetNames.size())
+                    fail("target morph LOD channel count differs from names");
+            lod.morphSourceForTarget.reserve(target.morphTargetNames.size());
+            for(const auto& name:target.morphTargetNames) {
+                const auto found=std::find(
+                    mesh.morphTargetNames.begin(),
+                    mesh.morphTargetNames.end(),name);
+                if(found==mesh.morphTargetNames.end())
+                    fail("morph LOD target channel '"+name+
+                         "' missing from source '"+mesh.name+"'");
+                lod.morphSourceForTarget.push_back(int(std::distance(
+                    mesh.morphTargetNames.begin(),found)));
             }
         }
         for (const auto& n : model_->nodes) if(n.skin>=0 && n.mesh>=0 && n.mesh<int(model_->meshes.size())) {
