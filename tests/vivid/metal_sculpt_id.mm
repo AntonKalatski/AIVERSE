@@ -40,7 +40,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     bool* usedGpuSource=nullptr,
                                     std::span<const SculptGpuMaskBatch> masks={},
                                     float* actualDepth=nullptr,
-                                    const SculptGpuVertexSource* actualMaskOccluder=nullptr) {
+                                    const SculptGpuVertexSource* actualMaskOccluder=nullptr,
+                                    std::span<const SculptGpuVertexSource> extraMasks={}) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -52,7 +53,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
                         viewProj,req,occluders,masks,gpuSource,
-                        actualDepth!=nullptr,actualMaskOccluder),
+                        actualDepth!=nullptr,actualMaskOccluder,extraMasks),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -315,6 +316,47 @@ void test() {
                 gpuHole==std::vector<std::uint8_t>({2,0,0,0}) &&
                 std::fabs(holeMaskDepth-0.2f)<0.001f,
                 "Metal independent GPU masked alpha hole failed to reveal source");
+        // 7BA: a second independent GPU Mask blocker at depth .15, behind
+        // the first .1 blocker and ahead of the selected .2 source.
+        // Masks have distinct 60B GPU streams and sampled base textures.
+        const std::array<std::uint8_t,4> altSolid{{255,255,255,255}};
+        gfx::TextureDesc altDesc=maskDesc;
+        altDesc.data=altSolid.data();
+        altDesc.label="VIVID 7BA independent third-actor alpha texture";
+        auto altTexture=device->createTexture(altDesc);
+        require(altTexture.valid(),"Metal multiple GPU Mask texel absent");
+        auto middleVertices=maskActor.vertices;
+        for(auto& v:middleVertices)v.pos.z=0.15f;
+        gfx::BufferDesc middleDesc=maskDescGpu;
+        middleDesc.size=middleVertices.size()*sizeof(render::ModelVertex);
+        middleDesc.data=middleVertices.data();
+        middleDesc.label="VIVID 7BA independently GPU-resident second blocker";
+        const auto middleBuffer=device->createBuffer(middleDesc);
+        require(middleBuffer.valid(),"Metal second GPU Mask buffer absent");
+        SculptGpuVertexSource middleGpu=maskGpu;
+        middleGpu.actualVertexOverride=middleBuffer;
+        middleGpu.maskBaseTexture=altTexture;
+        const std::array<SculptGpuVertexSource,1> otherMasks{{middleGpu}};
+        float middleDepth=-1.f;
+        const auto middleBlocked=runSample(
+            *device,pass,model,surface,32,32,{},&selectedGpu,
+            &usedTwoGpuActors,{},&middleDepth,&maskGpu,otherMasks);
+        require(usedTwoGpuActors &&
+                middleBlocked==std::vector<std::uint8_t>({0,0,0,0}) &&
+                std::fabs(middleDepth-0.15f)<0.001f,
+                "Metal second independent GPU Mask did not win actual depth");
+        const std::array<std::uint8_t,4> altHole{{255,255,255,0}};
+        device->updateTexture(altTexture,0,0,1,1,altHole.data(),4);
+        float bothHolesDepth=-1.f;
+        const auto bothHoles=runSample(
+            *device,pass,model,surface,32,32,{},&selectedGpu,
+            &usedTwoGpuActors,{},&bothHolesDepth,&maskGpu,otherMasks);
+        require(usedTwoGpuActors &&
+                bothHoles==std::vector<std::uint8_t>({2,0,0,0}) &&
+                std::fabs(bothHolesDepth-0.2f)<0.001f,
+                "Metal multiple GPU Mask alpha holes still hid selected face");
+        device->destroyBuffer(middleBuffer);
+        device->destroyTexture(altTexture);
         device->destroyBuffer(visibleMaskBuffer);
         device->destroyBuffer(selectedSourceBuffer);
         device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
