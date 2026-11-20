@@ -31,6 +31,8 @@ def read(path, items, mode):
     measured = samples[25:]  # frames 115..195
     if len(measured) != 81:
         raise ValueError(f"{path}: expected 81 measured frames")
+    submissions = []
+    command_counts = []
     for row in measured:
         if not all(math.isfinite(float(row[k])) and float(row[k]) >= 0
                    for k in REQUIRED):
@@ -39,8 +41,21 @@ def read(path, items, mode):
         commands = int(row["mdi_commands"])
         if mode == "direct" and (mdi or commands):
             raise ValueError(f"{path}: forced Direct unexpectedly used MDI")
-        if mode == "mdi" and (mdi <= 0 or commands != 2 * items):
-            raise ValueError(f"{path}: forced MDI expected {2*items} indirect commands and nonzero submissions, got {commands}/{mdi}")
+        if mode == "mdi":
+            # Two visible passes may cull a few primitives before the MDI
+            # command list is built. The authored count is an upper bound,
+            # not an exact count of submitted work.
+            if mdi <= 0 or commands <= 0 or commands > 2 * items:
+                raise ValueError(f"{path}: invalid forced MDI commands/submissions: {commands}/{mdi}")
+            # A large unexpected loss of submitted work is not allowed:
+            # investigate culling, fallback or test-scene regressions.
+            if commands < 0.90 * (2 * items):
+                raise ValueError(f"{path}: MDI covered only {commands}/{2*items} authored pass commands (<90%)")
+        submissions.append(mdi)
+        command_counts.append(commands)
+    if mode == "mdi" and (len(set(submissions)) != 1 or len(set(command_counts)) != 1):
+        raise ValueError(f"{path}: changing MDI workload across 81 measured frames: "
+                         f"submissions={sorted(set(submissions))}, commands={sorted(set(command_counts))}")
     wall = [float(row["render_cpu_ms"]) for row in measured]
     mach = [float(row["render_mach_thread_cpu_ms"]) for row in measured]
     backend = [float(row["shadow_backend_ms"])+float(row["opaque_backend_ms"])
@@ -54,7 +69,10 @@ def read(path, items, mode):
         "offcpu_median_ms": statistics.median(max(0.0, w-t) for w,t in zip(wall,mach)),
         "backend_median_ms": statistics.median(backend),
         "median_mdi_submissions": statistics.median(int(x["mdi_submissions"]) for x in measured),
-        "median_mdi_commands": statistics.median(int(x["mdi_commands"]) for x in measured)
+        "median_mdi_commands": statistics.median(int(x["mdi_commands"]) for x in measured),
+        "authored_pass_commands": 2 * items,
+        "mdi_command_coverage_pct": (100.0 * statistics.median(command_counts) / (2 * items)
+                                     if mode == "mdi" else 0.0)
     }
 
 
@@ -76,7 +94,9 @@ def main():
             rows.append(entry)
             print(f"{items:5d} {label:8} wall={entry['wall_median_ms']:.4f}ms "
                   f"p95={entry['wall_p95_ms']:.4f}ms mach={entry['mach_median_ms']:.4f}ms "
-                  f"mdi_commands={entry['median_mdi_commands']:.0f}")
+                  f"mdi_submissions={entry['median_mdi_submissions']:.0f} "
+                  f"mdi_commands={entry['median_mdi_commands']:.0f} "
+                  f"coverage={entry['mdi_command_coverage_pct']:.2f}%")
         direct = statistics.median(r["wall_median_ms"] for r in group if r["mode"] == "direct")
         mdi = statistics.median(r["wall_median_ms"] for r in group if r["mode"] == "mdi")
         savings = 100 * (direct - mdi) / direct if direct else float("nan")
