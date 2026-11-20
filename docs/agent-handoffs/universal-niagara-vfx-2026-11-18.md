@@ -1617,3 +1617,14 @@ When testing is requested later, run the unified `./run-tests.sh` as specified i
 2. Whole-pool rollback is intentionally destructive to all visual effects in this pool. Multiple independent rollback scopes need separate pools or a future per-source GPU kill mechanism.
 3. No auto-migration of existing RTS/FPS native clients, no new gameplay ECS system, and no complete Unreal Niagara material/shader parity. Current Metal feature path remains experimental; GPU material support is already owned by a parallel agent and should not be duplicated.
 4. **Next bounded Stage 30:** add CPU-owned, generation-safe GPU source IDs and GPU-buffer source tags plus per-source selective kill/retarget without resetting unrelated particles; integrate this with pooled continuous emitter scheduling and event-born particle provenance. Keep controls opt-in, continue user-deferred tests and commit a new handoff afterward.
+
+
+## 2026-11-20 — Inspector graph-v2 integration with current main
+
+Implementation `9db6d2014137e41cd67ff82dc187cf1136f73bb3`; branch `feature/aiv20261120_perf_inspector_integration`.
+Editor build PASS; final SpectraFX 20/20 PASS including five hardware Metal tests;
+actual PRISMA frame checks 5/5 PASS. Source-compatible view adapters and GPU
+preview retirement corrections preserve newer main ownership. No experimental
+defaults enabled. Full repo/Release/Vulkan/GLES/manual editor UI NOT RUN.
+Exact commands, earlier failures, warnings, APIs and next steps:
+`docs/agent-handoffs/inspector-spectrafx-main-2026-11-20.md`. Separate documentation commit follows implementation.
