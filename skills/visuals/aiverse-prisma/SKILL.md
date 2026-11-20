@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md` (latest actual Editor compile blocker), `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-full-native-metal-gl33-acceptance-pass-20261120.md` (latest complete hardware acceptance), `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md` (latest actual Editor compile blocker), `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,7 +1350,7 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-full-native-metal-gl33-acceptance-pass-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
 
 ## Stage 96 — integrated main native acceptance
 
@@ -1459,3 +1459,22 @@ CONFIRMED**. On the latest clean Mac worktree first rebuild just
 `aiverse_editor` and then rerun the complete acceptance runner. Read
 `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md`
 for exact errors, commits, tests, constraints and next step.
+
+## Stage97 final native acceptance — Apple M3 Ultra full PASS
+
+The user supplied the final output of
+`bash tools/prisma/acceptance.sh build/prisma-stage97` on exact tested
+HEAD `9da0dcdbbbb5179f890a2ad740e7cb27eeb1ab8d` (Darwin).
+`configure`, `build`, `registration`, `ctest_full`, Metal HDR
+54 probes, Metal P6 capture, Metal stationary TAA, Metal multiview,
+GL33 HDR 54 probes, GL33 P6 capture and GL33 multiview all report PASS.
+The script says **Failed=0, Skipped=0, exit=0**; 263 CTest cases
+registered and the full CTest invocation passed. Do NOT invent an
+individually verified CTest PASS count from an unseen raw ctest log.
+The previous two SpectraFX Editor `Viewport::ensure` signature failures
+were eliminated in this successfully built source. P6 capture existence
+and format are confirmed by runner, NOT qualitative visual comparison.
+Vulkan/GLES/WebGL runtime, actual full GPU-fence resource draining,
+long churn/VRAM plateau and moving-object ghosting pixel parity remain
+UNVERIFIED. Full details and concrete next Stage98 action:
+`docs/handoffs/prisma-stage-97-full-native-metal-gl33-acceptance-pass-20261120.md`.
