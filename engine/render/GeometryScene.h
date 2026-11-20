@@ -25,7 +25,14 @@ public:
     // used on rules/project reload, not final Device teardown.
     void clear(gfx::Device& dev) {retireResident(dev);}
     size_t pendingGpuRetirements() const noexcept;
+    // Bound retained GPU owners; a stalled/lost device must not permit an
+    // unlimited series of new staging allocations.
+    static constexpr size_t kMaxFailedStages=8;
     size_t pendingFailedStages() const noexcept {return failedStages_.size();}
+    uint64_t rejectedFailedStageLoads() const noexcept {return rejectedFailedStageLoads_;}
+    // Explicit host-controlled full-idle recovery (never from an open pass).
+    // Does not retire the currently published scene or its normal queue.
+    bool recoverFailedStagesAfterGpuIdle(gfx::Device& dev);
     // Render-owner-thread frame boundary only: poll both live and failed-stage
     // retirement queues, releasing stages only after GPU completion proof.
     bool collectRetired(gfx::Device& dev);
@@ -55,6 +62,7 @@ private:
     // Failed transactions may still own GPU models after a refused idle.
     // Retain those retirement queues for a later safe collect/shutdown.
     std::vector<std::unique_ptr<GeometryScene>> failedStages_;
+    uint64_t rejectedFailedStageLoads_=0;
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
