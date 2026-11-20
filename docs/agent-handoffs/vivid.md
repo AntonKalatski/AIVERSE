@@ -1605,3 +1605,7 @@ Code `4f7d6afd60c962b7a6594aea97f8eef01acc0ce0` on `integration/motionweave-stud
 ## 2026-11-20 combined Metal acceptance
 
 Code `647b7bc2e07ab1f99ca567022ac94cfed0d80dec`: fixed reserved MSL tokens and pre-frame actor initialization. 26 distinct focused native tests PASS; real single-actor Renderer3D/MotionWeave colour/ID-depth preview PASS. Detailed commands, limits, logs and next steps: [joint handoff](motionweave-vivid-integration-2026-11-20.md). All artifacts on KINGSTON.
+
+## 2026-11-20 full palette and mask parity
+
+Code `1cd6b732a100b8a01c302f2749b1d0bce2b4ee5e`: all 52 semantic channels + last MotionWeave palette slot tested; real 1/2-mask scene/ID-depth probes, 12-actor scene and Creator smoke PASS on Metal. See [joint handoff](motionweave-vivid-integration-2026-11-20.md) for logs and limits.

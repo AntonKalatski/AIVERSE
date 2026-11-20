@@ -50,3 +50,11 @@ Actual verification (KINGSTON):
 - VIVID Creator, preview, Studio and focused targets compile. CI, Vulkan/GLES, complete regression, Studio visual parity, imported Creator and mask/crowd GUI cases NOT RUN yet.
 
 Next: validate mask and crowd scenes; close 64-slot VIVID adapter coverage; continue shared provider/lease adoption in Studio. No performance or full production parity claim.
+
+## Full palette and masked scene checkpoint — 2026-11-20
+
+Code `1cd6b732a100b8a01c302f2749b1d0bce2b4ee5e` on the same branch. MorphBinding documentation/diagnostic now follows shared kMaxMorphTargets, with regression covering all 52 fixed semantic channels, last palette slot and rejection just past the limit. No ABI/order changes. Renamed another reserved MSL `vertex` identifier in the preview-only mask producer.
+
+KINGSTON validation: VIVID morph binding + real MotionWeave bridge 2/2 PASS (`tests-palette.log`); both single-mask and two-mask real GPU scenes PASS (`preview-mask-fixed.log`, `preview-multi-mask-fixed.log`), alpha-hole and solid-occlusion probes report identical scene/ID depths. 12 independent actors PASS (`preview-crowd.log`: 179676 morph pixels, 183285 animated pixels). Actual Creator skin/eye/groom smoke PASS (`creator.log`, `creator.ppm`). Inspected preview-motionweave.png: procedural deformation fixture visible on shadowed floor, NOT photoreal face quality. Imported Creator/optical sweeps/full backend parity NOT RUN. Build log build-palette-mask.log. CI NOT RUN.
+
+Next: finish native Studio facial preview ownership using shared ModelAssetProvider, async CPU decode, frame read leases and fenced retirement; imported Creator and broader animation tests remain.
