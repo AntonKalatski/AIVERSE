@@ -2901,3 +2901,19 @@ maps and cannot prove skin microdetail. Visual quality FAIL, no MH parity.
 No GUI/Vulkan/mobile/CI/performance check; no push. Latest native binary is
 restored-shader FXAA build from preceding stage. Next: isolate shadow bias/receiver
 plane discontinuity against both fixtures, then acquire higher-detail elder scan.
+
+## 2026-11-21 — authored LOD preparation, partial stage
+
+Implementation `7b9646b83d751d23d822006c5dbb189577ee0bec`, branch
+`integration/motionweave-studio-facial-stage184`. New configure_lods.cjs links
+authored meshes through existing aiverseLods metadata; rejects skin/morph/cycle
+mismatches and detaches alternative leaf nodes from visible scene. Creator
+--lod auto|highest added. No renderer/Studio UI/schema changes.
+PASS JS policy and synthetic GLB roundtrip tests; Creator KINGSTON build; CTest
+auto_lod_runtime1/1. Transition executable missing, direct command FAILED;
+transition test NOT RUN (corrected QA's initial inaccurate statement).
+See docs/qa/vivid-lod-2026-11-21.md for external logs and reproduction.
+Incomplete: wardrobe assembly clears chains; no synchronized character policy,
+arbitrary manual level UI, authored real character visual acceptance or CI.
+Next preserve/remap wardrobe chains then real skinned/morphed character LOD
+near/far native capture and editor controls. All outputs on KINGSTON; no push.
