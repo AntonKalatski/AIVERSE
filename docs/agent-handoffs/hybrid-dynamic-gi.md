@@ -970,3 +970,19 @@ writing a new target. Expanded `vulkan_backend` real-GPU-executable
 two-atlas/three-dispatch offscreen pixel fixture. No native CMake,
 glslang, CTest, Vulkan driver/validation, Metal or GLES GPU execution
 in this session. Preserve all earlier GI fence/borrow safety.
+
+
+## Stage 61 — 2026-11-20 — actual Release CI build failure and ECS assert repair (SOURCE FIX PENDING RETEST)
+
+Full handoff:
+`docs/agent-handoffs/gi-stage61-release-ci-ecs-assert-fix-2026-11-20.md`.
+**Observed** Linux ARM64 GCC CI build failure in run 44693379411,
+job 136144283268, previous GI branch head
+`d71411613d47fd26304edb6b0559515543806c1c`.
+GCC -O3 -DNDEBUG -Werror turned ECS COW/guarded test checks written
+as standard `assert()` into unused-variable/parameter compilation errors.
+The four failing test files now use 59 `AIVERSE_TEST_CHECK` calls which
+actually execute in Release, preserving checks and side effects. These
+commits are NOT YET BUILD/CTEST VERIFIED; old CI explicitly FAILED during
+Build, so tests/Vulkan were SKIPPED. No claim of GI GPU parity or full
+acceptance. Continue real CI log-driven remediation and separate handoffs.
