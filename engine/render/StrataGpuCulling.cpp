@@ -475,6 +475,114 @@ bool GpuClusterCulling::allocate(gfx::Device& dev, gfx::BufferHandle& h,
     return true;
 }
 
+// One bounded history per metadata source, original primitive,
+// stable instance token, camera/pass slot and source/policy revision.
+// A GPU-written mask is never overwritten until its triple-buffer frame
+// slot is confirmed complete; previous and next are separate resources.
+void GpuClusterCulling::expireTemporal(gfx::Device& dev,uint64_t frame) {
+    const uint64_t completed=dev.completedFrameSerial();
+    if(!completed)return;
+    for(auto it=temporal_.begin();it!=temporal_.end();){
+        const auto& record=it->second;
+        if(!record.lastFrame || frame<=record.lastFrame ||
+           frame-record.lastFrame<=120 || completed<record.lastFrame) {
+            ++it;
+            continue;
+        }
+        for(const auto handle:record.state)
+            if(handle.valid()){
+                dev.destroyBuffer(handle);
+                temporalStats_.retainedBytes-=size_t(record.nodes)*sizeof(uint32_t);
+            }
+        ++temporalStats_.expired;
+        it=temporal_.erase(it);
+    }
+    temporalStats_.histories=temporal_.size();
+}
+
+void GpuClusterCulling::releaseTemporal(gfx::Device& dev) {
+    for(auto& [key,record]:temporal_)
+        for(const auto handle:record.state)
+            if(handle.valid())dev.destroyBuffer(handle);
+    temporal_.clear();
+    if(temporalResetPipeline_.valid())
+        dev.destroyCompute(temporalResetPipeline_);
+    if(temporalSafetyPipeline_.valid())
+        dev.destroyCompute(temporalSafetyPipeline_);
+    temporalResetPipeline_={};
+    temporalSafetyPipeline_={};
+    temporalStats_={};
+}
+
+bool GpuClusterCulling::prepareTemporal(
+        gfx::Device& dev,gfx::BufferHandle metadata,
+        const GpuSceneInstance& instance,const GpuPassConfig& config,
+        uint64_t frame,gfx::BufferHandle& previous,
+        gfx::BufferHandle& next,bool& warm,TemporalKey& key) {
+    if(!metadata.valid() || !instance.enabled || !instance.instanceToken ||
+       !config.temporalPassId || !config.temporalRevision ||
+       config.temporalNodeCount==0 || config.temporalNodeCount>262144 ||
+       !std::isfinite(config.hysteresisFraction) ||
+       config.hysteresisFraction<=0.f ||
+       config.hysteresisFraction>.45f)return false;
+    expireTemporal(dev,frame);
+    key={metadata.id,instance.instanceToken,instance.primitiveIndex,
+         config.temporalPassId,config.temporalRevision};
+    auto it=temporal_.find(key);
+    if(it==temporal_.end()){
+        if(temporal_.size()>=kMaxTemporalHistories)return false;
+        TemporalRecord fresh{};
+        fresh.nodes=config.temporalNodeCount;
+        it=temporal_.emplace(key,fresh).first;
+    }
+    TemporalRecord& record=it->second;
+    if(record.nodes!=config.temporalNodeCount ||
+       record.lastFrame>=frame && record.lastFrame!=0)
+        return false;
+    const size_t slot=size_t(frame%kFramesInFlight);
+    if(record.frame[slot] && record.frame[slot]!=frame &&
+       (dev.completedFrameSerial()==0 ||
+        record.frame[slot]>dev.completedFrameSerial()))
+        return false;
+    // If no submission occurred in the previous two frame epochs, old
+    // history is considered cold. This also avoids using the output slot
+    // as its own previous input after a triple-buffer wrap.
+    warm=record.lastFrame && frame>record.lastFrame &&
+         frame-record.lastFrame<kFramesInFlight &&
+         record.width==uint32_t(config.width) &&
+         record.height==uint32_t(config.height) &&
+         record.clipDepthZeroToOne==config.clipDepthZeroToOne &&
+         record.fraction==config.hysteresisFraction;
+    previous={};
+    if(warm){
+        const size_t previousSlot=size_t(record.lastFrame%kFramesInFlight);
+        if(previousSlot==slot ||
+           !record.state[previousSlot].valid() ||
+           record.frame[previousSlot]!=record.lastFrame)
+            warm=false;
+        else previous=record.state[previousSlot];
+    }
+    const size_t bytes=size_t(record.nodes)*sizeof(uint32_t);
+    if(!record.state[slot].valid()){
+        if(bytes>kMaxTemporalBytes-temporalStats_.retainedBytes)
+            return false;
+        std::vector<uint32_t> zeros(record.nodes,0);
+        gfx::BufferDesc desc{};
+        desc.type=gfx::BufferType::Storage;
+        desc.usage=gfx::Usage::Immutable;
+        desc.size=bytes;
+        desc.data=zeros.data();
+        desc.label="STRATA GPU temporal LOD refined mask";
+        record.state[slot]=dev.createBuffer(desc);
+        if(!record.state[slot].valid())return false;
+        temporalStats_.retainedBytes+=bytes;
+    }
+    next=record.state[slot];
+    if(!warm)previous=next; // shader does not read previous on cold start
+    temporalStats_.histories=temporal_.size();
+    return true;
+}
+
 bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                 gfx::BufferHandle gpuMetadataV2,
                                 const std::vector<GpuSceneInstance>& instances,
