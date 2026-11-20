@@ -1960,18 +1960,24 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     try { types_ = loadRoadTypes(roadTypes); }
     catch (const std::exception& e) { warnings_.push_back(e.what()); types_ = loadRoadTypes(Json()); }
     cellMeters_ = float(roadCellMeters(roadTypes).toDouble());
-    // the kit: textures uploaded once, chunk models borrow them
-    Model kit;
+    // Own all partially uploaded GPU kit textures even if addImage,
+    // material creation, or a later decal/atlas operation throws.
+    buildingKit_=std::make_unique<Model>();
     materials_.clear();
-    std::vector<int> tex(kMatCount, -1);
-    for (int m = 0; m < kMatCount; ++m) {
-        Image img = roadkit::texture(m);
-        if (!img.rgba.empty()) tex[size_t(m)] = addImage(dev, kit, std::move(img));
-        Material mt = roadkit::material(m);
-        mt.baseTex = tex[size_t(m)];
+    std::vector<int> tex(kMatCount,-1);
+    for(int m=0;m<kMatCount;++m) {
+        Image img=roadkit::texture(m);
+        if(!img.rgba.empty()) {
+            tex[size_t(m)]=addImage(dev,*buildingKit_,std::move(img));
+            if(tex[size_t(m)]<0)
+                throw std::runtime_error("road View: GPU kit texture allocation failed");
+        }
+        Material mt=roadkit::material(m);
+        mt.baseTex=tex[size_t(m)];
         materials_.push_back(mt);
     }
-    images_ = std::move(kit.images);
+    images_=std::move(buildingKit_->images);
+    buildingKit_.reset();
     for (auto& img : images_) img.borrowedTexture = false;   // owned here, released in shutdown
     // road paint: decals (lines, zebras, arrows, text) from one generated atlas
     if (!decalBatch_.init(dev)) warnings_.push_back("road paint: decal pipeline: " + dev.lastError());
@@ -1982,10 +1988,26 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
         if (platform::readContentFile(path, probe)) { paint_ = paintTex_.resolve(path, false, "", true); if (paint_.valid()) break; }
     if (!paint_.valid()) paint_ = paintTex_.addGenerated("builtin:road-paint", 1024, 1024, roadkit::markingAtlas(256), false);
     verge_ = paintTex_.addGenerated("builtin:road-verges", 256 * roadkit::kVergeSlots, 256, roadkit::vergeAtlas(256), false);
+    if(!paint_.valid() || !verge_.valid())
+        throw std::runtime_error("road View: GPU paint atlas allocation failed");
     if (hasNet_) {   // new types: the network's type indices change
         try { net_ = parseRoadNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
     }
+}
+
+void RtsRoadView::inheritRuntimeStateForReload(const RtsRoadView& old) {
+    // No GPU handles or derived mesh caches are copied. In particular a
+    // different ruleset may assign different road type IDs.
+    hasNet_=old.hasNet_;
+    netJson_=old.netJson_;
+    net_=old.net_;
+    replaces_=old.replaces_;
+    wet_=old.wet_; puddles_=old.puddles_;
+    mapWet_=old.mapWet_; mapPuddles_=old.mapPuddles_;
+    weatherSet_=old.weatherSet_;
+    ghost_=old.ghost_;
+    dirty_=true; ghostDirty_=true;
 }
 
 namespace {
@@ -2083,6 +2105,10 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
         // Do not let RtsView::shutdown() continue and tear down other GPU
         // owners after this host failed to establish a completion barrier.
         throw std::runtime_error("road View GPU retirement barrier failed");
+    }
+    if(buildingKit_) {
+        releaseModel(dev,*buildingKit_);
+        buildingKit_.reset();
     }
     for (auto& img : images_) if (img.tex.valid()) {
         dev.destroyTexture(img.tex); img.tex = {};
