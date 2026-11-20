@@ -12557,6 +12557,44 @@ struct Device : entityfxtest::RecordingDevice {
 };
 }
 
+TEST(rts_view_commits_visual_epoch_only_after_primary_and_invalidates_on_map_edit) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsView view;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;
+    grid.init(4,4);
+    for(auto& flags:grid.flags)flags=game::kCellGround;
+    game::RtsScene scene;
+    render::RTSCamera camera;
+    camera.target={2,0,2};
+    camera.distance=18;
+    camera.pitch=1.0f;
+    CHECK(!view.publishedVisualFrame().ready());
+    renderer.beginScene(camera,320,240);
+    view.draw(renderer,scene,1.25,nullptr,grid);
+    const auto first=view.publishedVisualFrame();
+    CHECK(first.ready() && first.id!=0);
+    CHECK(view.visualFrameReadyFor(grid,1.25));
+    CHECK(!view.visualFrameReadyFor(grid,1.26));
+    renderer.render(gfx::PassDesc{});
+    // Map mutation invalidates the previously prepared multi-camera snapshot.
+    view.setTerrainMaterial(Json(),grid.w,grid.h);
+    CHECK(!view.publishedVisualFrame().ready());
+    CHECK(!view.visualFrameReadyFor(grid,1.25));
+    renderer.beginScene(camera,320,240);
+    view.draw(renderer,scene,2.5,nullptr,grid);
+    CHECK(view.visualFrameReadyFor(grid,2.5));
+    CHECK(view.publishedVisualFrame().id>first.id);
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+    CHECK(!view.publishedVisualFrame().ready());
+}
+
 TEST(frame_publication_epoch_requires_every_owner_before_secondary_camera) {
     using Epoch=render::FramePublicationEpoch;
     Epoch epoch;
