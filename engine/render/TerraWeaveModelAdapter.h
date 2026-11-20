@@ -38,8 +38,14 @@ inline std::unique_ptr<render::Model> makeArborModel(
     model->materials.push_back(foliage);
 
     for (TreeLOD tier : {TreeLOD::High, TreeLOD::Medium, TreeLOD::Low}) {
-        const ArborMesh geometry = buildArborMesh(generateTree(profile, seed, tier),
-                                                  meshSettings);
+        auto tierSettings=meshSettings;
+        if(meshSettings.naturalConifer) {
+            tierSettings.longitudinalSegments=tier==TreeLOD::High?meshSettings.longitudinalSegments:tier==TreeLOD::Medium?3u:1u;
+            tierSettings.radialSegments=tier==TreeLOD::High?meshSettings.radialSegments:tier==TreeLOD::Medium?4u:3u;
+            tierSettings.sprayPairs=tier==TreeLOD::High?meshSettings.sprayPairs:tier==TreeLOD::Medium?std::max(2u,meshSettings.sprayPairs/2):2u;
+        }
+        const ArborMesh geometry = buildArborMesh(generateTree(profile, seed,
+            meshSettings.naturalConifer?TreeLOD::High:tier), tierSettings);
         const uint32_t baseVertex = static_cast<uint32_t>(model->vertices.size());
         const uint32_t baseIndex = static_cast<uint32_t>(model->indices.size());
         uint32_t barkVertices = 0;
@@ -101,6 +107,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
     node.name = "TerraWeave Arbor";
     node.mesh = 0;
     model->nodes.push_back(std::move(node));
+    render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
     model->finalize();
     return model;
 }
@@ -227,6 +234,7 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
         node.parent = tree.branches[branch].parent;
         model->nodes.push_back(std::move(node));
     }
+    render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
     model->finalize();
     return model;
 }

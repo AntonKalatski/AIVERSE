@@ -3392,3 +3392,8 @@ if(AIVERSE_BUILD_TOOLS AND TARGET aiverse_modeling)
     add_executable(aiverse_terraweave_rocks tools/terrain/rocks.cpp)
     target_link_libraries(aiverse_terraweave_rocks PRIVATE aiverse_modeling aiverse_zstd_dec)
 endif()
+
+if(AIVERSE_BUILD_TOOLS AND TARGET aiverse_modeling)
+    add_executable(aiverse_terraweave_vegetation tools/terrain/vegetation.cpp)
+    target_link_libraries(aiverse_terraweave_vegetation PRIVATE aiverse_modeling aiverse_zstd_dec)
+endif()

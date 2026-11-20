@@ -47,8 +47,12 @@ inline ArborMesh buildArborBranchMesh(const TreeSkeleton& tree,
         section.leaves.push_back(far);
     }
     if (detail == BranchDetail::Reduced) {
+        base.longitudinalSegments=3;
+        base.sprayPairs = std::max(2u,base.sprayPairs/2);
         base.radialSegments = std::max<uint32_t>(3, (base.radialSegments + 1) / 2);
     } else if (detail == BranchDetail::Minimal) {
+        base.longitudinalSegments=1;
+        base.sprayPairs = 2;
         base.radialSegments = 3;
         base.leafPlanes = 1;
     }

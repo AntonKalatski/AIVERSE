@@ -28,12 +28,18 @@ struct GrassRenderQuality {
     bool crossedBlades=true;         // 2 triangles instead of 1 per blade
     uint32_t maxGpuPatches=128;      // 1..256
     uint32_t maxUploadsPerFrame=2;   // 1..8
+    uint32_t bladeSegments=1;       // 1..4; 2+ uses bent tapered ribbons
+    uint32_t bladeHeightCm=26;      // 4..150
+    uint32_t bladeHalfWidthCm=3;    // 1..12
 };
 
 inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
     if(!q.maxBladesPerPatch || q.maxBladesPerPatch>8192 ||
        !q.maxGpuPatches || q.maxGpuPatches>256 ||
-       !q.maxUploadsPerFrame || q.maxUploadsPerFrame>8)
+       !q.maxUploadsPerFrame || q.maxUploadsPerFrame>8 ||
+       q.bladeSegments<1 || q.bladeSegments>4 ||
+       q.bladeHeightCm<4 || q.bladeHeightCm>150 ||
+       q.bladeHalfWidthCm<1 || q.bladeHalfWidthCm>12)
         throw std::invalid_argument("TerraWeave grass RHI quality");
 }
 
@@ -47,14 +53,15 @@ inline bool sameGrassPresentation(const GrassPatch& a,const GrassPatch& b) {
 }
 
 using GrassSoilHeight=std::function<int32_t(int64_t,int64_t)>;
+using GrassPlacementFilter=std::function<bool(int64_t,int64_t)>;
 
-// Pure CPU model generation; only one or two opaque slender triangles per
+// Pure CPU model generation; bounded indexed opaque ribbons per
 // sampled blade. No per-patch alpha textures or unique shader variants.
 // The sparse, stable stratified sample reacts to coverage/light/age without
 // scanning a 262144-blade patch or allocating persistent blade arrays.
 inline std::unique_ptr<render::Model> makeGrassPatchModel(
         const GrassPatch& patch,const GrassSoilHeight& ground,
-        GrassRenderQuality quality={}) {
+        GrassRenderQuality quality={}, const GrassPlacementFilter& allows={}) {
     validateGrassRenderQuality(quality);
     if(!ground)throw std::invalid_argument("TerraWeave grass ground sampler");
     const auto draw=prepareGrassPatch(patch);
@@ -84,33 +91,17 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         appearance.foliagePermille/1000u);
     if(candidates) {
         model->vertices.reserve(size_t(candidates)*
-            (quality.crossedBlades?6u:3u));
+            (quality.crossedBlades?2u:1u)*(2*quality.bladeSegments+1));
         model->indices.reserve(size_t(candidates)*
-            (quality.crossedBlades?6u:3u));
+            (quality.crossedBlades?2u:1u)*3*(2*quality.bladeSegments-1));
     }
     const int64_t spanX=patch.bounds.maxX-patch.bounds.minX;
     const int64_t spanZ=patch.bounds.maxZ-patch.bounds.minZ;
-    const int32_t baseWidthCm=6;
-    const int32_t baseHeightCm=26;
+    const int32_t baseWidthCm=int32_t(quality.bladeHalfWidthCm);
+    const int32_t baseHeightCm=int32_t(quality.bladeHeightCm);
     const uint32_t light=patch.environment.lightPermille;
     const auto rgba=[](uint32_t r,uint32_t g,uint32_t b){
         return (0xffu<<24) | (b<<16) | (g<<8) | r;
-    };
-    const auto emitTriangle=[&](render::float3 a,render::float3 b,
-                                render::float3 tip,uint32_t color){
-        const auto normal=render::normalize(
-            render::cross(b-a,tip-a));
-        for(const auto& p:{a,b,tip}) {
-            render::ModelVertex v;
-            v.pos=p;
-            v.nrm=normal;
-            v.color=color;
-            v.uv={p.y>std::max(a.y,b.y)?0.5f:0.0f,
-                  p.y>std::max(a.y,b.y)?1.0f:0.0f};
-            model->indices.push_back(
-                static_cast<uint32_t>(model->vertices.size()));
-            model->vertices.push_back(v);
-        }
     };
     for(uint32_t slot=0;slot<candidates;++slot) {
         // Stable stratification of a large logical grass population:
@@ -125,6 +116,7 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
             int64_t((h>>13)%uint64_t(spanX));
         const int64_t z=patch.bounds.minZ+
             int64_t((h>>35)%uint64_t(spanZ));
+        if(allows && !allows(x,z))continue;
         const int32_t y=ground(x,z);
         if(y< -1000000 || y>1000000)
             throw std::out_of_range("TerraWeave grass soil height");
@@ -142,13 +134,31 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
             int(light*220u/1000u)+int((h>>29)%36u),70,255));
         const uint32_t color=rgba(shade,shade,
             uint32_t(std::max(1u,shade*3u/4u)));
-        emitTriangle({mx-bladeWidth,my,mz},
-                     {mx+bladeWidth,my,mz},
-                     {mx+bias,my+bladeHeight,mz+bias},color);
-        if(quality.crossedBlades)
-            emitTriangle({mx,my,mz-bladeWidth},
-                         {mx,my,mz+bladeWidth},
-                         {mx-bias,my+bladeHeight,mz+bias},color);
+        const float yaw=float((h>>10)%62832)*.0001f;
+        for(uint32_t plane=0;plane<(quality.crossedBlades?2u:1u);++plane){
+            const float a=yaw+float(plane)*1.57079633f;
+            const render::float3 side{std::cos(a)*bladeWidth,0,std::sin(a)*bladeWidth};
+            const render::float3 bend{-std::sin(a)*bladeHeight*.36f,0,std::cos(a)*bladeHeight*.36f};
+            const uint32_t base=uint32_t(model->vertices.size());
+            for(uint32_t seg=0;seg<=quality.bladeSegments;++seg){
+                const float t=float(seg)/quality.bladeSegments;
+                const render::float3 root{mx,my,mz};
+                const auto center=root+render::float3{bias*t,bladeHeight*t,0}+bend*(t*t);
+                const auto direction=render::float3{bias,bladeHeight,0}+bend*(2*t);
+                const auto normal=render::normalize(render::cross(side,direction));
+                for(uint32_t edge=0;edge<(seg==quality.bladeSegments?1u:2u);++edge){
+                    render::ModelVertex vertex;
+                    vertex.pos=center+side*((edge?1.f:-1.f)*(1-t));vertex.nrm=normal;
+                    vertex.uv={seg==quality.bladeSegments?.5f:float(edge),t};vertex.color=color;
+                    model->vertices.push_back(vertex);
+                }
+                if(seg<quality.bladeSegments){
+                    const uint32_t lo=base+seg*2, hi=lo+2;
+                    model->indices.insert(model->indices.end(),{lo,lo+1,hi});
+                    if(seg+1<quality.bladeSegments)model->indices.insert(model->indices.end(),{lo+1,hi+1,hi});
+                }
+            }
+        }
     }
     primitive.firstVertex=0;
     primitive.vertexCount=static_cast<uint32_t>(model->vertices.size());
@@ -177,7 +187,10 @@ public:
     void setQuality(GrassRenderQuality quality) {
         validateGrassRenderQuality(quality);
         if(quality.maxBladesPerPatch!=quality_.maxBladesPerPatch ||
-           quality.crossedBlades!=quality_.crossedBlades)
+           quality.crossedBlades!=quality_.crossedBlades ||
+           quality.bladeSegments!=quality_.bladeSegments ||
+           quality.bladeHeightCm!=quality_.bladeHeightCm ||
+           quality.bladeHalfWidthCm!=quality_.bladeHalfWidthCm)
             for(const auto& [key,entry]:resident_){
                 (void)entry;dirty_.insert(key);
             }

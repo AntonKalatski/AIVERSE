@@ -1,3 +1,4 @@
+#include "engine/render/TerraWeaveGrassRender.h"
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include <cassert>
@@ -7,6 +8,32 @@
 using namespace aiverse::terraweave;
 
 int main() {
+    // Opt-in conifer foliage keeps structural endpoints identical across LODs.
+    TreeProfile conifer;conifer.shape=CrownShape::Conifer;conifer.primaryBranches=120;
+    ArborMeshSettings sprays;sprays.naturalConifer=true;sprays.doubleSidedLeaves=false;
+    const auto natural=makeArborModel(conifer,909,sprays);
+    assert(natural->meshes.size()==3);
+    auto triangles=[](const auto& mesh){size_t n=0;for(const auto& p:mesh.primitives)n+=p.indexCount/3;return n;};
+    assert(triangles(natural->meshes[0])>triangles(natural->meshes[1]));
+    assert(triangles(natural->meshes[1])>triangles(natural->meshes[2]));
+    assert(triangles(natural->meshes[0])<20000);
+    for(const auto& v:natural->vertices){assert(std::isfinite(v.pos.x)&&std::isfinite(v.nrm.y)&&std::isfinite(v.uv.x));}
+    const auto repeat=makeArborModel(conifer,909,sprays);
+    assert(repeat->indices==natural->indices);
+    for(size_t i=0;i<natural->vertices.size();++i)assert(natural->vertices[i].pos.x==repeat->vertices[i].pos.x);
+    // Bounded grass, exact terrain contact and a fully excluded patch.
+    GrassPatch patch;patch.key=7;patch.seed=99;patch.bounds={-400,-400,400,400};patch.maximumBlades=2048;
+    GrassRenderQuality quality;quality.maxBladesPerPatch=2048;quality.bladeSegments=3;quality.crossedBlades=false;
+    const auto grass=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);
+    assert(grass && grass->indices.size()/3==2048*5);
+    for(size_t i=0;i<grass->vertices.size();i+=7)assert(std::fabs(grass->vertices[i].pos.y-1.23f)<.0001f);
+    assert(!makeGrassPatchModel(patch,[](auto,auto){return 123;},quality,[](auto,auto){return false;}));
+    const auto masked=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality,[](auto x,auto){return x>=0;});
+    assert(masked && masked->indices.size()<grass->indices.size());
+    quality.bladeSegments=5;bool badGrass=false;
+    try{(void)makeGrassPatchModel(patch,[](auto,auto){return 0;},quality);}catch(const std::invalid_argument&){badGrass=true;}
+    assert(badGrass);
+
     TreeProfile oak;
     oak.speciesId = 1001;
     oak.primaryBranches = 24;

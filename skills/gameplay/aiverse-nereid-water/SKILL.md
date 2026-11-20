@@ -3,6 +3,20 @@ name: aiverse-nereid-water
 description: Use NEREID deterministic ECS water bodies and contact sampling in native projects of any AIVERSE game genre.
 ---
 
+## Mandatory TerraWeave + NEREID ownership
+
+User instruction: construct game environments through TerraWeave + NEREID first.
+Terrain/biomes/trees/grass/rocks belong to TerraWeave; all new rivers/lakes/oceans
+belong to NEREID. Never substitute a custom height/noise generator or a static PBR
+water plane and describe it as the engine feature. Read
+`skills/workflow/aiverse-terra-first/SKILL.md` and
+`skills/gameplay/aiverse-nereid-water/SKILL.md`. Existing legacy maps retain their
+compatibility until an explicit tested migration. For missing host integration,
+add the adapter to the shared subsystem; record a real capability gap before any
+custom fallback. Do not fake waves, flow, foam or buoyancy in project scripts.
+Sky stays with PRISMA, climate with PHYSIS, VFX with SpectraFX; compose owners.
+
+
 # NEREID: universal water system
 
 Read `AGENTS.md`, `docs/nereid/ARCHITECTURE.md`,

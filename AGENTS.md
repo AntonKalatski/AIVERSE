@@ -4,6 +4,27 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Terra-first game creation (user policy, 2026-11-20)
+
+For every new game and environment task, read `skills/workflow/aiverse-terra-first/SKILL.md`.
+Use TerraWeave terrain/Arbor/Flora/rocks and existing companion owners first; write
+custom project code only for a verified missing capability. Configure or adapt existing
+native APIs before introducing a second procedural generator. This is capability routing,
+not a mandate to add terrain to UI-only/indoor/2D games or overwrite authored worlds.
+Vegetation recipes: `skills/world/aiverse-terra-vegetation/SKILL.md`. Distinguish exported
+assets from live native terrain/streaming/ecology/physics and record actual verification.
+
+## Water ownership for all new worlds (user policy, 2026-11-20)
+
+All new water uses NEREID: rivers, lakes, sea/ocean, flow and water interactions.
+Read `skills/gameplay/aiverse-nereid-water/SKILL.md`. Do not substitute static PBR
+planes or scene-local wave solvers. All terrain and vegetation use TerraWeave first.
+Together these are the required environment foundation for games and showcases.
+Add missing host adapters through the native shared systems. Preserve existing
+legacy gameplay/save compatibility until a deliberate, tested migration; do not
+claim source APIs or static exports prove live simulation. PRISMA/PHYSIS/SpectraFX
+retain sky/weather/VFX ownership rather than duplicating them in Terra or NEREID.
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
