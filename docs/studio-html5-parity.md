@@ -2,7 +2,7 @@
 
 Owner scope confirmed 2026-11-20: complete full functional transfer before main merge. Do not equate a registered tab, JSON endpoint, placeholder, disabled control or source scan with feature parity. Legacy ImGui stays available until the acceptance matrix is complete.
 
-Baseline: main 076139d12d9ea2380a5445f823323f4e2c096811 integrated into feature/studio-html5; tested HEAD 6e54c2e5ad743caa88daa95e4355daf313f942e4. Native app builds, 17 selected CTests pass, Python contracts 19 pass, frontend build/domain tests pass. These checks do not demonstrate functional parity. Mac UI currently blocked by locked desktop.
+Baseline: main 076139d12d9ea2380a5445f823323f4e2c096811 integrated into feature/studio-html5; tested HEAD 6e54c2e5ad743caa88daa95e4355daf313f942e4. Native app builds, 17 selected CTests pass, Python contracts 19 pass, frontend build/domain tests pass. These checks do not demonstrate functional parity. Mac UI was initially blocked by locked desktop; Stage 80 later exercised native Game interactively.
 
 ## Window inventory
 
@@ -23,7 +23,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `fog` | `apps/editor/windows/FogWindow.cpp` | Missing functional HTML5 implementation |
 | `FpsWindow` | `apps/editor/windows/FpsWindow.cpp` | Missing functional HTML5 implementation |
 | `effects` | `apps/editor/windows/FxWindow.cpp` | Missing functional HTML5 implementation |
-| `game` | `apps/editor/windows/GameWindow.cpp` | Missing functional HTML5 implementation |
+| `game` | `apps/editor/windows/GameWindow.cpp` | Partial: native shared GameClient Play map/menu/Stop, Metal surface, keyboard/mouse, runtime menu pause/resume visually verified (80); editor pause/step, device profiles, runtime inspection, FPS still pending |
 | `generate` | `apps/editor/windows/GenWindow.cpp` | Missing functional HTML5 implementation |
 | `hierarchy` | `apps/editor/windows/HierarchyWindow.cpp` | Partial: map entity create/duplicate/delete, single selection/search, undo/save/reopen tested (Stage 69); grouping/multiselect/FPS authoring and visual QA pending |
 | `project_import` | `apps/editor/windows/ImportProjectWindow.cpp` | Missing functional HTML5 implementation |
