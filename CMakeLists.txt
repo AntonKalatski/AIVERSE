@@ -3286,6 +3286,18 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave_micro_nutrient
         COMMAND aiverse_terraweave_micro_nutrient_test)
+    # Stage70 targeted sustained nutrient conservation / v3 replay. Distinct
+    # from the full real PHYSIS+NEREID+Box3D ECS bridge integration test.
+    add_executable(aiverse_terraweave_stage70_sustained_test
+        tests/terraweave_stage70_sustained_test.cpp)
+    target_link_libraries(aiverse_terraweave_stage70_sustained_test PRIVATE
+        aiverse_engine Threads::Threads)
+    target_compile_options(aiverse_terraweave_stage70_sustained_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_stage70_sustained
+        COMMAND aiverse_terraweave_stage70_sustained_test)
+    set_tests_properties(terraweave_stage70_sustained PROPERTIES
+        LABELS "TERRAWEAVE;PERSISTENCE")
     # Native headers must compile together: ECS, NEREID, 4m nutrient
     # adapters and optional PHYSIS weather without that feature branch.
     add_executable(aiverse_terraweave_native_micro_compile_test
