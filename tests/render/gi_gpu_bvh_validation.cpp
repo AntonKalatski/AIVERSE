@@ -48,6 +48,11 @@ int main() {
     corrupt.nodes[0].meta[0]=0;  // immediate parent-to-self cycle
     AIVERSE_TEST_CHECK(!giValidateGpuBvh(corrupt).valid);
     corrupt=good;
+    // Child indices can be legal yet the parent box may no longer contain
+    // its ray-visible descendants: reject this to prevent false occlusion.
+    corrupt.nodes[0].hi.x=corrupt.nodes[0].lo.x;
+    AIVERSE_TEST_CHECK(!giValidateGpuBvh(corrupt).valid);
+    corrupt=good;
     corrupt.nodes[0].lo.x=std::numeric_limits<float>::quiet_NaN();
     AIVERSE_TEST_CHECK(!giValidateGpuBvh(corrupt).valid);
     corrupt=good;
@@ -55,6 +60,9 @@ int main() {
         node.meta[2]=uint32_t(corrupt.triangles.size());
         break;
     }
+    AIVERSE_TEST_CHECK(!giValidateGpuBvh(corrupt).valid);
+    corrupt=good;
+    corrupt.triangles[0].a.x=100000; // leaf's AABB no longer covers its vertex
     AIVERSE_TEST_CHECK(!giValidateGpuBvh(corrupt).valid);
     corrupt=good;
     corrupt.triangles[0].albedo.x=-1;
