@@ -565,8 +565,8 @@ void test() {
             "non-authorable seam/LOD triangle incorrectly got a selectable ID");
         const auto shader=std::string_view(kSculptGpuSourceExpandMSL);
         req(shader.find("source[offset]")!=std::string_view::npos &&
-            shader.find("influences[request.vertex]")!=std::string_view::npos &&
-            shader.find("output[thread].world")!=std::string_view::npos,
+            shader.find("influences[request.vertexIndex]")!=std::string_view::npos &&
+            shader.find("output[threadIndex].world")!=std::string_view::npos,
             "GPU actor stream gather MSL did not reference actual 60B positions");
     }
     {
@@ -831,7 +831,7 @@ void test() {
         req(sizeof(SculptGpuSourceMaskInput)==16 &&
             sizeof(SculptGpuMaskVertex)==32 &&
             shader.find("source[offset]")!=std::string_view::npos &&
-            shader.find("masks[request.vertex].uvAlpha")!=
+            shader.find("masks[request.vertexIndex].uvAlpha")!=
                 std::string_view::npos &&
             shader.find("packed_float3 world")!=std::string_view::npos,
             "GPU Mask vertex shader lost shared source/32B UV layout");

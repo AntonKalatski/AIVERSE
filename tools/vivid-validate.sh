@@ -66,6 +66,7 @@ else
         aiverse_vivid_metal_sculpt_id_tests \
         aiverse_vivid_vertex_override_tests \
         aiverse_vivid_actor_retirement_tests \
+        aiverse_vivid_cpu_actor_tests \
         aiverse_vivid_human_dna_tests \
         aiverse_vivid_human_rig_tests \
         aiverse_vivid_human_appearance_tests \
@@ -229,6 +230,16 @@ if [[ "$GUI" -eq 1 ]]; then
             exit 1
         fi
     done
+
+    CPU_PPM="$LOGDIR/vivid-creator-cpu.ppm"
+    run_logged creator-cpu-preview env \
+        AIVERSE_VIVID_CREATOR_CAPTURE="$CPU_PPM" \
+        "$CREATOR" --smoke --cpu-morph
+    if [[ ! -s "$CPU_PPM" ]] || \
+       ! grep -q 'actor=CPU .*pass=1' "$LOGDIR/creator-cpu-preview.log"; then
+        printf 'VIVID Creator CPU morph capture failed.\n' >&2
+        exit 1
+    fi
 
     # Check that changing Skin/Eye DNA affects actual 3D viewport pixels,
     # not just Inspector text. Use a separate GUI run with the warm preset.

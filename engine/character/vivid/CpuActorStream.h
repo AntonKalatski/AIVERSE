@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -20,7 +21,9 @@ public:
                     std::span<const render::ModelVertex> base) {
         if(device_ || base.empty() || base.size()!=morphs.vertices() ||
            base.size()>std::numeric_limits<std::uint32_t>::max() ||
-           base.size()>512ull*1024ull*1024ull/(sizeof(render::ModelVertex)*2) ||
+           morphs.bufferBytes()>512ull*1024ull*1024ull ||
+           base.size()>(512ull*1024ull*1024ull-morphs.bufferBytes())/
+               (sizeof(render::ModelVertex)*2+sizeof(MorphVertex)*2) ||
            render::modelVertexOverrideStatus(model,model.vb,
                std::uint32_t(base.size()))!=render::ModelVertexOverrideStatus::Ready) {
             error_="VIVID CPU actor: invalid vertex stream or already initialized";
@@ -37,6 +40,10 @@ public:
             originalMorph_[i].tangent={v.tangent.x,v.tangent.y,v.tangent.z};
         }
         weights_.resize(morphs.targets());
+        // Authoring publishes HumanPreviewAsset by moving its value fields.
+        // Retain an immutable snapshot rather than a pointer into that value.
+        // Allocate before creating GPU resources so exceptions cannot leak VB.
+        morphs_=std::make_unique<const SparseMorphLibrary>(morphs);
         gfx::BufferDesc desc{};
         desc.type=gfx::BufferType::Vertex;
         desc.usage=gfx::Usage::Dynamic;
@@ -48,10 +55,10 @@ public:
         if(!buffer_.valid()) {
             base_.clear();output_.clear();originalMorph_.clear();
             currentMorph_.clear();weights_.clear();
+            morphs_.reset();
             error_="VIVID CPU actor: vertex stream allocation failed";
             return false;
         }
-        morphs_=&morphs;
         model_=&model;device_=&device;
         error_.clear();
         return true;
@@ -123,7 +130,7 @@ private:
     }
     gfx::Device* device_=nullptr;
     const render::Model* model_=nullptr;
-    const SparseMorphLibrary* morphs_=nullptr;
+    std::unique_ptr<const SparseMorphLibrary> morphs_;
     gfx::BufferHandle buffer_{};
     std::vector<render::ModelVertex> base_,output_;
     std::vector<MorphVertex> originalMorph_,currentMorph_;

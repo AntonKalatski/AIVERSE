@@ -6,6 +6,16 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Integration visual checkpoint — 2026-11-20
+
+The MotionWeave integration branch corrects CPU morph-library lifetime, first-frame
+GPU selection, procedural facial parenting, iris depth and iris shader radius.
+Creator smoke now requires actual head submissions. Earlier Creator smoke PASS
+records were insufficient visual acceptance: floor and hair could pass with a
+missing head. The latest separate handoff records rebuilt Metal captures and
+scoped regression results. Procedural artwork and standalone Creator captures do
+not establish production-human quality or Studio WKWebView parity.
+
 ## Purpose and non-goals
 
 VIVID provides believable, customisable digital humans for any AIVERSE game genre: cinematic characters, gameplay avatars, NPCs, crowds, first-person hands, dialogue portraits and user-created avatars. The core MUST NOT depend on RTS, FPS, specific game rules or proprietary Unreal runtime code.

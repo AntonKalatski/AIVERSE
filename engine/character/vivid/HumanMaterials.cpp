@@ -115,7 +115,7 @@ std::shared_ptr<const render::graph::Program> irisGraph(const HumanEyes& d) {
     Nodes g;
     const auto uv=g.add("uv");
     const auto origin=g.add("constant",{},vector4(0.5f,0.5f,0,0));
-    const auto radius=g.scalarOp("length",g.binary("subtract",uv,origin));
+    const auto radius=g.scalarOp("length3",g.binary("subtract",uv,origin));
     const auto pupilRadius=std::max(0.02f,d.irisRadius*d.pupil*0.5f);
     const auto irisRadius=std::max(0.10f,d.irisRadius*0.49f);
     const auto irisMask=g.scalarOp("oneMinus",
@@ -206,7 +206,7 @@ std::shared_ptr<const render::graph::Program> compactIrisGraph(
     Nodes g;
     const auto uv=g.add("uv");
     const auto center=g.add("constant",{},vector4(0.5f,0.5f,0,0));
-    const auto radius=g.scalarOp("length",g.binary("subtract",uv,center));
+    const auto radius=g.scalarOp("length3",g.binary("subtract",uv,center));
     const auto irisRadius=std::max(0.10f,d.irisRadius*0.49f);
     const auto pupilRadius=std::max(0.02f,d.irisRadius*d.pupil*0.5f);
     const auto irisMask=g.scalarOp("oneMinus",g.ternary("smoothstep",

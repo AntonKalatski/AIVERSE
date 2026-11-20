@@ -7,6 +7,7 @@
 #include "engine/character/vivid/GroomSegmentCollision.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/ModelShaders.h"
+#include "engine/render/Animation.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -78,6 +79,20 @@ void test() {
                human.head->findNode("eye.R")>=0,
                "facial joint hierarchy incomplete");
         expect(human.rig.hasFacialJoints(),"reference head has no jaw/eye joints");
+        render::Pose bind;
+        render::bindPose(*human.head,bind);
+        std::vector<render::mat4> world;
+        render::worldMatrices(*human.head,bind,world);
+        const auto& eye=world[std::size_t(human.head->findNode("eye.L"))];
+        const auto& nose=world[std::size_t(human.head->findNode("nose"))];
+        expect(std::fabs(eye.at(2,3)-0.75f*dna.anatomy.headScale)<1.e-5f &&
+               std::fabs(nose.at(2,3)-0.78f*dna.anatomy.headScale)<1.e-5f,
+               "head parenting applied anatomy scale twice and buried facial features");
+        const auto& iris=world[std::size_t(human.head->findNode("iris.L"))];
+        const auto& cornea=world[std::size_t(human.head->findNode("cornea.L"))];
+        expect(iris.at(2,3)>eye.at(2,3)+eye.at(2,2) &&
+               iris.at(2,3)<cornea.at(2,3)+cornea.at(2,2),
+               "iris pupil must lie between opaque sclera and corneal shell");
         expect(human.facialShapes.targets()==5 &&
                human.facialBinding.routes()==5 &&
                human.facialShapes.vertices()==human.head->vertices.size(),

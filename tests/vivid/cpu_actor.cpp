@@ -40,12 +40,15 @@ void run() {
     delta.vertex=1;
     delta.position={0,0.25f,0};
     target.deltas.push_back(delta);
-    const auto morphs=SparseMorphLibrary::compile(3,{target});
+    auto morphs=SparseMorphLibrary::compile(3,{target});
     const std::vector<ShapeRoute> routes{{Channel::JawOpen,"jawOpen",1.0f}};
     const auto binding=FaceShapeBinding::compile(morphs,routes);
     CpuActorStream actor;
     expect(actor.initialize(device,model,morphs,model.vertices),
            "GLES CPU actor rejected valid full model vertex stream");
+    // Publishing a HumanPreviewAsset moves and destroys the staged library.
+    // The actor must keep valid immutable data across that owner transition.
+    morphs=SparseMorphLibrary{};
     FaceFrame frame{};
     frame.values[static_cast<std::size_t>(Channel::JawOpen)]=1.0f;
     device.beginFrame(64,64);

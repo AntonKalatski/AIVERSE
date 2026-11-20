@@ -4,6 +4,25 @@ VIVID Creator is a standalone, genre-neutral C++20 tool built on AIVERSE
 Renderer3D, its existing ShaderGraph PBR materials and MotionWeave node poses.
 It does **not** bundle or decode Epic MetaHuman DNA or third-party scans.
 
+## Visual acceptance correction — 2026-11-20
+
+Use `--smoke --cpu-morph` to exercise the CPU facial stream on a compute-capable
+host. Normal startup selects GPU compute before the first frame. CPU actors own
+an immutable copy of their sparse morph library, so publishing a moved candidate
+cannot leave a dangling library pointer. There is no per-frame library copy.
+
+Smoke acceptance now requires successful head attachment and actual Renderer3D
+head commands; floor/hair draw counts alone cannot pass. The log reports the
+actor mode, head command count and measured shadow/colour draw counts. This is
+submission/capture acceptance, not a complete pixel or artistic-quality oracle.
+Inspect the image too: earlier Creator captures passed while the head was absent.
+
+Procedural facial parts preserve their authored world transforms when parented
+to the scaled head. The iris sits ahead of the opaque sclera; iris masks measure
+XYZ radius rather than including the UV port's homogeneous W=1. The default
+camera/floor now reveal the complete reference bust. This remains procedural
+pipeline test art, not a production digital human.
+
 ## Build and open on macOS
 
 ```bash

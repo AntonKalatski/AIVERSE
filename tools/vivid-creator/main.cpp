@@ -92,6 +92,7 @@ struct CreatorApp {
     bool pendingRebuild=true, rendererReady=false, uiReady=false;
     bool animate=true, inspectGroom=false, wetPreview=false;
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
+    bool forceCpuMorph=false; // explicit fallback acceptance on compute hosts
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
     VividPresentationSettings presentation{};
@@ -186,15 +187,17 @@ struct CreatorApp {
         renderer.setShadowBounds({-4,-4,-4},{4,4,4});
         renderer.lighting.fogDensity=0.0f;
         renderer.lighting.sunIntensity=1.35f;
-        camera.target={0,0,0};
-        camera.distance=5.4f;
+        // Frontal authoring key keeps eye optics visible below the brow.
+        renderer.lighting.sunDir={0.25f,0.4f,1.0f};
+        camera.target={0,-0.65f,0};
+        camera.distance=6.4f;
         camera.minDistance=2.0f;
         camera.pitch=0.08f;
         camera.yaw=0.08f;
         cache=std::make_unique<GpuMorphAssetCache>(dev);
         retiredHumans=std::make_unique<HumanRetirementQueue>(dev);
         MeshBuilder ground;
-        ground.box({0,-1.20f,0},{12,0.16f,12});
+        ground.box({0,-2.78f,0},{12,0.16f,12});
         floorCpuVertices.clear();
         floorCpuVertices.reserve(ground.vertices().size());
         for(const auto& vertex:ground.vertices())
@@ -652,7 +655,7 @@ struct CreatorApp {
                     if(!proposed.hair->vb.valid() || !proposed.hair->ib.valid())
                         throw std::runtime_error("VIVID Creator: candidate groom buffer upload failed");
                 }
-                if(device->supportsCompute() && device->frameSerial()) {
+                if(device->supportsCompute() && !forceCpuMorph) {
                     auto gpu=cache->acquire(
                         proposed.facialShapes,proposed.head->vertices);
                     if(!gpu)
@@ -2041,7 +2044,7 @@ struct CreatorApp {
         renderer.beginScene(camera,dev.framebufferWidth(),dev.framebufferHeight());
         // Opt-in only for this frame's selected human; other game Models
         // do not pay for per-command provenance collection.
-        if(gpuSculptToRecord.valid() && human.head)
+        if((smoke || gpuSculptToRecord.valid()) && human.head)
             renderer.trackModelSubmissions(human.head.get());
         // Renderer3D must select the view's actual model meshes, LODs,
         // vertex overrides and material batches BEFORE the separate ID
@@ -2051,8 +2054,9 @@ struct CreatorApp {
         ModelDraw draw;
         draw.model=human.head.get();
         draw.nodeWorld=&facePose;
-        if((actor&&actor->attach(draw))||
-           (cpuActor&&cpuActor->attach(draw)))
+        const bool headSubmitted=(actor&&actor->attach(draw))||
+                                 (cpuActor&&cpuActor->attach(draw));
+        if(headSubmitted)
             renderer.drawModel(draw);
         const int headIndex=human.rig.head;
         const mat4& poseHead=facePose[std::size_t(headIndex)];
@@ -2196,11 +2200,17 @@ struct CreatorApp {
             if(!renderer.modelError().empty())
                 throw std::runtime_error("VIVID Creator Metal shader error: "+
                                          renderer.modelError());
-            const bool ready=p.draws[0]>0 && p.draws[1]>0;
+            if(!headSubmitted)
+                throw std::runtime_error("VIVID Creator head was not submitted: "+status);
+            const auto headSubmission=renderer.modelSubmissionProvenance(*human.head);
+            const bool ready=p.draws[0]>0 && p.draws[1]>0 &&
+                             !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
                 smokeCaptureRequested=true;
-                dev.captureNextFrame([this](int w,int h,std::vector<uint8_t> pixels) {
+                dev.captureNextFrame([this,headCommands=headSubmission.commands.size(),
+                        shadowDraws=p.draws[0],colourDraws=p.draws[1]]
+                        (int w,int h,std::vector<uint8_t> pixels) {
                     if(w<128||h<128||pixels.size()!=std::size_t(w*h*4)) {
                         status="VIVID Creator screenshot is empty";
                         platform::requestQuit();
@@ -2211,8 +2221,9 @@ struct CreatorApp {
                     for(std::size_t i=0;i<pixels.size();i+=4)
                         out.write(reinterpret_cast<const char*>(pixels.data()+i),3);
                     smokeCompleted=bool(out);
-                    std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s shadow=%d colour=%d pass=%d\n",
-                        smokePath.c_str(),1,1,int(smokeCompleted));
+                    std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s headCommands=%zu actor=%s shadow=%u colour=%u pass=%d\n",
+                        smokePath.c_str(),headCommands,actor?"GPU":"CPU",
+                        unsigned(shadowDraws),unsigned(colourDraws),int(smokeCompleted));
                     platform::requestQuit();
                 });
             }
@@ -2257,6 +2268,8 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--cpu-morph")==0) {
+            application->forceCpuMorph=true;
         }else if(std::strcmp(argv[i],"--presentation-config")==0 && i+1<argc) {
             try {
                 application->presentation=VividPresentationSettings::loadFile(argv[++i]);
