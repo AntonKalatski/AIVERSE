@@ -552,6 +552,16 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     lights.begin(cam, aspect);
 }
 
+void Renderer3D::discardSceneSubmission() noexcept {
+    items_.clear();lines_.clear();tris_.clear();
+    custom_.clear();customOpaque_.clear();customShadow_.clear();customFeedback_.clear();
+    motionReactiveDraws_.clear();
+    modelItems_.clear();jointData_.clear();morphData_.clear();
+    materialStateIds_.clear();materialHashCandidates_.clear();
+    materialRepresentatives_.clear();materialItemIds_.clear();
+    modelStats_={};geometryStats_={};
+}
+
 void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
     // Fit an orthographic light frustum around the part of the ground the camera sees.
     float3 pts[8];

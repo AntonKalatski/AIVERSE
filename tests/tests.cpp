@@ -2,6 +2,7 @@
 #include "engine/view/VisibilityField.h"
 #include "engine/render/NativeMeshBatch.h"
 #include "engine/render/FramePublicationEpoch.h"
+#include "engine/render/CameraModelSnapshot.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include <cstdlib>
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
@@ -12603,6 +12604,50 @@ TEST(rts_view_commits_visual_epoch_only_after_primary_and_invalidates_on_map_edi
     view.shutdown(dev);
     renderer.shutdown();
     CHECK(!view.publishedVisualFrame().ready());
+}
+
+TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
+    struct Device final : fogfaulttest::Device {
+        bool failOverlays=false;
+        gfx::BufferHandle createBuffer(const gfx::BufferDesc& d) override {
+            if(failOverlays && d.label && std::string(d.label)=="overlays")
+                throw std::runtime_error("injected late overlay allocation failure");
+            return fogfaulttest::Device::createBuffer(d);
+        }
+    } dev;
+    render::Renderer3D renderer;CHECK(renderer.init(dev));
+    game::RtsView view;game::Rules rules=skirmishRules();
+    CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    render::RTSCamera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
+    render::CameraModelSnapshot snapshot;
+    view.setCameraPreparedCapture(&snapshot);
+    game::RtsScene scene;
+    renderer.beginScene(camera,320,240);
+    view.draw(renderer,scene,1,nullptr,grid);
+    const auto first=view.publishedVisualFrame();CHECK(first.ready());
+    renderer.render(gfx::PassDesc{});
+    game::SceneObject object;object.entity={1,1};object.pos={2,0,2};
+    object.visible=true;object.selected=true;object.hp=1;object.build=1;
+    scene.objects.push_back(object);scene.tick=1;
+    renderer.beginScene(camera,320,240);
+    dev.failOverlays=true;bool failed=false;
+    {
+        render::CameraModelSnapshot::CaptureGuard capture(snapshot,renderer);
+        try {view.draw(renderer,scene,1.1,nullptr,grid);}
+        catch(const std::runtime_error&){failed=true;}
+    }
+    CHECK(failed);
+    CHECK(!view.publishedVisualFrame().ready());
+    CHECK(snapshot.size()==0 && snapshot.geometryCount()==0 && snapshot.preparedCount()==0);
+    dev.failOverlays=false;
+    renderer.beginScene(camera,320,240);
+    view.draw(renderer,scene,1.1,nullptr,grid);
+    CHECK(view.publishedVisualFrame().ready());
+    CHECK(view.publishedVisualFrame().sourceFrame==first.sourceFrame+1);
+    renderer.render(gfx::PassDesc{});
+    view.setCameraPreparedCapture(nullptr);view.shutdown(dev);renderer.shutdown();
 }
 
 TEST(frame_publication_epoch_requires_every_owner_before_secondary_camera) {

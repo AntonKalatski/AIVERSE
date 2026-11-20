@@ -708,11 +708,10 @@ private:
         // "groundShadow": a flat image under the model (OpenWar's footprint sprites), turning with the drawn model
         struct GroundShadow { std::string image; float w = 0, d = 0, ox = 0, oz = 0, lift = 0.05f; uint32_t rgba = 0x0000008cu; bool flipU = false, flipV = false; } shadow;
     };
-    struct EntityAnim {
+    struct EntityAnimState {
         uint16_t type = 0;
         int choice = 0;
         render::Animator anim;
-        render::AnimationGraphInstance graph;
         // One-shot named clock snapshot from model/source reload. Restore
         // only AFTER resolving a possible per-entity programmable override,
         // never prematurely against the TypeLook's default graph.
@@ -768,6 +767,17 @@ private:
         bool launched = false;
         double lastSeenTime = -1;                 // previews keep their own clock
     };
+
+    struct EntityAnim : EntityAnimState {
+        render::AnimationGraphInstance graph;
+        EntityAnim cloneForPreparation() const {
+            EntityAnim next;
+            static_cast<EntityAnimState&>(next)=*this;
+            next.graph=std::move(*graph.cloneForPreparation());
+            return next;
+        }
+    };
+    class PreparedAnimationLease;
 
     // Short-lived, Model-pointer-free presentation clock handoff while a
     // source/graph/visual LOD reimport destroys and rebuilds a TypeLook.

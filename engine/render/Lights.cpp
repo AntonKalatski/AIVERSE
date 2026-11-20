@@ -352,6 +352,15 @@ LightSystem::PreparedFrame LightSystem::capturePrepared() const {
     return frame;
 }
 
+void LightSystem::swapPrepared(PreparedFrame& frame) noexcept {
+    lights_.swap(frame.lights);contacts_.swap(frame.contacts);
+    using std::swap;
+    swap(nightGlow_,frame.nightGlow);swap(unlitTint_,frame.unlitTint);
+    for(int i=0;i<4;++i)swap(u_.cloud[i],frame.cloud[i]);
+    swap(u_.sky[0],frame.cloudStrength);
+    swap(reflectOn_,frame.waterReflections);
+}
+
 void LightSystem::replayPrepared(const PreparedFrame& frame) {
     // Called after beginScene(): never replay through a stale light-map or
     // touch the camera's projection/focus/halo basis.

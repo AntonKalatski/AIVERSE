@@ -140,6 +140,8 @@ public:
         bool waterReflections=true;
     };
     PreparedFrame capturePrepared() const;
+    // Allocation-free owner-thread exchange for aborted scene preparation.
+    void swapPrepared(PreparedFrame& frame) noexcept;
     void replayPrepared(const PreparedFrame& frame);
 
     void begin(const RTSCamera& cam, float aspect);  // Renderer3D::beginScene

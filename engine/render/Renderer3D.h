@@ -503,6 +503,9 @@ public:
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Before render only: drop borrowed packets/callbacks of a failed host
+    // preparation before destroying its private CPU owners. No RHI work.
+    void discardSceneSubmission() noexcept;
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Bridge the current opaque immediate-mesh scene queue into VT feedback.
     // The caller supplies a compatible feedback pipeline and per-mesh

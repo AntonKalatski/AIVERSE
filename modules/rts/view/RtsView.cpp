@@ -7,6 +7,7 @@
 #include "RtsRoadView.h"
 #include "RtsShoreView.h"
 #include "engine/render/OwnerPrepareCommit.h"
+#include "engine/render/CameraModelSnapshot.h"
 #include "../../../engine/data/JsonCompose.h"
 #include "../RtsModule.h"
 #include "../RtsArsenal.h"
@@ -1006,6 +1007,61 @@ bool RtsView::prepareMapFrame(Renderer3D& renderer,const RtsScene& scene,
     return true;
 }
 
+// The legacy host owns semantic clocks/events; core View owns only generic
+// graph playback. Keep both old owners until the complete frame succeeds.
+class RtsView::PreparedAnimationLease final {
+public:
+    PreparedAnimationLease(RtsView& view,Renderer3D& renderer)
+        :v(view),r(renderer),generic(view.genericView_?view.genericView_->cloneForPreparation():nullptr),
+         reload(view.reloadPlayback_),choices(view.streamingChoices_),tracers(view.tracers_),
+         events(view.events_),effects(view.effects_),bars(view.bars_),
+         shadows(view.shadowDraws_),ground(view.groundMerged_),lights(view.lights_),
+         rendererLights(renderer.lights.capturePrepared()),lighting(renderer.lighting),
+         lastTime(view.lastTime_),lastTick(view.lastTick_),frame(view.frame_),
+         viewProj(view.viewProj_),camPos(view.camPos_),fx(view.fx_) {
+        animations.reserve(view.anims_.size());
+        for(const auto& [id,state]:view.anims_)
+            animations.emplace(id,state.cloneForPreparation());
+        // Every fallible copy above finishes before any published owner moves.
+        swapOwners();
+    }
+    ~PreparedAnimationLease() noexcept {
+        if(committed)return;
+        // Queued ModelDraws borrow candidate poses. Clear them BEFORE swap
+        // destroys the failed candidate, even if the caller catches the error.
+        r.discardSceneSubmission();
+        if(v.cameraPreparedCapture_)v.cameraPreparedCapture_->clear();
+        swapOwners();
+        r.lights.swapPrepared(rendererLights);r.lighting=lighting;
+        v.lastTime_=lastTime;v.lastTick_=lastTick;v.frame_=frame;
+        v.viewProj_=viewProj;v.camPos_=camPos;v.fx_=fx;
+    }
+    void commit() noexcept {committed=true;}
+private:
+    void swapOwners() noexcept {
+        v.anims_.swap(animations);v.genericView_.swap(generic);
+        v.reloadPlayback_.swap(reload);v.streamingChoices_.swap(choices);
+        v.tracers_.swap(tracers);v.events_.swap(events);v.effects_.swap(effects);
+        v.bars_.swap(bars);v.shadowDraws_.swap(shadows);v.groundMerged_.swap(ground);
+        using std::swap;swap(v.lights_,lights);
+    }
+    RtsView& v;Renderer3D& r;bool committed=false;
+    decltype(RtsView::anims_) animations;
+    decltype(RtsView::genericView_) generic;
+    decltype(RtsView::reloadPlayback_) reload;
+    decltype(RtsView::streamingChoices_) choices;
+    decltype(RtsView::tracers_) tracers;
+    decltype(RtsView::events_) events;
+    decltype(RtsView::effects_) effects;
+    decltype(RtsView::bars_) bars;
+    decltype(RtsView::shadowDraws_) shadows,ground;
+    RtsLights lights;
+    render::LightSystem::PreparedFrame rendererLights;
+    render::Lighting lighting;
+    double lastTime;uint32_t lastTick;uint64_t frame;
+    render::mat4 viewProj;render::float3 camPos;EntityFxStore* fx;
+};
+
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
     // A matching topology prewarm MUST publish before even the first
     // hierarchy/animation height query or FramePublicationEpoch::begin().
@@ -1047,6 +1103,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // and synchronous Renderer3D model submissions have completed.
     // GPU work remains owned by the separate fenced retirement queue.
     [[maybe_unused]] const auto modelReadScope=resources_.acquireFrameReadScope();
+    // Full animation/event rollback is used by LENS capture frames. Ordinary
+    // single-camera hosts keep their established allocation/performance path.
+    std::unique_ptr<PreparedAnimationLease> animationLease;
+    if(cameraPreparedCapture_)
+        animationLease=std::make_unique<PreparedAnimationLease>(*this,r);
     RtsScene resolved;
     const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
     if(hierarchy) {
@@ -1090,6 +1151,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         ::aiverse::View::submitLayers(providers,{time,0.f,frame_});
         if(!publication.finish())
             throw std::logic_error("RtsView: incomplete planet visual frame publication");
+        if(animationLease)animationLease->commit();
         return;
     }
     animationObstacles_.clear();
@@ -1499,6 +1561,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     latePasses.flush();
     if(!publication.finish())
         throw std::logic_error("RtsView: incomplete visual frame publication");
+    if(animationLease)animationLease->commit();
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
