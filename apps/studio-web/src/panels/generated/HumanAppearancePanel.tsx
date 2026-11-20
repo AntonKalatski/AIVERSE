@@ -1,3 +1,4 @@
+import HumanStudioLightingControls from '../HumanStudioLightingControls';
 import HumanFaceControls from '../HumanFaceControls';
 import HumanWardrobeControls from '../HumanWardrobeControls';
 import { useEffect, useRef, useState } from 'react';
@@ -99,6 +100,7 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
      </StudioSelect></StudioField>)}
     {!Object.keys(draft.materials).length&&<StudioAlert>Load the model profile or import appearance.json to assign its materials.</StudioAlert>}
    </StudioSection></details>
+   <HumanStudioLightingControls key={"lighting"+project}/>
    <HumanFaceControls key={"face"+project+guid} guid={guid} face={face} schema={info?.faceSchema??[]} onChange={setFace} onImported={v=>{setGuid(v);setFace(null);setDraft(emptyLook());}}/>
    <HumanWardrobeControls key={project+guid} guid={guid} look={draft} face={face}/>
    <StudioSection title="Saved looks">

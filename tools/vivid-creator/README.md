@@ -1431,3 +1431,15 @@ all-scene GPU picking replacement.
 MetaHuman binary DNA diagnostic import is available through the separate
 [offline adapter](../vivid-dna-import/README.md). Use `--smoke --still` for a
 frozen MotionWeave pose and snapped facial channels in reproducible captures.
+
+### Studio lighting captures
+
+The shared VIVID Appearance rigs can be captured without automating the locked
+Studio UI. Use `--studio-lighting ID` with one of `neutral`, `portrait`, `warm`,
+`cool`, `dramatic`, `rim`, `gel`, `catalog`. Combine with `--smoke --still` and
+an external `--asset` manifest. Add `--portrait` for close-up framing. Set
+`AIVERSE_VIVID_CREATOR_CAPTURE` to a PPM path on the designated build volume.
+All eight use four sources and the same smooth cyclorama geometry; camera,
+character pose and source materials remain unchanged between captures. These
+images demonstrate the native renderer, not the new HTML5 controls. Without
+`--studio-lighting`, existing optical capture baselines remain unchanged.

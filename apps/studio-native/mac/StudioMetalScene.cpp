@@ -23,12 +23,16 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     builder.box({0,0,0}, {1,1,1});
     cube_ = builder.upload(*device_);
     if (!cube_.vb.valid() || !cube_.ib.valid()) throw std::runtime_error("Preview cube mesh upload failed");
+    studioCyclorama_=vivid::humanStudioCyclorama().upload(*device_);
+    if(!studioCyclorama_.vb.valid()||!studioCyclorama_.ib.valid())throw std::runtime_error("Studio cyclorama upload failed");
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
 StudioMetalScene::~StudioMetalScene() {
     if (device_) {
         (void)facialGpu_.clear(*device_,renderer_);
+        if(studioCyclorama_.vb.valid())device_->destroyBuffer(studioCyclorama_.vb);
+        if(studioCyclorama_.ib.valid())device_->destroyBuffer(studioCyclorama_.ib);
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -91,6 +95,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     // for native materials and the map; no HTML fake character, no second
     // Animator/Graph clock. CPU import is asynchronous; GPU publication and
     // retirement remain on this owner thread before frame submissions.
+    if(!facialRequested){renderer_.setShadowQuality(ShadowQuality::Off);renderer_.lights.setQuality(LightQuality::Medium);}
     if(facialRequested) {
         std::string reason;
         if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
@@ -109,18 +114,20 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             }
             device_->beginFrame(framebufferWidth,framebufferHeight);
             renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
-            renderer_.lighting=render::Lighting{};
-            renderer_.lighting.sunIntensity=1.1f;
-            renderer_.lighting.skyColor={.42f,.5f,.64f};
-            renderer_.lighting.groundColor={.22f,.25f,.3f};
-            renderer_.lighting.fogDensity=0.f;
-            renderer_.lights.add({2.f,3.f,2.f},6.f,{1.f,.9f,.78f},2.4f);
+            const auto* model=facialGpu_.model();
+            const float h=std::max(.01f,model->boundsMax.y-model->boundsMin.y);
+            const float3 foot{(model->boundsMin.x+model->boundsMax.x)*.5f,model->boundsMin.y,(model->boundsMin.z+model->boundsMax.z)*.5f};
+            vivid::applyHumanStudioLighting(renderer_,facialBinding.studioLighting,foot,h);
+            renderer_.setShadowQuality(ShadowQuality::Medium);
+            const auto bg=facialBinding.studioLighting.rig().background;
+            if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},0,0);
+
             const bool submitted=facialGpu_.submit(
                 renderer_,facialBinding,1.f/60.f,reason);
             gfx::PassDesc pass;
-            pass.clearColor[0]=.038f;
-            pass.clearColor[1]=.064f;
-            pass.clearColor[2]=.098f;
+            pass.clearColor[0]=bg.x;
+            pass.clearColor[1]=bg.y;
+            pass.clearColor[2]=bg.z;
             pass.clearColor[3]=1.f;
             renderer_.render(pass);
             device_->endPass();

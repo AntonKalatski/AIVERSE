@@ -1,3 +1,4 @@
+#include "engine/character/vivid/HumanStudioLighting.h"
 // VIVID Creator: standalone non-destructive digital-human authoring and
 // actual Renderer3D preview. Uses AIVERSE's existing ImGui/RHI/Model and
 // MotionWeave animation systems; no duplicate game simulation.
@@ -93,6 +94,9 @@ struct CreatorApp {
     bool animate=true, inspectGroom=false, wetPreview=false;
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
     bool portraitCapture=false;
+    bool studioLightingEnabled=false;
+    vivid::HumanStudioLighting studioLighting;
+    float3 studioFoot{};float studioHeight=3.8f;
     bool forceCpuMorph=false; // explicit fallback acceptance on compute hosts
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
@@ -199,8 +203,11 @@ struct CreatorApp {
         camera.yaw=0.08f;
         cache=std::make_unique<GpuMorphAssetCache>(dev);
         retiredHumans=std::make_unique<HumanRetirementQueue>(dev);
+        if(commandLineAsset)loadExternal(manifestFile);
+        regenerate();
         MeshBuilder ground;
-        ground.box({0,-2.78f,0},{12,0.16f,12});
+        if(studioLightingEnabled&&human.head){const auto& m=*human.head;studioHeight=std::max(.01f,m.boundsMax.y-m.boundsMin.y);studioFoot={(m.boundsMin.x+m.boundsMax.x)*.5f,m.boundsMin.y,(m.boundsMin.z+m.boundsMax.z)*.5f};ground=vivid::humanStudioCyclorama(studioFoot,studioHeight);}
+        else ground.box({0,-2.78f,0},{12,0.16f,12});
         floorCpuVertices.clear();
         floorCpuVertices.reserve(ground.vertices().size());
         for(const auto& vertex:ground.vertices())
@@ -209,9 +216,7 @@ struct CreatorApp {
         floor=ground.upload(dev);
         if(!floor.vb.valid()||!floor.ib.valid())
             throw std::runtime_error("VIVID Creator: floor upload failed");
-        if(commandLineAsset)
-            loadExternal(manifestFile);
-        regenerate();
+
     }
     bool releaseHuman() {
         if(!device)return true;
@@ -2065,7 +2070,8 @@ struct CreatorApp {
         // vertex overrides and material batches BEFORE the separate ID
         // diagnostic is allowed to corroborate a CPU-picked source vertex.
         // drawModel stages colour commands; render() executes them below.
-        renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
+        if(studioLightingEnabled){vivid::applyHumanStudioLighting(renderer,studioLighting,studioFoot,studioHeight);const auto bg=studioLighting.rig().background;renderer.drawMesh(floor,{}, {bg.x,bg.y,bg.z,1},0,0);}
+        else renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
         ModelDraw draw;
         draw.model=human.head.get();
         draw.nodeWorld=&facePose;
@@ -2086,6 +2092,7 @@ struct CreatorApp {
         }
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
+        if(studioLightingEnabled){const auto bg=studioLighting.rig().background;pass.clearColor[0]=bg.x;pass.clearColor[1]=bg.y;pass.clearColor[2]=bg.z;}
         renderer.render(pass);
         // Stage 7AW: only AFTER the renderer has actually encoded its
         // opaque pass may the ID diagnostic corroborate a picked source.
@@ -2291,6 +2298,8 @@ int aiverseMain(int argc,char** argv) {
                 if(bytes.size()>128*1024)throw std::runtime_error("Appearance recipe too large");
                 application->appearanceOverride=HumanAppearance::fromJson(Json::parse(bytes));
             }catch(const std::exception& e){std::fprintf(stderr,"VIVID appearance: %s\n",e.what());return 2;}
+        }else if(std::strcmp(argv[i],"--studio-lighting")==0 && i+1<argc) {
+            application->studioLighting.preset=argv[++i];(void)application->studioLighting.rig();application->studioLightingEnabled=true;
         }else if(std::strcmp(argv[i],"--portrait")==0) {
             application->portraitCapture=true;
         }else if(std::strcmp(argv[i],"--still")==0) {

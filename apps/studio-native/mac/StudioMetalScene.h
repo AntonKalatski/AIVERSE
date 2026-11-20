@@ -36,6 +36,7 @@ private:
     std::unique_ptr<render::RenderDeviceLifetime> deviceLifetime_;
     render::Renderer3D renderer_;
     render::Mesh cube_;
+    render::Mesh studioCyclorama_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;
     StudioFacialGpuPreview facialGpu_;

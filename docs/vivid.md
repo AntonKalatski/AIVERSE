@@ -1828,3 +1828,24 @@ DAG into ordinary PBR textures/factors. Body bind deformation and facial morphs
 are retained in the output; garment fitting is not automatic. The Studio wardrobe section now exposes native asynchronous assembly, masks and
 accessory sockets. See [character assembly](vivid-character-assembly.md) for
 workflow, output contract and limitations.
+
+## Studio lighting rigs — 2026-11-20
+
+VIVID Appearance → Студийное освещение provides eight original preview rigs:
+neutral, portrait, warm, cool, dramatic, rim, gel and catalog. Each combines a
+shadowed directional key and three point lights, with hemisphere fill. Rotate
+the rig, adjust overall brightness, or toggle the smooth floor/wall cyclorama.
+These are AIVERSE rigs inspired by the environment-switching workflow, not copies
+of Epic assets, UE area lights, Lumen or ray tracing. Point sources use the existing
+High light tier and do not each cast independent shadows. The cyclorama is real
+smooth-normal geometry, scaled to the imported character's bind bounds.
+
+The settings are preview-only and retained until project reset; they never alter
+character textures, exported appearance or map lighting. Native validated method:
+`studio.humanStudioLighting` with optional `settings:{preset,rotation,gain,backdrop}`.
+The response contains settings and eight preset labels. Switching light settings
+does not advance the character binding revision or rebuild its GPU meshes.
+Native Creator accepts `--studio-lighting neutral` (or another preset ID) for
+repeatable captures. Without this option its legacy optical-test setup is retained.
+
+Workflow reference: [Epic MetaHuman viewport environments](https://dev.epicgames.com/documentation/metahuman/navigating-metahuman-creator-in-unreal-engine).

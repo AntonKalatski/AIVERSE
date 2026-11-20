@@ -60,6 +60,13 @@ int main() {
   AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));
   AIVERSE_TEST_CHECK(poll().has("error"));
   AIVERSE_TEST_CHECK(!fs::exists(project/"content/Characters/.assembled.pending"));
+  const auto lightInfo=call("studio.humanStudioLighting")["result"];AIVERSE_TEST_CHECK(lightInfo["presets"].size()==8);
+  auto lightParams=Json::object();auto lights=Json::parse(R"({"preset":"gel","rotation":90,"gain":0.75,"backdrop":true})");lightParams.set("settings",lights);
+  AIVERSE_TEST_CHECK(call("studio.humanStudioLighting",lightParams)["result"]["settings"].getStr("preset")=="gel");
+  lights.set("preset",Json::string("unknown"));lightParams.set("settings",lights);AIVERSE_TEST_CHECK(call("studio.humanStudioLighting",lightParams).has("error"));
+  AIVERSE_TEST_CHECK(call("studio.humanStudioLighting")["result"]["settings"].getStr("preset")=="gel");
+  const auto backdrop=vivid::humanStudioCyclorama();AIVERSE_TEST_CHECK(backdrop.vertices().size()==134&&backdrop.indices().size()==396);
+  for(size_t i=0;i<backdrop.indices().size();i+=3){const auto& a=backdrop.vertices()[backdrop.indices()[i]];const auto& b=backdrop.vertices()[backdrop.indices()[i+1]];const auto& c=backdrop.vertices()[backdrop.indices()[i+2]];AIVERSE_TEST_CHECK(render::dot(render::cross(b.pos-a.pos,c.pos-a.pos),a.nrm)>0);}
   auto face=Json::parse(R"({"version":1,"meshes":[],"values":{"width":0.1},"landmarks":[]})");face.member("meshes").push(Json::string(model.model->meshes[0].name));
   build.set("face",face);build.set("name",Json::string("face_baked"));
   AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));AIVERSE_TEST_CHECK(!poll().has("error"));

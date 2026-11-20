@@ -180,6 +180,10 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method=="studio.humanStudioLighting") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(params.has("settings"))facialPreview_.studioLighting=vivid::HumanStudioLighting::fromJson(params["settings"]);
+            reply.set("result",facialPreview_.studioLighting.describe());
         } else if(method=="studio.humanFaceFitScan" || method=="studio.humanHeadBodyImport" || method=="studio.humanWardrobeInfo" || method=="studio.humanWardrobeFromAsset" || method=="studio.humanCharacterBuild" || method=="studio.humanCharacterBuildStatus") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             if(method=="studio.humanCharacterBuildStatus") {
