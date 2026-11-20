@@ -152,6 +152,39 @@ public:
         if(!appendSculptGpuMaterialGeometry(
                 model,surface,authorCount,authorIds,true,
                 vertices_,grouped))return false;
+        const auto selectedOpaqueCount=vertices_.size();
+        if(actualGpuSource) {
+            // Only Metal compute currently reads 60B ModelVertex directly.
+            // Reject if the selected face needs custom/masked alpha: those
+            // triangles require a separate GPU-expanded UV stream.
+            const auto& source=*actualGpuSource;
+            if(!expandCompute_.valid() || !device_->supportsCompute() ||
+               device_->info().backend!=gfx::Backend::Metal ||
+               !source.actualVertexOverride.valid() ||
+               source.sourceVertexCount!=model.vertices.size() ||
+               source.params.vertices!=model.vertices.size() ||
+               source.params.count!=selectedOpaqueCount ||
+               source.indices.size()!=selectedOpaqueCount ||
+               !selectedOpaqueCount || !grouped.empty() ||
+               source.params.skinned!=
+                   (source.jointMatrices.empty()?0u:1u) ||
+               source.params.jointMatrices!=source.jointMatrices.size() ||
+               (source.params.skinned &&
+                source.influences.size()!=model.vertices.size()))
+                return false;
+            // Require exact topology/triangle IDs from the CPU-side
+            // renderer-selected source, but do not read CPU vertex positions.
+            for(std::size_t i=0;i<selectedOpaqueCount;++i) {
+                const auto& requestVertex=source.indices[i];
+                if(requestVertex.vertex>=model.vertices.size())return false;
+                const auto id=requestVertex.triangleId;
+                const auto& encoded=vertices_[i].rgba;
+                if(encoded[0]!=std::uint8_t(id) ||
+                   encoded[1]!=std::uint8_t(id>>8u) ||
+                   encoded[2]!=std::uint8_t(id>>16u) ||
+                   encoded[3]!=std::uint8_t(id>>24u))return false;
+            }
+        }
         if(maskedOccluders.size()+grouped.size()>256u)return false;
         std::size_t total=vertices_.size()+occluders.size();
         if(total>3000000u)return false;
@@ -194,6 +227,12 @@ public:
                !std::isfinite(vertex.world.z))return false;
         }
         vertices_.insert(vertices_.end(),occluders.begin(),occluders.end());
+        // The selected source triangle positions now come ONLY from the
+        // borrowed GPU ModelVertex buffer. Leave CPU-supplied zero-ID scene
+        // occluders in this separate legacy vertex allocation.
+        if(actualGpuSource)
+            vertices_.erase(vertices_.begin(),
+                            vertices_.begin()+selectedOpaqueCount);
         for(float v:viewProj.m)if(!std::isfinite(v))return false;
         const int w=int(request.width),h=int(request.height);
         if((!color_.valid()||!depth_.valid()) || w!=width_ || h!=height_) {
