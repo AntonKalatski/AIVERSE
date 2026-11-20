@@ -3120,6 +3120,23 @@ before calling this stage validated.
 - **ACTUAL:** GitHub source/API inspection and two source commits; **NOT RUN:** Mac C++ compiler/CMake/CTest, fresh CI green, real Studio GUI/pixels, Metal/Vulkan/GLES, GPU fault injection, ASan/TSan or high-crowd memory. **Next Stage 157:** safe on-disk ModelView provider+Animator atomic reload; truly token-based provider retirement and advanced Studio authoring. Draft PR #22 remains unmerged. Maintain per-stage handoff + user-visible readiness table.
 
 
+## LENS topology camera-resource continuation — 2026-11-20
+
+Branch `codex/lens-completion`, implementation `00f87a503068f4f4eae603a4d991ea4e20b2a34b`. See [LENS Stage 48B.3B.3](lens-motionweave-integration-stage48b3b3-topology-camera-resources-2026-11-20.md). Terrain LOD/dynamic/visibility/trace candidates now belong to unpublished topology; primary publication reuses them. No MotionWeave clock change. Native/GPU tests NOT RUN; hard topology budget and remaining owner integration outstanding. All builds must use KINGSTON.
+
+
+## LENS native validation and topology budget — 2026-11-20
+
+Branch `codex/lens-completion`: topology camera-resource staging `00f87a503`,
+shared preparation budget `481c07e85` / R8 correction `fcf72fafd`, final native
+repair `4a065c85b`. All builds/cache/temp/logs on KINGSTON. All-target native
+Debug x86_64 build PASS; LENS core 408 checks PASS; final Camera/MotionWeave/
+Animation/View/skills selection 77/77 PASS; sole remaining full-core fake idle
+failure repaired and targeted rerun 13/13 PASS. No single final all-suite green
+claim, CI/GPU/ARM64 NOT RUN. See [native validation](lens-native-validation-2026-11-20.md)
+and [budget handoff](lens-topology-preparation-budget-2026-11-20.md) for exact
+commands, SHAs, limitations and next work. Full Sprite/MotionWeave/Lighting/
+Overlay rollback remains open; PlaybackSnapshot is not a complete graph clone.
 
 ## Stage 157 — staged on-disk native ModelView reimport, Animator + socket atomicity (2026-11-20)
 
@@ -3160,3 +3177,140 @@ both source tips and remote integration handoffs. See
 [merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
 Source/ancestry checks complete; build/CTest/GPU/CI **NOT RUN** by merge-only
 request. Next: ordinary integration-branch push and remote SHA verification.
+
+
+## LENS complete graph candidate — 2026-11-20
+
+Branch `codex/lens-completion`, code `ac60e887da19931e947ff8e193611848057bee22`.
+`AnimationGraphInstance::cloneForPreparation()` copies all clocks, fades, poses,
+native spans, events, health diagnostics and parameters, then recursively
+detaches mutable child graphs, MotionPlayers, controller players, rigs and
+trait rigs. Immutable graph/model/environment references remain shared; host
+callbacks must not mutate external state. This is frame preparation, not asset
+hot reload or simulation rollback. Public API additive; save/JSON unchanged.
+Paths: engine/render/AnimationGraph.h/.cpp, tests/animation/graphs.cpp. Added
+native-state retry/isolation and interrupted-fade continuity tests.
+`git diff --check` PASS. Integrated native all-target build still RUNNING on
+KINGSTON; tests/Metal/Vulkan NOT RUN for this stage. Full LENS owner transaction
+remains partial; this primitive alone does not make RtsView atomic. Next:
+connect detached graph state to presentation/legacy owner staging, preserve
+single evaluation and commit only after all owners prepare.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Complete graph candidate | implemented in source | native tests |
+| Multi-owner frame rollback | partial | integrate Sprite/View/light/overlay candidates |
+| GPU validation | not tested | actual Metal/Vulkan runs |
+
+
+## LENS independent View preparation — 2026-11-20
+
+Branch `codex/lens-completion`, code `aae133564e950be9cda1210ad053addcf61704da`.
+`View::cloneForPreparation` copies the presentation World and source bridge,
+then deep-clones every mutable graph player. Copies budget, frame identity and
+LOD histories; scheduler workers and submission scratch are recreated lazily.
+`prepareUpdate` evaluates only this candidate; host publication is a noexcept
+unique_ptr swap. Immutable asset lifetime remains host-owned; custom external
+mutable callback/component state is outside the contract. No simulation/save
+format changes. Tests exercise native graph isolation, discard/retry and invalid
+source rejection. Paths engine/view/View.h and tests/view/packets.cpp.
+`git diff --check` PASS; integrated native build still RUNNING on KINGSTON,
+new tests/GPU tests NOT RUN yet. No full RtsView atomicity claim: connect the
+candidate at the host along with legacy animation, Sprite/light/overlay staging.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Generic View frame candidate | implemented in source | native test execution |
+| Legacy multi-owner frame | partial | host staging integration |
+| Metal/Vulkan parity | not tested | actual GPU tests |
+
+
+## LENS captured animation/event rollback — 2026-11-20
+
+Branch `codex/lens-completion`, code `e378c94da9c52d86251d1016032f036fc7595a41`.
+For frames with CameraPreparedCapture, legacy RtsView animation state is cloned
+alongside generic View and retained until whole-frame success. On failure restore
+clocks, tick/event cursor, entity poses/graphs/procedural state, reload seeds,
+streaming choices, tracers, emitted events/effects, bars/shadows and RtsLights
+CPU state. LightSystem::swapPrepared restores camera-neutral light inputs without
+allocation. Renderer3D::discardSceneSubmission clears borrowed CPU draw queues
+before destroying failed candidate poses, and camera capture is cleared.
+Ordinary noncapture frames retain the established fast path. This is NOT yet
+full Surface/Sprite/Overlay rollback. Added late overlay allocation failure/retry
+fixture with frame sequence and empty-capture checks. No save/JSON change.
+`git diff --check` PASS. Native all-target build stopped at root_motion_bake.cpp:32,
+ambiguous findNodePath after merging main; tests for this stage NOT RUN. KINGSTON
+log main-integration-build.log. Metal/Vulkan runtime NOT RUN. Next repair build
+ambiguity, test this rollback, then stage remaining owners before final publish.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Captured animation/events/lights rollback | implemented in source | run native fault fixture |
+| Full surface/Sprite/Overlay transaction | partial | stage remaining owners |
+| Integrated native build | partial | repair root_motion_bake ambiguity |
+
+
+### LENS montage parser integration repair — 2026-11-20
+Code `7fb7d1e7e0b7ae23e9ca4f0d92f4232c6157ebf4` on codex/lens-completion
+qualifies AnimationAssetLoader.h mask lookup to the existing generic full bone
+path function, avoiding ADL ambiguity with ModelClips.h after main integration.
+No API/JSON/save change. Observed build-3 error fixed in source, rebuild pending;
+full native/GPU checks NOT RUN for this repair. Next: finish build-3 remaining
+target diagnostics, rebuild and run animation_assets plus View/LENS fixtures.
+
+
+## Captured-frame final publication barrier — 2026-11-20
+Code `8a748e2579680b03d2d5aa422e90171bf2499c9d`, branch codex/lens-completion. Captured LENS frames retain the
+prepared surface cohort until Animation/Sprite/Lighting/Overlay packet assembly
+finishes. Topology candidates provide scoped height and road-surface queries
+without changing the published map; candidate packets are assembled before the
+noexcept publication. Owner/source revisions and completed epoch mask are checked
+again before commit. Late failure clears packets and restores animation/event
+clocks while surface candidate destruction releases private GPU handles. Legacy
+noncapture path unchanged. Added late-overlay topology discard/retry fixture.
+No asset/save changes. git diff --check PASS; new checks NOT RUN yet.
+Build-4 nearly complete but predates this stage; fresh rebuild required.
+Paint layers/field visual caches remain legacy host providers outside the declared
+surface cohort; this is preparation atomicity, not rollback of GPU execution.
+Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.
+
+
+### Contact rollback and fault-fixture correction — 2026-11-20
+Code `2abab22275e953af6dbaf11ce95ae20a343c0b6d`, codex/lens-completion. PreparedAnimationLease now preserves
+contact obstacles/surface-frame maps and Renderer heightfield binding on abort.
+First integrated lens_ run found late-overlay fixture never emitted an overlay
+(default rules only); configure an explicit selected ring and initial visibility
+so both the injected allocation and old fog-sheet assertions are meaningful.
+10 failed checks in that fixture; remaining lens_ run in progress. This is not
+a passing report. Build-5 still finishing; corrected fixture NOT RUN yet.
+No save/API changes; git diff --check PASS. Next rebuild core and run corrected
+fault/retry + native Metal fixture, then consolidated CTest on KINGSTON.
+
+
+## Full-suite merge regressions — 2026-11-20
+Code `2387b3996ef5888297e5087cac453e751782b520`, codex/lens-completion. Full CTest found two failures while
+324/326 tests had completed: animation_model_dependencies and
+animation_ragdoll_asset. Automatic merge combined two independently correct
+dependency predicates with different recursion levels. Restore main commit
+042fca8f1 complete usesLibrary/choicesUseLibrary pair, preserving exclusion of
+literal normalMap/texture strings. Ragdoll production already supports missing
+Neck via Chest-to-Head capsule (96c42b253); update stale sparse test expectation
+to 3 bodies/2 joints. No new persistence/API changes. git diff --check PASS.
+Corrected native tests NOT RUN yet; full suite still running, not all passing.
+Next rebuild affected targets/client, rerun two regressions and impacted view
+fixtures, retain the complete consolidated results.
+
+
+## Final acceptance and main publication readiness — 2026-11-20
+QA report `148ec5d1baae9edcaab31005bb965d4966d73f94`, branch codex/lens-completion; tested tree
+`783c2bcba193f99960d58fd538bc7641e5b41d7b`, integrated main
+`291908eb95054b1a331b1b7c54c8147d0330ef2f`. Build-9 PASS (client/editor/tests).
+Full CTest completed in 1079.99 s: 323 PASS, 2 already-repaired failures,
+1 explicit Metal opt-in skip. Core: 274371 checks, 0 failed. Final CTest rerun
+of repaired/affected cases with AIVERSE_LENS_METAL_VALIDATE=1: 9/9 PASS, no skips.
+Every registered case now has a passing execution across full + targeted runs.
+Detailed evidence, exact scope and unverified platforms are in
+`docs/qa/lens-integration-2026-11-20.md`; no queued workflow is called passing.
+No save/asset format change; no production performance-default change.
+Working tree/diff check clean. Next: authorized fast-forward push to main,
+verify remote SHA and record the publication receipt.

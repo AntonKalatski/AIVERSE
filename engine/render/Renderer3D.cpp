@@ -533,7 +533,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     ssrThisFrame_ = false;
     reflectionPlaneValid_ = false;
     reflectionPlaneY_ = 0.f;
-    items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
+    items_.clear(); meshSnapshots_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
     motionReactiveDraws_.clear(); // per-scene extensions register after beginScene
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     strataPreviewStats_ = {}; // diagnostic preflight never persists across scenes
@@ -550,6 +550,17 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     computeShadowMatrix(shadowCamera, aspect);
     geometryShadowSize_=shadowSize_;
     lights.begin(cam, aspect);
+}
+
+void Renderer3D::discardSceneSubmission() noexcept {
+    heightField_={};
+    items_.clear(); meshSnapshots_.clear();lines_.clear();tris_.clear();
+    custom_.clear();customOpaque_.clear();customShadow_.clear();customFeedback_.clear();
+    motionReactiveDraws_.clear();
+    modelItems_.clear();jointData_.clear();morphData_.clear();
+    materialStateIds_.clear();materialHashCandidates_.clear();
+    materialRepresentatives_.clear();materialItemIds_.clear();
+    modelStats_={};geometryStats_={};
 }
 
 void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
@@ -596,8 +607,18 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
     lightViewProj_ = proj * view;
 }
 
+void Renderer3D::drawMeshSnapshot(const Mesh& mesh,const mat4& model,float4 color,
+        uint32_t flags,float specular,float emissive) {
+    meshSnapshots_.push_back(mesh);
+    drawMesh(meshSnapshots_.back(),model,color,flags,specular,emissive);
+}
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
+    // Specialized water/selection draw variants carry extra state that a
+    // plain mesh packet cannot replay; skip those until their own packets exist.
+    if(geometryPacketTap_ && !suppressGeometryTap_ && !(flags&kDrawWaterSurface))
+        geometryPacketTap_({CameraGeometryCommand::Kind::Mesh,&m,model,
+                            color,flags,specular,emissive});
 }
 void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         float4 color,float specular,float refraction,
@@ -607,6 +628,17 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         float4 hydraulics,float4 rapidColor) {
     drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
              specular,refraction);
+    if(geometryPacketTap_ && !suppressGeometryTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Water;
+        packet.mesh=&mesh;packet.world=model;packet.tint=color;
+        packet.flags=kDrawNoCastShadow|kDrawWaterSurface;
+        packet.specular=specular;packet.emissive=refraction;
+        packet.ripples=ripples;packet.wakes=wakeShapes;packet.wind=wind;
+        packet.hydraulics=hydraulics;packet.rapidColor=rapidColor;
+        packet.firstIndex=firstIndex;packet.indexCount=indexCount;
+        geometryPacketTap_(packet);
+    }
     if(!items_.empty()) {
         items_.back().waterRipples=ripples;
         items_.back().waterWakeShapes=wakeShapes;
@@ -620,13 +652,43 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
                                    float4 tint, float4 selection) {
-    drawMesh(mesh, model, tint);
+    // The plain Mesh tap lacks the mask/outline state; capture only the
+    // complete specialized selection command, not a duplicate base mesh.
+    const bool previous=suppressGeometryTap_;
+    suppressGeometryTap_=true;
+    try {drawMesh(mesh,model,tint);}catch(...){
+        suppressGeometryTap_=previous;throw;
+    }
+    suppressGeometryTap_=previous;
     if (!items_.empty()) items_.back().selection = selection;
+    if(geometryPacketTap_ && !suppressGeometryTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Selection;
+        packet.mesh=&mesh;packet.world=model;packet.tint=tint;
+        packet.selection=selection;
+        geometryPacketTap_(packet);
+    }
 }
 
 
-void Renderer3D::line(float3 a, float3 b, uint32_t c) { lines_.push_back({a, c}); lines_.push_back({b, c}); }
-void Renderer3D::triangle(float3 a, float3 b, float3 c, uint32_t col) { tris_.push_back({a, col}); tris_.push_back({b, col}); tris_.push_back({c, col}); }
+void Renderer3D::line(float3 a, float3 b, uint32_t c) {
+    lines_.push_back({a,c});lines_.push_back({b,c});
+    if(geometryPacketTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Line;
+        packet.a=a;packet.b=b;packet.rgba=c;
+        geometryPacketTap_(packet);
+    }
+}
+void Renderer3D::triangle(float3 a, float3 b, float3 c, uint32_t col) {
+    tris_.push_back({a,col});tris_.push_back({b,col});tris_.push_back({c,col});
+    if(geometryPacketTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Triangle;
+        packet.a=a;packet.b=b;packet.c=c;packet.rgba=col;
+        geometryPacketTap_(packet);
+    }
+}
 
 void Renderer3D::quadXZ(float3 a, float3 b, float w, uint32_t c, float y) {
     float3 d = b - a; d.y = 0;

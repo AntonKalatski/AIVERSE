@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <deque>
 #include "../gfx/Gfx.h"
 #include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
@@ -415,6 +416,26 @@ struct ModelRenderStats {
     uint64_t mdiStateBreaks = 0;
 };
 
+// Immutable draw parameters for simple geometry emitted by any scene host.
+// Mesh GPU handles remain borrowed; the host owns their GPU retirement.
+struct CameraGeometryCommand {
+    enum class Kind : uint8_t { Mesh, Line, Triangle, Water, Selection };
+    Kind kind=Kind::Mesh;
+    const Mesh* mesh=nullptr;
+    mat4 world{};
+    float4 tint{1,1,1,1};
+    uint32_t flags=0;
+    float specular=.25f,emissive=0.f;
+    float3 a{},b{},c{};
+    uint32_t rgba=0xffffffffu;
+    // The water and selection variants must preserve their additional
+    // shader/outline parameters instead of being flattened to DrawMesh.
+    std::array<float4,16> ripples{},wakes{};
+    float4 wind{},hydraulics{},rapidColor{};
+    uint32_t firstIndex=0,indexCount=0;
+    float4 selection{};
+};
+
 class Renderer3D {
 public:
     void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
@@ -483,6 +504,10 @@ public:
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Before render only: drop borrowed packets/callbacks of a failed host
+    // preparation before destroying its private CPU owners. No RHI work.
+    void discardSceneSubmission() noexcept;
+    void drawMeshSnapshot(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Bridge the current opaque immediate-mesh scene queue into VT feedback.
     // The caller supplies a compatible feedback pipeline and per-mesh
@@ -1379,6 +1404,16 @@ public:
     // Light baker capture: every drawModel with kDrawStatic is reported (world matrix per node) until reset.
     using ModelCapture = std::function<void(const ModelDraw& d, const std::vector<mat4>& nodeWorld)>;
     void setModelCapture(ModelCapture fn) { capture_ = std::move(fn); }
+    // Synchronous tap for finalized models, animations and attachments.
+    // Copy borrowed pointers before drawModel returns; not light-baker capture.
+    using ModelPacketTap = std::function<void(const ModelDraw&)>;
+    void setModelPacketTap(ModelPacketTap tap) { modelPacketTap_=std::move(tap); }
+    // Optional synchronous capture of mesh/line/triangle commands.
+    // No callbacks retained by the renderer across frames; client removes it.
+    using GeometryPacketTap=std::function<void(const CameraGeometryCommand&)>;
+    void setGeometryPacketTap(GeometryPacketTap tap) {
+        geometryPacketTap_=std::move(tap);
+    }
     // Inside a custom lit draw (terrain): bind the terrain lightmap for AIVERSE_*_BAKED_TERRAIN (BakedShaders.h):
     // uniform block `uniformSlot`, RGBM page at `lightmapSlot`, shadow mask at `maskSlot` (placeholders when none).
     void bindBakedTerrain(int uniformSlot, int lightmapSlot, int maskSlot);
@@ -1510,6 +1545,7 @@ private:
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
     std::vector<DrawItem> items_;
+    std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<FeedbackCustomDraw> customFeedback_;
@@ -1959,6 +1995,9 @@ private:
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
+    ModelPacketTap modelPacketTap_;
+    GeometryPacketTap geometryPacketTap_;
+    bool suppressGeometryTap_=false;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
 };

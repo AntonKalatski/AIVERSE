@@ -90,14 +90,14 @@ int main() {
     assert(temporal.triangles>=fixed.triangles);
     assert(run(nodes,roots,.2f,false,false).checksum==temporal.checksum);
     // Timing samples are CPU wall only, non-comparable to GPU or FPS.
-    std::cout<<"mode,frames,transitions,triangles,checksum,cpu_wall_ns\\n";
+    std::cout<<"mode,frames,transitions,triangles,checksum,cpu_wall_ns\n";
     for(const auto& item : std::array<std::pair<const char*,int>,3>{{
         {"legacy_root",0},{"strata_h0",1},{"strata_h02",2}}}) {
         const auto measured=run(nodes,roots,item.second==2?.2f:0.f,
                                 item.second==0,true);
         std::cout<<item.first<<","<<kFrames<<","<<measured.transitions<<","
                  <<measured.triangles<<","<<measured.checksum<<","
-                 <<measured.cpuNanoseconds<<"\\n";
+                 <<measured.cpuNanoseconds<<"\n";
     }
     return 0;
 }

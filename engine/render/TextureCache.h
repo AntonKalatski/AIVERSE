@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <utility>
 #include "../gfx/Gfx.h"
 #include "GpuOwnedMemory.h"
 
@@ -49,6 +50,19 @@ struct TextureRef {
 class TextureCache {
 public:
     void init(gfx::Device& dev) { dev_ = &dev; }
+    // Atomic owner handoff for staged GPU icon caches. AtlasSprite addresses
+    // remain valid because their heap objects stay inside unique_ptr nodes.
+    void swap(TextureCache& other) noexcept {
+        using std::swap;
+        swap(atlas_,other.atlas_);
+        atlasBase_.swap(other.atlasBase_);
+        atlasPages_.swap(other.atlasPages_);
+        sprites_.swap(other.sprites_);
+        cache_.swap(other.cache_);
+        error_.swap(other.error_);
+        swap(dev_,other.dev_);
+        swap(gpuRetirement_,other.gpuRetirement_);
+    }
     // Optional editor hot-reload owner; retained by Editor across TextureCache
     // asset reloads. Doesn't own borrowed atlased sprite references.
     void setGpuResourceRetirement(GpuResourceRetirement* owner) {

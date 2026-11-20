@@ -88,6 +88,9 @@ public:
         uint32_t strataArchivedCpuIndexSources=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
+    // Stage a replacement scene independently, preserving the current scene
+    // on validation/model/GPU upload errors. Publish only after success.
+    void loadTransactional(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
     // Borrowed image handles must outlive the scene. GPU geometry is owned by the scene.
     void loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget=2000000);
@@ -97,8 +100,18 @@ public:
     // Discard the current static presentation scene without waiting idle:
     // used on rules/project reload, not final Device teardown.
     void clear(gfx::Device& dev) {retireResident(dev);}
-    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
-    bool collectRetired(gfx::Device& dev) {return retirement_.collect(dev);}
+    size_t pendingGpuRetirements() const noexcept;
+    // Bound retained GPU owners; a stalled/lost device must not permit an
+    // unlimited series of new staging allocations.
+    static constexpr size_t kMaxFailedStages=8;
+    size_t pendingFailedStages() const noexcept {return failedStages_.size();}
+    uint64_t rejectedFailedStageLoads() const noexcept {return rejectedFailedStageLoads_;}
+    // Explicit host-controlled full-idle recovery (never from an open pass).
+    // Does not retire the currently published scene or its normal queue.
+    bool recoverFailedStagesAfterGpuIdle(gfx::Device& dev);
+    // Render-owner-thread frame boundary only: poll both live and failed-stage
+    // retirement queues, releasing stages only after GPU completion proof.
+    bool collectRetired(gfx::Device& dev);
     void draw(Renderer3D& renderer);
     void setRuntimeOptions(bool hlod,bool geometry,bool surfaces,bool cache) { hlod_=hlod;geometryEnabled_=geometry;surfacesEnabled_=surfaces;cacheEnabled_=cache; }
     // Opt-in staging only: prepare auxiliary CPU Strata assets at load time,
@@ -329,6 +342,10 @@ private:
     void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     NativePresentationRetirement retirement_;
+    // Failed transactions may still own GPU models after a refused idle.
+    // Retain those retirement queues for a later safe collect/shutdown.
+    std::vector<std::unique_ptr<GeometryScene>> failedStages_;
+    uint64_t rejectedFailedStageLoads_=0;
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;

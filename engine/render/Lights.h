@@ -121,6 +121,29 @@ public:
     // Cloud shadows on the sun: coverage 0..1, strength 0..1 (0 = off), drift offset in world units.
     void setClouds(float coverage, float strength, float scale, float offsetX, float offsetZ);
 
+    // Camera-neutral prepared lighting. Capture after all scene light producers
+    // have run, then replay after each secondary camera's beginScene().
+    // Camera-space maps, spot selection and halo geometry remain per-view.
+    struct PreparedFrame {
+        struct Contact {
+            float3 center;
+            float halfX=0, halfZ=0, strength=0;
+            bool box=false;
+            float softness=0.5f;
+        };
+        std::vector<PointLight> lights;
+        std::vector<Contact> contacts;
+        float nightGlow=0;
+        float3 unlitTint{1,1,1};
+        float cloud[4]{};
+        float cloudStrength=0;
+        bool waterReflections=true;
+    };
+    PreparedFrame capturePrepared() const;
+    // Allocation-free owner-thread exchange for aborted scene preparation.
+    void swapPrepared(PreparedFrame& frame) noexcept;
+    void replayPrepared(const PreparedFrame& frame);
+
     void begin(const RTSCamera& cam, float aspect);  // Renderer3D::beginScene
     void add(const PointLight& l);
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
@@ -198,6 +221,7 @@ private:
     float mapX_ = 0, mapZ_ = 0, mapExtent_ = 64;      // what the map texture holds
     float3 focus_, camRight_{1, 0, 0}, camUp_{0, 1, 0};
     std::vector<PointLight> lights_;
+    std::vector<PreparedFrame::Contact> contacts_;
     std::vector<uint8_t> perPixel_;
     std::vector<uint32_t> prevKeys_;   // per-pixel set of the last frame (sorted)
     std::vector<MapVertex> verts_;

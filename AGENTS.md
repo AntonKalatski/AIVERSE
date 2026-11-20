@@ -4674,3 +4674,21 @@ Physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal remain opt-in
 PHYSIS bridge is read-only presentation; no gameplay visibility or simulation changes.
 Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
 and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.
+
+
+## LENS captured-frame integration (2026-11-20)
+
+Read `docs/camera-system.md` and the latest entries of
+`docs/agent-handoffs/lens-native-validation-2026-11-20.md` before editing LENS.
+Secondary cameras consume the published visual epoch and owned Mesh metadata;
+never call stateful `RtsView::draw` or MotionWeave update a second time.
+Captured primary frames defer the surface cohort publication until animation,
+Sprite/tile uploads, lighting and Overlay preparation have succeeded. Candidate
+height/road queries are scoped to that preparation and must restore on failure.
+Keep immutable GPU packets and host-boundary completion-token retirement;
+preparation atomicity does not roll back GPU execution or the separate legacy
+paint/field providers. `lens_metal_frame` requires explicit
+`AIVERSE_LENS_METAL_VALIDATE=1`; a skipped test is not GPU validation.
+Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
+fixtures, and record actual platform coverage in the handoff. Build/cache/log
+paths for this integration are on KINGSTON, per the user's instruction.

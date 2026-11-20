@@ -35,17 +35,18 @@ int main(){
             hint.mainThread=true;
         }
     }
-    // This one-node bind graph is intentionally cheap (< 256 total
-    // estimated work). Lower the cost threshold to exercise the actual
-    // parallel dispatch path rather than only the sequential fallback.
-    MotionWeaveScheduleOptions options;
-    options.minimumParallelCost=1;
-    MotionWeaveScheduler scheduler(3,options);
+    MotionWeaveScheduler scheduler(3);
     const auto stats=scheduler.update(w,.01f);
     AIVERSE_TEST_CHECK(stats.eligible==96);
     AIVERSE_TEST_CHECK(stats.serialEntities==1);
     AIVERSE_TEST_CHECK(stats.parallelEntities==95);
     AIVERSE_TEST_CHECK(stats.estimatedSafeCost>0);
-    AIVERSE_TEST_CHECK(stats.usedWorkers==(scheduler.workerCount()>0));
+    AIVERSE_TEST_CHECK(!stats.usedWorkers); // bind-only crowd stays below default cost gate
+    auto options=scheduler.options();
+    options.minimumParallelCost=1;
+    scheduler.setOptions(options);
+    const auto parallel=scheduler.update(w,.01f);
+    AIVERSE_TEST_CHECK(parallel.usedWorkers==(scheduler.workerCount()>0));
+    AIVERSE_TEST_CHECK(parallel.parallelEntities==95 && parallel.serialEntities==1);
     AIVERSE_TEST_CHECK(stats.workerPhaseMs>=0 && stats.serialPhaseMs>=0);
 }

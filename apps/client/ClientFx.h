@@ -30,6 +30,9 @@ public:
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);
+    // Replays the particle lights captured during the primary update into a
+    // secondary camera light system, without collecting or ticking particles.
+    void addPreparedLights(render::LightSystem& lights) const;
     // Opt-in SpectraFX GPU effects: call once before Renderer3D::beginScene,
     // inside beginFrame and outside all GPU render/compute passes.
     void prepareGpuFrame(float dt,const render::RTSCamera& camera);
@@ -37,6 +40,13 @@ public:
     void renderGpu(const render::mat4& viewProj, const render::RTSCamera& camera);
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
+    // Reorient and draw already updated particles for another LENS camera.
+    // No bridge.update(), ParticleSystem::update(), sub-emitter processing
+    // or time advancement; call inside an active post-geometry render pass.
+    void renderPrepared(const render::Camera3D& camera,
+                        const render::mat4& viewProj,
+                        int width,int height,
+                        const render::Lighting& lighting);
 
     int quality() const { return int(ps_.quality()); }
     void setQuality(int q) { ps_.setQuality(fx::FxQuality(q < 0 ? 0 : q > 3 ? 3 : q)); }
@@ -78,6 +88,7 @@ private:
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites
     bool attached_ = false;
     std::vector<fx::FxPointLight> lightBuf_;
+    bool preparedLightsValid_ = false;
     const game::RtsView* planet_ = nullptr;   // planet maps: the view placing effects (null on flat maps)
     int planetBody_ = -1;
     render::mat4 space_;

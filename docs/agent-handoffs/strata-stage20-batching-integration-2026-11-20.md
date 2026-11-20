@@ -86,3 +86,7 @@ After the pending Linux/Vulkan CI status was disclosed, the user requested “Д
 No runtime/API/save/default changes or new builds in this completion stage. Prior KINGSTON verification remains: full Debug build, 309/309 CTests before the indexed VT delta and 18/18 affected Metal/batching scenarios after it; exact revisions and evidence above. At merge final-head Linux ARM64 was in progress, other jobs including Lavapipe queued, with no completed failure reported. CI https://github.com/chromealex/AIVERSE/actions/runs/44760263873 ; focused Vulkan https://github.com/chromealex/AIVERSE/actions/runs/44760263492 . These are NOT claimed green. Local Vulkan runtime remains unverified (loader absent).
 
 This separate handoff is published by documentation PR: automatic approval review rejected a direct default-branch push and recommended the safer PR procedure. Next external action: inspect final-head/postmerge Linux and Vulkan runs when runners execute, repair actual failures in a bounded follow-up. Experimental GPU paths remain opt-in, no production/performance certification.
+
+## 2026-11-20 — subsequent system QA
+
+See [Stage21 QA handoff](strata-stage21-system-qa-2026-11-20.md) and `docs/qa/strata-system-2026-11-20.md`, report commit `5efea1c2285fd79610a3c04c0e30009da8de63fc`, tested main076139d12. All existing STRATA targets and Mac/Metal fixtures were executed; platform/visual gaps and four test/docs/CI findings are explicitly recorded. Product code unchanged; this is not full production certification.

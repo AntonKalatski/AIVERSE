@@ -60,6 +60,9 @@ def exists(root, token):
 def audit(root=ROOT, only=None, strict=False):
     tools = mcp_tools(root)
     prefixes = {n.split('_')[0] for n in tools}
+    # CTest identifiers in validation instructions are not MCP operations.
+    cmake = (root / 'CMakeLists.txt').read_text(encoding='utf-8')
+    test_names = set(re.findall(r'add_test\s*\(\s*NAME\s+([a-z][a-z0-9_]+)', cmake))
     errors, warnings = [], []
     for skill in sorted((root / 'skills').glob('*/*/SKILL.md')):
         sid = skill.parent.name
@@ -73,7 +76,7 @@ def audit(root=ROOT, only=None, strict=False):
                     errors.append(f'{rel}: missing path `{p}`')
                 continue
             m = TOOL.match(token.strip())
-            if m and m.group(1).split('_')[0] in prefixes and m.group(1) not in tools and m.group(1) not in NOT_TOOLS:
+            if m and m.group(1).split('_')[0] in prefixes and m.group(1) not in tools and m.group(1) not in NOT_TOOLS and m.group(1) not in test_names:
                 (errors if strict else warnings).append(f'{rel}: unknown MCP tool `{m.group(1)}`')
     return errors, warnings
 

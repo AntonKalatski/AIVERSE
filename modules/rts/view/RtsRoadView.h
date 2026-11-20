@@ -5,6 +5,7 @@
 // them. Textures: the game's (road type "look.textures") or procedural tiles generated at init. No shaders of its own:
 // everything is drawn through Renderer3D::drawModel (PBR, shadows, lightmaps as static scenery).
 #pragma once
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -26,19 +27,40 @@ class RtsRoadView {
 public:
     // rules "roadTypes" (composed rules.json); reader for the game's textures / models
     void init(gfx::Device& dev, const Json& roadTypes, render::FileReader reader);
+    // CPU runtime configuration carried to a staged replacement before GPU
+    // initialization. Meshes and RHI resources are deliberately not copied.
+    void inheritRuntimeStateForReload(const RtsRoadView& old);
+    bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
     void shutdown(gfx::Device& dev);
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
     void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
     size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
+    uint64_t stateRevision() const noexcept {return stateRevision_;}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().
     void setMap(const Json& map);
-    void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; }
-    void invalidateGround() { dirty_ = true; }   // terrain changed under the roads
+    void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; ++stateRevision_; }
+    void invalidateGround() { dirty_ = true; ++stateRevision_; }   // terrain changed under the roads
     // heightAt(x, z) in world units (the view's terrain); cellMeters of the road data turns it into metres
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt);
     bool active() const { return hasNet_ && !net_.empty(); }
     bool needsRebuild() const { return dirty_; }
+    // Prepared presentation state can be joined to a multi-owner frame
+    // transaction. A candidate owns only unpublished GPU allocations.
+    // commitRebuild performs retirement/moves without new GPU uploads.
+    struct PreparedRebuild;
+    bool needsVisualPreparation() const noexcept {
+        return dirty_ || ghostDirty_ ||
+            int(std::lround(wet_*32.f))!=wetStep_ ||
+            int(std::lround(puddles_*32.f))!=puddleStep_;
+    }
+    std::shared_ptr<PreparedRebuild> prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        bool forceGround=false);
+    void drawCandidate(const std::shared_ptr<PreparedRebuild>&,render::Renderer3D&);
+    void drawPrepared(render::Renderer3D&);
+    float candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>&,float x,float z,float terrain) const;
+    void commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept;
     // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
     // baked road surfaces): the view does not draw those while the network is shown
     const std::vector<std::string>& replaces() const { return replaces_; }
@@ -113,7 +135,7 @@ public:
     uint64_t surfaceGeneration() const { return surfaceGeneration_; }
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
-    void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
+    void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; ++stateRevision_; }
 
     // materials of the road kit (index into the chunk models' material lists)
     static constexpr int kDrivewaySurface = -2;   // paintedMaterial: a driveway apron (variant: width, 1/1000 cell)
@@ -125,6 +147,10 @@ private:
     struct PropModel { std::string path; std::unique_ptr<render::Model> model; };
     struct PropInstance { int model = -1; render::mat4 xf; };
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
+    // Candidate-only build; never invoke on the published owner. The caller
+    // owns private rollback and final retirement/publication.
+    void buildUnpublished(gfx::Device& dev,
+                          const std::function<float(float,float)>& heightAt);
     void buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void release(gfx::Device& dev);
     void retireSpriteBuffer(gfx::Device& dev,render::SpriteMesh& mesh) {
@@ -136,6 +162,10 @@ private:
     std::map<std::pair<int, int>, int> painted_;
 
     gfx::Device* dev_ = nullptr;
+    uint64_t stateRevision_=1; // invalidates unpublished multi-owner frame leases
+    // GPU kit uploads may throw before images_ receives ownership. Preserve
+    // this unpublished kit for an idle-gated shutdown or recovery retry.
+    std::unique_ptr<render::Model> buildingKit_;
     render::FileReader read_;
     std::vector<RoadTypeDef> types_;
     float cellMeters_ = 4;
@@ -144,6 +174,7 @@ private:
     std::vector<std::string> replaces_;
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
+    bool strictStaging_ = false; // never swallow failed candidate model uploads
     render::NativePresentationRetirement retirement_;
     std::vector<Chunk> chunks_;
     BatchStats batchStats_;
