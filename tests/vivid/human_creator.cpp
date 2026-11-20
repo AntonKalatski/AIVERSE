@@ -313,6 +313,24 @@ void test() {
             has(kSculptGpuIdMSL,"identifier [[flat]]") &&
             has(kSculptGpuIdMSL,"return input.identifier"),
             "GPU ID GLSL/MSL shader ABI/source parity contract missing");
+        const auto shader=sculptGpuIdShaderDesc();
+        const auto pipe=sculptGpuIdPipelineDesc(
+            aiverse::gfx::ShaderHandle{7u});
+        req(shader.glslVertex==kSculptGpuIdVS &&
+            shader.glslFragment==kSculptGpuIdFS &&
+            shader.msl==kSculptGpuIdMSL &&
+            shader.uniformSlots==1 && shader.textureSlots==0 &&
+            pipe.attrCount==2 && pipe.stride==16u &&
+            pipe.attrs[0].location==0 &&
+            pipe.attrs[0].format==aiverse::gfx::VertexFormat::Float3 &&
+            pipe.attrs[1].location==1 &&
+            pipe.attrs[1].format==aiverse::gfx::VertexFormat::UByte4N &&
+            pipe.attrs[1].offset==12u &&
+            pipe.depthTest && pipe.depthWrite &&
+            pipe.blend==aiverse::gfx::BlendMode::Opaque &&
+            pipe.colorFormat==aiverse::gfx::PixelFormat::RGBA8,
+            "GPU ID pass must retain linear RGBA8 and hardware depth writes");
+
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
