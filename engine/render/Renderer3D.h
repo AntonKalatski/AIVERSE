@@ -335,6 +335,13 @@ public:
         bool skinning=false,baked=false,shaderVertexOffset=false;
         bool translucent=false; // real colour-pass tint/material/flag classification
         bool customGpuStream=false;
+        // Stage 7BA: exact sampled Mask state used by the normal colour
+        // draw. No raw Material* escapes the frame. A later model/material
+        // hot-reload must NOT silently alter VIVID's alpha/depth source.
+        bool maskedMaterial=false,maskVertexColors=true;
+        gfx::TextureHandle maskBaseTexture{};
+        float maskAlpha=1.f,maskCutoff=.5f,maskUvRotation=0.f;
+        float2 maskUvOffset{0,0},maskUvScale{1,1};
         mat4 world{};
     };
     struct ModelViewProvenance {
