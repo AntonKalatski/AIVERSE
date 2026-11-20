@@ -162,3 +162,87 @@ CLI framebuffer captures succeeded independently. No synthetic UI screenshot.
 Next action: after Mac unlock, inspect Studio Facial/animation windows via CUA,
 exercise controls and take UI screenshots; then cross-backend acceptance on real
 hosts and production character assets. Do not label the whole VIVID roadmap done.
+
+
+## Real MetaHuman DNA sample import — 2026-11-20
+
+User explicitly requested a ready internet DNA character and screenshots, then
+selected **actual MetaHuman .dna, add compatible import first**, rather than a
+substitute glTF character. Code: `af940c85dbfa7967a836e6b300522e34f261b9c3` on
+`integration/motionweave-studio-facial-stage184`; parent
+`b6c17725d3fd97d24e005c960a5e60977f2bd8f1`.
+
+Source: official Epic MetaHuman-DNA-Calibration revision
+`8297ff1bd6f1692a6e221aa8395a66486e5a53c9`, data/dna_files/Ada.dna.
+SHA256 `e764cfab938283231bcb3e5af1c7bcbec5154bab4804aafa1b5b7dc6e400ca5e`.
+Internal DNA descriptor is "Archtype" (filename is Ada). SDK, original sample,
+converted assets, builds and captures live ONLY under
+`/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/metahuman/`; not vendored.
+SOURCE.json records source URL/revision/hash and local SDK license path.
+The official repository supports legacy UE <=5.5 DNA, not 5.6+; current general
+MetaHuman licensing and the older Calibration license are separate documents.
+No rights to redistribute the SDK or sample with AIVERSE are asserted.
+
+Changes: tools/vivid-dna-import/{CMakeLists.txt,decode.cpp,package.py,README.md,
+test_package.py} implement a separate authoring adapter linked to an external
+user-supplied official DNA reader. Decoder exports selected LOD geometry, all
+source target names and optionally one exact target's deltas. Package creates
+glTF + VIVID JSON/manifest, expands sparse deltas across UV/normal seams, records
+preview center/scale and optional baked weight. No SDK/game runtime coupling.
+Creator `--smoke --still` freezes MotionWeave and snaps facial weights for controlled
+captures. docs/vivid.md and Creator README document partial support.
+
+Actual native/sample checks:
+- External SDK CMake + Apple Silicon Release reader/adapter: PASS,
+  import-configure.log, import-build.log, import-build-final.log. SDK has ordinary
+  compiler warnings and ranlib empty platform translation units; build succeeded.
+- Creator rebuild: PASS, build-still.log. No new Studio build required; adapter is
+  offline and --still is standalone Creator-only.
+- Real Ada decode LOD0: **9 meshes, 34625 layout vertices**, head lists 681 source
+  blendshape targets. Selected exact source target `brow_raiseIn_L` exported.
+  Final rebuilt decoder output byte-compares equal to prior successful output.
+- `PYTHONDONTWRITEBYTECODE=1 TMPDIR=.../tmp python3 -m unittest discover
+  -s tools/vivid-dna-import -p 'test_*.py'`: **4/4 PASS**, package-tests-final.log.
+  Cases: UV seam morph expansion, invalid layout rejected without publishing,
+  baked+live double deformation rejected, existing output preserved.
+- Reader negative tests: invalid binary signature, out-of-range LOD 99 and `0junk`
+  all rejected without successful output files (bad-signature.log, bad-lod.log,
+  partial-lod.log). Input capped at 512MiB and LOD layout vertices at 1M; this does
+  not claim hardened adversarial parsing of the external SDK.
+- Real Metal `aiverse_vivid_creator --smoke --still --asset <manifest>`:
+  ada-neutral-final, ada-three-quarter, ada-brow-live and ada-brow-cpu
+  (`--cpu-morph`) **4/4 capture PASS**; each has .log/.ppm, PNGs of first three.
+  Actual accepted head provenance commands=9, opaque/shadow counts=5 after hiding
+  untextured helper surfaces. Front and 3/4 PNGs visually inspected: recognizable
+  human source geometry, not procedural spheres, no generated replacement wig.
+- Explicit diagnostic live route: VIVID browInnerUp -> source brow_raiseIn_L, gain1;
+  expressionRest[2]=1. This maps ONE left source target for test, not a faithful
+  bilateral ARKit/RigLogic mapping. Neutral vs live: 200 changed viewport pixels
+  at RGB-total threshold4. GPU vs CPU: one changed pixel of 586500 (max RGB sum8).
+  **Strict bit-exact image equality FAILED**; bounded visual similarity only.
+  Both actor paths rendered correctly. morph-parity.json preserves all counts.
+- git diff --check PASS. Full engine/Studio/web suites NOT RUN (unchanged runtime
+  systems outside Creator capture option); no CI/push, no main checkout changes.
+
+Failed discovery commands: initial unquoted GitHub tree URL hit zsh glob expansion;
+quoted retry succeeded. media.githubusercontent.com Ada URL returned 404 (file is
+ordinary Git blob); raw.githubusercontent.com pinned URL succeeded. No fabricated
+sample was substituted. Earlier first Ada render had opaque helper eye shells and
+Creator-generated hair; final package keeps helper geometry but explicitly hides
+untextured eyelash/eye-edge/tear/saliva surfaces and tags authored eyelashes so
+Creator does not add its procedural wig. Final screenshots are untextured/clay
+materials; they do not show original MetaHuman skin/iris textures or groom.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Legacy binary DNA reader + geometry package | implemented in source; Ada Metal tested | Other DNA versions/axes, broader assets |
+| One exact source morph, GPU/CPU routes | partial; Ada tested | Full corrective combinations, normals/tangents, semantic mapping |
+| RigLogic, original skeleton and skin weights | not implemented in this adapter | Behavior/joint solver and full expression parity |
+| Original textures, eye shading and groom | not implemented in this adapter | Obtain companion licensed assets; DNA alone lacks them |
+| Newer UE DNA, Vulkan/GLES, full Studio UI | not tested | Matching SDK and backend/UI hosts |
+
+No VIVID save schema, canonical 52-channel ordering, authoritative ECS state,
+shared animation scheduler or GPU ABI changed. Next actionable step: expand the
+explicit adapter to original skeleton/skin weights and RigLogic behavior with
+real reference-pose tests; obtain companion texture/groom assets separately.
+Do not call this complete MetaHuman runtime support or a production character.
