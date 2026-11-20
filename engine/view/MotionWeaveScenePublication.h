@@ -212,6 +212,33 @@ public:
     bool unload(uint64_t sceneId) {
         return scenes_.erase(sceneId)!=0;
     }
+
+    // After a SUCCESSFUL authoritative scene Replace/commit, the caller
+    // passes SceneState's complete ACTIVE scene IDs. Keep persistent scenes
+    // if and only if they remain in that authoritative active set. This
+    // works with the peer SceneLoadCoordinator without linking animation
+    // code to SceneState, rollback internals or authoritative components.
+    // Never call from an asynchronous scene-file poll/worker.
+    size_t unloadAbsent(std::span<const uint64_t> activeScenes) {
+        std::set<uint64_t> keep;
+        for(const uint64_t id:activeScenes) {
+            if(id==0 || !keep.insert(id).second)
+                throw std::invalid_argument(
+                    "active scene list contains zero or duplicate IDs");
+        }
+        size_t removed=0;
+        for(auto it=scenes_.begin();it!=scenes_.end();) {
+            if(keep.count(it->first)) {++it;continue;}
+            it=scenes_.erase(it);
+            ++removed;
+        }
+        return removed;
+    }
+
+    // On authoritative rollback/loadState, all previously borrowed
+    // presentation source IDs, Graph clocks and appearance epochs are
+    // invalid. Clear them before queueing new scene residency restore.
+    void resetAfterRollback() {clear();}
     void clear() {scenes_.clear();}
     bool contains(uint64_t sceneId) const noexcept {
         return scenes_.find(sceneId)!=scenes_.end();
