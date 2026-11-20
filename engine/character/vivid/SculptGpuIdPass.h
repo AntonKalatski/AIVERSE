@@ -47,7 +47,8 @@ public:
         const auto shaderDesc=sculptGpuIdShaderDesc();
         auto shader=device.createShader(shaderDesc);
         if(!shader.valid())return false;
-        auto pipeline=device.createPipeline(sculptGpuIdPipelineDesc(shader));
+        auto pipeline=device.createPipeline(
+            sculptGpuIdPipelineDesc(shader,gfx::CullMode::None));
         if(!pipeline.valid()) {
             device.destroyShader(shader);
             return false;
