@@ -62,6 +62,16 @@ void StudioMetalScene::orbit(float dx, float dy) {
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
+void StudioMetalScene::look(float dx, float dy) {
+    // First-person free look preserves the camera's world-space eye instead
+    // of orbiting around its target. WASD movement then translates the eye.
+    const float3 position=camera_.eye();
+    camera_.yaw += dx*0.007f;
+    camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
+    const float cp=std::cos(camera_.pitch),sp=std::sin(camera_.pitch);
+    const float3 fromTarget{std::sin(camera_.yaw)*cp,sp,std::cos(camera_.yaw)*cp};
+    camera_.target=position-fromTarget*camera_.distance;
+}
 void StudioMetalScene::pan(float dx, float dy) {
     // Editor navigation follows camera orientation, not RTS ground-plane input.
     const float speed=std::max(0.005f,camera_.distance*0.0018f);
