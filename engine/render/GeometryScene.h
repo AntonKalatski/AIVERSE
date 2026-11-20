@@ -111,6 +111,8 @@ public:
     bool setStrataLodHysteresisFraction(float fraction) {
         if(!std::isfinite(fraction) || fraction<0.f || fraction>.45f)
             return false;
+        if(strataLodHysteresisFraction_!=fraction)
+            strataPortableLodHistories_.clear(); // policy change -> cold start
         strataLodHysteresisFraction_=fraction;
         return true;
     }
