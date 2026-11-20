@@ -206,6 +206,32 @@ void test() {
         req(workspace.pick(model,0,pose,morphs,binding,face,
             {0.51f,0.51f,2},{0,0,-1},model.vertices.size()).hit,
             "valid subsequent pick did not recover after rejected pose");
+        // Both scratch layers must leave their previous published outputs
+        // untouched when the next pose/weights are rejected.
+        std::vector<float3> bindPositions,bindScratch;
+        const std::array<float,1> goodWeights{{1.f}};
+        const std::array<float,1> badWeights{{
+            std::numeric_limits<float>::quiet_NaN()
+        }};
+        req(prepareSculptMorphPositions(model,morphs,goodWeights,
+                                        bindPositions,&bindScratch),
+            "initial morph scratch reconstruction failed");
+        const auto originalZ=bindPositions[std::size_t(delta.vertex)].z;
+        req(!prepareSculptMorphPositions(model,morphs,badWeights,
+                                         bindPositions,&bindScratch) &&
+            bindPositions[std::size_t(delta.vertex)].z==originalZ,
+            "failed morph reconstruction overwrote last-good bind positions");
+        SkinnedWeightSurface skinSurface;
+        SkinnedWeightScratch skinScratch;
+        req(prepareSkinnedWeightSurface(model,0,pose,skinSurface,
+                                         bindPositions,&skinScratch),
+            "initial skinned scratch reconstruction failed");
+        const auto originalWorld=skinSurface.world[std::size_t(delta.vertex)].z;
+        req(!prepareSkinnedWeightSurface(model,0,badPose,skinSurface,
+                                          bindPositions,&skinScratch) &&
+            skinSurface.ready &&
+            skinSurface.world[std::size_t(delta.vertex)].z==originalWorld,
+            "failed skin reconstruction overwrote last-good world positions");
         workspace.reset();
         req(workspace.stats().triangles==0 &&
             workspace.pick(model,0,pose,morphs,binding,face,
