@@ -1496,7 +1496,10 @@ endif()
 
 # Model viewer (models agent): models, materials, clips and quality tiers as the game renders them.
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
-    add_executable(aiverse_modelview apps/modelview/main.cpp apps/modelview/Gallery.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    add_executable(aiverse_modelview
+        apps/modelview/main.cpp apps/modelview/Gallery.cpp
+        apps/modelview/NativeScenePreview.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
 endif()
 
