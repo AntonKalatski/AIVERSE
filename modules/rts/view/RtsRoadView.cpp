@@ -2462,12 +2462,12 @@ struct RtsRoadView::PreparedRebuild {
     }
 };
 
-std::unique_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
+std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt) {
     if(dev_!=&dev)
         throw std::logic_error("RtsRoadView prepare: GPU owner mismatch");
     if(!needsVisualPreparation())return {};
-    auto candidate=std::make_unique<PreparedRebuild>();
+    auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
     candidate->priorImageCount=images_.size();
     candidate->staged=std::make_unique<RtsRoadView>();
@@ -2500,7 +2500,7 @@ std::unique_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     return candidate;
 }
 
-void RtsRoadView::commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept {
+void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
     if(!candidate)return;
     RtsRoadView& staged=*candidate->staged;
     // The candidate copied old kit handles with borrowed flags. Transfer
