@@ -172,6 +172,20 @@ int aiverseMain(int,char**) {
             {profile.speciesId,terra::TreeLOD::High,{instance}}};
         const std::vector<terra::FloraBatch> farBatches{
             {profile.speciesId,terra::TreeLOD::Impostor,{instance}}};
+        // Independently prove that the actual Flora distance policy selects
+        // both geometry and impostor tiers. The GPU scenes below keep the
+        // same camera distance to compare visible representations fairly.
+        terra::FloraView nearPolicy;
+        nearPolicy.farDensityPermille=1000;
+        const auto selectedNear=terra::buildFloraBatches({instance},nearPolicy);
+        auto farPolicy=nearPolicy;
+        farPolicy.cameraZcm=24000;
+        const auto selectedFar=terra::buildFloraBatches({instance},farPolicy);
+        check(selectedNear.size()==1 &&
+              selectedNear[0].lod==terra::TreeLOD::High &&
+              selectedFar.size()==1 &&
+              selectedFar[0].lod==terra::TreeLOD::Impostor,
+              "Flora LOD policy failed to switch near tree to impostor");
         if(!forest.uploadModels(*device) ||
            !nearModel->vb.valid() || !farModel->vb.valid()) {
             std::fprintf(stderr,"FAIL [terraweave-metal-forest] Arbor model upload: %s\n",
