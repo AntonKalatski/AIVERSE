@@ -1,9 +1,9 @@
 # AIVERSE — Static Scene Stage 5: multi-domain prefab configurations
 
-Date: 2026-11-19  
-Repo: `chromealex/AIVERSE`  
-Branch: `feature/ecs-static-prefab-scene-integration`  
-Previous: `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`  
+Date: 2026-11-19
+Repo: `chromealex/AIVERSE`
+Branch: `feature/ecs-static-prefab-scene-integration`
+Previous: `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`
 Status: **new Stage 5 code, tests, runner and docs committed; NO native
 compile or CTest execution for Stage 5 yet**.
 

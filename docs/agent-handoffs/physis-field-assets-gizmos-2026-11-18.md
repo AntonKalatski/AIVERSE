@@ -1,7 +1,7 @@
 # PHYSIS Stage 19 — authored field assets, scene gizmos and native ECS spawn (2026-11-18)
 
-**Repo:** `chromealex/AIVERSE`. **Branch:** `feature/physis-nature-simulation`, draft PR #25.  
-**Main sync prerequisite:** merge `810feba70f01cdc35003ac80ea8486f39dc16049` included `main` at `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`. Main merge handoff: `docs/agent-handoffs/physis-main-merge-2026-11-18.md`.  
+**Repo:** `chromealex/AIVERSE`. **Branch:** `feature/physis-nature-simulation`, draft PR #25.
+**Main sync prerequisite:** merge `810feba70f01cdc35003ac80ea8486f39dc16049` included `main` at `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`. Main merge handoff: `docs/agent-handoffs/physis-main-merge-2026-11-18.md`.
 **Owners:** PHYSIS owns climate/nature/field policies; Box3D owns dynamics, NEREID owns canonical water, TerraWeave owns terrain/foliage; new editor code is a host adapter only. No genre dependence.
 
 ## Implementation and test SHAs

@@ -1,8 +1,8 @@
 # AIVERSE — StaticPrefabSceneBinding, integrated Stage 4 handoff
 
-Date: 2026-11-19  
-Repository: `chromealex/AIVERSE`  
-Branch: `feature/ecs-static-prefab-scene-integration`  
+Date: 2026-11-19
+Repository: `chromealex/AIVERSE`
+Branch: `feature/ecs-static-prefab-scene-integration`
 Status: **corrected scene resource pipeline CTest passed 1/1 and the complete seven-test integration selection passed 7/7 on Mac Studio (user log, 2026-11-19). Main merge still requires broader ECS/COW/FPS/RTS regressions.**
 
 ## Source integration provenance

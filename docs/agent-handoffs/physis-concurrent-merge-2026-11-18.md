@@ -1,11 +1,11 @@
 # PHYSIS concurrent branches merge — 3b600778b + f995ab5d9 (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Destination branch:** `feature/physis-nature-simulation` (PHYSIS draft PR #25).  
-**Actual merge commit:** `eb5afd7c5877428eb0353bf9e98fcb78eb799644`.  
-**Parents, in exact order:**  
-1. `b9c26382b215db19d34d9448719bdfadc0a96a9c` — canonical PHYSIS branch, including ongoing Stage 18 Scene overlay changes.  
-2. `3b600778b899d642a65aea432468eda69b1e4bb4` — alternative agent's total spatial bucket memory budget work.  
+**Repository:** `chromealex/AIVERSE`
+**Destination branch:** `feature/physis-nature-simulation` (PHYSIS draft PR #25).
+**Actual merge commit:** `eb5afd7c5877428eb0353bf9e98fcb78eb799644`.
+**Parents, in exact order:**
+1. `b9c26382b215db19d34d9448719bdfadc0a96a9c` — canonical PHYSIS branch, including ongoing Stage 18 Scene overlay changes.
+2. `3b600778b899d642a65aea432468eda69b1e4bb4` — alternative agent's total spatial bucket memory budget work.
 3. `f995ab5d90f583a62ac457e286fb8e475c1c69a2` — separate agent's earlier 3D spatial broadphase implementation and handoff.
 
 The destination branch was **successfully fast-forwarded to the merge commit** with an expected-head lease (no force push); the commit parents were re-fetched from GitHub after the ref update and verified.

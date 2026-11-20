@@ -100,6 +100,10 @@ int main() {
             return 1;
         }
 
+        check(device->supportsStorageTexture(
+                  aiverse::gfx::PixelFormat::RGBA32F,
+                  aiverse::gfx::TextureDimension::Texture2D),
+              "SpectraFX RGBA32F 2D writable storage capability");
         aiverse::fx::SpectraFxGpuEvolution particles;
         check(particles.init(*device,{seed(-0.45f)},false,sharedCompute),
               "production GPU particle buffers and RGBA32F storage");

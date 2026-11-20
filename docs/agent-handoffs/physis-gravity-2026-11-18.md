@@ -1,7 +1,7 @@
 # PHYSIS Stage 9 — gravity fields as environment acceleration policy (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation` (draft PR #25).  
-**Code/test commits:** `b9d94e1dc91761a539ebec2085d2de1b98d0b6a5`, `f8d09f5f21335bc858dd38129e9cb65fda1b1c06`, `fdfd0a1818f6ec465fe3e266b4e6f96eba3bff1e`, `3c69dbf05cf3675ba45754e3cd65f2a08a92945b`.  
+**Branch:** `feature/physis-nature-simulation` (draft PR #25).
+**Code/test commits:** `b9d94e1dc91761a539ebec2085d2de1b98d0b6a5`, `f8d09f5f21335bc858dd38129e9cb65fda1b1c06`, `fdfd0a1818f6ec465fe3e266b4e6f96eba3bff1e`, `3c69dbf05cf3675ba45754e3cd65f2a08a92945b`.
 **Verification:** NOT RUN (C++ build, CTest, native Box3D scene and CI all unverified).
 
 ## Scope / public API

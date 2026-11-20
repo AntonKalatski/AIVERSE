@@ -1,8 +1,8 @@
 # PHYSIS Stage 17 — bounded TOTAL spatial bucket references (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Branch:** `feature/physis-index-memory-budget`, forked from canonical PHYSIS `feature/physis-nature-simulation` head `fda801da926baa3b2d53d392edf2b7d021b8f9ae`. This is a focused supplement to its existing `FieldSpatialIndex` Stage 16, NOT a competing new broadphase. PR should target `feature/physis-nature-simulation` (draft PR #25).  
-**Native test status:** **NOT RUN** — GitHub connector writes are confirmed, but no local repository clone/CMake/native CTest or completed CI PASS evidence is available. `git ls-remote` against github.com from the container failed DNS resolution.  
+**Repository:** `chromealex/AIVERSE`
+**Branch:** `feature/physis-index-memory-budget`, forked from canonical PHYSIS `feature/physis-nature-simulation` head `fda801da926baa3b2d53d392edf2b7d021b8f9ae`. This is a focused supplement to its existing `FieldSpatialIndex` Stage 16, NOT a competing new broadphase. PR should target `feature/physis-nature-simulation` (draft PR #25).
+**Native test status:** **NOT RUN** — GitHub connector writes are confirmed, but no local repository clone/CMake/native CTest or completed CI PASS evidence is available. `git ls-remote` against github.com from the container failed DNS resolution.
 **Other agents:** Water/NEREID PR #23 and TerraWeave PR #24 remain untouched and own their canonical systems.
 
 ## Why

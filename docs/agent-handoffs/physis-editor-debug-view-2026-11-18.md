@@ -1,6 +1,6 @@
 # PHYSIS Stage 17 — opt-in dockable editor nature debug view (2026-11-18)
 
-**Repository** `chromealex/AIVERSE`. **Branch** `feature/physis-nature-simulation`, draft PR #25, based on `feature/universal-entity-inspector-fps`.  
+**Repository** `chromealex/AIVERSE`. **Branch** `feature/physis-nature-simulation`, draft PR #25, based on `feature/universal-entity-inspector-fps`.
 **Status:** code, test source, CMake/CI registration and docs committed. **Native compile/CTest/CI PASS, macOS editor launch, screenshot, interactive click-through and GPU test have NOT RUN and are NOT VERIFIED.** A GitHub connector write is not a substitute for an editor build.
 
 ## Implementation commits

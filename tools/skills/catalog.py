@@ -141,6 +141,7 @@ WORKFLOWS=[
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
  ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
+ ('aiverse-texture-rhi','Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance','docs/texture-rhi.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
  ('aiverse-driving','Top-down hero at the wheel: rules driving, handling table, steering wheels, decks, autopilot','docs/driving.md'),

@@ -4,6 +4,7 @@
 #include "ModelMerge.h"
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
+#include "ModelVirtualTextureSampling.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -27,11 +28,58 @@ namespace aiverse::render {
 
 namespace {
 struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float misc[4]; float uv0[4]; float uv1[4]; float light[4]; float reveal[4]; float revealAxis[4]; };
+// Exact nine-vec4 material U2 pack shared by regular CPU draws and
+// per-command Metal ICB, without the actor reveal override (GPU ICB
+// excludes kDrawActorReveal). Keep byte parity across both paths.
+static_assert(sizeof(MaterialUniforms) == 36u*sizeof(float));
+inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
+        MaterialUniforms mu{};
+        mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
+        mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
+        mu.pbr[0] = mt.metallic; mu.pbr[1] = mt.roughness; mu.pbr[2] = mt.normalScale; mu.pbr[3] = mt.occlusionStrength;
+        mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
+        mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
+        mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
+        mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
+        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
+        mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
+    return mu;
+}
+inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(
+    const Model& model, const Material& material,
+    gfx::TextureHandle white) {
+    std::array<gfx::TextureHandle,4> result{};
+    if (!material.shaderGraph) return result;
+    const size_t count=std::min(size_t(4),material.shaderGraph->textures.size());
+    for(size_t i=0;i<count;++i) {
+        const int index=material.graphTextures[i];
+        result[i]=index>=0 && size_t(index)<model.images.size() &&
+            model.images[size_t(index)].tex.valid() ?
+            model.images[size_t(index)].tex : white;
+    }
+    return result;
+}
+inline std::array<gfx::TextureHandle,6> gpuPbrSourceTextures(
+    const Model& model, const Material& mt, gfx::TextureHandle white,
+    gfx::TextureHandle black, gfx::TextureHandle flatNormal) {
+    const auto tex=[&](int image, gfx::TextureHandle fallback) {
+        return image>=0 && size_t(image)<model.images.size() &&
+               model.images[size_t(image)].tex.valid() ?
+               model.images[size_t(image)].tex : fallback;
+    };
+    return {tex(mt.baseTex,white),tex(mt.mrTex,white),
+            tex(mt.normalTex,flatNormal),tex(mt.occlusionTex,white),
+            tex(mt.emissiveTex,white),tex(mt.teamTex,black)};
+}
+
 constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec4 per joint
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
 constexpr uint32_t kKeyDrawCallView = 32768;
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
+constexpr uint32_t kKeyModelVirtualTexture = 1u << 28;
+constexpr uint32_t kKeyModelVirtualAlpha = 1u << 30;
+constexpr uint32_t kKeyModelVirtualTrilinear = 1u << 31; // opt-in indexed page-table permutation
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -239,6 +287,9 @@ Renderer3D::IndirectLayoutCacheStats Renderer3D::indirectLayoutCacheStats() cons
 }
 
 void Renderer3D::shutdownModels() {
+    // Invalidate CPU staging tickets before any model GPU handles retire.
+    gpuMaterialResources_.reset();
+    gpuEncodedBatches_.clear();
     clearCpuMdiRollingHistory();
     clearIndirectLayoutCaches();
     std::vector<gfx::DrawIndexedIndirectCommand>().swap(indirectCommandScratch_);
@@ -323,7 +374,41 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
-    const uint32_t shaderKey = gpuInstanceShaderBit | studioShaderBits |
+    const auto selectedGraph = it.mat->shaderGraph &&
+        int(matQuality_) >= it.mat->shaderGraph->minQuality ?
+        it.mat->shaderGraph : nullptr;
+    const auto* graph = selectedGraph.get();
+    // The original full-size base alpha was extracted to an R8 image.
+    // Keep colour/shadow/selection on the same full-resolution coverage.
+    // Slot 15 is intentionally not used with shader-graph variants.
+    bool alphaR8 = false;
+    if (mask && !graph && it.mat->baseTex >= 0 &&
+        size_t(it.mat->baseTex) < it.model->images.size()) {
+        alphaR8 = it.model->images[size_t(it.mat->baseTex)]
+                      .virtualAlphaMask.valid();
+    }
+    // The graph's four source textures occupy tex13..16 on Metal.
+    // A virtual material sample uses two additional texture slots,
+    // requiring tex17/18 when all four graph sources are present.
+    // This does not consume additional Metal sampler slots (s1 reused).
+    const bool graphVirtual = graph && graph->usesVirtualTexture;
+    if (graph && !supportsModelGraphSourceTextures(*dev_,graph->textures.size())) {
+        modelError_ = "shader graph source textures exceed RHI fragment slot budget";
+        return {}; // Never bind an unrepresentable tex16 on GL/Vulkan.
+    }
+    int virtualAtlasSlot=13, virtualTableSlot=14;
+    const bool graphVirtualSlots = !graphVirtual ||
+        modelGraphVirtualTextureSlots(*dev_,graph->textures.size(),
+                                     virtualAtlasSlot,virtualTableSlot);
+    ModelVirtualTextureBinding vtBinding;
+    const bool vtSampling = giPhase && (!graph || graphVirtual) &&
+        !materialPalette && graphVirtualSlots &&
+        resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
+    const bool vtTrilinear = vtSampling && vtBinding.indexedMipTable;
+    const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
+        (vtTrilinear ? kKeyModelVirtualTrilinear : 0u) |
+        (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
+        gpuInstanceShaderBit | studioShaderBits |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
@@ -332,8 +417,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
         (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
-    const auto selectedGraph=it.mat->shaderGraph && int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph:nullptr;
-    const auto* graph = selectedGraph.get();
+
     const ModelShaderKey skey{shaderKey, selectedGraph};
     const ModelShaderKey pkey{pipeKey, selectedGraph};
     for (auto& [k, p] : modelPipes_) if (k == pkey) {
@@ -364,6 +448,23 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (morph) defs += "#define MORPH 1\n";
         if (normalMap) defs += "#define NORMALMAP 1\n";
         if (mask) defs += "#define ALPHAMASK 1\n";
+        if (alphaR8) defs += "#define VIRTUAL_ALPHA_MASK 1\n";
+        if (vtSampling) defs += "#define AIVERSE_MODEL_VT 1\n";
+        // Only fragment-only, opaque Shader Graph permutations can have
+        // their direct texture slots remapped into the Metal PBR ICB
+        // argument table. Vertex-graph texture arguments stay on CPU draws.
+        const bool graphIcbCandidate = graph && !shadow && !outline &&
+            !depthAfter && !mask && !blend && !lodFade &&
+            !skinned && !baked && !morph && !materialPalette &&
+            graph->vertexMsl.empty() && graph->vertexGlsl.empty() &&
+            !graph->outputs.count("vertexOffset") &&
+            !graph->outputs.count("vertexNormal") &&
+            graph->textures.size() <= 4 && !vtTrilinear;
+        if (graphIcbCandidate) {
+            defs += "#define AIVERSE_SG_ICB_GRAPH 1\n";
+            defs += "#define AIVERSE_SG_TEXTURE_COUNT " +
+                std::to_string(graph->textures.size()) + "\n";
+        }
         if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
@@ -393,17 +494,49 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
                     if(metal) {
-                        const auto f=source.find("fragment ");const auto at=source.find(") {",f);
-                        if(at!=std::string::npos)source.insert(at,args);
+                        const auto f=source.find("fragment ");
+                        const auto at=source.find(") {",f);
+                        // Direct Metal graph parameters are not valid in a
+                        // GPU-encoded ICB. Its fragment instead reads the
+                        // same resources from IcbPbrTextures [[buffer(8)]].
+                        if(at!=std::string::npos)
+                            source.insert(at,
+                                "#if !defined(AIVERSE_ICB_PBR)\n"+
+                                args+"\n#endif\n");
                     } else source=declarations+source;
                     const auto uv=metal?"in.uv":"v_uv", wp=metal?"in.wpos":"v_wpos", np=metal?"in.nrm":"v_nrm";
-                    std::string code="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
+                    std::string code;
+                    if(metal && graphIcbCandidate) {
+                        code+="#if defined(AIVERSE_ICB_PBR)\n";
+                        for(size_t i=0;i<graph->textures.size();++i) {
+                            const auto slot=std::to_string(kGraphTextureSlot+int(i));
+                            code+="#define tex"+slot+" icbTextures.tex"+slot+"\n";
+                            if(kGraphTextureSlot+int(i)<16)
+                                code+="#define s"+slot+" icbTextures.s"+slot+"\n";
+                        }
+                        code+="#endif\n";
+                    }
+                    code+="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
+                    if (graph->usesVirtualTexture) {
+                        if (vtSampling) {
+                            const std::string sampled =
+                                modelVirtualSampleExpression(metal,vtTrilinear,
+                                    "tex"+std::to_string(virtualAtlasSlot),
+                                    "tex"+std::to_string(virtualTableSlot),
+                                    "uv",metal ? "tex1.sample(s1,(uv))" :
+                                                 "texture(tex1,(uv))");
+                            code+="#define SG_SAMPLE_VIRTUAL(uv) "+sampled+"\n";
+                        } else
+                            code+="#define SG_SAMPLE_VIRTUAL(uv) SG_SAMPLE(uv)\n";
+                    }
                     code+=std::string(metal?"float2":"vec2")+" sg_uv="+uv+"; "+v+" sg_input=base;\n";
                     code+=v3+" sg_world="+wp+", sg_object="+(metal?"in.opos":"v_opos")+", sg_normal="+np+", sg_view="+(metal?"f.camPos.xyz":"u_camPos.xyz")+"-"+wp+";\n";
                     code+=v+" sg_color="+(metal?"in.col":"v_col")+"; float sg_time="+(metal?"f.camPos.w":"u_camPos.w")+";\n";
                     // Projected world position gives the same normalized screen coordinates in colour/shadow passes.
                     code+=v+" sg_clip="+(metal?"f.viewProj":"u_viewProj")+"*"+v+"("+wp+",1.0); "+(metal?"float2":"vec2")+" sg_screen=sg_clip.xy/max(abs(sg_clip.w),0.00001)*0.5+0.5;\n";
-                    code+=graph::statements(*graph,metal)+"base="+graph->outputs.at("color")+";\n#undef SG_SAMPLE\n";
+                    code+=graph::statements(*graph,metal)+"base="+graph->outputs.at("color")+";\n";
+                    if (graph->usesVirtualTexture) code+="#undef SG_SAMPLE_VIRTUAL\n";
+                    code+="#undef SG_SAMPLE\n";
                     replace(source,"// SG_COLOR",code);
                     std::string surface;
                     for(auto name:{"roughness","metallic","emission","normal"}) {
@@ -414,7 +547,10 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     }
                     replace(source,"// SG_SURFACE",surface);
                 }
-                if(vertexOnly || metal) {
+                // Do not inject unused texture arguments into the Metal
+                // vertex entry point of a fragment-only graph ICB shader.
+                // A GPU-encoded ICB does not bind per-command vertex textures.
+                if(vertexOnly || (metal && !graphIcbCandidate)) {
                     const std::string pos=metal?"d.p":"p", normal=metal?"d.n":"n";
                     std::string code="{\n"+std::string(metal?"float2 sg_uv=uvTransform(m,in.uv);":"vec2 sg_uv=uvTransform(a_uv);");
                     code+=v3+" sg_object="+pos+".xyz, sg_world=(I.model*"+pos+").xyz;\n";
@@ -442,10 +578,20 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
         }
+        if (vtSampling && !injectModelVirtualTextureSampling(
+                fs,msl,virtualAtlasSlot,virtualTableSlot,
+                dev_->info().backend == gfx::Backend::Metal &&
+                dev_->maxFragmentTextureSlots() > 16,vtTrilinear)) {
+            modelError_ = "model virtual-texture shader insertion failed";
+            return {};
+        }
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+        sd.uniformSlots = vtSampling ? 7 : (shadow ? 5 : 6);
+        sd.textureSlots = alphaR8 ? 16 : vtSampling ? virtualTableSlot+1 :
+            (graph && !graph->textures.empty() ?
+            kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13); sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
@@ -1380,6 +1526,34 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const bool tracePreparation = !submit && std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto prepStart = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const ModelItem& it = modelItems_[items[0]];
+    // Renderer material batching groups GPU-equivalent source materials,
+    // but an external VT resolver can assign different physical atlases.
+    // Validate each batch that shares GPU parent texture bindings.
+    // Direct/CPU MDI batches keep exact VT homogeneity. Only the
+    // experimental per-command Metal GPU ICB has independent U6/PBR
+    // bindings and can skip this check after its ticket prevalidation.
+    if (count > 1 && (phase == 1 || phase == 2) &&
+        modelVirtualTextureResolver_ &&
+        !(phase == 1 && gpuInstances && gpuIcbPerCommandMaterialSubmit_)) {
+        ModelVirtualTextureBinding first;
+        const bool firstUsesVt = resolveModelVirtualTexture(
+            *it.model,*it.mat,first);
+        for (uint32_t n = 1; n < count; ++n) {
+            const auto& next = modelItems_[items[n]];
+            ModelVirtualTextureBinding candidate;
+            const bool usesVt = resolveModelVirtualTexture(
+                *next.model,*next.mat,candidate);
+            if (!compatibleModelVirtualTextureBinding(
+                    firstUsesVt, first, usesVt, candidate)) {
+                if (!submit) return false;
+                bool ok = true;
+                for (uint32_t k = 0; k < count; ++k)
+                    ok = drawModelBatch(items+k,1,phase,true,false,false)
+                        && ok;
+                return ok;
+            }
+        }
+    }
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced, gpuInstances, instancePalette);
     if (!ph.valid()) return false;
@@ -1439,16 +1613,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const bool actorRevealChanged = lastItem_ &&
         ((lastItem_->flags ^ it.flags) & kDrawActorReveal) != 0;
     if (materialStateChanged || actorRevealChanged) {
-        MaterialUniforms mu{};
-        mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
-        mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
-        mu.pbr[0] = mt.metallic; mu.pbr[1] = mt.roughness; mu.pbr[2] = mt.normalScale; mu.pbr[3] = mt.occlusionStrength;
-        mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
-        mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
-        mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
-        mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
-        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
-        mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
+        MaterialUniforms mu=packGpuPbrMaterialU2(mt);
         if (phase != 0 && geometryMainView_ && (it.flags & kDrawActorReveal) && actorReveal.w > 0) {
             mu.reveal[0]=actorReveal.x;mu.reveal[1]=actorReveal.y;mu.reveal[2]=actorReveal.z;mu.reveal[3]=actorReveal.w;
             const float3 centre{actorReveal.x,actorReveal.y,actorReveal.z};
@@ -1463,6 +1628,12 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
+        if (mt.alpha == AlphaMode::Mask && mt.baseTex >= 0 &&
+            size_t(mt.baseTex) < it.model->images.size() &&
+            !(mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality)) {
+            const auto coverage = it.model->images[size_t(mt.baseTex)].virtualAlphaMask;
+            if (coverage.valid()) dev_->setTexture(15,coverage);
+        }
         if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(kGraphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
@@ -1470,6 +1641,41 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             dev_->setTexture(4, tex(mt.occlusionTex, white_));
             dev_->setTexture(5, tex(mt.emissiveTex, white_));
             dev_->setTexture(6, tex(mt.teamTex, black_));
+        }
+    }
+    // Resolve every submission, not just on material pointer changes:
+    // the scene may switch a Horizon archive generation between frames.
+    // Shader variants use two spare built-in fragment slots (13/14) and
+    // one U6 vec4. The original tex1 remains bound as fallback.
+    const auto activeGraph = mt.shaderGraph &&
+        int(matQuality_) >= mt.shaderGraph->minQuality ?
+        mt.shaderGraph.get() : nullptr;
+    if ((phase == 1 || phase == 2) &&
+        !instancePalette && !it.paletteMaterials &&
+        (!activeGraph || activeGraph->usesVirtualTexture)) {
+        ModelVirtualTextureBinding vt;
+        int atlasSlot=13,tableSlot=14;
+        const bool canBind = !activeGraph ||
+            modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),
+                                         atlasSlot,tableSlot);
+        if (canBind && resolveModelVirtualTexture(*it.model,mt,vt)) {
+            ModelVirtualTextureUniforms params;
+            params.layer = float(vt.layer);
+            params.gutterPixels = vt.gutterPixels;
+            params.addressU = float(uint32_t(vt.addressU));
+            params.addressV = float(uint32_t(vt.addressV));
+            dev_->setTexture(atlasSlot,vt.physicalAtlas);
+            dev_->setTexture(tableSlot,vt.pageTable);
+            if(vt.indexedMipTable) {
+                ModelVirtualTextureTrilinearUniforms trilinear;
+                trilinear.base=params;
+                trilinear.widthPixels=vt.virtualWidthPixels;
+                trilinear.heightPixels=vt.virtualHeightPixels;
+                trilinear.mipLevels=float(vt.virtualMipLevels);
+                trilinear.mipBias=vt.virtualMipBias;
+                trilinear.anisotropyTaps=float(vt.virtualAnisotropyTaps);
+                dev_->setUniforms(6,&trilinear,sizeof(trilinear));
+            } else dev_->setUniforms(6,&params,sizeof(params));
         }
     }
     if (newModel) {
@@ -1580,6 +1786,26 @@ static size_t indirectCommandThreshold() {
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    // One Metal/CPU indirect command group inherits one fragment material
+    // state. Permit VT only when ALL commands use the exact same pair of
+    // atlas/page-table handles, layer and gutter. Never virtualize the
+    // per-instance material palette: its command layout lacks VT identity.
+    if (phase == 1 && modelVirtualTextureResolver_) {
+        ModelVirtualTextureBinding first;
+        const auto& firstItem = modelItems_[items[0]];
+        const bool firstVt = resolveModelVirtualTexture(
+            *firstItem.model,*firstItem.mat,first);
+        if (firstVt && instancePalette) return false;
+        for (uint32_t n = 1; n < count; ++n) {
+            const auto& candidate = modelItems_[items[n]];
+            ModelVirtualTextureBinding binding;
+            const bool vt = resolveModelVirtualTexture(
+                *candidate.model,*candidate.mat,binding);
+            if (!compatibleModelVirtualTextureBinding(
+                    firstVt,first,vt,binding))
+                return false;
+        }
+    }
     const bool profileMdiCpu = profiling_ && !auxiliaryModelPass_ &&
         (phase == 0 || (phase == 1 && geometryMainView_));
     auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
@@ -1860,8 +2086,15 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuEncodedDrawCalls_ = gpuEncodedCommands_ = 0;
     gpuIcbCandidates_ = gpuIcbPrepared_ = 0;
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
+    gpuIcbPerCommandVtExecuted_ = gpuIcbMixedVtExecuted_ = 0;
+    gpuIcbPerCommandPbrSubmitted_ = gpuIcbMixedPbrSubmitted_ = 0;
+    gpuIcbGraphSubmitted_ = gpuIcbMixedGraphSubmitted_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
+    // Invalidate previous-frame resource indices even when GPU ICB is off.
+    // No table resource is owned and this never retires GPU texture handles.
+    gpuMaterialResources_.beginFrame(dev_ ? dev_->frameSerial() : 0);
+    gpuIcbPerCommandMaterialSubmit_ = false;
     gpuAdaptiveInstancingFallback_ = false;
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
@@ -1888,6 +2121,10 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* value = std::getenv("AIVERSE_GPU_ICB_RIGID");
         return value && std::strcmp(value, "1") == 0;
     }();
+    static const bool graphIcbEnabled=[] {
+        const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH");
+        return flag && std::strcmp(flag,"1")==0;
+    }();
     std::vector<uint32_t> eligibleIndices;
     eligibleIndices.reserve(modelItems_.size() / 4);
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
@@ -1898,8 +2135,16 @@ void Renderer3D::prepareGpuModelDraws() {
         if (!it.inView || !it.rigid || !it.prim || !it.model || !it.mat ||
             (!includeRigidDynamic && !(it.flags & kDrawStatic)) ||
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
-            it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
-            it.mat->transparent || it.mat->shaderGraph ||
+            it.tint.w < .99f || it.mat->transparent ||
+            (it.mat->shaderGraph &&
+             (!graphIcbEnabled ||
+              int(matQuality_)<it.mat->shaderGraph->minQuality ||
+              !gpuIcbFragmentGraphEligible(*it.mat) ||
+              !supportsModelGraphSourceTextures(
+                  *dev_,it.mat->shaderGraph->textures.size()) ||
+              (it.mat->shaderGraph->usesVirtualTexture &&
+               14+int(it.mat->shaderGraph->textures.size()) >=
+                   dev_->maxFragmentTextureSlots()))) ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
@@ -1908,15 +2153,111 @@ void Renderer3D::prepareGpuModelDraws() {
             it.model->geometry || it.lodThreshold < 1.0f || it.lodInvert ||
             !it.model->vb.valid() || !it.model->ib.valid() || !it.indexCount)
             continue;
+        // GPU PBR ICB supports opaque models and masked models whose
+        // exact R8 alpha is bound at tex15 in the argument buffer.
+        // Other alpha materials keep their ordinary CPU path.
+        const bool alphaCoverage = it.mat->baseTex >= 0 &&
+            size_t(it.mat->baseTex) < it.model->images.size() &&
+            it.model->images[size_t(it.mat->baseTex)].virtualAlphaMask.valid();
+        if (it.mat->alpha != AlphaMode::Opaque &&
+            !(it.mat->alpha == AlphaMode::Mask && alphaCoverage))
+            continue;
         eligibleIndices.push_back(i);
         if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
         if (it.gpuLodAvailable) ++gpuModelLodEligible_;
     }
     gpuModelEligible_ = uint32_t(eligibleIndices.size());
     if (!gpuModelEligible_) return;
+    // Resolve once for this scene/viewport so the preflight, cache key,
+    // exact equivalence and command encoding observe the SAME VT domain.
+    // Revision changes between frames invalidate GPU batch signatures.
+    std::vector<ModelVirtualTextureBinding> vtBindings(modelItems_.size());
+    std::vector<uint8_t> vtEnabled(modelItems_.size(), uint8_t(0));
+    for (uint32_t index : eligibleIndices) {
+        const auto& item=modelItems_[index];
+        if (resolveModelVirtualTexture(*item.model,*item.mat,vtBindings[index]))
+            vtEnabled[index] = 1;
+    }
+    // An additional explicit opt-in allows different VT archives for the
+    // same GPU-equivalent non-graph material. It requires the actual
+    // per-command Metal fragment ABI, never the ordinary homogeneous ICB.
+    static const bool mixedVtGroups = [] {
+        const char* mixed = std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_VT");
+        const char* perCommand =
+            std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return mixed && std::strcmp(mixed,"1")==0 &&
+               perCommand && std::strcmp(perCommand,"1")==0;
+    }();
+    // Mixed PBR is independently opt-in for ordinary opaque
+    // materials. A separate VT flag remains mandatory for virtual
+    // materials. Source Shader Graph/alpha blending is still excluded.
+    static const bool mixedPbrGroups = [] {
+        const char* mixed=std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR");
+        const char* command=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR");
+        return mixed && std::strcmp(mixed,"1")==0 &&
+               command && std::strcmp(command,"1")==0;
+    }();
+    static const bool pbrVtAvailable=[] {
+        const char* command=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return command && std::strcmp(command,"1")==0;
+    }();
+    const auto mayMixPbr = [&](uint32_t index) {
+        const auto& material=*modelItems_[index].mat;
+        if (!mixedPbrGroups || (vtEnabled[index] && !pbrVtAvailable))
+            return false;
+        if (material.shaderGraph)
+            return graphIcbEnabled && gpuIcbFragmentGraphEligible(material) &&
+                int(matQuality_)>=material.shaderGraph->minQuality;
+        return equivalentGpuIcbPbrPipelineMaterial(material,material);
+    };
+    const auto pipelineMaterialCompatible=[&](const Material& a,
+                                               const Material& b) {
+        if (a.shaderGraph || b.shaderGraph)
+            return graphIcbEnabled &&
+                   equivalentGpuIcbGraphPipelineMaterial(a,b);
+        return equivalentGpuIcbPbrPipelineMaterial(a,b);
+    };
+    const auto vtCompatible = [&](uint32_t left, uint32_t right) {
+        if (mixedVtGroups && vtEnabled[left] && vtEnabled[right])
+            return true; // only when both commands can use per-command VT
+        return compatibleModelVirtualTextureBinding(
+            vtEnabled[left]!=0,vtBindings[left],
+            vtEnabled[right]!=0,vtBindings[right]);
+    };
+    const auto materialCompatible=[&](uint32_t left,uint32_t right) {
+        const auto& a=modelItems_[left];
+        const auto& b=modelItems_[right];
+        if (vtEnabled[left] == vtEnabled[right] &&
+            mayMixPbr(left) && mayMixPbr(right))
+            return pipelineMaterialCompatible(*a.mat,*b.mat);
+        return equivalentGpuMaterial(*a.model,*a.mat,*b.model,*b.mat);
+    };
+    const auto externalMaterialHash = [&](uint32_t index) {
+        const auto& item=modelItems_[index];
+        uint64_t hash=mayMixPbr(index) ?
+            (item.mat->shaderGraph ?
+                gpuIcbGraphPipelineHash(*item.mat) :
+                gpuIcbPbrPipelineHash(*item.mat)) :
+            gpuMaterialStateHash(*item.model,*item.mat);
+        // Exact comparison below remains authoritative, even on a hash
+        // collision. The special no-VT tag distinguishes the two modes.
+        const uint64_t vtHash=(vtEnabled[index] && !mixedVtGroups) ?
+            modelVirtualTextureBindingHash(vtBindings[index]) : 0;
+        hash ^= vtHash + 0x9e3779b97f4a7c15ULL +
+                (hash << 6) + (hash >> 2);
+        hash ^= vtEnabled[index] ? 0x5654524849414c4FULL : 0ULL;
+        return hash;
+    };
     static const bool gpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
         return flag && std::strcmp(flag, "1") == 0;
+    }();
+    // Prototype the actual Metal per-command argument-buffer ABI without
+    // broadening group equivalence yet. It is OFF by default, and
+    // heterogeneous VT grouping is a separately gated feature stage.
+    static const bool perCommandVt = [] {
+        const char* flag = std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return flag && std::strcmp(flag,"1")==0;
     }();
     static const bool adaptiveGpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
@@ -1964,7 +2305,7 @@ void Renderer3D::prepareGpuModelDraws() {
         for (uint32_t i : eligibleIndices) {
             const auto& x = modelItems_[i];
             auto [it, fresh] = hashes.try_emplace(std::make_pair(x.model, x.mat), 0);
-            if (fresh) it->second = gpuMaterialStateHash(*x.model, *x.mat);
+            if (fresh) it->second = externalMaterialHash(i);
             auto& count = counts[{x.model->vb.id, x.model->ib.id, x.flags, it->second}];
             if (count < groupCapacity) ++count;
         }
@@ -2051,7 +2392,7 @@ void Renderer3D::prepareGpuModelDraws() {
         const auto& m = modelItems_[item];
         const auto key = std::make_pair(m.model, m.mat);
         auto [cached, fresh] = cachedMaterialHashes.try_emplace(key, 0);
-        if (fresh) cached->second = gpuMaterialStateHash(*m.model, *m.mat);
+        if (fresh) cached->second = externalMaterialHash(item);
         const uint64_t hash = cached->second;
         hashes[item] = hash;
         signature.push_back({m.model, m.mat, item, m.flags,
@@ -2073,8 +2414,8 @@ void Renderer3D::prepareGpuModelDraws() {
                 if (first.model->vb != candidate.model->vb ||
                     first.model->ib != candidate.model->ib ||
                     first.flags != candidate.flags ||
-                    !equivalentGpuMaterial(*first.model, *first.mat,
-                                           *candidate.model, *candidate.mat)) {
+                    !vtCompatible(members.front(),member) ||
+                    !materialCompatible(members.front(),member)) {
                     cacheValid = false;
                     break;
                 }
@@ -2107,7 +2448,8 @@ void Renderer3D::prepareGpuModelDraws() {
                     first.model->baked.tex != m.model->baked.tex ||
                     first.model->morphTex != m.model->morphTex ||
                     first.flags != m.flags ||
-                    !equivalentGpuMaterial(*first.model, *first.mat, *m.model, *m.mat))
+                    !vtCompatible(group.items.front(),item) ||
+                    !materialCompatible(group.items.front(),item))
                     continue;
                 group.items.push_back(item);
                 found = true;
@@ -2191,18 +2533,183 @@ void Renderer3D::prepareGpuModelDraws() {
             for (size_t j = first; j < end; ++j)
                 packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
                                   gpuIcbInstancesScratch_.data() + (j - first) * 36u);
-            const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
-                gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
-                modelItems_[indices[first]].model->vb,
-                modelItems_[indices[first]].model->ib,
-                gpuIcbSourceSlotsScratch_.data(), uint32_t(gpuIcbSourceSlotsScratch_.size()),
-                gpuIcbInstancesScratch_.data(), gpuIcbInstancesScratch_.size() * sizeof(float));
+            // With two independent opt-ins a GPU group may contain
+            // different VT archive bindings, but never different
+            // source PBR materials or shader permutations. Exact per-item
+            // ticket validation below remains mandatory at execution.
+            const bool materialMode = perCommandVt && vtEnabled[indices[first]];
+            const bool pbrMode = mayMixPbr(indices[first]) &&
+                pipelineMaterialCompatible(
+                    *modelItems_[indices[first]].mat,
+                    *modelItems_[indices[first]].mat);
+            std::vector<gfx::GpuIcbVirtualMaterial> commandMaterials;
+            std::vector<gfx::GpuIcbPbrMaterial> ordinaryPbrMaterials;
+            std::vector<GpuMaterialResourceTicket> commandTickets;
+            bool materialSnapshotValid=true;
+            if (materialMode || pbrMode) {
+                commandMaterials.reserve(materialMode ? end-first : 0);
+                ordinaryPbrMaterials.reserve(!materialMode ? end-first : 0);
+                commandTickets.reserve(end-first);
+                for (size_t j=first;j<end;++j) {
+                    const uint32_t index=indices[j];
+                    const auto& item=modelItems_[index];
+                    const auto& binding=vtBindings[index];
+                    if (vtEnabled[index] != uint8_t(materialMode) ||
+                        (materialMode && !binding.valid()) ||
+                        (pbrMode &&
+                         !pipelineMaterialCompatible(
+                             *modelItems_[indices[first]].mat,*item.mat))) {
+                        materialSnapshotValid=false;
+                        break;
+                    }
+                    gfx::GpuIcbVirtualMaterial virtualDescriptor;
+                    if (materialMode) {
+                        virtualDescriptor.physicalAtlas=binding.physicalAtlas;
+                        virtualDescriptor.pageTable=binding.pageTable;
+                        virtualDescriptor.params[0]=float(binding.layer);
+                        virtualDescriptor.params[1]=binding.gutterPixels;
+                        virtualDescriptor.params[2]=float(uint32_t(binding.addressU));
+                        virtualDescriptor.params[3]=float(uint32_t(binding.addressV));
+                        if (item.mat->alpha==AlphaMode::Mask &&
+                            item.mat->baseTex>=0 &&
+                            size_t(item.mat->baseTex)<item.model->images.size())
+                            virtualDescriptor.alphaCoverage=item.model->images[
+                                size_t(item.mat->baseTex)].virtualAlphaMask;
+                    }
+                    gfx::GpuIcbPbrMaterial ordinaryDescriptor;
+                    if (pbrMode) {
+                        const auto textures=gpuPbrSourceTextures(
+                            *item.model,*item.mat,white_,black_,flatNormal_);
+                        const auto u2=packGpuPbrMaterialU2(*item.mat);
+                        std::memcpy(ordinaryDescriptor.u2.data(),&u2,sizeof(u2));
+                        ordinaryDescriptor.textures=textures;
+                        if (item.mat->shaderGraph) {
+                            ordinaryDescriptor.graphTextureCount=uint32_t(
+                                item.mat->shaderGraph->textures.size());
+                            ordinaryDescriptor.graphTextures=gpuGraphSourceTextures(
+                                *item.model,*item.mat,white_);
+                        }
+                        if (materialMode) {
+                            virtualDescriptor.hasPbr=true;
+                            virtualDescriptor.pbrTextures=textures;
+                            virtualDescriptor.pbrU2=ordinaryDescriptor.u2;
+                            virtualDescriptor.graphTextureCount=
+                                ordinaryDescriptor.graphTextureCount;
+                            virtualDescriptor.graphTextures=
+                                ordinaryDescriptor.graphTextures;
+                        }
+                    }
+                    GpuMaterialResourceBinding snapshot;
+                    snapshot.virtualTextureEnabled=materialMode;
+                    if (materialMode) {
+                        snapshot.virtualTexture=binding;
+                        snapshot.alphaCoverage=virtualDescriptor.alphaCoverage;
+                    }
+                    snapshot.pbrEnabled=pbrMode;
+                    if (pbrMode) {
+                        snapshot.pbrTextures=ordinaryDescriptor.textures;
+                        snapshot.pbrU2=ordinaryDescriptor.u2;
+                        snapshot.graphTextureCount=ordinaryDescriptor.graphTextureCount;
+                        snapshot.graphTextures=ordinaryDescriptor.graphTextures;
+                    }
+                    const auto ticket=gpuMaterialResources_.intern(snapshot);
+                    if (!ticket.valid() ||
+                        (materialMode && !virtualDescriptor.valid()) ||
+                        (pbrMode && !ordinaryDescriptor.valid())) {
+                        materialSnapshotValid=false;
+                        break;
+                    }
+                    if (materialMode) commandMaterials.push_back(virtualDescriptor);
+                    else ordinaryPbrMaterials.push_back(ordinaryDescriptor);
+                    commandTickets.push_back(ticket);
+                }
+            }
+            if (!materialSnapshotValid) {
+                ++gpuIcbRejected_;
+                first=end; // preserve all items for normal CPU fallback
+                continue;
+            }
+            const auto output=gpuModelCommands_.output(
+                gpuModelFrame_,gpuModelSubmission_);
+            const auto vb=modelItems_[indices[first]].model->vb;
+            const auto ib=modelItems_[indices[first]].model->ib;
+            const uint32_t token=materialMode ?
+                dev_->prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+                    output,vb,ib,gpuIcbSourceSlotsScratch_.data(),uint32_t(gpuIcbSourceSlotsScratch_.size()),
+                    gpuIcbInstancesScratch_.data(),gpuIcbInstancesScratch_.size()*sizeof(float),
+                    commandMaterials.data()) :
+                pbrMode ?
+                dev_->prepareGpuEncodedIndexedIcbWithPbrMaterials(
+                    output,vb,ib,gpuIcbSourceSlotsScratch_.data(),uint32_t(gpuIcbSourceSlotsScratch_.size()),
+                    gpuIcbInstancesScratch_.data(),gpuIcbInstancesScratch_.size()*sizeof(float),
+                    ordinaryPbrMaterials.data()) :
+                dev_->prepareGpuEncodedIndexedIcb(
+                    output,vb,ib,gpuIcbSourceSlotsScratch_.data(),uint32_t(gpuIcbSourceSlotsScratch_.size()),
+                    gpuIcbInstancesScratch_.data(),gpuIcbInstancesScratch_.size()*sizeof(float));
             if (token) {
-                ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
-                gpuEncodedBatches_.push_back(std::move(group));
+                group.perCommandVt = materialMode;
+                group.perCommandPbr = pbrMode;
+                group.shaderGraph = pbrMode &&
+                    modelItems_[indices[first]].mat->shaderGraph != nullptr;
+                if (pbrMode)
+                    group.pbrPipelineSnapshot=*modelItems_[indices[first]].mat;
+                if (materialMode) {
+                    const auto& reference=vtBindings[indices[first]];
+                    for (size_t j=first+1;j<end;++j)
+                        if (!(reference == vtBindings[indices[j]])) {
+                            group.mixedVtResources = true;
+                            break;
+                        }
+                }
+                if (pbrMode && commandTickets.size()>1) {
+                    GpuMaterialResourceBinding firstSignature;
+                    gpuMaterialResources_.resolve(commandTickets.front(),firstSignature);
+                    for (size_t j=1;j<commandTickets.size();++j) {
+                        GpuMaterialResourceBinding candidate;
+                        if (!gpuMaterialResources_.resolve(commandTickets[j],candidate) ||
+                            firstSignature.pbrTextures != candidate.pbrTextures ||
+                            firstSignature.pbrU2 != candidate.pbrU2 ||
+                            firstSignature.graphTextureCount != candidate.graphTextureCount ||
+                            firstSignature.graphTextures != candidate.graphTextures) {
+                            group.mixedPbrResources=true;
+                            if (firstSignature.graphTextureCount != candidate.graphTextureCount ||
+                                firstSignature.graphTextures != candidate.graphTextures)
+                                group.mixedGraphSources=true;
+                        }
+                    }
+                }
+                group.perCommandTickets = std::move(commandTickets);
+                group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
+                group.virtualTexture = vtBindings[indices[first]];
+                const auto& firstModel = modelItems_[indices[first]];
+                if (firstModel.mat->alpha == AlphaMode::Mask &&
+                    firstModel.mat->baseTex >= 0 &&
+                    size_t(firstModel.mat->baseTex) < firstModel.model->images.size())
+                    group.alphaCoverage = firstModel.model->images[
+                        size_t(firstModel.mat->baseTex)].virtualAlphaMask;
+                if (materialMode || pbrMode) {
+                    // First ticket is retained for legacy introspection;
+                    // execution validates every per-item resource snapshot.
+                    group.materialResources = group.perCommandTickets.front();
+                } else {
+                    GpuMaterialResourceBinding snapshot;
+                    snapshot.alphaCoverage = group.alphaCoverage;
+                    snapshot.virtualTextureEnabled = group.usesVirtualTexture;
+                    if (group.usesVirtualTexture)
+                        snapshot.virtualTexture = group.virtualTexture;
+                    group.materialResources = gpuMaterialResources_.intern(snapshot);
+                }
+                if (!group.materialResources.valid()) {
+                    // ICB was encoded but will not be submitted. A full or
+                    // invalid staging table must never weaken batch checks.
+                    ++gpuIcbRejected_;
+                } else {
+                    ++gpuIcbPrepared_;
+                    gpuEncodedBatches_.push_back(std::move(group));
+                }
             } else ++gpuIcbRejected_;
             first = end;
         }
@@ -2781,14 +3288,77 @@ void Renderer3D::renderModels(int phase) {
         !drawCallDebug_ && gpuModelCommandsReady_) {
         for (auto& group : gpuEncodedBatches_) {
             if (group.items.size() < 2) continue;
+            // A region/atlas revision may have swapped after compute
+            // prepared this ICB. Never bind a new texture table to old
+            // encoded command uniforms: fall back to per-item CPU draws.
+            bool stable = group.materialResources.valid() &&
+                (!(group.perCommandVt || group.perCommandPbr) ||
+                 group.perCommandTickets.size() == group.items.size());
+            for (size_t itemOrdinal=0;itemOrdinal<group.items.size();++itemOrdinal) {
+                if (!stable) break;
+                const uint32_t index=group.items[itemOrdinal];
+                if (index >= modelItems_.size()) { stable=false; break; }
+                const auto& item = modelItems_[index];
+                ModelVirtualTextureBinding current;
+                const bool usesVt=resolveModelVirtualTexture(
+                    *item.model,*item.mat,current);
+                gfx::TextureHandle alpha;
+                if (item.mat->alpha == AlphaMode::Mask &&
+                    item.mat->baseTex >= 0 &&
+                    size_t(item.mat->baseTex) < item.model->images.size())
+                    alpha=item.model->images[size_t(item.mat->baseTex)].virtualAlphaMask;
+                GpuMaterialResourceBinding live;
+                live.virtualTextureEnabled = usesVt;
+                if (usesVt) live.virtualTexture = current;
+                live.alphaCoverage = alpha;
+                if (group.perCommandPbr) {
+                    // prepareGpuModelDraws() has a local grouping lambda.
+                    // Submission runs in a different method: repeat its
+                    // exact pipeline-only contract here before using an
+                    // encoded ICB with potentially changed materials.
+                    const Material& frozen = group.pbrPipelineSnapshot;
+                    const bool compatible = (frozen.shaderGraph ||
+                                             item.mat->shaderGraph)
+                        ? equivalentGpuIcbGraphPipelineMaterial(frozen,*item.mat)
+                        : equivalentGpuIcbPbrPipelineMaterial(frozen,*item.mat);
+                    if (!compatible) {
+                        stable=false;
+                        break;
+                    }
+                    live.pbrEnabled=true;
+                    live.pbrTextures=gpuPbrSourceTextures(
+                        *item.model,*item.mat,white_,black_,flatNormal_);
+                    const auto u2=packGpuPbrMaterialU2(*item.mat);
+                    std::memcpy(live.pbrU2.data(),&u2,sizeof(u2));
+                    if (item.mat->shaderGraph) {
+                        live.graphTextureCount=uint32_t(
+                            item.mat->shaderGraph->textures.size());
+                        live.graphTextures=gpuGraphSourceTextures(
+                            *item.model,*item.mat,white_);
+                    }
+                }
+                const auto ticket = (group.perCommandVt || group.perCommandPbr) ?
+                    group.perCommandTickets[itemOrdinal] : group.materialResources;
+                if (!gpuMaterialResources_.matches(ticket,live) ||
+                    (!group.perCommandVt &&
+                     (!compatibleModelVirtualTextureBinding(
+                          group.usesVirtualTexture,group.virtualTexture,usesVt,current) ||
+                      !(alpha == group.alphaCoverage)))) {
+                    stable = false;
+                    break;
+                }
+            }
+            if (!stable) { ++gpuIcbRejected_; continue; }
             // Force all inherited parent state to be bound from this group.
             // Previous direct draws may have used transient setBytes blocks.
             currentPipe_ = {};
             lastItem_ = nullptr;
             dev_->setGpuIcbUniformBinding(true);
+            gpuIcbPerCommandMaterialSubmit_ = group.perCommandVt;
             const bool submitted = drawModelBatch(
                 group.items.data(), uint32_t(group.items.size()), phase,
                 false, true);
+            gpuIcbPerCommandMaterialSubmit_ = false;
             const bool executed = submitted &&
                 dev_->executeGpuEncodedIndexedIcb(group.token);
             dev_->setGpuIcbUniformBinding(false);
@@ -2797,6 +3367,15 @@ void Renderer3D::renderModels(int phase) {
                 continue;
             }
             lastItem_ = &modelItems_[group.items.back()];
+            if (group.perCommandVt) ++gpuIcbPerCommandVtExecuted_;
+            if (group.perCommandVt && group.mixedVtResources)
+                ++gpuIcbMixedVtExecuted_;
+            if (group.perCommandPbr) ++gpuIcbPerCommandPbrSubmitted_;
+            if (group.perCommandPbr && group.mixedPbrResources)
+                ++gpuIcbMixedPbrSubmitted_;
+            if (group.shaderGraph) ++gpuIcbGraphSubmitted_;
+            if (group.shaderGraph && group.mixedGraphSources)
+                ++gpuIcbMixedGraphSubmitted_;
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
             ++drawCalls_;

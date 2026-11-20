@@ -22,5 +22,11 @@ struct SpirvProgram {
 };
 // Compiles and links both stages (varyings get matching locations by name). Thread-safe.
 bool compileProgram(const std::string& vertexBody, const std::string& fragmentBody, bool linearTarget, SpirvProgram& out);
+// Explicit Vulkan compute shader: caller writes GLSL 4.50 body with
+// layout(set=0,binding=0..3,rgba8/rgba16f) uniform image2D imageN,
+// sampled tex at bindings 4..11, storage buffers 12..15 and UBO at 16.
+// Uses local_size_x = 64 unless the source provides its own layout.
+bool compileComputeProgram(const std::string& glslBody, std::vector<uint32_t>& spv,
+                           std::string& error);
 
 } // namespace aiverse::gfx::vk

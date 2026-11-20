@@ -20,8 +20,12 @@
 //   * vertex buffer: one interleaved stream; GLSL attribute location = VertexAttr::location,
 //     MSL [[attribute(location)]] via [[stage_in]] at buffer(0).
 #pragma once
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <functional>
 #include <string>
@@ -37,6 +41,8 @@ template <class Tag> struct Handle {
 };
 using BufferHandle = Handle<struct BufferTag>;
 using TextureHandle = Handle<struct TextureTag>;
+using TextureViewHandle = Handle<struct TextureViewTag>;
+using SamplerHandle = Handle<struct SamplerTag>;
 using ShaderHandle = Handle<struct ShaderTag>;
 using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
@@ -53,8 +59,66 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          ETC2_RGB8, ETC2_RGBA8, BC1, BC3, BC7, ASTC_4x4, ASTC_6x6,   // block-compressed: upload levels, check supports()   // Depth: 24/32-bit depth render target; RGBA32F: data textures
                                                         // (bone matrices, morph deltas), nearest only, read with texelFetch / read()
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
-                         RGBA16F }; // linear HDR radiance, 8 bytes/pixel; check supports()
+                         RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
+                         BC4, BC5, EAC_R11, // one/two-channel compressed data maps; check supports()
+                         RG8, R16F, RG16F, R32F, RG32F,
+                         BC6H_UFloat, BC6H_SFloat,
+                         BC1_sRGB, BC3_sRGB, BC7_sRGB,
+                         ETC2_RGB8_sRGB, ETC2_RGBA8_sRGB,
+                         ASTC_4x4_sRGB, ASTC_6x6_sRGB }; // HDR GPU block compression // single/dual-channel sampled data textures
+// Shared compression metadata used by all texture backends. A requested
+// compressed format must NEVER be allocated as RGBA8 when unsupported.
+constexpr bool isCompressedTextureFormat(PixelFormat f) {
+    switch (f) {
+    case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
+    case PixelFormat::EAC_R11: case PixelFormat::BC1:
+    case PixelFormat::BC3: case PixelFormat::BC4:
+    case PixelFormat::BC5: case PixelFormat::BC7:
+    case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
+    case PixelFormat::BC1_sRGB: case PixelFormat::BC3_sRGB: case PixelFormat::BC7_sRGB:
+    case PixelFormat::ETC2_RGB8_sRGB: case PixelFormat::ETC2_RGBA8_sRGB:
+    case PixelFormat::ASTC_4x4_sRGB: case PixelFormat::ASTC_6x6_sRGB:
+    case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6:
+        return true;
+    default:
+        return false;
+    }
+}
+constexpr int compressedTextureBlockBytes(PixelFormat f) {
+    if (!isCompressedTextureFormat(f)) return 0;
+    return f == PixelFormat::ETC2_RGB8 || f == PixelFormat::EAC_R11 ||
+           f == PixelFormat::BC1 || f == PixelFormat::BC1_sRGB ||
+           f == PixelFormat::ETC2_RGB8_sRGB ||
+           f == PixelFormat::BC4 ? 8 : 16;
+}
+constexpr int compressedTextureBlockSize(PixelFormat f) {
+    return !isCompressedTextureFormat(f) ? 0 :
+           f == PixelFormat::ASTC_6x6 || f == PixelFormat::ASTC_6x6_sRGB ? 6 : 4;
+}
+constexpr bool isExtendedDataTextureFormat(PixelFormat f) {
+    return f == PixelFormat::RG8 || f == PixelFormat::R16F ||
+           f == PixelFormat::RG16F || f == PixelFormat::R32F ||
+           f == PixelFormat::RG32F;
+}
+constexpr int uncompressedTexturePixelBytes(PixelFormat f) {
+    switch (f) {
+    case PixelFormat::R8: return 1;
+    case PixelFormat::RG8: case PixelFormat::R16F: return 2;
+    case PixelFormat::RG16F: case PixelFormat::R32F: return 4;
+    case PixelFormat::RG32F: case PixelFormat::RGBA16F: return 8;
+    case PixelFormat::RGBA32F: return 16;
+    case PixelFormat::RGBA8: case PixelFormat::RGBA8_sRGB: return 4;
+    default: return 0; // depth/compressed formats are not CPU-interleaved pixel data
+    }
+}
 enum class Filter { Nearest, Linear };
+// Resource dimension is separate from the sampled view dimension. Array layers are physical
+// slices: Cube requires six, CubeArray requires a multiple of six.
+enum class TextureDimension : uint8_t { Texture1D, Texture2D, Texture3D, Texture2DArray, Cube, CubeArray };
+enum class SamplerAddressMode : uint8_t { ClampToEdge, Repeat, MirrorRepeat, ClampToBorder };
+enum class SamplerMipFilter : uint8_t { None, Nearest, Linear };
+enum class CompareFunction : uint8_t { Never, Less, LessEqual, Equal, Greater, GreaterEqual, NotEqual, Always };
+enum class TextureAspect : uint8_t { Color, Depth, Stencil };
 enum class VertexFormat { Float2, Float3, Float4, UByte4N, UByte4 }; // UByte4: integers 0..255 (GLSL float / MSL uchar4)
 enum class IndexType { None, UInt16, UInt32 };
 enum class Primitive { Triangles, Lines };
@@ -72,6 +136,79 @@ struct DrawIndexedIndirectCommand {
     uint32_t firstInstance = 0;
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
+
+// Experimental *per-command* VT fragment resources for Metal GPU ICB.
+// The pipeline and non-VT PBR resources remain shared per command group.
+// This is a descriptor only; regular backends reject the opt-in path.
+// Both physical atlas and page table must be 2D-array textures.
+// params = (virtualLayer, gutterPixels, addressU, addressV).
+struct GpuIcbVirtualMaterial {
+    TextureHandle physicalAtlas, pageTable, alphaCoverage;
+    float params[4] = {};
+    bool hasVirtualTexture = true; // false only for per-command opaque PBR
+    // Optional experimental per-command material U2 and fragment source
+    // textures 1..6. All six must be bound (fallback 1x1 textures are valid).
+    // The nine float4 rows match the existing std140/Metal MU2 layout.
+    bool hasPbr = false;
+    std::array<TextureHandle,6> pbrTextures{};
+    std::array<float,36> pbrU2{};
+    // Fragment-only Shader Graph source slots 13..16. Slot 16 uses
+    // a constexpr Metal sampler because dynamic sampler slots stop at 15.
+    uint32_t graphTextureCount = 0;
+    std::array<TextureHandle,4> graphTextures{};
+    bool valid() const {
+        if (graphTextureCount>4 || (graphTextureCount && !hasPbr))
+            return false;
+        for(uint32_t i=0;i<graphTextureCount;++i)
+            if(!graphTextures[i].valid()) return false;
+        for(uint32_t i=graphTextureCount;i<4;++i)
+            if(graphTextures[i].valid()) return false;
+        if (hasPbr) {
+            for (const auto texture : pbrTextures)
+                if (!texture.valid()) return false;
+            for (const float value : pbrU2)
+                if (!std::isfinite(value)) return false;
+        } else {
+            for (const auto texture : pbrTextures)
+                if (texture.valid()) return false;
+            for (const float value : pbrU2)
+                if (value != 0.0f) return false;
+        }
+        if (!hasVirtualTexture) {
+            if (!hasPbr || physicalAtlas.valid() || pageTable.valid() ||
+                alphaCoverage.valid()) return false;
+            for (float x : params) if (x != 0.0f) return false;
+            return true;
+        }
+        return physicalAtlas.valid() && pageTable.valid() &&
+               std::isfinite(params[0]) && params[0] >= 0 &&
+               params[0] < 16 && std::floor(params[0]) == params[0] &&
+               std::isfinite(params[1]) && params[1] >= 0 &&
+               std::isfinite(params[2]) && params[2] >= 0 &&
+               params[2] <= 2 && std::floor(params[2]) == params[2] &&
+               std::isfinite(params[3]) && params[3] >= 0 &&
+               params[3] <= 2 && std::floor(params[3]) == params[3];
+    }
+};
+
+// Opt-in per-command PBR resources without a virtual texture.
+// Slots 1..6 and U2 are fully specified; default backends refuse it.
+struct GpuIcbPbrMaterial {
+    std::array<TextureHandle,6> textures{};
+    std::array<float,36> u2{};
+    uint32_t graphTextureCount = 0;
+    std::array<TextureHandle,4> graphTextures{};
+    bool valid() const {
+        for (auto t : textures) if (!t.valid()) return false;
+        for (float x : u2) if (!std::isfinite(x)) return false;
+        if (graphTextureCount>4) return false;
+        for(uint32_t i=0;i<graphTextureCount;++i)
+            if(!graphTextures[i].valid()) return false;
+        for(uint32_t i=graphTextureCount;i<4;++i)
+            if(graphTextures[i].valid()) return false;
+        return true;
+    }
+};
 
 struct BufferInfo {
     size_t logicalBytes = 0; // lower bound: excludes ring snapshots/driver padding
@@ -180,7 +317,250 @@ struct TextureDesc {
     const size_t* levelSize = nullptr;
     const char* label = nullptr;
     bool storage = false; // compute writable; requires supportsCompute()
+    // Extended descriptor contract. Defaults preserve all existing Texture2D callers.
+    // Backends MUST reject unsupported dimensions/features instead of silently making Texture2D.
+    TextureDimension dimension = TextureDimension::Texture2D;
+    int depth = 1;          // texel depth of Texture3D; 1 otherwise
+    int arrayLayers = 1;    // 2DArray slices, or faces (6 for Cube, 6*N for CubeArray)
+    int mipLevels = 0;      // 0 = legacy automatic policy; >0 = explicit allocation request
+    int sampleCount = 1;    // multisampled textures require renderTarget and no initial data
 };
+
+
+struct TextureViewDesc {
+    TextureDimension dimension = TextureDimension::Texture2D;
+    TextureAspect aspect = TextureAspect::Color;
+    int baseMipLevel = 0, mipLevelCount = 1;
+    int baseArrayLayer = 0, arrayLayerCount = 1; // cube views: multiples of six
+};
+
+struct SamplerDesc {
+    Filter minFilter = Filter::Linear, magFilter = Filter::Linear;
+    SamplerMipFilter mipFilter = SamplerMipFilter::Linear;
+    SamplerAddressMode addressU = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressV = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressW = SamplerAddressMode::ClampToEdge;
+    float minLod = 0.0f, maxLod = 1000.0f, lodBias = 0.0f, maxAnisotropy = 1.0f;
+    bool compare = false;
+    CompareFunction comparison = CompareFunction::LessEqual;
+};
+
+struct TextureUploadDesc {
+    int mipLevel = 0, arrayLayer = 0;
+    int x = 0, y = 0, z = 0;
+    int width = 0, height = 1, depth = 1;
+    int rowPitchBytes = 0, slicePitchBytes = 0;
+    const void* data = nullptr;
+};
+
+// Request a single 2D mip/face/layer from an existing sampled or render-target
+// texture. Readback is asynchronous only where implemented by the backend;
+// unsupported backends return false and never invoke the callback.
+struct TextureReadbackDesc {
+    int mipLevel = 0;
+    int arrayLayer = 0;
+};
+struct TextureReadbackResult {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
+    std::vector<uint8_t> pixels; // tightly packed top-left rows, output format
+    bool success() const { return width > 0 && height > 0 && !pixels.empty(); }
+};
+
+// CPU-only validation of dimension/layer/mip invariants. It does NOT imply GPU support.
+enum class TextureDescError : uint8_t {
+    None, InvalidExtent, InvalidLayers, InvalidMipCount, InvalidSampleCount,
+    InvalidDimension, InvalidUsage
+};
+constexpr int maxTextureMipLevels(int w, int h, int d = 1) {
+    int n = 0;
+    for (int s = w > h ? (w > d ? w : d) : (h > d ? h : d); s > 0; s >>= 1) ++n;
+    return n;
+}
+constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
+    if (d.width < 1 || d.height < 1 || d.depth < 1)
+        return TextureDescError::InvalidExtent;
+    if (d.arrayLayers < 1) return TextureDescError::InvalidLayers;
+    switch (d.dimension) {
+    case TextureDimension::Texture1D:
+        if (d.height != 1 || d.depth != 1 || d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture2D:
+        if (d.depth != 1 || d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture3D:
+        if (d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture2DArray:
+        if (d.depth != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Cube:
+        if (d.width != d.height || d.depth != 1 || d.arrayLayers != 6) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::CubeArray:
+        if (d.width != d.height || d.depth != 1 || d.arrayLayers % 6 != 0) return TextureDescError::InvalidDimension;
+        break;
+    }
+    if (d.mipLevels < 0 || d.levelCount < 0 || d.mipLevels > maxTextureMipLevels(d.width, d.height, d.depth) ||
+        d.levelCount > maxTextureMipLevels(d.width, d.height, d.depth) ||
+        (d.mipLevels > 0 && d.levelCount > 0 && d.mipLevels != d.levelCount))
+        return TextureDescError::InvalidMipCount;
+    if (d.sampleCount != 1 && d.sampleCount != 2 && d.sampleCount != 4 &&
+        d.sampleCount != 8 && d.sampleCount != 16)
+        return TextureDescError::InvalidSampleCount;
+    const bool blockCompressed = isCompressedTextureFormat(d.format);
+    if (d.sampleCount > 1 && (d.dimension != TextureDimension::Texture2D ||
+        !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 ||
+        d.levelCount > 0 || d.storage || d.compare || blockCompressed))
+        return TextureDescError::InvalidUsage;
+    if (d.compare && d.format != PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    if (d.storage && d.format == PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    // Until each backend has a validated float/RG mip generator, use explicit
+    // mipLevels + updateTextureRegion. Do not silently allocate one mip.
+    if (isExtendedDataTextureFormat(d.format) && d.mipmaps)
+        return TextureDescError::InvalidUsage;
+    if (blockCompressed) {
+        // A block-compressed GPU image requires a complete mip chain of
+        // levelData/levelSize entries; random data and render/storage targets
+        // must not be misinterpreted as compressed texture payloads.
+        if (d.levelCount < 1 || !d.levelData || !d.levelSize || d.data ||
+            d.mipmaps || d.renderTarget || d.storage || d.sampleCount != 1)
+            return TextureDescError::InvalidUsage;
+        const size_t byteCount = size_t(compressedTextureBlockBytes(d.format));
+        const size_t block = size_t(compressedTextureBlockSize(d.format));
+        if (!byteCount || !block) return TextureDescError::InvalidUsage;
+        for (int mip = 0; mip < d.levelCount; ++mip) {
+            const size_t w = size_t((d.width >> mip) > 0 ? (d.width >> mip) : 1);
+            const size_t h = size_t((d.height >> mip) > 0 ? (d.height >> mip) : 1);
+            const size_t z = d.dimension == TextureDimension::Texture3D ?
+                size_t((d.depth >> mip) > 0 ? (d.depth >> mip) : 1) : 1;
+            const size_t nx = (w + block - 1) / block, ny = (h + block - 1) / block;
+            size_t need = byteCount;
+            const size_t factors[4] = {nx, ny, z, size_t(d.arrayLayers)};
+            for (size_t f : factors) {
+                if (need > std::numeric_limits<size_t>::max() / f)
+                    return TextureDescError::InvalidUsage;
+                need *= f;
+            }
+            if (!d.levelData[mip] || d.levelSize[mip] < need)
+                return TextureDescError::InvalidUsage;
+        }
+    }
+    return TextureDescError::None;
+}
+constexpr const char* textureDescErrorString(TextureDescError e) {
+    switch (e) {
+    case TextureDescError::None: return "valid";
+    case TextureDescError::InvalidExtent: return "texture extent must be positive";
+    case TextureDescError::InvalidLayers: return "texture arrayLayers must be positive";
+    case TextureDescError::InvalidMipCount: return "texture mip count is invalid";
+    case TextureDescError::InvalidSampleCount: return "texture sample count is invalid";
+    case TextureDescError::InvalidDimension: return "texture dimensions/layers do not match its dimension";
+    case TextureDescError::InvalidUsage: return "texture usage combinations are invalid";
+    }
+    return "invalid texture descriptor";
+}
+
+
+inline int textureEffectiveMipLevels(const TextureDesc& d) {
+    if (d.levelCount > 0) return d.levelCount;
+    if (d.mipLevels > 0) return d.mipLevels;
+    return d.mipmaps ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
+}
+
+// Validate a view against the *requested* parent descriptor. Backends must also validate
+// the actual GPU allocation (which can have fewer mips if generation is unsupported).
+inline bool validateTextureViewDesc(const TextureDesc& image, const TextureViewDesc& view) {
+    if (validateTextureDesc(image) != TextureDescError::None ||
+        view.baseMipLevel < 0 || view.mipLevelCount <= 0 ||
+        view.baseArrayLayer < 0 || view.arrayLayerCount <= 0)
+        return false;
+    const int mips = textureEffectiveMipLevels(image);
+    if (view.baseMipLevel >= mips || view.mipLevelCount > mips - view.baseMipLevel ||
+        view.baseArrayLayer >= image.arrayLayers ||
+        view.arrayLayerCount > image.arrayLayers - view.baseArrayLayer)
+        return false;
+    if (image.format == PixelFormat::Depth) {
+        if (view.aspect != TextureAspect::Depth) return false;
+    } else if (view.aspect != TextureAspect::Color) return false;
+    switch (image.dimension) {
+    case TextureDimension::Texture1D:
+    case TextureDimension::Texture2D:
+    case TextureDimension::Texture3D:
+    case TextureDimension::Cube:
+        return view.dimension == image.dimension &&
+               view.baseArrayLayer == 0 &&
+               view.arrayLayerCount == image.arrayLayers;
+    case TextureDimension::Texture2DArray:
+        return (view.dimension == TextureDimension::Texture2DArray) ||
+               (view.dimension == TextureDimension::Texture2D &&
+                view.arrayLayerCount == 1);
+    case TextureDimension::CubeArray:
+        return (view.dimension == TextureDimension::CubeArray &&
+                view.baseArrayLayer % 6 == 0 && view.arrayLayerCount % 6 == 0) ||
+               (view.dimension == TextureDimension::Cube &&
+                view.baseArrayLayer % 6 == 0 && view.arrayLayerCount == 6);
+    }
+    return false;
+}
+
+inline bool validateSamplerDesc(const SamplerDesc& s) {
+    return std::isfinite(s.minLod) && std::isfinite(s.maxLod) &&
+           std::isfinite(s.lodBias) && std::isfinite(s.maxAnisotropy) &&
+           s.minLod >= 0.0f && s.maxLod >= s.minLod &&
+           s.maxAnisotropy >= 1.0f;
+}
+
+
+struct TextureResourceInfo {
+    TextureHandle handle;
+    TextureDimension dimension = TextureDimension::Texture2D;
+    PixelFormat format = PixelFormat::RGBA8;
+    int width = 0, height = 0, depth = 1;
+    int arrayLayers = 1, mipLevels = 1, sampleCount = 1;
+    bool renderTarget = false, storage = false;
+    size_t estimatedBytes = 0; // format-based estimate, not a driver memory query
+};
+
+// Conservative GPU storage estimate for editor inspection and budget planning.
+// Assumes tightly packed logical storage; real drivers may pad allocations.
+inline size_t estimateTextureFootprint(const TextureDesc& d) {
+    if (d.width < 1 || d.height < 1 || d.depth < 1 ||
+        d.arrayLayers < 1 || d.sampleCount < 1) return 0;
+    const int mips = textureEffectiveMipLevels(d);
+    if (mips < 1 || mips > maxTextureMipLevels(d.width,d.height,d.depth) ||
+        (d.sampleCount > 1 && mips != 1)) return 0;
+    const bool compressed = isCompressedTextureFormat(d.format);
+    const size_t bpp = compressed ?
+        size_t(compressedTextureBlockBytes(d.format)) :
+        size_t(d.format == PixelFormat::Depth ? 4 :
+               uncompressedTexturePixelBytes(d.format));
+    const size_t block = compressed ?
+        size_t(compressedTextureBlockSize(d.format)) : 1;
+    if (!bpp || !block) return 0;
+    size_t total = 0;
+    for (int mip = 0; mip < mips; ++mip) {
+        const size_t w = size_t(std::max(1,d.width >> mip));
+        const size_t h = size_t(std::max(1,d.height >> mip));
+        const size_t z = d.dimension == TextureDimension::Texture3D ?
+                         size_t(std::max(1,d.depth >> mip)) : 1;
+        const size_t factors[4] = {
+            (w + block - 1) / block, (h + block - 1) / block,
+            z, size_t(d.arrayLayers)
+        };
+        size_t bytes = bpp;
+        for (size_t factor : factors) {
+            if (bytes > std::numeric_limits<size_t>::max() / factor) return 0;
+            bytes *= factor;
+        }
+        if (bytes > std::numeric_limits<size_t>::max() /
+                         size_t(d.sampleCount)) return 0;
+        bytes *= size_t(d.sampleCount);
+        if (total > std::numeric_limits<size_t>::max() - bytes) return 0;
+        total += bytes;
+    }
+    return total;
+}
 
 // Each backend picks the sources it understands. A shader may provide all of them.
 struct ShaderDesc {
@@ -220,6 +600,13 @@ struct PipelineDesc {
     PixelFormat colorFormat = PixelFormat::RGBA8;   // colour target it draws into: RGBA8 (screen, RGBA8 targets) or RGBA8_sRGB
                                                     // RGBA16F passes select a cached linear-target variant on both backends
     const char* label = nullptr;
+    int sampleCount = 1; // 1 legacy; MSAA pipelines must explicitly match render-pass samples
+    // Color slot 0 uses colorFormat above; additional slots are opt-in.
+    // Fragment shaders must write explicit outputs 0..colorAttachmentCount-1.
+    int colorAttachmentCount = 1;
+    PixelFormat additionalColorFormats[3] = {
+        PixelFormat::RGBA8, PixelFormat::RGBA8, PixelFormat::RGBA8
+    };
 };
 
 // Default: render to the screen. With targets: render into textures (both must match in size).
@@ -231,6 +618,66 @@ struct PassDesc {
     bool clearDepthEnabled = true;
     float clearDepth = 1.0f;
 };
+
+
+constexpr int kMaxRenderTargetColors = 4;
+
+// The new pass API is explicit and offscreen-only. It never implicitly binds
+// the swapchain: use the existing PassDesc for screen/legacy single-target paths.
+// Each attachment selects a single mip and layer/face. All active attachments
+// must have identical mip-sized extents and sample counts.
+// A Texture3D attachment uses arrayLayer as a depth plane at the selected mip.
+struct RenderTargetAttachment {
+    TextureHandle texture;
+    int mipLevel = 0;
+    int arrayLayer = 0;
+    bool clear = true;
+    float clearColor[4] = {0, 0, 0, 0}; // color attachments only
+    // Optional resolve destination: must be single-sampled with identical
+    // pixel format and mip-sized extent. Source must be multisampled.
+    TextureHandle resolveTexture;
+    int resolveMipLevel = 0;
+    int resolveArrayLayer = 0;
+};
+struct RenderTargetPassDesc {
+    std::array<RenderTargetAttachment, kMaxRenderTargetColors> colors{};
+    int colorCount = 0;
+    RenderTargetAttachment depth; // texture invalid = no depth attachment
+    float clearDepth = 1.0f;
+};
+
+// CPU-only structural validation; actual image formats, flags, extents, subresources
+// and capability limits must additionally be verified by the device implementation.
+inline bool validateRenderTargetPassDesc(const RenderTargetPassDesc& desc) {
+    if (desc.colorCount < 0 || desc.colorCount > kMaxRenderTargetColors ||
+        (desc.colorCount == 0 && !desc.depth.texture.valid()))
+        return false;
+    for (int i = 0; i < desc.colorCount; ++i) {
+        const auto& a = desc.colors[size_t(i)];
+        if (!a.texture.valid() || a.mipLevel < 0 || a.arrayLayer < 0) return false;
+        if (a.resolveTexture.valid() &&
+            (a.resolveTexture == a.texture || a.resolveMipLevel < 0 ||
+             a.resolveArrayLayer < 0)) return false;
+        for (int k = 0; k < 4; ++k)
+            if (!std::isfinite(a.clearColor[k])) return false;
+        for (int j = 0; j < i; ++j) {
+            const auto& b = desc.colors[size_t(j)];
+            if (a.texture == b.texture && a.mipLevel == b.mipLevel &&
+                a.arrayLayer == b.arrayLayer) return false; // simultaneous write alias
+        }
+    }
+    if (desc.depth.resolveTexture.valid()) return false; // depth resolve is not portable
+    if (desc.depth.texture.valid()) {
+        if (desc.depth.mipLevel < 0 || desc.depth.arrayLayer < 0 ||
+            !std::isfinite(desc.clearDepth) || desc.clearDepth < 0.0f ||
+            desc.clearDepth > 1.0f) return false;
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& a = desc.colors[size_t(i)];
+            if (a.texture == desc.depth.texture) return false;
+        }
+    }
+    return true;
+}
 
 struct DeviceInfo {
     Backend backend = Backend::GLES3;
@@ -250,6 +697,11 @@ public:
     GpuTimingRouter& gpuTimingRouter() {return gpuTimingRouter_;}
     const GpuTimingRouter& gpuTimingRouter() const {return gpuTimingRouter_;}
     virtual const DeviceInfo& info() const = 0;
+    // Number of simultaneously addressable fragment texture *resources*
+    // via setTexture(), not dynamic sampler state objects. Legacy GL and
+    // portable Vulkan default to 16. Backends with larger binding tables
+    // override this (Metal textures 0..31, samplers only 0..15).
+    virtual int maxFragmentTextureSlots() const { return 16; }
 
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
@@ -277,6 +729,20 @@ public:
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
+    // New resource APIs are opt-in. A backend returning an invalid view/sampler or false
+    // MUST NOT create a reduced 2D resource in its place.
+    virtual bool supportsTextureDimension(TextureDimension dim) const { return dim == TextureDimension::Texture2D; }
+    virtual bool supportsTextureViews() const { return false; }
+    // Read/write images are optional. A backend must reject unsupported
+    // format/dimension combinations rather than silently allocating an
+    // ordinary sampled-only texture.
+    virtual bool supportsStorageTexture(PixelFormat, TextureDimension) const { return false; }
+    virtual TextureViewHandle createTextureView(TextureHandle, const TextureViewDesc&) { return {}; }
+    virtual void destroyTextureView(TextureViewHandle) {}
+    virtual SamplerHandle createSampler(const SamplerDesc&) { return {}; }
+    virtual void destroySampler(SamplerHandle) {}
+    virtual bool updateTextureRegion(TextureHandle, const TextureUploadDesc&) { return false; }
+    virtual bool bindTextureView(int, TextureViewHandle, SamplerHandle = {}) { return false; }
     // CPU-only RHI metadata lookup; no readback, synchronization or texture
     // sampling. Unsupported providers return false and leave out unchanged.
     virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
@@ -310,6 +776,10 @@ public:
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
     virtual bool supports(PixelFormat f) const { return f == PixelFormat::RGBA8 || f == PixelFormat::R8 || f == PixelFormat::Depth || f == PixelFormat::RGBA32F; }
+    // Optional inspection snapshot for the editor. Enumerates user-created
+    // live TextureHandles only (not swapchain internals); estimate is not a
+    // driver allocation query. Query on the graphics device owner thread.
+    virtual std::vector<TextureResourceInfo> textureResources() const { return {}; }
     // Copies the colour of a render target (invalid = the screen as drawn so far this frame) into `to`: an RGBA8
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.
@@ -348,6 +818,10 @@ public:
     virtual bool beginCompute(ComputeHandle) { return false; }
     virtual void setComputeBuffer(int,BufferHandle) {}
     virtual void setComputeTexture(int,TextureHandle) {}
+    // Explicit writable binding: false unless a compute encoder is active
+    // and the texture was created with TextureDesc::storage=true.
+    // setComputeTexture remains backward-compatible for sampled input images.
+    virtual bool bindComputeStorageTexture(int,TextureHandle) { return false; }
     virtual void setComputeUniforms(const void*,size_t) {}
     // 64 threads per X group; dispatch provides total logical threads. Bounds-check in shader.
     virtual void dispatch(uint32_t,uint32_t=1) {}
@@ -358,6 +832,15 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // The callback is invoked on the graphics-device owner thread at a later
+    // beginFrame, after GPU completion, never from a driver completion thread.
+    // An accepted request completes with data or an empty failure result.
+    // Destruction of the parent texture after submission must not invalidate
+    // the readback's own staging bytes. Implementations must reject MSAA and
+    // unsupported dimensions/formats instead of returning altered pixels.
+    using TextureReadFn = std::function<void(TextureReadbackResult)>;
+    virtual bool readTextureAsync(TextureHandle, TextureReadbackDesc,
+                                  TextureReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
@@ -429,6 +912,11 @@ public:
 
     // Commands (only valid between beginPass/endPass)
     virtual void beginPass(const PassDesc& d) = 0;
+    // Offscreen multi-attachment pass with explicit mip/array layer selection.
+    // Success opens a regular render pass; finish with endPass(). Failure must
+    // leave the active pass unchanged and never begin a reduced/silent fallback.
+    virtual bool supportsRenderTargetPasses() const { return false; }
+    virtual bool beginRenderTargets(const RenderTargetPassDesc&) { return false; }
     virtual void endPass() = 0;
     virtual void setViewport(const Rect& r) = 0;
     virtual void setScissor(const Rect& r) = 0;   // w==0 disables
@@ -477,6 +965,33 @@ public:
         const void* instanceData, size_t instanceBytes) {
         (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer; (void)sourceSlots; (void)count;
         (void)instanceData; (void)instanceBytes;
+        return 0;
+    }
+    // Optional GPU ICB material bindings. Unlike the legacy homogeneous
+    // path, this API may assign each draw its own VT atlas/page table and
+    // per-command U6. Only supported backends implement this; failed
+    // submissions return zero and the caller uses the ordinary draw path.
+    virtual uint32_t prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) {
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer;
+        (void)sourceSlots; (void)count; (void)instanceData;
+        (void)instanceBytes; (void)materials;
+        return 0;
+    }
+    // Separate optional non-VT PBR material pathway. A renderer may
+    // mix compatible opaque built-in PBR source textures/U2 while using
+    // the same geometry/shader pipeline. Failure returns token zero.
+    virtual uint32_t prepareGpuEncodedIndexedIcbWithPbrMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbPbrMaterial* materials) {
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer;
+        (void)sourceSlots; (void)count; (void)instanceData;
+        (void)instanceBytes; (void)materials;
         return 0;
     }
     // Finish batched GPU command encoding before opening a render pass.

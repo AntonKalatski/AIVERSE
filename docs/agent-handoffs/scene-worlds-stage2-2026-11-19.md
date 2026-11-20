@@ -1,8 +1,8 @@
 # SceneAsset / SceneLoadCoordinator — Stage 2 handoff (2026-11-19)
 
-Repository: `chromealex/AIVERSE`  
-Working branch: `feature/scene-runtime-multiworld`  
-Parent: Stage 1 at `155dfcf31a19077a7cb415b9269dae4468355803`  
+Repository: `chromealex/AIVERSE`
+Working branch: `feature/scene-runtime-multiworld`
+Parent: Stage 1 at `155dfcf31a19077a7cb415b9269dae4468355803`
 Status: **Stage 2 source committed; native compile/CTest not executed here**.
 
 ## Scope and contract

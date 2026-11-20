@@ -1,8 +1,8 @@
 # AIVERSE — Shared/Static ECS stage 1 handoff
 
-**Date:** 2026-11-19  
-**Repo:** `chromealex/AIVERSE`  
-**Branch:** `feature/ecs-shared-static-components` (created directly from `main`)  
+**Date:** 2026-11-19
+**Repo:** `chromealex/AIVERSE`
+**Branch:** `feature/ecs-shared-static-components` (created directly from `main`)
 **Status:** shared/static Release CTest passed 1/1; corrected always-on Release COW/hierarchy suite subsequently reported passing 4/4 (1.50 sec total) on Mac Studio. See `docs/agent-handoffs/ecs-shared-static-stage2-2026-11-19.md` for exact observed results and remaining limits. New prefab catalog Stage 3 is committed but not yet natively compiled/tested. Full RTS/FPS parity and RSS remain unverified.
 
 This branch is independent of `feature/scene-runtime-multiworld`, currently

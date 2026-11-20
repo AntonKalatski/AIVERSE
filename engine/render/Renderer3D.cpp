@@ -520,7 +520,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     ssrThisFrame_ = false;
     reflectionPlaneValid_ = false;
     reflectionPlaneY_ = 0.f;
-    items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
+    items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
     motionReactiveDraws_.clear(); // per-scene extensions register after beginScene
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
@@ -2022,6 +2022,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // GPU command generation must complete encoding before render passes.
     // Metal guarantees command order between compute and render encoders.
     prepareGpuModelDraws();
+    // GPU ICB material resources are now grouped by exact VT atlas,
+    // page-table and R8 alpha identity. Ineligible mixed/graph/deformed
+    // materials still use the ordinary CPU renderer.
     prepareOcclusion();
     // ---- shadow pass
     if (quality_ != ShadowQuality::Off && shadowMap_.valid()) {
@@ -2051,6 +2054,30 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     renderSpotShadow();   // High: the main spot light's shadow map (Renderer3DReflect.cpp)
     lights.renderMap();
 
+
+    // Virtual-texture feedback must run between render passes: the main
+    // scene pass stays open for UI and must never be interrupted.
+    // Skip when an asynchronous readback is outstanding; streaming
+    // completion/pumping is owned by the application frame coordinator.
+    const bool feedbackProducerConfigured =
+        (feedbackMeshPipeline_.valid() && feedbackMeshBinder_) ||
+        (feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
+        (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_) ||
+        (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
+        (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_) ||
+        feedbackDeformedModelDraw_ || !customFeedback_.empty();
+    if (feedbackScheduler_) {
+        // A multi-domain coordinator owns its individual feedback passes,
+        // filters model page IDs by domain, and routes readback only to the
+        // matching streamer. Never submit the legacy single pass as well.
+        feedbackScheduler_(*this);
+    } else if (feedbackPass_ && feedbackPass_->ready() &&
+               !feedbackPass_->pending() && !feedbackPass_->readyToSubmit() &&
+               feedbackProducerConfigured) {
+        renderVirtualTextureFeedback(*feedbackPass_,
+                                     feedbackMeshPipeline_,
+                                     feedbackMeshBinder_);
+    }
 
     // ---- main pass (left open for the caller's UI; with a post hook: the hook's scene target)
     post_ = post && post->active() ? post : nullptr;
