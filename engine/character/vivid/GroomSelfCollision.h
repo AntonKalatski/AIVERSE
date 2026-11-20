@@ -7,24 +7,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <map>
+#include <utility>
 #include <span>
 #include <vector>
 
 namespace aiverse::vivid {
 class GroomSelfCollision final {
-    struct Cell {
-        int x=0,y=0,z=0;
-        bool operator<(const Cell& b) const noexcept {
-            if(x!=b.x)return x<b.x;
-            if(y!=b.y)return y<b.y;
-            return z<b.z;
-        }
-    };
-    struct Particle {
-        std::uint32_t guide=0,segment=0;
-        render::float3 point{};
-    };
+    using Cell=GroomParticleWorkspace::Cell;
+    using Particle=GroomParticleWorkspace::Particle;
+    using Entry=GroomParticleWorkspace::Entry;
     static bool valid(render::float3 p) noexcept {
         return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);
     }
@@ -43,11 +34,13 @@ public:
     // Uses a Jacobi correction buffer so iteration order cannot create bias.
     static bool resolve(std::span<GroomGuide> guides,
                         const GroomSelfCollisionConfig& cfg,
-                        GroomSelfCollisionStats& stats) {
+                        GroomSelfCollisionStats& stats,
+                        GroomParticleWorkspace& workspace) {
         stats={};
         if(!validate(cfg))return false;
         if(!cfg.enabled || cfg.response==0 || guides.size()<2)return true;
-        std::vector<Particle> particles;
+        workspace.reset();
+        auto& particles=workspace.particles;
         for(std::size_t g=0;g<guides.size();++g) {
             const auto& guide=guides[g];
             if(guide.position.size()!=guide.previous.size()||
@@ -73,14 +66,22 @@ public:
             cell={int(cx),int(cy),int(cz)};
             return true;
         };
-        std::map<Cell,std::vector<std::size_t>> grid;
-        std::vector<Cell> cells(particles.size());
+        // Flat, sorted cell memberships replace per-cell heap allocations.
+        // Each entry owns exactly one particle ID, so the old i/j traversal
+        // and collision pair order remain unchanged.
+        auto& cells=workspace.cells;
+        auto& entries=workspace.entries;
+        cells.resize(particles.size());
+        entries.reserve(particles.size());
         for(std::size_t i=0;i<particles.size();++i) {
             if(!cellOf(particles[i].point,cells[i]))return false;
-            grid[cells[i]].push_back(i);
+            entries.push_back({cells[i],i});
         }
-        std::vector<render::float3> corrections(particles.size());
-        std::vector<std::uint16_t> counts(particles.size());
+        std::sort(entries.begin(),entries.end());
+        auto& corrections=workspace.corrections;
+        auto& counts=workspace.counts;
+        corrections.assign(particles.size(),render::float3{});
+        counts.assign(particles.size(),std::uint16_t(0));
         const float distance2=size*size;
         bool exhausted=false;
         for(std::size_t i=0;i<particles.size()&&!exhausted;++i) {
@@ -88,10 +89,12 @@ public:
             for(int dx=-1;dx<=1&&!exhausted;++dx)
                 for(int dy=-1;dy<=1&&!exhausted;++dy)
                     for(int dz=-1;dz<=1&&!exhausted;++dz) {
-                        const auto found=grid.find(
-                            {cell.x+dx,cell.y+dy,cell.z+dz});
-                        if(found==grid.end())continue;
-                        for(auto j:found->second) {
+                        const Cell target{cell.x+dx,cell.y+dy,cell.z+dz};
+                        const auto first=std::lower_bound(entries.begin(),
+                            entries.end(),Entry{target,0});
+                        for(auto it=first;it!=entries.end() &&
+                            !(target<it->cell) && !(it->cell<target);++it) {
+                            const auto j=it->particle;
                             if(j<=i || particles[i].guide==particles[j].guide)
                                 continue; // only unique cross-guide pairs
                             if(stats.pairChecks>=cfg.maxPairChecks) {
@@ -141,6 +144,13 @@ public:
             guide.previous[p.segment]+=offset;
         }
         return true;
+    }
+    // Source-compatible overload for standalone tools and existing tests.
+    static bool resolve(std::span<GroomGuide> guides,
+                        const GroomSelfCollisionConfig& cfg,
+                        GroomSelfCollisionStats& stats) {
+        GroomParticleWorkspace temporary;
+        return resolve(guides,cfg,stats,temporary);
     }
 };
 } // namespace aiverse::vivid
