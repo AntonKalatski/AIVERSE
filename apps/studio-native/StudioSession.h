@@ -2,6 +2,7 @@
 #pragma once
 #include <string>
 #include "apps/editor/core/Workspace.h"
+#include "apps/studio-native/StudioFacialPreviewState.h"
 namespace aiverse::studio {
 class StudioSession {
 public:
@@ -13,6 +14,8 @@ public:
     const std::string& previewMaterialName() const { return previewMaterialName_; }
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
+    const StudioFacialPreviewState& facialPreview() const noexcept {return facialPreview_;}
+    void failFacialPreview(const std::string& reason) noexcept;
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
 private:
     Json snapshot() const;
@@ -23,5 +26,7 @@ private:
     Json previewMaterialFactors_;
     uint64_t previewMaterialRevision_ = 0;
     void refreshMaterialPreview();
+    StudioFacialPreviewState facialPreview_;
+    std::string facialPreviewError_;
 };
 }
