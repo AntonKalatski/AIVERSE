@@ -63,11 +63,16 @@ bool RtsView::collectRetiredModels() {
     return models && images && roads && shores && geometry && overlays &&
            terrain && ground;
 }
-void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
+void RtsView::setRoadMap(const Json& map) {
+    framePublication_.invalidate();
+    roads_->setMap(map);
+    shores_->setMap(map);
+}
 
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
+    framePublication_.invalidate();
     // Terrain, fog, roads, shores and overlays also own RHI handles when a
     // sprite view is absent. Never rebind ANY live view owner to a foreign
     // device; sprite recovery performs its own stricter owner check below.
@@ -305,6 +310,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     // any presentation resource. A failed barrier leaves all owners intact.
     if(!dev.waitForResourceIdle())
         throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
+    framePublication_.invalidate();
     if(pendingSpriteRecovery_) {
         // The barrier above proves safe retirement of the failed staged view.
         pendingSpriteRecovery_->shutdown(dev);
@@ -410,13 +416,14 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 // GPU fog texture, visual clocks and all animation packets already. Do not
 // call fog_.update, terrain_.draw or any scene event/FX producers again.
 void RtsView::drawPreparedSprites(Renderer3D& renderer) {
-    if(frame_ && twoD_)twoD_->submitPrepared(renderer);
+    if(framePublication_.published().ready() && twoD_)
+        twoD_->submitPrepared(renderer);
 }
 
 void RtsView::drawPreparedTerrainFog(Renderer3D& r,const MapGrid& grid,
                                      const std::vector<uint8_t>* vision,
                                      double seconds) {
-    if(frame_==0 || !dev_)return;
+    if(!dev_ || !framePublication_.readyFor(grid.w,grid.h,seconds))return;
     const bool tiles=twoD_ && twoD_->hasTiles();
     if(hasTerrain_ && !tiles && terrain_.built())
         terrain_.drawPrepared(r,grid,vision);
@@ -435,6 +442,13 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // never by this draw function (which can be called several times).
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
+    using Epoch=render::FramePublicationEpoch;
+    constexpr uint32_t kSceneMask=Epoch::Geometry|Epoch::Terrain|
+        Epoch::Ground|Epoch::Roads|Epoch::Shores|Epoch::Fog|
+        Epoch::Sprites|Epoch::Animation|Epoch::Lighting|Epoch::Overlays;
+    auto publication=framePublication_.begin(
+        planets_.active()?uint32_t(Epoch::Geometry):kSceneMask,
+        frame_+1,grid.w,grid.h,time);
     // Script spawns, reinforcements and restored entities need not exist at
     // map load time. Build the active type set once for both lazy residency
     // and contact-animation detection, without allocating/clearing an array
@@ -495,10 +509,15 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         ::aiverse::view::ViewLayerProviders providers;
         providers.add("planet scene",[&](auto& q,const auto&){
             q.append("planet scene",::aiverse::view::LayerPhase::Geometry,
-                [&]{drawPlanets(r,s,time,vision,grid);});
+                [&]{
+                    drawPlanets(r,s,time,vision,grid);
+                    publication.mark(Epoch::Geometry);
+                });
         });
         // Universal View owns the synchronous presentation barrier.
         ::aiverse::View::submitLayers(providers,{time,0.f,frame_});
+        if(!publication.finish())
+            throw std::logic_error("RtsView: incomplete planet visual frame publication");
         return;
     }
     animationObstacles_.clear();
@@ -549,6 +568,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     using LayerPhase=::aiverse::view::LayerPhase;
     layers.append("scene geometry",LayerPhase::Geometry,[&] {
         geometryScene_.draw(r);
+        publication.mark(Epoch::Geometry);
     });
     const bool tiles = twoD_ && twoD_->hasTiles();
     layers.append("2D scene begin",LayerPhase::Background,[&] {
@@ -560,9 +580,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         if(hasTerrain_ && !tiles)
             terrain_.draw(r,grid,vision,groundFx_.drawsDig());
         if(hasTerrain_ && tiles)terrain_.drawWater(r);
+        publication.mark(Epoch::Terrain);
     });
     layers.append("surface effects",LayerPhase::Effects,[&] {
         if(!tiles)groundFx_.draw(r,s,time,vision,grid,*this);
+        publication.mark(Epoch::Ground);
     });
     // External host-only layer providers. The engine View doesn't know
     // what roads, shorelines or the game map mean.
@@ -573,6 +595,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 roads_->draw(r,[this,&grid](float x,float z){
                     return heightAt(grid,x,z);
                 });
+            publication.mark(Epoch::Roads);
         });
     });
     surfaceProviders.add("shore surface",[&](auto& queue,const auto&){
@@ -581,6 +604,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 shores_->draw(r,[this,&grid](float x,float z){
                     return heightAt(grid,x,z);
                 },terrain_.look().waterOffset,grid.w,grid.h);
+            publication.mark(Epoch::Shores);
         });
     });
     surfaceProviders.collect(layers,{time,0.f,frame_});
@@ -847,6 +871,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         twoD_->endFrame(grid);
         twoD_->submit(r, grid, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
     }
+    publication.mark(Epoch::Sprites|Epoch::Animation);
 
     const auto afterAnimations = std::chrono::steady_clock::now();
     // Game-owned providers for visibility, field markers and scene
@@ -885,21 +910,26 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                     terrain_.setFog(&fog_.field(),fog_.look(),changed);
                 else fog_.draw(r,time,low);
             }
+            publication.mark(Epoch::Fog);
         });
     });
     viewProviders.add("scene illumination",[&](auto& q,const auto&){
         q.append("scene illumination",LayerPhase::Effects,[&]{
             lights_.draw(r,s,time,vision,grid,*this);
+            publication.mark(Epoch::Lighting);
         });
     });
     viewProviders.add("world indicators",[&](auto& q,const auto&){
         q.append("world indicators",LayerPhase::Overlay,[&]{
             overlays_.drawWorld(r,s,time,vision,grid,*this);
+            publication.mark(Epoch::Overlays);
         });
     });
     ::aiverse::view::ViewLayerQueue latePasses;
     viewProviders.collect(latePasses,{time,dt,frame_});
     latePasses.flush();
+    if(!publication.finish())
+        throw std::logic_error("RtsView: incomplete visual frame publication");
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
