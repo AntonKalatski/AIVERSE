@@ -153,6 +153,7 @@ Json StudioSession::openProject(const std::string& path) {
     (void)studioContentRoot(ws_.project.dir);
     pendingAssetTransfer_.reset();
     selected_.clear();
+    facialPreview_.reset(); // project identity may change; never reuse prior GUID
     previewMaterialName_.clear();
     refreshMaterialPreview();
     return snapshot();
@@ -177,6 +178,33 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method=="studio.facialPreviewBind" ||
+                  method=="studio.facialPreviewControls" ||
+                  method=="studio.facialPreviewInfo") {
+            if(ws_.project.dir.empty())
+                throw std::runtime_error("Open a project first");
+            if(method=="studio.facialPreviewBind") {
+                const std::string guid=params.getStr("guid");
+                // A clear operation detaches all staged controls without
+                // touching the Scene GPU device or the document's saved rig.
+                if(guid.empty()) {
+                    facialPreview_.reset();
+                    reply.set("result",facialPreview_.describe());
+                } else {
+                    StudioAssetCatalog catalog(ws_.project.dir);
+                    catalog.rebuild();
+                    reply.set("result",facialPreview_.bind(catalog,guid,params["rig"]));
+                }
+            } else if(method=="studio.facialPreviewControls") {
+                const Json& revision=params["revision"];
+                if(!revision.isNumber() || revision.toDouble()<0 ||
+                   revision.toDouble()!=double(revision.integer()))
+                    throw std::runtime_error("Invalid facial selection revision");
+                reply.set("result",facialPreview_.controls(
+                    uint64_t(revision.integer()),params["values"]));
+            } else {
+                reply.set("result",facialPreview_.describe());
+            }
         } else if (method == "studio.facialRigList" ||
                    method == "studio.facialRigGet" ||
                    method == "studio.facialRigValidate" ||

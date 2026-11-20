@@ -61,6 +61,18 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_pbr_adapter_tests PRIVATE aiverse_editor_core)
     add_test(NAME studio_pbr_adapter COMMAND aiverse_studio_pbr_adapter_tests)
     set_tests_properties(studio_pbr_adapter PROPERTIES LABELS "EDITOR")
+    # Stage 184: project Asset GUID + typed facial input bridge, source-only.
+    # This cannot claim 52-channel GPU preview on Studio's 8-channel renderer.
+    add_executable(aiverse_studio_facial_preview_binding_tests
+        tests/StudioFacialPreviewBindingTests.cpp StudioAssetCatalog.cpp)
+    target_include_directories(aiverse_studio_facial_preview_binding_tests
+        PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_preview_binding_tests
+        PRIVATE SQLite::SQLite3 aiverse_editor_core)
+    add_test(NAME studio_facial_preview_binding
+        COMMAND aiverse_studio_facial_preview_binding_tests)
+    set_tests_properties(studio_facial_preview_binding PROPERTIES LABELS "EDITOR")
+
     # Facial Control Rig authoring is project-local, native validated and
     # independent of the unmerged MotionWeave runtime branch.
     add_executable(aiverse_studio_facial_rig_tests tests/StudioFacialRigDocumentTests.cpp)

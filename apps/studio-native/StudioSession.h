@@ -5,6 +5,7 @@
 #include <vector>
 #include <filesystem>
 #include "apps/studio-native/StudioAssetTransfers.h"
+#include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "apps/editor/core/Workspace.h"
 namespace aiverse::studio {
 class StudioSession {
@@ -26,6 +27,7 @@ private:
     int indexFor(const std::string& id) const;
     editor::Workspace ws_;
     std::string selected_;
+    StudioFacialPreviewBinding facialPreview_;
     std::string previewMaterialName_;
     Json previewMaterialFactors_;
     uint64_t previewMaterialRevision_ = 0;
