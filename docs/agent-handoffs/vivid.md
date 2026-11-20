@@ -2722,3 +2722,31 @@ Native captures pipelineFailures0; GUI/CI NOT RUN; not realtime performance.
 See docs/qa/vivid-eyes-2026-11-20.md. No push this stage.
 Next: correct eyelid/lash edge coverage/deformation and improve iris detail plus
 separate optical cornea response, retaining matched native before/after evidence.
+
+
+## 2026-11-20 — Layered eye optics, material/assembly integration
+
+Code585e6b4d2e34eb5f43a24d53eff766bb98775e66, integration/motionweave-studio-facial-stage184.
+Material.eyeOptics appends UV centre/radius/depth to U2, equality/hash/merge;
+GLSL/MSL refracted UV plus wet coat, glTF extras.aiverseEye v1 import/export,
+assembly accepts baked Eye with portable PBR. Appearance adds3 fields(schema75).
+Baker uses original iris fibers, radial limbus and restrained sclera; cartilage
+strip material fixed white jagged edges. No geometry shrinking/deletion, lashes
+alpha and51 morphs retained. Working Ada source updated with JSON backups; new
+Ada-Eye-Optics asset, all external on KINGSTON. Creator --eye-detail .85 camera.
+
+Native builds PASS; Node baker PASS;4/4 CTests PASS report20261120-200027-32474.
+GLSL12/12 stages syntaxPASS ES300/330,Q0/1/2; initial harness missing ColorSpace
+prefix fixed. Initial schema count72 and new fixture missing hiddenMeshes[]
+failed; corrected tests, retained logs. Native Metal motion168frames7s24fps
+completed pipelineFailures0. Eye/source reload logs show correct shading3 and
+optics. GUI/mobile/Vulkan/OpenGL GPU/CI NOT RUN; no push.
+
+CRITICAL latest visual finding: final-catalog.png after3.125 normalization
+reveals excess pale glare again. dynLight ds includes broad environment/grid
+response, not only source glints; multiplying the whole ds was insufficient.
+Do NOT call MetaHuman parity or final quality achieved. Next: isolate sharp
+reflections of actual point-light directions from broad ambient response; rerun
+matched catalog capture and motion before delivering final media. Existing
+final-motion.mp4/gallery.html are pre-refinement artifacts. Full analysis/tests
+and known skin-normal/card-hair limits in docs/qa/vivid-eye-optics-2026-11-20.md.
