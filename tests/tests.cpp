@@ -14029,6 +14029,40 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage47b3b_primary_pipeline_is_staged_before_draw) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,grid,false));
+    render::Renderer3D renderer;CHECK(renderer.init(dev));
+    render::RTSCamera camera;
+    camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    const auto oldShaders=dev.shaderAttempts;
+    const auto oldPipelines=dev.pipelineAttempts;
+    {
+        auto discarded=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+        CHECK(discarded!=nullptr);
+        CHECK(dev.shaderAttempts>=oldShaders);
+        CHECK(dev.pipelineAttempts>=oldPipelines);
+    }
+    auto prepared=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+    CHECK(prepared!=nullptr);
+    terrain.commitFrame(std::move(prepared));
+    const auto shadersAtDraw=dev.shaderAttempts;
+    const auto pipelinesAtDraw=dev.pipelineAttempts;
+    renderer.beginScene(camera,640,480);
+    terrain.draw(renderer,grid,nullptr,false);
+    CHECK(dev.shaderAttempts==shadersAtDraw);
+    CHECK(dev.pipelineAttempts==pipelinesAtDraw);
+    renderer.render(gfx::PassDesc{});
+    terrain.shutdown(dev);renderer.shutdown();
+}
+
 TEST(lens_stage47b3a_detail_lod_candidate_rollback_and_submission_only_draw) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();

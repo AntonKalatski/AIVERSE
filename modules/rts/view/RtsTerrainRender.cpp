@@ -1387,6 +1387,12 @@ public:
             if(item.mesh.vb.valid())try {device_->destroyBuffer(item.mesh.vb);}catch(...) {}
             if(item.mesh.ib.valid())try {device_->destroyBuffer(item.mesh.ib);}catch(...) {}
         }
+        if(traceHeight_.tex.valid())
+            try {device_->destroyTexture(traceHeight_.tex);}catch(...) {}
+        if(pipeline_.valid())
+            try {device_->destroyPipeline(pipeline_);}catch(...) {}
+        if(shader_.valid())
+            try {device_->destroyShader(shader_);}catch(...) {}
     }
 private:
     TerrainRenderer* owner_=nullptr;
@@ -1400,6 +1406,12 @@ private:
         Lod mesh{};
     };
     std::vector<PendingLod> lods_;
+    gfx::ShaderHandle shader_{};
+    gfx::PipelineHandle pipeline_{};
+    int pipelineSlot_=-1;
+    render::HeightField traceHeight_{};
+    double traceBuiltAt_=-1e9;
+    int traceWidth_=0,traceHeightPixels_=0;
     int nextDynRow_=0;
     bool nextVisionInit_=false;
 };
@@ -1494,7 +1506,8 @@ TerrainRenderer::prepareFrameVisible(
         const std::vector<uint8_t>* vision,
         const std::vector<uint8_t>* filteredVisibility) {
     auto pending=prepareFrame(g,vision,filteredVisibility);
-    if(!pending || !detailOn_ || !dev_)return pending;
+    if(!pending || !dev_)return pending;
+    if(detailOn_) {
     constexpr size_t kMaxNewLods=16;
     pending->lods_.reserve(kMaxNewLods);
     const auto frustum=::aiverse::view::SideFrustum::fromViewProjection(
@@ -1526,6 +1539,109 @@ TerrainRenderer::prepareFrameVisible(
         pending->lods_.push_back({i,size_t(lod),bytes,
                                  std::exchange(newLod,Lod{})});
     }
+    }
+
+    // Prepare shader/pipeline variants before any multi-owner publication.
+    // Shader and pipeline handles are unpublished and owned by this candidate
+    // until commitFrame transfers them. A lower quality tier is attempted on
+    // backend compile failures, preserving the existing fallback policy.
+    const int first=tierFor(camera);
+    const int dbase=detailOn_?3:0;
+    for(int tier=first;tier>=0;--tier) {
+        const int slot=dbase+tier;
+        if(pipes_[slot].valid())break;
+        if(shaderFailed_[slot])continue;
+        const std::string def="#define TERRAIN_TIER "+
+            std::to_string(tier)+"\n#define TERRAIN_DETAIL "+
+            std::to_string(detailOn_?1:0)+"\n";
+        const std::string vs=def+shaders::kTerrainVS;
+        const std::string fs=def+shaders::kTerrainFS;
+        const std::string msl=def+shaders::kTerrainMSL;
+        const bool borrowedShader=shaders_[slot].valid();
+        if(!borrowedShader) {
+            gfx::ShaderDesc sd;
+            sd.glslVertex=vs.c_str();
+            sd.glslFragment=fs.c_str();
+            sd.msl=msl.c_str();
+            sd.uniformSlots=4;
+            sd.textureSlots=21;
+            sd.label="terrain staged pipeline";
+            pending->shader_=dev_->createShader(sd);
+            if(!pending->shader_.valid())continue;
+        }
+        gfx::PipelineDesc p;
+        p.shader=borrowedShader?shaders_[slot]:pending->shader_;
+        p.attrs[0]={0,gfx::VertexFormat::Float3,0};
+        p.attrs[1]={1,gfx::VertexFormat::Float3,12};
+        p.attrs[2]={2,gfx::VertexFormat::UByte4N,24};
+        p.attrs[3]={3,gfx::VertexFormat::Float2,28};
+        p.attrCount=4;
+        p.stride=sizeof(TV);
+        p.indexType=gfx::IndexType::UInt32;
+        p.label="terrain staged pipeline";
+        pending->pipeline_=dev_->createPipeline(p);
+        if(pending->pipeline_.valid()) {
+            pending->pipelineSlot_=slot;
+            break;
+        }
+        // Failed private shaders were never submitted and need no idle proof.
+        if(pending->shader_.valid()) {
+            dev_->destroyShader(pending->shader_);
+            pending->shader_={};
+        }
+    }
+
+    // Traced shadows require a GPU height texture. Stage the replacement
+    // privately so an exception cannot replace a prior-camera generation.
+    if(camera.traceActive() && heightDirty_) {
+        using clock=std::chrono::steady_clock;
+        const double now=std::chrono::duration<double>(
+            clock::now().time_since_epoch()).count();
+        if(!heightField_.tex.valid() || now-heightBuiltAt_>=0.3) {
+            const int tw=std::max(2,std::min(1024,g.w*2));
+            const int th=std::max(2,std::min(1024,g.h*2));
+            std::vector<float> heights(size_t(tw)*size_t(th));
+            float mn=1e9f,mx=-1e9f;
+            for(int j=0;j<th;++j) {
+                const float z=(float(j)+0.5f)*float(g.h)/float(th);
+                for(int i=0;i<tw;++i) {
+                    const float x=(float(i)+0.5f)*float(g.w)/float(tw);
+                    const float value=surfaceAt(g,x,z);
+                    heights[size_t(j)*size_t(tw)+size_t(i)]=value;
+                    mn=std::min(mn,value);
+                    mx=std::max(mx,value);
+                }
+            }
+            const float range=std::max(mx-mn,1e-3f);
+            std::vector<uint8_t> pixels(heights.size()*4);
+            for(size_t i=0;i<heights.size();++i) {
+                const int q=std::clamp(int((heights[i]-mn)/range*
+                                           65535.0f+0.5f),0,65535);
+                pixels[i*4]=uint8_t(q>>8);
+                pixels[i*4+1]=uint8_t(q&255);
+                pixels[i*4+2]=0;pixels[i*4+3]=255;
+            }
+            gfx::TextureDesc desc;
+            desc.width=tw;desc.height=th;
+            desc.filter=gfx::Filter::Linear;
+            desc.data=pixels.data();
+            desc.label="terrain trace height staged";
+            pending->traceHeight_.tex=dev_->createTexture(desc);
+            if(!pending->traceHeight_.tex.valid())
+                throw std::runtime_error(
+                    "TerrainRenderer: private trace height upload failed");
+            pending->traceHeight_.originX=0;
+            pending->traceHeight_.originZ=0;
+            pending->traceHeight_.extentX=float(g.w);
+            pending->traceHeight_.extentZ=float(g.h);
+            pending->traceHeight_.heightMin=mn;
+            pending->traceHeight_.heightRange=
+                mx-mn>1e-3f?mx-mn:0.0f;
+            pending->traceBuiltAt_=now;
+            pending->traceWidth_=tw;
+            pending->traceHeightPixels_=th;
+        }
+    }
     return pending;
 }
 
@@ -1554,6 +1670,24 @@ void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept 
         chunks_[item.chunk].lods[item.level]=
             std::exchange(item.mesh,Lod{});
         geoBytes_+=item.bytes;
+    }
+    if(next->pipeline_.valid()) {
+        const int slot=next->pipelineSlot_;
+        if(slot<0 || slot>=6 || pipes_[slot].valid() ||
+           (next->shader_.valid() && shaders_[slot].valid()))
+            std::terminate();
+        if(next->shader_.valid())
+            shaders_[slot]=std::exchange(next->shader_,{});
+        pipes_[slot]=std::exchange(next->pipeline_,{});
+        shaderFailed_[slot]=false;
+    }
+    if(next->traceHeight_.tex.valid()) {
+        retiredMeshes_.retireTexture(*dev_,heightField_.tex);
+        heightField_=std::exchange(next->traceHeight_,{});
+        heightW_=next->traceWidth_;
+        heightH_=next->traceHeightPixels_;
+        heightBuiltAt_=next->traceBuiltAt_;
+        heightDirty_=false;
     }
     frameFieldsPrepared_=true;
     fogFieldChanged_=false;
@@ -1646,8 +1780,8 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     }
     const int tier = tierFor(r);
     gfx::PipelineHandle pipe{};
-    if(preparedOnly) {
-        // Secondary cameras must not compile GPU shaders or pipelines.
+    if(preparedOnly || stagedFields) {
+        // Secondary cameras and staged primary frames never compile shaders.
         const int first=tier+(detailOn_?3:0);
         const int minimum=detailOn_?3:0;
         for(int i=first;i>=minimum;--i)
@@ -1715,7 +1849,8 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     const Lod apron=apron_;
     // traced terrain shadows (Renderer3D trace tier): the height map of the drawn surface
     if (r.traceActive()) {
-        if (!preparedOnly && heightDirty_) updateHeightField(dev, g);
+        if(!preparedOnly && !stagedFields && heightDirty_)
+            updateHeightField(dev,g); // standalone compatibility only
         r.setHeightField(heightField_);
     } else r.setHeightField({});
     r.drawCustomOpaque([&r, items, u, pipe, apron, bindings](gfx::Device& d) {
