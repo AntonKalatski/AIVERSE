@@ -61,6 +61,25 @@ int main() {
           ws.map.data.extra["terraweaveSparse"]==after,
           "invalid brush partially modified saved sparse terrain");
 
+    // Same authored chunks must survive FPS document save/load too:
+    // generic MapDoc::toJson historically returned fps verbatim.
+    Workspace fps;
+    fps.project.dir=".";
+    fps.map.reset(4,4);
+    fps.map.data.fps=Json::object();
+    fps.map.data.fps.set("colliders",Json::array());
+    fps.map.data.fps.set("spawns",Json::array());
+    auto fpsCreate=fps.call("terraweave_sparse_paint",
+                            cmd("create",-6401,-6401),"mcp");
+    check(fpsCreate.getBool("ok") &&
+          fps.map.toJson().has("terraweaveSparse"),
+          "FPS map JSON dropped terrain created in the world");
+    MapDoc restoredFps;
+    std::string error;
+    check(restoredFps.loadJson(fps.map.toJson(),&error) &&
+          restoredFps.data.extra["terraweaveSparse"]==
+               fps.map.data.extra["terraweaveSparse"],
+          "FPS sparse terrain did not persist through load");
     std::cout<<"PASS sparse editor/MCP click anywhere, auto-neighbors, "
                 "undo/redo, no fixed map resize, atomic validation\n";
 }
