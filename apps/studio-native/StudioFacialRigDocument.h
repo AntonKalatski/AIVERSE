@@ -217,6 +217,7 @@ inline Json readStudioFacialRig(const std::string& root,const std::string& name)
 
 inline Json saveStudioFacialRig(const std::string& root,
                                 const std::string& name,const Json& doc) {
+    namespace fs=std::filesystem;
     std::string error;
     if(!validStudioFacialRigDraft(doc,&error))
         throw std::invalid_argument(error);
@@ -233,7 +234,7 @@ inline Json saveStudioFacialRig(const std::string& root,
     try {
         fd=::openat(dir,pending.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
         if(fd<0)throw std::runtime_error("Cannot create exclusive facial rig staging file");
-        const std::string bytes=doc.dump(2)+"\\n";
+        const std::string bytes=doc.dump(2)+"\n";
         std::size_t offset=0;
         while(offset<bytes.size()) {
             const ssize_t n=::write(fd,bytes.data()+offset,bytes.size()-offset);
