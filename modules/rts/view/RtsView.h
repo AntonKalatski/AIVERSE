@@ -385,6 +385,13 @@ public:
         terrain_.setDetail(d, splat);
     }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
+    // After a synchronous map-size transition, all resource owners already
+    // agree on dimensions. GroundFX mesh fills still await primary draw.
+    bool surfacePresentationMapReady(const MapGrid& grid) const noexcept {
+        return terrain_.mapMatches(grid.w,grid.h) &&
+               groundFx_.mapMatches(grid.w,grid.h) &&
+               fog_.sheetMatches(grid.w,grid.h);
+    }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
     // The generic frame fence is committed ONLY after all primary-frame
     // owners finish. Secondary RT cameras must consume exactly this epoch.

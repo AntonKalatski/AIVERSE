@@ -84,6 +84,14 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
         std::shared_ptr<TerrainRenderer::PreparedMap> stagedTerrain;
         std::shared_ptr<RtsRoadView::PreparedRebuild> stagedRoad;
         std::shared_ptr<RtsShoreView::PreparedRebuild> stagedShore;
+        std::shared_ptr<RtsGroundFx::PreparedFrame> stagedGroundFx;
+        std::unique_ptr<FogOfWar::PreparedSheet> stagedFogSheet;
+        std::unique_ptr<FogOfWar::PreparedUpdate> stagedFogField;
+        // No scene mask is available at this synchronous editor/client map
+        // boundary. Initialize a private all-unexplored field (never reveal
+        // unknown map cells); the next primary draw stages actual viewer Fog.
+        const std::vector<uint8_t> unexplored(
+            size_t(g.w)*size_t(g.h),uint8_t(0));
         const std::function<float(float,float)> newHeight=
             [&](float x,float z) {
                 return terrain_.preparedSurfaceAt(stagedTerrain,g,x,z);
@@ -119,11 +127,41 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
             },
             [&] {shores_->commitRebuild(std::move(stagedShore));},
             [&] {stagedShore.reset();});
+        Part groundFxPart(
+            [&] {
+                // No camera is needed to atomically replace the cell grid.
+                // Meshes will be built by the first scene-aware primary frame.
+                stagedGroundFx=groundFx_.prepareMapReset(g);
+            },
+            [&] {groundFx_.commitFrame(std::move(stagedGroundFx));},
+            [&] {stagedGroundFx.reset();});
+        Part fogPart(
+            [&] {
+                if(!fog_.ready())
+                    throw std::runtime_error("RtsView: fog pipeline unavailable for map change");
+                stagedFogSheet=fog_.prepareSheet(dev,g.w,g.h,newHeight);
+                if(!stagedFogSheet)
+                    throw std::runtime_error("RtsView: fog sheet map staging failed");
+                stagedFogField=fog_.prepareUpdate(
+                    unexplored,g.w,g.h,0.0,stagedFogSheet.get());
+                if(!stagedFogField)
+                    throw std::runtime_error("RtsView: fog field map staging failed");
+            },
+            [&] {
+                (void)fog_.commitPreparedFrame(
+                    std::move(stagedFogSheet),std::move(stagedFogField));
+            },
+            [&] {
+                stagedFogField.reset();
+                stagedFogSheet.reset();
+            });
         render::OwnerPrepareCommit tx;
         tx.add(terrainPart);
         tx.add(roadPart);
         tx.add(shorePart);
-        tx.prepareAll(); // a failed shore rolls back Terrain and Roads
+        tx.add(groundFxPart);
+        tx.add(fogPart); // a late R8 upload failure rolls back all owners
+        tx.prepareAll();
         if(!tx.publish())
             throw std::logic_error("RtsView: topology cohort not published");
         changed=true;
@@ -142,7 +180,9 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
     paintLayers_.shutdown();
     if(changed || !hasTerrain_)groundFx_.invalidate();
     hasTerrain_ = true;
-    fogMeshDirty_ = true;   // the fog sheet follows the ground
+    // A full-size topology cohort already published the matching fog sheet
+    // and R8 field. Same-size sculpting still needs a height-sheet refresh.
+    fogMeshDirty_ = !topologyChange;
     fieldView_.invalidate();  // so do grid field overlays
     if (twoD_) twoD_->buildTiles(dev, g, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
 }

@@ -14029,6 +14029,179 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b1_fog_gpu_failure_rolls_back_entire_topology_cohort) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::TerrainRenderer terrain;
+    game::RtsRoadView roads;
+    game::RtsShoreView shores;
+    game::RtsGroundFx groundFx;
+    view::VisibilityField fog;
+    terrain.init(dev,rules,missing,"");
+    roads.init(dev,Json(),missing);
+    shores.init(dev,Json(),missing);
+    groundFx.init(dev,rules,missing,"");
+    CHECK(fog.init(dev));
+    game::MapGrid oldMap;oldMap.init(8,6);
+    for(auto& f:oldMap.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,oldMap,false));
+    auto initialGround=groundFx.prepareMapReset(oldMap);
+    CHECK(initialGround!=nullptr);
+    groundFx.commitFrame(std::move(initialGround));
+    CHECK(groundFx.mapMatches(oldMap.w,oldMap.h));
+    const std::function<float(float,float)> flat=[](float,float){return 0.0f;};
+    fog.build(dev,oldMap.w,oldMap.h,flat);
+    const auto fogTexture=fog.texture();
+    const auto roadGeneration=roads.surfaceGeneration();
+    const auto terrainRetired=terrain.pendingMeshGpuRetirements();
+    const auto roadsRetired=roads.pendingGpuRetirements();
+    const auto shoresRetired=shores.pendingGpuRetirements();
+    const auto groundRetired=groundFx.pendingMeshGpuRetirements();
+    const auto fogRetired=fog.pendingGpuRetirements();
+
+    game::MapGrid next;next.init(12,9);
+    for(auto& f:next.flags)f=game::kCellGround;
+    next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
+    const std::vector<uint8_t> unexplored(size_t(next.w)*size_t(next.h),0);
+    std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
+    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
+    std::shared_ptr<game::RtsGroundFx::PreparedFrame> groundPending;
+    std::unique_ptr<view::VisibilityField::PreparedSheet> sheetPending;
+    std::unique_ptr<view::VisibilityField::PreparedUpdate> fieldPending;
+    const std::function<float(float,float)> nextHeight=
+        [&](float x,float z){
+            return terrain.preparedSurfaceAt(mapPending,next,x,z);
+        };
+    struct Part final:render::OwnerPrepareCommit::Participant {
+        std::function<void()> onPrepare,onCommit,onRollback;
+        Part(std::function<void()> p,std::function<void()> c,
+             std::function<void()> r)
+            :onPrepare(std::move(p)),onCommit(std::move(c)),
+             onRollback(std::move(r)){}
+        void prepare() override {onPrepare();}
+        void commit() noexcept override {onCommit();}
+        void rollback() noexcept override {onRollback();}
+    };
+    Part terrainPart(
+        [&]{mapPending=terrain.prepareMap(dev,next,false);},
+        [&]{(void)terrain.commitMap(std::move(mapPending));},
+        [&]{mapPending.reset();});
+    Part roadPart(
+        [&]{roadPending=roads.prepareRebuild(dev,nextHeight,true);},
+        [&]{roads.commitRebuild(std::move(roadPending));},
+        [&]{roadPending.reset();});
+    Part shorePart(
+        [&]{shorePending=shores.prepareRebuild(
+            dev,nextHeight,0.0f,next.w,next.h,true);},
+        [&]{shores.commitRebuild(std::move(shorePending));},
+        [&]{shorePending.reset();});
+    Part groundPart(
+        [&]{groundPending=groundFx.prepareMapReset(next);},
+        [&]{groundFx.commitFrame(std::move(groundPending));},
+        [&]{groundPending.reset();});
+    bool injectFogUpload=true;
+    Part fogPart(
+        [&]{
+            sheetPending=fog.prepareSheet(dev,next.w,next.h,nextHeight);
+            CHECK(sheetPending!=nullptr);
+            if(injectFogUpload)
+                dev.failTexture=dev.textureAttempts+1;
+            try {
+                fieldPending=fog.prepareUpdate(
+                    unexplored,next.w,next.h,0.0,sheetPending.get());
+            }catch(...) {
+                dev.failTexture=0;
+                throw;
+            }
+            dev.failTexture=0;
+            CHECK(fieldPending!=nullptr);
+        },
+        [&]{(void)fog.commitPreparedFrame(
+            std::move(sheetPending),std::move(fieldPending));},
+        [&]{
+            dev.failTexture=0;
+            fieldPending.reset();
+            sheetPending.reset();
+        });
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainPart);tx.add(roadPart);tx.add(shorePart);
+        tx.add(groundPart);tx.add(fogPart);
+        try {tx.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+        CHECK(!tx.publish());
+    }
+    CHECK(failed);
+    CHECK(!mapPending && !roadPending && !shorePending &&
+          !groundPending && !sheetPending && !fieldPending);
+    CHECK(terrain.mapMatches(oldMap.w,oldMap.h));
+    CHECK(groundFx.mapMatches(oldMap.w,oldMap.h));
+    CHECK(fog.sheetMatches(oldMap.w,oldMap.h));
+    CHECK(fog.texture().id==fogTexture.id);
+    CHECK(roads.surfaceGeneration()==roadGeneration);
+    CHECK(terrain.pendingMeshGpuRetirements()==terrainRetired);
+    CHECK(roads.pendingGpuRetirements()==roadsRetired);
+    CHECK(shores.pendingGpuRetirements()==shoresRetired);
+    CHECK(groundFx.pendingMeshGpuRetirements()==groundRetired);
+    CHECK(fog.pendingGpuRetirements()==fogRetired);
+
+    injectFogUpload=false;
+    dev.idleAllowed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainPart);tx.add(roadPart);tx.add(shorePart);
+        tx.add(groundPart);tx.add(fogPart);
+        tx.prepareAll();
+        CHECK(std::fabs(nextHeight(2,2)-2.0f)<1e-4f);
+        CHECK(tx.publish());
+    }
+    CHECK(terrain.mapMatches(next.w,next.h));
+    CHECK(groundFx.mapMatches(next.w,next.h));
+    CHECK(fog.sheetMatches(next.w,next.h));
+    CHECK(fog.texture().valid() && fog.texture().id!=fogTexture.id);
+    CHECK(fog.field().size()==unexplored.size());
+    CHECK(roads.surfaceGeneration()==roadGeneration+1);
+    dev.idleAllowed=true;
+    CHECK(fog.shutdownAfterGpuIdle());
+    groundFx.shutdown(dev);
+    shores.shutdown(dev);
+    roads.shutdown(dev);
+    terrain.shutdown(dev);
+}
+
+TEST(lens_stage48b1_editor_map_build_prepares_fog_and_groundfx_before_camera) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid oldMap;oldMap.init(6,4);
+    for(auto& f:oldMap.flags)f=game::kCellGround;
+    view.buildTerrain(dev,oldMap);
+    game::MapGrid next;next.init(12,9);
+    for(auto& f:next.flags)f=game::kCellGround;
+    next.corner.assign(size_t(next.w+1)*size_t(next.h+1),16);
+    view.buildTerrain(dev,next); // no scene, camera, or vision required
+    CHECK(view.surfacePresentationMapReady(next));
+    CHECK(!view.publishedVisualFrame().ready()); // old RT frames invalidated
+    const std::vector<uint8_t> visible(size_t(next.w)*size_t(next.h),2);
+    game::RtsScene scene;
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,next);
+    CHECK(view.publishedVisualFrame().ready());
+    CHECK(view.visualFrameReadyFor(next,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

@@ -1000,6 +1000,40 @@ private:
     std::vector<std::pair<size_t,uint8_t>> changedChunks_;
 };
 
+std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareMapReset(
+        const MapGrid& grid) {
+    if(!dev_ || !rules_ || grid.w<=0 || grid.h<=0)
+        return {};
+    checkGpuDevice(*dev_);
+    // Rebuilding the same map is handled by the ordinary frame's sparse
+    // geometry journal. Avoid retiring all chunks for an unchanged grid.
+    if(mapMatches(grid.w,grid.h))return {};
+    auto candidate=std::make_shared<PreparedFrame>();
+    candidate->owner_=this;
+    candidate->device_=dev_;
+    candidate->revision_=publicationRevision_;
+    candidate->fullReset_=true;
+    candidate->changedLane_=true;
+    candidate->staged_=std::make_unique<RtsGroundFx>();
+    RtsGroundFx& next=*candidate->staged_;
+    next.dev_=dev_;
+    next.rules_=rules_;
+    next.useT_=useT_;
+    next.useD_=useD_;
+    next.useR_=useR_;
+    next.useC_=useC_;
+    next.hi_=hi_;
+    next.viewer_=viewer_;
+    // This clone owns no mesh, material kit, or texture. resetGrid only
+    // prepares CPU cells/chunks, so an aborted candidate cannot retire or
+    // destroy old published GPU handles.
+    next.invalid_=true;
+    next.resetGrid(grid);
+    next.geomDirty_=true;
+    next.lanes_={}; // a lane built for the old map is never replayed
+    return candidate;
+}
+
 std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareFrame(
         Renderer3D& r,const RtsScene& s,double time,
         const std::vector<uint8_t>* vision,const MapGrid& g,const RtsView& v) {

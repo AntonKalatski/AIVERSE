@@ -114,6 +114,16 @@ public:
         render::Renderer3D& r, const RtsScene& s, double time,
         const std::vector<uint8_t>* vision, const MapGrid& grid,
         const RtsView& view);
+    // Stage a CPU-only map reset without requiring a camera, scene, clock,
+    // or visibility mask. A candidate carries no new GPU meshes; its commit
+    // retires old map meshes and lane ribbons with normal completion tokens.
+    // Visible chunks are then filled by prepareFrame on the first primary
+    // camera. This lets synchronous editor buildTerrain join the same
+    // topology cohort as Roads/Shores/Fog.
+    std::shared_ptr<PreparedFrame> prepareMapReset(const MapGrid& grid);
+    bool mapMatches(int w,int h) const noexcept {
+        return gridW_==w && gridH_==h && !invalid_;
+    }
     void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
     // Draws the current published snapshot; no mesh rebuild or visibility scan.
     void drawPrepared(render::Renderer3D& r, const RtsScene& s,
