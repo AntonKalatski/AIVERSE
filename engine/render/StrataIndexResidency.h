@@ -57,6 +57,28 @@ struct IndexResidencyStats {
     uint64_t deferredDemands = 0, failedUploads = 0;
     uint32_t residentNodes = 0;
 };
+// Stage18.2: difference of monotonic source counters before/after one
+// residency attempt. Failed attempts can still transfer orphan GPU bytes.
+// This is a non-mutating CPU telemetry helper, independent of backend.
+struct IndexResidencyFrameDelta {
+    uint64_t gpuTransferBytes=0, uploadedBytes=0, promotions=0;
+    uint64_t evictions=0, deferredDemands=0, failedUploads=0;
+};
+inline IndexResidencyFrameDelta indexResidencyFrameDelta(
+    const IndexResidencyStats& before,const IndexResidencyStats& after) {
+    const auto delta=[](uint64_t newer,uint64_t older) -> uint64_t {
+        return newer>=older ? newer-older : 0;
+    };
+    return {
+        delta(after.gpuTransferBytes,before.gpuTransferBytes),
+        delta(after.uploadedBytes,before.uploadedBytes),
+        delta(after.uploads,before.uploads),
+        delta(after.evictions,before.evictions),
+        delta(after.deferredDemands,before.deferredDemands),
+        delta(after.failedUploads,before.failedUploads)
+    };
+}
+
 class IndexResidency final {
 public:
     IndexResidency(); // out-of-line: owns incomplete IncrementalStorage
