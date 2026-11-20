@@ -3780,6 +3780,31 @@
       ]
     },
     {
+      "id": "aiverse-strata",
+      "package": null,
+      "path": "skills/visuals/aiverse-strata/SKILL.md",
+      "domain": "workflow",
+      "summary": "STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/strata.md",
+      "keywords": [
+        "strata",
+        "страта",
+        "virtual",
+        "geometry",
+        "meshlet",
+        "streaming",
+        "lod",
+        "batching",
+        "батчинг",
+        "геометрия"
+      ]
+    },
+    {
       "id": "aiverse-strategic-campaign",
       "package": null,
       "path": "skills/gameplay/aiverse-strategic-campaign/SKILL.md",

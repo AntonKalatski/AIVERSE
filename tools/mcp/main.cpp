@@ -170,6 +170,7 @@ Json toContent(const Json& result) {
 
 const char* kInstructions =
     "Tools to build real-time strategy games with AIVERSE: a game is data (game.json, rules.json, maps). "
+    "STRATA virtual geometry: strata_capabilities reports compiled authoring support; strata_model_analyze {model: project-relative path} builds read-only CPU staging, not GPU acceptance. "
     "Projects live anywhere on disk; the engine ships templates (sample games). "
     "Workflow: list_projects (recent projects + templates) / create_project {name, template, location} / open_game {game: folder} -> read rules_schema (the data format reference) -> rules_list / rules_get -> "
     "edit rules with rules_set / rules_merge (keep rules small: shared values in an \"abstract\": true base that entries \"extends\", "

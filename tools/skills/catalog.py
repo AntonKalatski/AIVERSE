@@ -142,6 +142,7 @@ WORKFLOWS=[
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
  ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
+ ('aiverse-strata','STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification','docs/strata.md'),
  ('aiverse-texture-rhi','Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance','docs/texture-rhi.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
@@ -152,6 +153,7 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-strata':'strata страта virtual geometry meshlet streaming lod batching батчинг геометрия',
  'aiverse-physis-authoring':'physis authoring mcp map config validate weather wind gravity настройка погода карта',
  'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',

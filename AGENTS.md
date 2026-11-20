@@ -4693,6 +4693,15 @@ Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
 fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
 
+
+## STRATA engine skill and MCP authoring (2026-11-20)
+
+Use `skills/visuals/aiverse-strata/SKILL.md` for STRATA asset authoring,
+MCP analysis and native verification. It is registered in the engine skill
+catalog. The shared editor/MCP operations `strata_capabilities` and
+`strata_model_analyze` provide read-only compiled-support and CPU import results;
+they never enable GPU parity gates or certify measured rendering performance.
+See `docs/strata.md` and the Stage 23 tools handoff for limits and verification.
 ## PHYSIS agent map authoring
 
 Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,

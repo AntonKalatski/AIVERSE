@@ -2791,6 +2791,10 @@ if(AIVERSE_BUILD_STRATA)
     target_link_libraries(aiverse_strata_render_routing PUBLIC
         aiverse_strata_gpu_scene aiverse_strata_view)
     target_include_directories(aiverse_strata_render_routing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    if(TARGET aiverse_editor_core)
+        target_link_libraries(aiverse_editor_core PUBLIC aiverse_strata_model_adapter)
+        target_compile_definitions(aiverse_editor_core PRIVATE AIVERSE_STRATA_EDITOR_ENABLED=1)
+    endif()
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC
@@ -3992,4 +3996,10 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_local_fog_tests tests/render/local_fog.cpp engine/render/LocalFog.cpp)
     target_link_libraries(aiverse_local_fog_tests PRIVATE aiverse_engine)
     add_test(NAME local_fog COMMAND aiverse_local_fog_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core AND AIVERSE_BUILD_STRATA)
+    add_executable(aiverse_strata_editor_test tests/strata_editor_test.cpp)
+    target_link_libraries(aiverse_strata_editor_test PRIVATE aiverse_editor_core)
+    add_test(NAME strata_editor COMMAND aiverse_strata_editor_test)
 endif()

@@ -2401,3 +2401,32 @@ comparison to the zero-hysteresis baseline; Stage19 is the
 single final full build, CTest and real hardware acceptance.
 Exact commits/next-agent handoff:
 `docs/agent-handoffs/strata-virtual-geometry.md`, Stage17.4.
+
+
+## Engine skill and MCP authoring (2026-11-20)
+
+The engine skill is [aiverse-strata](../skills/visuals/aiverse-strata/SKILL.md),
+registered in `skills/catalog.json` (regenerate with `python3 tools/skills/catalog.py generate`).
+It ships with the engine; no global Codex skill installation is required.
+
+Rebuild `aiversemcp` and the editor to expose the shared Workspace operations:
+
+- `strata_capabilities {}` reports whether this executable includes the builder,
+  analysis limits and documentation paths. `gpuVerified: false` means this command
+  does not verify a GPU; it is not a device capability probe.
+- `strata_model_analyze {"model":"models/scenery.glb"}` requires an open project.
+  It loads the actual source and invokes `buildModelAsset` with default options,
+  reporting eligible/skipped primitives, exact skip reasons, node/meshlet counts,
+  auxiliary index bytes and source/primitive seam certificates. No scene edits,
+  archive writes, GPU resources or flag changes occur.
+
+Analysis allows at most 250000 vertices, 750000 indices and 64 MiB cumulative
+file reads. All dependency paths are project-contained, including resolved
+symlinks. These bounds limit importer input and builder work, not decoded image
+memory. `AIVERSE_BUILD_STRATA=OFF` retains capability discovery and returns an
+explicit unavailable error for analysis. CPU eligibility and seam certification
+are not GPU visual parity, draw-call counts, VRAM usage or measured speedups.
+
+Use the existing AIVERSE MCP connection. The stdio server can run these Workspace
+operations locally without an editor (`--no-editor`); when connected, calls use
+the live editor registry. Restart/rebuild both sides to avoid stale tool lists.
