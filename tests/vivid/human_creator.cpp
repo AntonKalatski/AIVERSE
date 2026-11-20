@@ -10,6 +10,7 @@
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
 #include "engine/character/vivid/SculptGpuSubmittedView.h"
+#include "engine/character/vivid/SculptGpuColorPixelOracle.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
 #include "engine/render/ModelShaders.h"
 #include <string_view>
@@ -851,6 +852,34 @@ void test() {
         view.primitives.pop_back();
         req(check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot,
             "original valid renderer source snapshot was mutated");
+    }
+    // 7AX: conservative colour-vs-ID coverage, not raw RGB equality
+    // or an inferred depth sample. This tests the pure helper only;
+    // actual same-frame Metal pixels are checked in renderer_preview.
+    {
+        using Pixel=vivid::SculptGpuColorPixelResult;
+        const std::array<std::uint8_t,3> clear{{20,26,33}};
+        const auto covered=compareSculptGpuColorIdCoverage(
+            {{182,93,66,255}},{{1,0,0,0}},clear);
+        req(covered.verdict==Pixel::Verdict::Covered &&
+            covered.triangleIdVisible && covered.distanceFromClear>36,
+            "same-frame GPU actor foreground pixel must match colour coverage");
+        const auto mismatched=compareSculptGpuColorIdCoverage(
+            {{20,26,33,255}},{{1,0,0,0}},clear);
+        req(mismatched.verdict==Pixel::Verdict::Mismatch,
+            "GPU triangle ID must not confirm an unchanged clear-colour pixel");
+        const auto background=compareSculptGpuColorIdCoverage(
+            {{20,26,33,255}},{{0,0,0,0}},clear);
+        req(background.verdict==Pixel::Verdict::ClearBackground,
+            "clear framebuffer and empty GPU ID should agree");
+        const auto unrelated=compareSculptGpuColorIdCoverage(
+            {{182,93,66,255}},{{0,0,0,0}},clear);
+        req(unrelated.verdict==Pixel::Verdict::Inconclusive,
+            "other occluders must not be falsely classified as ID mismatch");
+        const auto invalid=compareSculptGpuColorIdCoverage(
+            {{182,93,66,255}},{{1,0,0,0}},clear,766);
+        req(invalid.verdict==Pixel::Verdict::Inconclusive,
+            "invalid colour coverage threshold was accepted");
     }
     // 7AW: staging a ModelItem is NOT proof its real colour pipeline
     // emitted a draw. Match one-to-one against the actual renderer-owned
