@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
-import { invoke, nativeConnected, onNativeEvent } from '../bridge';
+import { invoke, nativeConnected } from '../bridge';
 import {
   StudioPanel, StudioSection, StudioButton, StudioIconButton,
   StudioField, StudioInput, StudioSelect, StudioTabs, StudioBadge,
@@ -45,9 +45,6 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   const filtered=draft?.morphs.map((m,i)=>({...m,index:i}))
     .filter(m=>[m.parameter,m.node,m.target].some(value=>value.toLowerCase().includes(query.toLowerCase())))??[];
 
-  useEffect(()=>onNativeEvent(event=>{
-    if(event==='workspace.changed')setNonce(n=>n+1);
-  }),[]);
   useEffect(()=>{
     let cancelled=false;
     setSelected('');setSaved(null);setDraft(null);setNames([]);
