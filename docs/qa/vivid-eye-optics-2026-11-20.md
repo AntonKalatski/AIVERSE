@@ -90,3 +90,52 @@ Inspected turn36 and full blink41 with the final local-light coat; sharp moving
 highlights retain iris contrast, white cartilage flecks remain eliminated.
 Final video name `eyes-reviewed.mp4`; gallery points only at the reviewed take.
 The earlier final-motion.mp4 is retained as diagnostic history, not delivery.
+
+## User rejection and blink-normal repair — 2026-11-20
+
+The preceding reviewed eyes were explicitly rejected as glass-like by the user.
+Do not interpret the earlier delivery as MetaHuman visual acceptance.
+New evidence root: `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/eye-natural/`.
+
+Refinement: reduced/softened local cornea glints in GLSL/MSL, less bright sclera
+and iris fiber contrast, UV-faded upper-lid occlusion instead of uniform shell
+opacity. New default pupil radius .048 and sclera lightness .40; existing saved
+values remain authoritative. Ada candidate uses pupil .048, authored iris/sclera
+colors multiplied .75 before baking. Candidate `Ada-Eyes-Repaired` and editable
+`content/Ada` updated; original source JSON/appearance backed up in source-backup.
+Source node/topology/old accessor IDs preserved; new normal buffer/accessors appended.
+
+User reported black stripes on blinking lids during this work. Controlled tests:
+- Color-coded shell/lashes/cartilage: stripe remains on skin (diagnostic-blink.png).
+- Unlit skin: stripe disappears (unlit-view.png); diagnostic only.
+- Skin normal texture removed: stripe remains (no-normal-blink.png).
+- Shadow map disabled: stripe remains (no-shadow-blink.png).
+- Imported morph NORMAL deltas removed: stripe disappears (no-morph-normal-blink.png).
+- Geometry-derived blink normal repair, with original normal map and shadows:
+  broad dark stripe removed (repaired-blink.png, source-blink.png).
+
+The explicit smooth-face helper recomputes area-weighted normals of base/target
+triangles, welds coincident smooth vertices across partitions and applies their
+change to authored base normals. Only eyeBlinkLeft/Right on companion head skin
+are repaired; positions, skin weights, UVs and unrelated morphs retained.
+Importer now applies this known companion repair. It is not a universal RigLogic
+corrective solver. Small shadow/skin speckles and hair-card edge artifacts remain.
+
+Executed: Creator/Studio/appearance-test native builds PASS (build-final.log),
+final Creator diagnostic CLI build PASS (build-final-cli.log). CTest
+`-R '^vivid_human_appearance$'` PASS 1/1 (test-native.log). Node baker and morph
+repair tests PASS (test-baker.log, test-normals.log); full Draco source preparation
+PASS (import-check.log). GLSL ES300/330 Q0/1/2 vertex/fragment syntax 12/12 PASS
+using check-shaders and glslangValidator. No GPU Vulkan/OpenGL/GUI/CI tests.
+Initial baker invocation failed because /Volumes/KINGSTON/tmp did not exist;
+rerun used existing eye-natural directory. First no-shadow capture hit the smoke
+gate's mandatory shadow-draw check; CLI now permits zero shadow draws only for
+explicit --shadow-quality off. Defaults retain medium shadows.
+
+Native Metal final-motion: 168 frames, 1500x920, 24fps; open, turn, both blink
+peaks reviewed. source-check: 42 frames, editable source reload verified.
+Video eyes-blink-fixed.mp4 encoded successfully (encode.log). Images
+final-0000.png, final-0038.png, final-0041.png, final-0105.png are native output.
+No image retouching; diagnostic disabled-normal/shadow variants not delivered.
+No MetaHuman parity or user approval claimed. Next: broader face-expression
+correctives and lighting-reference comparison, including remaining shadow flecks.

@@ -99,6 +99,7 @@ struct CreatorApp {
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
     bool previewHeadSweep=false;
+    ShadowQuality captureShadowQuality=ShadowQuality::Medium;
     render::Animator sequenceAnimator; // offline diagnostic only; no runtime clock
 
     bool studioLightingEnabled=false;
@@ -192,7 +193,7 @@ struct CreatorApp {
         if(!ui.init(dev,AIVERSE_SOURCE_DIR "/engine/assets/fonts/ui.ttf",16.0f))
             throw std::runtime_error("VIVID Creator: ImGui init failed");
         uiReady=true;
-        renderer.setShadowQuality(ShadowQuality::Medium);
+        renderer.setShadowQuality(captureShadowQuality);
         renderer.setModelReflectionsEnabled(false);
         renderer.setTraceEnabled(false);
         renderer.setModelInstancingEnabled(false);
@@ -2278,7 +2279,7 @@ struct CreatorApp {
                 throw std::runtime_error("VIVID Creator head was not submitted: "+status);
             const auto headSubmission=renderer.modelSubmissionProvenance(*human.head);
 
-            const bool ready=p.draws[0]>0 && p.draws[1]>0 &&
+            const bool ready=(captureShadowQuality==ShadowQuality::Off || p.draws[0]>0) && p.draws[1]>0 &&
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
@@ -2368,6 +2369,12 @@ int aiverseMain(int argc,char** argv) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
+        }else if(std::strcmp(argv[i],"--shadow-quality")==0 && i+1<argc) {
+            const std::string quality=argv[++i];
+            if(quality=="off")application->captureShadowQuality=ShadowQuality::Off;
+            else if(quality=="high")application->captureShadowQuality=ShadowQuality::High;
+            else if(quality=="medium")application->captureShadowQuality=ShadowQuality::Medium;
+            else return 2;
         }else if(std::strcmp(argv[i],"--eye-detail")==0) {
             application->portraitCapture=true;application->closeupCapture=true;application->eyeDetailCapture=true;
         }else if(std::strcmp(argv[i],"--closeup")==0) {

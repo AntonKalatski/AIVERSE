@@ -49,6 +49,12 @@ const {createRequire} = require('node:module');
   const nodes = root.listNodes();
   const faceNode = nodes.find(n => n.getMesh()?.getName().includes('Ada_FaceMesh'));
   if (!faceNode?.getSkin()) throw Error('Expected a skinned Ada companion export');
+  // Companion exports can carry inverted blink-normal deltas on the lids.
+  // Repair only this known smooth face surface and the two blink channels.
+  const blinkNormals = require('./repair_morph_normals.cjs').repairMorphNormals(
+    doc, faceNode.getMesh(), m => /head_shader/.test(m?.getName() || ''),
+    ['eyeBlinkLeft', 'eyeBlinkRight']);
+  console.log('Blink normal repair:', blinkNormals);
   const head = faceNode.getSkin().listJoints().find(n => n.getName() === 'head');
   if (!head) throw Error('Face skin has no head bone');
   // Duplicate skeleton names in separate garment rigs must remain distinct.

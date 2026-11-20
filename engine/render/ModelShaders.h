@@ -454,7 +454,7 @@ void main() {
         if (m_eyeOptics.z > 0.0) {
             // A smooth wet dielectric coat over a diffuse iris, not a broad
             // specular lobe added to the existing PBR lobe twice.
-            float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
+            float exponent = mix(90.0, 220.0, tear) * mix(1.3, 0.8, rough);
             float footprint = max(length(dFdx(n)), length(dFdy(n)));
             exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
             float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
@@ -479,7 +479,7 @@ void main() {
 #endif
             vec3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
             col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
-                + sun * sh * glint * coatFresnel + coatDs * coatFresnel
+                + (sun * sh * glint + coatDs) * (coatFresnel * 0.55)
                 + coatEnv * coatFresnel * ao;
         }
     } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
@@ -997,7 +997,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         if (m.eyeOptics.z > 0.0) {
             // A smooth wet dielectric coat over a diffuse iris, not a broad
             // specular lobe added to the existing PBR lobe twice.
-            float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
+            float exponent = mix(90.0, 220.0, tear) * mix(1.3, 0.8, rough);
             float footprint = max(length(dfdx(n)), length(dfdy(n)));
             exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
             float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
@@ -1022,7 +1022,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
             float3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
             col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
-                + sun * sh * glint * coatFresnel + coatDs * coatFresnel
+                + (sun * sh * glint + coatDs) * (coatFresnel * 0.55)
                 + coatEnv * coatFresnel * ao;
         }
     } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {

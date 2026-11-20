@@ -1924,3 +1924,11 @@ bright triangle-sized flecks along the eyelid strip; no eye/face geometry is
 deleted or shrunk. Existing eyelash alpha and all51 morph targets are retained.
 Creator `--eye-detail` provides a closer native capture; user-facing Studio
 remains the native viewport. See [QA evidence](qa/vivid-eye-optics-2026-11-20.md).
+
+Companion blink-normal repair: `tools/vivid-dna-import/repair_morph_normals.cjs`
+repairs the known smooth head surface's `eyeBlinkLeft`/`eyeBlinkRight` normals
+from deformed topology during `prepare_full_character.cjs`, retaining geometry,
+UVs and skinning. This addresses black lighting bands from malformed exported
+morph normals; it does not replace RigLogic. Creator diagnostic captures accept
+`--shadow-quality off|medium|high` (default medium) to distinguish shadow-map
+artifacts from morph shading. See eye optics QA report for native evidence.

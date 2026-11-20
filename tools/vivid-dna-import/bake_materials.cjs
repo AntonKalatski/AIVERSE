@@ -59,6 +59,20 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     .setBaseColorFactor(occlusion?[.02,.015,.01,.12]:[.9,.88,.85,.04])
     .setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0)
     .setRoughnessFactor(occlusion?.8:.12);
+   if(occlusion) {
+    // This source shell follows the lids. Fade contact occlusion into the
+    // opening instead of uniformly tinting the whole eyeball like dark glass.
+    const size=256,pixels=Buffer.alloc(size*size*4);
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++) {
+     const u=(x+.5)/size,v=(y+.5)/size,k=(y*size+x)*4;
+     const upper=(1-smooth(.05,.62,v))*.48;
+     const lower=smooth(.78,1,v)*.10;
+     const corner=(1-smooth(0,.22,Math.min(u,1-u)))*.18;
+     pixels[k]=pixels[k+1]=pixels[k+2]=255;pixels[k+3]=Math.round(clamp(upper+lower+corner)*255);
+    }
+    material.setBaseColorFactor([.015,.009,.006,1])
+     .setBaseColorTexture(await texture(material.getName()+'_lid_occlusion',pixels,size,size));
+   }
    report.push({material:material.getName(),mode:'portable eye overlay; original UE procedural shader unavailable'});
   }
   if(spec.face_slot==='cartilage') {
@@ -143,7 +157,7 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     // is a radial mask, not an all-over darkening amount for the iris.
     const au=.5+du*.46/radiusOuter,av=.5+dv*.46/radiusOuter;
     const fibers=sample(atlas,au,av,0,false,false),crypt=sample(atlas,au,av,1,false,false);
-    const fibril=.25+1.45*Math.pow(clamp(fibers),.8);
+    const fibril=.30+1.15*Math.pow(clamp(fibers),.8);
     const limbus=smooth(radiusOuter*.83,radiusOuter,radius)*.8;
     const iris=smooth(p.iris_radius_in,p.iris_radius_out,radius);
     const pupilRadius=(p.pupil_radius_in+p.pupil_radius_out)*.5;
@@ -154,7 +168,7 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     const vein=Math.pow(Math.max(0,Math.sin(angle*37+Math.sin(radius*160)*.65)),24)*smooth(radiusOuter*1.1,radiusOuter*2.3,radius)*.11;
     for(let c=0;c<3;c++) {
      const detail=p.iris_color[c]*fibril*(1+collar*(crypt-.3)*.7);
-     const sclera=p.sclera_color[c]*.64*(1-vein)+p.vein_color[c]*vein;
+     const sclera=p.sclera_color[c]*.43*(1-vein)+p.vein_color[c]*vein;
      const base=mix(mix(detail,p.iris_dark[c]*.35,limbus),sclera,iris);
      output[k+c]=Math.round(clamp(srgb(mix(base,.0015,pupil)))*255);
     } output[k+3]=255;
