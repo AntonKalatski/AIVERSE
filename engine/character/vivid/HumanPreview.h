@@ -25,4 +25,6 @@ struct HumanPreviewAsset {
 // works with Metal, GL and Vulkan when the underlying RHI supports them.
 HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
                                         GroomQuality quality=GroomQuality::High);
+HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality,
+                                       HumanMaterialQuality materialQuality);
 } // namespace aiverse::vivid
