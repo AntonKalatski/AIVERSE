@@ -411,15 +411,17 @@ private:
 gfx::TextureHandle TerrainRenderer::createTerrainTexture(
         gfx::Device& dev,const gfx::TextureDesc& desc) {
     if(preparationAllocation_) {
-        // All Terrain-owned images currently use uncompressed RGBA8.
-        if(desc.format!=gfx::PixelFormat::RGBA8 || desc.levelCount!=0 ||
+        // Terrain fields use R8 visibility and RGBA8 material/height data.
+        if((desc.format!=gfx::PixelFormat::RGBA8 &&
+            desc.format!=gfx::PixelFormat::R8) || desc.levelCount!=0 ||
            desc.width<=0 || desc.height<=0)
             throw std::logic_error("unsupported Terrain preparation texture layout");
+        const size_t pixelBytes=desc.format==gfx::PixelFormat::R8?1:4;
         size_t w=size_t(desc.width),h=size_t(desc.height);
         for(;;) {
             if(w>std::numeric_limits<size_t>::max()/h)
                 throw std::length_error("Terrain texture payload overflow");
-            reservePreparationBytes(w*h,4);
+            reservePreparationBytes(w*h,pixelBytes);
             if(!desc.mipmaps || (w==1 && h==1))break;
             w=std::max<size_t>(1,w/2);h=std::max<size_t>(1,h/2);
         }

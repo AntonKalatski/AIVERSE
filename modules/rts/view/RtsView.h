@@ -426,6 +426,12 @@ public:
     // with no second GPU preparation. Any changed map, scene, camera, viewer,
     // visibility, owner revision or time drops the lease and re-prepares.
     // Neither prewarm nor its lease makes a secondary camera epoch ready.
+    void setTerrainTopologyPreparationBudgetBytes(size_t bytes) {
+        terrain_.setTopologyPreparationBudgetBytes(bytes);
+    }
+    size_t terrainTopologyPreparationBytes() const noexcept {
+        return terrain_.topologyPreparationBytes();
+    }
     bool prepareMapFrame(render::Renderer3D& renderer,const RtsScene& scene,
                          double time,const std::vector<uint8_t>* vision,
                          const MapGrid& grid);
