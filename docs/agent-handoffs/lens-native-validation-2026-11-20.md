@@ -467,3 +467,12 @@ Build-3 continues on KINGSTON with known duplicate fake idle methods and
 previously repaired montage ambiguity. Real GPU NOT RUN. Next integrate the
 SpriteBatch candidate with Rts2D CPU/tile state and host frame guard, poll its
 retirements at the owner boundary, then complete surface publication barrier.
+
+
+### Integrated fake-idle declarations
+Code `2a0c44f9633ef2ba57f7070e4d6f522d43ff781c`, codex/lens-completion,
+removes duplicate waitForResourceIdle overrides in core RecordingDevice, baked
+lighting ShaderRecorder and deferred-loading fake. Main already added equivalent
+true responses; preserve one each. Build-3 reported these three redeclarations.
+Rebuild/retests pending on KINGSTON; no production/API change. Next finish
+remaining build diagnostics and rerun the actual integrated binaries.
