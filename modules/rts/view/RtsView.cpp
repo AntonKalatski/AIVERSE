@@ -97,6 +97,13 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     const SpriteDefaults incomingSpriteDefaults=
         parseSpriteDefaults(incomingRules["sprites"],incomingGame["sprites"]);
+    // Prepare the fog look and overlay definitions before any replacement
+    // GPU owner is published. An invalid CPU config can now fail while the
+    // previous live view is still intact.
+    const FogLook incomingFogLook=
+        parseFogLook(incomingRules["fogOfWar"],incomingGame["fogOfWar"]);
+    OverlaySet incomingOverlaySet=
+        loadOverlaySet(rules,incomingRules["overlays"],incomingGame["overlays"]);
     // Parse the optional geometry descriptor before retiring the old sprite
     // owner; GPU geometry resources are still loaded/published later.
     Json incomingGeometry;
@@ -168,11 +175,11 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     {   // Reuse the exact parsed snapshot used for sprite staging.
         const Json& game=incomingGame;
         const Json& rj=incomingRules;
-        fog_.setLook(parseFogLook(rj["fogOfWar"], game["fogOfWar"]));
+        fog_.setLook(incomingFogLook);
         spriteDefaults_ = incomingSpriteDefaults;   // same snapshot as staged sprites
         fogMeshDirty_ = true;
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
-        overlays_.init(rules, rj["overlays"], game["overlays"], contentBase_);
+        overlays_.initPrepared(rules,std::move(incomingOverlaySet),contentBase_);
         overlays_.initGpu(dev);
         roads_->init(dev, rj["roadTypes"], read_);
         shores_->init(dev, rj["shoreTypes"], read_);   // water shores (docs/water.md)
