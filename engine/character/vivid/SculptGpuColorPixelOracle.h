@@ -3,6 +3,7 @@
 // this pure C++20 function cannot infer GPU/depth parity without pixels.
 #pragma once
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 
@@ -50,6 +51,29 @@ inline SculptGpuColorPixelResult compareSculptGpuColorIdCoverage(
         result.verdict=colourCovered?
             SculptGpuColorPixelResult::Verdict::Inconclusive:
             SculptGpuColorPixelResult::Verdict::ClearBackground;
+    return result;
+}
+
+// Both samples MUST come from actual GPU Depth32Float attachments in
+// the same render frame and at the same top-left pixel. CPU-projected
+// depth is not admissible. A clear-depth sample (1.0) cannot prove a
+// foreground parity hit, even when both attachments are untouched.
+struct SculptGpuDepthComparison {
+    bool samplesValid=false;
+    bool matching=false;
+    float absoluteDifference=0.f;
+};
+inline SculptGpuDepthComparison compareSculptGpuDepthPixels(
+        float sceneDepth01,float idDepth01,
+        float tolerance=0.003f) noexcept {
+    SculptGpuDepthComparison result;
+    if(!std::isfinite(sceneDepth01) || !std::isfinite(idDepth01) ||
+       !std::isfinite(tolerance) || tolerance<0.f || tolerance>1.f ||
+       sceneDepth01<0.f || sceneDepth01>=1.f ||
+       idDepth01<0.f || idDepth01>=1.f)return result;
+    result.samplesValid=true;
+    result.absoluteDifference=std::fabs(sceneDepth01-idDepth01);
+    result.matching=result.absoluteDifference<=tolerance;
     return result;
 }
 
