@@ -1262,9 +1262,13 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     // A separate offscreen path after the already presented scene/UI pass.
     // Never replay RtsView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.
-    if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy()) {
+    if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy() &&
+       view_.visualFrameReadyFor(mod().state(*sim_).grid,time_)) {
+        // Use the actual multi-owner committed epoch, never an unrelated
+        // client counter. Failed primary updates cannot be replayed by RT.
+        const auto published=view_.publishedVisualFrame();
         const render::CameraVisualFrameId visualId{
-            uint64_t(sim_->tick()),++lensPresentationFrame_,time_};
+            uint64_t(sim_->tick()),published.id,time_};
         const auto result=lensCameras_.renderPrepared(
             lensModelSnapshot_,visualId,float(dt),
             [&](const render::CameraModelSnapshot& snapshot,
