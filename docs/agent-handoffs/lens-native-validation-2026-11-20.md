@@ -160,3 +160,17 @@ parenthesis; CTest NOT RUN. Commit `7b376345c82ac078a2f107f8500ef629ee93f7de` fi
 Branch codex/lens-completion; no API/save change; CI NOT RUN. Next: repeat
 full quick runner with MAKEFLAGS=-k to collect independent compiler failures
 in one pass; outputs still exclusively on KINGSTON.
+
+## Pass 12 — keep-going native owner audit
+
+Quick runner with MAKEFLAGS=-k at `139584fc8`, KINGSTON report
+`20261120-144503-17388`: configure PASS, build FAIL, full CTest NOT RUN.
+Commit `71a85246955f65892bbc136dcb59b2a4f6f6104f` fixes all emitted failures: qualified kNullEntity in packet
+fixture; RtsView polls void Road/Shore collection then checks pending count,
+uses ScenePacketBatch::size; Overlays separates heterogeneous auto handles;
+AnimationOps uses render::findNodePath; sprite fault fixture links game_view/
+content_reader and uses runtime aiverseMain. Six affected files named above.
+No save format change, no GPU lifetime relaxation. Branch codex/lens-completion.
+Focused animation rerun report `20261120-144641-22436`: budget_policy,
+humanoid_retarget and repaired ragdoll_asset **3/3 PASS**. CI NOT RUN.
+Next: repeat full keep-going quick runner, then terrain fault coverage.
