@@ -64,6 +64,26 @@ int StudioSession::indexFor(const std::string& id) const {
     if (n >= ws_.map.data.entities.size()) throw std::runtime_error("Entity does not exist");
     return int(n);
 }
+Json StudioSession::propertiesFor(const std::string& entityId) const {
+    if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
+    Json fields = Json::array();
+    for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+        if (nodeId(node.ref) != entityId) continue;
+        if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
+            const auto& e = ws_.map.data.entities.at(node.ref.index);
+            fields.push(prop("type", "Type", "text", str(e.type)));
+            fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
+            fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
+            fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
+        } else if (node.hasPosition) {
+            fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
+            fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
+            fields.push(numericProp("z", "Position Z", Json::number(node.position.z, 3)));
+        }
+        return fields;
+    }
+    throw std::runtime_error("Unknown document object");
+}
 Json StudioSession::snapshot() const {
     Json result = Json::object();
     Json project = Json::object();
@@ -88,30 +108,10 @@ Json StudioSession::snapshot() const {
     }
     scene.set("entities", std::move(rows));
     result.set("scene", std::move(scene));
-    Json fields = Json::array();
-    bool valid = false;
-    if (!selected_.empty()) {
-        for (const auto& node : nodes) {
-            if (nodeId(node.ref) != selected_) continue;
-            valid = true;
-            if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
-                const auto& e = ws_.map.data.entities.at(node.ref.index);
-                fields.push(prop("type", "Type", "text", str(e.type)));
-                fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
-                fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
-                fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
-            } else if (node.hasPosition) {
-                // Show authoritative collider/spawn coordinates, but don't pretend
-                // unsupported authoring operations are writable yet.
-                fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
-                fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
-                fields.push(numericProp("z", "Position Z", Json::number(node.position.z, 3)));
-            }
-            break;
-        }
-    }
+    const bool valid = !selected_.empty() && std::any_of(nodes.begin(), nodes.end(),
+        [&](const auto& node) { return nodeId(node.ref) == selected_; });
     result.set("selectedId", valid ? str(selected_) : Json());
-    result.set("properties", std::move(fields));
+    result.set("properties", valid ? propertiesFor(selected_) : Json::array());
     Json logs = Json::array();
     const auto& activity = ws_.activity;
     for (size_t i = activity.size() > 100 ? activity.size() - 100 : 0; i < activity.size(); ++i) {
@@ -546,6 +546,8 @@ Json StudioSession::dispatch(const Json& request) {
             if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
             ws_.map.redo();
             reply.set("result", snapshot());
+        } else if (method == "studio.propertiesFor") {
+            reply.set("result", propertiesFor(params.getStr("entityId")));
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             // A pinned Inspector may edit its own explicitly addressed entity while
