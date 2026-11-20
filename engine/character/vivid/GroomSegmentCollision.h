@@ -17,10 +17,6 @@ namespace aiverse::vivid {
 class GroomSegmentCollision final {
     using V=render::float3;
     using Cell=GroomSegmentWorkspace::Cell;
-    struct Segment {
-        std::size_t guide=0,first=0;
-        V a{},b{};
-    };
 public:
     using Workspace=GroomSegmentWorkspace;
 private:
@@ -59,7 +55,9 @@ public:
         workspace.reset();
         workspace.offsets.reserve(guides.size()+1);
         workspace.offsets.push_back(0);
-        std::vector<Segment> segments;
+        auto& segments=workspace.segments;
+        // Reserve once per groom; later substeps reuse the same allocation.
+        segments.reserve(std::min<std::size_t>(16384, guides.size()*8));
         for(std::size_t g=0;g<guides.size();++g) {
             const auto& guide=guides[g];
             if(guide.position.size()!=guide.previous.size() ||
