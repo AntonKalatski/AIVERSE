@@ -650,7 +650,7 @@ std::string engineModuleVars(const Options& o) {
     const Json& modules = perTarget.has("engineModules") ? perTarget["engineModules"] : packaging["engineModules"];
     if (modules.isNull()) return "";
     if (!modules.isArray()) die("packaging.engineModules: ожидается массив имён модулей");
-    bool strata = false, autolod = false, vulkan = false, spine = false;
+    bool strata = false, autolod = false, vulkan = false, spine = false, gamepad = false;
     for (const auto& item : modules.items()) {
         if (!item.isString()) die("packaging.engineModules: каждое имя должно быть строкой");
         const std::string name = item.str();
@@ -658,19 +658,23 @@ std::string engineModuleVars(const Options& o) {
         else if (name == "runtime-autolod") autolod = true;
         else if (name == "vulkan") vulkan = true;
         else if (name == "spine") spine = true;
+        else if (name == "gamepad") gamepad = true;
         else die("packaging.engineModules: неизвестный модуль " + name);
     }
     if (vulkan && o.profile != "windows" && o.profile != "linux" && o.profile != "android")
         die("packaging.engineModules: vulkan недоступен для " + o.profile);
     if (!spine && o.gameJson["spine"].size() != 0)
         die("packaging.engineModules: game.json использует spine; добавьте модуль spine");
+    if (!gamepad && o.gameJson["gamepad"].size() != 0)
+        die("packaging.engineModules: game.json использует gamepad; добавьте модуль gamepad");
     info("модули движка: " + std::string(strata ? "strata " : "") + (autolod ? "runtime-autolod " : "") +
-         (vulkan ? "vulkan " : "") + (spine ? "spine" : "") +
-         (!strata && !autolod && !vulkan && !spine ? "нет дополнительных" : ""));
+         (vulkan ? "vulkan " : "") + (spine ? "spine " : "") + (gamepad ? "gamepad" : "") +
+         (!strata && !autolod && !vulkan && !spine && !gamepad ? "нет дополнительных" : ""));
     return std::string(" -DAIVERSE_BUILD_STRATA=") + (strata ? "ON" : "OFF") +
            " -DAIVERSE_RUNTIME_AUTOLOD=" + (autolod ? "ON" : "OFF") +
            " -DAIVERSE_VULKAN=" + (vulkan ? "ON" : "OFF") +
-           " -DAIVERSE_CLIENT_WITH_SPINE=" + (spine ? "ON" : "OFF");
+           " -DAIVERSE_CLIENT_WITH_SPINE=" + (spine ? "ON" : "OFF") +
+           " -DAIVERSE_CLIENT_WITH_GAMEPAD=" + (gamepad ? "ON" : "OFF");
 }
 
 std::string cmakeVars(const Game& g, const Options& o, const fs::path& content, const fs::path& gen) {

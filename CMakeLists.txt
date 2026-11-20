@@ -2073,7 +2073,8 @@ set(AIVERSE_CLIENT_CORE_SOURCES apps/client/ClientLoading.cpp apps/client/GameCl
     apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp
     apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp apps/client/ClientRegionInput.cpp
     apps/client/ClientBaked.cpp   # ClientBaked: the map's baked lighting (agent-lightbake)
-    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp)   # top-down heroes (agent-topdown-control), city economy (agent-gta2)
+    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp
+    apps/client/ClientGameActionsLua.cpp)   # shared sendPercent/useAbility UI Lua; independent of gamepad
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_content_reader)   # streamed world: worker-thread project reader
@@ -2991,6 +2992,7 @@ add_library(aiverse_spine STATIC engine/spine/SpineData.cpp engine/spine/SpineSk
 target_include_directories(aiverse_spine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_spine PUBLIC aiverse_engine)
 option(AIVERSE_CLIENT_WITH_SPINE "Include Spine UI animation in packaged clients" ON)
+option(AIVERSE_CLIENT_WITH_GAMEPAD "Include gamepad controls in packaged clients" ON)
 foreach(t aiverse_client main aiverse_hosted_client)
     if(TARGET ${t})
         if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_SPINE)
@@ -3000,7 +3002,15 @@ foreach(t aiverse_client main aiverse_hosted_client)
             target_sources(${t} PRIVATE apps/client/ClientSpineDisabled.cpp)
             target_compile_definitions(${t} PRIVATE AIVERSE_CLIENT_NO_SPINE=1)
         endif()
-        target_sources(${t} PRIVATE apps/client/ClientServices.cpp apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
+        target_sources(${t} PRIVATE apps/client/ClientServices.cpp)
+        if(NOT t STREQUAL "aiverse_hosted_client")
+            target_sources(${t} PRIVATE apps/client/ClientGameActionsLua.cpp)
+        endif()
+        if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_GAMEPAD)
+            target_sources(${t} PRIVATE apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientGamepadDisabled.cpp)
+        endif()
         target_link_libraries(${t} PRIVATE aiverse_render2d)
     endif()
 endforeach()
