@@ -235,7 +235,9 @@
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
                 session_->previewMaterialRevision(),
-                float(session_->workspace().project.rules.levelHeight.toDouble()));
+                float(session_->workspace().project.rules.levelHeight.toDouble()),
+                session_->workspace().project.dir,
+                session_->workspace().project.rulesJson);
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
