@@ -3,6 +3,7 @@
 // are deferred to the coordinated Mac acceptance campaign.
 #include "engine/view/MotionWeaveSceneAssetBuilder.h"
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -76,7 +77,7 @@ int main() {
     static_assert(std::is_move_assignable_v<SharedLease>);
     static_assert(std::is_same_v<
         decltype(std::declval<const Host&>().sharedProviderReferences(
-            std::declval<const std::string&>())),size_t>);
+            std::declval<const std::string&>())),std::size_t>);
     (void)&instantiateCommitPath;
     (void)&instantiateSharedCommitPath;
 
