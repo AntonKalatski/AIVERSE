@@ -1,5 +1,9 @@
 # STRATA — системная QA-проверка, 20 ноября 2026
 
+## Follow-up: four findings corrected (2026-11-20)
+
+Implementation `32535df16573d3c6bcfd8b0be28aa5b26d0e29ed` corrects QA-STRATA-01..04. See [Stage22 verification](../agent-handoffs/strata-stage22-qa-fixes-2026-11-20.md):16 tests PASS,1 explicit Vulkan skip, strict-device failure checked, CSV3/3 parsed correctly, Clang address-warning check PASS. New-head GCC CI and missing hardware/visual scenarios remain unverified. The original QA observations and counts below are retained as historical evidence, not the current defect status.
+
 **Итог: проверенные CPU/API и Metal lossless-сценарии проходят; полная кроссплатформенная/визуальная приёмка STRATA не закрыта.** Дефектов собственно рендера в исполненных fixtures не обнаружено. Найдены четыре проблемы: общий Linux build blocker в соседнем KTX2-тесте, неверная маркировка Vulkan skip, некорректный CSV benchmark и устаревший current-status документации. Продукт не исправлялся.
 
 ## Версия и окружение

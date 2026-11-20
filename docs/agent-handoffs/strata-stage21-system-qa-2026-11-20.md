@@ -23,3 +23,7 @@ NOT RUN / BLOCKED: real Vulkan/GLES/GL/WebGL visuals, spot-shadow depth, lossy m
 ## Next
 
 Get a separate fix request for QA01–04, fix the minimal diagnosed test/docs issues, then execute uncovered hardware/visual acceptance. Never enable experimental production defaults from this limited pass. QA report and this separate handoff are committed locally on the same branch; no product/main edits, no new Jira ticket or external messages.
+
+## Authorized fix follow-up
+
+User subsequently requested all four fixes and publication. Code `32535df16573d3c6bcfd8b0be28aa5b26d0e29ed` and [Stage22 handoff](strata-stage22-qa-fixes-2026-11-20.md) correct the diagnosed issues and record16PASS/1SKIP, strict Vulkan failure, CSV and compiler checks. Missing hardware/visual acceptance remains open.
