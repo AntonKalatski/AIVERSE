@@ -21,4 +21,3 @@ Code changes authored against exact cfc4ff9f50b61c7bda682d46f0d796b8593ac659, st
 - New fail-closed shader behavior needs actual Vulkan/GLES tests on feature-complete milestone; some devices may require additional shaders/fallbacks.
 - RenderDeviceLifetime and old-resource retirement completion must be validated with actual multi-camera GPU fences.
 - Continue Stage48 map change cohort, then MotionWeave sprites, lighting/overlays, consolidated build/test.
-
