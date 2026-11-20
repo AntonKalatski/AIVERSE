@@ -1901,10 +1901,12 @@ struct CreatorApp {
                 const auto beforePick=std::chrono::steady_clock::now();
                 bool hardwareCandidate=false;
                 if(gpuSculptEnabled && !gpuSculptPass.pending() &&
-                   dev.frameSerial() &&
-                   sculptGpuPickEligibility(
-                       *human.head,std::size_t(sculptMeshIndex))==
-                        SculptGpuPickEligibility::Eligible) {
+                   dev.frameSerial()) {
+                    // Do not preemptively reject authored LOD assets: the
+                    // actual Renderer3D view selected in drawModel() below
+                    // is the authority. LOD0 without a fade can match the
+                    // source precisely; alternate LOD/fade/batches fail
+                    // closed in validateSculptGpuRendererView.
                     hardwareCandidate=gpuSculptPass.supported() ||
                                       gpuSculptPass.initialize(dev);
                 }
@@ -1930,12 +1932,8 @@ struct CreatorApp {
                         std::to_string(sculptPicker.stats().testedTriangles)+
                         "/"+std::to_string(sculptPicker.stats().triangles)+
                         " / CPU "+std::to_string(pickMs)+" ms";
-                    if(gpuSculptEnabled && !hardwareCandidate) {
-                        const auto eligibility=sculptGpuPickEligibility(
-                            *human.head,std::size_t(sculptMeshIndex));
-                        status+=" / GPU ID disabled: "+
-                            std::string(sculptGpuPickEligibilityReason(eligibility));
-                    }
+                    if(gpuSculptEnabled && !hardwareCandidate)
+                        status+=" / GPU ID backend/frame unavailable; CPU BVH retained";
                     if(hardwareCandidate) {
                         const auto pixelX=int(mouse.x),pixelY=int(mouse.y);
                         const auto req=gpuSculptToken.begin(
