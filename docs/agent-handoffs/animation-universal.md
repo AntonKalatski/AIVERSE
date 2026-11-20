@@ -3171,3 +3171,10 @@ before calling this stage validated.
 - Handoff: [Stage 162 (part 1)](animation-stage162-modelview-graph-watch-preparation-2026-11-20.md).
 - Code commit: `f980e245d9efcc09ec37345fb89581f58f23dcf3`; `apps/modelview/main.cpp` now includes each enabled animated child `animationGraph` path in opt-in `--watch-model-files` source change detection, queuing the existing owner-boundary reload request.
 - **Partial prerequisite only:** native ModelView still explicitly refuses independently animated child preview; its actual child Graph publication, ECS source evaluation, render-only View submission and full atomic hot reload remain to implement. No native compile/CTest/GPU/backend tests have been run for this step. Do not declare Stage 162 complete or merge PR #22.
+
+
+## Stage 162 — ModelView independent animated child Graph sources (2026-11-20)
+
+- Handoff and complete readiness matrix: [Stage 162](animation-stage162-modelview-independent-child-graphs-2026-11-20.md). Source commits `8bcf590c`, `1c68e791`, `98e61b23`, `1cbfa690`, `7d59d2dc` plus Stage 162 Graph file watch `f980e245`.
+- ModelView source now stages independent per-actor child Graphs in a private presentation World/SceneAttachmentHost, evaluates them once via `AnimatedSceneAttachmentSources`, submits precomputed Graphless child poses through a separate render-only View, preserves shared JSON authoring, supports child Graph UI editing and watch source reload, and keeps move-only CPU ModelReadLease packets through Renderer3D::render. Old graph generations are retained together with old GPU providers until safe retirement.
+- **Source implementation only; NOT verified by native compiler, CMake, CTest, visual backend, sanitizer or performance tests.** Hot-reimport child Graph phase continuity, large-crowd/LOD/morph parity, scene loader adapter and fully tokenized provider shutdown remain outstanding. Keep PR #22 Draft and do not claim production readiness. Next Stage 163 is child Graph parameter/phase continuity plus remaining feature closure before one full Mac test run.
