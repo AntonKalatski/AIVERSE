@@ -3,6 +3,7 @@
 from __future__ import annotations
 from html.parser import HTMLParser
 from pathlib import Path
+import os
 import sys
 import unittest
 from urllib.parse import urlsplit, unquote
@@ -48,7 +49,7 @@ def verify_bundle(dist: Path) -> list[str]:
 
 class StudioBundleTests(unittest.TestCase):
     def test_bundled_es_modules_resolve_to_local_files(self):
-        dist=ROOT/"apps/studio-web/dist"
+        dist=Path(os.environ.get("AIVERSE_STUDIO_WEB_DIST", ROOT/"apps/studio-web/dist"))
         if not (dist/"index.html").exists():
             self.skipTest("Vite dist unavailable in source-only CI; native build script validates it")
         self.assertEqual(verify_bundle(dist),[])

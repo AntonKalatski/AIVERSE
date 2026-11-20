@@ -9,10 +9,11 @@ set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTI
 set_target_properties(aiverse_studio PROPERTIES
     OUTPUT_NAME AiverseStudioHTML5
     MACOSX_BUNDLE_GUI_IDENTIFIER com.aiverse.studio.html5)
-if(EXISTS "${PROJECT_SOURCE_DIR}/apps/studio-web/dist/index.html")
+set(AIVERSE_STUDIO_WEB_DIST "${PROJECT_SOURCE_DIR}/apps/studio-web/dist" CACHE PATH "Built Studio web assets")
+if(EXISTS "${AIVERSE_STUDIO_WEB_DIST}/index.html")
     add_custom_command(TARGET aiverse_studio POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
-            "${PROJECT_SOURCE_DIR}/apps/studio-web/dist"
+            "${AIVERSE_STUDIO_WEB_DIST}"
             "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web")
 else()
     message(FATAL_ERROR "HTML5 dist missing: first run npm install && npm run build in apps/studio-web")
