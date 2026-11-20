@@ -271,7 +271,7 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
             // owner or retired GPU queue is published by this attempt.
             tx.rollback();
             throw std::runtime_error(
-                "RtsView: map/scene source changed during topology preparation");
+                "RtsView: map source changed during topology preparation (scene/camera inputs included)");
         }
         if(!tx.publish())
             throw std::logic_error("RtsView: topology cohort not published");
