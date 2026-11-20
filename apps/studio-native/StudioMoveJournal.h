@@ -88,8 +88,11 @@ public:
     void restoreOrCleanup() {
         std::error_code ec;
         const auto status=fs::symlink_status(folder_,ec);
-        if (ec==std::errc::no_such_file_or_directory || !fs::exists(status)) return;
-        if (ec || fs::is_symlink(status) || !fs::is_directory(status))
+        if (ec==std::errc::no_such_file_or_directory) return;
+        if (ec)
+            throw std::runtime_error("Cannot inspect Studio recovery journal: "+ec.message());
+        if (!fs::exists(status)) return;
+        if (fs::is_symlink(status) || !fs::is_directory(status))
             throw std::runtime_error("Unsafe Studio move recovery journal");
         if (fs::exists(folder_/"committed.json")) {
             fs::remove_all(folder_);
@@ -101,27 +104,41 @@ public:
             fs::remove_all(folder_);
             return;
         }
+        if (fs::is_symlink(fs::symlink_status(pending)) ||
+            !fs::is_regular_file(pending))
+            throw std::runtime_error("Unsafe Studio pending transaction manifest");
         const Json state=Json::parseFile(pending.string());
         if (state["version"].integer()!=1 || !state["operations"].isArray() ||
             state["operations"].size()>128)
             throw std::runtime_error("Invalid Studio move recovery manifest");
         const fs::path root=studioContentRoot(project_);
         const auto& operations=state["operations"].items();
-        // Reverse order handles a partially moved file + .meta pair.
-        for (auto it=operations.rbegin();it!=operations.rend();++it) {
-            const auto from=it->getStr("from"),to=it->getStr("to");
+        struct RestoreStep { fs::path source,destination; bool moveBack; };
+        std::vector<RestoreStep> steps;
+        steps.reserve(operations.size());
+        // Validate ALL records and collisions before changing any files.
+        // A malformed later entry must not cause partial recovery of earlier ones.
+        for (const auto& operation:operations) {
+            if (!operation.isObject() || !operation["from"].isString() ||
+                !operation["to"].isString())
+                throw std::runtime_error("Invalid Studio recovery operation");
+            const auto from=operation.getStr("from"),to=operation.getStr("to");
             validateRelative(from);validateRelative(to);
+            if (from==to) throw std::runtime_error("Invalid no-op Studio recovery entry");
             const fs::path source=root/fs::path(from);
             const fs::path destination=root/fs::path(to);
-            // Never follow a symlink in an existing parent or endpoint.
             safePath(root,source);safePath(root,destination);
             const bool src=fs::exists(source),dst=fs::exists(destination);
             if (src && dst)
                 throw std::runtime_error("Studio recovery collision: source and destination both exist");
             if (!src && !dst)
                 throw std::runtime_error("Studio recovery missing both sides of a move");
-            if (dst) fs::rename(destination,source);
+            steps.push_back({source,destination,dst});
         }
+        // Reverse order handles file + .meta pairs. Each replay is idempotent
+        // when a crash happens midway through recovery itself.
+        for (auto it=steps.rbegin();it!=steps.rend();++it)
+            if (it->moveBack) fs::rename(it->destination,it->source);
         const fs::path material=project_/"materials.json";
         if (state.getBool("materialExisted")) {
             const fs::path backup=folder_/"materials.backup";
