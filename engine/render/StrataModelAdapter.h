@@ -27,6 +27,10 @@ struct ModelPrimitiveSkip {
 struct ModelAsset {
     std::vector<ModelPrimitiveAsset> primitives;
     std::vector<ModelPrimitiveSkip> skipped;
+    // Stage17.2: only buildModelAsset's source-wide positional seam audit
+    // may certify compatibility between different material/mesh partitions.
+    bool sourceSeamsCertified=false;
+    uint64_t sharedGeometricBoundarySegments=0;
 };
 
 // Asset extraction is read-only and transactional. Preserves LOD0, node
@@ -52,6 +56,8 @@ struct StagingStats {
     // Stage17: offline-only seam certification; not an estimate of
     // actual VRAM or shader-level pixel/depth parity.
     uint64_t seamCertifiedPrimitives = 0, seamRejectedParents = 0;
+    uint64_t crossMaterialMatchedSeams = 0;
+    uint32_t crossMaterialCertifiedSources = 0;
 };
 
 class SceneStaging {
