@@ -263,7 +263,7 @@ TEST(geometry_transactional_reload_preserves_hlod_after_proxy_source_failure) {
     GeometryScene scene;
     const auto oldScene=Json::parse(R"({"version":1,"hlod":{"enabled":true},
         "instances":[{"id":"a","model":"old-a.obj"},{"id":"b","model":"old-b.obj","position":[4,0,0]}]})");
-    const auto newScene=Json::parse(R"({"version":1},
+    const auto newScene=Json::parse(R"({"version":1,
         "instances":[{"id":"a","model":"new.obj",
         "proxy":{"model":"missing-proxy.obj","maxPixels":96}}]})");
     const auto good=[](const std::string&,std::string& out){
