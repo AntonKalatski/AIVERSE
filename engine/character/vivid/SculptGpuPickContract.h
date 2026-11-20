@@ -74,6 +74,9 @@ class SculptGpuPickProtocol {
     std::optional<SculptGpuPickRequest> pending_;
 public:
     bool pending() const noexcept {return pending_.has_value();}
+    bool pendingIs(const SculptGpuPickRequest& request) const noexcept {
+        return pending_.has_value() && *pending_==request;
+    }
     void cancel() noexcept {
         pending_.reset();
         ++generation_;
