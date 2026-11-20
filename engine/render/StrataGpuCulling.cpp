@@ -294,6 +294,7 @@ ViewConfig cpuReferenceView(const GpuPassConfig& pass,
     reference.frustumCull = pass.frustumCull;
     reference.errorThresholdPixels = pass.errorThresholdPixels;
     reference.maxSelectedNodes = pass.maxOutputClusters;
+    reference.hysteresisFraction=pass.hysteresisFraction;
     return reference;
 }
 
@@ -302,7 +303,8 @@ bool compareGpuSelection(const ModelAsset& source,
                          const GpuPassConfig& pass,
                          uint32_t pooledFirstIndex,
                          const GpuSelectionReadback& gpu,
-                         std::string* error) {
+                         std::string* error,
+                         const std::vector<uint8_t>* previousRefined) {
     if (error) error->clear();
     auto fail = [&](const std::string& reason) {
         if (error) *error = reason;
@@ -324,6 +326,9 @@ bool compareGpuSelection(const ModelAsset& source,
                           item.nodeIndex, item.primitiveIndex,
                           item.localFirstIndex});
     }
+    if(!std::isfinite(pass.hysteresisFraction) ||
+       pass.hysteresisFraction<0.f || pass.hysteresisFraction>.45f)
+        return fail("GPU temporal policy invalid for CPU reference");
     std::vector<uint64_t> primitiveIndexOffsets(source.primitives.size());
     std::vector<uint64_t> primitiveNodeOffsets(source.primitives.size());
     uint64_t indexCursor = 0, nodeCursor = 0;
@@ -337,6 +342,8 @@ bool compareGpuSelection(const ModelAsset& source,
             nodeCursor > std::numeric_limits<uint32_t>::max())
             return fail("Strata source exceeds GPU index/node address range");
     }
+    if(previousRefined && previousRefined->size()!=nodeCursor)
+        return fail("previous GPU temporal mask does not match source metadata nodes");
     for (const auto& instance : instances) {
         if (!instance.enabled) continue;
         if (!instance.instanceToken ||
@@ -346,8 +353,15 @@ bool compareGpuSelection(const ModelAsset& source,
         const auto& p = source.primitives[instance.primitiveIndex];
         ViewPlan cpu;
         std::string reason;
-        if (!planView(p.geometry, cpuReferenceView(pass, instance),
-                      cpu, &reason))
+        ViewConfig cpuView=cpuReferenceView(pass,instance);
+        std::vector<uint8_t> localHistory;
+        if(previousRefined){
+            const size_t begin=size_t(primitiveNodeOffsets[instance.primitiveIndex]);
+            localHistory.assign(previousRefined->begin()+begin,
+                previousRefined->begin()+begin+p.geometry.nodes.size());
+            cpuView.previousRefined=&localHistory;
+        }
+        if (!planView(p.geometry,cpuView,cpu,&reason))
             return fail("CPU reference selection failed: " + reason);
         // CPU can decide to retain a resident parent under budget pressure.
         // GPU emits overflow instead, so those cases are not equivalent.
