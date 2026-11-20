@@ -891,3 +891,15 @@ fallback on fragmentation; no semantic clipping. Added CTest source
 This remains flat GPU BVH packet streaming, not independent GPU
 BLAS pages; 8192 local triangle cap and optional CPU fallback remain.
 Native compiler, CTest, GPU memory/performance, device visuals NOT RUN.
+
+
+## Stage 55 — 2026-11-20 — borrowed Renderer3D lifetime guard for dynamic GI (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage55-renderer-atlas-borrow-safety-2026-11-20.md`.
+New `GiBorrowedPresentation` and `GiLightingController` lifetime checks
+prevent explicit shutdown or optional GPU→CPU fallback while renderer(s)
+hold raw borrowed atlas references. Successful bind registers, failed
+bind/explicit unbind releases; readers are tracked by renderer identity.
+Source regression `gi_borrowed_presentation` registered with CTest.
+Clients must still unbind before destructor and real render-fence retire.
+Native compiler/CTest and GPU/device tests NOT RUN.
