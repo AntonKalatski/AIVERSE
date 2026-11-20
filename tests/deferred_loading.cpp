@@ -29,8 +29,6 @@ public:
     bool waitForResourceIdle() override { return true; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
-    // CPU-only fake has no outstanding GPU work.
-    bool waitForResourceIdle() override { return true; }
     void beginPass(const aiverse::gfx::PassDesc&) override {}
     void endPass() override {}
     void setViewport(const aiverse::gfx::Rect&) override {}

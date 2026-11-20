@@ -12501,7 +12501,6 @@ public:
     bool waitForResourceIdle() override { return true; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
-    bool waitForResourceIdle() override { return true; } // synchronous CPU fake
     void beginPass(const aiverse::gfx::PassDesc&) override {}
     void endPass() override {}
     void setViewport(const aiverse::gfx::Rect&) override {}
