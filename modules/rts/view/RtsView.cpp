@@ -818,7 +818,7 @@ std::optional<bool> RtsView::publishPendingTerrainFrame(
 std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
         Renderer3D& r,const RtsScene& s,double time,
         const std::vector<uint8_t>* vision,const MapGrid& grid) {
-    if(!dev_ || !terrain_.mapMatches(grid.w,grid.h))
+    if(!dev_ || (hasTerrain_ && !terrain_.mapMatches(grid.w,grid.h)))
         throw std::logic_error("RtsView: build Terrain before surface preflight");
     auto lease=std::make_unique<PreparedSurfaceLease>();
     auto* next=lease.get();
