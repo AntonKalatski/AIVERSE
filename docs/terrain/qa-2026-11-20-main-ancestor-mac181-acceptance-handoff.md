@@ -53,12 +53,24 @@ independently reported PASS (851.30 sec). The full user-reported
 **181/181** run proves this registration set executed without CTest
 failures in that native Mac build. It does not prove GPU correctness.
 
-**Provenance limitation:** The supplied terminal excerpt does NOT
-include `provenance.txt` or the printed `git rev-parse HEAD`, so
-an exact source SHA for the full 181/181 result is not independently
-established. The repository's source at the stage HEAD has been
-re-read on GitHub for the FBX-off, micro nutrient, 65k grid guard and
-native test registration. There has been no new code fetched from main.
+**Provenance resolved (user-supplied `provenance.txt`, 2026-11-20):**
+The complete 181/181 native Mac test run was performed from
+`/Users/aleksandrfeer/Projects/AIVERSE-terraweave-stage70-local-qa`
+at exact source SHA
+`f55d8d4e8622d297c4c27266f9289f82cc59baed`.
+`git_branch=` was empty because the isolated worktree was in
+detached HEAD mode. The user ran
+`git merge-base --is-ancestor origin/main HEAD`, which printed
+`PASS: main уже включён в TerraWeave`. GitHub independent compare
+confirmed that current `main` at `e4129c5062a6ab47e7c70f3fdd483392fde1f679`
+is an ancestor. The branch's subsequent commit
+`36fd38db0f1198064a58a3e59ac533fcaf3f30c1`
+changed only documentation (two handoff files), not the code that
+passed. The user's excerpt does not show the actual CMakeCache flags
+or JUnit XML; preserve the acceptance-report archive for later audit.
+Source has also been read back from GitHub for FBX-off, micro nutrient,
+65k cap, and native test registration. No new code was fetched
+from `main`.
 
 ## Read-only source contract review at stage HEAD
 

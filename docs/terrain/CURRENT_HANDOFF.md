@@ -5,7 +5,9 @@
 > of TerraWeave; GitHub comparison showed `behind=0` — no merge.
 > User's local Mac full CTest reported **181/181 PASS in 886.46s**.
 > Dedicated PHYSIS, TerraWeave and Box3D tests are included.
-> Exact tested source SHA still requires `provenance.txt`.
+> Provenance now confirms tested SHA
+> `f55d8d4e8622d297c4c27266f9289f82cc59baed`;
+> the later integration commit `36fd38db` changed docs only.
 > Full details: [main ancestry / Mac 181 handoff](qa-2026-11-20-main-ancestor-mac181-acceptance-handoff.md).
 > GPU backend parity and live cross-owner sim are **NOT VERIFIED**.
 >
