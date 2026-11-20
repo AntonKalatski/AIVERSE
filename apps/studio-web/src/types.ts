@@ -20,6 +20,8 @@ export interface StudioAssetTransferItem {
 }
 export interface StudioAssetTransferPlan {
   token: string; source: 'internal' | 'external'; items: StudioAssetTransferItem[];
+  references?: Array<{ id: number; document: string; owner: string; field: string;
+    from: string; to: string; writable: boolean }>;
 }
 export type StudioAssetConflictAction =
   'import' | 'skip' | 'keep-both' | 'replace' | 'new-guid';
