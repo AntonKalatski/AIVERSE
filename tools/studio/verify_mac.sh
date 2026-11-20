@@ -41,12 +41,8 @@ cmake --build "$BUILD_DIR" \
   --parallel 4
 
 echo "==== Step 4: studio contracts ===="
-ctest --test-dir "$BUILD_DIR" --output-on-failure -R '^studio_(session|shader_graph_name|shader_graph_draft|pbr_adapter|material_validation|lighting_validation|light_preview_math|authored_lights|fps_lighting_contract|fps_lighting_document|scene_nodes|document_visuals|viewport_layout|terrain_geometry)
-
-echo "==== Automated verification finished; macOS visual testing still required ===="
-echo "Open the generated AiverseStudioHTML5.app with --project /path/to/project."
-echo "Manually verify Metal rendering, resizing, picking, history and native popovers."
-
+ctest --test-dir "$BUILD_DIR" --output-on-failure \
+  -R '^studio_(session|shader_graph_name|shader_graph_draft|pbr_adapter|material_validation|lighting_validation|light_preview_math|authored_lights|fps_lighting_contract|fps_lighting_document|scene_nodes|document_visuals|viewport_layout|terrain_geometry)$'
 
 echo "==== Automated verification finished; macOS visual testing still required ===="
 echo "Open the generated AiverseStudioHTML5.app with --project /path/to/project."

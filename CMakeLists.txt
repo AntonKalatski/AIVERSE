@@ -43,6 +43,14 @@ option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_TOOLS "Build aiversebuild packager" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot client" ${AIVERSE_DESKTOP})
 
+# Register Objective-C++ in the ROOT directory before creating any targets.
+# CMake does not propagate a language enabled only in a child directory back
+# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
+option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
+    enable_language(OBJCXX)
+endif()
+
 # Game being built (aiversebuild overrides these).
 set(AIVERSE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates/skirmish" CACHE PATH "Game content folder (contains game.json)")
 # build folders configured before games/ became templates/ keep the old cached path
@@ -2635,7 +2643,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Experimental HTML5 Studio host. Production editor still uses its existing UI.
 # ---------------------------------------------------------------------------
-option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
 if(AIVERSE_BUILD_STUDIO_HTML5)
     if(APPLE AND TARGET aiverse_editor_core)
         add_subdirectory(apps/studio-native)

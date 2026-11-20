@@ -1,5 +1,5 @@
 # Completely separate, opt-in executable, no ImGui editor source files.
-enable_language(OBJCXX)
+# OBJCXX was enabled by the root CMakeLists before creating targets.
 add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioMetalScene.cpp StudioSession.cpp)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_studio PRIVATE aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
