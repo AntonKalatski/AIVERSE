@@ -23,7 +23,13 @@ class Plant:
     def __init__(self,seed):self.rng=np.random.default_rng(seed);self.spines=[];self.leaves=[]
     def spine(self,points,r0,r1,root=False):
         p=np.asarray(points,float);length=sum(np.linalg.norm(p[i+1]-p[i]) for i in range(3));steps=max(6,int(length/.10));ts=np.linspace(0,1,steps+1)
-        xyz=curve(p,ts);r=r1+(r0-r1)*(1-ts)**(.9 if root else 1.35)
+        xyz=curve(p,ts);r=r1+(r0-r1)*(1-ts)**(1.15 if root else 1.35)
+        if root:
+            # Shape the UPPER surface, not just the centreline: near the soil
+            # it flattens, then sinks below ground before the geometric tip.
+            # This avoids the straight triangular fin cut by a ground plane.
+            top=max(.12,float(p[0,1])+r0)*(1-ts)**3-.10*ts**4
+            xyz[:,1]=top-r
         self.spines.append((xyz,r,root));return p
     def sprigs(self,parent,size,count):
         rng=self.rng
