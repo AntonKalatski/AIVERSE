@@ -137,3 +137,31 @@ development branches and does NOT mutate authoritative game ECS state.
 See [SceneAttachmentHost guide](scene-attachment-host.md) and
 [Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md).
 Native Studio/Metal/Vulkan/GLES compiler and renderer validation NOT RUN.
+
+
+
+## Stage 161 — independent child Graph authoring in Studio
+
+For any child use **Independent animation** to switch from a static
+parent-socket Model draw to a separately evaluated MotionWeave child.
+Provide a unique **Prefab child ID**, the actual imported **Child Model**
+path, its named source **Socket**, and **Child AnimationGraph file**
+(project-relative). Studio's explicit Reimport & Publish stages the
+imported child Model and compiles its Graph through the shared
+AppearanceAssetRegistry. Invalid Graph assets reject the staged
+session, leaving the prior published configuration intact.
+
+The child is still a real presentation ECS Entity but NOT included
+in its parent's static socket draw. On every preview frame the Studio's
+`EditorWindow::update` advances its independent child MotionWeave
+Graph once, then the offscreen Viewport submits graphless precomputed
+child skinning poses placed on the parent's animated bone. The parent
+has its own separate Animator/clip sampler. This is not a new gameplay
+ECS world or a second writer of the same Graph.
+
+ModelView currently keeps these fields in JSON but cannot display
+independently animated children; it rejects them. Rich child graph
+timeline/montage/IK/morph authoring and GPU-fence-safe full provider
+shutdown remain unfinished. See [animated child guide](animated-scene-attachments.md)
+and [Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+Native compiler/CTest/real Metal/Vulkan/GLES previews NOT RUN.
