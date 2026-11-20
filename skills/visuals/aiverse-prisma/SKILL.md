@@ -1517,3 +1517,21 @@ After ensuring an idle clean worktree, execute the single
 entire updated engine and all available Mac GPU fixtures. Keep
 Vulkan/GLES/WebGL unsupported-platform statuses separate. Exact
 handoff: `docs/handoffs/prisma-stage-98-latest-main-reconciled-all-in-one-20261120.md`.
+
+## Stage98 one-shot sky/fog GPU matrix from current MAIN
+
+The single `tools/prisma/acceptance.sh` native command also runs all 11
+`AIVERSE_PHYSICAL_SKY_TEST` and all 11 `AIVERSE_LOCAL_FOG_TEST`
+variants on **both native Metal and GL33** (44 GPU subprocesses):
+`clouds|clear|medium|ortho|night|no-rays|sunset|inside|above|physis-dry|physis-storm`
+and
+`off|sphere|reveal|move|obb|obb-reveal|behind|inside|medium|ortho|combined`.
+Every case is a real framebuffer fixture with its own backend marker,
+subprocess exit code, fresh nonempty P6 capture and diagnostic log.
+Fail a missing capture; never reuse an old PPM or call visual quality
+certified solely because a P6 exists. This is in addition to the
+Stage97 and Stage98 temporal/fence/ghost tests and one full CTest.
+Mac Vulkan/GLES/WebGL remain explicitly unavailable, not passed.
+New Stage98 matrix code is NOT yet compiled/verified on Mac.
+Latest handoff is
+`docs/handoffs/prisma-stage-98-latest-main-reconciled-all-in-one-20261120.md`.
