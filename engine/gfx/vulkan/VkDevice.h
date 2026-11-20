@@ -127,7 +127,7 @@ struct FrameSlot {
         VkBuffer buffer = VK_NULL_HANDLE;
         Allocation allocation{};
         int width=0, height=0;
-        CaptureFn callback;
+        Device::CaptureFn callback;
     };
     std::vector<TextureCapture> textureCaptures;
     VkCommandPool pool = VK_NULL_HANDLE;

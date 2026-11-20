@@ -28,13 +28,6 @@ Json pairJson(ImVec2 pos) {
     a.push(Json::number(double(std::clamp(pos.y,-100000.f,100000.f)),2));
     return a;
 }
-bool isOutput(const std::string& type) {
-    return type=="SpriteOutput"||type=="MeshOutput"||type=="RibbonOutput";
-}
-bool existsNode(const Json& graph,const std::string& id) {
-    for(const auto& node:graph["nodes"].items())if(node.getStr("id")==id)return true;
-    return false;
-}
 std::string nodeType(const Json& graph,const std::string& id) {
     for(const auto& node:graph["nodes"].items())if(node.getStr("id")==id)return node.getStr("type");
     return {};

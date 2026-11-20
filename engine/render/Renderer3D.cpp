@@ -373,7 +373,10 @@ void Renderer3D::invalidateModelCachesFor(const Model* model) {
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    customMaterialReceiver_.clear();customSurfaceReceiver_.clear();
     if(dev_)checkGpuDevice(*dev_);
+    // Atlas identity is per VIEW, never inherited by a different camera.
+    dynamicGiAtlas_={};
     // Query backend-confirmed GPU completion before allocating new targets;
     // this is nonblocking and never guesses an N-frame CPU delay.
     if (dev_) collectCompletedObjectMotion(dev_->gpuCompletedFence());
@@ -553,6 +556,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
 }
 
 void Renderer3D::discardSceneSubmission() noexcept {
+    dynamicGiAtlas_={};
     heightField_={};
     items_.clear(); meshSnapshots_.clear();lines_.clear();tris_.clear();
     custom_.clear();customOpaque_.clear();customShadow_.clear();customFeedback_.clear();
@@ -2165,6 +2169,46 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     renderReflection();
     // Exclude shadow, probe and reflection passes from the visible-colour ID range.
     debugMainDrawId_ = 0;
+    const bool savedAuxiliary=auxiliaryModelPass_, savedProfiling=profiling_, savedDrawDebug=drawCallDebug_;
+    auxiliaryModelPass_=true; profiling_=false; drawCallDebug_=false;
+    // Optional material-receiver side pass. Only explicitly enabled post
+    // processors can request it. The normal rendering path and all existing
+    // PBR shaders are unchanged when the hook is absent. The second material
+    // target owns its OWN depth (the main scene depth has not been drawn yet).
+    if(post_ && hdrFrame_ && post_->wantsMaterialReceiverPass()) {
+        auto receiver=post_->materialReceiverPass(sw,sh);
+        if(receiver.colorTarget.valid() && receiver.depthTarget.valid()) {
+            dev_->beginPass(receiver);
+            dev_->setViewport({0,0,sw,sh});
+            lumaMaterialCapture_=true;
+            uploadFrameUniforms(false);
+            renderModels(1);
+            for(auto& fn:customMaterialReceiver_)fn(*dev_);
+            lumaMaterialCapture_=false;
+            dev_->endPass();
+            post_->materialReceiverPublished(receiver.colorTarget,sw,sh);
+        }
+    }
+    // Optional second receiver: physical world normal and roughness. Source
+    // PBR material computations are identical to the primary material pass.
+    // It is never requested by existing PostProcess implementations.
+    if(post_ && hdrFrame_ && post_->wantsSurfaceReceiverPass()) {
+        auto surface=post_->surfaceReceiverPass(sw,sh);
+        if(surface.colorTarget.valid() && surface.depthTarget.valid()) {
+            dev_->beginPass(surface);
+            dev_->setViewport({0,0,sw,sh});
+            lumaSurfaceCapture_=true;
+            uploadFrameUniforms(false);
+            renderModels(1);
+            for(auto& fn:customSurfaceReceiver_)fn(*dev_);
+            lumaSurfaceCapture_=false;
+            dev_->endPass();
+            post_->surfaceReceiverPublished(surface.colorTarget,sw,sh);
+        }
+    }
+    // Exclude shadow, probe and reflection passes from the visible-colour ID range.
+    debugMainDrawId_ = 0;
+    auxiliaryModelPass_=savedAuxiliary; profiling_=savedProfiling; drawCallDebug_=savedDrawDebug;
     // trace tier + water: the opaque scene goes into colour + depth textures first (SSR reads them),
     // then it is blitted (with depth) into the main pass and the rest is drawn on top
     bool capture = modelReflections_ && hdrFrame_ && traceActive();
