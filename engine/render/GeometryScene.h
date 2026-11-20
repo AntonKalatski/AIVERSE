@@ -53,6 +53,19 @@ public:
         uint64_t strataDiskBytesRead=0, strataDiskReadFailures=0;
         uint64_t strataDiskPending=0, strataDiskReadyBytes=0;
         uint64_t strataStreamingGpuTransferBytes=0;
+        // Stage18.2: deltas for the current RHI frame; unlike the older
+        // streaming counters these are NOT cumulative per-source totals.
+        // No GPU timestamps, physical VRAM or bandwidth rate is implied.
+        uint64_t strataStreamFrameSerial=0;
+        uint64_t strataStreamFrameDemandRecords=0;
+        uint64_t strataStreamFrameGpuTransferBytes=0;
+        uint64_t strataStreamFrameUploadedBytes=0;
+        uint64_t strataStreamFramePromotions=0;
+        uint64_t strataStreamFrameEvictions=0;
+        uint64_t strataStreamFrameDeferrals=0;
+        uint64_t strataStreamFrameFailedUploads=0;
+        uint64_t strataStreamPeakGpuTransferBytes=0;
+        uint64_t strataStreamPeakActiveIndexBytes=0;
         // Stage16.3 opt-in exclusive GPU indexed raster routing.
         uint64_t strataVulkanGpuCandidates=0, strataVulkanGpuPrepared=0;
         uint64_t strataVulkanGpuDeclined=0;
