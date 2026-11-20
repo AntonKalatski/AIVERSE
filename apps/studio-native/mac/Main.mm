@@ -303,7 +303,8 @@
 }
 @end
 
-int main(int argc,char** argv) {
+// PlatformMac.mm (aiverse_runtime) owns main() and forwards to aiverseMain().
+int aiverseMain(int argc,char** argv) {
     @autoreleasepool {
         std::string project;
         bool dev=false;

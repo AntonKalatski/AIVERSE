@@ -28,8 +28,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: apps/studio-web/package.json
+          # npm cache needs package-lock.json. Do not enable until a pinned lockfile is committed.
       - name: Install frontend packages
         working-directory: apps/studio-web
         run: npm install --no-audit --no-fund

@@ -15,7 +15,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/apps/studio-web/dist/index.html")
             "${PROJECT_SOURCE_DIR}/apps/studio-web/dist"
             "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web")
 else()
-    message(WARNING "HTML5 dist absent: run npm install && npm run build in apps/studio-web before configuring")
+    message(FATAL_ERROR "HTML5 dist missing: first run npm install && npm run build in apps/studio-web")
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_studio_session_tests tests/StudioSessionTests.cpp StudioSession.cpp)
