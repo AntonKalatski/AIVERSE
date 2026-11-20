@@ -223,6 +223,26 @@ void test() {
                    finite(g.position[1]),
                    "budget-limited contacts damaged fixed root or guide");
     }
+    // Excessively dense candidate segment sets must not cancel the entire
+    // groom simulation or modify the existing positions.
+    {
+        std::vector<GroomGuide> oversized(16385);
+        for(std::size_t i=0;i<oversized.size();++i) {
+            auto& g=oversized[i];
+            g.root={float(i)*0.01f,0,0};
+            g.rest=g.position={g.root,g.root+render::float3{0,0.02f,0}};
+            g.previous=g.position;
+        }
+        GroomSelfCollisionConfig config;
+        config.enabled=true;
+        config.segmentEnabled=true;
+        GroomSelfCollisionStats report;
+        const auto prior=oversized[0].position[1];
+        expect(GroomSegmentCollision::resolve(oversized,config,report) &&
+               report.budgetHit && report.contacts==0 &&
+               render::length(oversized[0].position[1]-prior)<1.e-7f,
+               "dense groom segment budget did not fail open without mutation");
+    }
     // Inter-guide self collision is opt-in, deterministic and does not
     // move fixed roots. The spatial neighbor search has a strict pair cap.
     {
