@@ -7,6 +7,7 @@
 #include "StrataGpuCulling.h"
 #include "StrataRenderRouting.h"
 #include "StrataPortableRender.h"
+#include "StrataVulkanIndirectContract.h"
 #include "StrataStreamingCoordinator.h"
 #endif
 #include <algorithm>
@@ -743,6 +744,111 @@ void GeometryScene::draw(Renderer3D& r){
     if(hlod_&&!groups_.empty())drawGroup(r,0);
     else for(auto& i:instances_)drawInstance(r,i);
 }
+bool GeometryScene::tryStrataVulkanGpuDraw(
+        Renderer3D& renderer,const Instance& instance,ModelDraw& draw) {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(!strataVulkanGpuIndirectEnabled_ ||
+       !strataStagingEnabled_ || !strataGpuMetadataEnabled_ ||
+       !strataGpuCullingEnabled_ || !strataStaging_ ||
+       !strataGpuMetadata_ || !strataGpuDevice_ ||
+       strataGpuDevice_->info().backend!=gfx::Backend::Vulkan ||
+       !strataGpuDevice_->gpuHealthy() ||
+       !strataGpuDevice_->supportsCompute() ||
+       !strataGpuDevice_->supportsMultiDrawIndirect() ||
+       !strataGpuDevice_->frameSerial() ||
+       draw.model!=instance.model ||
+       !instance.model || !instance.model->vb.valid() ||
+       renderer.sceneWidth()<=0 || renderer.sceneHeight()<=0)
+        return false;
+    // Explicit acceptance is required for the current source build.
+    // Stage 16.3 code alone is NOT evidence of actual Vulkan pixel parity.
+    strata::RenderRouteGate gate{};
+    gate.requested=true;
+    gate.cpuGpuSelectionParityVerified=
+        strataVulkanGpuSelectionParityVerified_;
+    gate.rasterParityVerified=strataVulkanGpuRasterParityVerified_;
+    gate.rendererOwnsSubmission=true;
+    gate.sourceResident=true;
+    gate.sourceAndMaterialSafe=true;
+    if(strata::chooseExclusiveRenderRoute(gate)!=strata::RenderRoute::Strata)
+        return false;
+    // Only one scene instance of this source: GPU emits firstInstance=0
+    // and Renderer3D binds the exact same single U0 transform.
+    if(std::count_if(instances_.begin(),instances_.end(),
+         [&](const Instance& other){return other.model==instance.model;})!=1)
+        return false;
+    const bool otherViews=renderer.shadowQuality()!=ShadowQuality::Off ||
+                          renderer.lights.reflectionsWanted();
+    if(otherViews)return false;
+    for(const auto& [key,model]:models_){
+        if(model.get()!=instance.model)continue;
+        const auto* staged=strataStaging_->find(key);
+        if(!staged || staged->primitives.size()!=1 ||
+           instance.model->bindWorld.size()!=1 ||
+           instance.model->nodes.size()!=1)break;
+        strata::GpuMetadataScene::IndexBinding binding{};
+        if(!strataGpuMetadata_->indexBinding(key,*instance.model,binding))
+            break;
+        const auto metadata=strataGpuMetadata_->find(key,*instance.model);
+        if(!metadata.valid())break;
+        const auto selectedWorld=instance.world*instance.model->bindWorld[0];
+        strata::GpuPassConfig view{};
+        view.viewProjection=renderer.viewProj();
+        view.width=renderer.sceneWidth();
+        view.height=renderer.sceneHeight();
+        view.clipDepthZeroToOne=renderer.clipDepthZeroToOne();
+        view.frustumCull=true;
+        view.errorThresholdPixels=errorPixels_;
+        view.maxOutputClusters=uint32_t(std::min<size_t>(2048,
+            std::max<size_t>(16,staged->primitives[0].geometry.nodes.size())));
+        strata::VulkanIndirectContract contract{};
+        strata::GpuPassConfig guarded{};
+        std::string reason;
+        if(!strata::prepareVulkanIndirectContract(*strataGpuDevice_,
+             *instance.model,*staged,binding,view,false,
+             contract,guarded,&reason))
+            break;
+        if(!strataGpuCulling_)
+            strataGpuCulling_=std::make_shared<strata::GpuClusterCulling>();
+        const auto gpuInstance=strata::makeGpuSceneInstance(
+            selectedWorld,0,1,true);
+        strata::GpuSelectionSubmission submitted{};
+        ++stats_.strataVulkanGpuCandidates;
+        if(!strataGpuCulling_->dispatch(*strataGpuDevice_,metadata,
+            {gpuInstance},guarded,strataGpuDevice_->frameSerial(),submitted))
+            break;
+        if(!strata::validateVulkanIndirectSubmission(
+             *strataGpuDevice_,*instance.model,contract,submitted,&reason))
+            break;
+        draw.gpuIndexed.commands=submitted.indirect;
+        draw.gpuIndexed.vertex=contract.vertex;
+        draw.gpuIndexed.index=contract.index;
+        draw.gpuIndexed.selectedWorld=selectedWorld;
+        draw.gpuIndexed.frameSerial=contract.expectedFrameSerial;
+        draw.gpuIndexed.geometryRevision=contract.geometryRevision;
+        draw.gpuIndexed.materialRevision=contract.materialRevision;
+        draw.gpuIndexed.commandCapacity=submitted.capacity;
+        draw.gpuIndexed.sourceFirstIndex=
+            staged->primitives[0].geometry.nodes.empty()
+            ? 0 : instance.model->meshes[
+                staged->primitives[0].mesh].primitives[0].firstIndex;
+        draw.gpuIndexed.sourceIndexCount=contract.originalIndexCount;
+        draw.gpuIndexed.sourceBaseVertex=contract.pooledBaseVertex;
+        draw.gpuIndexed.exclusive=true;
+        draw.flags|=kDrawStatic;
+        draw.geometry={}; // GPU selection owns the only cluster LOD
+        draw.staticCache=nullptr;
+        draw.persistentId=0; // do not reuse stale render packet state
+        ++stats_.strataVulkanGpuPrepared;
+        return true;
+    }
+    ++stats_.strataVulkanGpuDeclined;
+#else
+    (void)renderer;(void)instance;(void)draw;
+#endif
+    return false;
+}
+
 void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;
     if(i.surfaceProxy&&surfacesEnabled_){
@@ -752,6 +858,10 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
         }
     }
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // The Vulkan GPU route does NOT create a second ModelDraw. It only
+    // annotates this single source draw for Renderer3D's own main pass.
+    // An unsupported view/source retains the normal Legacy/portable path.
+    const bool gpuStrataPrepared=tryStrataVulkanGpuDraw(r,i,d);
     // No duplicate geometry: preview only; always execute the exact legacy
     // draw below. Source proxies and HLOD substitutes are intentionally
     // excluded from this diagnostic path. Source key is borrowed only for
@@ -769,7 +879,8 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     }
 #endif
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    if (strataPortableRenderingEnabled_ && d.model == i.model &&
+    if (!gpuStrataPrepared && strataPortableRenderingEnabled_ &&
+        d.model == i.model &&
         !strataPortableSources_.empty()) {
         const auto staged=strataPortableSources_.find(d.model);
         if (staged != strataPortableSources_.end() && staged->second &&
