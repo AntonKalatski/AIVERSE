@@ -2370,3 +2370,50 @@ complete implementation remains on
   cluster LOD boundaries, then Stage18 performance, then one full
   native CMake/CTest and real hardware acceptance run. Preserve
   genre independence and Metal/Vulkan/GLES3 fallback behavior.
+
+
+## STRATA Stage 17.1–17.2 — welded and cross-material crack-resistant LOD (2026-11-20)
+
+Current branch: `feature/strata-virtual-geometry`. For the full
+architecture, exact commit list, test plan, known limitations and
+next steps, read `docs/agent-handoffs/strata-virtual-geometry.md`
+Stage 17.1 and Stage 17.2. Do NOT merge to main without
+the user's final combined native validation run.
+
+- `StrataSeamTopology.h/.cpp`: immutable CPU-only oriented-edge
+  contour verifier for a single source material. Coarse parent
+  triangles MUST preserve the EXACT welded global-ID border of
+  the combined children, even when adjacent groups render at
+  different depths. Nonmanifold/degenerate/altered contours
+  reject the parent and preserve the original fine children.
+  `StrataBuilder` independently audits all final parent links
+  and marks `Asset::seamCertified` only after success.
+- `StrataSourceSeams.h/.cpp`: source-wide UV/material/mesh physical
+  seam preflight. Handles duplicated vertex IDs at equal original
+  coordinates and different rigid `Model::bindWorld` transforms.
+  Uses a bounded BVH to reject an original cross-material T-junction
+  or near-identical but different source seam endpoints. Source
+  input is NEVER repaired or welded silently; unsafe sources
+  stay on the original Renderer3D Legacy path.
+- `StrataModelAdapter::buildModelAsset` now requires the second
+  positional audit before assigning
+  `ModelAsset::sourceSeamsCertified`. `SceneStaging` and
+  `GeometryScene` check per-partition AND whole-source
+  certification before portable Metal/Vulkan/GLES and GPU indirect
+  use. Both checks occur on CPU import/load, not in the render loop.
+- Tests `strata_seams` and `strata_source_seams` added to CMake:
+  authored but **NEVER EXECUTED**. Verify with `strata_builder`,
+  `strata_model_adapter`, `strata_view`, streaming/GPU route
+  tests and actual Metal/Vulkan/GLES3 mixed-LOD pixel/depth QA
+  during the user's final combined validation. Don't claim that
+  authored assertions prove GPU success.
+- **Limits:** no source geometry T-junction repair, no cross-Model,
+  cross-world or separate terrain chunk seam stitching, no
+  morph/skin vertex changes, no geometric geomorph or frame-stable
+  hysteresis, no guarantee of exact lossy-LOD interior shading.
+  Imported open surfaces are allowed; suspicious near-overlap
+  declines STRATA. Next Stage17.3: temporal LOD stability,
+  then Stage18 performance profiling and final Stage19 acceptance.
+
+All work stays genre-independent. Renderer3D remains the only draw
+authority; Metal/Vulkan/GLES and Legacy fallbacks must keep working.
