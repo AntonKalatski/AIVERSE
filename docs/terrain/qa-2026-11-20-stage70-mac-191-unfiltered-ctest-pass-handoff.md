@@ -5,7 +5,7 @@
 **Draft PR:** [#53](https://github.com/chromealex/AIVERSE/pull/53)
 **Prior native source merge:** `40ed8606e834fb7c75a1c16901280300191980ec` (main `b80601eb3fdcafddedbe9a9387f78a2fea0e499f` + TerraWeave).
 **Branch HEAD before docs-only recording:** `72fe4c22b51ce788b3fc7a5b11520484281bc772`.
-**The exact native tested SHA was NOT included in this latest CTest excerpt.**
+**Verified exact Mac native tested SHA (user-supplied acceptance provenance):** `346dc66aeb0a89e1dc69ad889134fe7079ecb169`.
 
 ## Real Mac native acceptance reported by user
 
@@ -57,11 +57,21 @@ build/CTest was previously independently user-reported **1/1 PASS in
 
 ## Critical provenance and moving main
 
-- This user excerpt identifies the complete **191/191 result and
-  945.76s** but DOES NOT print `git_sha`; collect the existing
-  `build/terraweave-main-acceptance/acceptance-reports/provenance.txt`,
-  `cmake-cache-flags.txt` and `ctest.xml` to bind its SHA,
-  configuration and JUnit test inventory immutably.
+- **Provenance now confirmed** from the user's actual
+  `build/terraweave-main-acceptance/acceptance-reports/provenance.txt`:
+  ```text
+  repo=/Users/aleksandrfeer/Projects/AIVERSE-terraweave-stage70-local-qa
+  git_sha=346dc66aeb0a89e1dc69ad889134fe7079ecb169
+  git_branch=
+  ```
+  The empty branch name is expected in a detached-HEAD test worktree.
+  GitHub compared the proven tested SHA to the integration branch
+  before this handoff: four later commits touched **only**
+  `docs/terrain/CURRENT_HANDOFF.md` and two standalone
+  `docs/terrain/qa-...` handoff files. Hence no post-test
+  C++/CMake changes had occurred on that branch. The actual
+  `cmake-cache-flags.txt` and `ctest.xml` have not been supplied;
+  preserve them as additional audit evidence.
 - When this QA result was recorded, GitHub `main` had already
   advanced to `d6942dde307814696f5060a51088cff5c013e5fe`,
   while TerraWeave was still at
