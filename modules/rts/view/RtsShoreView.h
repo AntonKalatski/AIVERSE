@@ -44,6 +44,7 @@ private:
     struct PropModel { std::string path; std::unique_ptr<render::Model> model; };
     struct PropInstance { int model = -1; render::mat4 xf; };
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h);
+    void buildUnpublished(gfx::Device& dev, const std::function<float(float, float)>& heightAt, float waterY, int w, int h);
     void release(gfx::Device& dev);
     int propModel(gfx::Device& dev, const std::string& path);
 
