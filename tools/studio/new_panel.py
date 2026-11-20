@@ -81,25 +81,41 @@ def generate(root: Path, panel_id: str, title: str, area: str, dry_run: bool = F
     title_js = json.dumps(title, ensure_ascii=False)
     class_name = "studio-panel-" + panel_id
     component_code = f'''import type {{ StudioSnapshot }} from '../../types';
-import PanelTitle from '../../components/PanelTitle';
+import {{ Layers3 }} from 'lucide-react';
+import {{
+  StudioPanel, StudioSection, StudioBadge, StudioAlert, StudioEmptyState
+}} from '../../ui';
 import './{component_name}.css';
 
-/** Generated panel: replace this view with typed UI, never direct project file IO. */
+/** Generated with AIVERSE Studio UI v1. Never touch game/project files from React. */
 export default function {component_name}({{ snapshot }}: {{ snapshot: StudioSnapshot | null }}) {{
   const title = {title_js};
-  return <section className="{class_name}">
-    <PanelTitle title={{title}}/>
-    <div className="{class_name}-body">
-      <h2>{{title}}</h2>
-      <p>{{snapshot?.project.name ?? 'No project opened'}}</p>
-      <p>Connect new controls using src/bridge.ts and allowlisted C++ StudioSession operations.</p>
+  const projectLoaded = Boolean(snapshot?.project.path);
+  return <StudioPanel className="{class_name}" title={{title}}
+    eyebrow="TOOLS / CUSTOM"
+    subtitle={{snapshot?.project.name ?? 'No project open'}}
+    actions={{<StudioBadge tone={{projectLoaded ? 'success' : 'neutral'}}>
+      {{projectLoaded ? 'Project loaded' : 'No project'}}
+    </StudioBadge>}}>
+    <div className="au-stack">
+      <StudioSection title="Overview">
+        <StudioAlert title="Native bridge integration">
+          Read data using typed src/bridge.ts methods. Implement any write
+          through allowlisted C++ StudioSession and the engine Workspace.
+        </StudioAlert>
+      </StudioSection>
+      <StudioEmptyState
+        icon={{<Layers3 size={{22}}/>}}
+        title="Ready for this panel"
+        description="Build this screen with Studio UI components and semantic tokens.
+        Loading, empty, error and disabled states belong to each feature."
+      />
     </div>
-  </section>;
+  </StudioPanel>;
 }}
 '''
-    css_code = f'''.{class_name}{{display:flex;flex:1;flex-direction:column;min-height:0;background:var(--studio-surface);color:var(--studio-foreground)}}
-.{class_name}-body{{padding:20px;overflow:auto;color:var(--studio-muted);line-height:1.5}}
-.{class_name}-body h2{{font-size:16px;font-weight:650;color:var(--studio-foreground)}}
+    # Use only scoped layout overrides. Appearance stays in shared UI tokens.
+    css_code = f'''.{class_name} .au-empty{{min-height:240px}}
 '''
     plan = {catalog: model, registry: renderer, component: component_code, css: css_code}
     if dry_run:

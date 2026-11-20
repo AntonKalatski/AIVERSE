@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './theme/tokens.css';
+import './ui/studio-ui.css';
 import './styles.css';
 
 const el = document.getElementById('root');

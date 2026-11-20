@@ -1,6 +1,6 @@
 # AIVERSE Studio Web
 
-**Status: Stage 5 experimental HTML5 editor.** This is a new UI for the **editor**, not a replacement for the engine's in-game UI. Native Workspace connectivity is available in the experimental macOS WKWebView host, while the GPU viewport is not yet integrated, and the existing ImGui editor remains the production editor.
+**Status:** experimental HTML5 editor with native macOS WKWebView, a working Metal Renderer3D Scene surface and partial authoring panels. This is the **editor**, not the engine's in-game UI. Keep the existing ImGui editor available until full feature parity.
 
 ## Run
 ```sh
@@ -17,8 +17,8 @@ npm run dev
 - Build independent React panels in `src/components/<Name>.tsx`; keep `src/App.tsx` as the host/composition layer.
 - Change global palette/spacing in `src/theme/tokens.css`, not by changing every color manually.
 - Read `AGENTS.md` before generating a new screen or component.
-- Use design tokens/classes in `src/styles.css`; prefer semantic HTML and accessibility.
-- Reuse `PanelTitle`, controlled inputs, typed snapshots and bridge methods.
+- Use the reusable `src/ui` design system; classes are `au-*`, tokens are `--au-*`. See `docs/studio-design-system.md`.
+- Reuse `StudioPanel`, `StudioButton`, `StudioField`, `StudioSection`, `StudioEmptyState`; keep typed snapshots and bridge methods.
 - Never call the engine from React components directly; use `src/bridge.ts`.
 - Ask AI to make a new screen, run Vite HMR and inspect in a browser without recompiling C++.
 - Keep UI data in TypeScript DTOs; engine state/undo belongs to native Workspace.
@@ -46,3 +46,15 @@ python3 tools/studio/new_panel.py --id world_stats --title "World Statistics" --
 ```
 
 The panel appears in the HTML5 Panels menu after Vite reload, with its TSX/CSS in `apps/studio-web/src/panels/generated/`. No C++ compilation is needed for the UI layout, but operations that mutate the engine still require explicit validated native bridge APIs.
+
+## Shared UI kit for agents
+```tsx
+import { StudioPanel, StudioBadge, StudioEmptyState } from '../../ui';
+
+export function ExamplePanel() {
+  return <StudioPanel title="Example" eyebrow="TOOLS" actions={<StudioBadge>Ready</StudioBadge>}>
+    <StudioEmptyState title="Choose an asset" description="Open a project and select an asset."/>
+  </StudioPanel>;
+}
+```
+Create a new screen with `python3 tools/studio/new_panel.py --id scene_stats --title "Scene Statistics" --area right`. Its generated TSX already uses the shared styles.

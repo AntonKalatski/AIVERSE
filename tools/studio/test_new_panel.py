@@ -52,6 +52,11 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('LightingDebugPanel', component)
         self.assertTrue((src / 'panels/generated/LightingDebugPanel.css').exists())
         self.assertNotIn('imgui', component.lower())
+        self.assertIn("from '../../ui'", component)
+        self.assertIn('StudioPanel', component)
+        self.assertIn('StudioEmptyState', component)
+        self.assertNotIn('PanelTitle', component)
+        self.assertNotIn('#', (src / 'panels/generated/LightingDebugPanel.css').read_text())
 
     def test_refuses_invalid_name_and_preserves_files(self):
         src = self.root / 'apps/studio-web/src/nestedDock.ts'
