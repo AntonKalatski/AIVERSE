@@ -19,12 +19,17 @@ class SculptGpuIdPass final {
     struct Reply {
         std::vector<std::uint8_t> rgba;
         bool ready=false;
+        bool depthReady=false;
+        bool depthValid=false;
+        float depth01=1.f;
     };
 public:
     struct Completed {
         SculptGpuPickRequest request{};
         std::vector<std::uint8_t> rgba;
-        bool actualOverride=false; // ID triangles came from the actor's GPU 60B buffer
+        bool actualOverride=false;
+        bool depthValid=false; // true actual RHI Depth32Float pixel, not CPU
+        float depth01=1.f; // ID triangles came from the actor's GPU 60B buffer
     };
 private:
     struct Pending {
@@ -32,6 +37,7 @@ private:
         std::vector<gfx::BufferHandle> masked;
         std::vector<gfx::BufferHandle> expandedScratch;
         bool actualOverride=false;
+        bool wantsDepth=false;
         std::shared_ptr<Reply> reply;
         SculptGpuPickRequest request{};
     };
@@ -115,7 +121,9 @@ public:
     // the Device off-thread. A later owner frame polls and retires buffers.
     bool takeCompleted(Completed& out) {
         if(!device_ || pending_.empty() ||
-           !pending_.front().reply->ready)return false;
+           !pending_.front().reply->ready ||
+           (pending_.front().wantsDepth &&
+            !pending_.front().reply->depthReady))return false;
         auto p=std::move(pending_.front());
         pending_.erase(pending_.begin());
         // The completed callback proves the corresponding command buffer
@@ -126,6 +134,8 @@ public:
         out.request=p.request;
         out.actualOverride=p.actualOverride;
         out.rgba=std::move(p.reply->rgba);
+        out.depthValid=p.wantsDepth && p.reply->depthValid;
+        out.depth01=out.depthValid?p.reply->depth01:1.f;
         return true;
     }
 
@@ -147,7 +157,8 @@ public:
                 const SculptGpuPickRequest& request,
                 std::span<const SculptGpuIdVertex> occluders={},
                 std::span<const SculptGpuMaskBatch> maskedOccluders={},
-                const SculptGpuVertexSource* actualGpuSource=nullptr) {
+                const SculptGpuVertexSource* actualGpuSource=nullptr,
+                bool captureDepth=false) {
         if(!device_||!supported_||!request.valid()||
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
@@ -504,9 +515,27 @@ public:
             supported_=false;
             return false;
         }
+        if(captureDepth && !device_->readTextureDepthPixelAsync(
+                depth_,int(request.x),int(request.y),
+                [reply](bool valid,float depth) {
+                    reply->depthValid=valid;
+                    reply->depth01=valid?depth:1.f;
+                    reply->depthReady=true;
+                })) {
+            // A colour readback may already be in-flight; still retain
+            // all scratch until the verified GPU-idle shutdown barrier.
+            if(vertex.valid())retiredWithoutCallback_.push_back(vertex);
+            retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
+                                           maskBuffers.begin(),maskBuffers.end());
+            retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
+                                           expandedScratch.begin(),
+                                           expandedScratch.end());
+            supported_=false;
+            return false;
+        }
         pending_.push_back({vertex,std::move(maskBuffers),
                             std::move(expandedScratch),
-                            actualGpuSource!=nullptr,
+                            actualGpuSource!=nullptr,captureDepth,
                             std::move(reply),request});
         return true;
     }
