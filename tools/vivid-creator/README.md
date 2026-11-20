@@ -776,3 +776,97 @@ GPU tests report exact outcomes. The still-missing production-level
 steps are true Renderer3D GPU vertex-override parity, actual visible
 LOD/culling selection, complete alpha/Blend ordering, Vulkan pixel
 readback and tested GLES/WebGL2 capability.
+
+
+## Stage 7AR — Vulkan and native GLES3 experimental GPU ID readback
+
+The experimental ID/depth shader/pipeline now accepts **Metal, Vulkan
+and native GLES3/GL33** backends with a valid owner-frame serial. Its
+normal CPU morph+skin BVH result is still available immediately and
+remains the selected source vertex; a completed GPU result only
+corroborates the **CPU-fed experimental ID pass**. If the GPU resolves
+a different source ID or a stale frame/model/viewport, CPU selection
+is retained and the discrepancy is reported.
+
+**Important:** an ID confirmation here does not certify parity with
+Renderer3D's actual GPU `ModelDraw::vertexOverride` stream, authored
+LOD choice, culling, custom ShaderGraph vertex offsets, translucent
+depth-after, or every non-Creator scene object. Those require shared
+renderer-owned visible-draw provenance and follow-up hardware tests.
+The Stage 7AQ authored LOD and mesh-owner rejection gate remains
+enabled. Normal Creator GPU ID checks remain OFF by default.
+
+### Shared RHI changes
+
+- `engine/gfx/vulkan/VkDevice.h` and
+  `engine/gfx/vulkan/GfxVulkan.cpp` implement
+  `Device::readTexturePixelAsync` for a single pixel from a linear
+  RGBA8 offscreen render target, outside render passes. Vulkan
+  validates the texture/coordinates, allocates a four-byte
+  host-visible coherent transfer destination, inserts exact
+  `vkCmdCopyImageToBuffer` and conservative image/host memory
+  barriers, then returns without waiting. Its existing reusable
+  two-slot frame fences determine completion. On a subsequent device
+  owner `beginFrame`, completed bytes are delivered to the callback
+  in RGBA order. The pixel origin is transformed from the public
+  top-left convention to Vulkan's current GL-oriented render-target
+  storage. A failed GPU completion cannot publish fake data.
+- Vulkan's `frameSerial()` reports the monotonic active recording
+  submission serial; it never implies that submission already
+  completed. The callback is gated by the slot fence, not just a
+  numerical frame delta. Pending staging is released at confirmed
+  completion or Vulkan device-idle teardown.
+- Native `engine/gfx/gl/GfxGL.cpp` now also exposes a monotonic
+  `frameSerial()` when a native GLES3/GL3 render frame is active.
+  Actual PBO readback remains gated by the real
+  `glFenceSync`/nonblocking `glClientWaitSync` already added in
+  Stage 7AQ. Emscripten/WebGL2 and the custom Windows GL loader
+  still report zero (unsupported), and their CPU fallback remains.
+- `SculptGpuIdPass::initialize` may compile shader/pipeline resources
+  before `beginFrame`; the strict nonzero/matching submission serial
+  is enforced only when actually recording a click. If readback fails
+  AFTER encoding draw commands, the pass disables further GPU work
+  until an idle-safe shutdown instead of repeatedly retaining large
+  in-flight vertex buffers.
+- The Creator's opt-in checkbox now reads **Experimental GPU ID check**
+  rather than Metal-only. On Vulkan/native GLES it uses the same
+  triangle/depth and alpha-mask pipeline, the same click request
+  generation, one outstanding request and async owner callback. It
+  does **not** silently change a previously chosen CPU vertex.
+
+### New native tests, not yet executed
+
+The branch contains two new independent GPU tests:
+
+```bash
+# Linux/Windows with AIVERSE_VULKAN=ON and available Vulkan driver.
+cmake -S . -B build/vivid-vk -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_VULKAN=ON
+cmake --build build/vivid-vk --target aiverse_vivid_vulkan_sculpt_id_tests -j 4
+ctest --test-dir build/vivid-vk --output-on-failure -R '^vivid_vulkan_sculpt_id$'
+
+# Linux with libEGL/libGLESv2 dev packages and a GLES3 pbuffer driver.
+cmake -S . -B build/vivid-gles -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/vivid-gles --target aiverse_vivid_gles_sculpt_id_tests -j 4
+ctest --test-dir build/vivid-gles --output-on-failure -R '^vivid_gles_sculpt_id$'
+```
+
+`vivid_vulkan_sculpt_id` uses the production headless Vulkan
+Device (Mesa lavapipe is acceptable), creates near/far face ID
+triangles and a closer zero-ID blocker, reads the actual hardware
+pixel asynchronously and checks clear/nearest/occluded values.
+`vivid_gles_sculpt_id` creates a native EGL pbuffer + GLES3
+context and checks the corresponding fenced-PBO path and depth.
+They exit **77 (CTest SKIP)** if an appropriate driver or context
+is absent; a mismatch on a working device is a FAIL, never a fake
+PASS. Both were added as source tests only and have **NOT RUN**.
+
+The user's one-pass macOS `bash tools/vivid-validate.sh --full`
+continues to cover Metal and shared C++ tests. Vulkan and native
+Linux GLES acceptance remain separate platform checks.
+Never treat a macOS-only pass as Vulkan/GLES validation.
+
+Stage 7AR does not modify `main` or merge Texture RHI. The
+new Vulkan/GLES readback and frame-serial contracts affect
+shared `gfx::Device` implementations: semantic reconciliation
+with the texture agent's branch, GPU allocation lifetimes and
+real driver verification are mandatory before main integration.
