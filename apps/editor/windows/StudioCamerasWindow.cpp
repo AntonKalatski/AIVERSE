@@ -39,12 +39,11 @@ public:
     void shutdownAfterGpuIdle(Editor& ed) override {
         recorder_.stop();
         if(preview_.color.valid()||preview_.depth.valid())preview_.release(ed.device());
-        for(auto& retired:retiredPreviews_)retired.viewport.release(ed.device());
-        retiredPreviews_.clear();
         device_=nullptr;
     }
     void draw(Editor& ed) override {
-        collectRetiredPreviews(ed.device());
+        preview_.setGpuDeviceLease(ed.gpuDeviceLease());
+        preview_.setTargetOwner(ed.offscreenTargets());
         const std::string project=ed.ws().project.dir;
         if(project.empty()) {
             ImGui::TextDisabled("Open a project to edit camera entities.");
@@ -252,28 +251,10 @@ private:
     Entity selected_{};
     gfx::Device* device_=nullptr;
     Viewport preview_;
-    struct RetiredPreview {
-        Viewport viewport;
-        uint64_t serial=0;
-    };
-    std::vector<RetiredPreview> retiredPreviews_;
-    // A source texture can still be referenced by already encoded GPU work.
-    // The offscreen capture callback may outlive a project switch.
+    // Reuse the editor's token-fenced target owner. It is collected at the
+    // host frame boundary, never while this window encodes preview draws.
     void retirePreview(gfx::Device& device) {
-        if(!preview_.color.valid()&&!preview_.depth.valid())return;
-        retiredPreviews_.push_back({preview_,device.frameSerial()});
-        preview_={};
-    }
-    void collectRetiredPreviews(gfx::Device& device) {
-        // A device with no completion serial cannot safely reclaim by age.
-        const uint64_t completed=device.completedFrameSerial();
-        if(!completed)return;
-        for(auto it=retiredPreviews_.begin();it!=retiredPreviews_.end();) {
-            if(it->serial!=0 && completed>=it->serial) {
-                it->viewport.release(device);
-                it=retiredPreviews_.erase(it);
-            } else ++it;
-        }
+        preview_.release(device);
     }
     uint64_t nextId_=1;
 

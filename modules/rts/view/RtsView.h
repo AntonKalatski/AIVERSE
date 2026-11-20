@@ -340,6 +340,10 @@ public:
     render::RenderTexture::SubmissionStats paintGpuCanvasSubmitStats() const noexcept {
         return paintLayers_.canvasSubmitStats();
     }
+    void setModelRetirementDiagnosticObserver(
+            render::ModelResourceCache::RetirementDiagnosticObserver observer) {
+        resources_.setRetirementDiagnosticObserver(std::move(observer));
+    }
     void setImageRetirementDiagnosticObserver(
             render::ModelImageRollbackPool::DiagnosticObserver observer) {
         imageRollback_.setRetirementDiagnosticObserver(std::move(observer));

@@ -5526,6 +5526,8 @@ TEST(store_and_ads_through_mock_plugins) {
 #include "engine/platform/Platform.h"
 #include "modules/rts/view/RtsOverlayData.h"
 #include "modules/rts/view/RtsView.h"
+#include "modules/rts/view/RtsRoadView.h"
+#include "modules/rts/view/RtsShoreView.h"
 
 static game::Rules skirmishRules() { return game::loadRules(Json::parseFile(kSkirmish + "/rules.json")); }
 static std::string overlayError(const game::Rules& R, const char* json) {
@@ -12748,7 +12750,8 @@ TEST(native_mesh_batch_same_target_replacement_is_coalesced) {
     render::MeshBuilder builder;
     builder.quad({0,0,0},{1,0,0},{1,0,1},{0,0,1});
     render::Mesh mesh=builder.upload(dev);
-    const auto original=mesh.vb.id, destroyedBefore=dev.destroyedBuffers;
+    const auto original=mesh.vb.id;
+    const auto destroyedBefore=dev.destroyedBuffers;
     {
         render::NativeMeshBatch batch(dev,retirement);
         batch.stage(mesh,builder);
