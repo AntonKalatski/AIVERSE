@@ -5,6 +5,7 @@
 #pragma once
 #include "MotionWeaveScenePublication.h"
 #include "engine/render/SceneModelProviderRetirement.h"
+#include "engine/render/SceneModelProviderResidency.h"
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -78,7 +79,7 @@ public:
             // Discard a prior uncommitted candidate FIRST. It cannot be
             // destroyed directly because it may contain uploaded GPU data.
             visuals_.discardStaged(sceneId);
-            retirement_.retire(device,it->second.staged);
+            releaseStaged(device,it->second);
             if(!visuals_.stageScene(sceneId,objects,incoming->resources(),
                                     stats,error)) {
                 retirement_.retire(device,incoming);
@@ -101,6 +102,75 @@ public:
         }
     }
 
+    // Opt-in shared REAL provider lifetime across additive/replaced scenes.
+    // First caller supplies a fully prewarmed new provider; subsequent
+    // callers supply nullptr and snapshots already resident in that SAME
+    // provider. Never create a second provider for an occupied key.
+    // Stage/commit/rollback still preserve separate cosmetic ECS Worlds.
+    bool stageShared(gfx::Device& device,uint64_t sceneId,
+                     const std::string& providerKey,
+                     std::span<const Object> objects,Owner incoming,
+                     Statistics& stats,std::string* error=nullptr) {
+        if(error)error->clear();
+        if(sceneId==0 || providerKey.empty() || providerKey.size()>256 ||
+           !retirement_.validDevice(device)) {
+            if(error)*error="shared scene provider key, ID or GPU epoch invalid";
+            retirement_.retire(device,incoming);
+            return false;
+        }
+        SharedLease lease;
+        try {
+            const bool exists=shared_.find(providerKey)!=nullptr;
+            if(exists==bool(incoming)) {
+                if(error)*error=exists
+                    ? "shared scene provider key already resident"
+                    : "shared scene provider key not resident";
+                retirement_.retire(device,incoming);
+                return false;
+            }
+            // Reserve the slot before acquiring ownership, but do not
+            // drop the OLD staged ref until a NEW shared ref is held.
+            auto [it,inserted]=slots_.try_emplace(sceneId);
+            (void)inserted;
+            if(incoming) {
+                incoming->setGpuDeviceLease(deviceLease_);
+                incoming->resources().bindResourceDevice(
+                    device,deviceLease_);
+                if(!shared_.adopt(providerKey,incoming,lease))
+                    throw std::runtime_error(
+                        "shared scene provider registration rejected");
+            }else if(!shared_.acquire(providerKey,lease)) {
+                throw std::runtime_error(
+                    "shared scene provider acquire rejected");
+            }
+            const auto* provider=shared_.find(lease);
+            if(!provider)
+                throw std::runtime_error(
+                    "shared scene provider lease became stale");
+            visuals_.discardStaged(sceneId);
+            releaseStaged(device,it->second);
+            if(!visuals_.stageScene(
+                    sceneId,objects,provider->resources(),stats,error)) {
+                shared_.release(device,lease);
+                return false;
+            }
+            it->second.stagedShared=std::move(lease);
+            return true;
+        }catch(const std::exception& ex) {
+            visuals_.discardStaged(sceneId);
+            shared_.release(device,lease);
+            retirement_.retire(device,incoming);
+            if(error)*error=ex.what();
+            return false;
+        }catch(...) {
+            visuals_.discardStaged(sceneId);
+            shared_.release(device,lease);
+            retirement_.retire(device,incoming);
+            if(error)*error="unknown shared scene stage failure";
+            return false;
+        }
+    }
+
     // Phase two: ONLY AFTER the authoritative coordinator has committed.
     // Old cosmetic Graph/World data is destroyed before its Model provider
     // enters GPU retirement. The new owner remains alive for all future
@@ -108,11 +178,15 @@ public:
     bool commit(gfx::Device& device,uint64_t sceneId) {
         if(!retirement_.validDevice(device))return false;
         const auto it=slots_.find(sceneId);
-        if(it==slots_.end() || !it->second.staged ||
+        if(it==slots_.end() ||
+           (!it->second.staged && !it->second.stagedShared) ||
            !visuals_.commitStaged(sceneId))return false;
         Owner retired=std::move(it->second.live);
+        SharedLease sharedRetired=std::move(it->second.liveShared);
         it->second.live=std::move(it->second.staged);
+        it->second.liveShared=std::move(it->second.stagedShared);
         retirement_.retire(device,retired);
+        shared_.release(device,sharedRetired);
         return true;
     }
 
@@ -122,8 +196,9 @@ public:
         const auto it=slots_.find(sceneId);
         if(it==slots_.end())return false;
         const bool visual=visuals_.discardStaged(sceneId);
-        const bool hadOwner=bool(it->second.staged);
-        retirement_.retire(device,it->second.staged);
+        const bool hadOwner=bool(it->second.staged) ||
+                            bool(it->second.stagedShared);
+        releaseStaged(device,it->second);
         return visual || hadOwner;
     }
 
@@ -135,8 +210,8 @@ public:
         const bool visible=visuals_.unload(sceneId);
         const auto it=slots_.find(sceneId);
         if(it==slots_.end())return visible;
-        retirement_.retire(device,it->second.staged);
-        retirement_.retire(device,it->second.live);
+        releaseStaged(device,it->second);
+        releaseLive(device,it->second);
         slots_.erase(it);
         return visible;
     }
@@ -154,8 +229,8 @@ public:
         const size_t removed=visuals_.unloadAbsent(activeIds);
         for(auto it=slots_.begin();it!=slots_.end();) {
             if(keep.count(it->first)) {++it;continue;}
-            retirement_.retire(device,it->second.staged);
-            retirement_.retire(device,it->second.live);
+            releaseStaged(device,it->second);
+            releaseLive(device,it->second);
             it=slots_.erase(it);
         }
         return removed;
@@ -168,8 +243,8 @@ public:
         visuals_.resetAfterRollback();
         for(auto& [id,slot]:slots_) {
             (void)id;
-            retirement_.retire(device,slot.staged);
-            retirement_.retire(device,slot.live);
+            releaseStaged(device,slot);
+            releaseLive(device,slot);
         }
         slots_.clear();
     }
@@ -194,9 +269,24 @@ public:
     const render::ModelResourceCache* liveResources(
             uint64_t sceneId) const noexcept {
         const auto it=slots_.find(sceneId);
-        return it!=slots_.end() && it->second.live &&
-               visuals_.contains(sceneId)
-            ?&it->second.live->resources():nullptr;
+        if(it==slots_.end() || !visuals_.contains(sceneId))
+            return nullptr;
+        if(it->second.live)return &it->second.live->resources();
+        const auto* shared=shared_.find(it->second.liveShared);
+        return shared?&shared->resources():nullptr;
+    }
+    // Structural-barrier-only lookups for builders resolving a second
+    // scene from already resident shared Model/Graph snapshots.
+    const render::ModelAssetProvider* sharedProvider(
+            const std::string& key) const noexcept {
+        return shared_.find(key);
+    }
+    size_t sharedProviderReferences(
+            const std::string& key) const noexcept {
+        return shared_.references(key);
+    }
+    size_t sharedProviderCount() const noexcept {
+        return shared_.ownerCount();
     }
     Publisher& visuals() noexcept{return visuals_;}
     const Publisher& visuals() const noexcept{return visuals_;}
@@ -229,14 +319,27 @@ public:
     }
 
 private:
+    using SharedLease=render::SceneModelProviderResidency::Lease;
     struct Slot {
         Owner live;
         Owner staged;
+        SharedLease liveShared;
+        SharedLease stagedShared;
     };
+    void releaseStaged(gfx::Device& device,Slot& slot) noexcept {
+        retirement_.retire(device,slot.staged);
+        shared_.release(device,slot.stagedShared);
+    }
+    void releaseLive(gfx::Device& device,Slot& slot) noexcept {
+        retirement_.retire(device,slot.live);
+        shared_.release(device,slot.liveShared);
+    }
     Publisher visuals_;
     std::map<uint64_t,Slot> slots_;
     render::RenderDeviceLifetime::Lease deviceLease_;
     render::SceneModelProviderRetirement retirement_;
+    // Must be destroyed BEFORE retirement_ (destruction order reversed).
+    render::SceneModelProviderResidency shared_{retirement_};
     uint64_t orphanedLive_=0;
 };
 
