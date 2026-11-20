@@ -25,7 +25,6 @@
 .nested-tab-close:hover{color:#ffd6de;background:#563745}
 .nested-divider{background:#0b1421}
 .nested-divider:hover,.nested-divider:focus-visible{background:var(--au-accent)}
-.nested-move{background:var(--au-field);color:var(--au-text-faint);border-color:var(--au-line)}
 .panel-heading{min-height:43px;padding-inline:var(--au-space-4);
   background:var(--au-panel-raised);color:var(--au-text-soft);border-color:var(--au-line)}
 .panel-footer{border-color:var(--au-line);background:var(--au-panel-raised);color:var(--au-text-faint)}
