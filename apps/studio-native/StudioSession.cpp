@@ -14,6 +14,7 @@
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -566,47 +567,40 @@ Json StudioSession::dispatch(const Json& request) {
                             " cannot yet be rewritten safely. Skip the item or edit its rules origin first.");
                 }
             }
-            // Snapshot GUID->path before and after the transfer. Folder moves
-            // are covered because every descendant file keeps its sidecar GUID.
-            StudioAssetCatalog beforeCatalog(ws_.project.dir);
-            beforeCatalog.rebuild();
-            const auto beforeAssets=beforeCatalog.all();
-            Json result=pendingAssetTransfer_->apply(token,decisions);
-            pendingAssetTransfer_.reset();
-            StudioAssetCatalog afterCatalog(ws_.project.dir);
-            afterCatalog.rebuild();
+            // Preload material document before touching assets, so malformed
+            // JSON cannot trigger a partially completed internal move.
+            const bool internal=currentPlan.getStr("source")=="internal";
+            Json library=internal ? editor::loadMaterialLibrary(ws_) : Json::object();
             std::map<std::string,std::string> oldPathByGuid;
-            for (const auto& asset:beforeAssets)
-                if (!asset.directory) oldPathByGuid.emplace(asset.guid,asset.path);
-            std::map<std::string,std::string> relocated;
-            for (const auto& asset:afterCatalog.all()) {
-                if (asset.directory) continue;
-                const auto found=oldPathByGuid.find(asset.guid);
-                if (found!=oldPathByGuid.end() && found->second!=asset.path)
-                    relocated.emplace("content/"+found->second,"content/"+asset.path);
+            if (internal) {
+                StudioAssetCatalog beforeCatalog(ws_.project.dir);
+                beforeCatalog.rebuild();
+                for (const auto& asset:beforeCatalog.all())
+                    if (!asset.directory) oldPathByGuid.emplace(asset.guid,asset.path);
             }
-            if (!relocated.empty()) {
-                try {
-                    Json library=editor::loadMaterialLibrary(ws_);
-                    const size_t updates=studioRemapMaterialReferences(library,relocated);
-                    if (updates) {
-                        // Reuse the engine's validated material library write.
-                        // Preserve all unrelated material fields and names.
-                        editor::saveMaterialLibrary(ws_,library,
-                            "Studio Assets: repair material paths after move");
-                    }
-                    result.set("repairedMaterialReferences",num(int64_t(updates)));
-                } catch (const std::exception& e) {
-                    // Asset movement already committed. Report partial success
-                    // rather than claiming reference repair occurred.
-                    Json issues=result["issues"];
-                    Json problem=Json::object();
-                    problem.set("name",str("materials.json"));
-                    problem.set("message",str(std::string("Moved assets but could not repair references: ")+e.what()));
-                    issues.push(std::move(problem));
-                    result.set("issues",std::move(issues));
+            std::size_t repaired=0;
+            // This hook executes while internal file/.meta moves are still
+            // reversible. If the material write throws, apply() reverses
+            // every completed rename before returning an error.
+            const auto repair=[&]() {
+                StudioAssetCatalog afterCatalog(ws_.project.dir);
+                afterCatalog.rebuild();
+                std::map<std::string,std::string> relocated;
+                for (const auto& asset:afterCatalog.all()) {
+                    if (asset.directory) continue;
+                    const auto found=oldPathByGuid.find(asset.guid);
+                    if (found!=oldPathByGuid.end() && found->second!=asset.path)
+                        relocated.emplace("content/"+found->second,"content/"+asset.path);
                 }
-            }
+                const std::size_t updates=studioRemapMaterialReferences(library,relocated);
+                if (updates) editor::saveMaterialLibrary(ws_,library,
+                    "Studio Assets: repair material paths after move");
+                repaired=updates;
+            };
+            Json result=pendingAssetTransfer_->apply(token,decisions,internal ? repair :
+                std::function<void()>{});
+            pendingAssetTransfer_.reset();
+            if (internal) result.set("repairedMaterialReferences",num(int64_t(repaired)));
             reply.set("result",std::move(result));
         } else if (method == "studio.assetByGuid") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
