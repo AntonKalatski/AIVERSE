@@ -228,6 +228,16 @@ static void testMultiMaterialGpuPackets() {
            draw.gpuIndexedPrimitives[0].commands);
     assert(draw.gpuShadowPrimitives[0].viewWidth==1024);
     assert(draw.gpuShadowPrimitives[0].pass==GpuIndexedPass::SunShadow);
+    assert(draw.gpuIndexedPrimitives[0].matchesView(
+        GpuIndexedPass::MainOpaque,camera.viewProjection,1280,720));
+    assert(!draw.gpuIndexedPrimitives[0].matchesView(
+        GpuIndexedPass::SunShadow,sun.viewProjection,1024,1024));
+    assert(draw.gpuShadowPrimitives[0].matchesView(
+        GpuIndexedPass::SunShadow,sun.viewProjection,1024,1024));
+    assert(!draw.gpuShadowPrimitives[0].matchesView(
+        GpuIndexedPass::SunShadow,camera.viewProjection,1024,1024));
+    assert(!draw.gpuShadowPrimitives[0].matchesView(
+        GpuIndexedPass::PlanarReflection,sun.viewProjection,1024,1024));
     assert(draw.gpuIndexedPrimitives[0].commands!=
            draw.gpuIndexedPrimitives[1].commands);
     ModelDraw anotherInstance=draw;
