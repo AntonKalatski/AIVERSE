@@ -53,8 +53,10 @@ public:
                std::span<const Object> objects,Owner incoming,
                Statistics& stats,std::string* error=nullptr) {
         if(error)error->clear();
-        if(!incoming || sceneId==0) {
-            if(error)*error="scene stage needs nonzero ID and Model owner";
+        if(!incoming || sceneId==0 ||
+           !retirement_.validDevice(device)) {
+            if(error)*error=
+                "scene stage needs valid GPU epoch, nonzero ID and Model owner";
             if(incoming)retirement_.retire(device,incoming);
             return false;
         }
@@ -92,6 +94,7 @@ public:
     // enters GPU retirement. The new owner remains alive for all future
     // parent/child read leases and draw packets until the next lifecycle op.
     bool commit(gfx::Device& device,uint64_t sceneId) {
+        if(!retirement_.validDevice(device))return false;
         const auto it=slots_.find(sceneId);
         if(it==slots_.end() || !it->second.staged ||
            !visuals_.commitStaged(sceneId))return false;
