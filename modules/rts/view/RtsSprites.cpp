@@ -73,8 +73,11 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
                      const SpriteDefaults& defaults, bool deferTypes) {
     // A prior failed idle barrier leaves this instance owning its GPU handles.
     // The host must call shutdownAfterGpuIdle() before retrying initialization.
-    if (ready_ || rules_)
+    if (ready_ || rules_ || resourceDevice_)
         throw std::logic_error("Rts2DView init: already initialized or recovery pending");
+    // Set device ownership before the first allocation; even if init throws,
+    // the retained owner can later retry cleanup against the correct device.
+    resourceDevice_ = &dev;
     try {
         rules_ = &rules;
         base_ = base;
@@ -125,12 +128,18 @@ void Rts2DView::loadType(uint16_t type) {
 }
 
 bool Rts2DView::shutdownAfterGpuIdle(gfx::Device& dev) {
+    if (resourceDevice_ && resourceDevice_ != &dev)
+        throw std::logic_error("Rts2DView shutdown: wrong GPU device");
+    if (!resourceDevice_) return true;
     if (!dev.waitForResourceIdle()) return false;
     shutdown(dev);
     return true;
 }
 
 void Rts2DView::shutdown(gfx::Device& dev) {
+    if (resourceDevice_ && resourceDevice_ != &dev)
+        throw std::logic_error("Rts2DView shutdown: wrong GPU device");
+    if (!resourceDevice_) return;
     // Also clean partially initialized resources after an init failure.
     batch_.destroyMesh(dev, tileMesh_);
     batch_.shutdown();
@@ -141,6 +150,7 @@ void Rts2DView::shutdown(gfx::Device& dev) {
     textures_.shutdown();
     looks_.clear(); loadedTypes_.clear(); seen_.clear(); corpses_.clear();
     shadowTex_={}; rules_=nullptr;
+    resourceDevice_=nullptr;
     ready_ = false;
 }
 
