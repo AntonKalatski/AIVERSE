@@ -206,3 +206,27 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 
 ### Mandatory next step
 Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python source tests and CTest. Add runtime fault injection for second file rename, sidecar rename, catalog rebuild, and failed materials save; verify source+meta+material byte equivalence after rollback and look for unexpected leftover files. Then implement durable journal with startup recovery for crashes and an atomic rules origin edit flow, including external imports and backed-up replace semantics.
+
+## Stage 10 — persistent move-recovery journal + editor Scene camera (2026-11-20)
+
+### Native transaction recovery
+- Added `apps/studio-native/StudioMoveJournal.h` with project-local `.aiverse-cache/studio-move-journal/` (outside `content/`). Before file movement, it snapshots the original `materials.json` when present and publishes an atomic `pending.json` manifest of relative source/destination paths. A successful completion renames `pending.json` to `committed.json` before best-effort cleanup.
+- `StudioAssetTransfers.cpp` now calls `journal.begin` before the first file/.meta rename, executes existing catalog rebuild and material callback, then `journal.commit`. If a step fails, it calls `journal.restoreOrCleanup` and rebuilds the catalog. Restore processes recorded moves in reverse order, refuses unexpected source/destination conflicts and restores material bytes from the backup. The journal is retained if recovery fails.
+- `StudioSession.cpp` calls `StudioMoveJournal::recover` before `ws_.openGame` in both CLI startup and native Open Project paths, to avoid opening with half-relocated assets. Completed markers are cleaned without rollback.
+- Safety boundary: only **internal**, non-destructive `import/keep-both/skip` moves use the journal. External imports and destructive replace remain outside these guarantees. This is persistent crash-recovery intent, **not yet power-loss durability proof**: manifest/material copy and parent directory currently lack fsync/F_FULLFSYNC, there is no multi-process lock or recovery fault-injection validation. Never claim unconditional atomicity.
+
+### Independent Scene camera
+- `StudioMetalScene.h/.cpp`: editor-owned Scene camera gained free pitch (including below horizon), pan in view axes, six-axis navigation relative to yaw, focus on picked document proxy bounds, and reset. The Scene renderer's own camera is separate from the game view camera.
+- `Main.mm`: native-validated `studio.viewportInput` commands `pan`, `move`, `focus`, `reset` routed to the Metal scene preview. Native non-composited overlay supports middle-drag pan, WASD/QE move, F focus and Home reset.
+- `ViewportPlaceholder.tsx`: HTML-composited Scene supports left/right drag orbit, middle or Shift+left drag pan, mousewheel zoom, WASD/QE move, F focus selected, Home reset. Keyboard focus is restricted to viewport, avoiding input/textarea interaction. Navigation hint added.
+- `StudioPanelRenderer.tsx`: Focus and Reset camera buttons in Scene toolbar. `types.ts` updated for typed viewport commands, `ui/editor-shell.css` styles the non-intercepting shortcut hint.
+- **Known gap:** keyboard movement currently follows discrete keydown/OS-repeat rather than frame-time continuous navigation, and non-composite native mode gesture parity requires manual QA. Selection focus uses available scene renderable proxies only; no promise to focus an unsupported node.
+- Tests updated: `tools/studio/test_reference_pin_zoom.py` source contracts cover persistent journal/restore and editor camera commands; tests themselves were not executed.
+
+### Implementation commits
+- Camera API `d1990b47358ba17f3c30bcfc67ce6586d894189d`, implementation `2a2e039c9b08191ceabaf3f4f23190bd912523b1`, native command routing `8e826d0382b9d7ddb02bc246ac398c29f55f9dde`, typed inputs `9e09998ac66e6b9ea962723019c9819688fc23a1`, HTML5 interaction `9bac667974dac7491c0ddf35c0ed474fbd47d258`, native overlay keys `61d5e27f8ec3e2e10e69598fcf5c2565b77a107b`, UI buttons `0bb931bd1a3f0dc7089507ccd1b49e57f7882e8d`, navigation styling `9ff07a00351c65f0a1893d64257dfee3daaf3055`.
+- Recovery journal `a5c18ee7b5f3c244e559e39b598cb3c6d29c8472`, transfer wiring `d8bfc425c041afbf3064e810dac82e1870f22ee4`, project open recovery `9f68dc5b25db31e575699806da7ce1af914a2177`, updated source guards `657d9b719e6bbf6dc84152cbaeabc458650be214`.
+
+### Actual validation / next
+- **Actual:** reviewed GitHub sources for existing transfer semantics, native Studio session startup, scene viewport and camera math; source commits applied. No executable C++/TS/Python tests, Metal visual QA or power-fail injection were performed.
+- **Next steps:** compile on Mac; add fixture-based native tests for crash after first rename/after sidecar/after material save/before committed marker; verify byte-for-byte restoration of material file and all GUID identities; test symlink and malformed manifest refusal, completed marker idempotence. Improve durability with fsync/F_FULLFSYNC for journal and backup files/parent directory and explicit single-writer lock, then revisit fully composed rules transaction. Verify free-camera controls in both GPU overlay modes at UI zoom 75/100/150/200%; do not merge until green.
