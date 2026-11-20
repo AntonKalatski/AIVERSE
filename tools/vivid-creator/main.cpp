@@ -101,6 +101,7 @@ struct CreatorApp {
     std::unique_ptr<MorphAuthoring> morphDraft;
     std::size_t morphSourceVertices=0;
     std::vector<MorphVec3> morphSourcePositions;
+    std::vector<std::uint32_t> sculptSourceIds; // candidate-published source IDs
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
     int sculptMeshIndex=-1;
@@ -550,6 +551,22 @@ struct CreatorApp {
                         std::size_t(lod.targetMesh),candidateMapping,lod.sourceIndices);
                 }
             }
+            // Authorable source prefix plus optional seam clones. Original
+            // IDs remain stable after authored LOD expansion. The mapping is
+            // published together with the candidate model/CSR, never before.
+            // A huge model may still render: picking is disabled above the
+            // per-click CPU reconstruction budget instead of failing import.
+            std::vector<std::uint32_t> proposedSculptSourceIds;
+            if(externalMode && morphSourceVertices &&
+               proposed.head->vertices.size()<=1000000u) {
+                if(proposed.facialShapes.vertices()!=
+                   proposed.head->vertices.size() ||
+                   !buildSculptSourceVertexMap(
+                       proposed.head->vertices.size(),morphSourceVertices,
+                       seamSplit.clones,proposedSculptSourceIds))
+                    throw std::runtime_error(
+                        "VIVID sculpt: source/LOD/seam model indices inconsistent");
+            }
             if(authorBindPose && !rigCorrections.edits().empty()) {
                 // Stage all bind / inverse-bind changes on this candidate
                 // before model GPU upload and AnimationGraph compilation.
@@ -692,6 +709,8 @@ struct CreatorApp {
                 retired->human=std::move(human);
             }
             human=std::move(proposed);
+            sculptSourceIds=std::move(proposedSculptSourceIds);
+            sculptPickMarkerValid=false;
             actor=std::move(nextActor);
             cpuActor=std::move(nextCpuActor);
             world=std::move(nextWorld);
@@ -1777,7 +1796,8 @@ struct CreatorApp {
            ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
            !ImGui::GetIO().WantCaptureMouse &&
            sculptMeshIndex>=0 &&
-           std::size_t(sculptMeshIndex)<human.head->meshes.size()) {
+           std::size_t(sculptMeshIndex)<human.head->meshes.size() &&
+           !sculptSourceIds.empty()) {
             const auto mouse=ImGui::GetMousePos();
             const float width=float(dev.framebufferWidth());
             const float height=float(dev.framebufferHeight());
@@ -1786,7 +1806,8 @@ struct CreatorApp {
                 const auto pick=pickDeformedSculptVertex(
                     *human.head,std::size_t(sculptMeshIndex),facePose,
                     human.facialShapes,human.facialBinding,
-                    controller.frame(),origin,direction,morphSourceVertices);
+                    controller.frame(),origin,direction,morphSourceVertices,
+                    sculptSourceIds);
                 if(pick.hit) {
                     morphVertexIndex=int(pick.vertex);
                     sculptPickMarkerWorld=pick.worldPosition;
