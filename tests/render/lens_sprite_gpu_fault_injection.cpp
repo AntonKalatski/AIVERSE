@@ -83,6 +83,43 @@ int aiverseMain(int,char**) {
         require(sprites.shutdownAfterGpuIdle(),"reinitialized shutdown failed");
         require(dev.clean(),"reinitialization leaked GPU objects");
     }
+    // Frame uploads allocate private buffers; a late caster failure cannot
+    // overwrite the previous frame's GPU bytes or advance its CPU batch.
+    {
+        FaultDevice dev;render::SpriteBatch sprites;
+        require(sprites.init(dev),"frame fixture initialization");
+        render::TextureRef texture;texture.tex={500};texture.width=texture.height=1;
+        const render::float3 corners[4]={{0,0,0},{1,0,0},{1,1,0},{0,1,0}};
+        const render::float2 uv[4]={{0,0},{1,0},{1,1},{0,1}};
+        sprites.begin();sprites.quad(texture,corners,{0,0,1,1},0xffffffff,0,0,0);
+        sprites.caster(texture.tex,corners,uv);
+        sprites.flush(dev,render::mat4{});sprites.flushCasters(dev,render::mat4{});
+        const auto published=dev.buffers;
+        const auto count=sprites.size();
+        {
+            auto frame=sprites.beginFramePreparation();
+            sprites.begin();
+            sprites.quad(texture,corners,{0,0,1,1},0xff0000ff,0,0,0);
+            sprites.caster(texture.tex,corners,uv);
+            dev.allocation=0;dev.failAt=2;
+            bool failed=false;
+            try {sprites.prepareFrameUploads(dev);}catch(const std::runtime_error&){failed=true;}
+            require(failed,"late private caster allocation was not injected");
+        }
+        require(dev.buffers==published && sprites.size()==count,"failed sprite frame changed published state");
+        dev.failAt=0;
+        {
+            auto frame=sprites.beginFramePreparation();
+            sprites.begin();sprites.quad(texture,corners,{0,0,1,1},0xff0000ff,0,0,0);
+            sprites.caster(texture.tex,corners,uv);
+            sprites.prepareFrameUploads(dev);
+            for(const auto& [id,bytes]:published)
+                require(dev.buffers.at(id)==bytes,"private sprite uploads overwrote old GPU data");
+            sprites.commitFramePreparation(frame);
+        }
+        require(sprites.shutdownAfterGpuIdle(),"prepared sprite teardown");
+        require(dev.clean(),"prepared sprite resource leak");
+    }
     // Stage 22: a failed initialization retains the original device identity.
     // A different device must never be allowed to release those GPU handles.
     {

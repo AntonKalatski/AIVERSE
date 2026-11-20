@@ -12,6 +12,8 @@
 // flagged `decal` lie on a surface (projected ground decals, blob shadows) and are drawn with a
 // depth bias towards the camera so they never z-fight with the ground they were cut from.
 #pragma once
+#include "NativePresentationRetirement.h"
+#include <memory>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -65,6 +67,12 @@ struct SpriteMesh {          // static quads (4 vertices each), e.g. a tile map
 
 class SpriteBatch {
 public:
+    class PreparedFrame;
+    std::shared_ptr<PreparedFrame> beginFramePreparation();
+    void prepareFrameUploads(gfx::Device&);
+    void commitFramePreparation(const std::shared_ptr<PreparedFrame>&) noexcept;
+    bool collectRetired(gfx::Device& dev) {return frameRetirement_.collect(dev);}
+
     bool init(gfx::Device& dev);
     void shutdown();
     // For failure recovery and ordinary host teardown: never release an
@@ -139,6 +147,10 @@ private:
     void drawRange(gfx::Device& dev, gfx::BufferHandle vb, uint32_t firstQuad, uint32_t count);
     void setUniforms(gfx::Device& dev, const mat4& viewProj, bool lit, const SpriteLighting* lighting);
 
+    void prepareDrawUpload(gfx::Device&);
+    void prepareCasterUpload(gfx::Device&);
+    bool preparingFrame_=false, privateFrameBuffers_=false;
+    NativePresentationRetirement frameRetirement_;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle shader_, litShader_, casterShader_, waterShader_;
     gfx::ShaderHandle waterReactiveShader_;
