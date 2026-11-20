@@ -61,6 +61,11 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         throw std::logic_error("RtsView reload: sprite resources belong to a different GPU device");
     if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
         throw std::logic_error("RTS view stale GPU device generation");
+    if (pendingSpriteRecovery_) {
+        if (!pendingSpriteRecovery_->shutdownAfterGpuIdle(dev))
+            throw std::runtime_error("RtsView reload: staged sprite GPU recovery pending");
+        pendingSpriteRecovery_.reset();
+    }
     // Stage the replacement sprites before touching the live view. A failed
     // sprite pipeline/texture allocation must not delete its predecessor.
     // The idle barrier is established first, so existing GPU resources may be
@@ -93,8 +98,22 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     const SpriteDefaults incomingSpriteDefaults=
         parseSpriteDefaults(incomingRules["sprites"],incomingGame["sprites"]);
     auto nextSprites=std::make_unique<Rts2DView>();
-    if(!nextSprites->init(dev,rules,contentBase_,incomingSpriteDefaults,deferredLoading_))
+    bool spritesReady=false;
+    try {
+        spritesReady=nextSprites->init(
+            dev,rules,contentBase_,incomingSpriteDefaults,deferredLoading_);
+    } catch (...) {
+        // A failed idle barrier may leave shader/texture/buffer handles
+        // owned by this staging instance. Do not discard its recovery owner.
+        if(nextSprites->ownsGpuResources())
+            pendingSpriteRecovery_=std::move(nextSprites);
+        throw;
+    }
+    if(!spritesReady) {
+        if(nextSprites->ownsGpuResources())
+            pendingSpriteRecovery_=std::move(nextSprites);
         return false;
+    }
     // A successful staging pass is not yet the complete RtsView transaction:
     // later terrain/model/overlay initialization can still fail.
     if(twoD_) {
@@ -200,6 +219,11 @@ void RtsView::shutdown(gfx::Device& dev) {
     // any presentation resource. A failed barrier leaves all owners intact.
     if(!dev.waitForResourceIdle())
         throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
+    if(pendingSpriteRecovery_) {
+        // The barrier above proves safe retirement of the failed staged view.
+        pendingSpriteRecovery_->shutdown(dev);
+        pendingSpriteRecovery_.reset();
+    }
     geometryScene_.shutdown(dev);
     // IMPORTANT: detach borrowed Model, graph, skin pose and material
     // references before the cache can release their CPU/GPU storage.
