@@ -205,8 +205,10 @@ public:
             }
         for(std::size_t g=0;g<guides.size();++g)
             for(std::size_t j=1;j<guides[g].position.size();++j) {
-                if(weights[g][j]<=0)continue;
-                auto shift=delta[g][j]*(1.f/weights[g][j]);
+                const auto id=workspace.offsets[g]+j;
+                if(workspace.counts[id]<=0)continue;
+                auto shift=workspace.displacements[id]*
+                    (1.f/workspace.counts[id]);
                 const auto length=render::length(shift);
                 if(length>cfg.separation)shift=shift*(cfg.separation/length);
                 auto& guide=guides[g];
