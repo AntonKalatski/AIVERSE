@@ -12761,3 +12761,14 @@ excluded before legacy ICB preflight; eligible counters match actual supported
 items. Full Debug build PASS; targeted legacy/indexed Renderer3D scenes 2/2
 PASS, with zero execution errors. Full 300-test regression is RUNNING, not
 yet accepted. [Exact evidence and continuation](texture-rhi-indexed-admission-fix-2026-11-20.md).
+
+## 2026-11-20 — final native Texture RHI regression PASS
+
+Runtime code `b17dba1a02066fd23d9764a5e07fbc16b9e27e63`: full Debug
+editor/test build and **300/300 registered CTests PASS**, 0 skipped/failures,
+949.78 s, including all eight serial Metal texture tests and 1330 canonical
+GPU color probes. Indexed ICB admission bug fixed; legacy ICB remains intact.
+All local build/cache/report output is on KINGSTON. PR #96 targets main.
+[Final evidence, hashes and external CI/release boundary](texture-rhi-indexed-admission-fix-2026-11-20.md).
+Cross-backend runtime CI remains queued; Windows/macOS republish is due
+from the integrator per AGENTS §8. No unsupported parity/performance claims.
