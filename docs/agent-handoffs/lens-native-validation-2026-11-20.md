@@ -409,3 +409,16 @@ qualifies the generic full bone-path lookup in root_motion_bake.cpp, preserving
 main semantics when ModelClips.h is also visible. Previous all-target build
 FAIL at ambiguous findNodePath. Retest pending on KINGSTON; no GPU/API/save
 change. Next: rebuild focused animation/View/core targets and run new fixtures.
+
+
+### Camera PRISMA integration repair
+Code `83e142cd01a85800c997657b1ff71a07e697b61a` on codex/lens-completion
+removes the duplicate Model retirement observer created by the clean textual
+merge, and makes CameraPostFxPool explicitly include/use canonical Prisma.
+Public pool name remains compatible. Previous all-target build FAIL for these
+two API mismatches; third all-target build RUNNING on KINGSTON, log
+main-integration-build-3.log (MAKEFLAGS=-k, --parallel 6).
+`ctest -R '^(animation_graphs|view_packets)$' --output-on-failure` ran ONE
+registered test, animation_graphs PASS (1.61s); view_packets was not a registered
+name (correct name view_scene_packets), so no View test claim. Next: finish
+build, run correct targeted fixtures and continue owner staging.
