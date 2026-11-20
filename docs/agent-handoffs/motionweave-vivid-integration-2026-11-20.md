@@ -383,3 +383,58 @@ symlinks remain after commits.
 Next: validate original UE reference lighting/materials against native results,
 then integrate actual full-body clips and RigLogic-compatible facial routing.
 Texture wiring is verified in native Metal captures; photoreal/UE parity is partial.
+
+
+## Soft hair/lash coverage correction — 2026-11-20
+
+User reported missing alpha on hair/eyelashes after the texture checkpoint.
+Implementation: `1f8b8b2852328864aafe8f1a453c3be5defa0be4`, branch
+`integration/motionweave-studio-facial-stage184`, parent `f7e932bfb2860c2ad2a7e9f7a6d05a04733c9421`.
+Affected: tools/vivid-dna-import/{bake_materials.cjs,prepare_full_character.cjs,
+test_bake_materials.cjs,README.md}, docs/vivid.md.
+
+Correction to prior acceptance: PNG coverage packing and successful render
+submission did NOT establish correct soft edges. The previous baker forced
+MASK at .35 on both hair and lashes, discarding fractional coverage. Re-read
+external viewer-reference.js: original uses blended lashes and blended hair
+fringe with a depth-writing masked core. Baker now emits BLEND lashes (coverage
+texture preferred over albedo), BLEND hair/brows and cloned MASK .5 core
+primitives sharing glTF accessors/textures. Invalid coverage channels reject.
+Preview groom roughness .55 follows reference viewer floor and reduces pin glints.
+No native renderer, DNA schema, API/save/channel ordering, gameplay or scheduler
+changes. Additional primitives increase native imported vertices 125302 ->159396;
+interchange sharing does NOT currently imply zero additional native GPU memory.
+
+All assets/logs/captures remain external under
+`/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/`.
+Preferred asset supersedes ada-textured-filtered:
+`ada-soft-alpha/manifest.json` (diagnostic-*.json are opaque controls, NOT delivery).
+Actual verification:
+- node --check baker and test: PASS; git diff --check: PASS.
+- node tools/vivid-dna-import/test_bake_materials.cjs <external tooling> <KINGSTON tmp>:
+  PASS, test-alpha.log. Fractional R=128 versus A=0 preserved, transparent zero,
+  BLEND lash path, shared core accessors/textures + MASK .5, cloth conversion,
+  unsafe path rejection. Synthetic test updated to exercise fractional coverage.
+- prepare_full_character.cjs <tooling> ada-source.glb ada-soft-alpha 0
+  mh_materials.json source-maps: PASS, prepare-soft-alpha.log.
+- Existing native Creator --smoke --still --asset ada-soft-alpha/manifest.json,
+  with/without --portrait: 2/2 PASS, commands49 shadow43 colour43,
+  pipelineFailures0. ada-soft-alpha-{portrait,full}.{log,ppm,png}; both PNGs viewed.
+- Separate all-hair/lash OPAQUE control and lash-only OPAQUE control: 2/2 PASS,
+  ada-{alpha,lashes}-control-opaque.{log,ppm,png}. Both viewed. Fixed-camera PPM
+  RGB comparison (>3/255 max-channel difference): all-opaque hair region
+  [620,300,880,480) 24851 changed pixels; lash-only eye region
+  [660,475,825,520) 335. Demonstrates coverage affects actual rendered pixels,
+  NOT a UE visual parity metric. Opaque control exposes solid card strips.
+- Native rebuild/CTest NOT RUN this stage: only offline JS/asset preparation
+  changed, existing e1dc2a63 native binary used for actual Metal captures.
+  Full suite, moving camera/animation sorting, Vulkan/GLES and Studio UI NOT RUN.
+  No CI URL/run, push or main mutation.
+
+Limits: primitive-sorted alpha blending is not order-independent transparency;
+intersecting strand/pose sorting still needs multi-angle/animated validation.
+Hair tangent-atlas anisotropy and original UE skin/eye lighting parity remain
+unfinished; this is a soft-coverage correction, not a photorealism completion.
+Next action: validate full-body clips and moving-camera/animated hair layers,
+then refine original skin/eye and strand-lighting fidelity. Keep all builds and
+artifacts on KINGSTON. Untracked web dist/node_modules symlinks left unchanged.
