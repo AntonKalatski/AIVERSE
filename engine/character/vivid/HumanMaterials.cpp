@@ -178,7 +178,10 @@ std::shared_ptr<const render::graph::Program> hairGraph(const HumanGroom& d) {
     const auto melaninDarkening=g.constant(1.0f-0.38f*d.melanin);
     const auto color=g.scalarOp("clamp",g.binary("multiply",
              g.binary("multiply",g.color(d.color),melaninDarkening),highlight));
-    return g.finish(color,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
+    // Keep sampled coverage through both colour and shadow graph evaluation.
+    // Procedural RGB must not turn imported alpha-masked cards opaque.
+    const auto covered=g.binary("setAlpha",color,g.scalarOp("alpha",g.add("input")));
+    return g.finish(covered,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
 }
 // Mobile/medium-specific graphs share the full ShaderGraph compiler, while
 // reducing nodes rather than hiding costly effects behind a runtime branch.
@@ -240,7 +243,10 @@ std::shared_ptr<const render::graph::Program> compactHairGraph(
         color=g.binary("multiply",color,g.binary("add",
             g.constant(0.75f),g.binary("multiply",grain,g.constant(0.30f))));
     }
-    return g.finish(color,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
+    // Keep sampled coverage through both colour and shadow graph evaluation.
+    // Procedural RGB must not turn imported alpha-masked cards opaque.
+    const auto covered=g.binary("setAlpha",color,g.scalarOp("alpha",g.add("input")));
+    return g.finish(covered,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
 }
 void enforceGraphBudget(const render::Material& material,
                         HumanMaterialQuality quality) {

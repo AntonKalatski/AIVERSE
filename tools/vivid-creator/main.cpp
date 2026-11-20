@@ -92,6 +92,7 @@ struct CreatorApp {
     bool pendingRebuild=true, rendererReady=false, uiReady=false;
     bool animate=true, inspectGroom=false, wetPreview=false;
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
+    bool portraitCapture=false;
     bool forceCpuMorph=false; // explicit fallback acceptance on compute hosts
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
@@ -190,7 +191,8 @@ struct CreatorApp {
         // Frontal authoring key keeps eye optics visible below the brow.
         renderer.lighting.sunDir={0.25f,0.4f,1.0f};
         camera.target={0,-0.65f,0};
-        camera.distance=6.4f;
+        camera.distance=portraitCapture?2.1f:6.4f;
+        if(portraitCapture)camera.target={0,0.96f,0};
         camera.minDistance=2.0f;
         camera.pitch=0.08f;
         camera.yaw=0.08f;
@@ -2274,6 +2276,8 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--portrait")==0) {
+            application->portraitCapture=true;
         }else if(std::strcmp(argv[i],"--still")==0) {
             application->animate=false;
             application->wind=0.0f;

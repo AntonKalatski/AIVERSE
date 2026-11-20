@@ -127,3 +127,40 @@ original facial solver parity have NOT been tested.
 All assets, package-lock, builds, provenance and captures are external under
 `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/`.
 No character asset or external dependency is vendored in the repository.
+
+## Companion texture conversion (2026-11-20)
+
+Pass a final `source-maps` directory to `prepare_full_character.cjs` after the
+material JSON. It must contain the published `textures/*.png` paths from that
+JSON. Also install external `sharp@0.34.5` in TOOLING (on KINGSTON). With this
+argument the former uniform-cloth fallback is replaced by `bake_materials.cjs`:
+
+- Cloth: source mask channel blends authored linear colours, available textile
+  detail/macro maps and AO. High-frequency detail is prefiltered for the bake's
+  texel footprint to avoid moiré. The result is encoded to an sRGB colour texture.
+- Hair, eyebrows and eyelashes: source coverage is packed into alpha; RGB is
+  neutral so attribute channels cannot tint the hair. MASK cutoff is 0.35.
+- Eyes: the original iris atlas R/B channels, per-eye UV pole, iris/limbus/pupil
+  ramps and authored colours are baked in original mesh UV. The atlas transform
+  is removed from the resulting texture to avoid applying it twice.
+- Skin cavity and available teeth base-colour/normal/mouth-occlusion maps are
+  attached from the companion files. Original 16 GLB image payloads, including
+  skin colour, normal and roughness maps, are retained byte-for-byte.
+
+The generated package has 29 images and 13 converted/attached material records in
+provenance.json. Original assets and source-map hashes remain outside the repo.
+This is deterministic material data conversion, not AI-generated character art.
+
+VIVID high/medium/low hair graphs now preserve sampled input alpha with setAlpha;
+previously procedural RGB also replaced alpha and could fill whole hair cards in
+colour/shadow passes. `aiverse_vivid_creator --smoke --still --portrait --asset ...`
+adds a close camera preset for this normalized full-character package. Default
+full-body framing is unchanged.
+
+Tests: `node test_bake_materials.cjs "$TOOLING" "$TMPDIR"` checks red-channel
+coverage against deliberately different source alpha, linear/sRGB cloth colours,
+colour roundtrip and path escape rejection. Native vivid_human_appearance passes
+all material quality budgets after the alpha fix. Real Metal full/portrait captures
+are recorded in the feature handoff. Cloth/iris baking remains an approximation:
+no view-dependent eye refraction, procedural sclera veins, tangent-atlas hair
+anisotropy or complete UE skin/scattering parity is claimed.

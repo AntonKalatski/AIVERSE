@@ -6,6 +6,16 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Companion texture checkpoint — 2026-11-20
+
+Ada's external companion package now uses decoded material textures instead of
+uniform cloth colours and raw RGB attribute masks. Cloth colour/detail/AO, iris
+masks, hair coverage, skin cavity and teeth maps are handled by the offline baker;
+original colour/normal images are preserved. VIVID hair graphs preserve sampled
+alpha through colour and shadow evaluation. A portrait capture mode permits
+close visual inspection. Full UE refraction/hair/skin shader parity is still not
+established. See [texture conversion](../tools/vivid-dna-import/README.md).
+
 ## Full-character visual checkpoint — 2026-11-20
 
 A separate published Ada companion GLB now renders full body, clothes, shoes,

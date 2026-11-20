@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {createRequire} = require('node:module');
 (async () => {
-  const [tooling, source, destination, yawText = '0', materialPath] = process.argv.slice(2);
+  const [tooling, source, destination, yawText = '0', materialPath, sourceMaps] = process.argv.slice(2);
   if (!destination) throw Error('Expected tooling-dir source.glb output-dir [yaw]');
   const yaw = Number(yawText);
   if (!Number.isFinite(yaw)) throw Error('Invalid yaw');
@@ -23,9 +23,14 @@ const {createRequire} = require('node:module');
   }
   const root = doc.getRoot();
   const materialFallbacks = [];
+  let bakedMaterials = [];
   if (materialPath) {
     const mapping = JSON.parse(fs.readFileSync(materialPath, 'utf8'));
+    if(sourceMaps) {
+      bakedMaterials = await require('./bake_materials.cjs').bakeMaterials(doc,mapping,sourceMaps,load('sharp'));
+    }
     for (const material of root.listMaterials()) {
+      if(sourceMaps) continue;
       const authored = mapping.materials.find(m => m.material_name === material.getName());
       if (authored?.kind !== 'cloth') continue;
       const p = authored.params;
@@ -91,7 +96,7 @@ const {createRequire} = require('node:module');
     sourceKind:'published MetaHuman companion GLB; not body reconstructed from legacy Ada.dna',vertices,
     meshes:root.listMeshes().map(m=>m.getName()),sourceBounds:{min,max},previewScale:scale,previewYaw:yaw,
     skins:root.listSkins().length,images:root.listTextures().length,
-    uniformClothFallbacks:materialFallbacks,
+    uniformClothFallbacks:materialFallbacks,bakedMaterials,
     limitations:['No full RigLogic evaluation','Existing GLB textures/materials; no original UE shader parity claim']};
   for (const [name,value] of Object.entries({'manifest.json':manifest,'vivid-dna.json':dna,'provenance.json':provenance}))
     fs.writeFileSync(path.join(destination,name),JSON.stringify(value,null,2));
