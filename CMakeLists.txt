@@ -2973,6 +2973,25 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Real TerraWeave forest render acceptance on production Apple Metal RHI.
+# Unlike CPU Arbor/Flora tests, this exercises Renderer3D with actual uploaded
+# BranchLOD and alpha-masked eight-view impostor models and GPU readback.
+# A missing Metal device is a failure; never silently green via CTest SKIP.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_terraweave_metal_forest_test
+        tests/terraweave_metal_forest.mm $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_terraweave_metal_forest_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_terraweave_metal_forest_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_terraweave_metal_forest_test PRIVATE
+        aiverse_runtime aiverse_models aiverse_world aiverse_zstd_dec
+        aiverse_render2d)
+    add_test(NAME terraweave_metal_forest
+        COMMAND aiverse_terraweave_metal_forest_test)
+    set_tests_properties(terraweave_metal_forest PROPERTIES
+        LABELS "TERRAWEAVE;MetalGPU;RHI;Renderer3D")
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
