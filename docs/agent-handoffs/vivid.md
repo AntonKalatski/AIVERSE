@@ -2943,3 +2943,39 @@ No GUI/live zoom-boundary/Vulkan/mobile/CI/push. Previous authorization: verify
 without interface. No production source asset replacement. Shadow artifacts
 remain unresolved. Next: production-authored LOD threshold tuning and live zoom
 visual QA, followed by separate renderer-shadow investigation. No save/ECS change.
+
+## 2026-11-21 — full older Bruce companion and planted body idle
+
+Implementation `063c0a2a76595361618dd2a51eee88861a69725c`, branch
+`integration/motionweave-studio-facial-stage184`. More visible spine/shoulder/arm/
+elbow/hand breathing and settling; optional complete-leg pelvis weight shift
+baked with shared solveTwoBoneIK and planted ankle targets/orientations. Canonical
+spine_01/neck_01 suffix bug fixed, MakeHuman upper-body aliases supported. Default
+Creator uses same full-body preview instead of head-only bob. Diagnostic
+--preview-fixed-pose prevents automatic pose cycling in pure-idle capture.
+No gameplay ECS/save change; no full motion-capture/MetaHuman quality claim.
+
+Bruce published companion GLB downloaded from creategamecharacters/metahuman-to-glb
+docs/5.7/characters/bruce; actual full body/outfits/grooms/face. Generic companion
+preparation accepts FaceMesh names, attaches beard/mustache. Separate upstream
+coverage maps + metadata converted by new prepare_companion_coverage.cjs. Explicit
+external grey colour blend, source skin pixels retained, eye shell mask disabled
+for layered eye. Final alpha BLEND; early MASK was too sparse. Source/license/SHA/
+adaptations recorded externally, no binary vendoring. Repository code MIT not
+a claim about Epic character content licensing. Python download certificate failed;
+curl retry succeeded. Source content Ada untouched.
+
+PASS Creator/Studio KINGSTON builds, extended native wardrobe test (initial test
+found canonical spine name bug, then PASS), shared groom and morph-normal tests;
+Studio appearance session PASS. Synthetic complete-leg test samples5phases and
+checks ankle drift<.001 plus moving pelvis; loop endpoint/body channel tests PASS.
+Final bruce-continuous-idle144frames/24fps fixed relaxed pose; pipelineFailures0,
+57commands. Video bruce-continuous-body-idle.mp4 encoded144frames1500x920. Reviewed
+fullbody36/108 and closeup0/41 blink. Earlier bruce-body-idle.mp4 switches poses,
+NOT final pure idle. All files on KINGSTON full-character/elder-skin/.
+
+QA: docs/qa/vivid-bruce-body-idle-2026-11-21.md. Known visual FAIL remains on
+triangular collar/cloth patches and shoulder intersections; do not claim polished
+clothing or complete MH Creator parity. No GUI/Vulkan/mobile/CI/performance/push.
+Next: isolate clothing faceting/shadow vs deformation and mask head shoulders
+against outfit; validate idle on additional body rigs and actual ankle targets.
