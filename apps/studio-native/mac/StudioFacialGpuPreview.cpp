@@ -77,9 +77,12 @@ void StudioFacialGpuPreview::load(
         next->models=std::make_unique<ModelAssetProvider>(reader);
         next->models->setGpuDeviceLease(deviceLifetime_->lease());
         Model* model=next->models->load(device,request.modelKey);
-        if(!model)
+        if(!model) {
+            const auto& warnings=next->models->warnings();
             throw std::runtime_error("Native facial model import/upload failed: "+
-                                     request.modelKey);
+                request.modelKey+(warnings.empty()?std::string{}:
+                                  std::string(" — ")+warnings.back()));
+        }
         next->model=model;
         // The MODEL ITSELF authorizes semantic face morph targets/rig bones.
         // The browser's schema validation cannot bypass this native compile.
