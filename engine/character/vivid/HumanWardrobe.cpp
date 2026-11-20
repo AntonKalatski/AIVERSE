@@ -17,17 +17,26 @@ void compactMaterials(Model& m) {
  m.materials=std::move(materials);m.images=std::move(images);
 }
 void append(Model& dst,Model src,const Json& item) {
- const auto id=item.getStr("id"),bone=item.getStr("bone");
+ const auto id=item.getStr("id"),socket=item.getStr("socket");
+ const auto bone=socket.empty()?item.getStr("bone"):"socket/"+socket;
+ const auto rule=item.getStr("attachmentRule");
  const bool independent=item.getBool("independentRig");
  need(independent||src.clips.empty(),"Clothing must use character animations; remove its independent clips");
  const auto t=vec(item["translation"],{}),r=vec(item["rotation"],{}),s=vec(item["scale"],{1,1,1});
  const bool skinned=!src.skins.empty();
  need(independent||!skinned || (bone.empty()&&t.x==0&&t.y==0&&t.z==0&&r.x==0&&r.y==0&&r.z==0&&s.x==1&&s.y==1&&s.z==1),"Skinned clothing requires matching bind pose, without socket offsets");
- int parent=bone.empty()?-1:dst.findNode(bone);need(bone.empty()||parent>=0,"Accessory bone missing: "+bone);
- if(independent&&parent>=0){
+ int parent=-1;for(size_t i=0;i<dst.nodes.size();++i)if(!bone.empty()&&dst.nodes[i].name==bone){need(parent<0,"Ambiguous attachment bone: "+bone);parent=int(i);}
+ need(bone.empty()||parent>=0,"Accessory bone missing: "+bone);
+ const int target=parent;
+ // New keep-world mode applies authored offsets in socket-local coordinates.
+ // Legacy independentRig records retain their existing offset order.
+ if(independent&&parent>=0&&rule=="keep_world"){
+  Node offset;offset.name="wardrobe/"+id+"/socket-offset";offset.parent=parent;offset.t=t;offset.r=quat::axisAngle({0,0,1},r.z)*quat::axisAngle({0,1,0},r.y)*quat::axisAngle({1,0,0},r.x);offset.s=s;parent=int(dst.nodes.size());dst.nodes.push_back(offset);
+ }
+ if(independent&&parent>=0&&rule!="snap"){
   // Retain the imported world bind frame while following the body's socket.
   // Inverse TRS is represented exactly as three nodes, avoiding shear loss.
-  std::vector<Node> chain;for(int n=parent;n>=0;n=dst.nodes.at(size_t(n)).parent)chain.push_back(dst.nodes.at(size_t(n)));
+  std::vector<Node> chain;for(int n=target;n>=0;n=dst.nodes.at(size_t(n)).parent)chain.push_back(dst.nodes.at(size_t(n)));
   int serial=0;for(const auto& n:chain){need(std::abs(n.s.x)>1e-6f&&std::abs(n.s.y)>1e-6f&&std::abs(n.s.z)>1e-6f,"Singular head attachment transform");
    Node scale;scale.name="wardrobe/"+id+"/bind-scale-"+std::to_string(serial);scale.parent=parent;scale.s={1/n.s.x,1/n.s.y,1/n.s.z};parent=int(dst.nodes.size());dst.nodes.push_back(scale);
    Node rotation;rotation.name="wardrobe/"+id+"/bind-rotation-"+std::to_string(serial);rotation.parent=parent;rotation.r={-n.r.x,-n.r.y,-n.r.z,n.r.w};parent=int(dst.nodes.size());dst.nodes.push_back(rotation);
@@ -42,6 +51,7 @@ void append(Model& dst,Model src,const Json& item) {
   skin.joints[j]=target;
  }
  Node wrapper;wrapper.name="wardrobe/"+id;wrapper.parent=parent;wrapper.t=t;wrapper.r=quat::axisAngle({0,0,1},r.z)*quat::axisAngle({0,1,0},r.y)*quat::axisAngle({1,0,0},r.x);wrapper.s=s;
+ if(independent&&target>=0&&rule=="keep_world"){wrapper.t={};wrapper.r={};wrapper.s={1,1,1};}
  const int wrapperIndex=no+int(src.nodes.size());
  for(auto& node:src.nodes){node.name="wardrobe/"+id+"/"+node.name;node.parent=node.parent<0?wrapperIndex:node.parent+no;for(auto& c:node.children)c+=no;if(node.mesh>=0)node.mesh+=mo;if(node.skin>=0)node.skin+=so;dst.nodes.push_back(std::move(node));}
  for(int n=no;n<wrapperIndex;++n)if(dst.nodes[size_t(n)].parent==wrapperIndex)wrapper.children.push_back(n);
@@ -95,9 +105,19 @@ void body(Model& m,const HumanAppearance& look) {
 }
 void bakeHumanBody(Model& model,const HumanAppearance& look){(void)HumanAppearance::fromJson(look.toJson());body(model,look);}
 void validateHumanWardrobe(const Json& r) {
- known(r,{"version","hiddenMeshes","items"});need(r["version"].isNumber()&&r["version"].toDouble()==1,"Wardrobe version must be 1");names(r["hiddenMeshes"]);need(r["items"].isArray()&&r["items"].size()<=32,"Wardrobe allows up to 32 items");std::set<std::string> ids,slots;
+ known(r,{"version","hiddenMeshes","items","sockets"});
+ if(r.has("sockets")){
+  need(r["sockets"].isArray()&&r["sockets"].size()<=128,"Too many sockets");std::set<std::string> socketNames;
+  for(const auto& socket:r["sockets"].items()){
+   known(socket,{"name","bone","translation","rotation","scale"});key(socket["name"]);key(socket["bone"]);need(socketNames.insert(socket.getStr("name")).second,"Duplicate socket name");
+   vec(socket["translation"],{});vec(socket["rotation"],{});const auto scale=vec(socket["scale"],{1,1,1});need(scale.x>.001f&&scale.y>.001f&&scale.z>.001f,"Socket scale must be positive");
+  }
+ }need(r["version"].isNumber()&&r["version"].toDouble()==1,"Wardrobe version must be 1");names(r["hiddenMeshes"]);need(r["items"].isArray()&&r["items"].size()<=32,"Wardrobe allows up to 32 items");std::set<std::string> ids,slots;
  for(const auto& item:r["items"].items()){
-  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish","independentRig"});need(!item.has("independentRig")||item["independentRig"].type()==Json::Type::Bool,"Invalid independent rig flag");need(!item.has("finish")||item.getStr("finish")=="cloth"||item.getStr("finish")=="source","Unknown clothing finish");key(item["id"]);key(item["asset"]);key(item["slot"]);need(ids.insert(item.getStr("id")).second,"Duplicate clothing ID");need((item["enabled"]==Json::fromBool(true)||item["enabled"]==Json::fromBool(false)),"Clothing enabled must be boolean");
+  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish","independentRig","attachmentRule","socket"});
+  if(item.has("attachmentRule")){need(item.getStr("attachmentRule")=="keep_world"||item.getStr("attachmentRule")=="snap","Invalid attachment rule");need(item.getBool("independentRig"),"Attachment rules require a separate skeleton");}
+  if(item.has("socket")){need(item["socket"].isString(),"Invalid socket name");need(item.getStr("socket").empty()||item.getStr("bone").empty(),"Choose bone or socket, not both");}
+need(!item.has("independentRig")||item["independentRig"].type()==Json::Type::Bool,"Invalid independent rig flag");need(!item.has("finish")||item.getStr("finish")=="cloth"||item.getStr("finish")=="source","Unknown clothing finish");key(item["id"]);key(item["asset"]);key(item["slot"]);need(ids.insert(item.getStr("id")).second,"Duplicate clothing ID");need((item["enabled"]==Json::fromBool(true)||item["enabled"]==Json::fromBool(false)),"Clothing enabled must be boolean");
   if(item.getBool("enabled"))need(slots.insert(item.getStr("slot")).second,"Choose one clothing item per slot");
   need(item["bone"].isString()&&item.getStr("bone").size()<=256,"Invalid socket bone");vec(item["translation"],{});vec(item["rotation"],{});const auto s=vec(item["scale"],{1,1,1});need(s.x>.001f&&s.y>.001f&&s.z>.001f,"Accessory scale must be positive");names(item["hideMeshes"]);
   need(item["masks"].isArray()&&item["masks"].size()<=16,"Too many body masks");for(const auto& mask:item["masks"].items()){known(mask,{"material","texture"});key(mask["material"]);key(mask["texture"]);}
@@ -105,7 +125,15 @@ void validateHumanWardrobe(const Json& r) {
 }
 Json inspectHumanWardrobe(const Model& model){auto result=Json::object(),meshes=Json::array(),bones=Json::array(),materials=Json::array();std::set<std::string> names;for(const auto& n:model.nodes){if(n.mesh>=0)names.insert(model.meshes.at(size_t(n.mesh)).name);bones.push(Json::string(n.name));}for(const auto& n:names)meshes.push(Json::string(n));for(const auto& m:model.materials)materials.push(Json::string(m.name));result.set("meshes",meshes);result.set("bones",bones);result.set("materials",materials);return result;}
 std::unique_ptr<Model> assembleHumanCharacter(const std::string& base,const FileReader& read,const Json& wardrobe,const HumanAppearance& look,int size,const HumanFaceShape* face){
- validateHumanWardrobe(wardrobe);auto model=loadModel(base,read);need(bool(model),"Cannot import base character");model->finalize();if(face)applyHumanFaceShape(*model,*face);const auto bodyMin=model->boundsMin,bodyMax=model->boundsMax;
+ validateHumanWardrobe(wardrobe);auto model=loadModel(base,read);need(bool(model),"Cannot import base character");model->finalize();
+ // Named sockets become ordinary transform nodes, so standard animation/world
+ // traversal and GLB export preserve them without a second attachment clock.
+ if(wardrobe.has("sockets"))for(const auto& socket:wardrobe["sockets"].items()){
+  const auto name="socket/"+socket.getStr("name"),bone=socket.getStr("bone");need(model->findNode(name)<0,"Socket name collides with model node");int parent=-1;
+  for(size_t i=0;i<model->nodes.size();++i)if(model->nodes[i].name==bone){need(parent<0,"Ambiguous socket parent");parent=int(i);}
+  need(parent>=0,"Socket parent missing: "+bone);Node n;n.name=name;n.parent=parent;n.t=vec(socket["translation"],{});const auto r=vec(socket["rotation"],{});n.r=quat::axisAngle({0,0,1},r.z)*quat::axisAngle({0,1,0},r.y)*quat::axisAngle({1,0,0},r.x);n.s=vec(socket["scale"],{1,1,1});model->nodes.push_back(n);
+ }
+ model->finalize();if(face)applyHumanFaceShape(*model,*face);const auto bodyMin=model->boundsMin,bodyMax=model->boundsMax;
  bakeHumanAppearance(*model,look,size);hide(*model,wardrobe["hiddenMeshes"]);
  for(const auto& item:wardrobe["items"].items())if(item.getBool("enabled")){
   hide(*model,item["hideMeshes"]);for(const auto& entry:item["masks"].items())mask(*model,entry,read,size);

@@ -181,6 +181,7 @@ export interface StudioResult {
   'studio.viewportInput': { ok: boolean };
 }
 
-export interface HumanWardrobeItem {id:string;asset:string;slot:string;enabled:boolean;bone:string;translation:number[];rotation:number[];scale:number[];finish:'cloth'|'source';hideMeshes:string[];masks:{material:string;texture:string}[]}
-export interface HumanWardrobe {version:1;hiddenMeshes:string[];items:HumanWardrobeItem[]}
+export interface HumanSocket {name:string;bone:string;translation:number[];rotation:number[];scale:number[]}
+export interface HumanWardrobeItem {independentRig?:boolean;attachmentRule?:'keep_world'|'snap';socket?:string;id:string;asset:string;slot:string;enabled:boolean;bone:string;translation:number[];rotation:number[];scale:number[];finish:'cloth'|'source';hideMeshes:string[];masks:{material:string;texture:string}[]}
+export interface HumanWardrobe {sockets?:HumanSocket[];version:1;hiddenMeshes:string[];items:HumanWardrobeItem[]}
 export interface HumanBuildStatus {face?:HumanFaceShape;running:boolean;error?:string;path?:string;guid?:string;vertices?:number;meshes?:number;materials?:number;bytes?:number}

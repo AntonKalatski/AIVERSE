@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanWardrobe.h"
 #include "tools/modeling/Modeling.h"
+#include "engine/render/Animation.h"
 #include "tools/branding/BrandImage.h"
 #include <iostream>
 using namespace aiverse;
@@ -42,6 +43,27 @@ int main(){try{
  check(length(combined->bindWorld[size_t(hn)].transformPoint({0,0,0})-headModel.model->bindWorld[0].transformPoint({0,0,0}))<1e-5f,"head bind frame changed on socket attachment");
  const auto before=combined->bindWorld[size_t(hn)].transformPoint({0,0,0});combined->nodes[size_t(combined->findNode("root"))].t.x+=2;combined->finalize();
  check(std::abs(combined->bindWorld[size_t(hn)].transformPoint({0,0,0}).x-before.x-2)<1e-5f,"head did not follow body socket");
+ // Any independent SKM can snap to an arbitrary named socket without
+ // remapping its joints to the character or losing skin/morph data.
+ auto socketRecipe=headRecipe;
+ socketRecipe.set("sockets",Json::parse(R"([{"name":"custom_anchor","bone":"root","translation":[0.2,0.5,-0.1],"rotation":[0,0.3,0],"scale":[1,1,1]}])"));
+ auto& item=socketRecipe.member("items").at(0);item.set("bone",Json::string(""));item.set("socket",Json::string("custom_anchor"));item.set("attachmentRule",Json::string("snap"));item.set("translation",Json::parse("[0.1,0,0]"));
+ auto snapped=vivid::assembleHumanCharacter("attachment.glb",reader,socketRecipe,vivid::HumanAppearance{},16);
+ const int anchor=snapped->findNode("socket/custom_anchor"),child=snapped->findNode("wardrobe/head/headRoot"),root=snapped->findNode("root");
+ check(anchor>=0&&child>=0&&snapped->skins.size()==2,"socket or independent SKM missing");
+ const auto expected=snapped->bindWorld[size_t(anchor)].transformPoint({.1f,0,0});
+ check(length(snapped->bindWorld[size_t(child)].transformPoint({})-expected)<1e-5f,"snap ignored socket-local offset");
+ // Rotation/nonuniform scale on the parent must affect the child exactly once.
+ Pose animated;bindPose(*snapped,animated);animated[size_t(root)].r=quat::axisAngle({0,1,0},.7f);animated[size_t(root)].s={3,2,4};std::vector<mat4> animatedWorld;worldMatrices(*snapped,animated,animatedWorld);
+ const auto delta=animatedWorld[size_t(root)]*snapped->bindWorld[size_t(root)].inverse();
+ check(length(animatedWorld[size_t(child)].transformPoint({})-delta.transformPoint(expected))<1e-4f,"SKM did not follow rotated/scaled parent");
+ const auto snapBytes=modeling::exportGlb(*snapped);auto snapReload=loadModel("socket.glb",[&](const std::string&,std::string& out){out=snapBytes;return true;});
+ check(snapReload&&snapReload->findNode("socket/custom_anchor")>=0&&snapReload->skins.size()==2,"GLB lost socket or skin");
+ item.set("attachmentRule",Json::string("keep_world"));item.set("translation",Json::parse("[0,0,0]"));
+ auto preserved=vivid::assembleHumanCharacter("attachment.glb",reader,socketRecipe,vivid::HumanAppearance{},16);
+ check(length(preserved->bindWorld[size_t(preserved->findNode("wardrobe/head/headRoot"))].transformPoint({})-headModel.model->bindWorld[0].transformPoint({}))<1e-4f,"keep-world socket moved bind frame");
+ auto badSocket=socketRecipe;badSocket.member("items").at(0).set("socket",Json::string("absent"));rejected=false;try{vivid::assembleHumanCharacter("attachment.glb",reader,badSocket,vivid::HumanAppearance{},16);}catch(...){rejected=true;}check(rejected,"missing named socket accepted");
+ badSocket=socketRecipe;badSocket.member("sockets").push(badSocket["sockets"][0]);rejected=false;try{vivid::validateHumanWardrobe(badSocket);}catch(...){rejected=true;}check(rejected,"duplicate sockets accepted");
  // A bake must match the source base alpha and roughness rather than opaque defaults.
  Model p;p.materials.resize(1);p.materials[0].name="cloth";p.materials[0].baseColor={.2f,.3f,.4f,.25f};p.materials[0].alpha=AlphaMode::Blend;vivid::HumanAppearance fabric;fabric.materials["cloth"]="cloth";vivid::bakeHumanAppearance(p,fabric,16);check(p.images[0].rgba[3]==64&&p.materials[0].roughness>.8f&&!p.materials[0].shaderGraph,"fabric alpha/roughness bake");
  std::cout<<"Wardrobe, socket, masks, appearance and facial roundtrip PASS\n";return 0;

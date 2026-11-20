@@ -64,3 +64,10 @@ Unreal animations, full RigLogic, anatomical correctives or collision-aware clot
 Next: author proper shirt body-visibility coverage/corrective deformations for
 shoulders, isolate eye-shell/iris rendering, then hair filtering/coverage and wider
 orbit/motion QA. Generic masks must not be inferred by simply hiding the whole body.
+
+
+Correction after user video review: user observed hair not bound to the head.
+The earlier limited-frame hair attachment assessment is withdrawn; it must be
+considered unverified/defective until an explicit head-rotation attachment test
+passes. Stage91 adds a socket/SKM assembly mechanism but does not retroactively
+fix or validate these recorded Ada frames.

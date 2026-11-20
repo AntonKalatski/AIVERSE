@@ -6,6 +6,15 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## SKM attachment authoring — 2026-11-20
+
+The existing assembly panel now supports independent imported SKMs attached to
+any named bone or authored socket, local transforms, keep-world/snap rules and
+multiple arbitrary slots. See [SKM attachments](vivid-skm-attachments.md).
+Native hierarchy/skin roundtrip tests pass; visual hair attachment is not accepted.
+The user identified hair not following the head in the previous video; prior
+limited-frame attachment conclusions are withdrawn pending corrected native capture.
+
 ## Preview motion continuation — 2026-11-20
 
 Stationary preview idle includes upper-body breathing, resting arm movement,
