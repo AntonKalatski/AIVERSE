@@ -963,3 +963,45 @@ python3 /tmp/aiverse-stage99-analyze.py \
 Expected: thread CPU ~0.79/0.80/0.85ms, `offcpu` near zero (~0.01ms), raw POSIX near 0.02ms. If investigating the patched fixture too, build it in a fresh `AIVERSE-batching-stage99` detached worktree and rerun native tests, or compile its changed C++ fixture separately after safely fetching the new branch; do not switch an existing rebasing worktree.
 
 **Next engineering decision:** capture a slow Stage99 run if reproducible; compare Mach thread time vs wall and the same backend CPU submission stages. A slow run with wall and Mach both rising suggests more actual CPU cost/clock-frequency changes rather than prolonged off-CPU waiting; a slow run with wall rising but Mach not rising motivates Instruments System Trace or Metal driver wait tracing. Further low-level Metal optimization should be evidence-based and retain pixel parity and other-platform builds.
+
+
+---
+
+## Stage 100 — Mach CPU confirms near-continuous on-CPU in three fast runs; bounded slow-run capture (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/auto-batch-cost-metrics-20261119`; **Draft PR:** #39. **Code:** `c0180eb2685ce3f014b2faea1cdb71ebc8604192` creates `tools/batching-stage100-capture-slow.sh`. This handoff is a subsequent commit. No Metal rendering, RHI, AUTO, model batching, uniform bindings, or default flags altered.
+
+### Actual Mac Studio owner test
+
+The owner fetched the Stage99 fixed Python analyzer without changing their Stage98 detached checkout, reran it on the *same three existing* 106-row Stage98 CSVs, and provided output:
+
+```text
+trial  measured     wall ms  trusted Mach thread ms  offcpu ms  backend CPU wall ms  process CPU ms   raw POSIX ms
+mdi1   81/81        0.7965       0.7860             0.0105       0.4542            0.7920          0.0189
+mdi2   81/81        0.8126       0.8020             0.0101       0.4633            0.8100          0.0193
+mdi3   81/81        0.8608       0.8500             0.0114       0.4983            0.8540          0.0204
+```
+
+No slow frames (>1.2ms wall) in any of these three measured sample windows. The previous `offcpu ~= 0.8ms` was a **measurement error** from the anomalous POSIX `CLOCK_THREAD_CPUTIME_ID` reading in this specific fixture; independent Mach per-thread CPU, process CPU, and wall track one another closely. The standalone CPU-bound Stage97 clock test also passed, so precise cause of POSIX mismatch in the Metal fixture is unresolved. **Do not claim 97.6% descheduling**. Current observations imply only ~0.01ms wall-minus-Mach per frame in **fast** runs. They do not explain previously observed *slow* forced-MDI processes, nor prove absence of GPU waits. All measurements are CPU only, no GPU timestamps/FPS.
+
+### New runner / API
+
+`tools/batching-stage100-capture-slow.sh` runs independently the already-built Stage98 native `aiverse_material_batches` process with forced CPU MDI, the same synthetic 1,024 primitives, and opt-in per-frame Mach/CPU and timing CSV. Uses **max eight processes by default** (user can pass a count 1..20). For each run, checks 38 CPU invariants via the printed result, pixel parity for actual MDI capture and final image, all 81 measured frames MDI with exactly 810 real submissions, and nonempty CSV. Then validates 106 ordered frames 90..195 and 81 measured frames 115..195 with exactly 10 submissions and 2048 commands each. Counts frames exceeding a *diagnostic*, not SLA, CPU wall threshold 1.2ms. **Stops at the first process with at least 10 slow measured frames** and preserves that process's native log and 106-row timeline. Writes `summary.csv` with run number, slow frame count, median CPU wall, Mach thread CPU, computed wall-minus-Mach offcpu, and CPU backend wall. If no run reproduces the slowdown, prints `INCONCLUSIVE` and retains all logs/CSVs; does not claim a fix or successful root-cause diagnosis.
+
+Runner uses `set -euo pipefail` and does not switch branches, reset conflicting worktrees, run a build or modify production source. All opt-in diagnostics and forced MDI remain off by default for actual engine runtime. A previous locally constructed equivalent shell script was checked by `bash -n`; **the exact committed Stage100 script has not been independently run on the owner's Mac or full native fixture**, so remain cautious and correct any parsing issues based on actual output.
+
+### Mac Studio command (use existing Stage98 compiled executable; no new worktree/build)
+
+The script resolves project root relative to its location inside `tools/`. Fetch only the runner into an untracked file with that directory, syntax-check, execute a bounded run:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage98 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage100-capture-slow.sh \
+  > tools/batching-stage100-capture-slow-local.sh || exit 1
+bash -n tools/batching-stage100-capture-slow-local.sh || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
+  bash tools/batching-stage100-capture-slow-local.sh build/batching-stage98/slow-capture 8
+```
+
+Send summary and **one slow process's full `mdi-N-frames.csv` if found**. If no slow process, report the negative result; the intermittent issue remains unproven during that batch. Next investigate whether slow-run Mach thread CPU doubles together with wall and backend CPU: if it does, pursue Instruments CPU Time Profiler, CPU frequency/thermal/driver CPU cost; if wall alone doubles, pursue blocking/descheduling and System Trace. Do not modify AUTO thresholds or force-enable MDI until repeatable cross-platform perf and pixel parity are verified. Keep Draft PR #39.
