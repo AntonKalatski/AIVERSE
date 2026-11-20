@@ -6,6 +6,7 @@
 #include <limits>
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include <filesystem>
 #include "apps/studio-native/StudioModelPicking.h"
@@ -49,6 +50,7 @@ private:
     // Each model is owned by the native Scene; upload keeps CPU vertices for
     // triangle picking. The draw list and hit list share the exact instances.
     std::map<std::string,std::unique_ptr<render::Model>> documentModels_;
+    std::set<std::string> rejectedDocumentModels_;
     std::vector<StudioModelPickInstance> modelInstances_;
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
