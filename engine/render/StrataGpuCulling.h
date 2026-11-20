@@ -198,7 +198,7 @@ private:
     struct TemporalRecord {
         std::array<gfx::BufferHandle,3> state{};
         std::array<uint64_t,3> frame{};
-        uint64_t lastFrame=0;
+        uint64_t lastFrame=0, lastAttemptFrame=0;
         uint32_t nodes=0,width=0,height=0;
         bool clipDepthZeroToOne=true;
         float fraction=0;
