@@ -215,6 +215,32 @@ int main() {
     authored.frameSerial=device.frameSerial();
     assert(validateVulkanIndirectSubmission(device,model,
         contract,authored,&error));
+    // A real Scene forwards this packet by VALUE through the single
+    // Renderer3D::drawModel() call. The payload must be independent of
+    // temporary culling submissions and reject nonexclusive/stale IDs.
+    ModelDraw gpuDraw{};
+    gpuDraw.model=&model;
+    gpuDraw.flags=kDrawStatic;
+    gpuDraw.gpuIndexed.commands=authored.indirect;
+    gpuDraw.gpuIndexed.vertex=contract.vertex;
+    gpuDraw.gpuIndexed.index=contract.index;
+    gpuDraw.gpuIndexed.frameSerial=contract.expectedFrameSerial;
+    gpuDraw.gpuIndexed.geometryRevision=contract.geometryRevision;
+    gpuDraw.gpuIndexed.materialRevision=contract.materialRevision;
+    gpuDraw.gpuIndexed.commandCapacity=authored.capacity;
+    gpuDraw.gpuIndexed.sourceFirstIndex=original.firstIndex;
+    gpuDraw.gpuIndexed.sourceIndexCount=original.indexCount;
+    gpuDraw.gpuIndexed.sourceBaseVertex=contract.pooledBaseVertex;
+    gpuDraw.gpuIndexed.exclusive=true;
+    assert(gpuDraw.gpuIndexed.valid());
+    ModelDraw copied=gpuDraw;
+    assert(copied.gpuIndexed.valid() &&
+           copied.gpuIndexed.commands==authored.indirect);
+    copied.gpuIndexed.exclusive=false;
+    assert(!copied.gpuIndexed.valid());
+    copied=gpuDraw;
+    copied.gpuIndexed.commands={};
+    assert(!copied.gpuIndexed.valid());
     authored.submittedInstances=2;
     assert(!validateVulkanIndirectSubmission(device,model,
         contract,authored,&error));
