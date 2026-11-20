@@ -124,7 +124,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [catalog,setCatalog]=useState<StudioAssetList>(EMPTY);
   const [folder,setFolder]=useState('');
   const [selected,setSelected]=useState<string|null>(null);
-  const [pinnedAssetPath,setPinnedAssetPath]=useState<string|null>(null);
+  const [pinnedAssetGuid,setPinnedAssetGuid]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [mode,setMode]=useState<'grid'|'list'>('grid');
   const [error,setError]=useState('');
@@ -151,7 +151,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       setError(String(payload.message));
     }
   }),[reload]);
-  useEffect(()=>{setFolder('');setSelected(null);setPinnedAssetPath(null);setSearch('');setPlan(null);},[projectPath]);
+  useEffect(()=>{setFolder('');setSelected(null);setPinnedAssetGuid(null);setSearch('');setPlan(null);},[projectPath]);
   useEffect(()=>{
     let cancelled=false;
     setLoading(true);setError('');
@@ -168,16 +168,17 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const shownFolders=useMemo(()=>search.trim()?[]:childFolders(folders,folder),[folders,folder,search]);
   const shownFiles=useMemo(()=>visibleAssetFiles(catalog.files,folder,search),[catalog.files,folder,search]);
   const crumbs=useMemo(()=>assetBreadcrumbs(folder),[folder]);
-  // Selection may change in Assets while import settings stay pinned to one asset.
-  // Resolve against the latest catalog: removed/moved assets must never write via stale GUID.
-  const detailPath=pinnedAssetPath ?? selected;
-  const selectedAsset=useMemo(()=>catalog.files.find(a=>a.path===detailPath),
-    [catalog,detailPath]);
-  const toggleAssetPin=()=>setPinnedAssetPath(current=>current ? null : selectedAsset?.path ?? null);
+  // Asset identities survive renames/moves; a pinned Import Settings panel
+  // must follow GUID, never a stale path or a new external selection.
+  const selectedAsset=useMemo(()=>pinnedAssetGuid
+    ? catalog.files.find(a=>a.guid===pinnedAssetGuid)
+    : catalog.files.find(a=>a.path===selected),
+    [catalog,pinnedAssetGuid,selected]);
+  const toggleAssetPin=()=>setPinnedAssetGuid(current=>current ? null : selectedAsset?.guid ?? null);
   useEffect(()=>{
-    if (pinnedAssetPath && !catalog.files.some(a=>a.path===pinnedAssetPath))
-      setPinnedAssetPath(null);
-  },[catalog,pinnedAssetPath]);
+    if (pinnedAssetGuid && !loading && !catalog.files.some(a=>a.guid===pinnedAssetGuid))
+      setPinnedAssetGuid(null);
+  },[catalog,pinnedAssetGuid,loading]);
 
   const goTo=(path:string)=>{setFolder(path);setSearch('');setSelected(null)};
   const createFolder=async()=>{
@@ -341,8 +342,8 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             </div>}
       </div>
       {selectedAsset&&native&&<AssetImportSettings key={selectedAsset.guid||selectedAsset.path}
-        asset={selectedAsset} locked={pinnedAssetPath!==null}
-        onToggleLock={toggleAssetPin} onClose={()=>{setSelected(null);setPinnedAssetPath(null)}}
+        asset={selectedAsset} locked={pinnedAssetGuid!==null}
+        onToggleLock={toggleAssetPin} onClose={()=>{setSelected(null);setPinnedAssetGuid(null)}}
         onSaved={reload} onError={setError}/>}
     </div>
     <footer className="studio-assets-footer">
