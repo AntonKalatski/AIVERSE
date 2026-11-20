@@ -31,6 +31,8 @@ struct GrassRenderQuality {
     uint32_t bladeSegments=1;       // 1..4; 2+ uses bent tapered ribbons
     uint32_t bladeHeightCm=26;      // 4..150
     uint32_t bladeHalfWidthCm=3;    // 1..12
+    uint32_t bladesPerTuft=1;      // 1..32, stable shared centre
+    uint32_t tuftRadiusCm=18;      // 1..100
 };
 
 inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
@@ -39,7 +41,8 @@ inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
        !q.maxUploadsPerFrame || q.maxUploadsPerFrame>8 ||
        q.bladeSegments<1 || q.bladeSegments>4 ||
        q.bladeHeightCm<4 || q.bladeHeightCm>150 ||
-       q.bladeHalfWidthCm<1 || q.bladeHalfWidthCm>12)
+       q.bladeHalfWidthCm<1 || q.bladeHalfWidthCm>12 ||
+       q.bladesPerTuft<1 || q.bladesPerTuft>32 || q.tuftRadiusCm<1 || q.tuftRadiusCm>100)
         throw std::invalid_argument("TerraWeave grass RHI quality");
 }
 
@@ -112,10 +115,18 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
             patch.seed^patch.key^
             (uint64_t(logicalIndex)*0x9e3779b97f4a7c15ULL));
         if(h%1000u>=keep)continue;
-        const int64_t x=patch.bounds.minX+
+        int64_t x=patch.bounds.minX+
             int64_t((h>>13)%uint64_t(spanX));
-        const int64_t z=patch.bounds.minZ+
+        int64_t z=patch.bounds.minZ+
             int64_t((h>>35)%uint64_t(spanZ));
+        if(quality.bladesPerTuft>1){
+            const auto centre=detail::mix64(patch.seed^patch.key^(uint64_t(logicalIndex/quality.bladesPerTuft)*0x9e3779b97f4a7c15ULL));
+            const int64_t radius=std::min<int64_t>(quality.tuftRadiusCm,std::min(spanX,spanZ)/4);
+            x=patch.bounds.minX+radius+int64_t((centre>>13)%uint64_t(std::max<int64_t>(1,spanX-2*radius)));
+            z=patch.bounds.minZ+radius+int64_t((centre>>35)%uint64_t(std::max<int64_t>(1,spanZ-2*radius)));
+            x+=int64_t((h>>20)%uint64_t(2*radius+1))-radius;
+            z+=int64_t((h>>44)%uint64_t(2*radius+1))-radius;
+        }
         if(allows && !allows(x,z))continue;
         const int32_t y=ground(x,z);
         if(y< -1000000 || y>1000000)
@@ -188,6 +199,7 @@ public:
         validateGrassRenderQuality(quality);
         if(quality.maxBladesPerPatch!=quality_.maxBladesPerPatch ||
            quality.crossedBlades!=quality_.crossedBlades ||
+           quality.bladesPerTuft!=quality_.bladesPerTuft || quality.tuftRadiusCm!=quality_.tuftRadiusCm ||
            quality.bladeSegments!=quality_.bladeSegments ||
            quality.bladeHeightCm!=quality_.bladeHeightCm ||
            quality.bladeHalfWidthCm!=quality_.bladeHalfWidthCm)

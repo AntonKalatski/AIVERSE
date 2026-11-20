@@ -30,6 +30,9 @@ int main() {
     assert(!makeGrassPatchModel(patch,[](auto,auto){return 123;},quality,[](auto,auto){return false;}));
     const auto masked=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality,[](auto x,auto){return x>=0;});
     assert(masked && masked->indices.size()<grass->indices.size());
+    quality.bladesPerTuft=16;quality.tuftRadiusCm=15;
+    const auto tufted=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);assert(tufted&&tufted->indices.size()==grass->indices.size());
+    for(size_t start=0;start<2048;start+=16){const auto centre=(tufted->vertices[start*7].pos+tufted->vertices[start*7+1].pos)*.5f;for(size_t i=start;i<start+16;++i){const auto blade=(tufted->vertices[i*7].pos+tufted->vertices[i*7+1].pos)*.5f;assert(std::abs(blade.x-centre.x)<=.301f&&std::abs(blade.z-centre.z)<=.301f);}}
     quality.bladeSegments=5;bool badGrass=false;
     try{(void)makeGrassPatchModel(patch,[](auto,auto){return 0;},quality);}catch(const std::invalid_argument&){badGrass=true;}
     assert(badGrass);

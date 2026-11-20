@@ -64,7 +64,7 @@ public:
         // The map document assigns 0xED-prefixed IDs to authored entities.
         // Trace only the selected one; avoid per-entity allocation in runtime.
         uint64_t lodTarget = 0;
-        renderer.setLodDiagnosticsEnabled(lodPopupVisible_);
+        renderer.setLodDiagnosticsEnabled(lodPopupVisible_ || std::getenv("AIVERSE_LOD_DIAGNOSTICS"));
         if (lodPopupVisible_ &&
             ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
             size_t(ed.selection.index) < ed.doc().data.entities.size())

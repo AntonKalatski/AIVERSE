@@ -44,12 +44,13 @@ int main(int argc,char** argv){try{
         const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,{name},true);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));tiles.push(e);
     }
     // Same surface snapshot for vegetation and asset placement; no second noise.
-    auto heights=Json::array(),cover=Json::array(),ground=Json::object(),grass=Json::array();
+    auto heights=Json::array(),waterHeights=Json::array(),cover=Json::array(),ground=Json::object(),grass=Json::array();
     const int64_t minX=x0*6400,minZ=z0*6400,nx=(x1-x0)*64+1,nz=(z1-z0)*64+1;
     for(int64_t j=0;j<nz;++j)for(int64_t i=0;i<nx;++i){const int64_t x=minX+i*100,z=minZ+j*100;const auto h=earth.sampleHeightCm(x,z);heights.push(Json::number(int64_t(h)));bool wet=false;for(const auto& w:water.surfaces)wet|=lib::nereid::coversWaterBody(w.body,w.useGeometry?&w.geometry:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});int64_t shoreHeight=h;
         if(!water.surfaces.empty()){const auto& w=water.surfaces[0];const auto local=lib::nereid::gradedWaterBody(w.body,w.mesh.useGrade?&w.mesh.grade:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});shoreHeight=h-(local.surfaceY*100_fx).floorInt();}
+        waterHeights.push(Json::number(int64_t(h-shoreHeight)));
         cover.push(Json::number(int64_t(wet||shoreHeight<270||h>2500?0:950)));}
-    ground.set("originXcm",Json::number(minX));ground.set("originZcm",Json::number(minZ));ground.set("stepCm",Json::number(int64_t(100)));ground.set("columns",Json::number(nx));ground.set("rows",Json::number(nz));ground.set("heightCm",heights);ground.set("coverPermille",cover);
+    ground.set("originXcm",Json::number(minX));ground.set("originZcm",Json::number(minZ));ground.set("stepCm",Json::number(int64_t(100)));ground.set("columns",Json::number(nx));ground.set("rows",Json::number(nz));ground.set("waterHeightCm",waterHeights);ground.set("heightCm",heights);ground.set("coverPermille",cover);
     for(const auto& p:doc["grassPatches"].items())grass.push(p);ground.set("patches",grass);write(out/"ground.json",ground.dump());
     auto placements=Json::array(),stones=Json::array();
     const auto& area=doc["vegetationBounds"];

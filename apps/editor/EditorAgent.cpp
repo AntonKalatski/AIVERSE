@@ -168,7 +168,8 @@ void Editor::registerGuiOps() {
         r.set("coarseClusters",Json::number(int64_t(s.coarseClusters)));
         r.set("occluded",Json::number(int64_t(s.occluded)));
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
-        r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls()))); return r;
+        r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls())));
+        const auto& model=r3d_.modelStats();auto levels=Json::array();for(auto count:model.cameraLodNodes)levels.push(Json::number(int64_t(count)));r.set("cameraLodNodes",levels);r.set("lodChains",Json::number(int64_t(model.cameraLodChains)));r.set("lodBlocked",Json::number(int64_t(model.cameraLodBlocked)));r.set("shadowLimitedLod",Json::number(int64_t(model.cameraShadowLimitedLod)));return r;
     });
     add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first; x, z, distance, pitch, yaw (degrees) place the Scene camera. Returns a PNG image.",
         R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})",

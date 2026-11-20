@@ -945,7 +945,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_LOD");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
+    const bool packetEligible = staticRenderPacketsEnabled_ && !m->batching.independentShadowLod && !gpuPacketLod &&
         staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
                                         lodDiagnosticsEnabled_, eligibility);
     const size_t packetStart = modelItems_.size();
@@ -1093,6 +1093,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
         const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
+        const bool independentLod=m->batching.independentShadowLod&&rigid&&lodEligible&&!m->geometry;
+        int shadowLodMesh=node.mesh;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
             float3 lodMin = baseMesh.boundsMin-margin, lodMax = baseMesh.boundsMax+margin;
@@ -1116,9 +1118,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 ? geometryErrorPixels(viewProj_ * lodWorld, lodMin, lodMax, error,
                                        sceneW_, sceneH_, zeroToOne) : 0.0f;
             float pixels = cameraPixels;
-            if (nodeShadow) pixels = std::max(pixels, geometryErrorPixels(
-                lightViewProj_ * lodWorld, lodMin, lodMax, error,
-                shadowSize_, shadowSize_, zeroToOne));
+            const float shadowPixels=nodeShadow?geometryErrorPixels(lightViewProj_*lodWorld,lodMin,lodMax,error,shadowSize_,shadowSize_,zeroToOne):0.f;
+            if(independentLod)shadowLodMesh=selectModelLod(node.mesh,baseMesh.lods,shadowPixels,0.f).mesh;
+            else if(nodeShadow)pixels=std::max(pixels,shadowPixels);
             if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
             const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
                 std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
@@ -1162,12 +1164,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
         // Shadow batch (mergeStaticPrimitives): one shadow draw covers the opaque parts of the mesh.
         // Material copies are common in game views; only shadow-incompatible overrides disable batching.
-        for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
-        meshIndex=part?lodBlend.incoming:lodBlend.mesh;
+        const int cameraParts=lodBlend.incoming>=0?2:1;
+        const bool separateShadow=independentLod&&modelLodEnabled_&&nodeShadow&&std::any_of(baseMesh.primitives.begin(),baseMesh.primitives.end(),[&](const Primitive& p){return p.material>=0&&size_t(p.material)<mats.size()&&mats[size_t(p.material)].castShadow;});
+        for(int part=0;part<cameraParts+(separateShadow?1:0);++part) {
+        const bool shadowOnly=part==cameraParts;
+        meshIndex=shadowOnly?shadowLodMesh:(part?lodBlend.incoming:lodBlend.mesh);
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
         const bool shadowBatch = d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (!shadowOnly && d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
@@ -1180,7 +1185,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             ModelItem it;
             it.sourceNode = n;
             it.geometry = d.geometry;
-            if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
+            if(!shadowOnly&&lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             // Restrict GPU LOD to a single compatible rigid primitive in each
             // of exactly two meshes. Complex materials and fading stay on CPU.
@@ -1188,7 +1193,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 const char* value = std::getenv("AIVERSE_GPU_ICB_LOD");
                 return value && std::strcmp(value, "1") == 0;
             }();
-            if (gpuLod && modelLodEnabled_ && rigid && !m->geometry &&
+            if (gpuLod && !separateShadow && modelLodEnabled_ && rigid && !m->geometry &&
                 lodBlend.incoming < 0 && d.variant < 0 && !d.nodeMaterial &&
                 !shadowBatch && materialRole == 0 && shadowRole == 0 &&
                 baseMesh.lods.size() == 1 && baseMesh.primitives.size() == 1 &&
@@ -1232,7 +1237,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             it.motionPersistentId = d.persistentId;
             it.motionNodeIndex = n;
             it.castShadow = !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 && it.mat->castShadow && it.mat->alpha != AlphaMode::Blend && !transparentItem(it.flags);
-            it.inView = nodeView; it.inShadow = nodeShadow && it.castShadow;
+            it.inView = nodeView && !shadowOnly; it.inShadow = nodeShadow && it.castShadow && (shadowOnly||!separateShadow);
             it.joints = -1; it.baked = false; it.anim = anim; it.morph = -1;
             const bool skinnedPrim = node.skin >= 0 && !p.jointPalette.empty();
             if (skinnedPrim && canBake && node.skin == m->baked.skin) {

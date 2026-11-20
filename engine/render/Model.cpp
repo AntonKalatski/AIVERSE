@@ -187,6 +187,8 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
+    if(config.has("independentShadowLod")&&config["independentShadowLod"].type()!=Json::Type::Bool)throw std::runtime_error(path+".batching.json: independentShadowLod must be boolean");
+    model.batching.independentShadowLod=config.getBool("independentShadowLod",false);
     // Optional per-asset policy for native importers and project sidecars.
     // It is applied before GPU upload; editing it requires asset reupload.
     if (config.has("geometryPool")) {

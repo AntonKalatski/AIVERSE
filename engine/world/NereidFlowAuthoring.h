@@ -5,6 +5,7 @@ namespace aiverse::world {
 inline Json editNereidFlow(const Json& root,const Json& input){
     auto result=root;auto water=result["nereidWater"];
     if(!input["id"].isNumber())throw JsonError("NEREID flow requires id");
+    const auto id=input["id"].integer();if(id<1||id>2147483647||input["id"].fx()!=Fixed::fromInt(id))throw JsonError("NEREID flow requires integer id");
     size_t found=water["surfaces"].size();
     for(size_t i=0;i<water["surfaces"].size();++i)if(water["surfaces"][i]["id"].integer()==input["id"].integer())found=i;
     if(found==water["surfaces"].size())throw JsonError("NEREID water id not found");

@@ -346,6 +346,7 @@ struct Bench {
             if(shot!=tourShot){screen.reset();additions.selectLights(camera.eye());tourShot=shot;}
         }
         post.setPhysicalSkyTime(options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?previewTime+options.tourStart:double(frame)/60.0);
+        renderer.setLodDiagnosticsEnabled(true);
         water.configure(config);
         water.prepare(d,camera.eye());
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
@@ -357,6 +358,7 @@ struct Bench {
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
             settings.set("physicalSkyRequested",Json::fromBool(post.physicalSky().enabled));
+            auto lodLevels=Json::array();for(auto n:renderer.modelStats().cameraLodNodes)lodLevels.push(Json::number(int64_t(n)));settings.set("cameraLodNodes",lodLevels);settings.set("cameraLodChains",Json::number(int64_t(renderer.modelStats().cameraLodChains)));settings.set("cameraLodBlocked",Json::number(int64_t(renderer.modelStats().cameraLodBlocked)));settings.set("shadowLimitedLod",Json::number(int64_t(renderer.modelStats().cameraShadowLimitedLod)));
             settings.set("nereidSurfaces",Json::number(int64_t(water.configuredSurfaces())));
             settings.set("waterUsesRendererClock",Json::fromBool(water.configuredSurfaces()!=0));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));

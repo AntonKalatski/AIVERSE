@@ -35,15 +35,26 @@ int main(int argc,char** argv){try{
         const auto doc=Json::parseFile(groundFile.string());const int64_t ox=doc.getInt("originXcm"),oz=doc.getInt("originZcm"),step=doc.getInt("stepCm");const int64_t nx=doc.getInt("columns"),nz=doc.getInt("rows");
         if(nx<2||nz<2||nx>2048||nz>2048||step<1||step>1000||doc["heightCm"].size()!=size_t(nx*nz)||doc["coverPermille"].size()!=size_t(nx*nz)||doc["patches"].size()>256)throw std::runtime_error("invalid bounded height/cover grid");
         if(ox< -kWorldLimitCm||ox>kWorldLimitCm||oz< -kWorldLimitCm||oz>kWorldLimitCm||ox+nx*step>kWorldLimitCm||oz+nz*step>kWorldLimitCm)throw std::runtime_error("grid extent");
+        if(doc.has("waterHeightCm")&&doc["waterHeightCm"].size()!=size_t(nx*nz))throw std::runtime_error("water height grid size");
         for(const auto& v:doc["heightCm"].items())if(!v.isNumber()||v.integer()< -1000000||v.integer()>1000000)throw std::runtime_error("height range");
         for(const auto& v:doc["coverPermille"].items())if(!v.isNumber()||v.integer()<0||v.integer()>1000)throw std::runtime_error("cover range");
         auto sample=[&](const char* field,int64_t x,int64_t z){const double gx=double(x-ox)/step,gz=double(z-oz)/step;const auto ix=int64_t(std::floor(gx)),iz=int64_t(std::floor(gz));if(ix<0||iz<0||ix>=nx-1||iz>=nz-1)throw std::runtime_error("patch outside grid");const double tx=gx-ix,tz=gz-iz;const auto& a=doc[field];return int32_t(std::lround((a[size_t(iz*nx+ix)].integer()*(1-tx)+a[size_t(iz*nx+ix+1)].integer()*tx)*(1-tz)+(a[size_t((iz+1)*nx+ix)].integer()*(1-tx)+a[size_t((iz+1)*nx+ix+1)].integer()*tx)*tz));};
         uint64_t key=1;
         for(const auto& entry:doc["patches"].items()){
             GrassPatch p;p.key=key++;p.seed=seed;p.bounds={entry.getInt("minX"),entry.getInt("minZ"),entry.getInt("maxX"),entry.getInt("maxZ")};p.maximumBlades=uint32_t(std::clamp<int64_t>(entry.getInt("blades",2048),1,8192));
-            GrassRenderQuality q;q.maxBladesPerPatch=p.maximumBlades;q.crossedBlades=false;q.bladeSegments=3;q.bladeHeightCm=38;q.bladeHalfWidthCm=2;
-            auto model=makeGrassPatchModel(p,[&](int64_t x,int64_t z){return sample("heightCm",x,z);},q,[&](int64_t x,int64_t z){return int64_t(detail::mix64(uint64_t(x)^detail::mix64(uint64_t(z)))%1000)<sample("coverPermille",x,z);});
+            GrassRenderQuality q;q.maxBladesPerPatch=p.maximumBlades;q.crossedBlades=false;q.bladeSegments=3;q.bladeHeightCm=38;q.bladeHalfWidthCm=2;q.bladesPerTuft=16;q.tuftRadiusCm=15;
+            const auto ground=[&](int64_t x,int64_t z){return sample("heightCm",x,z);};
+            const auto allows=[&](int64_t x,int64_t z){if(doc.has("waterHeightCm")&&sample("heightCm",x,z)-sample("waterHeightCm",x,z)<270)return false;return int64_t(detail::mix64(uint64_t(x)^detail::mix64(uint64_t(z)))%1000)<sample("coverPermille",x,z);};
+            auto model=makeGrassPatchModel(p,ground,q,allows);
             if(!model)continue;
+            for(uint32_t divisor:{3u,8u}){
+                q.maxBladesPerPatch=std::max(1u,p.maximumBlades/divisor);auto lod=makeGrassPatchModel(p,ground,q,allows);if(!lod)continue;
+                const uint32_t vo=uint32_t(model->vertices.size()),io=uint32_t(model->indices.size());
+                model->vertices.insert(model->vertices.end(),lod->vertices.begin(),lod->vertices.end());for(auto index:lod->indices)model->indices.push_back(index+vo);
+                auto mesh=lod->meshes[0];for(auto& pr:mesh.primitives){pr.firstVertex+=vo;pr.firstIndex+=io;}
+                model->meshes[0].lods.push_back({int(model->meshes.size()),divisor==3?220.f:90.f});model->meshes.push_back(std::move(mesh));
+            }
+            model->finalize();
             model->materials[0].baseColor={.16f,.26f,.06f,1};const std::string name="grass-"+std::to_string(p.key);save(out,name,*model);
             auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(p.bounds.minX));e.set("zCm",Json::number(p.bounds.minZ));patches.push(e);
         }

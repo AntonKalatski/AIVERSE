@@ -50,3 +50,34 @@ must be inspected in the intended game, and prototype count/density tuned to bud
 Tests extend `terraweave_model` for stable generation, decreasing LOD budgets,
 bounded grass, grounding and exclusions; run `terraweave_arbor` for legacy parity.
 See `AGENT_HANDOFF.md` for commands actually run and backend coverage.
+
+## Tufts, shore masks and camera/shadow LOD
+
+GrassRenderQuality now appends bladesPerTuft (1..32, default1 preserves old
+placement) and tuftRadiusCm (1..100). Tufts share stable centres; each blade keeps
+its independent width/height/yaw. Density remains maximumBlades per patch, not
+one ECS entity per blade. The exporter uses16 blades/tuft, radius15cm and exports
+three stable density tiers (full, one-third, one-eighth) using native grass APIs.
+The optional ground snapshot waterHeightCm grid rejects roots below270cm above
+the local water surface, matching the continuous sand transition. Missing field
+preserves existing input compatibility. A 64m² patch can request8192 blades;
+exported triangle counts are asset budgets, not visible frame submissions.
+
+For explicit rigid vegetation LODs, the generic model sidecar can opt into:
+
+```json
+{"autoLod":false,"independentShadowLod":true}
+```
+
+Camera geometry then uses projected main-view extent and dithering; a separate
+shadow-only packet uses the shadow projection without camera fade. Existing
+variants, node-material overrides, deformation and geometry policies retain their
+legacy eligibility gates. Ordinary models default to the prior shared maximum.
+The opt-in path bypasses experimental immutable CPU packets and GPU LOD, keeping
+those paths unchanged rather than replaying a packet with incompatible selections.
+High-resolution shadows no longer hold all visible vegetation at LOD0.
+
+Native editor diagnostics can be enabled with AIVERSE_LOD_DIAGNOSTICS=1;
+geometry_stats returns cameraLodNodes, lodChains, lodBlocked and shadowLimitedLod.
+Renderbench reports the same main-view counters. Counts describe source mesh
+nodes, not draw calls, triangles, GPU time or measured performance improvement.
