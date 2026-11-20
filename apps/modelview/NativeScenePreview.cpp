@@ -257,6 +257,9 @@ void NativeScenePreview::reconcileScenes() {
 void NativeScenePreview::pollAndCommit(std::string& error) {
     error.clear();
     if(!host_ || !coordinator_)return;
+    // Only the Device owner checks completed GPU fences, before the next
+    // frame records any new MotionWeave model submissions.
+    (void)host_->collectRetired();
     host_->poll();
     for(auto it=pending_.begin();it!=pending_.end();) {
         const auto status=coordinator_->status(it->ticket);
@@ -381,6 +384,7 @@ void NativeScenePreview::restoreSnapshot(std::string& error) {
     // Real Simulation rollback, not a new World pretending to restore.
     simulation_->loadState(snapshot_);
     clearPresentation();
+    pending_.clear(); // old tickets belong to the pre-rollback epoch
     const auto tickets=host_->restoreResidencyAfterRollback();
     for(const auto ticket:tickets) {
         std::string key;
