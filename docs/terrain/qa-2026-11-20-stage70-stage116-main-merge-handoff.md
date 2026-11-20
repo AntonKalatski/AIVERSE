@@ -77,8 +77,10 @@ a test-only main delta does not change its source rendering behavior.
 ## Next actionable checks
 
 1. On Mac or Linux, build and run the two changed Stage116 Release
-   CTests (registered as `retirement_pressure` and
-   `model_resource_owner` — verify exact CMake names first).
+   CTests (confirmed CMake names `render_retirement_pressure` and
+   `model_resource_owner_contract`; executables
+   `aiverse_retirement_pressure_tests` and
+   `aiverse_model_resource_owner_tests`).
    Capture exact tested HEAD and outcomes; Linux GCC `-Werror` CI
    is separate from a Mac Clang success.
 2. Inspect the new standalone
