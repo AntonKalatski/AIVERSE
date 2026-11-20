@@ -13512,6 +13512,63 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     CHECK(!fx.ownsGpuResources());
 }
 
+TEST(lens_road_prepared_weather_only_preserves_wheel_surface_generation) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsRoadView roads;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    roads.init(dev,Json(),missing);
+    game::RoadNetwork network;
+    game::RoadNode a,b;
+    a.id=1;b.id=2;
+    a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
+    b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
+    network.nodes={a,b};
+    game::RoadEdge edge;
+    edge.id=1;edge.a=1;edge.b=2;
+    int asphalt=0;
+    for(size_t i=0;i<roads.types().size();++i)
+        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+           roads.types()[i].drivable()) {asphalt=int(i);break;}
+    edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
+    network.edges={edge};
+    roads.setNetwork(network);
+    render::RTSCamera camera;
+    camera.target={30,0,6};camera.distance=110;camera.pitch=1.0f;
+    const std::function<float(float,float)> height=[](float,float){return 0.0f;};
+    renderer.beginScene(camera,800,600);
+    roads.draw(renderer,height);
+    renderer.render(gfx::PassDesc{});
+    const auto generation=roads.surfaceGeneration();
+    const auto oldHeight=roads.surfaceAt(30,6,0.0f);
+    const size_t oldChunks=roads.batchStats().uploadedChunks;
+    const size_t oldRetire=roads.pendingGpuRetirements();
+    roads.setWeather(0.75f,0.85f);
+    CHECK(roads.needsVisualPreparation());
+    {
+        auto candidate=roads.prepareRebuild(dev,height);
+        CHECK(candidate!=nullptr);
+        CHECK(roads.surfaceGeneration()==generation);
+        CHECK(roads.pendingGpuRetirements()==oldRetire);
+        // Discarding a prepared weather candidate must not retire old film.
+    }
+    CHECK(roads.needsVisualPreparation());
+    CHECK(roads.surfaceGeneration()==generation);
+    auto candidate=roads.prepareRebuild(dev,height);
+    CHECK(candidate!=nullptr);
+    roads.commitRebuild(candidate);
+    CHECK(!roads.needsVisualPreparation());
+    CHECK(roads.surfaceGeneration()==generation);
+    CHECK(roads.batchStats().uploadedChunks==oldChunks);
+    CHECK(roads.surfaceAt(30,6,0.0f)==oldHeight);
+    const auto publishedRetire=roads.pendingGpuRetirements();
+    roads.commitRebuild(std::move(candidate)); // no duplicate retirement
+    CHECK(roads.pendingGpuRetirements()==publishedRetire);
+    roads.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;
