@@ -479,6 +479,30 @@ private:
             MeshDef md;
             md.name = jm.getStr("name", "mesh" + std::to_string(mi));
             const auto& prims = jm["primitives"].items();
+            // The glTF ecosystem stores ordered morph semantic names in
+            // mesh.extras.targetNames (not in the core morph target schema).
+            // Preserve only real authored names and their original order.
+            // Reject incomplete/ambiguous metadata rather than fabricating
+            // channel identities or silently swapping facial expressions.
+            const Json& names=jm["extras"]["targetNames"];
+            if(!names.isNull()) {
+                if(!names.isArray())
+                    fail("mesh '" + md.name + "': targetNames must be an array");
+                std::set<std::string> seenMorphNames;
+                for(const auto& entry:names.items()) {
+                    if(!entry.isString() || entry.str().empty() ||
+                       !seenMorphNames.insert(entry.str()).second)
+                        fail("mesh '" + md.name + "': invalid or duplicate targetNames");
+                    md.morphTargetNames.push_back(entry.str());
+                }
+                if(md.morphTargetNames.size()>size_t(kMaxMorphTargets))
+                    fail("mesh '" + md.name + "': named morph channels exceed supported limit");
+                for(const auto& primitive:prims) {
+                    const size_t channels=primitive["targets"].size();
+                    if(channels!=md.morphTargetNames.size())
+                        fail("mesh '" + md.name + "': targetNames count differs from primitive morph channels");
+                }
+            }
             for (size_t pi = 0; pi < prims.size(); ++pi) loadPrimitive(prims[pi], md, skinOfMesh.count(int(mi)) > 0);
             for (const auto& w : jm["weights"].items()) md.weights.push_back(float(num(w, 0)));
             float previousPixels = 1e30f;
