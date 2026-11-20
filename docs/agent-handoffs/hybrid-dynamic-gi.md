@@ -958,3 +958,15 @@ slots remain permitted; malformed parent/leaf AABBs are rejected to
 avoid false ray pruning/light leaks. Low-level packet publisher
 rejects stale and duplicate source revisions. New CPU/FakeDevice
 regression and CTest registration; **native C++/CTest/GPU tests NOT RUN**.
+
+
+## Stage 60 — 2026-11-20 — sequential Vulkan storage-image compute barriers (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage60-vulkan-consecutive-compute-barriers-2026-11-20.md`.
+Fixed Vulkan compute image layout/memory hazards for multiple dispatches:
+same storage atlas now has compute shader write→read/write dependency;
+switching the image restores the old target to sampled layout before
+writing a new target. Expanded `vulkan_backend` real-GPU-executable
+two-atlas/three-dispatch offscreen pixel fixture. No native CMake,
+glslang, CTest, Vulkan driver/validation, Metal or GLES GPU execution
+in this session. Preserve all earlier GI fence/borrow safety.
