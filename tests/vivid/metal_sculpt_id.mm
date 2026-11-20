@@ -212,6 +212,24 @@ void test() {
                     {},model.vertices.size(),source) &&
                 source.maskedSelection,
                 "Metal identity GPU-selected Mask source preparation failed");
+        // 7AV: a stale or edited UV mapping cannot be corroborated
+        // against a different actual GPU ModelVertex source.
+        auto staleUvSource=source;
+        staleUvSource.maskInputs[0].uvAlpha[0]+=0.25f;
+        device->beginFrame(64,64);
+        SculptGpuPickRequest staleRequest;
+        staleRequest.generation=17u;
+        staleRequest.modelRevision=1u;
+        staleRequest.frameSerial=device->frameSerial();
+        staleRequest.meshId=0;
+        staleRequest.width=staleRequest.height=64u;
+        staleRequest.x=staleRequest.y=32u;
+        const bool staleAccepted=pass.record(
+            model,surface,model.vertices.size(),{},
+            render::mat4::identity(),staleRequest,{}, {},&staleUvSource);
+        device->endFrame();
+        require(!staleAccepted,
+                "GPU selected Mask silently accepted stale source UVs");
         device->updateTexture(alphaTexture,0,0,1,1,alphaHole.data(),4);
         usedOverride=false;
         const auto gpuMaskHole=runSample(
