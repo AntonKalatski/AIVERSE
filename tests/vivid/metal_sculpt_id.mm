@@ -36,7 +36,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     std::uint32_t x,std::uint32_t y,
                                     std::span<const SculptGpuIdVertex> occluders={},
                                     const SculptGpuVertexSource* gpuSource=nullptr,
-                                    bool* usedGpuSource=nullptr) {
+                                    bool* usedGpuSource=nullptr,
+                                    std::span<const SculptGpuMaskBatch> masks={}) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -47,7 +48,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     req.x=x;req.y=y;
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
-                        viewProj,req,occluders,{},gpuSource),
+                        viewProj,req,occluders,masks,gpuSource),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -160,6 +161,40 @@ void test() {
         const auto solid=runSample(*device,pass,model,surface,32,32);
         require(solid==std::vector<std::uint8_t>({2,0,0,0}),
                 "Metal alpha-tested GPU triangle lost opaque texel ID");
+
+        // 7AX negative coverage: a separate nearer sampled Mask
+        // object must block the source's triangle ID only where its GPU
+        // base texture is opaque. The selected mesh remains unchanged.
+        // This isolates hardware alpha/depth policy; final Renderer3D
+        // colour/occluder pixel parity is tested separately.
+        model.materials[0].alpha=render::AlphaMode::Opaque;
+        SculptGpuMaskBatch foreground;
+        foreground.baseTexture=alphaTexture;
+        foreground.uniform.alpha[0]=1.0f;
+        foreground.uniform.alpha[1]=0.5f;
+        foreground.uniform.uv0[2]=1.0f;
+        foreground.uniform.uv0[3]=1.0f;
+        for(const auto& original:xy) {
+            SculptGpuMaskVertex v;
+            v.world=original;
+            v.world.z=0.1f; // in front of source's near triangle at z=.2
+            v.uvAlpha[0]=v.uvAlpha[1]=0.5f;
+            v.uvAlpha[2]=1.f;
+            foreground.vertices.push_back(v); // 0 ID, depth-only blocker
+        }
+        std::array<SculptGpuMaskBatch,1> unrelatedMask{foreground};
+        device->updateTexture(alphaTexture,0,0,1,1,alphaHole.data(),4);
+        const auto visibleBehindHole=runSample(
+            *device,pass,model,surface,32,32,{},nullptr,nullptr,
+            unrelatedMask);
+        require(visibleBehindHole==std::vector<std::uint8_t>({2,0,0,0}),
+                "Metal GPU alpha-hole occluder incorrectly hid a selected face");
+        device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
+        const auto hiddenBehindSolid=runSample(
+            *device,pass,model,surface,32,32,{},nullptr,nullptr,
+            unrelatedMask);
+        require(hiddenBehindSolid==std::vector<std::uint8_t>({0,0,0,0}),
+                "Metal nearer sampled alpha occluder failed depth/zero-ID blocking");
 
         // 7AT: the actual 60B GPU override is the positional authority.
         // Move every GPU vertex completely off-screen WITHOUT changing the
