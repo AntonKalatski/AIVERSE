@@ -135,6 +135,7 @@ public:
     void setBlur(std::function<void(std::vector<uint8_t>& field, int radius)> fn) { blur_ = std::move(fn); dirty_ = true; ++revision_; }
     gfx::TextureHandle texture() const { return tex_; }
     size_t pendingGpuRetirements() const noexcept {return retired_.pending();}
+    uint64_t stateRevision() const noexcept {return revision_;}
     bool collectRetired(gfx::Device& dev) {
         if(!dev_)return true;
         if(dev_!=&dev)throw std::logic_error("VisibilityField retirement: wrong device");

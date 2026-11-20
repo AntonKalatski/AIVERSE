@@ -28,10 +28,148 @@ using namespace render;
 
 namespace {
 float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble()), float(v.z.toDouble())}; }
+
+// Conservative content fingerprints for cross-call private GPU candidates.
+// Identity pointers alone cannot detect editor mutation in-place. The hashes
+// are computed synchronously from host inputs without allocating storage.
+struct SurfaceLeaseHash {
+    uint64_t value=1469598103934665603ull;
+    template<class T> void scalar(const T& item) noexcept {
+        const auto* data=reinterpret_cast<const unsigned char*>(&item);
+        for(size_t i=0;i<sizeof(T);++i) {
+            value^=uint64_t(data[i]);
+            value*=1099511628211ull;
+        }
+    }
+    template<class T> void array(const std::vector<T>& items) noexcept {
+        scalar(items.size());
+        for(const auto& item:items)scalar(item);
+    }
+    void pos(float3 v) noexcept {scalar(v.x);scalar(v.y);scalar(v.z);}
+};
+uint64_t mapLeaseFingerprint(const MapGrid& g) noexcept {
+    SurfaceLeaseHash h;
+    h.scalar(g.w);h.scalar(g.h);
+    h.array(g.flags);h.array(g.level);h.array(g.height);
+    h.array(g.corner);h.array(g.dig);h.array(g.digMark);
+    h.array(g.territory);h.array(g.wall);h.array(g.room);
+    h.array(g.foundation);h.array(g.fieldRes);h.array(g.creep);
+    h.scalar(g.fieldAmt.size());
+    for(const auto& field:g.fieldAmt)h.scalar(field.raw);
+    return h.value;
+}
+uint64_t sceneLeaseFingerprint(const RtsScene& s) noexcept {
+    SurfaceLeaseHash h;
+    h.scalar(s.viewer);h.scalar(s.laneSignature);
+    h.scalar(s.roads.size());
+    for(const auto& road:s.roads) {
+        h.pos(road.first);h.pos(road.second);
+    }
+    h.scalar(s.objects.size());
+    for(const auto& o:s.objects) {
+        h.scalar(o.entity.packed());
+        h.scalar(o.type);h.scalar(o.garrison);
+        h.pos(o.pos);
+    }
+    h.scalar(s.lanes!=nullptr);
+    if(s.lanes) {
+        h.scalar(s.lanes->size());
+        for(const auto& lane:*s.lanes) {
+            h.scalar(lane.a.packed());h.scalar(lane.b.packed());
+            h.scalar(lane.offset);h.scalar(lane.points.size());
+            for(const auto& point:lane.points) {
+                h.scalar(point.x.raw);
+                h.scalar(point.y.raw);
+                h.scalar(point.z.raw);
+            }
+        }
+    }
+    return h.value;
+}
+uint64_t cameraLeaseFingerprint(const Renderer3D& r) {
+    SurfaceLeaseHash h;
+    const auto& matrix=r.viewProj();
+    h.scalar(matrix);
+    h.pos(r.camera().eye());
+    const auto quality=r.materialQuality();
+    const auto shadow=r.shadowQuality();
+    h.scalar(quality);h.scalar(shadow);
+    const bool trace=r.traceActive();
+    h.scalar(trace);
+    return h.value;
+}
+uint64_t visibilityLeaseFingerprint(
+        const std::vector<uint8_t>* vision) noexcept {
+    SurfaceLeaseHash h;
+    const bool present=vision!=nullptr;
+    h.scalar(present);
+    if(vision)h.array(*vision);
+    return h.value;
+}
 } // namespace
 
+// Owner-specific candidates stay private until the primary frame validates
+// this one-shot lease and publishes the full OwnerPrepareCommit transaction.
+struct RtsView::PreparedSurfaceLease final {
+    struct Part final:render::OwnerPrepareCommit::Participant {
+        std::function<void()> stage,accept,discard;
+        Part(std::function<void()> p,std::function<void()> c,
+             std::function<void()> r)
+            :stage(std::move(p)),accept(std::move(c)),
+             discard(std::move(r)){}
+        void prepare() override {stage();}
+        void commit() noexcept override {accept();}
+        void rollback() noexcept override {discard();}
+    };
+    const RtsView* owner=nullptr;
+    const gfx::Device* device=nullptr;
+    const Renderer3D* renderer=nullptr;
+    const RtsScene* scene=nullptr;
+    const MapGrid* map=nullptr;
+    const std::vector<uint8_t>* vision=nullptr;
+    double time=0;
+    uint64_t terrainGeneration=0,frameStamp=0;
+    uint64_t roadRevision=0,shoreRevision=0,groundRevision=0;
+    uint64_t fogRevision=0,terrainRevision=0;
+    uint64_t gridSignature=0,sceneSignature=0,cameraSignature=0;
+    uint64_t visibilitySignature=0;
+    bool tiles=false,fogSheetStaged=false,fogChanged=false;
+    std::shared_ptr<RtsGroundFx::PreparedFrame> groundCandidate;
+    std::shared_ptr<RtsRoadView::PreparedRebuild> roadCandidate;
+    std::shared_ptr<RtsShoreView::PreparedRebuild> shoreCandidate;
+    std::unique_ptr<FogOfWar::PreparedSheet> fogSheet;
+    std::unique_ptr<FogOfWar::PreparedUpdate> fogUpdate;
+    std::shared_ptr<TerrainRenderer::PreparedFrame> terrainCandidate;
+    std::vector<std::unique_ptr<Part>> parts;
+    // Declared LAST, so its destructor rollback runs before Part and
+    // private GPU-candidate destructors, even after a late prepare failure.
+    std::unique_ptr<render::OwnerPrepareCommit> transaction;
+    bool matches(const RtsView& view,const Renderer3D& r,
+                 const RtsScene& s,double seconds,
+                 const std::vector<uint8_t>* field,const MapGrid& g) const {
+        return owner==&view && device==view.dev_ &&
+            renderer==&r && scene==&s && map==&g && vision==field &&
+            time==seconds && frameStamp==view.frame_ &&
+            terrainGeneration==view.terrainGeneration_ &&
+            tiles==bool(view.twoD_ && view.twoD_->hasTiles()) &&
+            roadRevision==view.roads_->stateRevision() &&
+            shoreRevision==view.shores_->stateRevision() &&
+            groundRevision==view.groundFx_.stateRevision() &&
+            fogRevision==view.fog_.stateRevision() &&
+            terrainRevision==view.terrain_.stateRevision() &&
+            gridSignature==mapLeaseFingerprint(g) &&
+            sceneSignature==sceneLeaseFingerprint(s) &&
+            cameraSignature==cameraLeaseFingerprint(r) &&
+            visibilitySignature==visibilityLeaseFingerprint(field) &&
+            !view.planets_.active();
+    }
+};
+
 RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
-RtsView::~RtsView() = default;
+RtsView::~RtsView() { pendingSurfaceLease_.reset(); }
+void RtsView::discardPendingSurfaceLease() noexcept {
+    pendingSurfaceLease_.reset();
+}
 
 // Called by client/editor/preview owner at the SAME explicit pre-render
 // frame boundary used for ModelResourceCache and ImageRollbackPool. Never
@@ -68,6 +206,7 @@ bool RtsView::collectRetiredModels() {
            terrain && ground && visibility;
 }
 void RtsView::setRoadMap(const Json& map) {
+    pendingSurfaceLease_.reset();
     framePublication_.invalidate();
     roads_->setMap(map);
     shores_->setMap(map);
@@ -76,6 +215,7 @@ void RtsView::setRoadMap(const Json& map) {
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
+    pendingSurfaceLease_.reset();
     framePublication_.invalidate();
     // Terrain, fog, roads, shores and overlays also own RHI handles when a
     // sprite view is absent. Never rebind ANY live view owner to a foreign
@@ -304,6 +444,9 @@ size_t RtsView::genericRetargetScratchCapacityBytes() const noexcept {
 }
 
 void RtsView::shutdown(gfx::Device& dev) {
+    // Private unpublished GPU candidates must be released BEFORE the
+    // full-device idle boundary or owner kit shutdown.
+    pendingSurfaceLease_.reset();
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
@@ -443,163 +586,133 @@ void RtsView::drawPreparedTerrainFog(Renderer3D& r,const MapGrid& grid,
     }
 }
 
-// Shared render-owner prepare/commit path for scene-aware warmup and draw.
-// Neither a successful warmup nor this helper publishes FramePublicationEpoch.
+// Stage every surface owner into a private, one-shot transaction. All input
+// references are used synchronously here; stored participants retain ONLY
+// their candidate/commit/rollback closures after preparation.
+std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
+        Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid) {
+    if(!dev_ || !terrain_.mapMatches(grid.w,grid.h))
+        throw std::logic_error("RtsView: build Terrain before surface preflight");
+    auto lease=std::make_unique<PreparedSurfaceLease>();
+    auto* next=lease.get();
+    next->owner=this;
+    next->device=dev_;
+    next->renderer=&r;
+    next->scene=&s;
+    next->map=&grid;
+    next->vision=vision;
+    next->time=time;
+    next->terrainGeneration=terrainGeneration_;
+    next->frameStamp=frame_;
+    next->roadRevision=roads_->stateRevision();
+    next->shoreRevision=shores_->stateRevision();
+    next->groundRevision=groundFx_.stateRevision();
+    next->fogRevision=fog_.stateRevision();
+    next->terrainRevision=terrain_.stateRevision();
+    next->gridSignature=mapLeaseFingerprint(grid);
+    next->sceneSignature=sceneLeaseFingerprint(s);
+    next->cameraSignature=cameraLeaseFingerprint(r);
+    next->visibilitySignature=visibilityLeaseFingerprint(vision);
+    next->tiles=bool(twoD_ && twoD_->hasTiles());
+    next->transaction=std::make_unique<render::OwnerPrepareCommit>();
+    const std::function<float(float,float)> groundHeight=
+        [this,&grid](float x,float z){return heightAt(grid,x,z);};
+    const auto add=[&](std::function<void()> prepare,
+                       std::function<void()> commit,
+                       std::function<void()> rollback) {
+        next->parts.push_back(std::make_unique<PreparedSurfaceLease::Part>(
+            std::move(prepare),std::move(commit),std::move(rollback)));
+        next->transaction->add(*next->parts.back());
+    };
+    add(
+        [this,&r,&s,time,vision,&grid,next] {
+            if(!next->tiles)
+                next->groundCandidate=groundFx_.prepareFrame(
+                    r,s,time,vision,grid,*this);
+        },
+        [this,next] {groundFx_.commitFrame(std::move(next->groundCandidate));},
+        [next] {next->groundCandidate.reset();});
+    add(
+        [this,&groundHeight,next] {
+            next->roadCandidate=roads_->prepareRebuild(*dev_,groundHeight);
+        },
+        [this,next] {roads_->commitRebuild(std::move(next->roadCandidate));},
+        [next] {next->roadCandidate.reset();});
+    add(
+        [this,&groundHeight,&grid,next] {
+            next->shoreCandidate=shores_->prepareRebuild(
+                *dev_,groundHeight,terrain_.look().waterOffset,grid.w,grid.h);
+        },
+        [this,next] {shores_->commitRebuild(std::move(next->shoreCandidate));},
+        [next] {next->shoreCandidate.reset();});
+    add(
+        [this,&groundHeight,vision,&grid,time,next] {
+            if(!vision || vision->empty() || !fog_.ready())return;
+            if(fogMeshDirty_ || fog_.needsSheetRebuild(grid.w,grid.h)) {
+                next->fogSheet=fog_.prepareSheet(
+                    *dev_,grid.w,grid.h,groundHeight);
+                if(!next->fogSheet)
+                    throw std::runtime_error("RtsView: fog sheet staging failed");
+                next->fogSheetStaged=true;
+            }
+            next->fogUpdate=fog_.prepareUpdate(
+                *vision,grid.w,grid.h,time,next->fogSheet.get());
+            if(!next->fogUpdate)
+                throw std::runtime_error("RtsView: fog field staging failed");
+        },
+        [this,next] {
+            if(next->fogSheet || next->fogUpdate)
+                next->fogChanged=fog_.commitPreparedFrame(
+                    std::move(next->fogSheet),std::move(next->fogUpdate));
+            if(next->fogSheetStaged)fogMeshDirty_=false;
+        },
+        [next] {
+            next->fogUpdate.reset();
+            next->fogSheet.reset();
+        });
+    add(
+        [this,&r,&grid,vision,next] {
+            if(!hasTerrain_ || next->tiles)return;
+            const std::vector<uint8_t>* processed=nullptr;
+            if(terrain_.shaderFog()) {
+                if(next->fogUpdate && next->fogUpdate->changed() &&
+                   next->fogUpdate->field().size()==
+                       size_t(grid.w)*size_t(grid.h))
+                    processed=&next->fogUpdate->field();
+                else if(fog_.field().size()==size_t(grid.w)*size_t(grid.h))
+                    processed=&fog_.field();
+            }
+            next->terrainCandidate=terrain_.prepareFrameVisible(
+                r,grid,vision,processed);
+        },
+        [this,next] {terrain_.commitFrame(std::move(next->terrainCandidate));},
+        [next] {next->terrainCandidate.reset();});
+    // prepareAll automatically rolls attempted participants back when any
+    // later upload fails. The transaction lives across prewarm and draw.
+    next->transaction->prepareAll();
+    // Nothing can call prepare() again after State::Prepared; clear captured
+    // host references now, so no expired MapGrid/scene lambda survives.
+    for(auto& part:next->parts)part->stage={};
+    return lease;
+}
+
+// Publish an existing one-shot prewarm lease only when every dependency still
+// matches exactly. Otherwise release unpublished GPU candidates and run the
+// same complete preparation on the current primary-frame inputs.
 bool RtsView::publishSurfaceFrame(Renderer3D& r,const RtsScene& s,
         double time,const std::vector<uint8_t>* vision,
         const MapGrid& grid) {
-    if(!dev_ || !terrain_.mapMatches(grid.w,grid.h))
-        throw std::logic_error("RtsView: build Terrain before surface preflight");
-    // LENS: stage Roads, Shores, Fog height-sheet AND visibility field
-    // together. A late Fog GPU failure can no longer publish the sheet or
-    // any earlier owner. In-flight cameras retain the old buffers via the
-    // completion-token retirement queue; no full-device idle preflight.
-    const std::function<float(float,float)> groundHeight=
-        [this,&grid](float x,float z) {return heightAt(grid,x,z);};
-    // GroundFX geometry is now prepared before any Roads/Shores/Fog owner
-    // publishes. If a later owner fails, GroundFX retains the old CPU memory
-    // snapshot, GPU meshes and retirement generations.
-    const bool tiles=twoD_ && twoD_->hasTiles();
-    struct PreparedGround final : render::OwnerPrepareCommit::Participant {
-        RtsGroundFx& owner;
-        Renderer3D& renderer;
-        const RtsScene& scene;
-        const std::vector<uint8_t>* vision;
-        const MapGrid& grid;
-        const RtsView& view;
-        double time;
-        bool active;
-        std::shared_ptr<RtsGroundFx::PreparedFrame> pending;
-        PreparedGround(RtsGroundFx& o,Renderer3D& r,const RtsScene& s,
-                       const std::vector<uint8_t>* mask,const MapGrid& g,
-                       const RtsView& v,double t,bool enabled)
-            :owner(o),renderer(r),scene(s),vision(mask),grid(g),view(v),
-             time(t),active(enabled){}
-        void prepare() override {
-            if(active)pending=owner.prepareFrame(renderer,scene,time,vision,
-                                                 grid,view);
-        }
-        void commit() noexcept override {owner.commitFrame(std::move(pending));}
-        void rollback() noexcept override {pending.reset();}
-    } groundPart(groundFx_,r,s,vision,grid,*this,time,!tiles);
-    struct PreparedRoad final : render::OwnerPrepareCommit::Participant {
-        RtsRoadView& view;
-        gfx::Device& device;
-        const std::function<float(float,float)>& height;
-        std::shared_ptr<RtsRoadView::PreparedRebuild> pending;
-        PreparedRoad(RtsRoadView& v,gfx::Device& d,
-                     const std::function<float(float,float)>& h)
-            :view(v),device(d),height(h){}
-        void prepare() override {pending=view.prepareRebuild(device,height);}
-        void commit() noexcept override {view.commitRebuild(std::move(pending));}
-        void rollback() noexcept override {pending.reset();}
-    } roadsPart(*roads_,*dev_,groundHeight);
-    struct PreparedShore final : render::OwnerPrepareCommit::Participant {
-        RtsShoreView& view;
-        gfx::Device& device;
-        const std::function<float(float,float)>& height;
-        float waterY;
-        int width,heightCells;
-        std::shared_ptr<RtsShoreView::PreparedRebuild> pending;
-        PreparedShore(RtsShoreView& v,gfx::Device& d,
-                      const std::function<float(float,float)>& h,
-                      float y,int w,int hc)
-            :view(v),device(d),height(h),waterY(y),width(w),heightCells(hc){}
-        void prepare() override {
-            pending=view.prepareRebuild(device,height,waterY,width,heightCells);
-        }
-        void commit() noexcept override {view.commitRebuild(std::move(pending));}
-        void rollback() noexcept override {pending.reset();}
-    } shorePart(*shores_,*dev_,groundHeight,
-                 terrain_.look().waterOffset,grid.w,grid.h);
-    bool fogFieldChanged=false;
-    struct PreparedFog final : render::OwnerPrepareCommit::Participant {
-        FogOfWar& owner;
-        gfx::Device& device;
-        const std::function<float(float,float)>& ground;
-        const std::vector<uint8_t>* vision;
-        int width,height;
-        double time;
-        bool& changed;
-        bool& sheetDirty;
-        bool stagedSheet=false;
-        std::unique_ptr<FogOfWar::PreparedSheet> pendingSheet;
-        std::unique_ptr<FogOfWar::PreparedUpdate> pending;
-        PreparedFog(FogOfWar& o,gfx::Device& dev,
-                    const std::function<float(float,float)>& heightAt,
-                    const std::vector<uint8_t>* mask,int w,int h,
-                    double seconds,bool& out,bool& rebuildSheet)
-            :owner(o),device(dev),ground(heightAt),vision(mask),
-             width(w),height(h),time(seconds),changed(out),
-             sheetDirty(rebuildSheet){}
-        void prepare() override {
-            if(!vision || vision->empty() || !owner.ready())return;
-            if(sheetDirty || owner.needsSheetRebuild(width,height)) {
-                pendingSheet=owner.prepareSheet(device,width,height,ground);
-                if(!pendingSheet)
-                    throw std::runtime_error("RtsView: fog sheet staging failed");
-                stagedSheet=true;
-            }
-            pending=owner.prepareUpdate(*vision,width,height,time,
-                                        pendingSheet.get());
-            if(!pending)
-                throw std::runtime_error("RtsView: fog field staging failed");
-        }
-        void commit() noexcept override {
-            if(!pending && !pendingSheet)return;
-            changed=owner.commitPreparedFrame(std::move(pendingSheet),
-                                              std::move(pending));
-            if(stagedSheet)sheetDirty=false;
-        }
-        void rollback() noexcept override {
-            pending.reset();
-            pendingSheet.reset();
-            stagedSheet=false;
-        }
-    } fogPart(fog_,*dev_,groundHeight,vision,grid.w,grid.h,
-              time,fogFieldChanged,fogMeshDirty_);
-    // Last participant: Terrain copy-on-write dynamic + heightfield vision.
-    // Read Fog's private *processed* field only when it exists; otherwise
-    // reuse its last published field. No Terrain R8 write can occur before
-    // every GroundFX/Roads/Shores/Fog GPU candidate is prepared successfully.
-    struct PreparedTerrain final : render::OwnerPrepareCommit::Participant {
-        TerrainRenderer& owner;
-        const Renderer3D& renderer;
-        const MapGrid& grid;
-        const std::vector<uint8_t>* vision;
-        const PreparedFog& fog;
-        bool active;
-        std::shared_ptr<TerrainRenderer::PreparedFrame> pending;
-        PreparedTerrain(TerrainRenderer& t,const Renderer3D& r,
-                        const MapGrid& g,const std::vector<uint8_t>* mask,
-                        const PreparedFog& f,bool enabled)
-            :owner(t),renderer(r),grid(g),vision(mask),fog(f),
-             active(enabled){}
-        void prepare() override {
-            if(!active)return;
-            const std::vector<uint8_t>* filtered=nullptr;
-            if(owner.shaderFog()) {
-                if(fog.pending && fog.pending->changed() &&
-                   fog.pending->field().size()==size_t(grid.w)*size_t(grid.h))
-                    filtered=&fog.pending->field();
-                else if(fog.owner.field().size()==size_t(grid.w)*size_t(grid.h))
-                    filtered=&fog.owner.field();
-            }
-            pending=owner.prepareFrameVisible(renderer,grid,vision,filtered);
-        }
-        void commit() noexcept override {owner.commitFrame(std::move(pending));}
-        void rollback() noexcept override {pending.reset();}
-    } terrainPart(terrain_,r,grid,vision,fogPart,hasTerrain_ && !tiles);
-    render::OwnerPrepareCommit ownerTransaction;
-    ownerTransaction.add(groundPart);
-    ownerTransaction.add(roadsPart);
-    ownerTransaction.add(shorePart);
-    ownerTransaction.add(fogPart);
-    ownerTransaction.add(terrainPart);
-    ownerTransaction.prepareAll(); // any error automatically rolls all back
-    if(!ownerTransaction.publish())
-        throw std::logic_error("RtsView: owner frame publication incomplete");
-    return fogFieldChanged;
+    auto lease=std::move(pendingSurfaceLease_);
+    if(lease && !lease->matches(*this,r,s,time,vision,grid)) {
+        lease.reset(); // RAII abort releases unpublished GPU resources
+        ++surfacePrewarmStats_.discarded;
+    }
+    if(lease)++surfacePrewarmStats_.consumed;
+    else lease=stageSurfaceFrame(r,s,time,vision,grid);
+    if(!lease->transaction->publish())
+        throw std::logic_error("RtsView: surface owner cohort publish failed");
+    return lease->fogChanged;
 }
 
 bool RtsView::prepareMapFrame(Renderer3D& renderer,const RtsScene& scene,
@@ -609,14 +722,19 @@ bool RtsView::prepareMapFrame(Renderer3D& renderer,const RtsScene& scene,
        !terrain_.mapMatches(grid.w,grid.h))return false;
     if(framePublication_.active())
         throw std::logic_error("RtsView: prewarm during active publication");
-    // Hierarchy resolution needs the primary frame's animation graph; callers
-    // with hierarchical scenes use normal draw() rather than this prewarm.
+    // The hierarchy transform graph needs the primary animation frame.
     if(scene.entityFx && !scene.entityFx->hierarchy.parents.empty())
         return false;
-    // A prewarm may replace published GPU owner generations. Do not allow
-    // replay of any old camera epoch until a new primary draw completes.
+    // A pending primary surface will later change GPU owner generations.
+    // Never replay an older secondary camera epoch after prewarm begins.
     framePublication_.invalidate();
-    (void)publishSurfaceFrame(renderer,scene,time,vision,grid);
+    if(pendingSurfaceLease_) {
+        pendingSurfaceLease_.reset();
+        ++surfacePrewarmStats_.discarded;
+    }
+    pendingSurfaceLease_=stageSurfaceFrame(
+        renderer,scene,time,vision,grid);
+    ++surfacePrewarmStats_.staged;
     return true;
 }
 

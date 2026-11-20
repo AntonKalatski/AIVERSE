@@ -36,10 +36,11 @@ public:
     // Polls actual GPU retirement tokens, never frame-count heuristics.
     void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
     size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
+    uint64_t stateRevision() const noexcept {return stateRevision_;}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().
     void setMap(const Json& map);
-    void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; }
-    void invalidateGround() { dirty_ = true; }   // terrain changed under the roads
+    void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; ++stateRevision_; }
+    void invalidateGround() { dirty_ = true; ++stateRevision_; }   // terrain changed under the roads
     // heightAt(x, z) in world units (the view's terrain); cellMeters of the road data turns it into metres
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt);
     bool active() const { return hasNet_ && !net_.empty(); }
@@ -109,7 +110,7 @@ public:
     uint64_t surfaceGeneration() const { return surfaceGeneration_; }
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
-    void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
+    void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; ++stateRevision_; }
 
     // materials of the road kit (index into the chunk models' material lists)
     static constexpr int kDrivewaySurface = -2;   // paintedMaterial: a driveway apron (variant: width, 1/1000 cell)
@@ -136,6 +137,7 @@ private:
     std::map<std::pair<int, int>, int> painted_;
 
     gfx::Device* dev_ = nullptr;
+    uint64_t stateRevision_=1; // invalidates unpublished multi-owner frame leases
     // GPU kit uploads may throw before images_ receives ownership. Preserve
     // this unpublished kit for an idle-gated shutdown or recovery retry.
     std::unique_ptr<render::Model> buildingKit_;

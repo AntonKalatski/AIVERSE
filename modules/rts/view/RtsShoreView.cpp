@@ -636,6 +636,7 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             "shore View cannot rebind before verified GPU retirement");
     }
     dev_ = &dev;
+    ++stateRevision_;
     read_ = std::move(reader);
     warnings_.clear();
     dirty_ = true;
@@ -693,6 +694,7 @@ void RtsShoreView::release(gfx::Device& dev) {
 void RtsShoreView::shutdown(gfx::Device& dev) {
     if(!dev_)return;
     if(dev_!=&dev)throw std::logic_error("shore View GPU owner mismatch");
+    ++stateRevision_;
     release(dev);
     for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
@@ -717,6 +719,7 @@ void RtsShoreView::shutdown(gfx::Device& dev) {
 }
 
 void RtsShoreView::setMap(const Json& map) {
+    ++stateRevision_;
     net_ = Network{};
     dirty_ = true;
     netJson_ = map["waterNetwork"];
@@ -845,6 +848,7 @@ std::shared_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
 
 void RtsShoreView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
     if(!candidate || candidate->committed)return;
+    ++stateRevision_;
     candidate->committed=true;
     RtsShoreView& staged=*candidate->staged;
     release(*dev_);

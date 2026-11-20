@@ -109,6 +109,7 @@ public:
     bool mapMatches(int w,int h) const noexcept {
         return built_ && mapW_==w && mapH_==h;
     }
+    uint64_t stateRevision() const noexcept {return publicationRevision_;}
     bool canPrepareMap() const noexcept {
         return dev_ && built_ && texturesLoaded_;
     }

@@ -14029,6 +14029,103 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b2b_unpublished_scene_lease_is_consumed_once) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),0);
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    const auto previous=view.surfacePrewarmStats();
+    const auto retired=view.terrainRenderer().pendingMeshGpuRetirements();
+    CHECK(view.prepareMapFrame(renderer,scene,1.0,&visible,grid));
+    const auto staged=view.surfacePrewarmStats();
+    CHECK(staged.staged==previous.staged+1);
+    CHECK(staged.consumed==previous.consumed);
+    CHECK(staged.discarded==previous.discarded);
+    // The private Fog and Terrain candidates have NOT retired old GPU
+    // generations; no secondary camera may consume the unfinished frame.
+    CHECK(view.terrainRenderer().pendingMeshGpuRetirements()==retired);
+    CHECK(!view.publishedVisualFrame().ready());
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&visible,grid);
+    const auto consumed=view.surfacePrewarmStats();
+    CHECK(consumed.staged==staged.staged);
+    CHECK(consumed.consumed==staged.consumed+1);
+    CHECK(consumed.discarded==staged.discarded);
+    CHECK(view.visualFrameReadyFor(grid,1.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48b2b_stale_visibility_map_or_camera_discards_private_lease) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),0);
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,1.0,&vision,grid));
+    const auto first=view.surfacePrewarmStats();
+    vision[0]=2; // same pointer, mutated bytes: stale lease forbidden
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&vision,grid);
+    const auto afterVisibility=view.surfacePrewarmStats();
+    CHECK(afterVisibility.discarded==first.discarded+1);
+    CHECK(afterVisibility.consumed==first.consumed);
+    CHECK(view.visualFrameReadyFor(grid,1.0));
+    renderer.render(gfx::PassDesc{});
+
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,2.0,&vision,grid));
+    const auto beforeMap=view.surfacePrewarmStats();
+    grid.creep[0]=1; // valid dynamic data mutation, no buildTerrain call
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&vision,grid);
+    const auto afterMap=view.surfacePrewarmStats();
+    CHECK(afterMap.discarded==beforeMap.discarded+1);
+    CHECK(afterMap.consumed==beforeMap.consumed);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareMapFrame(renderer,scene,3.0,&vision,grid));
+    const auto beforeCamera=view.surfacePrewarmStats();
+    camera.distance=41; // changed camera frustum / visible Detail LODs
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,3.0,&vision,grid);
+    const auto afterCamera=view.surfacePrewarmStats();
+    CHECK(afterCamera.discarded==beforeCamera.discarded+1);
+    CHECK(afterCamera.consumed==beforeCamera.consumed);
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48b2a_scene_prewarm_invalidates_secondary_epoch_until_primary) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

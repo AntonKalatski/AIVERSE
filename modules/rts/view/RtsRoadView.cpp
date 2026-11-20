@@ -1955,6 +1955,7 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
             "road View cannot rebind before verified GPU retirement");
     }
     dev_ = &dev;
+    ++stateRevision_;
     read_ = std::move(reader);
     warnings_.clear();
     dirty_ = true;
@@ -2094,6 +2095,7 @@ void RtsRoadView::release(gfx::Device& dev) {
 void RtsRoadView::shutdown(gfx::Device& dev) {
     if(!dev_)return;
     if(dev_!=&dev)throw std::logic_error("road View GPU owner mismatch");
+    ++stateRevision_;
     release(dev);
     for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
@@ -2123,6 +2125,7 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
 }
 
 void RtsRoadView::setMap(const Json& map) {
+    ++stateRevision_;
     hasNet_ = map["roadNetwork"].isObject();
     net_ = RoadNetwork{};
     dirty_ = true;
@@ -2523,6 +2526,7 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
 
 void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
     if(!candidate || candidate->committed)return;
+    ++stateRevision_;
     candidate->committed=true;
     RtsRoadView& staged=*candidate->staged;
     // The candidate copied old kit handles with borrowed flags. Transfer
@@ -2621,6 +2625,7 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
 }
 
 void RtsRoadView::setWeather(float wet, float puddles) {
+    ++stateRevision_;
     weatherSet_ = true;
     wet_ = std::clamp(wet, 0.0f, 1.0f);
     puddles_ = std::clamp(puddles, 0.0f, 1.0f);

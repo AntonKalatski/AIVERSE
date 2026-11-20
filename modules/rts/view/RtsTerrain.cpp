@@ -39,6 +39,7 @@ float RtsView::groundAt(const MapGrid& g, float x, float z) const {
 }
 
 void RtsView::setTerrainDetail(const Json& map) {
+    discardPendingSurfaceLease();
     ++terrainGeneration_; // includes surface policy/texture changes before rebuilding geometry
     setRoadMap(map);
     terrain::DetailSurface d;
@@ -52,6 +53,7 @@ void RtsView::setTerrainDetail(const Json& map) {
 }
 
 void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
+    discardPendingSurfaceLease();
     // Any map rebuild invalidates the previous primary-frame publication.
     framePublication_.invalidate();
     ++terrainGeneration_; // conservative invalidation: cell edits can retain the MapGrid address

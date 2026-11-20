@@ -392,12 +392,21 @@ public:
                groundFx_.mapMatches(grid.w,grid.h) &&
                fog_.sheetMatches(grid.w,grid.h);
     }
-    // Optional render-owner prewarm for a built map: prepares the SAME
-    // GroundFX/Roads/Shores/Fog/Terrain cohort as draw(), without submitting
-    // scene commands, advancing animation, or publishing a camera epoch.
+    // Optional one-shot render-owner prewarm for a built map. A successful
+    // call keeps all five owners' GPU/CPU candidates UNPUBLISHED in a lease.
+    // The next matching primary draw consumes and publishes them exactly once,
+    // with no second GPU preparation. Any changed map, scene, camera, viewer,
+    // visibility, owner revision or time drops the lease and re-prepares.
+    // Neither prewarm nor its lease makes a secondary camera epoch ready.
     bool prepareMapFrame(render::Renderer3D& renderer,const RtsScene& scene,
                          double time,const std::vector<uint8_t>* vision,
                          const MapGrid& grid);
+    struct SurfacePrewarmStats {
+        uint64_t staged=0,consumed=0,discarded=0;
+    };
+    SurfacePrewarmStats surfacePrewarmStats() const noexcept {
+        return surfacePrewarmStats_;
+    }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
     // The generic frame fence is committed ONLY after all primary-frame
     // owners finish. Secondary RT cameras must consume exactly this epoch.
@@ -861,11 +870,21 @@ private:
         animDt = dt;
         return age + dt;
     }
-    // Internal two-phase owner transaction, also used by prepareMapFrame().
-    // Returning does not indicate readiness for secondary cameras.
+    // RAII candidate bundle is defined in RtsView.cpp before the view's
+    // out-of-line destructor. It never owns external scene/grid pointers.
+    struct PreparedSurfaceLease;
+    std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid);
+    // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
+    // This completes only the surface owner cohort, NOT FramePublicationEpoch.
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,
                              double time,const std::vector<uint8_t>* vision,
                              const MapGrid& grid);
+    // Must be defined out-of-line: the opaque lease owns private GPU handles.
+    void discardPendingSurfaceLease() noexcept;
+    std::unique_ptr<PreparedSurfaceLease> pendingSurfaceLease_;
+    SurfacePrewarmStats surfacePrewarmStats_;
     std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
     // Staged GPU kits may still own RHI handles after a refused full-idle

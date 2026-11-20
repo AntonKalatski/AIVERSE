@@ -101,6 +101,7 @@ public:
     size_t pendingMeshGpuRetirements() const noexcept {
         return retiredMeshes_.pending();
     }
+    uint64_t stateRevision() const noexcept {return publicationRevision_;}
     void invalidate() { geomDirty_ = true; ++publicationRevision_; }   // terrain rebuilt (heights may have changed): rebuild geometry
     // Map roads / lanes between buildings are drawn here (RtsView skips its flat road quads).
     bool drawsLinks() const { return lane_.on && pipe_.valid(); }
