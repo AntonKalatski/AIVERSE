@@ -47,6 +47,7 @@ public:
         config_=config;
         geometry_.reset();
         geometryRevision_=0;
+        geometryCurrent_=false;
         safe_=false;
         ready_=true;
         return true;
@@ -64,37 +65,44 @@ public:
                          uint64_t revision) {
         if(!ready()||!scene||!revision||revision<=geometryRevision_) {
             safe_=false;
+            geometryCurrent_=false;
             return false;
         }
         safe_=false;
+        geometryCurrent_=false;
         cpu_.setTraceGeometry(scene->traceView(),revision);
         geometry_=std::move(scene); // retain borrowed BVH until next update
         geometryRevision_=revision;
+        geometryCurrent_=true;
         (void)atlas_.uploadAll(cpu_); // clear old irradiance, even if frame budget is zero
         safe_=true;
         return true;
     }
     bool publishLights(std::vector<GiMovingLight> lights) {
         if(!ready())return false;
+        const bool coherent=safe_;
         safe_=false;
         std::vector<uint32_t> cleared;
         cpu_.setLights(std::move(lights),&cleared); // validate BEFORE publishing
         if(!cleared.empty())(void)atlas_.upload(cpu_,std::move(cleared));
-        safe_=bool(geometry_);
+        // A sparse/no-op source update cannot repair an earlier partial upload.
+        safe_=geometryCurrent_ && coherent;
         return true;
     }
     bool publishEnvironment(GiEnvironmentLight environment) {
         if(!ready())return false;
+        const bool coherent=safe_;
         safe_=false;
         std::vector<uint32_t> cleared;
         (void)cpu_.setEnvironment(environment,&cleared);
         if(!cleared.empty())(void)atlas_.upload(cpu_,std::move(cleared));
-        safe_=bool(geometry_);
+        safe_=geometryCurrent_ && coherent;
         return true;
     }
-    // Recover presentation only once the whole atlas matches the CPU source.
+    // Recover a failed upload only once the whole atlas matches the CPU source.
+    // Rejected geometry requires a valid newer publication, never an old-atlas flush.
     bool flushAll() {
-        if(!ready()||!geometry_||!device_->gpuHealthy())return false;
+        if(!ready()||!geometry_||!geometryCurrent_||!device_->gpuHealthy())return false;
         safe_=false;
         (void)atlas_.uploadAll(cpu_);
         safe_=true;
@@ -136,6 +144,7 @@ public:
         if(!atlas_.shutdownAfterGpuIdle())return false;
         geometry_.reset();
         geometryRevision_=0;
+        geometryCurrent_=false;
         device_=nullptr;
         ready_=false;
         return true;
@@ -148,6 +157,6 @@ private:
     GiDynamicProbeTexture atlas_;
     std::shared_ptr<const GiChunkedGeometrySnapshot> geometry_;
     uint64_t geometryRevision_=0;
-    bool ready_=false,safe_=false;
+    bool ready_=false,safe_=false,geometryCurrent_=false;
 };
 } // namespace aiverse::render

@@ -46,6 +46,12 @@ int main() {
     AIVERSE_TEST_CHECK(uploadFailed);
     AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
     AIVERSE_TEST_CHECK(!bridge.updateFrame({0,0,0}).canPresent);
+    // An unchanged snapshot has no dirty rows; it cannot repair a partial atlas.
+    AIVERSE_TEST_CHECK(bridge.publishLights({
+        GiMovingLight{5,{0,0,0},{1,0,0},4,30}}));
+    AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
+    AIVERSE_TEST_CHECK(bridge.publishEnvironment({}));
+    AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
     device.failUploads=false;
     AIVERSE_TEST_CHECK(bridge.flushAll());
     AIVERSE_TEST_CHECK(bridge.borrowedAtlas().valid());
@@ -53,9 +59,25 @@ int main() {
     AIVERSE_TEST_CHECK(!bridge.publishGeometry(nullptr,2));
     AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
     AIVERSE_TEST_CHECK(!bridge.updateFrame({0,0,0}).canPresent);
+    AIVERSE_TEST_CHECK(!bridge.flushAll());
+    AIVERSE_TEST_CHECK(bridge.publishLights({}));
+    AIVERSE_TEST_CHECK(bridge.publishEnvironment({}));
+    AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
+    AIVERSE_TEST_CHECK(!bridge.updateFrame({0,0,0}).canPresent);
     AIVERSE_TEST_CHECK(bridge.publishGeometry(scene,2));
     AIVERSE_TEST_CHECK(bridge.borrowedAtlas().valid());
     AIVERSE_TEST_CHECK(bridge.publishLights({}));
+    AIVERSE_TEST_CHECK(bridge.borrowedAtlas().valid());
+    // Accepted geometry with an upload failure can recover via a full upload;
+    // unlike rejected geometry, its CPU snapshot is current and owned.
+    device.failUploads=true;
+    uploadFailed=false;
+    try { (void)bridge.publishGeometry(scene,3); }
+    catch(const std::runtime_error&) {uploadFailed=true;}
+    AIVERSE_TEST_CHECK(uploadFailed);
+    AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
+    device.failUploads=false;
+    AIVERSE_TEST_CHECK(bridge.flushAll());
     AIVERSE_TEST_CHECK(bridge.borrowedAtlas().valid());
     // No actual draws in this FakeDevice: explicit host idle is legal.
     AIVERSE_TEST_CHECK(bridge.shutdownAfterGpuIdle());
