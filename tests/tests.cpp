@@ -12486,6 +12486,7 @@ public:
     const std::string& lastError() const override { return err_; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
+    bool waitForResourceIdle() override { return true; } // synchronous CPU fake
     void beginPass(const aiverse::gfx::PassDesc&) override {}
     void endPass() override {}
     void setViewport(const aiverse::gfx::Rect&) override {}
@@ -16493,8 +16494,17 @@ int main(int argc, char** argv) {
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]
         int before = g_failed;
-        fn();
+        try { fn(); }
+        catch(const std::exception& error) {
+            ++g_failed;
+            std::fprintf(stderr,"[EXCEPTION] %s: %s\n",name,error.what());
+        }
+        catch(...) {
+            ++g_failed;
+            std::fprintf(stderr,"[EXCEPTION] %s: unknown exception\n",name);
+        }
         std::printf("%s %s\n", g_failed == before ? "[ OK ]" : "[FAIL]", name);
+        std::fflush(stdout);
     }
     std::printf("\n%d checks, %d failed\n", g_checks, g_failed);
     return g_failed ? 1 : 0;
