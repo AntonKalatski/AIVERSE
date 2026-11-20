@@ -113,6 +113,9 @@ public:
         }
     }
 
+    bool validDevice(const gfx::Device& device) const noexcept {
+        return device_.validFor(device);
+    }
     size_t pendingOwners() const noexcept {
         return queue_?queue_->pending():0;
     }
