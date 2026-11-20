@@ -9,6 +9,7 @@
 #include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/studio-native/StudioShaderGraphDraft.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
+#include "apps/studio-native/StudioHumanLookDocument.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -178,6 +179,41 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
+                  method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
+                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanAppearanceFromAsset") {
+                StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
+                const auto relative=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
+                const auto path=studioContentRoot(ws_.project.dir)/std::filesystem::path(relative).parent_path()/"appearance.json";
+                if(std::filesystem::is_symlink(std::filesystem::symlink_status(path)) ||
+                   !std::filesystem::is_regular_file(path) || std::filesystem::file_size(path)>128*1024)
+                    throw std::runtime_error("No appearance.json beside this model; import a profile");
+                std::ifstream in(path,std::ios::binary);
+                if(!in)throw std::runtime_error("Cannot read model appearance");
+                std::string bytes((std::istreambuf_iterator<char>(in)),{});
+                const auto look=vivid::HumanAppearance::fromJson(Json::parse(bytes));
+                auto result=Json::object();result.set("name",Json::string("model profile"));result.set("look",look.toJson());reply.set("result",std::move(result));
+            } else if(method=="studio.humanAppearanceSave") {
+                reply.set("result",saveStudioHumanLook(ws_.project.dir,params.getStr("name"),params["look"]));
+            } else if(method=="studio.humanAppearanceLoad") {
+                reply.set("result",readStudioHumanLook(ws_.project.dir,params.getStr("name")));
+            } else if(method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+                reply.set("result",listStudioHumanLooks(ws_.project.dir));
+            } else {
+                if(method=="studio.humanAppearanceApply") {
+                    const auto& rev=params["revision"];
+                    if(!rev.isNumber() || rev.toDouble()<0 || rev.toDouble()!=double(rev.integer()))
+                        throw std::invalid_argument("Invalid appearance revision");
+                    StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
+                    facialPreview_.bindAppearance(catalog,params.getStr("guid"),uint64_t(rev.integer()),params["look"]);
+                    previewMaterialName_.clear();refreshMaterialPreview();
+                }
+                auto info=Json::object();info.set("schema",vivid::HumanAppearance::schema());
+                info.set("look",facialPreview_.appearance()?facialPreview_.appearance()->toJson():vivid::HumanAppearance{}.toJson());
+                info.set("preview",facialPreview_.describe());reply.set("result",std::move(info));
+            }
         } else if(method=="studio.facialPreviewBind" ||
                   method=="studio.facialPreviewControls" ||
                   method=="studio.facialPreviewInfo") {

@@ -14,8 +14,10 @@ carry `appearance.json`; Creator applies it automatically. Matte fabric and skin
 use explicit roughness instead of the low values in packed source maps. Hair
 retains coverage and now carries source root/seed attributes for colour effects.
 Y-up body proportions affect presentation skin-joint matrices only, including
-clothing rigs. This stage provides native controls/serialization; Studio UI is
-tracked in the following handoff, not implied by the old Creator sliders.
+clothing rigs. The native Studio **VIVID Appearance** panel exposes the profile through a
+typed bridge with apply, draft undo/redo, and native save/load. See the
+[control reference](vivid-appearance-controls.md). The old Creator DNA sliders
+are separate; profile overrides are loaded via the manifest or --appearance.
 
 Reference controls: [Epic hair overrides](https://dev.epicgames.com/documentation/metahuman/hair-overrides)
 and [skin tools](https://dev.epicgames.com/documentation/metahuman/skin-material-tools).

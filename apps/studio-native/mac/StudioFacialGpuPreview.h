@@ -37,7 +37,7 @@ public:
         return provider_?provider_->resources().acquireModelRead(model_):render::ModelReadLease{};
     }
     const render::Model* model() const noexcept {return model_;}
-    bool ready() const noexcept {return bool(model_) && facial_.ready();}
+    bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
     uint64_t sourceRevision() const noexcept {return revision_;}
 private:
     static bool readProjectFile(const std::filesystem::path& projectRoot,
@@ -52,6 +52,7 @@ private:
     std::string projectRoot_,guid_;
     std::string readerProject_,pendingSource_,pendingProject_,pendingGuid_,modelKey_;
     uint64_t pendingRevision_=0,publicationSerial_=0;
+    bool appearanceOnly_=false;
     uint64_t revision_=0;
     uint64_t rejectedRevision_=0;
     std::string rejectedGuid_,rejectedProject_,rejectedError_;

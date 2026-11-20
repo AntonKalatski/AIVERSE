@@ -23,7 +23,7 @@ test('move reorders within a tab stack',()=>{
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting']);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','human_appearance']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -96,11 +96,13 @@ test('closing last right panels removes their obsolete split',()=>{
   let t=closeTab(defaultDockTree(),'inspector');
   assert.ok(findDockStack(t,'dock-right'));
   t=closeTab(t,'lighting');
+  assert.ok(findDockStack(t,'dock-right'));
+  t=closeTab(t,'human_appearance');
   assert.equal(findDockStack(t,'dock-right'),null);
   assert.equal(dockStacks(t).length,3);
 });
 test('reopening Inspector restores pruned right-hand dock',()=>{
-  let t=closeTab(closeTab(defaultDockTree(),'inspector'),'lighting');
+  let t=closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'human_appearance');
   t=reopenTab(t,'inspector','dock-right');
   assert.equal(panelStack(t,'inspector'),'dock-right');
   assert.equal(dockStacks(t).length,4);

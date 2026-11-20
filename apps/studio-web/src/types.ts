@@ -64,8 +64,17 @@ export interface StudioSnapshot {
   history: { canUndo: boolean; canRedo: boolean };
 }
 export type StudioMethod = 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
-  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo';
+  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset';
+export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
+export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
+export interface HumanLookInfo {schema:HumanLookField[];look:HumanLook;preview:StudioFacialPreviewBinding}
 export interface StudioParams {
+  'studio.humanAppearanceInfo': Record<string,never>;
+  'studio.humanAppearanceApply': {guid:string;revision:number;look:HumanLook};
+  'studio.humanAppearanceSave': {name:string;look:HumanLook};
+  'studio.humanAppearanceLoad': {name:string};
+  'studio.humanAppearanceList': Record<string,never>;
+  'studio.humanAppearanceFromAsset': {guid:string};
   'studio.snapshot': Record<string, never>;
   'studio.propertiesFor': { entityId: string };
   'studio.save': Record<string, never>;
@@ -106,6 +115,12 @@ export interface StudioParams {
   'studio.viewportInput': { kind: 'orbit'; dx: number; dy: number } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
+  'studio.humanAppearanceInfo': HumanLookInfo;
+  'studio.humanAppearanceApply': HumanLookInfo;
+  'studio.humanAppearanceSave': {name:string;look:HumanLook};
+  'studio.humanAppearanceLoad': {name:string;look:HumanLook};
+  'studio.humanAppearanceList': {looks:string[]};
+  'studio.humanAppearanceFromAsset': {name:string;look:HumanLook};
   'studio.snapshot': StudioSnapshot;
   'studio.propertiesFor': StudioProperty[];
   'studio.save': StudioSnapshot;

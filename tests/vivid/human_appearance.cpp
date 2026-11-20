@@ -52,6 +52,9 @@ void test() {
     look.values["body.height"]=1.2f;applyHumanBody(source,look,world);
     expect(std::abs(world[1].m[13]-1.2f)<.001f && world[0].m[13]==1.f,"body deformation double applied or absent");
     expect(source.nodes[1].t.y==0,"body mutated source skeleton");
+    source.meshes.resize(1);source.meshes[0].boundsMin={-.2f,.8f,-.2f};source.meshes[0].boundsMax={.2f,1.2f,.2f};
+    source.nodes[0].mesh=0;world=original;applyHumanBody(source,look,world);
+    expect(std::abs(world[0].m[13]+world[0].m[5]-2.4f)<.003f,"rigid groom did not follow body height");
 
     for(auto name:{"neutral","warm","cool","stylized"}) {
         auto dna=HumanDNA::preset(name);

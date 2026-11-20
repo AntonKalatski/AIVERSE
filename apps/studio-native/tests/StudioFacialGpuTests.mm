@@ -26,7 +26,8 @@ int aiverseMain(int,char**) {
                              {"buffer":0,"byteOffset":36,"byteLength":36}],
               "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
                            {"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}],
-              "meshes":[{"primitives":[{"attributes":{"POSITION":0},"targets":[{"POSITION":1}]}],
+              "materials":[{"name":"Fabric"}],
+              "meshes":[{"primitives":[{"material":0,"attributes":{"POSITION":0},"targets":[{"POSITION":1}]}],
                          "extras":{"targetNames":["jawOpen"]}}],
               "nodes":[{"name":"Face","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0})";
             {std::ofstream file(root/"content/face.gltf");file<<gltf;}
@@ -91,6 +92,21 @@ int aiverseMain(int,char**) {
             binding.bind(catalog,asset->guid,rig);
             AIVERSE_TEST_CHECK(waitReady());
             AIVERSE_TEST_CHECK(preview.model()!=first && preview.sourceRevision()!=firstRevision);
+            binding.reset();
+            vivid::HumanAppearance look;
+            const auto materialName=preview.model()->materials.front().name;
+            look.materials[materialName]="cloth";
+            binding.bindAppearance(catalog,asset->guid,binding.revision(),look.toJson());
+            AIVERSE_TEST_CHECK(waitReady());
+            AIVERSE_TEST_CHECK(preview.ready() && binding.appearanceOnly());
+            AIVERSE_TEST_CHECK(preview.model()->materials.front().roughness>.8f);
+            {
+                auto read=preview.acquireRead();
+                device->beginFrame(64,64);render::RTSCamera camera;camera.distance=4.f;
+                renderer.beginScene(camera,64,64);
+                AIVERSE_TEST_CHECK(preview.submit(renderer,binding,1.f/60.f,error));
+                renderer.render(gfx::PassDesc{});device->endPass();device->endFrame();
+            }
             AIVERSE_TEST_CHECK(preview.clear(*device,renderer));
             AIVERSE_TEST_CHECK(!preview.ready());
             renderer.shutdown();epoch.retire();

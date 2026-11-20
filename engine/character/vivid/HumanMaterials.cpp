@@ -493,14 +493,28 @@ void applyHumanBody(const render::Model& model,const HumanAppearance& look,
     std::vector<bool> joint(world.size(),false);
     for(const auto& skin:model.skins)for(int j:skin.joints)if(j>=0&&size_t(j)<joint.size())joint[size_t(j)]=true;
     const float eps=h*.0001f;
-    for(size_t i=0;i<world.size();++i)if(joint[i]) {
-        auto& m=world[i];const render::float3 p{m.m[12],m.m[13],m.m[14]};const auto q=field(p);
+    for(size_t i=0;i<world.size();++i) {
+        const auto& node=model.nodes[i];
+        const bool rigid=node.mesh>=0 && node.skin<0 && size_t(node.mesh)<model.meshes.size();
+        if(!joint[i]&&!rigid)continue;
+        render::float3 local{};
+        if(rigid) {
+            const auto& mesh=model.meshes[size_t(node.mesh)];
+            local={(mesh.boundsMin.x+mesh.boundsMax.x)*.5f,(mesh.boundsMin.y+mesh.boundsMax.y)*.5f,(mesh.boundsMin.z+mesh.boundsMax.z)*.5f};
+        }
+        auto& m=world[i];
+        const render::float3 p{m.m[12]+m.m[0]*local.x+m.m[4]*local.y+m.m[8]*local.z,
+            m.m[13]+m.m[1]*local.x+m.m[5]*local.y+m.m[9]*local.z,
+            m.m[14]+m.m[2]*local.x+m.m[6]*local.y+m.m[10]*local.z};
+        const auto q=field(p);
         for(int axis=0;axis<3;++axis) {
             const render::float3 d{m.m[axis*4],m.m[axis*4+1],m.m[axis*4+2]};
             const auto r=field({p.x+d.x*eps,p.y+d.y*eps,p.z+d.z*eps});
             m.m[axis*4]=(r.x-q.x)/eps;m.m[axis*4+1]=(r.y-q.y)/eps;m.m[axis*4+2]=(r.z-q.z)/eps;
         }
-        m.m[12]=q.x;m.m[13]=q.y;m.m[14]=q.z;
+        m.m[12]=q.x-m.m[0]*local.x-m.m[4]*local.y-m.m[8]*local.z;
+        m.m[13]=q.y-m.m[1]*local.x-m.m[5]*local.y-m.m[9]*local.z;
+        m.m[14]=q.z-m.m[2]*local.x-m.m[6]*local.y-m.m[10]*local.z;
     }
 }
 } // namespace aiverse::vivid

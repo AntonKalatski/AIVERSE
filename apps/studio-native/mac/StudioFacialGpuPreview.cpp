@@ -43,6 +43,7 @@ bool StudioFacialGpuPreview::readProjectFile(
 bool StudioFacialGpuPreview::clear(
         gfx::Device& device,render::Renderer3D& renderer) noexcept {
     // Detach CPU readers before the shared owner drains GPU retirements.
+    appearanceOnly_=false;
     facial_.clear();
     animator_.setModel(nullptr);
     pose_.clear();
@@ -153,7 +154,8 @@ bool StudioFacialGpuPreview::sync(
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
             ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
-        if(!newSession.configure(*prepared.model,binding.document(),
+        if(binding.appearance())vivid::applyHumanAppearance(*prepared.model,*binding.appearance());
+        if(!binding.appearanceOnly() && !newSession.configure(*prepared.model,binding.document(),
                                  binding.scalars(),ikTargets,error))
             throw std::runtime_error(error);
         // CPU decoding/preparation is complete; validate the rig BEFORE any
@@ -170,6 +172,7 @@ bool StudioFacialGpuPreview::sync(
                 facial_.clear();
             });
         }
+        appearanceOnly_=binding.appearanceOnly();
         model_=published;
         modelKey_=key;
         facial_=std::move(newSession);
@@ -223,9 +226,13 @@ bool StudioFacialGpuPreview::submit(
     const float frameDt=std::clamp(dt,0.f,0.1f);
     animator_.update(frameDt);
     animator_.evaluate(pose_); // one parent writer, bind/clip pose once
-    if(!facial_.apply(*model_,pose_,frameDt,error))
+    if(!appearanceOnly_ && !facial_.apply(*model_,pose_,frameDt,error))
         return false; // FacialControlRig is transactional on failure
     render::worldMatrices(*model_,pose_,nodeWorld_);
+    if(binding.appearance()) {
+        try {vivid::applyHumanBody(*model_,*binding.appearance(),nodeWorld_);}
+        catch(const std::exception& ex){error=ex.what();return false;}
+    }
     const auto a=model_->boundsMin,b=model_->boundsMax;
     const float dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z;
     const float extent=std::max({dx,dy,dz,0.0001f});

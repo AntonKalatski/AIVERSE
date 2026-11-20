@@ -6,6 +6,8 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "engine/render/Model.h"
+#include "engine/character/vivid/HumanAppearance.h"
+#include <optional>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -22,6 +24,7 @@ namespace aiverse::studio {
 class StudioFacialPreviewBinding final {
 public:
     void reset() {
+        appearance_.reset();appearanceOnly_=false;
         guid_.clear();
         path_.clear();
         draft_=Json();
@@ -30,6 +33,19 @@ public:
         gpuReady_=false;
         gpuError_.clear();
         ++revision_;
+    }
+    const std::optional<vivid::HumanAppearance>& appearance() const {return appearance_;}
+    bool appearanceOnly() const {return appearanceOnly_;}
+    Json bindAppearance(const StudioAssetCatalog& catalog,const std::string& guid,
+                        uint64_t expected,const Json& look) {
+        if(expected!=revision_)throw std::runtime_error("Stale character selection; refresh first");
+        const auto path=checkedModelPath(catalog,guid);
+        const auto candidate=vivid::HumanAppearance::fromJson(look);
+        if(guid_!=guid || !bound()) {
+            draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;
+        }
+        guid_=guid;path_=path;appearance_=candidate;
+        gpuReady_=false;gpuError_.clear();++revision_;return describe();
     }
     bool bound() const {return !guid_.empty();}
     uint64_t revision() const {return revision_;}
@@ -104,6 +120,8 @@ public:
                 throw std::invalid_argument("Facial input declared as both scalar and vector: "+item.first);
         // Publish the COMPLETE new binding only after native GUID and
         // authoring schema checks. This is NOT a Model/Graph/GPU compile.
+        if(guid_!=guid)appearance_.reset();
+        appearanceOnly_=false;
         guid_=guid;
         path_=path;
         draft_=draft;
@@ -155,6 +173,8 @@ public:
     }
     Json describe() const {
         Json result=Json::object();
+        result.set("appearanceOnly",Json::fromBool(appearanceOnly_));
+        result.set("appearance",appearance_?appearance_->toJson():Json());
         result.set("bound",Json::fromBool(bound()));
         result.set("guid",Json::string(guid_));
         result.set("path",Json::string(path_));
@@ -185,6 +205,8 @@ public:
 private:
     std::string guid_,path_;
     Json draft_;
+    std::optional<vivid::HumanAppearance> appearance_;
+    bool appearanceOnly_=false;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;

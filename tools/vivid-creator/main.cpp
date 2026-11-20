@@ -1804,7 +1804,10 @@ struct CreatorApp {
                 status="VIVID rig correction invalid: last-good pose retained";
             else facePose.swap(rigPoseScratch);
         }
-        if(appearance)applyHumanBody(*human.head,*appearance,facePose);
+        if(appearance) {
+            try {applyHumanBody(*human.head,*appearance,facePose);}
+            catch(const std::exception& e){status=e.what();return;}
+        }
         if(actor) {
             if(!actor->dispatch(controller.frame(),human.facialBinding))
                 status=actor->lastError();

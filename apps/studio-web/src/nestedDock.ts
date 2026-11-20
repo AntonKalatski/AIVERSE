@@ -1,14 +1,16 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','human_appearance'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   hierarchy: 'Hierarchy', assets: 'Assets', scene: 'Scene', game: 'Game',
-  materials: 'Materials', animation: 'Animation', facial_rig: 'Facial Rig', inspector: 'Inspector', console: 'Console', lighting: 'Lighting', shader_graph: 'Shader Graph'
+  materials: 'Materials', animation: 'Animation', facial_rig: 'Facial Rig', inspector: 'Inspector', console: 'Console', lighting: 'Lighting', shader_graph: 'Shader Graph',
+  human_appearance: "VIVID Appearance"
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   hierarchy: 'dock-left', assets: 'dock-bottom', scene: 'dock-center', game: 'dock-center',
-  materials: 'dock-center', animation: 'dock-center', facial_rig: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right', shader_graph: 'dock-center'
+  materials: 'dock-center', animation: 'dock-center', facial_rig: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right', shader_graph: 'dock-center',
+  human_appearance: "dock-right"
 };
 
 export type DockAxis = 'horizontal' | 'vertical';
@@ -42,7 +44,7 @@ export function defaultDockTree(): DockTree {
       stack('dock-left',['hierarchy'],'hierarchy'),
       split('split-body-right','horizontal',.72,
         stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph'],'scene'),
-        stack('dock-right',['inspector','lighting'],'inspector'))),
+        stack('dock-right',['inspector','lighting','human_appearance'],'inspector'))),
     stack('dock-bottom',['assets','console'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {

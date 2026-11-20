@@ -1,5 +1,6 @@
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "tests/AlwaysCheck.h"
+#include "apps/studio-native/StudioHumanLookDocument.h"
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -94,7 +95,22 @@ int main() {
         try {(void)preview.controls(generation+1,scalar,Json::object());}
         catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
+        vivid::HumanAppearance look;look.values["skin.roughness"]=.8f;
+        const auto saved=saveStudioHumanLook(project.string(),"matte",look.toJson());
+        AIVERSE_TEST_CHECK(readStudioHumanLook(project.string(),"matte")["look"]==saved["look"]);
+        AIVERSE_TEST_CHECK(listStudioHumanLooks(project.string())["looks"].size()==1);
+        rejected=false;try{saveStudioHumanLook(project.string(),"../escape",look.toJson());}catch(...){rejected=true;}
+        AIVERSE_TEST_CHECK(rejected);
+        preview.bindAppearance(assets,model->guid,preview.revision(),look.toJson());
+        AIVERSE_TEST_CHECK(preview.appearance().has_value() && !preview.appearanceOnly());
+        AIVERSE_TEST_CHECK(preview.document()==rig); // keep MotionWeave rig when editing appearance
+        rejected=false;try{preview.bindAppearance(assets,model->guid,0,look.toJson());}catch(...){rejected=true;}
+        AIVERSE_TEST_CHECK(rejected);
         preview.reset();
+        preview.bindAppearance(assets,model->guid,preview.revision(),look.toJson());
+        AIVERSE_TEST_CHECK(preview.appearanceOnly());
+        preview.reset();
+        AIVERSE_TEST_CHECK(!preview.appearance().has_value());
         AIVERSE_TEST_CHECK(!preview.describe()["bound"].boolean());
         fs::remove_all(project);
     }catch(...) {
