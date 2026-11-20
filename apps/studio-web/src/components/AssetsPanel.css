@@ -159,3 +159,15 @@
 .studio-asset-settings-note{font-size:var(--au-font-sm);color:var(--au-text-faint);
   line-height:1.5;margin:3px 0}
 @media(max-width:760px){.studio-asset-import-settings{width:205px;max-width:45%}}
+
+/* Explicit, indexed dependency list for the selected content asset. */
+.studio-asset-references{border-top:1px solid var(--au-line);padding:12px;
+  display:flex;flex-direction:column;gap:8px;min-width:0}
+.studio-asset-references>strong{color:var(--au-text);font-size:var(--au-font-sm)}
+.studio-asset-references>p{color:var(--au-text-muted);font-size:var(--au-font-xs);
+  overflow-wrap:anywhere}
+.studio-asset-usage{display:flex;flex-direction:column;gap:3px;
+  padding:8px;border:1px solid var(--au-line);border-radius:var(--au-radius-sm);
+  background:var(--au-field);overflow-wrap:anywhere}
+.studio-asset-usage span{color:var(--au-text-soft)}
+.studio-asset-usage small{color:var(--au-text-faint)}
