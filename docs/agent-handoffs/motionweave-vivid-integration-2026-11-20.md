@@ -37,3 +37,16 @@ Actual KINGSTON builds: Studio, facial runtime/binding, AutoLOD, VIVID Creator P
 Unified Debug runner (tests-first.log): 12/17 PASS, 5 FAIL: auto_lod_runtime (malformed envelope throws), vivid_human_appearance (irisRadius fixture out of schema bounds), vivid_human_import (invalid fixture accepted), vivid_metal_sculpt_id (record rejected), vivid_actor_retirement (initialization rejected). Real Metal GPU and RHI tests PASS. Studio facial runtime and binding PASS. Python Studio contracts: 24/29 PASS; stale CMake/asset catalog/doc assertions and Python 3.8 Path.is_relative_to compatibility need repair. Do not report full suite passing. CI NOT RUN; GUI/pixel preview NOT RUN yet.
 
 Next: finish acceptance target build, diagnose the five failures without relaxing runtime validation, update stale contracts, run combined tests and real Renderer3D preview. Studio async provider adoption remains open. Correction to previous entry: RTS error was void collectRetired used as bool (not init).
+
+## Combined Metal acceptance — 2026-11-20
+
+Code: `647b7bc2e07ab1f99ca567022ac94cfed0d80dec` on this branch. Fixed reserved MSL identifiers `vertex` and `thread` in both actual-stream expansion kernels without changing CPU/GPU struct layout. GPU actor initialization now works before beginFrame; dispatch still rejects zero frame serial, covered by the original zero-frame fake RHI plus new rejection assertion. Updated malformed AutoLOD rejection, valid iris bound, real newline rejection and portable namespace fixtures. Studio source-contract assertions follow current asset catalog and documentation; bundle check supports system Python 3.8.
+
+Actual verification (KINGSTON):
+- Native selected Debug tests: 24/24 PASS (`tests-second.log`). Additional owner/Metal ID/actor regression: 3/3 PASS (`tests-gpu-fixed.log`), actor overlaps previous set: 26 distinct passing tests.
+- Real Metal sculpt ID/depth/readback: PASS, `metal-id-fixed.log`.
+- Real single-actor Renderer3D + MotionWeave preview: PASS (`preview-actor-fixed.log`); 81,989 morph-changed pixels, 63,241 MotionWeave-changed pixels. Both same-frame colour/ID depth probes PASS with zero reported delta. PPM files: preview-baseline, preview-morph, preview-motionweave on KINGSTON. These verify a procedural fixture, not photoreal human quality.
+- Studio Python: 29/29 PASS (`studio-python-final.log`); TypeScript typecheck PASS (`web-typecheck.log`). Web suite remains 73/73 PASS from merge.
+- VIVID Creator, preview, Studio and focused targets compile. CI, Vulkan/GLES, complete regression, Studio visual parity, imported Creator and mask/crowd GUI cases NOT RUN yet.
+
+Next: validate mask and crowd scenes; close 64-slot VIVID adapter coverage; continue shared provider/lease adoption in Studio. No performance or full production parity claim.

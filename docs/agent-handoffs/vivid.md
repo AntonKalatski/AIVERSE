@@ -1601,3 +1601,7 @@ User-authorized merge `1d8c76e99c924f0373067ba413fac7b5d4803018` preserves VIVID
 ## 2026-11-20 combined native build checkpoint
 
 Code `4f7d6afd60c962b7a6594aea97f8eef01acc0ce0` on `integration/motionweave-studio-facial-stage184`: Creator and Studio compile; combined runner 12/17 passes with five failures under investigation. Full commands/logs and next steps: [integration handoff](motionweave-vivid-integration-2026-11-20.md). All builds on KINGSTON; no complete acceptance claim.
+
+## 2026-11-20 combined Metal acceptance
+
+Code `647b7bc2e07ab1f99ca567022ac94cfed0d80dec`: fixed reserved MSL tokens and pre-frame actor initialization. 26 distinct focused native tests PASS; real single-actor Renderer3D/MotionWeave colour/ID-depth preview PASS. Detailed commands, limits, logs and next steps: [joint handoff](motionweave-vivid-integration-2026-11-20.md). All artifacts on KINGSTON.
