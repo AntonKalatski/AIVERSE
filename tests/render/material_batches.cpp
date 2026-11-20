@@ -307,6 +307,7 @@ int aiverseMain(int argc, char** argv) {
         std::string(std::getenv("AIVERSE_BATCH_GPU_TIMELINE")) == "1";
     std::vector<gfx::Device::GpuTiming> gpuTimelineSamples;
     bool gpuTimingUnsupported = false;
+    bool modelCountersUnsupported = false;
     if (gpuTimeline) gpuTimelineSamples.reserve(96);
     const bool modelGpuCounters = stress &&
         std::getenv("AIVERSE_BATCH_MODEL_GPU_COUNTERS") &&
@@ -370,7 +371,10 @@ int aiverseMain(int argc, char** argv) {
     cb.init=[&](gfx::Device& d) {
         device=&d; if (!renderer.init(d) || !render::uploadModel(d,*model)) { failed=true; return; }
         if (modelGpuCounters && !d.enableModelGpuCounters(true)) {
-            std::fprintf(stderr, "GPU model-pass counters UNSUPPORTED by this device\n");
+            std::fprintf(stderr,
+                "GPU model-pass draw-boundary timestamp counters UNSUPPORTED "
+                "(Metal capability; no samples recorded)\n");
+            modelCountersUnsupported = true;
             failed = true;
             return;
         }
@@ -982,7 +986,9 @@ int aiverseMain(int argc, char** argv) {
         failed|=!renderer.modelError().empty();d.endPass();++frame;
     };
     cb.shutdown=[&]{
-        if (modelGpuCounters) {
+        // The fixture exits cleanly with a distinct unsupported code instead
+        // of emitting misleading "0/66" secondary GPU timeline failures.
+        if (modelGpuCounters && !modelCountersUnsupported) {
             auto completed = device->takeModelGpuCounters();
             modelGpuSamples.insert(modelGpuSamples.end(),
                                    completed.begin(), completed.end());
@@ -1019,7 +1025,7 @@ int aiverseMain(int argc, char** argv) {
                             validCount, (prefix + "-model-gpu-counters.csv").c_str());
             }
         }
-        if (gpuTimeline) {
+        if (gpuTimeline && !modelCountersUnsupported) {
             auto completed = device->takeGpuTimings();
             gpuTimelineSamples.insert(gpuTimelineSamples.end(),
                                       completed.begin(), completed.end());
@@ -1055,5 +1061,7 @@ int aiverseMain(int argc, char** argv) {
         if(secondModel)render::releaseModel(*device,*secondModel);
         render::releaseModel(*device,*model);renderer.shutdown();
     };
-    platform::run(cfg,cb);return failed||!finished?1:0;
+    platform::run(cfg,cb);
+    if (modelCountersUnsupported) return 77; // explicit hardware capability skip
+    return failed||!finished?1:0;
 }
