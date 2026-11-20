@@ -1591,6 +1591,15 @@ TerrainRenderer::prepareFrameVisible(
         }
     }
 
+    // Never publish a frame with missing terrain material pipeline. A
+    // lower-tier fallback is fine, but a fully unusable backend must fail
+    // the owner transaction instead of silently publishing a blank surface.
+    bool usablePipeline=pending->pipeline_.valid();
+    for(int tier=first;tier>=0 && !usablePipeline;--tier)
+        usablePipeline=pipes_[dbase+tier].valid();
+    if(!usablePipeline)
+        throw std::runtime_error("TerrainRenderer: no usable staged pipeline");
+
     // Traced shadows require a GPU height texture. Stage the replacement
     // privately so an exception cannot replace a prior-camera generation.
     if(camera.traceActive() && heightDirty_) {
@@ -1761,7 +1770,8 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         }
     }
     if(!preparedOnly)++frame_;
-    if (!preparedOnly && detailOn_ && geoBytes_ > look_.detailBudgetMB * 1048576.0) { // LRU: drop LOD meshes not drawn for a while
+    if (!preparedOnly && !stagedFields && detailOn_ &&
+        geoBytes_ > look_.detailBudgetMB * 1048576.0) { // legacy LRU only; LENS GPU lifetime is frame-fenced
         for (auto& c : chunks_)
             for (size_t L = 0; L < c.lods.size(); ++L) {
                 Lod& l = c.lods[L];
@@ -1779,20 +1789,25 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         frameFieldsPrepared_=false;
     }
     const int tier = tierFor(r);
+    int effectiveTier=tier;
     gfx::PipelineHandle pipe{};
     if(preparedOnly || stagedFields) {
         // Secondary cameras and staged primary frames never compile shaders.
         const int first=tier+(detailOn_?3:0);
         const int minimum=detailOn_?3:0;
         for(int i=first;i>=minimum;--i)
-            if(pipes_[i].valid()){pipe=pipes_[i];break;}
+            if(pipes_[i].valid()) {
+                pipe=pipes_[i];
+                effectiveTier=i-minimum; // shader fallback must match uniforms
+                break;
+            }
     }else pipe=pipeline(dev,tier+(detailOn_?3:0));
     if (!pipe.valid()) return;
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
     u.mode[0] = 0.05f;
-    u.mode[1] = tier >= 1 && look_.materials() ? 1.0f : 0.0f;
-    u.mode[2] = tier >= 2 ? 1.0f : 0.0f;
+    u.mode[1] = effectiveTier >= 1 && look_.materials() ? 1.0f : 0.0f;
+    u.mode[2] = effectiveTier >= 2 ? 1.0f : 0.0f;
     u.mode[3] = fog ? 1.0f : 0.0f;
     for (int i = 0; i < 4; ++i) {
         const TerrainLook::Layer* L = i < int(look_.layers.size()) ? &look_.layers[size_t(i)] : nullptr;

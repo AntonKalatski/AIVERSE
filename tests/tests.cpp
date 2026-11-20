@@ -14029,6 +14029,63 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage47b3c_trace_height_failure_does_not_publish_or_retire) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    renderer.setShadowQuality(render::ShadowQuality::High);
+    renderer.setTraceEnabled(true);
+    game::TerrainRenderer terrain;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    grid.corner.resize(size_t(grid.w+1)*size_t(grid.h+1),0);
+    CHECK(terrain.build(dev,grid,false));
+    render::RTSCamera camera;
+    camera.target={2,0,2};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    // The AIVERSE_TRACE=off override is supported; the test exercises
+    // traced RHI when the selected backend/environment enables it.
+    if(renderer.traceActive()) {
+        const auto before=terrain.heightField().tex;
+        const auto pending=terrain.pendingMeshGpuRetirements();
+        dev.failTexture=dev.textureAttempts+1;
+        bool rejected=false;
+        try {
+            (void)terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+        }catch(const std::runtime_error&){rejected=true;}
+        dev.failTexture=0;
+        CHECK(rejected);
+        CHECK(terrain.heightField().tex.id==before.id);
+        CHECK(terrain.pendingMeshGpuRetirements()==pending);
+        // The temporary shader/pipeline and any staged COW images must
+        // be cleaned by the candidate after the late height allocation fails.
+        auto ready=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+        CHECK(ready!=nullptr);
+        terrain.commitFrame(std::move(ready));
+        CHECK(terrain.heightField().tex.valid());
+        const auto shaderAttempts=dev.shaderAttempts;
+        const auto pipelineAttempts=dev.pipelineAttempts;
+        const auto textureAttempts=dev.textureAttempts;
+        const auto bufferAttempts=dev.bufferAttempts;
+        terrain.draw(renderer,grid,nullptr,false);
+        CHECK(dev.shaderAttempts==shaderAttempts);
+        CHECK(dev.pipelineAttempts==pipelineAttempts);
+        CHECK(dev.textureAttempts==textureAttempts);
+        CHECK(dev.bufferAttempts==bufferAttempts);
+    } else {
+        auto ready=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+        CHECK(ready!=nullptr);
+        terrain.commitFrame(std::move(ready));
+        terrain.draw(renderer,grid,nullptr,false);
+    }
+    renderer.render(gfx::PassDesc{});
+    terrain.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage47b3b_primary_pipeline_is_staged_before_draw) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
