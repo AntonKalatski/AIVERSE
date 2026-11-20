@@ -128,7 +128,9 @@ bool StudioFacialGpuPreview::sync(
         if(!candidate)throw std::runtime_error("Model import returned no Model");
         if(candidate->nodes.empty() || candidate->vertices.empty())
             throw std::runtime_error("Imported facial Model has no geometry");
-        candidate->batching.autoLod=false;
+        // Respect the imported asset's normal autoLod policy. The shared
+        // Stage 186 generator now supports unskinned semantic morphs with
+        // source texture aliasing. Authored/skinned LODs keep importer policy.
         lib::animation::FacialPreviewSession newSession;
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
