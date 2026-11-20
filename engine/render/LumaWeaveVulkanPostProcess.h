@@ -279,6 +279,8 @@ public:
                     objectMotion_.texture:gfx::TextureHandle{};
                 temporal.motionFrameSerial=sameViewMotion?
                     motionFrameSerial_:0;
+                temporal.motionViewKey=sameViewMotion?motionViewKey_:0;
+                temporal.motionViewEpoch=sameViewMotion?motionViewEpoch_:0;
                 // If animated geometry is visible, no valid velocity
                 // means CURRENT spatial lighting only. Camera-only motion
                 // is not sufficient for skinned/deforming surfaces.
