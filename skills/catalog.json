@@ -4010,6 +4010,20 @@
       ]
     },
     {
+      "id": "aiverse-texture-rhi",
+      "package": null,
+      "path": "skills/visuals/aiverse-texture-rhi/SKILL.md",
+      "domain": "workflow",
+      "summary": "Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/texture-rhi.md",
+      "keywords": []
+    },
+    {
       "id": "aiverse-themes",
       "package": "themes",
       "path": "skills/ui/aiverse-themes/SKILL.md",

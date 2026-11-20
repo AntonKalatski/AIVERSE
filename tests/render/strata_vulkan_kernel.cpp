@@ -22,6 +22,58 @@ using namespace aiverse::render;
 using namespace aiverse::render::strata;
 using namespace aiverse::gfx;
 
+// Both public Vulkan resource ABIs must coexist on one device and frame.
+static void testComputeLayouts(gfx::Device& device) {
+    const char* textureAbi=R"(
+layout(set=0,binding=12,std430) buffer Output { uint value; } outputData;
+layout(set=0,binding=16,std140) uniform Params { uint value; } params;
+void main() { if(gl_GlobalInvocationID.x==0) outputData.value=params.value; }
+)";
+    const char* bufferAbi=R"(#version 450
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+layout(set=0,binding=0,std430) buffer Output { uint value; } outputData;
+layout(push_constant) uniform Params { uint value; } params;
+void main() { if(gl_GlobalInvocationID.x==0) outputData.value+=params.value; }
+)";
+    auto texture=device.createCompute({nullptr,textureAbi,"texture resource ABI"});
+    auto buffer=device.createCompute({nullptr,bufferAbi,"buffer resource ABI",
+                                      VulkanComputeLayout::BufferPushConstants});
+    assert(texture.valid() && buffer.valid());
+    BufferDesc desc{};
+    desc.type=BufferType::Storage;desc.usage=Usage::Dynamic;desc.size=16;
+    const auto output=device.createBuffer(desc);
+    assert(output.valid());
+    device.beginFrame(64,64);
+    assert(device.beginCompute(texture));
+    device.setComputeBuffer(0,output);
+    const std::array<uint32_t,4> initial{{37,0,0,0}};
+    device.setComputeUniforms(initial.data(),sizeof(initial));
+    assert(device.dispatchChecked(1,1));
+    device.endCompute();
+    assert(device.beginCompute(buffer));
+    device.setComputeBuffer(0,output);
+    const uint32_t increment=5;
+    device.setComputeUniforms(&increment,sizeof(increment));
+    assert(device.dispatchChecked(1,1));
+    // A rejected binding must prevent submission, not silently reuse slot zero.
+    device.setComputeBuffer(8,output);
+    assert(!device.dispatchChecked(1,1));
+    device.endCompute();
+    bool ready=false;
+    assert(device.readBufferAsync(output,4,[&](std::vector<uint8_t> bytes) {
+        assert(bytes.size()==4);
+        uint32_t value=0;std::memcpy(&value,bytes.data(),4);
+        assert(value==42);ready=true;
+    }));
+    device.endFrame();
+    for(int i=0;i<12 && !ready;++i) {
+        device.beginFrame(64,64);device.endFrame();
+    }
+    assert(ready);
+    device.destroyBuffer(output);
+    device.destroyCompute(texture);device.destroyCompute(buffer);
+}
+
 static ModelAsset sample() {
     ModelAsset out;
     ModelPrimitiveAsset p{};
@@ -207,6 +259,7 @@ int main() {
         std::cout<<"[strata-vulkan] SKIP compute unsupported\n";
         return 0;
     }
+    testComputeLayouts(*device);
     const auto asset=sample();
     std::vector<uint8_t> metadata;
     assert(packGpuMetadata(asset,metadata,&error));

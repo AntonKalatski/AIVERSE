@@ -13,11 +13,14 @@
 #include <string>
 #include <vector>
 #include "../gfx/Gfx.h"
+#include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
 #include "Math3D.h"
 #include "PrismaMotionTextureInput.h"
 #include "PrismaGpuRetirement.h"
 #include "Model.h"
+#include "ModelVirtualTextureSampling.h"
+#include "GpuMaterialResourceTable.h"
 #include "ModelStaticEligibility.h"
 #include "CpuMdiAdaptivePolicy.h"
 #include "AutoCpuBatchPolicy.h"
@@ -481,6 +484,38 @@ public:
 
     void beginScene(const Camera3D& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+    // Bridge the current opaque immediate-mesh scene queue into VT feedback.
+    // The caller supplies a compatible feedback pipeline and per-mesh
+    // material binding. This does not cover ModelItem or custom renderers
+    // (terrain) until their UV/material binding paths are integrated.
+    using FeedbackMeshBinder = std::function<bool(
+        gfx::Device&, const Mesh&, const mat4&)>;
+    bool collectMeshFeedbackDraws(
+        std::vector<gfx::VirtualTextureFeedbackDraw>& out,
+        gfx::PipelineHandle pipeline,
+        const FeedbackMeshBinder& bind) const {
+        // Mesh VT feedback is optional: model and procedural producers can
+        // submit feedback even when no immediate-mesh pipeline is installed.
+        if (!pipeline.valid() || !bind) return true;
+        for (const auto& item : items_) {
+            if (!item.mesh || !item.mesh->vb.valid() ||
+                !item.mesh->ib.valid() || !item.mesh->indexCount ||
+                item.color.w < 0.99f) continue;
+            const Mesh* mesh = item.mesh;
+            const mat4 transform = item.model;
+            gfx::VirtualTextureFeedbackDraw draw;
+            draw.pipeline = pipeline;
+            draw.vertexBuffer = mesh->vb;
+            draw.indexBuffer = mesh->ib;
+            draw.count = mesh->indexCount;
+            draw.prepare = [bind,mesh,transform](gfx::Device& dev) {
+                return bind(dev,*mesh,transform);
+            };
+            out.push_back(std::move(draw));
+        }
+        return true;
+    }
+
     // Opt-in per-surface ripple normals. Positions are render-origin-relative
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
     void drawNereidRippleMesh(const Mesh& mesh,const mat4& model,float4 color,
@@ -529,6 +564,31 @@ public:
                            const strata::GpuMetadataScene& pooled,
                            const std::string& sourceKey);
     StrataPreviewStats strataPreviewStats() const { return strataPreviewStats_; }
+    // Optional VT sampling for built-in model material shaders. Resolver
+    // returns the physical atlas/page-table domain for a given model and
+    // material; it must only query existing GPU allocations (render thread).
+    // Shader Graph materials keep their existing texture slot contract.
+    using ModelVirtualTextureResolver = std::function<bool(
+        const Model&, const Material&, ModelVirtualTextureBinding&)>;
+    void setModelVirtualTextureResolver(ModelVirtualTextureResolver resolver) {
+        modelVirtualTextureResolver_ = std::move(resolver);
+    }
+    void clearModelVirtualTextureResolver() {
+        modelVirtualTextureResolver_ = {};
+    }
+    bool resolveModelVirtualTexture(const Model& model,
+                                    const Material& material,
+                                    ModelVirtualTextureBinding& out) const {
+        out = {};
+        if (!modelVirtualTextureResolver_ ||
+            !modelVirtualTextureResolver_(model,material,out) ||
+            !out.valid()) {
+            out = {};
+            return false;
+        }
+        return true;
+    }
+
     // Opt-in CPU cache of per-node rigid bind transforms for stationary objects
     // with stable persistentId. Does NOT cache visibility, LOD, materials or draws.
     struct StaticModelCacheStats {
@@ -615,6 +675,11 @@ public:
         uint32_t preflightGroups = 0, batchCacheHits = 0, batchCacheMisses = 0;
         bool adaptiveInstancing = false;
         bool compacted = false, prepared = false;
+        // Counts only successful Metal ICB executions, not GPU staging.
+        uint32_t perCommandVtExecutions = 0, mixedVtExecutions = 0;
+        // Host-accepted ICB submissions; actual GPU completion is async.
+        uint32_t perCommandPbrSubmissions = 0, mixedPbrSubmissions = 0;
+        uint32_t shaderGraphIcbSubmissions = 0, mixedGraphSourceSubmissions = 0;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
@@ -629,7 +694,10 @@ public:
                 gpuPreflightGroups_, gpuBatchCacheHits_, gpuBatchCacheMisses_,
                 gpuAdaptiveInstancingFallback_,
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
-                gpuModelCommandsReady_};
+                gpuModelCommandsReady_,
+                gpuIcbPerCommandVtExecuted_, gpuIcbMixedVtExecuted_,
+                gpuIcbPerCommandPbrSubmitted_, gpuIcbMixedPbrSubmitted_,
+                gpuIcbGraphSubmitted_, gpuIcbMixedGraphSubmitted_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -737,6 +805,243 @@ public:
     // Opaque custom renderers (terrain): run first in the main pass, before meshes and models, so
     // translucent meshes (water) blend over them. Same lifetime rules as drawCustom.
     void drawCustomOpaque(CustomDraw fn) { customOpaque_.push_back(std::move(fn)); }
+    // Optional rigid-model feedback. Animated/skinned/morphed model
+    // primitives require a matching deformation pipeline and are excluded
+    // until such a pipeline is registered. Callback supplies UV/material
+    // uniforms for the exact visible primitive and world transform.
+    using FeedbackModelBinder = std::function<bool(
+        gfx::Device&, const Model&, const Primitive&, const Material&,
+        const mat4&)>;
+    void setVirtualTextureModelFeedback(gfx::PipelineHandle pipeline,
+                                        FeedbackModelBinder binder) {
+        feedbackModelPipeline_ = pipeline;
+        feedbackModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureModelFeedback() {
+        feedbackModelPipeline_ = {};
+        feedbackModelBinder_ = {};
+        clearVirtualTextureMaskedModelFeedback();
+        clearVirtualTextureLodModelFeedback();
+        clearVirtualTextureMaskedLodModelFeedback();
+        clearVirtualTextureDeformedModelFeedback();
+    }
+
+    // Optional material-aware pipeline for alpha-masked rigid models.
+    // This pipeline MUST discard fragments using the same alpha texture,
+    // UV transform and cutoff as the regular model material shader.
+    // Without this explicit pipeline, masked geometry is excluded.
+    void setVirtualTextureMaskedModelFeedback(
+        gfx::PipelineHandle pipeline, FeedbackModelBinder binder) {
+        feedbackMaskedModelPipeline_ = pipeline;
+        feedbackMaskedModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureMaskedModelFeedback() {
+        feedbackMaskedModelPipeline_ = {};
+        feedbackMaskedModelBinder_ = {};
+    }
+
+    // Optional LOD-crossfade feedback variant. The renderer must use the
+    // exact same per-fragment dither/coverage function and thresholds as
+    // its visible model pass; otherwise the pages would be overrequested.
+    // The callback receives the incoming/outgoing selection explicitly.
+    // RHI fragments use pixel centers; preserve alignment with the scene
+    // 4x4 ordered-dither grid when feedback and scene sizes differ.
+    struct FeedbackPixelGrid {
+        float scaleX = 1.0f, scaleY = 1.0f;
+        float offsetX = 0.0f, offsetY = 0.0f;
+    };
+    FeedbackPixelGrid feedbackPixelGrid(const gfx::VirtualTextureFeedbackPass& pass) const {
+        const float sx = pass.width() > 0 && sceneW_ > 0 ?
+            float(sceneW_) / float(pass.width()) : 1.0f;
+        const float sy = pass.height() > 0 && sceneH_ > 0 ?
+            float(sceneH_) / float(pass.height()) : 1.0f;
+        return {sx, sy, 0.5f * (1.0f - sx), 0.5f * (1.0f - sy)};
+    }
+    using FeedbackLodBinder = std::function<bool(
+        gfx::Device&, const Model&, const Primitive&, const Material&,
+        const mat4&, float threshold, bool invert,
+        const FeedbackPixelGrid&)>;
+    void setVirtualTextureLodModelFeedback(
+        gfx::PipelineHandle pipeline, FeedbackLodBinder binder) {
+        feedbackLodModelPipeline_ = pipeline;
+        feedbackLodModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureLodModelFeedback() {
+        feedbackLodModelPipeline_ = {};
+        feedbackLodModelBinder_ = {};
+    }
+
+    // Combined alpha-test + LOD dither feedback variant. The binder must
+    // reproduce both the base-color alpha cutoff and screen-space LOD
+    // coverage of the main material shader.
+    void setVirtualTextureMaskedLodModelFeedback(
+        gfx::PipelineHandle pipeline, FeedbackLodBinder binder) {
+        feedbackMaskedLodModelPipeline_ = pipeline;
+        feedbackMaskedLodModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureMaskedLodModelFeedback() {
+        feedbackMaskedLodModelPipeline_ = {};
+        feedbackMaskedLodModelBinder_ = {};
+    }
+
+    // Deformed model feedback is submitted through a dedicated callback,
+    // because skinning palettes, baked animation and morph targets use
+    // distinct vertex layouts and GPU resources. The callback must draw
+    // the same deformed silhouette as the visible model pass.
+    struct FeedbackDeformedModel {
+        const Model& model;
+        const Primitive& primitive;
+        const Material& material;
+        const mat4& world;
+        int32_t jointOffset;
+        int32_t morphOffset;
+        bool baked;
+        float4 animation;
+        float lodThreshold;
+        bool lodInvert;
+        uint32_t firstIndex;
+        uint32_t indexCount;
+        uint32_t gpuFirstIndex;
+        int32_t gpuBaseVertex;
+        FeedbackPixelGrid pixelGrid;
+        const std::vector<float>& jointData;
+        const std::vector<float>& morphData;
+    };
+    using FeedbackDeformedModelDraw = std::function<bool(
+        gfx::Device&, const FeedbackDeformedModel&)>;
+    void setVirtualTextureDeformedModelFeedback(
+        FeedbackDeformedModelDraw draw) {
+        feedbackDeformedModelDraw_ = std::move(draw);
+    }
+    void clearVirtualTextureDeformedModelFeedback() {
+        feedbackDeformedModelDraw_ = {};
+    }
+
+    // Per-scene feedback producers for terrain, foliage and procedural
+    // renderers that do not use the immediate Mesh queue. Each producer
+    // binds its own compatible feedback pipeline, geometry and uniforms.
+    // Unlike the main scene's CustomDraw, these callbacks execute only
+    // when renderVirtualTextureFeedback() is explicitly invoked.
+    using FeedbackCustomDraw = std::function<bool(gfx::Device&)>;
+    void drawCustomFeedback(FeedbackCustomDraw fn) {
+        if (fn) customFeedback_.push_back(std::move(fn));
+    }
+
+    // Must be called after beginScene/geometry submission and outside
+    // any render pass. This combines the regular opaque mesh queue with
+    // custom terrain/foliage feedback producers in one depth-tested pass.
+    // ModelItem geometry still requires its own feedback bridge.
+    bool renderVirtualTextureFeedback(
+        gfx::VirtualTextureFeedbackPass& pass,
+        gfx::PipelineHandle meshPipeline,
+        const FeedbackMeshBinder& bind) {
+        std::vector<gfx::VirtualTextureFeedbackDraw> meshes;
+        if (!collectMeshFeedbackDraws(meshes,meshPipeline,bind)) return false;
+        const auto pixelGrid = feedbackPixelGrid(pass);
+        return pass.renderAndCapture([&](gfx::Device& device) {
+            for (const auto& draw : meshes) {
+                device.setPipeline(draw.pipeline);
+                device.setVertexBuffer(draw.vertexBuffer,draw.vertexOffset);
+                device.setIndexBuffer(draw.indexBuffer,draw.indexOffset);
+                if (draw.prepare && !draw.prepare(device)) return false;
+                device.drawIndexed(draw.count,draw.first,draw.baseVertex,draw.instances);
+            }
+            if ((feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
+                (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_) ||
+                (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
+                (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_) ||
+                feedbackDeformedModelDraw_) {
+                for (const auto& item : modelItems_) {
+                    if (!item.inView || !item.model ||
+                        !item.prim || !item.mat || !item.indexCount ||
+                        !item.model->vb.valid() || !item.model->ib.valid() ||
+                        item.tint.w < 0.99f || item.dissolve > 0.0f ||
+                        item.mat->alpha == AlphaMode::Blend ||
+                        item.mat->transparent ||
+                        item.materialRole == 1 || item.shadowRole == 2)
+                        continue;
+                    if (!item.rigid || item.joints >= 0 ||
+                        item.baked || item.morph >= 0) {
+                        if (!feedbackDeformedModelDraw_) continue;
+                        const FeedbackDeformedModel info{
+                            *item.model,*item.prim,*item.mat,item.world,
+                            item.joints,item.morph,item.baked,item.anim,
+                            item.lodThreshold,item.lodInvert,
+                            item.firstIndex,item.indexCount,
+                            item.model->gpuFirstIndex,
+                            int32_t(item.model->gpuBaseVertex),
+                            pixelGrid,jointData_,morphData_};
+                        if (!feedbackDeformedModelDraw_(device,info))
+                            return false;
+                        continue;
+                    }
+                    const bool masked = item.mat->alpha == AlphaMode::Mask;
+                    const bool fading = item.lodThreshold < 1.0f;
+                    const auto pipeline = masked && fading ?
+                        feedbackMaskedLodModelPipeline_ :
+                        fading ? feedbackLodModelPipeline_ :
+                        masked ? feedbackMaskedModelPipeline_ : feedbackModelPipeline_;
+                    if (!pipeline.valid()) continue;
+                    device.setPipeline(pipeline);
+                    device.setVertexBuffer(item.model->vb);
+                    device.setIndexBuffer(item.model->ib);
+                    if (fading) {
+                        const auto& lodBinder = masked ?
+                            feedbackMaskedLodModelBinder_ : feedbackLodModelBinder_;
+                        if (!lodBinder ||
+                            !lodBinder(device,*item.model,
+                                *item.prim,*item.mat,item.world,
+                                item.lodThreshold,item.lodInvert,pixelGrid))
+                            return false;
+                    } else {
+                        const auto& binder = masked ? feedbackMaskedModelBinder_
+                                                    : feedbackModelBinder_;
+                        if (!binder ||
+                            !binder(device,*item.model,*item.prim,
+                                    *item.mat,item.world))
+                            return false;
+                    }
+                    device.drawIndexed(item.indexCount,
+                        item.firstIndex + item.model->gpuFirstIndex,
+                        int32_t(item.model->gpuBaseVertex));
+                }
+            }
+            for (const auto& custom : customFeedback_)
+                if (!custom(device)) return false;
+            return true;
+        });
+    }
+
+    // Opt-in automatic feedback submission during Renderer3D::render(),
+    // after shadow passes and before the main scene pass begins.
+    // The feedback pass and its GPU resources must outlive this renderer.
+    // Only enable when the owning application has initialized the pass
+    // and configured a compatible material feedback pipeline.
+    void setVirtualTextureFeedback(
+        gfx::VirtualTextureFeedbackPass* pass,
+        gfx::PipelineHandle meshPipeline,
+        FeedbackMeshBinder binder) {
+        feedbackPass_ = pass;
+        feedbackMeshPipeline_ = meshPipeline;
+        feedbackMeshBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureFeedback() {
+        feedbackPass_ = nullptr;
+        feedbackMeshPipeline_ = {};
+        feedbackMeshBinder_ = {};
+        clearVirtualTextureModelFeedback();
+    }
+
+    // Optional owner-thread scheduler for multiple independent VT feedback
+    // domains. Invoked after shadows and before the main scene pass starts.
+    // When installed it takes precedence over the single feedbackPass_.
+    // Must be detached before destroying the scheduler/captured resources.
+    using VirtualTextureFeedbackScheduler = std::function<void(Renderer3D&)>;
+    void setVirtualTextureFeedbackScheduler(VirtualTextureFeedbackScheduler fn) {
+        feedbackScheduler_ = std::move(fn);
+    }
+    void clearVirtualTextureFeedbackScheduler() { feedbackScheduler_ = {}; }
+
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
@@ -1207,6 +1512,21 @@ private:
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
+    std::vector<FeedbackCustomDraw> customFeedback_;
+    VirtualTextureFeedbackScheduler feedbackScheduler_;
+    gfx::VirtualTextureFeedbackPass* feedbackPass_ = nullptr; // non-owning
+    gfx::PipelineHandle feedbackMeshPipeline_;
+    FeedbackMeshBinder feedbackMeshBinder_;
+    gfx::PipelineHandle feedbackModelPipeline_;
+    FeedbackModelBinder feedbackModelBinder_;
+    gfx::PipelineHandle feedbackMaskedModelPipeline_;
+    FeedbackModelBinder feedbackMaskedModelBinder_;
+    gfx::PipelineHandle feedbackLodModelPipeline_;
+    FeedbackLodBinder feedbackLodModelBinder_;
+    gfx::PipelineHandle feedbackMaskedLodModelPipeline_;
+    FeedbackLodBinder feedbackMaskedLodModelBinder_;
+    FeedbackDeformedModelDraw feedbackDeformedModelDraw_;
+    ModelVirtualTextureResolver modelVirtualTextureResolver_;
     Camera3D cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
@@ -1541,7 +1861,28 @@ private:
     struct GpuEncodedBatch {
         std::vector<uint32_t> items;
         uint32_t token = 0;
+        // Capture the exact external resources when GPU commands are
+        // encoded. A Horizon revision switch can change bindings between
+        // prepareGpuModelDraws() and the actual scene render pass.
+        ModelVirtualTextureBinding virtualTexture;
+        gfx::TextureHandle alphaCoverage;
+        bool usesVirtualTexture = false;
+        bool perCommandVt = false; // Metal opt-in per-command fragment ABI
+        bool perCommandPbr = false; // exact per-command U2 and slots 1..6
+        bool mixedVtResources = false; // actual different VT bindings
+        bool mixedPbrResources = false;
+        bool shaderGraph = false;
+        bool mixedGraphSources = false;
+        Material pbrPipelineSnapshot; // frozen pipeline-only safety contract
+        std::vector<GpuMaterialResourceTicket> perCommandTickets;
+        // CPU table snapshot validates each command before ICB execution. The Metal GPU ICB
+        // still inherits homogeneous fragment resources per submission.
+        GpuMaterialResourceTicket materialResources;
     };
+    GpuMaterialResourceTable gpuMaterialResources_{4096};
+    // Set only around an opt-in per-command ICB draw submission.
+    // Non-ICB direct/MDI batches must continue exact VT grouping.
+    bool gpuIcbPerCommandMaterialSubmit_ = false;
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
     // Retained CPU packing scratch, never shared with the in-flight GPU buffers.
     std::vector<uint32_t> gpuIcbSourceSlotsScratch_;
@@ -1554,6 +1895,9 @@ private:
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
     uint32_t gpuIcbRejected_ = 0, gpuIcbExecuteFailed_ = 0;
+    uint32_t gpuIcbPerCommandVtExecuted_ = 0, gpuIcbMixedVtExecuted_ = 0;
+    uint32_t gpuIcbPerCommandPbrSubmitted_ = 0, gpuIcbMixedPbrSubmitted_ = 0;
+    uint32_t gpuIcbGraphSubmitted_ = 0, gpuIcbMixedGraphSubmitted_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     uint32_t gpuModelDynamicEligible_ = 0, gpuModelLodEligible_ = 0;
     PersistentGpuScene persistentScene_;
@@ -1577,7 +1921,21 @@ private:
         bool operator==(const ModelShaderKey& other) const {
             if (variant != other.variant) return false;
             if (graph == other.graph) return true;
-            return graph && other.graph && graph->glsl == other.graph->glsl && graph->vertexGlsl == other.graph->vertexGlsl && graph->textures.size() == other.graph->textures.size() && graph->outputs == other.graph->outputs;
+            if (!graph || !other.graph) return false;
+            // Material fragment and vertex shader source are backend-specific.
+            // A GL-only comparison may alias two distinct MSL shader programs;
+            // a mere texture count also loses the source binding identity.
+            // Preserve the Virtual Texture permutation flag explicitly,
+            // including graphs with an unused/disconnected VT node.
+            return graph->domain == other.graph->domain &&
+                   graph->glsl == other.graph->glsl &&
+                   graph->msl == other.graph->msl &&
+                   graph->vertexGlsl == other.graph->vertexGlsl &&
+                   graph->vertexMsl == other.graph->vertexMsl &&
+                   graph->textures == other.graph->textures &&
+                   graph->outputs == other.graph->outputs &&
+                   graph->usesVirtualTexture == other.graph->usesVirtualTexture &&
+                   graph->minQuality == other.graph->minQuality;
         }
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };

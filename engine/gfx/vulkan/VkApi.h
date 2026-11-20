@@ -13,7 +13,8 @@
 #define AIVERSE_VK_INSTANCE_FUNCS(X) \
     X(vkDestroyInstance) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties) X(vkGetPhysicalDeviceFeatures) \
     X(vkGetPhysicalDeviceQueueFamilyProperties) X(vkGetPhysicalDeviceMemoryProperties) \
-    X(vkGetPhysicalDeviceFormatProperties) X(vkEnumerateDeviceExtensionProperties) X(vkCreateDevice) \
+    X(vkGetPhysicalDeviceFormatProperties) X(vkGetPhysicalDeviceImageFormatProperties) \
+    X(vkEnumerateDeviceExtensionProperties) X(vkCreateDevice) \
     X(vkGetDeviceProcAddr)
 
 #define AIVERSE_VK_SURFACE_FUNCS(X) \

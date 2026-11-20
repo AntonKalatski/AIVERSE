@@ -19,6 +19,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace aiverse::gfx {
@@ -48,6 +49,14 @@ public:
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { items_[id - 1] = T{}; alive_[id - 1] = 0; free_.push_back(id - 1); } }
+    template <class F> void each(F&& fn) {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
+    template <class F> void each(F&& fn) const {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -69,7 +78,22 @@ struct MTBuffer {
     size_t indirectCursor = 0;
     BufferUpdateStats transferStats{};
 };
-struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
+struct MTTexture {
+    id<MTLTexture> tex;
+    id<MTLSamplerState> sampler;
+    // Preserve actual sampler semantics for graph source tex16.
+    // Metal cannot dynamically bind sampler(16), so its ICB shader
+    // uses a constexpr repeat/linear sampler, which is only correct
+    // when these stored flags match the original texture descriptor.
+    bool samplerRepeat = false;
+    bool samplerLinear = false;
+    bool samplerCompare = false;
+    PixelFormat fmt = PixelFormat::RGBA8;
+    TextureDimension dimension = TextureDimension::Texture2D;
+    bool mips = false;
+    bool storage = false;
+};
+struct MTTextureView { id<MTLTexture> tex; uint32_t parentId = 0; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
 struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
@@ -102,6 +126,38 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    int maxFragmentTextureSlots() const override { return 32; }
+    std::vector<TextureResourceInfo> textureResources() const override {
+        std::vector<TextureResourceInfo> result;
+        textures_.each([&](uint32_t id, const MTTexture& tex) {
+            if (!tex.tex) return;
+            TextureResourceInfo item;
+            item.handle = {id};
+            item.dimension = tex.dimension;
+            item.format = tex.fmt;
+            item.width = int(tex.tex.width);
+            item.height = int(tex.tex.height);
+            item.depth = tex.dimension == TextureDimension::Texture3D ?
+                         int(tex.tex.depth) : 1;
+            item.arrayLayers = tex.dimension == TextureDimension::Cube ? 6 :
+                tex.dimension == TextureDimension::CubeArray ?
+                int(tex.tex.arrayLength)*6 :
+                tex.dimension == TextureDimension::Texture2DArray ?
+                int(tex.tex.arrayLength) : 1;
+            item.mipLevels = int(tex.tex.mipmapLevelCount);
+            item.sampleCount = int(tex.tex.sampleCount);
+            item.renderTarget = (tex.tex.usage & MTLTextureUsageRenderTarget) != 0;
+            item.storage = (tex.tex.usage & MTLTextureUsageShaderWrite) != 0;
+            TextureDesc d;
+            d.dimension = item.dimension; d.format = item.format;
+            d.width = item.width; d.height = item.height; d.depth = item.depth;
+            d.arrayLayers = item.arrayLayers; d.mipLevels = item.mipLevels;
+            d.sampleCount = item.sampleCount;
+            item.estimatedBytes = estimateTextureFootprint(d);
+            result.push_back(item);
+        });
+        return result;
+    }
     uint64_t frameSerial() const override { return frame_; }
     uint64_t completedFrameSerial() const override {
         return gpuHealthy_->load(std::memory_order_acquire)
@@ -205,21 +261,95 @@ public:
 #endif
         if (@available(macOS 11.0, iOS 16.4, *)) bc = bc || device_.supportsBCTextureCompression;
         switch (f) {
-            case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8: case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6: return apple;
-            case PixelFormat::BC1: case PixelFormat::BC3: case PixelFormat::BC7: return bc;
+            case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
+            case PixelFormat::EAC_R11: case PixelFormat::ASTC_4x4:
+            case PixelFormat::ASTC_6x6:
+            case PixelFormat::ETC2_RGB8_sRGB: case PixelFormat::ETC2_RGBA8_sRGB:
+            case PixelFormat::ASTC_4x4_sRGB: case PixelFormat::ASTC_6x6_sRGB: return apple;
+            case PixelFormat::BC1: case PixelFormat::BC3: case PixelFormat::BC4:
+            case PixelFormat::BC5: case PixelFormat::BC7:
+            case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
+            case PixelFormat::BC1_sRGB: case PixelFormat::BC3_sRGB:
+            case PixelFormat::BC7_sRGB:
+                return bc && compressedFormat(f) != MTLPixelFormatInvalid;
             default: return true;
         }
     }
+    bool supportsTextureDimension(TextureDimension) const override { return true; }
+    bool supportsTextureViews() const override { return true; }
+    bool supportsStorageTexture(PixelFormat format, TextureDimension dimension) const override {
+        // Portable Metal writeable texture subset, avoiding compressed,
+        // sRGB, multisample, depth and unverified typed storage formats.
+        const bool sizeSupported = dimension == TextureDimension::Texture2D ||
+                                   dimension == TextureDimension::Texture2DArray ||
+                                   dimension == TextureDimension::Texture3D;
+        // SpectraFX evolution writes RGBA32F positions into a 2D
+        // storage texture. Other unverified float32 storage dimensions
+        // remain unsupported.
+        return supportsCompute() && sizeSupported &&
+               (format == PixelFormat::RGBA8 ||
+                format == PixelFormat::RGBA16F ||
+                (format == PixelFormat::RGBA32F &&
+                 dimension == TextureDimension::Texture2D));
+    }
+
+    static MTLSamplerAddressMode addressMode(SamplerAddressMode a) {
+        switch (a) {
+        case SamplerAddressMode::Repeat: return MTLSamplerAddressModeRepeat;
+        case SamplerAddressMode::MirrorRepeat: return MTLSamplerAddressModeMirrorRepeat;
+        case SamplerAddressMode::ClampToBorder: return MTLSamplerAddressModeClampToBorderColor;
+        case SamplerAddressMode::ClampToEdge: return MTLSamplerAddressModeClampToEdge;
+        }
+        return MTLSamplerAddressModeClampToEdge;
+    }
+    static MTLCompareFunction compareFunction(CompareFunction f) {
+        switch (f) {
+        case CompareFunction::Never: return MTLCompareFunctionNever;
+        case CompareFunction::Less: return MTLCompareFunctionLess;
+        case CompareFunction::LessEqual: return MTLCompareFunctionLessEqual;
+        case CompareFunction::Equal: return MTLCompareFunctionEqual;
+        case CompareFunction::Greater: return MTLCompareFunctionGreater;
+        case CompareFunction::GreaterEqual: return MTLCompareFunctionGreaterEqual;
+        case CompareFunction::NotEqual: return MTLCompareFunctionNotEqual;
+        case CompareFunction::Always: return MTLCompareFunctionAlways;
+        }
+        return MTLCompareFunctionLessEqual;
+    }
+
+    static MTLTextureType textureType(TextureDimension d) {
+        switch (d) {
+        case TextureDimension::Texture1D: return MTLTextureType1D;
+        case TextureDimension::Texture2D: return MTLTextureType2D;
+        case TextureDimension::Texture3D: return MTLTextureType3D;
+        case TextureDimension::Texture2DArray: return MTLTextureType2DArray;
+        case TextureDimension::Cube: return MTLTextureTypeCube;
+        case TextureDimension::CubeArray: return MTLTextureTypeCubeArray;
+        }
+        return MTLTextureType2D;
+    }
+
     static MTLPixelFormat compressedFormat(PixelFormat f) {
         switch (f) {
             case PixelFormat::ETC2_RGB8: return MTLPixelFormatETC2_RGB8;
             case PixelFormat::ETC2_RGBA8: return MTLPixelFormatEAC_RGBA8;
+            case PixelFormat::EAC_R11: return MTLPixelFormatEAC_R11Unorm;
             case PixelFormat::ASTC_4x4: return MTLPixelFormatASTC_4x4_LDR;
             case PixelFormat::ASTC_6x6: return MTLPixelFormatASTC_6x6_LDR;
+            case PixelFormat::ETC2_RGB8_sRGB: return MTLPixelFormatETC2_RGB8_sRGB;
+            case PixelFormat::ETC2_RGBA8_sRGB: return MTLPixelFormatEAC_RGBA8_sRGB;
+            case PixelFormat::ASTC_4x4_sRGB: return MTLPixelFormatASTC_4x4_sRGB;
+            case PixelFormat::ASTC_6x6_sRGB: return MTLPixelFormatASTC_6x6_sRGB;
 #if !TARGET_OS_IPHONE
             case PixelFormat::BC1: return MTLPixelFormatBC1_RGBA;
             case PixelFormat::BC3: return MTLPixelFormatBC3_RGBA;
+            case PixelFormat::BC4: return MTLPixelFormatBC4_RUnorm;
+            case PixelFormat::BC5: return MTLPixelFormatBC5_RGUnorm;
             case PixelFormat::BC7: return MTLPixelFormatBC7_RGBAUnorm;
+            case PixelFormat::BC1_sRGB: return MTLPixelFormatBC1_RGBA_sRGB;
+            case PixelFormat::BC3_sRGB: return MTLPixelFormatBC3_RGBA_sRGB;
+            case PixelFormat::BC7_sRGB: return MTLPixelFormatBC7_RGBAUnorm_sRGB;
+            case PixelFormat::BC6H_UFloat: return MTLPixelFormatBC6H_RGBUfloat;
+            case PixelFormat::BC6H_SFloat: return MTLPixelFormatBC6H_RGBFloat;
 #endif
             default: return MTLPixelFormatInvalid;
         }
@@ -479,7 +609,24 @@ public:
         if (auto* b=buffers_.get(h.id)) [compute_ setBuffer:current(*b) offset:0 atIndex:NSUInteger(slot)];
     }
     void setComputeTexture(int slot,TextureHandle h) override {
+        if (!compute_ || slot < 0 || slot >= 16) return;
         if (auto* t=textures_.get(h.id)) [compute_ setTexture:t->tex atIndex:NSUInteger(slot)];
+    }
+    bool bindComputeStorageTexture(int slot,TextureHandle h) override {
+        if (!compute_ || slot < 0 || slot >= 16) {
+            error_ = "Metal: a writable texture requires an active compute encoder and slot 0..15";
+            return false;
+        }
+        const MTTexture* t = textures_.get(h.id);
+        if (!t || !t->tex || !t->storage ||
+            !(t->tex.usage & MTLTextureUsageShaderWrite) ||
+            t->tex.sampleCount > 1 ||
+            !supportsStorageTexture(t->fmt,t->dimension)) {
+            error_ = "Metal: texture was not created for supported compute writes";
+            return false;
+        }
+        [compute_ setTexture:t->tex atIndex:NSUInteger(slot)];
+        return true;
     }
     void setComputeUniforms(const void* data,size_t size) override { if(size<=4096)[compute_ setBytes:data length:size atIndex:8]; }
     void dispatch(uint32_t x,uint32_t y) override {
@@ -499,6 +646,95 @@ public:
     }
     struct BufferRead {std::vector<uint8_t> bytes;BufferReadFn callback;std::atomic<bool> ready{false};};
     std::vector<std::shared_ptr<BufferRead>> bufferReads_;
+    struct TextureRead {
+        TextureReadbackResult result;
+        TextureReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<TextureRead>> textureReads_;
+    bool readTextureAsync(TextureHandle h, TextureReadbackDesc request,
+                          TextureReadFn callback) override {
+        MTTexture* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !callback ||
+            !t || !t->tex || t->tex.sampleCount != 1 ||
+            request.mipLevel < 0 ||
+            request.mipLevel >= int(t->tex.mipmapLevelCount) ||
+            request.arrayLayer < 0 || textureReads_.size() >= 32)
+            return false;
+        const bool cube = t->dimension == TextureDimension::Cube ||
+                          t->dimension == TextureDimension::CubeArray;
+        const bool volume=t->dimension==TextureDimension::Texture3D;
+        const int layers = cube ? int(t->tex.arrayLength)*6 :
+                           volume ? int(std::max<NSUInteger>(1,
+                                  t->tex.depth >> request.mipLevel)) :
+                           t->dimension == TextureDimension::Texture2DArray ?
+                           int(t->tex.arrayLength) : 1;
+        if ((t->dimension != TextureDimension::Texture2D &&
+             t->dimension != TextureDimension::Texture2DArray &&
+             !cube && !volume) || request.arrayLayer >= layers) return false;
+        const MTLPixelFormat pixelFormat = t->tex.pixelFormat;
+        const bool isBGRA = pixelFormat == MTLPixelFormatBGRA8Unorm ||
+                            pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
+        const bool isRGBA = pixelFormat == MTLPixelFormatRGBA8Unorm ||
+                            pixelFormat == MTLPixelFormatRGBA8Unorm_sRGB;
+        const bool isHalf = pixelFormat == MTLPixelFormatRGBA16Float;
+        if ((!isBGRA && !isRGBA && !isHalf) ||
+            (isHalf ? t->fmt != PixelFormat::RGBA16F :
+             t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB))
+            return false;
+        const size_t width = size_t(std::max<NSUInteger>(1,
+                              t->tex.width >> request.mipLevel));
+        const size_t height = size_t(std::max<NSUInteger>(1,
+                               t->tex.height >> request.mipLevel));
+        const size_t bpp = isHalf ? 8u : 4u;
+        // Align bytesPerRow for the Metal texture-to-buffer blit.
+        if (width > SIZE_MAX / bpp) return false;
+        const size_t packedRow = width*bpp;
+        if (packedRow > SIZE_MAX-255u) return false;
+        const size_t gpuRow = ((packedRow+255u)/256u)*256u;
+        if (height == 0 || gpuRow > (size_t(256)<<20)/height)
+            return false;
+        const size_t gpuBytes = gpuRow*height;
+        id<MTLBuffer> target = [device_ newBufferWithLength:gpuBytes
+                                                options:MTLResourceStorageModeShared];
+        if (!target) { error_ = "Metal: texture readback staging buffer allocation failed"; return false; }
+        id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+        if (!blit) { error_ = "Metal: cannot begin texture readback blit"; return false; }
+        [blit copyFromTexture:t->tex sourceSlice:volume ? 0u : NSUInteger(request.arrayLayer)
+                    sourceLevel:NSUInteger(request.mipLevel)
+                   sourceOrigin:MTLOriginMake(0,0,volume ? NSUInteger(request.arrayLayer) : 0u)
+                     sourceSize:MTLSizeMake(width,height,1)
+                       toBuffer:target destinationOffset:0
+         destinationBytesPerRow:gpuRow destinationBytesPerImage:gpuBytes];
+        [blit endEncoding];
+        auto read = std::make_shared<TextureRead>();
+        read->callback = std::move(callback);
+        read->result.format = t->fmt;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status == MTLCommandBufferStatusCompleted) {
+                read->result.width = int(width);
+                read->result.height = int(height);
+                read->result.pixels.resize(packedRow*height);
+                const uint8_t* src = static_cast<const uint8_t*>(target.contents);
+                uint8_t* dst = read->result.pixels.data();
+                for (size_t y=0;y<height;++y) {
+                    const uint8_t* input = src + y*gpuRow;
+                    uint8_t* output = dst + y*packedRow;
+                    if (isBGRA) {
+                        for (size_t x=0;x<width;++x) {
+                            output[x*4+0]=input[x*4+2];
+                            output[x*4+1]=input[x*4+1];
+                            output[x*4+2]=input[x*4+0];
+                            output[x*4+3]=input[x*4+3];
+                        }
+                    } else std::memcpy(output,input,packedRow);
+                }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        textureReads_.push_back(std::move(read));
+        return true;
+    }
     bool readBufferAsync(BufferHandle h,size_t size,BufferReadFn callback) override {
         auto* b=buffers_.get(h.id);
         if(!cmd_||enc_||compute_||!b||!size||size>b->size||size>65536||!callback||bufferReads_.size()>=32)return false;
@@ -669,74 +905,359 @@ public:
         for (auto& read:ready)
             read->callback(read->width,read->height,std::move(read->bytes));
     }
+    void deliverTextureReads() {
+        // Never invoke app callbacks on the asynchronous Metal driver thread.
+        std::vector<std::shared_ptr<TextureRead>> ready;
+        for (auto it=textureReads_.begin();it!=textureReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it=textureReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read:ready) read->callback(std::move(read->result));
+    }
     bool gpuHealthy() const override { return gpuHealthy_->load(); }
     double gpuFrameMs() const override { return gpuMs_->load(); }
 
     // ---------- textures ----------
     TextureHandle createTexture(const TextureDesc& d) override {
-        if (MTLPixelFormat cf = compressedFormat(d.format); cf != MTLPixelFormatInvalid) {
-            MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:cf
-                width:NSUInteger(d.width) height:NSUInteger(d.height) mipmapped:d.levelCount > 1 ? YES : NO];
-            td.mipmapLevelCount = NSUInteger(std::max(1, d.levelCount));
-            td.usage = MTLTextureUsageShaderRead;
-            MTTexture t;
-            t.fmt = d.format;
-            t.tex = [device_ newTextureWithDescriptor:td];
-            if (!t.tex) { error_ = "compressed texture not supported by this GPU"; return {}; }
-            const bool bc = d.format == PixelFormat::BC1 || d.format == PixelFormat::BC3 || d.format == PixelFormat::BC7;
-            const NSUInteger blockBytes = d.format == PixelFormat::ETC2_RGB8 || d.format == PixelFormat::BC1 ? 8 : 16;
-            const NSUInteger blockDim = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
-            for (int l = 0; l < d.levelCount; ++l) {
-                const NSUInteger w = NSUInteger(std::max(1, d.width >> l)), h = NSUInteger(std::max(1, d.height >> l));
-                [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:NSUInteger(l)
-                           withBytes:d.levelData[l] bytesPerRow:((w + blockDim - 1) / blockDim) * blockBytes];
-            }
-            (void)bc;
-            MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
-            sd.minFilter = sd.magFilter = d.filter == Filter::Linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
-            if (d.levelCount > 1) sd.mipFilter = MTLSamplerMipFilterLinear;
-            sd.sAddressMode = sd.tAddressMode = d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
-            t.sampler = [device_ newSamplerStateWithDescriptor:sd];
-            return {textures_.add(t)};
+        if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
+            error_ = textureDescErrorString(e); return {};
         }
-        MTLPixelFormat pf = d.format == PixelFormat::R8 ? MTLPixelFormatR8Unorm
-                          : d.format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
-                          : d.format == PixelFormat::RGBA32F ? MTLPixelFormatRGBA32Float
-                          : d.format == PixelFormat::Depth ? MTLPixelFormatDepth32Float
-                          : d.format == PixelFormat::RGBA8_sRGB ? (d.renderTarget ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatRGBA8Unorm_sRGB)
-                          : d.renderTarget ? MTLPixelFormatBGRA8Unorm   // same format as the screen: pipelines are shared
-                          : MTLPixelFormatRGBA8Unorm;
-        const bool mips = d.mipmaps && d.format != PixelFormat::Depth && d.format != PixelFormat::RGBA32F && !d.renderTarget;
-        MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pf
-            width:NSUInteger(d.width) height:NSUInteger(d.height) mipmapped:mips ? YES : NO];
-        td.usage = MTLTextureUsageShaderRead | (d.storage ? MTLTextureUsageShaderWrite : 0) | (d.renderTarget || d.format == PixelFormat::Depth ? MTLTextureUsageRenderTarget : 0);
-        if (d.format == PixelFormat::Depth) td.storageMode = MTLStorageModePrivate;
+        if (d.storage && !supportsStorageTexture(d.format,d.dimension)) {
+            error_ = "Metal: unsupported writable texture format or dimension";
+            return {};
+        }
+        if (d.renderTarget && (d.dimension == TextureDimension::Texture1D ||
+                               d.dimension == TextureDimension::Texture3D)) {
+            error_ = "Metal: 1D/3D render targets are unsupported";
+            return {};
+        }
+        if (d.sampleCount > 1 && ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            error_ = "Metal: requested MSAA sample count is unsupported by the device";
+            return {};
+        }
+        if (d.renderTarget && isExtendedDataTextureFormat(d.format)) {
+            error_ = "Metal: typed R/RG render targets require pipeline format support";
+            return {};
+        }
+        const MTLPixelFormat cf = compressedFormat(d.format);
+        const bool compressed = cf != MTLPixelFormatInvalid;
+        if (isCompressedTextureFormat(d.format) &&
+            (!compressed || !supports(d.format))) {
+            error_ = "Metal: requested compressed pixel format is unsupported on this platform";
+            return {};
+        }
+        if (compressed && (d.dimension == TextureDimension::Texture1D ||
+                           d.dimension == TextureDimension::Texture3D || d.storage ||
+                           d.renderTarget || d.levelCount < 1 || !d.levelData || !d.levelSize)) {
+            error_ = "Metal: compressed texture requires 2D/array/cube mip payloads";
+            return {};
+        }
+        if (compressed && !supports(d.format)) { error_ = "Metal: compressed format unavailable"; return {}; }
+
+        const MTLPixelFormat pf = compressed ? cf
+            : d.format == PixelFormat::RG8 ? MTLPixelFormatRG8Unorm
+            : d.format == PixelFormat::R16F ? MTLPixelFormatR16Float
+            : d.format == PixelFormat::RG16F ? MTLPixelFormatRG16Float
+            : d.format == PixelFormat::R32F ? MTLPixelFormatR32Float
+            : d.format == PixelFormat::RG32F ? MTLPixelFormatRG32Float
+            : d.format == PixelFormat::R8 ? MTLPixelFormatR8Unorm
+            : d.format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
+            : d.format == PixelFormat::RGBA32F ? MTLPixelFormatRGBA32Float
+            : d.format == PixelFormat::Depth ? MTLPixelFormatDepth32Float
+            : d.format == PixelFormat::RGBA8_sRGB
+                ? (d.renderTarget ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatRGBA8Unorm_sRGB)
+            : d.renderTarget ? MTLPixelFormatBGRA8Unorm
+            : MTLPixelFormatRGBA8Unorm;
+        const bool generate = d.mipmaps && !compressed && d.format != PixelFormat::Depth &&
+                              d.format != PixelFormat::RGBA32F && !d.renderTarget;
+        const int levels = compressed ? d.levelCount
+            : d.mipLevels > 0 ? d.mipLevels
+            : generate ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
+        MTLTextureDescriptor* td = [MTLTextureDescriptor new];
+        td.textureType = d.sampleCount > 1 ? MTLTextureType2DMultisample :
+                         textureType(d.dimension);
+        td.pixelFormat = pf;
+        td.sampleCount = NSUInteger(d.sampleCount);
+        td.width = NSUInteger(d.width);
+        td.height = NSUInteger(d.height);
+        td.depth = NSUInteger(d.dimension == TextureDimension::Texture3D ? d.depth : 1);
+        td.arrayLength = NSUInteger(d.dimension == TextureDimension::Texture2DArray ? d.arrayLayers :
+                                    d.dimension == TextureDimension::CubeArray ? d.arrayLayers / 6 : 1);
+        td.mipmapLevelCount = NSUInteger(levels);
+        td.usage = MTLTextureUsageShaderRead | (d.storage ? MTLTextureUsageShaderWrite : 0) |
+                   (d.renderTarget || d.format == PixelFormat::Depth ? MTLTextureUsageRenderTarget : 0);
+        if (d.format == PixelFormat::Depth || d.sampleCount > 1)
+            td.storageMode = MTLStorageModePrivate;
         MTTexture t;
-        t.fmt = d.format;
+        t.fmt = d.format; t.dimension = d.dimension; t.storage = d.storage;
         t.tex = [device_ newTextureWithDescriptor:td];
-        if(!t.tex){error_="texture allocation failed";return {};}
-        if (d.data && d.format != PixelFormat::Depth) {
-            int bpp = d.format == PixelFormat::R8 ? 1 : d.format == PixelFormat::RGBA32F ? 16 : d.format == PixelFormat::RGBA16F ? 8 : 4;
-            [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height)) mipmapLevel:0
-                       withBytes:d.data bytesPerRow:NSUInteger(d.width * bpp)];
-            if (mips) generateMips(t.tex);
+        if (!t.tex) { error_ = "Metal: requested texture type, dimensions or pixel format unavailable"; return {}; }
+
+        const int faces = d.arrayLayers;
+        if (compressed) {
+            const NSUInteger blockDim = NSUInteger(compressedTextureBlockSize(d.format));
+            const NSUInteger blockBytes = NSUInteger(compressedTextureBlockBytes(d.format));
+            for (int l = 0; l < d.levelCount; ++l) {
+                const NSUInteger w = NSUInteger(std::max(1, d.width >> l));
+                const NSUInteger h = NSUInteger(std::max(1, d.height >> l));
+                const NSUInteger bytesPerRow = ((w + blockDim - 1) / blockDim) * blockBytes;
+                const NSUInteger bytesPerImage = bytesPerRow * ((h + blockDim - 1) / blockDim);
+                if (d.levelSize[l] < size_t(bytesPerImage) * size_t(faces) || !d.levelData[l]) {
+                    error_ = "Metal: compressed mip payload does not cover all faces";
+                    return {};
+                }
+                const auto* pixels = static_cast<const uint8_t*>(d.levelData[l]);
+                if (d.dimension == TextureDimension::Texture2D) {
+                    [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:NSUInteger(l)
+                               withBytes:pixels bytesPerRow:bytesPerRow];
+                } else {
+                    for (int face = 0; face < faces; ++face)
+                        [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h)
+                                 mipmapLevel:NSUInteger(l) slice:NSUInteger(face)
+                                   withBytes:pixels + size_t(face) * size_t(bytesPerImage)
+                                bytesPerRow:bytesPerRow bytesPerImage:bytesPerImage];
+                }
+            }
+        } else if (d.data && d.format != PixelFormat::Depth) {
+            const int bpp = uncompressedTexturePixelBytes(d.format);
+            const NSUInteger row = NSUInteger(d.width) * NSUInteger(bpp);
+            const NSUInteger sliceBytes = row * NSUInteger(d.height);
+            const auto* pixels = static_cast<const uint8_t*>(d.data);
+            if (d.dimension == TextureDimension::Texture1D) {
+                [t.tex replaceRegion:MTLRegionMake1D(0, NSUInteger(d.width)) mipmapLevel:0
+                           withBytes:pixels bytesPerRow:row];
+            } else if (d.dimension == TextureDimension::Texture3D) {
+                [t.tex replaceRegion:MTLRegionMake3D(0, 0, 0, NSUInteger(d.width), NSUInteger(d.height), NSUInteger(d.depth))
+                          mipmapLevel:0 slice:0 withBytes:pixels bytesPerRow:row bytesPerImage:sliceBytes];
+            } else if (d.dimension == TextureDimension::Texture2D) {
+                [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height))
+                          mipmapLevel:0 withBytes:pixels bytesPerRow:row];
+            } else {
+                for (int face = 0; face < faces; ++face)
+                    [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height))
+                             mipmapLevel:0 slice:NSUInteger(face)
+                               withBytes:pixels + size_t(face) * size_t(sliceBytes)
+                            bytesPerRow:row bytesPerImage:sliceBytes];
+            }
+            if (generate && levels > 1) generateMips(t.tex);
         }
-        t.mips = mips;
+        t.mips = generate && levels > 1;
         MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
-        sd.minFilter = sd.magFilter = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
-        if (mips) sd.mipFilter = d.filter == Filter::Linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
-        sd.sAddressMode = sd.tAddressMode = d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
+        const bool float32Data = d.format == PixelFormat::RGBA32F ||
+                                  d.format == PixelFormat::R32F ||
+                                  d.format == PixelFormat::RG32F;
+        const bool linear = d.filter == Filter::Linear && !float32Data;
+        sd.minFilter = sd.magFilter = linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        if (levels > 1) sd.mipFilter = linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
+        sd.sAddressMode = sd.tAddressMode = sd.rAddressMode =
+            d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
         if (d.compare) sd.compareFunction = MTLCompareFunctionLessEqual;
+        t.samplerRepeat = d.repeat;
+        t.samplerLinear = linear;
+        t.samplerCompare = d.compare;
         t.sampler = [device_ newSamplerStateWithDescriptor:sd];
+        if (!t.sampler) { error_ = "Metal: sampler allocation failed"; return {}; }
         return {textures_.add(t)};
     }
+
     void updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) override {
         auto* t = textures_.get(h.id);
-        if (!t) return;
+        if (!t || t->dimension != TextureDimension::Texture2D || t->fmt == PixelFormat::Depth) return;
         [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(x), NSUInteger(y), NSUInteger(w), NSUInteger(hh)) mipmapLevel:0
                     withBytes:pixels bytesPerRow:NSUInteger(rowPitch)];
         if (t->mips) generateMips(t->tex);
     }
+
+    bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
+        auto* t = textures_.get(h.id);
+        if (!t || !u.data || u.width < 1 || u.height < 1 || u.depth < 1 ||
+            u.x < 0 || u.y < 0 || u.z < 0 || u.mipLevel < 0 || u.arrayLayer < 0 ||
+            t->fmt == PixelFormat::Depth || compressedFormat(t->fmt) != MTLPixelFormatInvalid)
+            return false;
+        const int mw = std::max(1, int(t->tex.width) >> u.mipLevel);
+        const int mh = std::max(1, int(t->tex.height) >> u.mipLevel);
+        const int md = t->dimension == TextureDimension::Texture3D ?
+                       std::max(1, int(t->tex.depth) >> u.mipLevel) : 1;
+        const int slices = t->dimension == TextureDimension::Texture2DArray ? int(t->tex.arrayLength) :
+                           t->dimension == TextureDimension::CubeArray ? int(t->tex.arrayLength) * 6 :
+                           t->dimension == TextureDimension::Cube ? 6 : 1;
+        if (u.mipLevel >= int(t->tex.mipmapLevelCount) ||
+            u.x > mw - u.width || u.y > mh - u.height || u.z > md - u.depth ||
+            u.arrayLayer >= slices ||
+            (t->dimension != TextureDimension::Texture3D && (u.depth != 1 || u.z != 0)) ||
+            (t->dimension == TextureDimension::Texture1D && (u.y != 0 || u.height != 1)))
+            return false;
+        const int bpp = uncompressedTexturePixelBytes(t->fmt);
+        if (u.rowPitchBytes < u.width * bpp) return false;
+        const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
+        if (imagePitch < u.rowPitchBytes * u.height) return false;
+        // Texture2DArray is the physical Virtual Texture atlas. CPU-side
+        // replaceRegion may race older GPU frames sampling the reused slice.
+        // Encode the write as a blit on the SAME Metal queue instead, so
+        // previous readers retire before the new bytes become visible.
+        if (t->dimension == TextureDimension::Texture2DArray && !t->mips) {
+            if (enc_ || compute_ || gpuIcbEncoder_) {
+                error_ = "Metal array texture upload requires no active GPU encoder";
+                return false;
+            }
+            const NSUInteger align = 256;
+            const NSUInteger sourceRow = NSUInteger(u.width) * NSUInteger(bpp);
+            if (sourceRow > NSUInteger(-1) - (align-1)) {
+                error_ = "Metal array upload row overflow";
+                return false;
+            }
+            const NSUInteger gpuRow = (sourceRow + align - 1) & ~(align-1);
+            if (NSUInteger(u.height) > NSUInteger(-1) / gpuRow) {
+                error_ = "Metal array upload buffer overflow";
+                return false;
+            }
+            const NSUInteger total = gpuRow * NSUInteger(u.height);
+            id<MTLBuffer> staging = [device_ newBufferWithLength:total
+                                     options:MTLResourceStorageModeShared];
+            if (!staging) {
+                error_ = "Metal array texture upload staging allocation failed";
+                return false;
+            }
+            auto* dst = static_cast<uint8_t*>(staging.contents);
+            const auto* src = static_cast<const uint8_t*>(u.data);
+            for (int row = 0; row < u.height; ++row)
+                std::memcpy(dst + size_t(row)*size_t(gpuRow),
+                            src + size_t(row)*size_t(u.rowPitchBytes),
+                            size_t(sourceRow));
+            id<MTLCommandBuffer> uploadCmd = cmd_ ? cmd_ : [queue_ commandBuffer];
+            if (!uploadCmd) {
+                error_ = "Metal array texture upload command allocation failed";
+                return false;
+            }
+            id<MTLBlitCommandEncoder> blit = [uploadCmd blitCommandEncoder];
+            if (!blit) {
+                error_ = "Metal array texture upload blit encoder failed";
+                return false;
+            }
+            [blit copyFromBuffer:staging sourceOffset:0
+                sourceBytesPerRow:gpuRow sourceBytesPerImage:total
+                sourceSize:MTLSizeMake(NSUInteger(u.width),NSUInteger(u.height),1)
+                toTexture:t->tex destinationSlice:NSUInteger(u.arrayLayer)
+                destinationLevel:NSUInteger(u.mipLevel)
+                destinationOrigin:MTLOriginMake(NSUInteger(u.x),NSUInteger(u.y),0)];
+            [blit endEncoding];
+            // The completion block keeps staging alive until the queued
+            // transfer has retired, including for standalone command buffers.
+            [uploadCmd addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+                (void)staging;
+                (void)completed;
+            }];
+            if (!cmd_) [uploadCmd commit];
+            return true; // queued in order, NOT a GPU completion fence
+        }
+        if (t->dimension == TextureDimension::Texture1D) {
+            [t->tex replaceRegion:MTLRegionMake1D(NSUInteger(u.x), NSUInteger(u.width))
+                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
+                       bytesPerRow:NSUInteger(u.rowPitchBytes)];
+        } else if (t->dimension == TextureDimension::Texture3D) {
+            [t->tex replaceRegion:MTLRegionMake3D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.z),
+                    NSUInteger(u.width), NSUInteger(u.height), NSUInteger(u.depth))
+                       mipmapLevel:NSUInteger(u.mipLevel) slice:0 withBytes:u.data
+                       bytesPerRow:NSUInteger(u.rowPitchBytes) bytesPerImage:NSUInteger(imagePitch)];
+        } else if (t->dimension == TextureDimension::Texture2D) {
+            [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
+                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)];
+        } else {
+            [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
+                       mipmapLevel:NSUInteger(u.mipLevel) slice:NSUInteger(u.arrayLayer)
+                         withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)
+                      bytesPerImage:NSUInteger(imagePitch)];
+        }
+        if (t->mips && u.mipLevel == 0) generateMips(t->tex);
+        return true;
+    }
+    TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& view) override {
+        MTTexture* t = textures_.get(h.id);
+        if (!t || !t->tex || t->tex.sampleCount > 1) {
+            error_ = "Metal texture view: invalid parent or multisampled resource";
+            return {};
+        }
+        TextureDesc parent;
+        parent.width = int(t->tex.width); parent.height = int(t->tex.height);
+        parent.depth = t->dimension == TextureDimension::Texture3D ? int(t->tex.depth) : 1;
+        parent.arrayLayers = t->dimension == TextureDimension::Cube ? 6 :
+                             t->dimension == TextureDimension::CubeArray ? int(t->tex.arrayLength) * 6 :
+                             t->dimension == TextureDimension::Texture2DArray ? int(t->tex.arrayLength) : 1;
+        parent.dimension = t->dimension;
+        parent.format = t->fmt;
+        parent.mipLevels = int(t->tex.mipmapLevelCount);
+        if (!validateTextureViewDesc(parent, view)) {
+            error_ = "Metal texture view: mip, layer, aspect or view dimension invalid"; return {};
+        }
+        // Explicit views select a subresource and can reinterpret an array slice
+        // as 2D or a cube array as one cube.
+        const MTLTextureType type = textureType(view.dimension);
+        id<MTLTexture> native = [t->tex newTextureViewWithPixelFormat:t->tex.pixelFormat
+                                 textureType:type
+                                 levels:NSMakeRange(NSUInteger(view.baseMipLevel), NSUInteger(view.mipLevelCount))
+                                 slices:NSMakeRange(NSUInteger(view.baseArrayLayer), NSUInteger(view.arrayLayerCount))];
+        if (!native) { error_ = "Metal texture view: native allocation rejected"; return {}; }
+        return {views_.add({native, h.id})};
+    }
+    void destroyTextureView(TextureViewHandle h) override { views_.remove(h.id); }
+
+    SamplerHandle createSampler(const SamplerDesc& d) override {
+        if (!validateSamplerDesc(d) || d.lodBias != 0.0f) {
+            error_ = "Metal sampler: invalid descriptor or unsupported LOD bias"; return {};
+        }
+        if (d.addressU == SamplerAddressMode::ClampToBorder ||
+            d.addressV == SamplerAddressMode::ClampToBorder ||
+            d.addressW == SamplerAddressMode::ClampToBorder) {
+            // Border color is only available for newer Metal families.
+            if (@available(macOS 10.12, iOS 14.0, *)) {}
+            else { error_ = "Metal sampler: border clamp unavailable on this OS"; return {}; }
+        }
+        MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
+        sd.minFilter = d.minFilter == Filter::Linear ?
+                       MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        sd.magFilter = d.magFilter == Filter::Linear ?
+                       MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        sd.mipFilter = d.mipFilter == SamplerMipFilter::None ? MTLSamplerMipFilterNotMipmapped :
+                       d.mipFilter == SamplerMipFilter::Linear ? MTLSamplerMipFilterLinear :
+                       MTLSamplerMipFilterNearest;
+        sd.sAddressMode = addressMode(d.addressU);
+        sd.tAddressMode = addressMode(d.addressV);
+        sd.rAddressMode = addressMode(d.addressW);
+        sd.lodMinClamp = d.minLod; sd.lodMaxClamp = d.maxLod;
+        sd.maxAnisotropy = NSUInteger(std::max(1, std::min(16, int(d.maxAnisotropy))));
+        sd.compareFunction = d.compare ? compareFunction(d.comparison) : MTLCompareFunctionNever;
+        id<MTLSamplerState> native = [device_ newSamplerStateWithDescriptor:sd];
+        if (!native) { error_ = "Metal sampler: native allocation failed"; return {}; }
+        return {samplers_.add(native)};
+    }
+    void destroySampler(SamplerHandle h) override { samplers_.remove(h.id); }
+
+    bool bindTextureView(int slot, TextureViewHandle h, SamplerHandle sampler = {}) override {
+        if (!enc_ || slot < 0 || slot >= 16) return false;
+        MTTextureView* view = views_.get(h.id);
+        if (!view || !view->tex) return false;
+        MTTexture* parent = textures_.get(view->parentId);
+        if (!parent) return false;
+        id<MTLSamplerState> state = sampler.valid() ? (samplers_.get(sampler.id) ?
+            *samplers_.get(sampler.id) : nil) : parent->sampler;
+        if (!state) return false;
+        icbFragmentTextures_[slot] = view->tex;
+        icbFragmentSamplers_[slot] = state;
+        if (bindingCacheEnabled_ && boundTextures_[slot] == view->tex &&
+            boundSamplers_[slot] == state) return true;
+        [enc_ setFragmentTexture:view->tex atIndex:NSUInteger(slot)];
+        [enc_ setVertexTexture:view->tex atIndex:NSUInteger(slot)];
+        [enc_ setFragmentSamplerState:state atIndex:NSUInteger(slot)];
+        [enc_ setVertexSamplerState:state atIndex:NSUInteger(slot)];
+        if (bindingCacheEnabled_) {
+            boundTextures_[slot] = view->tex;
+            boundSamplers_[slot] = state;
+        }
+        return true;
+    }
+
     // Own command buffer: textures are usually created while loading, outside of a frame.
     void generateMips(id<MTLTexture> tex) {
         id<MTLCommandBuffer> cb = [queue_ commandBuffer];
@@ -751,7 +1272,16 @@ public:
         out = {int(t->tex.width),int(t->tex.height),t->fmt};
         return true;
     }
-    void destroyTexture(TextureHandle h) override { textures_.remove(h.id); }
+    void destroyTexture(TextureHandle h) override {
+        // Parent/view ownership: remove children before allowing texture handle reuse.
+        std::vector<uint32_t> dependent;
+        views_.each([&](uint32_t id, MTTextureView& v) {
+            if (v.parentId == h.id) dependent.push_back(id);
+        });
+        for (uint32_t id : dependent) views_.remove(id);
+        clearBindings();
+        textures_.remove(h.id);
+    }
 
     // ---------- shaders / pipelines ----------
     ShaderHandle createShader(const ShaderDesc& d) override {
@@ -826,6 +1356,7 @@ public:
         pd.vertexFunction = s->vs;
         pd.fragmentFunction = s->fs; // depth-only shaders without fs_main get nil (no fragment stage)
         pd.vertexDescriptor = vd;
+        pd.rasterSampleCount = NSUInteger(std::max(1, d.sampleCount));
         // Metal requires opt-in at pipeline creation for pipeline states
         // referenced by indirect render commands. Without this the driver may
         // silently discard ICB draws or fail an entire command buffer.
@@ -839,12 +1370,20 @@ public:
             std::strcmp(std::getenv("AIVERSE_GPU_ENCODED_ICB"), "1") == 0 &&
             supportsMultiDrawIndirect())
             pd.supportIndirectCommandBuffers = YES;
-        pd.colorAttachments[0].pixelFormat = d.depthOnly ? MTLPixelFormatInvalid
-                                           : d.colorFormat == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
-                                           : d.colorFormat == PixelFormat::RGBA8_sRGB ? MTLPixelFormatBGRA8Unorm_sRGB   // sRGB render targets
-                                           : layer_.pixelFormat;
+        auto nativeColor = [&](PixelFormat format) {
+            return format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float :
+                   format == PixelFormat::RGBA8_sRGB ? MTLPixelFormatBGRA8Unorm_sRGB :
+                   layer_.pixelFormat;
+        };
+        const int slots = d.depthOnly ? 0 : d.colorAttachmentCount;
+        for (int colorSlot = 0; colorSlot < slots; ++colorSlot) {
+            const PixelFormat color = colorSlot == 0 ? d.colorFormat :
+                                      d.additionalColorFormats[colorSlot - 1];
+            pd.colorAttachments[colorSlot].pixelFormat = nativeColor(color);
+        }
         pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        auto* ca = pd.colorAttachments[0];
+        for (int colorSlot = 0; colorSlot < slots; ++colorSlot) {
+        auto* ca = pd.colorAttachments[colorSlot];
         if (!d.colorWrite) ca.writeMask = MTLColorWriteMaskNone;
         if (d.blend == BlendMode::Multiply) {          // dst * src colour, dst alpha kept
             ca.blendingEnabled = YES;
@@ -876,6 +1415,7 @@ public:
             ca.sourceAlphaBlendFactor = MTLBlendFactorOne;
             ca.destinationAlphaBlendFactor = d.blend == BlendMode::Additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
         }
+        }
         shaderAssets_->prepare(pd);
         return pd;
     }
@@ -894,7 +1434,9 @@ public:
             src.find("#define BAKED 1") != std::string::npos ||
             src.find("#define MORPH 1") != std::string::npos ||
             src.find("#define MATERIAL_PALETTE 1") != std::string::npos ||
-            src.find("#define SG_SAMPLE(") != std::string::npos) return;
+            (src.find("#define SG_SAMPLE(") != std::string::npos &&
+             src.find("#define AIVERSE_SG_ICB_GRAPH 1") == std::string::npos))
+            return;
 
         auto& cached = icbPbrShaders_[{src, shader->linear}];
         if (!cached.attempted) {
@@ -927,6 +1469,14 @@ public:
         pipeline.icbPbrEncoder = encoder;
     }
     PipelineHandle createPipeline(const PipelineDesc& d) override {
+        if (d.colorAttachmentCount < 1 || d.colorAttachmentCount > kMaxRenderTargetColors) {
+            error_ = "Metal pipeline: color attachment count must be 1..4";
+            return {};
+        }
+        if (d.sampleCount < 1 || ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            error_ = "Metal pipeline: unsupported raster sample count";
+            return {};
+        }
         auto* s = shaders_.get(d.shader.id);
         if (!s) { error_ = "pipeline: invalid shader"; return {}; }
         auto* pd = pipelineDescriptor(d, s);
@@ -951,6 +1501,12 @@ public:
         return {pipelines_.add(p)};
     }
     PipelineJob createPipelineAsync(const PipelineDesc& d) override {
+        if (d.colorAttachmentCount < 1 || d.colorAttachmentCount > kMaxRenderTargetColors) {
+            return Device::createPipelineAsync(d);
+        }
+        if (d.sampleCount < 1 || ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            return Device::createPipelineAsync(d);
+        }
         auto* shader=shaders_.get(d.shader.id);
         if (!shader) return Device::createPipelineAsync(d);
         struct Result { MTPipeline value; std::string error; std::atomic<bool> done{false}; PipelineHandle published; };
@@ -1185,6 +1741,7 @@ public:
         deliverBufferReads();
         deliverDepthReads();
         deliverColorReads();
+        deliverTextureReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
         // Programmatic .gputrace for one explicit frame. Capture must begin
@@ -1556,6 +2113,150 @@ public:
     size_t boundVertexOffset_=0;
     void clearBindings(){for(auto& t:boundTextures_)t=nil;for(auto& s:boundSamplers_)s=nil;boundVertexBuffer_=nil;}
     void setBindingCacheEnabled(bool enabled) override {if(enabled!=bindingCacheEnabled_){bindingCacheEnabled_=enabled;clearBindings();}}
+    bool supportsRenderTargetPasses() const override { return true; }
+
+    bool beginRenderTargets(const RenderTargetPassDesc& desc) override {
+        if (!validateRenderTargetPassDesc(desc) || !cmd_ || enc_ || compute_ || gpuIcbEncoder_) {
+            error_ = "Metal: invalid render target pass or an encoder is already active";
+            return false;
+        }
+        auto sliceCount = [](const MTTexture& t) {
+            return t.dimension == TextureDimension::Cube ? 6 :
+                   t.dimension == TextureDimension::CubeArray ? int(t.tex.arrayLength) * 6 :
+                   t.dimension == TextureDimension::Texture2DArray ? int(t.tex.arrayLength) : 1;
+        };
+        auto validate = [&](const RenderTargetAttachment& a, bool wantDepth,
+                            int& width, int& height) {
+            const MTTexture* t = textures_.get(a.texture.id);
+            if (!t || !t->tex || a.mipLevel < 0 || a.arrayLayer < 0 ||
+                a.mipLevel >= int(t->tex.mipmapLevelCount) ||
+                a.arrayLayer >= sliceCount(*t) ||
+                !(t->tex.usage & MTLTextureUsageRenderTarget) ||
+                (t->fmt == PixelFormat::Depth) != wantDepth ||
+                t->dimension == TextureDimension::Texture1D ||
+                t->dimension == TextureDimension::Texture3D)
+                return false;
+            if (!wantDepth && t->fmt != PixelFormat::RGBA8 &&
+                t->fmt != PixelFormat::RGBA8_sRGB && t->fmt != PixelFormat::RGBA16F)
+                return false;
+            width = std::max(1, int(t->tex.width) >> a.mipLevel);
+            height = std::max(1, int(t->tex.height) >> a.mipLevel);
+            return width > 0 && height > 0;
+        };
+        int width = 0, height = 0;
+        const MTTexture* colors[kMaxRenderTargetColors]{};
+        const MTTexture* resolves[kMaxRenderTargetColors]{};
+        const MTTexture* depth = nullptr;
+        PixelFormat commonFormat = PixelFormat::RGBA8;
+        int samples = 0;
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& a = desc.colors[size_t(i)];
+            int w = 0, h = 0;
+            if (!validate(a, false, w, h) ||
+                (width && (width != w || height != h))) {
+                error_ = "Metal: incompatible color attachment size/format/subresource";
+                return false;
+            }
+            const MTTexture* color = textures_.get(a.texture.id);
+            // Current HDR shader variants and blend policies are shared
+            // across slots. Mixed format MRT needs explicit shader variants.
+            if (i && color->fmt != commonFormat) {
+                error_ = "Metal: mixed color formats are not supported by MRT shader policy";
+                return false;
+            }
+            if (samples && samples != int(color->tex.sampleCount)) {
+                error_ = "Metal: color attachment sample counts differ";
+                return false;
+            }
+            width = w; height = h;
+            samples = int(color->tex.sampleCount);
+            commonFormat = color->fmt;
+            colors[i] = color;
+        }
+        if (desc.depth.texture.valid()) {
+            int w = 0, h = 0;
+            if (!validate(desc.depth, true, w, h) ||
+                (width && (width != w || height != h))) {
+                error_ = "Metal: depth attachment size/format mismatch";
+                return false;
+            }
+            depth = textures_.get(desc.depth.texture.id);
+            if (samples && samples != int(depth->tex.sampleCount)) {
+                error_ = "Metal: depth sample count differs from color";
+                return false;
+            }
+            if (!width) { width = w; height = h; }
+            if (!samples) samples = int(depth->tex.sampleCount);
+        }
+        if (width < 1 || height < 1 || samples < 1) return false;
+        // Check every resolve before creating any render encoder, so a
+        // malformed target cannot partially bind or clear the MRT pass.
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& a = desc.colors[size_t(i)];
+            if (!a.resolveTexture.valid()) continue;
+            const MTTexture* color = colors[i];
+            const MTTexture* resolve = textures_.get(a.resolveTexture.id);
+            if (samples <= 1 || !resolve || !resolve->tex ||
+                resolve->tex.sampleCount != 1 ||
+                resolve->tex.pixelFormat != color->tex.pixelFormat ||
+                !(resolve->tex.usage & MTLTextureUsageRenderTarget) ||
+                resolve->dimension == TextureDimension::Texture1D ||
+                resolve->dimension == TextureDimension::Texture3D ||
+                a.resolveMipLevel < 0 ||
+                a.resolveMipLevel >= int(resolve->tex.mipmapLevelCount) ||
+                a.resolveArrayLayer < 0 ||
+                a.resolveArrayLayer >= sliceCount(*resolve) ||
+                std::max(1, int(resolve->tex.width) >> a.resolveMipLevel) != width ||
+                std::max(1, int(resolve->tex.height) >> a.resolveMipLevel) != height) {
+                error_ = "Metal: incompatible color resolve target";
+                return false;
+            }
+            resolves[i] = resolve;
+        }
+        finishGpuEncodedIcbPreparation();
+        MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& a = desc.colors[size_t(i)];
+            auto* ca = rp.colorAttachments[i];
+            ca.texture = colors[i]->tex;
+            ca.level = NSUInteger(a.mipLevel);
+            ca.slice = NSUInteger(a.arrayLayer);
+            ca.loadAction = a.clear ? MTLLoadActionClear : MTLLoadActionLoad;
+            ca.storeAction = resolves[i] ? MTLStoreActionMultisampleResolve :
+                             MTLStoreActionStore;
+            if (resolves[i]) {
+                ca.resolveTexture = resolves[i]->tex;
+                ca.resolveLevel = NSUInteger(a.resolveMipLevel);
+                ca.resolveSlice = NSUInteger(a.resolveArrayLayer);
+            }
+            ca.clearColor = MTLClearColorMake(
+                a.clearColor[0], a.clearColor[1], a.clearColor[2], a.clearColor[3]);
+        }
+        if (depth) {
+            rp.depthAttachment.texture = depth->tex;
+            rp.depthAttachment.level = NSUInteger(desc.depth.mipLevel);
+            rp.depthAttachment.slice = NSUInteger(desc.depth.arrayLayer);
+            rp.depthAttachment.loadAction = desc.depth.clear ? MTLLoadActionClear : MTLLoadActionLoad;
+            rp.depthAttachment.storeAction = MTLStoreActionStore;
+            rp.depthAttachment.clearDepth = desc.clearDepth;
+        }
+        id<MTLRenderCommandEncoder> encoder = [cmd_ renderCommandEncoderWithDescriptor:rp];
+        if (!encoder) {
+            error_ = "Metal: MRT render encoder creation failed";
+            return false;
+        }
+        enc_ = encoder;
+        passW_ = width; passH_ = height;
+        explicitPassSamples_ = samples;
+        explicitPassColors_ = desc.colorCount;
+        explicitPassColorFormat_ = commonFormat;
+        hdrPass_ = desc.colorCount && commonFormat == PixelFormat::RGBA16F;
+        pipelineId_ = 0;
+        clearBindings();
+        [enc_ setFrontFacingWinding:MTLWindingCounterClockwise];
+        return true;
+    }
+
     void beginPass(const PassDesc& d) override {
         // Do not allow an unfinished GPU ICB compute pass to overlap a
         // render encoder, even if a future caller omits the explicit finish.
@@ -1607,6 +2308,8 @@ public:
     }
     void endPass() override {
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
+        explicitPassSamples_ = 0;
+        explicitPassColors_ = -1;
     }
     void pushGpuDebugGroup(const char* label) override {
         if (gpuTraceActive_ && enc_ && label) {
@@ -1634,6 +2337,29 @@ public:
         if (!enc_ || !p) return;
         if (hdrPass_ && !p->desc.depthOnly && p->desc.colorFormat != PixelFormat::RGBA16F) {
             h = hdrPipeline(h); p = pipelines_.get(h.id); if (!p) { pipelineId_ = 0; return; }
+        }
+        if (explicitPassSamples_ && p->desc.sampleCount != explicitPassSamples_) {
+            error_ = "Metal: pipeline sample count does not match active render target pass";
+            pipelineId_ = 0; return;
+        }
+        if (explicitPassColors_ >= 0 &&
+            (p->desc.depthOnly ? 0 : p->desc.colorAttachmentCount) != explicitPassColors_) {
+            error_ = "Metal: pipeline color output count does not match MRT pass";
+            pipelineId_ = 0; return;
+        }
+        if (explicitPassColors_ > 0 && p->desc.colorFormat != explicitPassColorFormat_) {
+            error_ = "Metal: pipeline color format does not match MRT pass";
+            pipelineId_ = 0; return;
+        }
+        if (explicitPassColors_ > 1) {
+            bool match = true;
+            for (int i = 1; i < explicitPassColors_; ++i)
+                if (p->desc.additionalColorFormats[i - 1] != explicitPassColorFormat_)
+                    match = false;
+            if (!match) {
+                error_ = "Metal: additional pipeline formats differ from MRT attachments";
+                pipelineId_ = 0; return;
+            }
         }
         pipelineId_ = h.id;
         [enc_ setRenderPipelineState:p->state];
@@ -1763,6 +2489,55 @@ public:
         BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
         const void* instanceData, size_t instanceBytes) override {
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,nullptr);
+    }
+    uint32_t prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) override {
+        static const bool optIn = [] {
+            const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+            return flag && std::strcmp(flag,"1")==0;
+        }();
+        if (!optIn || !materials) return 0;
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,materials);
+    }
+    uint32_t prepareGpuEncodedIndexedIcbWithPbrMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbPbrMaterial* materials) override {
+        static const bool enabled=[] {
+            const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR");
+            return flag && std::strcmp(flag,"1")==0;
+        }();
+        if (!enabled || !materials || count<2 || count>256) return 0;
+        std::vector<GpuIcbVirtualMaterial> entries(count);
+        for (uint32_t i=0;i<count;++i) {
+            if (!materials[i].valid()) return 0;
+            auto& entry=entries[i];
+            entry.hasVirtualTexture=false;
+            entry.hasPbr=true;
+            entry.pbrTextures=materials[i].textures;
+            entry.pbrU2=materials[i].u2;
+            entry.graphTextureCount=materials[i].graphTextureCount;
+            entry.graphTextures=materials[i].graphTextures;
+            if (!entry.valid()) return 0;
+        }
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,entries.data());
+    }
+    uint32_t prepareGpuEncodedIndexedIcbInternal(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) {
         static const bool enabled = [] {
             const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
             return flag && std::strcmp(flag, "1") == 0;
@@ -1797,7 +2572,7 @@ struct DrawArgs {
 struct IcbContainer {
     command_buffer commands [[id(0)]];
 };
-struct Params { uint count, indexCapacity, pad0, pad1; };
+struct Params { uint count, indexCapacity, materialStride, vtStride, pbrU2Stride; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     device uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
@@ -1835,14 +2610,16 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
     command.set_vertex_buffer(uniform6, 7);
     command.set_vertex_buffer(uniform7, 8);
     command.set_fragment_buffer(uniform1, 2);
-    command.set_fragment_buffer(uniform2, 3);
+    command.set_fragment_buffer(uniform2 + tid*params.pbrU2Stride, 3);
     command.set_fragment_buffer(uniform3, 4);
     command.set_fragment_buffer(uniform4, 5);
     command.set_fragment_buffer(uniform5, 6);
-    command.set_fragment_buffer(uniform6, 7);
+    // Only the opt-in per-command path changes U6 and the PBR resources.
+    // Legacy commands use zero strides and the original shared buffers.
+    command.set_fragment_buffer(uniform6 + tid*params.vtStride, 7);
     // Fragment slot 8 is reserved for the PBR argument-buffer variant.
-    // U7 is still available at vertex slot 8.
-    command.set_fragment_buffer(pbrArguments, 8);
+    // U7 remains available at vertex slot 8.
+    command.set_fragment_buffer(pbrArguments + tid*params.materialStride, 8);
     command.draw_indexed_primitives(primitive_type::triangle,
                                     args.indexCount,
                                     indices + args.firstIndex,
@@ -1902,21 +2679,141 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             resources.instanceBuffer = [device_ newBufferWithLength:instanceBytes
                                              options:MTLResourceStorageModeShared];
         if (!resources.instanceBuffer || !resources.instanceBuffer.contents) return 0;
+        // Prepare the native VT descriptors BEFORE GPU encoding. Each native
+        // texture is retained by this frame's resource pool and compared
+        // with its original handle again at execute time.
+        resources.virtualMaterials.clear();
+        if (materials) {
+            resources.virtualMaterials.reserve(count);
+            for (uint32_t i=0;i<count;++i) {
+                if (!materials[i].valid() ||
+                    materials[i].hasPbr != materials[0].hasPbr ||
+                    materials[i].hasVirtualTexture !=
+                        materials[0].hasVirtualTexture) return 0;
+                GpuIcbNativeVtMaterial native;
+                native.hasVt=materials[i].hasVirtualTexture;
+                if (native.hasVt) {
+                    const auto* atlas=textures_.get(materials[i].physicalAtlas.id);
+                    const auto* table=textures_.get(materials[i].pageTable.id);
+                    const auto* alpha=materials[i].alphaCoverage.valid() ?
+                        textures_.get(materials[i].alphaCoverage.id) : nullptr;
+                    // VT uses RGBA8 2D arrays and optional R8 alpha.
+                    if (!atlas || !table || !atlas->tex || !table->tex ||
+                        atlas->dimension != TextureDimension::Texture2DArray ||
+                        table->dimension != TextureDimension::Texture2DArray ||
+                        atlas->fmt != PixelFormat::RGBA8 ||
+                        table->fmt != PixelFormat::RGBA8 ||
+                        !atlas->tex.arrayLength || !table->tex.arrayLength ||
+                        (alpha && (!alpha->tex ||
+                         alpha->dimension != TextureDimension::Texture2D ||
+                         alpha->fmt != PixelFormat::R8)) ||
+                        (materials[i].alphaCoverage.valid() && !alpha) ||
+                        materials[i].params[0] >= float(table->tex.arrayLength) ||
+                        2.0f*materials[i].params[1]+1.0f >=
+                            float(std::min(atlas->tex.width,atlas->tex.height)))
+                        return 0;
+                    native.atlasHandle=materials[i].physicalAtlas;
+                    native.tableHandle=materials[i].pageTable;
+                    native.alphaHandle=materials[i].alphaCoverage;
+                    native.atlas=atlas->tex;
+                    native.table=table->tex;
+                    native.alpha=alpha ? alpha->tex : nil;
+                    std::memcpy(native.u6,materials[i].params,sizeof(native.u6));
+                }
+                native.hasPbr=materials[i].hasPbr;
+                if (native.hasPbr) {
+                    // The six ordinary built-in PBR sources are bound as
+                    // texture2d<float> and require their own sampler states.
+                    for (int slot=0;slot<6;++slot) {
+                        const auto* source=textures_.get(
+                            materials[i].pbrTextures[size_t(slot)].id);
+                        if (!source || !source->tex || !source->sampler ||
+                            source->dimension != TextureDimension::Texture2D ||
+                            source->tex.sampleCount != 1)
+                            return 0;
+                        native.pbrHandles[size_t(slot)]=
+                            materials[i].pbrTextures[size_t(slot)];
+                        native.pbrTextures[size_t(slot)]=source->tex;
+                        native.pbrSamplers[size_t(slot)]=source->sampler;
+                    }
+                    std::memcpy(native.u2,materials[i].pbrU2.data(),
+                                sizeof(native.u2));
+                }
+                native.graphTextureCount=materials[i].graphTextureCount;
+                // Graph sources use 13..16 and optional VT occupies the
+                // next two fragment texture indices, not dynamic samplers.
+                // Do not encode out-of-range Metal argument IDs even if
+                // the caller bypassed the renderer's slot planner.
+                if (native.graphTextureCount>4 ||
+                    (native.graphTextureCount>0 && !native.hasPbr) ||
+                    13+int(native.graphTextureCount)+(native.hasVt ? 2 : 0) >
+                        maxFragmentTextureSlots())
+                    return 0;
+                for (uint32_t j=0;j<native.graphTextureCount;++j) {
+                    const auto handle=materials[i].graphTextures[j];
+                    const auto* source=textures_.get(handle.id);
+                    if (!source || !source->tex || !source->sampler ||
+                        source->dimension!=TextureDimension::Texture2D ||
+                        source->tex.sampleCount!=1 ||
+                        source->samplerCompare ||
+                        // Graph source slot 16 has no dynamic Metal
+                        // sampler. Reject instead of silently changing
+                        // nearest/clamp sampling to repeat/linear.
+                        (j==3 && (!source->samplerRepeat ||
+                                  !source->samplerLinear)))
+                        return 0;
+                    native.graphHandles[j]=handle;
+                    native.graphTextures[j]=source->tex;
+                    native.graphSamplers[j]=source->sampler;
+                }
+                resources.virtualMaterials.push_back(std::move(native));
+            }
+        }
         // The GPU encoder references persistent uniform allocations, not
         // transient parent setBytes or parent buffer inheritance. The values
         // are filled from the correct render pass at execution time.
         constexpr size_t kGpuIcbUniformCapacity = 4096;
+        constexpr size_t kPerCommandPbrStride = 4096;
+        constexpr size_t kPerCommandVtStride = 256;
+        constexpr size_t kPerCommandU2Stride = 256;
+        const bool commandPbr = materials && materials[0].hasPbr;
+        const bool commandVt = materials && materials[0].hasVirtualTexture;
         for (int slot = 1; slot < 8; ++slot) {
+            const size_t bytes = (commandVt && slot==6) ?
+                size_t(count)*kPerCommandVtStride :
+                (commandPbr && slot==2) ?
+                size_t(count)*kPerCommandU2Stride :
+                kGpuIcbUniformCapacity;
             if (!resources.uniforms[slot] ||
-                resources.uniforms[slot].length < kGpuIcbUniformCapacity)
+                resources.uniforms[slot].length < bytes)
                 resources.uniforms[slot] = [device_ newBufferWithLength:
-                    kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+                    bytes options:MTLResourceStorageModeShared];
             if (!resources.uniforms[slot]) return 0;
         }
-        if (!resources.pbrArgs || resources.pbrArgs.length < kGpuIcbUniformCapacity)
+        const size_t pbrBytes = materials ?
+            size_t(count)*kPerCommandPbrStride : kGpuIcbUniformCapacity;
+        if (!resources.pbrArgs || resources.pbrArgs.length < pbrBytes)
             resources.pbrArgs = [device_ newBufferWithLength:
-                kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+                pbrBytes options:MTLResourceStorageModeShared];
         if (!resources.pbrArgs) return 0;
+        if (materials) {
+            if (commandVt) {
+                auto* destination=static_cast<uint8_t*>(resources.uniforms[6].contents);
+                if (!destination) return 0;
+                for(uint32_t i=0;i<count;++i)
+                    std::memcpy(destination+size_t(i)*kPerCommandVtStride,
+                                resources.virtualMaterials[i].u6,16);
+            }
+            if (commandPbr) {
+                auto* u2Destination=static_cast<uint8_t*>(
+                    resources.uniforms[2].contents);
+                if (!u2Destination) return 0;
+                for (uint32_t i=0;i<count;++i)
+                    std::memcpy(u2Destination+size_t(i)*kPerCommandU2Stride,
+                                resources.virtualMaterials[i].u2,
+                                sizeof(resources.virtualMaterials[i].u2));
+            }
+        }
         // The same submission index in a recycled frame slot typically
         // contains the same static instance payload. Avoid rewriting it.
         if (resources.instanceValidBytes != instanceBytes ||
@@ -1954,10 +2851,14 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [encoder setBuffer:resources.uniforms[slot] offset:0
                       atIndex:NSUInteger(slot + 5)];
         [encoder setBuffer:resources.pbrArgs offset:0 atIndex:13];
-        struct Params { uint32_t count, indexCapacity, padding[2]; };
+        struct Params { uint32_t count, indexCapacity, materialStride, vtStride,
+                        pbrU2Stride; };
         const size_t indexCount = indexData->size / sizeof(uint32_t);
         if (indexCount > UINT32_MAX) return 0;
-        Params params{count, uint32_t(indexCount), {0,0}};
+        Params params{count,uint32_t(indexCount),
+            materials ? uint32_t(kPerCommandPbrStride) : 0u,
+            commandVt ? uint32_t(kPerCommandVtStride) : 0u,
+            commandPbr ? uint32_t(kPerCommandU2Stride) : 0u};
         [encoder setBytes:&params length:sizeof(params) atIndex:17];
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
         [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
@@ -1987,15 +2888,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // when their direct fragment textures/samplers are rejected by Metal.
         // The existing PBR ICB variant consumes these resources through a
         // fragment argument buffer at index 8 instead.
-        const bool usePbrVariant = !pipeline->state.supportIndirectCommandBuffers;
-        // GPU command encoder uses uint32 index addresses. A future uint16
-        // specialization must be explicit rather than reinterpret indices.
-        if (pipeline->desc.indexType != IndexType::UInt32)
-            return reject("GPU ICB requires uint32 indices");
-        id<MTLRenderPipelineState> icbPipeline =
-            usePbrVariant ? pipeline->icbPbrState : pipeline->state;
-        if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
-            return reject("ICB-compatible pipeline unavailable (PBR variant not compiled)");
+        const auto* boundShader=shaders_.get(pipeline->desc.shader.id);
+        // Direct fragment texture bindings cannot be inherited reliably by
+        // a GPU-encoded ICB. VT/R8 permutations MUST use an argument-buffer
+        // variant even when the direct pipeline reports ICB support.
+        const bool externalMaterialTextures = boundShader &&
+            (boundShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos ||
+             boundShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos);
         const size_t frameSlot = frame_ % kFramesInFlight;
         auto& pool = gpuEncodedIcbPool_[frameSlot];
         if (size_t(token) > pool.size())
@@ -2003,6 +2902,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         auto& resources = pool[token - 1];
         if (resources.frame != frame_ || !resources.icb || resources.count == 0)
             return reject("ICB not encoded for current frame");
+        const bool perCommandPbr = !resources.virtualMaterials.empty() &&
+            resources.virtualMaterials.front().hasPbr;
+        const bool perCommandVt = !resources.virtualMaterials.empty() &&
+            resources.virtualMaterials.front().hasVt;
+        // A non-VT PBR group still needs the PBR argument-buffer shader
+        // even when the direct pipeline supports ordinary ICB.
+        const bool usePbrVariant = perCommandPbr || externalMaterialTextures ||
+            !pipeline->state.supportIndirectCommandBuffers;
+        if (pipeline->desc.indexType != IndexType::UInt32)
+            return reject("GPU ICB requires uint32 indices");
+        id<MTLRenderPipelineState> icbPipeline =
+            usePbrVariant ? pipeline->icbPbrState : pipeline->state;
+        if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
+            return reject("ICB-compatible pipeline unavailable (PBR variant not compiled)");
         if (!buffers_.get(ibId_) || !buffers_.get(vbId_))
             return reject("index or vertex resource is not bound");
         // The Metal render pipeline must retain all parent vertex/fragment
@@ -2020,33 +2933,168 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         for (int slot = 1; slot < 8; ++slot) {
             const auto& snapshot = indirectUniformSnapshots_[slot];
             id<MTLBuffer> stable = resources.uniforms[slot];
-            if (!stable || !stable.contents || snapshot.size() > stable.length)
+            const bool perCommandU2 = slot==2 &&
+                !resources.virtualMaterials.empty() &&
+                resources.virtualMaterials.front().hasPbr;
+            const bool perCommandU6 = slot==6 &&
+                !resources.virtualMaterials.empty() &&
+                resources.virtualMaterials.front().hasVt;
+            if (!stable || !stable.contents ||
+                (!(perCommandU2 || perCommandU6) &&
+                 snapshot.size() > stable.length))
                 return reject("uniform snapshot exceeds encoded GPU ICB buffer");
-            // The command was GPU-encoded to refer to this buffer. Never
-            // replace it after encoding: only update the existing contents.
-            if (!snapshot.empty())
+            // Each command's U2/U6 is captured at prepare time in an
+            // aligned persistent slice; never overwrite with the parent
+            // material's uniform state.
+            if (!(perCommandU2 || perCommandU6) && !snapshot.empty())
                 std::memcpy(stable.contents, snapshot.data(), snapshot.size());
             declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
         }
+        if (perCommandVt && !boundShader)
+            return reject("per-command VT requires a model shader");
+        if (!perCommandVt && perCommandPbr && boundShader &&
+            (boundShader->source.find("#define AIVERSE_MODEL_VT 1") !=
+                 std::string::npos ||
+             boundShader->source.find("#define VIRTUAL_ALPHA_MASK 1") !=
+                 std::string::npos))
+            return reject("non-VT PBR ICB shader mode mismatch");
         if (usePbrVariant) {
             if (!pipeline->icbPbrEncoder)
                 return reject("PBR ICB fragment argument encoder missing");
             constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+            const auto* pbrShader = shaders_.get(pipeline->desc.shader.id);
+            const bool virtualSampling = pbrShader &&
+                pbrShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos;
+            const bool alphaCoverage = pbrShader &&
+                pbrShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos;
+            const bool graphShader = pbrShader &&
+                pbrShader->source.find("#define AIVERSE_SG_ICB_GRAPH 1") != std::string::npos;
+            int shaderGraphCount=0;
+            if (graphShader) {
+                const std::string_view source=pbrShader->source;
+                constexpr std::string_view tag="#define AIVERSE_SG_TEXTURE_COUNT ";
+                const auto at=source.find(tag);
+                if (at==std::string_view::npos ||
+                    at+tag.size()+1>=source.size() ||
+                    source[at+tag.size()]<'0' ||
+                    source[at+tag.size()]>'4' ||
+                    source[at+tag.size()+1]!='\n')
+                    return reject("invalid graph source count in ICB variant");
+                shaderGraphCount=int(source[at+tag.size()]-'0');
+            }
+            const auto bound = [&](int slot) {
+                return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
+            };
             for (int slot : pbrSlots)
-                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot])
+                if (!(perCommandPbr && slot>=1 && slot<=6) && !bound(slot))
                     return reject("PBR ICB required texture or sampler not bound");
+            if (resources.virtualMaterials.empty() &&
+                ((virtualSampling &&
+                  (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
+                 (alphaCoverage && !bound(15))))
+                return reject("VT atlas/page table or R8 alpha ICB binding missing");
             const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
             // The compute kernel already recorded this exact buffer pointer.
             // Growing/replacing it here would make the encoded ICB stale.
-            if (!resources.pbrArgs || resources.pbrArgs.length < size)
+            constexpr size_t kPerCommandPbrStride = 4096;
+            if (!resources.pbrArgs || size > kPerCommandPbrStride ||
+                resources.pbrArgs.length <
+                    (resources.virtualMaterials.empty() ? size :
+                     size_t(resources.count)*kPerCommandPbrStride))
                 return reject("PBR ICB argument buffer exceeds encoded capacity");
-            [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
-            for (int slot : pbrSlots) {
+            const auto bindPbrSlot = [&](int slot, bool sampler = true) {
                 [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
                                             atIndex:NSUInteger(slot * 2)];
-                [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
-                                                 atIndex:NSUInteger(slot * 2 + 1)];
+                if (sampler)
+                    [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                                     atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
+            };
+            if (resources.virtualMaterials.empty()) {
+                [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
+                for (int slot : pbrSlots) bindPbrSlot(slot);
+                // Atlas uses s1; page table uses read(). Never encode
+                // unused argument indices 27/29.
+                if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
+                if (alphaCoverage) bindPbrSlot(15);
+            } else {
+                if (perCommandVt != virtualSampling ||
+                    resources.virtualMaterials.size()!=resources.count)
+                    return reject("per-command material count/shader mode mismatch");
+                for (uint32_t i=0;i<resources.count;++i) {
+                    const auto& resource=resources.virtualMaterials[i];
+                    if (resource.graphTextureCount!=uint32_t(shaderGraphCount))
+                        return reject("ICB graph count mismatches shader layout");
+                    if (perCommandVt) {
+                        const auto* liveAtlas=textures_.get(resource.atlasHandle.id);
+                        const auto* liveTable=textures_.get(resource.tableHandle.id);
+                        const auto* liveAlpha=resource.alphaHandle.valid() ?
+                            textures_.get(resource.alphaHandle.id) : nullptr;
+                        if (!liveAtlas || !liveTable ||
+                            liveAtlas->tex != resource.atlas ||
+                            liveTable->tex != resource.table ||
+                            (resource.alphaHandle.valid() &&
+                             (!liveAlpha || liveAlpha->tex != resource.alpha)))
+                            return reject("per-command VT texture changed after preparation");
+                    }
+                    [pipeline->icbPbrEncoder
+                        setArgumentBuffer:resources.pbrArgs
+                        offset:NSUInteger(size_t(i)*kPerCommandPbrStride)];
+                    for (int slot : pbrSlots)
+                        if (!(perCommandPbr && slot>=1 && slot<=6))
+                            bindPbrSlot(slot);
+                    if (perCommandPbr) {
+                        for (int j=0;j<6;++j) {
+                            const auto texture=resource.pbrTextures[size_t(j)];
+                            const auto sampler=resource.pbrSamplers[size_t(j)];
+                            const auto* live=textures_.get(
+                                resource.pbrHandles[size_t(j)].id);
+                            if (!live || live->tex!=texture ||
+                                live->sampler!=sampler)
+                                return reject("per-command PBR source changed after prepare");
+                            const NSUInteger pbrSlot=NSUInteger(j+1);
+                            [pipeline->icbPbrEncoder
+                                setTexture:texture atIndex:pbrSlot*2u];
+                            [pipeline->icbPbrEncoder
+                                setSamplerState:sampler atIndex:pbrSlot*2u+1u];
+                            declareIndirectRead(texture,MTLRenderStageFragment);
+                        }
+                    }
+                    for(uint32_t j=0;j<resource.graphTextureCount;++j) {
+                        const auto nativeTexture=resource.graphTextures[j];
+                        const auto nativeSampler=resource.graphSamplers[j];
+                        const auto* live=textures_.get(resource.graphHandles[j].id);
+                        if (!live || live->tex!=nativeTexture ||
+                            live->sampler!=nativeSampler)
+                            return reject("ICB graph source changed after prepare");
+                        const int slot=13+int(j);
+                        [pipeline->icbPbrEncoder setTexture:nativeTexture
+                                                   atIndex:NSUInteger(slot*2)];
+                        if (slot<16)
+                            [pipeline->icbPbrEncoder setSamplerState:nativeSampler
+                                                           atIndex:NSUInteger(slot*2+1)];
+                        // Graph source tex16 uses constexpr sampler s16.
+                        declareIndirectRead(nativeTexture,MTLRenderStageFragment);
+                    }
+                    if (perCommandVt) {
+                        const int slot=13+shaderGraphCount;
+                        [pipeline->icbPbrEncoder setTexture:resource.atlas
+                                                   atIndex:NSUInteger(slot*2)];
+                        [pipeline->icbPbrEncoder setTexture:resource.table
+                                                   atIndex:NSUInteger((slot+1)*2)];
+                        declareIndirectRead(resource.atlas, MTLRenderStageFragment);
+                        declareIndirectRead(resource.table, MTLRenderStageFragment);
+                    }
+                    if (alphaCoverage) {
+                        if (!resource.alpha || !icbFragmentSamplers_[15])
+                            return reject("per-command VT alpha mask missing");
+                        [pipeline->icbPbrEncoder
+                            setTexture:resource.alpha atIndex:30];
+                        [pipeline->icbPbrEncoder
+                            setSamplerState:icbFragmentSamplers_[15] atIndex:31];
+                        declareIndirectRead(resource.alpha, MTLRenderStageFragment);
+                    }
+                }
             }
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
@@ -2096,6 +3144,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         const id<MTLBuffer> indices = current(*ib);
         const id<MTLBuffer> vertices = current(*vb);
         const bool pbr = p->icbPbrState != nil;
+        const auto* sourceShader=shaders_.get(p->desc.shader.id);
+        const bool externalMaterialTextures = sourceShader &&
+            (sourceShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos ||
+             sourceShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos);
+        if (externalMaterialTextures && !pbr) return false;
         id<MTLRenderPipelineState> indirectPipeline = pbr ? p->icbPbrState : p->state;
         if (!indirectData || !indirectData.contents || !indices || !vertices || !indirectPipeline ||
             !indirectPipeline.supportIndirectCommandBuffers) return false;
@@ -2112,20 +3165,37 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // encode the individual texture/sampler bindings used by direct draws.
         id<MTLBuffer> pbrArgs = nil;
         constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+        const auto* indirectShader = shaders_.get(p->desc.shader.id);
+        const bool virtualSampling = indirectShader &&
+            indirectShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos;
+        const bool alphaCoverage = indirectShader &&
+            indirectShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos;
         if (pbr) {
             if (!p->icbPbrEncoder) return false;
+            const auto bound = [&](int slot) {
+                return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
+            };
             for (int slot : pbrSlots)
-                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot]) return false;
+                if (!bound(slot)) return false;
+            if ((virtualSampling &&
+                 (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
+                (alphaCoverage && !bound(15))) return false;
             const NSUInteger bytes = p->icbPbrEncoder.encodedLength;
             if (!resources.pbrArgs || resources.pbrArgs.length < bytes)
                 resources.pbrArgs = [device_ newBufferWithLength:bytes options:MTLResourceStorageModeShared];
             pbrArgs = resources.pbrArgs;
             if (!pbrArgs) return false;
             [p->icbPbrEncoder setArgumentBuffer:pbrArgs offset:0];
-            for (int slot : pbrSlots) {
-                [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot] atIndex:NSUInteger(slot * 2)];
-                [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot] atIndex:NSUInteger(slot * 2 + 1)];
-            }
+            const auto bindPbrSlot = [&](int slot, bool sampler = true) {
+                [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
+                                    atIndex:NSUInteger(slot * 2)];
+                if (sampler)
+                    [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                         atIndex:NSUInteger(slot * 2 + 1)];
+            };
+            for (int slot : pbrSlots) bindPbrSlot(slot);
+            if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
+            if (alphaCoverage) bindPbrSlot(15);
         }
 
         const auto afterArgs = std::chrono::steady_clock::now();
@@ -2516,7 +3586,22 @@ private:
         id<MTLBuffer> uniforms[8] = {};
         id<MTLBuffer> pbrArgs = nil;
     };
+    struct GpuIcbNativeVtMaterial {
+        TextureHandle atlasHandle, tableHandle, alphaHandle;
+        id<MTLTexture> atlas = nil, table = nil, alpha = nil;
+        float u6[4] = {};
+        bool hasVt = true, hasPbr = false;
+        std::array<TextureHandle,6> pbrHandles{};
+        std::array<id<MTLTexture>,6> pbrTextures{};
+        std::array<id<MTLSamplerState>,6> pbrSamplers{};
+        float u2[36] = {};
+        uint32_t graphTextureCount = 0;
+        std::array<TextureHandle,4> graphHandles{};
+        std::array<id<MTLTexture>,4> graphTextures{};
+        std::array<id<MTLSamplerState>,4> graphSamplers{};
+    };
     struct GpuEncodedIcbResources {
+        std::vector<GpuIcbNativeVtMaterial> virtualMaterials;
         id<MTLIndirectCommandBuffer> icb = nil;
         id<MTLBuffer> argBuffer = nil;
         id<MTLBuffer> pbrArgs = nil;
@@ -2537,10 +3622,15 @@ private:
     bool firstPass_ = true;
     bool screenReadable_ = false;   // setScreenReadable: drawables stay copyable (copyColor)
     bool hdrPass_ = false;
+    int explicitPassSamples_ = 0;
+    int explicitPassColors_ = -1; // -1: legacy beginPass (no MRT slot validation)
+    PixelFormat explicitPassColorFormat_ = PixelFormat::RGBA8;
     DeviceInfo info_;
     std::string error_;
     Pool<MTBuffer> buffers_;
     Pool<MTTexture> textures_;
+    Pool<MTTextureView> views_;
+    Pool<id<MTLSamplerState>> samplers_;
     std::map<std::pair<std::string,bool>,std::shared_ptr<MTShaderCompilation>> asyncShaderCompiles_;
     struct IcbPbrShaderCache { id<MTLFunction> fragment; bool attempted = false; };
     std::map<std::pair<std::string,bool>, IcbPbrShaderCache> icbPbrShaders_;

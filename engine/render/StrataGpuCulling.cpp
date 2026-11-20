@@ -664,7 +664,7 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if (!pipeline_.valid()) {
         pipeline_ = dev.createCompute({vulkan ? nullptr : kMetalCulling,
                                        vulkan ? kVulkanGpuCulling : nullptr,
-                                       "Strata diagnostic GPU cluster culling"});
+                                       "Strata diagnostic GPU cluster culling",gfx::VulkanComputeLayout::BufferPushConstants});
         if (!pipeline_.valid()) return false;
     }
     if(temporal){
@@ -672,7 +672,7 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
             temporalResetPipeline_=dev.createCompute({
                 vulkan?nullptr:kMetalTemporalReset,
                 vulkan?kVulkanTemporalReset:nullptr,
-                "STRATA GPU temporal refinement reset"});
+                "STRATA GPU temporal refinement reset",gfx::VulkanComputeLayout::BufferPushConstants});
         if(!vulkan && !temporalSafetyPipeline_.valid())
             temporalSafetyPipeline_=dev.createCompute({
                 kMetalTemporalSafety,nullptr,
@@ -684,10 +684,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if(vulkan){
         if(!indirectClearPipeline_.valid())
             indirectClearPipeline_=dev.createCompute({nullptr,
-                kVulkanIndirectClear,"Strata Vulkan indirect clear"});
+                kVulkanIndirectClear,"Strata Vulkan indirect clear",gfx::VulkanComputeLayout::BufferPushConstants});
         if(!indirectSafetyPipeline_.valid())
             indirectSafetyPipeline_=dev.createCompute({nullptr,
-                kVulkanIndirectSafety,"Strata Vulkan indirect safety"});
+                kVulkanIndirectSafety,"Strata Vulkan indirect safety",gfx::VulkanComputeLayout::BufferPushConstants});
         if(!indirectClearPipeline_.valid() ||
            !indirectSafetyPipeline_.valid())return false;
     }

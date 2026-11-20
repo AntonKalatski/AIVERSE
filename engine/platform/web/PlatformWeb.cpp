@@ -188,6 +188,32 @@ using detail::state;
 namespace {
 std::unique_ptr<gfx::Device> g_device;
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_ctx = 0;
+bool g_contextLost = false;
+bool g_contextRestorePending = false;
+bool g_initialized = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+// Read-only counters for the opt-in browser recovery probe.
+uint32_t g_testDeviceGeneration = 0;
+uint32_t g_testRenderedFrames = 0;
+uint32_t g_testContextLosses = 0;
+#endif
+EM_BOOL onWebGLContextLost(int, const EmscriptenWebGLContextEvent*, void*) {
+    // Returning true prevents browser default handling and permits restoration.
+    // Invalidate all GPU handles; rendering resumes only after reinitialization.
+    g_contextLost = true;
+    g_contextRestorePending = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testContextLosses;
+#endif
+    emscripten_log(EM_LOG_WARN,"AIVERSE WebGL2 context lost; frames suspended");
+    return EM_TRUE;
+}
+EM_BOOL onWebGLContextRestored(int, const EmscriptenWebGLContextEvent*, void*) {
+    g_contextRestorePending = true;
+    emscripten_log(EM_LOG_CONSOLE,"AIVERSE WebGL2 context restored; rebuilding GPU resources");
+    return EM_TRUE;
+}
+
 uint8_t g_pasteMods = kModCtrl;
 std::string g_pasteText;
 detail::FrameClock g_clock; // rAF stops in hidden tabs; the clamp keeps the first frame back sane
@@ -309,12 +335,42 @@ EM_BOOL onResize(int, const EmscriptenUiEvent*, void*) {
 void frame(void*) {
     auto& S = state();
     double dt = g_clock.tick(emscripten_get_now() / 1000.0);
+    if(g_contextRestorePending) {
+        // Run callbacks on the main loop, not in a browser event callback.
+        // Legacy GPU handles and textures must not survive context recovery.
+        g_contextRestorePending = false;
+        if(emscripten_webgl_make_context_current(g_ctx)!=EMSCRIPTEN_RESULT_SUCCESS) {
+            g_contextLost = true;
+            emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2 restore: make-current failed");
+            return;
+        }
+        if(g_initialized && S.cb.shutdown) S.cb.shutdown();
+        g_device.reset();
+        g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+        if(!g_device) {
+            g_contextLost = true;
+            emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2 restore: device recreation failed");
+            return;
+        }
+        if(S.cb.init) S.cb.init(*g_device);
+        g_initialized = true;
+        g_contextLost = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+        ++g_testDeviceGeneration;
+#endif
+        // Never render using stale dt or scene state from the lost context.
+        return;
+    }
+    if(g_contextLost || !g_device) return;
     double cssW = 0, cssH = 0;
     emscripten_get_element_css_size(kCanvas, &cssW, &cssH);
     if (int(cssW) != int(S.winW) || int(cssH) != int(S.winH)) onResize(0, nullptr, nullptr);
     g_device->beginFrame(S.fbW, S.fbH);
     if (S.cb.frame) S.cb.frame(*g_device, dt);
     g_device->endFrame();
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testRenderedFrames;
+#endif
 }
 } // namespace
 
@@ -352,6 +408,8 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     g_ctx = emscripten_webgl_create_context(kCanvas, &a);
     if (g_ctx <= 0) { emscripten_log(EM_LOG_ERROR, "WebGL2 is not available"); return 1; }
     emscripten_webgl_make_context_current(g_ctx);
+    emscripten_set_webglcontextlost_callback(kCanvas,nullptr,EM_TRUE,onWebGLContextLost);
+    emscripten_set_webglcontextrestored_callback(kCanvas,nullptr,EM_TRUE,onWebGLContextRestored);
 
     emscripten_set_mousedown_callback(kCanvas, nullptr, EM_TRUE, onMouse);
     emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr, EM_TRUE, onMouse);
@@ -375,7 +433,15 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
 void startAfterStorage() {
     auto& S = state();
     g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+    if (!g_device) {
+        emscripten_log(EM_LOG_ERROR,"AIVERSE WebGL2: unable to initialize graphics device");
+        return;
+    }
     if (S.cb.init) S.cb.init(*g_device);
+    g_initialized = true;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testDeviceGeneration;
+#endif
     emscripten_set_main_loop_arg(frame, nullptr, 0, EM_FALSE);
 }
 
@@ -396,6 +462,20 @@ void setClipboardText(const std::string& s) {
 
 // Called from the hidden input's JS handlers.
 extern "C" {
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_generation() {
+    return int(aiverse::platform::g_testDeviceGeneration);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_frames() {
+    return int(aiverse::platform::g_testRenderedFrames);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_losses() {
+    return int(aiverse::platform::g_testContextLosses);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_suspended() {
+    return aiverse::platform::g_contextLost ? 1 : 0;
+}
+#endif
 EMSCRIPTEN_KEEPALIVE void aiverse_web_char(int cp) {
     aiverse::platform::Event e; e.type = aiverse::platform::EventType::Char; e.codepoint = uint32_t(cp);
     aiverse::platform::detail::dispatch(e);

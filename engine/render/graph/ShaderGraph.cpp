@@ -16,6 +16,9 @@ bool supports(const Op& op, const std::string& domain) {
 const std::vector<Op>& catalog() {
     static const std::vector<Op> ops = {
         {"constant",0},{"parameter",0},{"uv",0},{"input",0,7,false},{"texture",1,7,false},{"sampleTexture",1,7,false},{"sampleTextureLod",2,1,true},
+        // Material-only fragment node. Renderer assigns two free slots
+        // for physical atlas/page table (no separate graph source path).
+        {"sampleVirtualTexture",1,1,false},
         {"time",0},{"worldPosition",0,5},{"objectPosition",0,1},{"normal",0,1},{"viewDirection",0,5},
         {"vertexColor",0,5},{"particleAge",0,4},{"particleLifetime",0,4},{"particleAge01",0,4},
         {"particleRandom",0,4},{"screenPosition",0,7,false},
@@ -78,6 +81,7 @@ Program compile(const Json& g, const std::string& expected) {
         auto it=std::find_if(catalog().begin(),catalog().end(),[&](auto& o){return n.getStr("op")==o.id;});
         if (it==catalog().end()) fail("node '"+id+"': unknown operation");
         if(!supports(*it,p.domain)) fail("node '"+id+"': operation is not available in "+p.domain);
+        if(n.getStr("op")=="sampleVirtualTexture") p.usesVirtualTexture=true;
         if((n.getStr("op")=="sampleTexture" || n.getStr("op")=="sampleTextureLod")) {
             const auto path=n.getStr("texture");
             if(path.empty() || path[0]=='/' || path.find("..")!=std::string::npos || path.find('\\')!=std::string::npos || path.find(':')!=std::string::npos)
@@ -96,6 +100,11 @@ Program compile(const Json& g, const std::string& expected) {
         }
         if ((!n["inputs"].isArray() && it->inputs) || n["inputs"].size()!=size_t(it->inputs)) fail("node '"+id+"': wrong input count");
     }
+    // Shader Graph remains backend-agnostic. The renderer resolves an
+    // explicit VT node against the actual RHI slot budget: Metal may use
+    // texture indices 16+ without extra sampler slots, while GL/Vulkan
+    // retain tex1 fallback if their fragment binding limit is exceeded.
+    // A graph can author up to four independent textures (checked above).
     lib::Graph edges(ns.size());
     for (size_t i=0;i<ns.size();++i) for (const auto& in:ns[i]["inputs"].items()) {
         auto it=ids.find(in.str());
@@ -129,13 +138,17 @@ Program compile(const Json& g, const std::string& expected) {
                     const auto& v=op=="parameter" && g["parameters"].has(key)?g["parameters"][key]:n["value"];
                     if(v.isNumber())e=vec+"("+number(v)+")";
                     else {if(!v.isArray()||v.size()!=4)fail("constant/parameter value must be a number or RGBA array");e=vec+"("+number(v[0])+","+number(v[1])+","+number(v[2])+","+number(v[3])+")";}
+                } else if(op=="sampleVirtualTexture") {
+                    e="SG_SAMPLE_VIRTUAL("+arg(0)+".xy)";
                 } else if(op=="texture" || op=="sampleTexture" || op=="sampleTextureLod") {
                     std::string sample="SG_SAMPLE";
                     if(op=="sampleTexture" || op=="sampleTextureLod")sample=std::string(op=="sampleTextureLod"?"SG_TEXTURE_LOD":"SG_TEXTURE")+std::to_string(std::find(p.textures.begin(),p.textures.end(),n.getStr("texture"))-p.textures.begin());
                     e=sample+"("+arg(0)+".xy"+(op=="sampleTextureLod"?",max("+arg(1)+".r,0.0)":"")+")";
                 } else e=nodeExpression(n,arg,metal,name,code);
                 code+=vec+" "+name+" = "+e+";\n";
-                if((op=="texture" && p.domain=="material") || ((op=="sampleTexture" || op=="sampleTextureLod") && n.getBool("srgb",false))) {
+                if((op=="texture" && p.domain=="material") ||
+                   ((op=="sampleTexture" || op=="sampleTextureLod" ||
+                     op=="sampleVirtualTexture") && n.getBool("srgb",false))) {
                     const std::string c=name+".rgb";
                     code+=c+" = "+c+"*("+c+"*("+c+"*0.305306011+0.682171111)+0.012522878);\n";
                 }
@@ -146,7 +159,8 @@ Program compile(const Json& g, const std::string& expected) {
     // Validate constants and sample limits even for disconnected nodes.
     for(const auto& n:ns.items()) {
         const auto op=n.getStr("op");
-        if(op=="texture" || op=="sampleTexture" || op=="sampleTextureLod")++p.samples;
+        if(op=="texture" || op=="sampleTexture" || op=="sampleTextureLod" ||
+           op=="sampleVirtualTexture") ++p.samples;
         if(op=="constant" || op=="parameter") {
             const auto& v=n["value"];if(v.isNumber())number(v);else {if(!v.isArray()||v.size()!=4)fail("constant/parameter value must be RGBA");for(auto& c:v.items())number(c);}
         }
