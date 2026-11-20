@@ -146,11 +146,12 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all six selectable modules. The supported names are
+empty array disables all seven selectable modules. The supported names are
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
 at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
 animation and its Lua API), `gamepad` (controller input and action bindings),
-and `fx` (SpectraFX particles and the RTS effect bridge).
+`fx` (SpectraFX particles and the RTS effect bridge), and `fbx` (runtime FBX
+import using ufbx).
 A target-specific
 `packaging.targets.web.engineModules` or similar overrides the shared list.
 For example, `"packaging": {"engineModules": [], "targets":
@@ -166,6 +167,9 @@ the module is excluded.
 Declare `fx` if the game has `fx/fx.json`, GPU routes, graph assets, or scripts
 that request particle effects. The packager rejects known FX resources when
 `fx` is excluded; script-only requests emit a runtime warning and no effect.
+Declare `fbx` when the client must import FBX at runtime. Without it, convert
+FBX assets to GLB before packaging; the loader reports a clear error for FBX
+without a converted `.glb` sidecar. Host conversion tools retain FBX support.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 
