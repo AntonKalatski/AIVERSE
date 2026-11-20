@@ -4,6 +4,7 @@
 #pragma once
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -31,7 +32,11 @@ public:
     static StudioTransferPlan internal(const std::filesystem::path& project,
         const std::string& destination,const std::vector<std::string>& contentPaths);
     Json describe() const;
-    Json apply(const std::string& token,const std::vector<StudioTransferDecision>& decisions);
+    // Internal no-overwrite moves use an all-or-error reversible sequence.
+    // The completion hook runs before the move is considered committed, so
+    // dependent material writes can fail and trigger filesystem rollback.
+    Json apply(const std::string& token,const std::vector<StudioTransferDecision>& decisions,
+               const std::function<void()>& beforeCommit = {});
     const std::string& token()const{return token_;}
 private:
     static StudioTransferPlan plan(const std::filesystem::path& project,
