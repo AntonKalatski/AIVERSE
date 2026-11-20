@@ -38,6 +38,7 @@ export default function App() {
     // CSS zoom scales the entire web layout, including dialogs and dock tabs.
     // The native viewport continues using getBoundingClientRect() screen pixels.
     document.documentElement.style.zoom = String(uiScale);
+    window.dispatchEvent(new Event('resize'));
     window.localStorage.setItem('aiverse.studio.uiScale', String(uiScale));
     return () => { document.documentElement.style.zoom = ''; };
   }, [uiScale]);
