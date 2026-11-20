@@ -477,3 +477,10 @@ Per-stage handoff `docs/agent-handoffs/lumaweave-stage27-active-gpu-shutdown-202
 Source commits `a0dd77fc853c94ba73b57e47d2d51f37147aed03` (graphics-use fence gate), `a5df6206993275e9c50483e3651c4bfe8a8eb37a` (material/surface/compose use recording and fail-closed `shutdown`), `ddf47303fcc2485a50fec4f64af256a210684b8a` (native driver `shutdownAfterGpuIdle`) and `84354aa395896487132208f4d9af04de1efbbb35` (regression fixture). Unlike compute completion callbacks, only real graphics completed-fence or external FULL GPU idle authorizes destruction of active render resources. Old RHI returns zero tokens and thus requires explicit host-proven idle; no unsafe automatic timeout/frame-age release.
 
 **NOT RUN:** native compiler, CTest, Metal shader/driver visual, Vulkan/GLES or whole AIVERSE acceptance. Current main merge is still blocked on cross-branch reconciliation and hardware evidence.
+
+
+## Stage 28 — 2026-11-20 — screen Metal output borrower graphics fence guard (SOURCE; NOT RUN)
+
+Separate handoff `docs/agent-handoffs/lumaweave-stage28-screen-metal-borrowed-output-2026-11-20.md`. Source commit `4fdba702433055ce06181aff49ab27bd392170de`: `LumaWeaveScreenMetal` now registers graphics borrows when `encodedOutput` or `confirmedOutput` gives a valid HDR texture to a caller; the producer's **own** `shutdown` protects active textures and compute programs even if the parent wrapper destructor is invoked before GPU idle. Readiness-only `canReuseConfirmedFor` avoids a false borrow. Stage26/27 retired-target queues and active material/HDR gate remain.
+
+Current old branch has no real device submission/completion fence; the host must explicitly prove full graphics GPU idle to release zero-token output borrows. No native compilation, CTest, Metal GPU draw/resize or Vulkan/GLES validation executed. Current-main merge and owner-lifetime integration still required.
