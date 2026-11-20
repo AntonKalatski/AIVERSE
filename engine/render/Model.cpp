@@ -331,7 +331,13 @@ bool decodeImage(const std::string& bytes, Image& out) {
         out.compressed = std::move(ci);
         return true;
     }
-    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) return decodeBlp(bytes, out);
+    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) {
+#if defined(AIVERSE_NO_BLP)
+        return false;
+#else
+        return decodeBlp(bytes, out);
+#endif
+    }
     if (bytes.size() >= 4 && bytes.compare(0, 4, "DDS ") == 0) return decodeDds(bytes, out);
     int w = 0, h = 0, n = 0;
     stbi_uc* px = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), int(bytes.size()), &w, &h, &n, 4);

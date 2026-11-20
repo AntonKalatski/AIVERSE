@@ -483,9 +483,14 @@ add_library(aiverse_models STATIC
     engine/render/ModelGltf.cpp
     engine/render/Animation.cpp
     engine/render/TextureCodec.cpp
-    engine/render/ImageBlp.cpp
     engine/render/ImageDds.cpp
     engine/render/TextureGen.cpp)
+option(AIVERSE_BLP "Runtime BLP1/BLP2 image decoding" ON)
+if(AIVERSE_BLP)
+    target_sources(aiverse_models PRIVATE engine/render/ImageBlp.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_BLP=1)
+endif()
 option(AIVERSE_OBJ "Runtime OBJ model import" ON)
 if(AIVERSE_OBJ)
     target_sources(aiverse_models PRIVATE engine/render/ModelObj.cpp)
