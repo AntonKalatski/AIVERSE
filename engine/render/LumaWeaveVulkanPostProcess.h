@@ -103,12 +103,19 @@ public:
     bool temporalShadowResolve() const override {
         return downstream_.temporalShadowResolve();
     }
-    void setEnabled(bool value) {
-        // A route switch back to raster/direct must not allow an in-flight
-        // old Vulkan filter frame to resurrect stale temporal light.
-        if(enabled_ && !value)owner_.invalidateHistory();
+    void setEnabled(bool value,bool preservePendingHistory=false) {
+        // Usually a route switch to raster must invalidate history. The
+        // two-frames-in-flight Vulkan RHI can temporarily require raster
+        // while the immediately preceding GPU submission is still pending.
+        // That is a *continuation*, not a world/view change, only when the
+        // driver checked the same source, geometry, view identity and epoch.
+        // On a real cut/route disable the second argument must remain false.
+        if(enabled_ && !value && !preservePendingHistory)
+            owner_.invalidateHistory();
         enabled_=value;
     }
+    uint64_t historyKey() const{return viewKey_;}
+    uint64_t historyEpoch() const{return viewEpoch_;}
     void setHistoryIdentity(uint64_t viewKey,uint64_t viewEpoch) {
         viewKey_=viewKey;viewEpoch_=viewEpoch;
     }
