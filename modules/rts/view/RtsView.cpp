@@ -6,6 +6,7 @@
 #include "engine/view/SceneLayerProviders.h"
 #include "RtsRoadView.h"
 #include "RtsShoreView.h"
+#include "engine/render/OwnerPrepareCommit.h"
 #include "../../../engine/data/JsonCompose.h"
 #include "../RtsModule.h"
 #include "../RtsArsenal.h"
@@ -564,6 +565,83 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             }
         }
     }
+    // LENS: commit Roads, Shores and Fog as one presentation cohort.
+    // A late Fog GPU failure must not publish already-prepared road/shore
+    // models. The external participant wrappers own unpublished candidates.
+    // The existing fog-sheet HEIGHT mesh rebuild is a separate preflight:
+    // its legacy build() still requires a full device-idle barrier and is
+    // not yet an externally staged member of the three-owner transaction.
+    if(vision && !vision->empty() && fogMeshDirty_ && dev_) {
+        fog_.build(*dev_,grid.w,grid.h,[&](float x,float z) {
+            return heightAt(grid,x,z);
+        });
+        fogMeshDirty_=false;
+    }
+    const std::function<float(float,float)> groundHeight=
+        [this,&grid](float x,float z) {return heightAt(grid,x,z);};
+    struct PreparedRoad final : render::OwnerPrepareCommit::Participant {
+        RtsRoadView& view;
+        gfx::Device& device;
+        const std::function<float(float,float)>& height;
+        std::unique_ptr<RtsRoadView::PreparedRebuild> pending;
+        PreparedRoad(RtsRoadView& v,gfx::Device& d,
+                     const std::function<float(float,float)>& h)
+            :view(v),device(d),height(h){}
+        void prepare() override {pending=view.prepareRebuild(device,height);}
+        void commit() noexcept override {view.commitRebuild(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } roadsPart(*roads_,*dev_,groundHeight);
+    struct PreparedShore final : render::OwnerPrepareCommit::Participant {
+        RtsShoreView& view;
+        gfx::Device& device;
+        const std::function<float(float,float)>& height;
+        float waterY;
+        int width,heightCells;
+        std::unique_ptr<RtsShoreView::PreparedRebuild> pending;
+        PreparedShore(RtsShoreView& v,gfx::Device& d,
+                      const std::function<float(float,float)>& h,
+                      float y,int w,int hc)
+            :view(v),device(d),height(h),waterY(y),width(w),heightCells(hc){}
+        void prepare() override {
+            pending=view.prepareRebuild(device,height,waterY,width,heightCells);
+        }
+        void commit() noexcept override {view.commitRebuild(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } shorePart(*shores_,*dev_,groundHeight,
+                 terrain_.look().waterOffset,grid.w,grid.h);
+    bool fogFieldChanged=false;
+    struct PreparedFog final : render::OwnerPrepareCommit::Participant {
+        FogOfWar& owner;
+        const std::vector<uint8_t>* vision;
+        int width,height;
+        double time;
+        bool& changed;
+        std::unique_ptr<FogOfWar::PreparedUpdate> pending;
+        PreparedFog(FogOfWar& o,const std::vector<uint8_t>* mask,
+                    int w,int h,double seconds,bool& out)
+            :owner(o),vision(mask),width(w),height(h),
+             time(seconds),changed(out){}
+        void prepare() override {
+            if(vision && !vision->empty())
+                pending=owner.prepareUpdate(*vision,width,height,time);
+        }
+        void commit() noexcept override {
+            if(!pending)return;
+            // All participants prepared without mutating this owner. A
+            // stale candidate between prepare and commit violates the
+            // single render-thread transaction contract (fail-closed).
+            try {changed=owner.commitPreparedUpdate(std::move(pending));}
+            catch(...) {std::terminate();}
+        }
+        void rollback() noexcept override {pending.reset();}
+    } fogPart(fog_,vision,grid.w,grid.h,time,fogFieldChanged);
+    render::OwnerPrepareCommit ownerTransaction;
+    ownerTransaction.add(roadsPart);
+    ownerTransaction.add(shorePart);
+    ownerTransaction.add(fogPart);
+    ownerTransaction.prepareAll(); // any error automatically rolls all back
+    if(!ownerTransaction.publish())
+        throw std::logic_error("RtsView: owner frame publication incomplete");
     const auto afterSetup = std::chrono::steady_clock::now();
     // Legacy game-specific inputs are translated to engine-owned generic
     // presentation passes. Every callback executes immediately in its
@@ -901,17 +979,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     viewProviders.add("visibility surface",[&](auto& q,const auto&){
         q.append("visibility surface",LayerPhase::Effects,[&]{
             if(vision && !vision->empty()) {
-                if(fogMeshDirty_ && dev_) {
-                    fog_.build(*dev_,grid.w,grid.h,[&](float x,float z) {
-                        return heightAt(grid,x,z);
-                    });
-                    fogMeshDirty_=false;
-                }
-                const bool changed=fog_.update(*vision,grid.w,grid.h,time);
                 const bool low=r.shadowQuality()==ShadowQuality::Off ||
                     r.shadowQuality()==ShadowQuality::Low;
                 if(hasTerrain_ && !tiles && terrain_.shaderFog())
-                    terrain_.setFog(&fog_.field(),fog_.look(),changed);
+                    terrain_.setFog(&fog_.field(),fog_.look(),fogFieldChanged);
                 else fog_.draw(r,time,low);
             }
             publication.mark(Epoch::Fog);
