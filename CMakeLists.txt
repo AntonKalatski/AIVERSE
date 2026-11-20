@@ -2992,6 +2992,27 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         LABELS "TERRAWEAVE;MetalGPU;RHI;Renderer3D")
 endif()
 
+# Linux forest parity gate: exercise the REAL Vulkan offscreen and GLES3
+# EGL-pbuffer RHI, not just Vulkan shader translation or CMake compilation.
+# These use the same production Renderer3D and ArborForestAdapter as Metal.
+# Each test refuses unavailable backend/driver instead of reporting SKIPPED.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux" AND AIVERSE_VULKAN)
+    add_executable(aiverse_terraweave_linux_forest_backends
+        tests/terraweave_linux_forest_backends.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_terraweave_linux_forest_backends
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_terraweave_linux_forest_backends PRIVATE
+        aiverse_runtime aiverse_models aiverse_world aiverse_zstd_dec
+        aiverse_render2d EGL GLESv2)
+    add_test(NAME terraweave_vulkan_forest
+        COMMAND aiverse_terraweave_linux_forest_backends vulkan)
+    add_test(NAME terraweave_gles3_forest
+        COMMAND aiverse_terraweave_linux_forest_backends gles3)
+    set_tests_properties(terraweave_vulkan_forest terraweave_gles3_forest
+        PROPERTIES LABELS "TERRAWEAVE;Renderer3D;RHI;LinuxGPU")
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
