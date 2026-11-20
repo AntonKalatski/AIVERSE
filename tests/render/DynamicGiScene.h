@@ -33,6 +33,9 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
             if(!s.dynamicGi.updateFrame({0,0,0}).canPresent){s.failed=true;return;}
         if(s.dynamicGi.reference().scheduler().pending()){s.failed=true;return;}
     }
+    if(s.terrainGiVerify && !s.terrainGi.vertices.valid() && !s.terrainGi.initialize(d)) {
+        std::fprintf(stderr,"Terrain GI setup FAIL: %s\n",d.lastError().c_str());s.failed=true;return;
+    }
     s.gridProbe=test;
     auto& r=s.renderer;
     r.lighting.sunIntensity=0;r.lighting.skyColor={};r.lighting.groundColor={};
@@ -53,7 +56,10 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
     if(test!=1 && !(s.computeGiVerify?r.setDynamicGiOverlay(s.computeGi):r.setDynamicGiOverlay(s.dynamicGi))){s.failed=true;return;}
-    ModelDraw draw;draw.model=s.probeBg.get();r.drawModel(draw);
+    if(s.terrainGiVerify)r.drawCustomOpaque([&s,test](gfx::Device& device) {
+        if(!s.terrainGi.draw(device,s.renderer,test==2,test!=3))s.failed=true;
+    });
+    else {ModelDraw draw;draw.model=s.probeBg.get();r.drawModel(draw);}
     r.render(s.output,s.pipeline());r.resolvePrisma();
     if(s.frame==5) {
         const auto& cfg=s.dynamicGi.config();

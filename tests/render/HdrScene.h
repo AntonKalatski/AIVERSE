@@ -3,6 +3,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "HdrShaders.h"
+#include "TerrainGiReceiver.h"
 #include "engine/render/GiMainCpuBridge.h"
 #include "engine/render/GiMainGpuBridge.h"
 #include "engine/render/GiDynamicSampling.h"
@@ -21,6 +22,8 @@ struct HdrScene {
     Renderer3D renderer;
     GiMainCpuBridge dynamicGi;
     GiMainGpuBridge computeGi;
+    TerrainGiReceiver terrainGi;
+    bool terrainGiVerify=false;
     bool computeGiVerify=false;
     bool dynamicGiVerify=false;
     Prisma post;
@@ -76,7 +79,8 @@ struct HdrScene {
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
         computeGiVerify=std::getenv("AIVERSE_COMPUTE_GI_VERIFY")!=nullptr;
-        dynamicGiVerify=computeGiVerify || std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
+        terrainGiVerify=std::getenv("AIVERSE_TERRAIN_GI_VERIFY")!=nullptr;
+        dynamicGiVerify=terrainGiVerify || computeGiVerify || std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
         verify = dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
@@ -330,6 +334,9 @@ struct HdrScene {
         d.endPass();if(ownsFrame)d.endFrame();++frame;
     }
     void shutdown(gfx::Device& d) {
+        if(terrainGi.vertices.valid()) {
+            if(d.waitForResourceIdle())terrainGi.shutdownAfterGpuIdle(d);else failed=true;
+        }
         renderer.clearDynamicGiOverlay();
         if(computeGi.ready()) {
             if(!d.waitForResourceIdle() || !computeGi.shutdownAfterGpuIdle())failed=true;

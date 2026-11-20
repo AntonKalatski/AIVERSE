@@ -3382,3 +3382,16 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
         FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_terrain_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_terrain_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_TERRAIN_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_terrain_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_terrain_gi_gl PROPERTIES
+            ENVIRONMENT "AIVERSE_TERRAIN_GI_VERIFY=1" LABELS "Lighting;GPU"
+            TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()
