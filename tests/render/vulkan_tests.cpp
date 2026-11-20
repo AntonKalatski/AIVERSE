@@ -685,6 +685,52 @@ void main() {
             if(wrong.w==W && wrong.h==H)
                 CHECK(near(wrong.at(W/2,H/2),255,0,0));
         }
+        // Capture actual current-frame surface normal and its scene depth
+        // through the second GPU compute stage. This historical normal is
+        // owned by the same frame slot as the filtered direct image.
+        TextureDesc snapshotDesc=tx;
+        snapshotDesc.data=nullptr;snapshotDesc.storage=true;
+        const auto capturedNormal=d.createTexture(snapshotDesc);
+        ComputeDesc normalDesc;
+        normalDesc.glsl=aiverse::render::luma_vk::kNormalHistoryCompute;
+        normalDesc.sampledTextureSlots=3;
+        const auto normalKernel=d.createCompute(normalDesc);
+        CHECK(normalKernel.valid() && capturedNormal.valid());
+        if(normalKernel.valid() && capturedNormal.valid() &&
+           normal.valid() && currentDepth.valid() && receiverDepth.valid() &&
+           dummy.valid()) {
+            const Image pixels=frame(d,[&] {
+                for(auto target:{currentDepth,receiverDepth}) {
+                    PassDesc pass;pass.depthTarget=target;
+                    pass.clearColorEnabled=false;
+                    d.beginPass(pass);
+                    d.setPipeline(pCaster);d.setVertexBuffer(vbFull);
+                    uniforms(1,1,1,1);d.draw(6);d.endPass();
+                }
+                std::array<uint32_t,20> pc{};
+                pc[1]=1;pc[5]=1;
+                CHECK(d.beginCompute(normalKernel));
+                for(int i=0;i<4;++i)d.setComputeBuffer(i,dummy);
+                d.setComputeTexture(0,capturedNormal);
+                d.setComputeSampledTexture(0,currentDepth);
+                d.setComputeSampledTexture(1,normal);
+                d.setComputeSampledTexture(2,receiverDepth);
+                d.setComputeUniforms(pc.data(),sizeof(pc));
+                d.dispatch(1);
+                CHECK(d.computeDispatchSucceeded());
+                d.endCompute();
+                d.beginPass(screen);
+                d.setPipeline(pTex);
+                d.setTexture(0,capturedNormal);
+                d.setVertexBuffer(vbFull);d.draw(6);
+                d.endPass();
+            });
+            CHECK(pixels.w==W && pixels.h==H);
+            if(pixels.w==W && pixels.h==H)
+                CHECK(near(pixels.at(W/2,H/2),0,0,255));
+        }
+        if(normalKernel.valid())d.destroyCompute(normalKernel);
+        if(capturedNormal.valid())d.destroyTexture(capturedNormal);
         if(filter.valid())d.destroyCompute(filter);
         for(auto tex:{raw,previous,normal,previousOpposite,
                       previousWrongDepth,motion,missingMotion,filtered,
