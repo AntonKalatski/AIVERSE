@@ -1724,10 +1724,12 @@ struct CreatorApp {
                     // Do NOT replace the CPU vertex: this experimental GPU
                     // pass draws a CPU-expanded morph/skin snapshot, not the
                     // actual Renderer3D GPU vertex-override stream/LOD.
-                    status="GPU ID confirmed Renderer3D-selected CPU snapshot / vertex "+
-                        std::to_string(gpuSculptExpectedSourceVertex);
-                    if(gpuSculptRendererUsedOverride)
-                        status+=" (renderer GPU vertexOverride remains unverified)";
+                    status=gpuReply.actualOverride
+                        ?"GPU ID confirmed actual actor 60B GPU source / vertex "
+                        :"GPU ID confirmed CPU-derived renderer source / vertex ";
+                    status+=std::to_string(gpuSculptExpectedSourceVertex);
+                    if(gpuReply.actualOverride)
+                        status+=" (GPU skin and final colour pixel parity unverified)";
                 }else status="GPU/CPU ID mismatch; CPU BVH selection retained";
             }else if(replyForActive && !valid && gpuReply.rgba.empty()) {
                 gpuSculptToken.cancel();
@@ -2076,6 +2078,33 @@ struct CreatorApp {
             // The render-source decision, not a second duplicated mesh
             // enumerator, determines which other model meshes can block.
             bool complete=viewCheck.canRenderDiagnostic;
+            SculptGpuVertexSource actualStream;
+            const SculptGpuVertexSource* actualStreamPtr=nullptr;
+            if(complete && viewCheck.gpuVertexOverridePresent) {
+                // The renderer's actual current-frame ModelDraw source
+                // buffer is the only legal GPU source. Do not upload a
+                // second CPU approximation under a GPU-override label.
+                const render::Renderer3D::ModelViewPrimitive* selected=nullptr;
+                for(const auto& primitive:actualView.primitives) {
+                    if(primitive.meshIndex!=gpuSculptToRecord.meshId)
+                        continue;
+                    if(!selected)selected=&primitive;
+                    else if(primitive.vertexOverride!=selected->vertexOverride ||
+                            primitive.vertexOverrideCount!=
+                                selected->vertexOverrideCount)
+                        complete=false;
+                }
+                if(!selected || !gpuSculptPass.supportsActualGpuVertexStream() ||
+                   !selected->vertexOverride.valid() ||
+                   draw.vertexOverride!=selected->vertexOverride ||
+                   !prepareSculptGpuVertexSource(
+                       *human.head,gpuSculptToRecord.meshId,facePose,
+                       selected->world,selected->vertexOverride,
+                       selected->vertexOverrideCount,sculptSourceIds,
+                       morphSourceVertices,actualStream))
+                    complete=false;
+                if(complete)actualStreamPtr=&actualStream;
+            }
             SkinnedWeightSurface otherSurface;
             for(const auto selectedVisibleMesh:viewCheck.otherVisibleMeshes) {
                 if(!complete)break;
@@ -2102,9 +2131,9 @@ struct CreatorApp {
                 *human.head,sculptPicker.worldSurface(),
                 morphSourceVertices,sculptSourceIds,
                 renderer.viewProj(),gpuSculptToRecord,
-                occluders,maskedOccluders);
+                occluders,maskedOccluders,actualStreamPtr);
             gpuSculptRendererUsedOverride=submitted &&
-                viewCheck.gpuVertexOverridePresent;
+                actualStreamPtr!=nullptr;
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
