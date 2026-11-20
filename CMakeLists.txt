@@ -2010,7 +2010,9 @@ if(AIVERSE_RUNTIME_AUTOLOD OR AIVERSE_BUILD_STRATA OR (AIVERSE_BUILD_AUTOLOD AND
     endif()
 endif()
 if(AIVERSE_BUILD_STRATA)
-    add_library(aiverse_strata_builder STATIC engine/render/StrataBuilder.cpp)
+    add_library(aiverse_strata_builder STATIC
+        engine/render/StrataBuilder.cpp
+        engine/render/StrataSeamTopology.cpp)
     target_link_libraries(aiverse_strata_builder PUBLIC aiverse_meshoptimizer_lod)
     target_include_directories(aiverse_strata_builder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     add_library(aiverse_strata_model_adapter STATIC engine/render/StrataModelAdapter.cpp)
