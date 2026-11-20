@@ -2656,16 +2656,32 @@ void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& 
         d.flags = kDrawStatic;
         r.drawModel(d);
     }
-    if ((decalMesh_.vb.valid() && paint_.valid()) || (vergeMesh_.vb.valid() && verge_.valid()) || filmMesh_.vb.valid() || puddleMesh_.vb.valid()) {
-        r.drawCustom([this, &r](gfx::Device& d) {
+    if ((decalMesh_.vb.valid() && paint_.valid()) ||
+        (vergeMesh_.vb.valid() && verge_.valid()) ||
+        filmMesh_.vb.valid() || puddleMesh_.vb.valid()) {
+        // Each queued camera pass retains the exact handles selected by
+        // this frame. Never re-read live RoadView SpriteMesh fields after
+        // the host has published another road/weather generation.
+        const SpriteMesh decal=decalMesh_,verge=vergeMesh_;
+        const SpriteMesh film=filmMesh_,puddle=puddleMesh_;
+        const TextureRef paint=paint_,vergeTexture=verge_;
+        const mat4 projection=r.viewProj();
+        const bool receivesShadows=r.shadowQuality()>=ShadowQuality::Medium;
+        SpriteBatch* spriteBatch=&decalBatch_; // pipeline owner, stable until idle-safe shutdown
+        r.drawCustom([&r,spriteBatch,decal,verge,film,puddle,
+                      paint,vergeTexture,projection,receivesShadows](gfx::Device& d) {
             SpriteLighting lighting;
-            lighting.bind = [&r] { r.bindLitFrame(); };
-            lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
-            lighting.bindReflection = [&r](int slot) { r.lights.bind(2, 1, slot); };
-            if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
-            if (filmMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, filmMesh_, verge_.tex, r.viewProj(), &lighting, true);   // wet: under the paint
-            if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
-            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawWater(d, puddleMesh_, verge_.tex, r.viewProj(), lighting);   // water over the lines
+            lighting.bind=[&r]{r.bindLitFrame();};
+            lighting.receiveShadows=receivesShadows;
+            lighting.bindReflection=[&r](int slot){r.lights.bind(2,1,slot);};
+            if(verge.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawMesh(d,verge,vergeTexture.tex,projection,&lighting,true);
+            if(film.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawMesh(d,film,vergeTexture.tex,projection,&lighting,true);
+            if(decal.vb.valid() && paint.valid())
+                spriteBatch->drawMesh(d,decal,paint.tex,projection,&lighting,true);
+            if(puddle.vb.valid() && vergeTexture.valid())
+                spriteBatch->drawWater(d,puddle,vergeTexture.tex,projection,lighting);
         });
     }
     for (auto& p : props_) {
