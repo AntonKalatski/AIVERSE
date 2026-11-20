@@ -154,7 +154,11 @@ bool compareGpuSelection(const ModelAsset& source,
                          const GpuPassConfig& pass,
                          uint32_t pooledFirstIndex,
                          const GpuSelectionReadback& gpu,
-                         std::string* error = nullptr);
+                         std::string* error = nullptr,
+                         // Diagnostic-only optional global metadata-node mask
+                         // from the PREVIOUS accepted GPU/CPU frame. Null
+                         // means cold start; GPU production never reads CPU.
+                         const std::vector<uint8_t>* previousRefined = nullptr);
 
 struct GpuTemporalStats {
     size_t retainedBytes=0, histories=0;
