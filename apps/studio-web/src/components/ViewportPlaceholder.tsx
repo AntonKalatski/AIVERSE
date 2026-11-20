@@ -68,33 +68,71 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     };
   }, [active, native]);
 
-  // Free scene navigation is editor-only and never modifies gameplay camera state.
+  // Editor-only navigation. Held keys move continuously, independently of OS
+  // keyboard repeat; pending bridge calls are not allowed to pile up.
   useEffect(() => {
     if (!active || !native || !gpuReady) return;
-    const down=(event:KeyboardEvent) => {
-      const host=element.current;
-      if (!host || !host.matches(':focus-within')) return;
+    const keys=new Set<string>();
+    const moveKeys=new Set(['w','a','s','d','q','e']);
+    let accelerated=false;
+    let frame=0;
+    let lastTick=0;
+    let inFlight=false;
+    const focused=()=>!!element.current?.matches(':focus-within');
+    const clear=()=>{keys.clear();accelerated=false;lastTick=0;};
+    const keydown=(event:KeyboardEvent)=>{
+      if (!focused() || event.metaKey || event.ctrlKey || event.altKey) return;
       const target=event.target;
       if (target instanceof HTMLElement &&
           target.closest('input, textarea, select, [contenteditable="true"]')) return;
-      const speed=event.shiftKey?3:1;
       const key=event.key.toLowerCase();
-      if (key==='f') {
+      if (key==='f' && !event.repeat) {
         event.preventDefault();
         void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn);
-      } else if (key==='home') {
+      } else if (key==='home' && !event.repeat) {
         event.preventDefault();
         void invoke('studio.viewportInput',{kind:'reset'}).catch(console.warn);
-      } else if (['w','a','s','d','q','e'].includes(key)) {
+      } else if (moveKeys.has(key)) {
         event.preventDefault();
-        const right=(key==='d'?1:key==='a'?-1:0)*speed;
-        const up=(key==='e'?1:key==='q'?-1:0)*speed;
-        const forward=(key==='w'?1:key==='s'?-1:0)*speed;
-        void invoke('studio.viewportInput',{kind:'move',right,up,forward}).catch(console.warn);
+        keys.add(key);
+        accelerated=event.shiftKey;
       }
     };
-    window.addEventListener('keydown',down);
-    return ()=>window.removeEventListener('keydown',down);
+    const keyup=(event:KeyboardEvent)=>{
+      keys.delete(event.key.toLowerCase());
+      accelerated=event.shiftKey;
+    };
+    const blur=()=>clear();
+    const visibility=()=>{if(document.hidden)clear();};
+    const tick=(now:number)=>{
+      frame=requestAnimationFrame(tick);
+      if (!focused() || document.hidden || keys.size===0) {lastTick=0;return;}
+      if (lastTick && now-lastTick<32) return;
+      const elapsed=lastTick?Math.min(80,now-lastTick):33;
+      lastTick=now;
+      if(inFlight)return;
+      const scale=Math.min(3,elapsed/33.333)*(accelerated?3:1);
+      const right=(Number(keys.has('d'))-Number(keys.has('a')))*scale;
+      const up=(Number(keys.has('e'))-Number(keys.has('q')))*scale;
+      const forward=(Number(keys.has('w'))-Number(keys.has('s')))*scale;
+      if (!right && !up && !forward) return;
+      inFlight=true;
+      void invoke('studio.viewportInput',{kind:'move',right,up,forward})
+        .catch(console.warn).finally(()=>{inFlight=false;});
+    };
+    window.addEventListener('keydown',keydown);
+    window.addEventListener('keyup',keyup);
+    window.addEventListener('blur',blur);
+    document.addEventListener('visibilitychange',visibility);
+    frame=requestAnimationFrame(tick);
+    return ()=>{
+      cancelAnimationFrame(frame);
+      clear();
+      window.removeEventListener('keydown',keydown);
+      window.removeEventListener('keyup',keyup);
+      window.removeEventListener('blur',blur);
+      document.removeEventListener('visibilitychange',visibility);
+    };
   },[active,native,gpuReady]);
   const composite = () => native && document.documentElement.classList.contains('native-composite');
   const sendOrbit = (dx: number, dy: number, mode: 'orbit' | 'pan' | 'look' = 'orbit') => {
