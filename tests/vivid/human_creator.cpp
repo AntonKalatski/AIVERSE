@@ -999,6 +999,65 @@ void test() {
                 .accepted,
             "no encoded colour draw was accepted as VIVID GPU hit");
     }
+    // 7AZ: one main-colour submission for an actor does NOT authorize
+    // borrowing another actor's GPU Mask buffer. Both source Models need
+    // independent 60B handles and accepted direct draws in the same frame.
+    {
+        using Renderer=aiverse::render::Renderer3D;
+        aiverse::render::Model selected,blocker;
+        selected.meshes.resize(1);
+        blocker.meshes.resize(1);
+        Renderer::ModelViewPrimitive p{};
+        p.model=&selected;
+        p.meshIndex=0;p.nodeIndex=0;p.primitiveIndex=0;
+        p.drawInvocation=1;p.indexCount=3;
+        p.visible=p.colourCandidate=p.customGpuStream=true;
+        p.vertexOverride={71};p.vertexOverrideCount=3;
+        Renderer::ModelViewProvenance sourceView{};
+        sourceView.frameSerial=55;
+        sourceView.hasModel=sourceView.complete=true;
+        sourceView.primitives={p};
+        Renderer::ModelSubmissionProvenance sourceSubmitted{};
+        sourceSubmitted.frameSerial=55;
+        sourceSubmitted.mainPassEncoded=true;
+        Renderer::ModelSubmittedPrimitive command{};
+        command.source=p;command.kind=Renderer::ModelSubmissionKind::Direct;
+        command.phase=1;command.pipeline={7};
+        sourceSubmitted.commands={command};
+
+        p.model=&blocker;p.vertexOverride={72};
+        p.drawInvocation=2;
+        Renderer::ModelViewProvenance maskView{};
+        maskView.frameSerial=55;
+        maskView.hasModel=maskView.complete=true;
+        maskView.primitives={p};
+        Renderer::ModelSubmissionProvenance maskSubmitted{};
+        maskSubmitted.frameSerial=55;
+        maskSubmitted.mainPassEncoded=true;
+        command.source=p;command.pipeline={8};
+        maskSubmitted.commands={command};
+
+        auto paired=[&] {
+            return sculptGpuPairedRendererViewsAccepted(
+                sourceView,sourceSubmitted,selected,0,
+                maskView,maskSubmitted,blocker,0,55);
+        };
+        req(paired(),
+            "separate submitted Renderer3D actor sources were rejected");
+        maskView.primitives[0].vertexOverride={71};
+        maskSubmitted.commands[0].source.vertexOverride={71};
+        req(!paired(),"shared selected/occluder GPU handle was accepted");
+        maskView.primitives[0].vertexOverride={72};
+        maskSubmitted.commands[0].source.vertexOverride={72};
+        maskSubmitted.frameSerial=56;
+        req(!paired(),"stale GPU Mask renderer submission was accepted");
+        maskSubmitted.frameSerial=55;
+        maskSubmitted.commands[0].source.indexCount=6;
+        req(!paired(),"changed Mask submitted primitive was accepted");
+        maskSubmitted.commands[0].source.indexCount=3;
+        maskSubmitted.commands.clear();
+        req(!paired(),"missing Mask draw was accepted");
+    }
     // 7AQ: no false claim of hardware pixel parity when the normal
     // Renderer3D may draw an alternate authored LOD or an ambiguously
     // instanced mesh. In those cases the CPU BVH remains authoritative.
