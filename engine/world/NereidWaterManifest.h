@@ -3,6 +3,7 @@
 // provide an ECS snapshot via WorldScene::setNereidSurfaces.
 #pragma once
 #include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidEntityManifest.h"
 #include "engine/data/Json.h"
 #include "engine/core/FixedMath.h"
 #include <string>
@@ -227,8 +228,8 @@ inline NereidSceneSurface surface(const Json& j) {
 
 inline NereidManifest parseNereidWaterManifest(const Json& root) {
     NereidManifest out;
-    if(!root.has("nereidWater"))return out;
-    const auto& config=root["nereidWater"];
+    const auto config=nereidEntityManifest(root);
+    if(config.isObject()&&config.size()==0)return out;
     if(!config.isObject())throw JsonError("nereidWater: expected object");
     out.maxUploadsPerFrame=uint32_t(worldInteger(config,"maxUploadsPerFrame",2,1,16));
     if(config.has("asyncPrepare") &&

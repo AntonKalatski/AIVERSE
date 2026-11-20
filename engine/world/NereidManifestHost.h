@@ -8,7 +8,7 @@ public:
     // Parse completely before changing the last-good scene. A missing block
     // explicitly clears water when opening another project/map.
     void configure(const Json& root) {
-        const auto signature=root["nereidWater"].dump();
+        const auto signature=nereidEntityManifest(root).dump();
         if(signature==signature_)return;
         auto config=parseNereidWaterManifest(root);
         scene_.setMaxUploadsPerFrame(config.maxUploadsPerFrame);

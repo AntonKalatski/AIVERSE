@@ -1,6 +1,8 @@
 // Editor: lifecycle, docking layout, menus, documents, play-test and viewport rendering.
 // Window contents live in apps/editor/windows/*.cpp; the agent link in EditorAgent.cpp.
 #include "Editor.h"
+#include "apps/editor/AuthoringComponents.h"
+#include "apps/editor/AuthoringWater.h"
 #include "windows/StudioContextMenus.h"
 #include "core/SimTools.h"
 #include "core/RouteOps.h"
@@ -1015,6 +1017,10 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
         o.pos = {e.x, 0, e.z};
+        if(authoredEntity(e)){
+            if(e.extra["components"].has("NereidWater"))continue;
+            const auto local=authoredLocalTransform(e);o.pos.y=float(local.position.y.toDouble());o.parented=true;o.parentFrame=authoredModelMatrix(e);
+        }
         if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
             const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
             o.facing = {std::sin(a), 0, -std::cos(a)};
@@ -1183,7 +1189,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
     // Existing map extra is the presentation manifest, not a new water solver.
     try {
-        nereidPreview_.configure(doc().data.extra);
+        nereidPreview_.configure(authoredWaterDocument(doc()));
         nereidPreview_.prepare(*dev_,useCam.eye());
     } catch(const std::exception& e) {
         std::fprintf(stderr,"[nereid-preview] %s\n",e.what());
@@ -1336,7 +1342,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
     const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
     try {
-        nereidPreview_.configure(doc().data.extra);
+        nereidPreview_.configure(authoredWaterDocument(doc()));
         nereidPreview_.prepare(*dev_,cam.eye());
     } catch(const std::exception& e) {
         std::fprintf(stderr,"[nereid-game-preview] %s\n",e.what());
