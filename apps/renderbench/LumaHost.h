@@ -10,7 +10,7 @@ struct LumaHost {
     render::LumaWeaveQuality quality=render::LumaWeaveQuality::High;
     bool enabled=false,published=false;
     std::string fallback;
-    uint64_t composedFrames=0;
+    uint64_t composedFrames=0,geometryRevision=1;
     void initialize(gfx::Device& d,const Json& settings,render::PostProcess& downstream,
                     render::LightSystem& legacy,const render::StaticShadowGeometry& mesh,
                     const std::vector<render::PointLight>& lights,bool hdr) {
@@ -47,6 +47,14 @@ struct LumaHost {
         if(!pipeline->initialize(d))throw std::runtime_error("Luma initialization failed: "+d.lastError());
         pipeline->setEnabled(true);pipeline->setQuality(quality);enabled=true;
     }
+    void replaceGeometry(gfx::Device& d,const render::GiChunkedGeometrySnapshot& next,uint64_t revision) {
+        if(!enabled || revision<=geometryRevision)return;
+        auto bvh=render::GiGpuBvh::build(next); // capacity rejects; never truncate actors
+        if(!d.waitForSubmittedGpuWork())throw std::runtime_error("animated Luma GPU fence failed");
+        pipeline->pollGpu();
+        if(published && !pipeline->publishGeometry(bvh,revision))throw std::runtime_error("animated Luma geometry publication failed");
+        geometry=std::move(bvh);geometryRevision=revision;
+    }
     void update(gfx::Device& d) {
         if(!enabled)return;
         pipeline->pollGpu();
@@ -59,7 +67,7 @@ struct LumaHost {
             if(pipeline->screen().busy())throw std::runtime_error("Luma pending work did not complete");
         }
         if(!published) {
-            if(!pipeline->publishSources(sources,clusters)||!pipeline->publishGeometry(geometry,1))
+            if(!pipeline->publishSources(sources,clusters)||!pipeline->publishGeometry(geometry,geometryRevision))
                 throw std::runtime_error("Luma source publication failed");
             published=true;
         }

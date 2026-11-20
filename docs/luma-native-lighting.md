@@ -51,7 +51,7 @@ Add `"luma":{"backend":"auto","quality":"high"}` to a scene containing
 `pointLights` (linear RGB) or imported glTF lights. Quality accepts balanced,
 high, ultra. `backend:"gpu"` rejects unsupported devices/capacity; auto retains
 the legacy LightSystem and reports the fallback. This host owns a fixed source
-snapshot and static caster geometry. It rejects simultaneous static light grid,
+snapshot and automatically republishes opted-in animated caster geometry. It rejects simultaneous static light grid,
 baked probeGI and staticPointBounce ownership. `dynamicGI` remains independent.
 
 The native host waits for previously committed GPU work before a new Luma frame;
@@ -63,3 +63,11 @@ lumaSources and lumaComposedFrames. No editor integration is implied yet.
 
 `lighting_luma_host` / `_gl` load a real glTF and verify report completion,
 on/off pixels, moving-camera continuity, ownership rejection and GL fallback.
+
+
+Animated native assets retain CPU geometry and share the GI snapshot revision.
+The native animated acceptance moves a real glTF occluder, requires more than
+90% RGB suppression in its filtered narrow shadow, restores illumination after
+movement and checks live CPU/GPU GI geometry revisions. The separate broad-wall
+GPU fixture checks analytic zero illumination. Low-resolution denoising softens
+narrow shadow boundaries; it is not full-resolution ray-traced shadow parity.

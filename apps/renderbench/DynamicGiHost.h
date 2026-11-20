@@ -16,6 +16,7 @@ struct DynamicGiHost {
     render::GiEnvironmentLight environment;
     std::chrono::steady_clock::time_point started;
     double convergenceMs=0;
+    uint64_t geometryRevision=1;
     static render::float3 vector(const Json& j) {
         if(!j.isArray() || j.size()!=3)throw std::runtime_error("dynamicGI requires xyz vectors");
         render::float3 v{float(j[0].toDouble()),float(j[1].toDouble()),float(j[2].toDouble())};
@@ -66,13 +67,24 @@ struct DynamicGiHost {
         if(!useGpu && !cpu.initialize(d,cfg))throw std::runtime_error("dynamicGI CPU initialization failed");
         enabled=true;
     }
+    void replaceGeometry(gfx::Device& d,std::shared_ptr<const render::GiChunkedGeometrySnapshot> next,uint64_t revision) {
+        if(!enabled || revision<=geometryRevision)return;
+        if(!published){scene=std::move(next);geometryRevision=revision;return;}
+        if(useGpu) {
+            if(!d.waitForSubmittedGpuWork())throw std::runtime_error("animated GI GPU fence failed");
+            gpu.poll();
+            if(!gpu.publishGeometry(next,revision))throw std::runtime_error(gpu.diagnostic());
+        } else if(!cpu.publishGeometry(next,revision))throw std::runtime_error("animated GI CPU geometry failed");
+        scene=std::move(next);geometryRevision=revision;converged=false;
+        if(published)started=std::chrono::steady_clock::now();
+    }
     bool update(gfx::Device& d,render::float3 focus) {
         if(!enabled)return true;
         if(!d.gpuHealthy())throw std::runtime_error("dynamicGI device lost");
         if(!published) {
             started=std::chrono::steady_clock::now();
-            const bool ok=useGpu?(gpu.publishGeometry(scene,1)&&gpu.publishLights(lights)&&gpu.publishEnvironment(environment)):
-                (cpu.publishGeometry(scene,1)&&cpu.publishLights(lights)&&cpu.publishEnvironment(environment));
+            const bool ok=useGpu?(gpu.publishGeometry(scene,geometryRevision)&&gpu.publishLights(lights)&&gpu.publishEnvironment(environment)):
+                (cpu.publishGeometry(scene,geometryRevision)&&cpu.publishLights(lights)&&cpu.publishEnvironment(environment));
             if(!ok)throw std::runtime_error("dynamicGI source publication failed");
             published=true;
         }

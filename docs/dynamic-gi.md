@@ -13,8 +13,8 @@ immutable `GiChunkedGeometrySnapshot`, stable geometry revisions, linear RGB
 `apps/renderbench/DynamicGiHost.h` is a working native host example.
 
 1. Before CPU mesh arrays are released, build immutable opaque caster chunks with
-   material diffuse albedo. The benchmark uses bind-pose opaque static geometry;
-   animated/deforming casters require newly published snapshots in a game host.
+   material diffuse albedo. The benchmark retains CPU geometry for opted-in
+   animated assets and republishes posed opaque caster chunks automatically.
 2. Initialize a fixed probe lattice. GPU supports up to 8192 triangles, 16 lights,
    32 probes per dispatch and 8–64 rays per probe. CPU supports 8–128 rays and uses
    an adaptive probe budget. Lattices are capped at 20000 probes. A CPU budget is
@@ -72,8 +72,11 @@ chunks. The benchmark waits for initial convergence before timed frames and repo
 The benchmark rejects simultaneous `probeGI`/`staticPointBounce` because those
 recipes reuse the same sources. Its screen-space diffuse bounce is disabled while
 dynamicGI is active. Direct-light rendering and post-processing remain independent.
-This benchmark host is a fixed scene demonstration, not an editor persistence/UI
-migration or automatic animated-caster tracking.
+Animated assets share one sampled pose between renderer, indirect GI and Luma
+shadows. The verification host holds that pose until its GI converges; it does
+not claim real-time animated transport latency. Submitted-frame timings exclude
+convergence-only updates, as recorded in `lightingCadence`. Editor integration
+is a separate stage.
 
 ## Verification and limits
 
@@ -111,3 +114,13 @@ snapshots retain their previous geometry for in-flight tracing. This adapter
 provides the snapshot, not scheduling or automatic host tracking. Alpha masks,
 transparent surfaces and Shader Graph vertex displacement are not represented by
 this opaque triangle approximation. Texture albedo uses bounded average sampling.
+
+
+The native `AnimatedLightingGeometry` host shares unchanged static chunks and
+rebuilds only animated caster chunks. It publishes monotonic revisions to both
+CPU/compute GI and Luma. Reports expose animatedLightingCasters,
+lightingGeometryRevision and lightingSnapshotTriangles. Geometry capacity errors
+reject the view; actors are never silently omitted to fit the GPU budget.
+`bake:false` preserves the asset's explicit caster exclusion. This fixed-workload
+host holds the selected pose while compute/convergence is pending, then renders
+that same pose; a game host must choose and measure its own update cadence.

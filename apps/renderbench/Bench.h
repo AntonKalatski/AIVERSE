@@ -10,6 +10,7 @@
 #include "SceneAssets.h"
 #include "DynamicGiHost.h"
 #include "LumaHost.h"
+#include "AnimatedLightingGeometry.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
 #include "SunStudy.h"
@@ -65,6 +66,9 @@ struct Bench {
     SceneAssets additions;
     DynamicGiHost dynamicGi;
     LumaHost luma;
+    AnimatedLightingGeometry animatedGeometry;
+    int lightingPoseView=-1,lightingPoseFrame=-1;
+    float lightingPoseSeconds=0;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
     std::vector<RTSCamera> cameras;
@@ -190,6 +194,7 @@ struct Bench {
                 }
                 report.set("staticPointShadowMaps",Json::number(int64_t(pointShadows.size())));
             }
+            if(config.has("dynamicGI") || config.has("luma"))animatedGeometry.initialize(additions.shadowGeometry,additions);
             if(config.has("luma")) {
                 if(config.getBool("staticPointLightGrid",false)||config.has("staticPointBounce")||config.has("probeGI"))
                     throw std::runtime_error("luma cannot duplicate baked/static direct ownership");
@@ -341,13 +346,25 @@ struct Bench {
     void draw(gfx::Device& d) {
         if(done)return;
         poll(d);
-        // Match the native three-frame queue without inserting GPU waits into a timed frame.
+        // Match the native three-frame timing queue. Explicit Luma/animated GI
+        // synchronization is accounted separately from ordinary submission.
         if(tags.size()>=3){if(ms(lastProgress,Clock::now())>30000)fail("GPU timer completion timeout");else std::this_thread::sleep_for(std::chrono::milliseconds(1));return;}
         const bool measuring=options.previewSeconds<=0&&view<int(cameras.size())&&frame>=options.warmup&&frame<options.warmup+options.samples;
         const int ci=std::min(view,int(cameras.size())-1);
         const auto start=Clock::now();if(ownsFrame)d.beginFrame(width,height);const auto encodeStart=Clock::now();
         try {
             luma.update(d);
+            if(animatedGeometry.enabled && (lightingPoseView!=view || lightingPoseFrame!=frame)) {
+                lightingPoseView=view;lightingPoseFrame=frame;
+                lightingPoseSeconds=options.freezeTime>=0?options.freezeTime:
+                    options.previewSeconds>0?(previewStart==Clock::time_point{}?float(options.tourStart):float(ms(previewStart,Clock::now())/1000.0+options.tourStart)):
+                    float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f;
+                additions.prepareAnimation(lightingPoseSeconds);
+                if(animatedGeometry.update(additions,lightingPoseSeconds)) {
+                    dynamicGi.replaceGeometry(d,animatedGeometry.scene,animatedGeometry.revision);
+                    luma.replaceGeometry(d,*animatedGeometry.scene,animatedGeometry.revision);
+                }
+            }
             if(!dynamicGi.update(d,cameras[size_t(ci)].eye())){if(ownsFrame)d.endFrame();return;}
         } catch(const std::exception& e) {fail(e.what());if(ownsFrame)d.endFrame();return;}
         const uint64_t thisTag=++tag;
@@ -372,7 +389,7 @@ struct Bench {
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
-        additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low" && !luma.enabled);
+        additions.draw(renderer,animatedGeometry.enabled?lightingPoseSeconds:options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low" && !luma.enabled);
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
         renderer.render(pass,luma.enabled?static_cast<PostProcess*>(luma.pipeline.get()):options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         try {luma.presented();} catch(const std::exception& e){fail(e.what());}
@@ -466,6 +483,10 @@ struct Bench {
             d.gpuTimingRouter().unsubscribe(timingSubscriber);
             timingSubscriber=0;
         }
+        if(animatedGeometry.scene)report.set("lightingSnapshotTriangles",Json::number(int64_t(animatedGeometry.scene->triangleCount())));
+        report.set("lightingGeometryRevision",Json::number(int64_t(animatedGeometry.revision)));
+        if(animatedGeometry.enabled)report.set("lightingCadence",Json::string("pose held until GI converges; submitted-frame timings exclude convergence-only updates"));
+        report.set("animatedLightingCasters",Json::fromBool(animatedGeometry.enabled));
         report.set("lumaComposedFrames",Json::number(int64_t(luma.composedFrames)));
         if(!luma.shutdown(d))fail("Luma GPU idle teardown failed");
         if(!dynamicGi.shutdownAfterGpuIdle(d,renderer))fail("dynamicGI GPU idle teardown failed");

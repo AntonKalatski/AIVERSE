@@ -18,10 +18,11 @@ struct SceneAsset {
     Pose pose;
     std::vector<mat4> world;
     mat4 transform;
-    bool animated=false;
+    bool animated=false,lightingCaster=true;
 };
 struct SceneAssets {
     std::vector<SceneAsset> assets;
+    float preparedSeconds=std::numeric_limits<float>::quiet_NaN();
     StaticShadowGeometry shadowGeometry;
     std::vector<PointLight> lights;
     std::vector<size_t> lightOrder;
@@ -166,7 +167,8 @@ struct SceneAssets {
             }
             // "bake": false — drawn only (e.g. a dark card closing a gap in the asset); not a light-cache input.
             if(bakeShadows&&!a.animated&&entry.getBool("bake",true))appendShadowGeometry(shadowGeometry,*a.model,a.transform);
-            if(!uploadModel(d,*a.model))throw std::runtime_error("addon upload failed: "+d.lastError());
+            a.lightingCaster=entry.getBool("bake",true);
+            if(!uploadModel(d,*a.model,a.animated && (config.has("dynamicGI")||config.has("luma"))))throw std::runtime_error("addon upload failed: "+d.lastError());
             audit.push(item);assets.push_back(std::move(a));
         }
         // Recipe lights use linear RGB, like glTF punctual lights.
@@ -191,10 +193,20 @@ struct SceneAssets {
             float aa=dot(da,da),bb=dot(db,db);return aa==bb?a<b:aa<bb;
         });
     }
+    void prepareAnimation(float seconds) {
+        if(seconds==preparedSeconds)return;
+        for(auto& a:assets)if(a.animated) {
+            bindPose(*a.model,a.pose);const auto& clip=a.model->clips.back();
+            sampleClip(clip,clip.duration>0?std::fmod(seconds,clip.duration):0,a.pose);
+            worldMatrices(*a.model,a.pose,a.world);
+        }
+        preparedSeconds=seconds;
+    }
     void draw(Renderer3D& r,float seconds,bool lightEnabled) {
-        for(auto& a:assets){
+        prepareAnimation(seconds);
+        for(auto& a:assets) {
             ModelDraw md;md.model=a.model.get();md.world=a.transform;
-            if(a.animated){bindPose(*a.model,a.pose);const auto& clip=a.model->clips.back();sampleClip(clip,clip.duration>0?std::fmod(seconds,clip.duration):0,a.pose);worldMatrices(*a.model,a.pose,a.world);md.nodeWorld=&a.world;md.pose=&a.pose;}
+            if(a.animated){md.nodeWorld=&a.world;md.pose=&a.pose;}
             r.drawModel(md);
         }
         if(lightEnabled)for(size_t i=0;i<std::min(lightOrder.size(),LightSystem::kMaxLights);++i)r.lights.add(lights[lightOrder[i]]);

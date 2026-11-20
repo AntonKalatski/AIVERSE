@@ -3452,3 +3452,16 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_models)
     add_test(NAME lighting_model_geometry COMMAND aiverse_lighting_model_geometry_test)
     set_tests_properties(lighting_model_geometry PROPERTIES LABELS "Lighting")
 endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench)
+    add_test(NAME lighting_animated_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_animated_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-animated-host ${_lighting_auto_backend})
+    set_tests_properties(lighting_animated_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 420)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_animated_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_animated_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-animated-host-gl cpu)
+        set_tests_properties(lighting_animated_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 420)
+    endif()
+endif()
