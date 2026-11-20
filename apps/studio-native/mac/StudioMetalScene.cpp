@@ -1,5 +1,6 @@
 #include "StudioMetalScene.h"
 #include "apps/editor/SceneRenderable.h"
+#include "apps/studio-native/StudioVisualPicking.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/studio-native/StudioAuthoredLights.h"
@@ -41,19 +42,10 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     float3 origin{}, direction{};
     if (materialMode_ || !cameraInitialized_ ||
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
+    // Pick the oriented cube mesh that Renderer3D actually draws, not its
+    // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
-    std::vector<editor::SceneRenderable> candidates;
-    candidates.reserve(proxies.size());
-    for(size_t i=0;i<proxies.size();++i) {
-        editor::SceneRenderable candidate;
-        candidate.entity=uint64_t(i)+1;
-        candidate.boundsMin=proxies[i].boundsMin;
-        candidate.boundsMax=proxies[i].boundsMax;
-        candidate.pickable=true;
-        candidates.push_back(candidate);
-    }
-    const int hit=editor::pickSceneRenderable(candidates,origin,direction);
-    return hit<0 ? std::string() : proxies[size_t(hit)].id;
+    return studioPickVisibleProxy(proxies,origin,direction).id;
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
