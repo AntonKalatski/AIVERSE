@@ -7,6 +7,7 @@
 #pragma once
 #include "GiGpuTicketQueue.h"
 #include "GiGpuChunkBvhCache.h"
+#include "GiGpuPagedBvhArena.h"
 #include "GiWorldDirtyAccumulator.h"
 #include "Renderer3D.h"
 #include <algorithm>
@@ -65,6 +66,8 @@ public:
         scheduler_=GiUpdateScheduler{};
         scene_.reset();
         chunkCache_=GiGpuChunkBvhCache{};
+        pages_.clear();
+        lastPageStats_={};
         lights_.clear();
         device_=nullptr;
         dims_[0]=dims_[1]=dims_[2]=0;
@@ -75,6 +78,10 @@ public:
     size_t pendingProbes() const {return scheduler_.pending();}
     const GiGpuSmallScene& backend() const {return gpu_;}
     const GiGpuChunkBvhCache& chunkCache() const {return chunkCache_;}
+    const GiGpuPagedBvhArena& gpuPages() const {return pages_;}
+    GiGpuPagedBvhArena::Stats lastGpuPageStats() const {
+        return lastPageStats_;
+    }
     const GiUpdateScheduler& scheduler() const {return scheduler_;}
     // Read-only accepted source snapshot for safe one-way GPU->CPU transport
     // failover. Call only after outstanding GPU tickets are fence-acknowledged.
@@ -217,8 +224,15 @@ private:
         if(!ready() || busy())return false;
         try {
             chunkCache_.refresh(snapshot);
-            auto bvh=chunkCache_.pack();
-            return queue_.setPackedGeometry(gpu_,bvh,revision);
+            // Prepare new absolute chunk-page addresses and a small TLAS
+            // transactionally. The old layout stays active on upload failure.
+            auto candidate=pages_.plan(snapshot,chunkCache_);
+            if(!candidate.accepted ||
+               !queue_.setPackedGeometry(gpu_,candidate.packet,revision))
+                return false;
+            lastPageStats_=candidate.stats;
+            pages_.commit(std::move(candidate));
+            return true;
         }catch(const std::exception&) {
             return false; // scheduler/controller retain the old revision
         }
@@ -241,6 +255,8 @@ private:
     GiGpuSmallScene gpu_;
     GiGpuTicketQueue queue_;
     GiGpuChunkBvhCache chunkCache_;
+    GiGpuPagedBvhArena pages_;
+    GiGpuPagedBvhArena::Stats lastPageStats_{};
     GiUpdateScheduler scheduler_;
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;
     std::vector<GiMovingLight> lights_;
