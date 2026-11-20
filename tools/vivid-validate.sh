@@ -47,6 +47,8 @@ run_logged() {
 # Run lightweight CPU fixture checks in the same final acceptance sweep.
 run_logged optical-python-tests python3 -m unittest discover \
     -s "$ROOT/tools/vivid-creator" -p "test_optical_ab.py"
+run_logged texture-overlap-python-tests python3 -m unittest discover \
+    -s "$ROOT/tools/vivid-creator" -p "test_texture_rhi_overlap.py"
 run_logged cmake-configure cmake -S "$ROOT" -B "$BUILD" \
     -DAIVERSE_BUILD_TESTS=ON
 
