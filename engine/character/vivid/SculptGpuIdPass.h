@@ -170,29 +170,23 @@ public:
            !device_->gpuHealthy())return false;
         // Stage 7BA: bounded set of independent GPU Mask blockers. Keep the
         // legacy single pointer for ABI/source-compatible existing callers.
-        constexpr std::size_t kMaxGpuMaskOccluders=4u;
         std::vector<const SculptGpuVertexSource*> gpuMaskSources;
-        gpuMaskSources.reserve(kMaxGpuMaskOccluders);
+        gpuMaskSources.reserve(kSculptGpuMaxMaskOccluders);
         if(gpuMaskOccluder)gpuMaskSources.push_back(gpuMaskOccluder);
         if(gpuMaskOccluders.size()>
-           kMaxGpuMaskOccluders-gpuMaskSources.size())return false;
+           kSculptGpuMaxMaskOccluders-gpuMaskSources.size())return false;
         for(const auto& blocker:gpuMaskOccluders)
             gpuMaskSources.push_back(&blocker);
         if(!gpuMaskSources.empty() &&
            (!actualGpuSource || !supportsActualGpuMaskedStream()))
             return false;
-        // No shared writable stream identity may masquerade as several
-        // independent current-frame Renderer3D actor sources.
-        for(std::size_t i=0;i<gpuMaskSources.size();++i) {
-            if(!sculptGpuMaskedOccluderInputsValid(
-                    *gpuMaskSources[i],
-                    actualGpuSource->actualVertexOverride))
-                return false;
-            for(std::size_t j=0;j<i;++j)
-                if(gpuMaskSources[i]->actualVertexOverride==
-                   gpuMaskSources[j]->actualVertexOverride)
-                    return false;
-        }
+        // No shared source handle may masquerade as independent actors.
+        if(!gpuMaskSources.empty() &&
+           !sculptGpuMaskSourceSetValid(
+               std::span<const SculptGpuVertexSource* const>(
+                   gpuMaskSources.data(),gpuMaskSources.size()),
+               actualGpuSource->actualVertexOverride))
+            return false;
         vertices_.clear();
         std::vector<SculptGpuMaskBatch> grouped;
         if(!appendSculptGpuMaterialGeometry(
