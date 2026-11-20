@@ -22,6 +22,8 @@ int main() {
     assert(call(R"({"id":22,"method":"studio.materialPatch","params":{"name":"steel","patch":{"metallic":0.5}}})").has("error"));
     assert(call(R"({"id":23,"method":"studio.materialCreate","params":{"name":"new_material","preset":"metal"}})").has("error"));
     assert(call(R"({"id":24,"method":"studio.materialPreview","params":{"name":"steel"}})").has("error"));
+    assert(call(R"({"id":25,"method":"studio.shaderGraphs","params":{}})").has("error"));
+    assert(call(R"({"id":26,"method":"studio.shaderGraphGet","params":{"name":"../escape"}})").has("error"));
     assert(session.previewMaterialName().empty());
     assert(call(R"({"id":12,"method":"studio.lighting","params":{}})").has("error"));
     assert(call(R"({"id":13,"method":"studio.lightAdd","params":{}})").has("error"));

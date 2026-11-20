@@ -6,6 +6,11 @@ export interface StudioAsset { path: string; bytes: number }
 export interface StudioAssetList { files: StudioAsset[] }
 export type StudioLightingState = import('./panels/lightingSchema').LightingState;
 export type StudioMaterialLibrary = import('./panels/materialSchema').MaterialLibrary;
+export interface StudioShaderGraphList { graphs: string[] }
+export interface StudioShaderGraphDocument {
+  graph: { version?: number; domain?: string; nodes?: Array<{id:string;op:string;inputs?:string[];position?:number[];value?:number[]}>; outputs?:Record<string,string> };
+  nodes: number; samples: number;
+}
 export interface StudioSnapshot {
   project: { name: string; path: string; dirty: boolean };
   scene: { name: string; entities: StudioEntity[] };
@@ -16,7 +21,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -28,6 +33,8 @@ export interface StudioParams {
   'studio.materialPatch': { name: string; patch: import('./panels/materialSchema').MaterialPatch };
   'studio.materialCreate': { name: string; preset: import('./panels/materialSchema').MaterialPreset };
   'studio.materialPreview': { name: string };
+  'studio.shaderGraphs': Record<string, never>;
+  'studio.shaderGraphGet': { name: string };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
   'studio.lightAdd': Record<string, never>;
@@ -49,6 +56,8 @@ export interface StudioResult {
   'studio.materialPatch': StudioMaterialLibrary;
   'studio.materialCreate': StudioMaterialLibrary;
   'studio.materialPreview': { active: boolean; name: string };
+  'studio.shaderGraphs': StudioShaderGraphList;
+  'studio.shaderGraphGet': StudioShaderGraphDocument;
   'studio.lighting': StudioLightingState;
   'studio.lightingSet': StudioLightingState;
   'studio.lightAdd': StudioLightingState;

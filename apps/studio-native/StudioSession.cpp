@@ -4,6 +4,7 @@
 #include "apps/studio-native/StudioLightingValidation.h"
 #include "apps/studio-native/StudioFpsLightingDocument.h"
 #include "apps/studio-native/StudioMaterialValidation.h"
+#include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
 #include <cmath>
@@ -160,6 +161,39 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.shaderGraphs") {
+                const Json raw=ws_.call("shader_graph_list",Json::object(),"studio");
+                if(raw.has("error")) throw std::runtime_error(raw.getStr("error"));
+                Json names=Json::array();
+                const Json& candidates=raw["graphs"];
+                const size_t count=std::min(size_t(128),candidates.size());
+                for(size_t i=0;i<count;++i) {
+                    if(candidates[i].isString() &&
+                       validStudioShaderGraphName(candidates[i].str()))
+                        names.push(candidates[i]);
+                }
+                Json result=Json::object();
+                result.set("graphs",std::move(names));
+                reply.set("result",std::move(result));
+            } else {
+                const std::string name=params.getStr("name");
+                if (!validStudioShaderGraphName(name))
+                    throw std::runtime_error("Invalid Shader Graph name");
+                Json request=Json::object();
+                request.set("name",str(name));
+                // Existing ShaderGraphOps validates the project-local name/path,
+                // 256 KiB graph budget and the entire node graph via compiler.
+                const Json raw=ws_.call("shader_graph_get",request,"studio");
+                if(raw.has("error")) throw std::runtime_error(raw.getStr("error"));
+                Json result=Json::object();
+                result.set("graph",raw["graph"]);
+                result.set("nodes",raw["nodes"]);
+                result.set("samples",raw["samples"]);
+                // Do NOT serialize raw.glsl/msl/vertex* to JS.
+                reply.set("result",std::move(result));
+            }
         } else if (method == "studio.materialPreview") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             const std::string name=params.getStr("name");

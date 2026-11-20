@@ -10,9 +10,10 @@
     "preview": "vite preview --host 127.0.0.1",
     "test:dock": "node --experimental-strip-types --test tests/dock-layout.mjs tests/nested-dock.mjs",
     "test:fields": "node --experimental-strip-types --test tests/propertyLogic.test.mjs",
-    "test:web": "npm run test:dock && npm run test:fields && npm run test:lighting && npm run test:materials",
+    "test:web": "npm run test:dock && npm run test:fields && npm run test:lighting && npm run test:materials && npm run test:graphs",
     "test:lighting": "node --experimental-strip-types --test tests/lightingSchema.test.mjs",
-    "test:materials": "node --experimental-strip-types --test tests/materialSchema.test.mjs"
+    "test:materials": "node --experimental-strip-types --test tests/materialSchema.test.mjs",
+    "test:graphs": "node --experimental-strip-types --test tests/shaderGraphLayout.test.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
