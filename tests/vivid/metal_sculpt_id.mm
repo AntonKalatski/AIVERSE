@@ -188,6 +188,20 @@ void test() {
         require(usedOverride &&
                 fromActual==std::vector<std::uint8_t>({0,0,0,0}),
                 "ID pass rendered CPU pose instead of exact 60B GPU override");
+        // 7AU: a sampled selected Mask must also follow the ACTUAL
+        // displaced GPU actor vertices, not the CPU surface position.
+        model.materials[0].alpha=render::AlphaMode::Mask;
+        require(prepareSculptGpuVertexSource(
+                    model,0,pose,render::mat4::identity(),
+                    displacedStream,std::uint32_t(actorBytes.size()),
+                    {},actorBytes.size(),source) && source.maskedSelection,
+                "Metal selected GPU Mask source could not prepare");
+        usedOverride=false;
+        const auto displacedMasked=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                displacedMasked==std::vector<std::uint8_t>({0,0,0,0}),
+                "Metal Mask used stale CPU positions rather than GPU source");
         device->destroyBuffer(displacedStream);
         gpuDesc.data=model.vertices.data();
         auto originalStream=device->createBuffer(gpuDesc);
@@ -195,15 +209,25 @@ void test() {
         require(prepareSculptGpuVertexSource(
                     model,0,pose,render::mat4::identity(),
                     originalStream,std::uint32_t(model.vertices.size()),
-                    {},model.vertices.size(),source),
-                "Metal identity actor stream source preparation failed");
+                    {},model.vertices.size(),source) &&
+                source.maskedSelection,
+                "Metal identity GPU-selected Mask source preparation failed");
+        device->updateTexture(alphaTexture,0,0,1,1,alphaHole.data(),4);
+        usedOverride=false;
+        const auto gpuMaskHole=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                gpuMaskHole==std::vector<std::uint8_t>({0,0,0,0}),
+                "Metal actual GPU source Mask failed to discard alpha hole");
+        device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
         usedOverride=false;
         const auto unchanged=runSample(
             *device,pass,model,surface,32,32,{},&source,&usedOverride);
         require(usedOverride &&
                 unchanged==std::vector<std::uint8_t>({2,0,0,0}),
-                "ID pass did not render the actual in-view GPU ModelVertex");
+                "GPU-selected sampled Mask lost in-view actor ModelVertex");
         device->destroyBuffer(originalStream);
+        model.materials[0].alpha=render::AlphaMode::Opaque;
 
         // Same packed 60B input but a GPU compute skinning transform moves
         // the triangles. This proves the ID pass does not silently bypass
