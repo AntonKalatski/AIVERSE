@@ -96,6 +96,17 @@ inline SculptGpuSubmittedViewCheck validateSculptGpuSubmittedView(
                q.vertexOverrideCount!=p.vertexOverrideCount ||
                q.skinning!=p.skinning || q.baked!=p.baked ||
                q.customGpuStream!=p.customGpuStream ||
+               q.maskedMaterial!=p.maskedMaterial ||
+               (p.maskedMaterial &&
+                (q.maskBaseTexture!=p.maskBaseTexture ||
+                 q.maskAlpha!=p.maskAlpha ||
+                 q.maskCutoff!=p.maskCutoff ||
+                 q.maskUvOffset.x!=p.maskUvOffset.x ||
+                 q.maskUvOffset.y!=p.maskUvOffset.y ||
+                 q.maskUvScale.x!=p.maskUvScale.x ||
+                 q.maskUvScale.y!=p.maskUvScale.y ||
+                 q.maskUvRotation!=p.maskUvRotation ||
+                 q.maskVertexColors!=p.maskVertexColors)) ||
                q.batched || q.gpuLodConditional || q.lodFade ||
                q.alternativeMeshLod || q.shaderVertexOffset ||
                q.translucent || !q.colourCandidate) {
