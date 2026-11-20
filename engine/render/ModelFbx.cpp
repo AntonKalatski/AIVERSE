@@ -263,8 +263,15 @@ private:
                 const ufbx_node* n = mesh->instances.data[k];
                 int ni = n->is_root ? -1 : nodeMap_[n->typed_id];
                 if (ni < 0) continue;
-                model_->nodes[size_t(ni)].mesh = meshIndex;
-                if (skin) model_->nodes[size_t(ni)].skin = int(skin->typed_id);
+                auto& node=model_->nodes[size_t(ni)];
+                node.mesh=meshIndex;
+                // FBX's rest/default channel weights are Model-node local,
+                // just like glTF weights. They are normalised against the
+                // single supported target keyframe's authored weight.
+                for(size_t channel=0;channel<md.weights.size() &&
+                    channel<size_t(kMaxMorphTargets);++channel)
+                    node.weights[channel]=md.weights[channel];
+                if (skin) node.skin = int(skin->typed_id);
             }
             model_->meshes.push_back(std::move(md));
         }
