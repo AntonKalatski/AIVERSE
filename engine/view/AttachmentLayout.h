@@ -30,6 +30,8 @@ struct AttachmentLayoutItem {
     // Independent MotionWeave graph source, never a static parent-pose
     // attachment. Requires a nonempty stable authored ID when enabled.
     bool animated=false;
+    // Host-resolved immutable Graph asset key. No runtime Graph pointer.
+    std::string animationGraph;
 };
 struct AttachmentLayout {
     std::string parent;
@@ -98,6 +100,15 @@ public:
                         "attachment animated flag must be boolean");
                 item.animated=field["animated"].boolean();
             }
+            if(field.has("animationGraph")) {
+                if(!field["animationGraph"].isString())
+                    throw std::invalid_argument(
+                        "attachment animationGraph must be a string");
+                item.animationGraph=field["animationGraph"].str();
+                if(item.animationGraph.size()>1024)
+                    throw std::invalid_argument(
+                        "attachment animationGraph asset key too long");
+            }
             if(field.has("id")) {
                 if(!field["id"].isString())
                     throw std::invalid_argument(
@@ -112,9 +123,10 @@ public:
             if(item.model.empty() || item.socket.empty())
                 throw std::invalid_argument(
                     "attachment entry needs model path and named socket");
-            if(item.animated && item.enabled && item.id.empty())
+            if(item.animated && item.enabled &&
+               (item.id.empty() || item.animationGraph.empty()))
                 throw std::invalid_argument(
-                    "enabled animated attachment needs stable child id");
+                    "enabled animated attachment needs stable id and Graph asset");
             item.local=readMatrix(field["local"]);
             item.childWorld=readMatrix(field["childWorld"]);
             next.attachments.push_back(std::move(item));
@@ -135,11 +147,14 @@ public:
                 !authoredIds.insert(item.id).second))
                 throw std::invalid_argument(
                     "attachment stable id too long or duplicated");
-            if(item.animated && item.enabled && item.id.empty())
+            if(item.animated && item.enabled &&
+               (item.id.empty() || item.animationGraph.empty()))
                 throw std::invalid_argument(
-                    "enabled animated attachment needs stable child id");
+                    "enabled animated attachment needs stable id and Graph asset");
             Json entry=Json::object();
             if(item.animated)entry.set("animated",Json::fromBool(true));
+            if(!item.animationGraph.empty())
+                entry.set("animationGraph",Json::string(item.animationGraph));
             if(!item.id.empty())
                 entry.set("id",Json::string(item.id));
             entry.set("model",Json::string(item.model));
