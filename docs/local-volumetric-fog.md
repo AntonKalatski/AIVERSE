@@ -84,7 +84,7 @@ Separate full-resolution RGBA16F pass after physical sky, before bloom/tonemap.
 Works without physical sky. Uses depth-clipped world-space ray marching,
 Beer-Lambert extinction, ambient fill and anisotropic sun scattering with the
 existing scene sun shadow map. GLSL/MSL share shader bodies. Geometry shadows
-can form local light shafts; no new shadow map or fog self-shadowing is added.
+can form local light shafts; no new geometry shadow map is added. Optional fog self-shadowing is described below.
 Medium uses 32 samples and High 64 **per merged ray interval**. Disjoint sphere/
 box intersections are sorted and merged before marching, avoiding sampling long
 empty gaps. Camera-inside, perspective and orthographic rays use the same path.
@@ -126,28 +126,45 @@ not camera-facing smoke cards. Existing volumes keep `amount=0` and
 `heightFalloff=0`, retaining their original uniform appearance.
 
 ```cpp
+LocalFogSettings lighting;
+lighting.enabled = true;
+lighting.ambient = .045f;
+lighting.anisotropy = .15f;
+lighting.selfShadow = 1;
+lighting.shadowDistance = 24;
+prisma.setLocalFog(lighting);
+
 FogVolume bank;
-bank.id = 1;
-bank.region.shape = FogShape::Obb;
-bank.region.center = {0, 1.2f, -14};
-bank.region.halfExtents = {32, 3, 43};
-bank.region.feather = .5f;
-bank.density = .045f;
+bank.region.shape = FogShape::Sphere;
+bank.region.feather = 5;
+bank.density = .5f;
 bank.color = {.72f, .8f, .88f};
 bank.structure.amount = 1;
-bank.structure.scale = {8, .65f, 5}; // elongated thin forest wisps
-bank.structure.coverage = .58f;
-bank.structure.softness = .22f;
-bank.structure.heightBase = .2f;
-bank.structure.heightFalloff = 1.3f;
+bank.structure.scale = {6, 4, 6};
+bank.structure.coverage = .55f;
+bank.structure.softness = .12f;
+bank.structure.heightBase = 1;
+bank.structure.heightFalloff = .035f;
+bank.structure.heightVariation = 4;
+bank.structure.warp = .85f;
+bank.structure.edgeErosion = .5f;
 bank.structure.wind = {.6f, 0, .2f};
-prisma.localFog().upsert(bank);
+for (int i = 0; i < 3; ++i) {
+    bank.id = uint32_t(i + 1);
+    bank.region.center = {float(i - 1) * 7, 3.f + float(i % 2) * 2,
+                          -12.f - float(i) * 15};
+    bank.region.radius = i == 1 ? 11.f : 8.f;
+    if (!prisma.localFog().upsert(bank)) { /* invalid or capacity exhausted */ }
+}
 ```
 
-For larger valley banks, use e.g. density `.07`, scale `{12,3.5,10}`, coverage
-`.62`, heightBase `1`, heightFalloff `.13`, a larger box with a soft boundary.
-These are starting values in the asset-free fixture's world scale, not calibrated
-atmospheric constants. Lighting and scene scale materially affect the result.
+The example authors separate overlapping valley banks with open sightlines,
+rather than filling the entire view with one dense box. For low forest pockets,
+use density `.32`, scale `{3.5,2.5,3.5}`, radii roughly `4.8..6`, centers slightly
+below the local ground, feather `3`, heightFalloff `.18` and heightVariation `2`.
+These are fixture-scale starting values; lighting and world scale matter.
+A single large OBB remains supported, but will naturally look like a continuous
+layer if its entire depth is filled.
 
 | Parameter | Meaning and accepted range |
 | --- | --- |
@@ -177,7 +194,7 @@ Structured/height-shaped scenes use 48 samples per merged interval at Medium and
 96 at High, with a static subpixel sample offset to reduce coherent raymarch bands.
 Uniform scenes retain the prior 32/64 budget and exact midpoint sampling. This
 adds shader ALU cost; no frame-time improvement or temporal reconstruction is
-claimed. Thin structures can still undersample, and self-shadowing remains absent.
+claimed. Thin structures can still undersample, with self-shadowing enabled the extra light march adds further cost.
 Height is **world Y, not automatic terrain-following**: place multiple regions for
 sloped ground. Geometry occludes the fog using scene depth; no terrain/physics
 simulation dependency is introduced.
@@ -187,3 +204,40 @@ simulation dependency is introduced.
 `tests/render/FogLandscape.h` contains their explicit settings and simple geometry.
 These demonstrate density, height and occlusion, not parity with a finished game's
 terrain, trees, materials or lighting. GLSL and MSL use the same noise body.
+
+## Billow shape and internal sun shadows
+
+`structure.heightVariation` (0..50000 world units, default 0) displaces the
+height profile by a smooth XZ noise field. It breaks a constant-height ceiling.
+`structure.warp` (0..2, default 0) deforms all three noise coordinates before
+sampling the density octaves; it is not a UV distortion of the rendered image.
+`structure.edgeErosion` (0..1, default 0) raises the density threshold near
+the soft region boundary. This breaks a geometric sphere/box silhouette into
+irregular lobes, while keeping density exactly zero outside the authored bound.
+All shape controls follow the world-space wind phase and preserve the 256-cell period. CPU
+`densityAt` matches this density definition. Sphere/OBB bounds still clip it.
+Keep bounds larger than the visible bank: a tight flat box can cut off billows.
+
+Set `LocalFogSettings::selfShadow=1` and `shadowDistance=24` to integrate optical
+depth toward the sun from each participating view-ray sample. All active fog
+volumes contribute; reveal regions reduce extinction along the light ray too.
+Medium uses 4 and High 6 quadratically spaced light samples, bounded by the
+configured distance (.1..1000 world units). The resulting Beer-Lambert sun
+transmission multiplies direct scattering; geometry shadows still multiply it.
+`selfShadow` is a 0..1 extinction scale, default 0 for compatibility. Ambient
+fill remains unshadowed, so excessive ambient can hide the new depth shading.
+
+This is a bounded single-scattering approximation, not global multi-scattering,
+sky-direction ambient occlusion or fog shadows cast onto surface materials.
+Blockers farther than shadowDistance are deliberately omitted. Small clouds
+can undersample on the light ray. Cost scales with occupied pixels, volumes and
+both view/light sample counts; profile target hardware before enabling widely.
+
+Native fixtures `forest`, `valley` enable the new shape/shadow controls.
+`forest-above`/`valley-above` change camera elevation; `-unshadowed` disables only
+self-shadowing for A/B comparison. `-off`, `-reveal` and `-wind` remain available.
+
+The native preview adds a fourth, very low-density OBB (`density=.004`, height
+falloff `.3`) between the three banks. This is ordinary composable local fog,
+not a second renderer or a camera-space overlay. The bank example above is kept
+minimal; add weak background haze separately when the scene calls for it.

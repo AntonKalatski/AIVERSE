@@ -25,6 +25,8 @@ struct FogStructure {
     float coverage=.65f, softness=.25f;
     float heightBase=0, heightFalloff=0; // world Y, inverse world units; zero disables
     float3 wind{}; // world units/second; presentation only
+    float heightVariation=0; // world-unit displacement of the height profile
+    float warp=0, edgeErosion=0; // domain distortion, boundary threshold erosion
 };
 struct FogVolume {
     uint32_t id=0; // nonzero, unique within fog volumes
@@ -41,6 +43,7 @@ struct FogReveal {
 struct LocalFogSettings {
     bool enabled=false;
     float maxDistance=1000, ambient=.5f, anisotropy=.3f;
+    float selfShadow=0, shadowDistance=30; // optical-depth sun march; opt-in
 };
 float fogRegionWeight(const FogRegion&,float3 point);
 // Validated, bounded runtime ownership. Failed edits leave previous state intact.

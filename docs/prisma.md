@@ -4175,3 +4175,9 @@ provides a reproducible presentation clock. Default uniform fog is preserved.
 The existing local fog pass owns this, with no extra history or render targets.
 See the structured banks section in `docs/local-volumetric-fog.md`. No terrain
 sampling, gameplay visibility or PHYSIS state mutation is introduced.
+
+Local fog now also supports `heightVariation`, three-dimensional `warp`, boundary
+`edgeErosion` and optional `selfShadow`/`shadowDistance`. Self-shadowing ray-marches
+all active volumes and reveal holes toward the sun, independently of the existing
+geometry shadow map. This is bounded single scattering; no new temporal buffers,
+shadow-map ownership, terrain dependency or authoritative simulation state.

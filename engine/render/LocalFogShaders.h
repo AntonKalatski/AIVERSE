@@ -13,12 +13,15 @@ float fogNoise(vec3 p){
     return mix(mix(mix(fogHash(i),fogHash(i+vec3(1,0,0)),f.x),mix(fogHash(i+vec3(0,1,0)),fogHash(i+vec3(1,1,0)),f.x),f.y),
         mix(mix(fogHash(i+vec3(0,0,1)),fogHash(i+vec3(1,0,1)),f.x),mix(fogHash(i+vec3(0,1,1)),fogHash(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
-float fogStructure(vec3 p,vec4 scale,vec4 shape,vec4 offset){
-    float weight=exp(-max(p.y-shape.z,0.0)*shape.w);
-    if(scale.w<=0.0)return weight;
+float fogStructure(vec3 p,vec4 scale,vec4 shape,vec4 offset,vec4 detail,float boundary){
     vec3 q=p/scale.xyz+offset.xyz;
+    float crest=detail.x>0.0?detail.x*(2.0*fogNoise(vec3(q.x,19,q.z))-1.0):0.0;
+    float weight=exp(-max(p.y-shape.z-crest,0.0)*shape.w);
+    if(scale.w<=0.0)return weight;
+    if(detail.y>0.0)q+=detail.y*(vec3(fogNoise(q+vec3(5,19,37)),fogNoise(q+vec3(31,7,13)),fogNoise(q+vec3(17,43,3)))-vec3(.5));
     float n=.57*fogNoise(q)+.28*fogNoise(q*2.0+vec3(17,31,7))+.15*fogNoise(q*4.0+vec3(43,11,29));
-    float clouds=smoothstep(1.0-shape.x,1.0-shape.x+shape.y,n);
+    float threshold=1.0-shape.x+(1.0-boundary)*detail.z;
+    float clouds=smoothstep(threshold,threshold+shape.y,n);
     return weight*mix(1.0,clouds,scale.w);
 }
 vec3 fogLocal(vec3 p,vec4 c,vec4 x,vec4 y,vec4 z){p-=c.xyz;return vec3(dot(p,x.xyz),dot(p,y.xyz),dot(p,z.xyz));}
@@ -63,19 +66,38 @@ for(int range=0;range<8;++range){if(range>=ranges||trans<.001)break;
         vec3 p=origin+dir*(merged[range].x+(float(step)+sampleOffset)*ds);
         float density=0.0,reveal=0.0;vec3 tint=vec3(0);
         for(int i=0;i<8;++i){if(material[i].w<=0.0)continue;
-            float den=material[i].w*fogWeight(p,centers[i],axesX[i],axesY[i],axesZ[i],edge[i].x);
-            if(den>0.0)den*=fogStructure(p,noiseScale[i],noiseShape[i],noiseOffset[i]);
+            float boundary=fogWeight(p,centers[i],axesX[i],axesY[i],axesZ[i],edge[i].x);
+            float den=material[i].w*boundary;
+            if(den>0.0)den*=fogStructure(p,noiseScale[i],noiseShape[i],noiseOffset[i],noiseDetail[i],boundary);
             density+=den;tint+=material[i].rgb*den;}
         if(density<=0.0)continue;
         tint/=density;
         for(int i=8;i<16;++i){if(material[i].w<=0.0)continue;
             reveal=max(reveal,material[i].w*fogWeight(p,centers[i],axesX[i],axesY[i],axesZ[i],edge[i].x));}
         density*=1.0-reveal;
+        if(density<=0.0)continue;
+        // Integrate real intervening extinction toward the sun, including other
+        // banks and reveal holes. Quadratic spacing concentrates near the sample.
+        float sunTransmit=1.0;
+        if(lighting.x>0.0){float optical=0.0;
+            for(int lightStep=0;lightStep<6;++lightStep){if(float(lightStep)>=lighting.z)break;
+                float a=float(lightStep)/lighting.z,b=float(lightStep+1)/lighting.z;
+                float start=lighting.y*a*a,end=lighting.y*b*b;
+                vec3 lp=p+sun.xyz*((start+end)*.5);float ld=0.0,lr=0.0;
+                for(int i=0;i<8;++i){if(material[i].w<=0.0)continue;
+                    float weight=fogWeight(lp,centers[i],axesX[i],axesY[i],axesZ[i],edge[i].x);
+                    if(weight>0.0)ld+=material[i].w*weight*fogStructure(lp,noiseScale[i],noiseShape[i],noiseOffset[i],noiseDetail[i],weight);}
+                if(ld>0.0){for(int i=8;i<16;++i){if(material[i].w<=0.0)continue;
+                    lr=max(lr,material[i].w*fogWeight(lp,centers[i],axesX[i],axesY[i],axesZ[i],edge[i].x));}}
+                optical+=ld*(1.0-lr)*(end-start);
+            }
+            sunTransmit=exp(-optical*lighting.x);
+        }
         float visibility=1.0;
         if(params.z>.5){vec4 lp=lightVP*vec4(p,1);vec3 q=lp.xyz/lp.w;vec2 suv=UV(q.xy*.5+.5);float sz=q.z/px.w+(px.w-1.0)/px.w;
             if(min(suv.x,suv.y)>0.0&&max(suv.x,suv.y)<1.0&&sz>0.0&&sz<1.0)visibility=SHADOW(suv,sz);}
         float tr=exp(-density*ds);
-        fog+=trans*(1.0-tr)*tint*(vec3(params.y)+sunColor.rgb*(visibility*phase));trans*=tr;
+        fog+=trans*(1.0-tr)*tint*(vec3(params.y)+sunColor.rgb*(visibility*phase*sunTransmit));trans*=tr;
     }
 }
 RETURN(vec4(background.rgb*trans+fog,background.a));

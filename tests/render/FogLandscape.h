@@ -25,22 +25,39 @@ inline void initFogLandscape(HdrScene& s,gfx::Device& d,const std::string& which
     for(int i=0;i<6;++i){float x=float(i%2?1:-1)*(5+i*.8f),z=8-i*6.f;rocks.cylinder({x,height(x,z),z},.8f,3+i*.4f,6,true,.35f);}
     s.fogTerrain=terrain.upload(d);s.fogTrees=trees.upload(d);s.fogRocks=rocks.upload(d);
     s.camera.target={0,valley?5.f:1.4f,-13};s.camera.distance=valley?42.f:28.f;s.camera.pitch=valley?.25f:.11f;s.camera.yaw=.16f;
-    s.renderer.lighting.sunDir={-.4f,.65f,-.6f};s.renderer.lighting.sunColor={.78f,.86f,1};s.renderer.lighting.sunIntensity=valley?.55f:.3f;
+    if(which.find("above")!=std::string::npos){s.camera.pitch=.65f;s.camera.distance=45;}
+    s.renderer.lighting.sunDir={-.6f,.5f,.5f};s.renderer.lighting.sunColor={.78f,.86f,1};s.renderer.lighting.sunIntensity=valley?1.1f:.65f;
     s.renderer.lighting.skyColor={.32f,.4f,.52f};s.renderer.lighting.groundColor={.15f,.19f,.16f};
-    s.post.localFog().clear();LocalFogSettings settings;settings.enabled=!which.ends_with("-off");settings.ambient=valley?.16f:.1f;settings.anisotropy=.15f;s.post.setLocalFog(settings);
-    FogVolume bank;bank.id=1;bank.region.shape=FogShape::Obb;bank.region.center={0,valley?5.f:1.2f,-14};
-    bank.region.halfExtents={32,valley?9.f:3.f,43};bank.region.feather=valley?3.f:.5f;
-    bank.density=valley?.07f:.045f;bank.color={.72f,.8f,.88f};bank.structure.amount=1;
-    bank.structure.scale=valley?float3{12,3.5f,10}:float3{8,.65f,5};bank.structure.coverage=valley?.62f:.58f;
-    bank.structure.softness=.22f;bank.structure.heightBase=valley?1.f:.2f;bank.structure.heightFalloff=valley?.13f:1.3f;
+    s.post.localFog().clear();LocalFogSettings settings;settings.enabled=!which.ends_with("-off");settings.ambient=valley?.045f:.04f;settings.anisotropy=.15f;settings.selfShadow=which.ends_with("-unshadowed")?0:1;settings.shadowDistance=24;s.post.setLocalFog(settings);
+    FogVolume bank;bank.id=1;bank.region.shape=FogShape::Obb;bank.region.center={0,valley?6.f:3.f,-14};
+    bank.region.halfExtents={48,valley?18.f:10.f,65};bank.region.feather=valley?5.f:3.f;
+    bank.density=valley?.34f:.25f;bank.color={.72f,.8f,.88f};bank.structure.amount=1;
+    bank.structure.scale=valley?float3{13,7,11}:float3{8,3.5f,7};bank.structure.coverage=valley?.50f:.48f;
+    bank.structure.softness=.17f;bank.structure.warp=.85f;bank.structure.heightVariation=valley?9.f:4.f;bank.structure.heightBase=valley?1.f:.2f;bank.structure.heightFalloff=valley?.15f:.5f;
     bank.structure.wind={.6f,0,.2f};
-    if(!s.post.localFog().upsert(bank)){s.failed=true;return;}
+    const FogRegion revealBounds=bank.region;
+    // Discrete banks preserve open sightlines and expose their 3D upper surface.
+    bank.region.shape=FogShape::Sphere;bank.region.feather=valley?5.f:3.f;
+    bank.density=valley?.5f:.32f;bank.structure.coverage=valley?.55f:.60f;bank.structure.softness=.12f;bank.structure.edgeErosion=.5f;
+    bank.structure.scale=valley?float3{6,4,6}:float3{3.5f,2.5f,3.5f};bank.structure.amount=1;
+    bank.structure.heightFalloff=valley?.035f:.18f;bank.structure.heightVariation=valley?4.f:2.f;
+    for(int i=0;i<3;++i){
+        bank.id=uint32_t(i+1);
+        bank.region.center=valley?float3{float(i-1)*7,3.f+float(i%2)*2,-12.f-float(i)*15}:float3{float(i-1)*7,-.5f,-7.f-float(i)*13};
+        bank.region.radius=valley?(i==1?11.f:8.f):(i==1?6.f:4.8f);
+        if(!s.post.localFog().upsert(bank)){s.failed=true;return;}
+    }
+    FogVolume haze;haze.id=4;haze.region=revealBounds;haze.region.feather=5;
+    haze.density=.004f;haze.structure.amount=.7f;haze.structure.scale={18,5,18};
+    haze.structure.coverage=.72f;haze.structure.heightBase=0;haze.structure.heightFalloff=.3f;
+    haze.color=bank.color;haze.structure.wind=bank.structure.wind;
+    if(!s.post.localFog().upsert(haze)){s.failed=true;return;}
     s.post.setLocalFogTime(which.ends_with("-wind")?8:0);
-    if(which.ends_with("-reveal")){FogReveal r;r.id=1;r.region=bank.region;r.region.feather=0;s.post.localFog().upsert(r);}
+    if(which.ends_with("-reveal")){FogReveal r;r.id=1;r.region=revealBounds;r.region.feather=0;s.post.localFog().upsert(r);}
 }
 inline void drawFogLandscape(HdrScene& s){
-    s.renderer.drawMesh(s.fogTerrain,{}, {.12f,.16f,.11f,1},kDrawUnlit);
-    s.renderer.drawMesh(s.fogTrees,{}, {.055f,.12f,.085f,1},kDrawUnlit);
-    s.renderer.drawMesh(s.fogRocks,{}, {.2f,.23f,.21f,1},kDrawUnlit);
+    s.renderer.drawMesh(s.fogTerrain,{}, {.22f,.28f,.18f,1},kDrawUnlit);
+    s.renderer.drawMesh(s.fogTrees,{}, {.09f,.18f,.12f,1},kDrawUnlit);
+    s.renderer.drawMesh(s.fogRocks,{}, {.3f,.34f,.3f,1},kDrawUnlit);
 }
 }
