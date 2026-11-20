@@ -5,7 +5,9 @@
 #include "engine/scene/SceneLoadCoordinator.h"
 #include "engine/view/MotionWeaveScenePrefabBindings.h"
 #include "engine/view/View.h"
+#include "engine/render/Renderer3D.h"
 #include "engine/sim/SceneHierarchy.h"
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <set>
