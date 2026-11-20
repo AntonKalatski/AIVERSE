@@ -53,13 +53,19 @@ struct GroomSegmentWorkspace {
             return segment<b.segment;
         }
     };
+    // Reusable owner-local segment snapshot, avoiding per-substep allocation.
+    struct Segment {
+        std::size_t guide=0, first=0;
+        render::float3 a{}, b{};
+    };
+    std::vector<Segment> segments;
     std::vector<Entry> cells;
     std::vector<std::pair<std::size_t,std::size_t>> pairs;
     std::vector<std::size_t> offsets;
     std::vector<render::float3> displacements;
     std::vector<float> counts;
     void reset() noexcept {
-        cells.clear();pairs.clear();offsets.clear();
+        segments.clear();cells.clear();pairs.clear();offsets.clear();
         displacements.clear();counts.clear();
     }
 };
