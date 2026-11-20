@@ -1,7 +1,7 @@
 // Stage 107 deferred: typed generic appearance packet preserves all
 // material/variant/tint/geometry/graph inputs without any game module.
 #include "engine/view/AppearancePacket.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <memory>
 #include <vector>
 namespace aiverse::platform {
@@ -23,17 +23,17 @@ int main() {
     spec.flags=render::kDrawTransparent;
     spec.sourceId=42;spec.generation=3;
     Object packet;
-    assert(buildAppearancePacket(spec,render::mat4::identity(),packet));
-    assert(packet.id==42 && packet.generation==3);
-    assert(packet.draw.model==&model);
-    assert(packet.draw.materials==&materials);
-    assert(packet.draw.nodeMaterial==&nodeMaterial);
-    assert(packet.draw.variant==7);
-    assert(packet.draw.tint.w==0.8f);
-    assert(packet.draw.team.x==0.1f);
-    assert(packet.draw.flags&render::kDrawTransparent);
-    assert(!packet.graph);
-    assert(packet.visible);
+    AIVERSE_TEST_CHECK(buildAppearancePacket(spec,render::mat4::identity(),packet));
+    AIVERSE_TEST_CHECK(packet.id==42 && packet.generation==3);
+    AIVERSE_TEST_CHECK(packet.draw.model==&model);
+    AIVERSE_TEST_CHECK(packet.draw.materials==&materials);
+    AIVERSE_TEST_CHECK(packet.draw.nodeMaterial==&nodeMaterial);
+    AIVERSE_TEST_CHECK(packet.draw.variant==7);
+    AIVERSE_TEST_CHECK(packet.draw.tint.w==0.8f);
+    AIVERSE_TEST_CHECK(packet.draw.team.x==0.1f);
+    AIVERSE_TEST_CHECK(packet.draw.flags&render::kDrawTransparent);
+    AIVERSE_TEST_CHECK(!packet.graph);
+    AIVERSE_TEST_CHECK(packet.visible);
     spec.model=nullptr;
-    assert(!buildAppearancePacket(spec,render::mat4::identity(),packet));
+    AIVERSE_TEST_CHECK(!buildAppearancePacket(spec,render::mat4::identity(),packet));
 }

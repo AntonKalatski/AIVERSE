@@ -10,7 +10,9 @@ public:
     void draw(Editor& ed) override{panel_.draw(ed);}
     void update(Editor& ed,double dt) override{
         panel_.update(ed,dt);
-        if(!open)panel_.suspendPreview();
+        // GPU state is disposable on dock-tab hide, unlike graph document
+        // and user preview controls; keep it alive only while visible.
+        if (!open || !ed.isWindowInFront(this)) panel_.suspendPreview();
     }
 private:AnimationEditorPanel panel_{true};
 };

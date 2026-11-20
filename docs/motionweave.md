@@ -656,3 +656,11 @@ provider shutdown and can increase peak memory; do not call this true
 fence-based or zero-stall retirement. See
 [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
 Real C++/CTest/GPU/visual/sanitizer/benchmark verification remains **NOT RUN**.
+
+
+
+## Stage 157 — native whole-source hot reload without a second animation owner
+
+Stage 157 adds a ModelView example **complete on-disk source generation replacement** while leaving the common genre-independent MotionWeave/AnimationGraph/ECS/View code unchanged. A staged native ModelAssetProvider owns all newly imported parent+child Models; the host creates new Animators bound to those Models and fresh compiled sockets against newly published source/child appearance snapshots. Valid compatible named clips preserve normalized phase via the existing `Animator::seek` API. Only after all imports/compilers succeed does ModelView publish the new scene. Failed candidates are held in a GPU-safe old-owner queue pending definitive completion. The Viewer emits precomputed poses through the same single-writer generic View pipeline.
+
+User controls: ModelView **Reload model files** (full new GPU/CPU asset generation), cached-only **Rebuild**, opt-in `--watch-model-files` / **Watch source files** polling. Retired Animator/Model/attachment owners are retained until a full GPU idle check at an advisory queue cap of eight or shutdown; not a GPU token-based asynchronous retirement API, and peak resource use can increase. Studio's Stage 156 3D preview remains separate. See [Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md). Native compiler/CMake/CTest/GPU Metal-Vulkan-GLES/ASan-TSan/benchmarks **NOT RUN**, per requested feature-first workflow.

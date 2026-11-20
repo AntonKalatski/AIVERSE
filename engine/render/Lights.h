@@ -28,6 +28,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "StaticLightGrid.h"
+#include "GpuOwnedMemory.h"
 #include "OffscreenTargetLifetime.h"
 
 namespace aiverse::render {
@@ -146,6 +147,10 @@ public:
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
     size_t count() const { return lights_.size(); }
     const LightStats& stats() const { return stats_; }
+    // Own GPU allocations only: light maps, spot/planar reflections,
+    // static light atlas, owned light-vertex streaming buffers.
+    // All values are known lower bounds, not device total VRAM.
+    GpuOwnedMemoryStats ownedGpuMemoryStats() const;
     void noteReflectionTime(float ms) { stats_.reflMs = ms; }
 
     // Renderer3D::render, after the sun shadow pass: picks the spot that gets a shadow this frame
@@ -166,6 +171,11 @@ public:
     bool reflectionsWanted() const { return reflectOn_ && quality_ == LightQuality::High && dev_; }
     bool beginReflection(int viewW, int viewH, float3 clearColor);   // opens the pass (half res)
     void endReflection();
+    // Diagnostic only: read the *actual planar reflection RTT* after
+    // Renderer3D::render() finishes. Fails rather than substitute screen
+    // pixels when the LDR reflection target is not current/available.
+    // Does not give ownership of reflColor_ to the caller.
+    bool requestPlanarReflectionColorReadback(gfx::Device::ColorReadFn callback) const;
     void drawHalos(const mat4& viewProj, bool decals = true);  // inside the main pass, after the opaque scene
 
     // Contact shadows / AO: soft dark decals on the ground under objects (all tiers, very cheap).

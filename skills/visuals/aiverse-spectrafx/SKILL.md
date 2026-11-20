@@ -5,9 +5,14 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 
 # SpectraFX — universal AIVERSE visual effects
 
-**Canonical documentation:** `docs/spectrafx.md`.  
-**Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
+**Canonical documentation:** `docs/spectrafx.md`.
+**Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
 **Engineering rules:** `AGENTS.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage120-main-integration-native-pass-2026-11-20.md`.
+
+## Mandatory scope boundary
+
+This skill is ONLY for world-space VFX emitters, particles, ribbon/mesh FX, effect graphs and ECS event presentation. For post-process bloom, tone mapping/HDR resolve, LUT/color grading, depth-of-field, motion blur, screen-space AO/GI/SSR, TAA/upscaling, post-process volumes, or the `postfx` Shader Graph domain, use **PRISMA** (`engine/render/Prisma.h`, `docs/prisma.md`). SpectraFX contributes linear HDR scene particles before PRISMA resolves the image; PRISMA never owns particle simulation. See the mandatory ownership section in `AGENTS.md`. Existing `postfx_*` MCP/JSON names are legacy external interfaces, **not** SpectraFX operations.
 
 ## Fast path (current supported capabilities)
 
@@ -17,19 +22,179 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 4. One-shot impact, fire, ability and death effects use `PresentationSystem::consumeTickEvents(tick, events, bindings)`, exactly once per committed tick. Call `reset()` when the client rolls back or starts a new session.
 5. Preserve `aiverse_fx`, `fx/<name>.json`, `fx/fx.json`, legacy `RtsFx` and older `Vfx*` aliases until production parity tests pass.
 
+## Graph editing through MCP (stage 7)
+
+Use the universal editor-core tools when authoring graphs for an open game:
+
+1. `fx_graph_list` and `fx_graph_get {name}` locate and inspect versioned graph assets.
+2. `fx_graph_validate {graph|text|name, overrides?}` checks the compiled emitter definition without writing.
+3. `fx_graph_set {name, graph|text}` saves only after strict compile validation. Graph names are lowercase `a-z0-9_`; max 48 chars. Invalid sources are not saved.
+4. `fx_graph_bake {name, effect, overrides?, overwrite?}` creates `fx/<effect>.json`, consumed by the original CPU renderer and `fx_preview {effect}`. Existing baked effects are protected unless `overwrite:true`.
+5. `fx_graph_delete {name}` removes only the graph source; baked effects remain separate.
+
+The MCP commands work in editor and headless `aiversemcp` via `Workspace::call`; they do not depend on RTS or FPS modules. Baked effects do **not** automatically track graph changes. The separate **SpectraFX** window adds a basic graph-v1 canvas, but it is not a full Niagara-equivalent programmable editor.
+
+## Visual editor and ephemeral preview (stage 8, committed but unverified)
+
+- Open **Графика → SpectraFX** in the editor. Select/create a graph, add Spawn/Initialize/Update/Output nodes, drag and connect their pins. Middle mouse pans; the right panel edits properties and exposed parameters as JSON.
+- Save calls `fx_graph_set` and reports the exact graph-v1 compiler errors.
+- `fx_graph_preview {graph:<JSON>, name?, overrides?, advance?, x?, y?, z?, loop?, freeze?}` is a GUI-only MCP operation. It compiles the **unsaved graph** in memory into the existing CPU particle backend, without creating `fx/*.json`.
+- Node `position:[x,y]` is authoring metadata; compilation and runtime effects ignore it. Older graphs without positions remain compatible.
+- Check `view_screenshot {window:"scene"}` after a successful preview. All interactive GUI results still require macOS/Windows manual validation; unit-test source presence alone is not verification.
+
+## Typed graph module inspector (stage 9)
+
+The visual **SpectraFX** window now offers a **Типизированные модули**
+section per selected node. Use it for common Spawn/Initialize/Update/Output
+fields (number, integer, bool, string, choice and Vector3); the editor
+validates values against `engine/fx/SpectraModuleSchema.h` and preserves
+unrelated node properties. Choose `+` to add a field and `x` to remove
+an explicit override. Use **Расширенные свойства (JSON)** for curves,
+gradients, nested modules and unsupported fields; a complex value must
+**never** be flattened by a typed control.
+
+Native projects may use `spectra::fieldsForNode(type)`,
+`spectra::validateTypedField(field,value,error)`,
+`spectra::applyTypedField(node,key,value,error)`, and
+`spectra::removeTypedField(node,key,error)`, available from
+`engine/fx/SpectraFX.h`. The parser `fx::parseEffect` remains the final
+source of truth. CTest source was extended but real compilation/tests
+have **NOT RUN** in this session. See stage 9 handoff.
+
+## Metal GPU compute prototype (stage 10 — unverified)
+
+The public `engine/fx/SpectraFX.h` also includes
+`engine/fx/SpectraGpuParticles.h`. Native presentation clients can
+create `spectra::ComputeParticles` with `ComputeEmitterDesc` and
+`ComputePreference::Automatic`, then call `burstAt`, `setView`,
+`step` **before the render pass** and `draw` **inside the pass**.
+Shutdown must precede destruction of `gfx::Device`.
+
+- Metal with `Device::supportsCompute()`: opt-in GPU simulation and
+  soft additive quads. The first version supports only burst count,
+  speed, lifetime, size, gravityY, drag and tint.
+- GL33/GLES3/WebGL2 and current Vulkan: **CPU fallback** via the legacy
+  `fx::ParticleSystem`. `RequireGpu` fails without Metal compute.
+- This is **not** automatic graph-v1 GPU code generation. Do not route
+  arbitrary `EffectDef`, trails, ribbon meshes, collisions, GPU light
+  events or untested graph operations into this subset.
+- Track `ComputeStats` and `reason()` for diagnostics. No measured
+  performance or real Metal shader-compile verification yet.
+- Use `aiverse_vfx_gpu_tests` / CTest `vfx_gpu_backend` for CPU,
+  capability selection and lifecycle regressions. A native Metal
+  offscreen render/readback test and multi-frame fences are still
+  mandatory before shipping.
+
+See `docs/spectrafx.md` stage 10 and the last handoff entry for
+the exact implementation status and follow-up checks.
+
+## Graph GPU eligibility and transparent CPU fallback (Stage 11)
+
+Use `spectra::GraphRuntime` (public `engine/fx/SpectraFX.h`) for
+opt-in **per-graph** backend selection from any native game genre.
+It accepts either `initGraph(device, graphJson, overrides, options)`
+or `initEffect(device, compiledEffect, options)` and owns one
+`ComputeParticles` or full `fx::ParticleSystem` instance. Call
+`burstAt`, `setView`, `step` (before scene render pass),
+`draw` (inside pass), `clear` (outside encoders) and `shutdown`
+(before device destruction).
+
+Never route a graph to GPU based on output node alone. Use
+`spectra::inspectGraphGpuEligibility(effect, options)` to check
+whether the **whole** effect fits the Metal prototype. Unsupported
+shader graphs, random ranges, noise, trails, collisions, lights,
+subemitters, custom colours, non-soft textures and multi-emitters
+keep all data via original `EffectDef` in the CPU runtime.
+`ComputePreference::RequireGpu` returns an error rather than
+silently simplifying the graph.
+
+`fx_graph_validate`/`get`/`list` now expose
+`metalGpuEligible` and `metalGpuReason`; the SpectraFX graph
+editor shows the same result. **Eligibility is not device support
+or measured GPU performance.** The existing editor preview is CPU.
+
+Run `aiverse_vfx_graph_runtime_tests`, `aiverse_vfx_gpu_tests`
+and the full `ctest -L SpectraFX` suite once a native checkout
+is available. Stage 11 is committed but tests and real Metal
+shaders have not been verified in this session. Preserve the
+per-stage handoff rule.
+
 ## Boundaries and tests
 
-VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
+VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The v1 graph compiler produces `fx::EffectDef`, while the separate opt-in Metal GPU runtime already has evolution, sorting and compaction kernels. Full graph-programmable GPU simulation, renderer/editor integration, and complete cross-platform GPU QA remain unfinished. Do not duplicate SpectraFX by genre.
 
-Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
+**Hard dependency rule:** engine/fx must not include any FPS, RTS, Editor or app module and must not accept a concrete genre camera. Use `SpectraFxView` and the generic `SpectraFxSceneHost` API instead; old camera APIs are source-compatible template adapters. The `spectrafx_architecture` CTest enforces direct source boundaries. Host builds are optional integration regressions, not requirements for using core.
+
+Use CMake target `AIVERSE::spectrafx` in a native project. The optional
+Metal `spectrafx_metal_rhi` test (Stage 98) compiles production
+`GfxMetal.mm` and validates two offscreen views and per-frame resource
+retirement. Do not claim this new test PASS before a hardware log exists.
+`gfx::Device::readColorRGBA8` is **test/debug only**, never per-frame
+FX runtime readback. Validate with:
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
 
 **Verification status:** these tests are committed, not proven passing. Never mark them successful based on source presence.
 
-**Handoff requirement:** every bounded implementation stage must end with a separate dated append to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` in the SAME branch, including implementation/test commit SHA, exact tests executed and their outputs, API/format changes, risks and the next step.
+**Handoff requirement:** every stage needs a dated file in `docs/agent-handoffs/` and an update to `spectrafx-current.md` in the SAME branch, including code SHA, exact tests run/results, API/format contracts, risks and the next step. Do not claim a test PASS until the log exists.
+
+
+## Multiple views (Stage 99)
+
+Update a `SpectraFxSceneHost` only once per frame through
+`prepareGpu(dt,firstView)` and `prepareCpu(dt,firstView)`.
+Before **each** sequential camera render pass, call
+`prepareRenderView(view)` *outside* the encoder; render the effect
+inside that pass with `render(lighting,view)`. Each new camera may
+replace the alpha sort index map: do not prepare multiple cameras up
+front and then render them out of order. New API is committed, still
+awaiting hardware acceptance; see Stage 99 handoff.
+
+
+## Stage 100: delayed GPU feedback after live scene reset
+
+GPU impact notifications are presentation-only. `HybridPlayback`
+automatically invalidates emitter callback epochs on GPU retirement
+(Stop/Kill/key replacement/rollback) without prematurely destroying
+Metal storage referenced by in-flight commands. Never call teardown
+`reset()` in the middle of a live GPU frame.
+The third MetalGPU test `spectrafx_metal_rhi` covers deferred callback
+invalidations and particle-generation rejection; run it before claiming
+native acceptance. Stage 98–100 tests have NOT RUN as of this handoff.
+
+
+## Stage 101: deterministic playback retirement
+
+The desktop `spectrafx_retirement` CTest exercises the real
+`SpectraFxHybridPlayback` resource accounting and deferred stop/reset
+through a controlled fake Metal RHI, while the separate
+`spectrafx_metal_rhi` checks actual Apple Metal GPU execution.
+These newly authored tests have not been run. Keep tested SHAs separate
+from Stage 97's verified 8/8 acceptance.
+
+
+## Stage 102 — strict GPU evidence before release
+
+When validating on a real Apple GPU, use
+`AIVERSE_ACCEPTANCE_REQUIRE_METAL=1 bash tools/spectrafx/acceptance.sh build/spectrafx-validation`.
+Check the `metal_evidence` stage: `spectrafx_metal_gpu`,
+`spectrafx_metal_billboard`, `spectrafx_metal_rhi` must each be
+`PASS`; CTest skip code is not evidence of execution.
+The Python parser tests are portable, but C++/GPU acceptance on
+Stage 98–102 remains unverified until the Mac Studio run is supplied.
+
+
+## Stage 104 — real Renderer3D integration QA
+
+The macOS `spectrafx_metal_scene` test links production Renderer3D,
+SpectraFxSceneHost and a real Metal RHI. It probes two-camera RT output,
+foreground depth occlusion and live reset/retirement. Optional PPM frames:
+`AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene`.
+Strict `AIVERSE_ACCEPTANCE_REQUIRE_METAL=1` now requires 4/4 real
+MetalGPU tests to PASS; the old 3/3 evidence applies to Stage 103 only.
+Do not claim Stage 104 native acceptance before fresh Mac Studio logs.

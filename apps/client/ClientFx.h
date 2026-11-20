@@ -2,6 +2,11 @@
 // match each frame. Kept in its own file so the client only calls a handful of methods.
 #pragma once
 #include "engine/fx/ParticleSystem.h"
+#include "engine/fx/SpectraFxGpuRoutes.h"
+#include "engine/fx/SpectraFxSimulationBridge.h"
+#include <deque>
+#include <memory>
+#include <unordered_set>
 #include "engine/render/Renderer3D.h"
 #include "engine/render/TextureCache.h"
 #include "modules/rts/fx/RtsFx.h"
@@ -28,6 +33,11 @@ public:
     // Replays the particle lights captured during the primary update into a
     // secondary camera light system, without collecting or ticking particles.
     void addPreparedLights(render::LightSystem& lights) const;
+    // Opt-in SpectraFX GPU effects: call once before Renderer3D::beginScene,
+    // inside beginFrame and outside all GPU render/compute passes.
+    void prepareGpuFrame(float dt,const render::RTSCamera& camera);
+    // Draw GPU-owned billboards in the still open scene pass, after render().
+    void renderGpu(const render::mat4& viewProj, const render::RTSCamera& camera);
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
     // Reorient and draw already updated particles for another LENS camera.
@@ -41,8 +51,38 @@ public:
     int quality() const { return int(ps_.quality()); }
     void setQuality(int q) { ps_.setQuality(fx::FxQuality(q < 0 ? 0 : q > 3 ? 3 : q)); }
     fx::ParticleSystem& particles() { return ps_; }
+    // This host owns particle GPU buffers/atlas AND separate sprite cache.
+    // The particle batches only borrow sprite textures from this cache.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        const auto particle = ps_.ownedGpuMemoryStats();
+        const auto images = textures_.ownedGpuMemoryStats();
+        render::GpuOwnedMemoryStats result=particle;
+        result.textureKnownBytes=
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                result.textureKnownBytes,images.textureKnownBytes);
+        result.bufferKnownBytes=
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                result.bufferKnownBytes,images.bufferKnownBytes);
+        result.textures+=images.textures;
+        result.buffers+=images.buffers;
+        result.unknownTextures+=images.unknownTextures;
+        result.unknownBuffers+=images.unknownBuffers;
+        result.multiVersionBuffers+=images.multiVersionBuffers;
+        return result;
+    }
 
 private:
+    struct GpuEventInbox {
+        uint8_t viewer=0;
+        bool active=false;
+        std::unordered_set<uint16_t> permitted;
+        std::deque<fx::SpectraFxCue> pending;
+        uint64_t dropped=0;
+    };
+    fx::SpectraFxGpuRouteAsset::Routes gpuRoutes_;
+    std::unique_ptr<fx::SpectraFxGpuEmitterLibrary> gpuLibrary_;
+    std::unique_ptr<fx::SpectraFxHybridPlayback> gpuPlayback_;
+    std::shared_ptr<GpuEventInbox> gpuInbox_;
     fx::ParticleSystem ps_;
     game::RtsFx bridge_;
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites

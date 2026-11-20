@@ -541,7 +541,7 @@ public:
         requireReadOwnerThread("gpuOwnerEstimate");
         GpuOwnerEstimate result;
         const auto max=std::numeric_limits<uint64_t>::max();
-        auto add=[max](uint64_t& dst,uint64_t value) {
+        auto add=[](uint64_t& dst,uint64_t value) {
             dst=value>max-dst?max:dst+value;
         };
         for(const auto& [key,model]:models_) {

@@ -1,5 +1,5 @@
 #include <aiverselib/animation/EcsAnimationSystems.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -19,13 +19,13 @@ int main() {
     physics.enabled=true;
     auto& recovery=w.add<AnimationRecoveryComponent>(e);
     stepAnimationPresentation(w,.01f);
-    assert(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x-4.f)<.001f);
+    AIVERSE_TEST_CHECK(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x-4.f)<.001f);
     recovery.requested=true;recovery.duration=.5f;
     recovery.from=w.get<AnimationPoseComponent>(e).local;
     physics.enabled=false;
     stepAnimationPresentation(w,.25f);
-    assert(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x-2.f)<.001f);
+    AIVERSE_TEST_CHECK(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x-2.f)<.001f);
     stepAnimationPresentation(w,.25f);
-    assert(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x)<.001f);
+    AIVERSE_TEST_CHECK(std::abs(w.get<AnimationPoseComponent>(e).local[0].t.x)<.001f);
     return 0;
 }

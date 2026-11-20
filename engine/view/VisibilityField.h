@@ -12,6 +12,7 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/render/NativePresentationRetirement.h"
+#include "engine/render/GpuOwnedMemory.h"
 
 namespace aiverse::view {
 
@@ -145,6 +146,12 @@ public:
         if(!dev_)return true;
         if(dev_!=&dev)throw std::logic_error("VisibilityField retirement: wrong device");
         return retired_.collect(dev);
+    }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        c.buffer(vb_);c.buffer(ib_);c.texture(tex_);
+        return c.stats();
     }
     // Draws the sheet (Renderer3D custom draw after the scene). `cells`: weak tier forces Cells.
     void draw(render::Renderer3D& r, double time, bool lowTier);

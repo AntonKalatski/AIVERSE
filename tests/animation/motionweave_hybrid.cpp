@@ -1,7 +1,7 @@
 // Serial vs hybrid MotionWeave graph parity; callback remains on main thread.
 #include <aiverselib/motionweave/MotionWeave.h>
 #include <atomic>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 #include <thread>
 #include <vector>
@@ -51,16 +51,16 @@ int main(){
     for(int frame=0;frame<5;++frame){
         MotionWeave::update(a,.05f);
         auto stats=MotionWeave::update(b,.05f,scheduler);
-        assert(stats.eligible==100);
-        assert(stats.serialEntities==6);
-        assert(stats.parallelEntities==94);
-        assert(stats.usedWorkers==(scheduler.workerCount()>0));
-        assert(!offThread.load());
+        AIVERSE_TEST_CHECK(stats.eligible==100);
+        AIVERSE_TEST_CHECK(stats.serialEntities==6);
+        AIVERSE_TEST_CHECK(stats.parallelEntities==94);
+        AIVERSE_TEST_CHECK(stats.usedWorkers==(scheduler.workerCount()>0));
+        AIVERSE_TEST_CHECK(!offThread.load());
         for(size_t i=0;i<aa.size();++i) {
             const auto& s=a.get<AnimationPoseComponent>(aa[i]);
             const auto& p=b.get<AnimationPoseComponent>(bb[i]);
-            assert(s.valid && p.valid && s.local.size()==p.local.size());
-            assert(std::abs(s.local[0].t.x-p.local[0].t.x)<1.e-4f);
+            AIVERSE_TEST_CHECK(s.valid && p.valid && s.local.size()==p.local.size());
+            AIVERSE_TEST_CHECK(std::abs(s.local[0].t.x-p.local[0].t.x)<1.e-4f);
         }
     }
 }

@@ -16,6 +16,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "TextureCodec.h"
+#include "GpuOwnedMemory.h"
 #include "graph/ShaderGraph.h"
 
 namespace aiverse::render {
@@ -80,6 +81,18 @@ struct Image {
     gfx::TextureHandle tex;
     bool borrowedTexture = false; // owner must outlive this image; never released here
     bool gpuCompressed = false;     // uploaded as GPU blocks (KTX2)
+    // Opt-in VT base-colour coarse fallback. When >0, uploadImage() uploads
+    // ONLY a downsampled RGBA8 version, not the full source texture.
+    // Configure before the first GPU upload and after packing the source
+    // into immutable virtual pages. Do not set on images also sampled by
+    // non-VT materials or alpha-sensitive shader paths.
+    int virtualFallbackMaxDimension = 0;
+    // Alpha-preserving masked VT images keep original-resolution R8
+    // coverage separately from the downsampled RGBA8 colour fallback.
+    // Only configured before upload and owned by the model; the normal
+    // TextureCache must never receive either reduced texture.
+    bool virtualFallbackPreserveAlpha = false;
+    gfx::TextureHandle virtualAlphaMask;
 };
 
 // 60 bytes, one interleaved stream for every model (unskinned meshes leave joints/weights zero).
@@ -192,9 +205,20 @@ struct Model {
     // from its GLB alone. The default still prepares compatible material/shadow batches.
     struct Batching {
         bool mergeRigid = false;
+        // Per-asset shared GPU geometry pool admission. Inherit uses the
+        // current global upload policy; Dedicated always uses separate VB/IB;
+        // AllowRigidLods opts in safe rigid LODs for only this Model.
+        // Backend/safe/size gates continue to take precedence.
+        enum class GeometryPoolPolicy : uint8_t {
+            Inherit = 0, Dedicated = 1, AllowRigidLods = 2
+        };
+        GeometryPoolPolicy geometryPoolPolicy = GeometryPoolPolicy::Inherit;
         // Generate missing LOD meshes during CPU preparation. Explicit
         // authored LOD chains always win; generated LODs never merge nodes.
         bool autoLod = true;
+        // Dynamic CPU-authored model vertices may be patched via Device::updateBuffer.
+        // Such models must own their GPU VB instead of sharing an immutable pool page.
+        bool allowGeometryPool = true;
         float maxExtent = 20.0f;
         std::vector<std::string> preserveNodes; // preserve node and its descendants by exact name
         // CPU-side instance counts, not GPU draw calls (shadows and instancing differ).
@@ -209,6 +233,22 @@ struct Model {
         std::string reason; // e.g. source already has LOD, unsupported model
     } autoLod;
     bool uploadPrepared = false;
+    // Monotonic content revision used by opt-in CPU caches. In-place changes to
+    // bind transforms, nodes or geometry must call markGeometryChanged().
+    // Material factors alone do not alter cached geometric transforms.
+    uint64_t geometryRevision = 1;
+    void markGeometryChanged() noexcept {
+        if (++geometryRevision == 0) ++geometryRevision;
+    }
+    // Explicit identity revision for the materials, texture bindings, and
+    // shader graphs belonging to this Model. Call after in-place edits or
+    // texture content updates that preserve GPU handle IDs. Needed only for
+    // the opt-in versioned material-owner cache; ordinary batching still
+    // validates live GPU state each draw.
+    uint64_t materialRevision = 1;
+    void markMaterialChanged() noexcept {
+        if (++materialRevision == 0) ++materialRevision;
+    }
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
@@ -229,6 +269,9 @@ struct Model {
     // An empty page means legacy dedicated per-model buffers.
     std::shared_ptr<GeometryPoolPage> geometryPoolPage;
     uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
+    // Byte extents of the reserved rigid geometry page pair, retained after
+    // uploadModel releases CPU vertices/indices. Zero for dedicated models.
+    uint32_t gpuPoolVertexBytes = 0, gpuPoolIndexBytes = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;
@@ -311,6 +354,10 @@ bool readModelImage(const std::string& path, const FileReader& read, Image& imag
 // Returns false if the GPU did not create a valid texture handle.
 bool uploadStandaloneImage(gfx::Device& dev, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
+// Unique owned model data (dedicated non-pooled vb/ib, nonborrowed images,
+// morph/baked textures). Shared model texture cache and pooled geometry pages
+// belong to their own owners and MUST NOT be counted through Model.
+void appendModelOwnedGpuMemory(const Model& m, GpuOwnedMemoryCounter& counter);
 void releaseModel(gfx::Device& dev, Model& m);
 
 } // namespace aiverse::render

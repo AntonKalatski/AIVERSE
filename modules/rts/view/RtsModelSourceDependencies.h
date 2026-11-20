@@ -120,6 +120,18 @@ private:
         }
         return false;
     }
+    static bool choicesUseLibrary(const Json& choices) {
+        if(choices.isObject()) {
+            if(choices["use"].isString() || choices["base"].isString())
+                return true;
+            for(const auto& [name,choice]:choices.members()) {
+                (void)name;
+                if(usesLibrary(choice))return true;
+            }
+            return false;
+        }
+        return usesLibrary(choices);
+    }
     void add(const std::string& source,ModelSourceKind kind,size_t type) {
         const std::string path=normalize(source);
         if(path.empty() || path.rfind("shape:",0)==0)return;
@@ -173,7 +185,8 @@ private:
         // Index every authored graph path, without interpreting graph nodes.
         collectGraphFiles(view,type);
         collectTextures(view,type);
-        if(usesLibrary(view["materials"]) || usesLibrary(view["assign"]))
+        if(choicesUseLibrary(view["materials"]) ||
+           choicesUseLibrary(view["assign"]))
             libraryUsers_.insert(type);
     }
 

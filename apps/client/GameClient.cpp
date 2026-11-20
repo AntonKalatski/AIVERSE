@@ -1,4 +1,5 @@
 #include "engine/platform/WindowSettings.h"
+#include "engine/render/PrismaVolumeData.h"
 #include "modules/rts/RtsInitialVars.h"
 #include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
@@ -27,6 +28,7 @@
 #include <vector>
 
 #include "engine/render/TextureCache.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
 #include "StartPlayers.h"
@@ -127,11 +129,11 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
-        postFx_.setGpuDeviceLease(gpuDeviceLease_);
-        postFx_.init(dev);
-        postFxBase_ = render::PostFx::defaultQualityFor(dev, platform::isTouchDevice());
-        postFx_.setQuality(postFxBase_);
-        postFx_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
+        prisma_.setGpuDeviceLease(gpuDeviceLease_);
+        prisma_.init(dev);
+        prismaBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
+        prisma_.setQuality(prismaBase_);
+        prisma_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
             std::string bytes;
             return platform::readContentFile(path, bytes) && render::decodeImage(bytes, w, h, rgba);
         });
@@ -289,9 +291,10 @@ void GameClient::shutdown() {
     fx_.shutdown();
     sound_.detach();
     audio_.shutdown();
+    horizonFrameTiming_.detach(*dev_);
     if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
     view_.shutdown(*dev_);
-    postFx_.shutdown();
+    prisma_.shutdown();
     r3d_.setBakedLighting(nullptr);
     baked_.release();
     r3d_.shutdown();
@@ -308,13 +311,22 @@ void GameClient::shutdown() {
     dev_=nullptr;
 }
 
-void GameClient::configurePostFx(const Json& map) {
-    postFx_.configure(manifest_["postfx"], map["postfx"]);
-    postFx_.setQuality(postFxBase_);
+void GameClient::configurePrisma(const Json& map) {
+    prisma_.configure(manifest_["postfx"], map["postfx"]);
+    std::vector<std::string> prismaWarnings;
+    prismaVolumes_ = render::parsePrismaVolumes(manifest_["prismaVolumes"], map["prismaVolumes"], &prismaWarnings);
+    for (const auto& issue : prismaWarnings)
+        std::fprintf(stderr, "[prisma] %s\n", issue.c_str());
+    prisma_.setQuality(prismaBase_);
 }
 
 void GameClient::startMatch(size_t idx, const Json& initialVars) {
     if (idx >= maps_.size() || netMatch_) return;
+    // A new map/game is a camera cut. Retire the old view's private
+    // exposure + motion history without releasing shared render sizes.
+    prisma_.retireView(3ULL);
+    r3d_.retireObjectMotionView(3ULL,
+        dev_ ? dev_->gpuSubmissionFence() : 0);
     std::string text;
     if (!platform::readContentFile(maps_[idx].file, text)) { error_ = "map not found: " + maps_[idx].file; return; }
     Json map;
@@ -345,6 +357,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         cityPrepare(rules, map);   // AIVERSE_CITY: a seat in a city on a server (ClientCity.cpp)
         sim_->setup(rules, map);
         cityAttach();
+        horizonFrameTiming_.detach(*dev_);
         if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
         // static scenery streamed around the camera instead of being loaded whole. The key is "streamedWorld" here:
         // in these maps "world" is the planet system (FPS maps keep the same block under "world")
@@ -359,7 +372,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         if (viewScripts_.load(*sim_, rules, map, uint8_t(spectator_ ? 0 : human_))) viewScripts_.attach(*sim_);
         view_.lights().configure(manifest_["lighting"], map["lighting"], map["lights"]); // day/night, map lights
         if (auto pe = game::configurePlayerColors(manifest_["playerColors"]); !pe.empty()) std::fprintf(stderr, "%s\n", pe.c_str());
-        configurePostFx(map);
+        configurePrisma(map);
         configureBakedLighting(maps_[idx].file);
         quality_.reset(int(r3d_.shadowQuality()), int(r3d_.lights.quality()));
     } catch (const std::exception& e) {
@@ -1012,6 +1025,10 @@ void GameClient::runViewScripts(float dt) {
 
 void GameClient::frame(gfx::Device& dev, double dt) {
     lensCameras_.collectRetiredTargets();
+    // Even on menus/loading screens there may be previous per-view motion
+    // textures awaiting the GPU completion fence from an old match.
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     // WorldScene unloads can retain a Model after its last resident cell
     // leaves; only the real Device owner frame hook can enqueue a final GPU
     // retirement token, never a streaming worker or View draw callback.
@@ -1031,10 +1048,18 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         r3d_.collectRetiredTargets();
     if(r3d_.hasPendingModelPipelineJobs())
         r3d_.pollPendingModelPipelineJobs();
-    if(postFx_.pendingTargetRetirements()!=0)
-        postFx_.collectRetiredTargets();
     const auto frameStarted = std::chrono::steady_clock::now();
-    if (mapLoading_) { frameMapLoading(dev, dt); return; }
+    if (mapLoading_) {
+        horizonFrameTiming_.discard();
+        // This frame does not render camera 3: retire stale motion/exposure
+        // history from the previous scene using the GPU submission token.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+        frameMapLoading(dev, dt);
+        return;
+    }
+    if (!worldScene_ || !sim_ || planet()) horizonFrameTiming_.discard();
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
     if (sim_ && screen_ == Screen::Playing) updateBackgroundLoading();
     const double backgroundMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStarted).count();
@@ -1110,8 +1135,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             r3d_.lights.setQuality(aiverse::render::LightQuality(quality_.lights()));
             shadowQuality_ = boundShadowQuality_ = quality_.shadows();
             // post effects follow: one tier down per governor step, but keep the cheap look (low)
-            if (postFxBase_ != render::PostFxQuality::Off)
-                postFx_.setQuality(render::PostFxQuality(std::max(1, int(postFxBase_) - quality_.stepsDown())));
+            if (prismaBase_ != render::PrismaQuality::Off)
+                prisma_.setQuality(render::PrismaQuality(std::max(1, int(prismaBase_) - quality_.stepsDown())));
         }
 
         steerPossessed();
@@ -1146,7 +1171,14 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing) { topDownPresent(dt, alpha); topDownCamera(dt); }
     }
 
-    if (sim_ && ensureLocalAssets()) { frameMapLoading(dev, dt); return; }
+    if (sim_ && ensureLocalAssets()) {
+        // Asset-loading output has no active 3D presentation camera.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+        frameMapLoading(dev, dt);
+        return;
+    }
 
     luaTick(dt);   // game.on("update", fn) in UI scripts
     updateAudio(dt);
@@ -1172,12 +1204,42 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
         }
         if (worldScene_ && !planet()) {   // load / unload chunks for where the camera looks (GPU uploads: before the scene pass)
+            horizonFrameTiming_.begin(dev,worldScene_.get());
             const Vec3 focus{Fixed::fromInt(int64_t(cam_.target.x)), Fixed{}, Fixed::fromInt(int64_t(cam_.target.z))};
             const auto worldStarted=std::chrono::steady_clock::now();
             worldScene_->update(dev, {&focus, 1}, worldRadius_);
             worldMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-worldStarted).count();
         }
-        r3d_.beginScene(cam_, fbW(), fbH());
+        prisma_.setViewId(3ULL);
+        prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
+        // The running game has priority over auxiliary editor previews.
+        // Up to 256 MiB for two camera-owned output HDR histories.
+        prisma_.setViewQualityPolicy(3ULL,{224,256});
+        const auto viewAssets=view_.ownedPresentationGpuMemoryStats(dev);
+        const auto fxAssets=fx_.ownedGpuMemoryStats();
+        const auto streamed=worldScene_
+            ? worldScene_->ownedGpuMemoryStats(dev) : render::GpuOwnedMemoryStats{};
+        prisma_.setExternalPresentationAssetsGpuMemory(
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                render::GpuOwnedMemoryCounter::saturatingAdd(
+                    viewAssets.knownBytes(),fxAssets.knownBytes()),
+                streamed.knownBytes()));
+        const auto rendererMemory=r3d_.residentMemoryStats();
+        prisma_.setExternalRendererGpuMemory(
+            rendererMemory.liveTextureKnownBytes+
+            rendererMemory.liveBufferKnownBytes,
+            rendererMemory.pendingMotionKnownBytes);
+        prisma_.setExternalGeometryPoolGpuMemory(
+            render::geometryPoolStats(dev).allocatedBytes);
+        // Presentation-only Halton jitter: gameplay aiming, viewport picking,
+        // UI and input continue to use the original unjittered cam_.
+        const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
+        const render::RTSCamera renderCam = prisma_.jitteredCamera(cam_,renderW,renderH);
+        // SpectraFX GPU simulation is encoded before the scene pass.
+        fx_.setPlanetView(planet() ? &view_ : nullptr);
+        fx_.prepareGpuFrame(screen_ == Screen::Playing || screen_ == Screen::Over
+                                ? float(std::clamp(dt,0.0,0.1)) : 0.0f,cam_);
+        r3d_.beginScene(renderCam,renderW,renderH);
         if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
         {   // input state for the overlays (placement footprint / build grids, held keys, modes, cursor)
@@ -1217,8 +1279,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
-        fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
-        fx_.update(*sim_, scene_, cam_, r3d_.viewProj(), fbW(), fbH(),
+        fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
         runViewScripts(screen_ == Screen::Playing ? float(dt) : 0.0f);
@@ -1245,10 +1306,22 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
-        r3d_.render(pass, &postFx_);
+        r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
+        // GPU billboards share this scene depth/pass; no separate pass and no
+        // duplicate CPU draw of GPU-owned hybrid emitter instances.
+        fx_.renderGpu(r3d_.viewProj(),cam_);
+        // PRISMA: current-frame particle alpha/depth coverage for MotionBlur.
+        // Callback runs only when the HDR motion/reactive pass is active;
+        // it reuses particle geometry already submitted by fx_.render().
+        if (fx_.particles().hasReactiveGeometry())
+            r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                    gfx::TextureHandle sceneDepth, int width, int height) {
+                fx_.particles().renderReactive(gpu,sceneDepth,width,height);
+            });
         r3d_.lighting.fogDensity = fogBase;
-        r3d_.resolvePostFx();   // post effects (if any) under the HUD
+        r3d_.resolvePrisma();   // post effects (if any) under the HUD
+        prisma_.clearCameraVolumes();
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
         topDownDraw();
@@ -1301,6 +1374,16 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
                 result.submitted,result.skipped,result.diagnostics.size());
     }
+    if (!sim_) {
+        // Menu-only output: no active camera view; avoid keeping the
+        // previous match's private histories and size caches indefinitely.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+    }
+    // CPU includes full client callback work (not clamped simulation dt);
+    // GPU completion is matched later through the tagged gfx query.
+    horizonFrameTiming_.finish(worldScene_.get(),frameStarted);
     if (std::getenv("AIVERSE_STREAM_TRACE") && sim_ && !mapLoading_) {
         static auto previous = frameStarted;
         const double interval = std::chrono::duration<double,std::milli>(frameStarted-previous).count(); previous=frameStarted;

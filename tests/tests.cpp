@@ -3,6 +3,7 @@
 #include "engine/render/NativeMeshBatch.h"
 #include "engine/render/FramePublicationEpoch.h"
 #include "engine/render/OwnerPrepareCommit.h"
+#include <cstdlib>
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -14,6 +15,7 @@ extern "C" {
 #include <filesystem>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -12484,6 +12486,9 @@ public:
     aiverse::gfx::PipelineHandle createPipeline(const aiverse::gfx::PipelineDesc& d) override { pipes.push_back(d); return {uint32_t(pipes.size())}; }
     void destroyPipeline(aiverse::gfx::PipelineHandle) override {}
     const std::string& lastError() const override { return err_; }
+    // Recording-only RHI; draw calls capture CPU state with no submitted GPU
+    // work. Explicitly confirm the idle barrier required by Renderer3D.
+    bool waitForResourceIdle() override { return true; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
     bool waitForResourceIdle() override { return true; } // synchronous CPU fake
@@ -16491,8 +16496,18 @@ TEST(lens_topology_preparation_budget_rejects_before_gpu_and_recovers) {
 }
 
 int main(int argc, char** argv) {
+    // Diagnostic-only crash localization. CTest captures and buffers stdout,
+    // so the last visible [ OK ] line can precede the actual crashing case
+    // by many tests. Stderr is explicitly flushed before EACH invocation.
+    // No output/timing overhead unless AIVERSE_TEST_TRACE=1.
+    const char* traceEnv = std::getenv("AIVERSE_TEST_TRACE");
+    const bool trace = traceEnv && std::string(traceEnv) == "1";
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]
+        if (trace) {
+            std::fprintf(stderr, "[ RUN ] %s\n", name);
+            std::fflush(stderr);
+        }
         int before = g_failed;
         try { fn(); }
         catch(const std::exception& error) {
@@ -16502,6 +16517,11 @@ int main(int argc, char** argv) {
         catch(...) {
             ++g_failed;
             std::fprintf(stderr,"[EXCEPTION] %s: unknown exception\n",name);
+        }
+        if (trace) {
+            std::fprintf(stderr, "[ DONE ] %s (%s)\n", name,
+                         g_failed == before ? "OK" : "FAIL");
+            std::fflush(stderr);
         }
         std::printf("%s %s\n", g_failed == before ? "[ OK ]" : "[FAIL]", name);
         std::fflush(stdout);

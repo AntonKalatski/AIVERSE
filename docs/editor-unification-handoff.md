@@ -1742,7 +1742,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `91a80fbab26ddbe5f7a28e4a45b7f12e4866944d`.
 - Added `tests/fps/projectile_spawn.inc` with `ecsProjectileSpawnAuthorityParity` run in both deep and COW snapshot modes. Uses production input commands to fire an ordinary bullet and throw Frag/Smoke/Flash actions, and compares legacy vs `ecsAuthority` state/checksums/actor fields and every `ProjectileRuntime` kind/ID/order/velocity/position/damage via `DynamicEntityIndex` after each tick. Verifies all three throwables existed, object ID counter advanced, v9 cross-mode save load, pre-fuse rollback, 10-tick continuation and replay checksum.
 - **Verification:** GitHub test source added, **not yet referenced from `tests/fps/tests.cpp` main**, native C++ compilation and execution not performed. Requires normal FPS test data and CTest. The helper's immediate creation is verified in source; after-tick fixture alone cannot distinguish whether an entity was created before `fps.ecsMirror`.
-- **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status. 
+- **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status.
 
 
 ### 2026-11-18 — FPS weapon/grenade ECS spawn parity fixture wired into built-in suite
@@ -2054,3 +2054,28 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Mac Studio CTest 106/106 PASS, extras unverified
 - Owner's uploaded `configure(3).log`, `build(3).log`, `ctest(2).log`, JUnit XML and `summary(3).txt` confirm local tested SHA `dd711f5e`: configure/build PASS, CTest 106 passed / 0 failed in 869.69s. All previous seven CTest failures are resolved. Current incremental build log has no warning/error diagnostics; not evidence for a clean rebuild.
 - Summary ends immediately after `PASS ctest`; standalone `extra-*` results **NOT VERIFIED**. No game or test code changes. See `docs/agent-handoffs/unified-test-runner.md` for exact evidence and next validation.
+
+### 2026-11-18 — PHYSIS Scene overlay and document Inspector extension (external PR #25)
+
+- **Branch:** `feature/physis-nature-simulation` (draft PHYSIS PR #25), after main merge `810feba70f01cdc35003ac80ea8486f39dc16049`. This note coordinates PHYSIS editor changes; **do not mark any editor-unification PR #7 acceptance gate complete** on this basis.
+- **Changed files:** `apps/editor/PhysisSceneOverlay.h` (read-only camera projection), `apps/editor/windows/SceneWindow.cpp` (optional debug draw call), `apps/editor/windows/PhysisWindow.cpp` (Scene overlay toggles), `apps/editor/PhysisAuthoring.h` (map authoring validation / Undo), and `apps/editor/windows/InspectorWindow.cpp` (MapProps PHYSIS dialog with JSON+structured configuration).
+- **Genre independence:** Scene overlay consumes PHYSIS `State` through common `Simulation::world()`; no new FPS or RTS Inspector switch, no PHYSIS ECS writes from editor UI, no fake scene entities. The PHYSIS map editor supports both traditional `MapData.extra` and FPS verbatim map JSON using `MapDoc::beginEdit` for a single Undo step.
+- **API:** `engine/physis/PhysisProjectConfig.h` supplies generic opt-in `installFromMap(Simulation&, Json map)` for native games only; editor itself does not auto-install or mutate PHYSIS runtime state.
+- **Actual checks:** source review and GitHub commits only; `aiverse_editor` build, CTest, macOS launch/drag/click/screenshot **NOT RUN**. Studio validation workflow now builds PHYSIS authoring + Scene geometry fixtures, but no PASS log inspected.
+- **Next editor-unification owner:** inspect the new Scene/Inspector side effects in the unified editor build, ensure UI collision-free with current Selection/MapProps/Undo/Redo and the InputFlow changes merged from main, and record exact failures/screenshots. PHYSIS retains ownership of its debug UI and generic runtime config parser; do not duplicate editor camera or entity selection stacks.
+
+### 2026-11-18 — PHYSIS authored field Gizmos and shared Inspector properties (PR #25)
+- **Ownership:** PHYSIS branch `feature/physis-nature-simulation` extends the common `SceneWindow` with opt-in map-authored PHYSIS W/S/G marker hit-testing/movement and `InspectorWindow::mapProps` with reusable field property UI; the field authorship code lives in `apps/editor/PhysisFieldEditor.h` and `PhysisAuthoring.h`. No new FPS- or RTS-specific editor stack.
+- **Input safety:** markers receive left mouse events only when explicitly enabled and only after a projected marker hit; otherwise legacy RTS/FPS selection and camera input paths remain as before. The PHYSIS asset is a map-JSON asset, **not** an ECS entity selected in the native inspector. A mouse drag uses one MapDoc Undo snapshot (first movement), and remaining movement calls `touched` with no extra snapshots. Shift moves vertically. Direct live PHYSIS ECS mutation is forbidden.
+- **Data source:** `engine/physis/PhysisFieldAssets.h` is a common genre-neutral map field parser. `installFromMap` creates WindZone/StormEvent/GravityField ECS entities sorted by stable unique JSON IDs after up-front validation; no new genre-native path or NEREID/Terra ownership collision.
+- **Validation:** code committed, `physis_field_assets`/`physis_field_authoring` CTests authored and CMake/Studio CI registered. **Build, CTest, macOS interactive Scene pick/drag, Inspector Undo/Redo, screenshot/perf NOT RUN**. Stage 19 handoff: `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`.
+- **Next editor owner:** build the actual `aiverse_editor` after main merge, verify mouse-gizmo hit/drag/UI in both FPS and RTS maps and ensure duplicate PHYSIS MapProps panel IDs do not interfere with undo/redo in Studio. Preserve generic Selection ownership and document limitations.
+
+## 2026-11-20 — Prisma/MotionWeave merge checkpoint
+
+Integration branch `integration/prisma-motionweave-view`; merge `fc46059ee6523cbc1f04f8c412d44e4fdae9398a`.
+See [complete merge handoff](handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
+owner and one editor viewport target owner, both animation playback APIs and GPU
+fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
+merge only. Remote documentation and latest MotionWeave merge/push remain next.

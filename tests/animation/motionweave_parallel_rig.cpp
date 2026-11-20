@@ -1,5 +1,5 @@
 #include <aiverselib/motionweave/MotionWeave.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -21,7 +21,7 @@ int main(){
             "effectors":[{"bone":"foot","target":"target"}]
           }]}],
         "output":"ik"})"));
-    assert(workerSafeGraph(*graph));
+    AIVERSE_TEST_CHECK(workerSafeGraph(*graph));
     World serial,parallel;
     auto create=[&](World& w) {
         std::vector<Entity> es;
@@ -39,12 +39,12 @@ int main(){
     MotionWeaveScheduler scheduler(3);
     MotionWeave::update(serial,.033f);
     const auto stats=MotionWeave::update(parallel,.033f,scheduler);
-    assert(stats.serialEntities==0 && stats.parallelEntities==80);
-    assert(stats.usedWorkers==(scheduler.workerCount()>0));
+    AIVERSE_TEST_CHECK(stats.serialEntities==0 && stats.parallelEntities==80);
+    AIVERSE_TEST_CHECK(stats.usedWorkers==(scheduler.workerCount()>0));
     for(int i=0;i<80;++i) {
         auto& x=serial.get<AnimationPoseComponent>(a[size_t(i)]);
         auto& y=parallel.get<AnimationPoseComponent>(b[size_t(i)]);
-        assert(x.valid && y.valid);
-        assert(std::abs(x.local[0].t.x-y.local[0].t.x)<1.e-4f);
+        AIVERSE_TEST_CHECK(x.valid && y.valid);
+        AIVERSE_TEST_CHECK(std::abs(x.local[0].t.x-y.local[0].t.x)<1.e-4f);
     }
 }

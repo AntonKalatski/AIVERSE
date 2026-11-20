@@ -101,12 +101,28 @@ public:
     bool openByDefault() const override { return false; }
 
     ~ModelWindow() override {
-        // The GPU device still exists when Editor destroys its windows.
         if(rawDevice_)rawModels_.shutdown(*rawDevice_);
-        portrait_.shutdown();
+        retirePortrait();
+    }
+    void retirePortrait() {
+        if (!portraitInit_) return;
+        auto former = std::move(portrait_);
+        portrait_ = std::make_shared<game::Portrait>();
+        portraitInit_ = false;
+        if (!former || !portraitDev_) return;
+        if (!gpuResourceOwner_) {
+            // Standalone owner: requires its existing GPU-idle teardown.
+            former->shutdown();
+            return;
+        }
+        gfx::Device& gpu = *portraitDev_;
+        gpuResourceOwner_->retireOwned(gpu,
+            [former = std::move(former)] { former->shutdown(); });
     }
 
     void draw(Editor& ed) override {
+        gpuResourceOwner_ = &ed.gpuResourceRetirement();
+        portraitDev_ = &ed.device();
         const auto& types = ed.rules().types;
         if (types.empty()) { ImGui::TextDisabled("Нет типов"); return; }
         if (ed.selection.kind == Selection::Type) {
@@ -149,7 +165,7 @@ public:
         }
         if(canShowRaw)ImGui::Checkbox("Исходная 3D-модель (без overrides)",&rawMode_);
         else rawMode_=false;
-        if (!portraitInit_) { portraitInit_ = true; portrait_.init(ed.device(), 256); }
+        if (!portraitInit_) { portraitInit_ = true; portrait_->init(ed.device(), 256); }
         time_ += ImGui::GetIO().DeltaTime;
         bool rawDrawn=false;
         if(rawMode_ && canShowRaw) {
@@ -189,7 +205,7 @@ public:
             const auto sceneLease=ownerGroup.registerScoped(
                 deviceEpoch,ed.view().modelResources());
             const auto portraitLease=ownerGroup.registerScoped(
-                deviceEpoch,portrait_.modelResources());
+                deviceEpoch,portrait_->modelResources());
             const auto rawLease=ownerGroup.registerScoped(
                 deviceEpoch,rawModels_.resources());
             ownerGroup.setEstimatedBudgetBytes(256ull*1024ull*1024ull);
@@ -221,17 +237,17 @@ public:
             if(admission)rawModels_.load(ed.device(),current->path);
 #endif
             if(rawModels_.find(current->path))
-                rawDrawn=portrait_.renderStaticModel(
+                rawDrawn=portrait_->renderStaticModel(
                     rawModels_,current->path,0.5f);
             else ImGui::TextDisabled("Загрузка исходной модели...");
         }
         if(!rawDrawn)
-            portrait_.render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
-        if (portrait_.texture().valid()) {
+            portrait_->render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
+        if (portrait_->texture().valid()) {
             const bool flip = ed.device().info().renderTargetFlipY;
             const float side = std::clamp(ImGui::GetContentRegionAvail().x, 120.0f, 260.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - side) * 0.5f);
-            ImGui::Image(ImTextureRef(ImTextureID(portrait_.texture().id)), ImVec2(side, side), ImVec2(0, flip ? 0.f : 1.f), ImVec2(1, flip ? 1.f : 0.f));
+            ImGui::Image(ImTextureRef(ImTextureID(portrait_->texture().id)), ImVec2(side, side), ImVec2(0, flip ? 0.f : 1.f), ImVec2(1, flip ? 1.f : 0.f));
         }
         const std::string& tid = types[size_t(type_)].id;
         for (const auto& w : ed.view().warnings())
@@ -288,6 +304,10 @@ public:
     }
 
     void update(Editor& ed, double dt) override {
+        // Dock-hidden and closed tabs do not need live 3D preview resources.
+        // Archive the complete previous Portrait until backend GPU completion.
+        if (portraitInit_ && (!open || !ed.isWindowInFront(this)))
+            retirePortrait();
         if (!opRegistered_) {
             opRegistered_ = true;
             ed.ws().registerOp({"model_info", "Contents of the model of a unit type (clips, nodes, materials, variants) and its view warnings.",
@@ -316,7 +336,10 @@ private:
     int type_ = 0, owner_ = 1;
     double time_ = 0;
     bool portraitInit_ = false, opRegistered_ = false;
-    game::Portrait portrait_;
+    std::shared_ptr<game::Portrait> portrait_ =
+        std::make_shared<game::Portrait>();
+    render::GpuResourceRetirement* gpuResourceOwner_ = nullptr;
+    gfx::Device* portraitDev_ = nullptr;
     // Owned by the editor Model panel; the default type preview does not
     // borrow from this independent native-source cache.
     render::ModelAssetProvider rawModels_;

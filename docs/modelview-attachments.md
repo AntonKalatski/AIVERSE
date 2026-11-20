@@ -71,3 +71,62 @@ until the full test pass.
 This Stage 154 functionality is **source implemented only**. CMake build, CTest, actual render,
 Metal/Vulkan/GLES, GPU fence failure injection, sanitizer and perf verification have not been run.
 Continue from [Stage 154 handoff](agent-handoffs/animation-stage154-modelview-attachment-workflow-2026-11-19.md).
+
+
+## Stage 157 — full on-disk Model file reimport
+
+ModelView now provides TWO distinct operations:
+
+- **Rebuild** only recompiles the selected attachment layout against Models that
+  are currently resident in the ModelAssetProvider, including changes to named
+  socket assignments and enabled children.
+- **Reload model files** re-reads the parent and EVERY enabled child Model file
+  from disk into a NEW, independent native ModelAssetProvider. It stages new
+  parent Animators, published appearances and compiled sockets together. A
+  failed file upload, missing Model or invalid socket leaves the existing
+  visible parent/child scene active. On successful validation it swaps the
+  entire visual source generation at the next render-owner frame boundary.
+
+To request reload automatically when an existing file is edited on disk:
+
+```sh
+aiverse_modelview models/hero.glb@Walk \
+  --attachments-file assets/hero.attachments.json \
+  --watch-model-files
+```
+
+Or launch without `--watch-model-files`, click **Reload model files** in
+the Attachments window whenever source Model files change, or enable
+**Watch source files** in the window. Timestamp polling is intentionally
+lightweight (once per second, on the render-owner thread). It tracks filesystem
+last-modified timestamps of the parent and enabled child paths, not arbitrary
+virtual archive URLs. The observer records each changed timestamp once, so a
+failed candidate does not cause an unbounded continuous retry storm; modify
+the file again or click Reload to retry. The JSON layout itself is still
+reloaded using its own normal authoring workflow, not the Model watcher.
+
+For a compatible named animation clip, the parent Animator is re-created
+against the NEW Model and its normalized layer-zero clip phase is restored
+using `Animator::seek`. If a clip was removed or renamed, that instance
+falls back to its new bind pose instead of interpreting an old clip index
+on a changed skeleton. World placement and UI variant selection remain in
+the viewer.
+
+The OLD provider, old Animator instances and borrowed published Model
+snapshots remain alive together in a deferred retirement queue until the
+GPU owner has proven all prior submissions completed. An advisory cap of
+eight retired source generations triggers a full GPU-idle cleanup, and final
+ModelView shutdown also requires a full idle barrier. This is NOT fully
+async per-provider GPU token retirement: it can still stall at the cap and
+temporarily retain multiple sets of GPU Models/textures. If GPU completion
+cannot be proven, old GPU owners are retained instead of being unsafely
+destroyed.
+
+The new path has **NOT YET** passed native CMake/C++ compile, CTest,
+Metal/Vulkan/GLES visual tests, failure-injection or memory/crowd profiling.
+It is a committed source implementation, not a guarantee of live tested
+file watching or safe graphics retirement on every backend. See
+[Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md).
+
+
+A standalone `aiverse_modelview models/hero.glb --watch-model-files` invocation is also supported without any child attachments. It uses the same native provider-backed source reload, with an empty child socket layout.

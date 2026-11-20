@@ -26,7 +26,7 @@
 #include "engine/net/NetClient.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/ImGuiLayer.h"
-#include "engine/render/PostFx.h"
+#include "engine/render/Prisma.h"
 #include "engine/render/BakedLighting.h"
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
@@ -37,6 +37,7 @@
 #include "engine/sim/Simulation.h"
 #include "engine/ui/UiLayer.h"
 #include "engine/world/WorldScene.h"
+#include "engine/world/TerraWeaveHorizonFrameTimingBridge.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsLocalize.h"
 #include "modules/rts/RtsModule.h"
@@ -355,10 +356,14 @@ private:
     bool lensCamerasActive_=false;
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
+    // Stage41: ordered nonblocking CPU/GPU samples only when the streamed
+    // world's Horizon adaptive presentation quality is explicitly enabled.
+    terraweave::HorizonFrameTimingBridge horizonFrameTiming_;
     int worldRadius_ = 2;
-    render::PostFx postFx_;               // post-processing: game.json / map "postfx" (engine/render/PostFx.h)
-    render::PostFxQuality postFxBase_ = render::PostFxQuality::Medium;   // tier before the governor stepped down
-    void configurePostFx(const Json& map);
+    render::PrismaVolumeStack prismaVolumes_; // camera-local PRISMA presentation profiles, nonauthoritative
+    render::Prisma prisma_;               // post-processing: game.json / map "postfx" (engine/render/Prisma.h)
+    render::PrismaQuality prismaBase_ = render::PrismaQuality::Medium;   // tier before the governor stepped down
+    void configurePrisma(const Json& map);
     render::BakedLighting baked_;         // the map's baked lightmaps / probes, "<map>.bake" (ClientBaked.cpp, agent-lightbake)
     void configureBakedLighting(const std::string& mapFile);
     RtsView view_;

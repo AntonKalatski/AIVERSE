@@ -1,5 +1,5 @@
 #include <aiverselib/animation/AnimationJobScheduler.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::lib::animation;
@@ -27,13 +27,13 @@ int main() {
     auto aa=populate(a),bb=populate(b);
     stepAnimationPresentation(a,.25f);
     const bool used=stepAnimationPresentationParallel(b,.25f,4);
-    assert(used);
+    AIVERSE_TEST_CHECK(used);
     for(size_t i=0;i<aa.size();++i) {
         const auto& x=a.get<AnimationPoseComponent>(aa[i]);
         const auto& y=b.get<AnimationPoseComponent>(bb[i]);
-        assert(x.valid && y.valid);
-        assert(std::abs(x.local[0].t.x-y.local[0].t.x)<1.e-5f);
+        AIVERSE_TEST_CHECK(x.valid && y.valid);
+        AIVERSE_TEST_CHECK(std::abs(x.local[0].t.x-y.local[0].t.x)<1.e-5f);
     }
-    assert(canEvaluateAnimationParallel(b));
+    AIVERSE_TEST_CHECK(canEvaluateAnimationParallel(b));
     return 0;
 }

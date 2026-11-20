@@ -92,6 +92,19 @@ public:
                     double(ownedPages.allocatedBytes)/ (1024.0*1024.0));
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
+        const auto modelOwnerMemory=ed.view().ownedModelGpuMemoryStats(ed.device());
+        ImGui::TextDisabled("Model/material GPU owned: %.2f MiB, %zu textures + %zu buffers; unknown %zu",
+            double(modelOwnerMemory.knownBytes()) / mib,
+            modelOwnerMemory.textures,modelOwnerMemory.buffers,
+            modelOwnerMemory.unknownTextures+modelOwnerMemory.unknownBuffers);
+        ImGui::TextDisabled("Dedicated non-pooled geometry + owner textures only; shared geometry pages excluded.");
+        const auto presentationAssets=ed.view().ownedPresentationGpuMemoryStats(ed.device());
+        const auto particleAssets=ed.gameFx().ownedGpuMemoryStats();
+        ImGui::TextDisabled("Terrain/planet + model presentation: %.2f MiB; SpectraFX core: %.2f MiB",
+            double(presentationAssets.knownBytes())/mib,
+            double(particleAssets.knownBytes())/mib);
+        ImGui::TextDisabled("SpectraFX shader/graph textures are borrowed from their texture-cache owner; VRAM remains a lower bound.");
+        ImGui::TextDisabled("Учтён только asset pool; отдельные render targets и FX указаны ниже частично.");
         ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
                     residency.retiredModels,residency.retirementBatches,
                     residency.retirementPeak);
@@ -207,14 +220,6 @@ public:
                 (unsigned long long)ed.renderer().programRetirementOrphanBatches());
         ImGui::TextDisabled("GPU PostFx: %zu ожидающих освобождения текстур",
             ed.postFx().pendingTargetRetirements());
-        if(const auto& targets=ed.offscreenTargets();targets) {
-            ImGui::TextDisabled("GPU render targets: %zu пар ждут fence",
-                targets->pendingPairs());
-            if(targets->enqueueFailures() || targets->orphanedPairs())
-                ImGui::TextDisabled("Render targets: ошибок очереди %llu · сиротских пар %llu",
-                    (unsigned long long)targets->enqueueFailures(),
-                    (unsigned long long)targets->orphanedPairs());
-        }
         if(const auto* ring=ed.gpuRetirementDiagnostics()) {
             size_t modelEvents=0,imageEvents=0,targetEvents=0;
             for(const auto& event:ring->snapshot()) {
@@ -234,6 +239,135 @@ public:
         ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
+        ui::section(ICON_REGIONS, "PRISMA · GPU resource retirement");
+        const auto post = ed.prisma().retirementStats();
+        const auto memory = ed.prisma().memoryStats();
+        const auto motion = ed.renderer().motionRetirementStats();
+        const auto rendererOwned = ed.renderer().residentMemoryStats();
+        const auto viewport = ed.viewportRetirement().stats(ed.device());
+        const auto viewportLive = ed.viewportRetirement().liveStats(ed.device());
+        const auto objects = ed.gpuResourceRetirement().stats(ed.device());
+        ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
+                    (unsigned long long)post.lastGpuCompletedFence,
+                    post.activeSizes, post.retiredSizes);
+        ImGui::Text("Auto Exposure: %zu камер  ·  Temporal HDR: %zu камер  ·  Motion: %zu камер  ·  Model velocity: %zu видов",
+                    post.exposureViews, post.temporalViews, post.motionViews, motion.liveViews);
+        const auto scopedGpu=ed.prisma().viewGpuTimings();
+        if (scopedGpu.empty()) {
+            ImGui::TextDisabled("Per-viewport GPU timing: unavailable / opt-in Metal counters or GL33");
+        } else {
+            for (const auto& gpu : scopedGpu) {
+                const char* name=gpu.viewId==1?"Scene":gpu.viewId==2?"Game":"Custom";
+                ImGui::Text("%s GPU render region: %.3f ms (completed, %llu samples)",
+                    name,gpu.lastGpuMs,
+                    (unsigned long long)gpu.sampleSequence);
+            }
+            ImGui::TextDisabled("Per-viewport intervals may include shared shadow passes; do not sum with GPU frame time.");
+        }
+        ImGui::Text("PRISMA: %zu fenced + %zu unfenced textures, graph pending %zu",
+                    post.fencedTextures, post.unfencedTextures,
+                    post.graphRetiredTextures);
+        ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
+                    motion.fencedTextures, motion.unfencedTextures);
+        ImGui::Text("Renderer3D + owned submodules: %.2f MiB textures + %.2f MiB buffers (%zu/%zu handles)",
+            double(rendererOwned.liveTextureKnownBytes) / mib,
+            double(rendererOwned.liveBufferKnownBytes) / mib,
+            rendererOwned.liveTextures,rendererOwned.liveBuffers);
+        ImGui::TextDisabled("Renderer owned details: scene capture %.2f MiB, motion %.2f MiB, pending motion %.2f MiB",
+            double(rendererOwned.sceneCaptureKnownBytes) / mib,
+            double(rendererOwned.objectMotionKnownBytes) / mib,
+            double(rendererOwned.pendingMotionKnownBytes) / mib);
+        ImGui::TextDisabled("LightSystem %.2f MiB | persistent upload %.2f MiB | culling %.2f MiB | authored draws %.2f MiB",
+            double(rendererOwned.lightSystemKnownBytes) / mib,
+            double(rendererOwned.persistentUploadKnownBytes) / mib,
+            double(rendererOwned.persistentCullKnownBytes) / mib,
+            double(rendererOwned.gpuAuthoredKnownBytes) / mib);
+        const auto geometryPages=render::geometryPoolStats(ed.device());
+        ImGui::TextDisabled("GlobalGeometryPool %.2f MiB (%zu shared pages, counted separately from model handles)",
+            double(geometryPages.allocatedBytes) / mib,geometryPages.pages);
+        if (rendererOwned.unknownTextures || rendererOwned.unknownBuffers ||
+            rendererOwned.multiVersionBuffers)
+            ImGui::TextDisabled("Renderer unknown: %zu textures, %zu buffers; %zu multi-version buffer(s)",
+                rendererOwned.unknownTextures,rendererOwned.unknownBuffers,
+                rendererOwned.multiVersionBuffers);
+        ImGui::TextDisabled("Renderer direct+subowners includes LightSystem/persistent pools; external models/materials, driver and Prisma excluded.");
+        ImGui::Text("Hosted GameClient ожидают GPU: %zu  ·  ShaderGraph pools: %zu активных / %zu ожидают",
+                    ed.clientHost().pendingRetiredClients(),
+                    post.graphLiveTextures, post.graphRetiredTextures);
+        ImGui::Text("RenderGraph GPU: %.2f MiB активных, %.2f MiB ожидают, %zu не учтено",
+                    double(post.graphLiveKnownBytes) / mib,
+                    double(post.graphPendingKnownBytes) / mib,
+                    post.graphUnknownTextures);
+        ImGui::Text("PRISMA GPU resident: %.2f MiB минимум / %zu текстур (%zu без размеров)",
+                    double(memory.liveKnownBytes) / mib,
+                    memory.liveTextures, memory.unknownTextures);
+        ImGui::Text("Кеши разрешений: %.2f MiB / %zu кешей (не используются %zu: %.2f MiB)",
+                    double(memory.sharedSizeKnownBytes) / mib, memory.activeSizeCaches,
+                    memory.unreferencedSizeCaches,
+                    double(memory.unreferencedSizeKnownBytes) / mib);
+        ImGui::Text("История камер: %.3f MiB (Temporal HDR %.3f MiB)  ·  LUT/graph input: %.2f MiB",
+                    double(memory.viewHistoryKnownBytes) / mib,
+                    double(memory.temporalHistoryKnownBytes) / mib,
+                    double(memory.otherLiveKnownBytes) / mib);
+        if (ImGui::TreeNode("PRISMA: память по камерам (без двойного подсчёта)")) {
+            if (memory.views.empty())
+                ImGui::TextDisabled("Сейчас нет камер с активным постпроцессингом");
+            for (const auto& view : memory.views) {
+                const char* name = view.viewId == 1 ? "Scene" :
+                                   view.viewId == 2 ? "Game" : "Custom";
+                ImGui::BulletText("%s #%llu (%d x %d)  ·  Exposure %.3f MiB + Temporal %.3f MiB (%zu targets)",
+                    name, (unsigned long long)view.viewId,
+                    view.width, view.height,
+                    double(view.ownedHistoryKnownBytes) / mib,
+                    double(view.ownedTemporalKnownBytes) / mib,
+                    view.ownedTemporalTextures);
+                ImGui::Indent();
+                ImGui::TextDisabled("Общий кеш размера: %.2f MiB / %zu текстур, совместно с %zu камерами",
+                    double(view.sharedKnownBytes) / mib,
+                    view.sharedTextures, view.sharedSizeViews);
+                ImGui::TextDisabled("RenderGraph: %.2f MiB live (%zu) + %.2f MiB pending (%zu); неизвестно: %zu",
+                    double(view.graphLiveKnownBytes) / mib, view.graphLiveTextures,
+                    double(view.graphPendingKnownBytes) / mib, view.graphPendingTextures,
+                    view.unknownTextures);
+                ImGui::Unindent();
+            }
+            ImGui::TextDisabled("Общие кеши приведены справочно и НЕ складываются по камерам.");
+            ImGui::TreePop();
+        }
+        ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
+                    viewport.fenced,viewport.unfenced);
+        for (const auto& v : viewportLive)
+            ImGui::Text("Framebuffer %s %dx%d: %.2f MiB / %zu targets, неизвестно %zu",
+                        v.name.c_str(),v.width,v.height,
+                        double(v.knownBytes) / mib,v.textures,v.unknownTextures);
+        ImGui::Text("GPU FX/ShaderGraph: %zu pipeline, %zu shader, %zu buffers, %zu textures, %zu bundles",
+                    objects.pipelines,objects.shaders,objects.buffers,
+                    objects.textures,objects.bundles);
+        ImGui::Text("Другие отложенные GPU: %zu fenced + %zu без fence",
+                    objects.fenced,objects.unfenced);
+        if (objects.bundlesWithoutByteEstimate || objects.texturesWithoutByteEstimate ||
+            objects.buffersWithoutByteEstimate)
+            ImGui::TextDisabled("GPU без оценки bytes: %zu Preview/Portrait bundles, %zu textures, %zu buffers",
+                objects.bundlesWithoutByteEstimate,
+                objects.texturesWithoutByteEstimate,
+                objects.buffersWithoutByteEstimate);
+        if (objects.abandonedHandles || objects.abandonedBundles)
+            ImGui::TextDisabled("GPU device lost: abandoned %zu handles, %zu owner bundles (без GPU destroy)",
+                objects.abandonedHandles,objects.abandonedBundles);
+        ImGui::Text("FX GPU-буферы: известные отложенные bytes включены в нижнюю оценку памяти");
+        const uint64_t totalRetired = post.knownPendingBytes +
+            motion.knownPendingBytes + viewport.knownPendingBytes +
+            objects.knownPendingBytes;
+        ImGui::Text("Удерживается GPU (известный минимум): %.2f MiB / %.0f MiB",
+                    double(totalRetired) / mib,double(viewport.budgetBytes) / mib);
+        if (viewport.budgetBytes && totalRetired > viewport.budgetBytes)
+            ImGui::TextDisabled("Превышен бюджет: на следующем кадре попытка GPU idle. WebGL может не поддерживать ожидание.");
+        if (ImGui::Button("Запросить безопасную очистку GPU"))
+            ed.requestGpuRetirementFlush();
+        ImGui::SameLine();
+        ImGui::TextDisabled("в начале следующего кадра; может задержать отрисовку");
+        ImGui::TextDisabled("Pending — удерживаемая память до GPU fence; resident — активные PRISMA ресурсы, НЕ прибавляйте к pending повторно.");
+        ImGui::TextDisabled("Оценки без mip, драйверной аллокации и вложенных ShaderGraph/Portrait bundle bytes; это НЕ полный VRAM.");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))
             ed.reclaimEditorAssets(true);
         ui::section(ICON_REGIONS, "Карта");

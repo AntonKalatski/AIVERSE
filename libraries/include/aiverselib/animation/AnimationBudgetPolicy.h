@@ -39,27 +39,32 @@ inline AnimationBudgetStats assignAnimationBudgets(
           std::isfinite(policy.hiddenInterval) &&
           policy.hiddenInterval>=policy.lowInterval))
         return stats;
-    const auto count=presentation.countExisting<AnimationSignificanceComponent>();
-    if (!count) return stats;
+    // Read through the public non-registering ECS iterator. The pool is
+    // private to World and may not be borrowed by external libraries.
+    // Budget writes are prepared before iteration to retain existing
+    // copy-on-write/scheduler semantics without creating new pools.
+    if (presentation.countExisting<AnimationSignificanceComponent>()==0)
+        return stats;
     auto* budgets=presentation.prepareExistingWrite<AnimationBudgetComponent>();
     if (!budgets) return stats;
     std::vector<Candidate> visible;
-    visible.reserve(count);
+    visible.reserve(presentation.countExisting<AnimationSignificanceComponent>());
     presentation.eachExistingConst<AnimationSignificanceComponent>(
-      [&](Entity e, const AnimationSignificanceComponent& s) {
-        if (!presentation.alive(e) || !budgets->has(e.index)) return;
-        auto* budget=budgets->tryGet(e.index);
-        if (!s.visible) {
-            budget->visible=false;
-            budget->interval=policy.hiddenInterval;
-            ++stats.hidden;
-            return;
-        }
-        budget->visible=true;
-        const float pixels=std::isfinite(s.pixels)?std::max(0.f,s.pixels):0.f;
-        const float importance=std::isfinite(s.importance)?std::max(0.f,s.importance):0.f;
-        visible.push_back({e,pixels*importance,s.alwaysEvaluate});
-    });
+        [&](Entity e,const AnimationSignificanceComponent& s) {
+            if (!presentation.alive(e) || !budgets->has(e.index)) return;
+            auto* budget=budgets->tryGet(e.index);
+            if (!budget) return;
+            if (!s.visible) {
+                budget->visible=false;
+                budget->interval=policy.hiddenInterval;
+                ++stats.hidden;
+                return;
+            }
+            budget->visible=true;
+            const float pixels=std::isfinite(s.pixels)?std::max(0.f,s.pixels):0.f;
+            const float importance=std::isfinite(s.importance)?std::max(0.f,s.importance):0.f;
+            visible.push_back({e,pixels*importance,s.alwaysEvaluate});
+        });
     std::stable_sort(visible.begin(),visible.end(),
         [](const Candidate& a,const Candidate& b) {
             if (a.force!=b.force) return a.force>b.force;

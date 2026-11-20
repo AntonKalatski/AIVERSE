@@ -3137,3 +3137,43 @@ claim, CI/GPU/ARM64 NOT RUN. See [native validation](lens-native-validation-2026
 and [budget handoff](lens-topology-preparation-budget-2026-11-20.md) for exact
 commands, SHAs, limitations and next work. Full Sprite/MotionWeave/Lighting/
 Overlay rollback remains open; PlaybackSnapshot is not a complete graph clone.
+
+## Stage 157 — staged on-disk native ModelView reimport, Animator + socket atomicity (2026-11-20)
+
+- **Standalone handoff and readiness:** [Stage 157](animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md). Source commits `20188ec0`, `dd153a91`, `7f8f0473`, `73b6d14b`, `4e92ec50` in `apps/modelview/main.cpp`; guide `docs/modelview-attachments.md` `61a9512d`.
+- Standalone ModelView now stages new **real parent AND child files** in a fresh `ModelAssetProvider`, rebinds each parent Animator against the new rig, carries compatible named clip phase using `Animator::seek`, compiles every published appearance and socket in a new registry, and swaps all resources as one accepted visual generation. Failed CPU import/GPU upload/bone socket validation keeps previous live scene unchanged. This replaces only example native-host code: no changes to genre-neutral MotionWeave/View/animation ECS.
+- A new **Reload model files** UI action and `--watch-model-files` / **Watch source files** opt-in timestamp polling schedule full reimport at the next native device-owner preframe boundary. Existing **Rebuild** retains its cached-layout-only semantics. The old provider+Animator instances+appearance/compiled binding snapshots stay together until proven GPU idle, with advisory retained-generation cap 8 and shutdown barrier; failed idle proof quarantines rather than destroys in-flight GPU resources. This is NOT fully async per-provider GPU tokens.
+- **ACTUAL:** GitHub source inspection, SHA-guarded commits and readback only. **NOT RUN:** native C++/CMake/CTest, current green CI, Metal/Vulkan/GLES, running watcher/model scenes, sanitizer, VRAM/high-crowd bench. PR #22 still Draft/unmerged; no feature freeze. **Next Stage 158:** true tokenized owner/texture retirement, complex retarget/morph and prefab/scene serialization, then coordinated full native validation. Continue separate handoffs and user-visible readiness table after every step.
+
+## 2026-11-20 — Prisma/MotionWeave merge checkpoint
+
+Integration branch `integration/prisma-motionweave-view`; merge `fc46059ee6523cbc1f04f8c412d44e4fdae9398a`.
+See [complete merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
+owner and one editor viewport target owner, both animation playback APIs and GPU
+fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
+merge only. Remote documentation and latest MotionWeave merge/push remain next.
+
+
+## Latest MotionWeave branch integrated — 2026-11-20
+
+Merge `57c839bff51768a9b52bc9a6c5ac6d4868a33aad` includes source tip `ea28f227b1da3fcfb32da2abc49e60f588861786`
+(Stages 155–157: Studio attachment authoring/viewport and ModelView source-file
+reimport/watcher). Paths: `AGENTS.md`, `apps/editor/animation/AnimationEditor.h`,
+`apps/editor/windows/AttachmentAuthoringWindow.cpp`, `ModelingWindow.cpp`,
+`apps/modelview/main.cpp`, incoming stage handoffs and View/MotionWeave guides.
+The only code reconciliation adapts Attachments Viewport::ensure to the shared
+`Editor::viewportRetirement()` owner and drops the duplicate target-owner setter.
+Both appended animation handoff histories preserved. No save/API feature changes
+beyond the source branch. `git diff --check` clean; unmerged path list empty.
+Build/CTest/GPU/CI: **NOT RUN** by user request; runtime compatibility unverified.
+Next: merge the remote integration documentation, final ancestry check and push.
+
+
+## 2026-11-20 — Final integration merge
+
+Final merge `5a01b4561d95c890d9a2ecd5724b04850fe1bf3e` on `integration/prisma-motionweave-view` contains
+both source tips and remote integration handoffs. See
+[merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Source/ancestry checks complete; build/CTest/GPU/CI **NOT RUN** by merge-only
+request. Next: ordinary integration-branch push and remote SHA verification.

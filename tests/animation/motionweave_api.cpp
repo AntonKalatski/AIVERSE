@@ -1,6 +1,6 @@
 // The public MotionWeave header/CMake target must work for native hosts.
 #include <aiverselib/motionweave/MotionWeave.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 #include <string>
 using namespace aiverse;
@@ -25,7 +25,7 @@ int main(){
     presentation.add<motionweave::AnimationPoseComponent>(entity);
     motionweave::MotionWeave::update(presentation,1.0f/60);
     const auto& pose=presentation.get<motionweave::AnimationPoseComponent>(entity);
-    assert(pose.valid && pose.local.size()==1 && pose.matrices.size()==1);
+    AIVERSE_TEST_CHECK(pose.valid && pose.local.size()==1 && pose.matrices.size()==1);
     static_assert(std::is_same_v<motionweave::AnimationPoseComponent,
         lib::animation::AnimationPoseComponent>);
     static_assert(std::is_same_v<lib::motionweave::AnimationPlayerComponent,

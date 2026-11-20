@@ -5,8 +5,8 @@
 #include "engine/render/ProbeEnvironment.h"
 #include "engine/render/LightGridCache.h"
 #include "engine/platform/Platform.h"
-#include "engine/render/PostFx.h"
-#include "engine/render/ScreenLighting.h"
+#include "engine/render/Prisma.h"
+#include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
@@ -58,8 +58,8 @@ struct Bench {
     Json config,report=Json::object(),rows=Json::array();
     platform::HostedView content;
     Renderer3D renderer;
-    PostFx post;
-    ScreenLighting screen;
+    Prisma post;
+    PrismaScreenLighting screen;
     SceneAssets additions;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
@@ -71,6 +71,7 @@ struct Bench {
     int width=1280,height=720,view=0,frame=0,drain=0,sequenceCaptures=0;
     bool sequencePending=false, ownsFrame=true;
     uint64_t tag=0;
+    gfx::GpuTimingRouter::Subscriber timingSubscriber=0;
     bool done=false,failed=false,gpuSupported=true,captureRequested=false,captured=false;
     std::string error;
     Clock::time_point lastProgress=Clock::now(), previewStart;
@@ -258,10 +259,10 @@ struct Bench {
             if(view.has("shadowMapSize")&&options.profile!="low"){const double size=view["shadowMapSize"].toDouble();
                 if(size!=2048&&size!=4096&&size!=8192)throw std::runtime_error("look shadowMapSize must be 2048, 4096 or 8192");
                 if(!renderer.setShadowMapSize(int(size)))throw std::runtime_error("shadow map allocation failed");}
-            PostFxSettings s;s.hdr=options.profile=="low"?HdrMode::Off:HdrMode::On;
-            if(options.profile=="hdr"||options.profile=="full")s=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25},{"type":"fxaa"}]})"),Json());
-            if(options.profile=="full")s=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25}]})"),Json());
-            if(options.profile!="low"&&config.has("postfx"))s=parsePostFx(config["postfx"],Json());
+            PrismaSettings s;s.hdr=options.profile=="low"?HdrMode::Off:HdrMode::On;
+            if(options.profile=="hdr"||options.profile=="full")s=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25},{"type":"fxaa"}]})"),Json());
+            if(options.profile=="full")s=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25}]})"),Json());
+            if(options.profile!="low"&&config.has("postfx"))s=parsePrisma(config["postfx"],Json());
             // Screen bounce adds near-field light from visible surfaces; probe GI scenes opt in via look.screenBounce.
             screen.setDiffuseBounceEnabled(config["look"].getBool("screenBounce",!(bakePointShadows&&(config.has("staticPointBounce")||config.has("probeGI")))));
             screen.setEnabled(options.profile=="full");
@@ -279,7 +280,7 @@ struct Bench {
                     throw std::runtime_error("volumetricLight: density 0..1, anisotropy -.95...95, maxDistance 0..1000, steps 4..32, tint >= 0");
                 screen.setVolumetricLight(light);
             }
-            post.setSettings(s);post.setQuality(options.profile=="low"?PostFxQuality::Low:PostFxQuality::High);
+            post.setSettings(s);post.setQuality(options.profile=="low"?PrismaQuality::Low:PrismaQuality::High);
             report.set("schema",Json::number(int64_t(1)));report.set("engine",Json::string("AIVERSE"));
 #if defined(__aarch64__) || defined(__arm64__)
             report.set("binaryArchitecture",Json::string("arm64"));
@@ -305,9 +306,14 @@ struct Bench {
     }
     void fail(std::string s) {failed=true;done=true;error=std::move(s);std::fprintf(stderr,"benchmark: %s\n",error.c_str());}
     void poll(gfx::Device& d) {
-        for(auto t:d.takeGpuTimings())if(auto it=tags.find(t.tag);it!=tags.end()) {
-            rows.at(it->second).set("gpuMs",t.valid?Json::number(t.milliseconds,6):Json());tags.erase(it);lastProgress=Clock::now();
-        }
+        auto& timing=d.gpuTimingRouter();
+        timing.poll(d);
+        for(auto t:timing.take(timingSubscriber))
+            if(auto it=tags.find(t.tag);it!=tags.end()) {
+                rows.at(it->second).set("gpuMs",
+                    t.valid?Json::number(t.milliseconds,6):Json());
+                tags.erase(it);lastProgress=Clock::now();
+            }
     }
     void draw(gfx::Device& d) {
         if(done)return;
@@ -318,7 +324,14 @@ struct Bench {
         const int ci=std::min(view,int(cameras.size())-1);
         const auto start=Clock::now();if(ownsFrame)d.beginFrame(width,height);const auto encodeStart=Clock::now();
         const uint64_t thisTag=++tag;
-        bool timed=false;if(measuring){timed=d.timeGpuFrame(thisTag);gpuSupported&=timed;}
+        bool timed=false;
+        if(measuring){
+            auto& timing=d.gpuTimingRouter();
+            if(!timingSubscriber)timingSubscriber=timing.subscribe();
+            timed=timingSubscriber &&
+                  timing.request(d,timingSubscriber,thisTag);
+            gpuSupported&=timed;
+        }
         if(frame==0&&view<int(cameras.size())){screen.reset();additions.selectLights(cameras[size_t(ci)].eye());}
         if(options.previewSeconds>0&&frame==options.warmup&&view<int(cameras.size()))previewStart=Clock::now();
         const double previewTime=previewStart==Clock::time_point{}?0.0:std::clamp(ms(previewStart,Clock::now())/1000.0,0.0,double(options.previewSeconds));
@@ -333,7 +346,7 @@ struct Bench {
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
         additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
-        renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePostFx();
+        renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
@@ -418,7 +431,13 @@ struct Bench {
     void shutdown(gfx::Device& d) {
         if(!options.captureSequence.empty()&&(sequenceCaptures!=16||sequencePending))fail("incomplete validation sequence; increase samples");
         if(!options.captureSequence.empty())d.setScreenReadable(false);
-        poll(d);report.set("gpuTimingSupported",Json::fromBool(gpuSupported));report.set("complete",Json::fromBool(done&&!failed));
+        poll(d);
+        if(timingSubscriber) {
+            d.gpuTimingRouter().unsubscribe(timingSubscriber);
+            timingSubscriber=0;
+        }
+        report.set("gpuTimingSupported",Json::fromBool(gpuSupported));
+        report.set("complete",Json::fromBool(done&&!failed));
         report.set("error",Json::string(error));report.set("frames",rows);
         std::ofstream f(options.output);f<<report.dump()<<"\n";if(!f)fail("cannot write report");
         if(model)releaseModel(d,*model);

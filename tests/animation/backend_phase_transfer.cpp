@@ -1,5 +1,5 @@
 #include <aiverselib/animation/AnimationPhaseTransfer.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -11,12 +11,12 @@ int main(){
     auto graph=AnimationGraph::compile(model,Json::parse(R"({
         "nodes":[{"id":"move","kind":"clip","clip":"Walk"}],"output":"move"})"));
     AnimationGraphInstance inst;inst.reset(graph);
-    assert(inst.seekClipNode("move",1.4f));
+    AIVERSE_TEST_CHECK(inst.seekClipNode("move",1.4f));
     auto phase=captureGraphClipPhase(inst,model,true);
-    assert(phase && std::abs(*phase-.7f)<1.e-5f);
+    AIVERSE_TEST_CHECK(phase && std::abs(*phase-.7f)<1.e-5f);
     Animator crowd;crowd.setModel(&model);crowd.play(0,0,{});
-    assert(crowd.seek(0,*phase*model.clips[0].duration));
+    AIVERSE_TEST_CHECK(crowd.seek(0,*phase*model.clips[0].duration));
     auto baked=captureBakedClipPhase(crowd,model);
-    assert(baked && std::abs(*baked-*phase)<1.e-5f);
-    assert(!captureGraphClipPhase(inst,model,false) || *phase>=0.f);
+    AIVERSE_TEST_CHECK(baked && std::abs(*baked-*phase)<1.e-5f);
+    AIVERSE_TEST_CHECK(!captureGraphClipPhase(inst,model,false) || *phase>=0.f);
 }

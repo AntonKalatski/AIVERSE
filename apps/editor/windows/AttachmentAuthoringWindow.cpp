@@ -144,7 +144,6 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             return;
         if(!rendererReady_) {
             viewport_.setGpuDeviceLease(ed.gpuDeviceLease());
-            viewport_.setTargetOwner(ed.offscreenTargets());
             if(!renderer_.init(ed.device()))
                 throw std::runtime_error("attachment preview renderer initialization failed");
             renderer_.setShadowQuality(render::ShadowQuality::Low);
@@ -154,7 +153,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         const float height=std::clamp(available.y*0.50f,180.f,470.f);
         viewport_.ensure(ed.device(),
                          std::clamp(int(available.x),96,1200),
-                         std::clamp(int(height),96,900));
+                         std::clamp(int(height),96,900),
+                         ed.viewportRetirement(), "Attachments");
         const auto* model=session_->source->model;
         auto rigRead=session_->provider->resources().acquireModelRead(model);
         if(!rigRead) {

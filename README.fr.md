@@ -208,7 +208,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 
 **Graphismes et audio**
 - RHI maison : Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, en option)
-- PBR, glTF/OBJ, animation squelettique et procédurale, câbles procéduraux, rendu des entités en hiérarchie
+- PBR, glTF/OBJ, animation squelettique et procédurale, câbles procéduraux, rendu des entités en hiérarchie, ciel physique, nuages volumétriques et rayons de soleil, brouillard volumétrique local en sphères/OBB avec dissipation à l’exécution
 - Ombres, lumières dynamiques, nuit, post-traitement, Shader Graph
 - Particules avec les modules du ParticleSystem d’Unity et importateur depuis Unity
 - 2D : sprites, cartes de tuiles avec autotiling

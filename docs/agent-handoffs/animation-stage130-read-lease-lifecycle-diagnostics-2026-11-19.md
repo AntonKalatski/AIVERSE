@@ -1,8 +1,8 @@
 # AIVERSE MotionWeave / Universal View — Stage 130 handoff
 
-Date: 2026-11-19  
-Branch: `feature/universal-ecs-animation-pipeline`  
-PR: https://github.com/chromealex/AIVERSE/pull/22 (Open / **Draft**)  
+Date: 2026-11-19
+Branch: `feature/universal-ecs-animation-pipeline`
+PR: https://github.com/chromealex/AIVERSE/pull/22 (Open / **Draft**)
 Previous: [Stage 129](animation-stage129-model-cache-read-leases-2026-11-19.md)
 
 ## Repository and branch ancestry

@@ -406,4 +406,3 @@ royale-zone wall preserves the previous wall/crate ordering.
 Only generic geometry enters View; game-specific rules stay
 in the FPS host. `ScenePacketBatch` does not replace
 Renderer3D's existing material/mesh batching logic.
-

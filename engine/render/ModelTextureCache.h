@@ -1,5 +1,6 @@
 #pragma once
 #include "Model.h"
+#include "GpuOwnedMemory.h"
 #include <map>
 #include <atomic>
 #include <limits>
@@ -65,6 +66,15 @@ public:
     void invalidateSource(const std::string& path);
     size_t decodedCount() const { return decodedCount_.load(); }
     size_t gpuCount() const { return gpu_.size(); } // render thread only
+    // Cache owns every non-borrowed GPU image. Model::Image instances
+    // referencing this cache are borrowers and must NOT add these handles.
+    // Use only from graphics thread (same contract as upload/trim).
+    void appendOwnedGpuMemory(GpuOwnedMemoryCounter& counter) const {
+        for (const auto& [key, image] : gpu_) {
+            (void)key;
+            if (image.tex.valid()) counter.texture(image.tex);
+        }
+    }
     struct GpuOwnerEstimate {
         size_t uniqueTextures=0,compressedTextures=0;
         uint64_t rgba8BaseMipEquivalentBytes=0;

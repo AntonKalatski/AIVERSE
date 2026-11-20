@@ -22,7 +22,7 @@ ROOT_FILES = ('AGENTS.md', 'README.md', 'CMakeLists.txt', 'CLAUDE.md', 'CMakePre
 TICK = re.compile(r'`([^`\n]+)`')
 REG = re.compile(r'(?:registerOp\(\{|\badd\(|ed\.ws\(\)\.registerOp\(\{)"([a-z][a-z0-9_]+)"')
 # snake_case words that are CMake targets or test names, not MCP tools
-NOT_TOOLS = {'animation_assets', 'game_meta', 'game_meta_rpc', 'game_client', 'road_network_geometry_and_decks', 'traffic_drives_spline_roads'}
+NOT_TOOLS = {'game_meta', 'game_meta_rpc', 'game_client', 'road_network_geometry_and_decks', 'traffic_drives_spline_roads', 'animation_assets', 'animation_budget_policy', 'animation_ecs_presentation', 'animation_generic_retarget', 'animation_graphs', 'animation_inertialization', 'animation_montage', 'animation_motion_warp', 'animation_physical_pose', 'animation_playback'}
 TOOL = re.compile(r'^([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\s*\{.*\})?$')
 
 

@@ -129,7 +129,8 @@ struct Viewer {
         // This attachment preview uses ONE real ModelAssetProvider for both
         // source rig and imported children. The original comparison/gallery
         // paths remain unchanged unless the user opts into attachments.
-        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty()) {
+        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty() ||
+           watchModelFiles) {
             if(!gameDir.empty())
                 throw std::invalid_argument(
                     "attachment preview takes model files, not --game gallery");
@@ -751,13 +752,22 @@ struct Viewer {
 
     void shutdown() {
         if(!dev)return;
-        // ModelView draws raw Models, a Gallery scene and an offscreen
-        // portrait through the SAME Device. They can all be GPU-visible
-        // after the final frame. One explicit idle proof must precede
-        // destruction of any native Model, texture or renderer resources.
-        if(!dev->waitForResourceIdle()) {
+        // Both Prisma fence completion and MotionWeave model/resource idle
+        // must be proven before native models or graphics owners are destroyed.
+        if (!dev->gpuHealthy() || !dev->waitForSubmittedGpuWork() ||
+            !dev->waitForResourceIdle()) {
             std::fprintf(stderr,
-                "aiverse_modelview: GPU shutdown barrier failed; resources left alive\n");
+                "aiverse_modelview: GPU shutdown barrier failed; GPU owners quarantined\n");
+            // Viewer is static. A mere early return would allow its
+            // unique_ptr members to destroy GPU-live Models on process
+            // teardown. Explicitly orphan owners when idle cannot be proven.
+            for(auto& [key,model]:models) {
+                (void)key;
+                (void)model.release();
+            }
+            (void)nativeModels.release();
+            for(auto& scene:retiredNativeScenes)(void)scene.release();
+            retiredNativeScenes.clear();
             return;
         }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
@@ -766,8 +776,16 @@ struct Viewer {
         inst.clear();
         attachmentsRegistry.reset();
         if(nativeModels) {
-            nativeModels->shutdown(*dev);
-            nativeModels.reset();
+            try {
+                nativeModels->shutdown(*dev);
+                nativeModels.reset();
+            }catch(...) {
+                // Preserve partial uploads rather than invoking an unsafe
+                // destructor when provider shutdown reports GPU failure.
+                (void)nativeModels.release();
+                std::fprintf(stderr,
+                    "aiverse_modelview: provider shutdown failed; GPU owner retained\n");
+            }
         }
         (void)collectRetiredNativeScenes(true);
         // If even full-idle shutdown could not complete, retain old GPU

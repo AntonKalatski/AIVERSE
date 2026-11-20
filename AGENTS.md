@@ -4,6 +4,77 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
+
+**Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
+
+| Owner | Owns | Must NOT own |
+|---|---|---|
+| **PRISMA** (`aiverse::render::Prisma`) | SceneColor/depth/velocity/history-dependent **full-screen post-processing**: HDR resolve, exposure/tonemapping, bloom, DoF, motion blur, TAA/upscaling, color grading/LUT, lens effects, screen-space GI/AO/SSR where implemented, atmospheric screen passes, quality profiles, post-process camera volumes, render passes, graph scheduling, GPU cost diagnostics, and the `postfx` Shader Graph domain | Particle spawn/update/lifetime, emitter graphs, VFX triggers, mesh/ribbon particle simulation |
+| **SpectraFX** (`aiverse::spectra`) | **World/scene VFX emitters and simulation**: particles, meshes, ribbons, smoke, fire, explosions, trails, ECS event presentation, CPU/GPU emitter scheduling and graph assets `fx/graphs/*.vfx.json` | Post-processing of SceneColor, camera volumes, tone mapping, bloom pipelines, screen-space temporal effects, `postfx` Shader Graph effects |
+
+**Composition contract:** SpectraFX emits scene-referred linear HDR contributions into the renderer **before** PRISMA composite/tonemap, with depth/alpha semantics preserved. PRISMA processes the completed scene **before** UI/HUD. PRISMA owns any postprocess that enhances particle appearance (e.g. bloom), while SpectraFX owns the emissive particle input. Neither system depends on FPS/RTS/other genres or modifies authoritative ECS data. Shared RHI and generic Shader Graph compiler stay shared; the `particle` domain belongs to SpectraFX, the `postfx` domain to PRISMA.
+
+**Official PRISMA agent skill:** [skills/visuals/aiverse-prisma/SKILL.md](skills/visuals/aiverse-prisma/SKILL.md). Every post-processing or screen-space image request must use it, not the SpectraFX skill.
+
+**Canonical paths:** PRISMA `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`; editor `apps/editor/core/PrismaOps.{h,cpp}` and `apps/editor/windows/PrismaWindow.cpp`; roadmap `docs/prisma.md`. SpectraFX `engine/fx/SpectraFX.h`, `engine/fx/Spectra*.{h,cpp}`, `libraries/include/aiverselib/genre/SpectraFX.h`, roadmap `docs/spectrafx.md`.
+
+**Compatibility is intentional:** `PostFx*.h`/editor `PostFxOps.h` are forwarding legacy includes and `PostFx*.cpp` are empty shims. Keep the external `"postfx"` JSON key, `postfx_*` MCP operation names, `view_postfx` and editor saved ID `"postfx"` until a separately approved versioned data migration. Do not create a second implementation or double-register the old editor window. Legacy `PostFx` types remain source aliases to PRISMA. Old source filenames must never be linked instead of the new canonical PRISMA .cpp files. The optional `aiverse_postfx_data` CMake target remains as compatibility link name.
+
+**Agent handoff:** Every PRISMA implementation stage MUST have a **separate, committed** `docs/handoffs/prisma-stage-XX.md` on its working branch, naming code changes, public APIs, real test commands/results, untested paths, current SHA and precise next step. Never mark unrun tests PASS. SpectraFX has a separate living handoff `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`; do not overwrite it with PRISMA changes. Any shared-render integration must be documented in both systems' design docs and note the exact common interface.
+
+## AIVERSE SpectraFX (universal VFX, in progress)
+
+**Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
+**Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
+**System documentation:** [docs/spectrafx.md](docs/spectrafx.md).
+The previous `aiverse-niagara-vfx` skill is a legacy discovery alias.
+
+The public SpectraFX headers are `engine/fx/SpectraFX.h` and `libraries/include/aiverselib/genre/SpectraFX.h`; native targets link `AIVERSE::spectrafx`. New cross-genre opt-in VFX layers are `engine/fx/VfxGraph.h` (graph -> existing CPU effect compiler),
+`engine/fx/VfxGraphAssets.h` (versioned assets, parameter variants and hot reload) and
+`libraries/include/aiverselib/genre/EcsVfxPresentation.h` (read-only ECS renderer bridge,
+tick-event bindings). Never put renderer handles, float particles or graphics timing into
+authoritative gameplay ECS, never duplicate an FPS-only/RTS-only VFX engine, and do not remove
+legacy `RtsFx` before production parity tests. The basic graph-v1 ImGui canvas is in
+`apps/editor/windows/SpectraGraphWindow.cpp`, graph CRUD in
+`apps/editor/core/SpectraGraphOps.cpp` and the editor-only in-memory preview
+in `apps/editor/EditorFxOps.cpp`. **GPU VFX, full Niagara graph dataflow and automatic
+native-client integration are not complete.** Current test targets are committed but not
+verified as passing. Every new VFX stage MUST append a separate handoff commit after code and
+tests and record exact SHA, verification status and next work.
+
+**Stage 10 — opt-in Metal GPU particle subset (source committed, not verified):**
+`engine/fx/{SpectraGpuParticles.h,SpectraGpuParticles.cpp,SpectraGpuShaders.h}`
+and `tests/vfx_gpu_backend_test.cpp`. Public native API:
+`spectra::ComputeParticles`, `ComputeEmitterDesc`,
+`ComputePreference` and `chooseComputeBackend`, available through
+`engine/fx/SpectraFX.h`, linked by `AIVERSE::spectrafx`.
+Only a simple additive soft-billboard emitter uses Metal compute;
+Vulkan/GL/GLES/WebGL fall back to the existing CPU `fx::ParticleSystem`.
+`step()` must execute before a render pass and `draw()` inside it.
+**Do not claim real Metal validation, GPU compaction, GPU graph execution
+or shipping FPS/RTS integration.** Inspect the stage-10 handoff and
+execute a native Metal smoke/CI test before enabling any default GPU
+effects. Preserve deterministic gameplay/ECS state and the existing
+CPU effect format.
+
+**Stage 11 — SpectraFX graph/runtime compatibility routing (source committed,
+NOT TESTED):** `engine/fx/SpectraGraphRuntime.{h,cpp}` adds
+`spectra::GraphRuntime` and `inspectGraphGpuEligibility`. Native
+modules may opt in via `engine/fx/SpectraFX.h`; the compatibility
+gate checks the complete compiled emitter definition, **not** game
+genre or output node label. Unsupported graph features preserve
+the original CPU `EffectDef`; `RequireGpu` rejects unsupported
+graphs/devices rather than dropping features. Existing RTS/FPS
+clients are **not** switched to GPU automatically. The editor
+`fx_graph_validate/get/list` operations report schema eligibility
+but cannot certify a device's Metal capabilities. Required checks:
+`vfx_graph_runtime`, `vfx_gpu_backend`, full SpectraFX CTest,
+real Metal GPU shader smoke and lossless CPU visual parity.
+No local checkout/build was available for this stage. Continue
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` after
+each future implementation stage.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
@@ -37,6 +108,334 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+## Shared texture RHI / streaming — reuse instead of regenerating (2026-11-18)
+
+For any native game project needing Texture2D/3D/arrays/cubes,
+offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
+`skills/visuals/aiverse-texture-rhi/SKILL.md` and
+`docs/texture-rhi.md`. Use the existing `gfx::Device`,
+`gfx::RenderTargetSet`, `gfx::TextureStreamQueue`,
+`gfx::TextureMipResidency`, `gfx::TextureResidentStreamer`,
+`gfx::VirtualTextureStreamer`, `gfx::VirtualTexturePrefetchPlanner`,
+`gfx::prefetchVisibleVirtualPages`, `gfx::VirtualTextureFeedbackRuntime`,
+`gfx::VirtualTextureFeedbackPass`,
+`Device::readTextureAsync`,
+`render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
+`render::parseDdsTexture`, `render::uploadContainerTexture`,
+`render::uploadKtx2WithLibktx`, and `render::loadOpenExrWithLibrary`.
+Do not regenerate or fork genre-specific texture managers in FPS,
+RTS or other projects. Rendering/streaming is presentation state:
+do not make it ECS-authoritative or add it to deterministic save hashes.
+Native project modules can include these public C++ headers directly.
+Optional BasisLZ/UASTC LDR, UASTC_HDR -> RGBA16F, and
+compressed OpenEXR decoding use explicit system Khronos
+libktx and OpenEXR 3 build flags; do not
+copy codecs into genre modules. Vulkan writable compute textures
+are opt-in and require capability checks; do not assume GL33/GLES3
+or WebGL2 support. The GPU inspector now permits bounded 3D
+mip-slice readback on native backends, not compressed/depth/MSAA.
+
+Texture format/dimension feature support differs per backend:
+explicitly check `supports`, `supportsTextureDimension` and resource
+creation results. Unavailable features must fail visibly, never silently
+reinterpret Cube/Array/3D as 2D, ignore resolve requests or misread
+compressed mip payloads. A streaming queue owns its textures and must
+be destroyed before the GPU Device. Do not sample mips until the
+residency planner reports every required layer/face resident.
+Metal/GL/Vulkan API branches and 7A–7E streaming work are source changes,
+**NOT verified production behavior** until native build/CTest/GPU checks
+pass. After each implementation stage append
+`docs/agent-handoffs/texture-rhi-2026-11-18.md` in a separate commit
+with actual (not assumed) test results. PR #21 must remain Draft
+until source integration and graphics validation gates pass.
+
+**Incremental static CPU cache, LOD-aware packets and ECS presentation (2026-11-19, opt-in):**
+The common `engine/render/Renderer3D` owns experimental per-`persistentId`
+transform reuse (`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1`) and immutable
+`ModelItem` packet reuse (`AIVERSE_PERSISTENT_CPU_PACKETS=1`). The packet
+requires nonzero `ModelDraw::staticPacketRevision`; it validates resolved
+GPU material state on each hit, including native/RTS per-draw material copies,
+and remaps the material pointer by index. A pointer-stable material mutation
+does not silently reuse the previous GPU material state. Runtime rigid LOD
+is reselected for the current camera and shadow; a changed LOD rebuilds and
+crossfade frames do not use the cache. Animated, skinned, morphed, vertex-
+displaced, baked-GI, mutable-node and cluster models fall back as before.
+Per-node material overrides and explicit KHR material variants are now
+eligible with value-snapshot invalidation: `ModelDraw::nodeMaterial` indices
+are compared before replay, material variant index is part of the saved draw
+signature, and the baseline's LOD-disabled behaviour for these modes is
+preserved. Do not store caller-owned material override pointers in packets.
+A model file containing authored animation clips can also use the rigid static
+bind-pose cache when its draw has no live pose/baked animation, its skin set
+is empty, the hierarchy has been finalized, and nodes are not runtime-mutable.
+Active animation is still uncached.
+The renderer now memoizes per-model static eligibility through
+`engine/render/ModelStaticEligibility.h`, keyed by geometryRevision and
+structural/GPU handles, with an 8192-entry cap and periodic expiry; this
+avoids rescanning rigid node and mesh flags per rendered instance.
+For the separate versioned material-owner opt-in API,
+`Model::materialRevision`/`markMaterialChanged()` tracks source material
+and GPU texture state, while `ModelDraw::materialOwnerKey` and
+`materialOwnerRevision` identify an immutable shared material set. Both
+owner fields must be nonzero for a version-based shortcut. Native asset
+and override owners must advance revisions on in-place factors, shader,
+texture binding **or texture content** changes, including stable handle IDs.
+Without these fields, keep exact GPU material fingerprint comparison.
+`Renderer3D` now implements a shared, bounded material-owner signature memo
+(4096 owners, <=512 materials each, <=8 MiB fingerprint payload) only when
+packet caching is enabled and both owner values are nonzero. It hashes
+resolved GPU state once per owner revision, then matches a monotonic
+signature serial from each saved packet instead of hashing/copying the
+same material array per entity. An unchanged owner revision promises
+unchanged materials/texture contents even if allocation pointers change.
+Model geometry/material revisions, owner revision and material count are
+validated. Material quality still controls vertex displacement from the
+stored shader threshold. Source changes require `markMaterialChanged()`
+or owner revision bump; `invalidateSharedMaterialState(model, ownerKey)`
+can immediately retire an individual owner on native unload. The fallback
+without trustworthy versions continues exact hash and equality checks.
+`StaticModelCachePolicy.h` still validates every draw's pose, static flag,
+material displacement, GPU material state, LOD and view state separately.
+In-place native changes to node/primitive eligibility must bump
+`Model::markGeometryChanged()`; asset unload must clear the model memo
+through `Renderer3D::invalidateModelCachesFor(model)`.
+`RtsView` opts eligible stationary scenery in at the host boundary, but no
+packet cache runs without the global experimental flag.
+
+**Cross-model static CPU MDI (experimental, 2026-11-19):**
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` enables a separate, static-only
+cross-model sort in the existing CPU indexed-indirect batching path.
+The common `engine/render/StaticCrossModelBatchPolicy.h` requires distinct
+Models to share one `geometryPoolPage` AND identical GPU VB/IB handles.
+Only compatible rigid opaque/sun-shadow items (no active deformation, GI,
+shader graph, transparent/fade, actor reveal, material-batch roles or LOD
+crossfade) can be grouped after independent view/LOD/culling. Material GPU
+state, pipeline flags, base indices and per-instance transforms still use
+the existing exact checks and MDI command offsets. Do NOT group merely
+because two Models use the same texture or Material pointer; different
+GPU buffers need separate draws, not fake combined geometry. Vulkan pooled
+nonzero base vertices remain on the direct path. The option is independent
+of CPU packet caching, disabled by default and forbidden in safe/debug
+or reflection/auxiliary passes. Editor Scene → Batching reports submitted
+cross-model groups, commands and item counts. Stage 18 added
+**page-aware preflight** before this extra sort: group only the ModelItems
+already selected for this render pass by exact shared GPU page, resolved
+material-state group, flags and VB/IB handles. At least two Models and the
+backend's unique indirect-command threshold (Metal 2–32, other backends 4)
+must be possible within `instanceLimit` before any page-aware sort runs.
+Preflight retains at most 32 distinct primitive pointers per group, caps
+candidate groups at 2048, and leaves ordinary sorting untouched on misses,
+overflow, or unsupported/safe modes. It never replaces exact final MDI
+compatibility checks or per-entity culling/LOD. Stats report **ready groups
+versus actual successful CPU MDI submissions**, so neither number alone is
+a proven frame-time improvement. Do not use cross-model preflight while
+the separate instance-material-palette sorter is active. Stage 19
+adds the optional `AIVERSE_CPU_MDI_ADAPTIVE=1` cost-feedback loop,
+only active with `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1`.
+`engine/render/CpuMdiAdaptivePolicy.h` tracks measured **CPU API
+preparation/submission time per distinct indexed command**, separately
+for sun-shadow and opaque. It warms up for two attempts, uses a 15% EMA,
+and after eight usable samples temporarily prefers ordinary instancing
+when the EMA exceeds `AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default
+25 us; experimental, user-tunable). Stage 20 scopes those decisions
+**per shared GPU geometry page and pass**, not globally per pass:
+`CpuMdiPageKey` includes the page address + VB/IB handles, and the
+renderer keeps a weak page lifetime reference to reject recycled keys.
+At most 256 pages have tracked feedback, expiring after 128 unseen epochs;
+untracked pages retain normal MDI, never an assumed fallback. Each page
+makes one decision per render-scene pass, with a recovery probe every
+32 eligible *page* opportunities. A slow page only sends its own
+preflight-ready candidates to instancing; fast pages still use cross-model
+MDI in the same view. The pass-wide EMA is **diagnostics only**.
+Nonpooled/nonstatic MDI and GPU ICB are unaffected. This does **not**
+measure GPU time or prove a speedup; keep all flags default OFF until
+Metal pixel tests and same-scene CPU/GPU A/B/A. Scene → Batching shows
+page counts, shadow/opaque slow pages, per-page skipped/probed groups
+and global CPU averages. Stage 21 moves cross-model preflight groups into a
+**renderer-owned reusable workspace** in
+`engine/render/StaticCrossModelBatchPolicy.h`. It uses an epoch-stamped
+4096-slot open-addressed directory, exact key equality, <=2048 groups,
+and temporary 16-bit group indices by ModelItem to skip repeated page/
+material lookups during the promotion pass. Group/model/page pointers
+are valid **only during the current render pass**; beginPass resets the
+generation and group contents without releasing high-water capacity.
+Stage 22 makes the 16-bit group-index and 8-bit mode arrays
+**sparse by epoch stamps**: each actual written item receives a 32-bit
+generation, so `groupForItem(index)` and `modeOf(index)` return invalid/0
+for stale entries without clearing all ModelItems each pass. `clearModes()`
+is a constant-time logical disable; even passes with no ready groups
+avoid full-mode array initialization. On item-generation wrap, reset
+both stamp arrays once to prevent stale values becoming valid.
+Only current-view selected items may be marked; never preserve group
+or mode decisions across camera/shadow passes. This costs 8 extra bytes
+per retained ModelItem in two generation-stamp arrays, counted in
+`retainedBytes()`, in exchange for fewer full-scene writes.
+Stage 23 adds `prepareSortRanks()`: after preflight and page-adaptive
+admission, accepted groups receive a compact 16-bit rank ordered by
+`materialGroup, geometryPage, GPU VB, GPU IB, drawFlags`. When *both*
+items are accepted cross-model candidates, the sorter compares that rank
+instead of re-reading model/page/material handles on each comparison.
+For a shared rank it keeps the original `lmPage, primitive, itemIndex`
+tie ordering. All other items continue through the original comparator,
+and the MDI pipeline still validates full material and geometry state.
+The group-order scratch vector is reused and included in retained memory;
+`staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
+Do not cache these ranks across passes or change transparency ordering.
+ Stage 33 independently flags persistently expensive CPU model
+ stages in the same read-only Stage 31 rolling summary. Reuse the
+ existing 120-sample sorted scratch to calculate nearest-rank P50.
+ With >=30 samples, only indexes 1..7 are sustained-cost candidates
+ if P50 >=0.35ms and stage mean >=15% of mean total model-pass time.
+ Metric 0 is a total and NEVER a specific stage. This is independent
+ of Stage 32 P95 variability: stable costly stages may flag with no
+ spikes, and rows may meet both criteria. Dominant sustained stage
+ uses the largest median; don't sum overlapping stage percentages.
+ Show orange P95 and blue sustained warnings separately, and never
+ use these indicators to change actual batching or GPU submission.
+ No extra profiling timestamps, allocation or sort belongs in the
+ render path; callbacks read the summary only with profiling enabled.
+ Keep Stage 33 handoff and future Metal/Vulkan parity validation.
+ Stage 32 annotates the Stage 31 read-only CPU rolling summary with
+ conservative P95 variability warnings: at least 30 eligible samples,
+ P95 >= 0.25 ms, absolute excess over mean >= 0.15 ms, and P95 at
+ least 1.8x mean. Evaluate this only on summary/UI read; do NOT scan,
+ allocate, sort or classify spikes in the render hot path. Metric 0
+ is the overlapping full model pass and must NOT be named as an MDI
+ stage. DominantStage is chosen only from indices 1..7; if only
+ total varies say the source is unassigned. Label all warnings as
+ possible CPU latency variability, NOT a measured regression, FPS
+ loss or GPU time. Continue to keep full scene history invalidation,
+ genre independence and stage handoff. Metal/Vulkan validation remains.
+ Stage 31 retains the last 120 Stage 30 CPU MDI pass-timing samples
+ for shadow and main opaque in a renderer-owned fixed ring OUTSIDE
+ `ModelRenderStats`. Per-pass samples are deltas against the existing
+ per-beginScene accumulators, not cumulative numbers or whole GPU
+ frame timings. Record both the ordinary exit and the empty visible-
+ order early return, but never record when profiling is disabled or
+ for reflections/auxiliary views. `cpuMdiRollingSummary(phase)` computes
+ arithmetic mean and nearest-rank P95 per CPU metric on UI read using
+ bounded stack scratch. Never sort or allocate in the rendering hot
+ loop. Clear ring on full scene invalidation/shutdown; disabling
+ profiling pauses sampling. No GPU timing or speedup claim is justified.
+ See Stage 31 handoff and preserve per-stage agent docs.
+ Stage 30 adds opt-in `ModelRenderStats::mdiCpuStages[0/1]`
+ CPU timing breakdown, controlled by the existing Studio
+ "Profile Scene renderer" (`profiling_`) toggle. The shadow and
+ main-camera opaque views each report selection, material grouping/
+ sorting, compatible-run scanning, command packing/signature validation,
+ pipeline/uniform binding, dynamic buffer creation/update and synchronous
+ backend `drawIndexedIndirect` API time, plus attempt/warmup/fallback
+ counts. The full model-pass wall time includes non-MDI draws and must
+ NOT be derived by summing nested stage numbers. Exclude reflections/
+ auxiliary views and other phases. These are **CPU**, not GPU timings.
+ Do not enable high-frequency timestamps unconditionally, alter fallback
+ semantics, or infer GPU performance improvement without A/B/A.
+ Preserve per-stage handoff and defer tests per current user priority.
+ Stage 29 attributes backend indirect-buffer CPU operations to sun shadow
+ (`renderModels(0)`) and main-view opaque (`renderModels(1)`) via
+ pre/post monotonic-counter snapshots. Use `gfx::bufferUpdateCounterDelta`
+ and `accumulateBufferUpdateCounters` only for additive counters;
+ NEVER subtract or sum retained-capacity gauges. A buffer born during
+ the pass has a zero baseline; a changed/destroyed buffer handle is
+ not comparable. Exclude reflection/auxiliary model views and all other
+ phases from the two labelled counters. `ModelRenderStats` resets every
+ `beginScene`; these are per-view scene model-pass deltas, **not**
+ whole GPU frame, GPU execution, VRAM residency or FPS. Keep Studio
+ diagnostics read-only and separate from real draw submissions.
+ Stage 28 adds an optional read-only `gfx::Device::bufferUpdateStats(BufferHandle)`
+ per-buffer diagnostic for Metal/Vulkan dynamic indexed indirect buffers.
+ It accumulates actual backend CPU memcpy/memcmp, skipped equal spans,
+ shadow/preserved copies, version/snapshot allocations/reuses and retained
+ logical capacities from creation onward, not per frame. Renderer3D surfaces
+ this only for its own indirect command buffer in Scene → Batching.
+ Metal's current b->bufs[] can alias an indirectSnapshots[] entry and must
+ not be double counted as retained capacity. Vulkan Allocation::size is
+ only an allocated subrange, not physical GPU residency. No GPU readback,
+ frame-time, bandwidth, or performance improvement is implied by the
+ diagnostic itself; unsupported RHI backends report unavailable.
+ Keep independent in-flight GPU snapshots and optional dirty mode OFF
+ until Metal/Vulkan parity and measured A/B. See Stage 28 handoff.
+ Stage 27 introduces the narrow `gfx::BufferDesc::discardOnUpdate`
+ contract for dynamic indirect buffers whose offset-zero update replaces
+ the complete readable command prefix. Renderer3D alone opts into it.
+ Metal keeps an independent snapshot for **every** submission and frame
+ slot, grows snapshot capacity geometrically, and skips old-tail copies
+ for opted-in prefix updates. `AIVERSE_METAL_ICB_DIRTY_UPDATES=1`
+ may compare/copy only changed 128-byte chunks of a *completed* slot;
+ it stays OFF by default because memcmp costs CPU. Vulkan can omit
+ carrying shadow-tail bytes into a new GPU-safe version, but retains
+ all frame serial fencing. Never reuse/overwrite command storage that
+ a previous draw in the same GPU frame still references, never skip
+ model material/LOD/culling validation, and never conflate saved CPU
+ memcpy bytes with GPU bandwidth/frame-time gains. Partial updates and
+ other buffers remain legacy. Read Stage 27 handoff before changing RHI.
+ Stage 26 bounds the per-phase positional CPU MDI layout cache to
+ 96 entries of at most 256 items each. Cache overflow must use the
+ uncached command scratch and must never omit a GPU draw. Each exact
+ signature includes Model identity, geometry revision, GPU VB/IB IDs,
+ primitive identity and index/base offsets. Unloading a Model calls
+ retireIndirectLayoutsFor(model) through invalidateModelCachesFor and
+ retires whole mixed-model command groups referencing it. Full scene
+ invalidation/shutdown frees layouts; beginScene ages out entries idle
+ 120 scenes, even in empty scenes. The zero-copy cached command vector
+ must never be invalidated *during* drawIndexedIndirect submission.
+ The editor reports retained CPU layout bytes, retired entries and
+ capacity bypasses. These are not frame-time or GPU bandwidth metrics.
+ Stage 25 additionally removes the indirect layout cache's CPU-to-CPU
+ command-array copy on exact signature hits: `drawModelIndirectBatch`
+ reads `IndirectLayoutEntry::commands` directly until synchronous
+ `dev_->drawIndexedIndirect` returns, but still uploads the same commands
+ to the GPU and runs exact signature/material/backend compatibility checks.
+ Cache misses continue to use renderer-owned scratch and persist their
+ finalized layout. Two fixed 64-entry stack arrays replace palette
+ preflight/U3 material slot heap allocations without changing material
+ order or GPU ABI. Scene Batching reports successfully submitted zero-copy
+ layouts and skipped CPU copy bytes, not GPU bandwidth savings.
+ Never mutate persistent layouts during a draw, assume the signature
+ survives asset changes, or enable experimental cross-model MDI without
+ Metal OFF/ON parity tests.
+ Stage 24 replaces the optional *large* admitted candidate comparison-sort
+ with a bounded ranked bucketization (minimum 64 items). It first partitions
+ mode-1 candidates from ordinary/adaptive-mode-2 items; only mode-1 entries
+ enter ranked buckets, and each exact group is ordered by lmPage/primitive/index.
+ The remaining entries retain the full legacy comparator, and transparent
+ passes still use depth sort. An invalid rank causes a safe pre-mutation
+ fallback to Stage 23 comparison-sort. Bucket scratch is renderer-owned,
+ released on scene invalidation; track bucketed items/groups separately from
+ actual MDI submissions. Never reuse rank/mode across camera passes.
+`invalidateStaticModelCaches()` and `shutdown()` release this workspace.
+Scene → Batching reports its retained CPU memory in KiB. Do not retain
+camera, visibility, material equivalence or LOD results across passes, or
+change the already mandatory per-draw/final MDI state checks. See
+`docs/geometry-performance.md` and the latest batching-agent handoff
+before editing these paths.
+
+`engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
+ECS presentation adapter** using only integer asset/revision state in the ECS
+component and the existing `WorldTransform`; model resolution and namespaced
+nonzero persistent draw IDs are caller-owned. The component now also offers
+appended `materialOwnerKey` and `materialOwnerRevision` integer fields
+(default zero) forwarded into `ModelDraw`, preserving old four-field aggregate
+initializers. Set them only for revision-controlled shared material owners;
+external material pointers belong in the presentation submit callback, never
+in ECS simulation data. Native FPS, RTS and other projects
+can compose this view without including either genre module. It must run after
+SceneHierarchy's transform update barrier, never in deterministic simulation.
+
+Before editing this feature, read
+[docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md](docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md),
+check current branch/PR #34 and coordinate changes to the shared renderer.
+Do **not** enable production defaults until compilation, cross-platform
+visual checks and same-scene Mac A/B. Call `Model::markGeometryChanged()` for
+in-place geometry/hierarchy edits. On model unload call
+`Renderer3D::invalidateModelCachesFor(model)` **before** releasing GPU/model
+resources; on ECS entity despawn or asset replacement call
+`invalidateStaticModelCache(persistentId)` or the generic
+`invalidateEcsStaticModel` adapter. Full scene reload uses
+`Renderer3D::invalidateStaticModelCaches()`. These methods run on the
+renderer thread between submissions, not inside authoritative ECS ticks.
+Camera culling, dynamic LOD decisions, sorting and GPU submissions still
+happen each render frame.
 **MANDATORY: MotionWeave never depends on game genres or modules.**
 The core animation subsystem is NOT allowed to include, depend on or
 interpret FPS, RTS, RPG, networking, AI, weapon, economy or game-action
@@ -99,6 +498,113 @@ Read `docs/view.md` and `skills/gameplay/aiverse-view/SKILL.md`.
 Every bounded implementation must be followed by its own
 committed agent handoff. User deferred actual tests: mark
 NOT RUN until executed.
+
+## Strata virtualized geometry work (2026-11-19)
+
+Strata development is isolated on `feature/strata-virtual-geometry`.
+Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
+indirect batching, read `docs/strata.md` and
+`docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
+`docs/metal-batching-agent-handoff.md`. Stages 2–8 build CPU meshlet/LOD assets, opt-in static
+`GeometryScene` staging, per-pass CPU reference selection, auxiliary
+source-attached `GlobalGeometryPool` indices and version-2 GPU metadata.
+Stage 8 adds **diagnostic Metal compute culling** through
+`StrataGpuCulling.h` and `GeometryScene::dispatchStrataGpuView`, default
+OFF. It is **NOT a GPU render submission path**: `Renderer3D` is still
+the only draw authority. Never use GPU selection buffers to draw until
+real Metal shader execution + CPU oracle selection parity, overflow
+checks and full screenshot parity are verified.
+`GpuPassConfig::viewProjection` is VIEW PROJECTION only; each
+`GpuSceneInstance::objectToWorld` already includes the source node bind
+transform. `cpuReferenceView` composes the two. Treat GPU output order
+as nondeterministic and any overflow/invalid flag as non-drawable.
+`GpuPrimitive::gpuFirstIndex` (version 2 only) is the absolute shared
+GPU index base for a primitive; `GpuNode::sourceFirstIndex` is only
+primitive-local and never directly a `Model::gpuFirstIndex`.
+Do not fork the underlying GPU geometry pool, ECS scene or batching
+submission. GPU selection slots are explicit frame-serial scoped and
+cannot be recycled until prior GPU completion. Keep all Strata staging,
+GPU metadata and compute diagnostics default-OFF, including
+`AIVERSE_BUILD_STRATA=OFF` portable fallback.
+Coordinate with the batching agent: share a single instance/material/indirect
+grouping authority, do not duplicate rendered primitives or transforms.
+Stage 8.2 adds `GpuClusterCulling::requestReadback` (Metal async counters
+plus <=2048 selected cluster records) and `compareGpuSelection` CPU oracle.
+Output is diagnostic and must never be submitted to `Renderer3D`. Any
+invalid/overflow/readback-failed status is not drawable. The real macOS
+`aiverse_strata_metal_parity` fixture is manual and opt-in
+(`AIVERSE_STRATA_METAL_GPU_TESTS=ON`) and requires genuine Metal shader
+execution before GPU parity can be claimed. The owner-confirmed Mac Studio
+run for **previous Stage 8 code** passed 5/5 CPU/mocked CTests in 1.19s;
+that does not prove the newer shader or readback behavior.
+Stage 9 adds `StrataRenderRouting.h/.cpp` and the additive
+`GeometryScene::prepareStrataRenderCandidate` diagnostic preflight.
+Batching PR #34 has merged into main; Strata synchronized its updates at
+merge commit `a77cd830` without overwriting batching ownership.
+`RenderRouteGate` defaults to Legacy and requires independent proof of
+CPU/GPU selection parity, raster parity, source safety, residency and
+Renderer3D submission ownership. Even a complete gate only prepares
+commands; **no live renderer suppresses legacy ModelDraw or executes
+Strata commands yet**. Do not turn it on until the actual Metal parity
+runner, material and shadow screenshots, and exclusive per-primitive
+ownership are verified. `encodeRendererCommands` revalidates the
+current Model pointer, geometry/material revisions and live
+`GpuMetadataScene` sidecar lease before preparing shared-RHI indirect
+command bytes. Never use a stale candidate after source unload.
+Stage 10 adds a **dry-run only** bridge into real `Renderer3D` ModelDraw
+passes. `StrataRendererPreview.h/.cpp` supports pure preflight of each
+rigid node/primitive in independent main-camera and sun-shadow views;
+`GeometryScene::setStrataRenderPreviewEnabled(true)` is an additional
+scene opt-in (in addition to CPU/GPU staging and the separate GPU culling
+flag), default OFF. It invokes
+`renderer.previewStrataModel(...)` synchronously and ALWAYS follows with
+the original `renderer.drawModel(d)` exactly once. No Strata GPU command
+or indexed draw is submitted by preview. Renderer3D counters are
+diagnostic only and reset at beginScene. Never infer GPU/raster parity
+from a preview-ready count; actual Metal validation and exclusive route
+ownership remain mandatory before legacy suppression can be added.
+Stage 11 adds opt-in `aiverse_strata_metal_raster_parity`: a
+real Metal/CAMetalLayer A/B visual fixture using **the ordinary
+Renderer3D model material and shadow passes**, with exclusive
+per-frame Legacy or Strata source alias. The aliases borrow the same
+source GPU VB and existing pooled Strata sidecar IB — no extra GPU
+geometry pool and no second GPU draw path. A blank baseline must
+differ from Legacy, fine/coarse raster screenshots must match Legacy
+byte-for-byte for a deliberately **lossless** two-triangle hierarchy,
+and only one ModelDraw is submitted per candidate frame. It is NOT
+yet a production Strata routing path or a proof of real simplified
+LOD crack-free visuals, water reflection parity or GPU-authored
+selected-command rendering. Stage 11 has **not been run** until
+native output is returned; do not conflate with the previously
+confirmed real Metal compute 5/5 or focused CPU 6/6.
+The Strata-focused workflow's previously malformed regex was
+replaced; CI compiles both Metal fixtures on macOS, but intentionally
+does not run GUI tests headlessly.
+Stage 11.1 owner Mac Studio real Metal raster attempt FAILED at
+`Legacy and empty screenshots identical` while GPU selection remained 5/5
+PASS. Do not attribute that to geometry blindly: the test requested
+`captureNextFrame` on the final frame of each mode while Metal may
+delay capture until the next mode (framebufferOnly drawable).
+`bcc471e9` fixes capture scheduling with `setScreenReadable(true)`
+and mid-mode snapshots (4/15/26/37), retaining strict pixel equality
+and nonblank baseline. This fix requires native rerun and cannot
+be marked PASS from its mere GitHub commit. Confirm callback-frame
+and main/shadow draw diagnostics if failing. No production renderer
+or Strata draw path was enabled.
+Update from owner Mac Studio after `bcc471e9`: **Stage 11.1
+native Metal raster A/B PASSED**, `Legacy/Fine
+changed_channels=0`, `Legacy/Coarse changed_channels=0`,
+`status=PASSED frames=44`. The screenshots' actual capture
+callback frames were Empty 6, Legacy 17, Fine 28, Coarse 39
+(requested 4,15,26,37); the renderer recorded source shadow/opaque
+submissions Legacy 1/1, Fine 2/2, Coarse 1/1, Empty 0/0, with
+`pipelines=16 pipelineFailures=0`. Previous blank-baseline
+failure is superseded for this fixed native fixture; do NOT
+extrapolate to independent shadow-map depth, reflection,
+mixed materials or lossy LOD visual parity.
+Production Strata draw route remains opt-in diagnostic only.
+On each bounded Strata step: implementation commit first; append and commit the
+handoff separately, recording unrun tests honestly.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
@@ -1274,6 +1780,15 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+
+
+## PRISMA post-processing rules (short reference)
+
+- Canonical ownership and compatibility contract: **see the mandatory section at the top of this file**.
+- PRISMA keeps GPU-free effect policy/data, volume blending, graph scheduling and optional ECS presentation adapters independent from FPS/RTS; all renderer work uses shared RHI.
+- After each stage: `docs/handoffs/prisma-stage-XX.md`, with full changed paths, architecture, real tests/status and next step.
+- Roadmap `docs/prisma.md`; legacy format details `docs/postfx.md`.
+
 ## AIVERSE Stage 99 render resource lifetime — mandatory for all genres
 
 The generic per-host resource owner is
@@ -1853,6 +2368,1773 @@ test status, limits and next step to its handoff as the next separate commit.
 
 Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.
 
+## PHYSIS — genre-independent environmental ECS (2026-11-18)
+
+- **Canonical source:** `engine/physis/{Physis,PhysisClimate,PhysisEnvironment,PhysisDisasters,PhysisWind,PhysisGravity,PhysisStorm,PhysisForces,PhysisPresentation,PhysisIntegration}.h`. Native games include these headers and install PHYSIS into generic `aiverse::Simulation` through `physis::install`; do **not** reimplement weather/hazards in FPS, RTS, RPG, any genre, or in renderer-specific code.
+- **Mandatory independence:** PHYSIS must have no dependency on any game-genre module or a render backend; use `World` ECS components/resources and `Fixed` arithmetic, fixed committed ticks, deterministic seeds and COW/rollback.
+- **Presentation:** consuming Terra, Water, Foliage, VFX, Physics, Audio, editor and native gameplay may query read-only `EnvironmentalResponse` / `PresentationCell`; PHYSIS must work headless. Do not store visual handles in authoritative ECS.
+- **System ordering:** one of `advance`, `advanceClimate`, `advanceEnvironment` or `advanceEnvironmentWithDisasters` per authoritative tick; do not advance all of them. `physis::install` registers a single system. Preserve world persistence schemas when changing components.
+- **Docs/hand-off on EVERY stage:** `docs/agent-handoffs/physis-{core,climate,environment,disasters,integration}-2026-11-18.md` and `engine/physis/AGENTS.md`. Every follow-on implementation stage must commit code, then a separate handoff with exact branch/SHA, public API, changed files, actual test results, limits and specific next action.
+- **Tests:** baseline CTests `physis_core`, `physis_climate`, `physis_environment`, `physis_disasters`, `physis_integration`, plus `physis_wind`, `physis_gravity`, `physis_storm`, `physis_forces`, `physis_presentation`, and opt-in `physis_box3d` (`AIVERSE_ENABLE_PHYSICS=ON`); run `./run-tests.sh --filter '^physis_'` as required by the unified test-runner policy above. These targets have been written and registered but **NOT RUN** in the connector-only development session; do not claim validation or merge before tests and review.
+- **Remaining work:** PHYSIS-owned climate/wind/gravity/storm/force fields and host-facing presentation APIs and host-owned opt-in Terra/NEREID/VFX/Foliage/Physics/editor adapters (other agents own canonical water and terrain), spatial indexing, sparse hazards, streaming/LOD, deterministic partitions, network deltas, platform validation and physical-unit calibration. Follow the cross-agent ownership matrix below and `docs/physis-nereid-terraweave-integration.md`; do not duplicate Water or Terra systems.
+
+## Cross-agent ownership: PHYSIS / NEREID / TerraWeave (2026-11-18)
+
+**MANDATORY before weather, terrain, water, foliage, shoreline, hydrology or biome work:** read [`docs/physis-nereid-terraweave-integration.md`](docs/physis-nereid-terraweave-integration.md). Never implement the same capability in two systems. All three engine subsystems and their opt-in adapters are **genre independent**.
+
+| Owner (agent / active feature branch) | Exclusive implementation scope | Shared consumption boundary |
+|---|---|---|
+| **PHYSIS agent** / `feature/physis-nature-simulation`, draft PR #25 | Atmospheric/climate ECS, rain/snow/wind, surface wetness/snowpack/ice, fire and quake events. `engine/physis/` | Publish read-only `physis::EnvironmentalResponse` / `PresentationCell`; no water body/river/ocean/shoreline solver or terrain meshes. |
+| **Water agent (NEREID)** / `feature/nereid-water-core`, draft PR #23 | Generic ECS water bodies, water-surface and flow sampling, river/lake/ocean geometry, buoyancy, optional water mesh and water legacy adapters. `libraries/include/aiverselib/water/`, `docs/nereid/` | Export NEREID `WaterSample` / `WaterContactComponent` and stable water-body geometry for any terrain/render host; do not own PHYSIS climate or Terra terrain. |
+| **Terra agent (TerraWeave)** / `feature/terraweave` | Heightfields, biome/soil and terrain geometry, foliage/scatter, scene/terrain adapters, ground/shore presentation. `engine/world/TerraWeave*.h` | Opt-in adapters consume NEREID water and PHYSIS environment; do not duplicate a mutable water solver or weather simulation in Terra core. |
+| **Integration agent** / explicitly assigned at merge time | Coordinates, units, tick order, persistence, optional adapters, editor/host integration and cross-system tests | Independent composition target, **not** dependencies from PHYSIS/NEREID/Terra foundational headers into one another. |
+| **Render/VFX agent** / separately assigned | Particles, precipitation visuals, wet/snow material layers, foliage deformation, water material effects | Presentation-only snapshots; never write authoritative PHYSIS/NEREID/Terra ECS state from GPU/render frames. |
+
+**Source of truth:** Terra owns terrain height/biome baseline; PHYSIS owns dynamic atmospheric/weather/surface conditions; NEREID owns persistent water bodies, levels, flow and contacts. PHYSIS has an **experimental standalone `HazardCell::waterDepth` flood model**; for NEREID-managed worlds set `physis::InstallOptions::floodMode = physis::FloodMode::ExternalAuthority` to skip/clear PHYSIS local water while retaining fire and quake. The switch and tests have been authored but are **NOT RUN**; no NEREID integration or cross-module validation has been performed. NEREID water becomes authoritative when enabled. Keep legacy `waterNetwork`/baked maps unchanged until explicit migration and regression testing.
+
+**Future Terra bridge:** read NEREID water masks/surface and PHYSIS wetness/snow/ice/wind to build Terra shoreline, vegetation exclusions and ground overlays. Terra uses signed centimetres, PHYSIS/NEREID `Fixed` metres, X/Z ground and Y vertical: checked deterministic conversion and negative-coordinate floor division are mandatory. PHYSIS `rain` is normalized intensity, **not metres of water**; only the Water owner defines a calibrated precipitation-to-water-volume policy. No mutual include dependencies, double authority, hidden state or genre switch.
+
+**Cross-agent handoff after EVERY stage:** commit own changes only on own branch; document implementation SHA, API, changed files, actual PASS/FAIL/NOT RUN results, integration risks, and next step in a stage handoff. Cross-branch integration waits for a dedicated PR, native builds, tests (`physis_*`, `ecs_nereid_*`, `terraweave*`, legacy water/terrain), rollback, save parity and conflict review. Neither separate PR is automatically merged by this guidance.
+
+## PHYSIS diagnostics / visualization boundary (2026-11-18)
+
+- PHYSIS Stage 14 adds a read-only, bounded CPU diagnostic raster in `engine/physis/PhysisDiagnostics.h`, with `sampleDiagnosticRaster`, `DiagnosticLayer` and 16-bit `diagnosticNormalized`. This is reusable by any editor/game/server but is not an implemented Scene overlay or VFX. The API must not write ECS state, inspect render handles or mutate Box3D/Water/Terra.
+- World state remains owned by PHYSIS fixed-point ECS; diagnostics sample only committed `World` state, with invalid/out-of-grid cells explicitly marked. `LocalFloodMeters` is PHYSIS's standalone flood, never canonical NEREID water.
+- The added `physis_diagnostics` CTest is registered for `./run-tests.sh` and focused `.github/workflows/physis.yml`; it is **NOT RUN** until actual CI/native results are inspected. Handoff `docs/agent-handoffs/physis-diagnostics-2026-11-18.md`.
+
+## PHYSIS Stage 15–16 — diagnostic fast path and snapshot broadphase (2026-11-18)
+
+- `engine/physis/PhysisDiagnostics.h` reads scalar weather/surface/hazard layers **directly** from authoritative ECS cells. Only wind/gravity vector layers need a 3D field query. Old `sampleDiagnosticRaster` signatures and raw-output semantics remain.
+- `engine/physis/PhysisSpatialIndex.h` is an **opt-in transient COW-snapshot index**, not persistent ECS state: X/Z buckets prune WindZone, WindShelter, GravityField and StormEvent candidates while keeping exact old Fixed evaluation policies, ECS visit order and priority tie-breaks. `sampleDiagnosticRasterIndexed` is available to editor/host consumers.
+- Rebuild the derived index after committed simulation ticks, storm movement, mutations, load or rollback when current values are required. Never store it in `World` resources, serialize it, make rendering authoritative, or depend on Box3D/FPS/RTS/Water/Terra in PHYSIS core.
+- Stage tests `physis_diagnostics` (14-layer old-vs-fast and indexed parity) and `physis_spatial_index` (negative positions, field parity, snapshot mutation, bounded global fallback) are registered for the unified CTest and focused Linux/macOS workflow. **NOT RUN**; no benchmark throughput or native success claim. Handoffs: `docs/agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md`, `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
+
+## PHYSIS Stage 17 — editor diagnostics and separate preview World (2026-11-18)
+
+- The PHYSIS agent owns `engine/physis/PhysisDebugPalette.h` (CPU-only colour conversion, not authoritative) and `apps/editor/windows/PhysisWindow.cpp` (new optional docked GUI, auto-registered by `AIVERSE_EDITOR_WINDOW`). This **does not** replace or refactor shared Inspector/Scene/Hierarchy from editor-unification PR #7. The window opens from the World menu and is hidden by default.
+- The PHYSIS window may **read** the current `Editor::sim()->world()` if its `physis::State` exists, but must never step or modify that World or Box3D. When there is no PHYSIS live simulator, an explicit action creates an **isolated demo World** and any step buttons apply only to it.
+- 2D heatmaps use `DiagnosticRaster`, `FieldSpatialIndex`, and `DebugPalette`. Wind/Storm/Gravity circles are visualization only, not colliders or physical objects. Do not duplicate NEREID water or Terra terrain. Avoid introducing FPS/RTS-specific debug paths.
+- Tests `physis_editor_view` plus prior PHYSIS regression targets are registered with unified CTest and focused CI, but **NOT RUN**. Also build `aiverse_editor` and manually inspect Russian labels, cell picking, project/source switching and UI layout before claiming editor usability. Stage handoff: `docs/agent-handoffs/physis-editor-debug-view-2026-11-18.md`.
+
+## PHYSIS Stage 18 / current main merge — 2026-11-18
+
+- **Canonical feature branch** `feature/physis-nature-simulation` merged `main` commit `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` via two-parent merge `810feba70f01cdc35003ac80ea8486f39dc16049`, preserving input work and PHYSIS/SpectraFX/VFX. `docs/agent-handoffs/physis-main-merge-2026-11-18.md` records the exact trees/conflict resolution. Native merged build/CTest have NOT RUN.
+- **Scene debug overlay:** `apps/editor/PhysisSceneOverlay.h` draws opt-in transparent PHYSIS field tiles and Wind/Storm/Gravity rings in the *real* Scene viewport; `engine/physis/PhysisSceneGeometry.h` is pure Fixed-point CPU geometry, independent of editor/Box3D/genres. The Scene projection is presentation-only and never edits authoritative World.
+- **Inspector authoring:** `apps/editor/PhysisAuthoring.h` validates map-level `"physis"` JSON and uses one `MapDoc::beginEdit()` per Apply for Undo/Redo. `apps/editor/windows/InspectorWindow.cpp` shows PHYSIS parameters under `Selection::MapProps` plus extended JSON; supports both generic map and FPS document layouts. Invalid edits must have no side effects.
+- **Runtime opt-in:** `engine/physis/PhysisProjectConfig.h` parses map config into `InstallOptions`; any generic native `GameModule::setup` may call `physis::installFromMap(sim,map)`. Do not auto-attach to RTS/FPS genre modules or mutate live ECS when authoring. Authored per-volume arrays are stored but not auto-spawned until a separate stable-ID adapter exists.
+- **Verification gates:** `physis_scene_geometry` and `physis_project_config` build under base tests, `physis_authoring` builds when `aiverse_editor_core` is enabled, Studio workflow compiles/executes the editor integration tests. Actual CMake/CTest, editor screenshots and live UI tests: **NOT RUN**. Handoff: `docs/agent-handoffs/physis-editor-scene-inspector-2026-11-18.md`. Preserve PHYSIS/NEREID/TerraWeave ownership, main branch input changes, and editor-unification PR #7 work.
+
+## PHYSIS Stage 19 — authored nature fields, universal ECS spawn and editor gizmos (2026-11-18)
+
+- **Genre-independent source of truth:** `engine/physis/PhysisFieldAssets.h` validates map-level `windZones`, `storms`, `gravityFields` with stable unique authored IDs and creates ordinary `WindZone`, `StormEvent`, `GravityField` components in sorted ID order. `engine/physis/PhysisProjectConfig.h::installFromMap` runs all validation before world initialization; explicit native `GameModule::setup` remains required. Never duplicate these calculations in FPS/RTS/RPG modules.
+- **Editor owner:** `apps/editor/PhysisFieldEditor.h` + `PhysisAuthoring.h` list, create, edit, remove fields and provide opt-in W/S/G Scene markers. Click/drag is handled before normal selection ONLY when marker editing is enabled and the pointer hits a marker. No fake runtime ECS selection, live World edits or Box3D force changes. Selected authored field properties are shared with the universal MapProps Inspector.
+- **Undo/redo rule:** field addition/deletion/property Apply uses `MapDoc::beginEdit` once. Scene drag starts a single snapshot on the first effective movement and calls `MapDoc::touched` on subsequent moves. All authoring, including FPS map JSON, must use the same strict parser and the same MapDoc history. Do not mutate game save ECS directly; there is no live hot-reload in this stage.
+- **IDs/saves:** Stable ASCII `id` (1..64 chars) is a map authoring key, sorted at spawn; it is not itself a new persistent ECS schema. Nonempty field collections require matching `enableWindZones`, `enableStorms`, `enableGravityFields` flags. Use unchanged map + registered schema manifest for replay/load; no runtime field-ID lookup or multi-user edit merge claimed.
+- **Water/Terra:** NEREID Water agent retains authoritative water; `FloodMode::ExternalAuthority` prevents duplicate PHYSIS shallow-water authority. TerraWeave agent owns foliage/landscape. Box3D adapter remains optional physics consumer.
+- **Tests:** `physis_field_assets`, `physis_field_authoring` (when editor_core built), expanded `physis_project_config` native save fixture, CMake + Linux/macOS/Studio CI updates. **CMake, native C++, CTest and graphical drag testing NOT RUN**; don't claim success without logs. Next handoff `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`.
+
+
+### PHYSIS Stage 21 — group editing without runtime writes
+- PHYSIS Scene W/S/G markers now support Ctrl/Shift multi-selection,
+  group move, safe duplicate and atomic group deletion. Continue building
+  genre-independent ECS components/systems; avoid genre-only variants.
+- The shared authoring helpers moveFields/duplicateFields/removeFields use
+  native field validation for one MapDoc Undo transaction per batch/drag,
+  for both regular and FPS-verbatim JSON maps. Move a whole group by the
+  same delta; never snap members individually or mutate live ECS World.
+- Keep Scene/ImGui in apps/editor/PhysisFieldEditor.h. NEREID owns water,
+  TerraWeave terrain/foliage, Box3D dynamics. No new saved ECS schema.
+- See docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
+  Source test cases added but C++ compilation/CTest/macOS GUI QA NOT RUN.
+  PR #25 must stay draft until verified.
+
+
+- PHYSIS Stage 21 extension: physis_authoring::transformFields performs one
+  editor-only group rotation around global Y and uniform spatial scale
+  about the active selected marker. It scales radii/storm extents but NOT
+  wind velocity or force strengths. No new runtime authority or schema.
+  See the Stage 21 handoff; GUI/CTest verification still pending.
+
+
+### PHYSIS Stage 22 — advanced Scene field gizmos
+
+- PHYSIS mouse controls in apps/editor/PhysisFieldEditor.h now include
+  optional box selection, 5 pivot choices, world-axis X/Y/Z handles,
+  Yaw-Y and Uniform Scale rings, and prior radius editor. Pure
+  apps/editor/PhysisGizmoGeometry.h is ImGui/genre independent.
+- Pivots are transient editor state. Group movement snaps the pivot and
+  preserves relative offsets; ring drag calculates from original JSON
+  via transformFields with baseline/firstEdit and a single Undo.
+  Every result gets full native parser validation before MapDoc write.
+- Never edit live ECS/Box3D/NEREID/TerraWeave state from scene authoring.
+  Yaw changes field positions, not orientation or wind velocity. The
+  current field types do not support unconstrained 3D quaternion rotation.
+- Independent engine/physis/PhysisFieldChangePlan.h may exist from
+  another agent; this is a planning helper only, not ECS hot reload.
+- Stage handoff docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
+  C++ fixtures authored but native compile/CTest/macOS visual QA NOT RUN;
+  keep PHYSIS PR #25 in draft.
+
+
+### PHYSIS Stage 23 — opt-in reconciler and command authority
+
+- The new engine/physis/PhysisFieldRuntime.h provides generic,
+  genre-neutral stable authored ID -> Entity mapping and an opt-in
+  Simulation command-boundary reconciler based on FieldChangePlan.
+  installEditableFromMap intentionally changes persistent schema
+  (physis.field_runtime v1, Wind/Storm/Gravity pools); keep old
+  installFromMap and existing save manifests untouched by default.
+- Apply complete typed field edits through a host-selected
+  GameModule::applyCommand type after server authorization and revision
+  checking; never write live ECS from Scene. Stable IDs and fingerprints
+  live in rollback-owned World resource; same-kind Update preserves Entity,
+  retype Remove+Add, stale batches reject and no-op batches consume revision.
+- Simulation Command wire supports <=4096 args, so PHYSIS caps snapshots
+  at 32760 bytes. It does not provide automatic network permissions,
+  atomic multi-packet chunking, Inspector-to-GameModule dispatch or
+  GUI edit acknowledgement. Live climate/grid/flood policy migration
+  remains unsupported.
+- A new physis_field_runtime CTest target is registered in CMake and
+  PHYSIS/Studio CI. Test SOURCE has been written but native C++/CTest/CI
+  PASS and actual network/editor integration have not been verified.
+- Stage handoff: docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
+  Keep PR #25 as DRAFT until genuine native validation.
+
+
+### PHYSIS Stage 24 — opt-in editor submission and network authority
+
+- apps/editor/PhysisLiveEdit.h holds the generic local capability and
+  status tracker, apps/editor/windows/PhysisWindow.cpp the UI.
+  GameModule must opt in, select its own command type and authorize
+  LOCAL editor mutations explicitly. No PHYSIS World writes from Scene.
+- Queued is not Applied. Read runtime revision plus authored field
+  fingerprints, invalidate on superseding changes/rollback and visibly
+  reject stale revisions or missing dispatch.
+- engine/physis/PhysisFieldRuntime.h exposes server-side
+  admitAuthorizedFieldEdit with a principal generated from the
+  authenticated connection and a host ACL callback. Never promote
+  untrusted player=0 commands into authority. Existing player input
+  relay is not a PHYSIS admin endpoint.
+- Network CommandSink stays unavailable for local editor submit; a
+  remote host needs its own privileged transport, routing and ACK/NACK.
+  No automatic FPS/RTS integration, climate/water/physics hot edits or
+  default persistence schema changes.
+- New physis_live_edit CTest + CI entries are authored but native
+  compile/CTest/macOS UI/real network runs NOT VERIFIED.
+  Handoff docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
+
+
+### PHYSIS Stage 25 — remote editor protocol, dedupe and reconnect
+
+- Reuse net::Conn and versioned PHYSIS envelopes for remote editing;
+  do not inject editing into normal player InputFrame or allow
+  arbitrary client-issued player=0/system commands.
+- ServerGateway takes a verified principal from an authenticated
+  server connection and a host ACL; only server-owned commands
+  execute at Simulation boundaries. Deduplicate exact requests
+  by principal/instance/request ID, reject altered ID reuse,
+  serialize admissions and distinguish Queued from Applied.
+- Applied requires the right ECS revision and exact fingerprints,
+  not a sent packet. RemoteClient preserves ID and bytes on retry,
+  queries before resending after reconnect and rechecks old
+  Applied receipts for rollback. Server dedupe cache is volatile,
+  NOT an exactly-once journal across server process restarts.
+- apps/editor/PhysisRemoteEdit.h accepts only a trusted attached
+  net::Conn. No default anonymous PHYSIS admin listener or
+  FPS/RTS auto-authority. A host must wire real auth, transport
+  and durable journal separately.
+- Another agent's RuntimeFieldRegistry / installTrackedFromMap is
+  independent from the Stage 23 FieldRuntimeState pipeline.
+  Keep one authority, do not install both. No NEREID/Terra/Box3D
+  ownership changes.
+- CTest physis_remote_edit and PHYSIS/Studio workflow targets
+  added but native compile/CTest/real security QA NOT RUN.
+  Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
+
+
+### PHYSIS Stage 26 — journal recovery and privileged local endpoint
+
+- Canonical PHYSIS editor/runtime authority is Stage 23/24
+  FieldRuntimeState + installEditableFromMap + GameModule::applyCommand
+  dispatching applyFieldEditCommand. Do NOT install the parallel
+  RuntimeFieldRegistry/FieldCommandHost simultaneously.
+- engine/physis/PhysisRemoteJournal.h stores the admin request/receipt
+  cache as bounded checksummed write-ahead snapshots. Persist INTENT
+  before command enqueue and status after tick, fail closed if disk
+  writes fail. On startup restore Simulation checkpoint first,
+  validate/load journal second, open privileged listener third.
+- engine/physis/PhysisAdminAuth.h provides challenge/proof with keyed
+  BLAKE2b and secure OS random. PhysisAdminEndpoint.h binds a
+  WsListener to loopback only, requires game-owned reserved command
+  type, authenticated principal and ACL. Never trust client IDs
+  or player=0 as an authority credential.
+- Native net::connectWebSocket does not support WSS/TLS. External
+  admin requires a real encrypted tunnel/transport, never public
+  plaintext ws://. No automatic privileged listener is added to
+  FPS/RTS modules or ordinary net match input.
+- Sidecar file journal + separate World checkpoint is NOT one
+  crash-atomic transaction; Unknown/Conflict after ambiguous
+  restart is a correct result, not a false Applied. Further
+  atomic checkpoint work required before exactly-once guarantees.
+- Test target physis_admin_journal registered and fixture written;
+  native build/CTest/macOS editor/actual remote TLS and security QA
+  NOT RUN. Stage handoff
+  docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
+
+
+### PHYSIS Stage 26 hardening — queued receipt after process crash
+
+- ServerGateway::restoreJournal must convert every persisted Queued
+  receipt to Unknown: a server restart loses its old in-memory
+  Simulation.pending commands. First restore matching World,
+  then observe() to reconcile to Applied / Conflict from actual
+  revision and field fingerprints. For unresolved intent permit
+  only the identical original authenticated Submit under ACL
+  and expectedRevision. Never fake a successful old receipt.
+- New native source tests in physis_admin_journal cover crash
+  before scheduled tick and crash after World commit but before
+  receipt flush; BUILD/CTEST NOT RUN.
+- FileJournal sidecar and Simulation save are NOT one atomic store.
+  Keep exact limits/ownership and separate PHYSIS, NEREID,
+  TerraWeave and Box3D. Handoff:
+  docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
+
+
+### PHYSIS Stage 26 queued receipt crash recovery
+- The existing admin journal and authenticated loopback endpoint were already implemented in PHYSIS; do not duplicate them. `ServerGateway::restoreJournal` must treat persisted `Queued` as `Unknown` on process restart because the Simulation pending command may have vanished.
+- Reconcile Unknown against the restored World; confirm Applied only for matching revision and typed-field fingerprints. Safe requeue requires the exact original authenticated request and still-current expected revision. Do not claim cross-file exactly-once durability.
+- New source tests cover crashes before ECS commit and after ECS commit but before journal Applied flush. Native tests NOT RUN.
+- Stage handoff: `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.
+
+## PHYSIS synchronized with canonical NEREID Water in main (2026-11-19)
+
+The two-parent merge `7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b` imported `main` at `d71c6d47e532b25fb816a8bb1f96c41e5275a165` INTO
+`feature/physis-nature-simulation`; **never merge PHYSIS into main
+without separate review**. The merge preserved the genre-independent
+PHYSIS ECS and imported canonical NEREID Water (components, surface,
+buoyancy, currents, confluence, scene, renderer bridges and tests).
+NEREID owns authoritative water bodies/flows/buoyancy; PHYSIS owns
+weather, wind, gravity, storms, wetness/snow/ice and hazards. For a
+native host using NEREID water authority, explicitly opt PHYSIS into
+`FloodMode::ExternalAuthority` to avoid double shallow-flood simulation.
+`engine/world/NereidPhysisWindBridge.h` is presentation-only; it never
+makes PHYSIS and NEREID share mutable authoritative state.
+Follow `docs/physis-nereid-terraweave-integration.md` and
+`docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
+Previous PHYSIS/Box3D, Editor authoring and NEREID standalone test
+results do NOT establish a PASS for the new combined merge: run a
+new native cross-module compile/CTest and preserve the result.
+
+## PHYSIS + NEREID post-merge native test checkpoint (2026-11-19)
+
+User ran the PHYSIS branch's focused post-`main` merge CTest
+(`^(physis_|ecs_nereid_|vfx_)`) and reported **40/40 PASS,
+0 failures, 10.25s**. This verifies those native test targets after
+the two-parent merge `7c617d7f`; it is **not** all-repo CTest or
+runtime visual validation. The system authority contract is unchanged:
+PHYSIS owns environment/weather; NEREID owns water bodies/flow
+and buoyancy; TerraWeave owns terrain/foliage. No duplicate local
+PHYSIS shallow flood with canonical NEREID: choose
+`FloodMode::ExternalAuthority`. The existing PHYSIS-to-NEREID
+wind adapter changes visuals only, not ECS water authority.
+See `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+## PHYSIS full repository test follow-up: skill audit and Place performance (2026-11-19)
+
+After the native post-main-merge focused suite passed 40/40,
+the user's full 150-test macOS CTest had **148/150 PASS**.
+`skill_audit` failed on one PHYSIS documentation reference
+(`tests/physis_remote_edit_test.cpp::revisionProbeStopsOnUnhealthyJournal`
+was treated as a nonexistent file), while `place` had **51/52
+internal checks PASS** but missed a strict performance check:
+server tick average **8.204 ms**, required **<5.0 ms**.
+All Place convergence/correctness assertions reported in the log
+passed; the measured sample had 523 physics bodies, 16 clients/4g
+and a late joiner.
+
+Source commit `a61923df653994a9a94c1916f4077db7fb7e9848`:
+- In `skills/world/aiverse-physis/SKILL.md` separate the valid
+  file path from the function name so `tools/skills/audit.py`
+  no longer treats the combined `file.cpp::function` as a path.
+- In `CMakeLists.txt`, make `place` CTest `RUN_SERIAL TRUE`.
+  This schedules the wall-clock performance test exclusively,
+  eliminating competition with parallel CTests as a confound.
+  The **original <5.0ms** performance condition and full scenario
+  are unchanged; no Place simulation/physics runtime was modified.
+
+**Verification:** CMake 3.31 isolated fixture confirmed
+`RUN_SERIAL=True` in `ctest --show-only=json-v1`.
+GitHub source readback confirmed the updated skill reference.
+**NOT RUN after these changes:** the actual macOS `skill_audit`,
+`place`, complete 150-test suite. This is a scheduling mitigation,
+not proof that Place meets 5ms on the user's machine. If it still
+fails alone, capture Release/Debug build mode, CPU/Rosetta status
+and isolated tick timing before changing performance budgets.
+Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.
+
+## Stage 75 — universal terminal build monitor + isolated Place triage (2026-11-19)
+
+- New `tools/aiverse-progress.py` (code commit
+  `d83716dcd835df40c7861828a92064e961a63bc6`): standard
+  library Python 3.8+ CMake/CTest wrapper, animated ANSI terminal
+  dashboard, CTest active names and elapsed duration, bounded recent
+  output/warning counts, plain CI fallback with 15s heartbeat, preserved
+  unabridged per-stage logs and `summary.json`, real exit codes.
+- **Actually tested on a local isolated Linux CMake fixture**, not
+  AIVERSE: configure/build/smoke CTest 2/2 PASS, deliberate no-tests
+  and failing-test exit 8, 16s silent test printed `[alive]`
+  heartbeat at 15s. `py_compile` PASS; GitHub blob SHA matches
+  the exact locally tested file. macOS ANSI UI remains unverified.
+- **User's Stage74 re-run**: `skill_audit` PASS (0.42s),
+  `place` FAIL after 309.14s, tick avg **8.110ms** (threshold
+  `<5.0ms`), worst 19.245ms; all other 51 Place internal
+  checks passed. This is an isolated CTest run after
+  `RUN_SERIAL TRUE`, so contention with other CTests is no
+  longer an adequate explanation. Do NOT relax the threshold.
+- Next: test `place` in a separate optimized Release build with
+  the monitor and examine `CMAKE_BUILD_TYPE`, actual Mac architecture/
+  Rosetta and then phase profile PlaceServer if needed.
+- This stage changes tooling/docs only; no engine PHYSIS/NEREID,
+  physics, network, ECS or genre API changes. PR #25 remains Draft.
+- Guides: `docs/aiverse-build-monitor.md`,
+  `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.
+
+## Universal AIVERSE Build Monitor warnings/errors (2026-11-19)
+
+Tool `tools/aiverse-progress.py` now keeps a **pinned colored**
+Warnings/Errors panel in interactive Terminal, a diagnostic count
+for each configure/build/CTest stage and a complete timestamped
+`diagnostics.log` plus `summary.json`. The display retains
+recent compiler errors even if later warning lines arrive.
+Warn/error counts are matching *output lines*, not distinct compiler
+diagnostics. Warnings do not automatically cause build failure.
+Python regression CTest `tool_aiverse_progress` is registered
+when `AIVERSE_BUILD_TESTS` and Python interpreter are available.
+Source commit `47a320624a118d3f5dd23a7e9d4c81d58e095676`.
+Only the monitor/test CMake and docs changed, not engine runtime.
+Local standalone Python unittest 3/3, standalone CMake CTest 1/1
+and CMake warning/success-log integration passed. Actual
+AIVERSE macOS Terminal UI is **NOT RUN**. Guide:
+`docs/aiverse-build-monitor.md`; handoff:
+`docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.
+
+## PHYSIS Stage 78 — optional per-entity Nature Contacts (2026-11-19)
+
+New `engine/physis/PhysisNatureSampling.h` adds reusable
+`NatureProbeComponent` (3D Fixed position/enabled),
+`NatureContactComponent` (wind, gravity, atmospheric and surface
+fields, fire/quake, validation and two tick stamps), and
+`advanceNatureContacts(World&,uint32_t)`.
+`InstallOptions::enableNatureContacts` defaults to **false**;
+the optional components are persisted only when enabled and
+`physis.nature_contacts` runs AFTER the climate system. No
+historical save manifest or genre-dependent code is changed by default.
+
+Separate `engine/world/PhysisNereidNatureBridge.h` combines
+the published PHYSIS/NEREID read-only contacts on one ECS entity,
+checking enabled state, matching tick stamps and probe positions
+to avoid stale data. It neither advances water nor writes
+NEREID bodies. Host must register both samplers; choose
+`FloodMode::ExternalAuthority` if NEREID owns water.
+
+**Code commits:** `354e0689fffcfc4ec9853307fc3a06ba32c86212`,
+`a286022cb733c524f30b795501c957ee1ae3f9ec`.
+**Verification:** source and test registered in CMake; combined native
+`physis_nereid_contacts` test is WRITTEN, **NOT RUN** on macOS
+or other full AIVERSE checkout. The earlier 40/40 focused
+PHYSIS/NEREID/SpectraFX PASS predates these commits and must NOT
+be cited as testing Nature Contacts. Review possible compile or
+runtime errors in the new test rather than claiming readiness.
+
+Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+## PHYSIS Stage 79 — generic wind/fire/quake structural stress (2026-11-19)
+
+PHYSIS now publishes opt-in, deterministic environmental structural
+stress **without** duplicating the existing wind force solver. Use
+`engine/physis/PhysisNatureStress.h`:
+`NatureStressReceiverComponent` for resistance, lever arm, fatigue,
+recovery, fire/quake sensitivity, and
+`NatureStressOutputComponent` for aerodynamic force, bending moment,
+normalized load, accumulated damage and the latched fracture transition.
+`InstallOptions::enableNatureStress=true` requires both
+`enableForces=true` and `enableNatureContacts=true`. Systems run
+climate -> forces -> nature contacts -> nature stress. Source:
+`21c016ede31107f48c50ecc5247cfc0cf98ae56a`.
+
+PHYSIS calculates generic **damage potential** only. It never
+creates Box3D bodies, uproots trees, rewrites TerraWeave vegetation,
+transforms meshes or runs a duplicate water authority. The host
+reacts to `newlyFractured` once per (entity, climate tick); the
+host must implement its own idempotent transition to fallen
+vegetation/rigid bodies. For large grass fields use ECS **cluster**
+proxies rather than a component per blade. A dedicated CTest
+`physis_nature_stress` and the earlier
+`physis_nereid_contacts` test are authored but **NOT RUN** natively.
+No new feature may be declared validated until actual macOS CTest.
+See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
+
+### PHYSIS Stage 80 — native macOS recovery after const World fix (2026-11-19)
+
+- Initial user-native AppleClang compile FAILED in `tests/physis_nereid_nature_contacts_test.cpp:103–104` with two `no matching member function for call to 'get'` errors. Test bound `const auto& world=sim->world()`, while `World::get<T>(Entity)` in `engine/core/ECS.h` is non-const.
+- Implementation commit `4d9c1adb94f88c7aefef58e3320afda9297e0b48`: replace two reads with `world.tryGetConst<T>(entity)`, check both pointers, copy their component values. Existing mutable test setup continues using `get<T>`. No runtime ECS, PHYSIS, NEREID, Box3D, save schema or renderer changes.
+- **Post-fix user-reported macOS native monitor: `AIVERSE: PASS`, 00:00:20, 0 warnings, 0 errors**. Report: `build/physis-nereid-validation/aiverse-reports/20261119-181448-67558`. The pasted output contains no CTest per-test lines: exact number of tests completed must be retrieved from this report's `ctest.log`/`summary.json`.
+- Prior combined PHYSIS/NEREID/SpectraFX 40/40 was on older source. Full current-branch repository-wide tests, interactive editor, Box3D/TerraWeave fracture handoff and CI are not verified. PR #25 stays Draft.
+- Standalone handoff: `docs/agent-handoffs/physis-stage80-const-world-native-2026-11-19.md`.
+
+### Stage 81 — Stage78/79 confirmed native macOS CTest 2/2 PASS (2026-11-19)
+
+The user supplied the complete AIVERSE Build Monitor JSON and native
+`ctest.log` from `build/physis-nereid-validation`,
+report `20261119-181448-67558`, on source commit
+`4d9c1adb94f88c7aefef58e3320afda9297e0b48`:
+`configure` exit=0, `build` exit=0, `ctest` exit=0,
+**completed=2, failures=0**, aggregate exit=0, 0 warnings,
+0 diagnostic errors, 20.71 seconds for the full command.
+Native CTest:
+- `physis_nereid_contacts` (#123) PASS 0.85s.
+- `physis_nature_stress` (#124) PASS 1.01s.
+- 100% PASS 2/2, 0 failed; CTest wall time 1.02s.
+This supersedes Stage80's note that the named test results were
+not yet available. **It does not establish full AIVERSE suite or
+TerraWeave/Box3D physical falling integration.**
+No code change; documentation checkpoint only.
+Handoff: `docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.
+
+### PHYSIS Stage 82 — persistent fracture event handoff (2026-11-19)
+
+Implementation commit `2b0190cb93e4335e7e458fa03d75239ef65c8424`.
+Added `engine/physis/PhysisFractureOutbox.h` defining
+`NatureFractureOutboxComponent` with Empty/Pending/Acknowledged
+states, a generation-safe Entity/tick event key and persistent
+Archive serialization. `advanceNatureFractureOutbox(World&)`
+publishes a current-tick newlyFractured stress event once;
+`pendingNatureFractures(const World&)` returns sorted pending
+messages, retained over later ticks/save, and
+`acknowledgeNatureFracture(World&,Entity,key,tick)` rejects
+wrong/duplicate acknowledgments.
+
+`InstallOptions::enableFractureOutbox=false` by default.
+If enabled, it requires nature stress (already requiring forces
+and nature contacts), registers `physis.fracture_outbox` v1
+persistence and adds system `physis.fracture_outbox` after
+`physis.nature_stress`. Default game save manifests unchanged.
+`tests/physis_fracture_outbox_test.cpp` registered as CTest
+`physis_fracture_outbox` (PHYSIS/ECS/PERSISTENCE labels):
+tests ordering, deterministic keys, pending/ack, native
+save/load, rollback and COW.
+
+TerraWeave `feature/terraweave` already owns
+`PlantFallEvent`, `AnchoredPlantId` and
+`FallenPlantPhysics::spawn` for Box3D. PHYSIS does not
+import or duplicate TerraWeave: a game host must map Entity
+to plant ID, perform/replicate physical consequences and
+then acknowledge. External Box3D float state is not atomic
+with ECS ack; host must deduplicate/resynchronize on rollback.
+NEREID still owns water. Grass uses per-cluster probes.
+
+Prior Stage81 user macOS 2/2 nature tests PASS confirmed;
+Stage82 native compile/CTest **NOT RUN**. PR #25 remains
+Draft. Handoff:
+`docs/agent-handoffs/physis-stage82-fracture-outbox-2026-11-19.md`.
+
+
+## TerraWeave procedural terrain/foliage (2026-11-18)
+
+Universal world generation lives in `engine/world/TerraWeave.h` (namespace
+`aiverse::terraweave`), independent of RTS/FPS and usable by native C++
+project modules. Read `docs/terrain/TERRAWEAVE.md` and the
+`skills/world/aiverse-terraweave/SKILL.md` before implementation.
+
+- Preserve existing RTS terrain rendering, simulation and editor contracts.
+  TerraWeave is an optional generic generator, **not** a new parallel terrain
+  renderer. Explicitly convert its integer centimetres to old map units.
+- Genre-independent components and systems: chunk/vegetation patch entities
+  for cosmetic foliage; entities per individual tree only when gameplay needs
+  them. Never allocate one ECS entity per grass blade.
+- All authoritative generation must be deterministic, independent of chunk
+  partition, job timing and input species order. Use stable seeds, integer or
+  Fixed math and explicit generator-version migration for saved worlds.
+- Generate chunks in pure jobs; ECS changes in deterministic commit order.
+  Rendering uploads use the RHI. Shader changes need GLSL+MSL and quality tiers.
+- **After every development stage update
+  `docs/terrain/AGENT_HANDOFF.md`** with exact commits, API/files, tests
+  actually run, limitations and the next step. No tests may be marked passing
+  without recorded execution.
+
+
+### TerraWeave agent ownership for current implementation phases (2026-11-18)
+
+- **Feature/architecture agent** owns TerraWeave runtime functions, native
+  APIs, opt-in WorldScene/editor integrations, and a handoff document after
+  EVERY implementation stage. Do not make the engine depend on FPS or RTS.
+- **Separate validation agent** owns build/CTest, the unified test runner,
+  Metal/GL/Vulkan screenshot checks, race/sanitizer checks, FPS/RTS
+  regressions and performance benchmarks for this feature. The feature
+  agent should NOT duplicate that test work while the user requests
+  functions first. This task split never permits claims that unexecuted
+  tests passed. Record all tests as NOT RUN until the testing agent
+  provides actual build/report evidence.
+- New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
+  Horizon quality presets and `TWH8` prebaked atlas archive interfaces
+  are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
+  versions/fingerprints consistent whenever the bake format changes.
+  Don't introduce file-system writes or game-authority mutations
+  into rendering/presentation code.
+
+### TerraWeave Horizon terrain borders and offline atlas migration (2026-11-18)
+
+- Horizon far-terrain grid world coordinates **must** use the globally
+  aligned signed rational lattice in `engine/world/TerraWeaveHorizon.h`,
+  not camera-local interpolation. Border normals use ghost-neighbor
+  samples and match on overlapping regions if the height source matches.
+- `terrainSkirtDepthCm` only adds outer downward geometry to existing
+  terrain primitive/material 0; no additional backend, model or ECS.
+- `TerraWeaveHorizonArchive.h` currently uses **TWH3** and invalidates
+  TWH1/TWH2 assets. Re-run `aiverse_horizon_bake` for static game packs.
+  Preserve current archive version/fingerprint semantics when extending
+  Horizon geometry; never silently read old incompatible assets.
+- After each functionality stage, append to
+  `docs/terrain/AGENT_HANDOFF.md`. Another agent runs ALL
+  compiler/CTest/platform-GPU validations; label them NOT RUN here.
+
+### TerraWeave Horizon near/far terrain ownership (2026-11-18)
+
+- The current Horizon archive is **TWH4**, not TWH3.
+  It stores an optional authored near-ground ownership map,
+  inner seam lip and stable skyline settings; all previous
+  TWH1–TWH3 binaries must be regenerated. Maintain archive
+  version/fingerprint whenever changing geometry layout.
+- Do not remove far terrain merely because it lies
+  within a near-camera radius if `WorldScene` exposes
+  actual authored terrain coverage. Use immutable
+  `HorizonSurfaceSources::ownsNearTerrainRect` and
+  conservative `AuthoredWorldHeightSnapshot::coversRect`;
+  absent near tiles must keep far ground visible.
+- Inner near/far seam lips are strictly bounded to
+  512 segments, share the original GPU Model/material 0,
+  and do not create gameplay ECS data.
+- Horizon outer grid snaps to a **nearest global lattice
+  anchor** in coarse steps to stabilize mountain silhouette;
+  forest radius must not extend beyond guaranteed far
+  terrain coverage. Separate agent owns all build/CTest/
+  Metal/GL/Vulkan screenshots and benchmarks.
+
+### TerraWeave exact near-ground clipping / archive TWH5 (Stage 18)
+
+- **Current archive:** `TerraWeaveHorizonArchive.h` is
+  **TWH5**. Any preceding TWH1–TWH4 reference is
+  historical; old binaries must be regenerated.
+- Distant terrain overlapping a partial authored
+  near-tile rectangle should be subtracted on the CPU
+  using `planHorizonNearGroundClipping`, preserving
+  original far-ground triangle plane and winding.
+  No new RHI backend, material or draw per near tile.
+- The immutable source snapshot supplies both
+  `ownsNearTerrainRect` and `collectNearTerrainRects`.
+  Input rectangles and output mesh triangles are
+  strictly bounded; on cap overflow fall back to
+  the conservative full coarse quad cutout rather
+  than unbounded memory.
+- `maxNearClipTriangles`: Minimal=0, Mobile=512,
+  Balanced=2048, High=4096, configurable up to 8192.
+  Accurate X/Z clipping is NOT proof of seamless
+  vertical near/distant terrain heights.
+- Update `docs/terrain/AGENT_HANDOFF.md` on each
+  source stage with files/commits/actual tests.
+  Testing is owned by a separate agent; do not
+  claim compilation, screenshots or passing CTest
+  without that agent's logs.
+
+### TerraWeave Horizon TWH6 near-surface seam data (Stage 19)
+
+- Current archive is **TWH6**; old TWH1–TWH5 blobs are historical
+  and must be regenerated. The version/fingerprint changes when the
+  baked seam sample layout changes.
+- Authored-world near/far stitching must capture near-terrain heights
+  from the **same immutable snapshot** as resident rectangle coverage.
+  Run `populateHorizonNearSeamSamples` after `bakeHorizon`
+  in both CPU worker and offline batch, BEFORE archiving/caching.
+- Seam sampling uses signed world-centimetre coordinates with
+  Q16 precision, no more than 4096 unique points, and an
+  all-or-none fallback when required heights are missing.
+  The source `nearGroundHeightAtCm` returns nullopt when
+  near terrain is not resident. The graphics/RHI layer must
+  not query live ECS/collision heights during submission.
+- `makeHorizonModel` welds the boundary vertex Y into the
+  existing material-0 triangles without adding a new model
+  or draw call. Real GPU seam quality is still unverified;
+  the separate testing agent owns CMake/CTest/driver captures.
+
+### TerraWeave Horizon slope-safe near seam and TWH7 (Stage 20)
+
+- **Current archive TWH7:** `TerraWeaveHorizonArchive.h`
+  includes bounded near-weld slope/normal settings and the
+  weld-fallback flag. TWH1–TWH6 are historical and must
+  be rebaked with `aiverse_horizon_bake` or regenerated.
+- `maxNearWeldSlopePermille=2500` (0=off) preflights
+  all new welded clip triangle gradients. An unsafe weld
+  is fully disabled for its region; precise X/Z clipping
+  remains and `nearWeldSlopeFallback` is explicit.
+  Do not misrepresent a missing weld as seam-free geometry.
+- `nearSeamNormalBlendPercent=65` repairs shared clipped
+  vertex normals with area-weighted geometric face normals
+  during existing CPU Model construction. No changes
+  to collision, near terrain ownership, GPU topology,
+  materials or backend APIs are permitted for this stage.
+- `HorizonRuntimeStats` exposes smoothed normal count and
+  slope safety fallback through the GPU LRU. User assigns
+  compilation, CTest, GPU screenshots and benchmarks
+  to another dedicated testing agent; always report
+  `NOT RUN` unless actual evidence is provided.
+
+### TerraWeave TWH8 exact fractional near-normal seam contract
+
+- **Current Horizon archive is TWH8**. Historical TWH1–TWH7
+  blobs must be regenerated; exact Q16 near seam heights,
+  signed near-surface gradient components and normal-valid
+  flags are versioned and fingerprinted through the
+  Horizon archive.
+- `AuthoredWorldHeightSnapshot::sampleQ16` is an optional
+  fractional-centimetre source contract used only by the
+  CPU seam baker. `WorldScene` supplies
+  `nearGroundHeightAtQ16Cm` from the SAME immutable
+  near-ground snapshot as near tile ownership.
+- On the near/far seam, use authored near-surface normals
+  when available, otherwise the existing area-weighted
+  far triangle normals. The `maxNearWeldSlopePermille`
+  all-or-none seam welding guard remains active.
+- `horizonCanReuseModelGeometry` must reject changes
+  in Q16 seam positions, near height, slopes, normal
+  validity and normal blend settings for **atlas-only**
+  GPU patching; never leave stale vertex normals.
+- `HorizonRuntimeStats::matchedAuthoredNearNormals`
+  measures actual near-surface normal matches, not GPU
+  performance. Separate testing agent performs all
+  CMake/CTest/Metal/Vulkan/GL/benchmark validation.
+
+### TerraWeave Stage36 host quality policy for Horizon GPU wind
+
+Native projects may use `engine/world/TerraWeaveWindUploadPolicy.h`:
+`HorizonWindUploadPolicy{maxBytesPerUpdate=2MiB,maxSparseRanges=8,
+fullFallbackPercent=70}`. `WorldScene::setVegetationHorizonWindUploadPolicy`
+forwards to Horizon's `setWindUploadPolicy`; validate strictly before
+publication. Zero byte budget defers changed colour transfers; a too-low
+budget may indefinitely defer dense fallback while the safe macro
+shader remains. Combined active+outgoing GPU upload limit is per update,
+not per model. The **2 MiB per-model CPU shadow remains fixed**; no
+new GPU resources or TWH8 format changes. See
+`docs/terrain/TERRAWEAVE.md` Stage36 and
+`docs/terrain/AGENT_HANDOFF.md`. User prioritizes features before QA;
+do not claim native/Metal/GL/Vulkan verification.
+
+### TerraWeave Stage37 — safe inactive wind CPU shadow budget
+
+Use `engine/world/TerraWeaveWindShadowCachePolicy.h` and public
+`WorldScene::setVegetationHorizonWindShadowCachePolicy` for a
+0..16MiB budget on **inactive GPU cache wind overlay capacity**.
+It is separate from Stage36 `HorizonWindUploadPolicy` and does not
+cap active/outgoing wind overlays. When cached shadow capacity
+exceeds the policy, `HorizonGpuRegionCache` evicts the entire oldest
+shadow-bearing **GPU model plus CPU overlay** via the RHI owning
+thread; never detach the CPU shadow from a live GPU model whose
+RGB bytes may already hold exact PHYSIS data. Re-entry rebuilds
+via the existing Horizon worker/CPU bake/asset archive and uploads
+a coherent new model/shadow, not a fabricated GPU readback.
+`gpuCachedWindShadowBytes` and `gpuWindShadowBudgetEvictions` in
+`HorizonRuntimeStats` expose current dormant capacity and specific
+evictions. Update `docs/terrain/AGENT_HANDOFF.md` each stage;
+CMake/CTest/Metal/Vulkan/GL **NOT RUN** under feature-first request.
+
+### TerraWeave Stage38 — lossless GPU-cache CPU shadow packing
+
+`HorizonWindShadowCachePolicy::compressCachedShadows` is opt-in and
+defaults to false. Inactive Horizon GPU LRU entries may losslessly
+compress their full `ModelVertex` wind CPU shadow with
+`TerraWeaveHorizonWindCompression.h`. Never detach or compress live
+active/outgoing shadows; never infer the GPU's exact PHYSIS RGB from
+a procedural generator. On cache `take`, fully unpack and validate
+the CPU shadow BEFORE the model becomes active or Stage35 sparse RHI
+writes resume. A corrupt compressed stream retires the matching GPU
+model and falls back to ordinary re-stream; failed allocation still
+propagates. Count both raw and packed storage capacity toward Stage37
+inactive CPU budget; do not claim a memory benefit unless measured.
+Source/PHYSIS/TWH8 semantics, signed coordinates, shader graphs and
+all genre-independent ECS ownership remain unchanged. QA is NOT RUN
+under the user's feature-first order; update Stage38 handoff on branch.
+
+### TerraWeave Stage39 — runtime Horizon presentation quality profiles
+
+AIVERSE already has `HorizonSettings` geometry quality
+`Minimal|Mobile|Balanced|High`. Stage39 adds an **independent**
+`HorizonPresentationPolicy` from
+`engine/world/TerraWeaveHorizonPresentationQuality.h` with
+`BatterySaver|Mobile|Balanced|Desktop` presets. Compose existing
+exact/procedural wind shader controls, Stage36 sparse GPU transfer
+budget and Stage37/38 inactive wind CPU shadow/cache compression;
+do not create parallel renderers, terrain bakes or PHYSIS solvers.
+The *optional* manifest `terraweaveHorizon.presentationQuality`
+(`battery-saver|mobile|balanced|desktop`) must not alter the
+preexisting geometry `quality` key or TWH8 cache fingerprints.
+No new field = Stage38 defaults. Native game code may set the whole
+policy on `WorldScene` or `TerraWeaveHorizonScene` and override
+individual components later. Validate all fields before mutation
+and use scene-owner threading. Report effective settings (not
+assumed named presets) and do not claim measured speed/battery
+improvement; CMake/CTest/GPU QA remains **NOT RUN** until the
+separate testing stage. Record the actual code SHAs and continuation
+in the per-stage `docs/terrain/AGENT_HANDOFF.md`.
+
+### TerraWeave Stage40 — host-fed adaptive Horizon runtime quality
+
+`engine/world/TerraWeaveHorizonAdaptiveQuality.h` defines an
+opt-in, strictly bounded controller over Stage39
+BatterySaver/Mobile/Balanced/Desktop **presentation** policies.
+The user requires reusable genre-independent runtime mechanics:
+do not modify Horizon terrain/forest geometry, TWH8 archives, GPU
+buffer types, PHYSIS source ownership or ECS simulation to adapt.
+A native host must feed actual CPU and/or completed GPU frame times
+in **microseconds** with monotonically increasing frame IDs via
+`WorldScene::submitVegetationHorizonFrameTiming`. Zero denotes
+unavailable measurements, not a fabricated 0ms frame.
+`gfx::Device::gpuFrameMs()` may be zero/delayed; always respect
+the actual backend timing availability and sample ordering.
+The backend-free policy requires sustained threshold violations
+(30 downgrade frames / 240 upgrade frames by default), 240-frame
+cooldown, and one-level bounded transitions; gaps and invalid
+samples cannot drive switches. Manual Stage39 policy/preset changes
+must disable adaptation, environmental/PHYSIS inputs do not.
+`terraweaveHorizon.adaptiveQuality.enabled` explicitly opts in
+at startup but does not instrument the host's frame.
+Keep source-only unverified stages marked **NOT RUN**, document
+exact code commits/risks/next step in
+`docs/terrain/AGENT_HANDOFF.md`, keep PR #24 Draft until
+a separate tester compiles and profiles real platforms.
+
+### TerraWeave Stage41 — native client frame timing ownership
+
+AIVERSE already exposes asynchronous tagged `gfx::Device::timeGpuFrame`
+and `takeGpuTimings`. Stage41's
+`engine/world/TerraWeaveHorizonFrameTimingBridge.h` connects real
+measured CPU callback durations plus asynchronous tagged GPU samples
+to Stage40's optional adaptive `WorldScene` controller. The bridge
+is included in both `apps/client/GameClient` (platform begins/ends
+the RTS frame) and `apps/fps/client.cpp` (FPS explicitly begins/ends
+its device frame). Do not add duplicate `beginFrame/endFrame` calls,
+use simulation `dt` as measured CPU/GPU time, or treat
+`Device::gpuFrameMs()` from an old completed frame as a sample for
+the current one. Tagged GPU completions are matched to original
+frame IDs; unsupported/late results use bounded CPU-only fallback.
+The `takeGpuTimings` API destructively drains **all** ready GPU tags,
+so a future app using multiple timing subsystems needs one shared
+device timing collector; do not silently race two consumers.
+No frame query when `adaptiveQuality.enabled` is false; no
+simulation, PHYSIS, terrain geometry, TWH8 or shader change.
+Build/tests/native Metal/GL/Vulkan timings **NOT RUN** until the
+separate agent performs QA. Continue updating the Stage41 handoff
+in `docs/terrain/AGENT_HANDOFF.md`.
+
+### AIVERSE Stage42 — one GPU timing collector per graphics Device
+
+The shared RHI now owns `gfx::Device::gpuTimingRouter()`
+(`engine/gfx/GpuTimingRouter.h`). Every new GPU timing client
+(TerraWeave, Prisma, SpectraFX/VFX, editor/tools/benchmarks)
+MUST use `subscribe`, `request`, `poll`, `take(subscriber)`,
+`cancel` and `unsubscribe`, rather than directly draining
+`Device::takeGpuTimings()` in parallel. The backend API still
+exists but its completed-result drain is destructive across ALL
+tags; the router alone should poll it for shared devices. Router
+messages restore the original caller's tag and are isolated in
+bounded per-subscriber queues; rejected requests retain each
+caller's CPU-only/unsupported fallback. Owner-thread only;
+never wait for GPU fences, invent timestamps, or claim separate
+per-feature GPU costs from a shared Metal command buffer.
+Existing native Stage41 RTS/FPS, editor batching benchmark,
+RenderBench, GeometryBench and instancing preview were moved
+to the generic router. Full API/limits:
+`docs/render/GPU_TIMING_ROUTER.md`. No changes to PHYSIS,
+geometry, archive TWH8, gameplay ECS or network authority.
+Source committed; native CMake/CTest/Metal/GL/Vulkan validation
+**NOT RUN** under feature-first instruction. Append exact
+per-stage handoff `docs/terrain/AGENT_HANDOFF.md`.
+
+## TerraWeave + NEREID shared ecology ownership (2026-11-19, Stages 53–56)
+
+- User assigned further water/shoreline erosion development to the **TerraWeave integration agent**. NEREID remains the single owner of ECS water bodies, flow, waves/currents and water contact. TerraWeave owns changed terrain, dig/fill, soil materials, root/plant support/falling and grass aggregate coverage; no independent second water physics.
+- Shared deterministic ECS workflow: register `registerNativeWaterPipeline(...enableBankErosion=true)`, `registerTerraWeaveBankVertexPersistence` and `registerTerraWeaveAuthorityResource`, then add `addTerraWeaveAuthoritativeBankSystem` **after** NEREID's water bank system. Never calculate `erodeShore` a second time from ECS results, and never have standalone `NereidEarthworksBridge::step` mutate the same bank vertices. The canonical rollback/save state is `TerraWeaveAuthorityResource` schema v2; graphics/RHI, NavMesh and Box3D are derived and rebuilt at the owner-thread barrier.
+- `TerraWeavePersistence.h` is an optional snapshot codec, `TerraWeaveReplication.h` is compact tick/revision-guarded per-change transport-neutral data, and `TerraWeaveEcsAuthority.h` is the actual Simulation World resource writer. Read **all** handoffs `docs/terrain/stage-53-persistence-ecs-handoff.md` through `stage-56-native-example-handoff.md` and `examples/world/terraweave_native/README.md` before touching these APIs.
+- After an ECS tick/rollback: use `NativeTerraWeaveWorldBinding` + `publishNativeTerraWeaveFrame` to publish pinned physics terrain, rebuild existing `nav::Mesh`, near/far forest and bounded grass GPU models. Trigger falling tree/capsule Box3D only from committed server events; replicate server poses, never claim cross-platform float Box3D lockstep. Fallen-tree visibility is separate from harvested tree removal; grass does not have one entity per blade.
+- **Status:** Source committed but Stage 44+ ecology/erosion/native additions have NOT passed new builds/tests or visual QA. The older 9/9 TerraWeave CPU and 1/1 GPU timing router tests do not prove new features. Draft PR #24 should not be merged to main until separate native QA, collision/NavMesh, NEREID replay, Box3D, GPU/Metal and full regression tests are green. No volumetric caves/overhangs yet; heightfield digging is not voxel excavation. Preserve per-stage handoff documents, tested/not-tested status, exact commits and next actions.
+
+
+## TerraWeave Stage57–59 shoreline auto-discovery and sediment ownership (2026-11-19)
+
+- `engine/world/TerraWeaveShorelineRaster.h`: discover bounded wet/dry bank and optional interior wet-bed grid cells using REAL `lib::nereid::WaterQueryIndex` over canonical water ECS bodies with polygons/river splines; classify soil via authored callback/optional biome helper, wave splash, slope, root reinforcement. `refreshAutoShorelineBanks` creates/persists auto-tagged ECS bank entities only at a structural barrier. It MUST NOT overwrite manually authored bank ECS entities, must retain suspended sediment when water retreats and must reject stale Earthworks ground heights. Register `terraweave.auto_bank` persistence during setup.
+- `libraries/include/aiverselib/water/NereidSedimentTransport.h` performs **mass-conserving**, bounded, integer-only transport of suspended sediment across neighbouring same-water-body cells, or across an EXPLICIT NEREID-confluence/cascade directed inlet→outlet link. Micro-cm carry persists so low Fixed currents eventually move small amounts. Sediment transport itself never edits terrain height; it is fed into existing NEREID `erodeShore` deposition/erosion on following ticks.
+- `engine/world/TerraWeaveSedimentEcs.h`: register `nereid.bank_sediment_transport` ECS persistence once; order native systems: NEREID sample → local bank erosion → sediment transport → TerraWeave canonical ECS Earthworks commit. The ECS transport stage validates confluence mouth geometry and cascade linkage, uses existing `WaterContactComponent.sample.flow`, and does not create another water solver or rerun erosion.
+- `examples/world/terraweave_native/{Integration.h,README.md}` demonstrates optional registration, bounded autoregistration, submerged bed carriers and soil material callbacks. **Do not** scan the full coast every graphics frame; rescan at map start or topology edits on an ECS structural barrier. Grass still uses aggregate patches, not per-blade entities.
+- **COW rollback correctness:** `World::prepareExistingWrite<T>()` alone does not detach shared pool ownership. Use `World::pool<T>()` before direct writable ECS component access; the pool then detaches individual pages. Fixed related NEREID sampling/erosion and auto-bank/sediment ECS authorship in these stages. Preserve this contract in further code.
+- Read `docs/terrain/stage-57-auto-shoreline-handoff.md`, `stage-58-sediment-transport-handoff.md`, `stage-59-riverbed-delta-handoff.md`. New Stage57–59 code is **NOT compiled or tested yet**; old TerraWeave CPU 9/9 and GPU timing router 1/1 successes predate this work. Keep PR #24 Draft. Remaining: native ECS/gameplay/Metal QA, automatic rescan scheduling, downstream sediment mixing at wider mouths, physical river rerouting/landslides, and water-volume feedback.
+
+
+## TerraWeave Stage60–61 — collapse of undercut soil (2026-11-19)
+
+- `engine/world/TerraWeaveSlopeFailure.h`: `SlopeSoil` carries NEREID/PHYSIS-sampled wetness, soil type and root strength. `planSlopeFailures(earth,triggerVertices,slopeSoil,settings)` is an integer-only deterministic bounded heightfield relaxation: unstable higher neighbours transfer equal-area centimetre mass downhill, rock is immobile, bedrock/buffer limits are enforced, each of at most 4096 disjoint pairs participates once per tick. `applySlopeFailures` commits the plan through one Earthworks sparse transaction for generic native games.
+- `engine/world/TerraWeaveEcsBankBridge.h` additionally accepts opt-in slope failure planning after NEREID computes bank erosion. **Merge water erosion AND soil slides into a single final Earthworks revision**, then recompute root support/fall and sparse grass damage ONCE from the final ground. ECS bank soil corrections are recorded for adjusted bank grid vertices, retaining NEREID suspended sediment/carries. Never call `erodeShore` twice.
+- `engine/world/TerraWeaveEcsAuthority.h`: opt-in `addTerraWeaveAuthoritativeBankSystem(...,enableSlopeFailures,settings)` writes the canonical ECS resource once and updates only extra bank soil heights after prevalidating/detaching COW pool pages. `excavateAuthoritativeEcs(...,enableSlopeFailures=true)` supports digging-induced collapses and also synchronizes affected NEREID bank soil heights. Both return sparse slope, tree fall and grass damage records usable by native gameplay/Box3D.
+- `examples/world/terraweave_native/{Integration.h,README.md}` opts in to bank slope failure; graphics/physics/navmesh publication stays with the existing `TerrainMutationCoordinator` native owner-thread barriers. Read `docs/terrain/stage-60-wet-slope-failure-handoff.md` and `stage-61-nereid-slopes-ecs-handoff.md`.
+- **Quality status:** Source committed; NO native compile/CTest, Box3D fall, Metal screenshot, geotechnical rate calibration or ECS replay run for Stage60–61. Earlier green 9/9 CPU and 1/1 GPU router tests predate these features. Keep PR #24 Draft. This is a heightfield slump, NOT a volumetric cave/overhang or 3D fluid simulation.
+
+
+## TerraWeave Stage62 — physical landslide debris and NEREID current blockage (2026-11-19)
+
+- User delegated continued water/terrain ecology to TerraWeave integration agent. **NEREID alone** owns the ECS `WaterBodyComponent`, water geometry, current/vortex/confluence/cascade resolution, bank erosion and local sediment transport. TerraWeave owns terrain slide events, Box3D debris proxy generation, tree fall mechanics and native ECS/current-obstacle publication. Never implement a second water solver or alter `WaterBodyComponent.flow` in a terrain worker.
+- New `libraries/include/aiverselib/water/NereidFlowObstacles.h`: opt-in persistent `WaterFlowObstructionComponent` and deterministic fixed-point `deflectNereidFlow` kernel. Reference `sampleWater` and `WaterQueryIndex::sample` apply it *after* ordinary NEREID currents and mouth policies. Source key sorting must be consistent in both query paths; cap active overlapping obstacles to 256. Native config `NativeWaterPipelineConfig::enableFlowObstructions` enables schema persistence, off by default in unrelated games.
+- `engine/world/TerraWeaveSlopeDebrisPhysics.h`: optional bounded server-owned Box3D dynamic fragment proxies from `SlopeFailurePlan` (max default 64 new/tick, 256 living), with stable event IDs, lifetime pruning, and rendering via borrowed soil prototypes. Earthworks ALREADY transferred mass; debris bodies are visual/collision proxies, NOT a second mass ledger. Keep Box3D behind an opt-in native link and replicate server poses, do not assume float lockstep on clients.
+- `engine/world/TerraWeaveFlowObstructionEcs.h` is the **Box3D-free** native ECS writer for generated auto obstacles (distinct from manually authored ones). Tag `AutoFlowObstructionComponent` marks generated records and is separately persisted. Run `publishNereidFlowObstructions` ONLY at the ECS structural-write barrier AFTER the server Box3D step and BEFORE the next NEREID sample. Preserve World COW isolation.
+- `engine/world/TerraWeaveNereidObstacleBridge.h` (requires Box3D) reads `FallenPlantPhysics` and `SlopeDebrisPhysics`, quantizes poses to Fixed and resolves the owning NEREID water body with existing `sampleWater`. `synchronizeNereidPhysicalObstacles` writes generated ECS obstacles and maps to the immutable WorldScene flow snapshot. Native game MUST supply ECS body Entity → `NereidSceneSurface.id` mapping, not assume Entity.index equals scene ID.
+- `WorldScene::setNereidFlowObstructions` affects optional whitewater shader current and ripple drift via the *same* `deflectNereidFlow` kernel. Visual water does not create or mutate gameplay water bodies, water height/volume, or solve fluid pressure. Existing manually authored scene/NEREID waters remain independent.
+- Example: `examples/world/terraweave_native/Integration.h` registers fixed ECS water/soil/obstruction components without Box3D; `PhysicsIntegration.h` is the opt-in owner-thread post-ECS Box3D and after-physics water-feedback adapter; `README.md` describes exact update order.
+- Full handoff: `docs/terrain/stage-62-debris-water-feedback-handoff.md`. **QA:** Source committed; no new Clang/CMake/CTest, Box3D scene, ECS replay, Metal screenshots or performance verification yet. PR #24 MUST stay Draft. Deeper hydraulic rerouting/pressure/river volume feedback, precise per-branch collisions, compact water-obstruction network transport and native FPS/RTS opt-in remain future work.
+
+
+## TerraWeave / NEREID Stage63 — finite-volume flood routing (2026-11-19)
+
+- NEREID is still the ONLY owner of water. NEW `libraries/include/aiverselib/water/NereidFloodRouting.h` is an **optional NEREID extension** (native `NativeWaterPipelineConfig::enableFloodRouting`, off by default for unrelated projects) for local, bounded equal-area water-column routing. `WaterFloodResource` is named persistent ECS resource `nereid.flood`, storing 16k max sorted signed grid cells, column water depth/volume, originating WaterBody Entity, TerraWeave ground height, flow and soil/wetness/tick revisions. `stepNereidFlood` transfers ONLY stored finite reservoir volume along hydraulic-head gradients between neighbouring cells, with conservative before/after mass equality and NEREID `WaterFlowObstructionComponent` permeability. Water can pile up behind a fallen tree, move sideways, flood a formerly dry cell and recede on later ticks. Do NOT invent water from rain/flow outside the finite reservoir.
+- `NereidWaterSystems.h` and `NereidQueryIndex.h` apply `applyNereidFloodSample` after existing water-body/flow/obstacle resolution; a flooded cell outside the original polygon/spline footprint becomes a real WaterSample for downstream NEREID interaction/erosion. If the authored water surface is already higher, that existing surface wins.
+- `engine/world/TerraWeaveNereidFloodBridge.h` seeds an explicit finite grid ONCE from existing WaterBody + canonical Earthworks; calling `initializeNereidFloodGrid` on an already active reservoir is prohibited (would create/remove volume). Ground synchronization updates grid-bottom elevations after TerraWeave digging/bank erosion/slump, without changing any water-volume column. `addTerraWeaveFloodGroundSyncSystem` must be registered after the TerraWeave soil ECS commit for the NEXT water tick.
+- `WaterFloodResource::wetnessRevision` tracks new wet/dry cells separately from sub-cell volume changes. `engine/world/TerraWeaveFloodShorelineSystem.h` provides persistent `AutomaticShorelineRevision` and opt-in last-stage ECS auto-bank refresh when groundwater/flood topology or soil revision changes; newly generated bank cells participate in NEREID sampling NEXT tick. Explicit `requestAutomaticShorelineRefresh` is required for water-body geometry edits not reflected by soil/wetness revision.
+- `engine/world/NereidFloodVisualScene.h` and `WorldScene::setNereidFloodCells` upload/draw a maximum 4096 flooded surface quads via ONE existing RHI model and transparent/unlit fallback material (native driver publishes up to 2048 active cells). Only extra water beyond/above base NEREID surface renders an overlay. It does NOT yet share the full NEREID refraction/foam shaders or exactly blend with authored curved coastlines.
+- Native example: `examples/world/terraweave_native/{Integration.h,README.md}`. Registration order: NEREID flood routing BEFORE NEREID water sampling/erosion; TerraWeave bank soil/roots/grass commit; flood ground sync; OPTIONAL auto-rasterized shoreline LAST. All owner/thread and COW barriers preserved. Read `docs/terrain/stage-63a-nereid-flood-volume-handoff.md` and `stage-63b-flood-visual-native-handoff.md`.
+- **Crucial limit:** volume conservation is within the finite, explicitly seeded equal-area flood window only; legacy static WaterBodyComponent levels and infinite ocean/river reservoir amounts are not hydraulically coupled. No rainfall/pumps/open-boundary inflow, sediment-dependent pressure solve, full shallow-water momentum or actual Navier–Stokes. Do not claim such features, global mass conservation including authored base water, or working Metal without tests.
+- **QA status:** Stage63 source committed to `feature/terraweave` but not CMake/Clang compiled, CTest run, ECS replay verified, Box3D flood-simulated or Metal screenshot validated. Keep PR #24 Draft; previous TerraWeave 9/9 and GPU router 1/1 are older revision evidence only. Next: native smoke compilation, tests for 1000-tick volume conservation/overtopping/reference-indexed sample parity and GPU scene validation, followed by perf.
+
+
+### TerraWeave/NEREID Stage63c finite river boundary flow (2026-11-19)
+
+- Closed `NereidFloodRouting.h` grid alone has no infinite inflow: a flat initial river surface cannot automatically build upstream head. NEW `WaterFloodPort` (Inflow/Outflow, at most 64) and `WaterFloodResource::externalVolumeCm` explicitly model a finite, already-counted outside reservoir. Port water transfers are bounded by user-defined cm-per-tick rates and local cell capacity. Water conservation is checked over **on-grid volume PLUS externalVolumeCm**, preventing fake water creation when a blocked channel backs up or a low bank overtops.
+- Configure only before the first flood tick, after seeding the grid and WaterBody entities, via `terraweave::configureNereidFloodBoundaryPorts` or native example `configureFloodRiverPorts`. `NereidFloodRouting.h` persists these ports/reserve in schema `nereid.flood`, validates inlet generation-safe WaterBody ID and port locations. A finite reserve can run dry; outlets return water to the SAME counted reserve. Do NOT call configuration again after the ECS flood tick or silently reseed/migrate the grid.
+- Exact result metrics `WaterFloodTick::suppliedCm/drainedCm` and old/new water column totals, `wetnessRevision` from FINAL wet/dry changes, and `WaterFloodResource::groundRevision` for TerraWeave soil sync. Scene overlay only represents water beyond/above existing static water surfaces; full NEREID refraction/foam not yet integrated.
+- See `docs/terrain/stage-63c-finite-river-ports-handoff.md`, `stage-63a-nereid-flood-volume-handoff.md`, `stage-63b-flood-visual-native-handoff.md`, and `examples/world/terraweave_native/README.md`.
+- **Feature-only commits, NOT compiled/tested.** Do not call this globally volume-conserving (static ocean/river bodies are outside the ledger), a pressure/momentum solver, or production-ready flood rendering. PR #24 stays Draft.
+
+
+## TerraWeave Stage64 — grass ecology and recovering riverbank surface protection (2026-11-19)
+
+- Native ecosystem code: `engine/world/TerraWeaveShoreRecovery.h` (pure integer recovery policy, versioned `ShoreRecoveryResource`, one small persistent `ShoreRecoveryPatchState` per aggregated `GrassPatch`, seeded regrowth after drying, prolonged flooding damage, nutrient/moisture/light/age response and spatial `ShoreRecoveryCoverIndex`). NO ECS entity per blade and NO separate vegetation renderer, water or soil mass solver.
+- `engine/world/TerraWeaveShoreRecoveryEcs.h`: `addTerraWeaveShoreEcologySystem` runs after NEREID flooding/shore erosion/sediment and after TerraWeave bank/slump and auto-shoreline refresh. Builds ONE NEREID WaterQueryIndex at ecology cadence (default 600 ECS ticks) and takes 5 terrain/water samples per grass patch, publishing canonical `TerraWeaveAuthorityResource.grass` changes and separately persistent `terraweave.shore_recovery` with its seed, wet/dry and soil-cover states. Owner-thread staging World copies keep rollback state coherent; beware non-COW deep-copy cost on huge Worlds. Tree/shrub fall state is untouched; never automatically revive harvested/fallen trees.
+- NEREID now accepts OPTIONAL `ShoreErosionForcing::surfaceShieldPermille` and ECS persisted `WaterBankSurfaceCoverComponent` (`nereid.bank_surface_cover`) to reduce exposed soil shearing independently of true tree/shrub root binding. Grass has NO physical tree roots; ecology's aggregated soil/litter protection is a separate factor. Generated `AutoShorelineBankComponent` cells receive updated shield from the 64m bucket `ShoreRecoveryCoverIndex`; manually authored bank cover is game-owned.
+- Native example `examples/world/terraweave_native/Integration.h` enables the fixed-period ecology resource/systems by default for this example only and allows disabling/configuring `ShoreRecoverySettings`; existing FPS/RTS/other genre clients remain opt-in. Read `docs/terrain/stage-64-shore-ecology-recovery-handoff.md` for exact committed source steps, API contract, remaining functions and no-test disclosure.
+- Stage64 covers grass recovery/surface crust only; detailed multi-species forest competition, adaptive seed distribution, persistent rooted-plant active aging/lighting and full ecological succession remain Stage65+. NO new native compiler/CTest/NEREID simulation/GPU/Box3D/Metal QA yet; prior TerraWeave 9/9 and GPU router 1/1 are older branch. Keep PR #24 Draft.
+
+
+## TerraWeave Stage65 — rooted forest ecology, canopy light and native saplings (2026-11-19)
+
+- `engine/world/TerraWeaveForestEcology.h`: per-species **opt-in** budgeted deterministic rooted tree/shrub life cycle over existing `RootAnchor`+`PlantEnvironment` records. `ForestEcologySpecies` configures maturity, age-based death, shade/drought/flood sensitivity, crown spread and seed interval/dispersal; `ForestEcologySettings` caps at default 256 expensive plant decisions every 32 simulation ticks, 65,536 interactable rooted plants total and 8 recruits per step. A persisted cursor and `lastEvaluatedTick` prevent processing every tree each frame. `ForestEcologyCanopyIndex` indexes crowns in 32m buckets and approximates relative-height shade, not photometric GI. Seed positions/IDs use stable integer hashes, exact canonical Earthworks ground and bounded free-space tests; mortality and recruitment never depend on camera.
+- `engine/world/TerraWeaveForestEcologyEcs.h` registers persistent `terraweave.forest_ecology` schema v1 (shade/flood/drought stress, mortality, recruitment, processing cursor). An opt-in ECS system reads **existing NEREID WaterQueryIndex** root-zone water/flood samples, optionally PHYSIS sunlight/soil policy, and stages ecology history plus canonical `TerraWeaveAuthorityResource.rooted` mutations together for rollback safety. Post-tick event callback is enqueuing only: never run Box3D or Renderer3D inside ECS.
+- `TerraWeaveForestScene::setDeadTrees` is an independent death visibility channel, separate from `setFallenTrees` (water uprooting/Box3D) and `setRemovedTrees` (harvesting). `setRecruitedPlants` uses existing Arbor shared prototypes and Flora near/LOD batching for sparse new saplings, no per-seedling GPU prototype. `TerraWeaveNativeWorldBinding::reconcile` reconstructs their presentation from the new persistent ecology resource after save/rollback. Tree-only changes DO NOT invalidate terrain/collision/NavMesh or unrelated grass GPU batches.
+- Native usage: `examples/world/terraweave_native/{Integration.h,README.md}` accepts trailing `rootedForestSpecies`, `rootedForestSettings` and `onForestEcology`. Empty policies leave old games unchanged. For harvested trees, gameplay MUST remove or suppress the canonical rooted entry too: presentation-only `removed_` does not stop a plant from reproducing. Natural death currently hides the Arbor instance but does NOT perform Box3D deadwood fall or game-resource/collider cleanup. Background decorative millions remain procedural, not individually simulated.
+- Read `docs/terrain/stage-65-rooted-forest-ecology-handoff.md` for exact files, commits, API, ownership/perf limits and next steps. **No Stage65 native compiler/CTest/ECS/Metal/Box3D/perf tests have been run**; earlier green tests apply to older commits only. PR #24 remains Draft; prioritize a compile and full native QA after feature implementation.
+
+## Validation follow-up for CPU MDI GPU safety (2026-11-19)
+
+The Vulkan `writableVersion` API now returns `nullptr` when a
+new GPU-safe version could not be allocated, **never** a writable
+reference to an in-flight VkBuffer. `updateBuffer` must select a
+safe destination BEFORE modifying its CPU shadow, and transactional
+growth must preserve the old allocations on failure. Do not revert
+to overwriting the previous serial's memory to avoid an OOM. Existing
+`tests/render/model_batching_policy.cpp` now exercises Stage 21–24
+preflight rank/bucket/generation behavior and Stage 28–29 monotonic
+RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
+CI results must be reported only when the corresponding workflow run
+actually completes, not inferred from test source or staging.
+
+## Scene-only CPU cross-model MDI override (feature continuation)
+
+The pooled static CPU MDI opt-in no longer requires a process restart
+when testing **Scene viewport** features in the editor. The renderer
+has `Renderer3D::StaticCrossModelBatchMode` with `Environment`,
+`Enable` and `Forbid`; the default is `Environment`, preserving
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` behavior and default OFF.
+`SceneWindow` explicitly sets this before `ed.renderScene` and
+restores `Environment` after Scene rendering, before Game.
+`Renderer3D::beginScene` resolves the effective mode once per view.
+The optional `AIVERSE_CPU_MDI_ADAPTIVE=1` feedback only runs if the
+*effective* cross-model mode is enabled. UI preflight counters must
+work for the Scene-only Enable mode, not just an environment flag.
+Do not auto-enable GPU ICB, change global geometry pooling or skip
+shader/material/VB/IB/LOD/indirect safety gates. Keep it genre-neutral.
+Add a separate feature-stage handoff; defer native tests per request.
+
+## Renderer-level CPU MDI policy controls (feature continuation)
+
+`Renderer3D::CpuMdiPolicyMode` (Environment/Enable/Forbid) configures
+adaptive page feedback, CPU indirect layout cache and geometry sorting
+*per renderer view* using `setCpuMdiAdaptiveMode`,
+`setMdiLayoutCacheMode`, `setMdiGeometrySortMode`. Resolve these at
+`beginScene()`, never per draw, preserving all process env defaults.
+The optional CPU adaptive budget uses
+`setCpuMdiAdaptiveBudgetOverrideUs(0)` to inherit env (default 25 µs),
+or a validated value in [1,1000] µs/command. Adaptive feedback requires
+effective static-cross-model batching and its own opt-in. Studio applies
+these controls only to the Scene view and restores Environment/0 before
+Game. Never globally toggle Metal GPU-encoded ICB, shared geometry
+pooling, scene shader/LOD or bypass GPU safety/fallback. No tests until
+all batching functions are finished, per current user instruction.
+
+## Per-host CPU MDI adaptive scope contract (feature continuation)
+
+`CpuMdiPageKey::scope` participates in hash/equality; admission
+policy uses it to isolate feedback across independent renderer hosts
+sharing a pooled GPU page. Default scope 0 preserves old clients.
+Use `setCpuMdiAdaptiveScope(uint64_t)` before `beginScene`. The
+Studio Scene window uses a stable nonzero scope and restores zero
+before Game. Do not use transient ECS Entity IDs here: scope is a
+host/view namespace, not a source model/entity identity. The 256-page
+cache bound is shared across scopes; untracked pages keep normal
+safe MDI admission. This never changes GPU geometry eligibility,
+material compatibility, shader binding, GPU-owned in-flight memory
+or draw fallback. Document stage and defer tests until all features.
+
+## CPU MDI host configuration snapshot (feature continuation)
+
+Use `Renderer3D::CpuMdiPolicyOverrides` and
+`cpuMdiPolicyOverrides()`/`setCpuMdiPolicyOverrides(...)` to
+temporarily override any per-host CPU MDI policy in a renderer.
+It includes static cross-model mode, adaptive mode, layout-cache
+mode, geometry-sort mode, budget and adaptive-scope namespace.
+Always restore the *captured prior policy* after a temporary editor
+view; do not blindly write `Environment` or scope 0, as native
+game hosts may have configured nondefault explicit policy options.
+This snapshot is CPU-only and does not own GPU commands, page EMA
+samples, scene entities, shader state or rendering resources.
+Preserve the renderer's genre independence and document each stage.
+No tests now, per user instruction.
+
+
+## Scoped CPU MDI policy override — Stage 35
+
+For Scene/native FPS/RTS render hosts sharing a `Renderer3D`, prefer
+`Renderer3D::ScopedCpuMdiPolicyOverride(renderer, policy)` around
+one view instead of manual snapshot/reset code. It saves the *actual*
+previous `CpuMdiPolicyOverrides` and restores it with stack lifetime,
+including early returns/exceptions; it is noncopyable and nonmovable.
+Nested scopes restore LIFO. Do not let it outlive the renderer or race
+across threads, and do not assume it snapshots GPU state, effective
+`beginScene` flags, ECS scene state, profiling, shader/LOD or page EMA.
+The Studio Scene viewport uses it and does not overwrite a game host's
+configured CPU MDI policy. Generic backend/material/geometry constraints
+remain authoritative. PR #34 remains Draft; native validation deferred
+under user's feature-first instruction. See Stage 35 handoff.
+
+
+## Model batching host policy isolation — Stage 36
+
+Use `Renderer3D::ModelRenderPolicyOverrides` for instancing,
+multi-draw, GPU-authored model draws, model culling, LOD and fade width.
+`ScopedModelRenderPolicyOverride(renderer)` snapshots and restores the
+existing configuration at scope exit. The two-argument overload can
+apply a temporary policy. Nest with the CPU MDI guard from Stage 35
+when rendering with a shared Scene/Game/native Renderer3D. Do not
+unconditionally restore `true` defaults after an editor view.
+Do not treat the value snapshot as a GPU buffer/sampler/scene rollback:
+`instanceLimit` is deliberately not included because it can trigger
+shader pipeline recompilation; profiling/debug/selection have their
+separate existing lifecycle. FPS editor debug Mesh previews are *not*
+static ModelDraw packets; the engine's genre-neutral static ECS
+adapter is `engine/render/EcsStaticModelRender.h`. Cross-model CPU
+MDI still requires genuinely shared GPU geometry and exact material
+compatibility. PR #34 Draft, native validation deferred as directed.
+
+
+## Rigid LOD shared GPU geometry pool — Stage 37
+
+The public shared geometry upload code now has an **experimental**
+`AIVERSE_GEOMETRY_POOL_RIGID_LOD=1` opt-in (default OFF) plus
+`rigidLodGeometryPoolingEnabled()`/
+`setRigidLodGeometryPoolingEnabled(bool)`.
+`GeometryPoolEligibility.h::rigidGeometryPoolCandidate` is the
+genre-neutral predicate for uploaders: safe rigid LOD chains may
+use the shared VB/IB page, but skin, morph, authored clips,
+material variants, deformable or clustered meshes remain dedicated.
+Reject invalid/self/nonfinite LOD thresholds/targets, and preserve
+existing backend and size fallbacks. This affects asset **upload**
+only, NOT live per-pass LOD decisions or cross-model material
+compatibility; no existing buffers are repacked in place.
+Scene Batching checkbox triggers editor `reloadRules()`.
+Global setting affects all game/native hosts, unlike scoped
+Scene-only renderer policies. Vulkan nonzero pooled base vertex
+still falls back to direct draws. Keep PR #34 Draft and do not
+claim a speedup or compilation before native testing. Document
+every subsequent stage separately.
+
+
+## Stage 38 — native per-asset geometry-pool admission
+
+`Model::Batching::geometryPoolPolicy` supports
+`Inherit` (default), `Dedicated`, `AllowRigidLods`.
+The native per-model value is also loaded via the strict optional
+`<asset>.batching.json` string `geometryPool`:
+`inherit`, `dedicated`, `rigidLod`.
+Only the **specific asset** is affected at GPU upload time.
+Do not bypass global safe-mode/backend/size gates or try to
+repack GPU buffers of already-uploaded models by changing this enum.
+Use separate renderer asset-lifetime invalidation/reload.
+Cross-model CPU MDI still requires shared page, exact GPU
+material/flags, enough commands and no active crossfade.
+No FPS/RTS dependency; project C++ may assign policy before
+`uploadModel` directly. This feature is source-committed
+but not compiled/tested on native GPUs yet. Keep PR #34 Draft
+and record a separate handoff for each additional step.
+
+
+## Stage 39 — read-only geometry-pool rejection reasons
+
+Use `geometryPoolAdmission(device, model)` before GPU upload to
+inspect why an asset cannot enter shared rigid geometry pages.
+`GeometryPoolAdmission::reason` classifies global enablement,
+backend, missing CPU data, dedicated asset choice, unsafe model and
+oversized model; `modelBlock` provides specific rigid/deformation/
+LOD exclusions (via `rigidGeometryPoolBlockName()`).
+The actual upload uses the identical predicate. This is
+allocation-free *CPU preflight*, not evidence of a real shared page
+allocation, indirect MDI submission or speedup. Query BEFORE the
+normal importer discards CPU vertices. No new Studio per-frame work,
+no genre dependencies and no default-flag changes. Native and GPU
+tests still deferred under user's feature-first direction.
+
+
+## Stage 40 — shared GPU page last-owner release
+
+`engine/render/GlobalGeometryPool.cpp::releaseModelGeometryPool`
+now serializes `shared_ptr` ownership transitions against uploads
+and `geometryPoolStats` using `poolMutex`. The last owner retires
+the page's weak directory entry and erases empty device entries,
+then destroys the GPU buffer *outside* the lock. Keep this invariant
+when changing model/asset streaming: no concurrent uncoordinated
+write/release of the same Model; RHI must retain in-flight GPU use.
+Do not reintroduce an unlocked `use_count()` check or destroy shared
+buffers while another Model owns the page. No tests have been run
+for this stage; retain Draft PR #34 until feature completion and
+Metal/Vulkan/release-stress validation.
+
+
+## Stage 41 — checked shared geometry Storage updates
+
+`gfx::Device::updateSharedBufferChecked` is the upload API for
+pooled rigid vertex/index ranges. Metal and Vulkan return real
+CPU-side success/failure on allocation/encoder/version selection;
+other backends forward to their existing `updateBuffer` semantics.
+This is **not** a GPU fence or proof the driver executed a draw.
+In `uploadModelToGeometryPool` commit page offsets, register new
+pages and assign Model GPU handles only after both writes succeed.
+On failure preserve the existing committed region and leave the
+failed range available for the next upload. Do not expose half-
+initialized pooled geometry; keep dedicated fallback. Current
+build/driver/failure-injection tests are **NOT RUN** and PR #34
+remains Draft. See Stage 41 handoff.
+
+
+## Stage 42 — model upload pair publication
+
+Native `uploadModel` must never publish a half-valid standalone
+VB/IB pair or discard CPU source vectors after one buffer allocation
+failed. `engine/render/Model.cpp` now allocates temporary handles,
+releases the first on second-allocation failure, and returns false
+before image/morph preparation. It also retires orphaned single
+handles from a prior failed dedicated upload and captures the GPU
+requirement before CPU vertex/index clearing. Shared GeometryPool
+uploads still take precedence and remain subject to Stage 41's
+checked-write contract. No CMake/CTest/Metal/Vulkan validation has
+run for this code; preserve PR #34 Draft until final validation.
+
+
+## Stage 43 — Vulkan immutable buffers fail closed
+
+When changing `VulkanDevice::createBufferObject`, propagate
+`vkBindBufferMemory` failure: destroy the unbound Vulkan buffer,
+release the allocation and return false. For `createBuffer` with
+immutable CPU initial data, `stagingWrite` failure must destroy
+the new VkBuffer and allocation and return an **invalid** RHI handle.
+Never report a valid Model VB/IB when its immutable contents were
+not uploaded. Preserve Stage 42 atomic Model publish/CPU retry,
+Vulkan in-flight buffer versioning and the original fallback.
+No new tests were run; PR #34 remains Draft with experimental
+options OFF until native build/failure-injection/visual parity.
+
+
+## Stage 44 — GPU-completed serial for geometry retirement
+
+Use `gfx::Device::completedFrameSerial()` instead of
+`frameSerial()` alone when considering reuse of GPU geometry
+storage. Metal/Vulkan return confirmed completed queue serials;
+other backends return 0 (no reuse permission). Match a freed
+span's nonzero `frameSerial()` against the completed value
+on the **same graphics Device**, and never race source Model
+teardown with render submission. No GPU stalls or new draw
+format. Stage 44 source is committed but native tests NOT RUN.
+See the incremental static cache handoff; user still requires
+all features before test phase.
+
+
+## Stage 45 — quarantined reusable geometry suballocations
+
+Model `gpuPoolVertexBytes`/`gpuPoolIndexBytes` retain byte
+extents after CPU data discard. `AIVERSE_GEOMETRY_POOL_RECYCLE=1`
+(default OFF) allows the common pool to remember no more than 256
+retired vertex+index pairs per page. Only reuse a whole pair when
+the **same** Device reports a nonzero completed GPU frame serial
+at least its retirement serial. Otherwise the free area remains
+quarantined; never overwrite in-flight commands. A checked
+upload failure does not consume an available retired pair.
+`GeometryPoolStats` read-only counters show retired/reusable
+pairs and recycled uploads, not GPU residency gains. No
+genre logic, no immediate in-place compaction, no default enable.
+Native/Metal/Vulkan/concurrency tests NOT RUN; PR #34 Draft.
+
+
+## Stage 46 — Vulkan pooled rigid nonzero base-vertex (opt-in)
+
+`AIVERSE_VULKAN_POOLED_MDI=1` (default OFF) makes eligible
+static, rigid, pooled, no-ShaderGraph ModelDraw calls use
+`Device::drawIndexedCanonical()` on Vulkan, so direct and
+indexed-indirect paths both apply `baseVertex` as GPU
+vertexOffset. The legacy Vulkan `drawIndexed` continues to
+apply VB binding offset for all other callers (especially
+morph/skinning). The renderer still rejects nonzero pooled
+baseVertex from MDI when flag OFF, and keeps normal fallback
+for unsupported/deformed/variant paths. Shader ABI, ECS,
+material/LOD/culling, Metal GPU ICB and command thresholds
+unchanged. No native builds, pixel comparisons or GPU
+validation performed; Draft PR #34 remains open. See Stage 46
+handoff for required tests before default enablement.
+
+
+## Stage 47 — preserve recycled reservation lengths
+
+`Model::gpuPoolVertexBytes` and `gpuPoolIndexBytes` refer to
+the reserved *allocation*, which may be larger than the
+current Model's uploaded vertex/index payload after reuse.
+Save the original retired pair extents when a smaller model
+reuses it and return the same whole pair on release. Do not
+silently shrink the reservation across repeated streaming.
+Keep Stage 44 completed-GPU-serial gate, Stage 41 checked writes,
+256-pair cap and the OFF-by-default recycle flag intact.
+Native/Metal/Vulkan tests still pending.
+
+
+## Stage 48 — read-only recycler stats
+
+Studio Scene → Batching displays retired, GPU-fence-ready
+and actually recycled GPU geometry allocation pairs via
+`geometryPoolStats()`. Keep the distinction: retired
+may still be in-flight; ready != submitted; high-water
+occupied is not live VRAM residency. Renderer and RHI
+behavior unchanged, `AIVERSE_GEOMETRY_POOL_RECYCLE` OFF by
+default. No native compilation/GPU tests run yet. See Stage 48
+handoff and maintain per-stage documentation.
+
+
+## Stage 49 — model-batching mock regression tests
+
+`tests/render/model_batching_policy.cpp` extends `MockDevice`
+with completed GPU serial simulation, checked shared-write and
+dedicated-buffer allocation fault injection. The new test covers
+quarantined GPU geometry spans, large->small->large capacity
+preservation, failed second pooled upload with dedicated fallback
+and failed second standalone IB allocation with successful retry.
+No additional CMake target. Recycling is enabled by test-process
+environment only, not engine default. Native compilation and CTest
+have NOT RUN; never describe authored assertions as passing.
+PR #34 remains Draft pending actual CI/Metal/Vulkan parity.
+
+
+## Stage 50 — Vulkan fence result checked before recycling
+
+Only a successful Vulkan queue fence wait proves
+`completed_`. `GfxVulkan.cpp::prepareSlot()` now
+checks `VK_SUCCESS` before updating `completed_`;
+non-success marks RHI unhealthy, disallowing completed-serial
+recycling. Keep this contract through any device-loss recovery.
+No new GPU stalls/changes to batching output; native tests NOT RUN.
+
+
+## Release-mode unit checks in CI — Stage 51
+
+Do **not** rely on `assert(expr)` as the only test assertion in
+Release builds compiled with `-DNDEBUG`; all checks become no-ops,
+and under `-Werror` test variables can trigger unused warnings.
+`tests/TestCheck.h` now exposes `AIVERSE_TEST_CHECK(expr)`
+to evaluate/abort with a source location in both Debug and Release.
+Four ECS regression files use it after a genuine Linux ARM64 CI
+compile failure (run 44540545468 / job 135617454000). These changes
+address the compilation blockers observed in that job, but the
+new head's CMake/CTest result is NOT YET VERIFIED. Keep preserving
+genre independence and the per-stage handoff protocol.
+
+
+## Stage 52 — Mac batching policy fixture correction
+
+Fix user-reported `model_batching_policy` failure (Mac test
+at original line 766): test fixtures must call `Model::finalize()`
+before expecting `classifyModelStaticEligibility` to accept them.
+An asset containing animation clips may still have a static,
+bind-pose instance; only actual instance animation (`pose`,
+`nodeWorld`, `baked`) or active displacement excludes it.
+Test both sides; do not weaken production cache eligibility.
+
+The 4 ECS CTest entries were **NOT RUN**, because requested
+executables were not built and `make` reported a missing target.
+Reconfigure `build-metal` with `-DAIVERSE_BUILD_TESTS=ON`
+and explicitly build their targets, or use a fresh independent
+build directory. All CTest/Mac/GPU outcomes after this stage
+remain unverified. PR #34 stays Draft, no experimental defaults.
+
+
+## Stage 53 — nodeMaterial packet eligibility regression
+
+`staticRenderPacketDrawCandidate` may accept a per-node material
+override: `Renderer3D` validates the current override contents
+against the saved packet's exact `nodeMaterialSnapshot` before
+replay. Keep eligibility and replay checks distinct. The Mac owner
+reported 4/5 focused tests passing, one `model_batching_policy`
+failure at its stale negative assert line 875. The test assertion
+has been updated, engine behavior not changed. No subsequent
+Mac/CI result is available yet; leave PR #34 Draft and continue
+handoff protocol.
+
+
+## Stage 54 — documented user Mac CTest success
+
+Owner's latest macOS `aiverse_model_batching_policy_tests`
+build **succeeded**; `ctest -R '^model_batching_policy$'`
+**PASSED (0.33 s)**. Prior local Mac CTest confirmed four
+ECS tests PASS, so 5 distinct focused tests have now passed
+across two CTest invocations. This is not proof that the
+complete 5-case CTest was rerun together, full CI finished
+or Metal/Vulkan parity is good. Follow Stage 54 handoff;
+keep the PR Draft and experimental recycle/Vulkan pooled
+MDI flags OFF until real GPU and broader test evidence.
+
+
+## Stage 55 — Metal raster fixture success and remaining gates
+
+User-supplied real Mac Studio results: CPU MDI fixture
+`AIVERSE_PALETTE_TEST_CASE=indirect` achieved 2 CPU MDI
+submissions / 64 indexed commands with 32→1 shadow,
+32→1 opaque calls and `changed_channels=0`. The
+persistent static packet fixture achieved 1 warm packet
+hit, 0 rebuild/declines, retained 5936 bytes, identical
+pixels and unchanged model submission counts. Both
+reported 30 CPU checks passed and no renderer/pipeline
+failures. Do not confuse raster/submission reductions
+with proven FPS, CPU or GPU speedup. These are actual
+Mac fixture outputs but GitHub CI remains queued.
+Next hardware gate is GPU-authored Metal ICB using
+`AIVERSE_EXPECT_GPU_ICB=1`, then Vulkan parity,
+recycle safety and performance A/B/A. Experimental flags
+remain OFF, Draft PR #34; document each subsequent stage.
+
+
+## Stage 56 — distinguish CPU MDI and GPU-authored ICB counters
+
+On Mac Studio the owner supplied GPU ICB fixture output
+(30 CPU checks passed, 32/32 model submissions reduced
+to 1/1, `changed_channels=0`, zero pipeline errors).
+When run with the prescribed `AIVERSE_EXPECT_GPU_ICB=1`,
+the fixture internally rejects zero GPU-encoded submissions
+and commands: it is valid evidence of GPU ICB output parity
+for that scenario. **Do not misread** the historical
+`GPU indirect supported=1 submissions=1 commands=32`
+line: those are `renderer.modelStats()` CPU MDI counters.
+Stage 56 instrumentation in `material_batches.cpp` now
+prints separate `GPU-encoded ICB` and `CPU MDI` counters
+with proper newlines. This change does not affect GPU
+rendering or test gates; new diagnostic binary remains
+unbuilt and exact GPU ICB counts are not yet recorded.
+Leave PR #34 Draft pending Vulkan, recycling, full CI
+and controlled A/B/A timing measurements.
+
+
+## Strata Stage 12 — real Metal shadow Depth32Float + two independent views (2026-11-19)
+
+Implementing `Strata` must remain fully genre-independent: no
+FPS/RTS-specific camera or renderer routing assumptions. There is
+still only one production `Renderer3D` and one
+`GlobalGeometryPool` source geometry owner.
+
+The new **diagnostic-only** `gfx::Device::readDepthTextureAsync`
+has a default-unsupported generic RHI implementation and a bounded
+Metal `Depth32Float` GPU blit implementation. It does not stall the
+GPU; Metal delivers packed 32-bit float depth bytes on the main
+device thread at a later beginFrame. The renderer's
+`requestSunShadowDepthReadback` method delegates readback of its
+own sun shadow map after normal passes finish, without leaking
+ownership of the texture. Never use readback as a runtime
+render decision or allocate a separate Strata GPU pool.
+
+`tests/render/strata_metal_depth_multiview_parity.cpp` is a separate
+macOS GUI test target `aiverse_strata_metal_depth_multiview_parity`
+built with `AIVERSE_STRATA_METAL_GPU_TESTS=ON`.
+It renders Empty, Legacy, Strata Fine and Strata Coarse
+lossless geometry in separate frames for **two distinct cameras**,
+and reads back both real 800x600 RGBA and 512x512 shadow depth.
+Success requires real nonblank color/depth, finite depth, exact
+Legacy-vs-Fine/Coarse equality of both pixel buffers in each view,
+distinct camera images, correct main+sun-shadow draws and
+one ModelDraw per frame. There is NO production Strata draw
+switch, no GPU-selected indirect draw and no claim that lossy
+LOD or reflection parity has been verified.
+
+**Current truth:** Stage 11 owner-verified Metal main-color raster
+A/B is PASS with zero changed channels; real Metal compute
+selection is PASS 5/5; six focused native Strata CPU/mock tests
+were PASS. This **new Stage 12 native C++ compilation and GPU
+runtime verification have NOT been performed** by the agent.
+CI compile-only is not runtime parity. Run the new fixture on
+Mac Studio, record exact output and commit separate handoff.
+No merge to main until shadow-depth, reflection and advanced
+material/LOD gates pass.
+
+Docs: `docs/strata.md`,
+`docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 12 verification — Mac Studio real Metal PASS (2026-11-19)
+
+The owner **actually built and ran** the new Stage 12
+`aiverse_strata_metal_depth_multiview_parity` GUI fixture on Mac Studio.
+All eight RGBA and eight genuine `Depth32Float` GPU captures
+completed across two independent cameras and four mutually exclusive
+Empty/Legacy/Fine/Coarse model modes each. The real GPU readbacks
+showed **ZERO changed colour channels and ZERO changed depth bytes**
+between Legacy/Fine and Legacy/Coarse in **both views**.
+The shadow maps were nonconstant: 73,179 non-clear samples in
+view 0 and 34,765 in view 1. The new fixture ended
+`status=PASSED views=2 modes=4 frames=89`, with 16 Metal pipelines
+and 0 pipeline failures. The owner's same output reconfirmed
+the earlier real GPU cluster selection **5/5 PASS** and the
+Stage 11 real Metal raster A/B **PASS**.
+
+Do not accidentally reassert the historical 'Stage 12 NOT RUN':
+it refers to the state before this owner-provided Mac Studio run.
+The precise tested checkout SHA was not printed in the terminal
+log. No production renderer switch, lossy LOD fidelity, reflection
+RTT, mixed materials, Vulkan, streaming or performance was tested.
+Stage 12's strict equality is **only for intentionally lossless
+test geometry**. Preserve single Renderer3D submission authority,
+the shared GlobalGeometryPool source, opt-in diagnostics and
+conservative unsupported-case fallback.
+
+Next independent gate: true planar reflection RTT readback and
+material/UV-boundary parity with multiple cameras, followed by
+lossy LOD seam and GPU-selected drawing tests. Keep PR #35 Draft.
+Stage handoff: `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 13 — reflection RTT, 2 material groups and UV seams (2026-11-19)
+
+The new \`gfx::Device::readColorTextureAsync(TextureHandle,ColorReadFn)\`
+is a diagnostics-only virtual API with default-unsupported
+behavior on non-Metal backends. Metal implements bounded,
+non-blocking GPU blit of an **actual offscreen LDR RGBA8 render
+target** into owner-thread callback RGBA8 bytes, with
+BGRA swizzle and row-stride repacking. It must NOT fake a
+reflection result by taking a screenshot of the presented
+main camera. It does not change rendering or geometry
+allocation when unused.
+
+\`LightSystem::requestPlanarReflectionColorReadback\` and
+\`Renderer3D::requestPlanarReflectionColorReadback\` provide
+read-only diagnostic access to the existing half-resolution
+LDR reflection RTT after the production reflection pass,
+with the actual renderer and selected water plane.
+\`strata::RenderPass::PlanarReflection\` is a pass-specific
+CPU selection contract, not permission to submit GPU draws.
+
+The manual macOS \`aiverse_strata_metal_reflection_material_parity\`
+test uses one shared source VB/IB, one Strata auxiliary index
+lease, two adjacent opaque materials with **duplicated seam
+vertices, independent UV transforms and separate GPU checker
+textures**. Parent geometry is deliberately LOSSLESS, so
+Legacy/Fine/Coarse should be pixel-identical. It exercises
+two independent cameras and four mutually exclusive modes
+each. The test obtains the actual main image, sun shadow
+Depth32Float map, and half-resolution reflection GPU RTT:
+**24 total GPU captures**. It requires Legacy != Empty for
+all three targets, exact source-vs-cluster parity, distinct
+camera results, separate material/primitive submission
+counts and no doubled ModelDraw. Reflections use the
+existing \`Renderer3D\` water path; there is no second
+raster implementation or Strata GPU allocator.
+
+This test has **NOT YET been compiled or run natively**.
+Mac Studio Stage 12, Stage 11 and cluster-culling
+results were owner-verified PASS in prior steps, but those
+DO NOT prove this newer reflection/multi-material fixture.
+The test is compiled but NOT executed by the focused macOS
+CI workflow. Keep PR #35 Draft and do not change \`main\`.
+After the user runs Stage 13, record every real result and
+failure with exact source commit (if available) in
+\`docs/agent-handoffs/strata-virtual-geometry.md\`.
+Then proceed to genuine lossy cluster LOD seam quality,
+GPU-selected draw submission and guarded Legacy fallback.
+
+
+## Strata Stage 13.1 — native Mac Studio reflection RTT parity PASS (2026-11-19)
+
+The owner independently built and ran the real Metal
+`aiverse_strata_metal_reflection_material_parity` fixture in
+the clean isolated `AIVERSE-strata-stage13` worktree.
+**Both cameras passed with exactly ZERO differences** for
+Legacy vs Strata Fine/Coarse in all three actual GPU outputs:
+main 800x600 RGBA, sun shadow 512x512 Depth32Float, and
+offscreen planar reflection 400x300 RTT RGBA.
+The fixture completed 24 real GPU captures, asserted that
+the actual RTT differed from Empty, confirmed two independent
+opaque PBR materials with separate UV/textures and a duplicated
+UV seam, and verified no dual ModelDraw source submissions.
+Observed final `[strata-reflect] status=PASSED views=2 modes=4 frames=89`;
+Metal reported 16 pipelines, 0 failures.
+
+This supersedes the historical Stage 13 pre-execution note.
+The owner's output did not print the checkout commit SHA;
+do not make an SHA-specific hardware validation claim.
+Scope remains intentionally **lossless** cluster triangles:
+real simplified-LOD seam quality, GPU-selected raster commands,
+streaming, Vulkan, HDR reflection and performance remain unverified.
+The branch has diverged from main; this PASS cannot be
+extrapolated to an untested integrated main+Strata tree.
+Keep the PR Draft, one GPU geometry pool and one production
+Renderer3D draw owner. Record and test a separate main
+integration before any merge. Handoff in
+`docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## STRATA Stage 15.3 — async disk page handoff (2026-11-20)
+
+Current work is on `feature/strata-virtual-geometry`, not main.
+Full details, exact implementation commits, API changes, authored
+but **unrun** tests and next steps are in
+`docs/agent-handoffs/strata-virtual-geometry.md`, Stage 15.3.
+
+- `aiverse_strata_disk` is a separate reusable offline/runtime
+  archive library: `SceneStaging::writeDiskArchives(directory)`
+  produces verified `.strataidx` files per source key.
+- Metal/Vulkan `IndexResidency` uses bounded background archive
+  reads for child cluster indices, with roots checked synchronously
+  during scene load and parent fallback until complete siblings
+  are resident and GPU-uploaded.
+- `GeometryScene` opts in with `setStrataDiskPageDirectory` and
+  `setStrataStreamingFrameUploadBudgetBytes`, after enabling portable
+  plus incremental streaming and setting a positive index budget.
+  GLES3/WebGL2 continue the old CPU-selected index fallback.
+- Do not claim disk mode reduces the original CPU `ModelAsset`
+  index memory: full CPU indices remain required by current planners.
+  FNV checksums detect accidental corruption, not malicious assets.
+- Do not replace the source vertex buffer, bypass Renderer3D, or
+  merge this divergent feature branch into main until a clean native
+  build, focused CTest and actual Metal/Vulkan/GLES parity run pass.
+  No Stage 15.3 tests have been executed yet.
+
+Next: Stage 15.4 global multi-world CPU/GPU streaming coordination,
+then Vulkan compute GPU selection and crack-free lossy LOD. Append a
+new handoff after each bounded implementation stage.
+
+
+## STRATA Stage 15.4 — multi-world streaming continuation (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 15.4
+before editing indexed geometry, IO, GPU residency, scene load/unload
+or RHI buffer lifetime. Current branch:
+`feature/strata-virtual-geometry` (do NOT merge into main yet).
+
+- `StrataStreamingCoordinator.h/.cpp`: one Device-wide reserved
+  STRATA INDEX budget, a per-RHI-frame checked GPU transfer cap,
+  process-wide bounded shared native disk IO workers and verified
+  ready-page CPU cache. Settings/leases must be shared across ECS
+  worlds using the same gfx::Device; no FPS/RTS dependencies.
+- `DiskIndexPages` no longer starts one std::thread per archive.
+  Worker jobs reference-count their own archive State, never a
+  GeometryScene/ModelAsset; source close cancels pending jobs and
+  releases global cache budget.
+- `GeometryScene`: default-OFF, optional release of duplicate
+  staged `Asset::indices` only after archive fingerprint and pinned
+  GPU root admission, with all conflicting diagnostic/metadata paths
+  disabled. `planView` uses immutable logical index counts.
+- The shared index cap is NOT complete physical GPU VRAM including
+  Vulkan versions/in-flight buffers, and CPU release does NOT delete
+  original source Model geometry. Never claim those objectives met.
+- New/extended tests are authored but **NOT RUN**. Finish all
+  functionality before the owner's final native CMake/CTest and GPU
+  acceptance pass; record exact failures and tested commit SHA.
+
+Next functional target: Stage 16 actual Vulkan compute selected cluster
+visibility, followed by Stage 17 crack-free lossy LOD. Preserve one
+Renderer3D draw owner and Metal/Vulkan/GLES3 fallback semantics.
+
+
+## STRATA Stage 16.1–16.2 — Vulkan GPU compute + indirect candidates (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`, Stage
+16.1 and 16.2, **before** editing `VkCompute`, Strata GPU selection,
+Renderer3D indexed draw submission or model metadata. Branch:
+`feature/strata-virtual-geometry`, NOT merged to `main`.
+
+- `VkCompute.cpp`: Vulkan compute RHI, standalone GLSL450 SPIR-V,
+  storage descriptors, checked 64-thread dispatch, GPU barriers and
+  async fence-completed readback. Preserve legacy Vulkan graphics
+  indexing and Storage vertex+index pooled buffer usages.
+- `StrataVulkanCullingShaders.h`: version-2 metadata shared with
+  Metal; GLSL GPU hierarchy selection + GPU indexed-indirect command
+  clear/select/safety. Overflow/invalid counters disable partial
+  commands on GPU, optionally replacing them with one original indexed
+  primitive only when strict one-material fallback fields are set.
+- `StrataVulkanIndirectContract.h/.cpp`: eligible static opaque,
+  single-primitive/material/node pooled source; no animation, author
+  LOD, shader graph, shadows/reflections or multi-instance alias.
+  Checks model revisions, handles and frame serial. Strict rejection
+  keeps the authoritative CPU/Legacy renderer route.
+- `GpuClusterCulling::dispatch` now emits Vulkan
+  `GpuSelectionSubmission::indirect` in addition to diagnostic ranges.
+  **DO NOT interpret `gpuIndirectPrepared()` as permission to
+  submit a production Renderer3D draw.** Vulkan RHI has an explicit
+  `drawIndexedGpuIndirect` method but no exclusive Renderer3D
+  production bridge is enabled yet. Next Stage 16.3 must own the
+  full renderer state and establish actual pixel parity before opt-in.
+- Stage16 authored CMake targets / tests are **NOT EXECUTED**:
+  `strata_vulkan_kernel` (real Vulkan+SPIR-V when available),
+  `strata_gpu_culling`, `strata_render_routing`. Do not claim
+  GPU parity from older Stage13 Metal lossless fixture.
+- Metal selector remains diagnostic, GLES3 portable CPU path
+  remains untouched. Avoid merging the divergent feature branch
+  to main until the full final native acceptance run.
+
+
+## STRATA Stage 16.3 — exclusive Vulkan GPU raster handoff (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 16.3
+before changing `GeometryScene`, `Renderer3DModels.cpp` or
+Vulkan `GpuSelectionSubmission`. This work remains isolated on
+`feature/strata-virtual-geometry` and is NOT merged into main.
+
+- GeometryScene now prepares a Vulkan GPU-authored indexed command
+  candidate only when staging, GPU metadata, GPU compute and
+  `setStrataVulkanGpuIndirectEnabled(true)` are enabled **AND BOTH**
+  explicit CPU/GPU-selection and actual-raster-parity acceptance
+  flags are true. Defaults remain OFF; flags are not proof of PASS.
+- A matching Vulkan GPU selection is copied into the SAME source
+  `ModelDraw::gpuIndexed`; no source sidecar/VB or second draw is
+  submitted. The renderer's own main-opaque pass binds existing
+  material, lighting and instance uniforms, then may consume the
+  GPU-authored indirect array INSTEAD OF the normal indexed draw.
+  Any rejection runs ordinary CPU/Legacy as before.
+- Strictly one source instance, one rigid opaque mesh/primitive/
+  material/node, no author LOD/deform/alpha/auxiliary passes,
+  no active sun shadows or planar reflections. GLES3/Metal never
+  take this Vulkan-only route; shadow/reflection scenes still
+  render fully through Legacy/portable CPU.
+- File/commit list and Stage 16.3 progress table are in the
+  dedicated handoff. Authored tests have **NOT BEEN RUN**.
+  Do not assert Vulkan real GPU pixel parity or modify defaults.
+- Next: add real Vulkan Renderer3D main-view pixel parity fixture,
+  then extend multi-material/multi-instance support while retaining
+  exclusive pass ownership, before tackling crack-free LOD.
+
+
+## STRATA Stage 16.4 — multi-material, instance and camera GPU routing (2026-11-20)
+
+Read Stage16.4a, 16.4b and 16.4c of
+`docs/agent-handoffs/strata-virtual-geometry.md` before editing
+Vulkan GPU selection, `GeometryScene` or `Renderer3D`. The
+complete implementation remains on
+`feature/strata-virtual-geometry`; do NOT merge directly to main.
+
+- Stage16.4a supports up to 16 opaque primitives/materials and up
+  to 16 source instances, with independent GPU indexed packets;
+  Renderer3D binds each original PBR/material/U0 state and owns the
+  ONLY actual draw. CPU material/shadow proxy batching is disabled
+  for selected GPU packet sources, not for Legacy sources.
+- Stage16.4b prepares a separate sun-camera selection before
+  the shadow render pass, with strict pass/projection/resolution
+  identity checks and same-model Legacy fallback.
+- Stage16.4c prepares **spot and planar reflection** GPU selection
+  only after their actual camera matrices are known in
+  `Renderer3DReflect.cpp`, **before opening render encoders**.
+  A separate `GpuIndexedSelectionPacket` is owned by each
+  Renderer3D ModelItem for every camera. Never reuse a main-view
+  command buffer in sun, spot or mirrored reflection.
+- EXPLICIT acceptance flags are all default FALSE:
+  `setStrataVulkanGpuParityGates(selection,mainRaster)` and
+  `setStrataVulkanGpuAuxiliaryParityGates(sun,spot,reflection)`.
+  The user must establish separate real Vulkan main RGBA and
+  sun/spot DEPTH, planar reflection RTT pixel parity for the
+  exact source SHA before accepting each pass. A manual flag is
+  not a test result.
+- `GpuClusterCulling` is borrowed from GeometryScene by ModelItems
+  only until `Renderer3D::render` completes; scene Model/metadata
+  cannot be destroyed between draw and render.
+- All 16.4 source + recording fixtures are committed but **NONE
+  WERE COMPILED OR EXECUTED**. Next stage: Stage17 crack-free lossy
+  cluster LOD boundaries, then Stage18 performance, then one full
+  native CMake/CTest and real hardware acceptance run. Preserve
+  genre independence and Metal/Vulkan/GLES3 fallback behavior.
+
+
+## STRATA Stage 17.1–17.2 — welded and cross-material crack-resistant LOD (2026-11-20)
+
+Current branch: `feature/strata-virtual-geometry`. For the full
+architecture, exact commit list, test plan, known limitations and
+next steps, read `docs/agent-handoffs/strata-virtual-geometry.md`
+Stage 17.1 and Stage 17.2. Do NOT merge to main without
+the user's final combined native validation run.
+
+- `StrataSeamTopology.h/.cpp`: immutable CPU-only oriented-edge
+  contour verifier for a single source material. Coarse parent
+  triangles MUST preserve the EXACT welded global-ID border of
+  the combined children, even when adjacent groups render at
+  different depths. Nonmanifold/degenerate/altered contours
+  reject the parent and preserve the original fine children.
+  `StrataBuilder` independently audits all final parent links
+  and marks `Asset::seamCertified` only after success.
+- `StrataSourceSeams.h/.cpp`: source-wide UV/material/mesh physical
+  seam preflight. Handles duplicated vertex IDs at equal original
+  coordinates and different rigid `Model::bindWorld` transforms.
+  Uses a bounded BVH to reject an original cross-material T-junction
+  or near-identical but different source seam endpoints. Source
+  input is NEVER repaired or welded silently; unsafe sources
+  stay on the original Renderer3D Legacy path.
+- `StrataModelAdapter::buildModelAsset` now requires the second
+  positional audit before assigning
+  `ModelAsset::sourceSeamsCertified`. `SceneStaging` and
+  `GeometryScene` check per-partition AND whole-source
+  certification before portable Metal/Vulkan/GLES and GPU indirect
+  use. Both checks occur on CPU import/load, not in the render loop.
+- Tests `strata_seams` and `strata_source_seams` added to CMake:
+  authored but **NEVER EXECUTED**. Verify with `strata_builder`,
+  `strata_model_adapter`, `strata_view`, streaming/GPU route
+  tests and actual Metal/Vulkan/GLES3 mixed-LOD pixel/depth QA
+  during the user's final combined validation. Don't claim that
+  authored assertions prove GPU success.
+- **Limits:** no source geometry T-junction repair, no cross-Model,
+  cross-world or separate terrain chunk seam stitching, no
+  morph/skin vertex changes, no geometric geomorph or frame-stable
+  hysteresis, no guarantee of exact lossy-LOD interior shading.
+  Imported open surfaces are allowed; suspicious near-overlap
+  declines STRATA. Next Stage17.3: temporal LOD stability,
+  then Stage18 performance profiling and final Stage19 acceptance.
+
+All work stays genre-independent. Renderer3D remains the only draw
+authority; Metal/Vulkan/GLES and Legacy fallbacks must keep working.
+
+
+**Stage17.2 intra-material UV island note:** use
+`StrataSourceSeams` edge-connected triangle components, not just
+material IDs, when auditing spatial seams. Different UV islands
+inside the SAME primitive may have duplicated IDs and physically
+matching or mismatched boundary segments. See latest Stage17.2
+follow-up in the STRATA handoff; corresponding CTest source was
+written but not executed. Preserve Legacy on ambiguous source.
+
+
+## STRATA Stage17.3 — CPU/portable temporal LOD hysteresis (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.3, before changing projected LOD error, per-pass view
+selection or scene-resident index page demand. Current branch is
+`feature/strata-virtual-geometry`, NOT merged to main.
+
+- `StrataGeometry.h` and `StrataView`: opt-in validated
+  `hysteresisFraction` (0..0.45), prior per-node refined-state
+  mask and successful view's actual refined-state vector. A
+  previously coarse node needs error > threshold*(1+h) to refine,
+  a previously refined node stays fine until below
+  threshold*(1-h). Cold start and default h=0 retain the
+  original immediate threshold. Missing resident children,
+  malformed input, max-selected-node budgets and prior Stages17.1
+  and 17.2 seam admission always override hysteresis safely.
+- `PortableLodHistory`: a value history keyed by original
+  source+revision, instance, primitive, original source node and
+  camera/pass slot. It is only published after the complete
+  indexed source alias has been successfully prepared by
+  `PortableSource::prepareModel`; a failed GPU upload never
+  changes it. Force-finest late planar reflection resets the
+  history after successful preparation. Changing the scene
+  hysteresis policy also cold-resets all instance histories.
+- `PortableSource::collectResidencyDemands` must use the SAME
+  history/fraction as `prepareModel`. Otherwise Stage15 GPU
+  residency might evict child pages that a warmed LOD frontier
+  still requires. GeometryScene owns temporal state; no extra
+  Renderer3D submission path or duplicate vertex allocator.
+- All Stage17.3 new tests were AUTHORED, NOT RUN:
+  `strata_view` (cold/warm thresholds, invalid masks,
+  missing-residency and budget fallback) and
+  `strata_portable` (Metal/Vulkan/GLES3 recording backend,
+  isolated instance/camera histories, GPU-error transactional
+  safety, streamed demand alignment).
+- This is CPU-selected portable raster stability, **NOT**
+  Vulkan/Metal GPU-compute temporal history, continuous
+  geomorph or guaranteed invisible lossless shading.
+  Next Stage17.4 is GPU-compute per-pass history with actual
+  CPU/GPU temporal parity, then Stage18 benchmarks, Stage19
+  final build/CTest and hardware validation. Parity gates stay
+  OFF until an exact source SHA has real GPU evidence.
+
+
+## STRATA Stage17.4 — Metal/Vulkan GPU temporal LOD history handoff (2026-11-20)
+
+Current feature branch `feature/strata-virtual-geometry`, NOT
+merged to main. Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.4, before editing GPU cluster culling, `GeometryScene`,
+`Renderer3DModels`, temporal mask lifetimes or Vulkan/Metal shaders.
+
+- `GpuPassConfig` adds `hysteresisFraction` (0..0.45),
+  `temporalPassId` (main=1, sun=2, spot=3, reflection=4),
+  `temporalNodeCount` and `temporalRevision`. Requires one
+  enabled GPU scene instance per temporal dispatch; h=0 is the
+  existing stateless selector, unchanged by default.
+- `GpuClusterCulling` owns bounded GPU-only per-source/
+  instance/primitive/pass histories: 3 frame-serial slots,
+  never overwrites a previous still-in-flight mask; no
+  synchronous CPU readback. Reset every next mask, select using
+  previous mask's coarse/fine hysteresis band, then GPU-safety
+  rollback on invalid metadata/overflow. Distinct Metal/Vulkan
+  shader kernels share 112-byte uniform layout and GPU metadata
+  node indexing. Caps: 262144 nodes/key, 256 histories,
+  32 MiB total logical Storage masks/selector owner. Expire
+  inactive histories after GPU completion; GPU allocation or
+  fence pressure declines to portable CPU/Legacy safely.
+- `GeometryScene::setStrataLodHysteresisFraction()` controls
+  the CPU (Stage17.3) AND GPU (17.4) band; source/material/
+  policy revision, camera slot and pass viewport identity
+  reset warm history. NEW
+  `setStrataGpuTemporalParityVerified(bool)` remains FALSE
+  until real GPU warm-state selection/raster A/B passes.
+  Old stateless GPU parity acceptance flags do not imply
+  temporal parity. Never enable this gate from source review
+  or mock tests alone.
+- Stage17.4 tests AUTHORED, NOT EXECUTED: recording RHI
+  `strata_gpu_culling` tests frame fences, independent cameras,
+  revisions, 32 MiB memory caps and cold/warm uniforms.
+  Real `strata_vulkan_kernel` offscreen GPU test queues
+  four consecutive frames and asynchronously compares
+  selected ranges AND refined mask with CPU temporal oracle.
+  New native `aiverse_strata_metal_temporal` is opt-in on
+  macOS under `AIVERSE_STRATA_METAL_GPU_TESTS=ON`, with
+  three consecutive frames. Both await the owner's combined
+  final native build and real device validation.
+- Never claim full physical VRAM accounting, smooth geomorphing,
+  zero flicker, CPU/GPU pixel parity or measured GPU time
+  from this stage. Cross-model/terrain seams and shading
+  continuity remain outside the static Stage17 proof.
+  Renderer3D still owns every actual graphics draw.
+- Next: Stage18 profiling and GPU workload optimization,
+  then Stage19 clean worktree and full CMake/CTest, actual
+  Metal/Vulkan/GLES3 raster/depth/RTT parity, reconciling
+  concurrent main without force merge. Every stage needs a
+  handoff with exact changed files, real tests and commit SHA.
+
 ### Animation/View Stage 115 — main integration and GPU program lifetime
 
 - Merge `01538817a68ac869b1e9ca12bc48ef9d9f4d56c7`
@@ -2370,3 +4652,25 @@ After **every** further MotionWeave / universal animation implementation stage, 
 - The **Studio Attachments** window owns a dedicated renderer, offscreen Viewport and independent ModelAssetProvider parent+real imported children. It samples a simple preview clip from that owner, composes sockets with `ImportedAttachmentAuthoring::prepare(...HostPrecomputed)`, and invokes common `View::submitOne`; the existing Modeling/Graph/other genre hosts are never borrowed or double-ticked. CPU read leases stay alive through synchronous Renderer3D rendering; imported Models/texture lifetimes and GPU target retirement remain host-owned.
 - Studio reimport now publishes a successful NEW independent provider without `waitForResourceIdle` at every swap; prior providers and failed scratch uploads go to `retiredSessions_` (max advisory 8 before a full GPU-idle cleanup). **This is bounded deferred ownership, not a fully GPU-fence-driven, zero-stall or zero-leak solution.** `ModelAssetProvider::shutdown` still mandates full idle. On unavailable completion, retain the old owner rather than destroy in-flight GPU assets. At shutdown Editor already proves idle. Avoid unnecessary model copies and do not mix separate Device generation leases.
 - Stage 157: safely reimport changed source files into ModelView using staging and complete Animator/provider rebind; design genuinely per-provider GPU token retirement, advanced morph/rig and Studio scene authoring. Keep animation core entirely genre-free; after every subsequent stage commit standalone handoff and print a status table. Never claim CTest/Metal/GLES/Vulkan passing until actually run.
+
+
+
+## MotionWeave / Universal View — Stage 157 atomic ModelView disk reimport
+
+- Continue from [Stage 157 standalone handoff + readiness table](docs/agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md) and [ModelView attachments user guide](docs/modelview-attachments.md). Stage 157 source commits `20188ec0` (replaceable native owner), `dd153a91` (shared layout compiler), `7f8f0473` (staged entire-scene disk reimport), `73b6d14b` (watcher/UI/retirement), `4e92ec50` (failed idle quarantine), guide `61a9512d`. Feature branch `feature/universal-ecs-animation-pipeline`, PR #22 Draft. **NOT RUN:** CMake/C++/CTest/current green CI/real Metal/Vulkan/GLES GPU, sanitizer/benchmarks.
+- Native ModelView reimport must NEVER replace a single parent Model* while `Instance::Animator` and published compiled socket models borrow the old source. Stage a NEW `ModelAssetProvider`, replacement `Instance` Animators, `AppearanceAssetRegistry` and ALL imported child/compiled socket bindings as ONE complete generation; only publish when all succeed. Compatible clip name + normalized layer0 phase is the only portable Animator continuity. Missing clip restarts at bind pose. No gameplay state, root motion or native solver transfer.
+- UI **Reload model files** and `--watch-model-files` (once-per-second render-owner timestamp polling) schedule whole reimport before `Device::beginFrame`. Old `RetiredNativeScene` retains parent Animator instances, source/child appearance metadata and provider-owned GPU resources until explicit GPU idle proof; advisory cap 8, full shutdown barrier, fail-closed quarantine on unavailable proof. GPU tokens are NOT implemented for complete provider shutdown; do not claim zero-stall or real GPU validation.
+- MotionWeave, common View, retarget/attachment components MUST remain genre-free and have exactly one graph/pose evaluator per animated source; ModelView precomputes pose and sends `HostPrecomputed` with graph null. **Next Stage 158:** true GPU-token provider retirement, complex morph/rig mapping, animated children, scene/prefab persistence. Follow user's complete-function-first, final coordinated Mac tests, and separate per-stage handoff + readiness table. Do not rebase/merge/force-push diverged peer branches without integration review.
+
+
+**Stage 157 final correction:** `aa3f2300843610374fd3a393ded02f8d82d28624` activates provider-backed ModelView reload on `--watch-model-files` even without authored child attachments. The same staged provider+Animator swap works for an empty compiled socket layout. Source readback only, not a passing native test.
+
+## Physical sky and local fog integration
+
+PRISMA owns PhysicalSky and LocalFog HDR passes before exposure/temporal processing.
+See docs/physical-sky.md, docs/local-volumetric-fog.md and
+docs/agent-handoffs/physical-sky-clouds-2026-11-20.md.
+Physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal remain opt-in.
+PHYSIS bridge is read-only presentation; no gameplay visibility or simulation changes.
+Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
+and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.

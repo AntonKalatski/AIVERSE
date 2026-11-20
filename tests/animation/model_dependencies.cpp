@@ -1,6 +1,6 @@
 // Stage 97 source-level regression fixture (native execution deferred).
 #include "modules/rts/view/RtsModelSourceDependencies.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <set>
 #include <string>
 #include <vector>
@@ -34,36 +34,36 @@ int main() {
     })");
     ModelSourceDependencyIndex index;
     index.rebuild(types,materialLibrary);
-    for(const std::string& path:{
+    for(const char* path:{
         "models/hero.glb","models/hero-variant.glb",
         "models/hero-lod.glb","models/hero-damaged.glb",
         "models/sword.glb","models/coarse.glb","models/detail.glb"
     }) {
         const auto* e=index.lookup(path);
-        assert(e && e->has(ModelSourceKind::Model));
-        assert(e->types.count(0)==1);
+        AIVERSE_TEST_CHECK(e && e->has(ModelSourceKind::Model));
+        AIVERSE_TEST_CHECK(e->types.count(0)==1);
     }
-    assert(index.lookup("animation/hero.json")->has(
+    AIVERSE_TEST_CHECK(index.lookup("animation/hero.json")->has(
         ModelSourceKind::AnimationGraph));
-    assert(index.lookup("materials.json")->has(
+    AIVERSE_TEST_CHECK(index.lookup("materials.json")->has(
         ModelSourceKind::MaterialLibrary));
-    assert(index.lookup("textures/steel.png")->has(ModelSourceKind::Texture));
-    assert(index.lookup("textures/camo.png")->has(ModelSourceKind::Texture));
-    assert(index.lookup("textures/bark-normal.png")->types.count(1)==1);
-    assert(index.lookup("models/missing.glb")==nullptr);
+    AIVERSE_TEST_CHECK(index.lookup("textures/steel.png")->has(ModelSourceKind::Texture));
+    AIVERSE_TEST_CHECK(index.lookup("textures/camo.png")->has(ModelSourceKind::Texture));
+    AIVERSE_TEST_CHECK(index.lookup("textures/bark-normal.png")->types.count(1)==1);
+    AIVERSE_TEST_CHECK(index.lookup("models/missing.glb")==nullptr);
     const auto materialImpact=index.resolve({"materials.json"});
-    assert(materialImpact.requiresWholeView());
+    AIVERSE_TEST_CHECK(materialImpact.requiresWholeView());
     const auto graphImpact=index.resolve({"animation/hero.json"});
-    assert(graphImpact.requiresWholeView());
+    AIVERSE_TEST_CHECK(graphImpact.requiresWholeView());
     const auto textureImpact=index.resolve({"textures/steel.png"});
-    assert(textureImpact.texture && !textureImpact.requiresWholeView());
-    assert(textureImpact.models.count("models/sword.glb")==1);
-    assert(textureImpact.models.count("models/tree.glb")==0);
+    AIVERSE_TEST_CHECK(textureImpact.texture && !textureImpact.requiresWholeView());
+    AIVERSE_TEST_CHECK(textureImpact.models.count("models/sword.glb")==1);
+    AIVERSE_TEST_CHECK(textureImpact.models.count("models/tree.glb")==0);
     index.addResidentTexture("models/hero.glb","textures/imported.png");
     const auto imported=index.resolve({"textures/imported.png"});
-    assert(imported.types.count(0)==1 && imported.types.count(1)==0);
+    AIVERSE_TEST_CHECK(imported.types.count(0)==1 && imported.types.count(1)==0);
     index.addResidentModel("models/missing.glb"); // failed/null cache key
     const auto missing=index.resolve({"models/missing.glb"});
-    assert(missing.model && missing.models.count("models/missing.glb")==1);
+    AIVERSE_TEST_CHECK(missing.model && missing.models.count("models/missing.glb")==1);
     return 0;
 }

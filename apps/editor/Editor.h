@@ -7,6 +7,7 @@
 #pragma once
 #include "SceneRenderable.h"
 #include <cmath>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <set>
@@ -19,6 +20,7 @@
 #include "EditorNativeBuild.h"
 #include "modules/rts/view/RtsViewScript.h"
 #include "EditorWindow.h"
+#include "TerraWeaveForestPreview.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
 #include "core/Workspace.h"
@@ -30,12 +32,13 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/ImGuiLayer.h"
-#include "engine/render/PostFx.h"
+#include "engine/render/Prisma.h"
 #include "engine/render/Renderer3D.h"
+#include "ViewportGpuRetirement.h"
+#include "engine/render/GpuResourceRetirement.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/NativePresentationRetirement.h"
 #include "engine/render/RetirementDiagnosticRing.h"
-#include "engine/render/OffscreenTargetLifetime.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
@@ -75,14 +78,18 @@ struct Viewport {
     float originX = 0, originY = 0;   // top-left on screen (points)
     bool hovered = false;
     render::RenderDeviceLifetime::Lease gpuDeviceLease;
-    std::weak_ptr<render::OffscreenTargetRetirement> targetOwner;
-    ~Viewport() noexcept;
     void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease=std::move(lease);}
-    void setTargetOwner(const std::shared_ptr<render::OffscreenTargetRetirement>& owner) {
-        targetOwner=owner;
-    }
     int drawnFrame = -100;            // ImGui frame the owning window last drew it (hidden tab: stale)
-    void ensure(gfx::Device& dev, int pw, int ph);
+    // Device/retirement owner must outlive this window. Editor clears all
+    // windows before draining its retirement queue on GPU-idle teardown.
+    gfx::Device* ownerDevice = nullptr;
+    ViewportGpuRetirement* retirement = nullptr;
+    ~Viewport() { if (ownerDevice) release(*ownerDevice); }
+    Viewport(const Viewport&) = delete;
+    Viewport& operator=(const Viewport&) = delete;
+    Viewport() = default;
+    void ensure(gfx::Device& dev, int pw, int ph, ViewportGpuRetirement& owner,
+                const char* debugName = "Viewport");
     void release(gfx::Device& dev);
     // ImGui::Image with the right orientation for the backend
     void image(gfx::Device& dev, float wPts, float hPts);
@@ -104,6 +111,11 @@ public:
     };
 
     explicit Editor(Options o) : opt_(std::move(o)) {}
+    ~Editor() {
+        // A graphics backend can deliver a capture callback after the
+        // Editor instance is gone, even if an explicit shutdown was skipped.
+        captureLifetime_->store(false,std::memory_order_release);
+    }
     void init(gfx::Device& dev);
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
@@ -118,13 +130,20 @@ public:
     render::RenderDeviceLifetime::Lease gpuDeviceLease() const {
         return gpuLifetime_?gpuLifetime_->lease():render::RenderDeviceLifetime::Lease{};
     }
-    const std::shared_ptr<render::OffscreenTargetRetirement>& offscreenTargets() const {
-        return offscreenTargets_;
-    }
     const render::RetirementDiagnosticRing* gpuRetirementDiagnostics() const {
         return gpuRetirementRing_.get();
     }
     render::Renderer3D& renderer() { return r3d_; }
+    render::GpuResourceRetirement& gpuResourceRetirement() { return gpuResourceRetirement_; }
+    const render::GpuResourceRetirement& gpuResourceRetirement() const { return gpuResourceRetirement_; }
+    ViewportGpuRetirement& viewportRetirement() { return viewportRetirement_; }
+    const ViewportGpuRetirement& viewportRetirement() const { return viewportRetirement_; }
+    // Request a GPU-idle drain at NEXT frame's safe pre-render boundary;
+    // never synchronize inside an active ImGui/window render pass.
+    void requestGpuRetirementFlush() { gpuRetirementFlushRequested_ = true; }
+    bool lastGpuRetirementFlushSucceeded() const { return gpuRetirementLastFlushSucceeded_; }
+    render::Prisma& prisma() { return prisma_; } // canonical PRISMA editor API
+    render::Prisma& postFx() { return prisma(); } // legacy alias; existing tools depend on it
     // Editor-owned native preview Model GPU retirement. Panels may replace
     // Models while the editor is recording offscreen windows in the same
     // frame; never destroy those Models until a later GPU completion token.
@@ -132,8 +151,13 @@ public:
     size_t pendingPreviewRetirements() const noexcept {
         return previewModelRetirement_.pending();
     }
-    render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
+    bool terraWeaveForestPreviewEnabled() const { return terraWeaveForestPreview_.enabled(); }
+    void setTerraWeaveForestPreviewEnabled(bool enabled) {
+        if (!enabled && dev_) terraWeaveForestPreview_.release(*dev_);
+        terraWeaveForestPreview_.setEnabled(enabled);
+    }
+    size_t terraWeaveForestPreviewCount() const { return terraWeaveForestPreview_.visibleInstances(); }
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
     // Pin a type that an editor panel or preview uses (also loads it lazily).
@@ -279,7 +303,7 @@ public:
 
     // rendering a map view into a Viewport (used by Scene and Game windows)
     void renderScene(Viewport& vp, const render::RTSCamera& cam, bool editOverlays);
-    void renderGame(Viewport& vp, const render::RTSCamera& cam);
+    void renderGame(Viewport& vp, const render::RTSCamera& cam, uint64_t prismaViewId = 2);
 
     // overlays (Overlays window / overlay_preview): ids drawn regardless of their conditions, and a
     // structure type whose ghost overlays (build grid, placement) are previewed at the cursor
@@ -369,12 +393,12 @@ private:
     Workspace ws_;
     gfx::Device* dev_ = nullptr;
     std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime_;
-    std::shared_ptr<render::OffscreenTargetRetirement> offscreenTargets_;
     std::shared_ptr<render::RetirementDiagnosticRing> gpuRetirementRing_;
     gfx::TextureHandle studioLogo_{}; // editor brand mark
     render::ImGuiLayer ui_;
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
+    TerraWeaveForestPreview terraWeaveForestPreview_;
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
@@ -383,7 +407,10 @@ private:
     int fpsRuntimeRulesRevision_ = -1; // same signed revision domain as rulesRevision_
     std::string fpsRuntimeProjectDir_;
 
-    render::PostFx postFx_;
+    render::Prisma prisma_;
+    render::PrismaVolumeStack prismaVolumes_; // editor camera profiles, presentation-only
+    std::string prismaVolumesSignature_;
+    void refreshPrismaVolumes();
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
     game::view_adapter::RtsModelDemandScheduler modelDemand_;
@@ -396,7 +423,15 @@ private:
     int focusFirst_ = 0;
     std::vector<std::string> pendingFocus_;   // openWorkspace: tabs to bring to front once docked
     int pendingFocusFrames_ = 0;
+    render::GpuResourceRetirement gpuResourceRetirement_; // outlives ShaderGraph/FX windows
+    ViewportGpuRetirement viewportRetirement_; // outlives all window Viewports
+    bool gpuRetirementFlushRequested_ = false;
+    bool gpuRetirementLastFlushSucceeded_ = false;
     std::vector<std::unique_ptr<EditorWindow>> windows_;
+    // Only the GUI owner can decide whether Scene/Game postprocess views
+    // actually rendered in the current frame, including dock-hidden tabs.
+    bool prismaSceneRendered_ = false, prismaGameRendered_ = false;
+    bool prismaScenePreviouslyLive_ = false, prismaGamePreviouslyLive_ = false;
 
     game::MapGrid grid_;
     uint64_t gridRevision_ = ~0ull;
@@ -483,6 +518,11 @@ private:
     struct PendingShot { int client; int64_t id; std::string device; Json metadata; };
     std::vector<PendingShot> shots_;
     bool captureArmed_ = false;
+    // The graphics backend can call captureNextFrame asynchronously after
+    // Editor shuts down. A shared liveness token prevents a stale callback
+    // from dereferencing this or touching the closed MCP connection.
+    std::shared_ptr<std::atomic<bool>> captureLifetime_ =
+        std::make_shared<std::atomic<bool>>(true);
     bool overlayKeys_[int(platform::Key::Count)] = {};
 };
 

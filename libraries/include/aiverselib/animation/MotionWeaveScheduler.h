@@ -50,6 +50,10 @@ public:
         const auto prepared=prepareAnimationPresentation(world);
         if(!prepared.players || !prepared.poses)return last_;
         const World& read=world;
+        // Read each optional component through the public non-creating
+        // World API. poolIfExists() is private and must not be used by
+        // presentation libraries.
+
         // Reuse allocation capacity across frames. Cache graph classification
         // only within the current frame: hot reload may reuse freed addresses.
         safe_.clear();unsafe_.clear();weight_.clear();graphPlans_.clear();

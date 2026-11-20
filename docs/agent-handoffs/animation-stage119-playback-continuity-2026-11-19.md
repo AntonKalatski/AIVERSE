@@ -141,4 +141,3 @@ Previous: [Stage 118](animation-stage118-gpu-init-rollback-2026-11-19.md)
    build/CTest/sanitizer and real GPU visual/benchmark tests, fix
    warnings and only then consider merging PR #22.
 5. Add a separate Stage 120 handoff and update `AGENTS.md`.
-

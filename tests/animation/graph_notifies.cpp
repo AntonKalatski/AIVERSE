@@ -1,5 +1,5 @@
 #include "engine/render/AnimationGraph.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -15,13 +15,13 @@ int main(){
         "output":"run"})"));
     AnimationGraphInstance a;a.reset(graph);
     a.update(.5f);
-    assert(a.notifies().size()==5);
-    assert(a.notifies()[0].name=="step");
-    assert(a.notifies()[1].name=="lift");
-    assert(a.notifies()[2].name=="step");
-    assert(a.notifies()[3].name=="lift");
-    assert(a.notifies()[4].name=="step");
+    AIVERSE_TEST_CHECK(a.notifies().size()==5);
+    AIVERSE_TEST_CHECK(a.notifies()[0].name=="step");
+    AIVERSE_TEST_CHECK(a.notifies()[1].name=="lift");
+    AIVERSE_TEST_CHECK(a.notifies()[2].name=="step");
+    AIVERSE_TEST_CHECK(a.notifies()[3].name=="lift");
+    AIVERSE_TEST_CHECK(a.notifies()[4].name=="step");
     a.update(.125f);
-    assert(a.notifies().size()==1 && a.notifies()[0].name=="lift");
+    AIVERSE_TEST_CHECK(a.notifies().size()==1 && a.notifies()[0].name=="lift");
     return 0;
 }

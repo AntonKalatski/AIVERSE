@@ -5,6 +5,8 @@
 #include "core/SimTools.h"
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
+#include "engine/render/PrismaVolumeData.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -43,22 +45,29 @@ FileReader projectReader(const std::string& dir) {
 }
 } // namespace
 
-// ============================ viewport ============================
-
-// Window destruction occurs during Editor::shutdown while the editor's
-// render-target retirement pool and host Device are still valid. A weak
-// owner avoids dereferencing a destroyed editor on abnormal teardown.
-Viewport::~Viewport() noexcept {
-    if(auto owner=targetOwner.lock())
-        owner->retire(color,depth);
-    color=depth={};
+void Editor::refreshPrismaVolumes() {
+    const Json& game = ws_.project.manifest["prismaVolumes"];
+    const Json& map = doc().data.extra["prismaVolumes"];
+    const std::string signature = game.dump(-1) + "|" + map.dump(-1);
+    if (signature == prismaVolumesSignature_) return;
+    prismaVolumesSignature_ = signature;
+    std::vector<std::string> issues;
+    prismaVolumes_ = render::parsePrismaVolumes(game, map, &issues);
+    for (const auto& issue : issues) ws_.log("prisma", issue, true);
 }
 
-void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
+// ============================ viewport ============================
+
+void Viewport::ensure(gfx::Device& dev, int pw, int ph,
+                      ViewportGpuRetirement& owner, const char* debugName) {
+    ownerDevice = &dev;
+    retirement = &owner;
     if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
         throw std::logic_error("Editor viewport GPU generation expired");
     pw = std::max(pw, 8); ph = std::max(ph, 8);
-    if (pw == w && ph == h && color.valid()) return;
+    if (pw == w && ph == h && color.valid() && depth.valid()) return;
+    // The old color may still be referenced by ImGui's GPU draw list and
+    // the depth by the previous scene pass. Never destroy them here.
     release(dev);
     gfx::TextureDesc td;
     td.width = pw; td.height = ph;
@@ -69,21 +78,28 @@ void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
     td.filter = gfx::Filter::Nearest;
     depth = dev.createTexture(td);
     w = pw; h = ph;
+    owner.noteLive(this, debugName, w, h, color, depth);
 }
 
 void Viewport::release(gfx::Device& dev) {
     if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
         throw std::logic_error("Editor viewport release GPU generation expired");
-    if(auto owner=targetOwner.lock()) {
-        // Prior GPU frames and ImGui draws can still sample these targets.
-        owner->retire(color,depth);
-    }else {
-        // Legacy stand-alone Viewport callers may omit an editor pool.
-        if(color.valid())dev.destroyTexture(color);
-        if(depth.valid())dev.destroyTexture(depth);
+    if (retirement) retirement->forgetLive(this);
+    // Color handles used in ImGui commands must survive GPU submission,
+    // including when an entire Scene/Game/FX window is destroyed.
+    if (retirement) {
+        retirement->retire(dev,color);
+        retirement->retire(dev,depth);
+    } else {
+        // Legacy host not using an Editor owner: preserve its old explicit
+        // teardown contract (caller must guarantee GPU idle).
+        if (color.valid()) dev.destroyTexture(color);
+        if (depth.valid()) dev.destroyTexture(depth);
+        color = depth = {};
     }
-    color=depth={};
-    w=h=0;
+    w = h = 0;
+    hovered = false;
+    drawnFrame = -100; // never expose a released ImGui texture as live
 }
 
 void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
@@ -102,10 +118,9 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 
 void Editor::init(gfx::Device& dev) {
     gpuLifetime_=std::make_unique<render::RenderDeviceLifetime>(dev);
-    offscreenTargets_=std::make_shared<render::OffscreenTargetRetirement>(
-        dev,gpuDeviceLease());
     view_.setGpuDeviceLease(gpuDeviceLease());
     dev_ = &dev;
+    captureLifetime_ = std::make_shared<std::atomic<bool>>(true);
     ws_.engineDir = opt_.engineDir;
     editor::setEditorLanguage(ws_.engineDir + "/engine/assets/lang");   // editor messages (map checks)
     ws_.buildTool = opt_.buildTool;
@@ -132,9 +147,9 @@ void Editor::init(gfx::Device& dev) {
                const std::vector<render::Material>& materials) {
             return r3d_.warmModelPipelinesChecked(model,&materials);
         });
-    postFx_.setGpuDeviceLease(gpuDeviceLease());
-    postFx_.init(dev);
-    postFx_.setQuality(render::PostFx::defaultQualityFor(dev, false));
+    prisma_.setGpuDeviceLease(gpuDeviceLease());
+    prisma_.init(dev);
+    prisma_.setQuality(render::Prisma::defaultQualityFor(dev, false));
     r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, false));
     r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, false));
     for (auto& f : WindowRegistry::factories()) {
@@ -177,14 +192,12 @@ void Editor::init(gfx::Device& dev) {
             event.resource=render::RetirementResourceKind::Image;
             gpuTrace(event);
         });
-    if(offscreenTargets_)
-        offscreenTargets_->setRetirementDiagnosticObserver(
-            [gpuTrace](render::RetirementDiagnosticEvent event) {
-                event.resource=render::RetirementResourceKind::Target;
-                gpuTrace(event);
-            });
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
     fxTextures_.init(dev);
+    // ShaderGraph/FX hot reload can occur while the previous frame still
+    // samples the old atlases and pipelines. The editor owns the fence queue.
+    fxTextures_.setGpuResourceRetirement(&gpuResourceRetirement_);
+    gameFx_.setGpuResourceRetirement(&gpuResourceRetirement_);
     gameFx_.setQuality(fx::defaultQualityFor(dev, false));
     gameFx_.setFileReader([this](const std::string& path, std::string& out) { return projectReader(ws_.project.dir)(path, out); });
     gameFx_.setTextureLoader([this](const std::string& name, fx::FxTexture& out) {
@@ -219,6 +232,10 @@ void Editor::retirePreviewModel(std::unique_ptr<render::Model>& model) noexcept 
 
 void Editor::shutdown() {
     if (!dev_) return;
+    // Invalidate any captureNextFrame callbacks still owned by the RHI.
+    captureLifetime_->store(false,std::memory_order_release);
+    captureArmed_ = false;
+    shots_.clear();
     // Editor windows own offscreen Model/portrait/viewport allocations and
     // can still have prior-frame submissions in flight. Prove full device
     // completion BEFORE allowing destructors to destroy native GPU objects.
@@ -226,33 +243,44 @@ void Editor::shutdown() {
         throw std::runtime_error(
             "Editor shutdown: GPU completion barrier failed");
     clientHost_.stop();
+    // A hosted GameClient may have submitted resources in an earlier GUI
+    // frame. Its GPU handles must survive until a true graphics completion
+    // signal; do not release them simply because the Game tab was closed.
+    if (dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
+        clientHost_.drainAfterGpuIdle();
+    else if (!dev_->gpuHealthy())
+        clientHost_.abandonOnDeviceLoss();
     gameFxBridge_.detach();
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
     for(auto& window:windows_)window->shutdownAfterGpuIdle(*this);
-    windows_.clear(); // window destructors may retire Model pointers into the shared queue
+    windows_.clear(); // All windows (including ShaderGraph previews) retire owned resources.
+    // The last submitted GPU frame may still reference ShaderGraph
+    // pipelines/buffers/portrait resources queued by window destruction.
+    if (dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
+        gpuResourceRetirement_.drainAfterGpuIdle(*dev_);
+    else if (!dev_->gpuHealthy())
+        gpuResourceRetirement_.abandonDevice(*dev_);
+    // Shut down after last frame submission. Only an actual successful
+    // graphics-queue idle barrier permits destroying ImGui-referenced
+    // viewport handles; otherwise leave them owned by the device until
+    // its own teardown instead of risking a GPU use-after-free.
+    if (dev_->waitForSubmittedGpuWork())
+        viewportRetirement_.drainAfterGpuIdle(*dev_);
     if(!previewModelRetirement_.completeForShutdown(*dev_))
-        throw std::runtime_error(
-            "Editor preview Models: GPU retirement barrier failed");
+        throw std::runtime_error("Editor preview Models: GPU retirement barrier failed");
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
+    terraWeaveForestPreview_.release(*dev_);
     view_.shutdown(*dev_);
     view_.setModelRetirementDiagnosticObserver({});
     view_.setImageRetirementDiagnosticObserver({});
-    if(offscreenTargets_)
-        offscreenTargets_->setRetirementDiagnosticObserver({});
     gpuRetirementRing_.reset();
-    postFx_.shutdown();
+    prisma_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
     if(fpsPreviewMesh_.ib.valid())dev_->destroyBuffer(fpsPreviewMesh_.ib);
     r3d_.shutdown();
     ui_.shutdown();
-    // Windows have released their weakly-owned viewport target pairs into
-    // this queue. A real idle barrier is required before GPU device retire.
-    if(offscreenTargets_ && !offscreenTargets_->drain())
-        throw std::runtime_error(
-            "Editor offscreen targets: GPU retirement barrier failed");
-    offscreenTargets_.reset();
     // The token is invalidated only AFTER all cache-backed GPU shutdowns,
     // and before the platform can destroy or reuse its Device address.
     if(gpuLifetime_)gpuLifetime_->retire();
@@ -288,6 +316,8 @@ void Editor::openGame(const std::string& idOrDir) {
         return;
     }
     ws_.changes.clear();
+    if (dev_) terraWeaveForestPreview_.release(*dev_);
+    terraWeaveForestPreview_.setEnabled(false);
     reloadRules();
     selection = {};
     showPicker_ = false;
@@ -320,6 +350,9 @@ void Editor::reloadFx() {
 void Editor::reloadRules() {
     editSceneCacheValid_ = false;
     editSceneCache_.clear();
+    // The view can destroy/recreate Model objects while reusing allocator
+    // addresses and GPU handles. Never carry their CPU bind caches forward.
+    r3d_.invalidateStaticModelCaches();
     view_.shutdown(*dev_);
     modelDemand_.resize(rules().types.size());
     modelDemand_.markSweep(time_);
@@ -562,6 +595,8 @@ void Editor::reclaimEditorAssets(bool force) {
 }
 
 void Editor::newMap(int w, int h) {
+    if (dev_) terraWeaveForestPreview_.release(*dev_);
+    terraWeaveForestPreview_.setEnabled(false);
     doc().reset(w, h);
     selection = {};
     syncGrid();
@@ -574,6 +609,8 @@ void Editor::openMap(const std::string& file) {
     std::error_code ec;
     std::string norm = fs::weakly_canonical(fs::path(file), ec).string();
     if (doc().load(ec ? file : norm, &err)) {
+        if (dev_) terraWeaveForestPreview_.release(*dev_);
+        terraWeaveForestPreview_.setEnabled(false);
         status = "Открыто: " + ws_.relative(doc().path);
         selection = {};
         syncGrid();
@@ -1091,7 +1128,7 @@ void Editor::drawEditOverlays3D() {
 
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
-    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
+    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
     if (!ws_.project.isFps()) {
@@ -1107,9 +1144,43 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
     const auto afterFields = std::chrono::steady_clock::now();
     const bool planets = !ws_.project.isFps() && view_.planetMode();
+    // A map undo may have removed the TerraWeave recipe since last frame.
+    // Release stale preview buffers even when the Terrain panel is closed.
+    if (terraWeaveForestPreview_.enabled() &&
+        !doc().data.extra["terraweave"].isObject())
+        setTerraWeaveForestPreviewEnabled(false);
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
-    r3d_.beginScene(useCam, vp.w, vp.h);
+    refreshPrismaVolumes();
+    prisma_.setViewId(1ULL);
+    prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
+    // Editor Scene is a lower-priority preview than the live Game viewport.
+    // The cap applies only to this view's two output HDR histories.
+    prisma_.setViewQualityPolicy(1ULL,{64,128});
+    const auto sceneAssets=view_.ownedPresentationGpuMemoryStats(*dev_);
+    const auto sceneFxImages=fxTextures_.ownedGpuMemoryStats();
+    const auto sceneFxBuffers=gameFx_.ownedGpuMemoryStats();
+    prisma_.setExternalPresentationAssetsGpuMemory(
+        render::GpuOwnedMemoryCounter::saturatingAdd(
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                sceneAssets.knownBytes(),sceneFxImages.knownBytes()),
+            sceneFxBuffers.knownBytes()));
+    const auto sceneRendererMemory=r3d_.residentMemoryStats();
+    prisma_.setExternalRendererGpuMemory(
+        sceneRendererMemory.liveTextureKnownBytes+
+        sceneRendererMemory.liveBufferKnownBytes,
+        sceneRendererMemory.pendingMotionKnownBytes);
+    prisma_.setExternalGeometryPoolGpuMemory(
+        render::geometryPoolStats(*dev_).allocatedBytes);
+    const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
+    // Only the renderer's camera receives jitter. UI, picking, overlays,
+    // camera navigation and authored scene positions use the stable useCam.
+    const auto [renderW,renderH] = postEnabledForScene
+        ? prisma_.renderSizeForOutput(vp.w,vp.h)
+        : std::pair<int,int>{vp.w,vp.h};
+    const RTSCamera renderCam = postEnabledForScene
+        ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
+    r3d_.beginScene(renderCam,renderW,renderH);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(true);
@@ -1127,7 +1198,32 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
-    if (!planets && !ws_.project.isFps()) tickFx(cam, vp.w, vp.h, nullptr);   // agent previews (fx_preview) in the Scene view
+    // Editor-only TerraWeave forest overlay. Explicit opt-in from TerrainWindow:
+    // shares the standard Renderer3D model/instancing path, no gameplay state.
+    if (!planets && !ws_.project.isFps() && terraWeaveForestPreview_.enabled()) {
+        try {
+            const auto cameraPosition = r3d_.cameraPos();
+            const double xCm = double(cameraPosition.x) * 100.0;
+            const double zCm = double(cameraPosition.z) * 100.0;
+            if (!std::isfinite(xCm) || !std::isfinite(zCm) ||
+                std::abs(xCm) > double(terraweave::kWorldLimitCm) ||
+                std::abs(zCm) > double(terraweave::kWorldLimitCm))
+                throw std::out_of_range("TerraWeave forest camera outside world extent");
+            terraWeaveForestPreview_.draw(*dev_, r3d_, doc(),
+                int64_t(std::llround(xCm)), int64_t(std::llround(zCm)),
+                [this](int64_t x, int64_t z) -> int32_t {
+                    // The display surface (including manual sculpt) takes priority.
+                    const float height = view_.heightAt(grid_, float(x) * 0.01f, float(z) * 0.01f);
+                    if (!std::isfinite(height) || std::abs(height) > 1000000.0f)
+                        throw std::out_of_range("TerraWeave preview invalid map height");
+                    return int32_t(std::llround(double(height) * 100.0));
+                });
+        } catch (const std::exception& e) {
+            status = std::string("TerraWeave forest: ") + e.what();
+            terraWeaveForestPreview_.setEnabled(false);
+        }
+    }
+    if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -1135,12 +1231,30 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
-    r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    const bool postActiveForScene = postEnabledForScene && prisma_.active();
+    static const bool measurePrismaViews=[] {
+        const char* value=std::getenv("AIVERSE_PRISMA_VIEWPORT_GPU_TIMING");
+        return value && std::strcmp(value,"1")==0;
+    }();
+    const bool sceneGpuScope=measurePrismaViews && dev_->beginGpuScope(1ULL);
+    r3d_.render(pass, postEnabledForScene ? &prisma_ : nullptr);
+    if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
-    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
-    r3d_.resolvePostFx();
+    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
+        gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+        // Scene-view particle reactive coverage; per-scene callback is
+        // consumed synchronously by resolvePrisma and never persists.
+        if (gameFx_.hasReactiveGeometry())
+            r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                    gfx::TextureHandle sceneDepth, int width, int height) {
+                gameFx_.renderReactive(gpu,sceneDepth,width,height);
+            });
+    }
+    r3d_.resolvePrisma();
+    prisma_.clearCameraVolumes();
     dev_->endPass();
+    if (sceneGpuScope) dev_->endGpuScope();
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
         static unsigned samples = 0;
@@ -1163,7 +1277,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     }
 }
 
-void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
+void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewId) {
     if (!vp.color.valid() || !sim_) return;
     auto& gs = simModule()->state(*sim_);
     // fields / creep changing during play are read by the terrain shader: build once per play session
@@ -1189,20 +1303,58 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
             o.hovered = hover == me;
         }
     }
-    r3d_.beginScene(cam, vp.w, vp.h);
+    refreshPrismaVolumes();
+    prisma_.setViewId(prismaViewId);
+    prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
+    prisma_.setViewQualityPolicy(prismaViewId,
+        {uint8_t(prismaViewId==1ULL?64:224),
+         uint32_t(prismaViewId==1ULL?128:256)});
+    const auto gameAssets=view_.ownedPresentationGpuMemoryStats(*dev_);
+    const auto gameFxImages=fxTextures_.ownedGpuMemoryStats();
+    const auto gameFxBuffers=gameFx_.ownedGpuMemoryStats();
+    prisma_.setExternalPresentationAssetsGpuMemory(
+        render::GpuOwnedMemoryCounter::saturatingAdd(
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                gameAssets.knownBytes(),gameFxImages.knownBytes()),
+            gameFxBuffers.knownBytes()));
+    const auto gameRendererMemory=r3d_.residentMemoryStats();
+    prisma_.setExternalRendererGpuMemory(
+        gameRendererMemory.liveTextureKnownBytes+
+        gameRendererMemory.liveBufferKnownBytes,
+        gameRendererMemory.pendingMotionKnownBytes);
+    prisma_.setExternalGeometryPoolGpuMemory(
+        render::geometryPoolStats(*dev_).allocatedBytes);
+    const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
+    const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
+    r3d_.beginScene(renderCam,renderW,renderH);
     setOverlayContext(vp, cam, true);
     view_.draw(r3d_, sc, time_, human_ ? &gs.vision[size_t(human_)] : nullptr, gs.grid);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, gs.grid, time_);
-    tickFx(cam, vp.w, vp.h, &sc.objects);
+    tickFx(cam,renderW,renderH,&sc.objects);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
-    r3d_.render(pass, &postFx_);
+    const bool postActiveForGame = prisma_.active();
+    static const bool measureGameGpu=[] {
+        const char* value=std::getenv("AIVERSE_PRISMA_VIEWPORT_GPU_TIMING");
+        return value && std::strcmp(value,"1")==0;
+    }();
+    const bool gameGpuScope=measureGameGpu && dev_->beginGpuScope(prismaViewId);
+    r3d_.render(pass, &prisma_);
+    if (postActiveForGame && prismaViewId == 1ULL) prismaSceneRendered_ = true;
+    if (postActiveForGame && prismaViewId == 2ULL) prismaGameRendered_ = true;
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
-    r3d_.resolvePostFx();
+    if (gameFx_.hasReactiveGeometry())
+        r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                gfx::TextureHandle sceneDepth, int width, int height) {
+            gameFx_.renderReactive(gpu,sceneDepth,width,height);
+        });
+    r3d_.resolvePrisma();
+    prisma_.clearCameraVolumes();
     dev_->endPass();
+    if (gameGpuScope) dev_->endGpuScope();
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 
@@ -1447,6 +1599,66 @@ void Editor::drawDockspace() {
 }
 
 void Editor::frame(gfx::Device& dev, double dt) {
+    // PRE-RENDER GPU-retirement maintenance. Only here may the editor
+    // explicitly synchronize previously SUBMITTED work on memory pressure:
+    // the current frame has not encoded its viewport/ImGui render yet.
+    // Do not do an idle wait after scene/ImGui commands are recorded.
+    static const uint64_t retirementBudgetBytes = []() -> uint64_t {
+        uint64_t mb = 128;
+        if (const char* value = std::getenv("AIVERSE_PRISMA_RETIRE_BUDGET_MB")) {
+            char* end = nullptr;
+            const unsigned long long n = std::strtoull(value,&end,10);
+            if (end != value && end && *end == '\0')
+                mb = std::clamp<uint64_t>(n,32,4096);
+        }
+        return mb * 1024 * 1024;
+    }();
+    viewportRetirement_.setBudgetBytes(retirementBudgetBytes);
+    // Only completed scoped GPU queries are returned. This is a distinct
+    // queue from whole-frame timing/benchmark APIs; never consume those.
+    for (const auto& timing : dev.takeGpuScopeTimings())
+        if (timing.valid && std::isfinite(timing.milliseconds) &&
+            timing.milliseconds>0 && (timing.tag==1ULL || timing.tag==2ULL))
+            prisma_.acceptViewGpuTiming(timing.tag,timing.milliseconds);
+    viewportRetirement_.collect(dev);
+    gpuResourceRetirement_.collect(dev);
+    clientHost_.collectGpuRetirements();
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
+    const auto vpStats = viewportRetirement_.stats(dev);
+    const auto postStats = prisma_.retirementStats();
+    const auto motionStats = r3d_.motionRetirementStats();
+    const auto genericStats = gpuResourceRetirement_.stats(dev);
+    const uint64_t pendingKnownBytes = vpStats.knownPendingBytes +
+        postStats.knownPendingBytes + motionStats.knownPendingBytes +
+        genericStats.knownPendingBytes;
+    const bool flushRequested = gpuRetirementFlushRequested_;
+    gpuRetirementFlushRequested_ = false; // one attempt, no repeated UI stalls
+    if (flushRequested ||
+        (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes) ||
+        clientHost_.pendingRetiredClients() > 2 ||
+        genericStats.bundles > 8) {
+        // Old ShaderGraph preview bundles include unknown portrait/FX GPU
+        // allocations. Bundle count is pressure only, never GPU completion.
+        // A retired hosted GameClient has deep renderer/textures whose
+        // GPU byte count is not cheaply enumerable. Bound the number of
+        // archived clients as an additional pressure signal (never as a
+        // GPU-completion signal). Only a real completed idle may drain them.
+        // This can block, but only at the safe PRE-RENDER boundary. If the
+        // backend can't guarantee submitted-work idle (e.g. WebGL), keep
+        // every resource quarantined rather than freeing in-flight textures.
+        gpuRetirementLastFlushSucceeded_ = dev.waitForSubmittedGpuWork();
+        if (gpuRetirementLastFlushSucceeded_) {
+            viewportRetirement_.drainAfterGpuIdle(dev);
+            gpuResourceRetirement_.drainAfterGpuIdle(dev);
+            clientHost_.drainAfterGpuIdle();
+            prisma_.releaseRetiredSizesAfterGpuIdle();
+            r3d_.drainObjectMotionAfterGpuIdle();
+        }
+    }
+    // Window tabs can close or become dock-hidden without a destructor.
+    // Only a viewport that actually calls Prisma this frame stays live.
+    prismaSceneRendered_ = prismaGameRendered_ = false;
     auto t0 = std::chrono::steady_clock::now();
     const bool traceEditor = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     time_ += dt;
@@ -1462,8 +1674,6 @@ void Editor::frame(gfx::Device& dev, double dt) {
         view_.collectRetiredPaintGpuResources();
     if(previewModelRetirement_.pending()!=0)
         (void)previewModelRetirement_.collect(dev);
-    if(offscreenTargets_ && offscreenTargets_->pendingPairs()!=0)
-        offscreenTargets_->collect();
     if(r3d_.pendingProgramRetirements()!=0)
         r3d_.collectRetiredPrograms();
     if(r3d_.pendingTargetRetirements()!=0)
@@ -1472,8 +1682,6 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // frame. Scratch authoring resumes only when they have completed.
     if(r3d_.hasPendingModelPipelineJobs())
         r3d_.pollPendingModelPipelineJobs();
-    if(postFx_.pendingTargetRetirements()!=0)
-        postFx_.collectRetiredTargets();
     pollAgentLink();
     applyChanges();
     // Poll changed presentation assets before any new frame submissions.
@@ -1574,6 +1782,38 @@ void Editor::frame(gfx::Device& dev, double dt) {
         if (focusFirst_ > 0) --focusFirst_;
     }
     const auto afterWindows = std::chrono::steady_clock::now();
+    // At a hidden/closed tab transition, drop only camera-private histories.
+    // Shared size-keyed scene render targets remain usable by other tabs.
+    // The current GPU submission token fences the previous view's textures.
+    auto retireClosedView = [&](uint64_t id, bool rendered, bool& wasLive) {
+        if (wasLive && !rendered) {
+            prisma_.retireView(id);
+            r3d_.retireObjectMotionView(id, dev.gpuSubmissionFence());
+        }
+        wasLive = rendered;
+    };
+    retireClosedView(1ULL, prismaSceneRendered_, prismaScenePreviouslyLive_);
+    retireClosedView(2ULL, prismaGameRendered_, prismaGamePreviouslyLive_);
+    // Also discard stale per-view Prisma quality/temporal state from any
+    // future custom viewport ID, not just hard-coded Scene/Game. The same
+    // GPU-fenced retireView() owns every private texture; no forced GPU idle.
+    std::vector<uint64_t> activePrismaViews;
+    if (prismaSceneRendered_) activePrismaViews.push_back(1ULL);
+    if (prismaGameRendered_) activePrismaViews.push_back(2ULL);
+    prisma_.retireUnregisteredViews(activePrismaViews);
+    // Renderer3D keeps a separate per-camera object/deformation velocity
+    // history, independent of PRISMA's own temporal/exposure resources.
+    // Retire orphaned custom-camera IDs as well as the two built-in views,
+    // behind the graphics backend submission fence, never a CPU frame age.
+    r3d_.retireUnregisteredObjectMotionViews(activePrismaViews);
+    // A cached size can remain after a tab closes or is resized. Retire it
+    // only when NO live camera references the same size. This moves its
+    // targets and graph pool behind the current GPU submission fence, never
+    // destroys resources while the frame is still recording.
+    prisma_.retireUnreferencedSizeCaches();
+    // Polling also runs when no Scene/Game render pass is active.
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     drawOpenRequest();
     drawNativeBuild();
     // the screen: only the UI (3D views were rendered offscreen by their windows)

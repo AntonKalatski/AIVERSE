@@ -267,6 +267,29 @@ public:
         stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
     }
+    // Enumerates actual GPU assets owned by this presentation view, not
+    // temporary draw references. Pooled geometry pages are counted by
+    // GlobalGeometryPool, and cache-borrowed images by ModelTextureCache.
+    // Graphics-owner thread only, since GPU caches are mutated there.
+    render::GpuOwnedMemoryStats ownedModelGpuMemoryStats(
+            const gfx::Device& device) const {
+        render::GpuOwnedMemoryCounter counter(device);
+        // This cache owns both resident and GPU-retired Models. Borrowed
+        // page/image handles are excluded by appendModelOwnedGpuMemory.
+        resources_.forEachOwnedModel([&](const render::Model& model,bool) {
+            render::appendModelOwnedGpuMemory(model,counter);
+        });
+        // Account for the shared texture cache once, not for every
+        // Model/Image that borrows one of its resident handles.
+        if (const auto textures=resources_.textures())
+            textures->appendOwnedGpuMemory(counter);
+        return counter.stats();
+    }
+    // Asset-owner view includes model caches, terrain chunk/detail
+    // renderer, and planet renderer (all separate owners). An additive
+    // lower bound, not physical device VRAM. Draw-item borrowings excluded.
+    render::GpuOwnedMemoryStats ownedPresentationGpuMemoryStats(
+            const gfx::Device& device) const;
     // An optional host-owned device generation protects cached models even
     // when a gfx::Device address is recycled. The lease never owns the Device.
     // Supply it before init; hosted clients share the editor's generation.
@@ -310,6 +333,13 @@ public:
     // Borrowed Model* and materials must not outlive trim/shutdown/hot reload.
     const view_adapter::RtsModelResourceCache& modelResources() const noexcept {
         return resources_;
+    }
+    // The editor may subscribe to cache GPU-retirement diagnostics without
+    // gaining mutable access to the model owner or its resident assets.
+    // The underlying cache enforces owner-thread and detach-callback guards.
+    void setModelRetirementDiagnosticObserver(
+            render::ModelResourceCache::RetirementDiagnosticObserver observer) {
+        resources_.setRetirementDiagnosticObserver(std::move(observer));
     }
     // Host frame-boundary retirement: call before beginning render submissions
     // for this frame. No draw happens here; previous GPU work must complete.

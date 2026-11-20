@@ -9,8 +9,10 @@
 #include "engine/platform/InputFlow.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
+#include "engine/world/TerraWeaveHorizonFrameTimingBridge.h"
 #include "engine/platform/ContentReader.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/fx/SpectraFxSceneHost.h"
 #include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
@@ -30,8 +32,10 @@
 #include "engine/audio/Audio.h"
 #include "engine/platform/EngineDir.h"
 #include <fstream>
+#include <algorithm>
 #include <filesystem>
 #include <iterator>
+#include <chrono>
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -51,9 +55,13 @@ struct App {
     net::UdpListener udp;net::WsListener ws;
 #endif
     world::SpatialWorld geometry;world::ChunkScene chunks;std::unique_ptr<world::WorldScene> streamedScene;std::string projectRoot;
+    terraweave::HorizonFrameTimingBridge horizonFrameTiming; // optional, native stream QoS
     platform::ContentReader contentReader;
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
+    fx::SpectraFxSceneHost fxScene;
+    world::Cell fxOrigin{};
+    bool fxOriginValid=false;
     // One explicit generation for this FPS host/device lifetime. Do not
     // retire it until the character, scene and renderer GPU owners stop.
     std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime;
@@ -219,6 +227,13 @@ struct App {
         loadInputConfig();
         renderer.setGpuDeviceLease(gpuLifetime->lease());
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
+        if(!fxScene.init(device,
+             [this](const std::string& p,std::string& out) {
+                 return platform::readContentFile(projectRoot+"/"+p,out);
+             },projectRoot+"/")) {
+            std::fprintf(stderr,"SpectraFX FPS scene: %s\n",
+                         fxScene.lastError().c_str());
+        }
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
             std::string text;if(!reader(file,text))throw std::runtime_error("geometryScene: file not found: "+file);
@@ -691,6 +706,7 @@ struct App {
             inputAdapter.onEvent(e);
     }
     void frame(gfx::Device& device,double dt) {
+        const auto frameStarted=terraweave::HorizonFrameTimingBridge::Clock::now();
         // Shader variants invalidated by quality/instance changes belong
         // to the host Device and retire only after real GPU completion.
         if(renderer.pendingProgramRetirements()!=0)
@@ -800,7 +816,11 @@ struct App {
             (void)streamedScene->collectRetired(device);
         if(staticGeometry.pendingGpuRetirements()!=0)
             (void)staticGeometry.collectRetired(device);
-        device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
+        device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());
+        // GPU query belongs to this FPS frame's command buffer. Unsupported
+        // backends transparently use measured CPU callback time only.
+        horizonFrameTiming.begin(device,streamedScene.get());
+        gui.newFrame(dt);
         auto actor=client->predicted();viewTime+=dt;
         updateCharacterAnimations(dt,actor);
         if(actor.reloadUntil&&!lastReload)audio.play("reload");
@@ -818,6 +838,10 @@ struct App {
             heardShots[remote.slot]={remote.life,remote.shots};
         }
         flash=std::max(0.0,flash-dt);hitFlash=std::max(0.0,hitFlash-dt);
+        // Local predicted shot presentation only; never publish another
+        // network or authoritative event. Four FX requests per frame max.
+        const uint32_t fxLocalShots=shownLife==actor.life &&
+            actor.shots>shownShots?std::min(uint32_t(actor.shots-shownShots),4u):0u;
         if(shownLife==actor.life) {
             if(actor.shots>shownShots)flash=0.09;
             if(actor.hits>shownHits)hitFlash=0.18;
@@ -825,19 +849,46 @@ struct App {
         shownLife=actor.life;shownShots=actor.shots;shownHits=actor.hits;
         const auto& weapon=config.weapons[std::min(size_t(actor.weaponIndex),config.weapons.size()-1)];
         snapshotAge+=dt;
-        
+
         if(client->snapshot().tick!=lastSnapshotTick){previousSnapshot=received;received=client->snapshot();lastSnapshotTick=received.tick;snapshotAge=0;}
         float interpolation=float(std::min(1.0,snapshotAge*config.snapshotRate));
         world::Cell origin=geometry.cell(actor.pos);
+        bool fxOriginReady=true;
+        if(fxOriginValid && origin!=fxOrigin) {
+            if(!fxScene.resetScene()) fxOriginReady=false;
+        }
+        if(fxOriginReady) {
+            fxOrigin=origin;
+            fxOriginValid=true;
+        }
+        // If a reset could not safely run outside a GPU encoder, do not
+        // enqueue or render VFX in mismatched floating-origin coordinates.
+        // The next frame retries the reset before accepting new FX.
         Vec3 eye=actor.pos+Vec3{{},fps::stanceHeight(actor,config.motor)-Fixed::fromRatio(1,10),{}};
         auto localEye=visual(world::relativeTo(eye,origin,32));
         auto cameraLook=look;cameraLook.pitch+=float(actor.recoil.toDouble());
         auto cam=cameraLook.camera(localEye);
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);
+        if(fxOriginReady && fxScene.enabled()) {
+            // FPS-specific visual cue ID 1: local weapon fired; opt-in only.
+            for(uint32_t i=0;i<fxLocalShots;++i) {
+                fx::SpectraFxCue cue{};
+                cue.id=1;
+                cue.action=fx::SpectraFxCue::Action::Play;
+                cue.position=localEye+forward*0.8f;
+                cue.direction=forward;
+                fxScene.enqueueCue(std::move(cue),true,fxScene.cueEpoch());
+            }
+        }
         if(streamedScene)streamedScene->update(device,{&actor.pos,1});
+        // Prepare GPU particle evolution outside render passes.
+        if(fxOriginReady) fxScene.prepareGpu(float(std::clamp(dt,0.0,0.1)),cam);
         genericSceneView.beginScene(renderer,cam,
             device.framebufferWidth(),device.framebufferHeight());
+        if(fxOriginReady)
+            fxScene.prepareCpu(float(std::clamp(dt,0.0,0.1)),cam,renderer.viewProj(),
+                               device.framebufferWidth(),device.framebufferHeight());
         if(streamedScene)streamedScene->draw(renderer,origin,32);
         staticGeometry.draw(renderer);
         chunks.update(actor.pos,2,2,[&](const auto& file,auto& data){return platform::readContentFile(projectRoot+"/"+file,data);});
@@ -986,6 +1037,7 @@ struct App {
         for(const auto& c:client->snapshot().royale.crates)box(c,{1.2f,1.2f,1.2f},{0.95f,0.6f,0.1f,1});
         genericSceneView.submitPackets(renderer,worldPackets);
         gfx::PassDesc pass;pass.clearColor[0]=0.2f;pass.clearColor[1]=0.28f;pass.clearColor[2]=0.36f;renderer.render(pass);
+        if(fxOriginReady) fxScene.render(renderer.lighting,renderer.viewProj(),cam);
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
         auto text=lang.tr("fps.status",i18n::Args().num("health",actor.health).num("ammo",actor.ammo).num("reserve",actor.reserve).num("tick",client->snapshot().tick));
@@ -1047,10 +1099,13 @@ struct App {
         if(actor.blindUntil>client->snapshot().tick){auto remain=actor.blindUntil-client->snapshot().tick;auto alpha=int(std::min(1.0,double(remain)/std::max(1u,config.systems.flashTicks))*255);draw->AddRectFilled({0,0},{w,h},IM_COL32(255,255,255,alpha));}
         fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         gui.render();device.endPass();device.endFrame();
+        horizonFrameTiming.finish(streamedScene.get(),frameStarted);
     }
     void shutdown(gfx::Device& device) {
         if(!gpuLifetime || !gpuLifetime->lease().validFor(device))
             throw std::logic_error("FPS shutdown GPU device generation expired");
+        horizonFrameTiming.detach(device);
+        fxScene.shutdown();
         characterScheduler.reset();
         characterEntities.clear();
         characterLives.clear();

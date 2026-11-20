@@ -117,6 +117,24 @@ public:
     const std::string& state() const;
     const std::vector<AnimationGraphNotify>& notifies() const {return notifies_;}
     float stateTime() const { return time_; }
+    // CPU-only preview clock checkpoint. Explicitly refuses nodes with stateful
+    // native/rig/motion/controller/trait data or an unfinished transition fade.
+    // The caller must additionally compare its authored graph program key.
+    struct PreviewClockSnapshot {
+        struct ClipClock {
+            std::string nodeId, clipName;
+            double duration = 0, clock = 0;
+            bool loop = true;
+        };
+        std::string state;
+        float stateTime = 0;
+        std::vector<std::string> stateIds;
+        std::vector<std::pair<std::string, int>> skeleton;
+        std::vector<std::pair<std::string, AnimationGraph::Kind>> nodeKinds;
+        std::vector<ClipClock> clips;
+    };
+    std::optional<PreviewClockSnapshot> snapshotPreviewClocks() const;
+    bool restorePreviewClocks(const PreviewClockSnapshot& snapshot);
     // A named, presentation-only playback position for compatible graph/model
     // hot reload. Does not transfer native operations, contacts, rig solver
     // caches, poses, event queues or authoritative root motion.

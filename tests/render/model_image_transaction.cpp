@@ -3,7 +3,7 @@
 #include "engine/render/ModelResourceCache.h"
 #include "engine/render/ModelStagingTransaction.h"
 #include "engine/render/OffscreenTargetLifetime.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <set>
 #include <string>
 #include <stdexcept>
@@ -34,7 +34,7 @@ struct Device : gfx::Device {
     }
     void updateTexture(gfx::TextureHandle,int,int,int,int,const void*,int) override{}
     void destroyTexture(gfx::TextureHandle h) override {
-        assert(live.erase(h.id)==1);++destroyed;
+        AIVERSE_TEST_CHECK(live.erase(h.id)==1);++destroyed;
     }
     gfx::ShaderHandle createShader(const gfx::ShaderDesc&) override{return {};}
     void destroyShader(gfx::ShaderHandle) override{}
@@ -48,7 +48,7 @@ struct Device : gfx::Device {
     void setScissor(const gfx::Rect&) override{}
     void setPipeline(gfx::PipelineHandle) override{}
     void setVertexBuffer(gfx::BufferHandle,size_t) override{}
-    void setIndexBuffer(gfx::BufferHandle,size_t=0) override{}
+    void setIndexBuffer(gfx::BufferHandle,size_t) override{}
     void setTexture(int,gfx::TextureHandle) override{}
     void setUniforms(int,const void*,size_t) override{}
     void draw(uint32_t,uint32_t) override{}
@@ -65,36 +65,36 @@ int main(){
     render::RenderDeviceLifetime epoch(device);
     {
         render::ModelImageUploadTransaction stage(device,pool,epoch.lease());
-        assert(stage.stage(first,makeImage("a.png"))==0);
-        assert(stage.stage(first,makeImage("a.png"))==0);
-        assert(stage.stage(second,makeImage("b.png"))==0);
-        assert(first.images.empty()&&second.images.empty());
-        assert(stage.pendingImages()==2);
+        AIVERSE_TEST_CHECK(stage.stage(first,makeImage("a.png"))==0);
+        AIVERSE_TEST_CHECK(stage.stage(first,makeImage("a.png"))==0);
+        AIVERSE_TEST_CHECK(stage.stage(second,makeImage("b.png"))==0);
+        AIVERSE_TEST_CHECK(first.images.empty()&&second.images.empty());
+        AIVERSE_TEST_CHECK(stage.pendingImages()==2);
     } // abort
-    assert(first.images.empty()&&second.images.empty());
-    assert(pool.pendingImages()==2&&device.destroyed==0);
-    assert(!pool.collect(device)); // first fence
-    assert(!pool.collect(device)); // pending
+    AIVERSE_TEST_CHECK(first.images.empty()&&second.images.empty());
+    AIVERSE_TEST_CHECK(pool.pendingImages()==2&&device.destroyed==0);
+    AIVERSE_TEST_CHECK(!pool.collect(device)); // first fence
+    AIVERSE_TEST_CHECK(!pool.collect(device)); // pending
     device.failed=true;
-    assert(!pool.collect(device)); // failed fence
-    assert(!pool.drain(device)); // idle not yet proven
-    assert(device.destroyed==0);
+    AIVERSE_TEST_CHECK(!pool.collect(device)); // failed fence
+    AIVERSE_TEST_CHECK(!pool.drain(device)); // idle not yet proven
+    AIVERSE_TEST_CHECK(device.destroyed==0);
     device.idle=true;
-    assert(pool.drain(device)); // full idle recovery
-    assert(pool.pendingImages()==0&&device.destroyed==2);
+    AIVERSE_TEST_CHECK(pool.drain(device)); // full idle recovery
+    AIVERSE_TEST_CHECK(pool.pendingImages()==0&&device.destroyed==2);
     device.failed=false;device.idle=false;
     {
         render::ModelImageUploadTransaction stage(device,pool,epoch.lease());
-        assert(stage.stage(first,makeImage("c.png"))==0);
-        assert(stage.stage(second,makeImage("d.png"))==0);
-        assert(stage.commit()==2);
+        AIVERSE_TEST_CHECK(stage.stage(first,makeImage("c.png"))==0);
+        AIVERSE_TEST_CHECK(stage.stage(second,makeImage("d.png"))==0);
+        AIVERSE_TEST_CHECK(stage.commit()==2);
     }
-    assert(first.images.size()==1&&second.images.size()==1);
-    assert(pool.pendingImages()==0&&device.destroyed==2);
+    AIVERSE_TEST_CHECK(first.images.size()==1&&second.images.size()==1);
+    AIVERSE_TEST_CHECK(pool.pendingImages()==0&&device.destroyed==2);
     device.idle=true;
     render::releaseModel(device,first);
     render::releaseModel(device,second);
-    assert(device.destroyed==4&&device.live.empty());
+    AIVERSE_TEST_CHECK(device.destroyed==4&&device.live.empty());
     // Stage 113: speculative Model import may reuse an ALREADY resident
     // shared texture but must never add a missing GPU key to that cache.
     auto shared=std::make_shared<render::ModelTextureCache>();
@@ -102,7 +102,7 @@ int main(){
     resident.textureKey="textures/shared.png";
     resident.textureCache=shared;
     shared->upload(device,resident);
-    assert(resident.tex.valid() && shared->gpuCount()==1);
+    AIVERSE_TEST_CHECK(resident.tex.valid() && shared->gpuCount()==1);
     // The importer keeps only its Model leases. Drop the temporary probe
     // lease so the cache can trim after the retired Model completes.
     resident.textureLease.reset();
@@ -115,12 +115,12 @@ int main(){
     miss.textureKey="textures/fresh.png";
     miss.textureCache=shared;
     scratch->images.push_back(std::move(miss));
-    assert(render::uploadModel(device,*scratch,false,false));
-    assert(scratch->images[0].borrowedTexture);
-    assert(scratch->images[0].tex==resident.tex);
-    assert(!scratch->images[1].borrowedTexture);
-    assert(scratch->images[1].tex.valid());
-    assert(shared->gpuCount()==1); // failed import cannot pollute shared residency
+    AIVERSE_TEST_CHECK(render::uploadModel(device,*scratch,false,false));
+    AIVERSE_TEST_CHECK(scratch->images[0].borrowedTexture);
+    AIVERSE_TEST_CHECK(scratch->images[0].tex==resident.tex);
+    AIVERSE_TEST_CHECK(!scratch->images[1].borrowedTexture);
+    AIVERSE_TEST_CHECK(scratch->images[1].tex.valid());
+    AIVERSE_TEST_CHECK(shared->gpuCount()==1); // failed import cannot pollute shared residency
 
     // An unpublished Model with borrowed/dedicated textures must be
     // released only after its OWN GPU completion marker, not at abort.
@@ -130,17 +130,17 @@ int main(){
     device.complete=false;
     const int before=device.destroyed;
     owner.retireUnpublished(device,scratch);
-    assert(!scratch && owner.pendingRetirements()==1);
-    assert(!owner.collectRetired(device)); // submit marker
-    assert(device.destroyed==before);
+    AIVERSE_TEST_CHECK(!scratch && owner.pendingRetirements()==1);
+    AIVERSE_TEST_CHECK(!owner.collectRetired(device)); // submit marker
+    AIVERSE_TEST_CHECK(device.destroyed==before);
     shared->trim(device); // lease held by retired Model, still resident
-    assert(shared->gpuCount()==1);
+    AIVERSE_TEST_CHECK(shared->gpuCount()==1);
     device.complete=true;
-    assert(owner.collectRetired(device));
-    assert(owner.pendingRetirements()==0);
-    assert(device.destroyed==before+1); // dedicated miss destroyed, alias borrowed
+    AIVERSE_TEST_CHECK(owner.collectRetired(device));
+    AIVERSE_TEST_CHECK(owner.pendingRetirements()==0);
+    AIVERSE_TEST_CHECK(device.destroyed==before+1); // dedicated miss destroyed, alias borrowed
     shared->trim(device);
-    assert(shared->gpuCount()==0 && device.live.empty());
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0 && device.live.empty());
 
     // Commit moves scratch map nodes into the live cache without changing
     // the stable Model*; duplicate cache keys reject the whole transfer.
@@ -149,14 +149,14 @@ int main(){
     auto* ptr=stable.get();
     stagedModels.emplace("models/stable.glb",std::move(stable));
     owner.publishStagedModels(device,stagedModels);
-    assert(stagedModels.empty());
-    assert(owner.find("models/stable.glb")==ptr);
+    AIVERSE_TEST_CHECK(stagedModels.empty());
+    AIVERSE_TEST_CHECK(owner.find("models/stable.glb")==ptr);
     render::ModelResourceCache::ModelMap duplicate;
     duplicate.emplace("models/stable.glb",std::make_unique<render::Model>());
     bool rejectedDuplicate=false;
     try {owner.publishStagedModels(device,duplicate);}
     catch(const std::logic_error&){rejectedDuplicate=true;}
-    assert(rejectedDuplicate && duplicate.size()==1);
+    AIVERSE_TEST_CHECK(rejectedDuplicate && duplicate.size()==1);
     duplicate.clear();
     device.idle=true;
     owner.shutdown(device);
@@ -172,37 +172,37 @@ int main(){
     auto rightImage=makeImage("atlas.png");
     rightImage.textureKey="textures/new-atlas.png";
     rightImage.textureCache=shared;
-    assert(render::uploadStandaloneImage(device,leftImage));
-    assert(render::uploadStandaloneImage(device,rightImage));
-    assert(leftImage.tex!=rightImage.tex);
+    AIVERSE_TEST_CHECK(render::uploadStandaloneImage(device,leftImage));
+    AIVERSE_TEST_CHECK(render::uploadStandaloneImage(device,rightImage));
+    AIVERSE_TEST_CHECK(leftImage.tex!=rightImage.tex);
     left.images.push_back(std::move(leftImage));
     right.images.push_back(std::move(rightImage));
-    assert(shared->gpuCount()==0);
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0);
     auto planned=shared->prepareGpuPromotion({&left,&right});
-    assert(planned.newSharedTextures()==1 && planned.bindings()==2);
-    assert(shared->gpuCount()==0);
-    assert(!left.images[0].borrowedTexture && !right.images[0].borrowedTexture);
+    AIVERSE_TEST_CHECK(planned.newSharedTextures()==1 && planned.bindings()==2);
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0);
+    AIVERSE_TEST_CHECK(!left.images[0].borrowedTexture && !right.images[0].borrowedTexture);
     auto duplicates=planned.commit();
-    assert(shared->gpuCount()==1 && duplicates.size()==1);
-    assert(left.images[0].borrowedTexture && right.images[0].borrowedTexture);
-    assert(left.images[0].tex==right.images[0].tex);
-    assert(left.images[0].textureLease==right.images[0].textureLease);
+    AIVERSE_TEST_CHECK(shared->gpuCount()==1 && duplicates.size()==1);
+    AIVERSE_TEST_CHECK(left.images[0].borrowedTexture && right.images[0].borrowedTexture);
+    AIVERSE_TEST_CHECK(left.images[0].tex==right.images[0].tex);
+    AIVERSE_TEST_CHECK(left.images[0].textureLease==right.images[0].textureLease);
     const auto duplicateId=duplicates.front().tex.id;
     const int destroyedBeforePromotion=device.destroyed;
     device.complete=false;device.idle=false;
     pool.retire(device,std::move(duplicates));
-    assert(pool.pendingImages()==1);
-    assert(!pool.collect(device));
-    assert(device.live.contains(duplicateId));
+    AIVERSE_TEST_CHECK(pool.pendingImages()==1);
+    AIVERSE_TEST_CHECK(!pool.collect(device));
+    AIVERSE_TEST_CHECK(device.live.contains(duplicateId));
     device.complete=true;
-    assert(pool.collect(device));
-    assert(!device.live.contains(duplicateId));
-    assert(device.destroyed==destroyedBeforePromotion+1);
+    AIVERSE_TEST_CHECK(pool.collect(device));
+    AIVERSE_TEST_CHECK(!device.live.contains(duplicateId));
+    AIVERSE_TEST_CHECK(device.destroyed==destroyedBeforePromotion+1);
     render::releaseModel(device,left);
     render::releaseModel(device,right);
-    assert(shared->gpuCount()==1); // lease owner still resident
+    AIVERSE_TEST_CHECK(shared->gpuCount()==1); // lease owner still resident
     shared->trim(device);
-    assert(shared->gpuCount()==0 && device.live.empty());
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0 && device.live.empty());
 
     // Aborted promotion plan never published cache entries or changed
     // Model ownership; the staged Model's normal rollback path still owns
@@ -211,17 +211,17 @@ int main(){
     auto abortedImage=makeImage("reject.png");
     abortedImage.textureKey="textures/reject.png";
     abortedImage.textureCache=shared;
-    assert(render::uploadStandaloneImage(device,abortedImage));
+    AIVERSE_TEST_CHECK(render::uploadStandaloneImage(device,abortedImage));
     aborted.images.push_back(std::move(abortedImage));
     {
         auto uncommitted=shared->prepareGpuPromotion({&aborted});
-        assert(uncommitted.newSharedTextures()==1);
+        AIVERSE_TEST_CHECK(uncommitted.newSharedTextures()==1);
     }
-    assert(shared->gpuCount()==0);
-    assert(!aborted.images[0].borrowedTexture);
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0);
+    AIVERSE_TEST_CHECK(!aborted.images[0].borrowedTexture);
     device.idle=true;
     render::releaseModel(device,aborted);
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     // Stage 114: material images are still outside Model::images when
     // the shared-promotion plan is prepared. One plan must support their
@@ -234,33 +234,33 @@ int main(){
         a.textureKey="textures/material.png";a.textureCache=shared;
         auto b=makeImage("mat.png");
         b.textureKey="textures/material.png";b.textureCache=shared;
-        assert(tx.stage(materialA,std::move(a))==0);
-        assert(tx.stage(materialB,std::move(b))==0);
+        AIVERSE_TEST_CHECK(tx.stage(materialA,std::move(a))==0);
+        AIVERSE_TEST_CHECK(tx.stage(materialB,std::move(b))==0);
         const auto refs=tx.pendingImageReferences();
-        assert(refs.size()==2);
+        AIVERSE_TEST_CHECK(refs.size()==2);
         std::vector<render::ModelTextureCache::PendingImage> proposed;
         for(const auto& ref:refs)
             proposed.push_back({ref.model,ref.appendIndex,ref.staged});
         auto promotion=shared->prepareGpuPromotion({},proposed);
-        assert(promotion.newSharedTextures()==1 && promotion.bindings()==2);
-        assert(shared->gpuCount()==0);
-        assert(materialA.images.empty() && materialB.images.empty());
-        assert(tx.commit()==2);
+        AIVERSE_TEST_CHECK(promotion.newSharedTextures()==1 && promotion.bindings()==2);
+        AIVERSE_TEST_CHECK(shared->gpuCount()==0);
+        AIVERSE_TEST_CHECK(materialA.images.empty() && materialB.images.empty());
+        AIVERSE_TEST_CHECK(tx.commit()==2);
         auto duplicates=promotion.commit();
-        assert(duplicates.size()==1);
-        assert(shared->gpuCount()==1);
-        assert(materialA.images[0].borrowedTexture);
-        assert(materialB.images[0].borrowedTexture);
-        assert(materialA.images[0].tex==materialB.images[0].tex);
+        AIVERSE_TEST_CHECK(duplicates.size()==1);
+        AIVERSE_TEST_CHECK(shared->gpuCount()==1);
+        AIVERSE_TEST_CHECK(materialA.images[0].borrowedTexture);
+        AIVERSE_TEST_CHECK(materialB.images[0].borrowedTexture);
+        AIVERSE_TEST_CHECK(materialA.images[0].tex==materialB.images[0].tex);
         pool.retire(device,std::move(duplicates));
     }
-    assert(!pool.collect(device));
+    AIVERSE_TEST_CHECK(!pool.collect(device));
     device.complete=true;
-    assert(pool.collect(device));
+    AIVERSE_TEST_CHECK(pool.collect(device));
     render::releaseModel(device,materialA);
     render::releaseModel(device,materialB);
     shared->trim(device);
-    assert(shared->gpuCount()==0 && device.live.empty());
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0 && device.live.empty());
 
     // A scratch Model can receive new authored material images in the
     // SAME transaction. Its Model::images vector may relocate when the
@@ -270,7 +270,7 @@ int main(){
     auto original=makeImage("original.png");
     original.textureKey="textures/original.png";
     original.textureCache=shared;
-    assert(render::uploadStandaloneImage(device,original));
+    AIVERSE_TEST_CHECK(render::uploadStandaloneImage(device,original));
     mixed.images.push_back(std::move(original));
     mixed.images.shrink_to_fit();
     {
@@ -278,24 +278,24 @@ int main(){
         auto extra=makeImage("override.png");
         extra.textureKey="textures/override.png";
         extra.textureCache=shared;
-        assert(tx.stage(mixed,std::move(extra))==1);
+        AIVERSE_TEST_CHECK(tx.stage(mixed,std::move(extra))==1);
         std::vector<render::ModelTextureCache::PendingImage> proposed;
         for(const auto& ref:tx.pendingImageReferences())
             proposed.push_back({ref.model,ref.appendIndex,ref.staged});
         auto plan=shared->prepareGpuPromotion({&mixed},proposed);
-        assert(plan.newSharedTextures()==2 && plan.bindings()==2);
-        assert(tx.commit()==1);
+        AIVERSE_TEST_CHECK(plan.newSharedTextures()==2 && plan.bindings()==2);
+        AIVERSE_TEST_CHECK(tx.commit()==1);
         auto redundant=plan.commit();
-        assert(redundant.empty());
-        assert(mixed.images.size()==2);
-        assert(mixed.images[0].borrowedTexture);
-        assert(mixed.images[1].borrowedTexture);
-        assert(shared->gpuCount()==2);
+        AIVERSE_TEST_CHECK(redundant.empty());
+        AIVERSE_TEST_CHECK(mixed.images.size()==2);
+        AIVERSE_TEST_CHECK(mixed.images[0].borrowedTexture);
+        AIVERSE_TEST_CHECK(mixed.images[1].borrowedTexture);
+        AIVERSE_TEST_CHECK(shared->gpuCount()==2);
     }
     device.idle=true;
     render::releaseModel(device,mixed);
     shared->trim(device);
-    assert(shared->gpuCount()==0 && device.live.empty());
+    AIVERSE_TEST_CHECK(shared->gpuCount()==0 && device.live.empty());
 
     // Generic native Model staging: a successful import publishes the
     // unchanged Model* and a shared GPU texture only after commit().
@@ -313,14 +313,14 @@ int main(){
     {
         render::ModelStagingTransaction tx(
             device,native,nativeRollback,epoch.lease());
-        assert(tx.stage(nativeKey,std::move(nativeModel))==nativePointer);
-        assert(!native.find("models/native.glb"));
-        assert(native.textures()->gpuCount()==0);
-        assert(tx.commit()==1);
+        AIVERSE_TEST_CHECK(tx.stage(nativeKey,std::move(nativeModel))==nativePointer);
+        AIVERSE_TEST_CHECK(!native.find("models/native.glb"));
+        AIVERSE_TEST_CHECK(native.textures()->gpuCount()==0);
+        AIVERSE_TEST_CHECK(tx.commit()==1);
     }
-    assert(native.find("models/native.glb")==nativePointer);
-    assert(native.textures()->gpuCount()==1);
-    assert(nativePointer->images[0].borrowedTexture);
+    AIVERSE_TEST_CHECK(native.find("models/native.glb")==nativePointer);
+    AIVERSE_TEST_CHECK(native.textures()->gpuCount()==1);
+    AIVERSE_TEST_CHECK(nativePointer->images[0].borrowedTexture);
 
     // Aborted native import never becomes a cache tombstone and holds
     // partially uploaded images until the Model's own completion fence.
@@ -334,19 +334,19 @@ int main(){
         pic.textureKey="textures/cancelled.png";
         pic.textureCache=native.textures();
         invalid->images.push_back(std::move(pic));
-        assert(tx.stage("models/cancelled.glb",std::move(invalid)));
-        assert(!native.contains("models/cancelled.glb"));
+        AIVERSE_TEST_CHECK(tx.stage("models/cancelled.glb",std::move(invalid)));
+        AIVERSE_TEST_CHECK(!native.contains("models/cancelled.glb"));
     }
-    assert(!native.contains("models/cancelled.glb"));
-    assert(native.pendingRetirements()==1);
-    assert(native.textures()->gpuCount()==1); // no aborted GPU-cache key
-    assert(!native.collectRetired(device));
+    AIVERSE_TEST_CHECK(!native.contains("models/cancelled.glb"));
+    AIVERSE_TEST_CHECK(native.pendingRetirements()==1);
+    AIVERSE_TEST_CHECK(native.textures()->gpuCount()==1); // no aborted GPU-cache key
+    AIVERSE_TEST_CHECK(!native.collectRetired(device));
     device.complete=true;
-    assert(native.collectRetired(device));
-    assert(native.pendingRetirements()==0);
+    AIVERSE_TEST_CHECK(native.collectRetired(device));
+    AIVERSE_TEST_CHECK(native.pendingRetirements()==0);
     device.idle=true;
     native.shutdown(device);
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     // Stage 114 offscreen targets use the same per-batch fence semantics.
     // A resize or window destruction must not immediately release GPU
@@ -361,18 +361,18 @@ int main(){
     const int oldDestroyed=device.destroyed;
     device.failed=false;device.complete=false;device.idle=false;
     targets.retire(colorTarget,depthTarget);
-    assert(targets.pendingPairs()==1);
-    assert(!targets.collect());
-    assert(device.destroyed==oldDestroyed);
+    AIVERSE_TEST_CHECK(targets.pendingPairs()==1);
+    AIVERSE_TEST_CHECK(!targets.collect());
+    AIVERSE_TEST_CHECK(device.destroyed==oldDestroyed);
     device.failed=true;
-    assert(!targets.collect()); // failed token is NOT completion
-    assert(!targets.drain()); // failed waitForResourceIdle blocks release
-    assert(device.destroyed==oldDestroyed);
+    AIVERSE_TEST_CHECK(!targets.collect()); // failed token is NOT completion
+    AIVERSE_TEST_CHECK(!targets.drain()); // failed waitForResourceIdle blocks release
+    AIVERSE_TEST_CHECK(device.destroyed==oldDestroyed);
     device.idle=true;
-    assert(targets.drain());
-    assert(targets.pendingPairs()==0);
-    assert(device.destroyed==oldDestroyed+2);
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(targets.drain());
+    AIVERSE_TEST_CHECK(targets.pendingPairs()==0);
+    AIVERSE_TEST_CHECK(device.destroyed==oldDestroyed+2);
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     // Stage 115/116 native import invariant: a failing GPU Device must not
     // discard CPU vertex/index data and falsely publish a visible Model.
@@ -380,9 +380,9 @@ int main(){
     noGeometryUpload.path="models/gpu-buffer-failure.glb";
     noGeometryUpload.vertices.resize(3);
     noGeometryUpload.indices={0,1,2};
-    assert(!render::uploadModel(device,noGeometryUpload,false,false));
-    assert(!noGeometryUpload.vertices.empty());
-    assert(!noGeometryUpload.indices.empty());
+    AIVERSE_TEST_CHECK(!render::uploadModel(device,noGeometryUpload,false,false));
+    AIVERSE_TEST_CHECK(!noGeometryUpload.vertices.empty());
+    AIVERSE_TEST_CHECK(!noGeometryUpload.indices.empty());
 
     // Stage 116: one owner handles different active render-target shapes:
     // shadow depth only, SSR color+depth and water reflection color+depth.
@@ -403,31 +403,31 @@ int main(){
     targets.retire(oldShadow,{});
     targets.retire(oldSceneColor,oldSceneDepth);
     targets.retire(oldReflectionColor,oldReflectionDepth);
-    assert(targets.pendingPairs()==3);
-    assert(device.live.size()==5);
-    assert(!targets.collect());
-    assert(device.destroyed==beforeMulti);
+    AIVERSE_TEST_CHECK(targets.pendingPairs()==3);
+    AIVERSE_TEST_CHECK(device.live.size()==5);
+    AIVERSE_TEST_CHECK(!targets.collect());
+    AIVERSE_TEST_CHECK(device.destroyed==beforeMulti);
     device.complete=true;
-    assert(targets.collect());
-    assert(targets.pendingPairs()==0);
-    assert(device.destroyed==beforeMulti+5);
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(targets.collect());
+    AIVERSE_TEST_CHECK(targets.pendingPairs()==0);
+    AIVERSE_TEST_CHECK(device.destroyed==beforeMulti+5);
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     // A failed partial two-attachment allocation still enters the same
     // fenced queue with only its valid first handle.
     device.complete=false;
     const auto orphanColor=device.createTexture(targetDesc);
     targets.retire(orphanColor,{});
-    assert(!targets.collect());
-    assert(device.live.contains(orphanColor.id));
+    AIVERSE_TEST_CHECK(!targets.collect());
+    AIVERSE_TEST_CHECK(device.live.contains(orphanColor.id));
     device.complete=true;
-    assert(targets.collect());
-    assert(device.live.empty());
+    AIVERSE_TEST_CHECK(targets.collect());
+    AIVERSE_TEST_CHECK(device.live.empty());
 
     epoch.retire();
     bool stale=false;
     try {
         render::ModelImageUploadTransaction stage(device,pool,epoch.lease());
     }catch(const std::logic_error&) {stale=true;}
-    assert(stale);
+    AIVERSE_TEST_CHECK(stale);
 }

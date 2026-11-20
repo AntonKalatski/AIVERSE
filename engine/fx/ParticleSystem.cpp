@@ -9,6 +9,7 @@
 #include "FxNoise.h"
 #include "ParticleShaders.h"
 #include "engine/render/graph/ShaderGraph.h"
+#include "engine/render/GpuResourceRetirement.h"
 
 namespace aiverse::fx {
 
@@ -637,6 +638,17 @@ void ParticleSystem::Impl::stepParticle(size_t& i, float dt, bool& removed) {
 ParticleSystem::ParticleSystem() : impl_(std::make_unique<Impl>()) {}
 ParticleSystem::~ParticleSystem() { shutdown(); }
 
+render::GpuOwnedMemoryStats ParticleSystem::ownedGpuMemoryStats() const {
+    if (!impl_ || !impl_->dev) return {};
+    render::GpuOwnedMemoryCounter counter(*impl_->dev);
+    // Only buffers/atlas created in init(). Batch textures, custom mesh
+    // VBOs, graph images and loader sprites are owned by their providers.
+    counter.buffer(impl_->vb);
+    counter.buffer(impl_->ib);
+    counter.texture(impl_->atlas);
+    return counter.stats();
+}
+
 bool ParticleSystem::init(gfx::Device* dev) {
     if(dev && !deviceLeaseValid(*dev)) {
         error_="particles: GPU device generation expired";
@@ -708,14 +720,40 @@ void ParticleSystem::shutdown() {
         I.dev=nullptr;
     }
     if (I.dev) {
-        for (auto& b : I.batches) { for(auto p:b.graphPipe) if(p.valid()) I.dev->destroyPipeline(p); if(b.shader.valid()) I.dev->destroyShader(b.shader); }
-        for (auto& p : I.pipe) if (p.valid()) I.dev->destroyPipeline(p);
-        for (auto& p : I.meshPipe) if (p.valid()) I.dev->destroyPipeline(p);
-        if (I.shader.valid()) I.dev->destroyShader(I.shader);
-        if (I.mulShader.valid()) I.dev->destroyShader(I.mulShader);
-        if (I.vb.valid()) I.dev->destroyBuffer(I.vb);
-        if (I.ib.valid()) I.dev->destroyBuffer(I.ib);
-        if (I.atlas.valid()) I.dev->destroyTexture(I.atlas);
+        auto releasePipeline = [&](gfx::PipelineHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyPipeline(p); p={}; }
+        };
+        auto releaseShader = [&](gfx::ShaderHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyShader(p); p={}; }
+        };
+        auto releaseBuffer = [&](gfx::BufferHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyBuffer(p); p={}; }
+        };
+        auto releaseTexture = [&](gfx::TextureHandle& p) {
+            if (!p.valid()) return;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyTexture(p); p={}; }
+        };
+        for (auto& batch : I.batches) {
+            for (auto& p : batch.graphPipe) releasePipeline(p);
+            releaseShader(batch.shader);
+        }
+        for (auto& p : I.pipe) releasePipeline(p);
+        for (auto& p : I.meshPipe) releasePipeline(p);
+        releasePipeline(I.reactiveQuadPipe);
+        releasePipeline(I.reactiveMeshPipe);
+        releaseShader(I.shader);
+        releaseShader(I.mulShader);
+        releaseShader(I.reactiveShader);
+        releaseBuffer(I.vb);
+        releaseBuffer(I.ib);
+        releaseTexture(I.atlas);
     }
     TextureLoader keep = std::move(I.loader);
     MeshLoader keepMesh = std::move(I.meshLoader);
@@ -824,7 +862,20 @@ void ParticleSystem::reloadAll() {
     I.effects.clear();
     I.byName.clear();
     I.textures.clear();
-    if (I.dev) for(auto& b:I.batches) { for(auto p:b.graphPipe) if(p.valid()) I.dev->destroyPipeline(p); if(b.shader.valid()) I.dev->destroyShader(b.shader); }
+    if (I.dev) for (auto& batch : I.batches) {
+        // Old shader graph variants can still be referenced by an in-flight
+        // particle draw. The editor opt-in moves them to the GPU fence
+        // lifetime service; gameplay clients keep their existing owner path.
+        for (auto& p : batch.graphPipe) {
+            if (!p.valid()) continue;
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,p);
+            else { I.dev->destroyPipeline(p); p={}; }
+        }
+        if (batch.shader.valid()) {
+            if (gpuRetirement_) gpuRetirement_->retire(*I.dev,batch.shader);
+            else { I.dev->destroyShader(batch.shader); batch.shader={}; }
+        }
+    }
     I.batches.clear();
     I.meshes.clear();
     I.meshByName.clear();
@@ -949,16 +1000,19 @@ void ParticleSystem::clear() {
     for (size_t i = 0; i < I.instances.size(); ++i) { I.instances[i].used = false; I.freeInstances.push_back(int(i)); }
 }
 
-void ParticleSystem::setView(const RTSCamera& cam, const mat4& viewProj, int fbW, int fbH) {
+void ParticleSystem::setView(const SpectraFxView& view) {
+    if(!view.valid()) return;
     auto& I = *impl_;
     I.haveView = true;
-    I.viewProj = viewProj;
-    I.eye = cam.eye();
-    float3 f = render::normalize(cam.target - I.eye);
-    float3 worldUp{0, 1, 0};
+    I.viewProj = view.viewProj;
+    I.eye = view.eye;
+    float3 f = render::normalize(view.forward);
+    // Take camera up from the supplied view. A world-Y assumption breaks
+    // rolled/cinematic cameras and degenerates at a straight-down view.
+    float3 worldUp = view.up;
     if (I.haveSpace) { // particles live in their own space: the camera into it, the projection from it
         const mat4 inv = I.space.inverse();
-        I.viewProj = viewProj * I.space;
+        I.viewProj = view.viewProj * I.space;
         I.eye = inv.transformPoint(I.eye);
         f = render::normalize(inv.transformDir(f));
         worldUp = render::normalize(inv.transformDir(worldUp));
@@ -966,9 +1020,9 @@ void ParticleSystem::setView(const RTSCamera& cam, const mat4& viewProj, int fbW
     I.right = render::normalize(render::cross(f, worldUp));
     I.up = render::cross(I.right, f);
     // Screen-size budgets and culling use clip-space scale, including ortho zoom.
-    I.p11 = std::abs(cam.proj(1.0f, false).m[5]);
-    I.fbW = std::max(1, fbW);
-    I.fbH = std::max(1, fbH);
+    I.p11 = view.projectionYScale;
+    I.fbW = std::max(1, view.width);
+    I.fbH = std::max(1, view.height);
     I.aspect = float(I.fbW) / float(I.fbH);
 }
 

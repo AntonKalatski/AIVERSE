@@ -2,7 +2,7 @@
 // observer lifetime. A ring is NOT evidence of hardware GPU completion.
 #include "engine/render/RetirementDiagnosticRing.h"
 #include "engine/render/AsyncResourceRetirementQueue.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <memory>
 #include <vector>
 using namespace aiverse::render;
@@ -12,12 +12,12 @@ int main() {
     observer({RetirementDiagnosticKind::Enqueued,0,1});
     observer({RetirementDiagnosticKind::TokenSubmitted,11,1});
     observer({RetirementDiagnosticKind::Pending,11,1});
-    assert(ring->receivedCount()==3);
-    assert(ring->overflowCount()==1);
+    AIVERSE_TEST_CHECK(ring->receivedCount()==3);
+    AIVERSE_TEST_CHECK(ring->overflowCount()==1);
     const auto snapshot=ring->snapshot();
-    assert(snapshot.size()==2);
-    assert(snapshot.front().kind==RetirementDiagnosticKind::TokenSubmitted);
-    assert(snapshot.back().kind==RetirementDiagnosticKind::Pending);
+    AIVERSE_TEST_CHECK(snapshot.size()==2);
+    AIVERSE_TEST_CHECK(snapshot.front().kind==RetirementDiagnosticKind::TokenSubmitted);
+    AIVERSE_TEST_CHECK(snapshot.back().kind==RetirementDiagnosticKind::Pending);
     // Host observers can tag Model and Image events while the same bounded
     // ring remains agnostic about GPU completion and retirement permission.
     observer({RetirementDiagnosticKind::Completed,11,2,
@@ -25,20 +25,20 @@ int main() {
     observer({RetirementDiagnosticKind::Failed,12,3,
               RetirementResourceKind::Image});
     const auto tagged=ring->snapshot();
-    assert(tagged.size()==2);
-    assert(tagged[0].resource==RetirementResourceKind::Model);
-    assert(tagged[1].resource==RetirementResourceKind::Image);
-    assert(ring->overflowCount()==3);
+    AIVERSE_TEST_CHECK(tagged.size()==2);
+    AIVERSE_TEST_CHECK(tagged[0].resource==RetirementResourceKind::Model);
+    AIVERSE_TEST_CHECK(tagged[1].resource==RetirementResourceKind::Image);
+    AIVERSE_TEST_CHECK(ring->overflowCount()==3);
     observer({RetirementDiagnosticKind::TokenSubmitted,13,1,
               RetirementResourceKind::Target});
     const auto targetTagged=ring->snapshot();
-    assert(targetTagged.size()==2);
-    assert(targetTagged.back().resource==RetirementResourceKind::Target);
-    assert(ring->overflowCount()==4);
+    AIVERSE_TEST_CHECK(targetTagged.size()==2);
+    AIVERSE_TEST_CHECK(targetTagged.back().resource==RetirementResourceKind::Target);
+    AIVERSE_TEST_CHECK(ring->overflowCount()==4);
     auto empty=std::make_shared<RetirementDiagnosticRing>(0);
     RetirementDiagnosticRing::observe(empty)(
         {RetirementDiagnosticKind::Failed,12,1});
-    assert(empty->size()==0 && empty->overflowCount()==1);
+    AIVERSE_TEST_CHECK(empty->size()==0 && empty->overflowCount()==1);
     ring.reset();
     observer({RetirementDiagnosticKind::Completed,11,1}); // expired weak ref
 
@@ -47,5 +47,5 @@ int main() {
         throw 1; // diagnostic failure MUST NOT affect resource safety
     });
     queue.enqueue(std::make_unique<int>(1));
-    assert(queue.pending()==1);
+    AIVERSE_TEST_CHECK(queue.pending()==1);
 }

@@ -74,4 +74,3 @@ a revision/generation and arbitrary named counters and flags. FPS-only
 `modules/fps/view/FpsAnimationEvents.h`, not in the MotionWeave library.
 Use a different host adapter for every other game's own data layout,
 without duplicating generic event/animation algorithms.
-

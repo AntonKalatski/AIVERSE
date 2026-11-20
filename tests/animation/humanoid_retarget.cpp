@@ -1,5 +1,5 @@
 #include <aiverselib/animation/HumanoidRetarget.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cmath>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -29,11 +29,11 @@ int main() {
     in[2].r=quat::axisAngle({1,0,0},0.7f);
     in[1].t.x=0.3f;
     retarget.evaluate(in,out);
-    assert(out.size()==3);
-    assert(std::abs(out[1].t.x-0.3f)<.001f); // no foot rig: neutral scale 1
-    assert(std::abs(dot(out[2].r,qnormalize(dst.nodes[2].r*in[2].r)))>.999f); // preserves target bind orientation
+    AIVERSE_TEST_CHECK(out.size()==3);
+    AIVERSE_TEST_CHECK(std::abs(out[1].t.x-0.3f)<.001f); // no foot rig: neutral scale 1
+    AIVERSE_TEST_CHECK(std::abs(dot(out[2].r,qnormalize(dst.nodes[2].r*in[2].r)))>.999f); // preserves target bind orientation
     Pose bindDst;bindPose(dst,bindDst);
     bindPose(src,in);retarget.evaluate(in,out);
-    assert(std::abs(dot(out[1].r,bindDst[1].r))>.999f);
+    AIVERSE_TEST_CHECK(std::abs(dot(out[1].r,bindDst[1].r))>.999f);
     return 0;
 }

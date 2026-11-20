@@ -1,7 +1,7 @@
 // Deferred native compile fixture: generic model source provider API.
 // The real Metal/Vulkan/GL loading and GPU lifetime tests are separate.
 #include "engine/render/ModelAssetProvider.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -19,10 +19,10 @@ int main() {
         return false;
     };
     ModelAssetProvider provider(reader);
-    assert(provider.find("models/missing.glb")==nullptr);
-    assert(provider.resources().generation()==0);
-    assert(provider.resources().pendingRetirements()==0);
-    assert(provider.warnings().empty());
+    AIVERSE_TEST_CHECK(provider.find("models/missing.glb")==nullptr);
+    AIVERSE_TEST_CHECK(provider.resources().generation()==0);
+    AIVERSE_TEST_CHECK(provider.resources().pendingRetirements()==0);
+    AIVERSE_TEST_CHECK(provider.warnings().empty());
     provider.clearWarnings();
     return 0;
 }
