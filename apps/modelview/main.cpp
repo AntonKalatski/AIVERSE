@@ -26,6 +26,7 @@
 #include "../../engine/view/AnimatedSceneAttachmentSources.h"
 #include "imgui.h"
 #include "Gallery.h"
+#include "NativeScenePreview.h"
 
 #include <algorithm>
 #include <cctype>
@@ -117,6 +118,12 @@ struct Viewer {
     std::vector<std::string> types;
     float start = 0, fixedDt = 0;
     std::unique_ptr<modelview::Gallery> gallery;
+    // Opt-in generic SceneAsset and MotionWeave native integration;
+    // existing --game, --provider and attachment paths remain unchanged.
+    std::string sceneRoot,sceneStart="scenes/motionweave-global";
+    std::unique_ptr<render::RenderDeviceLifetime> sceneLifetime;
+    std::unique_ptr<modelview::NativeScenePreview> scenePreview;
+    bool restoreSceneSnapshotRequested=false;
 
     gfx::Device* dev = nullptr;
     Renderer3D r3d;
@@ -182,6 +189,25 @@ struct Viewer {
         gb.color(rgba(120, 132, 110)).box({0, -0.05f, 0}, {60, 0.1f, 60});
         ground = gb.upload(d);
         time = start;
+        if (!sceneRoot.empty()) {
+            if(!gameDir.empty() || !files.empty() || attachmentPreview)
+                throw std::invalid_argument(
+                    "--scene-preview cannot be combined with model/gallery/attachments");
+            sceneLifetime=std::make_unique<render::RenderDeviceLifetime>(d);
+            scenePreview=std::make_unique<modelview::NativeScenePreview>();
+            std::string error;
+            if(!scenePreview->init(
+                    d,sceneLifetime->lease(),sceneRoot,sceneStart,error)) {
+                log.push_back("native scene preview: "+error);
+                throw std::runtime_error(log.back());
+            }
+            cam.target={1.5f,0.5f,0.f};
+            cam.distance=distance>0?distance:8.f;
+            cam.yaw=yawDeg*3.14159265f/180.f;
+            cam.pitch=pitchDeg*3.14159265f/180.f;
+            cam.minDistance=1.f;
+            return;
+        }
         if (!gameDir.empty()) {
             gallery = std::make_unique<modelview::Gallery>();
             std::string err;
@@ -751,6 +777,16 @@ struct Viewer {
         // and scene within ONE RHI frame; neither draw is a safe retirement
         // hook. Poll model and paint token queues before any GPU pass.
         if(gallery)gallery->collectRetiredGpuResources();
+        if(scenePreview) {
+            std::string error;
+            if(restoreSceneSnapshotRequested) {
+                restoreSceneSnapshotRequested=false;
+                scenePreview->restoreSnapshot(error);
+            }
+            if(error.empty())scenePreview->pollAndCommit(error);
+            if(!error.empty() && (log.empty() || log.back()!=error))
+                log.push_back(error);
+        }
         if(nativeModels->resources().pendingRetirements()!=0 ||
            nativeModels->pendingRolledBackImages()!=0)
             nativeModels->collectRetired(d);
@@ -890,9 +926,16 @@ struct Viewer {
             if(!presented)
                 ::aiverse::View::submitModel(r3d,md);
         }
+        if(scenePreview) {
+            std::string error;
+            scenePreview->submit(r3d,(paused || seek>=0)?0.f:float(dt),error);
+            if(!error.empty() && (log.empty() || log.back()!=error))
+                log.push_back(error);
+        }
         gfx::PassDesc pass;
         pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
         r3d.render(pass);
+        if(scenePreview)scenePreview->finishRender();
         // All submitted GPU input has now been synchronously encoded;
         // ModelResourceCache retains ownership for actual GPU completion.
         childPackets.clear();
@@ -908,6 +951,33 @@ struct Viewer {
                 auto mi = mergeInfo.find(in.path);
                 if (mi != mergeInfo.end()) ImGui::Text("  %s", mi->second.c_str());
             }
+        if(scenePreview) {
+            ImGui::Separator();
+            ImGui::Text("MotionWeave native scenes: %zu; ready draws: %zu",
+                        scenePreview->sceneCount(),scenePreview->drawnParents());
+            ImGui::Text("authoritative Entities: %zu; GPU pack leases: %zu",
+                        scenePreview->authoritativeEntities(),
+                        scenePreview->sharedProviderRefs());
+            if(ImGui::Button("Add scene")) {
+                std::string error;
+                if(!scenePreview->request(
+                        "scenes/motionweave-area",scene::LoadMode::Additive,
+                        false,error))log.push_back(error);
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Replace scene")) {
+                std::string error;
+                if(!scenePreview->request(
+                        "scenes/motionweave-area",scene::LoadMode::Replace,
+                        false,error))log.push_back(error);
+            }
+            if(ImGui::Button("Snapshot"))scenePreview->saveSnapshot();
+            ImGui::SameLine();
+            if(ImGui::Button("Restore") && scenePreview->hasSnapshot())
+                restoreSceneSnapshotRequested=true; // next safe owner barrier
+            if(!scenePreview->lastError().empty())
+                ImGui::TextWrapped("Scene: %s",scenePreview->lastError().c_str());
+        }
         if (portrait.valid()) {
             const bool flip = d.info().renderTargetFlipY;
             ImGui::Image(ImTextureRef(ImTextureID(portrait.id)), ImVec2(128, 128), ImVec2(0, flip ? 0.f : 1.f), ImVec2(1, flip ? 1.f : 0.f));
@@ -1082,6 +1152,8 @@ struct Viewer {
             (void)attachmentGeneration.release();
             (void)attachmentsRegistry.release();
             (void)nativeModels.release();
+            (void)scenePreview.release();
+            (void)sceneLifetime.release();
             for(auto& scene:retiredNativeScenes)(void)scene.release();
             retiredNativeScenes.clear();
             return;
@@ -1092,6 +1164,17 @@ struct Viewer {
         attachmentGeneration.reset();
         inst.clear();
         attachmentsRegistry.reset();
+        if(scenePreview) {
+            std::string error;
+            if(!scenePreview->shutdown(error)) {
+                std::fprintf(stderr,"aiverse_modelview: %s\n",error.c_str());
+                (void)scenePreview.release();
+                (void)sceneLifetime.release();
+            }else {
+                scenePreview.reset();
+                sceneLifetime.reset();
+            }
+        }
         if(nativeModels) {
             try {
                 nativeModels->shutdown(*dev);
@@ -1135,6 +1218,8 @@ int aiverseMain(int argc, char** argv) {
         auto next = [&]() { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
         if (a == "--clip") v.clipAll = next();
         else if (a == "--game") v.gameDir = next();
+        else if (a == "--scene-preview") v.sceneRoot = next();
+        else if (a == "--scene-start") v.sceneStart = next();
         else if (a == "--types") {
             std::stringstream ss(next());
             for (std::string t; std::getline(ss, t, ',');) v.types.push_back(t);
@@ -1210,10 +1295,11 @@ int aiverseMain(int argc, char** argv) {
             return 2;
         }
     }
-    if (v.files.empty() && v.gameDir.empty()) {
+    if (v.files.empty() && v.gameDir.empty() && v.sceneRoot.empty()) {
         std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
                     "       aiverse_modelview parent.glb@Walk --attach child.glb@Hand.R [--attachments-file file.json]\n"
-                    "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n");
+                    "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n"
+                    "       aiverse_modelview --scene-preview templates/showcase [--scene-start scenes/motionweave-global]\n");
         return 1;
     }
     platform::AppConfig cfg;
