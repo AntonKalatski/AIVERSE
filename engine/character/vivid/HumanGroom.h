@@ -22,6 +22,9 @@ struct GroomSelfCollisionConfig {
     float separation=0.014f;
     float response=0.6f;
     std::size_t maxPairChecks=250000;
+    bool segmentEnabled=false;  // optional capsule narrowphase
+    float friction=0.2f;        // 0..1 tangential velocity attenuation
+    float bendPreservation=0.25f; // 0..1 rest-shape bend projection
 };
 struct GroomSelfCollisionStats {
     std::size_t pairChecks=0;
