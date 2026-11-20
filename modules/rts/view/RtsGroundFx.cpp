@@ -950,29 +950,77 @@ void RtsGroundFx::draw(Renderer3D& r, const RtsScene& s, double time, const std:
     if ((useT_ || useD_ || useR_ || useC_) && (time >= nextScan_ || nextScan_ < 0)) { scan(g, vision, viewer_); nextScan_ = time + (terr_.smooth ? 0.05 : 0.2); }
     if (useT_ && terr_.on && terr_.smooth) animateTerritory(g, time);
 
-    // lanes: rebuilt when the lane set or the map roads change
-    if (lane_.on) {
-        uint32_t sig = s.lanes ? s.laneSignature : 0u;
-        size_t count = (s.lanes ? s.lanes->size() : 0) * 131 + s.roads.size();
-        for (auto& [a, b] : s.roads) sig = sig * 31u + uint32_t(int(a.x * 4) * 7 + int(a.z * 4) * 13 + int(b.x * 4) * 17 + int(b.z * 4) * 19);
-        if (sig != laneSig_ || count != laneCount_) { laneSig_ = sig; laneCount_ = count; buildLanes(s, g, v); }
+    // LENS: one atomic publication of lane/visible chunk mesh replacements.
+    // Limit work per frame, not the total map: remaining dirty chunks retain
+    // their old published buffers and are retried by the next primary frame.
+    constexpr size_t kBatchChunkLimit=16;
+    constexpr size_t kBatchBytes=128ull*1024ull*1024ull;
+    render::NativeMeshBatch batch(*dev_,retiredMeshes_);
+    const uint32_t priorLaneSig=laneSig_;
+    const size_t priorLaneCount=laneCount_;
+    struct DirtyBefore {
+        size_t index;
+        std::array<bool,5> values;
+    };
+    std::vector<DirtyBefore> touched;
+    activeMeshBatch_=&batch;
+    try {
+        if(lane_.on) {
+            uint32_t sig=s.lanes?s.laneSignature:0u;
+            size_t count=(s.lanes?s.lanes->size():0)*131+s.roads.size();
+            for(auto& [a,b]:s.roads)
+                sig=sig*31u+uint32_t(int(a.x*4)*7+int(a.z*4)*13+
+                                      int(b.x*4)*17+int(b.z*4)*19);
+            if(sig!=laneSig_ || count!=laneCount_) {
+                buildLanes(s,g,v);
+                laneSig_=sig;
+                laneCount_=count;
+            }
+        }
+        visible_.clear();
+        const mat4& vp=r.viewProj();
+        size_t builtChunks=0;
+        for(int cy=0;cy<chunksY_;++cy)
+            for(int cx=0;cx<chunksX_;++cx) {
+                const size_t index=size_t(cy*chunksX_+cx);
+                Chunk& c=chunks_[index];
+                float3 mn{float(cx*kChunk),c.yMin,float(cy*kChunk)};
+                float3 mx{float((cx+1)*kChunk),c.yMax,float((cy+1)*kChunk)};
+                if(!boxVisible(vp,mn,mx))continue;
+                visible_.push_back(int(index));
+                const bool needs=(useT_ && terr_.on && c.dT) ||
+                    (useD_ && dig_.on && (c.dD || c.dM)) ||
+                    (useR_ && road_.on && c.dR) ||
+                    (useC_ && conc_.on && c.dC);
+                if(!needs)continue;
+                if(builtChunks>=kBatchChunkLimit ||
+                   (builtChunks>0 && batch.stagedBytes()>=kBatchBytes))
+                    continue;
+                touched.push_back({index,{c.dT,c.dD,c.dM,c.dR,c.dC}});
+                if(useT_ && terr_.on && c.dT)buildTerritory(c,cx,cy,g,v);
+                if(useD_ && dig_.on && c.dD)buildDig(c,cx,cy,g,v);
+                if(useD_ && dig_.on && c.dM)buildMarks(c,cx,cy,g,v);
+                if(useR_ && road_.on && c.dR)buildRoads(c,cx,cy,g,v);
+                if(useC_ && conc_.on && c.dC)buildConcrete(c,cx,cy,g,v);
+                ++builtChunks;
+            }
+        activeMeshBatch_=nullptr;
+        batch.publish(); // no fallible upload remains; retire all old VBs/IBs
+    }catch(...) {
+        activeMeshBatch_=nullptr;
+        laneSig_=priorLaneSig;
+        laneCount_=priorLaneCount;
+        for(const auto& saved:touched) {
+            Chunk& c=chunks_[saved.index];
+            c.dT=saved.values[0];
+            c.dD=saved.values[1];
+            c.dM=saved.values[2];
+            c.dR=saved.values[3];
+            c.dC=saved.values[4];
+        }
+        throw; // batch destructor destroys only unpublished replacements
     }
 
-    // visible chunks, rebuilt lazily
-    visible_.clear();
-    const mat4& vp = r.viewProj();
-    for (int cy = 0; cy < chunksY_; ++cy)
-        for (int cx = 0; cx < chunksX_; ++cx) {
-            Chunk& c = chunks_[size_t(cy * chunksX_ + cx)];
-            float3 mn{float(cx * kChunk), c.yMin, float(cy * kChunk)}, mx{float((cx + 1) * kChunk), c.yMax, float((cy + 1) * kChunk)};
-            if (!boxVisible(vp, mn, mx)) continue;
-            if (useT_ && terr_.on && c.dT) buildTerritory(c, cx, cy, g, v);
-            if (useD_ && dig_.on && c.dD) buildDig(c, cx, cy, g, v);
-            if (useD_ && dig_.on && c.dM) buildMarks(c, cx, cy, g, v);
-            if (useR_ && road_.on && c.dR) buildRoads(c, cx, cy, g, v);
-            if (useC_ && conc_.on && c.dC) buildConcrete(c, cx, cy, g, v);
-            visible_.push_back(cy * chunksX_ + cx);
-        }
     // rock blocks: ordinary lit opaque meshes (cast and receive sun shadows, point lights)
     if (useD_ && dig_.on)
         for (int ci : visible_) {
