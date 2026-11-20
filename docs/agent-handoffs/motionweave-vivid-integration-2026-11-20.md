@@ -73,3 +73,17 @@ Actual checks, all outputs on KINGSTON:
 Cumulative scoped coverage: 30 DISTINCT native tests PASS across recorded runs (some repeated), 73 web tests PASS, 29 Python Studio contracts PASS, single/crowd/mask/Creator Metal cases PASS. This is not the full engine suite. CI not dispatched; Vulkan/GLES, complete animation roadmap, optical sweeps, production human art and WKWebView screenshot parity remain NOT VERIFIED. Source worktree has only local untracked dist/node_modules symlinks used for external builds/reused dependencies. No push or main checkout edits.
 
 Next actionable work: integrate the latest VIVID documentation/portable fixture ancestry, then cross-platform/Studio UI visual acceptance when those hosts are available. The prior shared Studio provider gap is closed and covered by native tests.
+
+## Final VIVID ancestry reconciliation — 2026-11-20
+
+Merge `ef11263a5afec830c4522c5ed7d719af5fad01aa` includes VIVID `2b7c4f967309726562afc84c0672fdbfca9a4c29`. Only additional documentation changed relative to tested parent; the upstream portable BufferHandle fix was already included. One append-only vivid.md conflict resolved by keeping BOTH upstream historical Stage 7BA and our later actual validation entries, without silently treating upstream source-only claims as test passes. No code rebuild required for this documentation-only delta. `git merge-base --is-ancestor 2b7c4f... HEAD`: PASS. Aggregated latest per-test results from actual JUnit logs: 30 distinct native tests, all PASS, no unresolved failures. Tracked worktree clean; local dist/node_modules symlinks are intentionally untracked. No push, CI or main checkout mutation.
+
+| Area | Current readiness |
+|---|---|
+| MotionWeave + latest available VIVID ancestry | Implemented and merged |
+| 52 semantic / 64 Model palette CPU routing | Implemented; focused regression PASS |
+| Single/crowd/masked Metal rendering and Creator | Implemented; recorded procedural/import fixtures PASS |
+| Studio async import, last-good and frame leases | Implemented; real Metal lifecycle PASS |
+| Complete cross-platform/photoreal/Studio UI parity | Partial; Vulkan/GLES, production artwork and WKWebView screenshot parity NOT VERIFIED |
+
+Deliverables: `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/native/apps/studio-native/AiverseStudioHTML5.app`, native `aiverse_vivid_creator`, logs and captures in the same external build root. Source remains the isolated integration worktree. Next: Windows/Linux/Vulkan/GLES builds on corresponding hosts and visual Studio acceptance; use this joint handoff rather than restarting from earlier source-only stage notes.
