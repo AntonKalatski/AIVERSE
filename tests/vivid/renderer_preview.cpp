@@ -9,6 +9,7 @@
 #include "engine/render/ModelVertexStreamOverride.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/SculptGpuSubmittedView.h"
+#include "engine/character/vivid/SculptGpuRendererMaskSources.h"
 #include "engine/character/vivid/SculptGpuIdPass.h"
 #include "engine/character/vivid/SculptGpuColorPixelOracle.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
@@ -695,7 +696,7 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             require(selected && selected->customGpuStream &&
                     selected->vertexOverride.valid(),
                     "VIVID parity lost original 60B GPU actor source");
-            vivid::SculptGpuVertexSource blockerGpu;
+            std::vector<vivid::SculptGpuVertexSource> maskBlockers;
             const vivid::SculptGpuVertexSource* blockerPtr=nullptr;
             if(maskParityEnabled) {
                 require(maskModel && maskGpuDeformedFrame==dev.frameSerial(),
@@ -724,16 +725,16 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     "7AZ ID occluder source differs from actual Renderer3D draw");
                 const std::array<render::mat4,1> maskPose{{
                     render::mat4::identity()}};
-                require(vivid::prepareSculptGpuVertexSource(
-                            *maskModel,0,maskPose,maskSelected->world,
-                            maskSelected->vertexOverride,
-                            maskSelected->vertexOverrideCount,
-                            {},maskModel->vertices.size(),blockerGpu) &&
-                        blockerGpu.maskedSelection &&
-                        vivid::sculptGpuMaskedOccluderInputsValid(
-                            blockerGpu,selected->vertexOverride),
-                    "7AZ GPU-written Mask source/UV/cutoff preflight failed");
-                blockerPtr=&blockerGpu;
+                const std::array<vivid::SculptGpuMaskSceneCandidate,1>
+                    candidates{{{maskModel.get(),0,maskPose}}};
+                require(vivid::collectSculptGpuRendererMaskOccluders(
+                            renderer,candidates,dev.frameSerial(),
+                            selected->vertexOverride,maskBlockers) &&
+                        maskBlockers.size()==1u &&
+                        maskBlockers[0].actualVertexOverride==
+                            maskDeformedVertices,
+                    "7BA renderer did not collect the exact GPU-written Mask depth source");
+                blockerPtr=&maskBlockers[0];
             }
             vivid::SkinnedWeightSurface reference;
             require(vivid::prepareSkinnedWeightSurface(
