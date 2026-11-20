@@ -5,7 +5,7 @@
 // and MotionWeave joint transforms to evaluate in the GPU compute kernel.
 // Rendering still validates the source/LOD with Renderer3D provenance.
 #pragma once
-#include "SculptGpuPickShaders.h"
+#include "SculptGpuAlphaMask.h"
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -36,7 +36,17 @@ struct alignas(16) SculptGpuSourceParams {
 };
 static_assert(sizeof(SculptGpuSourceParams)==80);
 
+// Per-original-vertex UV and colour alpha. Positions are NEVER stored here.
+struct SculptGpuSourceMaskInput {
+    float uvAlpha[4]{};
+};
+static_assert(sizeof(SculptGpuSourceMaskInput)==16);
+
 struct SculptGpuVertexSource {
+    bool maskedSelection=false; // homogeneous standard AlphaMode::Mask only
+    gfx::TextureHandle maskBaseTexture{}; // BORROWED until same-frame ID draw
+    SculptGpuMaskUniform maskUniform{};
+    std::vector<SculptGpuSourceMaskInput> maskInputs;
     gfx::BufferHandle actualVertexOverride{}; // BORROWED current-frame 60B buffer
     std::uint32_t sourceVertexCount=0;
     SculptGpuSourceParams params{};
@@ -112,6 +122,8 @@ inline bool prepareSculptGpuVertexSource(
     std::vector<std::size_t> firstPalette;
     if(skin)firstPalette.assign(model.vertices.size(),notSet);
     std::size_t count=0;
+    bool sawOpaque=false;
+    int selectedMaskMaterial=-1;
     for(const auto& primitive:model.meshes[meshId].primitives) {
         const auto first=std::size_t(primitive.firstIndex);
         if(first>model.indices.size() ||
@@ -119,8 +131,9 @@ inline bool prepareSculptGpuVertexSource(
            primitive.indexCount%3u)return false;
         count+=primitive.indexCount/3u;
         if(count>1000000u)return false;
-        // Only fully opaque conventional source faces use GPU expansion.
-        // The existing CPU-fed ID path handles alpha-tested selection.
+        // Stage 7AU: a homogeneous standard sampled Mask material may
+        // read source GPU positions and original CPU UV/alpha together.
+        // Mixed opaque/masked, Blend and custom ShaderGraph paths fail closed.
         const Material* material=nullptr;
         if(!model.materials.empty()) {
             if(primitive.material<0 ||
@@ -128,10 +141,20 @@ inline bool prepareSculptGpuVertexSource(
                 return false;
             material=&model.materials[std::size_t(primitive.material)];
         }
-        if(material && (material->alpha!=AlphaMode::Opaque ||
-                        material->transparent || material->baseColor.w<0.999f ||
-                        material->shaderGraph))
-            return false;
+        if(material && material->alpha==AlphaMode::Mask) {
+            if(sawOpaque || !sculptGpuMaskEligible(model,*material) ||
+               (selectedMaskMaterial>=0 &&
+                selectedMaskMaterial!=primitive.material))return false;
+            selectedMaskMaterial=primitive.material;
+        }else{
+            if(selectedMaskMaterial>=0 || (material &&
+               (material->alpha!=AlphaMode::Opaque ||
+                material->transparent ||
+                !std::isfinite(material->baseColor.w) ||
+                material->baseColor.w<0.999f ||
+                material->shaderGraph)))return false;
+            sawOpaque=true;
+        }
         if(skin && primitive.jointPalette.empty())return false;
         for(std::size_t i=first;i<first+primitive.indexCount;++i) {
             const auto id=model.indices[i];
@@ -161,6 +184,28 @@ inline bool prepareSculptGpuVertexSource(
         }
     }
     if(!count)return false;
+    if(selectedMaskMaterial>=0) {
+        const auto& m=model.materials[std::size_t(selectedMaskMaterial)];
+        candidate.maskedSelection=true;
+        candidate.maskBaseTexture=model.images[std::size_t(m.baseTex)].tex;
+        candidate.maskUniform.alpha[0]=m.baseColor.w;
+        candidate.maskUniform.alpha[1]=m.alphaCutoff;
+        candidate.maskUniform.uv0[0]=m.uvOffset.x;
+        candidate.maskUniform.uv0[1]=m.uvOffset.y;
+        candidate.maskUniform.uv0[2]=m.uvScale.x;
+        candidate.maskUniform.uv0[3]=m.uvScale.y;
+        candidate.maskUniform.uv1[0]=m.uvRotation;
+        candidate.maskInputs.resize(model.vertices.size());
+        for(std::size_t id=0;id<model.vertices.size();++id) {
+            const auto& v=model.vertices[id];
+            if(!std::isfinite(v.uv.x) || !std::isfinite(v.uv.y))
+                return false;
+            auto& uv=candidate.maskInputs[id].uvAlpha;
+            uv[0]=v.uv.x;
+            uv[1]=v.uv.y;
+            uv[2]=m.vertexColors?float((v.color>>24u)&255u)/255.f:1.f;
+        }
+    }
     candidate.indices.reserve(count*3u);
     std::uint32_t ordinal=0;
     for(const auto& primitive:model.meshes[meshId].primitives) {
@@ -228,6 +273,57 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                                uchar((id>>8u)&255u),
                                uchar((id>>16u)&255u),
                                uchar((id>>24u)&255u));
+}
+)MSL";
+
+// Homogeneous standard Mask material only. The 32B output is binary
+// compatible with SculptGpuMaskVertex (12B packed position, 4B RGBA ID,
+// 16B original authoring UV and vertex alpha). Never read CPU positions.
+inline constexpr const char* kSculptGpuSourceMaskExpandMSL=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct Input { uint vertex; uint triangleId; };
+struct Skin { uint4 joints; float4 weights; };
+struct MaskInput { float4 uvAlpha; };
+struct Output { packed_float3 world; uchar4 rgba; float4 uvAlpha; };
+struct Params {
+    uint count, vertices, skinned, jointMatrices;
+    float4x4 rigidWorld;
+};
+kernel void cs_main(device const uint* source [[buffer(0)]],
+                    device const Input* triangles [[buffer(1)]],
+                    device const Skin* influences [[buffer(2)]],
+                    device const float4x4* joints [[buffer(3)]],
+                    device Output* output [[buffer(4)]],
+                    device const MaskInput* masks [[buffer(5)]],
+                    constant Params& params [[buffer(8)]],
+                    uint thread [[thread_position_in_grid]]) {
+    if(thread>=params.count)return;
+    const Input request=triangles[thread];
+    if(request.vertex>=params.vertices)return;
+    const uint offset=request.vertex*15u;
+    const float4 bind=float4(as_type<float>(source[offset]),
+                             as_type<float>(source[offset+1u]),
+                             as_type<float>(source[offset+2u]),1.0);
+    float4 world;
+    if(params.skinned!=0u) {
+        const Skin influence=influences[request.vertex];
+        world=float4(0.0);
+        for(uint k=0u;k<4u;++k) {
+            const float weight=influence.weights[k];
+            if(weight>0.0 && influence.joints[k]<params.jointMatrices)
+                world+=(joints[influence.joints[k]]*bind)*weight;
+        }
+    }else{
+        world=params.rigidWorld*bind;
+    }
+    const uint id=request.triangleId;
+    output[thread].world=packed_float3(world.xyz);
+    output[thread].rgba=uchar4(uchar(id&255u),
+                               uchar((id>>8u)&255u),
+                               uchar((id>>16u)&255u),
+                               uchar((id>>24u)&255u));
+    output[thread].uvAlpha=masks[request.vertex].uvAlpha;
 }
 )MSL";
 } // namespace aiverse::vivid
