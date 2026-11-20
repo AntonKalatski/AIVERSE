@@ -1,5 +1,20 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 postmerge Stage116 Mac Release CTest 2/2 PASS (2026-11-20):**
+> User confirms `model_resource_owner_contract` PASS 0.43 sec
+> and `render_retirement_pressure` PASS 0.31 sec;
+> **2/2 PASS, 0 failures, 0.75 sec wall** in
+> `build/terraweave-retirement-release`.
+> [Committed executed-test QA handoff](qa-2026-11-20-stage70-stage116-mac-release-green-handoff.md).
+> The pasted log lacks explicit `git_sha`; source came from
+> Stage116 two-parent main merge `910461a6d910dc0583762cb6dedfa4e9b97858b7`.
+> Linux ARM64 GCC -Werror and real Vulkan/GLES3
+> `terraweave_linux_forest_backends` are NOT VERIFIED.
+> Linux GPU CI #44729549836 was queued at check time.
+> Long authentic PHYSIS/NEREID/Terra/Box3D runtime and
+> Studio forest screenshot review remain open; PR #53 stays Draft.
+>
+>
 > **Stage70 latest main Stage116 Release test sync (2026-11-20):**
 > Real two-parent merge `910461a6d910dc0583762cb6dedfa4e9b97858b7`
 > incorporates main `f9aed9a705982e2c6b77b29869e309995ce8b163`
