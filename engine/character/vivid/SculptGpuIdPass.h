@@ -313,7 +313,8 @@ public:
             const std::array<SculptGpuSkinInfluence,1> rigidSkin{};
             const std::array<render::mat4,1> rigidMatrix{{render::mat4{}}};
             const auto requestBuffer=makeInput(
-                source.indices.data(),source.indices.size_bytes(),
+                source.indices.data(),
+                source.indices.size()*sizeof(SculptGpuSourceIndex),
                 "VIVID GPU source triangle index+ID");
             const auto skinInput=source.influences.empty()
                 ?std::span<const SculptGpuSkinInfluence>(rigidSkin)
