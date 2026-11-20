@@ -12,6 +12,7 @@ import PanelTitle from '../components/PanelTitle';
 import PropertyField from '../components/PropertyField';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
 import AssetsPanel from '../components/AssetsPanel';
+import LightingPanel from './LightingPanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
@@ -97,6 +98,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               <span>{line.time}</span>{line.text}
             </div>)}
         </div>;
+      case 'lighting':
+        return <LightingPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
       case 'materials':

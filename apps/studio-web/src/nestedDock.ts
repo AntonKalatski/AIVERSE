@@ -1,14 +1,14 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','inspector','console'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','inspector','console','lighting'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   hierarchy: 'Hierarchy', assets: 'Assets', scene: 'Scene', game: 'Game',
-  materials: 'Materials', animation: 'Animation', inspector: 'Inspector', console: 'Console'
+  materials: 'Materials', animation: 'Animation', inspector: 'Inspector', console: 'Console', lighting: 'Lighting'
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   hierarchy: 'dock-left', assets: 'dock-left', scene: 'dock-center', game: 'dock-center',
-  materials: 'dock-center', animation: 'dock-center', inspector: 'dock-right', console: 'dock-bottom'
+  materials: 'dock-center', animation: 'dock-center', inspector: 'dock-right', console: 'dock-bottom', lighting: 'dock-right'
 };
 
 export type DockAxis = 'horizontal' | 'vertical';
@@ -42,7 +42,7 @@ export function defaultDockTree(): DockTree {
       stack('dock-left',['hierarchy','assets'],'hierarchy'),
       split('split-body-right','horizontal',.77,
         stack('dock-center',['scene','game','materials','animation'],'scene'),
-        stack('dock-right',['inspector'],'inspector'))),
+        stack('dock-right',['inspector','lighting'],'inspector'))),
     stack('dock-bottom',['console'],'console')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {

@@ -42,7 +42,7 @@ export default function App() {
   useEffect(() => {
     void refresh();
     return onNativeEvent(event => {
-      if (event === 'workspace.changed' || event === 'selection.changed') void refresh();
+      if (event === 'workspace.changed' || event === 'selection.changed' || event === 'document.changed') void refresh();
     });
   }, [refresh]);
 

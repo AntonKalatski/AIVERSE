@@ -20,7 +20,7 @@ test('move reorders within a tab stack',()=>{
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,[]);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -35,7 +35,7 @@ test('nested split adds a stack to left edge and preserves panels',()=>{
   assert.equal(panelStack(base,'inspector'),'dock-right');
 });
 test('cannot split away sole tab from its own stack',()=>{
-  const t=splitDockStack(defaultDockTree(),'inspector','dock-right','bottom');
+  const t=splitDockStack(defaultDockTree(),'console','dock-bottom','bottom');
   assert.deepEqual(t,defaultDockTree());
 });
 test('split every direction and preserve first stack',()=>{

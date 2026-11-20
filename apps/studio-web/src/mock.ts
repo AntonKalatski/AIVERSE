@@ -29,6 +29,13 @@ const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
 
 export async function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
+  if (method === 'studio.lighting') {
+    return { lighting: null, lights: [] } as StudioResult[M];
+  }
+  if (method === 'studio.lightingSet' || method === 'studio.lightAdd' ||
+      method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
+    throw Error('Editing map lights requires the native AIVERSE host');
+  }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
     return { files: [] } as StudioResult[M];

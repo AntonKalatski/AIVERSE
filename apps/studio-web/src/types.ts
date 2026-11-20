@@ -4,6 +4,7 @@ export interface StudioEntity { id: string; name: string; kind: string; parentId
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
 export interface StudioAsset { path: string; bytes: number }
 export interface StudioAssetList { files: StudioAsset[] }
+export type StudioLightingState = import('./panels/lightingSchema').LightingState;
 export interface StudioSnapshot {
   project: { name: string; path: string; dirty: boolean };
   scene: { name: string; entities: StudioEntity[] };
@@ -13,7 +14,7 @@ export interface StudioSnapshot {
   mode: 'edit' | 'play';
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -21,6 +22,11 @@ export interface StudioParams {
   'studio.redo': Record<string, never>;
   'studio.openProject': Record<string, never>;
   'studio.assets': Record<string, never>;
+  'studio.lighting': Record<string, never>;
+  'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
+  'studio.lightAdd': Record<string, never>;
+  'studio.lightUpdate': { index: number; key: import('./panels/lightingSchema').LightEditableKey; value: string | number | boolean };
+  'studio.lightDelete': { index: number };
   'studio.select': { id: string | null };
   'studio.setProperty': { entityId: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
@@ -33,6 +39,11 @@ export interface StudioResult {
   'studio.redo': StudioSnapshot;
   'studio.openProject': { cancelled: boolean; snapshot: StudioSnapshot | null };
   'studio.assets': StudioAssetList;
+  'studio.lighting': StudioLightingState;
+  'studio.lightingSet': StudioLightingState;
+  'studio.lightAdd': StudioLightingState;
+  'studio.lightUpdate': StudioLightingState;
+  'studio.lightDelete': StudioLightingState;
   'studio.select': StudioSnapshot;
   'studio.setProperty': StudioSnapshot;
   'studio.viewportRect': { ok: boolean };

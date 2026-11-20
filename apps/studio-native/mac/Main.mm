@@ -342,6 +342,14 @@
             reply=session_->dispatch(req);
         }
         [self sendStudioReply:reply];
+        const std::string method=req.getStr("method");
+        if (!reply.has("error") &&
+            (method=="studio.setProperty" || method=="studio.save" ||
+             method=="studio.undo" || method=="studio.redo" ||
+             method=="studio.lightingSet" || method=="studio.lightAdd" ||
+             method=="studio.lightUpdate" || method=="studio.lightDelete")) {
+            [self sendStudioEvent:"document.changed" message:""];
+        }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app { (void)app; return YES; }
