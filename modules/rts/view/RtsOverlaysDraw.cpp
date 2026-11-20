@@ -173,6 +173,10 @@ bool RtsOverlays::shutdownAfterGpuIdle(gfx::Device& dev) {
 void RtsOverlays::shutdown(gfx::Device& dev) {
     if(dev_ && dev_!=&dev)
         throw std::logic_error("RtsOverlays GPU shutdown: device owner mismatch");
+    // Retired dynamic buffers may still be in use by an earlier frame.
+    // A failed barrier must preserve live GPU ownership for retry.
+    if(dev_ && !retiredBuffers_.completeForShutdown(dev))
+        throw std::runtime_error("RtsOverlays shutdown: GPU retirement idle failed");
     for(auto& p:pipes_)if(p.valid()) {dev.destroyPipeline(p);p={};}
     if(shader_.valid())dev.destroyShader(shader_);
     if(vb_.valid())dev.destroyBuffer(vb_);
@@ -620,10 +624,23 @@ void RtsOverlays::flush(Renderer3D& r) {
     for (auto& b : buckets_) upload_.insert(upload_.end(), b.verts.begin(), b.verts.end());
     const size_t bytes = upload_.size() * sizeof(BatchVertex);
     if (!vb_.valid() || bytes > vbBytes_) {
-        if (vb_.valid()) dev_->destroyBuffer(vb_);
-        vbBytes_ = std::max<size_t>(bytes * 2, 64 * 1024);
-        gfx::BufferDesc bd; bd.type = gfx::BufferType::Vertex; bd.usage = gfx::Usage::Dynamic; bd.size = vbBytes_; bd.label = "overlays";
-        vb_ = dev_->createBuffer(bd);
+        if(bytes>SIZE_MAX/2)
+            throw std::overflow_error("RtsOverlays: vertex upload size overflow");
+        const size_t capacity=std::max<size_t>(bytes*2,64*1024);
+        gfx::BufferDesc bd;
+        bd.type=gfx::BufferType::Vertex;
+        bd.usage=gfx::Usage::Dynamic;
+        bd.snapshotUpdates=true;
+        bd.size=capacity;
+        bd.label="overlays";
+        const auto replacement=dev_->createBuffer(bd);
+        if(!replacement.valid())
+            throw std::runtime_error("RtsOverlays: vertex buffer allocation failed");
+        // Safe inside a frame: ownership is deferred to a frame-boundary GPU
+        // token rather than destroying memory referenced by prior cameras.
+        retiredBuffers_.retireBuffer(*dev_,vb_);
+        vb_=replacement;
+        vbBytes_=capacity;
     }
     const mat4 vp = r.viewProj();
     r.drawCustom([this, vp, bytes](gfx::Device& dev) {
