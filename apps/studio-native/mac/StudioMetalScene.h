@@ -14,6 +14,7 @@
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/world/NereidManifestHost.h"
 
 namespace aiverse::studio {
 class StudioMetalScene final {
@@ -40,6 +41,7 @@ public:
 private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;
+    world::NereidManifestHost nereid_;
     render::Mesh cube_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;

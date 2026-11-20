@@ -4,6 +4,7 @@
 #pragma once
 #include "engine/world/NereidWaterScene.h"
 #include "engine/data/Json.h"
+#include "engine/core/FixedMath.h"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -203,6 +204,22 @@ inline NereidSceneSurface surface(const Json& j) {
             else if(quality=="high")s.style.rapidDetail=WaterRapidDetail::High;
             else throw JsonError("nereidWater.rapidDetail: unknown quality");
         }
+    }
+    if(j.has("grade")){
+        const auto& g=j["grade"];if(!g.isObject()||!s.useGeometry||s.geometry.kind!=WaterGeometryKind::RiverSpline)throw JsonError("nereidWater.grade requires river");
+        auto& grade=s.mesh.grade;s.mesh.useGrade=true;
+        if(g.has("origin")){if(!g["origin"].isArray()||g["origin"].size()!=2)throw JsonError("nereidWater.grade.origin");grade.origin={coordinate(g["origin"][0],"grade.origin"),coordinate(g["origin"][1],"grade.origin")};}
+        if(g.has("risePerMetre")){if(!g["risePerMetre"].isArray()||g["risePerMetre"].size()!=2)throw JsonError("nereidWater.grade.risePerMetre");grade.risePerMetre={coordinate(g["risePerMetre"][0],"grade.rise",1_fx),coordinate(g["risePerMetre"][1],"grade.rise",1_fx)};}
+        if(g.has("slopeDegrees")){
+            const auto slope=coordinate(g["slopeDegrees"],"grade.slopeDegrees",20_fx);
+            const auto heading=g.has("downhillHeadingDegrees")?coordinate(g["downhillHeadingDegrees"],"grade.heading",360_fx):0_fx;
+            const auto angle=slope/360_fx;const auto rise=fxSinTurns(angle)/fxCosTurns(angle);
+            grade.risePerMetre={-fxSinTurns(heading/360_fx)*rise,-fxCosTurns(heading/360_fx)*rise};
+        }
+        grade.automaticCurrent=g.getBool("automaticCurrent",true);
+        if(g.has("responseSeconds"))grade.responseSeconds=positive(g["responseSeconds"],"grade.response",60_fx);
+        if(g.has("maxSpeed"))grade.maxSpeed=positive(g["maxSpeed"],"grade.maxSpeed",100_fx);
+        if(!validWaterRiverGrade(grade))throw JsonError("nereidWater.grade invalid");
     }
     return s;
 }

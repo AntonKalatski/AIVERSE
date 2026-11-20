@@ -25,6 +25,8 @@ import ProjectPanel from './generated/ProjectPanel';
 
 import RuntimePanel from './generated/RuntimePanel';
 
+import NereidFlowPanel from './generated/NereidFlowPanel';
+
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
@@ -128,6 +130,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'facial_rig':
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
+      case 'nereid_flow': return <NereidFlowPanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':

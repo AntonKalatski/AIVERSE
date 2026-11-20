@@ -871,7 +871,7 @@
              method=="studio.entityCreate" || method=="studio.entityDelete" ||
              method=="studio.entityDuplicate" || method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
-             method=="studio.lightingSet" || method=="studio.lightAdd" ||
+             method=="studio.nereidFlowSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate")) {
             [self sendStudioEvent:"document.changed" message:""];

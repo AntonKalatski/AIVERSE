@@ -56,6 +56,7 @@ void entityWorkflow() {
     map.reset(16,16);
     editor::DocEntity entity; entity.type="unit";entity.id="original";entity.x=2;entity.z=3;
     entity.extra=Json::parse(R"({"inventory":{"wood":20}})");
+    map.data.extra.set("nereidWater",Json::parse(R"({"surfaces":[{"id":7,"kind":"river","shape":"river","surfaceY":2,"bottomY":0,"points":[[0,0,3],[0,16,3]]}]})"));
     map.data.entities.push_back(entity);
     entity.id="other";entity.x=5;map.data.entities.push_back(entity);
     map.data.roads.emplace_back(0,1);
@@ -67,6 +68,20 @@ void entityWorkflow() {
             request.set("method",Json::string(method));request.set("params",std::move(params));
             return session.dispatch(request);
         };
+        {
+            auto state=call("studio.nereidFlow");AIVERSE_TEST_CHECK(!state.has("error")&&state["result"]["surfaces"].size()==1);
+            auto input=Json::parse(R"({"id":7,"mode":"automatic","slopeDegrees":1,"downhillHeadingDegrees":180})");
+            AIVERSE_TEST_CHECK(!call("studio.nereidFlowSet",input).has("error"));
+            AIVERSE_TEST_CHECK(session.workspace().map.data.extra["nereidWater"]["surfaces"][0]["grade"].has("slopeDegrees"));
+            AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            AIVERSE_TEST_CHECK(!session.workspace().map.data.extra["nereidWater"]["surfaces"][0].has("grade"));
+            AIVERSE_TEST_CHECK(!call("studio.redo").has("error"));
+            const auto previous=session.workspace().map.toJson();input.set("slopeDegrees",Json::number(90.0));
+            AIVERSE_TEST_CHECK(call("studio.nereidFlowSet",input).has("error"));AIVERSE_TEST_CHECK(session.workspace().map.toJson()==previous);
+            AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+            AIVERSE_TEST_CHECK(!call("studio.save").has("error"));
+            session.openProject(project.string());
+        }
         {
             Simulation live({1,20,0},std::make_unique<game::RtsModule>());
             live.setup(session.workspace().project.rulesJson,session.workspace().map.toJson());

@@ -1,4 +1,5 @@
 #include "StudioSession.h"
+#include "engine/world/NereidFlowAuthoring.h"
 #include "apps/editor/core/ProjectFile.h"
 #include "modules/rts/RtsMap.h"
 #include "apps/editor/EditorWorldEdit.h"
@@ -427,6 +428,15 @@ Json StudioSession::dispatch(const Json& request) {
             Json result=Json::object();
             result.set("library",library);
             reply.set("result",std::move(result));
+        } else if(method=="studio.nereidFlow"||method=="studio.nereidFlowSet"){
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(ws_.project.isFps())throw std::runtime_error("NEREID authoring currently requires a flat map");
+            if(method=="studio.nereidFlowSet"){
+                if(!params["mode"].isString())throw std::runtime_error("Choose current mode");
+                auto candidate=world::editNereidFlow(ws_.map.data.extra,params);
+                ws_.map.beginEdit();ws_.map.data.extra=std::move(candidate);ws_.map.touched();
+            }
+            reply.set("result",world::nereidFlowState(ws_.map.data.extra));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {

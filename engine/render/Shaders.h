@@ -524,12 +524,13 @@ void main() {
     // aliases into stripes; slow large patches of darker / lighter water.
     bool openWater = (u_params.x < -0.5 || (u_params.y >= 0.85 && v_wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        float wt = (l_cloud.x + l_cloud.y) * 20.0;
+        float wt = u_params.x < -0.5 ? u_camPos.w : (l_cloud.x + l_cloud.y) * 20.0;
         // PHYSIS/weather owner supplies world-space wind through NEREID's
         // generic presentation API; legacy untagged water is unchanged.
         float windCoupling=u_params.x < -0.5 ? u_waterWind.w : 0.0;
         vec2 p = v_wpos.xz -
                  u_waterWind.xy * wt * (0.02 * windCoupling);
+        if(u_params.x < -0.5)p-=u_waterHydraulics.xy*wt;
         float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
         const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
                                    vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
@@ -558,7 +559,7 @@ void main() {
     // material path but never sample the horizontal planar reflection.
     // Fast downstream streaks perturb their ribbon normals and tint.
     if(u_params.x < -2.5) {
-        float waterfallTime=(l_cloud.x+l_cloud.y)*20.0;
+        float waterfallTime=u_camPos.w;
         float streak=sin(v_wpos.y*8.0+v_wpos.x*1.8 -
                          waterfallTime*3.6);
         float crossFlow=sin(v_wpos.z*12.0-v_wpos.y*3.2 -
@@ -576,7 +577,7 @@ void main() {
         vec2 dir=flow/max(speed,0.001);
         vec2 side=vec2(-dir.y,dir.x);
         float scale=u_waterHydraulics.w;
-        float time=(l_cloud.x+l_cloud.y)*20.0;
+        float time=u_camPos.w;
         float along=dot(v_wpos.xz,dir)*scale;
         float across=dot(v_wpos.xz,side)*scale;
         // waterRapidColor.a: Low=0, Medium=1 (legacy), High=2.
@@ -761,10 +762,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     // aliases into stripes; slow large patches of darker / lighter water.
     bool openWater = (u.params.x < -0.5 || (u.params.y >= 0.85 && in.wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        float wt = (l.cloud.x + l.cloud.y) * 20.0;
+        float wt = u.params.x < -0.5 ? f.camPos.w : (l.cloud.x + l.cloud.y) * 20.0;
         float windCoupling=u.params.x < -0.5 ? u.waterWind.w : 0.0;
         float2 p = in.wpos.xz -
                    u.waterWind.xy * wt * (0.02 * windCoupling);
+        if(u.params.x < -0.5)p-=u.waterHydraulics.xy*wt;
         float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
         const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
                                    float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
@@ -790,7 +792,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         base *= 0.84 + 0.22 * patches;
     }
     if(u.params.x < -2.5) {
-        float waterfallTime=(l.cloud.x+l.cloud.y)*20.0;
+        float waterfallTime=f.camPos.w;
         float streak=sin(in.wpos.y*8.0+in.wpos.x*1.8 -
                          waterfallTime*3.6);
         float crossFlow=sin(in.wpos.z*12.0-in.wpos.y*3.2 -
@@ -805,7 +807,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float2 dir=flow/max(speed,0.001);
         float2 side=float2(-dir.y,dir.x);
         float scale=u.waterHydraulics.w;
-        float time=(l.cloud.x+l.cloud.y)*20.0;
+        float time=f.camPos.w;
         float along=dot(in.wpos.xz,dir)*scale;
         float across=dot(in.wpos.xz,side)*scale;
         float quality=u.waterRapidColor.a;

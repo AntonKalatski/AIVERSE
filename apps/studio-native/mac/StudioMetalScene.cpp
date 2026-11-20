@@ -202,6 +202,7 @@ StudioMetalScene::~StudioMetalScene() {
         }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
+        nereid_.shutdown(*device_);
         renderer_.shutdown();
     }
 }
@@ -371,6 +372,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
     syncDocumentModels(doc,projectPath,rules,proxies);
     device_->beginFrame(framebufferWidth, framebufferHeight);
+    nereid_.configure(fpsProject?Json::object():doc.data.extra);
+    nereid_.prepare(*device_,camera_.eye());
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
     renderer_.lighting=Lighting{}; // reset when project and lighting settings change
     const auto day=previewDocumentDay(doc,fpsProject);
@@ -428,6 +431,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
         renderer_.drawModel(draw);
     }
+    nereid_.draw(renderer_);
     // Editor gizmos for authored lights; actual light contribution is passed through
     // Renderer3D::lights, not faked with an overlay screenshot.
     for(const auto& light:activeLights) {

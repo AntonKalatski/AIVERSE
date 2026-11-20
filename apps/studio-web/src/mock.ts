@@ -81,6 +81,8 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
     throw Error('Editing materials requires the native AIVERSE host');
   }
+  if(method==='studio.nereidFlow')return {surfaces:[],computed:[]};
+  if(method==='studio.nereidFlowSet')throw Error('NEREID flow editing requires the native host');
   if (method === 'studio.lighting') {
     return { lighting: null, lights: [] };
   }
