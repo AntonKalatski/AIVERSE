@@ -44,6 +44,7 @@ void GeometryScene::shutdown(gfx::Device& dev){
     // Renderer3D has consumed the previous draw epoch before scene unload.
     // Release alias borrowers BEFORE their index sidecars / source Models.
     strataPortableDrawModels_.clear();
+    strataPortableLodHistories_.clear();
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
     strataPortableSources_.clear();
@@ -1022,8 +1023,20 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             auto& slot=strataPortableDrawModels_[&i];
             if (!slot) slot=std::make_unique<Model>();
             std::string error;
+            strata::PortableLodHistory* history=nullptr;
+            if(strataLodHysteresisFraction_>0.f){
+                auto& owned=strataPortableLodHistories_[&i];
+                if(!owned)
+                    owned=std::make_shared<strata::PortableLodHistory>();
+                history=owned.get();
+            }
+            const uint64_t oldTransitions=
+                staged->second->stats().hysteresisTransitions;
             if (staged->second->prepareModel(i.world, views, forceFinest,
-                                              *slot, &error)) {
+                    *slot, &error,history,strataLodHysteresisFraction_)) {
+                stats_.strataLodHysteresisTransitions+=
+                    staged->second->stats().hysteresisTransitions-
+                    oldTransitions;
                 d.model=slot.get();
                 d.flags |= kDrawStatic; // eligible rigid Strata, Vulkan MDI may batch it
                 d.staticCache=nullptr;
@@ -1046,6 +1059,11 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
         }
     }
 #endif
+    if(d.model!=i.model || strataLodHysteresisFraction_==0.f)
+        strataPortableLodHistories_.erase(&i);
+    if(strataLodHysteresisFraction_>0.f)
+        stats_.strataLodHysteresisHistories=
+            uint32_t(strataPortableLodHistories_.size());
     r.drawModel(d);++stats_.submitted;
 }
 
