@@ -38,3 +38,18 @@ test('browser demo cannot claim facial model preview/real asset writes',async()=
     rig:arkitFaceMapping()
   }),/native validation/);
 });
+
+test('browser facial GPU controls cannot claim a rendered Model',async()=>{
+  const status=await mockInvoke('studio.facialPreviewState',{});
+  assert.equal(status.active,false);
+  assert.equal(status.gpuReady,false);
+  await assert.rejects(mockInvoke('studio.facialPreviewStart',{
+    name:'hero_face',model:'models/human.glb'
+  }),/native AIVERSE host/);
+  await assert.rejects(mockInvoke('studio.facialPreviewScalar',{
+    parameter:'jawOpen',value:1
+  }),/native AIVERSE host/);
+  await assert.rejects(mockInvoke('studio.facialPreviewVector',{
+    parameter:'lookAt',x:0,y:1,z:3
+  }),/native AIVERSE host/);
+});
