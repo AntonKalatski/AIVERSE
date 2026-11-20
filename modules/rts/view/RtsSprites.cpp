@@ -69,45 +69,50 @@ void spriteCorners(const SpriteLook& L, const Basis& B, float3 ground, float3 (&
 }
 } // namespace
 
-bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& base, const SpriteDefaults& defaults, bool deferTypes) {
-    rules_ = &rules;
-    base_ = base;
-    defaults_ = defaults;
-    textures_.init(dev);
-    if (!batch_.init(dev)) {
-        std::fprintf(stderr, "[sprites] pipeline: %s\n", dev.lastError().c_str());
-        textures_.shutdown();
-        return false;
-    }
-    if (!secondaryBatch_.init(dev)) {
-        // The failed SpriteBatch init has established its own idle barrier
-        // before releasing partial resources.
-        batch_.shutdown();
-        textures_.shutdown();
-        return false;
-    }
+bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& base,
+                     const SpriteDefaults& defaults, bool deferTypes) {
+    // A prior failed idle barrier leaves this instance owning its GPU handles.
+    // The host must call shutdownAfterGpuIdle() before retrying initialization.
+    if (ready_ || rules_)
+        throw std::logic_error("Rts2DView init: already initialized or recovery pending");
     try {
-    // soft round shadow blob, generated: no file needed
-    const int S = 32;
-    std::vector<uint32_t> px(size_t(S * S));
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x) {
-            float dx = (x + 0.5f) / S * 2 - 1, dy = (y + 0.5f) / S * 2 - 1;
-            float a = std::clamp(1.0f - std::sqrt(dx * dx + dy * dy), 0.0f, 1.0f);
-            px[size_t(y * S + x)] = rgba(255, 255, 255, uint8_t(std::min(1.0f, a * 1.6f) * 255));
+        rules_ = &rules;
+        base_ = base;
+        defaults_ = defaults;
+        textures_.init(dev);
+        if (!batch_.init(dev)) {
+            std::fprintf(stderr, "[sprites] pipeline: %s\\n", dev.lastError().c_str());
+            if (!shutdownAfterGpuIdle(dev))
+                throw std::runtime_error("Rts2DView init: GPU idle barrier failed");
+            return false;
         }
-    shadowTex_ = textures_.addGenerated("builtin:shadow", S, S, px, false);
-    looks_.assign(rules.types.size(), {});
-    loadedTypes_.assign(rules.types.size(), false);
-    if (!deferTypes) for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
-    ready_ = true;
-    return true;
+        if (!secondaryBatch_.init(dev)) {
+            if (!shutdownAfterGpuIdle(dev))
+                throw std::runtime_error("Rts2DView init: GPU idle barrier failed");
+            return false;
+        }
+        // Soft round shadow blob, generated: no file needed.
+        const int S = 32;
+        std::vector<uint32_t> px(size_t(S * S));
+        for (int y = 0; y < S; ++y)
+            for (int x = 0; x < S; ++x) {
+                float dx = (x + 0.5f) / S * 2 - 1, dy = (y + 0.5f) / S * 2 - 1;
+                float a = std::clamp(1.0f - std::sqrt(dx * dx + dy * dy), 0.0f, 1.0f);
+                px[size_t(y * S + x)] =
+                    rgba(255, 255, 255, uint8_t(std::min(1.0f, a * 1.6f) * 255));
+            }
+        shadowTex_ = textures_.addGenerated("builtin:shadow", S, S, px, false);
+        looks_.assign(rules.types.size(), {});
+        loadedTypes_.assign(rules.types.size(), false);
+        if (!deferTypes)
+            for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
+        ready_ = true;
+        return true;
     } catch (...) {
-        // Textures and uploaded sprite meshes may already be referenced by
-        // a submitted frame: GPU idle must precede any destruction.
-        if (!dev.waitForResourceIdle())
-            throw std::runtime_error("Rts2DView init rollback: GPU idle barrier failed");
-        shutdown(dev);
+        // This also protects failures from the first batch or texture loader.
+        // A second idle attempt can succeed after a transient device stall.
+        if (!shutdownAfterGpuIdle(dev))
+            throw std::runtime_error("Rts2DView init rollback: GPU idle barrier failed; recovery pending");
         throw;
     }
 }
@@ -117,6 +122,12 @@ void Rts2DView::loadType(uint16_t type) {
     const Json& s = rules_->types[type].view["sprite"];
     if (s.isObject()) loadLook(looks_[type], rules_->types[type], s);
     loadedTypes_[type] = true;
+}
+
+bool Rts2DView::shutdownAfterGpuIdle(gfx::Device& dev) {
+    if (!dev.waitForResourceIdle()) return false;
+    shutdown(dev);
+    return true;
 }
 
 void Rts2DView::shutdown(gfx::Device& dev) {
