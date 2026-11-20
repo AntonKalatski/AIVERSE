@@ -183,11 +183,16 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     // A live rules/project reload must not stall the whole GPU or destroy
     // static/HLOD Models still referenced by an earlier rendered frame.
     // Final teardown continues to call the blocking shutdown barrier.
-    geometryScene_.clear(dev);
     if(!incomingGeometryWarning.empty())warnings_.push_back(incomingGeometryWarning);
     if(incomingGeometryPresent) {
-        try { geometryScene_.load(dev,incomingGeometry,read_); }
-        catch (const std::exception& e) { warnings_.push_back(e.what()); }
+        try { geometryScene_.loadTransactional(dev,incomingGeometry,read_); }
+        catch(const std::exception& e) {
+            // A rejected replacement never empties the current geometry scene.
+            warnings_.push_back(e.what());
+        }
+    } else if(incomingGeometryWarning.empty()) {
+        // No descriptor was configured: explicitly remove old geometry.
+        geometryScene_.clear(dev);
     }
 
     // Publish the same materials snapshot parsed before sprite staging.
