@@ -5,7 +5,7 @@
 // TRS animations (step / linear / cubic spline), PBR metallic-roughness materials, normal /
 // occlusion / emissive maps, alpha modes, double sided, KHR_texture_transform,
 // KHR_materials_unlit, KHR_materials_emissive_strength, KHR_materials_pbrSpecularGlossiness
-// (converted), KHR_materials_variants, morph targets (position / normal deltas, up to 16 per primitive,
+// (converted), KHR_materials_variants, morph targets (position / normal deltas, up to 64 per primitive,
 // animated weights). Not supported (warning, skipped): TEXCOORD_1,
 // cameras. Light descriptions (KHR_lights_punctual) are preserved for scene consumers. Compressed geometry / textures (Draco, meshopt, KTX2, WebP) are an error when
 // required and skipped otherwise.
