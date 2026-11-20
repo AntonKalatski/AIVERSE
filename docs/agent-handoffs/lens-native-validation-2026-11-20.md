@@ -401,3 +401,11 @@ ambiguity, test this rollback, then stage remaining owners before final publish.
 | Captured animation/events/lights rollback | implemented in source | run native fault fixture |
 | Full surface/Sprite/Overlay transaction | partial | stage remaining owners |
 | Integrated native build | partial | repair root_motion_bake ambiguity |
+
+
+### Root-motion lookup integration repair
+Code `e1dad14eaa22b059008f312fca9303fbaa33c06e` on codex/lens-completion
+qualifies the generic full bone-path lookup in root_motion_bake.cpp, preserving
+main semantics when ModelClips.h is also visible. Previous all-target build
+FAIL at ambiguous findNodePath. Retest pending on KINGSTON; no GPU/API/save
+change. Next: rebuild focused animation/View/core targets and run new fixtures.
