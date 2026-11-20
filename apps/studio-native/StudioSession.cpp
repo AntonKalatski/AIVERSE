@@ -1,5 +1,6 @@
 #include "StudioSession.h"
 #include "apps/studio-native/StudioContentDirectory.h"
+#include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -432,18 +433,38 @@ Json StudioSession::dispatch(const Json& request) {
             // Browser input cannot specify a filesystem directory. This scan
             // sees ONLY regular files beneath project/content (no symlinks).
             // Return content-relative paths, so the UI's root is "content".
-            const auto catalog = studioContentFiles(ws_.project.dir);
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild(); // .meta is source of truth, index is disposable
             Json r = Json::object();
             r.set("root", str("content"));
-            Json entries = Json::array();
-            for (const auto& asset : catalog) {
+            Json entries = Json::array(), folders = Json::array();
+            for (const auto& asset : catalog.all()) {
                 Json item = Json::object();
                 item.set("path", str(asset.path));
+                item.set("guid", str(asset.guid));
+                item.set("importer",str(asset.importer));
                 item.set("bytes", Json::number(asset.bytes));
-                entries.push(std::move(item));
+                if(asset.directory)folders.push(std::move(item));
+                else entries.push(std::move(item));
             }
-            r.set("files", std::move(entries));
+            r.set("files",std::move(entries));
+            r.set("folders",std::move(folders));
             reply.set("result", std::move(r));
+        } else if (method == "studio.assetByGuid") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string guid=params.getStr("guid");
+            if(!studioValidGuid(guid))throw std::runtime_error("Invalid asset GUID");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            const auto entry=catalog.byGuid(guid);
+            if(!entry)throw std::runtime_error("Asset GUID not found; refresh Assets");
+            Json item=Json::object();
+            item.set("guid",str(entry->guid));
+            item.set("path",str(entry->path));
+            item.set("importer",str(entry->importer));
+            item.set("directory",Json::fromBool(entry->directory));
+            item.set("bytes",Json::number(entry->bytes));
+            item.set("settings",entry->settings);
+            reply.set("result",std::move(item));
         } else if (method == "studio.select") {
             const Json& id = params["id"];
             if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
