@@ -1,8 +1,8 @@
 # SpectraFX Stage 108 — two-camera GPU alpha depth sort index parity
 
-Date: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-Implementation commit: `9468a46297abbdd846e8a98ccf1df371bba95f17`  
+Date: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+Implementation commit: `9468a46297abbdd846e8a98ccf1df371bba95f17`
 Native accepted baseline: Stage 105 source `c4fc948535557f1cc1a00459d1a3cd48257ad6ca`, 126/126 full CTest and 4/4 MetalGPU PASS on Apple M3 Ultra. **Stage 106–108 not yet native tested.**
 
 ## New real Metal acceptance

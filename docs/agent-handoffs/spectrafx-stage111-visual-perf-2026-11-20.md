@@ -1,7 +1,7 @@
 # SpectraFX Stage 111 — PPM visual evidence review and Metal timing / allocation diagnostics
 
-**Date:** 2026-11-20  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
+**Date:** 2026-11-20
+**Branch:** `feature/spectrafx-generic-cue-queue`
 **Code commits:**
 - `3e56816e991f304bbe4ebe0fe1abc8505523e4d8`: real Metal RHI asynchronous GPU frame timing and device allocation instrumentation.
 - `65426ea8b551e3a33713109a43c17e990375cd1f`: standard-library PPM contact sheet + JSON QA utility, unit tests and acceptance wiring.

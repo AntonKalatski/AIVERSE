@@ -1,7 +1,7 @@
 # SpectraFX Stage 98 — real Metal RHI offscreen views and 3-frame GPU retirement
 
-Date: 2026-11-19  
-Branch: `feature/spectrafx-generic-cue-queue`  
+Date: 2026-11-19
+Branch: `feature/spectrafx-generic-cue-queue`
 Code commits:
 - `59605eea446f0c26533ea839b6074b7729d3d73f` — real Metal RHI offscreen multi-view test, diagnostics, CMake and CI.
 - `96954451dd1bd317079098bfe2ca02b823fa89ed` — remove incorrect standalone CommonCrypto framework link; the existing runtime uses system linkage.

@@ -1,8 +1,8 @@
 # SpectraFX Stage 102 — strict evidence for full native Metal acceptance
 
-**Date:** 2026-11-19  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Code commits:** `a6b8617d472b104e660a254d2ed228abc4c81905` (MetalGPU evidence verifier and CTest), `e711c2a955e54a12c6b3aa8136724744cc99726a` (skip report and shell indentation).  
+**Date:** 2026-11-19
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Code commits:** `a6b8617d472b104e660a254d2ed228abc4c81905` (MetalGPU evidence verifier and CTest), `e711c2a955e54a12c6b3aa8136724744cc99726a` (skip report and shell indentation).
 **Prior native validation:** Stage 97, `4e363db3a6fc0d1631a574165febb7d26e08c3b8` (Apple M3 Ultra 8/8 acceptance steps, 2/2 older Metal tests PASS). The newly authored Stage 98–102 source remains **unverified by native CMake/Metal/CTest**.
 
 ## Motivation

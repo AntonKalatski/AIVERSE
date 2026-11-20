@@ -1,8 +1,8 @@
 # SpectraFX Stage 103 — full strict Apple M3 Ultra acceptance confirmed
 
-Date: 2026-11-19  
-Branch: `feature/spectrafx-generic-cue-queue`  
-**Validated SHA:** `fceb8caef1bf26085063b55c224631a3c53a9407`  
+Date: 2026-11-19
+Branch: `feature/spectrafx-generic-cue-queue`
+**Validated SHA:** `fceb8caef1bf26085063b55c224631a3c53a9407`
 **This handoff is documentation only** — the tested engine, shaders, scripts and CMake files remain unchanged.
 
 ## Actual user-provided native evidence

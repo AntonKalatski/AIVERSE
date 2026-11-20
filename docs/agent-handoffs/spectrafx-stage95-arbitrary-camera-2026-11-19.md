@@ -1,7 +1,7 @@
 # SpectraFX Stage 95 — arbitrary camera orientation (2026-11-19)
 
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Implementation SHA:** `2415e08bb0ed3cc2290afd4a0f19cf9d3288797e`  
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Implementation SHA:** `2415e08bb0ed3cc2290afd4a0f19cf9d3288797e`
 **Previous architecture stage:** `docs/agent-handoffs/spectrafx-stage94-genre-neutral-camera-2026-11-19.md`
 
 ## Implemented

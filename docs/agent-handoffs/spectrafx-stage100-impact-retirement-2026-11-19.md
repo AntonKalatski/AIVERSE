@@ -1,8 +1,8 @@
 # SpectraFX Stage 100 — GPU impact callback invalidation and lifecycle regression
 
-**Date:** 2026-11-19  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Implementation commits:** `dcd0d38481561c5e5fc85cb1e7881893e5d9ba69` (real Metal impact callback fixture), `a232c4535d221ff684ca81435bedeb97f35d1b36` (production retirement invalidation).  
+**Date:** 2026-11-19
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Implementation commits:** `dcd0d38481561c5e5fc85cb1e7881893e5d9ba69` (real Metal impact callback fixture), `a232c4535d221ff684ca81435bedeb97f35d1b36` (production retirement invalidation).
 **Most recent validated native baseline:** Stage 97, `4e363db3a6fc0d1631a574165febb7d26e08c3b8` on Apple M3 Ultra; 8/8 acceptance stages, 2/2 native MetalGPU test PASS **at that older SHA only**.
 
 ## Problem / why this stage exists

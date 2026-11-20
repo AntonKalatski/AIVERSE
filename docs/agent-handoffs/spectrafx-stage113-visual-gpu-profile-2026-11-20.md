@@ -1,8 +1,8 @@
 # SpectraFX Stage 113 — actual screenshot review and Metal performance evidence
 
-Recorded: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-**Validated production source SHA:** `441d69e08836888604e0aee6ec71765a51fddddc`  
+Recorded: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+**Validated production source SHA:** `441d69e08836888604e0aee6ec71765a51fddddc`
 Source code changes: **none**. This stage documents the two user-uploaded artifacts, inspected directly in the current conversation. Stage 112 had already recorded the strict native acceptance (10/10 steps, four real Metal tests, five visual checks); the missing numerical and visual evidence is now available.
 
 ## Uploaded hardware log: exact measurements

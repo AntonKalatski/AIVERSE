@@ -1,10 +1,10 @@
 # SpectraFX Stage 117 — integrate main into isolated SpectraFX validation branch
 
-Date: 2026-11-20  
-Integration branch: `integration/spectrafx-main-sync-20261120`  
-**Merge commit:** `7ef385060956b73e131821e66e3a8b515da6ac32`  
-First parent, fully native-validated SpectraFX: `ba4b126fd533cdbcb8443f46a68c6d8afe76867f` (Stage 116: 128/128 full CTest PASS).  
-Second parent, main: `e4129c5062a6ab47e7c70f3fdd483392fde1f679`.  
+Date: 2026-11-20
+Integration branch: `integration/spectrafx-main-sync-20261120`
+**Merge commit:** `7ef385060956b73e131821e66e3a8b515da6ac32`
+First parent, fully native-validated SpectraFX: `ba4b126fd533cdbcb8443f46a68c6d8afe76867f` (Stage 116: 128/128 full CTest PASS).
+Second parent, main: `e4129c5062a6ab47e7c70f3fdd483392fde1f679`.
 Common merge base: `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
 
 ## Why an isolated branch

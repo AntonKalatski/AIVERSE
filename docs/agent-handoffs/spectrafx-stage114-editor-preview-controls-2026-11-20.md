@@ -1,8 +1,8 @@
 # SpectraFX Stage 114 — Editor Preview timeline, revision retries and deterministic QA
 
-Date: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-Parent SHA: `76a7d222579abd8017f0740a9adace23b7f56744`  
+Date: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+Parent SHA: `76a7d222579abd8017f0740a9adace23b7f56744`
 **Last natively validated source:** `441d69e08836888604e0aee6ec71765a51fddddc` (Stage 113; 10/10 acceptance, 4/4 MetalGPU, 5/5 visual pixel checks). Source changes here require new compilation and interactive Editor QA.
 
 ## Reason for the change

@@ -1,8 +1,8 @@
 # SpectraFX Stage 110 — strict full Apple M3 Ultra acceptance for Stages 106–109
 
-**Recorded:** 2026-11-20  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Validated engine source SHA:** `b06c6d0f4dc820455d9c7b25dc98aa33397adca7`  
+**Recorded:** 2026-11-20
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Validated engine source SHA:** `b06c6d0f4dc820455d9c7b25dc98aa33397adca7`
 **Changes in Stage 110:** documentation/evidence only; no engine source, shaders, CMake or acceptance script modified.
 
 ## Actual native verification (user-provided Mac Studio log)

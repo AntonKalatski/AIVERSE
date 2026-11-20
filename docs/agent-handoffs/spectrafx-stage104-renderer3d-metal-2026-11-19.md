@@ -1,7 +1,7 @@
 # SpectraFX Stage 104 — Renderer3D multi-view, depth and reset Metal acceptance
 
-**Date:** 2026-11-19  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
+**Date:** 2026-11-19
+**Branch:** `feature/spectrafx-generic-cue-queue`
 **Code commits:**
 - `4e7539d298076a3944bf837e570e0cd420e26275` — real Renderer3D + SceneHost Metal test, CMake registration and strict fourth MetalGPU gate
 - `4518f775451c32af36a8db8fdd21e95a2fbf433a` — optional offscreen PPM captures

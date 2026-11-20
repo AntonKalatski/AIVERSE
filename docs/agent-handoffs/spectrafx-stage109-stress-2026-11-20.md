@@ -1,7 +1,7 @@
 # SpectraFX Stage 109 — production playback stress + configurable Metal GPU churn
 
-Date: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
+Date: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
 Code commits:
 - `a5bf5979a17019a2e8e4b4170922698e627d4a89` — deterministic production HybridPlayback stress, configurable real Metal RHI churn, live resource telemetry.
 - `5310c44c0d500b5b2bb74e5299bd2b458f4f5ded` — clarify Stage 107 HDR/Bloom fixture's center-pixel assumption: screen-space bloom can spill across physically occluding geometry.

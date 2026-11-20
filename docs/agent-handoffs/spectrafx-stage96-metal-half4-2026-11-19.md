@@ -1,7 +1,7 @@
 # SpectraFX Stage 96 — fix Metal half4 vertex output compile (2026-11-19)
 
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Code commit:** `7f77b26fa7e6092ed970d3cf8d2d08c764527761`  
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Code commit:** `7f77b26fa7e6092ed970d3cf8d2d08c764527761`
 **Changed code:** `engine/fx/SpectraFxGpuBillboardRenderer.h`
 
 ## Failure evidence

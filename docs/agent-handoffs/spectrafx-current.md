@@ -1,5 +1,19 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 118 — integration Markdown trailing whitespace cleanup (Mac QA pending)
+
+Integration QA found Git `diff --check` trailing whitespace
+errors on SpectraFX handoff metadata lines. Stage 118 cleaned
+**23 added Markdown handoffs (134 spaces)**; all code/RHI/CMake
+and other agent files were preserved. Additional scans of newly
+added SpectraFX sources and modified integration paths found
+no other newly introduced whitespace. This is a docs-only fix
+based on Stage 117's two-parent merge.
+**Mac `git diff --check` and native acceptance must be rerun on
+this updated integration commit.** Handoff:
+`docs/agent-handoffs/spectrafx-stage118-whitespace-2026-11-20.md`.
+
+
 ## Stage 117 — main merged into isolated integration branch (NATIVE NOT RUN)
 
 **Merge SHA** `7ef385060956b73e131821e66e3a8b515da6ac32`

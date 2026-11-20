@@ -1,8 +1,8 @@
 # SpectraFX Stage 116 — full native acceptance 128/128, Editor regression resolved
 
-Date: 2026-11-20  
-Validated source / feature branch SHA: `ba4b126fd533cdbcb8443f46a68c6d8afe76867f`  
-Platform: Apple M3 Ultra, Darwin  
+Date: 2026-11-20
+Validated source / feature branch SHA: `ba4b126fd533cdbcb8443f46a68c6d8afe76867f`
+Platform: Apple M3 Ultra, Darwin
 This is **documentation-only** evidence for pre-merge SpectraFX; it does not certify the later integration branch.
 
 ## Actual native acceptance from user report

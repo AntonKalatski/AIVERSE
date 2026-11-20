@@ -1,8 +1,8 @@
 # SpectraFX Stage 106 — Editor GPU preview camera and alpha-sort coherence
 
-Date: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-Code SHA: `f12afc07483523b34923f1fc1378c654cf40c9fb`  
+Date: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+Code SHA: `f12afc07483523b34923f1fc1378c654cf40c9fb`
 Previously hardware-validated source: Stage 105 `c4fc948535557f1cc1a00459d1a3cd48257ad6ca`; user-provided Apple M3 Ultra 126/126 full CTest and 4/4 actual MetalGPU PASS. **Stage 106 is NOT native-compiled or Editor-validated**.
 
 ## Implementation

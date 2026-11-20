@@ -1,7 +1,7 @@
 # SpectraFX Stage 94 — genre-neutral camera/view input (2026-11-19)
 
-**Branch:** `feature/spectrafx-generic-cue-queue`.  
-**Implementation commits:** `82970d7aa99490a0ff6bbcb07a2f2989e43f2a7c`, `3be028674abc221cc391d58f41f34802cf07b050`.  
+**Branch:** `feature/spectrafx-generic-cue-queue`.
+**Implementation commits:** `82970d7aa99490a0ff6bbcb07a2f2989e43f2a7c`, `3be028674abc221cc391d58f41f34802cf07b050`.
 **Ownership:** SpectraFX is an engine presentation subsystem. No FPS/RTS/editor camera, game-rule or scene dependency is permitted in `engine/fx`.
 
 ## What changed

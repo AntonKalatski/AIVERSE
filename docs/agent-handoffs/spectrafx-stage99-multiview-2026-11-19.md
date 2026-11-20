@@ -1,8 +1,8 @@
 # SpectraFX Stage 99 — independent per-camera GPU/CPU preparation (2026-11-19)
 
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Code SHA:** `8f9777c17df9c4b22d2104927ef949a925ede6b3`  
-**Previous Stage 98 handoff:** `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`  
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Code SHA:** `8f9777c17df9c4b22d2104927ef949a925ede6b3`
+**Previous Stage 98 handoff:** `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`
 **Last validated native acceptance:** Stage 97 source `4e363db3a6fc0d1631a574165febb7d26e08c3b8`. **Stage 98 and Stage 99 have NOT been compiled or tested.**
 
 ## Problem and behavior

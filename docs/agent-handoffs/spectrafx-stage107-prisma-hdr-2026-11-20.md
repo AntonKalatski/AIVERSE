@@ -1,9 +1,9 @@
 # SpectraFX Stage 107 — PRISMA HDR/Bloom integration acceptance
 
-Date: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-Implementation commit: `9ee2ffeb5a0ff3a0d3088e291b098a95279994dc`  
-Previous Stage 106: `f12afc07483523b34923f1fc1378c654cf40c9fb`.  
+Date: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+Implementation commit: `9ee2ffeb5a0ff3a0d3088e291b098a95279994dc`
+Previous Stage 106: `f12afc07483523b34923f1fc1378c654cf40c9fb`.
 **Last native verified source:** `c4fc948535557f1cc1a00459d1a3cd48257ad6ca` (Apple M3 Ultra, 126/126 full CTest, 4/4 hardware MetalGPU). This Stage 107 code has **not yet been native built/tested**.
 
 ## Implementation and architecture

@@ -1,9 +1,9 @@
 # SpectraFX Stage 115 — Editor Preview C++ compile scope fix after Stage 114 hardware regression
 
-**Date:** 2026-11-20  
-**Branch:** `feature/spectrafx-generic-cue-queue`  
-**Failing exact source:** `c5dd5914edac64f8071f4bd6a5ffd8eb5e6353e3`  
-**Implementation fix commit:** `fc08834e1744a0a50d272043167515a635b70565`  
+**Date:** 2026-11-20
+**Branch:** `feature/spectrafx-generic-cue-queue`
+**Failing exact source:** `c5dd5914edac64f8071f4bd6a5ffd8eb5e6353e3`
+**Implementation fix commit:** `fc08834e1744a0a50d272043167515a635b70565`
 **Stage 115 handoff:** documentation commit after the fix (this document).
 
 ## User-reported Mac Studio acceptance

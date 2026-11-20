@@ -1,9 +1,9 @@
 # SpectraFX Stage 105 — full native Renderer3D acceptance evidence
 
-Date recorded: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-**Validated code SHA:** `c4fc948535557f1cc1a00459d1a3cd48257ad6ca`  
-Source changes this stage: **none** (documentation of real user-provided M3 Ultra execution).  
+Date recorded: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+**Validated code SHA:** `c4fc948535557f1cc1a00459d1a3cd48257ad6ca`
+Source changes this stage: **none** (documentation of real user-provided M3 Ultra execution).
 Previous stage: `docs/agent-handoffs/spectrafx-stage104-renderer3d-metal-2026-11-19.md`.
 
 ## Verified native hardware evidence

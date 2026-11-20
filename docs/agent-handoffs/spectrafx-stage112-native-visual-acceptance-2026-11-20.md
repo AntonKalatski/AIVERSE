@@ -1,8 +1,8 @@
 # SpectraFX Stage 112 — Stage 111 full native and visual acceptance PASS
 
-Recorded: 2026-11-20  
-Branch: `feature/spectrafx-generic-cue-queue`  
-**Validated source SHA:** `441d69e08836888604e0aee6ec71765a51fddddc`  
+Recorded: 2026-11-20
+Branch: `feature/spectrafx-generic-cue-queue`
+**Validated source SHA:** `441d69e08836888604e0aee6ec71765a51fddddc`
 This stage: **documentation-only** record of user-provided hardware report; no engine, shader or test code changed.
 
 ## Reported full native acceptance — Apple M3 Ultra, Darwin

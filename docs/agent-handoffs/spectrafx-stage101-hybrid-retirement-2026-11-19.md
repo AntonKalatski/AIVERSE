@@ -1,8 +1,8 @@
 # SpectraFX Stage 101 — deterministic production HybridPlayback retirement test
 
-Date: 2026-11-19  
-Branch: `feature/spectrafx-generic-cue-queue`  
-Implementation commit: `50df70bd39cf8059c54e75389c81a1c6eb40a306`  
+Date: 2026-11-19
+Branch: `feature/spectrafx-generic-cue-queue`
+Implementation commit: `50df70bd39cf8059c54e75389c81a1c6eb40a306`
 Previous stage: `docs/agent-handoffs/spectrafx-stage100-impact-retirement-2026-11-19.md`
 
 ## Summary
