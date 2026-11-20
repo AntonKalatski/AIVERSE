@@ -639,3 +639,18 @@ core remains running on the premerge binary; unaffected by this documentation
 and test-source merge. Next rebuild all configured targets, rerun changed
 KTX2/LOD fixtures and repaired animation cases, preserve the full core outcome.
 No main push yet. Vulkan runtime is not claimed on this Mac.
+
+
+## Final acceptance and main publication readiness — 2026-11-20
+QA report `148ec5d1baae9edcaab31005bb965d4966d73f94`, branch codex/lens-completion; tested tree
+`783c2bcba193f99960d58fd538bc7641e5b41d7b`, integrated main
+`291908eb95054b1a331b1b7c54c8147d0330ef2f`. Build-9 PASS (client/editor/tests).
+Full CTest completed in 1079.99 s: 323 PASS, 2 already-repaired failures,
+1 explicit Metal opt-in skip. Core: 274371 checks, 0 failed. Final CTest rerun
+of repaired/affected cases with AIVERSE_LENS_METAL_VALIDATE=1: 9/9 PASS, no skips.
+Every registered case now has a passing execution across full + targeted runs.
+Detailed evidence, exact scope and unverified platforms are in
+`docs/qa/lens-integration-2026-11-20.md`; no queued workflow is called passing.
+No save/asset format change; no production performance-default change.
+Working tree/diff check clean. Next: authorized fast-forward push to main,
+verify remote SHA and record the publication receipt.
