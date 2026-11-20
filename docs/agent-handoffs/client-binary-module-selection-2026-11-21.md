@@ -237,3 +237,31 @@ were NOT RUN (no CI URL). Next: assess other core client components for safe
 optional linkage, especially imports whose usage can be determined from
 project data; validate representative games and optimized Web size once the
 toolchain is available.
+
+## 2026-11-21 continuation: optional runtime OBJ loader
+
+Branch `feature/studio-html5`; implementation commit `b52fedb41`. Affected
+paths: `CMakeLists.txt`, `engine/render/Model.cpp`,
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. The new `obj` name selects
+the `AIVERSE_OBJ` CMake option in packaged clients. OFF excludes `ModelObj.cpp`
+and its dispatch entry, and direct OBJ load reports a conversion error unless
+a `.glb` sidecar exists. Omitted module declarations keep the historical ON
+default. GLTF/GLB, FBX, legacy loaders, host conversion tools, public model
+API, and save formats are unchanged.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. `aiversebuild --project
+/private/tmp/aiverse-fbx-module-fixture --target web --check-engine-modules`
+PASS with `["obj"]` (`AIVERSE_OBJ=ON`) and `[]` (OFF). macOS client configure
+and `cmake --build /private/tmp/aiverse-client-modules-check --target
+aiverse_client -j 6` PASS with `AIVERSE_OBJ=OFF` and ON, keeping FBX and
+legacy models ON. OFF executable: 80,740,448 bytes with no `loadObj` symbol;
+ON executable: 80,898,328 bytes with `loadObj`. Diagnostic reduction:
+157,880 bytes. `git diff --check` PASS on stage paths (line-ending warnings
+only).
+
+The shared worktree contained unrelated changes; none was staged. Emscripten
+is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
+Windows, runtime OBJ smoke, and CI were NOT RUN (no CI URL). Next: inspect
+other importer/decoder linkage and project-data-driven module selection, then
+measure a representative optimized Web build when the toolchain is available.
