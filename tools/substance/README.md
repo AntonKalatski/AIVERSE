@@ -58,3 +58,21 @@ exclusive lock; an interrupted process may leave `.substance-import.lock` which
 must only be removed after confirming no importer is running. A failed library
 publication can leave unused immutable textures. This does not provide a
 cross-process transaction with a running Studio. No GPU compression yet.
+
+## Stage 4: existing build compression rules
+
+```sh
+python3 tools/substance/packaging.py --project /path/to/game --name stone --target android
+```
+
+Prints a game.json fragment for the existing aiversebuild ASTC/KTX2 encoder.
+Merge its exact-path rules at the START of packaging.targets.<target>.files
+(first matching compression rule wins). Does not modify game.json automatically.
+Base/emission use sRGB; normals/ORM use linear, normal maps are flagged, shared
+ORM is deduplicated. ASTC4x4 with full mipmaps is the conservative quality profile.
+Requires external astcenc (AIVERSE_ASTCENC or existing toolchain discovery).
+Only use this profile on devices supporting ASTC; macos here means a tested
+ASTC-capable Apple Silicon deployment, not every Mac. Desktop BC compression is
+not provided by this existing packaging API. Source PNGs stay unchanged; KTX2
+is produced during packaging under original resource names. Missing encoder or
+build warnings must not be interpreted as successful GPU compression.
