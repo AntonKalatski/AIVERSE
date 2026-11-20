@@ -11,7 +11,10 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <iterator>
 #include <memory>
+#include <limits>
+#include <mutex>
 #include <map>
 #include <cstring>
 #include <cstdio>
@@ -752,6 +755,155 @@ public:
             if((*it)->ready.load(std::memory_order_acquire)){ready.push_back(*it);it=bufferReads_.erase(it);}else ++it;
         }
         for(auto& read:ready)read->callback(std::move(read->bytes));
+    }
+    // A depth-only diagnostic readback, asynchronous and bounded. Metal's
+    // Depth32Float shadow map is private; encode a blit into a temporary shared
+    // buffer after the shadow render pass, never use getBytes on private memory.
+    struct DepthRead {
+        int width = 0, height = 0;
+        std::vector<uint8_t> bytes;
+        DepthReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<DepthRead>> depthReads_;
+    bool readDepthTextureAsync(TextureHandle h,DepthReadFn callback) override {
+        auto* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || !t || !callback ||
+            t->fmt != PixelFormat::Depth ||
+            t->tex.pixelFormat != MTLPixelFormatDepth32Float ||
+            t->tex.textureType != MTLTextureType2D ||
+            t->tex.sampleCount != 1 ||
+            !t->tex.width || !t->tex.height ||
+            t->tex.width > 4096 || t->tex.height > 4096 ||
+            depthReads_.size() >= 8)
+            return false;
+        const NSUInteger w = t->tex.width, hgt = t->tex.height;
+        constexpr NSUInteger kFloatBytes = sizeof(float);
+        // Metal blit-to-buffer row stride must be padded. All user-facing
+        // bytes are repacked to tightly packed float32 at callback delivery.
+        const NSUInteger rowBytes =
+            ((w * kFloatBytes + 255u) / 256u) * 256u;
+        const NSUInteger allocation = rowBytes * hgt;
+        if (allocation > 64u * 1024u * 1024u) return false;
+        id<MTLBuffer> dst =
+            [device_ newBufferWithLength:allocation
+                                 options:MTLResourceStorageModeShared];
+        if (!dst) return false;
+        auto read = std::make_shared<DepthRead>();
+        read->width = int(w);
+        read->height = int(hgt);
+        read->bytes.resize(size_t(w * hgt) * sizeof(float));
+        read->callback = std::move(callback);
+        id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+        if (!blit) return false;
+        [blit copyFromTexture:t->tex sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(w, hgt, 1)
+                    toBuffer:dst destinationOffset:0
+        destinationBytesPerRow:rowBytes
+      destinationBytesPerImage:allocation];
+        [blit endEncoding];
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status != MTLCommandBufferStatusCompleted) {
+                read->bytes.clear();
+            } else {
+                const uint8_t* src =
+                    static_cast<const uint8_t*>(dst.contents);
+                for (NSUInteger y = 0; y < hgt; ++y)
+                    std::memcpy(read->bytes.data() + size_t(y*w)*sizeof(float),
+                                src + size_t(y*rowBytes),
+                                size_t(w)*sizeof(float));
+            }
+            read->ready.store(true, std::memory_order_release);
+        }];
+        depthReads_.push_back(std::move(read));
+        return true;
+    }
+    void deliverDepthReads() {
+        std::vector<std::shared_ptr<DepthRead>> ready;
+        for (auto it = depthReads_.begin(); it != depthReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it = depthReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read : ready)
+            read->callback(read->width, read->height,
+                           std::move(read->bytes));
+    }
+    // Diagnostic only: copy the *actual offscreen reflection render target*
+    // (not the presented drawable) as native RGBA8. Same GPU queue and
+    // owner-thread completion rules as readDepthTextureAsync().
+    struct ColorRead {
+        int width = 0, height = 0;
+        std::vector<uint8_t> bytes;
+        ColorReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<ColorRead>> colorReads_;
+    bool readColorTextureAsync(TextureHandle h,ColorReadFn callback) override {
+        auto* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || !t || !callback ||
+            t->fmt != PixelFormat::RGBA8 ||
+            t->tex.pixelFormat != MTLPixelFormatBGRA8Unorm ||
+            t->tex.textureType != MTLTextureType2D ||
+            t->tex.sampleCount != 1 ||
+            !(t->tex.usage & MTLTextureUsageRenderTarget) ||
+            !t->tex.width || !t->tex.height ||
+            t->tex.width > 4096 || t->tex.height > 4096 ||
+            colorReads_.size() >= 8)
+            return false;
+        const NSUInteger w=t->tex.width, hgt=t->tex.height;
+        const NSUInteger rowBytes=((w*4u+255u)/256u)*256u;
+        const NSUInteger length=rowBytes*hgt;
+        if (length > 64u*1024u*1024u) return false;
+        id<MTLBuffer> dst=[device_ newBufferWithLength:length
+                               options:MTLResourceStorageModeShared];
+        if (!dst) return false;
+        auto read=std::make_shared<ColorRead>();
+        read->width=int(w);
+        read->height=int(hgt);
+        read->bytes.resize(size_t(w*hgt)*4u);
+        read->callback=std::move(callback);
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if (!blit) return false;
+        [blit copyFromTexture:t->tex sourceSlice:0 sourceLevel:0
+                 sourceOrigin:MTLOriginMake(0,0,0)
+                   sourceSize:MTLSizeMake(w,hgt,1)
+                     toBuffer:dst destinationOffset:0
+         destinationBytesPerRow:rowBytes
+       destinationBytesPerImage:length];
+        [blit endEncoding];
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status != MTLCommandBufferStatusCompleted)
+                read->bytes.clear();
+            else {
+                const uint8_t* src=static_cast<const uint8_t*>(dst.contents);
+                for (NSUInteger y=0;y<hgt;++y)
+                    for (NSUInteger x=0;x<w;++x) {
+                        const size_t from=size_t(y*rowBytes+x*4u);
+                        const size_t to=size_t((y*w+x)*4u);
+                        read->bytes[to+0]=src[from+2];
+                        read->bytes[to+1]=src[from+1];
+                        read->bytes[to+2]=src[from+0];
+                        read->bytes[to+3]=src[from+3];
+                    }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        colorReads_.push_back(std::move(read));
+        return true;
+    }
+    void deliverColorReads() {
+        std::vector<std::shared_ptr<ColorRead>> ready;
+        for (auto it=colorReads_.begin();it!=colorReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it=colorReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read:ready)
+            read->callback(read->width,read->height,std::move(read->bytes));
     }
     void deliverTextureReads() {
         // Never invoke app callbacks on the asynchronous Metal driver thread.
@@ -1587,9 +1739,29 @@ public:
         fbW_ = w; fbH_ = h;
         dispatch_semaphore_wait(frameSemaphore_, DISPATCH_TIME_FOREVER);
         deliverBufferReads();
+        deliverDepthReads();
+        deliverColorReads();
         deliverTextureReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
+        // Programmatic .gputrace for one explicit frame. Capture must begin
+        // BEFORE commandBuffer creation; beginning in the fixture callback
+        // would be too late for the already-created command buffer.
+        maybeStartGpuTrace();
+        if (modelCounterEnabled_) {
+            std::fill(std::begin(modelCounterMarked_), std::end(modelCounterMarked_), false);
+            modelCounterCurrent_ = nil;
+            if (@available(macOS 11.0, iOS 14.0, *)) {
+                MTLCounterSampleBufferDescriptor* descriptor =
+                    [MTLCounterSampleBufferDescriptor new];
+                descriptor.counterSet = modelTimestampCounterSet_;
+                descriptor.sampleCount = 4;
+                descriptor.storageMode = MTLStorageModeShared;
+                NSError* counterError = nil;
+                modelCounterCurrent_ = [device_ newCounterSampleBufferWithDescriptor:descriptor
+                                                                              error:&counterError];
+            }
+        }
         // The semaphore guarantees this slot is no longer in flight.
         // Reuse its ICB and uniform allocations, but never reuse one twice
         // within the same frame (different draws need different snapshots).
@@ -1788,6 +1960,58 @@ public:
         return result;
     }
 
+    // Shared lifetime across completed-handler callbacks: no blocking wait
+    // and no callbacks dereferencing a destroyed MetalDevice.
+    struct ModelGpuCounterResults {
+        std::mutex lock;
+        std::vector<ModelGpuCounter> ready;
+    };
+    std::shared_ptr<ModelGpuCounterResults> modelCounterResults_ =
+        std::make_shared<ModelGpuCounterResults>();
+    bool modelCounterEnabled_ = false;
+    id<MTLCounterSet> modelTimestampCounterSet_ = nil;
+    id<MTLCounterSampleBuffer> modelCounterCurrent_ = nil;
+    bool modelCounterMarked_[4] = {};
+    bool enableModelGpuCounters(bool enabled) override {
+        modelCounterEnabled_ = false;
+        modelCounterCurrent_ = nil;
+        modelTimestampCounterSet_ = nil;
+        if (!enabled) return true;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            if (![device_ supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary])
+                return false;
+            for (id<MTLCounterSet> counterSet in device_.counterSets) {
+                if ([counterSet.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+                    for (id<MTLCounter> counter in counterSet.counters)
+                        if ([counter.name isEqualToString:MTLCommonCounterTimestamp]) {
+                            modelTimestampCounterSet_ = counterSet;
+                            modelCounterEnabled_ = true;
+                            return true;
+                        }
+                }
+            }
+        }
+        return false;
+    }
+    bool sampleModelGpuCounter(int phase, bool start) override {
+        if (!modelCounterEnabled_ || !modelCounterCurrent_ || !enc_ ||
+            (phase != 0 && phase != 1)) return false;
+        const NSUInteger index = NSUInteger(phase * 2 + (start ? 0 : 1));
+        if (modelCounterMarked_[index]) return false;
+        // Draw-boundary samples are diagnostics; barrier=NO avoids an
+        // intrusive GPU synchronization point that distorts the benchmark.
+        [enc_ sampleCountersInBuffer:modelCounterCurrent_
+                       atSampleIndex:index withBarrier:NO];
+        modelCounterMarked_[index] = true;
+        return true;
+    }
+    std::vector<ModelGpuCounter> takeModelGpuCounters() override {
+        auto results = modelCounterResults_;
+        std::lock_guard<std::mutex> hold(results->lock);
+        std::vector<ModelGpuCounter> out;
+        out.swap(results->ready);
+        return out;
+    }
     struct TimedCommand { uint64_t tag; id<MTLCommandBuffer> command; };
     std::vector<TimedCommand> timedCommands_;
     bool timeGpuFrame(uint64_t tag) override {
@@ -1835,10 +2059,49 @@ public:
                 c->ready = true; // read on the main thread in the next beginFrame (after the semaphore)
             }];
         }
+        if (modelCounterEnabled_ && modelCounterCurrent_) {
+            // Counter buffers are resolved only after the GPU has finished
+            // the command buffer; retain the sample buffer via the block.
+            id<MTLCounterSampleBuffer> sampleBuffer = modelCounterCurrent_;
+            auto resultQueue = modelCounterResults_;
+            const uint64_t serial = frame_;
+            const bool completeSet = std::all_of(
+                std::begin(modelCounterMarked_), std::end(modelCounterMarked_),
+                [](bool value) { return value; });
+            [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+                ModelGpuCounter output{};
+                output.frame = serial;
+                if (completeSet && completed.status == MTLCommandBufferStatusCompleted) {
+                    NSData* resolved = [sampleBuffer resolveCounterRange:NSMakeRange(0, 4)];
+                    if (resolved && resolved.length >= 4 * sizeof(MTLCounterResultTimestamp)) {
+                        auto* times = static_cast<const MTLCounterResultTimestamp*>(resolved.bytes);
+                        const uint64_t a = times[0].timestamp, b = times[1].timestamp;
+                        const uint64_t c = times[2].timestamp, d = times[3].timestamp;
+                        if (a && c && b > a && d > c &&
+                            a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
+                            c != MTLCounterErrorValue && d != MTLCounterErrorValue) {
+                            output.shadowTicks = b - a;
+                            output.opaqueTicks = d - c;
+                            output.valid = true;
+                        }
+                    }
+                }
+                std::lock_guard<std::mutex> hold(resultQueue->lock);
+                resultQueue->ready.push_back(output);
+            }];
+            modelCounterCurrent_ = nil;
+        }
         if (drawable_) [cmd_ presentDrawable:drawable_];
         lastCommittedGpuFrameBuffer_ = cmd_;
         lastCommittedGpuFrame_ = frame_;
         [cmd_ commit];
+        if (gpuTraceActive_) {
+            [[MTLCaptureManager sharedCaptureManager] stopCapture];
+            gpuTraceActive_ = false;
+            std::fprintf(stderr, "[metal-gputrace] STOP frame=%llu path=%s\n",
+                         static_cast<unsigned long long>(frame_),
+                         gpuTracePath_.c_str());
+        }
         cmd_ = nil;
         drawable_ = nil;
     }
@@ -2003,6 +2266,10 @@ public:
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         if (!cmd_) return;
         MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        if (modelCounterEnabled_ && modelCounterCurrent_) {
+            if (@available(macOS 11.0, iOS 14.0, *))
+                rp.sampleBufferAttachments[0].sampleBuffer = modelCounterCurrent_;
+        }
         const bool offscreen = d.colorTarget.valid() || d.depthTarget.valid();
         passW_ = fbW_; passH_ = fbH_;
         if (offscreen) {
@@ -2043,6 +2310,15 @@ public:
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
         explicitPassSamples_ = 0;
         explicitPassColors_ = -1;
+    }
+    void pushGpuDebugGroup(const char* label) override {
+        if (gpuTraceActive_ && enc_ && label) {
+            NSString* text = [NSString stringWithUTF8String:label];
+            if (text) [enc_ pushDebugGroup:text];
+        }
+    }
+    void popGpuDebugGroup() override {
+        if (gpuTraceActive_ && enc_) [enc_ popDebugGroup];
     }
 
     void setViewport(const Rect& r) override {
@@ -2923,7 +3199,16 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         }
 
         const auto afterArgs = std::chrono::steady_clock::now();
-        // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
+        // Controlled experiment: inherit only the shared pipeline from the
+        // parent encoder. Per-command vertex/fragment buffers remain explicit:
+        // their inheritance previously caused AGX G15 driver faults.
+        // Process-level opt-in is captured before the immutable descriptor is
+        // first allocated; never mix descriptor settings in one process.
+        static const bool inheritCpuIcbPipeline = [] {
+            const char* flag = std::getenv("AIVERSE_METAL_CPU_MDI_INHERIT_PIPELINE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        // Driver crash fix: explicit vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
         // fault inside executeCommandsInBufferCommon on Apple Silicon.
         // Descriptor configuration is identical for every model ICB. Keep one
@@ -2932,21 +3217,43 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             modelIcbDescriptor_ = [MTLIndirectCommandBufferDescriptor new];
             modelIcbDescriptor_.commandTypes = MTLIndirectCommandTypeDrawIndexed;
             modelIcbDescriptor_.inheritBuffers = NO;
-            modelIcbDescriptor_.inheritPipelineState = NO;
+            modelIcbDescriptor_.inheritPipelineState = inheritCpuIcbPipeline ? YES : NO;
             modelIcbDescriptor_.maxVertexBufferBindCount = 9;
             modelIcbDescriptor_.maxFragmentBufferBindCount = 9;
         }
+        // Stage141, diagnostic-only ICB playback control: both 0 and 128
+        // deliberately allocate and reset the SAME extra 128 empty commands.
+        // Only the executed ICB range differs between control/experiment.
+        // When unset, all allocation/reset/execute behavior is unchanged.
+        // Empty commands are never encoded; reset clears stale pooled slots.
+        struct EmptyTailExperiment {
+            bool active = false;
+            uint32_t executedTail = 0;
+        };
+        static const EmptyTailExperiment emptyTail = [] {
+            const char* flag = std::getenv("AIVERSE_METAL_CPU_MDI_EMPTY_TAIL");
+            if (!flag) return EmptyTailExperiment{};
+            if (std::strcmp(flag, "0") == 0) return EmptyTailExperiment{true, 0};
+            if (std::strcmp(flag, "128") == 0) return EmptyTailExperiment{true, 128};
+            return EmptyTailExperiment{}; // invalid controls never enable padding
+        }();
+        const uint32_t resetTail = emptyTail.active ? 128u : 0u;
+        if (drawCount > std::numeric_limits<uint32_t>::max() - resetTail) return false;
+        const uint32_t allocatedCount = drawCount + resetTail;
+        const uint32_t executeCount = drawCount + emptyTail.executedTail;
         MTLIndirectCommandBufferDescriptor* descriptor = modelIcbDescriptor_;
-        if (!resources.icb || resources.icbCapacity < drawCount) {
+        if (!resources.icb || resources.icbCapacity < allocatedCount) {
             resources.icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
-                maxCommandCount:drawCount options:MTLResourceStorageModeShared];
+                maxCommandCount:allocatedCount options:MTLResourceStorageModeShared];
             if (!resources.icb) return false;
-            resources.icbCapacity = drawCount;
+            resources.icbCapacity = allocatedCount;
         }
         id<MTLIndirectCommandBuffer> icb = resources.icb;
-        // Only commands used by this submission need resetting. Larger pooled
-        // capacity is untouched and cannot execute (execute range is drawCount).
-        [icb resetWithRange:NSMakeRange(0, drawCount)];
+        // Both Stage141 modes reset all padded slots; only the range passed
+        // to executeCommandsInBuffer differs. In the default path the range
+        // is exactly the original drawCount, with no extra allocation.
+        [icb resetWithRange:NSMakeRange(0, allocatedCount)];
+        const auto afterIcbReset = std::chrono::steady_clock::now();
 
         // Uniform buffers are private to this submission. Preserve their lifetime
         // until the frame's GPU fence has completed; never reference setBytes
@@ -2984,6 +3291,42 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         const MTLPrimitiveType icbPrimitive =
             p->desc.primitive == Primitive::Lines
                 ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle;
+        // Stage139: reversible, process-level ICB experiment. A pipeline
+        // without fs_main has no fragment stage, so a fragment uniform binding
+        // cannot be consumed. Keep EVERY vertex binding and residency
+        // declaration, regardless of this option: inherited buffers previously
+        // triggered AGX faults. Missing shader metadata fails closed.
+        struct DepthFragmentUniformExperiment {
+            bool audit = false;
+            bool skip = false;
+        };
+        static const DepthFragmentUniformExperiment depthFragmentUniforms = [] {
+            const char* flag =
+                std::getenv("AIVERSE_METAL_CPU_MDI_SKIP_DEPTH_FRAGMENT_UNIFORMS");
+            const bool audit = flag && (std::strcmp(flag, "0") == 0 ||
+                                        std::strcmp(flag, "1") == 0);
+            return DepthFragmentUniformExperiment{
+                audit, audit && std::strcmp(flag, "1") == 0};
+        }();
+        const MTShader* icbShader = depthFragmentUniforms.audit
+            ? shaders_.get(p->desc.shader.id) : nullptr;
+        const bool eligibleDepthNoFragment =
+            depthFragmentUniforms.audit && p->desc.depthOnly && !pbr &&
+            icbShader && icbShader->fs == nil;
+        const bool skipDepthFragmentUniforms =
+            eligibleDepthNoFragment && depthFragmentUniforms.skip;
+        if (eligibleDepthNoFragment) {
+            // One line per process (rather than per frame/command) confirms
+            // that an experiment actually reached a fragmentless depth pass.
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr,
+                    "[metal-icb-depth-uniforms] mode=%s eligible=1 slots=%d\n",
+                    skipDepthFragmentUniforms ? "on" : "off",
+                    uniformBindingCount);
+            }
+        }
         const auto& modelUniforms = indirectUniformSnapshots_[0];
         constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
         const size_t instanceCapacity = modelUniforms.size() / kModelInstanceBytes;
@@ -3003,13 +3346,17 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 return false;
             id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
             if (!command) return false;
-            [command setRenderPipelineState:indirectPipeline];
+            if (!inheritCpuIcbPipeline)
+                [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
             for (int k = 0; k < uniformBindingCount; ++k) {
                 const auto& binding = uniformBindings[k];
                 [command setVertexBuffer:binding.buffer offset:0 atIndex:binding.index];
-                [command setFragmentBuffer:binding.buffer offset:0 atIndex:binding.index];
+                // No fragment function means no consumer of fragment uniforms.
+                // All other shaders preserve the original explicit bindings.
+                if (!skipDepthFragmentUniforms)
+                    [command setFragmentBuffer:binding.buffer offset:0 atIndex:binding.index];
             }
             [command drawIndexedPrimitives:icbPrimitive indexCount:args.indexCount
                 indexType:icbIndexType
@@ -3029,7 +3376,86 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
             declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
         }
-        [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
+        // With inherited pipeline state, each ICB command sees exactly the
+        // same per-batch compatible pipeline; restore the ordinary state so
+        // subsequent direct fallback draws behave identically.
+        if (inheritCpuIcbPipeline)
+            [enc_ setRenderPipelineState:indirectPipeline];
+        [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, executeCount)];
+        if (emptyTail.active) {
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr,
+                    "[metal-icb-empty-tail] mode=%s valid=%u reset=%u execute=%u\n",
+                    emptyTail.executedTail ? "on" : "off",
+                    unsigned(drawCount), unsigned(allocatedCount),
+                    unsigned(executeCount));
+            }
+        }
+        if (inheritCpuIcbPipeline)
+            [enc_ setRenderPipelineState:p->state];
+        // Diagnostic only. Sample the four existing CPU ICB stage boundaries
+        // after a submission, never inside the per-command encode loop.
+        // Limit printing to avoid turning ordinary frames into a log benchmark.
+        static const bool traceSlowIcb = [] {
+            const char* flag = std::getenv("AIVERSE_ICB_SLOW_TRACE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        if (traceSlowIcb) {
+            const auto afterExecute = std::chrono::steady_clock::now();
+            const auto ms = [](auto begin, auto end) {
+                return std::chrono::duration<double, std::milli>(end - begin).count();
+            };
+            const double argsMs = ms(profileStart, afterArgs);
+            const double allocMs = ms(afterArgs, afterAlloc);
+            const double icbResetMs = ms(afterArgs, afterIcbReset);
+            const double uniformsMs = ms(afterIcbReset, afterAlloc);
+            const double encodeMs = ms(afterAlloc, afterEncode);
+            const double executeMs = ms(afterEncode, afterExecute);
+            const double totalMs = argsMs + allocMs + encodeMs + executeMs;
+            static const double slowMs = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_MS");
+                if (!raw || !*raw) return 0.15;
+                char* end = nullptr;
+                const double v = std::strtod(raw, &end);
+                return end != raw && *end == '\0' && std::isfinite(v) &&
+                    v >= 0.01 && v <= 100.0 ? v : 0.15;
+            }();
+            // Select a warmed timeline window so the 24-event budget is
+            // not exhausted by initial Metal ICB allocations. Optional slot
+            // filtering samples equivalent command groups across frames.
+            static const uint64_t fromFrame = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_FROM_FRAME");
+                if (!raw || !*raw) return uint64_t(0);
+                char* end = nullptr;
+                const unsigned long n = std::strtoul(raw, &end, 10);
+                return end != raw && *end == '\0' && n <= 1000000ul
+                    ? uint64_t(n) : uint64_t(0);
+            }();
+            static const long selectedSlot = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_SLOT");
+                if (!raw || !*raw) return -1l;
+                char* end = nullptr;
+                const long n = std::strtol(raw, &end, 10);
+                return end != raw && *end == '\0' && n >= 0 && n <= 64
+                    ? n : -1l;
+            }();
+            static uint32_t printed = 0;
+            if (uint64_t(frame_) >= fromFrame &&
+                (selectedSlot < 0 || submissionIndex == size_t(selectedSlot)) &&
+                totalMs >= slowMs && printed < 24) {
+                ++printed;
+                std::fprintf(stderr,
+                    "[metal-icb-slow] frame=%llu slot=%zu commands=%u total=%.5fms "
+                    "args=%.5f alloc=%.5f icb_reset=%.5f uniforms=%.5f "
+                    "encode=%.5f residency_execute=%.5f "
+                    "threshold=%.3fms sample=%u/24\n",
+                    static_cast<unsigned long long>(frame_), submissionIndex,
+                    drawCount, totalMs, argsMs, allocMs, icbResetMs, uniformsMs,
+                    encodeMs, executeMs, slowMs, printed);
+            }
+        }
         if (traceIcb) {
             static uint32_t submissions = 0;
             static uint64_t commandsEncoded = 0;
@@ -3068,6 +3494,61 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
     }
 
 private:
+    // The trace is strictly opt-in and separate from GPU timestamp counters,
+    // which may be unavailable on this device. No implicit capture in runtime.
+    bool gpuTraceConfigured_ = false;
+    bool gpuTraceAttempted_ = false;
+    bool gpuTraceActive_ = false;
+    uint64_t gpuTraceFrame_ = 0;
+    std::string gpuTracePath_;
+    void maybeStartGpuTrace() {
+#if !TARGET_OS_IPHONE
+        if (gpuTraceAttempted_) return;
+        if (!gpuTraceConfigured_) {
+            gpuTraceConfigured_ = true;
+            const char* rawFrame = std::getenv("AIVERSE_METAL_TRACE_FRAME");
+            const char* rawPath = std::getenv("AIVERSE_METAL_TRACE_PATH");
+            if (!rawFrame || !rawPath || !*rawPath) return;
+            char* end = nullptr;
+            const unsigned long long parsed = std::strtoull(rawFrame, &end, 10);
+            if (end == rawFrame || *end != '\0' || parsed < 1 || parsed > 1000000ull) {
+                std::fprintf(stderr, "[metal-gputrace] INVALID frame number\n");
+                gpuTraceAttempted_ = true;
+                return;
+            }
+            gpuTraceFrame_ = uint64_t(parsed);
+            gpuTracePath_ = rawPath;
+            if (gpuTracePath_.size() < 9 ||
+                gpuTracePath_.substr(gpuTracePath_.size() - 9) != ".gputrace") {
+                std::fprintf(stderr, "[metal-gputrace] INVALID path (need .gputrace)\n");
+                gpuTraceAttempted_ = true;
+                return;
+            }
+        }
+        if (gpuTraceFrame_ != frame_) return;
+        gpuTraceAttempted_ = true;
+        MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
+        if (![manager supportsDestination:MTLCaptureDestinationGPUTraceDocument]) {
+            std::fprintf(stderr, "[metal-gputrace] UNSUPPORTED: GPUTraceDocument destination\n");
+            return;
+        }
+        MTLCaptureDescriptor* descriptor = [MTLCaptureDescriptor new];
+        descriptor.captureObject = queue_;
+        descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+        NSString* filePath = [NSString stringWithUTF8String:gpuTracePath_.c_str()];
+        descriptor.outputURL = [NSURL fileURLWithPath:filePath];
+        NSError* error = nil;
+        if (![manager startCaptureWithDescriptor:descriptor error:&error]) {
+            const char* reason = error ? error.localizedDescription.UTF8String : "unknown";
+            std::fprintf(stderr, "[metal-gputrace] FAILED frame=%llu reason=%s\n",
+                         static_cast<unsigned long long>(frame_), reason);
+            return;
+        }
+        gpuTraceActive_ = true;
+        std::fprintf(stderr, "[metal-gputrace] START frame=%llu path=%s\n",
+                     static_cast<unsigned long long>(frame_), gpuTracePath_.c_str());
+#endif
+    }
     std::unique_ptr<MetalShaderAssets> shaderAssets_;
     CAMetalLayer* layer_;
     id<MTLDevice> device_;

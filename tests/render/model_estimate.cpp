@@ -1,6 +1,6 @@
 // Stage 102 regression (execution deferred): approximate owned GPU allocations.
 #include "engine/render/ModelResidentEstimate.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cstdint>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -18,12 +18,12 @@ int main() {
     m.images.push_back(borrowed);
     m.baked.tex={5};m.baked.joints=4;m.baked.rows=2;
     const auto estimate=estimateModelResident(m);
-    assert(estimate.dedicatedGeometryBytes==
+    AIVERSE_TEST_CHECK(estimate.dedicatedGeometryBytes==
         100*sizeof(ModelVertex)+300*sizeof(uint32_t));
-    assert(estimate.ownedImageBytes==32*16*4);
-    assert(estimate.borrowedImages==1);
-    assert(estimate.poseTextureBytes==4*3*2*16);
-    assert(estimate.knownBytes()==
+    AIVERSE_TEST_CHECK(estimate.ownedImageBytes==32*16*4);
+    AIVERSE_TEST_CHECK(estimate.borrowedImages==1);
+    AIVERSE_TEST_CHECK(estimate.poseTextureBytes==4*3*2*16);
+    AIVERSE_TEST_CHECK(estimate.knownBytes()==
         estimate.dedicatedGeometryBytes+
         estimate.ownedImageBytes+estimate.poseTextureBytes);
 }

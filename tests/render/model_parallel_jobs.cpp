@@ -3,7 +3,7 @@
 #include "engine/render/AsyncModelCpuQueue.h"
 #include <algorithm>
 #include <atomic>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -25,23 +25,23 @@ int main() {
         --running;
         return false; // missing models still produce a valid null result
     };
-    assert(queue.workerCount()==2);
-    assert(queue.request("busy0.glb",reader,textures));
-    assert(queue.request("busy1.glb",reader,textures));
+    AIVERSE_TEST_CHECK(queue.workerCount()==2);
+    AIVERSE_TEST_CHECK(queue.request("busy0.glb",reader,textures));
+    AIVERSE_TEST_CHECK(queue.request("busy1.glb",reader,textures));
     const auto startDeadline=std::chrono::steady_clock::now()+
                              std::chrono::seconds(2);
     while(queue.stats().activeWorkers<2 &&
           std::chrono::steady_clock::now()<startDeadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    assert(queue.stats().activeWorkers==2);
-    assert(queue.request("background.glb",reader,textures,
+    AIVERSE_TEST_CHECK(queue.stats().activeWorkers==2);
+    AIVERSE_TEST_CHECK(queue.request("background.glb",reader,textures,
                          ModelLoadPriority::Background));
-    assert(queue.request("interactive.glb",reader,textures,
+    AIVERSE_TEST_CHECK(queue.request("interactive.glb",reader,textures,
                          ModelLoadPriority::Interactive));
-    assert(queue.request("stale.glb",reader,textures,
+    AIVERSE_TEST_CHECK(queue.request("stale.glb",reader,textures,
                          ModelLoadPriority::Visible));
     queue.invalidate("stale.glb");
-    assert(queue.request("stale.glb",reader,textures,
+    AIVERSE_TEST_CHECK(queue.request("stale.glb",reader,textures,
                          ModelLoadPriority::Visible));
     std::vector<std::string> done;
     const auto deadline=std::chrono::steady_clock::now()+
@@ -51,18 +51,18 @@ int main() {
         if(queue.pollReady(model))done.push_back(model.source);
         else std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(done.size()==5);
-    assert(std::count(done.begin(),done.end(),"stale.glb")==1);
-    assert(std::count(done.begin(),done.end(),"background.glb")==1);
-    assert(std::count(done.begin(),done.end(),"interactive.glb")==1);
-    assert(peak.load()<=2);
-    assert(peak.load()>=1);
-    assert(queue.stats().finished==5);
-    assert(queue.stats().queued==0);
-    assert(queue.stats().activeWorkers==0);
+    AIVERSE_TEST_CHECK(done.size()==5);
+    AIVERSE_TEST_CHECK(std::count(done.begin(),done.end(),"stale.glb")==1);
+    AIVERSE_TEST_CHECK(std::count(done.begin(),done.end(),"background.glb")==1);
+    AIVERSE_TEST_CHECK(std::count(done.begin(),done.end(),"interactive.glb")==1);
+    AIVERSE_TEST_CHECK(peak.load()<=2);
+    AIVERSE_TEST_CHECK(peak.load()>=1);
+    AIVERSE_TEST_CHECK(queue.stats().finished==5);
+    AIVERSE_TEST_CHECK(queue.stats().queued==0);
+    AIVERSE_TEST_CHECK(queue.stats().activeWorkers==0);
     queue.setWorkerCount(0); // clamped to one
-    assert(queue.workerCount()==1);
+    AIVERSE_TEST_CHECK(queue.workerCount()==1);
     queue.setWorkerCount(100); // clamped to eight
-    assert(queue.workerCount()==8);
+    AIVERSE_TEST_CHECK(queue.workerCount()==8);
     queue.shutdown();
 }

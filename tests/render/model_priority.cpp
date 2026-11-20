@@ -1,7 +1,7 @@
 // Stage 102 deferred regression: priority/FIFO and duplicate promotion.
 #include "engine/render/AsyncModelCpuQueue.h"
 #include <atomic>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -20,17 +20,17 @@ int main() {
         }
         return false;
     };
-    assert(queue.request("busy.glb",reader,cache,ModelLoadPriority::Visible));
+    AIVERSE_TEST_CHECK(queue.request("busy.glb",reader,cache,ModelLoadPriority::Visible));
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(4);
     while(!entered && std::chrono::steady_clock::now()<deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    assert(entered);
-    assert(queue.request("background.glb",reader,cache,ModelLoadPriority::Background));
-    assert(queue.request("visible.glb",reader,cache,ModelLoadPriority::Visible));
-    assert(queue.request("interactive.glb",reader,cache,ModelLoadPriority::Interactive));
-    assert(!queue.request("interactive.glb",reader,cache,ModelLoadPriority::Interactive));
-    assert(queue.request("background.glb",reader,cache,ModelLoadPriority::Interactive));
-    assert(queue.stats().queued==3);
+    AIVERSE_TEST_CHECK(entered);
+    AIVERSE_TEST_CHECK(queue.request("background.glb",reader,cache,ModelLoadPriority::Background));
+    AIVERSE_TEST_CHECK(queue.request("visible.glb",reader,cache,ModelLoadPriority::Visible));
+    AIVERSE_TEST_CHECK(queue.request("interactive.glb",reader,cache,ModelLoadPriority::Interactive));
+    AIVERSE_TEST_CHECK(!queue.request("interactive.glb",reader,cache,ModelLoadPriority::Interactive));
+    AIVERSE_TEST_CHECK(queue.request("background.glb",reader,cache,ModelLoadPriority::Interactive));
+    AIVERSE_TEST_CHECK(queue.stats().queued==3);
     release=true;
 
     std::vector<std::string> completed;
@@ -41,11 +41,11 @@ int main() {
         else
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(completed.size()==4);
-    assert(completed[0]=="busy.glb");
+    AIVERSE_TEST_CHECK(completed.size()==4);
+    AIVERSE_TEST_CHECK(completed[0]=="busy.glb");
     // Promoted background waits before the lower-priority visible entry.
-    assert(completed[1]=="background.glb");
-    assert(completed[2]=="interactive.glb");
-    assert(completed[3]=="visible.glb");
+    AIVERSE_TEST_CHECK(completed[1]=="background.glb");
+    AIVERSE_TEST_CHECK(completed[2]=="interactive.glb");
+    AIVERSE_TEST_CHECK(completed[3]=="visible.glb");
     queue.shutdown();
 }

@@ -11,6 +11,9 @@
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+#include "StrataGpuCulling.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -1063,8 +1066,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     float3 c = (m->boundsMin + m->boundsMax) * 0.5f,
            e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
     const bool displaced = cache ? cache->displaced : activeDisplacement;
-    // Bounded vertex graphs retain ordinary node frustum tests and LOD.
-    // Unknown vertexOffset graphs remain conservatively uncullable.
+    // Bounded vertex graphs retain conservative node culling/LOD.
+    // Unknown displacement stays uncullable (legacy safe fallback).
     const float offset=(displaced && std::isfinite(d.maxVertexOffsetMetres) &&
                         d.maxVertexOffsetMetres>0.0f &&
                         d.maxVertexOffsetMetres<=10.0f) ?
@@ -1311,9 +1314,22 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
-        const bool shadowBatch = d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        // A GPU-indexed source has separate GPU command packets for each
+        // original primitive. Never replace those originals with the CPU
+        // shadow/material batch proxy: one ModelItem must own one material.
+        // If Vulkan indirect is rejected later, original items still draw
+        // through the exact conventional material/instance code path.
+        const bool gpuPacketSource = d.gpuIndexed.valid() ||
+                                     !d.gpuIndexedPrimitives.empty() ||
+                                     !d.gpuShadowPrimitives.empty();
+        const bool shadowBatch = d.primitiveMaterialFilter < 0 &&
+                                 !gpuPacketSource && !m->geometry &&
+                                 !d.nodeMaterial && d.variant < 0 &&
+                                 shadowBatchCompatible(drawMesh,mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (d.primitiveMaterialFilter < 0 && !gpuPacketSource &&
+            !m->geometry && !d.nodeMaterial &&
+            d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
@@ -1326,6 +1342,42 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             ModelItem it;
             it.sourceNode = n;
             it.geometry = d.geometry;
+            // Copy GPU packets BY VALUE into the renderer's immutable
+            // ModelItem list. Mesh/material identities come from original
+            // primitives, not from the atomic GPU output order. CPU batch
+            // proxies and alternate authored LODs never borrow a packet.
+            if(shadowRole!=2 && materialRole==0 && part==0) {
+                if(!d.gpuIndexedPrimitives.empty()) {
+                    const uint32_t primitiveId=uint32_t(
+                        &p-drawMesh.primitives.data());
+                    for(const auto& packet:d.gpuIndexedPrimitives) {
+                        if(packet.sourceMesh==uint32_t(meshIndex) &&
+                           packet.sourcePrimitive==primitiveId &&
+                           packet.sourceFirstIndex==p.firstIndex &&
+                           packet.sourceIndexCount==p.indexCount &&
+                           packet.expectedMaterial==uint32_t(p.material)){
+                            it.gpuIndexed=packet;
+                            break;
+                        }
+                    }
+                }else{
+                    it.gpuIndexed=d.gpuIndexed;
+                }
+                if(!d.gpuShadowPrimitives.empty()){
+                    const uint32_t primitiveId=uint32_t(
+                        &p-drawMesh.primitives.data());
+                    for(const auto& packet:d.gpuShadowPrimitives) {
+                        if(packet.sourceMesh==uint32_t(meshIndex) &&
+                           packet.sourcePrimitive==primitiveId &&
+                           packet.sourceFirstIndex==p.firstIndex &&
+                           packet.sourceIndexCount==p.indexCount &&
+                           packet.expectedMaterial==uint32_t(p.material)){
+                            it.gpuShadowIndexed=packet;
+                            break;
+                        }
+                    }
+                }
+            }
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             // Restrict GPU LOD to a single compatible rigid primitive in each
@@ -1410,9 +1462,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             // sort distance: ortho cameras along the view direction (Unity's TransparencySortMode.Default), else from the eye
             it.depth = cam_.ortho ? dot(wc - camPos_, normalize(cam_.target - camPos_)) : length(wc - camPos_);
             bakedItem(it, d, n);
-            // Rigid material ShaderGraph vertices can use the already
-            // allocated U0 Inst.anim vec4, which is otherwise reserved for
-            // baked skin clips or baked lightmap UVs. Never overwrite those.
+            // Main branch ShaderGraph vertex params reuse Inst.anim only
+            // when not overwritten by baked clips, morphs or lightmaps.
             if(d.useVertexParameters && it.joints<0 && !it.baked &&
                it.morph<0 && it.gi!=1 && it.mat->shaderGraph)
                 it.anim=d.vertexParameters;
@@ -2744,8 +2795,122 @@ void Renderer3D::prepareGpuModelDraws() {
     }
 }
 
+void Renderer3D::prepareStrataAuxiliaryGpuPackets(
+        GpuIndexedPass pass,const mat4& projection,int width,int height) {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(!dev_ || !dev_->gpuHealthy() ||
+       dev_->info().backend!=gfx::Backend::Vulkan ||
+       !dev_->supportsCompute() || !dev_->supportsMultiDrawIndirect() ||
+       !dev_->frameSerial() || width<=0 || height<=0 ||
+       (pass!=GpuIndexedPass::SpotShadow &&
+        pass!=GpuIndexedPass::PlanarReflection))return;
+    // This is called before renderSpotShadow()/beginReflection() starts a
+    // graphics pass. Compute cannot be encoded during an active Vulkan
+    // render pass; all dependent draw commands remain owned by Renderer3D.
+    for(auto& item:modelItems_){
+        auto& destination=pass==GpuIndexedPass::SpotShadow
+            ? item.gpuSpotShadowIndexed:item.gpuReflectionIndexed;
+        destination={};
+        const auto& source=item.gpuIndexed;
+        if(!source.valid() || !source.metadata.valid() ||
+           !source.selector ||
+           (pass==GpuIndexedPass::SpotShadow &&
+            (!source.allowSpotShadow || !item.castShadow)) ||
+           (pass==GpuIndexedPass::PlanarReflection &&
+            !source.allowReflection) ||
+           !item.model || !item.prim || !item.mat ||
+           item.model->vb!=source.vertex ||
+           item.model->ib!=source.index ||
+           item.model->geometryRevision!=source.geometryRevision ||
+           item.model->materialRevision!=source.materialRevision ||
+           source.sourceMesh!=0 ||
+           item.model->meshes.size()!=1 ||
+           source.sourcePrimitive>=item.model->meshes[0].primitives.size() ||
+           item.prim!=&item.model->meshes[0].primitives[
+               source.sourcePrimitive] ||
+           source.expectedMaterial>=item.model->materials.size() ||
+           item.mat!=&item.model->materials[source.expectedMaterial] ||
+           !item.rigid || item.joints>=0 || item.morph>=0 ||
+           item.baked || item.mat->shaderGraph ||
+           item.mat->alpha!=AlphaMode::Opaque ||
+           item.mat->transparent || item.gi!=0 ||
+           item.materialRole || item.paletteMaterials ||
+           !(item.flags&kDrawStatic) || transparentItem(item.flags) ||
+           item.dissolve>0.f || item.tint.w<.99f ||
+           std::memcmp(item.world.m,source.selectedWorld.m,
+                       sizeof(source.selectedWorld.m))!=0)
+            continue;
+        const uint64_t originalFirstIndex=
+            uint64_t(item.model->gpuFirstIndex)+source.sourceFirstIndex;
+        if(originalFirstIndex>UINT32_MAX || !source.sourceIndexCount)
+            continue;
+        strata::GpuPassConfig config{};
+        config.viewProjection=projection;
+        config.width=width;
+        config.height=height;
+        config.clipDepthZeroToOne=dev_->info().clipDepthZeroToOne;
+        config.frustumCull=true;
+        config.errorThresholdPixels=source.errorThresholdPixels;
+        config.maxOutputClusters=source.commandCapacity;
+        if(source.lodHysteresisFraction>0.f){
+            config.hysteresisFraction=source.lodHysteresisFraction;
+            config.temporalNodeCount=source.temporalNodeCount;
+            config.temporalRevision=source.temporalRevision;
+            config.temporalPassId=pass==GpuIndexedPass::SpotShadow
+                ? 3u : 4u; // separate spot and mirrored-camera masks
+        }
+        config.baseVertex=source.sourceBaseVertex;
+        config.gpuFallbackEnabled=true;
+        config.gpuFallbackFirstIndex=uint32_t(originalFirstIndex);
+        config.gpuFallbackIndexCount=source.sourceIndexCount;
+        config.gpuFallbackBaseVertex=source.sourceBaseVertex;
+        const auto instance=strata::makeGpuSceneInstance(
+            item.world,source.sourcePrimitive,source.instanceToken,true);
+        strata::GpuSelectionSubmission selected{};
+        if(!source.selector->dispatch(*dev_,source.metadata,{instance},
+                                     config,dev_->frameSerial(),selected) ||
+           !selected.gpuIndirectPrepared() ||
+           selected.submittedInstances!=1 ||
+           selected.capacity!=source.commandCapacity ||
+           selected.frameSerial!=dev_->frameSerial())
+            continue;
+        destination=source;
+        destination.commands=selected.indirect;
+        destination.pass=pass;
+        destination.viewProjection=projection;
+        destination.viewWidth=width;
+        destination.viewHeight=height;
+        if(pass==GpuIndexedPass::SpotShadow)
+            ++modelStats_.strataGpuSpotShadowPrepared;
+        else ++modelStats_.strataGpuReflectionPrepared;
+    }
+#else
+    (void)pass;(void)projection;(void)width;(void)height;
+#endif
+}
+
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Explicit test-only isolation. Leave Metal pass begin/end and all
+    // non-model draws unchanged; never change production rendering by default.
+    if ((phase == 0 && !(diagnosticModelPassMask_ & 1u)) ||
+        (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+         !(diagnosticModelPassMask_ & 2u))) return;
+    // Unsupported backends and unarmed Metal counters ignore this marker.
+    // Marks bracket GPU commands emitted by renderModels (shadow/main only).
+    const bool sampleModelGpu = !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, true);
+    // Capture labels have no runtime effect without explicit Metal trace.
+    // Scope the pop so an early return cannot leave the render encoder
+    // with an unbalanced debug group.
+    if (sampleModelGpu)
+        dev_->pushGpuDebugGroup(phase == 0 ? "AIVERSE Shadow Models"
+                                           : "AIVERSE Opaque Models");
+    struct ScopedModelGpuGroup {
+        gfx::Device* device = nullptr;
+        ~ScopedModelGpuGroup() { if (device) device->popGpuDebugGroup(); }
+    } gpuGroup{sampleModelGpu ? dev_ : nullptr};
     // Read the same dynamic indirect-buffer handle at both boundaries.
     // Reflection and other auxiliary view replays are intentionally excluded
     // from the main-camera opaque metric; phases 2..4 are not shadow/opaque.
@@ -3403,6 +3568,113 @@ void Renderer3D::renderModels(int phase) {
     for (size_t i = 0; i < order_.size();) {
         if (phase == 1 && !gpuEncodedCovered_.empty() &&
             gpuEncodedCovered_[order_[i]]) { ++i; continue; }
+        // STRATA Stage 16.3: the ONLY production source of Vulkan GPU
+        // indexed cluster draws is Renderer3D, after its own model pipeline,
+        // textures, lighting and single-world instance U0 are bound. A
+        // successful indirect submission REPLACES (does not duplicate)
+        // this exact original draw. No other pass is eligible.
+        const ModelItem& strataItem=modelItems_[order_[i]];
+        const auto& packet=phase==0
+            ? (auxiliaryModelPass_ ? strataItem.gpuSpotShadowIndexed
+                                   : strataItem.gpuShadowIndexed)
+            : ((phase==1 && !geometryMainView_)
+                ? strataItem.gpuReflectionIndexed
+                : strataItem.gpuIndexed);
+        if(packet.valid()){
+            ++modelStats_.strataGpuCandidates;
+            const bool correctMain=phase==1 && geometryMainView_ &&
+                !auxiliaryModelPass_ &&
+                packet.matchesView(GpuIndexedPass::MainOpaque,
+                                   viewProj_,sceneW_,sceneH_) &&
+                (quality_==ShadowQuality::Off ||
+                 strataItem.gpuShadowIndexed.valid());
+            const bool correctSun=phase==0 &&
+                !auxiliaryModelPass_ && quality_!=ShadowQuality::Off &&
+                packet.matchesView(GpuIndexedPass::SunShadow,
+                                   lightViewProj_,shadowSize_,shadowSize_) &&
+                strataItem.castShadow &&
+                !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
+            const bool correctSpot=phase==0 &&
+                auxiliaryModelPass_ &&
+                packet.matchesView(GpuIndexedPass::SpotShadow,
+                    lightViewProj_,geometryShadowSize_,geometryShadowSize_) &&
+                strataItem.castShadow &&
+                !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
+            const bool correctReflection=phase==1 &&
+                auxiliaryModelPass_ && !geometryMainView_ &&
+                packet.matchesView(GpuIndexedPass::PlanarReflection,
+                    viewProj_,sceneW_,sceneH_);
+            const bool eligible=(correctMain || correctSun ||
+                                 correctSpot || correctReflection) &&
+                !drawCallDebug_ &&
+                dev_->info().backend==gfx::Backend::Vulkan &&
+                dev_->supportsMultiDrawIndirect() && dev_->gpuHealthy() &&
+                dev_->frameSerial()==packet.frameSerial &&
+                !gpuModelCommandsReady_ &&
+                packet.sourceIndexCount>0 &&
+                strataItem.model && strataItem.prim && strataItem.mat &&
+                strataItem.model->vb==packet.vertex &&
+                strataItem.model->ib==packet.index &&
+                strataItem.model->geometryRevision==packet.geometryRevision &&
+                strataItem.model->materialRevision==packet.materialRevision &&
+                packet.sourceBaseVertex>=0 &&
+                strataItem.model->gpuBaseVertex==uint32_t(packet.sourceBaseVertex) &&
+                strataItem.firstIndex==packet.sourceFirstIndex &&
+                strataItem.indexCount==packet.sourceIndexCount &&
+                strataItem.model->geometryPoolPage &&
+                !strataItem.model->geometry &&
+                strataItem.model->meshes.size()==1 &&
+                !strataItem.model->materials.empty() &&
+                strataItem.model->nodes.size()==1 &&
+                packet.sourceMesh==0 &&
+                packet.sourcePrimitive<
+                    strataItem.model->meshes[0].primitives.size() &&
+                strataItem.model->meshes[0].primitives.size()<=16 &&
+                strataItem.prim==&strataItem.model->meshes[0].primitives[
+                    packet.sourcePrimitive] &&
+                packet.expectedMaterial<
+                    strataItem.model->materials.size() &&
+                strataItem.mat==&strataItem.model->materials[
+                    packet.expectedMaterial] &&
+                strataItem.rigid && strataItem.joints<0 &&
+                strataItem.morph<0 && !strataItem.baked &&
+                !strataItem.mat->shaderGraph &&
+                strataItem.mat->alpha==AlphaMode::Opaque &&
+                !strataItem.mat->transparent &&
+                strataItem.gi==0 && !strataItem.materialRole &&
+                strataItem.shadowRole!=2 && !strataItem.paletteMaterials &&
+                strataItem.lodThreshold>=1.f && !strataItem.lodInvert &&
+                strataItem.tint.w>=.99f &&
+                strataItem.dissolve<=0.f &&
+                (strataItem.flags&kDrawStatic)!=0 &&
+                !transparentItem(strataItem.flags) &&
+                strataItem.outline.w==0.f &&
+                std::memcmp(strataItem.world.m,
+                            packet.selectedWorld.m,
+                            sizeof(packet.selectedWorld.m))==0;
+            if(eligible && drawModelBatch(&order_[i],1,phase,false)){
+                if(dev_->drawIndexedIndirect(packet.commands,0,
+                        packet.commandCapacity,
+                        sizeof(gfx::DrawIndexedIndirectCommand))){
+                    lastItem_=&strataItem;
+                    ++modelStats_.strataGpuSubmitted;
+                    if(correctSun)++modelStats_.strataGpuSunShadowSubmitted;
+                    if(correctSpot)++modelStats_.strataGpuSpotShadowSubmitted;
+                    if(correctReflection)++modelStats_.strataGpuReflectionSubmitted;
+                    ++drawCalls_;
+                    ++profile_.draws[size_t(phase)];
+                    ++profile_.instances[size_t(phase)];
+                    // GPU culling has an unknown number of triangles until
+                    // completion. Do not claim a CPU triangle count here.
+                    ++i;
+                    continue; // exclusive: original Legacy draw skipped
+                }
+            }
+            ++modelStats_.strataGpuRejected;
+            ++modelStats_.strataGpuFallbackDraws;
+            // The original source item is still in order_ and reaches the
+            // ordinary Renderer3D path below, with identical material state.
+        }
         // Keep one-draw-per-primitive GPU-authoring limited to the legacy
         // static path. Dynamic rigid models only use GPU ICB in batches of 2+;
         // otherwise conventional instancing remains cheaper and preserves
@@ -3496,7 +3768,12 @@ void Renderer3D::renderModels(int phase) {
                 (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
                                 !transparentItem(first.flags)))) {
                 size_t end = i + 1;
-                while (end < order_.size() && end - i < size_t(instanceLimit_)) {
+                // Test-only cap changes CPU MDI submission count without
+                // recompiling shaders or changing uniform instance capacity.
+                const size_t groupLimit = diagnosticCpuMdiGroupCap_
+                    ? std::min(size_t(instanceLimit_), size_t(diagnosticCpuMdiGroupCap_))
+                    : size_t(instanceLimit_);
+                while (end < order_.size() && end - i < groupLimit) {
                     const uint32_t candidate = order_[end];
                     if (!compatible(candidate)) {
                         const auto& y = modelItems_[candidate];
@@ -3630,6 +3907,32 @@ void Renderer3D::renderModels(int phase) {
                 std::chrono::steady_clock::now() - passBegin).count();
             autoCpuBatch_.observe(size_t(phase), order_.size(),
                                   autoCpuPermit, cpuMs);
+            // Explicitly opt-in cost audit: record comparable wall boundaries
+            // for CPU AUTO decisions, not GPU time or FPS. Existing stage
+            // profiling already accounts for the same passBegin boundary.
+            static const bool traceAutoCosts = [] {
+                const char* flag = std::getenv("AIVERSE_BATCH_AUTO_COST_TRACE");
+                return flag && std::strcmp(flag, "1") == 0;
+            }();
+            if (traceAutoCosts) {
+                static uint32_t printed[2][2]{};
+                const size_t lane = size_t(phase);
+                const size_t mode = mdiSubmitted ? 1u : 0u;
+                if (lane < 2 && printed[lane][mode]++ < 24) {
+                    const auto& learned =
+                        autoCpuBatch_.lanes[lane][AutoCpuBatchPolicy::bucket(order_.size())];
+                    std::fprintf(stderr,
+                        "[auto-cpu-cost] phase=%zu mode=%s items=%zu "
+                        "wall_ms=%.5f "
+                        "submissions=%llu direct_ewma_ms=%.5f mdi_ewma_ms=%.5f "
+                        "direct_samples=%u mdi_samples=%u opportunities=%u\n",
+                        lane, mdiSubmitted ? "mdi" : "direct", order_.size(),
+                        cpuMs,
+                        (unsigned long long)(modelStats_.multiDrawSubmissions-cpuMdiBefore),
+                        learned.directMs, learned.mdiMs,
+                        learned.directSamples, learned.mdiSamples, learned.opportunities);
+                }
+            }
         }
     }
     if (cpuStages) {
@@ -3706,6 +4009,7 @@ void Renderer3D::renderModels(int phase) {
             t = {};
         }
     }
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, false);
 }
 
 void Renderer3D::prepareOcclusion() {

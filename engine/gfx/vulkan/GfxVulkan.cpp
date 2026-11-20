@@ -277,6 +277,7 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    shutdownCompute();
     for (auto& read : textureReads_) {
         if (read.buffer) vkDestroyBuffer(device_, read.buffer, nullptr);
         memory_.release(read.alloc);
@@ -508,11 +509,13 @@ void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
     const VkResult waited = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
-    if (waited == VK_SUCCESS)
-        completed_ = std::max(completed_, s.serial);
-    else
-        healthy_ = false; // no verified completion on error/device lost
-    if (healthy_) collectGarbage();
+    // A failed fence wait is not a completed GPU frame.
+    if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
+    else healthy_ = false;
+    if (healthy_) {
+        collectGarbage();
+        deliverComputeReadbacks();
+    }
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;

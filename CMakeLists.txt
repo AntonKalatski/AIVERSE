@@ -1102,8 +1102,9 @@ endif()
 option(AIVERSE_VULKAN "Build the Vulkan RHI backend (Windows, Linux, Android)" ${_aiverse_vulkan_default})
 if(AIVERSE_VULKAN)
     add_subdirectory(third_party/glslang)
-    add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp engine/gfx/vulkan/VkCompute.cpp
-        engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp)
+    add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp
+        engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp
+        engine/gfx/vulkan/VkCompute.cpp)
     target_include_directories(aiverse_gfx_vulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan/include)
     target_compile_definitions(aiverse_gfx_vulkan PUBLIC AIVERSE_WITH_VULKAN=1)
     target_link_libraries(aiverse_gfx_vulkan PRIVATE aiverse_glslang PUBLIC ${CMAKE_DL_LIBS})
@@ -2656,10 +2657,11 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP AND TARGET aiverse_modeling)
 endif()
 
 option(AIVERSE_BUILD_AUTOLOD "Build offline meshoptimizer LOD tools" OFF)
+option(AIVERSE_BUILD_STRATA "Build opt-in Strata import-time virtual geometry builder" ON)
 option(AIVERSE_RUNTIME_AUTOLOD "Generate missing rigid-model LODs during upload preparation" ON)
 # meshoptimizer is a portable import-time dependency: not used during a render
 # frame. Share its exact implementation with the optional offline worker.
-if(AIVERSE_RUNTIME_AUTOLOD OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
+if(AIVERSE_RUNTIME_AUTOLOD OR AIVERSE_BUILD_STRATA OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
     if(NOT TARGET aiverse_meshoptimizer_lod)
         add_library(aiverse_meshoptimizer_lod STATIC
             third_party/meshoptimizer/src/allocator.cpp
@@ -2667,6 +2669,199 @@ if(AIVERSE_RUNTIME_AUTOLOD OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
             third_party/meshoptimizer/src/simplifier.cpp
             third_party/meshoptimizer/src/vcacheoptimizer.cpp)
         target_include_directories(aiverse_meshoptimizer_lod PUBLIC third_party/meshoptimizer/src)
+    endif()
+endif()
+if(AIVERSE_BUILD_STRATA)
+    add_library(aiverse_strata_builder STATIC
+        engine/render/StrataBuilder.cpp
+        engine/render/StrataSeamTopology.cpp)
+    target_link_libraries(aiverse_strata_builder PUBLIC aiverse_meshoptimizer_lod)
+    target_include_directories(aiverse_strata_builder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    add_library(aiverse_strata_model_adapter STATIC
+        engine/render/StrataModelAdapter.cpp
+        engine/render/StrataSourceSeams.cpp)
+    target_link_libraries(aiverse_strata_model_adapter PUBLIC aiverse_strata_builder aiverse_models)
+    target_include_directories(aiverse_strata_model_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Per-pass CPU reference selection, using existing Geometry.cpp projection.
+    # Output is non-submitting source-local index ranges, not GPU commands.
+    add_library(aiverse_strata_view STATIC engine/render/StrataView.cpp)
+    target_link_libraries(aiverse_strata_view PUBLIC aiverse_strata_model_adapter aiverse_models)
+    target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Offline archive IO is independently linkable by native import/editor
+    # tools without pulling the complete renderer or a gfx::Device.
+    add_library(aiverse_strata_disk STATIC
+        engine/render/StrataDiskPages.cpp
+        engine/render/StrataStreamingCoordinator.cpp)
+    target_link_libraries(aiverse_strata_disk PUBLIC aiverse_strata_model_adapter)
+    target_include_directories(aiverse_strata_disk PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    if(NOT EMSCRIPTEN)
+        find_package(Threads REQUIRED)
+        target_link_libraries(aiverse_strata_disk PUBLIC Threads::Threads)
+    endif()
+    # Portable Vulkan/GLES3/WebGL2 fallback: CPU-selected LOD frontiers and
+    # immutable auxiliary INDEX-only data. Original Model VB stays owned by
+    # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
+    add_library(aiverse_strata_portable STATIC
+        engine/render/StrataPortableRender.cpp
+        engine/render/StrataIndexResidency.cpp
+        engine/render/StrataIndexPages.cpp)
+    target_link_libraries(aiverse_strata_portable PUBLIC
+        aiverse_strata_view aiverse_models aiverse_strata_disk)
+    target_include_directories(aiverse_strata_portable PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    # GPU metadata is a non-drawing, source-revision-checked storage buffer.
+    # Original GPU geometry MUST remain owned by GlobalGeometryPool.
+    add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
+    target_link_libraries(aiverse_strata_gpu_scene PUBLIC aiverse_strata_model_adapter)
+    target_include_directories(aiverse_strata_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Metal/Vulkan diagnostic GPU cluster selection. Vulkan also writes
+    # guarded indexed indirect candidates, but Renderer3D is still the
+    # exclusive production draw owner (no automatic GPU raster switch).
+    add_library(aiverse_strata_gpu_culling STATIC engine/render/StrataGpuCulling.cpp)
+    target_link_libraries(aiverse_strata_gpu_culling PUBLIC
+        aiverse_strata_gpu_scene aiverse_strata_view)
+    target_include_directories(aiverse_strata_gpu_culling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Shared-gfx indirect argument preflight. No live draw path is selected:
+    # renderer ownership/parity gates are explicit and default Legacy.
+    add_library(aiverse_strata_render_routing STATIC
+        engine/render/StrataRenderRouting.cpp
+        engine/render/StrataRendererPreview.cpp
+        engine/render/StrataVulkanIndirectContract.cpp)
+    target_link_libraries(aiverse_strata_render_routing PUBLIC
+        aiverse_strata_gpu_scene aiverse_strata_view)
+    target_include_directories(aiverse_strata_render_routing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # GeometryScene is still the only instance owner. This option exposes
+    # opt-in CPU staging at scene load, not a second draw submission path.
+    target_link_libraries(aiverse_runtime PUBLIC
+        aiverse_strata_view aiverse_strata_gpu_scene
+        aiverse_strata_gpu_culling aiverse_strata_render_routing
+        aiverse_strata_portable)
+    target_compile_definitions(aiverse_runtime PRIVATE AIVERSE_STRATA_STAGING_ENABLED=1)
+    if(AIVERSE_BUILD_TESTS)
+        add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
+        target_link_libraries(aiverse_strata_builder_tests PRIVATE aiverse_strata_builder)
+        add_test(NAME strata_builder COMMAND aiverse_strata_builder_tests)
+        add_executable(aiverse_strata_seams_tests tests/render/strata_seams.cpp)
+        target_link_libraries(aiverse_strata_seams_tests PRIVATE
+            aiverse_strata_builder)
+        add_test(NAME strata_seams COMMAND aiverse_strata_seams_tests)
+        add_executable(aiverse_strata_model_adapter_tests tests/render/strata_model_adapter.cpp)
+        target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
+        add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        add_executable(aiverse_strata_source_seams_tests
+            tests/render/strata_source_seams.cpp)
+        target_link_libraries(aiverse_strata_source_seams_tests PRIVATE
+            aiverse_strata_model_adapter aiverse_zstd_dec)
+        add_test(NAME strata_source_seams
+            COMMAND aiverse_strata_source_seams_tests)
+        add_executable(aiverse_strata_view_tests tests/render/strata_view.cpp)
+        target_link_libraries(aiverse_strata_view_tests PRIVATE aiverse_strata_view aiverse_zstd_dec)
+        add_test(NAME strata_view COMMAND aiverse_strata_view_tests)
+        # Stage18.4: opt-in CPU-only deterministic trace; not GPU timing/FPS.
+        add_executable(aiverse_strata_lod_benchmark
+            tests/render/strata_lod_benchmark.cpp)
+        target_include_directories(aiverse_strata_lod_benchmark PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME strata_lod_benchmark COMMAND aiverse_strata_lod_benchmark)
+        add_executable(aiverse_strata_gpu_scene_tests tests/render/strata_gpu_scene.cpp)
+        target_link_libraries(aiverse_strata_gpu_scene_tests PRIVATE
+            aiverse_strata_gpu_scene aiverse_zstd_dec)
+        add_test(NAME strata_gpu_scene COMMAND aiverse_strata_gpu_scene_tests)
+        add_executable(aiverse_strata_gpu_culling_tests tests/render/strata_gpu_culling.cpp)
+        target_link_libraries(aiverse_strata_gpu_culling_tests PRIVATE
+            aiverse_strata_gpu_culling aiverse_zstd_dec)
+        add_test(NAME strata_gpu_culling COMMAND aiverse_strata_gpu_culling_tests)
+        if(AIVERSE_VULKAN AND NOT EMSCRIPTEN)
+            add_executable(aiverse_strata_vulkan_kernel_tests
+                tests/render/strata_vulkan_kernel.cpp)
+            target_link_libraries(aiverse_strata_vulkan_kernel_tests PRIVATE
+                aiverse_strata_gpu_culling aiverse_gfx_vulkan aiverse_zstd_dec)
+            add_test(NAME strata_vulkan_kernel
+                COMMAND aiverse_strata_vulkan_kernel_tests)
+        endif()
+        add_executable(aiverse_strata_render_routing_tests
+            tests/render/strata_render_routing.cpp)
+        target_link_libraries(aiverse_strata_render_routing_tests PRIVATE
+            aiverse_strata_render_routing aiverse_zstd_dec)
+        add_test(NAME strata_render_routing COMMAND aiverse_strata_render_routing_tests)
+        add_executable(aiverse_strata_portable_tests tests/render/strata_portable.cpp)
+        target_link_libraries(aiverse_strata_portable_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_portable COMMAND aiverse_strata_portable_tests)
+        add_executable(aiverse_strata_index_residency_tests
+            tests/render/strata_index_residency.cpp)
+        target_link_libraries(aiverse_strata_index_residency_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_index_residency COMMAND aiverse_strata_index_residency_tests)
+        add_executable(aiverse_strata_index_pages_tests
+            tests/render/strata_index_pages.cpp)
+        target_link_libraries(aiverse_strata_index_pages_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_index_pages COMMAND aiverse_strata_index_pages_tests)
+        if(NOT EMSCRIPTEN)
+            add_executable(aiverse_strata_disk_pages_tests
+                tests/render/strata_disk_pages.cpp)
+            target_link_libraries(aiverse_strata_disk_pages_tests PRIVATE
+                aiverse_strata_portable aiverse_zstd_dec)
+            add_test(NAME strata_disk_pages COMMAND aiverse_strata_disk_pages_tests)
+            add_executable(aiverse_strata_streaming_coordinator_tests
+                tests/render/strata_streaming_coordinator.cpp)
+            target_link_libraries(aiverse_strata_streaming_coordinator_tests PRIVATE
+                aiverse_strata_disk aiverse_zstd_dec)
+            add_test(NAME strata_streaming_coordinator
+                COMMAND aiverse_strata_streaming_coordinator_tests)
+        endif()
+    endif()
+    # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
+    # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
+    option(AIVERSE_STRATA_METAL_GPU_TESTS "Build actual Strata Metal GPU parity runner" OFF)
+    if(AIVERSE_STRATA_METAL_GPU_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+        add_executable(aiverse_strata_metal_parity
+            tests/render/strata_metal_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_parity PRIVATE
+            aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
+        # Stage 17.4: opt-in native Metal GPU per-node temporal mask parity.
+        # Three consecutive frames, asynchronously checked against CPU LOD.
+        add_executable(aiverse_strata_metal_temporal
+            tests/render/strata_metal_temporal.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_temporal PRIVATE
+            aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
+        # Stage 11: separate real Metal raster A/B; shares original source
+        # VB/IB and Strata pooled index sidecar, no production draw switch.
+        add_executable(aiverse_strata_metal_raster_parity
+            tests/render/strata_metal_raster_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_raster_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
+        # Stage 12: actual Renderer3D 2-view pixel and shadow Depth32Float
+        # parity, using the SAME GlobalGeometryPool and no extra draw owner.
+        add_executable(aiverse_strata_metal_depth_multiview_parity
+            tests/render/strata_metal_depth_multiview_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_depth_multiview_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
+        # Stage 13: actual Metal planar-reflection RTT + textured material
+        # and UV-boundary parity, still no production Strata raster route.
+        add_executable(aiverse_strata_metal_reflection_material_parity
+            tests/render/strata_metal_reflection_material_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_reflection_material_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
+        # Stage 14: new portable CPU-selected LOD path, selected clusters
+        # through the SAME production Renderer3D on actual Metal hardware.
+        # Vulkan/GLES3 compile contract is in strata_portable_tests.
+        add_executable(aiverse_strata_metal_portable_parity
+            tests/render/strata_metal_portable_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_portable_parity PRIVATE
+            aiverse_runtime aiverse_strata_portable)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)

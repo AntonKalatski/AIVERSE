@@ -191,6 +191,19 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
     quality_=q;
 }
 
+bool Renderer3D::requestSunShadowDepthReadback(
+    gfx::Device::DepthReadFn callback) const {
+    return dev_ && quality_ != ShadowQuality::Off &&
+           shadowMap_.valid() && shadowSize_ > 0 &&
+           dev_->readDepthTextureAsync(shadowMap_, std::move(callback));
+}
+
+bool Renderer3D::requestPlanarReflectionColorReadback(
+    gfx::Device::ColorReadFn callback) const {
+    return dev_ && reflectionPlaneValid_ &&
+           lights.requestPlanarReflectionColorReadback(std::move(callback));
+}
+
 void Renderer3D::shutdown() {
     if (!dev_) return;
     checkGpuDevice(*dev_);
@@ -523,6 +536,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
     motionReactiveDraws_.clear(); // per-scene extensions register after beginScene
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
+    strataPreviewStats_ = {}; // diagnostic preflight never persists across scenes
     maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their

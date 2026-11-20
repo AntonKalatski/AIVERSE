@@ -35,11 +35,6 @@ Json pairJson(ImVec2 pos) {
     a.push(Json::number(double(std::clamp(pos.y,-100000.f,100000.f)),2));
     return a;
 }
-bool validId(const std::string& id) {
-    if(id.empty()||id.size()>64)return false;
-    for(char c:id)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'))return false;
-    return true;
-}
 bool isOutput(const std::string& type) {
     return type=="SpriteOutput"||type=="MeshOutput"||type=="RibbonOutput";
 }
@@ -103,7 +98,7 @@ public:
         canvas();
         ImGui::EndChild(); ImGui::SameLine();
         ImGui::BeginChild("##spectra_details",ImVec2(0,0),ImGuiChildFlags_Borders);
-        properties(ed);
+        properties();
         ImGui::EndChild();
     }
 private:
@@ -444,7 +439,7 @@ private:
         }
     }
 
-    void properties(Editor& ed) {
+    void properties() {
         ImGui::TextUnformatted("Узлы");
         if(ImGui::BeginCombo("Добавить узел","Выберите тип")) {
             for(const char* type:{"Spawn","Initialize","Update","SpriteOutput","MeshOutput","RibbonOutput"})

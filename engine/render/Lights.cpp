@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <stdexcept>
 
 namespace aiverse::render {
@@ -519,6 +520,13 @@ void LightSystem::endReflection() {
     dev_->endPass();
     reflReady_ = true;
     stats_.reflection = true; stats_.reflW = reflW_; stats_.reflH = reflH_;
+}
+
+bool LightSystem::requestPlanarReflectionColorReadback(
+    gfx::Device::ColorReadFn callback) const {
+    return dev_ && reflReady_ && reflColor_.valid() &&
+           !reflectionLinear_ && reflW_ > 0 && reflH_ > 0 &&
+           dev_->readColorTextureAsync(reflColor_, std::move(callback));
 }
 
 void LightSystem::bind(int uniformSlot, int textureSlot, int reflectionSlot) {

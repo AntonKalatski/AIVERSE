@@ -93,6 +93,8 @@ struct VCompute {
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
+    bool bufferPushConstants = false;
+    uint32_t bufferBindings = 4;
 };
 struct VTextureView { VkImageView native = VK_NULL_HANDLE; uint32_t parentId = 0; };
 struct VSampler { VkSampler native = VK_NULL_HANDLE; };
@@ -147,7 +149,9 @@ public:
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
     std::vector<TextureResourceInfo> textureResources() const override;
-    bool supportsCompute() const override { return device_ && healthy_ && computeQueue_; }
+    bool supportsCompute() const override { return device_ && healthy_ && computeQueue_ &&
+        gpuProps_.limits.maxComputeWorkGroupInvocations >= 64 &&
+        gpuProps_.limits.maxComputeWorkGroupSize[0] >= 64; }
     bool supportsStorageTexture(PixelFormat,TextureDimension) const override;
     ComputeHandle createCompute(const ComputeDesc&) override;
     void destroyCompute(ComputeHandle) override;
@@ -157,6 +161,8 @@ public:
     bool bindComputeStorageTexture(int,TextureHandle) override;
     void setComputeUniforms(const void*,size_t) override;
     void dispatch(uint32_t,uint32_t) override;
+    bool dispatchChecked(uint32_t,uint32_t=1) override;
+    bool readBufferAsync(BufferHandle,size_t,BufferReadFn) override;
     void endCompute() override;
     bool supportsTextureViews() const override { return true; }
     bool supportsTextureDimension(TextureDimension d) const override {
@@ -227,6 +233,8 @@ public:
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
 
+    bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override;
+
 private:
     // GfxVulkan.cpp
     bool createInstance(bool wantSurface, std::string& error);
@@ -240,6 +248,8 @@ private:
     void present();
     void readBackBuffer();
     void deliverTextureReads();
+    void deliverComputeReadbacks();
+    void shutdownCompute();
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
     VkBufferUsageFlags bufferUsage(BufferType t) const;
@@ -334,6 +344,15 @@ private:
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
     Pool<VCompute> computes_;
+    struct PendingComputeRead {
+        uint64_t serial=0;
+        VkBuffer buffer=VK_NULL_HANDLE;
+        Allocation allocation{};
+        size_t bytes=0;
+        BufferReadFn callback;
+    };
+    std::vector<PendingComputeRead> computeReads_;
+
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
@@ -393,7 +412,8 @@ private:
     uint32_t activeComputeId_ = 0;
     std::array<TextureHandle,4> computeStorage_{};
     std::array<TextureHandle,8> computeSampled_{};
-    std::array<BufferHandle,4> computeBuffers_{};
+    std::array<BufferHandle,8> computeBuffers_{};
+    bool computeStateValid_ = false;
     std::vector<uint8_t> computeUniforms_;
 };
 

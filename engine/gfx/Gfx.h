@@ -573,7 +573,16 @@ struct ShaderDesc {
     bool linearTarget = false; // internal variant: AIVERSE_HDR=1, selected for RGBA16F passes
 };
 
-struct ComputeDesc { const char* msl=nullptr; const char* glsl=nullptr; const char* label=nullptr; };
+// Vulkan shader resource ABI. Other backends keep their native slot contracts.
+// TextureResources: storage images 0..3, sampled images 4..11, buffers 12..15,
+// uniform buffer 16. BufferPushConstants: buffers 0..7, <=128 push bytes.
+enum class VulkanComputeLayout : uint8_t { TextureResources, BufferPushConstants };
+struct ComputeDesc {
+    const char* msl=nullptr;
+    const char* glsl=nullptr;
+    const char* label=nullptr;
+    VulkanComputeLayout vulkanLayout=VulkanComputeLayout::TextureResources;
+};
 
 struct VertexAttr {
     uint32_t location = 0;
@@ -809,6 +818,20 @@ public:
     virtual bool beginGpuScope(uint64_t tag) { (void)tag; return false; }
     virtual void endGpuScope() {}
     virtual std::vector<GpuTiming> takeGpuScopeTimings() { return {}; }
+    // Diagnostic, opt-in: GPU hardware counter timestamp deltas across
+    // renderModels shadow/opaque spans. Deltas are raw GPU counter ticks,
+    // NOT milliseconds without a validated device clock calibration.
+    // No counter availability is represented by false/empty, never fake zero.
+    struct ModelGpuCounter {
+        uint64_t frame = 0;
+        uint64_t shadowTicks = 0, opaqueTicks = 0;
+        bool valid = false;
+    };
+    virtual bool enableModelGpuCounters(bool enabled) { (void)enabled; return false; }
+    virtual bool sampleModelGpuCounter(int phase, bool start) {
+        (void)phase; (void)start; return false;
+    }
+    virtual std::vector<ModelGpuCounter> takeModelGpuCounters() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
@@ -825,6 +848,16 @@ public:
     virtual void setComputeUniforms(const void*,size_t) {}
     // 64 threads per X group; dispatch provides total logical threads. Bounds-check in shader.
     virtual void dispatch(uint32_t,uint32_t=1) {}
+    // Unlike the legacy void dispatch(), this reports a CPU-side encode
+    // rejection (missing descriptor, invalid pipeline, unsupported limits).
+    // GPU execution errors still require health/readback/fence validation.
+    // Backends that implement only void dispatch retain conservative
+    // device-health-based behavior.
+    virtual bool dispatchChecked(uint32_t x,uint32_t y=1) {
+        if (!supportsCompute() || !gpuHealthy()) return false;
+        dispatch(x,y);
+        return gpuHealthy();
+    }
     virtual void endCompute() {}
     // Debug/readback only, between frames. Never used in normal simulation/rendering.
     virtual bool readBuffer(BufferHandle,void*,size_t) { return false; }
@@ -832,6 +865,21 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // Diagnostic only: asynchronous readback of an offscreen Depth32Float
+    // texture AFTER the depth pass has ended. Packed row-major native float32
+    // samples, exactly width*height*sizeof(float) bytes. No GPU wait; the
+    // callback runs on the owning thread at a later beginFrame. Empty bytes
+    // indicate GPU failure. Unsupported backends return false.
+    // Resource must remain alive until the queued GPU blit completes.
+    using DepthReadFn = std::function<void(int width,int height,std::vector<uint8_t> depthBytes)>;
+    virtual bool readDepthTextureAsync(TextureHandle,DepthReadFn) { return false; }
+    // Diagnostic-only async readback of an OFFSCREEN, non-MSAA RGBA8
+    // render target. Returns tightly packed top-down RGBA8 bytes after GPU
+    // completion on the device owner thread. Empty payload signals GPU error.
+    // Request after the writer pass is closed. Other backends may return false;
+    // do not fall back to reading the presented screen as a fake RTT result.
+    using ColorReadFn=std::function<void(int width,int height,std::vector<uint8_t> rgba)>;
+    virtual bool readColorTextureAsync(TextureHandle,ColorReadFn) { return false; }
     // The callback is invoked on the graphics-device owner thread at a later
     // beginFrame, after GPU completion, never from a driver completion thread.
     // An accepted request completes with data or an empty failure result.
@@ -918,6 +966,10 @@ public:
     virtual bool supportsRenderTargetPasses() const { return false; }
     virtual bool beginRenderTargets(const RenderTargetPassDesc&) { return false; }
     virtual void endPass() = 0;
+    // Diagnostic GPU frame-capture grouping. Other backends are harmless
+    // no-ops; Metal emits labels only while an explicit trace is active.
+    virtual void pushGpuDebugGroup(const char* label) { (void)label; }
+    virtual void popGpuDebugGroup() {}
     virtual void setViewport(const Rect& r) = 0;
     virtual void setScissor(const Rect& r) = 0;   // w==0 disables
     virtual void setPipeline(PipelineHandle p) = 0;

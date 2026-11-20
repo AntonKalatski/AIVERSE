@@ -38,6 +38,11 @@
 #include <unordered_map>
 
 namespace aiverse::render {
+namespace strata {
+    struct ModelAsset;
+    class GpuMetadataScene;
+    class GpuClusterCulling;
+}
 
 struct Mesh {
     gfx::BufferHandle vb, ib;
@@ -180,6 +185,60 @@ struct StaticModelCache {
     bool displaced=false;
     void prepare(const Model& source,const mat4& transform);
 };
+// Optional Stage 16.3 GPU-authored indexed selection packet. All shading,
+// transforms, visibility and final draw ownership remain Renderer3D's.
+// GeometryScene supplies this ONLY for validated one-primitive Vulkan
+// sources, and keeps the buffer/metadata alive through the render epoch.
+// Failure to consume this packet falls back to the same Legacy ModelDraw.
+enum class GpuIndexedPass : uint8_t {
+    MainOpaque=0, SunShadow=1, PlanarReflection=2, SpotShadow=3
+};
+struct GpuIndexedSelectionPacket {
+    gfx::BufferHandle commands{};
+    gfx::BufferHandle vertex{}, index{};
+    mat4 selectedWorld{};
+    // Each GPU selection has its own camera. Shadow or reflection passes
+    // must NEVER consume another camera's main-view cluster list.
+    mat4 viewProjection{};
+    GpuIndexedPass pass=GpuIndexedPass::MainOpaque;
+    int viewWidth=0, viewHeight=0;
+    uint64_t frameSerial=0, geometryRevision=0, materialRevision=0;
+    uint32_t commandCapacity=0, sourceFirstIndex=0, sourceIndexCount=0;
+    // Source-local primitive identity, NOT GPU atomic output order.
+    uint32_t sourceMesh=0, sourcePrimitive=0, expectedMaterial=0;
+    int32_t sourceBaseVertex=0;
+    // Borrowed index metadata/selector for JUST-IN-TIME spot/reflection
+    // dispatch before those camera-specific graphics encoders begin.
+    // GeometryScene must outlive Renderer3D::render() as for source Model.
+    gfx::BufferHandle metadata{};
+    strata::GpuClusterCulling* selector=nullptr;
+    uint32_t instanceToken=0;
+    float errorThresholdPixels=2.f;
+    // Scene-staged GPU temporal history identity; the source Culling owner
+    // holds per-instance/pass triple-buffer masks. Auxiliary cameras use
+    // the same source revision but DIFFERENT pass IDs (3/4).
+    float lodHysteresisFraction=0.f;
+    uint32_t temporalNodeCount=0;
+    uint64_t temporalRevision=0;
+    bool allowSpotShadow=false, allowReflection=false;
+    bool exclusive=false;
+    bool valid() const {
+        return exclusive && commands.valid() && vertex.valid() &&
+               index.valid() && frameSerial && commandCapacity &&
+               commandCapacity<=2048 && sourceIndexCount &&
+               viewWidth>0 && viewHeight>0;
+    }
+    // Exact camera identity guard; sun / spot / reflection matrices must
+    // NEVER share a cluster selection simply because they share geometry.
+    bool matchesView(GpuIndexedPass expected,const mat4& projection,
+                     int width,int height) const {
+        if(!valid() || pass!=expected ||
+           viewWidth!=width || viewHeight!=height)return false;
+        for(unsigned i=0;i<16;++i)
+            if(viewProjection.m[i]!=projection.m[i])return false;
+        return true;
+    }
+};
 struct ModelDraw {
     const StaticModelCache* staticCache=nullptr;
     GeometryPolicy geometry;
@@ -216,17 +275,22 @@ struct ModelDraw {
     const BakedSample* baked = nullptr;            // skin from Model::baked instead of nodeWorld
     float dissolve = 0;                            // 0..1: burn away (spawn, death, construction)
     float4 outline{0, 0, 0, 0};                    // rgb (linear) + width in world units; a = 0: none
-    // Source Primitive::material slot selector for one drawModel call;
-    // -1 submits the complete model. Trailing field preserves existing
-    // positional ModelDraw aggregate initializers in native projects.
+    // Appended to preserve existing positional aggregate ModelDraw callers.
+    GpuIndexedSelectionPacket gpuIndexed{};
+    // Stage16.4a: one independent packet per original material/primitive.
+    // Appended to keep every preexisting ModelDraw aggregate initializer
+    // backwards compatible. Copies into renderer-owned ModelItems by value.
+    std::vector<GpuIndexedSelectionPacket> gpuIndexedPrimitives;
+    // Stage16.4b: distinct sun-shadow camera selections. Spot shadows and
+    // water reflections retain CPU/Legacy until their own view epochs
+    // can be selected before render passes.
+    std::vector<GpuIndexedSelectionPacket> gpuShadowPrimitives;
+    // Main branch ShaderGraph/source material selector; append to keep
+    // all prior positional ModelDraw initializers backward-compatible.
     int primitiveMaterialFilter = -1;
-    // Optional four per-instance vertex graph parameters for rigid models.
-    // Reuses the unused U0 Inst.anim slot (baked clip/lightmap take priority);
-    // no uniform-buffer layout change. Other users may reuse this contract.
     bool useVertexParameters = false;
     float4 vertexParameters{0, 0, 0, 0};
-    // Conservative local-metre vertexOffset envelope for safe frustum/LOD.
-    // 0 means unknown deformation; retain conservative uncullable behavior.
+    // Bounded vertexOffset (metres), zero means unknown displacement.
     float maxVertexOffsetMetres = 0;
 };
 
@@ -259,6 +323,14 @@ struct ModelRenderStats {
     uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // Stage 16.3: main opaque, one-primitive Vulkan STRATA route only.
+    uint64_t strataGpuCandidates=0, strataGpuSubmitted=0;
+    uint64_t strataGpuRejected=0, strataGpuFallbackDraws=0;
+    uint64_t strataGpuSunShadowSubmitted=0;
+    uint64_t strataGpuSpotShadowSubmitted=0;
+    uint64_t strataGpuReflectionSubmitted=0;
+    uint64_t strataGpuSpotShadowPrepared=0;
+    uint64_t strataGpuReflectionPrepared=0;
     // Submitted indexed MDI batches using an exact validated persistent
     // layout, without copying cached CPU commands into transient scratch.
     uint64_t mdiLayoutZeroCopySubmissions = 0;
@@ -389,6 +461,16 @@ public:
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
+    // Diagnostic-only asynchronous sun shadow DEPTH readback on backends
+    // supporting gfx::Device::readDepthTextureAsync. Call after render()
+    // and after the main colour pass is ended; never waits on the GPU.
+    // A completed GPU failure arrives as an empty byte vector.
+    // Does not expose or change shadow texture ownership.
+    bool requestSunShadowDepthReadback(gfx::Device::DepthReadFn callback) const;
+    // Diagnostic-only readback of the actual LDR planar water reflection
+    // RTT (half-resolution). Not a main-screen screenshot or surrogate.
+    // Call after render() and closing its main pass; the callback is async.
+    bool requestPlanarReflectionColorReadback(gfx::Device::ColorReadFn callback) const;
     bool setShadowMapSize(int size) {
         highShadowSize_=size;
         setShadowQuality(quality_);
@@ -471,6 +553,17 @@ public:
     GpuWarmStats gpuWarmStats() const noexcept;
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Diagnostic-only per-ModelDraw Strata preflight (legacy draws untouched).
+    // Only GeometryScene's opt-in native static scene calls this in Stage 10.
+    // No render pass, GPU commands, source cache or ECS state is mutated.
+    struct StrataPreviewStats {
+        uint64_t modelDraws=0, attempted=0, ready=0, rejected=0;
+        uint64_t selectedClusters=0, fullyCulled=0, skippedUnsafeDraws=0;
+    };
+    void previewStrataModel(const ModelDraw& d, const strata::ModelAsset& staged,
+                           const strata::GpuMetadataScene& pooled,
+                           const std::string& sourceKey);
+    StrataPreviewStats strataPreviewStats() const { return strataPreviewStats_; }
     // Optional VT sampling for built-in model material shaders. Resolver
     // returns the physical atlas/page-table domain for a given model and
     // material; it must only query existing GPU allocations (render thread).
@@ -995,6 +1088,17 @@ public:
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    // Diagnostic-only CPU MDI compatible-run cap; 0 means current renderer
+    // instance limit. Does not resize shader uniform arrays or change pipes.
+    // Never exposed as a production batching quality setting.
+    void setDiagnosticCpuMdiGroupCap(uint32_t cap) {
+        diagnosticCpuMdiGroupCap_ = cap == 0 ? 0 : std::clamp(cap, 16u, 256u);
+    }
+    // Diagnostic only: control which *model* phases emit GPU draws while
+    // retaining both render encoders, other scene draws and pass clears.
+    // Bit 0 = shadow models, bit 1 = main opaque models. Defaults to both.
+    // Do not expose this as a quality setting or use it for production frames.
+    void setDiagnosticModelPassMask(uint8_t mask) { diagnosticModelPassMask_ = mask & 3u; }
     // Explicit editor-view override for the opt-in pooled static CPU MDI
     // feature. Environment preserves the process-level opt-in (OFF by
     // default), and Forbid/Enable are scoped by the caller to one view.
@@ -1296,6 +1400,12 @@ private:
         int32_t materialIndex = -1; // remap material pointers on packet replay
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
+        // Copied by value from a transient ModelDraw into this frame's
+        // renderer-owned item. Never stores a pointer to GeometryScene.
+        GpuIndexedSelectionPacket gpuIndexed{};
+        GpuIndexedSelectionPacket gpuShadowIndexed{};
+        GpuIndexedSelectionPacket gpuSpotShadowIndexed{};
+        GpuIndexedSelectionPacket gpuReflectionIndexed{};
         size_t geometryPrimitive = 0;
         uint32_t firstIndex = 0, indexCount = 0;
         // Optional two-level, single-primitive GPU LOD choice. Always preserve
@@ -1341,6 +1451,11 @@ private:
                                 bool instancePalette = false);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
+    // Stage16.4c: compute for auxiliary cameras ONLY outside the active
+    // render pass; no duplicate graphics submission or CPU GPU wait.
+    void prepareStrataAuxiliaryGpuPackets(GpuIndexedPass pass,
+                                          const mat4& projection,
+                                          int width,int height);
     struct ObjectMotionHistory; // defined with per-view GPU owners below
     void renderObjectMotionVectors(PostProcess& post); // RHI pass, rigid + deformed models
     // Camera-current reactive coverage is NOT motion history: still encode
@@ -1495,6 +1610,8 @@ private:
     void retireIndirectLayoutsFor(const Model* model);
     void maintainIndirectLayoutCaches();
     bool modelMultiDrawEnabled_ = true;
+    uint32_t diagnosticCpuMdiGroupCap_ = 0; // 0: unchanged default grouping
+    uint8_t diagnosticModelPassMask_ = 3u; // full output by default
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.
     bool staticCrossModelBatchesEnabled_ = false;
@@ -1547,6 +1664,7 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    StrataPreviewStats strataPreviewStats_{};
     // Immutable rigid packet templates; views / shadows / depth are replayed
     // for the current camera. Stored items own no GPU or Model resources.
     struct StaticPacketEntry {

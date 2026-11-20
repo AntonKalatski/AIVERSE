@@ -2,7 +2,7 @@
 // resource registrations reject the wrong device and calling thread.
 // No actual GPU work is submitted; real backend verification remains open.
 #include "engine/render/RenderResourceOwnerGroup.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -51,48 +51,48 @@ int main() {
     {
         auto sceneLease=group.registerScoped(first,scene);
         auto portraitLease=group.registerScoped(first,portrait);
-        assert(group.size()==2);
-        assert(scene.boundToResourceDevice(first));
-        assert(group.snapshot(first).uniqueOwners==2);
+        AIVERSE_TEST_CHECK(group.size()==2);
+        AIVERSE_TEST_CHECK(scene.boundToResourceDevice(first));
+        AIVERSE_TEST_CHECK(group.snapshot(first).uniqueOwners==2);
         bool rejected=false;
         try {group.registerScoped(second,scene);}catch(const std::logic_error&) {
             rejected=true;
         }
-        assert(rejected);
+        AIVERSE_TEST_CHECK(rejected);
         rejected=false;
         try {scene.bindResourceDevice(second);}catch(const std::logic_error&) {
             rejected=true;
         }
-        assert(rejected);
+        AIVERSE_TEST_CHECK(rejected);
         std::thread other([&] {
             bool failed=false;
             try {(void)group.snapshotOwners();}
             catch(const std::logic_error&) {failed=true;}
-            assert(failed);
+            AIVERSE_TEST_CHECK(failed);
         });
         other.join();
     }
-    assert(group.size()==0);
-    assert(group.snapshotOwners().uniqueOwners==0);
+    AIVERSE_TEST_CHECK(group.size()==0);
+    AIVERSE_TEST_CHECK(group.snapshotOwners().uniqueOwners==0);
     auto lease=group.registerScoped(first,scene);
-    assert(lease.valid());
+    AIVERSE_TEST_CHECK(lease.valid());
     lease.reset();
-    assert(!lease.valid());
-    assert(group.size()==0);
+    AIVERSE_TEST_CHECK(!lease.valid());
+    AIVERSE_TEST_CHECK(group.size()==0);
     auto active=group.registerScoped(first,scene);
     scene.shutdown(first); // proven empty stub, clears cache/device binding
     bool stale=false;
     try {(void)group.snapshot(first);}
     catch(const std::logic_error&) {stale=true;}
-    assert(stale); // live scope must not survive host device rebind
+    AIVERSE_TEST_CHECK(stale); // live scope must not survive host device rebind
     active.reset();
-    assert(group.size()==0);
+    AIVERSE_TEST_CHECK(group.size()==0);
 
     render::RenderResourceOwnerGroup::ScopedRegistration surviving;
     {
         render::RenderResourceOwnerGroup temporary;
         surviving=temporary.registerScoped(first,scene);
-        assert(surviving.valid());
+        AIVERSE_TEST_CHECK(surviving.valid());
     }
     surviving.reset(); // safe after group destruction
 }

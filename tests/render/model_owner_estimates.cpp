@@ -2,7 +2,7 @@
 // borrowed images; unique shared textures are counted at cache owner once.
 #include "engine/render/ModelResidentEstimate.h"
 #include "engine/render/AsyncResourceRetirementQueue.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -24,18 +24,18 @@ int main() {
     auto second=std::make_unique<Model>();
     second->images.push_back(borrowed); // same lease; NOT model-owned
     const uint64_t firstBytes=estimateModelResident(*first).knownBytes();
-    assert(firstBytes==8*sizeof(ModelVertex)+12*sizeof(uint32_t)+16*16*4);
-    assert(estimateModelResident(*second).knownBytes()==0);
+    AIVERSE_TEST_CHECK(firstBytes==8*sizeof(ModelVertex)+12*sizeof(uint32_t)+16*16*4);
+    AIVERSE_TEST_CHECK(estimateModelResident(*second).knownBytes()==0);
     queue.enqueue(std::move(first));
     queue.enqueue(std::move(second));
     const uint64_t known=queue.estimatedPendingBytes(
         [](const std::unique_ptr<Model>& m)->uint64_t {
             return m?estimateModelResident(*m).knownBytes():0;
         });
-    assert(known==firstBytes);
-    assert(queue.pending()==2);
+    AIVERSE_TEST_CHECK(known==firstBytes);
+    AIVERSE_TEST_CHECK(queue.pending()==2);
     const auto before=queue.stats();
-    assert(before.highWatermark==2);
-    assert(!queue.saturated(3));
-    assert(queue.saturated(2));
+    AIVERSE_TEST_CHECK(before.highWatermark==2);
+    AIVERSE_TEST_CHECK(!queue.saturated(3));
+    AIVERSE_TEST_CHECK(queue.saturated(2));
 }
