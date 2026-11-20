@@ -3728,3 +3728,32 @@ exact contour proof), then Stage18 optimization/performance,
 then the owner's requested single native build+CTest+GPU acceptance.
 Never claim performance or GPU correctness before actual logs
 identify the tested commit SHA.
+
+
+### Stage 17.2 follow-up — same-material UV island seam admission
+
+Review found a source-level blind spot: two disconnected UV islands
+can have identical geometric seams but duplicated vertex IDs while
+belonging to the **same** material/primitive. Treating each material
+primitive as one whole partition would miss the original T-junction
+between those islands. Commit
+`9d18a88e38da1f1631fed6de656ce6650da486d2`
+changes `StrataSourceSeams.cpp` to first partition the original
+triangles by **shared manifold edges** (not just by material or
+shared vertex). Each transformed connected component gets its own
+boundary identity. The same source BVH then checks neighboring
+components regardless of whether their material ID differs.
+A component touching another component at only one vertex does not
+imply its other boundary segments are safely welded.
+
+`tests/render/strata_source_seams.cpp` commit
+`18fc0960ed432d864cef83d7dd9a8d2724a5e96e`
+adds a single-material primitive with two disconnected UV-island
+triangle groups: exact geometric seam is admitted even with duplicated
+IDs, while a tiny source gap must fail the entire source audit
+without mutating the previously certified output.
+**Both source changes remain uncompiled and untested.**
+
+This extends Stage17.2 beyond multiple materials/meshes to duplicated
+position seams inside ONE original primitive. The other limitations
+remain: no cross-source/world stitching or source geometry repair.
