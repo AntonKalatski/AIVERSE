@@ -222,6 +222,19 @@ int main() {
     device.endFrame();
     device.completed=16;
     AIVERSE_TEST_CHECK(direct.poll() && direct.historyValid());
+
+    // A history reset DURING an in-flight compute must not be undone by
+    // a later successful callback for that old command buffer.
+    device.current=17;
+    device.beginFrame(64,64);
+    const auto pending=direct.dispatchScreen(surfaces,view,16,16,1,7,&history);
+    AIVERSE_TEST_CHECK(pending.encoded &&
+                       direct.denoiseStatus().historyUsed);
+    direct.invalidateHistory();
+    device.endFrame();
+    device.completed=17;
+    AIVERSE_TEST_CHECK(direct.poll());
+    AIVERSE_TEST_CHECK(!direct.historyValid());
     for(auto t:inputs)device.destroyTexture(t);
 
     AIVERSE_TEST_CHECK(direct.shutdown());
