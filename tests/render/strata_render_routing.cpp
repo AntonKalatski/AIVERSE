@@ -113,7 +113,131 @@ static ModelAsset buildSourceAsset() {
     return source;
 }
 
+static void testMultiMaterialGpuPackets() {
+    RecordingDevice device;
+    device.meta.backend=gfx::Backend::Vulkan;
+    Model model;
+    model.batching.autoLod=false;
+    model.vertices.resize(8);
+    model.indices={0,1,2,1,3,2,4,5,6,5,7,6};
+    model.materials.resize(2);
+    model.materials[0].baseColor={1.f,.1f,.1f,1.f};
+    model.materials[1].baseColor={.1f,.3f,1.f,1.f};
+    model.meshes.resize(1);
+    for(uint32_t i=0;i<2;++i){
+        Primitive p{};
+        p.firstIndex=i*6;
+        p.indexCount=6;
+        p.firstVertex=i*4;
+        p.vertexCount=4;
+        p.material=int(i);
+        model.meshes[0].primitives.push_back(p);
+    }
+    Node node{};
+    node.mesh=0;
+    model.nodes.push_back(node);
+    model.order={0};
+    model.bindWorld={mat4::identity()};
+    ModelAsset asset;
+    for(uint32_t i=0;i<2;++i){
+        ModelPrimitiveAsset entry{};
+        entry.mesh=0;entry.primitive=i;entry.material=i;
+        auto& g=entry.geometry;
+        g.indices.assign(model.indices.begin()+i*6,
+                         model.indices.begin()+i*6+6);
+        g.roots={0};
+        ClusterNode leaf{};
+        leaf.resident=true;
+        leaf.indexCount=6;
+        leaf.materialGroup=i;
+        g.nodes.push_back(leaf);
+        g.bounds.push_back({{-1.f,-1.f,.1f},{1.f,1.f,.9f}});
+        asset.primitives.push_back(std::move(entry));
+    }
+    assert(uploadModelToGeometryPool(device,model));
+    GpuMetadataScene metadata;
+    assert(metadata.stage(device,"two/materials",model,asset));
+    GpuMetadataScene::IndexBinding binding{};
+    assert(metadata.indexBinding("two/materials",model,binding));
+    assert(binding.indexCount==12);
+    GpuPassConfig camera{};
+    camera.viewProjection=mat4::identity();
+    camera.width=1280;
+    camera.height=720;
+    camera.maxOutputClusters=16;
+    std::string error;
+    ModelDraw draw{};
+    draw.model=&model;
+    draw.flags=kDrawStatic;
+    for(uint32_t ordinal=0;ordinal<2;++ordinal){
+        VulkanIndirectContract contract{};
+        GpuPassConfig guarded{};
+        assert(prepareVulkanIndirectPrimitiveContract(device,model,asset,
+            binding,ordinal,camera,false,contract,guarded,&error));
+        assert(contract.primitiveOrdinal==ordinal);
+        assert(contract.expectedMaterial==ordinal);
+        assert(guarded.gpuFallbackEnabled);
+        assert(guarded.gpuFallbackIndexCount==6);
+        assert(guarded.gpuFallbackFirstIndex==
+               model.gpuFirstIndex+ordinal*6);
+        GpuIndexedSelectionPacket packet{};
+        packet.commands={100+ordinal};
+        packet.vertex=contract.vertex;
+        packet.index=contract.index;
+        packet.selectedWorld=mat4::identity();
+        packet.frameSerial=contract.expectedFrameSerial;
+        packet.geometryRevision=contract.geometryRevision;
+        packet.materialRevision=contract.materialRevision;
+        packet.commandCapacity=16;
+        packet.sourceFirstIndex=ordinal*6;
+        packet.sourceIndexCount=6;
+        packet.sourceMesh=0;
+        packet.sourcePrimitive=ordinal;
+        packet.expectedMaterial=ordinal;
+        packet.sourceBaseVertex=contract.pooledBaseVertex;
+        packet.exclusive=true;
+        draw.gpuIndexedPrimitives.push_back(packet);
+    }
+    assert(draw.gpuIndexedPrimitives.size()==2);
+    assert(draw.gpuIndexedPrimitives[0].commands!=
+           draw.gpuIndexedPrimitives[1].commands);
+    ModelDraw anotherInstance=draw;
+    anotherInstance.world=mat4::translate({4.f,0.f,0.f});
+    anotherInstance.gpuIndexedPrimitives[0].selectedWorld=
+        anotherInstance.world;
+    assert(draw.gpuIndexedPrimitives[0].selectedWorld.m[12]==0.f);
+    assert(anotherInstance.gpuIndexedPrimitives[0].selectedWorld.m[12]==4.f);
+    VulkanIndirectContract legacyContract{};
+    GpuPassConfig legacyGuarded{};
+    assert(!prepareVulkanIndirectContract(device,model,asset,binding,
+        camera,false,legacyContract,legacyGuarded,&error)); // old API rejects
+    model.materials[1].alpha=AlphaMode::Blend;
+    VulkanIndirectContract rejected{};
+    GpuPassConfig guarded{};
+    assert(!prepareVulkanIndirectPrimitiveContract(device,model,asset,
+        binding,0,camera,false,rejected,guarded,&error));
+    model.materials[1].alpha=AlphaMode::Opaque;
+    model.markMaterialChanged();
+    GpuSelectionSubmission submission{};
+    submission.ranges={199};submission.counters={200};
+    submission.indirect={201};
+    submission.capacity=16;submission.submittedInstances=1;
+    submission.frameSerial=device.frameSerial();
+    VulkanIndirectContract fresh{};
+    assert(prepareVulkanIndirectPrimitiveContract(device,model,asset,
+        binding,1,camera,false,fresh,guarded,&error));
+    assert(validateVulkanIndirectSubmission(device,model,fresh,
+        submission,&error));
+    model.markMaterialChanged();
+    assert(!validateVulkanIndirectSubmission(device,model,fresh,
+        submission,&error));
+    metadata.shutdown(device);
+    releaseModelGeometryPool(device,model);
+    assert(device.buffers.empty());
+}
+
 int main() {
+    testMultiMaterialGpuPackets();
     RecordingDevice device;
     Model model;
     model.materials.resize(1);
