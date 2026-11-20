@@ -66,3 +66,14 @@ scoped policy integration when merging a renderer that actually owns it.
 Fixed camera_client_adapter's check helper to accept its existing diagnostic
 argument. Commit `23679d5be4f6106e3e2d3989fda99824b0d7182b`; two paths above. No asset/save change; CI NOT RUN.
 Next: rerun full build; no camera runtime or GPU parity claim yet.
+
+## Pass 4 — camera adapter native linkage
+
+Tested `e95cb473e`: configure PASS, build FAIL at camera_client_adapter link;
+CTest NOT RUN. Report `20261120-142525-69711`. Missing Json implementation and
+PostFx/ScreenLighting vtables proved this fixture was not header-only. Fix
+`22820a9ab6d64a244883dddde9493afc14dc7231` adds only this target's runtime/content-reader dependencies in shared
+CMakeLists.txt and uses the runtime-provided platform entrypoint (`aiverseMain`)
+in tests/render/camera_client_adapter.cpp, matching existing native fixtures.
+No production source/API changes. Subsequent build/CTest NOT RUN at checkpoint.
+Next: rerun the same KINGSTON command. CI NOT RUN/no URL.
