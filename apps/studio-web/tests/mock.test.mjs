@@ -14,7 +14,7 @@ test('mock Shader Graph endpoints return method-specific result shapes', async (
   await assert.rejects(mockInvoke('studio.shaderGraphGet', {name: 'test'}), /native project/);
 });
 test('mock assets, materials and lighting use separate typed envelopes', async () => {
-  assert.deepEqual(await mockInvoke('studio.assets', {}), {files: []});
+  assert.deepEqual(await mockInvoke('studio.assets', {}), {files: [], root: 'content'});
   assert.deepEqual(await mockInvoke('studio.materials', {}), {library: {}});
   assert.deepEqual(await mockInvoke('studio.lighting', {}), {lighting: null, lights: []});
 });

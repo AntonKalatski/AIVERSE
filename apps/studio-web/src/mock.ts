@@ -63,7 +63,7 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
-    return { files: [] };
+    return { files: [], root: 'content' };
   }
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
     return { ok: true }; // Browser preview has no native surface.

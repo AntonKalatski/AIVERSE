@@ -27,7 +27,7 @@ function AssetIcon({kind,size=27}:{kind:AssetKind;size?:number}) {
 
 /** One project-local read-only asset browser. Real file list from native Workspace. */
 export default function AssetsPanel({projectPath}:{projectPath:string}) {
-  const [catalog,setCatalog]=useState<StudioAssetList>({files:[]});
+  const [catalog,setCatalog]=useState<StudioAssetList>({files:[],root:'content'});
   const [folder,setFolder]=useState('');
   const [selected,setSelected]=useState<string|null>(null);
   const [search,setSearch]=useState('');
@@ -46,7 +46,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
     let cancelled=false;
     setLoading(true);setError('');
     if(nativeConnected()&&!projectPath){
-      setCatalog({files:[]});setLoading(false);return;
+      setCatalog({files:[],root:'content'});setLoading(false);return;
     }
     void invoke('studio.assets',{})
       .then(result=>{if(!cancelled)setCatalog(result)})
@@ -65,7 +65,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
       <div className="studio-assets-breadcrumb" aria-label="Asset location">
         {crumbs.map((part,index)=><span className="studio-assets-crumb" key={part.path}>
           {index>0 && <ChevronRight size={13} aria-hidden="true"/>}
-          <button type="button" title={part.path||'Project root'}
+          <button type="button" title={part.path ? 'content/'+part.path : 'content/ root'}
             aria-current={part.path===folder?'location':undefined}
             onClick={()=>{setFolder(part.path);setSearch('');setSelected(null)}}>
             {part.name}
@@ -89,10 +89,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
     </div>
     <div className="studio-assets-layout">
       <nav className="studio-assets-folders" aria-label="Project asset folders">
-        <div className="studio-assets-sidebar-title">PROJECT FILES</div>
+        <div className="studio-assets-sidebar-title">CONTENT / PROJECT ASSETS</div>
         <button type="button" className={'studio-assets-folder'+(folder===''?' active':'')}
           onClick={()=>{setFolder('');setSearch('');setSelected(null)}}>
-          <Library size={15}/><span>All assets</span>
+          <Library size={15}/><span>content</span>
           <small>{catalog.files.length}</small>
         </button>
         {folders.slice(0,300).map(entry=>
@@ -110,9 +110,11 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
           shownFiles.length===0 && shownFolders.length===0 ?
             <div className="studio-assets-empty">
               <Folder size={26}/>
-              <strong>{projectPath ? 'No matching assets' : 'Open a project'}</strong>
-              <p>{projectPath ? 'Choose another folder or change the search.' :
-                'Project files appear here when an AIVERSE project is open.'}</p>
+              <strong>{projectPath ? (search || folder ? 'No matching assets' : 'content/ is empty') : 'Open a project'}</strong>
+              <p>{projectPath ? (search || folder ?
+                'Choose another folder or change the search.' :
+                'Place your models, textures, audio and other resources in the project/content folder.') :
+                'Assets from the project/content folder appear here after opening an AIVERSE project.'}</p>
             </div> :
             <div className={'studio-assets-items studio-assets-items--'+mode} role="list">
               {shownFolders.map(entry=>
@@ -128,7 +130,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
                 return <button key={asset.path} type="button" role="listitem"
                   className={'studio-assets-item'+(selected===asset.path?' active':'')}
                   data-kind={kind} aria-selected={selected===asset.path}
-                  title={asset.path} onClick={()=>setSelected(asset.path)}>
+                  title={'content/'+asset.path} onClick={()=>setSelected(asset.path)}>
                   <span className="studio-assets-icon"><AssetIcon kind={kind} size={mode==='grid'?32:20}/></span>
                   <span className="studio-assets-name">{assetFileName(asset.path)}</span>
                   <span className="studio-assets-meta">{formatBytes(asset.bytes)}</span>
@@ -138,9 +140,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}) {
       </div>
     </div>
     <footer className="studio-assets-footer">
-      <span>{catalog.files.length} project files · read-only</span>
-      <span className="studio-assets-current">{selectedAsset?selectedAsset.path:
-        search ? 'Search results' : folder||'Project root'}</span>
+      <span>{catalog.files.length} assets in content/ · read-only</span>
+      <span className="studio-assets-current">{selectedAsset?'content/'+selectedAsset.path:
+        search ? 'Search in content/' : folder?'content/'+folder:'content/'}</span>
     </footer>
   </section>;
 }

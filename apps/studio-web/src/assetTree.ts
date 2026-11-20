@@ -1,5 +1,6 @@
-// UI-only presentation model for project-relative files from native Workspace.asset_list.
-// It never reads arbitrary paths, invents thumbnails, or writes project assets.
+// UI-only presentation model of paths RELATIVE TO project/content.
+// Native StudioContentDirectory scans the directory safely; UI never reads
+// arbitrary paths, invents thumbnails or modifies project assets.
 import type { StudioAsset } from './types';
 
 export type AssetKind = 'image' | 'model' | 'audio' | 'code' | 'document';
@@ -60,7 +61,7 @@ export function visibleAssetFiles(files:readonly StudioAsset[],parent:string,sea
   }).sort((a,b)=>a.path.localeCompare(b.path));
 }
 export function assetBreadcrumbs(parent:string):Array<{name:string;path:string}> {
-  const result=[{name:'Project',path:''}];
+  const result=[{name:'content',path:''}];
   if(!parent)return result;
   const parts=parent.split('/');
   parts.forEach((name,index)=>result.push({name,path:parts.slice(0,index+1).join('/')}));

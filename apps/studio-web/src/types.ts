@@ -4,7 +4,7 @@ export type StudioProperty = import('./propertyLogic').FieldDescriptor;
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
 export interface StudioAsset { path: string; bytes: number }
-export interface StudioAssetList { files: StudioAsset[] }
+export interface StudioAssetList { files: StudioAsset[]; root?: 'content' }
 export type StudioLightingState = import('./panels/lightingSchema').LightingState;
 export type StudioMaterialLibrary = import('./panels/materialSchema').MaterialLibrary;
 export interface StudioShaderGraphList { graphs: string[] }

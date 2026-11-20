@@ -37,8 +37,28 @@ test('file categories are stable and do not fake thumbnails',()=>{
 });
 test('breadcrumbs are derived without new filesystem access',()=>{
   assert.deepEqual(assetBreadcrumbs('Content/Environment/Ruins'),[
-    {name:'Project',path:''},{name:'Content',path:'Content'},
+    {name:'content',path:''},{name:'Content',path:'Content'},
     {name:'Environment',path:'Content/Environment'},
     {name:'Ruins',path:'Content/Environment/Ruins'}
   ]);
+});
+
+test('Assets breadcrumb root represents actual lower-case content directory',()=>{
+  assert.deepEqual(assetBreadcrumbs(''),[{name:'content',path:''}]);
+  assert.deepEqual(assetBreadcrumbs('Models/Characters'),[
+    {name:'content',path:''},
+    {name:'Models',path:'Models'},
+    {name:'Characters',path:'Models/Characters'}
+  ]);
+});
+test('content-relative root shows top-level imported assets without a content/ prefix',()=>{
+  const listed=[
+    {path:'textures/rock.png',bytes:10},
+    {path:'rock.glb',bytes:99},
+    {path:'models/tank.fbx',bytes:400}
+  ];
+  assert.deepEqual(visibleAssetFiles(listed,'','').map(x=>x.path),['rock.glb']);
+  assert.deepEqual(assetFolders(listed).map(x=>x.path),['models','textures']);
+  assert.deepEqual(visibleAssetFiles(listed,'textures','').map(x=>x.path),['textures/rock.png']);
+  assert.equal(visibleAssetFiles(listed,'','tank').length,1);
 });
