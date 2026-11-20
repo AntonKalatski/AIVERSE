@@ -10,7 +10,7 @@
 
 | Commit | File(s) | Actual authored implementation |
 |---|---|---|
-| `bd97a893`, `a9446777` | `apps/modelview/NativeScenePreview.h` | New opt-in host interface/owned native Simulation, canonical scene coordinator, ModelView per-object animation and frame-scoped packet buffers |
+| `bd97a893`, `a9446777`, `d1cc2ee2` | `apps/modelview/NativeScenePreview.h` | New opt-in host interface/owned native Simulation, canonical scene coordinator, ModelView per-object animation and frame-scoped packet buffers |
 | `790864c7` | `apps/modelview/NativeScenePreview.cpp` | Genuine native GameModule::setup + `scene::registerScenePersistence`, canonical prefab spawn, strict project visual catalogue, real imported GLB ModelAssetProvider/AppearanceRegistry, read-only shared resident resolver, owner-thread scene/rollback lifecycle and per-object native Animator |
 | `786fd2c1`, `df60c11f`, `e348367b` | `NativeScenePreview.cpp` | Poll native GPU retirement at owner barrier, discard old epochs' tickets on rollback, rebuild actual SceneHierarchy after loadState, clear stale appearance publications, preflight requested named model clips, invalidate stale Model pointer publication generations |
 | `c1cb2e6e` | `apps/modelview/main.cpp` | `--scene-preview <content-root>`, optional `--scene-start <scene-key>`; preserve existing paths; in-scene GPU owner-frame poll, actual View draw, packet lifetime through Renderer3D::render; HUD Add/Replace/Snapshot/Restore; explicit shutdown quarantine |
