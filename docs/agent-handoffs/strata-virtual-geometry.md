@@ -4182,3 +4182,92 @@ first, run one combined native CMake/CTest/hardware pass on Mac afterward.
 Inspect current main before final integration, avoid overwriting other
 render/geometry agents' changes, and do not enable unverified Vulkan GPU
 parity routes.
+
+
+---
+
+## Stage 18.2 — per-frame STRATA residency/streaming telemetry (2026-11-20)
+
+**Repo/branch:** `chromealex/AIVERSE` / `feature/strata-virtual-geometry`; **not merged to main**.
+**Validation truth:** Source was committed; no local CMake compiler, CTest, Metal,
+Vulkan or GLES GPU test was run. Added regression assertions are NOT a pass
+claim. Existing Stage17 production parity gates remain disabled.
+
+### Why this stage exists
+Existing `GeometryScene::Stats::strataStreamingEvictions`,
+`strataStreamingGpuTransferBytes`, and other source stats were sums
+of **cumulative** `IndexResidencyStats` from each scene source.
+Re-reading those values for successive frames cannot measure per-frame
+upload churn or residency promotion/eviction rate.
+
+### Committed source changes
+- `a30e42bdb0bebd9c1d234cd7b97c4c4581b89f3c`:
+  `engine/render/GeometryScene.h` — additive `Stats` fields
+  `strataStreamFrameSerial`, `strataStreamFrameDemandRecords`,
+  `strataStreamFrameGpuTransferBytes`, `strataStreamFrameUploadedBytes`,
+  `strataStreamFramePromotions`, `strataStreamFrameEvictions`,
+  `strataStreamFrameDeferrals`, `strataStreamFrameFailedUploads`,
+  `strataStreamPeakGpuTransferBytes`,
+  `strataStreamPeakActiveIndexBytes`.
+- `7dba7d4923da84b49b4285299441d9f123aa6295`:
+  `engine/render/GeometryScene.cpp` — at pre-draw residency update,
+  reset frame values when `gfx::Device::frameSerial()` changes.
+  Serial 0 is untrusted and resets per prepass. Count demand records
+  after each source's instance union, compare before/after source
+  counters, aggregate and retain high-water snapshots. A prepass
+  repeated in the same RHI frame accumulates that frame's deltas.
+- `b282355efc9bb87e51c4fcfe2b5f0cfddfd7cde0`:
+  `engine/render/StrataIndexResidency.h` — pure
+  `indexResidencyFrameDelta(before, after)` with nonnegative
+  differences for checked GPU transfer, committed upload bytes,
+  promotions, evictions, deferred demands and failed transfers.
+- `acd4b2c4369b88abb99f3ccc316afb770653b76b`:
+  `engine/render/GeometryScene.cpp` — reuse the pure delta
+  helper rather than duplicating arithmetic in the scene loop.
+- `8fe50c1410736b55f698a2bc2b64e70c198cfdfd`:
+  `tests/render/strata_portable.cpp` — authored regression for
+  failed-upload orphan transfer (32 bytes transferred, 0 bytes
+  published), no-change deltas, counter reset handling and subsequent
+  increasing counts; **not executed**.
+
+### Scope, API and ownership
+`scene.stats()` is the only public access surface; no new ECS
+component, scene JSON field, RHI dispatch, GPU readback, allocation
+or renderer route was introduced.
+`strataStreamFrameDemandRecords` counts per-source collected demand
+records before residency update; it is **not** distinct GPU pages,
+deduplicated nodes, a demand success rate or triangle count.
+`strataStreamFrameGpuTransferBytes` counts checked RHI copies
+including writes from failed transactions. In contrast,
+`strataStreamFrameUploadedBytes` is the delta in published upload
+bytes reported by the residency owner. Frame counts are **CPU-side
+observations**, not physical VRAM, GPU timestamps or PCIe bandwidth.
+`strataStreamPeakActiveIndexBytes` aggregates the active source
+index allocation snapshots rather than actual backend heap residency.
+
+Lifecycle: frame fields reset on a changed valid device serial or on
+each prepass with invalid serial 0. Peaks persist until scene
+shutdown; scene shutdown clears `stats_`. If the prepass is skipped
+because streaming is off or no sources are present, last sampled
+frame values may remain visible; consumers should check the serial
+and streaming status rather than assuming a fresh reading.
+
+### Test plan, not execution result
+```sh
+cmake -S . -B build/strata-final -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+cmake --build build/strata-final --target aiverse_strata_portable_tests aiverse_strata_gpu_culling_tests --parallel 4
+ctest --test-dir build/strata-final -R '^strata_(portable|gpu_culling)$' --output-on-failure
+```
+Then review the actual `CMakeLists.txt` target names, conduct
+device-specific tests under their enabled build options, and
+check the complete Stage17.4 temporal acceptance fixtures.
+No pass/fail result was observed for Stage18.2.
+
+### Next bounded step — Stage 18.3
+Instrument backend compute encoder/dispatch counts and real GPU timing
+capabilities only where supported, without synchronous waits, and
+add an opt-in deterministic camera-trace benchmark for h=0 versus
+h>0 under fixed scene/workload. Avoid reporting a speedup without
+measured, reproducible native hardware results. Keep entire end-to-end
+native test pass deferred until user-approved final feature completion;
+do not overwrite concurrent batching/renderer work.
