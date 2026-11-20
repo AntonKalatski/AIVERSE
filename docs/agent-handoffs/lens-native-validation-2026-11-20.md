@@ -566,3 +566,15 @@ so primary candidate assembly must add it to the copied mesh snapshot. No
 secondary duplication or save/API change. git diff --check PASS. Build-5
 finishing; corrected path NOT RUN yet. Next rebuild all pending fixes and GPU
 fixture, then full CTest.
+
+
+### Acceptance fixture execution corrections — 2026-11-20
+Code `e9edee09ff64a97f3a3045466912793601a62087`, codex/lens-completion. Build-6 PASS. Native Metal readbacks
+reported primary/replay mismatch=0, alternate-camera changed channels=12146,
+nonuniform=25262, no pipeline failures. AppKit terminate does not return from
+platform::run, so fixture now propagates any callback/teardown failure through
+shutdown exit(1) and prints explicit PASS there. Re-run required. Overlay fixture
+still had 9 failed assertions: ordinary rings use renderer lines/triangles, not
+the dedicated Overlay VB. Set onTop + thickness to force the intended batched
+allocation. Production code unchanged. git diff --check PASS. Next rebuild
+these two fixtures, run corrected acceptance and full CTest.
