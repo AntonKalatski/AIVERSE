@@ -43,8 +43,8 @@ PROVENANCE="$BUILD/native-provenance.txt"
   printf 'uname=%s\n' "$(uname -a)"
   printf 'macos=%s\n' "$(sw_vers -productVersion)"
   printf 'mac_model=%s\n' "$(sysctl -n hw.model)"
-  printf 'cmake=%s\n' "$(cmake --version | head -1)"
-  printf 'clang=%s\n' "$(xcrun clang --version | head -1)"
+  printf 'cmake=%s\n' "$(cmake --version | sed -n '1p')"
+  printf 'clang=%s\n' "$(xcrun clang --version | sed -n '1p')"
 } > "$PROVENANCE"
 
 cmake -S "$ROOT" -B "$BUILD" \
