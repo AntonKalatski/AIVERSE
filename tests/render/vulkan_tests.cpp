@@ -276,7 +276,8 @@ int main() {
             td.width=8;td.height=8;td.format=PixelFormat::RGBA16F;
             td.storage=true;td.filter=Filter::Nearest;
             const TextureHandle atlas=d.createTexture(td);
-            CHECK(atlas.valid());
+            const TextureHandle secondAtlas=d.createTexture(td);
+            CHECK(atlas.valid() && secondAtlas.valid());
             const ComputeHandle compute=d.createCompute({nullptr,kGiStorageCompute,
                                                           "offscreen GI storage parity"});
             CHECK(compute.valid());
@@ -291,7 +292,7 @@ int main() {
                 h=d.createBuffer(bd);
                 CHECK(h.valid());
             }
-            if(atlas.valid() && compute.valid() &&
+            if(atlas.valid() && secondAtlas.valid() && compute.valid() &&
                storage[0].valid() && storage[1].valid() &&
                storage[2].valid() && storage[3].valid()) {
                 struct Parameters {
@@ -306,24 +307,41 @@ int main() {
                     if(begun) {
                         for(int i=0;i<4;++i)d.setComputeBuffer(i,storage[i]);
                         d.setComputeTexture(0,atlas);
+                        params.color[0]=.9f;params.color[1]=.1f;params.color[2]=.1f;
+                        d.setComputeUniforms(&params,sizeof(params));
+                        d.dispatch(64);  // first write
+                        CHECK(d.computeDispatchSucceeded());
+                        params.color[0]=.25f;params.color[1]=.5f;params.color[2]=.75f;
+                        d.setComputeUniforms(&params,sizeof(params));
+                        d.dispatch(64);  // same image: compute write->write barrier
+                        CHECK(d.computeDispatchSucceeded());
+                        d.setComputeTexture(0,secondAtlas); // close old GENERAL layout
+                        params.color[0]=.75f;params.color[1]=.25f;params.color[2]=.5f;
                         d.setComputeUniforms(&params,sizeof(params));
                         d.dispatch(64);
-                        d.endCompute();
                         CHECK(d.computeDispatchSucceeded());
+                        d.endCompute();
                     }
                     d.beginPass(screen);
                     d.setPipeline(pTex);d.setVertexBuffer(vbFull);
+                    d.setViewport({0,0,W/2,H});
                     d.setTexture(0,atlas);
+                    d.draw(6);
+                    d.setViewport({W/2,0,W/2,H});
+                    d.setTexture(0,secondAtlas);
                     d.draw(6);
                     d.endPass();
                 });
                 CHECK(img.w==W && img.h==H);
-                if(img.w==W && img.h==H)
-                    CHECK(near(img.at(W/2,H/2),64,128,191));
+                if(img.w==W && img.h==H) {
+                    CHECK(near(img.at(8,H/2),64,128,191));
+                    CHECK(near(img.at(W-8,H/2),191,64,128));
+                }
             }
             for(auto h:storage)if(h.valid())d.destroyBuffer(h);
             if(compute.valid())d.destroyCompute(compute);
             if(atlas.valid())d.destroyTexture(atlas);
+            if(secondAtlas.valid())d.destroyTexture(secondAtlas);
         }
     }
     {   // shadow map: depth-only pass, compare sampler (LEQUAL), GL depth values
