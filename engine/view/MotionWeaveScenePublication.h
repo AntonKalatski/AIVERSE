@@ -6,6 +6,7 @@
 #include "AnimatedSceneAttachmentSources.h"
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <set>
@@ -136,6 +137,25 @@ public:
                 throw std::runtime_error(
                     "independent child Graph publication: "+reason);
 
+            // Each independently created scene Graph host has its OWN
+            // monotonic source IDs starting at one. A shared render-only
+            // View must not receive colliding IDs from different scenes.
+            // Allocate a distinct global visual draw ID for every parent
+            // and every independently animated child, never reused even on
+            // scene replace. A rejected candidate may consume IDs but can
+            // never overwrite the last-good visual generation.
+            for(const auto& [key,parent]:next->parents) {
+                (void)parent;
+                next->parentDrawIds.emplace(key,allocateDrawId());
+            }
+            for(const auto& [key,children]:next->childSnapshots)
+                for(const auto& [childId,appearance]:children) {
+                    (void)appearance;
+                    next->childDrawIds.emplace(
+                        ChildSources::Key{sceneId,key,childId},
+                        allocateDrawId());
+                }
+
             // All compilation, animation preflight and entity construction
             // succeeded. Map allocation happens BEFORE replacing the last
             // good generation. Assignment of unique_ptr cannot throw.
@@ -181,8 +201,18 @@ public:
             if(error)*error="presentation scene not published";
             return false;
         }
-        return it->second->attachments.prepare(
-            sceneId,objectKey,cache,world,out,error);
+        StaticPrepared staged;
+        if(!it->second->attachments.prepare(
+               sceneId,objectKey,cache,world,staged,error))
+            return false;
+        const auto id=it->second->parentDrawIds.find(objectKey);
+        if(id==it->second->parentDrawIds.end()) {
+            if(error)*error="presentation parent render ID unavailable";
+            return false;
+        }
+        staged.object.id=id->second;
+        out=std::move(staged);
+        return true;
     }
 
     // The child pose is already evaluated by sync(), never by the render
@@ -200,9 +230,20 @@ public:
             if(error)*error="presentation scene not published";
             return false;
         }
-        return it->second->animated.prepare(
-            it->second->attachments,cache,{sceneId,objectKey,childId},
-            parentDraw,parentNodeMatrices,out,error);
+        const ChildSources::Key key{sceneId,objectKey,childId};
+        const auto id=it->second->childDrawIds.find(key);
+        if(id==it->second->childDrawIds.end()) {
+            if(error)*error="independent child render ID unavailable";
+            return false;
+        }
+        ChildSources::Prepared staged;
+        if(!it->second->animated.prepare(
+               it->second->attachments,cache,key,parentDraw,
+               parentNodeMatrices,staged,error))
+            return false;
+        staged.object.id=id->second;
+        out=std::move(staged);
+        return true;
     }
 
     // Authoritative scene unload/replace MUST invoke this on the same
@@ -259,6 +300,9 @@ private:
         std::map<std::string,Snapshot> parents;
         std::map<std::string,Entity> parentEntities;
         std::map<std::string,std::map<std::string,Snapshot>> childSnapshots;
+        std::map<std::string,uint64_t> parentDrawIds;
+        std::map<ChildSources::Key,uint64_t,ChildSources::KeyLess>
+            childDrawIds;
         Generation():attachments(presentation){}
         Generation(const Generation&)=delete;
         Generation& operator=(const Generation&)=delete;
@@ -278,6 +322,13 @@ private:
                                   appearance,appearance->parameters});
         return result;
     }
+    uint64_t allocateDrawId() {
+        if(nextDrawId_==0 ||
+           nextDrawId_==std::numeric_limits<uint64_t>::max())
+            throw std::overflow_error("presentation draw IDs exhausted");
+        return nextDrawId_++;
+    }
+    uint64_t nextDrawId_=1; // global to this host; never reused
     std::map<uint64_t,std::unique_ptr<Generation>> scenes_;
 };
 
