@@ -1207,3 +1207,64 @@ post-culling visible command stream still need a fully
 fenced Renderer3D-owned integration, plus isolated Texture
 RHI conflict resolution before main merge. See the 7AS
 handoff and Creator README for exact API and limits.
+
+
+## Stage 7AT — Metal ID rendering from the actual GPU actor vertex buffer (2026-11-20)
+
+The opt-in VIVID GPU picker on Metal no longer needs to reconstruct
+the selected character's vertex *positions* on CPU when the normal
+Renderer3D colour view has an active 60-byte
+`ModelDraw::vertexOverride`. After the renderer-owned
+Stage 7AS source mesh/primitive/LOD/override provenance passes,
+`SculptGpuVertexSource.h` builds only original source vertex
+indices, triangle ordinal IDs, immutable local-to-skin influence
+resolution and the current MotionWeave joint matrices. The
+Metal compute kernel `kSculptGpuSourceExpandMSL` reads the
+**same current-frame GPU `ModelVertex` buffer** that Renderer3D
+will draw, gathers the already-morphed positions at the exact
+60-byte ABI stride, applies rigid source world or the current
+joint palette, and writes GPU-resident 16-byte triangle-ID
+vertices. That output is drawn directly in the existing
+offscreen RGBA8+depth pass; no GPU source vertex readback
+or CPU source position stream re-upload is required.
+
+`SculptGpuIdPass` owns the optional Metal compute pipeline
+and GPU-generated index/skin/matrix/output buffers, but **does
+not own the actor's borrowed source handle**. Every temporary
+GPU buffer remains alive until the frame's asynchronous pixel
+callback is complete or an actual owner-thread GPU-idle barrier
+permits retirement. Exact primitive index order, original
+source IDs (including seam clones), model vertex count and
+skinning data are validated before the compute dispatch. A
+missing/unrepresentable GPU source fails closed to CPU BVH.
+
+For scenes without a GPU vertex override, the earlier CPU-fed
+ID diagnostic remains supported on Metal, Vulkan and native
+GLES3. The new true GPU-source expansion is currently
+**Metal-only**: Vulkan/GLES native one-pixel readback does
+not imply that a native GPU expansion shader exists there.
+Selected masked/custom ShaderGraph source primitives,
+ambiguous/skinned palette input, non-selected authored LOD,
+and other unsupported renderer source decisions continue to
+reject GPU confirmation rather than fabricate provenance.
+Other Creator occluders still use staged CPU reference
+positions as in previous stages.
+
+New pure C++ regression *sources* validate GPU ID input
+topology and 60B override count, seam-clone/LOD mapping,
+one-/two-joint weights, matrices and invalid-input rollback.
+The native `vivid_metal_sculpt_id` GPU fixture now explicitly
+compares a moved GPU source buffer against an unchanged CPU
+reference, plus a skinned GPU source with translated joints,
+to demonstrate that the ID path uses GPU buffer positions
+rather than stale bind-pose/CPU morph coordinates.
+
+**Actual compiler/CTest/Metal shader execution, GPU pixel
+capture, Vulkan/GLES driver and full acceptance were NOT RUN
+on Stage 7AT.** A matching source buffer, joint data and
+pre-render primitive provenance still do not guarantee final
+Renderer3D colour-pass pixel parity under custom shader
+displacement, depth-after transparency, GPU command culling,
+postfx and material selection. A complete cross-platform
+runtime selection pass and polished topology-aware editor
+tools remain subsequent work. See the dedicated 7AT handoff.
