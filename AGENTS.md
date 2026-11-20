@@ -2470,3 +2470,57 @@ selection or scene-resident index page demand. Current branch is
   CPU/GPU temporal parity, then Stage18 benchmarks, Stage19
   final build/CTest and hardware validation. Parity gates stay
   OFF until an exact source SHA has real GPU evidence.
+
+
+## STRATA Stage17.4 — Metal/Vulkan GPU temporal LOD history handoff (2026-11-20)
+
+Current feature branch `feature/strata-virtual-geometry`, NOT
+merged to main. Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.4, before editing GPU cluster culling, `GeometryScene`,
+`Renderer3DModels`, temporal mask lifetimes or Vulkan/Metal shaders.
+
+- `GpuPassConfig` adds `hysteresisFraction` (0..0.45),
+  `temporalPassId` (main=1, sun=2, spot=3, reflection=4),
+  `temporalNodeCount` and `temporalRevision`. Requires one
+  enabled GPU scene instance per temporal dispatch; h=0 is the
+  existing stateless selector, unchanged by default.
+- `GpuClusterCulling` owns bounded GPU-only per-source/
+  instance/primitive/pass histories: 3 frame-serial slots,
+  never overwrites a previous still-in-flight mask; no
+  synchronous CPU readback. Reset every next mask, select using
+  previous mask's coarse/fine hysteresis band, then GPU-safety
+  rollback on invalid metadata/overflow. Distinct Metal/Vulkan
+  shader kernels share 112-byte uniform layout and GPU metadata
+  node indexing. Caps: 262144 nodes/key, 256 histories,
+  32 MiB total logical Storage masks/selector owner. Expire
+  inactive histories after GPU completion; GPU allocation or
+  fence pressure declines to portable CPU/Legacy safely.
+- `GeometryScene::setStrataLodHysteresisFraction()` controls
+  the CPU (Stage17.3) AND GPU (17.4) band; source/material/
+  policy revision, camera slot and pass viewport identity
+  reset warm history. NEW
+  `setStrataGpuTemporalParityVerified(bool)` remains FALSE
+  until real GPU warm-state selection/raster A/B passes.
+  Old stateless GPU parity acceptance flags do not imply
+  temporal parity. Never enable this gate from source review
+  or mock tests alone.
+- Stage17.4 tests AUTHORED, NOT EXECUTED: recording RHI
+  `strata_gpu_culling` tests frame fences, independent cameras,
+  revisions, 32 MiB memory caps and cold/warm uniforms.
+  Real `strata_vulkan_kernel` offscreen GPU test queues
+  four consecutive frames and asynchronously compares
+  selected ranges AND refined mask with CPU temporal oracle.
+  New native `aiverse_strata_metal_temporal` is opt-in on
+  macOS under `AIVERSE_STRATA_METAL_GPU_TESTS=ON`, with
+  three consecutive frames. Both await the owner's combined
+  final native build and real device validation.
+- Never claim full physical VRAM accounting, smooth geomorphing,
+  zero flicker, CPU/GPU pixel parity or measured GPU time
+  from this stage. Cross-model/terrain seams and shading
+  continuity remain outside the static Stage17 proof.
+  Renderer3D still owns every actual graphics draw.
+- Next: Stage18 profiling and GPU workload optimization,
+  then Stage19 clean worktree and full CMake/CTest, actual
+  Metal/Vulkan/GLES3 raster/depth/RTT parity, reconciling
+  concurrent main without force merge. Every stage needs a
+  handoff with exact changed files, real tests and commit SHA.
