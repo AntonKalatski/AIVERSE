@@ -4271,3 +4271,80 @@ h>0 under fixed scene/workload. Avoid reporting a speedup without
 measured, reproducible native hardware results. Keep entire end-to-end
 native test pass deferred until user-approved final feature completion;
 do not overwrite concurrent batching/renderer work.
+
+
+---
+
+## Stage 18.3 — RHI compute dispatch overhead counters (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry` (not merged). Stage18.2
+preceded this change. Code and tests are committed, but **native compilation,
+CTest and GPU execution were NOT RUN**. Existing GPU temporal production
+parity gates remain OFF.
+
+### Discovery and boundary
+`engine/gfx/Gfx.h` currently exposes `beginCompute`,
+`dispatchChecked` and `endCompute`, but **no cross-backend GPU timestamp
+query contract**. Accordingly, Stage18.3 instruments the number of
+RHI calls and requested logical workgroups; it does NOT invent a
+GPU duration, time GPU utilization, or synchronize with the GPU.
+
+### Implemented changes and commits
+- `af5ea02decd3fe2e89e28ebe7d4e0d89e2e323fd`:
+  `engine/render/StrataGpuCulling.h` extends the existing
+  `GpuTemporalStats` with `computeBeginAttempts`,
+  `computeEncodersOpened`, `computeBeginFailures`,
+  `computeDispatchAttempts`, `computeDispatchAccepted`,
+  `computeDispatchFailures`, `computeGroupsRequested`,
+  plus per-kernel counters `temporalResetDispatches`,
+  `selectionDispatches`, `indirectClearDispatches`,
+  `safetyDispatches`. These counters also count **partial**
+  attempts that fail before a complete Strata submission.
+- `6c819499748ae58a0bcab60f47d2e399a2e01567`:
+  `engine/render/StrataGpuCulling.cpp` wraps five existing
+  compute begin/dispatch sites with local tracked wrappers, preserving
+  the original shader bindings, GPU queue order, encoder lifetime and
+  error handling. The counters do not call any GPU readback or clock.
+  Vulkan stateless normal path remains clear/select/safety; Metal
+  stateless path remains select only. Temporal Metal/Vulkan paths
+  account for their additional reset/safety operations.
+- `f760cb256d3b7ccec414f8e8d43f9a94a788c6b9`
+  and correction `2683e4a69bc8f51871ec6c828a3e1ec5ed7a1176`:
+  `tests/render/strata_gpu_culling.cpp`, recording-RHI assertions
+  of begin/dispatch conservation and three Vulkan view submissions
+  (3 compute encoders each). The recording device's
+  `computeCalls` counts pipeline creations, not encoder opens;
+  the corrected assertions explicitly expect nine opens. **NOT RUN**.
+
+### API and safety
+The additive counters are retrieved through
+`GpuClusterCulling::temporalStats()`; `shutdown` resets all.
+The existing `successfulDispatches` counts complete selections,
+whereas `computeDispatchAttempts` counts kernel dispatch calls,
+including those from submissions that subsequently fail. Stage-kernel
+counts represent attempted, not necessarily accepted, dispatches;
+the accepted/failure totals distinguish these outcomes.
+`computeGroupsRequested` sums the logical counts supplied to
+`Device::dispatchChecked`, not hardware wave/warp/mesh-shader
+occupancy. All backends keep their prior capability and parity gates.
+
+### Stage 18 progress
+| Area | Code | Native/GPU verification |
+| --- | --- | --- |
+| Compute encoder begin/failure accounting | IMPLEMENTED | NOT RUN |
+| Total checked compute dispatch counters | IMPLEMENTED | NOT RUN |
+| Kernel-category attempted dispatch breakdown | IMPLEMENTED | NOT RUN |
+| Recording-RHI regression assertions | AUTHORED | NOT RUN |
+| Real Metal/Vulkan GPU timestamps | NOT IMPLEMENTED | N/A |
+| Real per-pass GPU milliseconds/p95 | NOT MEASURED | N/A |
+| Deterministic h=0 vs temporal camera-trace benchmarks | TODO | N/A |
+| Final Metal/Vulkan/GLES acceptance | DEFERRED | N/A |
+
+**Next:** Stage18.4 implement an opt-in deterministic trace/replay
+benchmark and exports for fixed frames, scenes and camera views,
+record baseline h=0 and temporal h>0, and only then evaluate
+performance tradeoffs after one combined Mac native test run.
+If real GPU timings are needed, first design optional RHI timestamp
+queries with backend-specific asynchronous safe readback and strict
+frame/fence lifetime (do not emulate them using CPU wall time).
+Continue to append a distinct stage handoff and list exact commits.
