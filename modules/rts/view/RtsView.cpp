@@ -39,6 +39,8 @@ size_t RtsView::pendingModelRetirements() const {
     return resources_.pendingRetirements()+
            roads_->pendingGpuRetirements()+
            shores_->pendingGpuRetirements()+
+           (pendingRoadRecovery_ ? pendingRoadRecovery_->pendingGpuRetirements() : 0)+
+           (pendingShoreRecovery_ ? pendingShoreRecovery_->pendingGpuRetirements() : 0)+
            geometryScene_.pendingGpuRetirements()+
            overlays_.pendingGpuRetirements();
 }
@@ -48,6 +50,10 @@ bool RtsView::collectRetiredModels() {
     const bool images=imageRollback_.collect(*dev_);
     // Always poll all three queues, even while a previous one is pending.
     const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
+    // Failed staged owners remain alive until a host-proven idle shutdown.
+    // Poll their token queues too so they cannot accumulate GPU retirements.
+    if(pendingRoadRecovery_)pendingRoadRecovery_->collectRetired(*dev_);
+    if(pendingShoreRecovery_)pendingShoreRecovery_->collectRetired(*dev_);
     const bool geometry=geometryScene_.collectRetired(*dev_);
     const bool overlays=overlays_.collectRetiredGpuResources(*dev_);
     return models && images && roads && shores && geometry && overlays;
