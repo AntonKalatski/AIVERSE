@@ -2268,6 +2268,14 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
 endif()
 
+# Enforce the SpectraFX core/consumer direction independently of FPS/RTS/Editor.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_architecture
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/check_boundaries.py)
+    set_tests_properties(spectrafx_architecture PROPERTIES LABELS "SpectraFX;Architecture")
+endif()
+
 # Genre-neutral Niagara-style graph compiler: headless CPU fallback contract.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_graph_tests tests/vfx_graph_compiler_test.cpp)
@@ -2284,6 +2292,134 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vfx_ecs_tests PRIVATE aiverse_fx aiverse_engine)
     add_test(NAME vfx_ecs_presentation COMMAND aiverse_vfx_ecs_tests)
     set_tests_properties(vfx_ecs_presentation PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Standalone SpectraFX API compile smoke and GPU-free authored contract checks.
+# Keep these separate from the large monolithic runtime tests: missing C++
+# symbols/API mismatches in new inline headers must fail immediately.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_library(aiverse_spectrafx_header_smoke OBJECT tests/spectrafx_compile_smoke.cpp)
+    target_include_directories(aiverse_spectrafx_header_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_header_smoke PRIVATE aiverse_runtime aiverse_fx)
+    add_executable(aiverse_spectrafx_contract_tests tests/spectrafx_contract_test.cpp)
+    target_include_directories(aiverse_spectrafx_contract_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_contract_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_contract COMMAND aiverse_spectrafx_contract_tests)
+    set_tests_properties(spectrafx_contract PROPERTIES LABELS "SpectraFX")
+endif()
+
+# Actual Apple Metal GPU compute acceptance. Unlike CPU-only contract tests,
+# this compiles MSL at runtime and dispatches the same evolution, depth-sort
+# and compaction shaders used by HybridPlayback, then reads the GPU results.
+# A runner without an available Metal device reports SKIPPED (exit 77).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_gpu_test tests/spectrafx_metal_gpu.mm)
+    target_include_directories(aiverse_spectrafx_metal_gpu_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_metal_gpu_test PRIVATE
+        "-framework Metal" "-framework Foundation")
+    add_test(NAME spectrafx_metal_gpu COMMAND aiverse_spectrafx_metal_gpu_test)
+    set_tests_properties(spectrafx_metal_gpu PROPERTIES
+        LABELS "SpectraFX;MetalGPU"
+        SKIP_RETURN_CODE 77)
+endif()
+
+# Metal rasterization acceptance for the exact SpectraFX billboard MSL:
+# validates source-instance lookup and alpha/additive pixel output offscreen.
+# Runs independently of the previously passing compute-only MSL test.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_billboard_test
+        tests/spectrafx_metal_billboard.mm)
+    target_include_directories(aiverse_spectrafx_metal_billboard_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_metal_billboard_test PRIVATE
+        "-framework Metal" "-framework Foundation")
+    add_test(NAME spectrafx_metal_billboard
+        COMMAND aiverse_spectrafx_metal_billboard_test)
+    set_tests_properties(spectrafx_metal_billboard PROPERTIES
+        LABELS "SpectraFX;MetalGPU"
+        SKIP_RETURN_CODE 77)
+endif()
+
+# Metal evidence parser guards against false-green suites with skipped
+# hardware tests. Standard-library-only; runs on any host with Python.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_metal_evidence_parser
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/test_verify_metal_ctest.py)
+    set_tests_properties(spectrafx_metal_evidence_parser PROPERTIES
+        LABELS "SpectraFX;Architecture")
+endif()
+
+# Portable visual evidence review of seven real P6 screenshots.
+# Runs hermetic synthetic fixtures; actual screenshots are analyzed separately.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_visual_review_parser
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/test_review_frames.py)
+    set_tests_properties(spectrafx_visual_review_parser PROPERTIES
+        LABELS "SpectraFX;TOOLS")
+endif()
+
+# Production Metal RHI acceptance: two independent offscreen camera views,
+# real compute->gfx::Device draw, RGBA pixel readback and 3-in-flight resource churn.
+# Explicitly compiles the production Metal backend without linking PlatformMac's main().
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_rhi_test
+        tests/spectrafx_metal_rhi.mm engine/gfx/metal/GfxMetal.mm)
+    target_include_directories(aiverse_spectrafx_metal_rhi_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_metal_rhi_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_spectrafx_metal_rhi_test PRIVATE
+        "-framework Metal" "-framework Foundation"
+        "-framework QuartzCore")
+    add_test(NAME spectrafx_metal_rhi COMMAND aiverse_spectrafx_metal_rhi_test)
+    set_tests_properties(spectrafx_metal_rhi PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI"
+        SKIP_RETURN_CODE 77)
+endif()
+
+# Pure native Editor Preview controls: pause/step, invalid JSON and failed
+# revision retries. No ImGui, platform or Metal backend needed for this gate.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_preview_policy_tests
+        tests/spectrafx_preview_policy.cpp)
+    target_include_directories(aiverse_spectrafx_preview_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME spectrafx_preview_policy
+        COMMAND aiverse_spectrafx_preview_policy_tests)
+    set_tests_properties(spectrafx_preview_policy PROPERTIES
+        LABELS "SpectraFX;EDITOR;Architecture")
+endif()
+
+# Real HybridPlayback retirement policy with a controlled Metal-capable RHI.
+# This checks slot/fence ownership and reset semantics, not hardware shaders.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_retirement_tests
+        tests/spectrafx_retirement_test.cpp)
+    target_include_directories(aiverse_spectrafx_retirement_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_retirement_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_retirement COMMAND aiverse_spectrafx_retirement_tests)
+    set_tests_properties(spectrafx_retirement PROPERTIES
+        LABELS "SpectraFX;Architecture")
+endif()
+
+# Real Renderer3D + SpectraFxSceneHost offscreen scene acceptance. The
+# platform OBJECT target supplies the production Metal backend and main();
+# the fixture provides aiverseMain and creates its own tiny CAMetalLayer.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_scene_test
+        tests/spectrafx_metal_scene.mm $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_spectrafx_metal_scene_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_metal_scene_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_spectrafx_metal_scene_test PRIVATE
+        aiverse_runtime aiverse_fx aiverse_render2d)
+    add_test(NAME spectrafx_metal_scene
+        COMMAND aiverse_spectrafx_metal_scene_test)
+    set_tests_properties(spectrafx_metal_scene PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI;Renderer3D"
+        SKIP_RETURN_CODE 77)
 endif()
 
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.

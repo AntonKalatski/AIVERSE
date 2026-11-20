@@ -845,6 +845,61 @@ public:
         return true;
     }
 
+    bool readColorRGBA8(TextureHandle h, std::vector<uint8_t>& rgba) override {
+        rgba.clear();
+        // Diagnostic-only blocking readback: never interrupt an active frame,
+        // encoder, or the normal asynchronous particle render path.
+        if (cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !queue_) return false;
+        const auto* item = textures_.get(h.id);
+        if (!item || !item->tex) return false;
+        const auto format = item->tex.pixelFormat;
+        const bool bgra = format == MTLPixelFormatBGRA8Unorm ||
+                          format == MTLPixelFormatBGRA8Unorm_sRGB;
+        const bool rawRGBA = format == MTLPixelFormatRGBA8Unorm ||
+                             format == MTLPixelFormatRGBA8Unorm_sRGB;
+        if (!bgra && !rawRGBA) return false;
+        const size_t w = item->tex.width, hgt = item->tex.height;
+        if (!w || !hgt || w > SIZE_MAX / 4u || hgt > SIZE_MAX / (w * 4u))
+            return false;
+        // 256-byte rows satisfy Metal texture->buffer blit alignment for
+        // arbitrary offscreen viewport widths, not just the test's 128 px.
+        const size_t pitch = ((w * 4u + 255u) / 256u) * 256u;
+        if (hgt > SIZE_MAX / pitch) return false;
+        id<MTLBuffer> buffer = [device_ newBufferWithLength:pitch * hgt
+                            options:MTLResourceStorageModeShared];
+        if (!buffer) return false;
+        id<MTLCommandBuffer> command = [queue_ commandBuffer];
+        if (!command) return false;
+        id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
+        if (!blit) return false;
+        [blit copyFromTexture:item->tex sourceSlice:0 sourceLevel:0
+                  sourceOrigin:MTLOriginMake(0, 0, 0)
+                    sourceSize:MTLSizeMake(w, hgt, 1)
+                      toBuffer:buffer destinationOffset:0
+         destinationBytesPerRow:pitch destinationBytesPerImage:pitch * hgt];
+        [blit endEncoding];
+        [command commit];
+        [command waitUntilCompleted];
+        if (command.status != MTLCommandBufferStatusCompleted) {
+            error_ = command.error ? command.error.localizedDescription.UTF8String
+                                   : "diagnostic color readback incomplete";
+            return false;
+        }
+        rgba.resize(w * hgt * 4u);
+        const auto* src = static_cast<const uint8_t*>(buffer.contents);
+        for (size_t y = 0; y < hgt; ++y) {
+            for (size_t x = 0; x < w; ++x) {
+                const size_t si = y * pitch + x * 4u;
+                const size_t di = (y * w + x) * 4u;
+                rgba[di] = src[si + (bgra ? 2 : 0)];
+                rgba[di + 1] = src[si + 1];
+                rgba[di + 2] = src[si + (bgra ? 0 : 2)];
+                rgba[di + 3] = src[si + 3];
+            }
+        }
+        return true;
+    }
+
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
         dispatch_semaphore_wait(frameSemaphore_, DISPATCH_TIME_FOREVER);

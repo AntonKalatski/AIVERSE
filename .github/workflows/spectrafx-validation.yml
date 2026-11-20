@@ -1,0 +1,61 @@
+name: SpectraFX one-pass full acceptance
+
+on:
+  push:
+    branches:
+      - feature/spectrafx-generic-cue-queue
+    paths:
+      - ".github/workflows/spectrafx-validation.yml"
+      - "tools/spectrafx/**"
+      - "CMakeLists.txt"
+      - "engine/fx/**"
+      - "engine/gfx/Gfx.h"
+      - "engine/gfx/metal/GfxMetal.mm"
+      - "apps/client/ClientFx*"
+      - "apps/fps/client.cpp"
+      - "apps/editor/windows/SpectraFx*"
+      - "tests/spectrafx*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not cancel an in-progress complete test run on a later push.
+concurrency:
+  group: spectrafx-full-acceptance
+  cancel-in-progress: false
+
+jobs:
+  full-native-acceptance:
+    name: Full build and CTest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: false
+      - name: Linux graphics and build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            ninja-build libx11-dev libegl-dev libgles-dev libvulkan-dev \
+            xvfb mesa-vulkan-drivers
+      - name: Configure, build all, test all, verify SpectraFX and Metal
+        env:
+          AIVERSE_ACCEPTANCE_JOBS: "4"
+          AIVERSE_ACCEPTANCE_WARNINGS_AS_ERRORS: "1"
+        run: bash tools/spectrafx/acceptance.sh build/spectrafx-ci
+      - name: Upload acceptance summary and detailed logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectrafx-full-acceptance-${{ runner.os }}
+          path: build/spectrafx-ci/spectrafx-acceptance/
+          retention-days: 14
+          if-no-files-found: warn
