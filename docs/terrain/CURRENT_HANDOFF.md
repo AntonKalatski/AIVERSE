@@ -1,5 +1,17 @@
 # TerraWeave — current agent handoff entry point
 
+
+> **Stage70 live NEREID/PHYSIS nutrient test — 2026-11-20:**
+> C++ source `2a7c5b66` and lifetime/soil comparison correction
+> `5ccba305` extend `physis_terraweave_fall_bridge` with
+> real one-World PHYSIS weather, two overlapping NEREID bodies,
+> 4m conserved nutrients, v3 Archive and ordinary/COW rollback.
+> [Handoff](qa-2026-11-20-stage70-live-physis-nereid-nutrients-rollback-handoff.md).
+> **Code committed; test has NOT been compiled or executed**.
+> The earlier user-verified 181/181 Mac PASS was on `f55d8d4e`,
+> before this test was added. Do not claim post-edit PASS.
+>
+
 > **Latest main-sync and native QA checkpoint (2026-11-20):**
 > Current `main` `e4129c5062a6` is already an ancestor
 > of TerraWeave; GitHub comparison showed `behind=0` — no merge.
