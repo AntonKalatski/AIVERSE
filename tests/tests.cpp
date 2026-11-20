@@ -12871,6 +12871,89 @@ TEST(terrain_full_map_texture_allocation_and_upload_failure_preserve_old_frame) 
     CHECK(terrain.pendingMeshGpuRetirements()==0);
 }
 
+TEST(terrain_detail_stage_rolls_back_late_lod_and_normal_splat_failures) {
+    fogfaulttest::Device dev;
+    game::TerrainRenderer terrain;
+    game::Rules rules=skirmishRules();
+    const render::FileReader smooth=[](const std::string& path,std::string& out) {
+        if(path!="game.json")return false;
+        out=R"({"terrain":{"style":"smooth","detailLook":{"scale":2}}})";
+        return true;
+    };
+    terrain.init(dev,rules,smooth,"");
+    game::MapGrid previous;
+    previous.init(4,4);
+    for(auto& flag:previous.flags)flag=game::kCellGround;
+    CHECK(terrain.build(dev,previous,false));
+    CHECK(terrain.built() && terrain.detailActive());
+    CHECK(terrain.detail()!=nullptr);
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    const float publishedHeight=terrain.surfaceAt(previous,1.5f,1.5f);
+
+    game::MapGrid next;
+    next.init(65,4); // 3 detail chunks, one coarse LOD per chunk
+    for(auto& flag:next.flags)flag=game::kCellGround;
+    auto oldTextureDeletes=dev.destroyedTextures;
+    dev.failTexture=dev.textureAttempts+6; // after 4 cell and 1 detail-normal textures
+    bool failed=false;
+    try {(void)terrain.build(dev,next,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built() && terrain.detailActive());
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==oldTextureDeletes+5);
+    CHECK(std::fabs(terrain.surfaceAt(previous,1.5f,1.5f)-publishedHeight)<1e-5f);
+    dev.failTexture=0;
+    CHECK(!terrain.build(dev,previous,false)); // unchanged source remains published
+
+    oldTextureDeletes=dev.destroyedTextures;
+    dev.failTextureUpdate=dev.textureUpdates+4; // fail detail splat update
+    failed=false;
+    try {(void)terrain.build(dev,next,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==oldTextureDeletes+6);
+    dev.failTextureUpdate=0;
+
+    const auto oldBufferDeletes=dev.destroyedBuffers;
+    dev.failBuffer=dev.bufferAttempts+8; // apron 2; third coarse LOD index fails
+    failed=false;
+    try {(void)terrain.build(dev,next,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedBuffers==oldBufferDeletes+7);
+    dev.failBuffer=0;
+    CHECK(terrain.build(dev,next,false));
+    CHECK(terrain.detailActive() && terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()>=10);
+
+    // A same-size editor cell change is now staged too, not published chunk
+    // by chunk. The previous detail height must survive a late upload fault.
+    const float nextHeight=terrain.surfaceAt(next,0.5f,0.5f);
+    game::MapGrid edited=next;
+    edited.level[0]=1;
+    const auto pending=terrain.pendingMeshGpuRetirements();
+    dev.failTextureUpdate=dev.textureUpdates+4;
+    failed=false;
+    try {(void)terrain.build(dev,edited,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()==pending);
+    CHECK(std::fabs(terrain.surfaceAt(next,0.5f,0.5f)-nextHeight)<1e-5f);
+    dev.failTextureUpdate=0;
+    CHECK(terrain.build(dev,edited,false));
+    CHECK(terrain.detailActive());
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
 TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
