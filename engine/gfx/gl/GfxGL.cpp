@@ -145,6 +145,13 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
+    uint64_t frameSerial() const override {
+#if defined(__EMSCRIPTEN__) || defined(AIVERSE_GL_LOADER)
+        return 0; // native readback/fenced frame identity not implemented
+#else
+        return frameActive_ ? frameSerial_ : 0;
+#endif
+    }
 
     // ---------- buffers ----------
     BufferHandle createBuffer(const BufferDesc& d) override {
@@ -430,6 +437,11 @@ public:
     }
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
+        // Each real native GLES/GL submission has a monotonic owner-frame
+        // identity. The async readback's GLsync, not this counter, proves
+        // GPU completion before the callback is delivered.
+        frameActive_=true;
+        if(++frameSerial_==0)++frameSerial_;
         deliverPixelReads();
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
@@ -440,6 +452,7 @@ public:
         glBindVertexArray(vao_);
     }
     void endFrame() override { // swap is done by the platform layer (EGL/WGL/browser)
+        frameActive_=false;
 #if defined(__APPLE__) || defined(_WIN32)
         if (queryActive_) {glEndQuery(GL_TIME_ELAPSED);queryActive_=false;glFlush();}
 #endif
@@ -471,7 +484,8 @@ public:
         return false;
 #else
         auto* texture=textures_.get(h.id);
-        if(inPass_ || !texture || texture->fmt!=PixelFormat::RGBA8 ||
+        if(!frameActive_ || inPass_ || !texture ||
+           texture->fmt!=PixelFormat::RGBA8 ||
            !callback || x<0 || y<0 ||
            x>=texture->w || y>=texture->h ||
            pixelReads_.size()>=32u)return false;
@@ -760,6 +774,8 @@ private:
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     bool inPass_=false; // reject async offscreen readback during an encoder/pass
+    bool frameActive_=false;
+    uint64_t frameSerial_=0;
     std::vector<GLFramebuffer> fbos_;
     uint64_t nextRetirementToken_=1;
     std::map<uint64_t,GLsync> retirementFences_;
