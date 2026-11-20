@@ -21,6 +21,9 @@ public:
         uint32_t strataSources=0, strataPrimitives=0, strataSkippedSources=0,
                  strataSkippedPrimitives=0, strataFailures=0;
         uint64_t strataNodes=0, strataMeshlets=0, strataIndexBytes=0;
+        uint64_t strataSeamCertifiedPrimitives=0,
+                 strataSeamRejectedParents=0;
+        uint32_t strataSeamUnsafeDeclined=0;
         uint32_t strataGpuMetadataSources=0, strataGpuMetadataDeclined=0,
                  strataGpuMetadataFailures=0;
         uint64_t strataGpuMetadataBytes=0;
