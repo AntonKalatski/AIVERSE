@@ -81,3 +81,49 @@ neutral. GPU vs CPU differs at **one** of 586500 sampled pixels (max RGB sum del
 8); strict bit-exact image equality FAILED and is not claimed. Both paths rendered
 successfully. Full RigLogic, texture quality, newer DNA, and other backends remain
 NOT TESTED. All artifacts/logs are under the external build root's `metahuman/`.
+
+## Full-character companion export (2026-11-20)
+
+The legacy Epic `Ada.dna` sample contains the head/neck, not a full body. A full
+character cannot be reconstructed from that file alone. For full-body acceptance
+we separately imported the published Ada UE 5.6 GLB from
+https://github.com/creategamecharacters/metahuman-to-glb (CreateGameCharacters).
+Source URL: https://creategamecharacters.github.io/metahuman-to-glb/characters/ada/ada.glb
+SHA256: `70ad5d190e3cdfb54e88d405b75d7b4731547f2bd93d5cbad0ce4720946d99de`.
+This is a companion-export test, NOT evidence that the binary DNA adapter imports
+body DNA, clothing, original RigLogic or skinning from the old head-only sample.
+
+`prepare_full_character.cjs` uses external packages `@gltf-transform/core@4.2.1`,
+`@gltf-transform/extensions@4.2.1`, `draco3dgltf@1.5.7` installed into a separate
+KINGSTON tooling directory. It decodes Draco offline because the native importer
+requires uncompressed geometry. The 7 meshes, 15 primitives, 5 skin palettes and
+16 texture images are retained; duplicate garment bone names are made unique.
+The face skin's own head bone becomes `vivid_face_head`. A parent frame uniformly
+scales/centers the model for Creator without rewriting skin inverse-bind matrices.
+
+```sh
+node tools/vivid-dna-import/prepare_full_character.cjs \
+  "$TOOLING" "$BUILD/ada-source.glb" "$BUILD/ada-full" 0 "$BUILD/mh_materials.json"
+AIVERSE_VIVID_CREATOR_CAPTURE="$BUILD/ada-full.ppm" \
+  "$NATIVE/aiverse_vivid_creator" --smoke --still --asset "$BUILD/ada-full/manifest.json"
+```
+
+Use yaw `-0.5` for the ¾ view. Destination must be new. `mh_materials.json` comes
+from the same published character directory. The source UE cloth material uses a
+packed region mask in the GLB base-colour slot: the adapter removes that colour
+binding and applies the author's `diffuse_color_1`, roughness and metallic values.
+This is an explicit **uniform-cloth fallback**, not full mask/detail shader parity.
+Original skin and other texture bindings stay in the asset. Hair uses VIVID's
+material profile; exact UE hair/eye appearance has not been established.
+
+Creator idle animation now adds its demo bob to the head's bind translation:
+absolute zero translation would collapse a real imported head toward its neck.
+Actual Metal front, ¾ and CPU captures all passed. Both final GPU images were
+visually inspected, including hands, feet, clothes, head and hair. Native source
+has 119916 position vertices; after importer skin-palette splitting Creator shows
+125302 vertices. The full body is in its rest pose; complete rig animation and
+original facial solver parity have NOT been tested.
+
+All assets, package-lock, builds, provenance and captures are external under
+`/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/`.
+No character asset or external dependency is vendored in the repository.

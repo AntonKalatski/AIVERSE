@@ -608,7 +608,12 @@ struct CreatorApp {
                 throw std::runtime_error("VIVID Creator: imported head joint missing");
             headMove.path=AnimChannel::Translation;
             headMove.times={0,1,2};
-            headMove.values={0,0,0,0,0.055f,0,0,0,0};
+            // Clip translation is absolute local TRS: retain the imported
+            // head bind offset, otherwise skinned heads collapse toward neck.
+            const auto bind=proposed.head->nodes[std::size_t(headMove.node)].t;
+            headMove.values={bind.x,bind.y,bind.z,
+                             bind.x,bind.y+0.055f,bind.z,
+                             bind.x,bind.y,bind.z};
             idle.channels.push_back(std::move(headMove));
             proposed.head->clips.push_back(std::move(idle));
             proposed.head->uploadPrepared=true;

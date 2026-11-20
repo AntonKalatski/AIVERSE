@@ -6,6 +6,17 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Full-character visual checkpoint — 2026-11-20
+
+A separate published Ada companion GLB now renders full body, clothes, shoes,
+hair and textured head in Creator. The external preparation script preserves
+skins/textures, decompresses Draco and frames the character. Creator demo head
+motion preserves imported bind translation. Three real Metal captures (front,
+¾, CPU) passed. This is **companion-export support**, not body reconstructed from
+the legacy head-only Ada.dna. Cloth uses an explicitly recorded uniform-colour
+fallback; complete RigLogic/body animation and UE material parity remain unverified.
+See the [full-character workflow](../tools/vivid-dna-import/README.md).
+
 ## MetaHuman DNA diagnostic adapter — 2026-11-20
 
 `tools/vivid-dna-import` now provides an offline adapter through an externally
