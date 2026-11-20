@@ -154,6 +154,13 @@ if [[ "$GUI" -eq 1 ]]; then
         "$ROOT/tools/vivid-creator/compare_ppm.py" \
         "$CREATOR_PPM" "$WARM_PPM"
 
+    # Machine-readable viewport RGB diagnostic; source-level BRDF checks
+    # cannot replace a captured, nonempty GPU material A/B comparison.
+    run_logged creator-optical-ab python3 \
+        "$ROOT/tools/vivid-creator/optical_ab.py" \
+        "$CREATOR_PPM" "$WARM_PPM" \
+        --output "$LOGDIR/creator-optical-ab.json"
+
     # Exercise the OPEN external OBJ+manifest+named morph importer in a
     # real window. No bundled copyrighted scanned human assets required.
     IMPORT_PPM="$LOGDIR/vivid-imported-head.ppm"
@@ -180,6 +187,7 @@ fi
         printf 'Renderer3D shared GPU asset crowd preview=PASS\n'
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
         printf 'VIVID Creator neutral-vs-warm actual material pixel A/B=PASS\n'
+        printf 'VIVID Creator quantitative optical A/B report=PASS\n'
         printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
