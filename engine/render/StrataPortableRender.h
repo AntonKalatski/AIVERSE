@@ -102,7 +102,9 @@ public:
     bool collectResidencyDemands(const mat4& instanceWorld,
                      const std::vector<PortablePassView>& passes,
                      bool forceFinestForUnspecifiedPass,
-                     std::vector<IndexDemand>& out) const;
+                     std::vector<IndexDemand>& out,
+                     const PortableLodHistory* temporalHistory = nullptr,
+                     float hysteresisFraction = 0.f) const;
     bool prepareModel(const mat4& instanceWorld,
                       const std::vector<PortablePassView>& passes,
                       bool forceFinestForUnspecifiedPass,
