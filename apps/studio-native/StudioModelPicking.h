@@ -5,6 +5,7 @@
 // per-material alpha masks and rendered LOD selection require GPU ID/depth pick.
 #pragma once
 #include "engine/render/Model.h"
+#include "apps/studio-native/StudioVisualPicking.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -124,5 +125,25 @@ inline StudioModelInstanceHit studioPickModelInstances(
         }
     }
     return nearest;
+}
+
+// Resolve the visible nearest surface among both real model instances and
+// fallback document cubes. Any proxy replaced by a drawn model is excluded:
+// otherwise an invisible proxy could steal the click from the real model.
+inline std::string studioPickSceneSurfaces(
+    const std::vector<StudioModelPickInstance>& renderedModels,
+    const std::vector<StudioDocumentProxy>& documentProxies,
+    render::float3 origin,render::float3 direction) {
+    const auto modelHit=studioPickModelInstances(renderedModels,origin,direction);
+    std::vector<StudioDocumentProxy> visibleProxies;
+    visibleProxies.reserve(documentProxies.size());
+    for (const auto& proxy:documentProxies) {
+        bool replaced=false;
+        for (const auto& instance:renderedModels)
+            if (instance.id==proxy.id) {replaced=true;break;}
+        if (!replaced) visibleProxies.push_back(proxy);
+    }
+    const auto proxyHit=studioPickVisibleProxy(visibleProxies,origin,direction);
+    return modelHit.surface.distance<proxyHit.distance ? modelHit.id : proxyHit.id;
 }
 } // namespace aiverse::studio
