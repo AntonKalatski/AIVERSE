@@ -15,10 +15,19 @@ StudioGameSurface::~StudioGameSurface() {
     lifetime_->retire();
 }
 void StudioGameSurface::start(const StudioGameLaunch& plan,const std::string& assets) {
-    error_.clear();
+    error_.clear();launch_=plan;assets_=assets;
     host_->start(*device_,plan.project,assets,lifetime_->lease(),plan.map);
 }
 void StudioGameSurface::stop() { host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
+void StudioGameSurface::control(const std::string& action) {
+    if (action=="restart") {
+        if (!host_->active()) throw std::runtime_error("Start a game before restarting");
+        start(launch_,assets_);return;
+    }
+    const bool ok=action=="pause"?host_->setPaused(true):action=="resume"?host_->setPaused(false):
+        action=="step"?host_->stepOnce():false;
+    if (!ok) throw std::runtime_error("Control unavailable: use a loaded local match; Step requires editor Pause and a closed game menu");
+}
 void StudioGameSurface::suspend() { host_->suspendInput();host_->collectGpuRetirements(); }
 void StudioGameSurface::event(const platform::Event& event) {
     if (!host_->active()) return;
@@ -46,6 +55,9 @@ void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focus
 Json StudioGameSurface::state() const {
     Json out=Json::object();
     out.set("active",Json::fromBool(host_->active()));
+    out.set("paused",Json::fromBool(host_->paused()));
+    out.set("canControl",Json::fromBool(host_->canControl()));
+    out.set("canStep",Json::fromBool(host_->canStep()));
     out.set("loading",Json::fromBool(host_->loading()));
     out.set("progress",Json::number(double(host_->progress())));
     out.set("inMatch",Json::fromBool(host_->inMatch()));

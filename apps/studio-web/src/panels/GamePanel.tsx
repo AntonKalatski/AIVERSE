@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play, Square } from 'lucide-react';
+import { Play, Square, Pause, StepForward, RotateCcw } from 'lucide-react';
 import { invoke } from '../bridge';
 import type { StudioGameState } from '../types';
 import type { StudioPanelContext } from './StudioPanelRenderer';
@@ -50,13 +50,22 @@ export default function GamePanel({snapshot,connected,busy,setBusy}:StudioPanelC
     catch(e){setError(e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
+  const control=async(action:'pause'|'resume'|'step'|'restart')=>{
+    if(busy)return;setBusy(true);setError('');
+    try{setState(await invoke('studio.gameControl',{action}));}
+    catch(e){setError(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
+  };
   return <StudioPanel title="Game" className="studio-game" flush
     actions={<>
       <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('map')}><Play size={14}/> Play map</StudioButton>
       <StudioButton disabled={!loaded||busy||!!state?.active} onClick={()=>void act('menu')}>Project menu</StudioButton>
+      <StudioButton disabled={!state?.canControl||busy} onClick={()=>void control(state?.paused?'resume':'pause')}><Pause size={14}/>{state?.paused?'Resume':'Pause'}</StudioButton>
+      <StudioButton disabled={!state?.canStep||busy} onClick={()=>void control('step')}><StepForward size={14}/>Step</StudioButton>
+      <StudioButton disabled={!state?.active||busy} onClick={()=>void control('restart')}><RotateCcw size={14}/>Restart</StudioButton>
       <StudioButton disabled={!state?.active||busy} onClick={()=>void act('stop')}><Square size={14}/> Stop</StudioButton>
     </>}
-    footer={<><StudioBadge>{state?.active?(state.loading?`Loading ${Math.round(state.progress*100)}%`:state.inMatch?`Running · tick ${state.tick}`:'Project menu'):'Stopped'}</StudioBadge><span>Native game client · click the viewport to focus input</span></>}>
+    footer={<><StudioBadge>{state?.active?(state.loading?`Loading ${Math.round(state.progress*100)}%`:state.inMatch?`${state.paused?'Paused':'Running'} · tick ${state.tick}`:'Project menu'):'Stopped'}</StudioBadge><span>Native game client · click the viewport to focus input</span></>}>
     {(error||state?.error) && <StudioAlert tone="danger">{error||state?.error}</StudioAlert>}
     <div ref={surface} className="studio-game__surface" aria-label="Native Game viewport">
       {!state?.active && <StudioEmptyState title={loaded?'Ready to play':'Open a project'}

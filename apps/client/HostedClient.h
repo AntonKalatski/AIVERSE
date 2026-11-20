@@ -57,6 +57,11 @@ public:
     Simulation* simulation();
     bool inMatch() const;
     std::string errorText() const;
+    bool canControl() const;
+    bool paused() const;
+    bool canStep() const;
+    bool setPaused(bool paused);
+    bool stepOnce();
 
 private:
     struct Scope;

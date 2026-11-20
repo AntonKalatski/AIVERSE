@@ -225,6 +225,17 @@ void HostedClient::event(const Event& in) {
 Simulation* HostedClient::simulation() { return client_ && step_ >= kSteps ? client_->simulation() : nullptr; }
 bool HostedClient::loading() const { return client_ && (step_ < kSteps || client_->mapLoading()); }
 std::string HostedClient::errorText() const { return client_ ? client_->errorText() : std::string(); }
+bool HostedClient::canControl() const { return client_ && step_ >= kSteps && client_->hostCanControl(); }
+bool HostedClient::paused() const { return client_ && step_ >= kSteps && client_->hostPaused(); }
+bool HostedClient::canStep() const { return client_ && step_ >= kSteps && client_->hostCanStep(); }
+bool HostedClient::setPaused(bool paused) {
+    if (!canControl()) return false;
+    Scope scope(*this);return client_->setHostPaused(paused);
+}
+bool HostedClient::stepOnce() {
+    if (!canStep()) return false;
+    Scope scope(*this);return client_->requestHostStep();
+}
 bool HostedClient::inMatch() const { return client_ && step_ >= kSteps && client_->inMatch(); }
 
 } // namespace aiverse::client

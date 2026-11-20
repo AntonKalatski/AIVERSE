@@ -128,8 +128,16 @@ public:
     Simulation* simulation() { return sim_.get(); }
     bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
+    // Editor controls affect only the existing local simulation. Network/city
+    // authority must keep advancing even when a local preview is paused.
+    bool hostCanControl() const;
+    bool hostPaused() const;
+    bool hostCanStep() const;
+    bool setHostPaused(bool paused);
+    bool requestHostStep();
 
 private:
+    bool hostPaused_ = false, hostStep_ = false;
     enum class Screen { Menu, Lobby, Playing, Paused, Over };
     enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd, Repair, Reclaim };
 

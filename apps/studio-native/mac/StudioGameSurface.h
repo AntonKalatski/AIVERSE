@@ -11,6 +11,7 @@ public:
     ~StudioGameSurface();
     void start(const StudioGameLaunch& plan,const std::string& engineAssets);
     void stop();
+    void control(const std::string& action);
     void frame(int width,int height,float pointsW,float pointsH,double dt,bool focused);
     void suspend();
     void event(const platform::Event& event);
@@ -19,6 +20,7 @@ private:
     std::unique_ptr<gfx::Device> device_;
     std::unique_ptr<render::RenderDeviceLifetime> lifetime_;
     std::unique_ptr<client::HostedClient> host_;
-    std::string error_;
+    std::string error_, assets_;
+    StudioGameLaunch launch_;
 };
 }

@@ -325,7 +325,7 @@
 }
 - (aiverse::Json)gameState {
     if(game_)return game_->state();
-    return aiverse::Json::parse(R"({"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+    return aiverse::Json::parse(R"({"paused":false,"canControl":false,"canStep":false,"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
 }
 - (void)gameEvent:(const aiverse::platform::Event&)event {
     if(game_ && !gameViewport_.hidden)game_->event(event);
@@ -743,7 +743,7 @@
             return;
         }
         const auto gameMethod=req.getStr("method");
-        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState") && req["id"].isNumber()) {
+        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState" || gameMethod=="studio.gameControl") && req["id"].isNumber()) {
             aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
             try {
                 if(gameMethod=="studio.gameStart") {
@@ -754,6 +754,10 @@
                     game_->start(plan,std::string(AIVERSE_STUDIO_SOURCE_DIR)+"/engine/assets");
                     gameFrameTime_=0;
                 }else if(gameMethod=="studio.gameStop" && game_)game_->stop();
+                else if(gameMethod=="studio.gameControl") {
+                    if(!game_)throw std::runtime_error("No game is running");
+                    game_->control(req["params"].getStr("action"));
+                }
                 reply.set("result",[self gameState]);
             }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
             [self sendStudioReply:reply];return;
