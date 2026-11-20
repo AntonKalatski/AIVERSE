@@ -315,3 +315,5 @@ OFL, CC0 and CC-BY, among others). Original assets of commercial games are not i
 from your own copy.
 
 Game builds automatically include `THIRD_PARTY_NOTICES.txt`; external SDK notices must be supplied by the project (see [details](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): Seeded decorative stones, boulders, slabs and shards; shared PBR export and three native LODs (opt-in).

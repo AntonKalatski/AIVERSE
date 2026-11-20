@@ -315,3 +315,5 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 インポーターはあなた自身のコピーから読み込みます。
 
 ゲームのビルドには `THIRD_PARTY_NOTICES.txt` が自動的に含まれます。外部 SDK のライセンス通知はプロジェクトで用意してください（[詳細](docs/third-party-notices.md)）。
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): シードによる装飾用の石・巨石・石板・岩片生成。共有PBRテクスチャの出力と3段階のネイティブLOD（任意）。

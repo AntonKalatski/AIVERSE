@@ -316,3 +316,5 @@ Die Referenzdokumente sind auf Englisch. Die Übersicht, der Spiel-Assistent, de
 lesen sie aus Ihrer eigenen Kopie.
 
 Spiel-Builds enthalten automatisch `THIRD_PARTY_NOTICES.txt`; Hinweise für externe SDKs muss das Projekt bereitstellen (siehe [Details](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): Dekorative Steine, Felsbrocken, Platten und Splitter per Seed; gemeinsamer PBR-Export und drei native LODs (optional).

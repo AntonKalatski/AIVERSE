@@ -318,3 +318,5 @@ Les documents de référence sont en anglais. La vue d’ensemble, l’assistant
 incluses : les importateurs les lisent depuis votre propre copie.
 
 Les builds incluent automatiquement `THIRD_PARTY_NOTICES.txt` ; le projet doit fournir les mentions des SDK externes (voir les [détails](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): Pierres, rochers, dalles et éclats décoratifs par graine ; export PBR partagé et trois LOD natifs (optionnel).

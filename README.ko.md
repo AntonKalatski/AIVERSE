@@ -312,3 +312,5 @@ OFL, CC0, CC-BY 등). 상용 게임의 원본 에셋은 포함되어 있지 않�
 읽어 옵니다.
 
 게임 빌드에는 `THIRD_PARTY_NOTICES.txt`가 자동으로 포함됩니다. 외부 SDK의 라이선스 고지는 프로젝트에서 제공해야 합니다([자세히 보기](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): 시드 기반 장식용 돌, 바위, 석판, 파편 생성. 공유 PBR 텍스처 내보내기 및 네이티브 LOD 3단계(선택 기능).

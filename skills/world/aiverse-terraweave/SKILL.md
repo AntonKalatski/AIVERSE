@@ -1428,3 +1428,16 @@ See `docs/nereid/TERRAIN_EROSION.md` and handoff for exact status.
 - `TerraWeaveForestScene.h`: `setDeadTrees` independent of fallen/harvested filters; `setRecruitedPlants` renders sparse native saplings using the existing Arbor shared mesh/impostor and Flora LOD instead of per-tree GPU asset generation. `TerraWeaveNativeWorldBinding.h` reconstructs these on rollback/load. Tree-only age/light changes do not rebuild unrelated GPU grass, terrain meshes, colliders or navmesh.
 - `examples/world/terraweave_native/{Integration.h,README.md}` demonstrates opt-in species policies and authoritative ECS planting; see `docs/terrain/stage-65-rooted-forest-ecology-handoff.md` for exact commits and limitations. Hidden *harvested* trees must also be removed/flagged in authoritative game state; natural death does NOT itself remove physics colliders, produce fallen logs or decompose resources. Explicit gameplay owns those actions.
 - This stage is **source-implemented but not compiled or native-tested**. Expensive decisions are batched, but rebuilding the canopy index and staging ECS root snapshots remains O(N) per due ecology period; no proven million-entity runtime or true photometric light. Do not merge Draft PR #24 before native CMake/CTest, deterministic ECS replay, NEREID water stress and Arbor near/far/Metal validation.
+
+## Native decorative rocks (2026-11-20)
+
+Use `engine/world/TerraWeaveRocks.h` / `engine/render/TerraWeaveRockModel.h`
+for reusable seeded stones, boulders, slabs and shards. Read `docs/terrain/rocks.md`.
+Do not create a second Python geometry solver or use plant age/foliage components
+for rocks. Cache a bounded prototype pool; ordinary Renderer3D owns 1280/320/80
+triangle LOD and GPU resources. Integer placement accepts an immutable authored
+height snapshot and a road/water exclusion callback. Nine-point support is a
+conservative visual approximation, not collision or authority. Native source
+uses no new renderer. `aiverse_terraweave_rocks` exports the same generated models
+with existing glTF rtsLods and four shared PBR maps, refusing existing output dirs.
+Test `terraweave_rocks` and inspect real captures before visual acceptance.

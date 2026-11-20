@@ -4046,3 +4046,12 @@ Physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal remain opt-in
 PHYSIS bridge is read-only presentation; no gameplay visibility or simulation changes.
 Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
 and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.
+
+## TerraWeave cosmetic rocks (2026-11-20)
+Use `TerraWeaveRocks.h` integer scatter and `TerraWeaveRockModel.h` seeded native
+model adapter for stones/boulders/slabs/shards; documentation `docs/terrain/rocks.md`.
+Reuse bounded shared prototypes and existing Renderer3D LOD; no plant-age ECS state,
+per-rock mesh generation in the render loop, or implied collision authority.
+Offline tool `aiverse_terraweave_rocks` exports the same model with shared PBR maps.
+The current API is opt-in, not automatically installed in WorldScene/Studio.
+Keep separate per-stage handoffs and distinguish visual geometry from physics.

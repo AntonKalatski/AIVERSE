@@ -308,3 +308,5 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 仓库不包含商业游戏的原始资源：导入器从你自己的副本中读取它们。
 
 游戏构建会自动包含 `THIRD_PARTY_NOTICES.txt`；外部 SDK 的许可声明须由项目提供（见[详情](docs/third-party-notices.md)）。
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): 按种子生成装饰性石头、巨石、石板与碎岩；共享 PBR 纹理导出和三级原生 LOD（可选）。
