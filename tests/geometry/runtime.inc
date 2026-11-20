@@ -297,7 +297,7 @@ struct GpuUploadFailDevice : entityfxtest::RecordingDevice {
     gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
         ++attempts;
         if(failAt && attempts==failAt)return {};
-        return RecordingDevice::createBuffer(desc);
+        return entityfxtest::RecordingDevice::createBuffer(desc);
     }
     bool waitForResourceIdle() override {
         ++refused;
