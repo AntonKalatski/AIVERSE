@@ -250,6 +250,7 @@ struct Bench {
             if(!uploadModel(d,*model))throw std::runtime_error("model upload failed: "+d.lastError());
             report.set("loadAndUploadMs",Json::number(ms(start,Clock::now())));
             const auto& optim=config["modelOptimization"];
+            renderer.setLodDiagnosticsEnabled(true);
             renderer.setModelLodEnabled(config["look"].getBool("lod",optim.getBool("lod",true)));   // look.lod/culling: draw-only
             renderer.setModelCullingEnabled(config["look"].getBool("culling",optim.getBool("culling",true)));
             renderer.setModelInstancingEnabled(optim.getBool("instancing",true));

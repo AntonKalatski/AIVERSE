@@ -42,7 +42,7 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         MaterialUniforms mu{};
         mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
         mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
-        mu.emissive[3] = std::isfinite(mt.shadowDiffusion) ? std::clamp(mt.shadowDiffusion,0.0f,1.0f) : 0.0f;
+        mu.emissive[3] = std::isfinite(mt.shadowDiffusion) ? std::clamp(mt.shadowDiffusion, 0.0f, 1.0f) : 0.0f;
         mu.pbr[0] = mt.metallic; mu.pbr[1] = mt.roughness; mu.pbr[2] = mt.normalScale; mu.pbr[3] = mt.occlusionStrength;
         mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
         mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
@@ -1321,6 +1321,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const bool skinLod = node.skin >= 0 && !unboundedDisplacement && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
         const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
+        // CPU-owned rigid scenery only. GPU-authored packets retain their own
+        // mesh/primitive identities and never borrow a second shadow LOD.
         const bool independentLod=m->batching.independentShadowLod&&rigid&&lodEligible&&!m->geometry&&
             !d.gpuIndexed.valid()&&d.gpuIndexedPrimitives.empty()&&d.gpuShadowPrimitives.empty();
         int shadowLodMesh=node.mesh;

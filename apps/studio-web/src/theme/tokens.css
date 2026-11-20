@@ -64,6 +64,18 @@
   --au-shadow-md: 0 14px 42px #030811a6;
   --au-focus: 0 0 0 2px #0c1726, 0 0 0 4px #82b5ff;
   --au-transition-fast: 125ms ease-out;
+  /* First Cinematic Concept: selected by user (NOT the later flat variant). */
+  --au-accent-secondary: #9b91ff;
+  --au-accent-glow: #82b5ff26;
+  --au-active-glow: #77aaff3a;
+  --au-shell-header: #101a2b;
+  --au-shell-toolbar: #17253a;
+  --au-shell-tab: #1c2b42;
+  --au-panel-gradient: linear-gradient(160deg,#18273b,#111b2a 70%,#101826);
+  --au-header-gradient: linear-gradient(180deg,#213550,#192a42);
+  --au-selection-gradient: linear-gradient(90deg,#315b94,#263f67);
+  --au-popover-shadow: 0 18px 48px #030817b3;
+
 }
 :root[data-studio-density="comfortable"] {
   --au-control-height: 40px;

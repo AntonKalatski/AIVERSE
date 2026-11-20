@@ -143,8 +143,11 @@ export default function ShaderGraphPanel({projectPath}:{projectPath:string}) {
         onPointerMove={event=>{
           if(!drag.current||!draft)return;
           const current=drag.current;
-          const x=current.originalX+event.clientX-current.x;
-          const y=current.originalY+event.clientY-current.y;
+          // Client pointer delta is in zoomed CSS pixels, while node positions
+          // are stored in unscaled SVG viewBox coordinates.
+          const zoom=Number(window.document.documentElement.style.zoom)||1;
+          const x=current.originalX+(event.clientX-current.x)/zoom;
+          const y=current.originalY+(event.clientY-current.y)/zoom;
           setDraft(previous=>previous?moveShaderGraphNode(previous,current.id,x,y):previous);
         }}
         onPointerUp={()=>{drag.current=null;}}

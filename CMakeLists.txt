@@ -43,6 +43,14 @@ option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_TOOLS "Build aiversebuild packager" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot client" ${AIVERSE_DESKTOP})
 
+# Register Objective-C++ in the ROOT directory before creating any targets.
+# CMake does not propagate a language enabled only in a child directory back
+# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
+option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
+    enable_language(OBJCXX)
+endif()
+
 # Explicit system Khronos libktx support for BasisLZ/ETC1S and UASTC.
 # OFF by default: no hidden vendoring, network fetch or platform dependency.
 option(AIVERSE_TEXTURE_WITH_LIBKTX "Use installed libktx Basis Universal KTX2 transcoder" OFF)
@@ -60,14 +68,6 @@ if(AIVERSE_TEXTURE_WITH_LIBKTX)
     target_include_directories(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_INCLUDE_DIR}")
     target_link_libraries(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_LIBRARY}")
     target_compile_definitions(aiverse_texture_libktx INTERFACE AIVERSE_TEXTURE_WITH_LIBKTX=1)
-endif()
-
-# Register Objective-C++ in the ROOT directory before creating any targets.
-# CMake does not propagate a language enabled only in a child directory back
-# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
-option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
-if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
-    enable_language(OBJCXX)
 endif()
 
 # Game being built (aiversebuild overrides these).
@@ -2141,14 +2141,26 @@ foreach(t aiverse_client main)
     endif()
 endforeach()
 # Editor: play the project as in the game client, hosted in the Game window or in AiverseGame (apps/editor/EditorClientPlay.cpp)
+if(TARGET aiverse_editor OR AIVERSE_BUILD_STUDIO_HTML5)
+    # Shared game runtime host; editor shells own controls and native surfaces.
+    # Existing in-game overlay rendering remains inside GameClient, not Studio UI.
+    add_library(aiverse_hosted_client STATIC apps/client/HostedClient.cpp ${AIVERSE_CLIENT_CORE_SOURCES})
+    target_include_directories(aiverse_hosted_client PUBLIC "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_hosted_client PUBLIC aiverse_runtime aiverse_game_view
+        aiverse_net_city aiverse_splash aiverse_net aiverse_game_audio aiverse_atlas
+        aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader AIVERSE::InputFlow)
+endif()
 if(TARGET aiverse_editor)
-    target_sources(aiverse_editor PRIVATE apps/editor/EditorClientPlay.cpp apps/editor/ClientHost.cpp ${AIVERSE_CLIENT_CORE_SOURCES})
-    target_link_libraries(aiverse_editor PRIVATE aiverse_net_city)
-    target_link_libraries(aiverse_editor PRIVATE aiverse_splash aiverse_net aiverse_game_audio aiverse_atlas aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader)
+    target_sources(aiverse_editor PRIVATE apps/editor/EditorClientPlay.cpp)
+    target_link_libraries(aiverse_editor PRIVATE aiverse_hosted_client)
 endif()
 if(AIVERSE_BUILD_TESTS AND (AIVERSE_PLATFORM STREQUAL "linux" OR AIVERSE_PLATFORM STREQUAL "macos"))
     add_executable(aiverse_hosted_view_tests tests/hosted_view.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_hosted_view_tests PRIVATE aiverse_runtime)
+    if(TARGET aiverse_hosted_client)
+        target_link_libraries(aiverse_hosted_view_tests PRIVATE aiverse_hosted_client)
+        target_compile_definitions(aiverse_hosted_view_tests PRIVATE AIVERSE_TEST_HOSTED_CLIENT=1)
+    endif()
     add_test(NAME aiverse_hosted_view_tests COMMAND aiverse_hosted_view_tests)
 endif()
 
@@ -3044,7 +3056,7 @@ endif()
 add_library(aiverse_spine STATIC engine/spine/SpineData.cpp engine/spine/SpineSkeleton.cpp)
 target_include_directories(aiverse_spine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_spine PUBLIC aiverse_engine)
-foreach(t aiverse_client main aiverse_editor)
+foreach(t aiverse_client main aiverse_hosted_client)
     if(TARGET ${t})
         target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp apps/client/ClientServices.cpp apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
         target_link_libraries(${t} PRIVATE aiverse_spine aiverse_render2d)

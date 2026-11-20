@@ -64,6 +64,7 @@ inline TerrainPreviewStats buildTerrainPreview(const editor::MapData& d,
                                                render::MeshBuilder& out,
                                                float levelHeight = 1.5f) {
     TerrainPreviewStats stats;
+    if(d.extra.getStr("terrainPresentation","legacy")=="entities")return stats;
     if (d.planet() || d.w <= 0 || d.h <= 0 || d.w > 200000 || d.h > 200000) return stats;
     const int longest = std::max(d.w, d.h);
     const int step = std::max(1, (longest + 255) / 256);

@@ -275,7 +275,8 @@ void registerMaterialOps(Workspace& ws) {
             if (mat.getStr("base") == name) throw std::runtime_error("a material can't be its own base");
             std::vector<std::string> warnings;
             for (const char* k : {"texture", "normalMap", "emissiveMap", "teamMask", "metallicRoughnessMap", "occlusionMap"})
-                if (mat[k].isString() && !fs::exists(gameFile(*w, mat.getStr(k)))) warnings.push_back(std::string(k) + " '" + mat.getStr(k) + "' does not exist yet");
+                if (mat[k].isString() && !mat.getStr(k).empty() &&
+                    !fs::exists(gameFile(*w, mat.getStr(k)))) warnings.push_back(std::string(k) + " '" + mat.getStr(k) + "' does not exist yet");
             const bool existed = lib.has(name);
             lib.set(name, mat);
             saveMaterialLibrary(*w, lib, std::string(existed ? "Материал изменён: " : "Материал создан: ") + name);
