@@ -56,28 +56,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Audit no ImGui in new native Studio
-        run: python3 tools/studio/migration_audit.py --strict --json
-      - name: Audit scanner tests
-        run: python3 -m unittest discover -s tools/studio -p 'test_*.py' -v
-      - name: Build headless native viewport layout contract
-        run: c++ -std=c++17 -Wall -Wextra -Werror -I . apps/studio-native/tests/StudioViewportLayoutTests.cpp -o /tmp/aiverse_studio_viewport_layout
-      - name: Run headless native viewport layout contract
-        run: /tmp/aiverse_studio_viewport_layout
-      - name: Compile and run Shader Graph bridge name validator
-        run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -I . apps/studio-native/tests/StudioShaderGraphValidationTests.cpp -o /tmp/aiverse_studio_shader_graph_name
-          /tmp/aiverse_studio_shader_graph_name
-      - name: Compile and run headless Lighting IPC validator
-        run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . apps/studio-native/tests/StudioLightingValidationTests.cpp -o /tmp/aiverse_studio_lighting_validation
-          /tmp/aiverse_studio_lighting_validation
-          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . apps/studio-native/tests/StudioFpsLightingContractTests.cpp -o /tmp/aiverse_studio_fps_lighting
-          /tmp/aiverse_studio_fps_lighting
-          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . apps/studio-native/tests/StudioLightPreviewMathTests.cpp -o /tmp/aiverse_studio_light_preview_math
-          /tmp/aiverse_studio_light_preview_math
-          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . apps/studio-native/tests/StudioMaterialValidationTests.cpp -o /tmp/aiverse_studio_material_validation
-          /tmp/aiverse_studio_material_validation
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Complete dependency-light headless editor contracts
+        run: bash tools/studio/verify_headless.sh
 
   macos-native:
     name: macOS HTML5 + Metal native compiler / contracts
