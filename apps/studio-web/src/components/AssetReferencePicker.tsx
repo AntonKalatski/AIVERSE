@@ -77,10 +77,8 @@ export default function AssetReferencePicker({
     event.preventDefault();
     event.stopPropagation();
     if (!path) return;
-    const asset = catalog.files.find(item => item.path === path);
-    if (asset) { choose(asset); return; }
-    // Do not commit unverified paths or bypass GUID assignment if catalog is
-    // stale. Native catalog remains the only authority for asset identities.
+    // Recheck against authoritative catalog on every drop: stale React state
+    // must not assign deleted files or accidentally replace GUIDs with paths.
     void invoke('studio.assets', {}).then(result => {
       setCatalog(result);
       const resolved = result.files.find(item => item.path === path);
