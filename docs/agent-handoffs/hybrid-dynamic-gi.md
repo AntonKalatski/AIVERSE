@@ -850,3 +850,16 @@ and Vulkan offscreen compute-storage→fragment readback test sources.
 **No native CMake, CTest, GLSL compiler, GPU validation or performance
 tests have run in this work session.** Do not claim GPU parity or merge
 draft PR #47 to main without actual runner evidence.
+
+
+## Stage 52 — 2026-11-20 — terminal GPU-device-loss ticket abort (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage52-gpu-device-loss-recovery-2026-11-20.md`.
+The healthy Vulkan/Metal GI queue still needs genuine completed GPU
+fences to accept jobs; if the GPU becomes UNHEALTHY, in-flight tickets
+are aborted as failures and kept dirty, even without an eventual VkFence
+or Metal async callback. Safe sampling and new submissions are disabled
+on a lost device. Stage52 extends `gi_gpu_ticket_queue` source regression.
+This does NOT assert driver resource teardown safety or successful RHI
+recreation. Native CTest, Vulkan/Metal device-loss and full acceptance
+are NOT RUN.
