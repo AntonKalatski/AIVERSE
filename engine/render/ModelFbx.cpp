@@ -506,6 +506,12 @@ private:
             const ufbx_baked_anim& baked) {
         std::set<uint32_t> handledProperties;
         if(!stack.anim)return handledProperties;
+        bool hasMorphs=false;
+        for(size_t mi=0;mi<scene_->meshes.count;++mi)
+            if(scene_->meshes.data[mi]->blend_deformers.count) {
+                hasMorphs=true;break;
+            }
+        if(!hasMorphs)return handledProperties;
         const double duration=baked.playback_duration;
         if(!std::isfinite(duration) || duration<0.0 || duration>1800.0)
             fail("FBX blendshape animation duration is invalid or too long");
