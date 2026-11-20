@@ -25,6 +25,7 @@ public:
     void orbit(float dx, float dy);
     void zoom(float wheel);
     void pan(float dx, float dy);
+    void look(float dx, float dy);
     void move(float right, float up, float forward);
     void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
     void resetView();
