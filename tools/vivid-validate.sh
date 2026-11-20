@@ -154,7 +154,7 @@ if [[ "$GUI" -eq 1 ]]; then
             "$CREATOR" --smoke --material-quality "$material_tier"
         if [[ ! -s "$material_ppm" ]] || \
            ! grep -q 'pass=1' "$LOGDIR/creator-material-$material_tier.log"; then
-            printf 'VIVID material quality capture failed: %s\\n' "$material_tier" >&2
+            printf 'VIVID material quality capture failed: %s\n' "$material_tier" >&2
             exit 1
         fi
     done
@@ -254,7 +254,8 @@ fi
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
         printf 'VIVID Creator neutral-vs-warm actual material pixel A/B=PASS\n'
         printf 'VIVID Creator quantitative optical A/B report=PASS\n'
-        printf 'VIVID isolated optical DNA captures and regional A/B=PASS\n'        printf 'VIVID Low/Medium native material quality preview=PASS\n'
+        printf 'VIVID isolated optical DNA captures and regional A/B=PASS\n'
+        printf 'VIVID Low/Medium native material quality preview=PASS\n'
 
         printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
