@@ -44,6 +44,9 @@ public:
         uint64_t strataDiskBytesRead=0, strataDiskReadFailures=0;
         uint64_t strataDiskPending=0, strataDiskReadyBytes=0;
         uint64_t strataStreamingGpuTransferBytes=0;
+        // Stage16.3 opt-in exclusive GPU indexed raster routing.
+        uint64_t strataVulkanGpuCandidates=0, strataVulkanGpuPrepared=0;
+        uint64_t strataVulkanGpuDeclined=0;
         // All live GeometryScenes sharing one gfx::Device contribute to the
         // same reservation ledger. Excludes source model buffers and in-flight
         // internal backend copies; see Stage 15.4 handoff.
@@ -91,6 +94,21 @@ public:
     // Scene must be reloaded after changing this option.
     void setStrataPortableRenderingEnabled(bool on) { strataPortableRenderingEnabled_=on; }
     bool strataPortableRenderingEnabled() const { return strataPortableRenderingEnabled_; }
+    // Stage16.3 Vulkan-only production experiment. Requires staging,
+    // GPU metadata and GPU culling enabled plus EXPLICIT independent
+    // selection and raster parity acceptance for the exact deployed build.
+    // Disabled by default. Renderer3D remains exclusive draw owner.
+    void setStrataVulkanGpuIndirectEnabled(bool enabled) {
+        strataVulkanGpuIndirectEnabled_=enabled;
+    }
+    void setStrataVulkanGpuParityGates(bool selectionVerified,
+                                      bool rasterVerified) {
+        strataVulkanGpuSelectionParityVerified_=selectionVerified;
+        strataVulkanGpuRasterParityVerified_=rasterVerified;
+    }
+    bool strataVulkanGpuIndirectEnabled() const {
+        return strataVulkanGpuIndirectEnabled_;
+    }
     // Positive budget enables bounded physical index-only GPU residency per
     // source, instead of eager full Strata sidecars. Must set before load.
     // Zero means classic fully resident mode; this does not affect source VB.
@@ -230,6 +248,8 @@ private:
     int buildGroup(gfx::Device& dev, std::vector<size_t> ids);
     void drawGroup(Renderer3D& renderer,int group);
     void drawInstance(Renderer3D& renderer,const Instance& instance);
+    bool tryStrataVulkanGpuDraw(Renderer3D& renderer,
+                                const Instance& instance,ModelDraw& draw);
     void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     std::map<std::string,std::unique_ptr<Model>> models_;
@@ -253,6 +273,9 @@ private:
     bool strataGpuCullingEnabled_=false;
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
+    bool strataVulkanGpuIndirectEnabled_=false;
+    bool strataVulkanGpuSelectionParityVerified_=false;
+    bool strataVulkanGpuRasterParityVerified_=false;
     size_t strataStreamingIndexBudgetBytes_=0;
     size_t strataStreamingSceneBudgetBytes_=0;
     size_t strataGlobalIndexBudgetBytes_=0;
