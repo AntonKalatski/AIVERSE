@@ -24,3 +24,7 @@ The registry is confined to the *same RHI owner thread* as Renderer3D; it does n
 2. Check the engine's owning client/editor render-loop order: beginScene → source updates → controller.bind → render → controller.unbind → optional geometry/fallback/shutdown; a queued custom draw may sample GI later than source publication.
 3. Repeat on real Metal/Vulkan GPUs while terrain changes, with burst GPU jobs, and on GLES3 CPU fallback. Confirm no atlas use-after-free or leaks.
 4. Continue the full GI large-world/clipmap features, then final full native CMake/CTest + Metal/Vulkan/GLES graphics parity; reconcile with main only after test pass and conflict review.
+
+## Stage 55 follow-up — exception-safe borrower registration
+
+- `26da2162d5ed0b276d42b772c9636c61dc4242ce`: `GiLightingController::bind` now registers the reader **before** passing the raw atlas pointer into `Renderer3D`. An allocation failure in the tracking set can therefore never leave a newly successful but untracked borrowed pointer that `shutdown` might free. If binding fails, the method still clears the renderer overlay and releases the reader. **No native tests executed; source-only correctness review.**
