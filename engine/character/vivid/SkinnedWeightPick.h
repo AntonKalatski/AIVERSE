@@ -134,6 +134,10 @@ inline SculptPick pickSkinnedWeightVertex(
         for(std::size_t i=start;i+2<start+prim.indexCount;i+=3) {
             const auto ia=model.indices[i],ib=model.indices[i+1],
                 ic=model.indices[i+2];
+            if(ia>=surface.world.size()||ib>=surface.world.size()||
+               ic>=surface.world.size()||
+               !surface.included[ia]||!surface.included[ib]||
+               !surface.included[ic])return {};
             // Optional per-model source map: seam-split clones may still
             // carry an authorable original ID, while generated/LOD vertices
             // are intentionally UINT32_MAX and cannot be edited.
@@ -142,10 +146,6 @@ inline SculptPick pickSkinnedWeightVertex(
             const auto srcC=authorVertexIds.empty()?ic:authorVertexIds[ic];
             if(srcA>=sourceVertexCount || srcB>=sourceVertexCount ||
                srcC>=sourceVertexCount)continue;
-            if(ia>=surface.world.size()||ib>=surface.world.size()||
-               ic>=surface.world.size()||
-               !surface.included[ia]||!surface.included[ib]||
-               !surface.included[ic])return {};
             const auto a=surface.world[ia],b=surface.world[ib],
                 c=surface.world[ic];
             const auto ab=b-a,ac=c-a;
