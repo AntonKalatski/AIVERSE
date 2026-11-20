@@ -870,3 +870,102 @@ new Vulkan/GLES readback and frame-serial contracts affect
 shared `gfx::Device` implementations: semantic reconciliation
 with the texture agent's branch, GPU allocation lifetimes and
 real driver verification are mandatory before main integration.
+
+
+## Stage 7AS — Renderer3D per-frame geometry provenance
+
+The experimental GPU sculpt pass no longer reinterprets
+`Model::nodes` and `Model::lods` to guess the rendered mesh.
+`Renderer3D::modelViewProvenance(model)` is a new opt-in,
+frame-scoped, **read-only snapshot** taken from the renderer's own
+`ModelItem` records *after* `drawModel()` has applied the actual
+mesh/primitive/LOD selection, source culling, GPU stream selection
+and material-batch policy.
+
+The snapshot includes model/mesh/node/primitive IDs, source index
+ranges, frame serial, a per-`drawModel()` invocation identity,
+the current `ModelDraw::vertexOverride` handle + vertex count
+when accepted by the renderer, current world transform and
+flags for LOD fade, GPU-conditional LOD, alternate LOD mesh,
+material batching, skinned/baked geometry and ShaderGraph vertex
+deformation. It is **pre-render submission evidence**, not proof
+the GPU pipeline actually drew the triangle or that any pixel is
+visible after all passes.
+
+`engine/character/vivid/SculptGpuRendererView.h` validates a
+newly submitted view against the CPU source-picked mesh:
+
+- Requires exact frame serial, source Model pointer, single
+  `drawModel` invocation/selected node, and correct primitive
+  index ranges matching the original author source mesh.
+- Rejects a renderer-selected alternate authored LOD, partial LOD
+  fades, GPU indirect LOD switches, colour/material batches,
+  ShaderGraph vertex offsets, baked skin, missing selected mesh,
+  duplicate/incomplete primitives and ambiguous instances.
+- Permits an asset **with authored LODs** only when the renderer's
+  *actual* decision is unchanged source LOD0 with all source
+  primitive index ranges and no fade. The old static asset-only
+  conservative eligibility function remains for hosts without
+  renderer provenance.
+- Returns only the *other* model meshes that Renderer3D actually
+  marked visible in the main colour view, so the experimental
+  zero-ID depth occluder pass no longer resubmits unrelated hidden
+  source meshes on its own. Creator floor and procedural groom
+  remain independently provided zero-ID occluders.
+- Explicitly reports whether the renderer uses a 60-byte GPU
+  vertex-override buffer. The current diagnostic ID pass still
+  draws a **CPU morph+skin reconstruction**, not that actual
+  GPU buffer. Even a matching GPU ID is labelled *CPU-snapshot
+  corroboration, GPU vertexOverride unverified*, and must never
+  replace the already selected CPU author vertex.
+
+To obtain frame-local renderer provenance in a host:
+
+```cpp
+renderer.beginScene(camera,framebufferWidth,framebufferHeight);
+renderer.drawModel(characterDraw);  // actor has attached vertexOverride
+auto sourceView=renderer.modelViewProvenance(*characterDraw.model);
+auto check=aiverse::vivid::validateSculptGpuRendererView(
+    sourceView,*characterDraw.model,pickedSourceMeshId,device.frameSerial());
+if(check.canRenderDiagnostic) {
+    // VIVID can draw its opt-in ID/depth diagnostic this frame, using
+    // check.otherVisibleMeshes for exact Renderer3D source mesh scope.
+}
+// Renderer3D colour/shadow rendering is still owned by the host:
+renderer.render(scenePass);
+```
+
+This contract does not clone or mutate any GPU data, does not capture
+pointers for later frames, introduces no persistent ECS component and
+requires no second Renderer3D. It is a query of current draw decisions,
+not a new model visibility algorithm. A subsequent `beginScene()`,
+asset republish or GPU retirement invalidates the borrowed handles
+and model pointers. The ID pass's asynchronous reply is still
+versioned by captured frame/viewport/model publication, and a
+discarded/obsolete callback no longer overwrites the CPU picker
+status.
+
+### Remaining correctness and platform gates
+
+1. **Actual GPU-deformed vertex equality is NOT implemented.**
+   Renderer3D can identify that it uses a `vertexOverride` handle,
+   but VIVID's GPU ID render still expands CPU morphed/skinned
+   vertices. A true GPU-geometry picking pass must borrow the same
+   GPU vertex stream with its original primitive index buffer and
+   palette transforms, or read back a verified immutable GPU
+   snapshot with correct completion fences.
+2. Renderer3D's pre-render candidate provenance is not guaranteed
+   to equal final raster visibility after GPU command culling, dynamic
+   material/shader compilation, shadow/transparent depth-after or
+   screen-space overlays. The ID pass remains experimental.
+3. Existing Vulkan, Metal and native GLES3 ID/readback fixtures and
+   new pure C++ provenance fixtures are **added but NOT RUN**.
+   The native Metal renderer preview now checks that a single
+   GPU actor's current 60-byte vertex override appears in the
+   actual Renderer3D selection. No performance or pixel parity
+   values have been measured at these source SHAs.
+4. Because the renderer's core `Renderer3D.h/.cpp/Models.cpp`
+   are shared with other agents, resolve Texture RHI/renderer
+   conflicts in a dedicated integration branch before merging
+   to `main`. The default CPU BVH picker stays functional
+   whether or not the provenance query passes.
