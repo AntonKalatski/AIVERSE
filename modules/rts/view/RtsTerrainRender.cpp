@@ -379,6 +379,7 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         try {
             staged.rules_=rules_;
             staged.look_=look_;
+            staged.materialLayer_=materialLayer_;
             staged.lh_=lh_;
             staged.heightfield_=heightfield_;
             staged.lodLevels_=lodLevels_;
@@ -402,6 +403,9 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
                 }
             staged.buildApron(dev,g);
             staged.buildWater(dev,g,flatDig);
+            // Fully populate map textures before publishing any geometry.
+            staged.updateCellTextures(dev,g,flatDig);
+            staged.updateDynamic(dev,g,true);
         } catch (...) {
             // These buffers belong exclusively to a not-yet-submitted map.
             // Unlike old published buffers they can be destroyed immediately.
@@ -414,6 +418,8 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
             if (staged.apron_.ib.valid()) dev.destroyBuffer(staged.apron_.ib);
             if (staged.water_.vb.valid()) dev.destroyBuffer(staged.water_.vb);
             if (staged.water_.ib.valid()) dev.destroyBuffer(staged.water_.ib);
+            for(auto* t:{&staged.cellTex_,&staged.dynTex_,&staged.splatTex_,&staged.visionTex_})
+                if(t->valid())dev.destroyTexture(*t);
             lh_=previousLh;
             heightfield_=previousHeightfield;
             lodLevels_=previousLodLevels;
@@ -425,6 +431,8 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         retiredMeshes_.retireBuffer(dev,apron_.ib);
         retiredMeshes_.retireBuffer(dev,water_.vb);
         retiredMeshes_.retireBuffer(dev,water_.ib);
+        for(auto* t:{&cellTex_,&dynTex_,&splatTex_,&visionTex_})
+            retiredMeshes_.retireTexture(dev,*t);
         chunks_=std::move(staged.chunks_);
         apron_=staged.apron_;
         water_=staged.water_;
@@ -437,9 +445,21 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         globalHash_=gh.h;
         detailOn_=false;
         geoBytes_=0;
+        cellTex_=std::exchange(staged.cellTex_,gfx::TextureHandle{});
+        dynTex_=std::exchange(staged.dynTex_,gfx::TextureHandle{});
+        splatTex_=std::exchange(staged.splatTex_,gfx::TextureHandle{});
+        visionTex_=std::exchange(staged.visionTex_,gfx::TextureHandle{});
+        cellPx_=std::move(staged.cellPx_);
+        dynPx_=std::move(staged.dynPx_);
+        splatPx_=std::move(staged.splatPx_);
+        visionPx_=std::move(staged.visionPx_);
+        cellLayerOf_=std::move(staged.cellLayerOf_);
+        texW_=staged.texW_;
+        texH_=staged.texH_;
+        dynRow_=staged.dynRow_;
+        visionInit_=false;
+        fogFieldChanged_=true;
         if (!texturesLoaded_) loadTextures(dev);
-        updateCellTextures(dev,g,flatDig);
-        updateDynamic(dev,g,true);
         heightDirty_=true;
         built_=true;
         stats_.rebuilt=int(chunks_.size());
@@ -881,20 +901,51 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
 void TerrainRenderer::updateCellTextures(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     const int W = g.w, H = g.h;
     if (texW_ != W || texH_ != H) {
-        for (auto* t : {&cellTex_, &dynTex_, &splatTex_, &visionTex_}) if (t->valid()) { dev.destroyTexture(*t); *t = {}; }
-        texW_ = W; texH_ = H;
-        cellPx_.assign(size_t(W * H) * 4, 0);
-        dynPx_.assign(size_t(W * H) * 4, 0);
-        splatPx_.assign(size_t(W * H) * 4, 0);
-        visionPx_.assign(size_t(W * H), 255);
-        gfx::TextureDesc td; td.width = W; td.height = H; td.filter = gfx::Filter::Nearest;
-        td.data = cellPx_.data(); td.label = "terrain cells"; cellTex_ = dev.createTexture(td);
-        td.data = dynPx_.data(); td.label = "terrain dynamic"; dynTex_ = dev.createTexture(td);
-        td.filter = gfx::Filter::Linear;
-        td.data = splatPx_.data(); td.label = "terrain splat"; splatTex_ = dev.createTexture(td);
-        td.format = gfx::PixelFormat::R8; td.filter = gfx::Filter::Linear;   // smooth fog edges (cells: snapped in the shader)
-        td.data = visionPx_.data(); td.label = "terrain vision"; visionTex_ = dev.createTexture(td);
-        visionInit_ = false;
+        // Allocate all replacements and their CPU storage first. A failed
+        // second/third GPU allocation must not destroy the published set.
+        std::vector<uint8_t> nextCell(size_t(W)*size_t(H)*4,0);
+        std::vector<uint8_t> nextDyn(size_t(W)*size_t(H)*4,0);
+        std::vector<uint8_t> nextSplat(size_t(W)*size_t(H)*4,0);
+        std::vector<uint8_t> nextVision(size_t(W)*size_t(H),255);
+        gfx::TextureHandle nextCellTex{},nextDynTex{},nextSplatTex{},nextVisionTex{};
+        try {
+            gfx::TextureDesc td;
+            td.width=W; td.height=H; td.filter=gfx::Filter::Nearest;
+            td.data=nextCell.data(); td.label="terrain cells";
+            nextCellTex=dev.createTexture(td);
+            if(!nextCellTex.valid())throw std::runtime_error("terrain cell texture allocation failed");
+            td.data=nextDyn.data(); td.label="terrain dynamic";
+            nextDynTex=dev.createTexture(td);
+            if(!nextDynTex.valid())throw std::runtime_error("terrain dynamic texture allocation failed");
+            td.filter=gfx::Filter::Linear;
+            td.data=nextSplat.data(); td.label="terrain splat";
+            nextSplatTex=dev.createTexture(td);
+            if(!nextSplatTex.valid())throw std::runtime_error("terrain splat texture allocation failed");
+            td.format=gfx::PixelFormat::R8;
+            td.data=nextVision.data(); td.label="terrain vision";
+            nextVisionTex=dev.createTexture(td);
+            if(!nextVisionTex.valid())throw std::runtime_error("terrain vision texture allocation failed");
+        }catch(...) {
+            if(nextCellTex.valid())dev.destroyTexture(nextCellTex);
+            if(nextDynTex.valid())dev.destroyTexture(nextDynTex);
+            if(nextSplatTex.valid())dev.destroyTexture(nextSplatTex);
+            if(nextVisionTex.valid())dev.destroyTexture(nextVisionTex);
+            throw;
+        }
+        retiredMeshes_.retireTexture(dev,cellTex_);
+        retiredMeshes_.retireTexture(dev,dynTex_);
+        retiredMeshes_.retireTexture(dev,splatTex_);
+        retiredMeshes_.retireTexture(dev,visionTex_);
+        cellTex_=nextCellTex;
+        dynTex_=nextDynTex;
+        splatTex_=nextSplatTex;
+        visionTex_=nextVisionTex;
+        cellPx_=std::move(nextCell);
+        dynPx_=std::move(nextDyn);
+        splatPx_=std::move(nextSplat);
+        visionPx_=std::move(nextVision);
+        texW_=W; texH_=H;
+        visionInit_=false;
     }
     cellLayerOf_.resize(size_t(W * H));
     for (int y = 0; y < H; ++y)
