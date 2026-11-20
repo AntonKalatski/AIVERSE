@@ -318,6 +318,29 @@ struct Preview {
                         "VIVID character refused same-frame 60B render override");
             renderer.drawModel(draw);
         }
+        // Stage 7AS: inspect the actual current-frame Renderer3D staging
+        // rather than re-deriving visibility/LOD from the source Model.
+        // This checks GPU vertex-override provenance for the single
+        // character and does not claim the VIVID CPU-fed ID shader already
+        // consumes the same GPU buffer.
+        if(actorCount==1) {
+            const auto view=renderer.modelViewProvenance(*model);
+            require(view.hasModel && !view.primitives.empty() &&
+                    view.frameSerial==device->frameSerial(),
+                    "VIVID Renderer3D model view provenance unavailable");
+            if(faceActive) {
+                const bool actualOverride=std::any_of(
+                    view.primitives.begin(),view.primitives.end(),
+                    [&](const auto& p) {
+                        return p.colourCandidate && p.customGpuStream &&
+                            p.vertexOverride.valid() &&
+                            p.vertexOverrideCount==
+                                actors[0]->vertexCount();
+                    });
+                require(actualOverride,
+                    "Renderer3D lost current-frame GPU actor override provenance");
+            }
+        }
         gfx::PassDesc pass;
         pass.clearColor[0]=.08f;pass.clearColor[1]=.1f;pass.clearColor[2]=.13f;
         renderer.render(pass);
