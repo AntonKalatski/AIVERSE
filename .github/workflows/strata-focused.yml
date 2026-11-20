@@ -63,3 +63,42 @@ jobs:
             aiverse_strata_metal_raster_parity \
             aiverse_strata_metal_depth_multiview_parity \
             aiverse_strata_metal_reflection_material_parity --parallel 4
+
+  # Vulkan remains a supported backend. Linux Mesa Lavapipe supplies a
+  # software Vulkan ICD for shader/compute/indirect contract validation;
+  # this is NOT a discrete-GPU performance or driver certification.
+  vulkan-lavapipe:
+    name: Vulkan kernel parity (Ubuntu / Lavapipe)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan SDK prerequisites and software ICD
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools
+          find /usr/share/vulkan/icd.d -maxdepth 1 -name '*lvp*.json' -print
+      - name: Configure full Vulkan backend and STRATA
+        run: |
+          cmake -S . -B build/strata-vulkan \
+            -DAIVERSE_BUILD_TESTS=ON \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_STRATA=ON \
+            -DAIVERSE_VULKAN=ON \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Build native Vulkan kernel contract
+        run: |
+          cmake --build build/strata-vulkan \
+            --target aiverse_strata_vulkan_kernel_tests \
+            --parallel 4
+      - name: Run Vulkan compute / indirect / temporal parity via Lavapipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name '*lvp*.json' | head -n 1)"
+          test -n "$ICD"
+          export VK_ICD_FILENAMES="$ICD"
+          vulkaninfo --summary
+          ctest --test-dir build/strata-vulkan \
+            -R '^strata_vulkan_kernel$' --output-on-failure
