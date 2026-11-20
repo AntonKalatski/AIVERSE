@@ -2778,8 +2778,11 @@ if(AIVERSE_BUILD_STRATA)
                 tests/render/strata_vulkan_kernel.cpp)
             target_link_libraries(aiverse_strata_vulkan_kernel_tests PRIVATE
                 aiverse_strata_gpu_culling aiverse_gfx_vulkan aiverse_zstd_dec)
+            add_test(NAME strata_vulkan_compile
+                COMMAND aiverse_strata_vulkan_kernel_tests --compile-only)
             add_test(NAME strata_vulkan_kernel
                 COMMAND aiverse_strata_vulkan_kernel_tests)
+            set_tests_properties(strata_vulkan_kernel PROPERTIES SKIP_RETURN_CODE 77)
         endif()
         add_executable(aiverse_strata_render_routing_tests
             tests/render/strata_render_routing.cpp)

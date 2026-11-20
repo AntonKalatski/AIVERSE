@@ -101,4 +101,7 @@ jobs:
           export VK_ICD_FILENAMES="$ICD"
           vulkaninfo --summary
           ctest --test-dir build/strata-vulkan \
-            -R '^strata_vulkan_kernel$' --output-on-failure
+            -R '^strata_vulkan_compile$' --output-on-failure --no-tests=error
+          # This job promises real compute execution: a loader/device/compute
+          # failure must fail CI, not turn an optional CTest skip into green.
+          build/strata-vulkan/aiverse_strata_vulkan_kernel_tests --require-device
