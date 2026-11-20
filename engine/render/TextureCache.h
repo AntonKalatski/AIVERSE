@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <utility>
 #include "../gfx/Gfx.h"
 
 #include "engine/atlas/AtlasFormat.h"
