@@ -489,7 +489,6 @@ struct Viewer {
 
     bool rebuildAttachments() {
         if(!dev || !attachmentPreview || gallery)return false;
-        std::string error;
         // Reimport/rebuild is one generation transaction; this also
         // retains all old graph players and Model owners until retirement.
         if(reimportModelFiles()) {
@@ -497,7 +496,7 @@ struct Viewer {
                           std::to_string(inst.size())+" source Models");
             return true;
         }
-        log.push_back("attachment update rejected; last good retained: "+error);
+        log.push_back("attachment update rejected; last good retained: "+nativeReloadError);
         return false;
     }
 
@@ -771,7 +770,7 @@ struct Viewer {
             }
             // Existing host Animator is the only writer: generic View
             // consumes its precomputed pose and composes imported children.
-            // Keep owner-thread ModelReadLeases until submitOne returns.
+            // Retain owner-thread ModelReadLeases through Renderer3D::render.
             bool presented=false;
             if(attachmentPreview && in.attachmentsReady) {
                 Imported::Prepared prepared;
