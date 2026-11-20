@@ -1,21 +1,13 @@
 import { useState } from 'react';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
 import {
-  STUDIO_PANELS, activateTab, closeTab, defaultDockTree, dockStacks,
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, activateTab, closeTab, defaultDockTree, dockStacks,
   moveTab, panelStack, reopenTab, resizeDockSplit, splitDockStack
 } from '../nestedDock';
 import type { DockEdge, DockNode, DockSplit, DockStack, DockTree, StudioPanel } from '../nestedDock';
 import './NestedDockWorkspace.css';
 
 const MIME = 'application/x-aiverse-studio-tab';
-const TITLES: Record<StudioPanel,string> = {
-  hierarchy: 'Hierarchy', assets: 'Assets', scene: 'Scene', game: 'Game',
-  materials: 'Materials', animation: 'Animation', inspector: 'Inspector', console: 'Console'
-};
-const PREFERRED: Record<StudioPanel,string> = {
-  hierarchy: 'dock-left', assets: 'dock-left', scene: 'dock-center', game: 'dock-center',
-  materials: 'dock-center', animation: 'dock-center', inspector: 'dock-right', console: 'dock-bottom'
-};
 type DockUpdate = Dispatch<SetStateAction<DockTree>>;
 interface Properties {
   tree: DockTree;
@@ -56,17 +48,17 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging, sta
         onDragOver={event=>{event.preventDefault();event.stopPropagation();}}
         onDrop={event=>transfer(event,undefined,panel)}>
         <button role="tab" aria-selected={node.active===panel}
-          onClick={()=>setTree(t=>activateTab(t,node.id,panel))}>{TITLES[panel]}</button>
-        <button className="nested-tab-close" title={'Close '+TITLES[panel]}
-          aria-label={'Close '+TITLES[panel]} onClick={()=>setTree(t=>closeTab(t,panel))}>×</button>
+          onClick={()=>setTree(t=>activateTab(t,node.id,panel))}>{STUDIO_PANEL_TITLES[panel]}</button>
+        <button className="nested-tab-close" title={'Close '+STUDIO_PANEL_TITLES[panel]}
+          aria-label={'Close '+STUDIO_PANEL_TITLES[panel]} onClick={()=>setTree(t=>closeTab(t,panel))}>×</button>
       </div>)}
       {node.active && <select className="nested-move" value={node.id}
-        aria-label={'Move '+TITLES[node.active]+' to dock'}
+        aria-label={'Move '+STUDIO_PANEL_TITLES[node.active]+' to dock'}
         onChange={event=>setTree(t=>moveTab(t,node.active!,event.target.value))}>
         {stacks.map(stack=><option key={stack.id} value={stack.id}>{stack.id.replace('dock-','')}</option>)}
       </select>}
     </div>
-    <div className="nested-stack-body" role="tabpanel" aria-label={node.active ? TITLES[node.active] : 'Empty dock'}>
+    <div className="nested-stack-body" role="tabpanel" aria-label={node.active ? STUDIO_PANEL_TITLES[node.active] : 'Empty dock'}>
       {node.active ? renderPanel(node.active) : <div className="nested-empty">Drop a panel here</div>}
       {showEdges && <div className="nested-drop-zones">
         {(['left','right','top','bottom'] as const).map(edge=><div key={edge}
@@ -139,8 +131,8 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Prop
           {STUDIO_PANELS.map(panel=><label key={panel}>
             <input type="checkbox" checked={panelStack(tree,panel)!==null}
               onChange={event=>setTree(t=>event.target.checked
-                ?reopenTab(t,panel,PREFERRED[panel]):closeTab(t,panel))}/>
-            {TITLES[panel]}
+                ?reopenTab(t,panel,STUDIO_PANEL_HOME[panel]):closeTab(t,panel))}/>
+            {STUDIO_PANEL_TITLES[panel]}
           </label>)}
         </div>
       </details>

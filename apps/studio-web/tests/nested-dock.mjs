@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STUDIO_PANELS, defaultDockTree, dockStacks, findDockStack, panelStack,
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, defaultDockTree, dockStacks, findDockStack, panelStack,
   normalizeDockTree, moveTab, closeTab, reopenTab, activateTab,
   resizeDockSplit, splitDockStack, migrateDockV2
 } from '../src/nestedDock.ts';
@@ -73,4 +73,10 @@ test('migration from v2 preserves tabs and active',()=>{
   assert.equal(findDockStack(layout,'dock-left').active,'assets');
   assert.equal(findDockStack(layout,'dock-center').active,'scene');
   assert.equal(findDockStack(layout,'dock-bottom').active,null);
+});
+
+test('AI panel registry metadata matches every registered panel',()=>{
+  assert.deepEqual(Object.keys(STUDIO_PANEL_TITLES).sort(),[...STUDIO_PANELS].sort());
+  assert.deepEqual(Object.keys(STUDIO_PANEL_HOME).sort(),[...STUDIO_PANELS].sort());
+  assert.equal(STUDIO_PANEL_HOME.scene,'dock-center');
 });
