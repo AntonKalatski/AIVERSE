@@ -164,9 +164,25 @@ Json StudioSession::dispatch(const Json& request) {
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
         } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet" ||
-                   method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave") {
+                   method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave" ||
+                   method == "studio.shaderGraphCatalog") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
-            if (method == "studio.shaderGraphs") {
+            if (method == "studio.shaderGraphCatalog") {
+                const Json raw=ws_.call("shader_graph_catalog",Json::object(),"studio");
+                if(raw.has("error")) throw std::runtime_error(raw.getStr("error"));
+                Json result=Json::object(),catalog=Json::array();
+                for(const Json& op:raw["nodes"].items()) {
+                    if(catalog.size()>=256) break;
+                    if(!op.isObject() || !validStudioShaderGraphName(op.getStr("id")))continue;
+                    Json allowed=Json::object();
+                    allowed.set("id",op["id"]);
+                    allowed.set("inputs",op["inputs"]);
+                    allowed.set("domains",op["domains"]);
+                    catalog.push(std::move(allowed));
+                }
+                result.set("nodes",std::move(catalog));
+                reply.set("result",std::move(result));
+            } else if (method == "studio.shaderGraphs") {
                 const Json raw=ws_.call("shader_graph_list",Json::object(),"studio");
                 if(raw.has("error")) throw std::runtime_error(raw.getStr("error"));
                 Json names=Json::array();

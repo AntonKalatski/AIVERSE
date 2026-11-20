@@ -7,6 +7,8 @@ export interface StudioAssetList { files: StudioAsset[] }
 export type StudioLightingState = import('./panels/lightingSchema').LightingState;
 export type StudioMaterialLibrary = import('./panels/materialSchema').MaterialLibrary;
 export interface StudioShaderGraphList { graphs: string[] }
+export interface StudioShaderGraphOp { id:string; inputs:number; domains:string[] }
+export interface StudioShaderGraphCatalog { nodes:StudioShaderGraphOp[] }
 export interface StudioShaderGraphDocument {
   graph: { version?: number; domain?: string; nodes?: Array<{id:string;op:string;inputs?:string[];position?:number[];value?:number[]}>; outputs?:Record<string,string> };
   nodes: number; samples: number;
@@ -21,7 +23,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -35,6 +37,7 @@ export interface StudioParams {
   'studio.materialPreview': { name: string };
   'studio.shaderGraphs': Record<string, never>;
   'studio.shaderGraphGet': { name: string };
+  'studio.shaderGraphCatalog': Record<string, never>;
   'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
   'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };
   'studio.lighting': Record<string, never>;
@@ -60,6 +63,7 @@ export interface StudioResult {
   'studio.materialPreview': { active: boolean; name: string };
   'studio.shaderGraphs': StudioShaderGraphList;
   'studio.shaderGraphGet': StudioShaderGraphDocument;
+  'studio.shaderGraphCatalog': StudioShaderGraphCatalog;
   'studio.shaderGraphValidate': StudioShaderGraphDocument;
   'studio.shaderGraphSave': StudioShaderGraphDocument;
   'studio.lighting': StudioLightingState;

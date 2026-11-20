@@ -34,3 +34,27 @@ export function moveShaderGraphNode(source:GraphSource,id:string,x:number,y:numb
  return {...source,nodes:source.nodes.map(node=>node.id===id?
   {...node,position:clamped}:node)};
 }
+
+/** Generate one bounded authoring node from the native operation catalog. */
+export function addShaderGraphNode(source:GraphSource,op:{id:string;inputs:number}):GraphSource {
+ if(!Array.isArray(source.nodes)||source.nodes.length>=128||
+    !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(op.id)||
+    !Number.isSafeInteger(op.inputs)||op.inputs<0||op.inputs>16)return source;
+ const ids=new Set(source.nodes.map(n=>n.id));
+ let id='';
+ for(let i=1;i<=999;i++){id='node'+i;if(!ids.has(id))break;}
+ if(ids.has(id))return source;
+ const first=source.nodes[0]?.id;
+ const inputs=first?Array(op.inputs).fill(first):[];
+ const node:GraphNode={id,op:op.id,inputs,position:[
+  50+(source.nodes.length%5)*180,50+Math.floor(source.nodes.length/5)*110]};
+ if(op.id==='constant'||op.id==='parameter')node.value=[.2,.6,1,1];
+ return {...source,nodes:[...source.nodes,node]};
+}
+/** Reject deleting a node still referenced by inputs or outputs. */
+export function removeShaderGraphNode(source:GraphSource,id:string):GraphSource {
+ if(!Array.isArray(source.nodes)||!source.nodes.some(n=>n.id===id))return source;
+ if(source.nodes.some(n=>n.id!==id&&n.inputs?.includes(id))||
+    Object.values(source.outputs??{}).includes(id))return source;
+ return {...source,nodes:source.nodes.filter(n=>n.id!==id)};
+}

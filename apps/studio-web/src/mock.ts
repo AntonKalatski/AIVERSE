@@ -32,6 +32,7 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
   if (method === 'studio.materials') {
     return { library: {} } as StudioResult[M];
   }
+  if (method === 'studio.shaderGraphCatalog') return {nodes:[]} as StudioResult[M];
   if (method === 'studio.shaderGraphs') return {graphs:[]} as StudioResult[M];
   if (method === 'studio.shaderGraphGet' || method === 'studio.shaderGraphValidate' ||
       method === 'studio.shaderGraphSave')
