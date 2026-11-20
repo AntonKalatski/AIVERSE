@@ -41,6 +41,7 @@ private:
     gfx::ShaderHandle maskShader_{};
     gfx::PipelineHandle maskPipeline_{};
     gfx::ComputeHandle expandCompute_{}; // native Metal real-vertex expansion
+    gfx::ComputeHandle expandMaskCompute_{}; // same GPU source + UV/alpha
     gfx::TextureHandle color_,depth_;
     int width_=0,height_=0;
     std::vector<Pending> pending_;
@@ -84,10 +85,14 @@ public:
         }
         // Source override expansion is opt-in: if the compute kernel
         // cannot compile, the legacy CPU-fed GPU diagnostic remains usable.
-        if(backend==gfx::Backend::Metal && device.supportsCompute())
+        if(backend==gfx::Backend::Metal && device.supportsCompute()) {
             expandCompute_=device.createCompute({
                 kSculptGpuSourceExpandMSL,nullptr,
                 "VIVID ID actual 60B vertex expansion"});
+            expandMaskCompute_=device.createCompute({
+                kSculptGpuSourceMaskExpandMSL,nullptr,
+                "VIVID ID actual GPU source alpha mask expansion"});
+        }
         device_=&device;
         shader_=shader;
         pipeline_=pipeline;
@@ -99,6 +104,9 @@ public:
     bool supported() const noexcept {return supported_;}
     bool supportsActualGpuVertexStream() const noexcept {
         return supported_ && expandCompute_.valid();
+    }
+    bool supportsActualGpuMaskedStream() const noexcept {
+        return supported_ && expandMaskCompute_.valid() && maskPipeline_.valid();
     }
     bool pending() const noexcept {return !pending_.empty();}
     bool hasTargets() const noexcept {return color_.valid()&&depth_.valid();}
@@ -153,24 +161,57 @@ public:
                 model,surface,authorCount,authorIds,true,
                 vertices_,grouped))return false;
         const auto selectedOpaqueCount=vertices_.size();
+        std::size_t selectedMaskedCount=0;
+        for(const auto& batch:grouped)selectedMaskedCount+=batch.vertices.size();
+        const auto selectedSourceCount=selectedOpaqueCount+selectedMaskedCount;
         if(actualGpuSource) {
-            // Only Metal compute currently reads 60B ModelVertex directly.
-            // Reject if the selected face needs custom/masked alpha: those
-            // triangles require a separate GPU-expanded UV stream.
+            // Only the Metal compute path reads actual 60B ModelVertex.
+            // Standard homogeneous Mask surfaces use 32B GPU-expanded
+            // UV/alpha vertices; mixed/custom material paths fail closed.
             const auto& source=*actualGpuSource;
-            if(!expandCompute_.valid() || !device_->supportsCompute() ||
+            if(!device_->supportsCompute() ||
                device_->info().backend!=gfx::Backend::Metal ||
                !source.actualVertexOverride.valid() ||
                source.sourceVertexCount!=model.vertices.size() ||
                source.params.vertices!=model.vertices.size() ||
-               source.params.count!=selectedOpaqueCount ||
-               source.indices.size()!=selectedOpaqueCount ||
-               !selectedOpaqueCount || !grouped.empty() ||
+               source.params.count!=selectedSourceCount ||
+               source.indices.size()!=selectedSourceCount ||
+               !selectedSourceCount ||
                source.params.skinned!=
                    (source.jointMatrices.empty()?0u:1u) ||
                source.params.jointMatrices!=source.jointMatrices.size() ||
                (source.params.skinned &&
                 source.influences.size()!=model.vertices.size()))
+                return false;
+            if(source.maskedSelection) {
+                if(!supportsActualGpuMaskedStream() ||
+                   !selectedMaskedCount || selectedOpaqueCount ||
+                   !source.maskBaseTexture.valid() ||
+                   source.maskInputs.size()!=model.vertices.size())
+                    return false;
+                // Source alpha and UV are immutable CPU metadata, sampled
+                // against the actual renderer-owned GPU-morphed positions.
+                std::size_t n=0;
+                for(const auto& batch:grouped) {
+                    if(batch.baseTexture!=source.maskBaseTexture)
+                        return false;
+                    for(int k=0;k<4;++k)
+                        if(batch.uniform.alpha[k]!=source.maskUniform.alpha[k] ||
+                           batch.uniform.uv0[k]!=source.maskUniform.uv0[k] ||
+                           batch.uniform.uv1[k]!=source.maskUniform.uv1[k])
+                            return false;
+                    for(const auto& v:batch.vertices) {
+                        const auto id=source.indices[n++].triangleId;
+                        for(int k=0;k<4;++k)
+                            if(v.rgba[k]!=std::uint8_t(id>>(8u*k)))
+                                return false;
+                    }
+                }
+                for(const auto& value:source.maskInputs)
+                    for(float component:value.uvAlpha)
+                        if(!std::isfinite(component))return false;
+            }else if(!expandCompute_.valid() || !grouped.empty() ||
+                     !source.maskInputs.empty())
                 return false;
             // Require exact topology/triangle IDs from the CPU-side
             // renderer-selected source, but do not read CPU vertex positions.
@@ -191,16 +232,21 @@ public:
                 for(float weight:v.weights)
                     if(!std::isfinite(weight) ||
                        weight<0.f || weight>1.f)return false;
-            for(std::size_t i=0;i<selectedOpaqueCount;++i) {
+            for(std::size_t i=0;i<selectedSourceCount;++i) {
                 const auto& requestVertex=source.indices[i];
                 if(requestVertex.vertex>=model.vertices.size())return false;
-                const auto id=requestVertex.triangleId;
-                const auto& encoded=vertices_[i].rgba;
-                if(encoded[0]!=std::uint8_t(id) ||
-                   encoded[1]!=std::uint8_t(id>>8u) ||
-                   encoded[2]!=std::uint8_t(id>>16u) ||
-                   encoded[3]!=std::uint8_t(id>>24u))return false;
+                if(!source.maskedSelection) {
+                    const auto id=requestVertex.triangleId;
+                    const auto& encoded=vertices_[i].rgba;
+                    if(encoded[0]!=std::uint8_t(id) ||
+                       encoded[1]!=std::uint8_t(id>>8u) ||
+                       encoded[2]!=std::uint8_t(id>>16u) ||
+                       encoded[3]!=std::uint8_t(id>>24u))return false;
+                }
             }
+            // Selected Mask triangles will now come exclusively from the
+            // GPU-expanded source, not the legacy CPU masked batches.
+            if(source.maskedSelection)grouped.clear();
         }
         if(maskedOccluders.size()+grouped.size()>256u)return false;
         std::size_t total=vertices_.size()+occluders.size();
@@ -314,7 +360,7 @@ public:
         gfx::BufferHandle expandedVertex{};
         if(actualGpuSource) {
             const auto& source=*actualGpuSource;
-            expandedScratch.reserve(4);
+            expandedScratch.reserve(source.maskedSelection?5u:4u);
             auto makeInput=[&](const void* data,std::size_t size,
                                const char* label)->gfx::BufferHandle {
                 gfx::BufferDesc d{};
@@ -345,12 +391,23 @@ public:
             const auto matrixBuffer=makeInput(
                 jointInput.data(),jointInput.size_bytes(),
                 "VIVID MotionWeave joint transform palette");
+            gfx::BufferHandle maskInput{};
+            if(source.maskedSelection)
+                maskInput=makeInput(
+                    source.maskInputs.data(),source.maskInputs.size()*
+                        sizeof(SculptGpuSourceMaskInput),
+                    "VIVID selected source UV and vertex alpha");
             expandedVertex=makeInput(
-                nullptr,source.indices.size()*sizeof(SculptGpuIdVertex),
+                nullptr,source.indices.size()*
+                    (source.maskedSelection?sizeof(SculptGpuMaskVertex):
+                                            sizeof(SculptGpuIdVertex)),
                 "VIVID GPU-source morphed/skinned triangle IDs");
+            const auto compute=source.maskedSelection?
+                expandMaskCompute_:expandCompute_;
             if(!requestBuffer.valid()||!skinBuffer.valid()||
                !matrixBuffer.valid()||!expandedVertex.valid()||
-               !device_->beginCompute(expandCompute_)) {
+               (source.maskedSelection&&!maskInput.valid())||
+               !device_->beginCompute(compute)) {
                 if(vertex.valid())device_->destroyBuffer(vertex);
                 for(auto handle:maskBuffers)device_->destroyBuffer(handle);
                 for(auto handle:expandedScratch)device_->destroyBuffer(handle);
@@ -361,6 +418,7 @@ public:
             device_->setComputeBuffer(2,skinBuffer);
             device_->setComputeBuffer(3,matrixBuffer);
             device_->setComputeBuffer(4,expandedVertex);
+            if(source.maskedSelection)device_->setComputeBuffer(5,maskInput);
             device_->setComputeUniforms(&source.params,sizeof(source.params));
             device_->dispatch(source.params.count);
             device_->endCompute();
@@ -380,8 +438,14 @@ public:
         device_->setViewport({0,0,w,h});
         device_->setScissor({int(request.x),int(request.y),1,1});
         if(expandedVertex.valid()) {
-            device_->setPipeline(pipeline_);
+            const bool sourceMask=actualGpuSource->maskedSelection;
+            device_->setPipeline(sourceMask?maskPipeline_:pipeline_);
             device_->setVertexBuffer(expandedVertex);
+            if(sourceMask) {
+                device_->setTexture(0,actualGpuSource->maskBaseTexture);
+                device_->setUniforms(1,&actualGpuSource->maskUniform,
+                                    sizeof(actualGpuSource->maskUniform));
+            }
             device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
             device_->draw(std::uint32_t(actualGpuSource->params.count));
         }
@@ -450,6 +514,7 @@ public:
         if(maskPipeline_.valid())device_->destroyPipeline(maskPipeline_);
         if(maskShader_.valid())device_->destroyShader(maskShader_);
         if(expandCompute_.valid())device_->destroyCompute(expandCompute_);
+        if(expandMaskCompute_.valid())device_->destroyCompute(expandMaskCompute_);
         if(pipeline_.valid())device_->destroyPipeline(pipeline_);
         if(shader_.valid())device_->destroyShader(shader_);
         color_=depth_={};
@@ -458,6 +523,7 @@ public:
         maskPipeline_={};
         maskShader_={};
         expandCompute_={};
+        expandMaskCompute_={};
         device_=nullptr;
         supported_=false;
         width_=height_=0;
