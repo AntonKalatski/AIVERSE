@@ -362,17 +362,21 @@ public:
         bool truncated=false;
         std::vector<ModelSubmittedPrimitive> commands;
     };
-    // Must be called after beginScene and before drawModel. Pointer is
-    // borrowed for the current scene; cleared automatically at beginScene.
-    void trackModelSubmissions(const Model* model) noexcept {
-        // Late opt-in cannot reconstruct already staged model sources
-        // or encoded colour draws. Mark the current scene ineligible.
+    // Stage 7AZ: capture two independent actor Models in one scene.
+    // All existing single-model callers keep the original API behaviour.
+    // Both borrowed pointers must remain alive through current-frame render
+    // and queries. Tracked-model changes after drawModel fail closed.
+    void trackModelSubmissions(const Model* model,
+                               const Model* occluder=nullptr) noexcept {
         if(modelDrawInvocation_!=0 || modelSubmissionMainEncoded_) {
             modelSubmissionTarget_=model;
+            modelSubmissionSecondary_=
+                occluder!=model?occluder:nullptr;
             modelSubmissionTruncated_=true;
             return;
         }
         modelSubmissionTarget_=model;
+        modelSubmissionSecondary_=occluder!=model?occluder:nullptr;
         modelSubmitted_.clear();
         modelSubmissionTruncated_=false;
     }
@@ -725,6 +729,7 @@ private:
     std::vector<ModelItem> modelItems_;
     uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
     const Model* modelSubmissionTarget_=nullptr;
+    const Model* modelSubmissionSecondary_=nullptr;
     std::vector<ModelSubmittedPrimitive> modelSubmitted_;
     bool modelSubmissionTruncated_=false;
     bool modelSubmissionMainEncoded_=false;
