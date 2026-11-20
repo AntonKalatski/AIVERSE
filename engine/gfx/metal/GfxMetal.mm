@@ -351,6 +351,8 @@ public:
         auto* source=textures_.get(h.id);
         if(!cmd_ || enc_ || compute_ || !source || !source->tex ||
            source->fmt!=PixelFormat::RGBA8 || !callback ||
+           (source->tex.usage & MTLTextureUsageRenderTarget)==0 ||
+           source->tex.sampleCount!=1 ||
            x<0 || y<0 || x>=int(source->tex.width) ||
            y>=int(source->tex.height) ||
            bufferReads_.size()>=32)return false;
