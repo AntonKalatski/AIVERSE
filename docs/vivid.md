@@ -1658,3 +1658,100 @@ readback remain open. A full native Mac acceptance and
 isolated semantic integration with concurrent renderer
 and Texture RHI work are required before merging.
 See `docs/agent-handoffs/vivid-7AZ-second-actor-mask-parity-2026-11-20.md`.
+
+
+## Stage 7BA — bounded renderer-verified multiple GPU Mask occluders (2026-11-20)
+
+Stage 7AZ verified source code for one independently GPU-deformed
+sampled-alpha scene blocker in both normal Renderer3D colour/depth and
+VIVID's ID/depth pass. Stage 7BA expands the optional diagnostic to
+**one selectable Model and up to four independent GPU-deformed Mask
+occluder Models** with conservative current-frame provenance.
+
+`Renderer3D::trackModelSubmissionsMany(std::span<const Model* const>)`
+records a bounded maximum of five models (the selected actor and
+four scene blocker candidates). Duplicate/null/late/over-capacity
+registration fails closed; source pointers and accepted colour
+commands are cleared at `beginScene`. Existing
+`trackModelSubmissions(selected)` and
+`trackModelSubmissions(selected,blocker)` calls still work.
+A per-Model `modelSubmissionProvenance(model)` result contains
+only that Model's real accepted commands.
+
+`SculptGpuRendererMaskSources.h` is a new portable, renderer-owned
+**candidate filtering layer**. The host supplies the scene's known
+visible candidate Models and their current MotionWeave poses;
+the collector determines each actual visible primitive, original
+index range, live 60-byte GPU override, transform/skin/LOD and
+successful native direct main-colour submission exclusively
+through Renderer3D. Only homogeneous standard sampled
+`AlphaMode::Mask` actors may use this exact GPU Mask route.
+Duplicate models, missing submitted draws, unsupported
+ShaderGraph/Blend/LOD/materials, stale frames or over-limit
+candidate lists invalidate the whole output transaction, rather
+than silently omitting an occluder and claiming a false-positive
+selectable ID.
+
+Renderer3D now freezes each sampled mask's **base texture handle,
+baseColor alpha, alphaCutoff, UV offset/scale/rotation and
+vertexColors choice** in its per-frame staging and accepted
+submission provenance. The collector requires exact equality
+with the mask parameters used in VIVID's independent ID pass.
+This rejects changed or republished textures/materials between
+normal render and picking.
+
+`SculptGpuIdPass::record` retains the old optional single
+`gpuMaskOccluder` pointer and adds a trailing optional
+`std::span<const SculptGpuVertexSource> gpuMaskOccluders={}`.
+The total number (legacy pointer + span) may not exceed four.
+Every distinct 60B GPU actor source has an individual immutable
+index/UV/skin/3×4-row input set, a 32-byte output per indexed
+vertex and an ordered Metal mask-expand compute dispatch.
+Every blocker triangle ID is unconditionally replaced with
+zero; sampled alpha and hardware depth decide occlusion.
+The combined triangle count remains bounded to the existing
+3M vertex budget and all expanded scratch allocations remain
+pinned through the asynchronous GPU ID/depth callbacks or
+a verified native GPU idle barrier. Opaque CPU scene depth
+blockers and existing unsupported-material CPU fallbacks are
+preserved; exact **GPU opaque** occluder expansion is not yet
+included in this stage.
+
+The existing GUI preview now routes its real GPU Mask actor
+through the collector, not manually constructed source metadata.
+`AIVERSE_VIVID_MASK_PARITY=2` is a new opt-in native Metal
+mode: one selected human and **two independently GPU-compute-written
+Mask Models** are all submitted to normal Renderer3D. Their
+individual original GPU buffers are collected and passed to the
+same actual VIVID ID/depth pass. The existing alpha-hole
+(stage 1) and solid-occlusion (stage 2) scene colour/depth/ID
+checks remain, with the closest solid Mask winning depth.
+`tools/vivid-validate.sh` runs this separately, alongside
+the old one-human, one-mask and 12-human modes.
+
+The native `vivid_metal_sculpt_id` fixture defines an
+additional third GPU-resident source scenario with an
+independent .15-depth Mask, alpha-hole/solid outcomes and
+actual Metal depth assertions. Headless fixtures cover
+the 4-source cap, distinct GPU buffers, invalid last source,
+and wrong/stale accepted renderer material/draw source.
+
+**Actual verification:** GitHub connector code read/write,
+commits and 28 static source-contract inspections. **NOT RUN:**
+native CMake/C++/ObjC++/Metal compilation, CTest, GUI screenshots,
+actual GPU colour/depth/ID readbacks, full
+`bash tools/vivid-validate.sh --full`, Vulkan/GLES drivers,
+performance/VRAM or main integration. These are committed
+functional/test sources, not measured Metal PASS evidence.
+
+**Remaining:** Native Mac acceptance and fixes are required before
+the feature is production-proven. General automatic discovery
+of all other renderer objects is not implemented: the host
+must supply bounded known visible scene candidates before
+`drawModel` so their submissions can be tracked; unknown
+objects are not guessed. Multiple GPU-mask handling is
+implemented; GPU opaque, arbitrary shader offsets, blended
+cornea, GPU ICB/MDI, conditional LOD and late compositing
+still fail closed or retain conservative CPU depth fallbacks.
+Vulkan and GLES3 still lack true 60B GPU-source expansion.
+See dedicated `docs/agent-handoffs/vivid-7BA-multi-gpu-mask-2026-11-20.md`.
