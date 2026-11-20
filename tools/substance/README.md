@@ -42,3 +42,19 @@ material field object and a bundle manifest with color spaces. The material
 object is not a complete materials.json library. Project import must rebase
 texture paths and insert it under a material name. PNG GPU compression and
 automatic Studio publication remain unimplemented.
+
+## Stage 3: offline project import
+
+Close Studio before importing (its writer does not share the CLI lock):
+
+```sh
+python3 tools/substance/import_bundle.py /path/to/bundle --project /path/to/game --name stone
+```
+
+Copies validated PNGs under content-addressed `assets/substance/`, rebases paths,
+and atomically replaces `materials.json`, preserving other entries and top-level
+metadata. Existing material names are refused. Cooperating importers use an
+exclusive lock; an interrupted process may leave `.substance-import.lock` which
+must only be removed after confirming no importer is running. A failed library
+publication can leave unused immutable textures. This does not provide a
+cross-process transaction with a running Studio. No GPU compression yet.
