@@ -698,6 +698,27 @@ void test() {
             std::fabs(source.maskUniform.alpha[1]-0.5f)<1.e-6f,
             "GPU selected Mask lost exact actor source IDs, UV or alpha");
         const auto savedCount=source.indices.size();
+        // 7AY: independently GPU-resident masked depth blocker has a
+        // distinct 60B actor source, and must reject malformed indices,
+        // invalid per-source UV or a reused selected source handle.
+        SculptGpuVertexSource blocker=source;
+        blocker.actualVertexOverride={72};
+        req(sculptGpuMaskedOccluderInputsValid(blocker,{71}),
+            "valid independent GPU masked occluder source was rejected");
+        req(!sculptGpuMaskedOccluderInputsValid(blocker,{72}),
+            "selected GPU actor cannot be its own unrelated occluder");
+        blocker.indices[0].vertex=999999u;
+        req(!sculptGpuMaskedOccluderInputsValid(blocker,{71}),
+            "out-of-range GPU masked occluder source ID accepted");
+        blocker=source;blocker.actualVertexOverride={72};
+        blocker.maskInputs[0].uvAlpha[0]=
+            std::numeric_limits<float>::quiet_NaN();
+        req(!sculptGpuMaskedOccluderInputsValid(blocker,{71}),
+            "nonfinite original source UV accepted for GPU mask depth");
+        blocker=source;blocker.actualVertexOverride={72};
+        blocker.params.count=99;
+        req(!sculptGpuMaskedOccluderInputsValid(blocker,{71}),
+            "incorrect GPU mask occluder source count accepted");
         material.shaderGraph=std::make_shared<
             const aiverse::render::graph::Program>();
         req(!prepareSculptGpuVertexSource(
