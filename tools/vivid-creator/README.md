@@ -1443,3 +1443,14 @@ All eight use four sources and the same smooth cyclorama geometry; camera,
 character pose and source materials remain unchanged between captures. These
 images demonstrate the native renderer, not the new HTML5 controls. Without
 `--studio-lighting`, existing optical capture baselines remain unchanged.
+
+### Offline wardrobe regression
+
+`--preview-fixed-pose` keeps the selected pose during a sequence; without it the
+existing diagnostic visits relaxed/A/T/portrait/relaxed every72frames, using the
+shared Animator crossfade. `--preview-light-sweep` requires studio lighting and a
+sequence and cycles the eight existing light presets every48frames.384frames cover
+all eight. These flags do not change saved project lighting or animation settings.
+Offline sequences print `footEndpointMaxDrift` and sample count at completion:
+this is displacement of ankle/ball bone origins in model units, not a physical
+shoe-ground collision test. Diagnostic sampling does not run in interactive mode.

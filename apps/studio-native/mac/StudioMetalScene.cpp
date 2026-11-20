@@ -134,7 +134,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             vivid::applyHumanStudioLighting(renderer_,facialBinding.studioLighting,foot,h);
             vivid::updateHumanStudioShadows(renderer_,shadowResolution_,h,framebufferHeight);
             const auto bg=facialBinding.studioLighting.rig().background;
-            if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},0,0);
+            if(facialBinding.studioLighting.backdrop)renderer_.drawMesh(studioCyclorama_,mat4::trs(foot,{}, {h,h,h}),{bg.x,bg.y,bg.z,1},kDrawNoCastShadow,0);
 
             const bool submitted=facialGpu_.submit(
                 renderer_,facialBinding,1.f/60.f,reason);

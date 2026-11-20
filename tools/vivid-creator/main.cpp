@@ -101,7 +101,8 @@ struct CreatorApp {
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
     bool automaticLod=true;
     render::PostFx antialiasing;bool antialiasingReady=false,aaEnabled=true;
-    bool previewHeadSweep=false,previewFixedPose=false,previewBindPose=false;
+    bool previewHeadSweep=false,previewFixedPose=false,previewBindPose=false,previewLightSweep=false;
+    float previewFootDrift=0;size_t previewFootSamples=0;
     float captureCameraDistance=0;
     ShadowQuality captureShadowQuality=ShadowQuality::High;
     render::AdaptiveShadowResolution shadowResolution;
@@ -1828,6 +1829,9 @@ struct CreatorApp {
                     local.r=qnormalize(inverse*quat::axisAngle({0,1,0},.45f*std::sin(phase))*quat::axisAngle({1,0,0},.20f*std::sin(phase*2))*parent*local.r);
                     worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);
                 }
+                for(size_t node=0;node<human.head->nodes.size();++node){const auto name=humanBoneSemantic(human.head->nodes[node].name);if(name=="foot_l"||name=="foot_r"||name=="ball_l"||name=="ball_r"){
+                    previewFootDrift=std::max(previewFootDrift,length(previewCapturePose.matrices[node].transformPoint({})-human.head->bindWorld[node].transformPoint({})));++previewFootSamples;
+                }}
                 sequenceSampled=sequenceFrame;
             }
             poseSource=&previewCapturePose;
@@ -2121,7 +2125,8 @@ struct CreatorApp {
         // vertex overrides and material batches BEFORE the separate ID
         // diagnostic is allowed to corroborate a CPU-picked source vertex.
         // drawModel stages colour commands; render() executes them below.
-        if(studioLightingEnabled){vivid::applyHumanStudioLighting(renderer,studioLighting,studioFoot,studioHeight);vivid::updateHumanStudioShadows(renderer,shadowResolution,studioHeight,dev.framebufferHeight());const auto bg=studioLighting.rig().background;renderer.drawMesh(floor,{}, {bg.x,bg.y,bg.z,1},0,0);}
+        if(previewLightSweep&&sequenceFrames)studioLighting.preset=humanStudioPresets()[size_t(std::min(sequenceFrame/48,7))].id;
+        if(studioLightingEnabled){vivid::applyHumanStudioLighting(renderer,studioLighting,studioFoot,studioHeight);vivid::updateHumanStudioShadows(renderer,shadowResolution,studioHeight,dev.framebufferHeight());const auto bg=studioLighting.rig().background;renderer.drawMesh(floor,{}, {bg.x,bg.y,bg.z,1},kDrawNoCastShadow,0);}
         else renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
         ModelDraw draw;
         draw.model=human.head.get();
@@ -2285,6 +2290,7 @@ struct CreatorApp {
                              !headSubmission.commands.empty();
             smokeReady=ready?smokeReady+1:0;
             if(smokeReady>=4 && !smokeCaptureRequested) {
+            if(previewLightSweep&&sequenceFrame%48==0)std::printf("VIVID lighting frame=%d preset=%s\n",sequenceFrame,studioLighting.preset.c_str());
             if(sequenceFrame==0){const auto& lod=renderer.modelStats();std::printf("VIVID LOD auto=%d levels=%llu,%llu,%llu,%llu chains=%llu blocked=%llu\n",int(automaticLod),(unsigned long long)lod.lodNodes[0],(unsigned long long)lod.lodNodes[1],(unsigned long long)lod.lodNodes[2],(unsigned long long)lod.lodNodes[3],(unsigned long long)lod.cameraLodChains,(unsigned long long)lod.cameraLodBlocked);}
             if(sequenceFrame==0)std::printf("VIVID AA enabled=%d passes=%d\n",int(aaEnabled),antialiasing.stats().passes);
             if(sequenceFrame==0)std::printf("VIVID shadow map=%d adaptive=%d cameraDistance=%.3f\n",renderer.shadowMapSize(),shadowResolution.resolution,camera.distance);
@@ -2310,6 +2316,7 @@ struct CreatorApp {
                     std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s headCommands=%zu actor=%s shadow=%u colour=%u pass=%d\n",
                         outputPath.c_str(),headCommands,previewMotion?"MODEL_MORPH":actor?"GPU":"CPU",
                         unsigned(shadowDraws),unsigned(colourDraws),int(smokeCompleted));
+                    if(sequenceFrames&&sequenceFrame+1==sequenceFrames)std::printf("VIVID preview footEndpointMaxDrift=%.8f samples=%zu\n",previewFootDrift,previewFootSamples);
                     if(sequenceFrames&&smokeCompleted&&++sequenceFrame<sequenceFrames){
                         smokeCompleted=false;smokeCaptureRequested=false;smokeFrames=0;
                     }else platform::requestQuit();
@@ -2379,6 +2386,8 @@ int aiverseMain(int argc,char** argv) {
             const std::string mode=argv[++i];
             if(mode!="auto" && mode!="highest")return 2;
             application->automaticLod=mode=="auto";
+        }else if(std::strcmp(argv[i],"--preview-light-sweep")==0) {
+            application->previewLightSweep=true;
         }else if(std::strcmp(argv[i],"--preview-bind-pose")==0) {
             application->previewBindPose=true;
         }else if(std::strcmp(argv[i],"--preview-fixed-pose")==0) {
@@ -2453,6 +2462,7 @@ int aiverseMain(int argc,char** argv) {
             return 2;
         }
     }
+    if(application->previewLightSweep&&(!application->sequenceFrames||!application->studioLightingEnabled)){std::fprintf(stderr,"preview-light-sweep requires preview-sequence and studio-lighting\n");return 2;}
     if(application->previewHeadSweep&&!application->sequenceFrames){std::fprintf(stderr,"preview-head-sweep requires preview-sequence\n");return 2;}
     if(application->sequenceFrames){
         if(!application->smoke||!application->previewMotion||application->previewTime>=0){
