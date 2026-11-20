@@ -2,6 +2,7 @@
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/DeformedSculptPick.h"
+#include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
@@ -126,6 +127,90 @@ void test() {
         req(!pickSculptVertex(model,0,pose,
             {2,2,2},{0,0,-1},3).hit,
             "viewport sculpt accepted ray missing the triangle");
+    }
+    // 7AL: the accelerated picker must be equivalent to the original
+    // triangle-order reference for neutral and animated morph poses.
+    // On a dense planar grid a narrow ray should visit far fewer triangles
+    // than the total model; repeated clicks retain CPU buffer capacities.
+    {
+        using namespace aiverse::render;
+        constexpr int side=41;
+        Model model;
+        model.vertices.resize(side*side);
+        for(int y=0;y<side;++y)for(int x=0;x<side;++x)
+            model.vertices[std::size_t(y*side+x)].pos={
+                float(x)/float(side-1),float(y)/float(side-1),0};
+        for(int y=0;y<side-1;++y)for(int x=0;x<side-1;++x) {
+            const auto a=std::uint32_t(y*side+x),b=a+1,c=a+side;
+            model.indices.insert(model.indices.end(),{
+                a,b,c,b,c+1,c
+            });
+        }
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=std::uint32_t(model.indices.size());
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(std::move(mesh));
+        Node owner;
+        owner.mesh=0;
+        model.nodes.push_back(owner);
+        const std::array<mat4,1> pose{{mat4{}}};
+        MorphTargetInput target;
+        target.name="lift";
+        MorphDelta delta;
+        delta.vertex=std::uint32_t((side/2)*side+side/2);
+        delta.position={0,0,0.1f};
+        target.deltas.push_back(delta);
+        const auto morphs=SparseMorphLibrary::compile(
+            model.vertices.size(),{target});
+        const std::array<ShapeRoute,1> routes{{
+            {Channel::JawOpen,"lift",1.f}
+        }};
+        const auto binding=FaceShapeBinding::compile(morphs,routes);
+        DeformedSculptWorkspace workspace;
+        FaceFrame face;
+        for(float expression:{0.f,1.f}) {
+            face.values[std::size_t(Channel::JawOpen)]=expression;
+            for(float x:{0.12f,0.26f,0.51f,0.82f}) {
+                const float3 origin{x,0.51f,2.f},direction{0,0,-1};
+                const auto brute=pickDeformedSculptVertex(
+                    model,0,pose,morphs,binding,face,origin,direction,
+                    model.vertices.size());
+                const auto fast=workspace.pick(
+                    model,0,pose,morphs,binding,face,origin,direction,
+                    model.vertices.size());
+                req(brute.hit && fast.hit && brute.vertex==fast.vertex &&
+                    std::fabs(brute.rayDistance-fast.rayDistance)<1.e-5f &&
+                    std::fabs(brute.worldPosition.x-fast.worldPosition.x)<1.e-5f &&
+                    std::fabs(brute.worldPosition.y-fast.worldPosition.y)<1.e-5f &&
+                    std::fabs(brute.worldPosition.z-fast.worldPosition.z)<1.e-5f,
+                    "refitted BVH sculpt hit differs from full-triangle reference");
+            }
+        }
+        req(workspace.stats().triangles==model.indices.size()/3 &&
+            workspace.stats().testedTriangles<
+                workspace.stats().triangles/4,
+            "BVH did not cull triangle candidates for a narrow ray");
+        const auto warmCapacity=workspace.vertexCapacity();
+        face.values[std::size_t(Channel::JawOpen)]=0.5f;
+        req(workspace.pick(model,0,pose,morphs,binding,face,
+            {0.51f,0.51f,2},{0,0,-1},model.vertices.size()).hit &&
+            workspace.vertexCapacity()==warmCapacity,
+            "sculpt workspace unexpectedly grew after warm-up");
+        auto badPose=pose;
+        badPose[0].at(0,3)=std::numeric_limits<float>::quiet_NaN();
+        req(!workspace.pick(model,0,badPose,morphs,binding,face,
+            {0.51f,0.51f,2},{0,0,-1},model.vertices.size()).hit,
+            "refitted picking accepted a nonfinite node pose");
+        req(workspace.pick(model,0,pose,morphs,binding,face,
+            {0.51f,0.51f,2},{0,0,-1},model.vertices.size()).hit,
+            "valid subsequent pick did not recover after rejected pose");
+        workspace.reset();
+        req(workspace.stats().triangles==0 &&
+            workspace.pick(model,0,pose,morphs,binding,face,
+                {0.51f,0.51f,2},{0,0,-1},model.vertices.size()).hit,
+            "BVH did not rebuild after explicit candidate reset");
     }
     // 7AJ: published GPU morph is sampled in bind space BEFORE skinning.
     // Picking must return the original vertex ID and final world position,
