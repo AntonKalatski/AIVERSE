@@ -613,6 +613,33 @@ struct Viewer {
                                       candidate->instances,
                                       candidate->generation,error))
                 throw std::runtime_error("compiled attachment reload: "+error);
+            // Old CPU Graph players remain alive during the transfer.
+            // Only portable named-state/clip clocks cross the generation.
+            // Stable actor/child identity and complete node hierarchy must
+            // match; incompatible imports start from graph defaults.
+            size_t transferred=0,declined=0;
+            if(attachmentGeneration && candidate->generation) {
+                const size_t count=std::min(
+                    attachmentGeneration->childGraphs.size(),
+                    candidate->generation->childGraphs.size());
+                for(size_t i=0;i<count;++i) {
+                    const auto& incoming=candidate->generation->childGraphs[i];
+                    for(const auto& [childId,snapshot]:incoming) {
+                        const auto& previous=attachmentGeneration->childGraphs[i];
+                        if(previous.find(childId)==previous.end() ||
+                           !snapshot || !snapshot->model)continue;
+                        const ::aiverse::view::AnimatedSceneAttachmentSources::Key
+                            key{1,"actor-"+std::to_string(i),childId};
+                        const auto playback=
+                            attachmentGeneration->animations.capturePlayback(key);
+                        if(!playback) {++declined;continue;}
+                        if(candidate->generation->animations.queuePlayback(
+                                key,*playback,*snapshot->model))
+                            ++transferred;
+                        else ++declined;
+                    }
+                }
+            }
             // Allocate the old-session owner BEFORE the atomic move/commit.
             auto retired=std::make_unique<RetiredNativeScene>();
             retired->provider=std::move(nativeModels);
@@ -627,7 +654,9 @@ struct Viewer {
             nativeReloadError.clear();
             log.push_back("reimported "+
                           std::to_string(inst.size())+
-                          " ModelView sources and socket attachments from disk");
+                          " ModelView sources and socket attachments from disk; "+
+                          std::to_string(transferred)+" child graph clocks queued, "+
+                          std::to_string(declined)+" declined");
             return true;
         }catch(const std::exception& e) {
             nativeReloadError=e.what();
