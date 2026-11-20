@@ -523,7 +523,41 @@ static void testPortableTemporalHysteresis(gfx::Backend backend) {
     assert(dev.data_.empty());
 }
 
+static void testStreamingFrameTelemetryDelta() {
+    IndexResidencyStats before{};
+    before.gpuTransferBytes=120;
+    before.uploadedBytes=80;
+    before.uploads=3;
+    before.evictions=1;
+    before.deferredDemands=4;
+    before.failedUploads=2;
+    auto after=before;
+    after.gpuTransferBytes=152; // failed transaction may still write bytes
+    after.uploadedBytes=80; // no published pages
+    after.uploads=3;
+    after.evictions=1;
+    after.deferredDemands=6;
+    after.failedUploads=3;
+    auto delta=indexResidencyFrameDelta(before,after);
+    assert(delta.gpuTransferBytes==32 && delta.uploadedBytes==0);
+    assert(delta.promotions==0 && delta.evictions==0);
+    assert(delta.deferredDemands==2 && delta.failedUploads==1);
+    const auto unchanged=indexResidencyFrameDelta(after,after);
+    assert(unchanged.gpuTransferBytes==0 && unchanged.failedUploads==0);
+    IndexResidencyStats reset{};
+    delta=indexResidencyFrameDelta(after,reset);
+    assert(delta.gpuTransferBytes==0 && delta.evictions==0);
+    reset.gpuTransferBytes=300;
+    reset.uploadedBytes=100;
+    reset.uploads=5;
+    reset.evictions=2;
+    delta=indexResidencyFrameDelta(after,reset);
+    assert(delta.gpuTransferBytes==148 && delta.uploadedBytes==20);
+    assert(delta.promotions==2 && delta.evictions==1);
+}
+
 int main(){
+    testStreamingFrameTelemetryDelta();
     testStreamedTemporalDemands();
     testPortableTemporalHysteresis(gfx::Backend::Metal);
     testPortableTemporalHysteresis(gfx::Backend::Vulkan);
