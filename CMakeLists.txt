@@ -768,25 +768,25 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_appearance_authoring_tests
         tests/view/appearance_authoring.cpp)
     target_link_libraries(aiverse_appearance_authoring_tests
-        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+        PRIVATE aiverse_models AIVERSE::View aiverse_shader_graph aiverse_zstd_dec)
     add_test(NAME view_appearance_authoring
         COMMAND aiverse_appearance_authoring_tests)
     add_executable(aiverse_appearance_registry_tests
         tests/view/appearance_registry.cpp)
     target_link_libraries(aiverse_appearance_registry_tests
-        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+        PRIVATE aiverse_models AIVERSE::View aiverse_shader_graph aiverse_zstd_dec)
     add_test(NAME view_appearance_registry
         COMMAND aiverse_appearance_registry_tests)
     add_executable(aiverse_appearance_choice_tests
         tests/view/appearance_choice.cpp)
     target_link_libraries(aiverse_appearance_choice_tests
-        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+        PRIVATE aiverse_models AIVERSE::View aiverse_shader_graph aiverse_zstd_dec)
     add_test(NAME view_appearance_choice
         COMMAND aiverse_appearance_choice_tests)
     add_executable(aiverse_appearance_prepared_tests
         tests/view/appearance_prepared.cpp)
     target_link_libraries(aiverse_appearance_prepared_tests
-        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+        PRIVATE aiverse_models AIVERSE::View aiverse_shader_graph aiverse_zstd_dec)
     add_test(NAME view_appearance_prepared
         COMMAND aiverse_appearance_prepared_tests)
 endif()
