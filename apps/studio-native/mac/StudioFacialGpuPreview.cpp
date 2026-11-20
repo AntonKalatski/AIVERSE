@@ -81,7 +81,7 @@ void StudioFacialGpuPreview::load(
             const auto& warnings=next->models->warnings();
             throw std::runtime_error("Native facial model import/upload failed: "+
                 request.modelKey+(warnings.empty()?std::string{}:
-                                  std::string(" — ")+warnings.back()));
+                                  std::string(": ")+warnings.back()));
         }
         next->model=model;
         // The MODEL ITSELF authorizes semantic face morph targets/rig bones.
