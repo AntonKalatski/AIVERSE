@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import {
-  closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
+  closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock, splitDockStack
 } from './nestedDock';
 import type { StudioPanel } from './nestedDock';
 import type { StudioEntity, StudioSnapshot } from './types';
@@ -48,6 +48,17 @@ export default function App() {
           setDock(current => reopenTab(current,'scene','dock-center'));
         }
         void refresh();
+      } else if(event==='facial.preview.requested') {
+        // Keep the REAL native Scene visible alongside the authoring
+        // sliders. Preserve user layout if Facial Rig is already in a
+        // separate pane; never create a synthetic HTML image.
+        setDock(current=>{
+          let next=reopenTab(current,'scene','dock-center');
+          const sceneStack=panelStack(next,'scene');
+          if(sceneStack && panelStack(next,'facial_rig')===sceneStack)
+            next=splitDockStack(next,'facial_rig',sceneStack,'right');
+          return next;
+        });
       } else if (event === 'workspace.changed' || event === 'selection.changed' ||
                  event === 'document.changed') void refresh();
     });
