@@ -14,6 +14,7 @@
 #include "LumaWeaveVulkanMotionPolicy.h"
 #include <algorithm>
 #include <array>
+#include <map>
 #include <cstdint>
 #include <stdexcept>
 
@@ -26,6 +27,7 @@ public:
         bool gpuBusy=false,missingDepth=false;
         bool denoiseEncoded=false,temporalHistoryUsed=false;
         bool motionInputBound=false,previousNormalCaptured=false;
+        bool motionAutoCaptured=false,motionSnapshotCopied=false;
         LumaVulkanHistoryReason historyReason=LumaVulkanHistoryReason::Disabled;
         LumaWeaveDecision quality{};
         LumaWeaveVulkanDirect::Submission submission{};
@@ -89,7 +91,7 @@ public:
                 if(slot.retireSerial>completed)return false;
             for(const auto& slot:receiverSlots_)
                 for(auto t:{slot.material,slot.materialDepth,slot.surface,
-                            slot.surfaceDepth,slot.composeDepth})
+                            slot.surfaceDepth,slot.composeDepth,slot.motion})
                     if(t.valid())dev_->destroyTexture(t);
             if(vertex_.valid())dev_->destroyBuffer(vertex_);
             if(pipeline_.valid())dev_->destroyPipeline(pipeline_);
@@ -107,6 +109,8 @@ public:
         viewKey_=viewEpoch_=0;
         objectMotion_={};motionFrameSerial_=motionViewKey_=motionViewEpoch_=0;
         dynamicGeometryVisible_=false;
+        autoMotionCaptured_=motionSnapshotCopied_=false;
+        cameraMotion_.clear();
         return true;
     }
 
@@ -163,8 +167,8 @@ public:
     // Conservative preflight, queried by the native driver BEFORE excluding
     // legacy raster direct sources for this view. No GPU mutation.
     static constexpr uint64_t kMaxReceiverRingBytes=512ull*1024ull*1024ull;
-    static constexpr uint64_t kBytesPerReceiverPixel=28u;
-    // Two RGBA16F material/normal images + three depth images per frame.
+    static constexpr uint64_t kBytesPerReceiverPixel=36u;
+    // Three RGBA16F (material,normal,velocity) + three depth images/frame.
     // Reject a 4K multi-view memory explosion BEFORE excluding raster lights.
     bool canAcquireFrame(uint32_t viewW=0,uint32_t viewH=0) const {
         if(!ready() || !owner_.canSubmitScreen() ||
@@ -182,6 +186,7 @@ public:
         scene_=downstream_.scenePass(out,w,h);
         width_=w;height_=h;
         readyMaterial_=readySurface_=false;
+        autoMotionCaptured_=motionSnapshotCopied_=false;
         stats_={};
         const bool usable=w>0 && h>0 && w<=16384 && h<=16384 &&
             scene_.colorTarget.valid() && scene_.depthTarget.valid();
@@ -309,12 +314,13 @@ public:
         // on another view/scene, even if its handle ID happens to match.
         objectMotion_={};motionFrameSerial_=0;motionViewKey_=0;
         motionViewEpoch_=0;dynamicGeometryVisible_=false;
+        autoMotionCaptured_=motionSnapshotCopied_=false;
     }
 
 private:
     struct ReceiverSlot {
         gfx::TextureHandle material{},materialDepth{};
-        gfx::TextureHandle surface{},surfaceDepth{},composeDepth{};
+        gfx::TextureHandle surface{},surfaceDepth{},composeDepth{},motion{};
         int width=0,height=0;
         uint64_t retireSerial=0; // ALL five images held until real frame fence
     };
@@ -335,7 +341,8 @@ private:
             if(chosen<0)chosen=int(i);
             if(slot.width==w && slot.height==h && slot.material.valid() &&
                slot.materialDepth.valid() && slot.surface.valid() &&
-               slot.surfaceDepth.valid() && slot.composeDepth.valid()) {
+               slot.surfaceDepth.valid() && slot.composeDepth.valid() &&
+           slot.motion.valid()) {
                 chosen=int(i);break;
             }
         }
@@ -343,15 +350,16 @@ private:
         auto& slot=receiverSlots_[size_t(chosen)];
         if(slot.width!=w || slot.height!=h || !slot.material.valid() ||
            !slot.materialDepth.valid() || !slot.surface.valid() ||
-           !slot.surfaceDepth.valid() || !slot.composeDepth.valid()) {
+           !slot.surfaceDepth.valid() || !slot.composeDepth.valid() ||
+           !slot.motion.valid()) {
             gfx::TextureDesc desc;
             desc.width=w;desc.height=h;
             desc.format=gfx::PixelFormat::RGBA16F;
             desc.filter=gfx::Filter::Nearest;desc.renderTarget=true;
             desc.label="LumaWeave Vulkan per-frame opaque receiver";
-            std::array<gfx::TextureHandle,5> replacement{};
+            std::array<gfx::TextureHandle,6> replacement{};
             for(size_t i=0;i<replacement.size();++i) {
-                desc.format=(i==0 || i==2) ?
+                desc.format=(i==0 || i==2 || i==5) ?
                     gfx::PixelFormat::RGBA16F:gfx::PixelFormat::Depth;
                 replacement[i]=dev_->createTexture(desc);
                 if(!replacement[i].valid()) {
@@ -361,13 +369,14 @@ private:
                 }
             }
             for(auto t:{slot.material,slot.materialDepth,slot.surface,
-                        slot.surfaceDepth,slot.composeDepth})
+                        slot.surfaceDepth,slot.composeDepth,slot.motion})
                 if(t.valid())dev_->destroyTexture(t);
             slot.material=replacement[0];
             slot.materialDepth=replacement[1];
             slot.surface=replacement[2];
             slot.surfaceDepth=replacement[3];
             slot.composeDepth=replacement[4];
+            slot.motion=replacement[5];
             slot.width=w;slot.height=h;
         }
         slot.retireSerial=frame;
@@ -441,6 +450,13 @@ private:
     MotionTextureInput objectMotion_{};
     uint64_t motionFrameSerial_=0,motionViewKey_=0,motionViewEpoch_=0;
     bool dynamicGeometryVisible_=false;
+    bool autoMotionCaptured_=false,motionSnapshotCopied_=false;
+    struct CameraMotion {
+        mat4 previousVP{};
+        uint64_t epoch=0;
+        bool valid=false;
+    };
+    std::map<uint64_t,CameraMotion> cameraMotion_; // up to eight camera+world IDs
     FrameStats stats_{},last_{};
 };
 } // namespace aiverse::render
