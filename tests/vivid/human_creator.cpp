@@ -156,7 +156,9 @@ void test() {
         const auto newer=protocol.begin(7u,21u,0u,800u,600u,200u,300u);
         req(older.valid() && newer.valid() &&
             older.generation!=newer.generation &&
-            protocol.pending(),"GPU pick protocol did not replace older click");
+            protocol.pending() && protocol.pendingIs(newer) &&
+            !protocol.pendingIs(older),
+            "GPU pick protocol did not replace older click");
         const SculptGpuPickPixel pixel{packSculptTriangleId(0u),0.45f,true};
         req(!protocol.consume(older,pixel,7u,22u,800u,600u,ordinal) &&
             protocol.pending(),
@@ -172,7 +174,8 @@ void test() {
             protocol.pending(),
             "invalid GPU depth was incorrectly accepted");
         req(protocol.consume(newer,pixel,7u,22u,800u,600u,ordinal) &&
-            ordinal==0u && !protocol.pending(),
+            ordinal==0u && !protocol.pending() &&
+            !protocol.pendingIs(newer),
             "valid GPU ID/depth callback was not resolved");
         const auto obsolete=protocol.begin(7u,23u,0u,800u,600u,200u,300u);
         protocol.cancel(); // caller has published a different character
