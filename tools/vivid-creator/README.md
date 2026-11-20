@@ -969,3 +969,101 @@ status.
    conflicts in a dedicated integration branch before merging
    to `main`. The default CPU BVH picker stays functional
    whether or not the provenance query passes.
+
+
+## Stage 7AT — actual GPU ModelVertex source in Metal ID picking
+
+The opt-in Metal ID/depth confirmation now has a genuine **GPU-source
+vertex path** when the current Renderer3D view uses a VIVID-owned
+60-byte `ModelDraw::vertexOverride` from the current animation frame.
+This avoids re-uploading CPU-generated *selected face positions* and
+instead borrows the SAME RHI buffer handle that the normal
+`Renderer3D::drawModel` is scheduled to use in its colour pass.
+
+`SculptGpuVertexSource.h` defines the portable, transactional
+`prepareSculptGpuVertexSource` builder, source index+triangle ID
+pairs (8B each), resolved per-vertex joint indices + normalized
+four-way skin weights (32B each), exact current MotionWeave joint
+matrices and a matching 80B compute-uniform layout. It does **not**
+read CPU morph positions from `Model::vertices`. Only topology,
+source IDs, immutable skin weight metadata, and current joint
+transforms are prepared on CPU.
+
+The new `kSculptGpuSourceExpandMSL` kernel reads the first three
+IEEE754 float words from the **borrowed GPU ModelVertex[vertexID]**
+at the same 15×uint (= 60-byte) stride used by
+`GpuMorphMeshStream`. It applies the current source node world
+transform for rigid meshes or the MotionWeave skin palette matrices
+and normalized four influences for skinned meshes; writes a
+16-byte `SculptGpuIdVertex` with encoded mesh-local Triangle ID.
+An ordinary vertex pipeline subsequently draws this compute output
+into the same scene-aware RGBA8 + depth ID target. The GPU compute
+dispatch, ID draw and colour rendering are recorded in the same
+ordered Metal frame. No blocking GPU→CPU vertex readback or second
+copy of the actor's original GPU vertex buffer occurs.
+
+The experimental path is guarded by:
+
+- The actual frame-local Renderer3D provenance from Stage 7AS: it must
+  identify exactly the same selected mesh, source triangle index
+  ranges, actor draw invocation and original 60B vertexOverride
+  handle/count. Unsupported LOD/ShaderGraph/ambiguous instancing
+  continue to fail closed.
+- A live Metal compute-capable device and a successfully initialized
+  expansion shader. If the renderer uses a GPU override but the
+  expansion is unavailable, the optional GPU confirmation is
+  rejected. The immediate CPU BVH sculpt selection remains intact.
+- Selected source primitives must use conventional fully opaque
+  materials and unambiguous skin palettes. Texture alpha-cutout
+  selections continue to use the earlier CPU-fed diagnostic path
+  only when the renderer did **not** submit a GPU override; unknown
+  custom material/skin inputs cannot be represented as if they were
+  exact GPU source.
+- The GPU expansion inputs are validated against the current
+  Model's exact index ordering and encoded original-source IDs.
+  Seam-split clones map back to their original authoring ID; generated
+  LOD triangles carry zero selectable ID but remain depth blockers.
+- Native GPU lifetime: the actor owns its source buffer; the GPU
+  picking pass only borrows it during the same frame. Temporary
+  index, influence, joint matrix, expanded result, mask and
+  occluder buffers are released only after the true asynchronous
+  GPU pixel callback completes. On a post-draw failure they stay
+  retained until a verified device-idle retirement barrier;
+  repeated failed jobs are disabled rather than unbounded.
+
+`SculptGpuIdPass::record(..., optional const SculptGpuVertexSource*)`
+keeps the previous CPU-fed source path for other supported RHI
+backends and non-override models. `SculptGpuIdPass::Completed`
+reports `actualOverride=true` for a validated Metal source
+expansion; Creator labels such a confirmation as using the
+actual actor 60B GPU source, but the already selected CPU author
+vertex is **never overwritten**.
+
+The existing `vivid_human_creator` source fixtures now validate
+rigid transform inputs, clone source IDs, source index ordering,
+two-joint skin palette weights and matrices, nonauthorable LOD
+triangles and transactional rejection. The native
+`vivid_metal_sculpt_id` GPU fixture additionally uploads an
+explicit 60B actor stream whose vertex positions are deliberately
+different from the unchanged CPU mesh; the hardware ID at the
+centre must follow the GPU bytes. It also tests the original
+in-view buffer and a GPU skinning transform that moves the
+character outside the click pixel. **These are new test definitions;
+no C++/MSL compilation or GPU tests have actually been run.**
+
+### Remaining parity boundary
+
+This is **real GPU source position reading on Metal**, not a
+complete replacement for Renderer3D's actual vertex shader,
+material fragment path or final colour-depth/culling result.
+Joint palette matrices are prepared from the same MotionWeave
+pose but evaluated in a separate compute kernel, not a captured
+native Renderer3D vertex shader. Model-specific shader vertex
+offsets, conditional GPU LOD selection/fade and nonstandard
+alpha/Blend remain unsupported. Other occluders in Creator still
+use the existing CPU world-geometry reconstruction. Metal is
+the only platform implementing this compute path; Vulkan and
+native GLES3 retain their Stage 7AR CPU-fed ID diagnostics and
+CPU BVH selection. Neither Vulkan compute expansion nor full
+WebGL2 support is claimed. Exact pixel/skinning parity and
+performance require the deferred consolidated native acceptance.
