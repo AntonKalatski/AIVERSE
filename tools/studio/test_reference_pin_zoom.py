@@ -143,11 +143,12 @@ class StudioReferencePinZoomTests(unittest.TestCase):
     def test_import_settings_lock_preserves_asset_context(self):
         assets = self.source("components/AssetsPanel.tsx")
         settings = self.source("components/AssetImportSettings.tsx")
-        self.assertIn("pinnedAssetPath", assets)
-        self.assertIn("const detailPath=pinnedAssetPath ?? selected;", assets)
-        self.assertIn("locked={pinnedAssetPath!==null}", assets)
+        self.assertIn("pinnedAssetGuid", assets)
+        self.assertIn("catalog.files.find(a=>a.guid===pinnedAssetGuid)", assets)
+        self.assertIn("locked={pinnedAssetGuid!==null}", assets)
         self.assertIn("onToggleLock={toggleAssetPin}", assets)
-        self.assertIn("setPinnedAssetPath(null)", assets)
+        self.assertIn("selectedAsset?.guid ?? null", assets)
+        self.assertIn("setPinnedAssetGuid(null)", assets)
         self.assertIn("aria-pressed={locked}", settings)
         self.assertIn("Lock import settings", settings)
 
