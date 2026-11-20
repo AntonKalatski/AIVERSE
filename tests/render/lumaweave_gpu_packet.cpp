@@ -1,4 +1,5 @@
 #include "engine/render/LumaWeaveGpuPacket.h"
+#include "engine/render/LumaWeaveTextureRetirement.h"
 #include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <stdexcept>
@@ -88,4 +89,40 @@ int main() {
     AIVERSE_TEST_CHECK(afterCameraMove.cells.size()==1);
     AIVERSE_TEST_CHECK(afterCameraMove.cells[0].count==0);
     AIVERSE_TEST_CHECK(afterCameraMove.cells[0].total==0);
+
+    // Stage26: completed GPU timeline is not a CPU frame serial. Completed
+    // tokens may release a matching prior texture, but a zero/unknown token
+    // must remain quarantined until the host proves FULL graphics GPU idle.
+    LumaWeaveTextureRetirement retire;
+    AIVERSE_TEST_CHECK(!retire.prepare(LumaWeaveTextureRetirement::kMaxPending+1));
+    AIVERSE_TEST_CHECK(retire.prepare(3));
+    aiverse::gfx::TextureHandle first{101},unknown{102},third{103};
+    retire.retire(first,4);
+    retire.retire(unknown,0);
+    retire.retire(third,7);
+    AIVERSE_TEST_CHECK(!first.valid() && !unknown.valid() && !third.valid());
+    AIVERSE_TEST_CHECK(retire.pendingCount()==3 && retire.unfencedCount()==1);
+    std::vector<uint32_t> released;
+    const auto release=[&](aiverse::gfx::TextureHandle handle) {
+        released.push_back(handle.id);
+    };
+    AIVERSE_TEST_CHECK(retire.collect(3,release)==0);
+    AIVERSE_TEST_CHECK(retire.collect(4,release)==1);
+    AIVERSE_TEST_CHECK(released.size()==1 && released[0]==101);
+    AIVERSE_TEST_CHECK(retire.collect(7,release)==1);
+    AIVERSE_TEST_CHECK(released.size()==2 && released[1]==103);
+    AIVERSE_TEST_CHECK(retire.pendingCount()==1 && retire.unfencedCount()==1);
+    AIVERSE_TEST_CHECK(!retire.prepare(LumaWeaveTextureRetirement::kMaxPending));
+    AIVERSE_TEST_CHECK(retire.drainAfterGpuIdle(release)==1);
+    AIVERSE_TEST_CHECK(retire.pendingCount()==0);
+    AIVERSE_TEST_CHECK(released.size()==3 && released[2]==102);
+    struct LegacyRhi {};
+    struct FenceRhi {
+        uint64_t gpuSubmissionFence() const { return 11; }
+        uint64_t gpuCompletedFence() const { return 9; }
+    };
+    AIVERSE_TEST_CHECK(lumaWeaveSubmittedFence(LegacyRhi{})==0);
+    AIVERSE_TEST_CHECK(lumaWeaveCompletedFence(LegacyRhi{})==0);
+    AIVERSE_TEST_CHECK(lumaWeaveSubmittedFence(FenceRhi{})==11);
+    AIVERSE_TEST_CHECK(lumaWeaveCompletedFence(FenceRhi{})==9);
 }
