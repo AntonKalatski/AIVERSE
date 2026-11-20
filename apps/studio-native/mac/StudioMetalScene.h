@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
@@ -15,8 +16,10 @@ public:
     ~StudioMetalScene();
     StudioMetalScene(const StudioMetalScene&) = delete;
     StudioMetalScene& operator=(const StudioMetalScene&) = delete;
-    void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc, int selectedIndex, float levelHeight = 1.5f);
-    int pick(float x, float y, float width, float height, const editor::MapData& map) const;
+    void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
+               bool fpsProject, const std::string& selectedId, float levelHeight = 1.5f);
+    std::string pick(float x, float y, float width, float height,
+                     const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
     void zoom(float wheel);
     void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); }

@@ -91,7 +91,7 @@ jobs:
       - name: Compile Metal host and native contracts
         run: |
           cmake --build build/studio-native-ci \
-            --target aiverse_studio aiverse_studio_session_tests aiverse_studio_scene_nodes_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
+            --target aiverse_studio aiverse_studio_session_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
             --parallel 3
       - name: Run native contract tests
-        run: ctest --test-dir build/studio-native-ci --output-on-failure -R '^studio_(session|scene_nodes|viewport_layout|terrain_geometry)$'
+        run: ctest --test-dir build/studio-native-ci --output-on-failure -R '^studio_(session|scene_nodes|document_visuals|viewport_layout|terrain_geometry)$'

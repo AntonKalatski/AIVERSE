@@ -1,6 +1,7 @@
 #include "StudioMetalScene.h"
 #include "apps/editor/SceneRenderable.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
+#include "apps/studio-native/StudioDocumentVisuals.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -29,25 +30,23 @@ StudioMetalScene::~StudioMetalScene() {
         renderer_.shutdown();
     }
 }
-int StudioMetalScene::pick(float x, float y, float width, float height, const editor::MapData& map) const {
+std::string StudioMetalScene::pick(float x, float y, float width, float height,
+                                   const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
-    if (!cameraInitialized_ || !camera_.screenRay(x,y,width,height,origin,direction)) return -1;
+    if (!cameraInitialized_ || !camera_.screenRay(x,y,width,height,origin,direction)) return {};
+    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     std::vector<editor::SceneRenderable> candidates;
-    const size_t limit = std::min(map.entities.size(),size_t(2000));
-    candidates.reserve(limit);
-    for (size_t i=0;i<limit;++i) {
-        const auto& e = map.entities[i];
-        if (!e.at.isNull()) continue; // planet not implemented
-        const float terrainHeight=terrainPreviewHeight(map,e.x,e.z,terrainLevelHeight_);
+    candidates.reserve(proxies.size());
+    for(size_t i=0;i<proxies.size();++i) {
         editor::SceneRenderable candidate;
         candidate.entity=uint64_t(i)+1;
-        candidate.boundsMin={e.x-.55f, terrainHeight, e.z-.55f};
-        candidate.boundsMax={e.x+.55f, terrainHeight+1.2f,e.z+.55f};
+        candidate.boundsMin=proxies[i].boundsMin;
+        candidate.boundsMax=proxies[i].boundsMax;
         candidate.pickable=true;
         candidates.push_back(candidate);
     }
-    const int index=editor::pickSceneRenderable(candidates,origin,direction);
-    return index<0 ? -1 : int(candidates[size_t(index)].entity-1);
+    const int hit=editor::pickSceneRenderable(candidates,origin,direction);
+    return hit<0 ? std::string() : proxies[size_t(hit)].id;
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
@@ -56,7 +55,8 @@ void StudioMetalScene::orbit(float dx, float dy) {
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
-void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc, int selectedIndex, float levelHeight) {
+void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
+                             bool fpsProject, const std::string& selectedId, float levelHeight) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
     const auto& map = doc.data;
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight) {
@@ -99,26 +99,20 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     for (int z=0; z<=map.h; z+=zStep)
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
-    const size_t limit = std::min(map.entities.size(),size_t(2000));
-    for (size_t i=0;i<limit;++i) {
-        const auto& e = map.entities[i];
-        // Flat world preview; planet surfaces require a separate adapter.
-        if (!e.at.isNull()) continue;
-        const float terrainHeight = terrainPreviewHeight(map,e.x,e.z,levelHeight);
-        const float3 at{e.x, terrainHeight + .6f, e.z};
-        const float4 color = e.owner == 0 ? float4{.65f,.75f,.84f,1} :
-                             e.owner == 1 ? float4{.44f,.70f,.98f,1} :
-                             e.owner == 2 ? float4{.94f,.52f,.42f,1} : float4{.83f,.76f,.48f,1};
-        renderer_.drawMesh(cube_, mat4::translate(at) * mat4::scale({1,1.2f,1}), color, kDrawNoCastShadow);
-        if (int(i) == selectedIndex) {
-            const float3 lo{at.x - 0.65f,at.y - 0.72f,at.z - 0.65f};
-            const float3 hi{at.x + 0.65f,at.y + 0.72f,at.z + 0.65f};
-            const float3 p[8] = {
-                {lo.x,lo.y,lo.z}, {hi.x,lo.y,lo.z}, {hi.x,lo.y,hi.z}, {lo.x,lo.y,hi.z},
-                {lo.x,hi.y,lo.z}, {hi.x,hi.y,lo.z}, {hi.x,hi.y,hi.z}, {lo.x,hi.y,hi.z}
-            };
-            constexpr int edges[12][2] = {{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}};
-            for (const auto& edge:edges) renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
+    const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    for(const auto& entity:proxies) {
+        renderer_.drawMesh(cube_,
+            mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
+            mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
+        if(entity.id==selectedId) {
+            const auto lo=entity.boundsMin,hi=entity.boundsMax;
+            const float3 p[8]={{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},
+                {hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,lo.z},
+                {hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}};
+            constexpr int edges[12][2]={{0,1},{1,2},{2,3},{3,0},
+                {4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+            for(const auto& edge:edges)
+                renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
         }
     }
     gfx::PassDesc pass;

@@ -151,7 +151,7 @@
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
-                session_->selectedEntityIndex(),
+                session_->workspace().project.isFps(), session_->selectedObjectId(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()));
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
@@ -176,12 +176,13 @@
 }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
-    const int index=preview_->pick(float(x),float(y),float(width),float(height),session_->workspace().map.data);
+    const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
+        session_->workspace().map,session_->workspace().project.isFps());
     aiverse::Json request=aiverse::Json::object();
     request.set("id",aiverse::Json::number(int64_t(0)));
     request.set("method",aiverse::Json::string("studio.select"));
     aiverse::Json params=aiverse::Json::object();
-    if(index>=0) params.set("id",aiverse::Json::string("entity:"+std::to_string(index)));
+    if(!objectId.empty()) params.set("id",aiverse::Json::string(objectId));
     else params.set("id",aiverse::Json());
     request.set("params",std::move(params));
     const aiverse::Json outcome=session_->dispatch(request);

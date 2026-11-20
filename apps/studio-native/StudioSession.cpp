@@ -1,5 +1,6 @@
 #include "StudioSession.h"
 #include "apps/editor/EditorSceneNodes.h"
+#include "apps/studio-native/StudioDocumentIds.h"
 #include <cctype>
 #include <cmath>
 #include <limits>
@@ -17,14 +18,7 @@ Json prop(const char* key, const char* label, const char* type, Json value, bool
     r.set("editable", Json::fromBool(editable));
     return r;
 }
-std::string nodeId(const editor::DocumentEntityRef& ref) {
-    switch (ref.source) {
-        case editor::DocumentEntityRef::Source::MapEntity: return "entity:" + std::to_string(ref.index);
-        case editor::DocumentEntityRef::Source::FpsCollider: return "collider:" + std::to_string(ref.index);
-        case editor::DocumentEntityRef::Source::FpsSpawn: return "spawn:" + std::to_string(ref.index);
-    }
-    return {};
-}
+std::string nodeId(const editor::DocumentEntityRef& ref) { return studioDocumentId(ref); }
 }
 StudioSession::StudioSession(const std::string& engineRoot, const std::string& project) {
     ws_.engineDir = engineRoot;
