@@ -201,10 +201,19 @@ public:
                            batch.uniform.uv1[k]!=source.maskUniform.uv1[k])
                             return false;
                     for(const auto& v:batch.vertices) {
-                        const auto id=source.indices[n++].triangleId;
-                        for(int k=0;k<4;++k)
-                            if(v.rgba[k]!=std::uint8_t(id>>(8u*k)))
+                        if(n>=source.indices.size())return false;
+                        const auto index=source.indices[n++];
+                        for(int k=0;k<4;++k) {
+                            if(v.rgba[k]!=std::uint8_t(
+                                    index.triangleId>>(8u*k)))
                                 return false;
+                            // The actual GPU position is borrowed, but
+                            // static UV and vertex alpha must correspond
+                            // to the exact same indexed ModelVertex.
+                            if(v.uvAlpha[k]!=
+                               source.maskInputs[index.vertex].uvAlpha[k])
+                                return false;
+                        }
                     }
                 }
                 for(const auto& value:source.maskInputs)
