@@ -37,3 +37,12 @@ The current browser preview uses a **DEMO-only** in-memory adapter. Do not treat
 4. Security: only trusted locally packaged page allowed to invoke native editor operations.
 5. Keep old editor functional until verified feature parity.
 6. Each stage must add a handoff markdown in `docs/handoff/studio-html5/`.
+
+## Create a new screen with AI
+From the AIVERSE repository root:
+
+```bash
+python3 tools/studio/new_panel.py --id world_stats --title "World Statistics" --area right
+```
+
+The panel appears in the HTML5 Panels menu after Vite reload, with its TSX/CSS in `apps/studio-web/src/panels/generated/`. No C++ compilation is needed for the UI layout, but operations that mutate the engine still require explicit validated native bridge APIs.

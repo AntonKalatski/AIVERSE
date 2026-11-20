@@ -22,3 +22,14 @@ This is the **editor**, not an in-game interface. Everything shared across windo
 
 ## Sample agent task
 "Create a new AIVERSE Studio panel for [feature] using React + TypeScript, PanelTitle, semantic design tokens and Lucide icons. Keep backend state in C++, expose only typed bridge operations, add empty/loading/errors, run npm typecheck/build, and add handoff markdown."
+
+## Scaffold new HTML5 Studio panels
+To generate and register a new dockable screen with no changes to App.tsx:
+
+```bash
+python3 tools/studio/new_panel.py --id lighting_debug --title "Lighting Debug" --area right
+# optional safe preview: add --dry-run
+cd apps/studio-web && npm run typecheck && npm run build && npm run test:dock
+```
+
+The generator creates a component and CSS under `src/panels/generated/`, registers its ID/title/home dock in `src/nestedDock.ts`, and inserts a render case in `src/panels/StudioPanelRenderer.tsx`. After scaffolding, AI edits the generated component for the actual feature. Backend operations must be separately allowlisted and implemented in C++ StudioSession. The script does not edit or disable the legacy ImGui editor.
