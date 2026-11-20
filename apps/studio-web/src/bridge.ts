@@ -14,7 +14,7 @@ declare global {
 const pending = new Map<number, {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
 }>();
 const listeners = new Set<(event: string, payload: unknown) => void>();
 let nextId = 1;
@@ -27,7 +27,7 @@ window.__aiverseReceive = (message: NativeReply) => {
   if (!message || typeof message.id !== 'number') return;
   const call = pending.get(message.id);
   if (!call) return;
-  clearTimeout(call.timer);
+  if (call.timer !== null) clearTimeout(call.timer);
   pending.delete(message.id);
   if (typeof message.error === 'string') call.reject(new Error(message.error));
   else call.resolve(message.result);
@@ -43,12 +43,13 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
   if (!native) return mockInvoke(method, params);
   return new Promise<StudioResult[M]>((resolve, reject) => {
     const id = nextId++;
-    const timer = setTimeout(() => {
+    // Native project selection waits for a person; only its reply/cancel ends it.
+    const timer = method === 'studio.openProject' ? null : setTimeout(() => {
       pending.delete(id);
       reject(new Error('Native bridge timeout: ' + method));
     }, 8000);
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
     try { native.postMessage({ id, method, params }); }
-    catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
+    catch (error) { if (timer !== null) clearTimeout(timer); pending.delete(id); reject(error); }
   });
 }

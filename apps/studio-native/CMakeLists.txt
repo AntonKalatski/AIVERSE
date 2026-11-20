@@ -59,6 +59,8 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME studio_material_validation COMMAND aiverse_studio_material_validation_tests)
     find_program(AIVERSE_STUDIO_NODE node)
     if(AIVERSE_STUDIO_NODE)
+        add_test(NAME studio_bridge COMMAND "${AIVERSE_STUDIO_NODE}" --experimental-strip-types --test
+            "${PROJECT_SOURCE_DIR}/apps/studio-web/tests/bridge.test.mjs")
         add_test(NAME studio_material_schema
             COMMAND "${AIVERSE_STUDIO_NODE}" --experimental-strip-types --test
             "${PROJECT_SOURCE_DIR}/apps/studio-web/tests/materialSchema.test.mjs")
