@@ -128,7 +128,9 @@ public:
     // resources. Resized resources are separately quarantined until a real
     // completion fence or explicit drainAfterGpuIdle().
     bool shutdown() {
-        if(pending_ || retiredTextures_.pendingCount())return false;
+        if(pending_ || retiredTextures_.pendingCount() ||
+           !graphicsReaders_.canRelease(dev_?lumaWeaveCompletedFence(*dev_):0))
+            return false;
         if(dev_) {
             for(auto b:{marker_,lightBuffer_,clusterBuffer_,indexBuffer_,triangleBuffer_,nodeBuffer_})
                 if(b.valid())dev_->destroyBuffer(b);
@@ -150,6 +152,7 @@ public:
         pendingProducesHistory_=false;
         width_=height_=confirmedWidth_=confirmedHeight_=0;
         nodeCount_=0;confirmedIndex_=pendingIndex_=0;
+        graphicsReaders_.afterGpuIdle();
         return true;
     }
 
@@ -168,6 +171,7 @@ public:
         if(pending_)return false;
         if(dev_)retiredTextures_.drainAfterGpuIdle(
             [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
+        graphicsReaders_.afterGpuIdle();
         return true;
     }
 
@@ -380,9 +384,14 @@ public:
     // by the PostProcess wrapper, before ending/submitting the command buffer.
     // GPU encoder order guarantees visibility even before the fence callback.
     gfx::TextureHandle encodedOutput(uint64_t serial) const {
-        return pending_ && pendingProducesHistory_ &&
-               pendingSerial_==serial ? filtered_[pendingIndex_] :
-               gfx::TextureHandle{};
+        const auto texture=pending_ && pendingProducesHistory_ &&
+            pendingSerial_==serial ? filtered_[pendingIndex_] :
+            gfx::TextureHandle{};
+        // Returning an owned GPU texture is a graphics-sampling borrow.
+        // The last COMPUTE fence cannot authorize destroying this output.
+        if(texture.valid() && dev_)
+            graphicsReaders_.markUsed(lumaWeaveSubmittedFence(*dev_));
+        return texture;
     }
 
     // This prior result is safe only for the exact prior camera/source revision.
@@ -390,11 +399,17 @@ public:
     gfx::TextureHandle confirmedOutput() const {
         // The pending producer targets the OTHER ping-pong slot. The last
         // completed history remains immutable/readable until this next fence.
-        return ready() && historyValid_ ? filtered_[confirmedIndex_] :
-               gfx::TextureHandle{};
+        const auto texture=ready() && historyValid_ ?
+            filtered_[confirmedIndex_] : gfx::TextureHandle{};
+        if(texture.valid() && dev_)
+            graphicsReaders_.markUsed(lumaWeaveSubmittedFence(*dev_));
+        return texture;
     }
     bool canReuseConfirmedFor(const mat4& vp,float3 camera) const {
-        if(!confirmedOutput().valid() || !finite3(camera) ||
+        // Query only: do not register a graphics borrow until the caller
+        // actually requests confirmedOutput() for a draw.
+        if(!(ready() && historyValid_ && filtered_[confirmedIndex_].valid()) ||
+           !finite3(camera) ||
            length(camera-previousEye_)>1e-4f)return false;
         for(int i=0;i<16;++i)
             if(std::abs(vp.m[i]-previousVP_.m[i])>1e-5f)return false;
@@ -505,6 +520,7 @@ private:
     bool confirmedShaded_=false,pendingShaded_=false;
     std::shared_ptr<Fence> pending_;
     LumaWeaveTextureRetirement retiredTextures_;
+    mutable LumaWeaveGraphicsUseGate graphicsReaders_;
 };
 
 } // namespace aiverse::render
