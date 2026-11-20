@@ -12585,6 +12585,8 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     CHECK(previousTexture.valid());
     CHECK(fog.update(std::vector<uint8_t>{2,2,2,2},2,2,0.0));
     const auto originalField=fog.field();
+    CHECK(dev.destroyedBuffers==0);
+    CHECK(dev.destroyedTextures==0);
 
     // A created VB must be destroyed when the following index allocation
     // fails. Earlier published fog remains usable.
@@ -12596,6 +12598,8 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     CHECK(fog.texture().id==previousTexture.id);
     CHECK(fog.field()==originalField);
     CHECK(fog.ready());
+    CHECK(dev.destroyedBuffers==1); // only unpublished replacement VB
+    CHECK(dev.destroyedTextures==0);
     dev.failBuffer=0;
 
     // A new texture allocation failure must not destroy the published VB/IB
@@ -12607,6 +12611,8 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     CHECK(failed);
     CHECK(fog.texture().id==previousTexture.id);
     CHECK(fog.field()==originalField);
+    CHECK(dev.destroyedBuffers==3); // two more unpublished buffers
+    CHECK(dev.destroyedTextures==0);
     dev.failTexture=0;
 
     // Old GPU draws may still own previously published buffers/texture.
@@ -12617,6 +12623,8 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     catch(const std::runtime_error&){failed=true;}
     CHECK(failed);
     CHECK(dev.idleRequests>0);
+    CHECK(dev.destroyedBuffers==5); // staged VB + IB after idle refusal
+    CHECK(dev.destroyedTextures==1); // unpublished candidate only
     CHECK(fog.texture().id==previousTexture.id);
     CHECK(fog.field()==originalField);
     CHECK(!fog.shutdownAfterGpuIdle());
@@ -12627,6 +12635,8 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     CHECK(fog.texture().valid());
     CHECK(fog.texture().id!=previousTexture.id);
     CHECK(fog.field().size()==9);
+    CHECK(dev.destroyedBuffers==7); // published old pair safely retired
+    CHECK(dev.destroyedTextures==2); // old texture safely retired
     CHECK(fog.shutdownAfterGpuIdle());
     CHECK(!fog.ready());
 }
