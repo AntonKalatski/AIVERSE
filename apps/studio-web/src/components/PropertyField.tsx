@@ -30,26 +30,27 @@ export default function PropertyField({ property, disabled, onChange }: Property
   if (property.type === 'boolean') {
     return <label className="property-row">
       <span>{property.label}</span>
-      <input type="checkbox" disabled={locked} checked={Boolean(property.value)}
+      <input type="checkbox" className="au-checkbox__input" disabled={locked} checked={Boolean(property.value)}
         aria-label={property.label}
         onChange={event => {
           const next = validateBooleanChange(property, event.target.checked);
           if (next.ok && !isSameFieldValue(property.value, next.value)) onChange(next.value);
         }}/>
-      {property.description && <small className="property-description">{property.description}</small>}
+      {property.description && <small className="property-description au-field__hint">{property.description}</small>}
     </label>;
   }
 
   return <label className="property-row">
     <span>{property.label}</span>
     {property.options?.length ?
-      <select disabled={locked} value={String(property.value)}
+      <select className="au-select" disabled={locked} value={String(property.value)}
         aria-label={property.label}
         onChange={event => validateAndCommit(event.target.value)}>
         {property.options.map(option =>
           <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
       </select>
       : <input
+          className="au-input"
           disabled={locked}
           type={property.type === 'number' ? 'number' : 'text'}
           value={draft}
@@ -73,7 +74,7 @@ export default function PropertyField({ property, disabled, onChange }: Property
             }
           }}
         />}
-    {error && <small className="property-error" role="alert">{error}</small>}
+    {error && <small className="property-error au-field__error" role="alert">{error}</small>}
     {property.description && <small className="property-description">{property.description}</small>}
   </label>;
 }

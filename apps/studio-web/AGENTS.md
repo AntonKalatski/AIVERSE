@@ -41,3 +41,6 @@ The generator creates a component and CSS under `src/panels/generated/`, registe
 - Responsive/docking: panes must survive 240px width and 900px workspace height; no fixed-width columns that overflow.
 - Import screen-specific CSS only for layout; colors, font sizes, border radii, controls and focus appearance come from the design system.
 - Check `python3 -m unittest discover -s tools/studio -p 'test_*.py' -v` and `npm run typecheck && npm run build` after changing shared styles.
+
+## Existing panels — gradual migration
+The old App shell and NestedDockWorkspace use `src/ui/editor-shell.css` to inherit shared tokens without changing their event handling or native Metal geometry. Migrate each panel to true Studio UI components gradually, with macOS screenshots. Do not duplicate shell overrides in panel CSS or alter .viewport/.viewport-native rules to change the native renderer.

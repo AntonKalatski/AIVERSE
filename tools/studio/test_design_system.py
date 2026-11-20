@@ -48,6 +48,8 @@ class StudioDesignSystemTests(unittest.TestCase):
         self.assertEqual(main.count("import './ui/studio-ui.css';"),1)
         self.assertLess(main.index("tokens.css"),main.index("studio-ui.css"))
         self.assertLess(main.index("studio-ui.css"),main.index("styles.css"))
+        self.assertIn("import './ui/editor-shell.css';",main)
+        self.assertGreater(main.index("editor-shell.css"),main.index("styles.css"))
         self.assertIn("export * from './StudioUI';",(SRC/"ui/index.ts").read_text())
 
     def test_native_gpu_surface_selectors_not_modified_by_shared_css(self):
