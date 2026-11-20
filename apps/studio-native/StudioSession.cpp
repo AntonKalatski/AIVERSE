@@ -1,6 +1,7 @@
 #include "StudioSession.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include <cctype>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -85,9 +86,9 @@ Json StudioSession::snapshot() const {
             } else if (node.hasPosition) {
                 // Show authoritative collider/spawn coordinates, but don't pretend
                 // unsupported authoring operations are writable yet.
-                fields.push(prop("x", "Position X", "number", Json::number(node.position.x, 4), false));
-                fields.push(prop("y", "Position Y", "number", Json::number(node.position.y, 4), false));
-                fields.push(prop("z", "Position Z", "number", Json::number(node.position.z, 4), false));
+                fields.push(prop("x", "Position X", "number", Json::number(node.position.x, 3)));
+                fields.push(prop("y", "Position Y", "number", Json::number(node.position.y, 3)));
+                fields.push(prop("z", "Position Z", "number", Json::number(node.position.z, 3)));
             }
             break;
         }
@@ -168,11 +169,58 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             if (selected_.empty() || selected_ != entityId) throw std::runtime_error("Selection changed while editing");
-            // Only MapDoc entity authoring is currently connected to Workspace::entity_update.
-            // Collider/spawn objects are explicitly read-only until native commands are added.
-            const int index = indexFor(entityId);
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
+            if (entityId.compare(0, 7, "entity:") != 0) {
+                // Non-map document sources use the shared editor transform adapter.
+                // fps_set validates the COMPLETE edited document atomically before
+                // committing it with the existing MapDoc undo snapshots.
+                if (!ws_.project.isFps() ||
+                    (key != "x" && key != "y" && key != "z") || !value.isNumber())
+                    throw std::runtime_error("Unsupported document property");
+                const double number = value.toDouble();
+                if (!std::isfinite(number) || number < -1000000 || number > 1000000)
+                    throw std::runtime_error("Invalid coordinate");
+
+                bool found = false;
+                editor::DocumentEntityRef ref;
+                editor::DocumentTransform target{};
+                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, true)) {
+                    if (nodeId(node.ref) != entityId) continue;
+                    if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity ||
+                        !node.hasPosition)
+                        throw std::runtime_error("Document position is unavailable");
+                    ref = node.ref;
+                    target = node.position;
+                    found = true;
+                    break;
+                }
+                if (!found) throw std::runtime_error("Unknown document object");
+                const double previous = key == "x" ? target.x : key == "y" ? target.y : target.z;
+                if (previous == number) {
+                    reply.set("result", snapshot());
+                    return reply;
+                }
+                if (key == "x") target.x = number;
+                else if (key == "y") target.y = number;
+                else target.z = number;
+
+                editor::MapDoc draft;
+                draft.data.fps = ws_.map.toJson();
+                if (!editor::setDocumentPosition(draft, ref, target))
+                    throw std::runtime_error("Document transform validation failed");
+                if (draft.toJson() == ws_.map.toJson()) {
+                    reply.set("result", snapshot());
+                    return reply; // serialized 3-decimal position unchanged
+                }
+                Json args = Json::object();
+                args.set("map", draft.toJson());
+                const Json op = ws_.call("fps_set", args, "studio");
+                if (op.has("error")) throw std::runtime_error(op.getStr("error"));
+                reply.set("result", snapshot());
+                return reply;
+            }
+            const int index = indexFor(entityId);
             if (key == "type") {
                 if (!value.isString() || value.str().empty()) throw std::runtime_error("Invalid type");
             } else if (key == "x" || key == "z" || key == "owner") {

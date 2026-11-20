@@ -29,6 +29,20 @@ int main() {
     assert(std::abs(nodes[0].position.x - 5.0) < .0001);
     assert(nodes[1].ref.source == editor::DocumentEntityRef::Source::FpsSpawn);
     assert(nodes[1].hasPosition && nodes[1].position.y == 3);
+    editor::DocumentTransform target = nodes[1].position;
+    target.x = 7; target.y = 9;
+    assert(editor::setDocumentPosition(map,nodes[1].ref,target));
+    editor::DocumentTransform read{};
+    assert(editor::readDocumentTransform(map,nodes[1].ref,read));
+    assert(read.x == 7 && read.y == 9 && read.z == 4);
+
+    // AABB collider transforms preserve half-extents through the shared adapter.
+    const auto collider=nodes[0].ref;
+    assert(editor::setDocumentPosition(map,collider,{8,7,6}));
+    assert(editor::readDocumentTransform(map,collider,read));
+    assert(read.x == 8 && read.y == 7 && read.z == 6);
+    assert(map.data.fps["colliders"][0]["min"][0].toDouble() == 3);
+    assert(map.data.fps["colliders"][0]["max"][0].toDouble() == 13);
     std::cout << "Studio scene node contract PASS\n";
     return 0;
 }
