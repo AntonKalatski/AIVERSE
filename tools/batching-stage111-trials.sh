@@ -40,7 +40,7 @@ for items in 2048 4096; do
   name="$OUT/$items-$mode"
   CURRENT_LOG="$name.log"
   echo "Stage 111: $items unique primitives; $mode"
-  env -u AIVERSE_BATCH_AUTO -u AIVERSE_BATCH_AUTO_COST_TRACE \
+  if env -u AIVERSE_BATCH_AUTO -u AIVERSE_BATCH_AUTO_COST_TRACE \
       -u AIVERSE_BATCH_AUTO_TRACE -u AIVERSE_ICB_PROFILE \
       -u AIVERSE_ICB_SLOW_TRACE -u AIVERSE_EXPERIMENTAL_METAL_ICB \
       -u AIVERSE_GPU_ENCODED_ICB -u AIVERSE_GPU_AUTHORED_DRAWS \
@@ -51,7 +51,23 @@ for items in 2048 4096; do
       AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_FRAME_TIMELINE=1 \
       AIVERSE_BATCH_GPU_TIMELINE=1 AIVERSE_BATCH_MODEL_GPU_COUNTERS=1 \
       AIVERSE_CAPTURE_SUCCESSFUL_MDI="$([[ "$mode" == mdi ]] && echo 1 || echo 0)" \
-      "$BIN" unused.obj "$name" > "$name.log" 2>&1
+      "$BIN" unused.obj "$name" > "$name.log" 2>&1; then
+    :
+  else
+    native_status=$?
+    if [[ "$native_status" == 77 ]] &&
+       grep -q 'GPU model-pass draw-boundary timestamp counters UNSUPPORTED' "$name.log"; then
+      echo "Stage 111 UNSUPPORTED: this Metal device has no draw-boundary timestamp counter capability" >&2
+      echo "utc_end=$(date -u +%Y%m%dT%H%M%SZ)" >> "$OUT/manifest.txt"
+      echo "result=UNSUPPORTED" >> "$OUT/manifest.txt"
+      echo "capability=MTLCounterSamplingPointAtDrawBoundary" >> "$OUT/manifest.txt"
+      tar -czf "$OUT.tar.gz" -C "$BASE" "$(basename "$OUT")"
+      echo "Stage 111 unsupported archive: $OUT.tar.gz"
+      exit 0
+    fi
+    echo "Stage 111 native fixture failed (status=$native_status)" >&2
+    false
+  fi
   grep -Eq '^material palette CPU checks=[0-9]+ result=passed$' "$name.log"
   grep -qx 'changed_channels=0' "$name.log"
   grep -Eq '^GPU command-buffer timeline samples=66 path=' "$name.log"
