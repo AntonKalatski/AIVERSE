@@ -123,7 +123,7 @@ export default function AssetReferencePicker({
           {error && <p role="alert">{error}</p>}
           {!loading && !error && !files.length && <p>No matching assets.</p>}
           {!loading && files.map(asset => <button type="button" key={asset.path}
-            role="option" aria-selected={value === (asset.guid || asset.path)}
+            role="option" aria-selected={value === asset.guid || value === asset.path || value === 'content/' + asset.path}
             onClick={() => choose(asset)}>
             <span>{assetFileName(asset.path)}</span>
             <small>{asset.path}{asset.guid ? ' · '+asset.guid : ''}</small>
