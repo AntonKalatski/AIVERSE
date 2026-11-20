@@ -58,7 +58,8 @@ export default function AssetReferencePicker({
     return () => window.removeEventListener('keydown', keydown);
   }, [open]);
 
-  const permitted = (asset: StudioAsset) => !kinds?.length || kinds.includes(assetKind(asset.path));
+  const permitted = (asset: StudioAsset) => (!kinds?.length || kinds.includes(assetKind(asset.path))) &&
+    (!kinds?.includes('image') || kinds.length !== 1 || !asset.importer || asset.importer === 'texture');
   const files = useMemo(() => catalog.files.filter(asset => permitted(asset) &&
     (asset.path.toLocaleLowerCase().includes(search.toLocaleLowerCase()) ||
      asset.guid?.toLocaleLowerCase().includes(search.toLocaleLowerCase())))
@@ -67,8 +68,8 @@ export default function AssetReferencePicker({
 
   const choose = (asset: StudioAsset) => {
     if (disabled || !permitted(asset)) return;
-    // Persist GUID where available; otherwise use content-relative path.
-    onChange(asset.guid || asset.path);
+    if (!asset.guid) { setError('Asset is missing a GUID. Refresh the project Assets catalog.'); return; }
+    onChange(asset.guid);
     setOpen(false);
   };
   const drop = (event: DragEvent<HTMLElement>) => {
@@ -82,8 +83,8 @@ export default function AssetReferencePicker({
     void invoke('studio.assets', {}).then(result => {
       setCatalog(result);
       const resolved = result.files.find(item => item.path === path);
-      if (resolved && (!kinds?.length || kinds.includes(assetKind(resolved.path)))) {
-        onChange(resolved.guid || resolved.path);
+      if (resolved && permitted(resolved) && resolved.guid) {
+        onChange(resolved.guid);
         setOpen(false);
       } else setError('Dropped asset is not present in project/content or has an incompatible type.');
     }).catch(cause => setError(String(cause instanceof Error ? cause.message : cause)));
