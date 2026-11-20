@@ -81,7 +81,7 @@ export default function App() {
     setBusy(true);
     try {
       const result = await invoke('studio.openProject', {});
-      if (result.snapshot) setSnapshot(result.snapshot);
+      if (result.snapshot) { setInspectorPin(null); setSnapshot(result.snapshot); }
       setError('');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -130,6 +130,8 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  // Pins are project-local; never retain a target after switching projects.
+  useEffect(() => { setInspectorPin(null); }, [snapshot?.project.path]);
   const rows = useMemo(() => hierarchyRows(snapshot?.scene.entities ?? []), [snapshot]);
   const selected = inspectorPin?.entity ??
     snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
