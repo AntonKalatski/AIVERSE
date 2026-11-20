@@ -833,3 +833,20 @@ atlas via `presentationBlocked`, `StepStats::canPresent` and fail-closed
 `bind` until the new immutable geometry is actually accepted. Added
 regressions to world-presentation and GPU-residency test sources.
 No native compilation/CTest or actual device shader/image testing run.
+
+
+## Stages 50–51 — 2026-11-20 — fail-closed source updates and Vulkan compute acceptance (SOURCE; NOT RUN)
+
+Detailed handoffs:
+`docs/agent-handoffs/gi-stage50-source-publication-gates-2026-11-20.md`
+and `docs/agent-handoffs/gi-stage51-vulkan-format-compute-validation-2026-11-20.md`.
+
+Stage50 accepts truly unchanged stable-key lights while GPU is busy,
+but rejects stale GI presentation after invalid or unaccepted newer
+point/spot/sun/sky source revisions. Stage51 fixes Vulkan's RGBA16F
+sampled+storage format admission (no mandatory color-attachment bit
+unless requested as a render target) and adds real glslang shader compile
+and Vulkan offscreen compute-storage→fragment readback test sources.
+**No native CMake, CTest, GLSL compiler, GPU validation or performance
+tests have run in this work session.** Do not claim GPU parity or merge
+draft PR #47 to main without actual runner evidence.
