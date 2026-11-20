@@ -10,6 +10,7 @@
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
 #include "engine/character/vivid/SculptGpuVertexSource.h"
+#include "engine/render/ModelShaders.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -594,27 +595,61 @@ void test() {
             mat4::translate({0,0,4})
         }};
         SculptGpuVertexSource source;
+        const auto rootWorld=mat4::translate({0,0,3});
         req(prepareSculptGpuVertexSource(
-                model,0,pose,mat4::identity(),{11},3,{},3,source) &&
+                model,0,pose,rootWorld,{11},3,{},3,source) &&
             source.params.skinned==1 &&
             source.params.jointMatrices==2 &&
             source.influences.size()==3 &&
             source.influences[0].joints[0]==0 &&
             source.influences[0].joints[1]==1 &&
             std::fabs(source.influences[0].weights[0]-
-                      128.f/192.f)<1.e-6f &&
+                      128.f/255.f)<1.e-6f &&
             std::fabs(source.influences[0].weights[1]-
-                      64.f/192.f)<1.e-6f &&
+                      64.f/255.f)<1.e-6f &&
             std::fabs(source.jointMatrices[0].at(2,3)-2.f)<1.e-6f &&
-            std::fabs(source.jointMatrices[1].at(2,3)-4.f)<1.e-6f,
-            "GPU source skin palette differs from Renderer3D normalized weights");
+            std::fabs(source.jointMatrices[1].at(2,3)-4.f)<1.e-6f &&
+            std::fabs(source.params.rigidWorld.at(2,3)-3.f)<1.e-6f,
+            "GPU source must preserve Renderer3D raw UNORM8 weights and local skin matrices");
+        // Renderer3D blends 3x4 palette ROWS before applying I.model;
+        // verify numeric reference with two nonuniform U8 influences.
+        const auto packed=sculptGpuRendererSkinRows(
+            std::span<const mat4>(source.jointMatrices));
+        const float wa=source.influences[0].weights[0];
+        const float wb=source.influences[0].weights[1];
+        const float sum=wa+wb;
+        const auto localZ=(packed[0].row2[3]*wa+
+                           packed[1].row2[3]*wb)/sum;
+        const auto worldZ=source.params.rigidWorld.transformPoint(
+            {0,0,localZ}).z;
+        req(packed.size()==2 && sizeof(SculptGpuSkinRows)==48 &&
+            std::fabs(worldZ-(3.f+(2.f*128.f+4.f*64.f)/192.f))<1.e-5f,
+            "VIVID skinned GPU position differs from renderer 3x4 row reference");
+        const auto msl=std::string_view(kSculptGpuSourceExpandMSL);
+        const auto maskedMsl=std::string_view(kSculptGpuSourceMaskExpandMSL);
+        const auto renderMsl=std::string_view(shaders::kModelMSL);
+        req(msl.find("dot(r0,bind)")!=std::string_view::npos &&
+            msl.find("params.rigidWorld*skinned")!=std::string_view::npos &&
+            maskedMsl.find("dot(r0,bind)")!=std::string_view::npos &&
+            maskedMsl.find("params.rigidWorld*skinned")!=
+                std::string_view::npos &&
+            renderMsl.find("r0 += sk.v[slot * 3] * wv[k]")!=
+                std::string_view::npos &&
+            renderMsl.find("dot(r0, d.p)")!=std::string_view::npos,
+            "Metal sculpt compute no longer mirrors Renderer3D skin row order");
         const auto good=source.indices;
         model.meshes[0].primitives[0].jointPalette={999};
         req(!prepareSculptGpuVertexSource(
-                model,0,pose,mat4::identity(),{11},3,{},3,source) &&
+                model,0,pose,rootWorld,{11},3,{},3,source) &&
             source.indices.size()==good.size() &&
             source.indices[0].triangleId==good[0].triangleId,
             "invalid skinned GPU joint palette overwrote published inputs");
+        model.meshes[0].primitives[0].jointPalette.assign(
+            std::size_t(kMaxPaletteJoints)+1u,0u);
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,rootWorld,{11},3,{},3,source) &&
+            source.indices.size()==good.size(),
+            "over-limit GPU skin palette would differ from truncated renderer U3");
     }
     // 7AU: homogeneous sampled masks can use the GPU's actual 60B
     // positions with immutable UV/alpha metadata. An unsupported/mixed
