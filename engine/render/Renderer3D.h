@@ -6,6 +6,8 @@
 //         the main pass is left open so the caller can draw UI, then calls device.endPass()]
 #pragma once
 #include "Geometry.h"
+#include <array>
+#include <span>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -362,23 +364,40 @@ public:
         bool truncated=false;
         std::vector<ModelSubmittedPrimitive> commands;
     };
-    // Stage 7AZ: capture two independent actor Models in one scene.
-    // All existing single-model callers keep the original API behaviour.
-    // Both borrowed pointers must remain alive through current-frame render
-    // and queries. Tracked-model changes after drawModel fail closed.
+    // Stage 7BA: at most 1 selected model + 4 candidate blockers.
+    // Opt-in bounded, frame-local diagnostics; no global scene registry.
+    // The producer supplies candidate model identities before staging
+    // draws. Every unique pointer is borrowed only through this frame.
+    static constexpr std::size_t kMaxTrackedSubmissionModels=5u;
+    void trackModelSubmissionsMany(
+        std::span<const Model* const> models) noexcept {
+        trackedModelCount_=0;
+        for(auto& model:trackedModels_)model=nullptr;
+        modelSubmitted_.clear();
+        modelSubmissionTruncated_=
+            modelDrawInvocation_!=0 || modelSubmissionMainEncoded_ ||
+            models.empty() || models.size()>trackedModels_.size();
+        if(modelSubmissionTruncated_)return;
+        for(const auto* model:models) {
+            if(!model) {
+                modelSubmissionTruncated_=true;
+                return;
+            }
+            for(std::size_t i=0;i<trackedModelCount_;++i)
+                if(trackedModels_[i]==model) {
+                    modelSubmissionTruncated_=true;
+                    return;
+                }
+            trackedModels_[trackedModelCount_++]=model;
+        }
+    }
+    // Compatible with existing 7AW single and 7AZ paired callers.
     void trackModelSubmissions(const Model* model,
                                const Model* occluder=nullptr) noexcept {
-        if(modelDrawInvocation_!=0 || modelSubmissionMainEncoded_) {
-            modelSubmissionTarget_=model;
-            modelSubmissionSecondary_=
-                occluder!=model?occluder:nullptr;
-            modelSubmissionTruncated_=true;
-            return;
-        }
-        modelSubmissionTarget_=model;
-        modelSubmissionSecondary_=occluder!=model?occluder:nullptr;
-        modelSubmitted_.clear();
-        modelSubmissionTruncated_=false;
+        const std::array<const Model*,2> models{{model,occluder}};
+        trackModelSubmissionsMany(
+            std::span<const Model* const>(models.data(),
+                                        occluder?2u:1u));
     }
     ModelSubmissionProvenance modelSubmissionProvenance(
         const Model& model) const;
@@ -728,8 +747,8 @@ private:
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
     uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
-    const Model* modelSubmissionTarget_=nullptr;
-    const Model* modelSubmissionSecondary_=nullptr;
+    std::array<const Model*,kMaxTrackedSubmissionModels> trackedModels_{};
+    std::size_t trackedModelCount_=0;
     std::vector<ModelSubmittedPrimitive> modelSubmitted_;
     bool modelSubmissionTruncated_=false;
     bool modelSubmissionMainEncoded_=false;
