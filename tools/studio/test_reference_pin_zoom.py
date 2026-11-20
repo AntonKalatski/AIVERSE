@@ -163,13 +163,16 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         renderer=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
         host=(ROOT/"apps/studio-native/mac/Main.mm").read_text(encoding="utf-8")
         panel=self.source("panels/StudioPanelRenderer.tsx")
-        for kind in ("orbit","pan","move","focus","reset"):
+        for kind in ("orbit","pan","look","move","focus","reset"):
             self.assertIn("kind==\""+kind+"\"",host)
         self.assertIn("void StudioMetalScene::pan(",renderer)
+        self.assertIn("void StudioMetalScene::look(",renderer)
+        self.assertIn("camera_.target=position-fromTarget*camera_.distance",renderer)
         self.assertIn("void StudioMetalScene::move(",renderer)
         self.assertIn("void StudioMetalScene::focusSelected(",renderer)
         self.assertIn("void StudioMetalScene::resetView()",renderer)
         self.assertIn("event.button===1",web)
+        self.assertIn("event.button===2?'look'",web)
         self.assertIn("['w','a','s','d','q','e']",web)
         self.assertIn("kind:'focus'",web)
         self.assertIn("kind:'reset'",web)
