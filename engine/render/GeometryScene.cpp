@@ -851,6 +851,21 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
         if(!metadata.valid())break;
         const mat4 selectedWorld=
             instance.world*instance.model->bindWorld[0];
+        uint64_t globalTemporalNodes=0;
+        for(const auto& primitive:staged->primitives)
+            globalTemporalNodes+=primitive.geometry.nodes.size();
+        // A new source revision/policy creates a new camera history
+        // identity. Never borrow temporal data from a different model
+        // upload or an earlier hysteresis setting.
+        uint64_t temporalRevision=0xcbf29ce484222325ull;
+        const auto mixRevision=[&](uint64_t value) {
+            temporalRevision^=value;
+            temporalRevision*=1099511628211ull;
+        };
+        mixRevision(instance.model->geometryRevision);
+        mixRevision(instance.model->materialRevision);
+        mixRevision(strataGpuLodPolicyEpoch_);
+        if(!temporalRevision)temporalRevision=1;
 
         struct Planned {
             strata::GpuPassConfig view{};
@@ -875,6 +890,16 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             view.errorThresholdPixels=errorPixels_;
             view.maxOutputClusters=uint32_t(std::min<size_t>(2048,
                 std::max<size_t>(16,primitive.geometry.nodes.size())));
+            if(strataLodHysteresisFraction_>0.f){
+                if(globalTemporalNodes>262144) {
+                    accepted=false;
+                    break; // bounded memory: use CPU/Legacy
+                }
+                view.hysteresisFraction=strataLodHysteresisFraction_;
+                view.temporalNodeCount=uint32_t(globalTemporalNodes);
+                view.temporalPassId=1u; // main camera
+                view.temporalRevision=temporalRevision;
+            }
             Planned entry{};
             entry.ordinal=uint32_t(i);
             if(!strata::prepareVulkanIndirectPrimitiveContract(
@@ -893,6 +918,8 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
                 shadowView.width=renderer.shadowMapSize();
                 shadowView.height=renderer.shadowMapSize();
                 shadowView.frustumCull=true;
+                if(shadowView.hysteresisFraction>0.f)
+                    shadowView.temporalPassId=2u; // sun shadow
                 if(!strata::prepareVulkanIndirectPrimitiveContract(
                     *strataGpuDevice_,*instance.model,*staged,binding,
                     shadow.ordinal,shadowView,false,shadow.contract,
@@ -951,6 +978,9 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             packet.selector=strataGpuCulling_.get();
             packet.instanceToken=instanceToken;
             packet.errorThresholdPixels=entry.view.errorThresholdPixels;
+            packet.lodHysteresisFraction=entry.view.hysteresisFraction;
+            packet.temporalNodeCount=entry.view.temporalNodeCount;
+            packet.temporalRevision=entry.view.temporalRevision;
             packet.allowSpotShadow=
                 strataVulkanGpuSpotShadowParityVerified_;
             packet.allowReflection=
@@ -975,6 +1005,14 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
         draw.persistentId=0;
         stats_.strataVulkanGpuPrepared+=
             draw.gpuIndexedPrimitives.size()+draw.gpuShadowPrimitives.size();
+        if(strataGpuCulling_){
+            const auto temporal=strataGpuCulling_->temporalStats();
+            stats_.strataGpuTemporalHistories=uint32_t(temporal.histories);
+            stats_.strataGpuTemporalBytes=temporal.retainedBytes;
+            stats_.strataGpuTemporalSubmissions=temporal.submitted;
+            stats_.strataGpuTemporalColdStarts=temporal.coldStarts;
+            stats_.strataGpuTemporalRefused=temporal.refused;
+        }
         return true;
     }
     ++stats_.strataVulkanGpuDeclined;
