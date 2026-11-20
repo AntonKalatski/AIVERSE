@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage129: fixed 2048 MDI commands, 1 vs 64 triangles per primitive.
+# Stage129: fixed 2048 model nodes / 4086 MDI commands per frame.
 # 16 independent processes: mesh subdivisions 1/8 x inherited pipeline
 # OFF/ON x Direct/MDI. Default renderer and shaders remain untouched.
 set -euo pipefail
@@ -27,7 +27,7 @@ mkdir "$OUT"
  echo "icb_inherit_pipeline_on=1"
  echo "order=off-direct1,off-mdi1,on-direct1,on-mdi1,on-mdi2,on-direct2,off-mdi2,off-direct2"
  echo "gpu=whole_completed_Metal_command_buffer_timestamps"
- echo "note=shared_pipeline_inheritance_only_all_ICB_buffers_explicit"
+ echo "note=geometry_tessellation_and_pipeline_inheritance_explicit_ICB_buffers"
 } > "$OUT/manifest.txt"
 CURRENT_LOG=""
 on_error() {
