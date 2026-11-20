@@ -34,6 +34,7 @@ void StudioMetalScene::clearDocumentModels() {
     modelInstances_.clear();
     documentModels_.clear();
     rejectedDocumentModels_.clear();
+    documentModelTimes_.clear();
 }
 
 void StudioMetalScene::syncDocumentModels(
@@ -82,6 +83,20 @@ void StudioMetalScene::syncDocumentModels(
         if (!allowed || !fs::is_regular_file(current)) continue;
         if (modelInstances_.size()>=256) break;
         active.insert(path);
+        std::error_code modifiedError;
+        const auto modified=fs::last_write_time(current,modifiedError);
+        if (modifiedError) continue;
+        const auto previousTime=documentModelTimes_.find(path);
+        if (previousTime!=documentModelTimes_.end() &&
+            previousTime->second!=modified) {
+            auto old=documentModels_.find(path);
+            if (old!=documentModels_.end()) {
+                render::releaseModel(*device_,*old->second);
+                documentModels_.erase(old);
+            }
+            rejectedDocumentModels_.erase(path);
+        }
+        documentModelTimes_[path]=modified;
         if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
             if (documentModels_.size()>=32) continue;
             // Model loaders may request .bin, textures, MTL beside the model.
@@ -154,6 +169,10 @@ void StudioMetalScene::syncDocumentModels(
         modelInstances_.push_back({proxy.id,found->second.get(),
             render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
             render::mat4::rotateY(proxy.yaw)});
+    }
+    for (auto it=documentModelTimes_.begin();it!=documentModelTimes_.end();) {
+        if (!active.count(it->first)) it=documentModelTimes_.erase(it);
+        else ++it;
     }
     for (auto it=rejectedDocumentModels_.begin();it!=rejectedDocumentModels_.end();) {
         if (!active.count(*it)) it=rejectedDocumentModels_.erase(it);
