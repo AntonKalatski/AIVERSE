@@ -85,7 +85,13 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         shores_->init(dev, rj["shoreTypes"], read_);   // water shores (docs/water.md)
     }
     if (!resources_.models().count("shape:generic")) buildShapes(dev);
-    if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
+    if (twoD_) {
+        // Reload can happen while earlier cameras still reference sprite GPU
+        // buffers and textures. Preserve ownership if the idle proof fails.
+        if (!twoD_->shutdownAfterGpuIdle(dev))
+            throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
+        twoD_.reset();
+    }
     looks_.clear();
     warnings_.clear();
     // A live rules/project reload must not stall the whole GPU or destroy
