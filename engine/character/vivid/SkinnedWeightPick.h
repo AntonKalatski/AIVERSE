@@ -115,12 +115,15 @@ inline bool prepareSkinnedWeightSurface(
 inline SculptPick pickSkinnedWeightVertex(
     const render::Model& model,const SkinnedWeightSurface& surface,
     render::float3 origin,render::float3 direction,
-    std::size_t sourceVertexCount=std::numeric_limits<std::size_t>::max()) noexcept {
+    std::size_t sourceVertexCount=std::numeric_limits<std::size_t>::max(),
+    std::span<const std::uint32_t> authorVertexIds={}) noexcept {
     using namespace render;
     SculptPick best;
     if(!surface.ready||surface.mesh>=model.meshes.size()||
        surface.world.size()!=model.vertices.size() ||
-       surface.included.size()!=model.vertices.size())return best;
+       surface.included.size()!=model.vertices.size() ||
+       (!authorVertexIds.empty() &&
+        authorVertexIds.size()!=model.vertices.size()))return best;
     const float magnitude=length(direction);
     if(!(magnitude>1e-8f)||!std::isfinite(magnitude))return best;
     direction=direction*(1.f/magnitude);
@@ -131,8 +134,14 @@ inline SculptPick pickSkinnedWeightVertex(
         for(std::size_t i=start;i+2<start+prim.indexCount;i+=3) {
             const auto ia=model.indices[i],ib=model.indices[i+1],
                 ic=model.indices[i+2];
-            if(ia>=sourceVertexCount || ib>=sourceVertexCount ||
-               ic>=sourceVertexCount)continue; // authored source vertices only
+            // Optional per-model source map: seam-split clones may still
+            // carry an authorable original ID, while generated/LOD vertices
+            // are intentionally UINT32_MAX and cannot be edited.
+            const auto srcA=authorVertexIds.empty()?ia:authorVertexIds[ia];
+            const auto srcB=authorVertexIds.empty()?ib:authorVertexIds[ib];
+            const auto srcC=authorVertexIds.empty()?ic:authorVertexIds[ic];
+            if(srcA>=sourceVertexCount || srcB>=sourceVertexCount ||
+               srcC>=sourceVertexCount)continue;
             if(ia>=surface.world.size()||ib>=surface.world.size()||
                ic>=surface.world.size()||
                !surface.included[ia]||!surface.included[ib]||
@@ -156,9 +165,9 @@ inline SculptPick pickSkinnedWeightVertex(
             const auto da=length(hit-a),db=length(hit-b),dc=length(hit-c);
             best.hit=true;
             best.rayDistance=t;
-            if(da<=db&&da<=dc){best.vertex=ia;best.worldPosition=a;}
-            else if(db<=dc){best.vertex=ib;best.worldPosition=b;}
-            else{best.vertex=ic;best.worldPosition=c;}
+            if(da<=db&&da<=dc){best.vertex=srcA;best.worldPosition=a;}
+            else if(db<=dc){best.vertex=srcB;best.worldPosition=b;}
+            else{best.vertex=srcC;best.worldPosition=c;}
         }
     }
     return best;
