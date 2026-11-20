@@ -177,6 +177,7 @@ int main() {
     device.current=14;
     history.motionVectors=inputs[0]; // FakeDevice's current borrowed RGBA16F
     history.motionFrameSerial=14;
+    history.motionViewKey=77;history.motionViewEpoch=3;
     history.requireValidMotion=true;
     device.beginFrame(64,64);
     filtered=direct.dispatchScreen(surfaces,view,8,8,1,4,&history);
