@@ -24,3 +24,6 @@ Merge latest origin/main after this handoff commit; review shared rendering conf
 
 ## Stage20.1 — current main reconciliation
 Main `5aba82c35` merged without textual conflicts in implementation `5cd7055b08a9046bd5497646c57609579f75972b`. Preserves physical sky/local fog and Release retirement test fixes. No manual source edits in this merge. Native combined checks are next; NOT RUN at this checkpoint.
+
+## Stage20.2 — fix observed GCC CI blocker
+Implementation `1b8b58cabfe5d27b278a73344dc4894708d562e8` removes unused anonymous `validId` and the unused Editor parameter from SpectraGraphWindow::properties, including its only call. No validation behavior or UI changes: the removed helper had no callers. Exact failing CI: https://github.com/chromealex/AIVERSE/actions/runs/44733446948/job/136278777703 on STRATA source 60820d548; downloaded raw log `/private/tmp/strata-arm64-failure.log` reports -Werror=unused-function and -Werror=unused-parameter at lines 38/447. `git diff --check` PASS. Combined Mac Debug build is in progress; Linux GCC rerun NOT RUN. Next: finish build/CTest and publish branch for fresh CI.
