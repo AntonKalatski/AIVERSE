@@ -83,12 +83,16 @@ bool StudioFacialGpuPreview::sync(
         error="Cannot switch facial model: previous GPU frame is still active";
         return false;
     }
+    // A failed GPU upload can leave partial VB/IB/texture handles. Keep the
+    // candidate alive through catch and retire behind a real device barrier.
+    std::unique_ptr<render::Model> candidate;
+    bool gpuUploadStarted=false;
     try {
         auto read=[root=fs::path(projectRoot)](
                 const std::string& key,std::string& data) {
             return readProjectFile(root,key,data);
         };
-        auto candidate=render::loadModel(
+        candidate=render::loadModel(
             "content/"+binding.path(),read);
         if(!candidate)throw std::runtime_error("Model import returned no Model");
         if(candidate->nodes.empty() || candidate->vertices.empty())
@@ -101,6 +105,7 @@ bool StudioFacialGpuPreview::sync(
         // Source validation completed before publishing any GPU Model.
         // Preparation and upload remain on the owning native device thread.
         render::prepareModelUpload(*candidate);
+        gpuUploadStarted=true;
         if(!render::uploadModel(device,*candidate,true))
             throw std::runtime_error("GPU facial Model upload failed");
         // Previous owner is now completion-proven, so it can retire safely.
@@ -123,6 +128,21 @@ bool StudioFacialGpuPreview::sync(
         return true;
     }catch(const std::exception& ex) {
         error=ex.what();
+        if(candidate && gpuUploadStarted) {
+            // A candidate is not published until ALL GPU allocations succeed.
+            // Never let CPU destructor release possibly submitted GPU objects.
+            try {
+                if(device.waitForResourceIdle())
+                    render::releaseModel(device,*candidate);
+                else {
+                    (void)candidate.release();
+                    error+=" (partial GPU Model quarantined: no completion proof)";
+                }
+            }catch(...) {
+                (void)candidate.release();
+                error+=" (partial GPU Model quarantined: cleanup failed)";
+            }
+        }
         return false;
     }
 }
