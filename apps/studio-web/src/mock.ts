@@ -33,6 +33,13 @@ const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { 
  // cannot narrow generic M through a runtime method comparison.
 export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
 export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
+  if (method === 'studio.facialRigList')return {rigs: []};
+  if (method === 'studio.facialRigGet' || method === 'studio.facialRigSave')
+    throw Error('Facial Rig project files require the native AIVERSE host');
+  if (method === 'studio.facialRigValidate') {
+    // Browser demo never claims native compile/model/morph verification.
+    throw Error('Facial Rig native validation requires the AIVERSE host');
+  }
   if (method === 'studio.materials') {
     return { library: {} };
   }
