@@ -782,6 +782,18 @@ void GeometryScene::draw(Renderer3D& r){
     updateStrataStreamingBeforeDraw(r);
     if(hlod_&&!groups_.empty())drawGroup(r,0);
     else for(auto& i:instances_)drawInstance(r,i);
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // Count both accepted and declined GPU temporal submissions. Rendering
+    // uses no readback and does not depend on these diagnostic counters.
+    if(strataGpuCulling_){
+        const auto temporal=strataGpuCulling_->temporalStats();
+        stats_.strataGpuTemporalHistories=uint32_t(temporal.histories);
+        stats_.strataGpuTemporalBytes=temporal.retainedBytes;
+        stats_.strataGpuTemporalSubmissions=temporal.submitted;
+        stats_.strataGpuTemporalColdStarts=temporal.coldStarts;
+        stats_.strataGpuTemporalRefused=temporal.refused;
+    }
+#endif
 }
 bool GeometryScene::tryStrataVulkanGpuDraw(
         Renderer3D& renderer,const Instance& instance,ModelDraw& draw) {
