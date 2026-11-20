@@ -3,12 +3,15 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <stdexcept>
 #include <span>
 #include <utility>
 #include <vector>
 #include "engine/data/Json.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/NativePresentationRetirement.h"
 
 namespace aiverse::view {
 
@@ -41,7 +44,7 @@ public:
     // Caller must already have established GPU idle (RtsView::shutdown does).
     void shutdown();
     bool ready() const { return pipe_.valid(); }
-    void setLook(const VisibilityLook& look) { look_ = look; dirty_ = true; }
+    void setLook(const VisibilityLook& look) { look_ = look; dirty_ = true; ++revision_; }
     const VisibilityLook& look() const { return look_; }
 
     // Sheet draped over the ground. Creates replacement buffers/texture
@@ -51,6 +54,36 @@ public:
     void build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height);
     // Per frame: vision of the viewer (0/1/2 per cell) -> faded + blurred field, uploaded when it changed.
     // Returns true when the field changed this frame.
+    // Phase 1 stages a new faded/blurred field and private R8 GPU texture,
+    // with no mutation to the currently sampled fog texture or clock.
+    // Phase 2 publishes the prepared result after all dependent owners have
+    // prepared successfully; abandoned candidates destroy only private RHI.
+    class PreparedUpdate final {
+        friend class VisibilityField;
+    public:
+        PreparedUpdate()=default;
+        PreparedUpdate(const PreparedUpdate&)=delete;
+        PreparedUpdate& operator=(const PreparedUpdate&)=delete;
+        ~PreparedUpdate() noexcept {
+            if(dev_ && tex_.valid()) {
+                try {dev_->destroyTexture(tex_);} catch(...) {}
+            }
+        }
+        bool changed() const noexcept{return changed_;}
+        const std::vector<uint8_t>& field() const noexcept{return field_;}
+    private:
+        gfx::Device* dev_=nullptr;
+        gfx::TextureHandle tex_{};
+        VisibilityField* owner_=nullptr;
+        uint64_t revision_=0;
+        std::vector<uint8_t> target_,cur_,field_;
+        std::vector<uint16_t> tmp_;
+        double lastTime_=-1;
+        bool dirty_=false,fading_=false,changed_=false;
+    };
+    std::unique_ptr<PreparedUpdate> prepareUpdate(
+        std::span<const uint8_t> vision,int w,int h,double time);
+    bool commitPreparedUpdate(std::unique_ptr<PreparedUpdate> candidate);
     bool update(std::span<const uint8_t> vision,int w,int h,double time);
     // Existing vector callers remain source-compatible; host buffers
     // can now be passed as a non-owning span without a temporary vector.
@@ -61,14 +94,20 @@ public:
     const std::vector<uint8_t>& field() const { return field_; }
     // Optional blur replacing the box blur over the grid rectangle (planets: stacked face rows need a
     // seam-aware neighbourhood). Called with the faded field and the blur radius in cells; null = box blur.
-    void setBlur(std::function<void(std::vector<uint8_t>& field, int radius)> fn) { blur_ = std::move(fn); dirty_ = true; }
+    void setBlur(std::function<void(std::vector<uint8_t>& field, int radius)> fn) { blur_ = std::move(fn); dirty_ = true; ++revision_; }
     gfx::TextureHandle texture() const { return tex_; }
+    size_t pendingGpuRetirements() const noexcept {return retired_.pending();}
+    bool collectRetired(gfx::Device& dev) {
+        if(dev_!=&dev)throw std::logic_error("VisibilityField retirement: wrong device");
+        return retired_.collect(dev);
+    }
     // Draws the sheet (Renderer3D custom draw after the scene). `cells`: weak tier forces Cells.
     void draw(render::Renderer3D& r, double time, bool lowTier);
 
 private:
-    void upload();
     gfx::Device* dev_ = nullptr;
+    render::NativePresentationRetirement retired_;
+    uint64_t revision_=1;
     gfx::ShaderHandle shader_;
     gfx::PipelineHandle pipe_;
     gfx::BufferHandle vb_, ib_;
