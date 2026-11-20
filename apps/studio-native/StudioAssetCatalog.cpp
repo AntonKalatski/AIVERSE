@@ -5,6 +5,7 @@
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <climits>
 #include <fstream>
 #include <random>
 #include <regex>

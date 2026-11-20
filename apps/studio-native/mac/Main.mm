@@ -20,14 +20,18 @@
 #define AIVERSE_STUDIO_SOURCE_DIR "."
 #endif
 
-// Transparent WKWebView is opt-in: the normal Metal-over-WebView host stays as fallback.
-@interface StudioTransparentWebView : WKWebView
+@class StudioHost;
+// A native drop receiver is required because Finder drags local file URLs,
+// not JavaScript-provided paths. These are trusted only after NSDraggingDestination
+// resolves them and the drop falls inside the HTML5 Assets panel.
+@interface StudioFileDropWebView : WKWebView <NSDraggingDestination>
+@property(nonatomic, assign) StudioHost* studioHost;
+@end
+@interface StudioTransparentWebView : StudioFileDropWebView
 @end
 @implementation StudioTransparentWebView
 - (BOOL)isOpaque { return NO; }
 @end
-
-@class StudioHost;
 @interface StudioMetalView : NSView {
     NSPoint press_;
     BOOL dragged_;
@@ -54,11 +58,40 @@
 - (void)zoom:(CGFloat)amount;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point;
 - (void)sendStudioReply:(const aiverse::Json&)reply;
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
 - (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
+@end
+
+@implementation StudioFileDropWebView
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingEntered:sender];
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    NSArray* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost)return NSDragOperationCopy;
+    return [super draggingUpdated:sender];
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSArray<NSURL*>* urls=[[sender draggingPasteboard]
+        readObjectsForClasses:@[[NSURL class]]
+        options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if(urls.count && self.studioHost){
+        [self.studioHost importDroppedFileURLs:urls atWindowPoint:sender.draggingLocation];
+        return YES; // native plan + explicit UI confirmation, NEVER direct file copy
+    }
+    return [super performDragOperation:sender];
+}
 @end
 
 @implementation StudioMetalView
@@ -137,7 +170,9 @@
     if (htmlComposite_) {
         web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
         if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
-    } else web_=[[WKWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    } else web_=[[StudioFileDropWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    ((StudioFileDropWebView*)web_).studioHost=self;
+    [web_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
     web_.navigationDelegate=self;
     web_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     [window_.contentView addSubview:web_];
@@ -312,6 +347,53 @@
         }
         [self sendStudioReply:reply];
     }];
+}
+- (void)importDroppedFileURLs:(NSArray<NSURL*>*)urls atWindowPoint:(NSPoint)point {
+    if(urls.count==0 || urls.count>64 || session_->workspace().project.dir.empty())return;
+    NSPoint local=[web_ convertPoint:point fromView:nil];
+    const double x=double(local.x),y=web_.isFlipped?double(local.y):
+        double(web_.bounds.size.height-local.y);
+    if(!std::isfinite(x)||!std::isfinite(y))return;
+    // The native handler reads a destination from the currently displayed
+    // HTML Assets pane only. No browser-provided source filesystem paths.
+    NSString* js=[NSString stringWithFormat:
+        @"(function(){const el=document.elementFromPoint(%f,%f);"
+        @"const root=el&&el.closest('[data-content-drop-root]');"
+        @"if(!root)return null;"
+        @"const dest=el.closest('[data-content-drop-target]');"
+        @"return dest?dest.getAttribute('data-content-drop-target'):"
+        @"root.getAttribute('data-content-drop-target');})()",
+        x,y];
+    NSArray<NSURL*>* safeURLs=[urls copy];
+    [web_ evaluateJavaScript:js completionHandler:^(id result,NSError* error) {
+        if(error || ![result isKindOfClass:[NSString class]])return;
+        const std::string folder=[(NSString*)result UTF8String];
+        try{
+            std::vector<std::filesystem::path> sources;
+            sources.reserve(safeURLs.count);
+            for(NSURL* url in safeURLs){
+                if(!url.isFileURL)throw std::runtime_error("Only local files can be imported");
+                sources.emplace_back(url.path.UTF8String);
+            }
+            const auto preview=session_->previewExternalAssets(sources,folder);
+            [self sendStudioEventPayload:"assets.importPreview" payload:preview];
+        }catch(const std::exception& ex){
+            aiverse::Json payload=aiverse::Json::object();
+            payload.set("message",aiverse::Json::string(ex.what()));
+            [self sendStudioEventPayload:"assets.importError" payload:payload];
+        }
+    }];
+}
+- (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload {
+    aiverse::Json packet=aiverse::Json::object();
+    packet.set("event",aiverse::Json::string(event));
+    packet.set("payload",payload);
+    const std::string bytes=packet.dump(-1);
+    NSString* text=[[NSString alloc]initWithBytes:bytes.data()
+        length:bytes.size() encoding:NSUTF8StringEncoding];
+    if(text)[web_ evaluateJavaScript:[NSString stringWithFormat:
+        @"window.__aiverseReceive && window.__aiverseReceive(%@);",text]
+        completionHandler:nil];
 }
 - (void)sendStudioEvent:(const char*)event message:(const char*)message {
     aiverse::Json packet=aiverse::Json::object();

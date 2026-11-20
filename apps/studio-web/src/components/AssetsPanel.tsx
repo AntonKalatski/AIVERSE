@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
 import {
   FileAudio, Box, FileCode2, FileImage, FileText, Folder, FolderOpen,
-  Grid2X2, List, RefreshCw, Search, ChevronRight, Library, Upload, FolderPlus, X, Move
+  Grid2X2, List, RefreshCw, Search, ChevronRight, Library, Upload, FolderPlus, X
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import type {
   StudioAsset, StudioAssetList, StudioAssetTransferPlan,
   StudioAssetConflictAction, StudioAssetTransferItem
 } from '../types';
-import { assetKind, assetFolders, assetFileName, assetBreadcrumbs, assetParent,
+import { assetKind, assetFolders, assetFileName, assetBreadcrumbs,
   childFolders, visibleAssetFiles, safeAssetPath } from '../assetTree';
 import type { AssetFolder, AssetKind } from '../assetTree';
 import './AssetsPanel.css';
@@ -127,8 +128,19 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [refreshToken,setRefreshToken]=useState(0);
   const native=nativeConnected();
   const reload=useCallback(()=>setRefreshToken(t=>t+1),[]);
-  useEffect(()=>onNativeEvent(event=>{
+  useEffect(()=>onNativeEvent((event,payload)=>{
     if(event==='workspace.changed')reload();
+    if(event==='assets.importPreview' && payload &&
+       typeof payload==='object' && 'token' in payload && 'items' in payload){
+      const candidate=payload as StudioAssetTransferPlan;
+      if(typeof candidate.token==='string' && Array.isArray(candidate.items)){
+        setError('');setMessage('');setPlan(candidate);
+      }
+    }
+    if(event==='assets.importError' && payload &&
+       typeof payload==='object' && 'message' in payload){
+      setError(String(payload.message));
+    }
   }),[reload]);
   useEffect(()=>{setFolder('');setSelected(null);setSearch('');setPlan(null);},[projectPath]);
   useEffect(()=>{
@@ -189,11 +201,11 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     }catch(e){setError(String(e instanceof Error?e.message:e))}
     finally{setBusy(false)}
   };
-  const dragStart=(event:React.DragEvent<HTMLElement>,path:string)=>{
+  const dragStart=(event:DragEvent<HTMLElement>,path:string)=>{
     event.dataTransfer.setData(ASSET_DRAG_MIME,path);
     event.dataTransfer.effectAllowed='move';
   };
-  const acceptInternal=(event:React.DragEvent<HTMLElement>)=>{
+  const acceptInternal=(event:DragEvent<HTMLElement>)=>{
     if(event.dataTransfer.types.includes(ASSET_DRAG_MIME)){
       event.preventDefault();event.dataTransfer.dropEffect='move';
     }
@@ -207,7 +219,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const folderDropProps=(target:string)=>({
     'data-content-drop-target':target,
     onDragOver:acceptInternal,
-    onDrop:(event:React.DragEvent<HTMLElement>)=>dropInternal(event,target)
+    onDrop:(event:DragEvent<HTMLElement>)=>dropInternal(event,target)
   });
 
   return <section className="studio-assets" aria-label="Project Assets"
