@@ -34,3 +34,7 @@
 .materials-new-form input,.materials-new-form select{padding:7px 6px;min-width:0;width:100%;border:1px solid #43576f;border-radius:5px;background:#1a2a3f;color:#e6f0ff}
 .materials-new-form button{padding:7px;border:1px solid #526f9a;border-radius:5px;background:#2d577b;color:white;font-size:11px}
 .materials-new-form button:disabled{opacity:.5}
+
+.materials-preview{display:flex;gap:6px;align-items:center;padding:7px 10px;
+  color:#a6dbff;background:#163c5d;border:1px solid #4b789e;border-radius:5px;font-size:11px}
+.materials-preview:disabled{opacity:.44}

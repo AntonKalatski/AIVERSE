@@ -41,8 +41,15 @@ export default function App() {
   }, []);
   useEffect(() => {
     void refresh();
-    return onNativeEvent(event => {
-      if (event === 'workspace.changed' || event === 'selection.changed' || event === 'document.changed') void refresh();
+    return onNativeEvent((event,payload) => {
+      if (event === 'material.preview') {
+        if (typeof payload === 'object' && payload !== null &&
+            'message' in payload && String(payload.message)) {
+          setDock(current => reopenTab(current,'scene','dock-center'));
+        }
+        void refresh();
+      } else if (event === 'workspace.changed' || event === 'selection.changed' ||
+                 event === 'document.changed') void refresh();
     });
   }, [refresh]);
 

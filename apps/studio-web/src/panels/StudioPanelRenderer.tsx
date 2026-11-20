@@ -102,7 +102,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'lighting':
         return <LightingPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'materials':
-        return <MaterialsPanel projectPath={snapshot?.project.path ?? ''}/>;
+        return <MaterialsPanel projectPath={snapshot?.project.path ?? ''}
+          previewMaterial={snapshot?.previewMaterial}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
       case 'animation':

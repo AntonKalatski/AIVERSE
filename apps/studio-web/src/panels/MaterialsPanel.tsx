@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Layers, RefreshCw, Save, Search, ShieldAlert } from 'lucide-react';
+import { Eye, Layers, RefreshCw, Save, Search, ShieldAlert } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import PropertyField from '../components/PropertyField';
 import { editablePatch, materialFields, materialNames, materialSwatchColor, MATERIAL_PRESETS } from './materialSchema';
@@ -7,7 +7,7 @@ import type { MaterialData, MaterialKey, MaterialLibrary, MaterialPatch, Materia
 import './MaterialsPanel.css';
 
 const EMPTY:MaterialLibrary={library:{}};
-export default function MaterialsPanel({projectPath}:{projectPath:string}){
+export default function MaterialsPanel({projectPath,previewMaterial}:{projectPath:string;previewMaterial?:string|null}){
  const [library,setLibrary]=useState<MaterialLibrary>(EMPTY);
  const [name,setName]=useState('');
  const [query,setQuery]=useState('');
@@ -18,6 +18,7 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
  const [pending,setPending]=useState<string|null>(null);
  const [loading,setLoading]=useState(true);
  const [busy,setBusy]=useState(false);
+ const [previewing,setPreviewing]=useState(false);
  const [error,setError]=useState('');
  const [message,setMessage]=useState('');
  const [nonce,setNonce]=useState(0);
@@ -78,6 +79,15 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
   } catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  };
+ const preview=async()=>{
+  if(busy||previewing||!connected||!projectPath||!name||changes>0)return;
+  setPreviewing(true);setError('');
+  try{
+    await invoke('studio.materialPreview',{name:previewMaterial===name?'':name});
+    setMessage(previewMaterial===name?'Material preview cleared.':'PBR sphere selected in Scene view (textures/graphs excluded).');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setPreviewing(false);}
+ };
  const discard=()=>{
   setDraft({});
   if(pending!==null){setName(pending);setPending(null);}
@@ -136,6 +146,9 @@ export default function MaterialsPanel({projectPath}:{projectPath:string}){
   </div>
   <footer className="materials-footer">
    <span>{changes>0 ? changes+' pending PBR edits' : 'No pending edits'}</span>
+   <button className="materials-preview" disabled={!connected||!projectPath||!name||changes>0||busy||previewing}
+     title="Preview basic PBR factors on the native Scene GPU sphere; texture and shader graph preview not supported"
+     onClick={()=>void preview()}><Eye size={14}/> {previewMaterial===name?'Exit PBR preview':'Preview in Scene'}</button>
    {pending!==null&&<button className="materials-discard" onClick={discard}>Discard &amp; switch</button>}
    <button className="materials-discard" onClick={discard} disabled={changes===0}>Discard</button>
    <button className="materials-apply" disabled={busy||loading||changes===0||!connected||!projectPath}

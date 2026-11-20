@@ -14,7 +14,7 @@ inline float previewScalar(const Json& value, float fallback, float lo, float hi
     const double number = value.toDouble();
     return std::isfinite(number) ? float(std::clamp(number,double(lo),double(hi))) : fallback;
 }
-inline float3 previewRgb(const Json& value, float3 fallback) {
+inline render::float3 previewRgb(const Json& value, render::float3 fallback) {
     if (!value.isArray() || value.size()<3) return fallback;
     return {previewScalar(value[0],fallback.x,0,1),
             previewScalar(value[1],fallback.y,0,1),

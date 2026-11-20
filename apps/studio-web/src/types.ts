@@ -13,6 +13,7 @@ export interface StudioSnapshot {
   properties: StudioProperty[];
   logs: StudioLog[];
   mode: 'edit' | 'play';
+  previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
 export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview';

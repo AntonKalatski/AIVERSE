@@ -3,6 +3,7 @@
 #include "apps/studio-native/StudioTerrainGeometry.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/studio-native/StudioAuthoredLights.h"
+#include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -26,6 +27,10 @@ StudioMetalScene::~StudioMetalScene() {
     if (device_) {
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
+        if (materialSphere_) {
+            render::releaseModel(*device_,*materialSphere_);
+            materialSphere_.reset();
+        }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         renderer_.shutdown();
@@ -34,7 +39,8 @@ StudioMetalScene::~StudioMetalScene() {
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
-    if (!cameraInitialized_ || !camera_.screenRay(x,y,width,height,origin,direction)) return {};
+    if (materialMode_ || !cameraInitialized_ ||
+        !camera_.screenRay(x,y,width,height,origin,direction)) return {};
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     std::vector<editor::SceneRenderable> candidates;
     candidates.reserve(proxies.size());
@@ -57,8 +63,69 @@ void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
-                             bool fpsProject, const std::string& selectedId, float levelHeight) {
+                             bool fpsProject, const std::string& selectedId,
+                             const std::string& previewName, const Json& previewFactors,
+                             uint64_t previewRevision, float levelHeight) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
+    const bool materialRequested = !previewName.empty() && previewFactors.isObject();
+    if (materialRevision_ != previewRevision) {
+        materialRevision_ = previewRevision;
+        if (materialRequested) {
+            if (!materialSphere_) {
+                // Same primitive->Model->GPU path used by AIVERSE's HDR material gallery.
+                render::MeshBuilder sphere;
+                sphere.color(render::rgba(255,255,255));
+                sphere.sphere({0,0,0},1.0f,32,48);
+                render::Material base;
+                base.vertexColors=false;
+                materialSphere_ = render::modelFromParts("studio/pbr-preview",
+                    {{"PBR sphere",&sphere,base,render::mat4{}}});
+                if (!materialSphere_) throw std::runtime_error("Material preview geometry missing");
+                materialSphere_->batching.autoLod=false;
+                render::prepareModelUpload(*materialSphere_);
+                if (!render::uploadModel(*device_,*materialSphere_))
+                    throw std::runtime_error("Material preview GPU upload failed");
+            }
+            materialSphere_->materials.at(0)=studioPbrPreviewMaterial(previewFactors,previewName);
+            materialSphere_->markMaterialChanged(); // invalidate renderer-owned material signature
+        }
+    }
+    if (materialMode_ != materialRequested) {
+        materialMode_=materialRequested;
+        cameraInitialized_=false;
+    }
+    if (materialMode_) {
+        if (!cameraInitialized_) {
+            camera_.target={0,0,0};
+            camera_.distance=4.3f;
+            camera_.pitch=.5f;
+            camera_.yaw=.25f;
+            cameraInitialized_=true;
+        }
+        device_->beginFrame(framebufferWidth,framebufferHeight);
+        renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
+        renderer_.lighting=render::Lighting{};
+        renderer_.lighting.sunIntensity=1.2f;
+        renderer_.lighting.skyColor={.42f,.51f,.66f};
+        renderer_.lighting.groundColor={.27f,.27f,.31f};
+        renderer_.lighting.fogDensity=0;
+        renderer_.lights.add({1.5f,2.4f,1.6f},6,{1,.9f,.78f},2.5f);
+        if (materialSphere_) {
+            render::ModelDraw sample;
+            sample.model=materialSphere_.get();
+            renderer_.drawModel(sample);
+        }
+        renderer_.drawMesh(cube_,render::mat4::translate({0,-1.14f,0})*
+            render::mat4::scale({4,.18f,4}),{.22f,.25f,.3f,1},render::kDrawNoCastShadow);
+        gfx::PassDesc previewPass;
+        previewPass.clearColor[0]=.07f;
+        previewPass.clearColor[1]=.09f;
+        previewPass.clearColor[2]=.135f;
+        renderer_.render(previewPass);
+        device_->endPass();
+        device_->endFrame();
+        return;
+    }
     const auto& map = doc.data;
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight) {
         terrainLevelHeight_ = levelHeight;

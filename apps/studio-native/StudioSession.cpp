@@ -118,6 +118,7 @@ Json StudioSession::snapshot() const {
     history.set("canRedo", Json::fromBool(ws_.map.canRedo()));
     result.set("history", std::move(history));
     result.set("mode", str("edit"));
+    result.set("previewMaterial", previewMaterialName_.empty() ? Json() : str(previewMaterialName_));
     return result;
 }
 void StudioSession::refreshMaterialPreview() {

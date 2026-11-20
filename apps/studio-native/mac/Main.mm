@@ -152,6 +152,8 @@
             // StudioSession/renderer are owned and called on the main thread.
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
+                session_->previewMaterialName(), session_->previewMaterialFactors(),
+                session_->previewMaterialRevision(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()));
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
@@ -343,6 +345,9 @@
         }
         [self sendStudioReply:reply];
         const std::string method=req.getStr("method");
+        if (!reply.has("error") && method=="studio.materialPreview") {
+            [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
+        }
         if (!reply.has("error") &&
             (method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
