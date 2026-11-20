@@ -106,6 +106,10 @@ private:
         bool dT = true, dD = true, dM = true, dR = true, dC = true;
         float yMin = 0, yMax = 2;
     };
+    // Initialize a never-published staging owner. The outer init() keeps
+    // the live GPU kit untouched until staging and device-idle succeed.
+    void initUnpublished(gfx::Device& dev,const Rules& rules,
+                         const render::FileReader& read,const std::string& base);
     void parseLook(const Json& terrain);
     void resetGrid(const MapGrid& g);
     void scan(const MapGrid& g, const std::vector<uint8_t>* vision, uint8_t viewer);
