@@ -12624,10 +12624,17 @@ TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
         "waterNetwork":{}})");
     roads.setMap(map);
     shores.setMap(map);
+    // Manually supplied networks are not backed by a serialized netJson_.
+    // Their topology must survive a staged view copy as well.
+    game::RoadNetwork manual;
+    manual.nodes.emplace_back();
+    manual.edges.emplace_back();
+    roads.setNetwork(manual);
     stagedRoads.inheritRuntimeStateForReload(roads);
     stagedShores.inheritRuntimeStateForReload(shores);
     CHECK(stagedRoads.wet()==roads.wet());
     CHECK(stagedRoads.puddles()==roads.puddles());
+    CHECK(stagedRoads.network().edges.size()==1);
     CHECK(stagedRoads.network().edges.size()==roads.network().edges.size());
     CHECK(stagedShores.active()==shores.active());
 }
