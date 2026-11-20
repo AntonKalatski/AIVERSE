@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace aiverse::studio {
 
@@ -91,5 +93,36 @@ inline StudioModelSurfaceHit studioPickModelSurface(
         }
     }
     return hit;
+}
+
+struct StudioModelPickInstance {
+    std::string id;                  // Studio document identity, not a mesh/node ID
+    const render::Model* model = nullptr;
+    render::mat4 world{};
+};
+
+struct StudioModelInstanceHit {
+    std::string id;
+    StudioModelSurfaceHit surface;
+};
+
+// Query all currently rendered rigid model instances and choose their
+// foremost actual triangle. Callers should include ONLY instances also
+// submitted to Renderer3D, using identical world transforms.
+inline StudioModelInstanceHit studioPickModelInstances(
+    const std::vector<StudioModelPickInstance>& instances,
+    render::float3 origin,render::float3 direction,
+    std::size_t triangleBudgetPerModel=1000000) {
+    StudioModelInstanceHit nearest;
+    for (const auto& instance:instances) {
+        if (!instance.model || instance.id.empty()) continue;
+        const auto surface=studioPickModelSurface(*instance.model,instance.world,
+            origin,direction,triangleBudgetPerModel);
+        if (surface.distance<nearest.surface.distance) {
+            nearest.id=instance.id;
+            nearest.surface=surface;
+        }
+    }
+    return nearest;
 }
 } // namespace aiverse::studio
