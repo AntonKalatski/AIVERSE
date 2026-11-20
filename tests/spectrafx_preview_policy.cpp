@@ -40,14 +40,20 @@ int main() {
           "nonfinite time source never causes nonfinite delta");
     check(close(p.advance(14.0,true),0),
           "clock recovers cleanly from nonfinite sample");
+    p.requestStep();
     p.didFail(84);
     check(!p.canDraw(42) && !p.needsStart(84),
           "failed GPU dispatch cannot be marked live or retried every frame");
+    check(close(p.advance(14.1,p.canDraw(84)),0) && p.stepPending(),
+          "failed dispatch retains queued Step until a playable source exists");
     check(p.needsStart(85),"editing failed JSON revision enables retry");
     p.requestRestart();
     check(p.needsStart(84),"manual Restart enables same failed revision retry");
     p.didStart(84);
     check(p.canDraw(84),"new successful revision becomes live");
+    check(close(p.advance(14.2,p.canDraw(84)),1.0f/60.0f) &&
+          !p.stepPending(),
+          "retry success consumes exactly one previously queued Step");
     p.invalidDraft();
     check(!p.canDraw(84) && p.needsStart(84),
           "invalid draft clears presentation state and forces fresh Play");
