@@ -1,6 +1,7 @@
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GroomSelfCollision.h"
+#include "engine/character/vivid/GroomSegmentCollision.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/ModelShaders.h"
 #include <algorithm>
@@ -165,6 +166,62 @@ void test() {
         expect(after>before && guides[0].position[0].y==1.f &&
                guides[1].position[0].x==0.001f,
                "groom contact correction moved roots or failed separation");
+    }
+    // Crossed line segments must repel even when their endpoint particles
+    // are farther apart than the contact radius. This tests the continuous
+    // segment narrowphase rather than the particle-particle approximation.
+    {
+        std::array<GroomGuide,2> hair{};
+        hair[0].root={-0.04f,0,0};
+        hair[1].root={0,-0.04f,0.004f};
+        hair[0].rest=hair[0].position={{-0.04f,0,0},{0.04f,0,0}};
+        hair[1].rest=hair[1].position={{0,-0.04f,0.004f},{0,0.04f,0.004f}};
+        for(auto& guide:hair)guide.previous=guide.position;
+        hair[0].previous[1].y=-0.01f;
+        GroomSelfCollisionConfig config;
+        config.enabled=true;
+        config.segmentEnabled=true;
+        config.separation=0.02f;
+        config.response=1.f;
+        config.friction=0.5f;
+        GroomSelfCollisionStats report;
+        const auto start0=hair[0].position[0],start1=hair[1].position[0];
+        expect(GroomSegmentCollision::resolve(hair,config,report) &&
+               report.contacts>0 && report.pairChecks==1,
+               "segment collision missed crossing strand capsules");
+        expect(render::length(hair[0].position[1]-hair[0].previous[1])<0.011f &&
+               render::length(hair[0].position[0]-start0)<1.e-7f &&
+               render::length(hair[1].position[0]-start1)<1.e-7f,
+               "segment friction changed pinned root or added velocity");
+        const auto first=hair[0].position[1];
+        auto invalid=config;
+        invalid.friction=std::numeric_limits<float>::quiet_NaN();
+        expect(!GroomSegmentCollision::resolve(hair,invalid,report) &&
+               render::length(hair[0].position[1]-first)<1.e-7f,
+               "invalid strand friction partially changed live groom");
+    }
+    {
+        std::vector<GroomGuide> packed(64);
+        for(std::size_t i=0;i<packed.size();++i) {
+            const float off=float(i)*0.00001f;
+            auto& g=packed[i];
+            g.root={off,0,0};
+            g.rest=g.position={{off,0,0},{off,0.02f,0}};
+            g.previous=g.position;
+        }
+        GroomSelfCollisionConfig config;
+        config.enabled=true;
+        config.segmentEnabled=true;
+        config.separation=0.04f;
+        config.maxPairChecks=1024;
+        GroomSelfCollisionStats report;
+        expect(GroomSegmentCollision::resolve(packed,config,report) &&
+               report.budgetHit && report.pairChecks<=config.maxPairChecks,
+               "bounded segment contact search ignored pair budget");
+        for(const auto& g:packed)
+            expect(render::length(g.position[0]-g.root)<1.e-7f &&
+                   finite(g.position[1]),
+                   "budget-limited contacts damaged fixed root or guide");
     }
     // Inter-guide self collision is opt-in, deterministic and does not
     // move fixed roots. The spatial neighbor search has a strict pair cap.
