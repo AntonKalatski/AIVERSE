@@ -258,10 +258,15 @@ int main() {
         });
         CHECK(near(img.at(W / 2, H / 2), 128, 0, 127));
         if (d.supports(PixelFormat::RGBA16F)) {
+            // General format support is sampled-texture support. A Vulkan
+            // device can support sampled+storage RGBA16F for compute GI without
+            // COLOR_ATTACHMENT support; rendering to FP16 is a separate cap.
             TextureDesc hd; hd.width = W; hd.height = H; hd.format = PixelFormat::RGBA16F; hd.renderTarget = true;
             const TextureHandle hdr = d.createTexture(hd);
-            frame(d, [&] { PassDesc p; p.colorTarget = hdr; d.beginPass(p); d.setPipeline(pColor); d.setVertexBuffer(vbFull); uniforms(1, 1, 1, 1); d.draw(6); d.endPass(); });
-            d.destroyTexture(hdr);
+            if (hdr.valid()) {
+                frame(d, [&] { PassDesc p; p.colorTarget = hdr; d.beginPass(p); d.setPipeline(pColor); d.setVertexBuffer(vbFull); uniforms(1, 1, 1, 1); d.draw(6); d.endPass(); });
+                d.destroyTexture(hdr);
+            } else std::printf("Vulkan: sampled RGBA16F supported, FP16 color attachment unavailable\\n");
         }
     }
     CHECK(d.gpuHealthy());
