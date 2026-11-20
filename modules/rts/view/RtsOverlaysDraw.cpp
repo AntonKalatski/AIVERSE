@@ -9,6 +9,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
+#include <utility>
 
 namespace aiverse::game {
 
@@ -66,52 +68,122 @@ float RtsOverlays::radiusFor(const OverlayDef& d, const Inst& in) const {
 
 // GPU part of init (RtsView calls it): textures of icons, the batch shader and pipelines.
 void RtsOverlays::initGpu(gfx::Device& dev) {
-    dev_ = &dev;
-    images_.assign(set_.defs.size(), {});
-    textures_.init(dev);
-    for (size_t i = 0; i < set_.defs.size(); ++i)
-        if (!set_.defs[i].image.empty()) {
-            images_[i] = textures_.resolve(set_.defs[i].image, false, base_);
-            if (!images_[i].valid()) set_.warnings.push_back("overlay '" + set_.defs[i].id + "': " + set_.defs[i].image + ": " + textures_.lastError());
-        }
-    if (!shader_.valid()) {
+    if(dev_ && dev_!=&dev)
+        throw std::logic_error("RtsOverlays GPU init: device owner mismatch");
+
+    // New resources are private until every pipeline, fallback texture and
+    // requested icon is staged. The previous GPU state remains untouched on
+    // any allocation error or refused idle barrier.
+    render::TextureCache stagedTextures;
+    stagedTextures.init(dev);
+    std::vector<render::TextureRef> stagedImages(set_.defs.size());
+    std::vector<std::string> stagedWarnings=set_.warnings;
+    gfx::ShaderHandle stagedShader{};
+    gfx::PipelineHandle stagedPipes[4]{};
+    gfx::TextureHandle stagedWhite{};
+    try {
         gfx::ShaderDesc sd;
-        sd.glslVertex = shaders::kOverlayVS; sd.glslFragment = shaders::kOverlayFS; sd.msl = shaders::kOverlayMSL;
-        sd.textureSlots = 1; sd.uniformSlots = 1; sd.label = "overlays";
-        shader_ = dev.createShader(sd);
-        if (shader_.valid())
-            for (int p = 0; p < 4; ++p) {
-                gfx::PipelineDesc pd;
-                pd.shader = shader_;
-                pd.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-                pd.attrs[1] = {1, gfx::VertexFormat::Float2, 12};
-                pd.attrs[2] = {2, gfx::VertexFormat::UByte4N, 20};
-                pd.attrCount = 3; pd.stride = sizeof(BatchVertex);
-                pd.indexType = gfx::IndexType::None;
-                pd.cull = gfx::CullMode::None;
-                pd.blend = (p & 1) ? gfx::BlendMode::Additive : gfx::BlendMode::Alpha;
-                pd.depthTest = !(p & 2);
-                pd.depthWrite = false;
-                pd.label = "overlays";
-                pipes_[p] = dev.createPipeline(pd);
-            }
-        const uint32_t w = 0xffffffffu;
-        gfx::TextureDesc td; td.width = 1; td.height = 1; td.data = &w; td.label = "overlays white";
-        white_ = dev.createTexture(td);
+        sd.glslVertex=shaders::kOverlayVS;
+        sd.glslFragment=shaders::kOverlayFS;
+        sd.msl=shaders::kOverlayMSL;
+        sd.textureSlots=1; sd.uniformSlots=1; sd.label="overlays";
+        stagedShader=dev.createShader(sd);
+        if(!stagedShader.valid())
+            throw std::runtime_error("RtsOverlays GPU init: shader creation failed");
+        for(int p=0;p<4;++p) {
+            gfx::PipelineDesc pd;
+            pd.shader=stagedShader;
+            pd.attrs[0]={0,gfx::VertexFormat::Float3,0};
+            pd.attrs[1]={1,gfx::VertexFormat::Float2,12};
+            pd.attrs[2]={2,gfx::VertexFormat::UByte4N,20};
+            pd.attrCount=3; pd.stride=sizeof(BatchVertex);
+            pd.indexType=gfx::IndexType::None;
+            pd.cull=gfx::CullMode::None;
+            pd.blend=(p&1)?gfx::BlendMode::Additive:gfx::BlendMode::Alpha;
+            pd.depthTest=!(p&2);
+            pd.depthWrite=false;
+            pd.label="overlays";
+            stagedPipes[p]=dev.createPipeline(pd);
+            if(!stagedPipes[p].valid())
+                throw std::runtime_error("RtsOverlays GPU init: pipeline creation failed");
+        }
+        const uint32_t whitePixel=0xffffffffu;
+        gfx::TextureDesc td;
+        td.width=1; td.height=1; td.data=&whitePixel; td.label="overlays white";
+        stagedWhite=dev.createTexture(td);
+        if(!stagedWhite.valid())
+            throw std::runtime_error("RtsOverlays GPU init: white texture creation failed");
+        for(size_t i=0;i<set_.defs.size();++i) {
+            if(set_.defs[i].image.empty())continue;
+            stagedImages[i]=stagedTextures.resolve(set_.defs[i].image,false,base_);
+            if(!stagedImages[i].valid())
+                stagedWarnings.push_back("overlay '"+set_.defs[i].id+"': "+
+                    set_.defs[i].image+": "+stagedTextures.lastError());
+        }
+        // Includes old dynamic VB and icon textures. Never retire GPU-visible
+        // state without a completion proof from its owning device.
+        if(dev_ && !dev.waitForResourceIdle())
+            throw std::runtime_error("RtsOverlays GPU init: idle barrier failed");
+    } catch(...) {
+        // None of the staged handles has been submitted for drawing.
+        stagedTextures.shutdown();
+        if(stagedWhite.valid())dev.destroyTexture(stagedWhite);
+        for(auto p:stagedPipes)if(p.valid())dev.destroyPipeline(p);
+        if(stagedShader.valid())dev.destroyShader(stagedShader);
+        throw;
     }
+
+    const auto oldShader=shader_,oldWhite=white_,oldVb=vb_;
+    gfx::PipelineHandle oldPipes[4]{};
+    for(int p=0;p<4;++p) {
+        oldPipes[p]=pipes_[p];
+        pipes_[p]=stagedPipes[p];
+    }
+    shader_=stagedShader;
+    white_=stagedWhite;
+    vb_={}; vbBytes_=0;
+    // TextureCache map nodes own AtlasSprite pointers referred to by
+    // TextureRef. Swapping both owners preserves those heap allocations.
+    using std::swap;
+    swap(textures_,stagedTextures);
+    images_.swap(stagedImages);
+    set_.warnings.swap(stagedWarnings);
+    buckets_.clear();
+    upload_.clear();
+    dev_=&dev;
+
+    // Previous resources may be destroyed only after the confirmed idle
+    // barrier above; the newly published owner remains valid.
+    if(oldVb.valid())dev.destroyBuffer(oldVb);
+    for(auto p:oldPipes)if(p.valid())dev.destroyPipeline(p);
+    if(oldShader.valid())dev.destroyShader(oldShader);
+    if(oldWhite.valid())dev.destroyTexture(oldWhite);
+    stagedTextures.shutdown();
+}
+
+bool RtsOverlays::shutdownAfterGpuIdle(gfx::Device& dev) {
+    if(!dev_)return true;
+    if(dev_!=&dev)
+        throw std::logic_error("RtsOverlays GPU shutdown: device owner mismatch");
+    if(!dev.waitForResourceIdle())return false;
+    shutdown(dev);
+    return true;
 }
 
 void RtsOverlays::shutdown(gfx::Device& dev) {
-    for (auto& p : pipes_) if (p.valid()) { dev.destroyPipeline(p); p = {}; }
-    if (shader_.valid()) dev.destroyShader(shader_);
-    if (vb_.valid()) dev.destroyBuffer(vb_);
-    if (white_.valid()) dev.destroyTexture(white_);
-    shader_ = {}; vb_ = {}; white_ = {}; vbBytes_ = 0;
+    if(dev_ && dev_!=&dev)
+        throw std::logic_error("RtsOverlays GPU shutdown: device owner mismatch");
+    for(auto& p:pipes_)if(p.valid()) {dev.destroyPipeline(p);p={};}
+    if(shader_.valid())dev.destroyShader(shader_);
+    if(vb_.valid())dev.destroyBuffer(vb_);
+    if(white_.valid())dev.destroyTexture(white_);
+    shader_={}; vb_={}; white_={}; vbBytes_=0;
     textures_.shutdown();
     images_.clear();
     buckets_.clear();
+    upload_.clear();
     popups_.clear();
-    dev_ = nullptr;
+    dev_=nullptr;
 }
 
 size_t RtsOverlays::cellCap(const OverlayDef& d) const {
