@@ -853,3 +853,60 @@ Send both printed `Clock sanity` and `Mach THREAD_BASIC_INFO` lines and return c
 ### Validation truth
 
 **Performed:** raw owner CSV numeric analysis; GitHub standalone diagnostic committed; handoff updated. **Not performed:** macOS native compilation and running the standalone control, GPU timing, Mach/System Trace, full CTest or Vulkan. PR #39 remains Draft, all diagnostic flags default off.
+
+
+---
+
+## Stage 98 — validate Stage 95 thread-accounting within actual render fixture (2026-11-20)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Code commits:** `1b0356b021c0f3baf10dfc04c40666b8963e399c` in `tests/render/material_batches.cpp`; `04f07ee36f7bf8111c862b532d8fc49931f5fd6f` in `tools/batching-stage95-analyze.py`. This handoff is a separate subsequent commit. All changes in diagnostic fixture/analyzer, **no renderer/Metal/AUTO policy changes**.
+
+### Owner Mac Studio Stage 97 control — PASS
+
+The owner fetched and natively compiled `tools/batching-thread-clock-sanity.cpp` with AppleClang and ran the 30ms busy loop. Actual output:
+
+```text
+Clock sanity (CPU-bound, no Metal): wall_ms=30.016291
+thread_cpu_ms=29.997417 process_cpu_ms=29.998000
+thread_to_wall=0.999371 process_to_wall=0.999391
+iterations=4419 checksum=16553240126093259979
+Mach THREAD_BASIC_INFO delta_ms=29.998000 mach_to_wall=0.999391
+Clock sanity PASS: busy-loop thread CPU and wall clocks agree
+```
+
+Thus the Darwin `CLOCK_THREAD_CPUTIME_ID` clock is not globally scaled by ~1/41.7; both POSIX thread CPU and Mach thread basic info match steady-wall during CPU-bound work. This does **not** prove that the 0.02ms thread-time measured around `renderer.render()` in Stage 95 represents descheduling: it could be waits/blocking/other threads/driver semantics or a measurement artifact localized to the renderer.
+
+### Previous observed Stage 95 anomaly
+
+Owner supplied all three Stage 95 106-row CSVs; 81 measured MDI frames each, 10 submissions + 2048 commands every measured frame. Median `renderer.render()` wall-time: 0.8542 / 0.8440 / 0.9347ms. Median **reported** calling-thread CPU-time: 0.0205 / 0.0202 / 0.0224ms. The ratio `thread/wall` was exceptionally stable near 0.02396 in *every* measured frame, across all three processes; this is suspicious and requires independent validation. 1.2ms slow interval was not reproduced in these three test runs. CPU wall-time is not GPU execution time.
+
+Source inspection established that the wall start and end timestamps enclose `renderer.render(pass)`, and the POSIX calling-thread CPU timestamps were also sampled directly on either side of that same call. `Renderer3D::render` invokes model rendering synchronously; no evidence of a dedicated worker thread can be asserted merely from looking at this outer method.
+
+### Stage 98 diagnostics
+
+- In the existing **explicitly opt-in** `AIVERSE_BATCH_THREAD_CPU_TIMING=1` path around the identical `renderer.render(pass)`, also sample `CLOCK_PROCESS_CPUTIME_ID` on macOS/Linux and `Mach THREAD_BASIC_INFO` on macOS for the *same calling thread*. Verify process CPU and Mach thread CPU are independent cross-checks against POSIX thread CPU and steady wall time.
+- Append two more CSV columns **only when the opt-in flag is set**: `render_process_cpu_ms`, `render_mach_thread_cpu_ms`. Missing unsupported measurements get `-1` (Mach on non-Apple platforms). The original 10 default CSV columns are unchanged, and the first two Stage95 optional columns remain in the same positions.
+- Extend `tools/batching-stage95-analyze.py` to accept these extra optional fields and print `procCPU`, `machThr` medians, writing them to `stage95-thread-summary.csv`. Older Stage95 12-column CSVs still parse with NaN for unavailable optional measures. This analyzer independently rejects invalid negative values in optional fields and the pathological case that measured process CPU is much below thread CPU; it does not conflate process CPU with renderer CPU due to possible other threads.
+- Measurements include the minimal clock-probe overhead in their wall region; used for **comparative diagnosis**, not a production performance claim. Runtime Metal paths/default-off feature flags unchanged.
+
+### Source and validation truth
+
+**Performed:** owner native Stage97 clock control PASS; GitHub source inspection and Stage98 fixture/analyzer updates. **Not yet performed:** Stage98 AppleClang build, Stage98 native run, analysis of Stage98 14-column output, GPU completion timing, macOS scheduler trace, Vulkan tests, full CTest. Keep PR #39 Draft.
+
+### Exact next Mac Studio steps — new detached worktree
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage98
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$ROOT" worktree add --detach "$WT" origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake -S "$WT" -B "$WT/build/batching-stage98" \
+  -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_TESTS=OFF \
+  -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build "$WT/build/batching-stage98" --target aiverse_material_batches --parallel 8 || exit 1
+cd "$WT" || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
+  bash tools/batching-stage95-trials.sh build/batching-stage98/trials 1024
+```
+
+Expected runner builds three forced real CPU MDI trials, asserts native CPU checks, raster parity and 81/81 measured CPU MDI frames, and analyzes each measured frame's `wall`, `thread`, `procCPU`, `machThr`. If the earlier ~0.024 ratio persists and Mach agrees with POSIX thread while process CPU is much larger, consider work happening on other threads; if Mach and POSIX agree and process CPU is also tiny, investigate blocking/driver waits with Instruments. If Mach and POSIX disagree, investigate per-clock measurement semantics and/or fixture instrumentation. If thread CPU approaches wall, the earlier Stage95 anomaly was transient; use system trace to explain differences. Do not claim causality based on one process. Preserve all older worktrees and Git state.
