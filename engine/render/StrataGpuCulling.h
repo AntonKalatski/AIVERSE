@@ -168,6 +168,14 @@ struct GpuTemporalStats {
     size_t peakRetainedBytes=0, peakHistories=0;
     uint64_t successfulDispatches=0;
     size_t peakSubmissionsPerFrameSlot=0;
+    // Stage18.3: backend-neutral CPU submission instrumentation.
+    // Includes partial/failed submissions. These are NOT GPU timestamps.
+    uint64_t computeBeginAttempts=0, computeEncodersOpened=0;
+    uint64_t computeBeginFailures=0, computeDispatchAttempts=0;
+    uint64_t computeDispatchAccepted=0, computeDispatchFailures=0;
+    uint64_t computeGroupsRequested=0;
+    uint64_t temporalResetDispatches=0, selectionDispatches=0;
+    uint64_t indirectClearDispatches=0, safetyDispatches=0;
 };
 
 // One diagnostic selection dispatch per source and view; caller must retain
