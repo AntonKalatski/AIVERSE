@@ -10,6 +10,7 @@ extern "C" {
 }
 #include <filesystem>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -12448,6 +12449,9 @@ public:
     aiverse::gfx::PipelineHandle createPipeline(const aiverse::gfx::PipelineDesc& d) override { pipes.push_back(d); return {uint32_t(pipes.size())}; }
     void destroyPipeline(aiverse::gfx::PipelineHandle) override {}
     const std::string& lastError() const override { return err_; }
+    // Recording-only RHI; draw calls capture CPU state with no submitted GPU
+    // work. Explicitly confirm the idle barrier required by Renderer3D.
+    bool waitForResourceIdle() override { return true; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
     void beginPass(const aiverse::gfx::PassDesc&) override {}

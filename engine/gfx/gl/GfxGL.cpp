@@ -7,6 +7,8 @@
 #include <limits>
 #include <cstring>
 #include <cstdio>
+#include <deque>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -115,6 +117,7 @@ public:
         items_.push_back(std::move(v)); alive_.push_back(1); return uint32_t(items_.size());
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
+    const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; free_.push_back(id - 1); } }
     template <class F> void each(F&& fn) {
         for (size_t i = 0; i < items_.size(); ++i)
@@ -213,6 +216,43 @@ public:
     // Core GL 3.3 / GLES 3 has independent sampler objects, but not native
     // arbitrary subresource texture views. Identity views can still be bound.
     bool supportsTextureViews() const override { return false; }
+    // Nonblocking GLsync timeline. Fence placed after the current frame's
+    // GPU commands, polled with timeout=0 on the GL/context owner thread.
+    uint64_t gpuSubmissionFence() const override {
+        return frameActive_ ? nextGpuToken_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return completedGpuToken_;
+    }
+    bool waitForSubmittedGpuWork() override {
+#if defined(__EMSCRIPTEN__)
+        // WebGL2 cannot promise a portable synchronous GPU-idle barrier.
+        // Retain quarantined textures until an explicit host-safe teardown.
+        return false;
+#else
+        // ONLY at the owner's pre-render pressure point; never every frame.
+        glFinish();
+        // All previously submitted commands are GPU-complete now.
+        for (const auto& entry : gpuFences_) {
+            completedGpuToken_ = std::max(completedGpuToken_,entry.first);
+            glDeleteSync(entry.second);
+        }
+        gpuFences_.clear();
+        return true;
+#endif
+    }
+    void pollCompletedGpuFences() {
+        while (!gpuFences_.empty()) {
+            auto& front = gpuFences_.front();
+            const GLenum status = glClientWaitSync(front.second, 0, 0);
+            if (status != GL_ALREADY_SIGNALED &&
+                status != GL_CONDITION_SATISFIED)
+                break;
+            completedGpuToken_ = front.first;
+            glDeleteSync(front.second);
+            gpuFences_.pop_front();
+        }
+    }
     bool supports(PixelFormat f) const override {
         switch (f) {
             case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
@@ -237,9 +277,17 @@ public:
             if (read.pbo) glDeleteBuffers(1, &read.pbo);
         }
         textureReads_.clear();
+        for (const auto& pending : gpuFences_) glDeleteSync(pending.second);
+        gpuFences_.clear();
+        for(const auto& [token,sync]:retirementFences_) {
+            (void)token;
+            if(sync)glDeleteSync(sync);
+        }
+        retirementFences_.clear();
 #if defined(__APPLE__) || defined(_WIN32)
-        if (queryActive_) glEndQuery(GL_TIME_ELAPSED);
+        if (queryActive_ || scopeActive_) glEndQuery(GL_TIME_ELAPSED);
         for (const auto& t:timedQueries_) glDeleteQueries(1,&t.query);
+        for (const auto& t:scopedQueries_) glDeleteQueries(1,&t.query);
 #endif
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)
         glDeleteBuffers(kMaxUniformSlots, slotUbos_);
@@ -301,6 +349,12 @@ public:
         }
         glBufferSubData(b->target, GLintptr(offset), GLsizeiptr(size), data);
         attribsDirty_ = true;
+    }
+    bool bufferInfo(BufferHandle h, BufferInfo& out) const override {
+        const auto* b = buffers_.get(h.id);
+        if (!b) return false;
+        out = {b->size,1};
+        return true;
     }
     void destroyBuffer(BufferHandle h) override {
         if (auto* b = buffers_.get(h.id)) { glDeleteBuffers(1, &b->id); buffers_.remove(h.id); }
@@ -834,7 +888,12 @@ public:
         glBindSampler(GLuint(slot), sampler);
         return glGetError() == GL_NO_ERROR;
     }
-
+    bool textureInfo(TextureHandle h, TextureInfo& out) const override {
+        const auto* t = textures_.get(h.id);
+        if (!t) return false;
+        out = {t->w,t->h,t->fmt};
+        return true;
+    }
     void destroyTexture(TextureHandle h) override {
         std::vector<uint32_t> children;
         views_.each([&](uint32_t id, GLTextureView& view) {
@@ -992,9 +1051,11 @@ public:
 #if defined(__APPLE__) || defined(_WIN32)
     struct TimedQuery { uint64_t tag; GLuint query; };
     std::vector<TimedQuery> timedQueries_;
-    bool queryActive_ = false;
+    std::vector<TimedQuery> scopedQueries_;
+    bool queryActive_ = false, scopeActive_ = false;
     bool timeGpuFrame(uint64_t tag) override {
-        if (info_.backend != Backend::GL33 || queryActive_ || timedQueries_.size() >= 64) return false;
+        if (info_.backend != Backend::GL33 || queryActive_ || scopeActive_ ||
+            timedQueries_.size() >= 64) return false;
         GLuint q=0; glGenQueries(1,&q); glBeginQuery(GL_TIME_ELAPSED,q);
         timedQueries_.push_back({tag,q}); queryActive_=true; return true;
     }
@@ -1011,7 +1072,93 @@ public:
         return out;
     }
 #endif
+#if defined(__APPLE__) || defined(_WIN32)
+    // Desktop GL33 can measure one bounded region using the native elapsed
+    // GPU query. Do NOT use while a whole-frame GL_TIME_ELAPSED query runs:
+    // OpenGL prohibits overlapping queries of the same target.
+    bool beginGpuScope(uint64_t tag) override {
+        if (info_.backend != Backend::GL33 || !frameActive_ ||
+            queryActive_ || scopeActive_ || scopedQueries_.size() >= 64)
+            return false;
+        GLuint q=0;
+        glGenQueries(1,&q);
+        if (!q) return false;
+        glBeginQuery(GL_TIME_ELAPSED,q);
+        scopedQueries_.push_back({tag,q});
+        scopeActive_=true;
+        return true;
+    }
+    void endGpuScope() override {
+        if (!scopeActive_) return;
+        glEndQuery(GL_TIME_ELAPSED);
+        scopeActive_=false;
+        glFlush(); // submit query progress without CPU/GPU synchronization
+    }
+    std::vector<GpuTiming> takeGpuScopeTimings() override {
+        std::vector<GpuTiming> out;
+        for (size_t i=0;i<scopedQueries_.size();) {
+            const auto q=scopedQueries_[i];
+            if (scopeActive_ && i+1==scopedQueries_.size()) {++i;continue;}
+            GLuint ready=0;
+            glGetQueryObjectuiv(q.query,GL_QUERY_RESULT_AVAILABLE,&ready);
+            if (!ready) {++i;continue;}
+            GLuint64 ns=0;
+            glGetQueryObjectui64v(q.query,GL_QUERY_RESULT,&ns);
+            out.push_back({q.tag,double(ns)/1000000.0,true});
+            glDeleteQueries(1,&q.query);
+            scopedQueries_.erase(scopedQueries_.begin()+i);
+        }
+        return out;
+    }
+#endif
+    bool waitForResourceIdle() override {
+        // Fallback for unsupported/failed async sync objects.
+        glFinish();
+        return glGetError()==GL_NO_ERROR;
+    }
+    uint64_t beginResourceRetirement() override {
+        // Fence is enqueued behind earlier GL commands on this context.
+        // Submission must happen only at a host frame boundary.
+        GLsync sync=glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+        if(!sync)return 0;
+        glFlush(); // allows asynchronous progress without glFinish
+        const uint64_t token=nextRetirementToken_++;
+        retirementFences_.emplace(token,sync);
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+    }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return ResourceRetirementStatus::Failed;
+        const GLenum status=glClientWaitSync(it->second,0,0);
+        if(status==GL_ALREADY_SIGNALED ||
+           status==GL_CONDITION_SATISFIED)
+            return ResourceRetirementStatus::Complete;
+        if(status==GL_TIMEOUT_EXPIRED)
+            return ResourceRetirementStatus::Pending;
+        return ResourceRetirementStatus::Failed; // GL_WAIT_FAILED
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return;
+        const GLenum status=glClientWaitSync(it->second,0,0);
+        if(status!=GL_ALREADY_SIGNALED &&
+           status!=GL_CONDITION_SATISFIED)return;
+        glDeleteSync(it->second);
+        retirementFences_.erase(it);
+    }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // The host first completed glFinish successfully on this context.
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return;
+        glDeleteSync(it->second);
+        retirementFences_.erase(it);
+    }
     void beginFrame(int w, int h) override {
+        pollCompletedGpuFences();
+        frameActive_ = true;
         fbW_ = w; fbH_ = h;
         deliverTextureReads();
 #if defined(__EMSCRIPTEN__) && defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
@@ -1032,8 +1179,22 @@ public:
     }
     void endFrame() override { // swap is done by the platform layer (EGL/WGL/browser)
 #if defined(__APPLE__) || defined(_WIN32)
+        if (scopeActive_) endGpuScope();
         if (queryActive_) {glEndQuery(GL_TIME_ELAPSED);queryActive_=false;glFlush();}
 #endif
+        if (frameActive_) {
+            GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            if (sync) {
+                gpuFences_.push_back({nextGpuToken_,sync});
+                glFlush(); // ensures this fence is submitted, no CPU wait
+            } else {
+                // No proof of GPU completion. Never advance completed token.
+                // Any retired target with this token remains quarantined
+                // until a true idle drain by its owner.
+            }
+            ++nextGpuToken_;
+            frameActive_ = false;
+        }
         if (!capture_) return;
         std::vector<uint8_t> px(size_t(fbW_) * size_t(fbH_) * 4);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1704,6 +1865,10 @@ public:
     }
 
 private:
+    std::deque<std::pair<uint64_t,GLsync>> gpuFences_;
+    uint64_t nextGpuToken_ = 1;
+    uint64_t completedGpuToken_ = 0;
+    bool frameActive_ = false;
     bool hdr_ = false;
     bool hdrPass_ = false;
     DeviceInfo info_;
@@ -1736,6 +1901,8 @@ private:
     int explicitPassSamples_ = 0;
     int explicitPassColors_ = -1;
     std::array<PixelFormat, kMaxRenderTargetColors> explicitPassFormats_{};
+    uint64_t nextRetirementToken_=1;
+    std::map<uint64_t,GLsync> retirementFences_;
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLTextureView> views_;

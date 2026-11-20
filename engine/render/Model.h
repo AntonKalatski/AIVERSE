@@ -16,6 +16,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "TextureCodec.h"
+#include "GpuOwnedMemory.h"
 #include "graph/ShaderGraph.h"
 
 namespace aiverse::render {
@@ -342,9 +343,21 @@ void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& 
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
-bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
+// A speculative model import may borrow already resident shared textures,
+// but must not create new entries in the live shared GPU texture cache.
+// Pass publishSharedTextures=false only when an external host owns a staged
+// Model and can retire the entire Model on abort after a real GPU barrier.
+bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false,
+                 bool publishSharedTextures = true);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
+// Upload one host-staged image without touching any live Model::images vector.
+// Returns false if the GPU did not create a valid texture handle.
+bool uploadStandaloneImage(gfx::Device& dev, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
+// Unique owned model data (dedicated non-pooled vb/ib, nonborrowed images,
+// morph/baked textures). Shared model texture cache and pooled geometry pages
+// belong to their own owners and MUST NOT be counted through Model.
+void appendModelOwnedGpuMemory(const Model& m, GpuOwnedMemoryCounter& counter);
 void releaseModel(gfx::Device& dev, Model& m);
 
 } // namespace aiverse::render

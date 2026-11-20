@@ -1742,7 +1742,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `91a80fbab26ddbe5f7a28e4a45b7f12e4866944d`.
 - Added `tests/fps/projectile_spawn.inc` with `ecsProjectileSpawnAuthorityParity` run in both deep and COW snapshot modes. Uses production input commands to fire an ordinary bullet and throw Frag/Smoke/Flash actions, and compares legacy vs `ecsAuthority` state/checksums/actor fields and every `ProjectileRuntime` kind/ID/order/velocity/position/damage via `DynamicEntityIndex` after each tick. Verifies all three throwables existed, object ID counter advanced, v9 cross-mode save load, pre-fuse rollback, 10-tick continuation and replay checksum.
 - **Verification:** GitHub test source added, **not yet referenced from `tests/fps/tests.cpp` main**, native C++ compilation and execution not performed. Requires normal FPS test data and CTest. The helper's immediate creation is verified in source; after-tick fixture alone cannot distinguish whether an entity was created before `fps.ecsMirror`.
-- **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status. 
+- **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status.
 
 
 ### 2026-11-18 — FPS weapon/grenade ECS spawn parity fixture wired into built-in suite
@@ -2070,3 +2070,12 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Data source:** `engine/physis/PhysisFieldAssets.h` is a common genre-neutral map field parser. `installFromMap` creates WindZone/StormEvent/GravityField ECS entities sorted by stable unique JSON IDs after up-front validation; no new genre-native path or NEREID/Terra ownership collision.
 - **Validation:** code committed, `physis_field_assets`/`physis_field_authoring` CTests authored and CMake/Studio CI registered. **Build, CTest, macOS interactive Scene pick/drag, Inspector Undo/Redo, screenshot/perf NOT RUN**. Stage 19 handoff: `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`.
 - **Next editor owner:** build the actual `aiverse_editor` after main merge, verify mouse-gizmo hit/drag/UI in both FPS and RTS maps and ensure duplicate PHYSIS MapProps panel IDs do not interfere with undo/redo in Studio. Preserve generic Selection ownership and document limitations.
+
+## 2026-11-20 — Prisma/MotionWeave merge checkpoint
+
+Integration branch `integration/prisma-motionweave-view`; merge `fc46059ee6523cbc1f04f8c412d44e4fdae9398a`.
+See [complete merge handoff](handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
+owner and one editor viewport target owner, both animation playback APIs and GPU
+fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
+merge only. Remote documentation and latest MotionWeave merge/push remain next.

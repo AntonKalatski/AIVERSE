@@ -10,6 +10,10 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Engineering rules:** `AGENTS.md`.
 **Latest handoff:** `docs/agent-handoffs/spectrafx-stage120-main-integration-native-pass-2026-11-20.md`.
 
+## Mandatory scope boundary
+
+This skill is ONLY for world-space VFX emitters, particles, ribbon/mesh FX, effect graphs and ECS event presentation. For post-process bloom, tone mapping/HDR resolve, LUT/color grading, depth-of-field, motion blur, screen-space AO/GI/SSR, TAA/upscaling, post-process volumes, or the `postfx` Shader Graph domain, use **PRISMA** (`engine/render/Prisma.h`, `docs/prisma.md`). SpectraFX contributes linear HDR scene particles before PRISMA resolves the image; PRISMA never owns particle simulation. See the mandatory ownership section in `AGENTS.md`. Existing `postfx_*` MCP/JSON names are legacy external interfaces, **not** SpectraFX operations.
+
 ## Fast path (current supported capabilities)
 
 1. Create `fx/graphs/<name>.vfx.json` with `version:1`, `nodes`, `links`, `outputs`, and optional `parameters`. Supported chain: `Spawn → Initialize → Update* → SpriteOutput|MeshOutput|RibbonOutput`. Node `properties` reuse `engine/fx/FxEffect.h` emitter fields. Example: `docs/spectrafx.md`.
@@ -57,6 +61,64 @@ Native projects may use `spectra::fieldsForNode(type)`,
 source of truth. CTest source was extended but real compilation/tests
 have **NOT RUN** in this session. See stage 9 handoff.
 
+## Metal GPU compute prototype (stage 10 — unverified)
+
+The public `engine/fx/SpectraFX.h` also includes
+`engine/fx/SpectraGpuParticles.h`. Native presentation clients can
+create `spectra::ComputeParticles` with `ComputeEmitterDesc` and
+`ComputePreference::Automatic`, then call `burstAt`, `setView`,
+`step` **before the render pass** and `draw` **inside the pass**.
+Shutdown must precede destruction of `gfx::Device`.
+
+- Metal with `Device::supportsCompute()`: opt-in GPU simulation and
+  soft additive quads. The first version supports only burst count,
+  speed, lifetime, size, gravityY, drag and tint.
+- GL33/GLES3/WebGL2 and current Vulkan: **CPU fallback** via the legacy
+  `fx::ParticleSystem`. `RequireGpu` fails without Metal compute.
+- This is **not** automatic graph-v1 GPU code generation. Do not route
+  arbitrary `EffectDef`, trails, ribbon meshes, collisions, GPU light
+  events or untested graph operations into this subset.
+- Track `ComputeStats` and `reason()` for diagnostics. No measured
+  performance or real Metal shader-compile verification yet.
+- Use `aiverse_vfx_gpu_tests` / CTest `vfx_gpu_backend` for CPU,
+  capability selection and lifecycle regressions. A native Metal
+  offscreen render/readback test and multi-frame fences are still
+  mandatory before shipping.
+
+See `docs/spectrafx.md` stage 10 and the last handoff entry for
+the exact implementation status and follow-up checks.
+
+## Graph GPU eligibility and transparent CPU fallback (Stage 11)
+
+Use `spectra::GraphRuntime` (public `engine/fx/SpectraFX.h`) for
+opt-in **per-graph** backend selection from any native game genre.
+It accepts either `initGraph(device, graphJson, overrides, options)`
+or `initEffect(device, compiledEffect, options)` and owns one
+`ComputeParticles` or full `fx::ParticleSystem` instance. Call
+`burstAt`, `setView`, `step` (before scene render pass),
+`draw` (inside pass), `clear` (outside encoders) and `shutdown`
+(before device destruction).
+
+Never route a graph to GPU based on output node alone. Use
+`spectra::inspectGraphGpuEligibility(effect, options)` to check
+whether the **whole** effect fits the Metal prototype. Unsupported
+shader graphs, random ranges, noise, trails, collisions, lights,
+subemitters, custom colours, non-soft textures and multi-emitters
+keep all data via original `EffectDef` in the CPU runtime.
+`ComputePreference::RequireGpu` returns an error rather than
+silently simplifying the graph.
+
+`fx_graph_validate`/`get`/`list` now expose
+`metalGpuEligible` and `metalGpuReason`; the SpectraFX graph
+editor shows the same result. **Eligibility is not device support
+or measured GPU performance.** The existing editor preview is CPU.
+
+Run `aiverse_vfx_graph_runtime_tests`, `aiverse_vfx_gpu_tests`
+and the full `ctest -L SpectraFX` suite once a native checkout
+is available. Stage 11 is committed but tests and real Metal
+shaders have not been verified in this session. Preserve the
+per-stage handoff rule.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The v1 graph compiler produces `fx::EffectDef`, while the separate opt-in Metal GPU runtime already has evolution, sorting and compaction kernels. Full graph-programmable GPU simulation, renderer/editor integration, and complete cross-platform GPU QA remain unfinished. Do not duplicate SpectraFX by genre.
@@ -72,7 +134,7 @@ FX runtime readback. Validate with:
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```

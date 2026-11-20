@@ -1008,6 +1008,20 @@ void VulkanDevice::destroySampler(SamplerHandle handle) {
     deferDestroy([this, native] { vkDestroySampler(device_, native, nullptr); });
 }
 
+bool VulkanDevice::bufferInfo(BufferHandle h, BufferInfo& out) const {
+    const auto* b = buffers_.get(h.id);
+    if (!b) return false;
+    out = {b->size,uint32_t(b->versions.size())};
+    return true;
+}
+
+bool VulkanDevice::textureInfo(TextureHandle h, TextureInfo& out) const {
+    const auto* t = textures_.get(h.id);
+    if (!t) return false;
+    out = {t->width,t->height,t->format};
+    return true;
+}
+
 void VulkanDevice::destroyTexture(TextureHandle h) {
     VTexture* t = textures_.get(h.id);
     if (!t) return;
