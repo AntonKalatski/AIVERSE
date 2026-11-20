@@ -508,11 +508,13 @@ int main() {
     const auto vkTelemetry=gpuVk.temporalStats();
     assert(vkTelemetry.successfulDispatches==3); // rejected 4th is excluded
     assert(vkTelemetry.peakSubmissionsPerFrameSlot==3);
-    assert(vkTelemetry.computeBeginAttempts==vk.computeCalls);
-    assert(vkTelemetry.computeEncodersOpened==vk.computeCalls);
+    // Three accepted Vulkan views, each clear/select/safety (3 encoders).
+    // vk.computeCalls counts shader CREATION, not beginCompute calls.
+    assert(vkTelemetry.computeBeginAttempts==9);
+    assert(vkTelemetry.computeEncodersOpened==9);
     assert(vkTelemetry.computeDispatchAttempts==
            vkTelemetry.computeDispatchAccepted);
-    assert(vkTelemetry.computeDispatchAttempts==vk.computeCalls);
+    assert(vkTelemetry.computeDispatchAttempts==9);
     assert(vkTelemetry.indirectClearDispatches==3);
     assert(vkTelemetry.selectionDispatches==3);
     assert(vkTelemetry.safetyDispatches==3);
