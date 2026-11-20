@@ -498,8 +498,13 @@ void GpuClusterCulling::expireTemporal(gfx::Device& dev,uint64_t frame) {
     if(!completed)return;
     for(auto it=temporal_.begin();it!=temporal_.end();){
         const auto& record=it->second;
-        if(!record.lastFrame || frame<=record.lastFrame ||
-           frame-record.lastFrame<=120 || completed<record.lastFrame) {
+        const uint64_t lastUsed=std::max(
+            record.lastFrame,record.lastAttemptFrame);
+        bool inFlight=false;
+        for(const uint64_t epoch:record.frame)
+            if(epoch && epoch>completed)inFlight=true;
+        if(!lastUsed || frame<=lastUsed ||
+           frame-lastUsed<=120 || inFlight) {
             ++it;
             continue;
         }
@@ -552,9 +557,12 @@ bool GpuClusterCulling::prepareTemporal(
     }
     TemporalRecord& record=it->second;
     if(record.nodes!=config.temporalNodeCount ||
-       record.lastFrame>=frame && record.lastFrame!=0)
+       (record.lastFrame>=frame && record.lastFrame!=0))
         return false;
     const size_t slot=size_t(frame%kFramesInFlight);
+    // No retry of an attempted key in the same GPU encoder epoch: even
+    // failed later passes can leave GPU commands referencing this slot.
+    if(record.frame[slot]==frame)return false;
     if(record.frame[slot] && record.frame[slot]!=frame &&
        (dev.completedFrameSerial()==0 ||
         record.frame[slot]>dev.completedFrameSerial()))
@@ -599,6 +607,11 @@ bool GpuClusterCulling::prepareTemporal(
     }
     next=record.state[slot];
     if(!warm)previous=next; // shader does not read previous on cold start
+    // Mark attempted GPU use BEFORE encoding any compute commands. A later
+    // failure cannot permit this buffer to be reused by a younger frame
+    // whose RHI completion fence has not reached the attempted epoch.
+    record.frame[slot]=frame;
+    record.lastAttemptFrame=frame;
     temporalStats_.histories=temporal_.size();
     return true;
 }
