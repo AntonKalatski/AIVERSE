@@ -268,6 +268,14 @@ void test() {
             model,0,pose,library,binding,face,
             {0.05f,0.05f,4.f},{0,0,-1},3,authorIds).hit,
             "generated LOD triangle leaked into original sculpt vertex selection");
+        const std::array<SkinSeamSplit::Clone,2> sourceAndLodClones{{
+            {0,3,0,0},{4,5,0,1}
+        }};
+        std::vector<std::uint32_t> expandedIds;
+        req(buildSculptSourceVertexMap(6,3,sourceAndLodClones,expandedIds) &&
+            expandedIds.size()==6 && expandedIds[3]==0 &&
+            expandedIds[5]==std::numeric_limits<std::uint32_t>::max(),
+            "LOD seam clones must remain excluded without blocking publication");
         const auto lastGood=authorIds;
         const std::array<SkinSeamSplit::Clone,2> duplicated{{
             {0,3,0,0},{1,3,0,0}
