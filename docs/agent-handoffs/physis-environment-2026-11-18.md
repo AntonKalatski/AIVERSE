@@ -1,8 +1,8 @@
 # PHYSIS Stage 3 — environmental materials and universal responses (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`  
-**Implementation commit:** `54f291991d318d9593aad32e42dbcd766347ca2a`  
-**Handoff commit:** find with `git log -1 -- docs/agent-handoffs/physis-environment-2026-11-18.md`.  
+**Branch:** `feature/physis-nature-simulation`
+**Implementation commit:** `54f291991d318d9593aad32e42dbcd766347ca2a`
+**Handoff commit:** find with `git log -1 -- docs/agent-handoffs/physis-environment-2026-11-18.md`.
 **Verification:** **NOT RUN** — connector-backed writes only, no compiler, CTest, CI, headless runner, renderer or sanitizer run.
 
 ## Delivered changes

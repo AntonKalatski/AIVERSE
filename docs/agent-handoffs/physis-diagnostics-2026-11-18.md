@@ -1,7 +1,7 @@
 # PHYSIS Stage 14 — renderer-neutral diagnostic heatmaps (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Branch:** `feature/physis-nature-simulation` (draft PR #25; base `feature/universal-entity-inspector-fps`).  
+**Repository:** `chromealex/AIVERSE`
+**Branch:** `feature/physis-nature-simulation` (draft PR #25; base `feature/universal-entity-inspector-fps`).
 **Implementation and test commits:**
 - `73ec271864ed0699a2b681c4521b6244b0f327e1`: `engine/physis/PhysisDiagnostics.h`, read-only raster API.
 - `8e4f4f6fcdeeb165b1e14e7d6979015668b3cf96`: `tests/physis_diagnostics_test.cpp`.

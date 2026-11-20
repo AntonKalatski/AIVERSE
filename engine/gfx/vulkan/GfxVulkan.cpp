@@ -115,7 +115,7 @@ bool VulkanDevice::pickDevice(std::string& error) {
             const bool digits = std::strspn(forced, "0123456789") == std::strlen(forced);
             if (digits ? uint32_t(std::atoi(forced)) == i : std::strstr(p.deviceName, forced) != nullptr) score += 100;
         }
-        if (score > bestScore) { bestScore = score; best = int(i); queueFamily_ = uint32_t(family); }
+        if (score > bestScore) { bestScore = score; best = int(i); queueFamily_ = uint32_t(family); computeQueue_ = (qs[size_t(family)].queueFlags & VK_QUEUE_COMPUTE_BIT)!=0; }
     }
     if (best < 0) { error = "Vulkan: no GPU with graphics and present support"; return false; }
     gpu_ = gpus[size_t(best)];
@@ -132,6 +132,10 @@ bool VulkanDevice::pickDevice(std::string& error) {
     multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
+    enable.imageCubeArray = have.imageCubeArray;
+    cubeArray_ = have.imageCubeArray;
+    enable.samplerAnisotropy = have.samplerAnisotropy;
+    samplerAnisotropy_ = have.samplerAnisotropy;
     const float priority = 1.0f;
     auto qi = vkStruct<VkDeviceQueueCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
     qi.queueFamilyIndex = queueFamily_;
@@ -273,15 +277,40 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    shutdownCompute();
+    for (auto& read : textureReads_) {
+        if (read.buffer) vkDestroyBuffer(device_, read.buffer, nullptr);
+        memory_.release(read.alloc);
+    }
+    textureReads_.clear();
+    for(const auto& [token,fence]:retirementFences_) {
+        (void)token;
+        if(fence)vkDestroyFence(device_,fence,nullptr);
+    }
+    retirementFences_.clear();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
+    // Views must be destroyed before the parent VkImage, after device idle.
+    views_.each([&](VTextureView& v) {
+        if (v.native) vkDestroyImageView(device_, v.native, nullptr);
+    });
     textures_.each(killTex);
     killTex(dummy_); killTex(dummyDepth_); killTex(back_); killTex(backDepth_);
     shaders_.each([&](VShader& s) { for (VkShaderModule m : {s.vert, s.frag, s.hdrVert, s.hdrFrag}) if (m) vkDestroyShaderModule(device_, m, nullptr); });
     pipelines_.each([&](VPipeline& p) { for (auto& v : p.variants) vkDestroyPipeline(device_, v.pipeline, nullptr); });
+    computes_.each([&](VCompute& c) {
+        if (c.pipeline) vkDestroyPipeline(device_, c.pipeline, nullptr);
+        if (c.layout) vkDestroyPipelineLayout(device_, c.layout, nullptr);
+        if (c.descriptorLayout) vkDestroyDescriptorSetLayout(device_, c.descriptorLayout, nullptr);
+        if (c.shader) vkDestroyShaderModule(device_, c.shader, nullptr);
+    });
     for (auto& s : samplers_) vkDestroySampler(device_, s.sampler, nullptr);
+    customSamplers_.each([&](VSampler& s) {
+        if (s.native) vkDestroySampler(device_, s.native, nullptr);
+    });
     for (auto& f : framebuffers_) vkDestroyFramebuffer(device_, f.fb, nullptr);
     for (auto& r : renderPasses_) vkDestroyRenderPass(device_, r.pass, nullptr);
+    for (auto& r : mrtRenderPasses_) vkDestroyRenderPass(device_, r.pass, nullptr);
     for (auto& c : staging_) { vkDestroyBuffer(device_, c.buffer, nullptr); memory_.release(c.alloc); }
     for (auto& s : slots_) {
         for (auto p : s.descriptorPools) vkDestroyDescriptorPool(device_, p, nullptr);
@@ -410,15 +439,83 @@ void VulkanDevice::ensureBackBuffer(int w, int h) {
     initImageLayout(backDepth_, cb, true);
 }
 
+bool VulkanDevice::waitForResourceIdle() {
+    // Frame serial counts submissions, NOT GPU completion. Only a
+    // successful device-wide wait establishes the retirement fence.
+    // Caller must be outside passes and before any current-frame packet
+    // can borrow a model scheduled for destruction.
+    if(!device_ || inPass_ || !healthy_)return false;
+    const VkResult result=vkDeviceWaitIdle(device_);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        return false;
+    }
+    completed_=std::max(completed_,serial_-1);
+    collectGarbage();
+    return true;
+}
+
+uint64_t VulkanDevice::beginResourceRetirement() {
+    // Enqueue an empty ordered queue submission. The fence completes only
+    // after earlier submitted graphics/transfer work on this same queue.
+    // Recorded-but-unsubmitted current-frame commands are NOT included.
+    if(!device_ || !healthy_ || inPass_ || !queue_)return 0;
+    VkFence fence=VK_NULL_HANDLE;
+    const auto info=vkStruct<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+    if(vkCreateFence(device_,&info,nullptr,&fence)!=VK_SUCCESS)return 0;
+    const VkResult result=vkQueueSubmit(queue_,0,nullptr,fence);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        vkDestroyFence(device_,fence,nullptr);
+        return 0;
+    }
+    const uint64_t token=nextRetirementToken_++;
+    retirementFences_.emplace(token,fence);
+    return token;
+}
+
+bool VulkanDevice::resourceRetirementComplete(uint64_t token) {
+    return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+}
+
+ResourceRetirementStatus VulkanDevice::resourceRetirementStatus(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_ || !healthy_)
+        return ResourceRetirementStatus::Failed;
+    const VkResult result=vkGetFenceStatus(device_,it->second);
+    if(result==VK_SUCCESS)return ResourceRetirementStatus::Complete;
+    if(result==VK_NOT_READY)return ResourceRetirementStatus::Pending;
+    if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+    return ResourceRetirementStatus::Failed;
+}
+
+void VulkanDevice::endResourceRetirement(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    if(vkGetFenceStatus(device_,it->second)!=VK_SUCCESS)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
+void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
+    // This API requires an earlier successful vkDeviceWaitIdle: it is
+    // forbidden for failed/vkDeviceLost paths with incomplete submissions.
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
     const VkResult waited = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
-    // completed_ must mean a *successfully signalled fence*, not merely
-    // that a wait was attempted. On device loss/other errors disallow pool
-    // recycling: there is no proof earlier GPU readers finished.
+    // A failed fence wait is not a completed GPU frame.
     if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
     else healthy_ = false;
-    collectGarbage();
+    if (healthy_) {
+        collectGarbage();
+        deliverComputeReadbacks();
+    }
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;
@@ -448,8 +545,49 @@ VkCommandBuffer VulkanDevice::transferCmd() {
     return s.pre;
 }
 
+void VulkanDevice::deliverTextureReads() {
+    // Completed serials are advanced only after a frame-slot fence is waited.
+    // Never touch mapped staging data while the GPU can still write to it,
+    // and never run the user's callback inside garbage collection.
+    struct Done { TextureReadFn callback; TextureReadbackResult result; };
+    std::vector<Done> ready;
+    for (size_t i=0; i<textureReads_.size();) {
+        TextureRead& r = textureReads_[i];
+        if (r.serial > completed_) { ++i; continue; }
+        TextureReadbackResult result;
+        result.format = r.format;
+        if (healthy_ && r.alloc.mapped && r.bytes) {
+            result.width = r.width;
+            result.height = r.height;
+            result.pixels.resize(r.bytes);
+            std::memcpy(result.pixels.data(), r.alloc.mapped, r.bytes);
+        }
+        if (r.buffer) vkDestroyBuffer(device_, r.buffer, nullptr);
+        memory_.release(r.alloc);
+        ready.push_back({std::move(r.callback), std::move(result)});
+        textureReads_.erase(textureReads_.begin()+ptrdiff_t(i));
+    }
+    for (auto& item : ready)
+        if (item.callback) item.callback(std::move(item.result));
+}
+
+bool VulkanDevice::waitForSubmittedGpuWork() {
+    if (!device_ || !queue_ || !healthy_) return false;
+    // Only call at the PRE-RENDER boundary. Current frame's recording
+    // command buffer may be open, but no new draw referencing old resources
+    // has been encoded. vkQueueWaitIdle covers already SUBMITTED work only.
+    if (vkQueueWaitIdle(queue_) != VK_SUCCESS) {
+        healthy_ = false;
+        return false;
+    }
+    if (serial_ > 0) completed_ = std::max(completed_,serial_-1);
+    collectGarbage(); // uses real GPU-idle confirmation, not CPU frame age
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
+    deliverTextureReads();
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

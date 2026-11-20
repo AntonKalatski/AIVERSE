@@ -1,7 +1,8 @@
 // Deterministic, asset-free visual fixture shared by GL and Metal runners.
 #pragma once
-#include "engine/render/PostFx.h"
-#include "engine/render/ScreenLighting.h"
+#include "engine/render/Prisma.h"
+#include "engine/render/PrismaScreenLighting.h"
+#include "engine/world/PhysisSkyBridge.h"
 #include "HdrShaders.h"
 #include "engine/render/graph/ShaderGraph.h"
 #include <cstdio>
@@ -15,8 +16,8 @@ void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
 struct HdrScene {
     Renderer3D renderer;
-    PostFx post;
-    ScreenLighting screen;
+    Prisma post;
+    PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
     RTSCamera camera;
@@ -67,7 +68,7 @@ struct HdrScene {
         }
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
-        post.setQuality(PostFx::defaultQualityFor(d,false));
+        post.setQuality(Prisma::defaultQualityFor(d,false));
         verify = std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
@@ -101,12 +102,69 @@ struct HdrScene {
                 if (!uploadModel(d,*shadowReceiver)) { failed=true; return; }
             }
         }
+        if(const char* skyCase=std::getenv("AIVERSE_PHYSICAL_SKY_TEST")) {
+            advanced=false;renderer.setModelReflectionsEnabled(false);
+            post.configure(Json::parse(R"({"hdr":"on","physicalSky":{"enabled":true},"effects":[{"type":"fxaa"}]})"),{});
+            post.setQuality(PrismaQuality::High);post.setPhysicalSkyTime(0);
+            camera.target={0,5,0};camera.distance=20;camera.pitch=-.12f;camera.yaw=0;
+            renderer.lighting.sunDir={.15f,.22f,-1};renderer.lighting.sunIntensity=1;
+            renderer.lighting.sunColor={1,1,1};
+            auto sky=post.physicalSky();sky.coverage=.53f;
+            const std::string which=skyCase;
+            if(which=="clear")sky.clouds=false;
+            if(which=="medium")post.setQuality(PrismaQuality::Medium);
+            if(which=="ortho")camera.ortho=true;
+            if(which=="night")renderer.lighting.sunDir={.15f,-.3f,-1};
+            if(which=="no-rays")sky.godRays=false;
+            if(which=="sunset")renderer.lighting.sunDir={.15f,.025f,-1};
+            if(which=="inside"){camera.target.y=2200;camera.pitch=.05f;}
+            if(which=="above"){camera.target.y=4000;camera.pitch=.35f;}
+            post.setPhysicalSky(sky);
+            if(which=="physis-dry"||which=="physis-storm") {
+                World weatherWorld;physis::Settings config;config.width=config.height=1;
+                physis::initialize(weatherWorld,config);
+                const Vec3 location{1_fx,0_fx,1_fx};
+                auto& atmosphere=weatherWorld.get<physis::Atmosphere>(physis::cellAtPosition(weatherWorld,location));
+                atmosphere.humidity=which=="physis-dry"?0_fx:1_fx;
+                atmosphere.rain=which=="physis-dry"?0_fx:1_fx;
+                atmosphere.wind={10_fx,-2_fx};
+                world::PhysisSkyBinding binding;
+                world::applyPhysisSkyFrame(post,binding.update(weatherWorld,location,1,1.0/30,sky));
+            }
+        }
+        if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST")) {
+            advanced=false;renderer.setModelReflectionsEnabled(false);
+            post.configure(Json::parse(R"({"hdr":"on","effects":[{"type":"fxaa"}]})"),{});
+            post.setQuality(PrismaQuality::High);
+            LocalFogSettings settings;settings.enabled=true;post.setLocalFog(settings);
+            const std::string which=fogCase;
+            FogVolume volume;volume.id=1;volume.region.center={0,1,0};volume.region.radius=7;
+            volume.region.feather=2;volume.density=.3f;volume.color={.65f,.78f,.95f};
+            if(which=="obb"||which=="obb-reveal") {
+                volume.region.shape=FogShape::Obb;volume.region.halfExtents={6,3,2};
+                volume.region.orientation={0,.38268343f,0,.92387953f};
+            }
+            if(which=="behind"){volume.region.center={0,-4,0};volume.region.radius=1;volume.region.feather=.1f;}
+            if(which=="inside"){camera.target={0,1,0};camera.distance=1;camera.pitch=.1f;}
+            if(!post.localFog().upsert(volume)){failed=true;return;}
+            if(which=="reveal"||which=="obb-reveal"||which=="move") {
+                FogReveal reveal;reveal.id=1;reveal.region=volume.region;reveal.region.feather=0;post.localFog().upsert(reveal);
+            }
+            if(which=="off") { settings.enabled=false;post.setLocalFog(settings); }
+            if(which=="medium")post.setQuality(PrismaQuality::Medium);
+            if(which=="ortho")camera.ortho=true;
+            if(which=="combined"){PhysicalSkySettings sky;sky.enabled=true;post.setPhysicalSky(sky);post.setPhysicalSkyTime(0);}
+        }
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
+        if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
+            FogReveal reveal=post.localFog().reveals()[0];reveal.region.center={100,0,0};
+            if(!post.localFog().upsert(reveal)){failed=true;return;}
+        }
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
         if (shadowReceiver) { ModelDraw receiver; receiver.model=shadowReceiver.get(); renderer.drawModel(receiver); }
@@ -125,7 +183,7 @@ struct HdrScene {
         gfx::PassDesc pass = output; pass.clearColor[0]=0.09f;pass.clearColor[1]=0.11f;pass.clearColor[2]=0.15f;
         renderer.render(pass,pipeline());
         const bool hdr=post.linearScene();
-        renderer.resolvePostFx();
+        renderer.resolvePrisma();
         if(frame==5) {
             std::printf("scene=%s, post passes=%d, ssr=%d, reflection=%d\n",hdr?"HDR":"LDR",post.stats().passes,renderer.ssrActive(),renderer.lights.stats().reflection);
             auto receive = [this](int cw,int ch,std::vector<uint8_t> px){
@@ -144,14 +202,14 @@ struct HdrScene {
         }
     }
     void drawTemporal(gfx::Device& d,int w,int h) {
-        PostFxSettings settings;settings.hdr=HdrMode::On;post.setSettings(settings);post.setQuality(PostFxQuality::High);
+        PrismaSettings settings;settings.hdr=HdrMode::On;post.setSettings(settings);post.setQuality(PrismaQuality::High);
         screen.setDiffuseBounceEnabled(false);renderer.lighting.tonemap=false;
         probeBg->materials[0].baseColor={1,1,1,1};
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(screen.jittered(camera,w,h),w,h);
         ModelDraw bar;bar.model=probeBg.get();bar.world=mat4::translate({.123f,.057f,0})*mat4::scale({.01f,.02f,.01f});renderer.drawModel(bar);
         auto pass=output;pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
-        renderer.render(pass,pipeline());renderer.resolvePostFx();
+        renderer.render(pass,pipeline());renderer.resolvePrisma();
         if(frame>=40&&frame<56){
             const int sample=frame;
             auto receive=[this,sample](int cw,int ch,std::vector<uint8_t> px){
@@ -171,11 +229,11 @@ struct HdrScene {
     }
     void drawProbe(gfx::Device& d, int w, int h) {
         const bool legacy = probeIndex==3 || probeIndex==4;
-        PostFxSettings settings;
+        PrismaSettings settings;
         settings.hdr=probeIndex==3?HdrMode::Off:HdrMode::On;
-        if(probeIndex==1 || probeIndex==6) settings=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"colorGrade","exposure":-2}]})"),Json());
-        if(probeIndex==6) settings=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":2,"intensity":1},{"type":"colorGrade","exposure":-2}]})"),Json());
-        post.setSettings(settings);post.setQuality(probeIndex==4?PostFxQuality::Low:PostFxQuality::High);
+        if(probeIndex==1 || probeIndex==6) settings=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"colorGrade","exposure":-2}]})"),Json());
+        if(probeIndex==6) settings=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":2,"intensity":1},{"type":"colorGrade","exposure":-2}]})"),Json());
+        post.setSettings(settings);post.setQuality(probeIndex==4?PrismaQuality::Low:PrismaQuality::High);
         renderer.lighting.tonemap=probeIndex==1 || probeIndex==6;
         const float value=(probeIndex==1 || probeIndex==6)?4.0f:0.25f;
         probeBg->materials[0].baseColor={value,value,value,1};
@@ -272,14 +330,14 @@ struct HdrScene {
         if(probeIndex==5) { // alternate view sizes in the same frame, as the editor does
             renderer.beginScene(camera,w/2,h/2);
             ModelDraw small;small.model=probeBg.get();renderer.drawModel(small);
-            renderer.render(output,pipeline());renderer.resolvePostFx();d.endPass();
+            renderer.render(output,pipeline());renderer.resolvePrisma();d.endPass();
         }
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
         ModelDraw bg;bg.model=probeBg.get();
         if(probeIndex==37)bg.world=mat4::rotate(quat::axisAngle({0,1,0},3.14159265f));
         renderer.drawModel(bg);
         if(probeIndex==2) {ModelDraw fg;fg.model=probeFg.get();fg.world=mat4::translate({0,0,1});renderer.drawModel(fg);}
-        renderer.render(output,pipeline());renderer.resolvePostFx();
+        renderer.render(output,pipeline());renderer.resolvePrisma();
         if(frame==5) {
             const int test=probeIndex;
             float expected=probeIndex==2?0.5f:0.25f;

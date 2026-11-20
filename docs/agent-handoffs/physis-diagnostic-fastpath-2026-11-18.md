@@ -1,7 +1,7 @@
 # PHYSIS Stage 15 — direct ECS diagnostic layers / reference parity (2026-11-18)
 
-**Repository** `chromealex/AIVERSE` · **branch** `feature/physis-nature-simulation` · draft PR #25.  
-**Implementation SHA** `99642e39f0bbdd6e6ff45d95ec414dff34941d24`; **test SHA** `55f1cc735343cd56d2a6e1db5777926e8a1d2a28`.  
+**Repository** `chromealex/AIVERSE` · **branch** `feature/physis-nature-simulation` · draft PR #25.
+**Implementation SHA** `99642e39f0bbdd6e6ff45d95ec414dff34941d24`; **test SHA** `55f1cc735343cd56d2a6e1db5777926e8a1d2a28`.
 **Verification**: GitHub write completed. **NOT RUN** CMake configure, native build, CTest, CI, Box3D, editor profiling. GitHub checkout unavailable to the current container due `Could not resolve host: github.com`; do not claim any PASS.
 
 ## Problem / improvement

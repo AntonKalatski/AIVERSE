@@ -47,6 +47,11 @@ void Renderer3D::renderReflection() {
     const float3 savedCam = camPos_;
     viewProj_ = mat4::scale({-1, 1, 1}) * viewProj_ * mirror;
     camPos_ = {camPos_.x, 2 * planeY - camPos_.y, camPos_.z};
+    // Actual mirrored camera and target dimensions are only known HERE.
+    // Dispatch STRATA before lights.beginReflection starts the GPU pass;
+    // Renderer3D owns every later material binding and indexed draw.
+    prepareStrataAuxiliaryGpuPackets(
+        GpuIndexedPass::PlanarReflection,viewProj_,w,h);
 
     const float3 sky = (lighting.fogColor + lighting.skyColor) * 0.5f;
     if (lights.beginReflection(w, h, sky)) {
@@ -95,6 +100,11 @@ void Renderer3D::renderSpotShadow() {
     const mat4 savedLVP = lightViewProj_;
     lightViewProj_ = lights.spotShadowMatrix();
     geometryShadowSize_=lights.spotShadowSize();
+    // Spot shadow uses a DIFFERENT light matrix from the sun. Build a
+    // fresh GPU cluster selection before opening this depth render pass.
+    prepareStrataAuxiliaryGpuPackets(
+        GpuIndexedPass::SpotShadow,lightViewProj_,
+        geometryShadowSize_,geometryShadowSize_);
     dev_->beginPass(lights.spotShadowPass());
     dev_->setViewport({0, 0, lights.spotShadowSize(), lights.spotShadowSize()});
     dev_->setPipeline(shadowPipe_);

@@ -1,8 +1,8 @@
 # PHYSIS Stage 20 — Scene radius gizmos, grid snapping and Undo-safe authoring (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Working branch:** `feature/physis-nature-simulation`, draft PR #25  
-**Main integration baseline:** `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` (already an ancestor; no new main merge necessary when this stage started)  
+**Repository:** `chromealex/AIVERSE`
+**Working branch:** `feature/physis-nature-simulation`, draft PR #25
+**Main integration baseline:** `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` (already an ancestor; no new main merge necessary when this stage started)
 **Previous handoff:** `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md` (Stage 19, HEAD `6eccd89f134e38a6216688829ffa7d9c73d56a02`)
 
 ## Actual commits

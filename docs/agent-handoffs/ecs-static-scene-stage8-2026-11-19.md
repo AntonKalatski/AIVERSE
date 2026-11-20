@@ -1,8 +1,8 @@
 # AIVERSE Stage 8 — fix skill catalog / routing validation
 
-Date: 2026-11-19  
-Repo: `chromealex/AIVERSE`  
-Branch: `feature/ecs-static-prefab-scene-integration`  
+Date: 2026-11-19
+Repo: `chromealex/AIVERSE`
+Branch: `feature/ecs-static-prefab-scene-integration`
 Prior handoff: `docs/agent-handoffs/ecs-static-scene-stage7-2026-11-19.md`
 
 **Status: source changes committed and repository references verified;

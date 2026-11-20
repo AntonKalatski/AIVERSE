@@ -1,8 +1,8 @@
 # PHYSIS Stage 4 — deterministic disasters: fire, flood and quake (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`  
-**Implementation SHA:** `2ea0c8c23d2a6302011245d4fe58f0e49e854ea9`  
-**Handoff commit:** `git log -1 -- docs/agent-handoffs/physis-disasters-2026-11-18.md`  
+**Branch:** `feature/physis-nature-simulation`
+**Implementation SHA:** `2ea0c8c23d2a6302011245d4fe58f0e49e854ea9`
+**Handoff commit:** `git log -1 -- docs/agent-handoffs/physis-disasters-2026-11-18.md`
 **Verification:** **NOT RUN**: GitHub connector writes only, no actual compiler, CTest, sanitizer, CI or live game execution.
 
 ## Delivered files

@@ -1,0 +1,245 @@
+#include "engine/gfx/Gfx.h"
+#include <limits>
+#include <cstdio>
+
+using namespace aiverse::gfx;
+namespace {
+int failures = 0;
+void check(bool yes, const char* what) {
+    if (!yes) { ++failures; std::printf("FAIL: %s\n", what); }
+}
+TextureDesc size2D(int w = 128, int h = 64) {
+    TextureDesc d;
+    d.width = w; d.height = h;
+    return d;
+}
+}
+int main() {
+    auto d = size2D();
+    check(validateTextureDesc(d) == TextureDescError::None, "legacy 2D");
+    check(d.dimension == TextureDimension::Texture2D && d.depth == 1 &&
+          d.arrayLayers == 1 && d.sampleCount == 1 && d.mipLevels == 0, "legacy defaults");
+    d.width = 0;
+    check(validateTextureDesc(d) == TextureDescError::InvalidExtent, "zero width");
+    d = size2D(); d.dimension = TextureDimension::Texture1D; d.height = 1;
+    check(validateTextureDesc(d) == TextureDescError::None, "1D descriptor");
+    d.height = 2;
+    check(validateTextureDesc(d) == TextureDescError::InvalidDimension, "1D rejects height");
+    d = size2D(); d.dimension = TextureDimension::Texture3D; d.depth = 9;
+    check(validateTextureDesc(d) == TextureDescError::None, "3D descriptor");
+    d.arrayLayers = 2;
+    check(validateTextureDesc(d) == TextureDescError::InvalidDimension, "3D disallows array layers");
+    d = size2D(); d.dimension = TextureDimension::Texture2DArray; d.arrayLayers = 9;
+    check(validateTextureDesc(d) == TextureDescError::None, "2DArray descriptor");
+    d = size2D(128, 128); d.dimension = TextureDimension::Cube; d.arrayLayers = 6;
+    check(validateTextureDesc(d) == TextureDescError::None, "cube descriptor");
+    d.arrayLayers = 5;
+    check(validateTextureDesc(d) == TextureDescError::InvalidDimension, "cube requires six faces");
+    d = size2D(128, 128); d.dimension = TextureDimension::CubeArray; d.arrayLayers = 12;
+    check(validateTextureDesc(d) == TextureDescError::None, "cube array descriptor");
+    d.arrayLayers = 7;
+    check(validateTextureDesc(d) == TextureDescError::InvalidDimension, "cube array layer count");
+    d = size2D(); d.mipLevels = maxTextureMipLevels(d.width, d.height) + 1;
+    check(validateTextureDesc(d) == TextureDescError::InvalidMipCount, "mip cap");
+    d = size2D(); d.renderTarget = true; d.sampleCount = 4;
+    check(validateTextureDesc(d) == TextureDescError::None, "MSAA render target descriptor");
+    d.mipmaps = true;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA mipmaps rejected");
+    d = size2D(); d.compare = true;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "depth comparison needs depth");
+    d.format = PixelFormat::Depth;
+    check(validateTextureDesc(d) == TextureDescError::None, "depth comparison");
+    d.storage = true;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "depth storage rejected");
+    d = size2D();
+    d.format = PixelFormat::RGBA8; d.storage = true;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "uncompressed writable RGBA8 texture descriptor is structurally valid");
+    d.dimension = TextureDimension::Texture2DArray; d.arrayLayers = 4;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "array writable image descriptor has valid generic shape");
+    d.dimension = TextureDimension::Texture3D;
+    d.arrayLayers = 1; d.depth = 4;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "3D writable image descriptor has valid generic shape");
+    d.format = PixelFormat::BC7;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage,
+          "compressed writable image is forbidden by common descriptor");
+    // View subresources must remain in the parent's mip/layer bounds.
+    d = size2D(64,64); d.mipLevels = 7;
+    TextureViewDesc v; v.baseMipLevel = 1; v.mipLevelCount = 4;
+    check(validateTextureViewDesc(d,v), "valid 2D mip range");
+    v.mipLevelCount = 7;
+    check(!validateTextureViewDesc(d,v), "invalid 2D mip range");
+    d = size2D(64,64); d.dimension = TextureDimension::Texture2DArray; d.arrayLayers = 8;
+    v = TextureViewDesc{}; v.dimension = TextureDimension::Texture2DArray;
+    v.baseArrayLayer = 6; v.arrayLayerCount = 2;
+    check(validateTextureViewDesc(d,v), "array view near end");
+    v.arrayLayerCount = 3;
+    check(!validateTextureViewDesc(d,v), "array view past end");
+    v.dimension = TextureDimension::Texture2D; v.arrayLayerCount = 1;
+    check(validateTextureViewDesc(d,v), "single array slice as 2D");
+    d = size2D(64,64); d.dimension = TextureDimension::CubeArray; d.arrayLayers = 12;
+    v = TextureViewDesc{}; v.dimension = TextureDimension::Cube;
+    v.baseArrayLayer = 6; v.arrayLayerCount = 6;
+    check(validateTextureViewDesc(d,v), "cube view from cube array");
+    v.baseArrayLayer = 5;
+    check(!validateTextureViewDesc(d,v), "cube view must align to six faces");
+    d = size2D(); d.format = PixelFormat::Depth;
+    v = TextureViewDesc{}; v.aspect = TextureAspect::Depth;
+    check(validateTextureViewDesc(d,v), "depth aspect");
+    v.aspect = TextureAspect::Color;
+    check(!validateTextureViewDesc(d,v), "reject color view of depth");
+    SamplerDesc sampler;
+    check(validateSamplerDesc(sampler), "default sampler");
+    sampler.maxLod = -1.0f;
+    check(!validateSamplerDesc(sampler), "invalid sampler LOD");
+    sampler.maxLod = 8.0f; sampler.maxAnisotropy = 0.0f;
+    check(!validateSamplerDesc(sampler), "invalid anisotropy");
+
+    PipelineDesc oldPipeline;
+    check(oldPipeline.colorAttachmentCount == 1 &&
+          oldPipeline.additionalColorFormats[0] == PixelFormat::RGBA8,
+          "legacy pipeline retains one color output");
+    RenderTargetPassDesc rp;
+    check(!validateRenderTargetPassDesc(rp), "empty offscreen pass is invalid");
+    rp.colorCount = 1; rp.colors[0].texture.id = 1;
+    check(validateRenderTargetPassDesc(rp), "single color attachment");
+    rp.colorCount = 2; rp.colors[1].texture.id = 2;
+    check(validateRenderTargetPassDesc(rp), "two distinct color attachments");
+    rp.colors[1].texture.id = 1;
+    check(!validateRenderTargetPassDesc(rp), "reject simultaneous writes to same subresource");
+    rp.colors[1].mipLevel = 1;
+    check(validateRenderTargetPassDesc(rp), "distinct mip subresources are structurally legal");
+    rp.depth.texture.id = 3; rp.clearDepth = 0.5f;
+    check(validateRenderTargetPassDesc(rp), "color plus depth");
+    rp.depth.texture.id = 1;
+    check(!validateRenderTargetPassDesc(rp), "reject color and depth alias");
+    rp.depth.texture.id = 3; rp.colorCount = 0;
+    check(validateRenderTargetPassDesc(rp), "depth-only pass");
+    rp.depth.mipLevel = -1;
+    check(!validateRenderTargetPassDesc(rp), "reject invalid depth mip");
+    rp.depth.mipLevel = 0; rp.clearDepth = 2.0f;
+    check(!validateRenderTargetPassDesc(rp), "reject invalid depth clear value");
+    rp = RenderTargetPassDesc{}; rp.colorCount = 5;
+    check(!validateRenderTargetPassDesc(rp), "reject color count > 4");
+    rp = RenderTargetPassDesc{}; rp.colorCount = 1; rp.colors[0].texture.id = 2;
+    rp.colors[0].resolveTexture.id = 3;
+    check(validateRenderTargetPassDesc(rp), "valid optional resolve descriptor");
+    rp.colors[0].resolveTexture.id = 2;
+    check(!validateRenderTargetPassDesc(rp), "reject resolve to same subresource");
+    rp.colors[0].resolveTexture.id = 3; rp.colors[0].resolveMipLevel = -1;
+    check(!validateRenderTargetPassDesc(rp), "reject negative resolve mip");
+    rp.colors[0].resolveMipLevel = 0; rp.depth.resolveTexture.id = 4;
+    check(!validateRenderTargetPassDesc(rp), "reject unsupported depth resolve");
+    d = size2D(8,8); d.renderTarget = true; d.sampleCount = 4;
+    check(validateTextureDesc(d) == TextureDescError::None, "MSAA color target");
+    d.compare = true; d.format = PixelFormat::Depth;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA depth compare must be explicit");
+    d.compare = false; d.format = PixelFormat::BC7;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA compressed texture disallowed");
+    d.format = PixelFormat::RGBA8; d.sampleCount = 3;
+    check(validateTextureDesc(d) == TextureDescError::InvalidSampleCount, "reject nonstandard MSAA samples");
+    check(isCompressedTextureFormat(PixelFormat::BC1_sRGB) &&
+          compressedTextureBlockBytes(PixelFormat::BC1_sRGB) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::ETC2_RGB8_sRGB) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::BC7_sRGB) == 16 &&
+          compressedTextureBlockSize(PixelFormat::ASTC_6x6_sRGB) == 6,
+          "native compressed sRGB variants retain correct block extents");
+    check(isCompressedTextureFormat(PixelFormat::BC4) &&
+          isCompressedTextureFormat(PixelFormat::BC5) &&
+          isCompressedTextureFormat(PixelFormat::EAC_R11),
+          "all new compressed formats are recognized");
+    check(!isCompressedTextureFormat(PixelFormat::RGBA8) &&
+          compressedTextureBlockBytes(PixelFormat::RGBA8) == 0,
+          "uncompressed texture is not misclassified");
+    check(compressedTextureBlockBytes(PixelFormat::BC4) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::EAC_R11) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::BC5) == 16 &&
+          compressedTextureBlockSize(PixelFormat::ASTC_6x6) == 6,
+          "shared compression dimensions and byte counts");
+    TextureDesc bc;
+    bc.width = bc.height = 4;
+    bc.format = PixelFormat::BC5;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "compressed format without mip payload is rejected");
+    const uint8_t blockData[16] = {};
+    const void* levelPointers[1] = {blockData};
+    const size_t sizeValid[1] = {16}, sizeShort[1] = {8};
+    bc.levelCount = 1;
+    bc.levelData = levelPointers;
+    bc.levelSize = sizeValid;
+    check(validateTextureDesc(bc) == TextureDescError::None,
+          "BC5 one block payload is valid");
+    bc.levelSize = sizeShort;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "truncated compressed block rejected");
+    bc.levelSize = sizeValid; bc.mipmaps = true;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "compressed mip regeneration rejected");
+    bc.mipmaps = false;
+    bc.dimension = TextureDimension::Cube;
+    bc.arrayLayers = 6;
+    bc.levelSize = sizeValid;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "cube payload needs six complete faces");
+    const size_t cubeSize[1] = {96};
+    bc.levelSize = cubeSize;
+    check(validateTextureDesc(bc) == TextureDescError::None,
+          "BC5 six-face compressed cube payload");
+    check(uncompressedTexturePixelBytes(PixelFormat::RGBA8) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG8) == 2 &&
+          uncompressedTexturePixelBytes(PixelFormat::R16F) == 2 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG16F) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::R32F) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG32F) == 8 &&
+          uncompressedTexturePixelBytes(PixelFormat::RGBA32F) == 16,
+          "typed single/dual-channel data texture strides");
+    check(uncompressedTexturePixelBytes(PixelFormat::BC5) == 0 &&
+          uncompressedTexturePixelBytes(PixelFormat::Depth) == 0,
+          "compressed/depth formats do not have CPU color stride");
+    TextureDesc typed;
+    typed.width = typed.height = 8;
+    typed.format = PixelFormat::RG16F;
+    typed.mipmaps = true;
+    check(validateTextureDesc(typed) == TextureDescError::InvalidUsage,
+          "typed data textures reject unverified automatic mip generation");
+    typed.mipmaps = false;
+    typed.mipLevels = 4;
+    check(validateTextureDesc(typed) == TextureDescError::None,
+          "typed data textures allow explicitly allocated mip chain");
+    TextureDesc footprint;
+    footprint.width = footprint.height = 4;
+    footprint.dimension = TextureDimension::Texture2DArray;
+    footprint.arrayLayers = 2;
+    footprint.mipLevels = 3;
+    check(estimateTextureFootprint(footprint) == 168,
+          "RGBA8 two-layer mip-chain allocation estimate");
+    footprint.dimension = TextureDimension::Cube;
+    footprint.arrayLayers = 6;
+    footprint.format = PixelFormat::BC7;
+    footprint.mipLevels = 2;
+    check(estimateTextureFootprint(footprint) == 192,
+          "BC7 six-face compressed cube estimate");
+    footprint = {};
+    footprint.width = footprint.height = 2;
+    footprint.format = PixelFormat::Depth;
+    footprint.renderTarget = true;
+    footprint.sampleCount = 4;
+    check(estimateTextureFootprint(footprint) == 64,
+          "four-sample depth renderbuffer estimate");
+    footprint = {};
+    footprint.width = footprint.height = 4;
+    footprint.format = PixelFormat::RG16F;
+    check(estimateTextureFootprint(footprint) == 64,
+          "typed two-channel half-float estimate");
+    footprint = {};
+    footprint.width = footprint.height = std::numeric_limits<int>::max();
+    footprint.arrayLayers = std::numeric_limits<int>::max();
+    footprint.dimension = TextureDimension::Texture2DArray;
+    footprint.sampleCount = 16;
+    check(estimateTextureFootprint(footprint) == 0,
+          "overflow-safe allocation estimate");
+    std::printf("Texture descriptor contract: %d failures\n", failures);
+    return failures ? 1 : 0;
+}

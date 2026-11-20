@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <memory>
 #include <vector>
 
 using namespace aiverse::gfx;
@@ -97,6 +98,21 @@ void translation() {
     aiverse::gfx::vk::SpirvProgram p;
     CHECK(aiverse::gfx::vk::compileProgram(kVs, kColorFs, false, p) && !p.vertex.empty() && !p.fragment.empty());
     CHECK(!aiverse::gfx::vk::compileProgram(kVs, "void main() { undefined_call(); }", false, p) && !p.error.empty());
+    std::vector<uint32_t> computeSpv;
+    std::string computeError;
+    const char* computeSource = R"(
+layout(set=0,binding=0,rgba8) uniform writeonly image2D image0;
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x>=4 || pixel.y>=4) return;
+    imageStore(image0,pixel,vec4(1.0,0.25,0.5,1.0));
+})";
+    CHECK(aiverse::gfx::vk::compileComputeProgram(
+        computeSource,computeSpv,computeError) && !computeSpv.empty());
+    CHECK(!aiverse::gfx::vk::compileComputeProgram(
+        "void main() { invalid_storage_image_call(); }",computeSpv,
+        computeError) && !computeError.empty());
+
 }
 } // namespace
 
@@ -111,6 +127,104 @@ int main() {
     Device& d = *dev;
     std::printf("%s\n", d.info().name.c_str());
     CHECK(d.info().backend == Backend::Vulkan && !d.info().clipDepthZeroToOne && !d.info().renderTargetFlipY);
+
+    {   // Texture resource inspector reports only living GPU allocations.
+        TextureDesc inventoryDesc;
+        inventoryDesc.width = inventoryDesc.height = 8;
+        inventoryDesc.dimension = TextureDimension::Texture2DArray;
+        inventoryDesc.arrayLayers = 2;
+        inventoryDesc.mipLevels = 4;
+        const TextureHandle inventoryTexture = d.createTexture(inventoryDesc);
+        CHECK(inventoryTexture.valid());
+        if (inventoryTexture.valid()) {
+            bool found = false;
+            for (const auto& entry : d.textureResources()) {
+                if (entry.handle == inventoryTexture) {
+                    found = true;
+                    CHECK(entry.dimension == TextureDimension::Texture2DArray);
+                    CHECK(entry.format == PixelFormat::RGBA8);
+                    CHECK(entry.width == 8 && entry.height == 8);
+                    CHECK(entry.depth == 1 && entry.arrayLayers == 2);
+                    CHECK(entry.mipLevels == 4 && entry.sampleCount == 1);
+                    CHECK(!entry.renderTarget && !entry.storage);
+                    CHECK(entry.estimatedBytes == 680); // 2*(8²+4²+2²+1)*4
+                }
+            }
+            CHECK(found);
+            d.destroyTexture(inventoryTexture);
+            bool stillReported = false;
+            for (const auto& entry : d.textureResources())
+                stillReported |= entry.handle == inventoryTexture;
+            CHECK(!stillReported);
+        }
+    }
+
+
+    {   // Real Vulkan compute storage texture, barrier and async GPU readback.
+        // This runs only when the physical queue and format support image stores.
+        CHECK(!d.supportsStorageTexture(PixelFormat::BC7,
+                                        TextureDimension::Texture2D));
+        if (d.supportsCompute() &&
+            d.supportsStorageTexture(PixelFormat::RGBA8,
+                                     TextureDimension::Texture2D)) {
+            TextureDesc image;
+            image.width=image.height=4;
+            image.mipLevels=1;
+            image.storage=true;
+            image.format=PixelFormat::RGBA8;
+            const TextureHandle output=d.createTexture(image);
+            CHECK(output.valid());
+            ComputeDesc desc;
+            desc.glsl=R"(
+layout(set=0,binding=0,rgba8) uniform writeonly image2D image0;
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x>=4 || pixel.y>=4) return;
+    imageStore(image0,pixel,vec4(1.0,0.25,0.5,1.0));
+})";
+            const ComputeHandle program=d.createCompute(desc);
+            CHECK(program.valid());
+            if (program.valid() && output.valid()) {
+                struct ReadbackState {
+                    bool done=false;
+                    TextureReadbackResult result;
+                };
+                auto readState=std::make_shared<ReadbackState>();
+                d.beginFrame(W,H);
+                CHECK(d.beginCompute(program));
+                CHECK(d.bindComputeStorageTexture(0,output));
+                d.dispatch(4,4);
+                d.endCompute();
+                const bool queued=d.readTextureAsync(
+                    output,{},[readState](TextureReadbackResult result) {
+                        readState->done=true;
+                        readState->result=std::move(result);
+                    });
+                CHECK(queued);
+                d.endFrame();
+                for(int wait=0;wait<12 && queued && !readState->done;++wait) {
+                    d.beginFrame(W,H);
+                    d.endFrame();
+                }
+                const auto& pixels=readState->result;
+                CHECK(readState->done && pixels.success() &&
+                      pixels.width==4 && pixels.height==4 &&
+                      pixels.format==PixelFormat::RGBA8 &&
+                      pixels.pixels.size()==64);
+                if(pixels.success() && pixels.pixels.size()==64) {
+                    for(size_t i=0;i<pixels.pixels.size();i+=4) {
+                        CHECK(std::abs(int(pixels.pixels[i])-255)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+1])-64)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+2])-128)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+3])-255)<=1);
+                    }
+                }
+            }
+            if (program.valid()) d.destroyCompute(program);
+            if (output.valid()) d.destroyTexture(output);
+        } else
+            std::printf("Vulkan compute storage texture: SKIPPED (queue/format unavailable)\\n");
+    }
 
     ShaderDesc sd;
     sd.glslVertex = kVs; sd.glslFragment = kColorFs; sd.uniformSlots = 1;
@@ -197,6 +311,260 @@ int main() {
         CHECK(near(img2.at(4, H - 4), 0, 0, 255));
         d.destroyTexture(rt); d.destroyTexture(copy);
     }
+    {   // Explicit offscreen subresource pass: render mip 1 / array layer 1, then sample it.
+        TextureDesc rd; rd.width = 8; rd.height = 8;
+        rd.dimension = TextureDimension::Texture2DArray;
+        rd.arrayLayers = 2; rd.mipLevels = 3; rd.renderTarget = true;
+        const TextureHandle layeredColor = d.createTexture(rd);
+        CHECK(layeredColor.valid());
+        TextureDesc zd = rd; zd.format = PixelFormat::Depth;
+        const TextureHandle layeredDepth = d.createTexture(zd);
+        CHECK(layeredDepth.valid());
+        TextureViewDesc vd; vd.dimension = TextureDimension::Texture2D;
+        vd.baseMipLevel = 1; vd.baseArrayLayer = 1;
+        const TextureViewHandle slice = layeredColor.valid() ?
+            d.createTextureView(layeredColor, vd) : TextureViewHandle{};
+        CHECK(slice.valid());
+        SamplerDesc sampleDesc;
+        sampleDesc.minFilter = sampleDesc.magFilter = Filter::Nearest;
+        sampleDesc.mipFilter = SamplerMipFilter::None;
+        const SamplerHandle sampler = d.createSampler(sampleDesc);
+        CHECK(sampler.valid());
+        if (slice.valid() && sampler.valid() && layeredDepth.valid()) {
+            Image img = frame(d, [&] {
+                RenderTargetPassDesc pass;
+                pass.colorCount = 1;
+                pass.colors[0].texture = layeredColor;
+                pass.colors[0].mipLevel = 1;
+                pass.colors[0].arrayLayer = 1;
+                pass.colors[0].clearColor[0] = 0.0f;
+                pass.colors[0].clearColor[1] = 0.75f;
+                pass.colors[0].clearColor[2] = 1.0f;
+                pass.colors[0].clearColor[3] = 1.0f;
+                pass.depth.texture = layeredDepth;
+                pass.depth.mipLevel = 1;
+                pass.depth.arrayLayer = 1;
+                CHECK(d.supportsRenderTargetPasses());
+                CHECK(d.beginRenderTargets(pass));
+                d.endPass();
+                // A rejected mip must not start another pass or change the attachment state.
+                pass.colors[0].mipLevel = 20;
+                CHECK(!d.beginRenderTargets(pass));
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                CHECK(d.bindTextureView(0, slice, sampler));
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(img.w == W && img.h == H);
+            if (img.w == W && img.h == H)
+                CHECK(near(img.at(W / 2, H / 2), 0, 191, 255));
+        }
+        if (sampler.valid()) d.destroySampler(sampler);
+        if (slice.valid()) d.destroyTextureView(slice);
+        if (layeredColor.valid()) d.destroyTexture(layeredColor);
+        if (layeredDepth.valid()) d.destroyTexture(layeredDepth);
+    }
+    {   // Two-target MRT: independent per-attachment clear values and fragment outputs.
+        TextureDesc cd; cd.width = W; cd.height = H; cd.renderTarget = true;
+        const TextureHandle target0 = d.createTexture(cd);
+        const TextureHandle target1 = d.createTexture(cd);
+        CHECK(target0.valid() && target1.valid());
+        ShaderDesc shaderDesc;
+        shaderDesc.glslVertex = kVs;
+        shaderDesc.glslFragment = R"(
+in vec2 v_uv;
+layout(location=0) out vec4 color0;
+layout(location=1) out vec4 color1;
+void main() {
+    color0 = vec4(0.0, 0.0, 1.0, 1.0);
+    color1 = vec4(1.0, 1.0, 0.0, 1.0);
+}
+)";
+        shaderDesc.uniformSlots = 1;
+        const ShaderHandle mrtShader = d.createShader(shaderDesc);
+        CHECK(mrtShader.valid());
+        PipelineDesc mrtPipe;
+        mrtPipe.shader = mrtShader;
+        mrtPipe.attrs[0] = {0, VertexFormat::Float3, 0};
+        mrtPipe.attrs[1] = {1, VertexFormat::Float2, 12};
+        mrtPipe.attrCount = 2;
+        mrtPipe.stride = sizeof(Vtx);
+        mrtPipe.indexType = IndexType::None;
+        mrtPipe.depthTest = mrtPipe.depthWrite = false;
+        mrtPipe.colorAttachmentCount = 2;
+        mrtPipe.additionalColorFormats[0] = PixelFormat::RGBA8;
+        const PipelineHandle mrt = mrtShader.valid() ? d.createPipeline(mrtPipe) : PipelineHandle{};
+        CHECK(mrt.valid());
+        if (target0.valid() && target1.valid() && mrt.valid()) {
+            RenderTargetPassDesc pass;
+            pass.colorCount = 2;
+            pass.colors[0].texture = target0;
+            pass.colors[1].texture = target1;
+            pass.colors[0].clearColor[0] = 1.0f;
+            pass.colors[0].clearColor[3] = 1.0f;
+            pass.colors[1].clearColor[1] = 1.0f;
+            pass.colors[1].clearColor[3] = 1.0f;
+            Image clears = frame(d, [&] {
+                CHECK(d.supportsRenderTargetPasses());
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) d.endPass();
+                d.beginPass(screen);
+                d.setPipeline(pTex);
+                d.setVertexBuffer(vbFull);
+                d.setTexture(0, target0);
+                d.setViewport({0, 0, W/2, H});
+                d.draw(6);
+                d.setTexture(0, target1);
+                d.setViewport({W/2, 0, W/2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(clears.w == W && clears.h == H);
+            if (clears.w == W && clears.h == H) {
+                CHECK(near(clears.at(4, H/2), 255, 0, 0));
+                CHECK(near(clears.at(W-4, H/2), 0, 255, 0));
+            }
+            pass.colors[0].clear = pass.colors[1].clear = false;
+            Image outputs = frame(d, [&] {
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) {
+                    d.setPipeline(mrt);
+                    d.setVertexBuffer(vbFull);
+                    uniforms(1,1,1,1);
+                    d.draw(6);
+                    d.endPass();
+                }
+                d.beginPass(screen);
+                d.setPipeline(pTex);
+                d.setVertexBuffer(vbFull);
+                d.setTexture(0, target0);
+                d.setViewport({0, 0, W/2, H});
+                d.draw(6);
+                d.setTexture(0, target1);
+                d.setViewport({W/2, 0, W/2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(outputs.w == W && outputs.h == H);
+            if (outputs.w == W && outputs.h == H) {
+                CHECK(near(outputs.at(4, H/2), 0, 0, 255));
+                CHECK(near(outputs.at(W-4, H/2), 255, 255, 0));
+            }
+        }
+        if (mrt.valid()) d.destroyPipeline(mrt);
+        if (mrtShader.valid()) d.destroyShader(mrtShader);
+        if (target0.valid()) d.destroyTexture(target0);
+        if (target1.valid()) d.destroyTexture(target1);
+    }
+    {   // Vulkan 4x MSAA: two color outputs, matching depth and independent resolves.
+        TextureDesc ms; ms.width = W; ms.height = H;
+        ms.renderTarget = true; ms.sampleCount = 4;
+        const TextureHandle ms0 = d.createTexture(ms);
+        const TextureHandle ms1 = d.createTexture(ms);
+        TextureDesc depthMs = ms; depthMs.format = PixelFormat::Depth;
+        const TextureHandle msDepth = d.createTexture(depthMs);
+        TextureDesc resolveDesc = ms; resolveDesc.sampleCount = 1;
+        const TextureHandle resolve0 = d.createTexture(resolveDesc);
+        const TextureHandle resolve1 = d.createTexture(resolveDesc);
+        if (!ms0.valid() || !ms1.valid() || !msDepth.valid() ||
+            !resolve0.valid() || !resolve1.valid()) {
+            std::printf("Vulkan MSAA resolve: 4x unavailable on this device; fixture skipped\n");
+        } else {
+            RenderTargetPassDesc pass;
+            pass.colorCount = 2;
+            pass.colors[0].texture = ms0;
+            pass.colors[1].texture = ms1;
+            pass.colors[0].resolveTexture = resolve0;
+            pass.colors[1].resolveTexture = resolve1;
+            pass.colors[0].clearColor[0] = 1.0f;
+            pass.colors[0].clearColor[3] = 1.0f;
+            pass.colors[1].clearColor[1] = 1.0f;
+            pass.colors[1].clearColor[3] = 1.0f;
+            pass.depth.texture = msDepth;
+            pass.clearDepth = 1.0f;
+            Image cleared = frame(d, [&] {
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) d.endPass();
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                d.setTexture(0, resolve0);
+                d.setViewport({0, 0, W / 2, H});
+                d.draw(6);
+                d.setTexture(0, resolve1);
+                d.setViewport({W / 2, 0, W / 2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(cleared.w == W && cleared.h == H);
+            if (cleared.w == W && cleared.h == H) {
+                CHECK(near(cleared.at(4, H / 2), 255, 0, 0));
+                CHECK(near(cleared.at(W - 4, H / 2), 0, 255, 0));
+            }
+
+            ShaderDesc sdMrt;
+            sdMrt.glslVertex = kVs;
+            sdMrt.glslFragment = R"(
+in vec2 v_uv;
+layout(location=0) out vec4 o0;
+layout(location=1) out vec4 o1;
+void main() {
+    o0 = vec4(0.0, 0.0, 1.0, 1.0);
+    o1 = vec4(1.0, 1.0, 0.0, 1.0);
+}
+)";
+            const ShaderHandle shader = d.createShader(sdMrt);
+            CHECK(shader.valid());
+            PipelineDesc pd;
+            pd.shader = shader;
+            pd.attrs[0] = {0, VertexFormat::Float3, 0};
+            pd.attrs[1] = {1, VertexFormat::Float2, 12};
+            pd.attrCount = 2;
+            pd.stride = sizeof(Vtx);
+            pd.indexType = IndexType::None;
+            pd.depthTest = pd.depthWrite = false;
+            pd.colorAttachmentCount = 2;
+            pd.sampleCount = 4;
+            const PipelineHandle pipeline = shader.valid() ? d.createPipeline(pd) : PipelineHandle{};
+            CHECK(pipeline.valid());
+            if (pipeline.valid()) {
+                Image filled = frame(d, [&] {
+                    const bool started = d.beginRenderTargets(pass);
+                    CHECK(started);
+                    if (started) {
+                        d.setPipeline(pipeline);
+                        d.setVertexBuffer(vbFull);
+                        d.draw(6);
+                        d.endPass();
+                    }
+                    d.beginPass(screen);
+                    d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                    d.setTexture(0, resolve0);
+                    d.setViewport({0, 0, W / 2, H});
+                    d.draw(6);
+                    d.setTexture(0, resolve1);
+                    d.setViewport({W / 2, 0, W / 2, H});
+                    d.draw(6);
+                    d.endPass();
+                });
+                CHECK(filled.w == W && filled.h == H);
+                if (filled.w == W && filled.h == H) {
+                    CHECK(near(filled.at(4, H / 2), 0, 0, 255));
+                    CHECK(near(filled.at(W - 4, H / 2), 255, 255, 0));
+                }
+            }
+            if (pipeline.valid()) d.destroyPipeline(pipeline);
+            if (shader.valid()) d.destroyShader(shader);
+        }
+        if (ms0.valid()) d.destroyTexture(ms0);
+        if (ms1.valid()) d.destroyTexture(ms1);
+        if (msDepth.valid()) d.destroyTexture(msDepth);
+        if (resolve0.valid()) d.destroyTexture(resolve0);
+        if (resolve1.valid()) d.destroyTexture(resolve1);
+    }
     {   // a dynamic buffer rewritten between draws of one frame: each draw keeps its data
         const BufferHandle dyn = d.createBuffer(bufferDesc(Usage::Dynamic, top.size() * sizeof(Vtx), nullptr));
         const auto bottom = quad(-1, -1, 1, 0, 0);
@@ -233,6 +601,130 @@ int main() {
         CHECK(near(img.at(4, H / 2), 200, 0, 0));
         CHECK(near(img.at(W - 4, H / 2), 100, 0, 0));
         d.destroyTexture(t); d.destroyTexture(tr);
+    }
+    {   // sampled dimensional resources: actual GPU image/view + GLSL sampler type pairing
+        auto checkDimension = [&](TextureDesc desc, const std::vector<uint8_t>& pixels,
+                                  const char* fs, int r, int g, int b) {
+            desc.filter = Filter::Nearest;
+            desc.data = pixels.data();
+            CHECK(d.supportsTextureDimension(desc.dimension));
+            const TextureHandle imageTex = d.createTexture(desc);
+            CHECK(imageTex.valid());
+            ShaderDesc shaderDesc; shaderDesc.glslVertex = kVs;
+            shaderDesc.glslFragment = fs; shaderDesc.textureSlots = 1;
+            const ShaderHandle shader = d.createShader(shaderDesc);
+            CHECK(shader.valid());
+            const PipelineHandle pip = shader.valid() ? pipeline(d, shader) : PipelineHandle{};
+            CHECK(pip.valid());
+            if (imageTex.valid() && pip.valid()) {
+                Image img = frame(d, [&] {
+                    d.beginPass(screen);
+                    d.setPipeline(pip); d.setTexture(0, imageTex);
+                    d.setVertexBuffer(vbFull); d.draw(6);
+                    d.endPass();
+                });
+                CHECK(img.w == W && img.h == H);
+                if (img.w == W && img.h == H) CHECK(near(img.at(W / 2, H / 2), r, g, b));
+            }
+            if (pip.valid()) d.destroyPipeline(pip);
+            if (shader.valid()) d.destroyShader(shader);
+            if (imageTex.valid()) d.destroyTexture(imageTex);
+        };
+        auto solidLayers = [](int faces, const std::vector<int>& colours) {
+            std::vector<uint8_t> p(size_t(faces) * 2 * 2 * 4, 255);
+            for (int face = 0; face < faces; ++face)
+                for (int i = 0; i < 4; ++i) {
+                    uint8_t* v = p.data() + (size_t(face) * 4 + size_t(i)) * 4;
+                    v[0] = uint8_t(colours[size_t(face) * 3]);
+                    v[1] = uint8_t(colours[size_t(face) * 3 + 1]);
+                    v[2] = uint8_t(colours[size_t(face) * 3 + 2]);
+                }
+            return p;
+        };
+        TextureDesc desc; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture1D;
+        desc.height = 1;
+        checkDimension(desc, {255, 0, 0, 255, 255, 0, 0, 255},
+            R"(in vec2 v_uv; uniform sampler1D tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,0.3); })", 255, 0, 0);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture3D; desc.depth = 2;
+        checkDimension(desc, solidLayers(2, {255,0,0, 0,0,255}),
+            R"(in vec2 v_uv; uniform sampler3D tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(v_uv,0.75)); })", 0, 0, 255);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture2DArray; desc.arrayLayers = 3;
+        checkDimension(desc, solidLayers(3, {255,0,0, 0,255,0, 0,0,255}),
+            R"(in vec2 v_uv; uniform sampler2DArray tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(v_uv,1.0)); })", 0, 255, 0);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Cube; desc.arrayLayers = 6;
+        checkDimension(desc, solidLayers(6, {255,0,0, 0,255,0, 0,0,255,
+                                              255,255,0, 0,255,255, 255,0,255}),
+            R"(in vec2 v_uv; uniform samplerCube tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(1.0,0.0,0.0)); })", 255, 0, 0);
+        if (d.supportsTextureDimension(TextureDimension::CubeArray)) {
+            desc = TextureDesc{}; desc.width = desc.height = 2;
+            desc.dimension = TextureDimension::CubeArray; desc.arrayLayers = 12;
+            auto colours = std::vector<int>(36, 0);
+            for (int i = 0; i < 6; ++i) colours[size_t(i) * 3] = 255;
+            for (int i = 6; i < 12; ++i) colours[size_t(i) * 3 + 1] = 255;
+            checkDimension(desc, solidLayers(12, colours),
+                R"(in vec2 v_uv; uniform samplerCubeArray tex0; out vec4 o_color;
+                   void main(){ o_color=texture(tex0,vec4(1.0,0.0,0.0,1.0)); })", 0, 255, 0);
+        }
+    }
+    {   // Native views + independent samplers: bind one array slice as a 2D texture.
+        TextureDesc td; td.width = 2; td.height = 2;
+        td.dimension = TextureDimension::Texture2DArray;
+        td.arrayLayers = 3; td.filter = Filter::Nearest;
+        std::vector<uint8_t> px(3 * 2 * 2 * 4, 255);
+        for (int slice = 0; slice < 3; ++slice)
+            for (int pixel = 0; pixel < 4; ++pixel) {
+                uint8_t* dst = px.data() + (size_t(slice) * 4 + size_t(pixel)) * 4;
+                dst[0] = slice == 0 ? 255 : 0;
+                dst[1] = slice == 1 ? 255 : 0;
+                dst[2] = slice == 2 ? 255 : 0;
+            }
+        td.data = px.data();
+        const TextureHandle array = d.createTexture(td);
+        CHECK(array.valid());
+        CHECK(d.supportsTextureViews());
+        TextureViewDesc vd;
+        vd.dimension = TextureDimension::Texture2D;
+        vd.baseArrayLayer = 2;
+        const TextureViewHandle blue = array.valid() ? d.createTextureView(array, vd) : TextureViewHandle{};
+        vd.baseArrayLayer = 1;
+        const TextureViewHandle green = array.valid() ? d.createTextureView(array, vd) : TextureViewHandle{};
+        CHECK(blue.valid() && green.valid());
+        SamplerDesc sp;
+        sp.minFilter = sp.magFilter = Filter::Nearest;
+        sp.mipFilter = SamplerMipFilter::None;
+        const SamplerHandle sampler = d.createSampler(sp);
+        CHECK(sampler.valid());
+        if (blue.valid() && green.valid() && sampler.valid()) {
+            Image img = frame(d, [&] {
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                d.setViewport({0, 0, W / 2, H});
+                CHECK(d.bindTextureView(0, blue, sampler));
+                d.draw(6);
+                d.setViewport({W / 2, 0, W / 2, H});
+                CHECK(d.bindTextureView(0, green, sampler));
+                d.draw(6);
+                d.endPass();
+            });
+            if (img.w == W && img.h == H) {
+                CHECK(near(img.at(4, H / 2), 0, 0, 255));
+                CHECK(near(img.at(W - 4, H / 2), 0, 255, 0));
+            } else CHECK(false);
+            d.destroySampler(sampler);
+            CHECK(!d.bindTextureView(0, green, sampler)); // destroyed sampler must be rejected
+        } else if (sampler.valid()) d.destroySampler(sampler);
+        if (array.valid()) d.destroyTexture(array);
+        CHECK(!d.bindTextureView(0, blue)); // destroying parent invalidates child views
+        d.destroyTextureView(blue);
+        d.destroyTextureView(green);
     }
     {   // shadow map: depth-only pass, compare sampler (LEQUAL), GL depth values
         TextureDesc sd2; sd2.width = W; sd2.height = H; sd2.format = PixelFormat::Depth; sd2.renderTarget = true; sd2.compare = true;

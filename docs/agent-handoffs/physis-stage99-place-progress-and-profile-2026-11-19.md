@@ -73,7 +73,7 @@ adding printf without running `-V` would still not show live updates.
    `AIVERSE_CTEST_VERBOSE=1` to use one **unfiltered**
    `ctest --verbose` instead of default buffered
    `--output-on-failure`. It still configures full Debug Box3D,
-   builds all targets and runs exactly one unfiltered CTest; 
+   builds all targets and runs exactly one unfiltered CTest;
    the only changed behavior is stdout visibility.
    Commit `3bfffe944cb55053c6c9877230b816bb1099ba1e`.
 

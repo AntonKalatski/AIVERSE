@@ -35,11 +35,6 @@ Json pairJson(ImVec2 pos) {
     a.push(Json::number(double(std::clamp(pos.y,-100000.f,100000.f)),2));
     return a;
 }
-bool validId(const std::string& id) {
-    if(id.empty()||id.size()>64)return false;
-    for(char c:id)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'))return false;
-    return true;
-}
 bool isOutput(const std::string& type) {
     return type=="SpriteOutput"||type=="MeshOutput"||type=="RibbonOutput";
 }
@@ -103,7 +98,7 @@ public:
         canvas();
         ImGui::EndChild(); ImGui::SameLine();
         ImGui::BeginChild("##spectra_details",ImVec2(0,0),ImGuiChildFlags_Borders);
-        properties(ed);
+        properties();
         ImGui::EndChild();
     }
 private:
@@ -111,6 +106,15 @@ private:
         fx::EffectDef result;
         valid_=spectra::compileGraph(doc_,result,errors_);
         emitters_=valid_?int(result.emitters.size()):0;
+        gpuEligible_=false;
+        gpuReason_.clear();
+        if(valid_) {
+            const auto eligibility=spectra::inspectGraphGpuEligibility(result);
+            gpuEligible_=eligibility.eligible;
+            gpuReason_=eligibility.eligible
+                ? "Metal compute subset compatible (device check still required)"
+                : eligibility.reason;
+        }
     }
     void remember() {
         if(undo_.size()==64)undo_.erase(undo_.begin());
@@ -435,7 +439,7 @@ private:
         }
     }
 
-    void properties(Editor& ed) {
+    void properties() {
         ImGui::TextUnformatted("Узлы");
         if(ImGui::BeginCombo("Добавить узел","Выберите тип")) {
             for(const char* type:{"Spawn","Initialize","Update","SpriteOutput","MeshOutput","RibbonOutput"})
@@ -485,6 +489,8 @@ private:
         }
         ImGui::Separator();
         ImGui::Text("CPU emitters: %d",emitters_);
+        ImGui::Text("Metal GPU subset: %s",gpuEligible_?"compatible":"CPU fallback");
+        if(!gpuReason_.empty())ImGui::TextWrapped("%s",gpuReason_.c_str());
         ImGui::TextWrapped("V1: Spawn -> Initialize -> Update* -> Output. "
                            "Положение узлов не влияет на симуляцию. "
                            "GPU compute и математические dataflow узлы пока не поддерживаются.");
@@ -497,7 +503,8 @@ private:
     std::map<std::string,std::pair<std::string,Json>> drafts_;
     ImVec2 pan_{10,10};
     int selected_=-1,revision_=-1,emitters_=0;
-    bool dirty_=false,valid_=false,dragging_=false;
+    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false;
+    std::string gpuReason_;
 };
 
 AIVERSE_EDITOR_WINDOW(SpectraGraphWindow);

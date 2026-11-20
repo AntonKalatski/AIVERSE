@@ -1,8 +1,8 @@
 # PHYSIS branch recovery audit — 2026-11-18
 
-**Repository:** `chromealex/AIVERSE`  
-**Canonical branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.  
-**Canonical head at audit:** `b2be39b0f4a78ded68cdeb9663454c3d55ed2fa9` (may advance concurrently).  
+**Repository:** `chromealex/AIVERSE`
+**Canonical branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.
+**Canonical head at audit:** `b2be39b0f4a78ded68cdeb9663454c3d55ed2fa9` (may advance concurrently).
 **Nature of this stage:** repository inventory / history inspection; no physics/compiler changes, native compilation or CTest execution.
 
 ## Branch inventory, complete search for branch name "physis"

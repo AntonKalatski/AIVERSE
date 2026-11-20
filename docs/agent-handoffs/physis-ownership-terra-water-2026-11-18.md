@@ -1,7 +1,7 @@
 # PHYSIS Stage 6 — cross-agent Water / Terra ownership and reuse contract (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation` (draft PR #25, base `feature/universal-entity-inspector-fps`).  
-**Type:** documentation / coordination stage. **NO PHYSIS C++ runtime, renderer, Terra or NEREID code changed.**  
+**Branch:** `feature/physis-nature-simulation` (draft PR #25, base `feature/universal-entity-inspector-fps`).
+**Type:** documentation / coordination stage. **NO PHYSIS C++ runtime, renderer, Terra or NEREID code changed.**
 **Implementation/documentation commits (on this branch):**
 - `d3ce749b676764a4454ce4d0c209e57f96a5dbbd` — new integration contract.
 - `d7e295874f2f0886600300ad6e1d4f8f3c57d0e1` — root `AGENTS.md` ownership matrix and rules.

@@ -1,8 +1,8 @@
 # AIVERSE SceneResource Stage 3 — interrupted-stage handoff (2026-11-19)
 
-Branch: `feature/scene-runtime-multiworld`  
-Latest implementation commit at handoff: `918b3302ff99bf88804c4a53d13c93a61f615ee9`  
-Status: **source committed, native compile/CTest not executed, NOT production ready**.  
+Branch: `feature/scene-runtime-multiworld`
+Latest implementation commit at handoff: `918b3302ff99bf88804c4a53d13c93a61f615ee9`
+Status: **source committed, native compile/CTest not executed, NOT production ready**.
 Context: work on the scene manager was interrupted by a separate request to
 implement shared/static immutable ECS configuration. That work is isolated in
 `feature/ecs-shared-static-components`; it must not be silently merged into

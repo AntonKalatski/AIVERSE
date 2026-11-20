@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/render/Model.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/SpriteBatch.h"
 #include "../../../engine/render/TextureCache.h"
@@ -26,6 +27,10 @@ public:
     // rules "roadTypes" (composed rules.json); reader for the game's textures / models
     void init(gfx::Device& dev, const Json& roadTypes, render::FileReader reader);
     void shutdown(gfx::Device& dev);
+    // Called only at a frame boundary, BEFORE this frame's scene submissions.
+    // Polls actual GPU retirement tokens, never frame-count heuristics.
+    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().
     void setMap(const Json& map);
     void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; }
@@ -40,6 +45,28 @@ public:
     const std::vector<RoadTypeDef>& types() const { return types_; }
     const RoadNetwork& network() const { return net_; }
     const RoadGeometry& geometry() const { return geom_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter counter(*dev_);
+        for (const auto& chunk : chunks_)
+            if (chunk.model) render::appendModelOwnedGpuMemory(*chunk.model,counter);
+        for (const auto& prop : propModels_)
+            if (prop.model) render::appendModelOwnedGpuMemory(*prop.model,counter);
+        if (ghostModel_) render::appendModelOwnedGpuMemory(*ghostModel_,counter);
+        // All chunk models borrow the shared road kit image handles.
+        for (const auto& image : images_) counter.texture(image.tex);
+        counter.buffer(decalMesh_.vb);counter.buffer(vergeMesh_.vb);
+        counter.buffer(filmMesh_.vb);counter.buffer(puddleMesh_.vb);
+        auto total=counter.stats(),batch=decalBatch_.ownedGpuMemoryStats(),cache=paintTex_.ownedGpuMemoryStats();
+        const auto add=[&](const render::GpuOwnedMemoryStats& owner){
+            total.textureKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.textureKnownBytes,owner.textureKnownBytes);
+            total.bufferKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.bufferKnownBytes,owner.bufferKnownBytes);
+            total.textures+=owner.textures;total.buffers+=owner.buffers;
+            total.unknownTextures+=owner.unknownTextures;total.unknownBuffers+=owner.unknownBuffers;
+            total.multiVersionBuffers+=owner.multiVersionBuffers;
+        };
+        add(batch);add(cache);return total;
+    }
     float cellMeters() const { return cellMeters_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     // Asset/build-time breakdown, not an estimate of actual GPU draw calls.
@@ -100,6 +127,10 @@ private:
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void release(gfx::Device& dev);
+    void retireSpriteBuffer(gfx::Device& dev,render::SpriteMesh& mesh) {
+        retirement_.retireBuffer(dev,mesh.vb);
+        mesh={};
+    }
     int propModel(gfx::Device& dev, const std::string& path);
     int paintedMaterial(gfx::Device& dev, int type, int variant);   // carriageway texture with its lines, made on demand
     std::map<std::pair<int, int>, int> painted_;
@@ -113,6 +144,7 @@ private:
     std::vector<std::string> replaces_;
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
+    render::NativePresentationRetirement retirement_;
     std::vector<Chunk> chunks_;
     BatchStats batchStats_;
     uint64_t surfaceGeneration_ = 1; // increments whenever road geometry/surface is rebuilt

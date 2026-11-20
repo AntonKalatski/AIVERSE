@@ -1,7 +1,7 @@
 # PHYSIS Stage 16 — bounded transient spatial broadphase (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Implementation branch:** `feature/physis-spatial-broadphase`, forked from PHYSIS head `44b4fe74de7ad0947dca6dc78c6f2f6c2a13b256`. **PR target:** `feature/physis-nature-simulation` (upstream draft PR #25), NOT `main`. Other agents may continue changing the PHYSIS source branch. No changes made to NEREID PR #23 or TerraWeave PR #24.  
+**Repository:** `chromealex/AIVERSE`
+**Implementation branch:** `feature/physis-spatial-broadphase`, forked from PHYSIS head `44b4fe74de7ad0947dca6dc78c6f2f6c2a13b256`. **PR target:** `feature/physis-nature-simulation` (upstream draft PR #25), NOT `main`. Other agents may continue changing the PHYSIS source branch. No changes made to NEREID PR #23 or TerraWeave PR #24.
 **Status:** code, CTest source and CI build registration committed. **NO actual native build, CTest, CI pass, editor or Box3D execution validated.** GitHub repository clone from local container failed DNS lookup for `github.com`.
 
 ## Exact implementation/test commits

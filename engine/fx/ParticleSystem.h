@@ -14,6 +14,7 @@
 //     (FxQuality) — fill rate is what kills old Mali/Adreno, so the size cap matters most;
 //   * one-shot effects that start off-screen or far away are not spawned at all.
 #pragma once
+#include "engine/render/RenderDeviceLifetime.h"
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -22,8 +23,11 @@
 #include <unordered_map>
 #include <vector>
 #include "../gfx/Gfx.h"
+#include "../render/GpuOwnedMemory.h"
 #include "FxEffect.h"
+#include "SpectraFxView.h"
 
+namespace aiverse::render { class GpuResourceRetirement; }
 namespace aiverse::fx {
 
 struct QualityLimits {
@@ -90,8 +94,15 @@ public:
     ParticleSystem& operator=(const ParticleSystem&) = delete;
 
     // `dev` may be null: simulation without drawing (tests, headless tools).
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     bool init(gfx::Device* dev);
     void shutdown();
+    // Optional presentation-only GPU-fenced lifetime manager for editor
+    // effect-graph hot reload. Defaults to legacy owner-managed destruction.
+    // Manager must outlive this ParticleSystem and its GPU device.
+    void setGpuResourceRetirement(render::GpuResourceRetirement* owner) {
+        gpuRetirement_ = owner;
+    }
     const std::string& lastError() const { return error_; }
 
     void setQuality(FxQuality q);
@@ -139,15 +150,33 @@ public:
     void emitManual(FxHandle h);                       // fires the "manual" sub-emitters of its live particles
     void clear();                                      // everything (new match)
 
-    void setView(const render::RTSCamera& cam, const render::mat4& viewProj, int fbW, int fbH);
+    // Generic camera/view packet: no dependency on an RTS or FPS camera.
+    void setView(const SpectraFxView& view);
+    // Source-compatible legacy path for cameras with eye/view/proj methods.
+    template<class Camera>
+    void setView(const Camera& camera,const render::mat4& viewProj,
+                 int fbW,int fbH) {
+        setView(SpectraFxView::fromCamera(camera,viewProj,fbW,fbH));
+    }
     void update(float dt);
     void render(const FxFog& fog);
+    // Stage 31: optional presentation-only reactive coverage from the
+    // ALREADY uploaded current-frame particle geometry. Call after render()
+    // inside Renderer3D::addMotionReactiveDraw's open RGBA8 mask pass.
+    // No simulation, no GPU pass begin/end, no scene depth writes.
+    bool hasReactiveGeometry() const;
+    uint32_t renderReactive(gfx::Device& device,
+                            gfx::TextureHandle sceneDepth,
+                            int width, int height);
     // Lights of emitters with a "light" module (after update): appended to `out`, at most `maxLights`
     // in total (fewer on low tiers). Call between Renderer3D::beginScene and render.
     void collectLights(std::vector<FxPointLight>& out, int maxLights = 32) const;
 
     void snapshot(std::vector<FxParticleInfo>& out) const;   // every live particle (current size and colour)
     const FxStats& stats() const { return stats_; }
+    // SpectraFX owns particle GPU vertex/index buffers and builtin atlas.
+    // Loader textures/meshes/ShaderGraph textures are borrowed: exclude.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const;
     void resetStats() { stats_.dropped = stats_.culled = 0; }
 
     // Built-in texture names (always available, no files): soft, spark, ring, smoke.
@@ -157,7 +186,12 @@ public:
 
 private:
     struct Impl;
+    bool deviceLeaseValid(const gfx::Device& dev) const noexcept {
+        return !gpuDeviceLease_.device() || gpuDeviceLease_.validFor(dev);
+    }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     std::unique_ptr<Impl> impl_;
+    render::GpuResourceRetirement* gpuRetirement_ = nullptr;
     FxQuality quality_ = FxQuality::Medium;
     FileReader reader_;
     std::vector<std::string> errors_;

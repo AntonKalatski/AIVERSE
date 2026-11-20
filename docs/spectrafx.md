@@ -4,6 +4,12 @@
 
 > **Current scope (2026-11-18):** Graph v1 frontend, reusable CPU particle backend, graph-asset variants/hot reload and optional read-only ECS presentation adapter have been **committed**. A basic graph-v1 node-canvas editor and in-memory CPU preview are **committed but unverified**; a limited Metal GPU particle prototype is **committed but unverified**; full GPU/CPU integration, Niagara dataflow and automatic RTS/FPS production integration are **not finished**. Tests were added but have **not yet been run** in the authoring environment. Refer to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` for exact SHA and verification status.
 
+## Integration boundary with PRISMA
+
+**SpectraFX is NOT the post-processing engine.** It owns emitters, particle simulation, FX graphs (VFX `fx/graphs/*.vfx.json`), ECS FX sources and transient visual events. **PRISMA** in `engine/render/Prisma.{h,cpp}` owns HDR composite/tone mapping, bloom, depth of field, motion blur, temporal AA, screen-space lighting and post-process camera volumes. FX sprites/meshes write scene HDR before PRISMA; the full-screen `postfx` Shader Graph domain belongs to PRISMA. The common Shader Graph compiler/RHI is shared infrastructure, not a second VFX or postprocess implementation.
+
+Never add full-screen frame effects to `engine/fx`, and never add emitters/particle lifecycle to PRISMA. PRISMA's persisted `postfx` block and `postfx_*` MCP commands stay stable for existing projects. See `AGENTS.md` ownership table and `docs/prisma.md`. No automatic live binding is implied.
+
 ## Architecture
 
 ```text
@@ -312,8 +318,10 @@ GLES3/GL33/WebGL2 do not run the compute kernel, so the existing CPU
 particle renderer is used instead. Do not report those platforms as
 GPU-supported. The dedicated test
 `tests/vfx_gpu_backend_test.cpp` checks the selection policy, bounds,
-headless CPU-fallback emissions and lifetime; **this is not a Metal GPU
-integration test**. CI and native GPU validation are still required.
+headless CPU-fallback emissions and lifetime. It also contains a recording
+Metal RHI mock that verifies spawn→integrate→expand dispatch ordering and
+render-pass command sequencing **without compiling/launching real GPU
+shaders**. It is not a Metal GPU integration test. CI and native GPU validation are still required.
 
 **Known limitations:** no GPU compaction, no camera culling/LOD for
 per-particle draws, no GPU-particle soft intersection, no mesh/ribbon
@@ -323,11 +331,86 @@ performance measurements. Runtime Metal shader compilation, GPU
 resource hazards, multi-frame correctness and framebuffer output
 remain **NOT VERIFIED**.
 
+## Automatic graph-to-backend routing (Stage 11 — source committed, not verified)
+
+`engine/fx/SpectraGraphRuntime.{h,cpp}` introduces a new **optional,
+genre-independent** `aiverse::spectra::GraphRuntime`. It compiles a graph-v1
+asset or accepts a precompiled `fx::EffectDef` and decides whether it can run
+without semantic loss on the existing Metal compute prototype. Every
+unsupported graph is executed with the **exact same full EffectDef** on
+`fx::ParticleSystem`; complex modules are never stripped to fit the GPU.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GraphRuntime runner;
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference = aiverse::spectra::ComputePreference::Automatic;
+options.quality = aiverse::fx::FxQuality::High;
+options.capacity = 1024;
+
+if (!runner.initGraph(device, graphJson, aiverse::Json::object(), options)) {
+    // runner.reason() and runner.errors() describe the rejection
+}
+
+// After Device::beginFrame, before the scene render pass:
+runner.setView(camera, viewProj, width, height);
+runner.burstAt({0, 1, 0}, {0, 1, 0});
+runner.step(1.f / 60.f);
+
+// While the scene pass is open:
+runner.draw(fog);
+// On match change/rollback: runner.clear() outside an active encoder.
+// Before device shutdown: runner.shutdown().
+```
+
+The schema validator `inspectGraphGpuEligibility(effect, options)` does not
+require a GPU and is safe for native modules, headless tests and editor tools.
+It returns `GraphGpuEligibility { eligible, gpu, reason }`. GPU v1 is allowed
+**only** for one additive `builtin:soft` camera-aligned point emitter
+containing one burst of 1–64 particles, constant speed/life/size/drag,
+zero spread, world-Y gravity, and the default white-to-transparent
+colour ramp. The current prototype supports only this limited payload.
+Custom colours/gradients, multiple emitters, random ranges/curves,
+custom shader graphs, trails/ribbons, noise, force fields, sub-emitters,
+lights, collisions, texture animation, or any other unsupported module
+force a full CPU fallback. The validator compares normalized complete
+effect definitions against a known-supported template and also explicitly
+checks sensitive unsupported modules and colour keys.
+
+`ComputePreference::RequireGpu` fails if the graph is not eligible,
+the real device does not expose Metal compute, the quality tier is too
+low or the shader/pipeline cannot initialize. `Automatic` and
+`PreferGpu` instead use the unchanged CPU asset. `CpuOnly` never
+attempts GPU. A GPU health failure inside `ComputeParticles` can
+subsequently fall back to its restricted CPU equivalent; `GraphRuntime`
+continues to own that instance and reports the actual backend.
+
+The editor and MCP `fx_graph_validate`, `fx_graph_get`,
+`fx_graph_list` responses now add **`metalGpuEligible`** and
+**`metalGpuReason`** after successful compilation. These are only
+**asset capability diagnostics**, **not** proof that Metal is present
+or that GPU execution succeeded. The SpectraFX visual editor shows the
+same capability verdict under the properties inspector; its in-memory
+graph preview still uses the established CPU renderer.
+
+**Important boundaries:** This is an opt-in native API. It is not
+automatically wired into existing FPS, RTS, editor gameplay, ECS
+authoritative state, file assets or current save protocols. The
+existing production client renderer stays on CPU. Actual Apple Silicon
+GPU rendering, MSL compilation, multiple frames in flight and all
+regression tests remain **unverified** until run in a real checkout.
+
+Source tests: `tests/vfx_graph_runtime_test.cpp` exercises a supported
+graph, strict rejections and CPU fallback; `tests/vfx_graph_ops_test.cpp`
+checks MCP eligibility diagnostics. CTest name:
+`vfx_graph_runtime` (label `SpectraFX`).
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```

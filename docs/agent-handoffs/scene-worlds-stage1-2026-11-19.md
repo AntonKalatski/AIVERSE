@@ -1,10 +1,10 @@
 # Scene runtime / multiworld — Stage 1 agent handoff
 
-Date: 2026-11-19  
-Repository: `chromealex/AIVERSE`  
-Branch: `feature/scene-runtime-multiworld`  
-Base: `main` (branch created directly from current remote main)  
-Most recent source-code correction: `5d3fd0c9a65d331f551add1614829d927fcd734a`  
+Date: 2026-11-19
+Repository: `chromealex/AIVERSE`
+Branch: `feature/scene-runtime-multiworld`
+Base: `main` (branch created directly from current remote main)
+Most recent source-code correction: `5d3fd0c9a65d331f551add1614829d927fcd734a`
 Status: **code committed, native build and CTest NOT run**.
 
 ## Intent and ownership

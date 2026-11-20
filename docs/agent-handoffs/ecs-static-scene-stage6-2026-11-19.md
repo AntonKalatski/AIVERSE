@@ -1,8 +1,8 @@
 # AIVERSE Stage 6 — immutable prefab authoring, editor Inspector, RSS
 
-Date: 2026-11-19  
-Repository: `chromealex/AIVERSE`  
-Feature branch: `feature/ecs-static-prefab-scene-integration`  
+Date: 2026-11-19
+Repository: `chromealex/AIVERSE`
+Feature branch: `feature/ecs-static-prefab-scene-integration`
 Parent handoffs:
 - `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`
 - `docs/agent-handoffs/ecs-static-scene-stage5-2026-11-19.md`

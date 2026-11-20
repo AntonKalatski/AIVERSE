@@ -273,6 +273,16 @@ struct ParticleSystem::Impl {
     std::vector<Particle> particles;
     std::vector<Rec> recs;
     std::vector<Vertex> verts, meshVerts;
+    // Runs from the MOST RECENT render() only; reuse that exact vertex buffer
+    // for a one-pass reactive mask after the scene pass ends.
+    struct ReactiveRun {
+        gfx::TextureHandle texture; // borrowed from particle batch/atlas
+        uint32_t first = 0, count = 0;
+        bool mesh = false;  // true: nonindexed triangles; false: indexed quads
+    };
+    std::vector<ReactiveRun> reactiveRuns;
+    gfx::ShaderHandle reactiveShader;
+    gfx::PipelineHandle reactiveQuadPipe, reactiveMeshPipe;
     Rng rng;
     QualityLimits limits = limitsFor(FxQuality::Medium);
     FxQuality quality = FxQuality::Medium;
