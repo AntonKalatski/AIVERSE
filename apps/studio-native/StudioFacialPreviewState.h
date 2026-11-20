@@ -11,6 +11,7 @@
 namespace aiverse::studio {
 struct StudioFacialPreviewState final {
     bool active=false;
+    bool gpuReady=false;
     std::string projectRoot;
     std::string modelKey;
     std::string rigName;
