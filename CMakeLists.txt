@@ -1078,6 +1078,19 @@ if(AIVERSE_VULKAN)
         add_executable(aiverse_vulkan_tests tests/render/vulkan_tests.cpp)
         target_link_libraries(aiverse_vulkan_tests PRIVATE aiverse_gfx_vulkan)
         add_test(NAME vulkan_backend COMMAND aiverse_vulkan_tests)
+
+        # Real headless Vulkan VIVID ID/depth + async one-pixel RHI oracle.
+        # No driver is a registered SKIP, not an invented GPU PASS.
+        add_executable(aiverse_vivid_vulkan_sculpt_id_tests
+            tests/vivid/vulkan_sculpt_id.cpp)
+        target_link_libraries(aiverse_vivid_vulkan_sculpt_id_tests PRIVATE
+            aiverse_gfx_vulkan aiverse_models)
+        target_compile_features(aiverse_vivid_vulkan_sculpt_id_tests
+            PRIVATE cxx_std_20)
+        add_test(NAME vivid_vulkan_sculpt_id
+            COMMAND aiverse_vivid_vulkan_sculpt_id_tests)
+        set_tests_properties(vivid_vulkan_sculpt_id
+            PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 endif()
 
