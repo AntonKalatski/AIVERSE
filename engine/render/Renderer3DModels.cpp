@@ -2055,6 +2055,11 @@ void Renderer3D::prepareGpuModelDraws() {
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Unsupported backends and unarmed Metal counters ignore this marker.
+    // Marks bracket GPU commands emitted by renderModels (shadow/main only).
+    const bool sampleModelGpu = !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, true);
     // Read the same dynamic indirect-buffer handle at both boundaries.
     // Reflection and other auxiliary view replays are intentionally excluded
     // from the main-camera opaque metric; phases 2..4 are not shadow/opaque.
@@ -2969,6 +2974,7 @@ void Renderer3D::renderModels(int phase) {
             t = {};
         }
     }
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, false);
 }
 
 void Renderer3D::prepareOcclusion() {
