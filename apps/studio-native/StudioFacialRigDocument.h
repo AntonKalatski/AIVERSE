@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <fcntl.h>
+#include <unistd.h>
 #include <iterator>
 #include <set>
 #include <stdexcept>
@@ -215,28 +217,43 @@ inline Json readStudioFacialRig(const std::string& root,const std::string& name)
 
 inline Json saveStudioFacialRig(const std::string& root,
                                 const std::string& name,const Json& doc) {
-    namespace fs=std::filesystem;
     std::string error;
     if(!validStudioFacialRigDraft(doc,&error))
         throw std::invalid_argument(error);
     const fs::path file=studioFacialRigFile(root,name,true);
-    // Never truncate an existing file until a complete JSON payload has
-    // been staged in the same project directory.
-    const fs::path temporary=file.string()+".pending";
-    if(fs::exists(temporary) || fs::is_symlink(fs::symlink_status(temporary)))
-        throw std::runtime_error("Pending facial rig file already exists");
+    // Descriptor-relative exclusive staging prevents path traversal,
+    // following a substituted pending symlink, or truncating the live
+    // preset before a complete payload has been written.
+    const std::string filename=name+".json";
+    const std::string pending=filename+".pending";
+    const int dir=::open(file.parent_path().c_str(),
+                         O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(dir<0)throw std::runtime_error("Cannot open facial rig project folder");
+    int fd=-1;
     try {
-        {
-            std::ofstream output(temporary,std::ios::binary|std::ios::trunc);
-            if(!output)throw std::runtime_error("Cannot stage facial rig");
-            output<<doc.dump(2)<<"\n";
-            output.flush();
-            if(!output)throw std::runtime_error("Cannot flush staged facial rig");
+        fd=::openat(dir,pending.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+        if(fd<0)throw std::runtime_error("Cannot create exclusive facial rig staging file");
+        const std::string bytes=doc.dump(2)+"\\n";
+        std::size_t offset=0;
+        while(offset<bytes.size()) {
+            const ssize_t n=::write(fd,bytes.data()+offset,bytes.size()-offset);
+            if(n<=0)throw std::runtime_error("Failed writing facial rig staging file");
+            offset+=std::size_t(n);
         }
-        fs::rename(temporary,file);
+        if(::fsync(fd)!=0)throw std::runtime_error("Facial rig staging fsync failed");
+        if(::close(fd)!=0) {
+            fd=-1;
+            throw std::runtime_error("Failed closing facial rig staging file");
+        }
+        fd=-1;
+        if(::renameat(dir,pending.c_str(),dir,filename.c_str())!=0)
+            throw std::runtime_error("Cannot publish facial rig file");
+        (void)::fsync(dir);
+        (void)::close(dir);
     }catch(...) {
-        std::error_code ignored;
-        fs::remove(temporary,ignored);
+        if(fd>=0)(void)::close(fd);
+        (void)::unlinkat(dir,pending.c_str(),0);
+        (void)::close(dir);
         throw;
     }
     Json result=Json::object();
