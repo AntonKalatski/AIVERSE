@@ -33,3 +33,36 @@ Next: inspect the client feature source graph and introduce explicit per-game
 module declarations for capabilities selected by data, retaining a safe default
 for older games. Verify an actual HTML5 Release build and compare `index.wasm`
 before and after, then validate startup and representative game modes.
+
+## 2026-11-21 continuation: explicit packaged modules
+
+Branch `feature/studio-html5`; implementation commit `6223f33c2`.
+Affected paths: `tools/aiversebuild/main.cpp`,
+`platform/android/template/app/build.gradle`, `docs/overview.md`.
+`packaging.engineModules` (or a target-specific override) now selects the
+existing optional CMake modules `strata`, `runtime-autolod`, and `vulkan` for
+packaged clients. An absent field preserves legacy defaults. An explicit empty
+array sets all three OFF. Invalid names and Vulkan on unsupported targets fail
+before building. Web/macOS/iOS/Windows/Linux CMake invocations, Windows source
+export, and Android Gradle project generation receive the selected flags.
+Packaged builds also set `AIVERSE_BUILD_FPS_CLIENT=OFF` because that separate
+reference executable is not shipped with the game. No runtime API/save format
+changed. Core GameClient and its direct source files were not made selectable.
+
+Actual checks: `cmake --build build/studio-html5-verify --target aiversebuild -j 6`
+PASS. `aiversebuild --project /private/tmp/aiverse-module-fixture --target web
+--check-engine-modules --out /private/tmp/aiverse-module-output` PASS, printing
+all three OFF for an empty list. The same command for Windows PASS, printing
+Vulkan ON from the per-target override. `templates/skirmish` with no list PASS,
+printing `legacy defaults`. An unknown module fixture exits 1 with the intended
+error. `git diff --check` PASS (line-ending warnings only). Android APK, iOS
+export, Windows/Linux client binaries, actual WebAssembly compile, browser
+startup and size comparison NOT RUN. CI: no URL or status for this local stage.
+
+Risk: CMake's existing cache values are intentionally overridden by explicit
+flags on every packaged invocation; manually building an exported source tree
+without its generated build command may use CMake defaults. Games relying on
+runtime-generated LODs must include `runtime-autolod`. Next: decouple the
+remaining GameClient feature translation units and make their dynamic roots
+explicit, then measure an HTML5 Release `index.wasm` with Emscripten and test
+representative game modes. Do not claim full per-game module pruning yet.
