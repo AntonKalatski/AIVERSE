@@ -6,12 +6,14 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "engine/render/Model.h"
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace aiverse::studio {
 

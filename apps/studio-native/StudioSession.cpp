@@ -184,6 +184,8 @@ Json StudioSession::dispatch(const Json& request) {
             if(ws_.project.dir.empty())
                 throw std::runtime_error("Open a project first");
             if(method=="studio.facialPreviewBind") {
+                if(!params["guid"].isString())
+                    throw std::invalid_argument("Facial preview selection requires asset GUID string");
                 const std::string guid=params.getStr("guid");
                 // A clear operation detaches all staged controls without
                 // touching the Scene GPU device or the document's saved rig.
