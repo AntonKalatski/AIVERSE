@@ -833,6 +833,24 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             return;
         }
         pixelIdReady=false;
+        // Both GPU actor buffers were borrowed through the same frame.
+        // Only the verified queue-idle barrier above permits destruction.
+        if(maskDeformedVertices.valid()) {
+            device->destroyBuffer(maskDeformedVertices);
+            maskDeformedVertices={};
+        }
+        if(maskDeformCompute.valid()) {
+            device->destroyCompute(maskDeformCompute);
+            maskDeformCompute={};
+        }
+        if(maskModel) {
+            render::releaseModel(*device,*maskModel);
+            maskModel.reset();
+        }
+        for(auto& texture:maskTextures) {
+            if(texture.valid())device->destroyTexture(texture);
+            texture={};
+        }
         // No in-flight read/copy can survive the successful GPU idle proof.
         if(colourPixelSnapshot_.valid()) {
             device->destroyTexture(colourPixelSnapshot_);
