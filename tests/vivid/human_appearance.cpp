@@ -1,4 +1,5 @@
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/VividPresentationSettings.h"
 #include "tools/vivid-creator/OpticalCaptureCases.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GroomSelfCollision.h"
@@ -112,6 +113,53 @@ void test() {
         const auto stats=human.groom.stats();
         expect(stats.triangles==human.hair->indices.size()/3,
                "groom card triangle stats mismatch");
+    }
+    // Stage 7AG project-level profile is independent of the human recipe.
+    {
+        VividPresentationSettings settings;
+        expect(settings.valid() &&
+               settings.materialQuality==HumanMaterialQuality::High &&
+               settings.groomQuality==GroomQuality::High,
+               "VIVID default presentation profile changed");
+        const auto before=HumanDNA::preset("neutral").toJson();
+        for(const auto quality:{HumanMaterialQuality::Low,
+                                HumanMaterialQuality::Medium,
+                                HumanMaterialQuality::High}) {
+            for(const auto groom:{GroomQuality::Low,GroomQuality::Medium,
+                                  GroomQuality::High}) {
+                settings.materialQuality=quality;
+                settings.groomQuality=groom;
+                const auto document=settings.toJson();
+                const auto restored=VividPresentationSettings::fromJson(document);
+                expect(restored.valid() && restored.materialQuality==quality &&
+                       restored.groomQuality==groom,
+                       "VIVID presentation profile JSON roundtrip failed");
+                const auto parsed=VividPresentationSettings::fromJson(
+                    Json::parse(document.dump()));
+                expect(parsed.materialQuality==quality &&
+                       parsed.groomQuality==groom,
+                       "VIVID presentation profile textual JSON drift");
+            }
+        }
+        const auto reject=[](Json document) {
+            try { (void)VividPresentationSettings::fromJson(document); }
+            catch(const std::invalid_argument&) {return true;}
+            return false;
+        };
+        auto invalid=settings.toJson();
+        invalid.set("version",Json::number(std::int64_t(2)));
+        expect(reject(invalid),"VIVID presentation accepted unsupported version");
+        invalid=settings.toJson();
+        invalid.set("groomQuality",Json::string("ultra"));
+        expect(reject(invalid),"VIVID presentation accepted unknown groom tier");
+        invalid=settings.toJson();
+        invalid.set("materialQuality",Json::number(std::int64_t(1)));
+        expect(reject(invalid),"VIVID presentation accepted non-string material tier");
+        invalid=settings.toJson();
+        invalid.set("textureStreaming",Json::fromBool(true));
+        expect(reject(invalid),"VIVID presentation silently accepted unsupported texture toggle");
+        expect(HumanDNA::preset("neutral").toJson()==before,
+               "VIVID presentation quality must not mutate HumanDNA");
     }
     // Stage 7AF: quality is a presentation policy, independent of DNA and
     // of geometry/morph source IDs. Old APIs default to High quality.
