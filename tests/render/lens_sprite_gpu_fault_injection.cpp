@@ -45,7 +45,7 @@ void require(bool ok,const char* reason) {
 }
 }
 
-int main() {
+int aiverseMain(int,char**) {
     // Every allocation point is injected independently; both early and
     // late failures must leave no GPU allocations after a successful idle.
     for(int failure=1;failure<=32;++failure) {
