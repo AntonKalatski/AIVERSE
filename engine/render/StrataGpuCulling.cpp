@@ -778,6 +778,12 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if(temporal){
         dev.setComputeBuffer(5,previousTemporal);
         dev.setComputeBuffer(6,nextTemporal);
+    }else if(vulkan){
+        // Vulkan requires every statically declared storage descriptor
+        // to be valid even when the temporal uniform branch is disabled.
+        // The shaders NEVER access these dummy bindings at fraction=0.
+        dev.setComputeBuffer(5,slot.counters);
+        dev.setComputeBuffer(6,slot.counters);
     }
     GpuSelectionUniforms uniforms{};
     std::memcpy(uniforms.viewProjection, config.viewProjection.m,
@@ -833,6 +839,11 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         if(temporal){
             dev.setComputeBuffer(2,previousTemporal);
             dev.setComputeBuffer(3,nextTemporal);
+        }else{
+            // Statically used GLSL bindings 2/3 must remain descriptor-
+            // valid, although temporalNodeCount=0 prevents any access.
+            dev.setComputeBuffer(2,slot.counters);
+            dev.setComputeBuffer(3,slot.counters);
         }
         dev.setComputeUniforms(&safety,sizeof(safety));
         const bool safe=dev.dispatchChecked(std::max(
