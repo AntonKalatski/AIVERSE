@@ -68,3 +68,12 @@ The following is the contract for the agent merging/reconciling the scene branch
 Create C++ fixtures for two committed scenes, duplicate stable IDs, disabled/static/independent children, graph import failure at object N after N-1 staged, failed coordinator commit/discard, successful swap, persistent-scene Replace, multi-scene unique draw IDs, unload, rollback, compatible/incompatible Graph clock continuation and model resource lease retirement. Then run CMake/CTest, real Studio/ModelView or game scene, Metal/Vulkan/GLES and sanitizer/GPU fault/VRAM suites in the agreed final acceptance campaign.
 
 See [Stage 173 handoff](agent-handoffs/animation-stage173-scene-publication-2026-11-20.md).
+
+
+## Stage 174 — real GPU-owned residency (dedicated scene provider)
+
+The Stage 173 presentation-only visual bridge remains a valid low-level adapter, but it does not itself own GPU Models. For production native scene hosts with **one dedicated ModelAssetProvider per scene**, use `engine/view/MotionWeaveSceneOwnedHost.h` instead: it wraps the two-phase visual publication and strongly retains the actual provider through a separate GPU token queue in `engine/render/SceneModelProviderRetirement.h`.
+
+This avoids treating appearance snapshots or CPU ModelReadLeases as GPU fences. It also stops the provider's asynchronous CPU reader before retiring the owner and validates `RenderDeviceLifetime` epochs. If GPU completion cannot be proven, the provider is quarantined and status is reported as a failure, not success.
+
+See [scene GPU owner integration guide](motionweave-scene-gpu-owners.md) and [Stage 174 handoff](agent-handoffs/animation-stage174-scene-provider-gpu-residency-2026-11-20.md) for sequencing, limitations and diagnostic APIs. **Not yet fully nonblocking:** the current provider shutdown still waits for device idle. Shared-provider leases and the actual peer SceneLoadCoordinator GameModule integration remain open.
