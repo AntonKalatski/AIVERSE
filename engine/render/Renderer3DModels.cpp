@@ -2699,19 +2699,14 @@ void Renderer3D::renderModels(int phase) {
             ++modelStats_.strataGpuCandidates;
             const bool correctMain=phase==1 && geometryMainView_ &&
                 !auxiliaryModelPass_ &&
-                packet.pass==GpuIndexedPass::MainOpaque &&
-                packet.viewWidth==sceneW_ && packet.viewHeight==sceneH_ &&
-                std::memcmp(packet.viewProjection.m,viewProj_.m,
-                            sizeof(viewProj_.m))==0 &&
+                packet.matchesView(GpuIndexedPass::MainOpaque,
+                                   viewProj_,sceneW_,sceneH_) &&
                 (quality_==ShadowQuality::Off ||
                  strataItem.gpuShadowIndexed.valid());
             const bool correctSun=phase==0 &&
                 !auxiliaryModelPass_ && quality_!=ShadowQuality::Off &&
-                packet.pass==GpuIndexedPass::SunShadow &&
-                packet.viewWidth==shadowSize_ &&
-                packet.viewHeight==shadowSize_ &&
-                std::memcmp(packet.viewProjection.m,lightViewProj_.m,
-                            sizeof(lightViewProj_.m))==0 &&
+                packet.matchesView(GpuIndexedPass::SunShadow,
+                                   lightViewProj_,shadowSize_,shadowSize_) &&
                 strataItem.castShadow &&
                 !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
             const bool eligible=(correctMain || correctSun) &&
