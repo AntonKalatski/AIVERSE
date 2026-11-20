@@ -40,6 +40,9 @@ jobs:
       - name: Typecheck
         working-directory: apps/studio-web
         run: npm run typecheck
+      - name: Docking model unit tests
+        working-directory: apps/studio-web
+        run: npm run test:dock
       - name: Build static HTML5 frontend
         working-directory: apps/studio-web
         run: npm run build
