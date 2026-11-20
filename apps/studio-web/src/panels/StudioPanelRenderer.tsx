@@ -124,10 +124,11 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
           previewMaterial={snapshot?.previewMaterial}/>;
       case 'shader_graph':
         return <ShaderGraphPanel projectPath={snapshot?.project.path ?? ''}/>;
-      case 'animation':
+      case 'facial_rig':
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
+      case 'animation':
         return <div className="dock-unported" role="status">
           <Box size={28}/>
           <strong>{panel.charAt(0).toUpperCase() + panel.slice(1)} editor</strong>
