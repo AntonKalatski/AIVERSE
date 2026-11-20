@@ -137,6 +137,10 @@ public:
         const render::Renderer3D& renderer,const MapGrid& grid,
         const std::vector<uint8_t>* vision,
         const std::vector<uint8_t>* filteredVisibility=nullptr);
+    void drawCandidate(const std::shared_ptr<PreparedFrame>&,render::Renderer3D&,
+        const MapGrid&,const std::vector<uint8_t>*);
+    void drawMapCandidate(const std::shared_ptr<PreparedMap>&,render::Renderer3D&,
+        const MapGrid&,const std::vector<uint8_t>*);
     void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
     // Prepare camera resources against unpublished topology. The map owns
     // this frame until commitMap publishes both, or rollback discards both.

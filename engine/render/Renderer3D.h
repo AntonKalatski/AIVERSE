@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <deque>
 #include "../gfx/Gfx.h"
 #include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
@@ -506,6 +507,7 @@ public:
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
     void discardSceneSubmission() noexcept;
+    void drawMeshSnapshot(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Bridge the current opaque immediate-mesh scene queue into VT feedback.
     // The caller supplies a compatible feedback pipeline and per-mesh
@@ -1543,6 +1545,7 @@ private:
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
     std::vector<DrawItem> items_;
+    std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<FeedbackCustomDraw> customFeedback_;

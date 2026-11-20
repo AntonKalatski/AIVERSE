@@ -28,13 +28,14 @@ class CameraModelSnapshot {
     };
     std::vector<Entry> entries_;
     std::vector<CameraGeometryCommand> geometry_;
+    std::vector<std::shared_ptr<Mesh>> geometryMeshes_;
     std::vector<PreparedEntry> prepared_;
     std::unordered_set<uint64_t> preparedDrawIds_;
     size_t dropped_=0,maximum_=100000;
 public:
     explicit CameraModelSnapshot(size_t maxPackets=100000):maximum_(maxPackets){}
     void clear(){
-        entries_.clear();prepared_.clear();geometry_.clear();
+        entries_.clear();prepared_.clear();geometry_.clear();geometryMeshes_.clear();
         preparedDrawIds_.clear();dropped_=0;
     }
     size_t size()const{return entries_.size();}
@@ -87,7 +88,12 @@ public:
     }
     void recordGeometry(const CameraGeometryCommand& command) {
         if(geometry_.size()>=maximum_){++dropped_;return;}
-        geometry_.push_back(command);
+        auto packet=command;
+        if(command.mesh) {
+            auto mesh=std::make_shared<Mesh>(*command.mesh);
+            packet.mesh=mesh.get();geometryMeshes_.push_back(std::move(mesh));
+        }
+        geometry_.push_back(packet);
     }
     void beginCapture(Renderer3D& renderer) {
         clear();

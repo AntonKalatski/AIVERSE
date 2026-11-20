@@ -57,6 +57,9 @@ public:
     std::shared_ptr<PreparedRebuild> prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt,
         bool forceGround=false);
+    void drawCandidate(const std::shared_ptr<PreparedRebuild>&,render::Renderer3D&);
+    void drawPrepared(render::Renderer3D&);
+    float candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>&,float x,float z,float terrain) const;
     void commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept;
     // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
     // baked road surfaces): the view does not draw those while the network is shown

@@ -154,6 +154,7 @@ public:
         return c.stats();
     }
     // Draws the sheet (Renderer3D custom draw after the scene). `cells`: weak tier forces Cells.
+    void drawCandidate(PreparedSheet*,PreparedUpdate*,render::Renderer3D&,double,bool);
     void draw(render::Renderer3D& r, double time, bool lowTier);
 
 private:

@@ -523,6 +523,11 @@ std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
     // A fully prepared, *published* material kit stays in its current owner.
     // No material cache, shader or pipeline allocations are made in staging.
     staged.texturesLoaded_=true;
+    std::copy(std::begin(layerTex_),std::end(layerTex_),std::begin(staged.layerTex_));
+    std::copy(std::begin(layerNrm_),std::end(layerNrm_),std::begin(staged.layerNrm_));
+    staged.cliffTex_=cliffTex_;staged.cliffNrm_=cliffNrm_;
+    staged.white_=white_;staged.flatN_=flatN_;staged.gray_=gray_;
+    staged.fogLook_=fogLook_;
     staged.layerNormalAtlas_=layerNormalAtlas_;
     staged.layerNormalAtlasSize_=layerNormalAtlasSize_;
     // Borrow the immutable live kit; the frame candidate owns only misses.
@@ -1837,6 +1842,30 @@ void TerrainRenderer::commitMapVisible(PreparedMap& candidate) noexcept {
     commitFrame(std::move(frame));
 }
 
+void TerrainRenderer::drawCandidate(const std::shared_ptr<PreparedFrame>& next,
+        Renderer3D& r,const MapGrid& g,const std::vector<uint8_t>* vision) {
+    if(!next){drawPrepared(r,g,vision);return;}
+    if(next->owner_!=this || next->revision_!=publicationRevision_ || next->committed_)
+        throw std::logic_error("Terrain: stale candidate draw");
+    const bool dynamic=next->dynamic_.valid(),visible=next->vision_.valid();
+    const bool trace=next->traceHeight_.tex.valid(),pipeline=next->pipeline_.valid();
+    const auto exchange=[&]() noexcept {
+        using std::swap;
+        if(dynamic)swap(dynTex_,next->dynamic_);
+        if(visible)swap(visionTex_,next->vision_);
+        if(trace)swap(heightField_,next->traceHeight_);
+        if(pipeline)swap(pipes_[next->pipelineSlot_],next->pipeline_);
+        for(auto& item:next->lods_)swap(chunks_[item.chunk].lods[item.level],item.mesh);
+    };
+    exchange();try {drawPrepared(r,g,vision);}catch(...) {exchange();throw;}exchange();
+}
+void TerrainRenderer::drawMapCandidate(const std::shared_ptr<PreparedMap>& c,
+        Renderer3D& r,const MapGrid& g,const std::vector<uint8_t>* vision) {
+    if(!c || c->owner_!=this || c->revision_!=publicationRevision_ || c->committed_)
+        throw std::logic_error("Terrain: stale map candidate draw");
+    c->staged_->drawCandidate(c->frame_,r,g,vision);
+}
+
 void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept {
     if(!next || next->committed_)return;
     if(next->owner_!=this || next->device_!=dev_ ||
@@ -2091,7 +2120,7 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     // Water was already captured as a model/mesh packet in the primary
     // view; avoid duplicating it when the secondary terrain path runs.
     if (!preparedOnly && hasWater_ && water_.indexCount)
-        r.drawMesh(water_,mat4{},look_.waterColor,kDrawNoCastShadow,0.9f);
+        r.drawMeshSnapshot(water_,mat4{},look_.waterColor,kDrawNoCastShadow,0.9f);
     // AIVERSE_TERRAIN_STATS=1: chunks / triangles / frame time every 60 frames (stderr; perf checks on big maps)
     static const bool printStats = std::getenv("AIVERSE_TERRAIN_STATS") != nullptr;
     if (printStats && !preparedOnly) {
@@ -2154,7 +2183,7 @@ void TerrainRenderer::updateHeightField(gfx::Device& dev, const MapGrid& g) {
 
 void TerrainRenderer::drawWater(render::Renderer3D& r) {
     if (hasWater_ && water_.indexCount)
-        r.drawMesh(water_, render::mat4{}, look_.waterColor, render::kDrawNoCastShadow, .9f);
+        r.drawMeshSnapshot(water_, render::mat4{}, look_.waterColor, render::kDrawNoCastShadow, .9f);
 }
 
 } // namespace aiverse::game

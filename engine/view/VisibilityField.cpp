@@ -582,6 +582,21 @@ bool VisibilityField::update(std::span<const uint8_t> vision,int w,int h,double 
     return candidate?commitPreparedUpdate(std::move(candidate)):false;
 }
 
+void VisibilityField::drawCandidate(PreparedSheet* sheet,PreparedUpdate* field,
+        Renderer3D& r,double time,bool low) {
+    if((sheet && (sheet->owner_!=this || sheet->revision_!=revision_)) ||
+       (field && (field->owner_!=this || field->revision_!=revision_)))
+        throw std::logic_error("VisibilityField: stale candidate draw");
+    const bool texture=field && field->tex_.valid();
+    const auto exchange=[&]() noexcept {
+        using std::swap;
+        if(sheet){swap(vb_,sheet->vb_);swap(ib_,sheet->ib_);swap(indexCount_,sheet->indexCount_);
+            swap(w_,sheet->width_);swap(h_,sheet->height_);}
+        if(texture)swap(tex_,field->tex_);
+    };
+    exchange();try {draw(r,time,low);}catch(...) {exchange();throw;}exchange();
+}
+
 void VisibilityField::draw(Renderer3D& r, double time, bool lowTier) {
     if (!dev_ || !pipe_.valid() || !vb_.valid() || !tex_.valid() || !look_.show) return;
     Uniforms u{};

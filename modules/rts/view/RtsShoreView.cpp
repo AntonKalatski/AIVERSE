@@ -871,9 +871,18 @@ void RtsShoreView::rebuild(gfx::Device& dev,
     commitRebuild(std::move(prepared));
 }
 
+void RtsShoreView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
+    if(!c){drawPrepared(r);return;}
+    if(c->committed || c->device!=dev_)throw std::logic_error("Shore: stale candidate draw");
+    c->staged->drawPrepared(r);
+}
+
 void RtsShoreView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt, float waterY, int w, int h) {
     if (!dev_) return;
     if (dirty_ || waterY != builtWaterY_ || w != builtW_ || h != builtH_) rebuild(*dev_, heightAt, waterY, w, h);
+    drawPrepared(r);
+}
+void RtsShoreView::drawPrepared(Renderer3D& r) {
     for (auto& c : chunks_) { ModelDraw d; d.model = c.get(); d.flags = kDrawStatic; r.drawModel(d); }
     for (auto& p : props_) { ModelDraw d; d.model = propModels_[size_t(p.model)].model.get(); d.world = p.xf; d.flags = kDrawStatic; r.drawModel(d); }
     for (auto& c : transparent_) { ModelDraw d; d.model = c.get(); d.flags = kDrawNoCastShadow | kDrawTransparent; r.drawModel(d); }

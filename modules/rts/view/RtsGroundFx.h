@@ -136,6 +136,9 @@ public:
     }
     void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
     // Draws the current published snapshot; no mesh rebuild or visibility scan.
+    void drawCandidate(const std::shared_ptr<PreparedFrame>& frame,
+        render::Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& g,const RtsView& v);
     void drawPrepared(render::Renderer3D& r, const RtsScene& s,
                       double time, const std::vector<uint8_t>* vision,
                       const MapGrid& grid, const RtsView& view);

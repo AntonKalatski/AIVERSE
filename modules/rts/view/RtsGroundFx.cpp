@@ -1277,6 +1277,40 @@ void RtsGroundFx::draw(Renderer3D& r,const RtsScene& s,double time,
     drawPrepared(r,s,time,vision,g,v);
 }
 
+void RtsGroundFx::drawCandidate(const std::shared_ptr<PreparedFrame>& frame,
+        Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& g,const RtsView& v) {
+    if(!frame){drawPrepared(r,s,time,vision,g,v);return;}
+    if(frame->owner_!=this || frame->revision_!=publicationRevision_ || frame->committed_)
+        throw std::logic_error("GroundFX: stale candidate draw");
+    auto& next=*frame->staged_;
+    const auto exchange=[&]() noexcept {
+    using std::swap;
+    swap(chunks_,next.chunks_);
+    swap(lanes_,next.lanes_);
+    swap(territoryBlend_,next.territoryBlend_);
+    swap(territoryTime_,next.territoryTime_);
+    swap(memT_,next.memT_);swap(memD_,next.memD_);
+    swap(memR_,next.memR_);swap(memM_,next.memM_);
+    swap(memC_,next.memC_);swap(memW_,next.memW_);
+    swap(memRoom_,next.memRoom_);
+    swap(marked_,next.marked_);
+    swap(visible_,next.visible_);
+    swap(gridW_,next.gridW_);swap(gridH_,next.gridH_);
+    swap(chunksX_,next.chunksX_);swap(chunksY_,next.chunksY_);
+    swap(nextScan_,next.nextScan_);
+    swap(viewer_,next.viewer_);
+    swap(laneSig_,next.laneSig_);swap(laneCount_,next.laneCount_);
+    swap(useR_,next.useR_);
+    swap(hi_,next.hi_);swap(invalid_,next.invalid_);
+    swap(geomDirty_,next.geomDirty_);
+    swap(time_,next.time_);
+    };
+    exchange();
+    try {drawPrepared(r,s,time,vision,g,v);}catch(...) {exchange();throw;}
+    exchange();
+}
+
 void RtsGroundFx::drawPrepared(Renderer3D& r,const RtsScene& s,double time,
                                const std::vector<uint8_t>* vision,
                                const MapGrid& g,const RtsView& v) {
@@ -1285,12 +1319,12 @@ void RtsGroundFx::drawPrepared(Renderer3D& r,const RtsScene& s,double time,
     if (useD_ && dig_.on)
         for (int ci : visible_) {
             Chunk& c = chunks_[size_t(ci)];
-            if (c.rock.indexCount) r.drawMesh(c.rock, mat4{}, {1, 1, 1, 1}, 0, 0.12f);
-            if (c.veins.indexCount) r.drawMesh(c.veins, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 0.9f, 0.25f);
+            if (c.rock.indexCount) r.drawMeshSnapshot(c.rock, mat4{}, {1, 1, 1, 1}, 0, 0.12f);
+            if (c.veins.indexCount) r.drawMeshSnapshot(c.veins, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 0.9f, 0.25f);
             if (c.gems.indexCount) {
                 float glow = 0.0f;
                 for (auto& k : dig_.kinds) glow = std::max(glow, k.glow);
-                r.drawMesh(c.gems, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 1.0f, glow * (hi_ ? 0.85f + 0.15f * std::sin(time_ * 2.0f) : 1.0f));
+                r.drawMeshSnapshot(c.gems, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 1.0f, glow * (hi_ ? 0.85f + 0.15f * std::sin(time_ * 2.0f) : 1.0f));
             }
         }
     if (useD_ && dig_.on) drawProgress(r, g, v, vision);

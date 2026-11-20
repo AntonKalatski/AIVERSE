@@ -2713,11 +2713,35 @@ void RtsRoadView::buildWeather(gfx::Device& dev) {
     }
 }
 
+float RtsRoadView::candidateSurfaceAt(const std::shared_ptr<PreparedRebuild>& c,
+        float x,float z,float terrain) const {
+    return c && c->replaceGeometry ? c->staged->surfaceAt(x,z,terrain):surfaceAt(x,z,terrain);
+}
+void RtsRoadView::drawCandidate(const std::shared_ptr<PreparedRebuild>& c,Renderer3D& r) {
+    if(!c){drawPrepared(r);return;}
+    if(c->committed || c->device!=dev_)throw std::logic_error("Road: stale candidate draw");
+    auto& n=*c->staged;
+    const auto exchange=[&]() noexcept {
+        using std::swap;
+        if(c->replaceGeometry) {
+            swap(chunks_,n.chunks_);swap(props_,n.props_);swap(propModels_,n.propModels_);
+            swap(decalMesh_,n.decalMesh_);swap(vergeMesh_,n.vergeMesh_);
+        }
+        if(c->replaceFilm)swap(filmMesh_,n.filmMesh_);
+        if(c->replacePuddles)swap(puddleMesh_,n.puddleMesh_);
+        if(c->replaceGhost)swap(ghostModel_,n.ghostModel_);
+    };
+    exchange();try {drawPrepared(r);}catch(...) {exchange();throw;}exchange();
+}
+
 void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt) {
     if (!dev_) return;
     if (dirty_) rebuild(*dev_, heightAt);
     if (ghostDirty_) buildGhost(*dev_, heightAt);
     buildWeather(*dev_);
+    drawPrepared(r);
+}
+void RtsRoadView::drawPrepared(Renderer3D& r) {
     for (auto& c : chunks_) {
         ModelDraw d;
         d.model = c.model.get();

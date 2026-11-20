@@ -533,7 +533,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     ssrThisFrame_ = false;
     reflectionPlaneValid_ = false;
     reflectionPlaneY_ = 0.f;
-    items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
+    items_.clear(); meshSnapshots_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
     motionReactiveDraws_.clear(); // per-scene extensions register after beginScene
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     strataPreviewStats_ = {}; // diagnostic preflight never persists across scenes
@@ -553,7 +553,8 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
 }
 
 void Renderer3D::discardSceneSubmission() noexcept {
-    items_.clear();lines_.clear();tris_.clear();
+    heightField_={};
+    items_.clear(); meshSnapshots_.clear();lines_.clear();tris_.clear();
     custom_.clear();customOpaque_.clear();customShadow_.clear();customFeedback_.clear();
     motionReactiveDraws_.clear();
     modelItems_.clear();jointData_.clear();morphData_.clear();
@@ -606,6 +607,11 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
     lightViewProj_ = proj * view;
 }
 
+void Renderer3D::drawMeshSnapshot(const Mesh& mesh,const mat4& model,float4 color,
+        uint32_t flags,float specular,float emissive) {
+    meshSnapshots_.push_back(mesh);
+    drawMesh(meshSnapshots_.back(),model,color,flags,specular,emissive);
+}
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
     // Specialized water/selection draw variants carry extra state that a
