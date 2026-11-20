@@ -1358,3 +1358,60 @@ the true GPU actor source expansion, despite their existing CPU-fed
 diagnostic ID support. Independent native driver testing and wider
 MetaHuman-level authoring work remain separate milestones. See
 `docs/agent-handoffs/vivid-7AV-renderer-skin-parity-2026-11-20.md`.
+
+
+## Stage 7AW — renderer-encoded main-colour source provenance (2026-11-20)
+
+The VIVID Metal GPU ID diagnostic now requires **two independent source
+contracts**: (1) the current frame's staged Renderer3D
+`modelViewProvenance()` (original mesh, primitive, actual LOD, actor
+GPU vertex override); and (2) a new opt-in renderer-owned record of
+**actual main-colour draw calls encoded by Renderer3D**, obtained
+only after `Renderer3D::render()`. The new
+`trackModelSubmissions(model)` and `modelSubmissionProvenance(model)`
+APIs collect only the explicitly selected model's commands. Each
+records source mesh/node/primitive/draw invocation, the actual index
+range, 60B vertex override handle/count, renderer world transform,
+skin and material classification, compiled pipeline handle, pass
+and dispatch class (`Direct`, `DirectInstanced`,
+`IndexedIndirect`, `GpuIndirect`, `GpuIcb`). A newly
+begun scene clears these records; a late opt-in marks the result
+truncated rather than pretending earlier submissions were captured.
+
+`SculptGpuSubmittedView.h` checks the renderer's staged source against
+the accepted opaque main-colour commands **one-to-one** with the same
+frame serial and original source identity. Only an actually encoded
+single direct indexed draw with a valid pipeline is currently eligible.
+Pipeline-warming without a draw, mismatched index range/world/skin,
+instancing/ICB/MDI/conditional GPU LOD, missing material source,
+a non-main pass or an incomplete tracked scene fails closed. GPU
+ID confirmation never overrides the previously CPU-BVH-selected
+source vertex.
+
+Creator now invokes its optional ID diagnostic **after** the real
+Renderer3D render. Because the renderer deliberately leaves the main
+pass open for UI, Creator temporarily ends that pass only when the
+renderer/scene preflight succeeds, records the ID compute and
+offscreen RGBA8/depth pass, and resumes the original pass with
+`clearColorEnabled=false`, `clearDepthEnabled=false`, full
+viewport and full scissor. The original selected actor GPU stream
+remains borrowed only for the current RHI frame. Other actors and
+engine worlds pay no per-model tracking cost unless they opt in.
+
+The source-only `vivid_human_creator` tests now cover missing accepted
+commands, pipeline pending, wrong frame, mismatched transform/index
+and indirect/ICB rejection. The existing real Metal renderer preview
+fixture now checks that its actor GPU override has an encoded direct
+main-colour draw and matches the staged original model view.
+
+**Actual verification:** GitHub reads/writes and 16 static source
+contract checks. **Native C++/ObjC++ build, CTest, GPU shader
+compile, real Metal pixels, frame timing/VRAM, Vulkan/GLES and full
+`bash tools/vivid-validate.sh --full`: NOT RUN.** This validates
+source-level submitted-command identity, **not** a completed GPU
+fragment, final depth/colour pixel or physical GPU-fence parity.
+An actual final colour/depth ↔ GPU ID pixel oracle (with another
+GPU-moved alpha-masked occluder) is a distinct upcoming stage.
+Other GPU-deformed occluders and final material/Prisma depth may
+still disagree. See
+`docs/agent-handoffs/vivid-7AW-accepted-draw-provenance-2026-11-20.md`.
