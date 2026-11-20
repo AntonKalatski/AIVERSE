@@ -35,7 +35,7 @@ struct DeviceProbe final:Device {
     void setVertexBuffer(BufferHandle,size_t)override{}
     void setIndexBuffer(BufferHandle,size_t)override{}
     void setTexture(int,TextureHandle t)override{CHECK(t.valid()&&t!=attachment&&t!=depthAttachment);}
-    void setUniforms(int,const void* ptr,size_t bytes)override{CHECK(bytes==1728);const auto* f=static_cast<const float*>(ptr);for(size_t i=0;i<bytes/4;++i)CHECK(std::isfinite(f[i]));weatherX=f[56];weatherZ=f[57];}
+    void setUniforms(int,const void* ptr,size_t bytes)override{CHECK(bytes==2112);const auto* f=static_cast<const float*>(ptr);for(size_t i=0;i<bytes/4;++i)CHECK(std::isfinite(f[i]));weatherX=f[56];weatherZ=f[57];}
     void draw(uint32_t count,uint32_t)override{CHECK(count==3&&open);++draws;}
     void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t)override{}
 };
@@ -54,6 +54,21 @@ int main(int argc,char** argv){
     bad=v;bad.region.center.x=std::numeric_limits<float>::quiet_NaN();CHECK(!scene.upsert(bad));
     for(uint32_t id=2;id<=8;++id){v.id=id;CHECK(scene.upsert(v));}v.id=9;CHECK(!scene.upsert(v));
     CHECK(scene.removeVolume(4));CHECK(scene.upsert(v));scene.clear();CHECK(scene.densityAt({0,0,0})==0);
+    // Heterogeneous banks stay bounded; vertical profile and wind have world-space semantics.
+    FogVolume bank;bank.id=1;bank.region.radius=100;bank.region.feather=0;bank.density=.4f;
+    bank.structure.amount=1;bank.structure.scale={6,1,4};bank.structure.wind={2,0,0};
+    CHECK(scene.upsert(bank));float lo=1,hi=0;
+    for(int i=-20;i<20;++i){float den=scene.densityAt({float(i)*.3f,0,1});CHECK(den>=0&&den<=bank.density);lo=std::min(lo,den);hi=std::max(hi,den);}
+    CHECK(hi-lo>.05f);
+    CHECK(std::abs(scene.densityAt({4,0,1},2)-scene.densityAt({0,0,1},0))<1e-6f);
+    CHECK(std::abs(scene.densityAt({0,0,1},768)-scene.densityAt({0,0,1},0))<1e-6f);
+    CHECK(std::isfinite(scene.densityAt({0,0,1},1e300)));
+    auto invalid=bank;invalid.structure.scale.y=0;CHECK(!scene.upsert(invalid));
+    invalid=bank;invalid.structure.wind.x=std::numeric_limits<float>::infinity();CHECK(!scene.upsert(invalid));
+    bank.structure.amount=0;bank.structure.heightFalloff=1;CHECK(scene.upsert(bank));
+    CHECK(std::abs(scene.densityAt({0,1,0})-.4f/std::exp(1.f))<1e-6f);
+    r.region.radius=100;r.region.center={};r.strength=1;CHECK(scene.upsert(r));CHECK(scene.densityAt({0,1,0},42)==0);
+    CHECK(scene.removeReveal(r.id));CHECK(scene.densityAt({0,1,0},42)>0);scene.clear();
     DeviceProbe device;LocalFog fog;PostFrame frame;frame.width=640;frame.height=360;LocalFogSettings settings;settings.enabled=true;
     auto render=[&](TextureHandle dst,int quality=3){return fog.draw(device,frame,settings,scene,quality,{1},{2},dst,{4},{1});};
     CHECK(!render({3}));v.id=1;CHECK(scene.upsert(v));CHECK(!render({1}));CHECK(!render({3},1));CHECK(device.shaders==0);

@@ -117,3 +117,73 @@ Use `AIVERSE_HDR_CAPTURE=/tmp/fog.ppm` and `AIVERSE_AUDIO=off`.
 The legacy `PostFx` alias forwards to `Prisma` and retains these APIs. On main,
 atmosphere/fog feed exposure metering, motion/temporal resolve and bloom.
 New targets use PRISMA roles 200/201 (DoF retains role 50).
+
+## Structured banks and low forest mist
+
+`FogVolume::structure` adds opt-in three-octave **3D density noise**, anisotropic
+cell scale, a world-Y height falloff and wind advection. These are volume samples,
+not camera-facing smoke cards. Existing volumes keep `amount=0` and
+`heightFalloff=0`, retaining their original uniform appearance.
+
+```cpp
+FogVolume bank;
+bank.id = 1;
+bank.region.shape = FogShape::Obb;
+bank.region.center = {0, 1.2f, -14};
+bank.region.halfExtents = {32, 3, 43};
+bank.region.feather = .5f;
+bank.density = .045f;
+bank.color = {.72f, .8f, .88f};
+bank.structure.amount = 1;
+bank.structure.scale = {8, .65f, 5}; // elongated thin forest wisps
+bank.structure.coverage = .58f;
+bank.structure.softness = .22f;
+bank.structure.heightBase = .2f;
+bank.structure.heightFalloff = 1.3f;
+bank.structure.wind = {.6f, 0, .2f};
+prisma.localFog().upsert(bank);
+```
+
+For larger valley banks, use e.g. density `.07`, scale `{12,3.5,10}`, coverage
+`.62`, heightBase `1`, heightFalloff `.13`, a larger box with a soft boundary.
+These are starting values in the asset-free fixture's world scale, not calibrated
+atmospheric constants. Lighting and scene scale materially affect the result.
+
+| Parameter | Meaning and accepted range |
+| --- | --- |
+| `amount` | 0..1 blend from uniform to noise-shaped density |
+| `scale` | Positive cell dimensions per world axis, .1..50000 world units |
+| `coverage` | 0..1 noise threshold control; higher produces fuller banks |
+| `softness` | .01..1 width of threshold transition |
+| `heightBase` | World Y below which height attenuation is 1, +/-1000000 |
+| `heightFalloff` | 0..100 inverse world units; attenuation is exp(-max(Y-base,0)*falloff) |
+| `wind` | World units/second per axis, each -1000..1000 |
+
+Noise coordinates are world anchored and advect in the **positive wind direction**.
+Changing a volume center moves its boundary; it does not restart the world noise.
+Changing wind with the same absolute clock can change phase; hosts needing smooth
+wind transitions must manage their authored clock/wind policy. Noise is a periodic
+256-cell lattice; time reduction preserves that periodicity even in long sessions.
+CPU `densityAt(position, seconds=0)` evaluates the same density definition including
+height and reveals, with normal CPU/GPU float differences. It remains cosmetic.
+
+`Prisma::setLocalFogTime(nonnegativeSeconds)` freezes an explicit presentation
+instant (pause/replay/captures); a negative value resumes the steady clock.
+Configure/shutdown reset the fog clock. CPU callers must supply the matching time
+for animated density queries. Reveals apply after density shaping and continue to
+fully clear/move/restore both structured and uniform fog.
+
+Structured/height-shaped scenes use 48 samples per merged interval at Medium and
+96 at High, with a static subpixel sample offset to reduce coherent raymarch bands.
+Uniform scenes retain the prior 32/64 budget and exact midpoint sampling. This
+adds shader ALU cost; no frame-time improvement or temporal reconstruction is
+claimed. Thin structures can still undersample, and self-shadowing remains absent.
+Height is **world Y, not automatic terrain-following**: place multiple regions for
+sloped ground. Geometry occludes the fog using scene depth; no terrain/physics
+simulation dependency is introduced.
+
+`AIVERSE_LOCAL_FOG_TEST=forest|valley` selects native synthetic landscape fixtures;
+`-off`, `-reveal`, `-wind` suffixes check disabled fog, full clearing and wind at 8s.
+`tests/render/FogLandscape.h` contains their explicit settings and simple geometry.
+These demonstrate density, height and occlusion, not parity with a finished game's
+terrain, trees, materials or lighting. GLSL and MSL use the same noise body.

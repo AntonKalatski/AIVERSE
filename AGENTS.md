@@ -4046,3 +4046,10 @@ Physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal remain opt-in
 PHYSIS bridge is read-only presentation; no gameplay visibility or simulation changes.
 Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
 and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.
+
+**Structured fog:** `FogVolume::structure` is opt-in cosmetic 3D noise/height/wind.
+Preserve `amount=0,heightFalloff=0` uniform compatibility and CPU `densityAt(p,t)`
+semantics. World-Y height does not imply terrain following. Noise is a periodic
+256-cell integer lattice; time wrap must preserve its phase. Reveals apply after
+structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
+presentation only. Structured 48/96-step budgets are separate from uniform 32/64.

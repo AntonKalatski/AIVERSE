@@ -4166,3 +4166,12 @@ compatible. These features are disabled by default. Native region/settings APIs
 are owner-wide: a multi-camera host must set each view's cosmetic data before
 its resolve, or use a separate Prisma owner. Camera-volume profile blending does
 not yet author or interpolate these atmosphere settings. No gameplay changes.
+
+### Structured fog continuation
+
+`FogVolume::structure` optionally shapes local fog with periodic 3D noise,
+per-axis world scale, height attenuation and wind; `Prisma::setLocalFogTime`
+provides a reproducible presentation clock. Default uniform fog is preserved.
+The existing local fog pass owns this, with no extra history or render targets.
+See the structured banks section in `docs/local-volumetric-fog.md`. No terrain
+sampling, gameplay visibility or PHYSIS state mutation is introduced.
