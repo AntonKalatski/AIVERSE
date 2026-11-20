@@ -604,6 +604,8 @@ void test() {
         model.meshes[0].lods.clear();
         // Multiple node owners are supported in Renderer3D but NOT by our
         // single-surface CPU picking reconstructor.
+        const auto originalOther=view.primitives.back();
+        view.primitives.pop_back(); // isolate the selected mesh's owners
         model.nodes[1].mesh=0;
         view.primitives.push_back(view.primitives[0]);
         view.primitives.back().nodeIndex=1;
@@ -612,7 +614,7 @@ void test() {
             "multiple node owners of same mesh must fail closed");
         model.nodes[1].mesh=1;
         view.primitives.pop_back();
-        view.primitives.pop_back();
+        view.primitives.push_back(originalOther);
         // Renderer3D can draw the same Model twice with identical internal
         // node indices but a different world transform. Such instances must
         // not reuse a single morphed/skinned CPU source surface.
