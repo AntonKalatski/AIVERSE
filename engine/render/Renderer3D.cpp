@@ -2062,6 +2062,13 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     hdrFrame_ = post_ && post_->linearScene();
     lights.setLinearScene(hdrFrame_);
     renderReflection();
+    struct LumaReceiverScope {
+        bool& capture;bool& auxiliary;bool oldAuxiliary;
+        LumaReceiverScope(bool& c,bool& a):capture(c),auxiliary(a),oldAuxiliary(a){
+            capture=true;auxiliary=true; // disable unrelated GPU ICB/MDI
+        }
+        ~LumaReceiverScope(){capture=false;auxiliary=oldAuxiliary;}
+    };
     // PBR side-channel captures are opt-in PostProcess only. They sample the
     // SAME current/animated ModelItems and palette/batched material state.
     // Each receiver has independent depth; never reuse HDR depth as a
@@ -2071,11 +2078,12 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         if(receiver.colorTarget.valid() && receiver.depthTarget.valid()) {
             dev_->beginPass(receiver);
             dev_->setViewport({0,0,sw,sh});
-            lumaMaterialCapture_=true;
-            uploadFrameUniforms(false);
-            renderModels(1);
-            for(auto& fn:customMaterialReceiver_)fn(*dev_);
-            lumaMaterialCapture_=false;
+            {
+                LumaReceiverScope captureScope(lumaMaterialCapture_,auxiliaryModelPass_);
+                uploadFrameUniforms(false);
+                renderModels(1);
+                for(auto& fn:customMaterialReceiver_)fn(*dev_);
+            }
             dev_->endPass();
             post_->materialReceiverPublished(receiver.colorTarget,sw,sh);
         }
@@ -2085,11 +2093,12 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         if(surface.colorTarget.valid() && surface.depthTarget.valid()) {
             dev_->beginPass(surface);
             dev_->setViewport({0,0,sw,sh});
-            lumaSurfaceCapture_=true;
-            uploadFrameUniforms(false);
-            renderModels(1);
-            for(auto& fn:customSurfaceReceiver_)fn(*dev_);
-            lumaSurfaceCapture_=false;
+            {
+                LumaReceiverScope captureScope(lumaSurfaceCapture_,auxiliaryModelPass_);
+                uploadFrameUniforms(false);
+                renderModels(1);
+                for(auto& fn:customSurfaceReceiver_)fn(*dev_);
+            }
             dev_->endPass();
             post_->surfaceReceiverPublished(surface.colorTarget,sw,sh);
         }
