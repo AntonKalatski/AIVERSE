@@ -246,3 +246,20 @@ Focused rerun at 8987223a9 report `20261120-150848-57940`: all six preceding
 regression fixes PASS after targeted 3-target rebuild. Full CTest still pending
 other long checks. CI/GPU visuals NOT RUN. Next: rebuild these targets and run
 epoch, LENS and deferred-loading filters before another expensive core run.
+
+## Full core second abort; reporting repair
+
+First full run at 74f076f42 ended **206/214 PASS, 8 FAIL**, 543.88 seconds
+(report 20261120-145546-38984). All except core subsequently passed focused
+reruns: six fixes report 20261120-150848-57940, deferred loading report
+20261120-151141-61050. At 6a5d3bf6d, direct lens_ filter: **380 checks PASS**
+(log lens-core-6a5d3bf6d.log); epoch filter: **11 checks PASS**
+(log lens-epoch-6a5d3bf6d.log), both under KINGSTON test-reports.
+Second full core run 20261120-151300-62204 aborted after 445.75s at
+selection_outline_mask_pipeline_preserves_scene_depth: synchronous RecordingDevice
+did not implement waitForResourceIdle. Commit `1a106642b0a2a360fd3584dd4caa6e1e235510a0` adds true only to that
+CPU fake (fault-injecting subclasses still override it), and main catches
+unexpected exceptions as failed tests, prints their names and flushes output
+before continuing. Failure exit status remains nonzero. tests/tests.cpp only.
+CI NOT RUN. Budget-stage native tests still pending. Next: rebuild core, run
+selection/LENS/budget filters, then complete the remaining full core gate.
