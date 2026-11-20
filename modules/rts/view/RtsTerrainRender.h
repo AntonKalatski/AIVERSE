@@ -55,6 +55,9 @@ struct TerrainLook {
     double detailBudgetMB = 96;                 // detail LOD meshes kept on the GPU (LRU beyond)
     render::float3 rockColor{0.45f, 0.41f, 0.36f}; // steep slopes without a cliff texture
     bool hasRockColor = false;
+    // Opt-in dielectric PBR. Packed assets use albedo.a=AO, normal.a=roughness.
+    bool pbr = false, packedPbr = false;
+    float pbrRoughness = 0.85f;
     bool materials() const { return !layers.empty(); }
 };
 

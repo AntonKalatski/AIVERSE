@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "default": "checkerboard",
+  "normalConvention": "+Y (OpenGL)",
+  "colorSpace": {
+    "basecolor": "sRGB",
+    "normal": "linear",
+    "orm": "linear",
+    "height": "linear"
+  },
+  "materials": [
+    {
+      "id": "grass",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.018,
+      "heightMap": "materials/terrain/textures/grass_height_repeat.png",
+      "terrainLayer": {
+        "id": "grass",
+        "texture": "materials/terrain/textures/grass_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/grass_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "soil",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.035,
+      "heightMap": "materials/terrain/textures/soil_height_repeat.png",
+      "terrainLayer": {
+        "id": "soil",
+        "texture": "materials/terrain/textures/soil_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/soil_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "sand",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.012,
+      "heightMap": "materials/terrain/textures/sand_height_repeat.png",
+      "terrainLayer": {
+        "id": "sand",
+        "texture": "materials/terrain/textures/sand_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/sand_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "rock",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.065,
+      "heightMap": "materials/terrain/textures/rock_height_repeat.png",
+      "terrainLayer": {
+        "id": "rock",
+        "texture": "materials/terrain/textures/rock_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/rock_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "snow",
+      "repeatMeters": 2.0,
+      "heightMeters": 0.008,
+      "heightMap": "materials/terrain/textures/snow_height_repeat.png",
+      "terrainLayer": {
+        "id": "snow",
+        "texture": "materials/terrain/textures/snow_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/snow_terrain_normal_repeat.png",
+        "scale": 2.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "checkerboard",
+      "repeatMeters": 4.0,
+      "heightMeters": 0,
+      "heightMap": "materials/terrain/textures/checkerboard_height_repeat.png",
+      "terrainLayer": {
+        "id": "checkerboard",
+        "texture": "materials/terrain/textures/checkerboard_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/checkerboard_terrain_normal_repeat.png",
+        "scale": 4.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ]
+}

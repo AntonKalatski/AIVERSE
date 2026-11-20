@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Bake the bundled terrain PBR library from authored base-color/height sources.
+No inferred metallic surfaces: the entire terrain pack is dielectric.
+Requires numpy and Pillow. Sources are authored images, not measured scans.
+"""
+from pathlib import Path
+import json, argparse
+import numpy as np
+from PIL import Image
+
+MATERIALS={'grass':(2.0,.018,.91),'soil':(2.0,.035,.94),'sand':(2.0,.012,.86),'rock':(2.0,.065,.78),'snow':(2.0,.008,.76),'checkerboard':(4.0,0,.68)}
+SIZE=1024
+
+def tile(a):
+    # Periodic-plus-smooth decomposition removes broad boundary discontinuities.
+    h,w=a.shape[:2]; v=np.zeros_like(a)
+    v[0]=a[-1]-a[0];v[-1]=a[0]-a[-1]
+    v[:,0]+=a[:,-1]-a[:,0];v[:,-1]+=a[:,0]-a[:,-1]
+    den=2*np.cos(2*np.pi*np.arange(h)/h)[:,None]+2*np.cos(2*np.pi*np.arange(w)/w)[None,:]-4
+    den[0,0]=1
+    if a.ndim==3:den=den[...,None]
+    f=np.fft.fft2(v,axes=(0,1))/den;f[0,0]=0
+    p=a-np.fft.ifft2(f,axes=(0,1)).real
+    # Match the actual endpoint texels too, before periodic derivative baking.
+    edge=(p[0]+p[-1])/2;p[0]=edge;p[-1]=edge
+    edge=(p[:,0]+p[:,-1])/2;p[:,0]=edge;p[:,-1]=edge
+    return np.clip(p,0,1)
+
+def blur_periodic(a,r):
+    freqy=np.fft.fftfreq(a.shape[0])[:,None];freqx=np.fft.fftfreq(a.shape[1])[None,:]
+    return np.fft.ifft2(np.fft.fft2(a)*np.exp(-2*np.pi**2*r*r*(freqx*freqx+freqy*freqy))).real
+
+def png(path,a):
+    Image.fromarray(np.rint(np.clip(a,0,1)*255).astype('uint8')).save(path,optimize=True)
+
+def bake(root):
+    textures=root/'textures';textures.mkdir(parents=True,exist_ok=True);library={};catalog=[]
+    for name,(meters,height_m,rough_mean) in MATERIALS.items():
+        if name=='checkerboard':
+            yy,xx=np.indices((SIZE,SIZE));c=((xx//128+yy//128)%2)*.23+.24
+            base=np.repeat(c[...,None],3,axis=2);height=np.full((SIZE,SIZE),.5)
+        else:
+            base=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_basecolor.png').convert('RGB').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
+            height=np.asarray(Image.open(Path(__file__).resolve().parent/'pbr_sources'/f'{name}_height.png').convert('L').resize((SIZE,SIZE),Image.Resampling.LANCZOS),dtype=float)/255
+            base=tile(base);height=tile(height)
+        dx=(np.roll(height,-1,axis=1)-np.roll(height,1,axis=1))*height_m*SIZE/(2*meters)
+        dy=(np.roll(height,-1,axis=0)-np.roll(height,1,axis=0))*height_m*SIZE/(2*meters)
+        normal=np.stack([-dx,dy,np.ones_like(dx)],axis=2);normal/=np.linalg.norm(normal,axis=2,keepdims=True);normal=normal*.5+.5
+        cavity=np.maximum(blur_periodic(height,7)-height,0)
+        ao=np.clip(1-cavity*1.2,.72,1)
+        rough=np.clip(rough_mean+(blur_periodic(height,2)-.5)*.1+cavity*.12,.5,.98)
+        if name=='checkerboard':ao[:]=1;rough[:]=rough_mean
+        prefix='materials/terrain/textures/'+name
+        for suffix,arr in [('basecolor',base),('normal',normal),('roughness',rough),('ao',ao),('metallic',np.zeros_like(ao)),('orm',np.stack([ao,rough,np.zeros_like(ao)],2)),('terrain_color',np.dstack([base,ao])),('terrain_normal',np.dstack([normal,rough]))]:
+            png(textures/f'{name}_{suffix}_repeat.png',arr)
+        Image.fromarray(np.rint(height*65535).astype('uint16')).save(textures/f'{name}_height_repeat.png')
+        library['terrain_'+name]={'description':f'Bundled terrain PBR: {name}. Dielectric; {meters:g} m repeat.','texture':prefix+'_basecolor_repeat.png','normalMap':prefix+'_normal_repeat.png','metallicRoughnessMap':prefix+'_orm_repeat.png','occlusionMap':prefix+'_ao_repeat.png','color':[1,1,1,1],'roughness':1,'metallic':0,'normalScale':1,'occlusionStrength':1,'vertexColors':False,'team':'none','uvScale':[1,1]}
+        catalog.append({'id':name,'repeatMeters':meters,'heightMeters':height_m,'heightMap':prefix+'_height_repeat.png','terrainLayer':{'id':name,'texture':prefix+'_terrain_color_repeat.png','normal':prefix+'_terrain_normal_repeat.png','scale':meters,'tint':[1,1,1]}})
+    (root/'materials.json').write_text(json.dumps(library,indent=2)+'\n')
+    (root/'catalog.json').write_text(json.dumps({'version':1,'default':'checkerboard','normalConvention':'+Y (OpenGL)','colorSpace':{'basecolor':'sRGB','normal':'linear','orm':'linear','height':'linear'},'materials':catalog},indent=2)+'\n')
+    checker=catalog[-1]['terrainLayer']
+    config={'pbr':{'enabled':True,'packedMaps':True,'roughness':.68},'layers':[checker],'cells':{k:{'layer':'checkerboard','color':[1,1,1]} for k in ('grass','sand','ramp','rock','blocked','lakebed','shallows','dug')},'splatStrength':1}
+    (root/'default-terrain.json').write_text(json.dumps(config,indent=2)+'\n')
+    print('Baked 6 PBR materials / 54 texture maps')
+if __name__=='__main__':
+    ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2]/'engine/assets/materials/terrain');bake(ap.parse_args().root)
