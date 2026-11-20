@@ -146,7 +146,27 @@ struct StaticModelCache {
     bool displaced=false;
     void prepare(const Model& source,const mat4& transform);
 };
+// Optional Stage 16.3 GPU-authored indexed selection packet. All shading,
+// transforms, visibility and final draw ownership remain Renderer3D's.
+// GeometryScene supplies this ONLY for validated one-primitive Vulkan
+// sources, and keeps the buffer/metadata alive through the render epoch.
+// Failure to consume this packet falls back to the same Legacy ModelDraw.
+struct GpuIndexedSelectionPacket {
+    gfx::BufferHandle commands{};
+    gfx::BufferHandle vertex{}, index{};
+    mat4 selectedWorld{};
+    uint64_t frameSerial=0, geometryRevision=0, materialRevision=0;
+    uint32_t commandCapacity=0, sourceFirstIndex=0, sourceIndexCount=0;
+    int32_t sourceBaseVertex=0;
+    bool exclusive=false;
+    bool valid() const {
+        return exclusive && commands.valid() && vertex.valid() &&
+               index.valid() && frameSerial && commandCapacity &&
+               commandCapacity<=2048 && sourceIndexCount;
+    }
+};
 struct ModelDraw {
+    GpuIndexedSelectionPacket gpuIndexed{};
     const StaticModelCache* staticCache=nullptr;
     GeometryPolicy geometry;
     const Model* model = nullptr;
@@ -213,6 +233,9 @@ struct ModelRenderStats {
     uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // Stage 16.3: main opaque, one-primitive Vulkan STRATA route only.
+    uint64_t strataGpuCandidates=0, strataGpuSubmitted=0;
+    uint64_t strataGpuRejected=0, strataGpuFallbackDraws=0;
     // Submitted indexed MDI batches using an exact validated persistent
     // layout, without copying cached CPU commands into transient scratch.
     uint64_t mdiLayoutZeroCopySubmissions = 0;
@@ -819,6 +842,9 @@ private:
         int32_t materialIndex = -1; // remap material pointers on packet replay
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
+        // Copied by value from a transient ModelDraw into this frame's
+        // renderer-owned item. Never stores a pointer to GeometryScene.
+        GpuIndexedSelectionPacket gpuIndexed{};
         size_t geometryPrimitive = 0;
         uint32_t firstIndex = 0, indexCount = 0;
         // Optional two-level, single-primitive GPU LOD choice. Always preserve
