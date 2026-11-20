@@ -125,3 +125,84 @@ half-resolution depth-aware compositor/temporal resolve (keep histories per view
 reset on weather/time/camera changes). Add cloud transmittance to surface lighting
 only as a separate stage with dedicated GLSL/MSL shadow/IBL parity tests. Preserve
 this handoff and append a separate code-SHA entry after each further stage.
+
+## Stage 2 — PHYSIS weather binding (2026-11-20)
+
+Implementation: `50480303c9428e92f8f0b1f1346763d4b3d5bef1`, same branch
+`feature/physical-sky-clouds`, parent `a4443b5b59f441d87d5208ebfc574874b72488c8`.
+Stage 1 was subsequently pushed to origin at the user's request. This stage
+continues the user's approved PHYSIS integration; no main merge or PR creation.
+
+### API, ownership and changes
+
+- Added `engine/world/PhysisSkyBridge.h`: `PhysisSkyPolicy`,
+  `PhysisSkyFrame`, `physisSkySettings`, `PhysisSkyBinding::update/reset`,
+  `applyPhysisSkyFrame`. Host-side bridge samples `const World` through existing
+  `physis::sampleNatureField`; no changes or render dependency inside PHYSIS.
+- Coverage maps humidity plus max rain/snow/storm precipitation; cloud extinction
+  and haze are configurable visual multipliers. PHYSIS has no canonical cloud
+  coverage, so this is an artistic transfer, not atmospheric calibration or a
+  new climate solver. No time stepping, world/resource/component writes.
+- Added `PostFx::setPhysicalSkyAdvection/clearPhysicalSkyAdvection` in
+  `engine/render/PostFx.h`, configure/shutdown reset and forwarding in
+  `engine/render/PostFx.cpp`. `PhysicalSky.{h,cpp}` accepts optional metre
+  displacement with positive X/Z world motion; absence preserves prior manual
+  time*wind behavior. Shader source/layout unchanged.
+- Binding integrates previous committed wind by elapsed PHYSIS ticks. Repeated
+  same-tick reads freeze advection. Wind changes preserve accumulated phase.
+  Source token, decreasing tick, changed tick duration/cloud scale or >60-second
+  gap resets cosmetic phase; caller must change source token for same-tick
+  restores. One instance per source/view. Missing/outside-grid PHYSIS or invalid
+  clock/token returns authored settings and clears advection on publish.
+- `tests/render/physis_sky.cpp`: normalized precipitation mapping, invalid
+  policy, real negative-coordinate World sample, wind/pause/change behavior,
+  copy isolation, rollback, missing atmosphere, source change and two bindings.
+  `tests/render/physical_sky.cpp`: actual uploaded displacement signs and
+  manual-clock compatibility. `CMakeLists.txt`: default-built CPU bridge target
+  `aiverse_physis_sky_tests`, CTest `physis_sky` in unified runner.
+- `tests/render/HdrScene.h`: real World -> bridge -> PostFx dry/storm fixtures.
+- `docs/physical-sky.md`: compiled API usage, units, lifetime and boundaries;
+  root `AGENTS.md`: continuation contract.
+
+No gameplay/network/save/schema changes; no TerraWeave dependency, automatic
+PHYSIS install or automatic existing editor/RTS/FPS attachment. Native hosts
+must explicitly call the bridge at their committed read barrier. Always retain
+the original authored settings, not the previous mapped settings, as baseline.
+The transient cloud offset intentionally resets on rollback; it is NOT an exact
+persisted visual replay history. One sample controls the entire cloud slab;
+spatial weather maps and temporal parameter smoothing remain future work.
+
+### Actual validation and failures corrected
+
+- Initial build command for the newly added target failed `No rule to make
+  target aiverse_physis_sky_tests` before regeneration. Ran
+  `cmake -S . -B build/sky` (PASS) to update the existing isolated Debug cache.
+- First compile exposed four fixture `.tick` accesses on the pointer returned
+  by `World::resource<T>()`. Corrected to `->tick`; no production change.
+- PASS build: `cmake --build build/sky --target aiverse_physis_sky_tests
+  aiverse_physical_sky_tests aiverse_physis_presentation_test aiverse_hdr_scene
+  -j 8`. Final incremental build also passed after test additions.
+- PASS strict syntax: `c++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I.
+  tests/render/physis_sky.cpp`.
+- PASS final committed-source unified run:
+  `./run-tests.sh --no-build --build-dir build/sky --filter
+  '^(physical_sky|physis_sky|physis_presentation)$'`: 3/3, 0 failures.
+  Exact SHA `50480303c9428e92f8f0b1f1346763d4b3d5bef1`, report
+  `build/sky/test-reports/20261120-131057-81808/summary.txt` and `ctest.xml`.
+- PASS Metal Apple M3 Ultra: `AIVERSE_PHYSICAL_SKY_TEST=physis-dry` and
+  `physis-storm`, `AIVERSE_HDR_CAPTURE=/tmp/aiverse-sky-CASE.ppm`,
+  `AIVERSE_AUDIO=off ./build/sky/aiverse_hdr_scene`. Both exit successfully,
+  HDR/3 passes, zero pipeline failures. Both resulting PNGs visually inspected:
+  dry almost-clear sky; high-precipitation dense overcast, suppressed sunlight.
+  Captures in `build/sky/captures/physis-{dry,storm}.png` and logs in
+  `build/sky/verification/`. These are synthetic host snapshots, not proof an
+  existing game automatically installs/steps PHYSIS.
+- PASS staged diff whitespace check. Full repository/CI, new-stage GL/Vulkan/
+  mobile and actual game/editor attachment tests NOT RUN. No CI URL/run exists.
+
+Next: explicitly attach one binding in a selected native host which already
+installs PHYSIS, identify its source generation and real climate tick interval,
+then exercise live pause/load/rollback and map transitions. Do not introduce
+renderer dependencies into PHYSIS core or force climate on legacy games. For
+spatial clouds, design a bounded read-only weather texture separately; preserve
+this stage's deterministic simulation and transient-render ownership boundary.
