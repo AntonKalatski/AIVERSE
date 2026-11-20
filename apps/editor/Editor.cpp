@@ -271,6 +271,7 @@ void Editor::shutdown() {
         throw std::runtime_error("Editor preview Models: GPU retirement barrier failed");
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     terraWeaveForestPreview_.release(*dev_);
+    nereidPreview_.shutdown(*dev_);
     view_.shutdown(*dev_);
     view_.setModelRetirementDiagnosticObserver({});
     view_.setImageRetirementDiagnosticObserver({});
@@ -1179,6 +1180,13 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         : std::pair<int,int>{vp.w,vp.h};
     const RTSCamera renderCam = postEnabledForScene
         ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
+    // Existing map extra is the presentation manifest, not a new water solver.
+    try {
+        nereidPreview_.configure(doc().data.extra);
+        nereidPreview_.prepare(*dev_,useCam.eye());
+    } catch(const std::exception& e) {
+        std::fprintf(stderr,"[nereid-preview] %s\n",e.what());
+    }
     r3d_.beginScene(renderCam,renderW,renderH);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
@@ -1193,6 +1201,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         view_.draw(r3d_, scene_, time_, nullptr, grid_);
         view_.setSelectionOutline(false);
     }
+    nereidPreview_.draw(r3d_);
     const auto afterView = std::chrono::steady_clock::now();
     if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
@@ -1325,11 +1334,18 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         render::geometryPoolStats(*dev_).allocatedBytes);
     const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
     const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
+    try {
+        nereidPreview_.configure(doc().data.extra);
+        nereidPreview_.prepare(*dev_,cam.eye());
+    } catch(const std::exception& e) {
+        std::fprintf(stderr,"[nereid-game-preview] %s\n",e.what());
+    }
     r3d_.beginScene(renderCam,renderW,renderH);
     setOverlayContext(vp, cam, true);
     view_.draw(r3d_, sc, time_, human_ ? &gs.vision[size_t(human_)] : nullptr, gs.grid);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, gs.grid, time_);
+    nereidPreview_.draw(r3d_);
     tickFx(cam,renderW,renderH,&sc.objects);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;

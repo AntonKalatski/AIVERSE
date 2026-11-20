@@ -8,6 +8,7 @@
 #include "engine/render/Prisma.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
+#include "engine/world/NereidManifestHost.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
 #include "SunStudy.h"
@@ -61,6 +62,7 @@ struct Bench {
     Prisma post;
     PrismaScreenLighting screen;
     SceneAssets additions;
+    world::NereidManifestHost water;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
     std::vector<RTSCamera> cameras;
@@ -344,14 +346,19 @@ struct Bench {
             if(shot!=tourShot){screen.reset();additions.selectLights(camera.eye());tourShot=shot;}
         }
         post.setPhysicalSkyTime(options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?previewTime+options.tourStart:double(frame)/60.0);
+        water.configure(config);
+        water.prepare(d,camera.eye());
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
+        water.draw(renderer);
         additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
         renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
             settings.set("physicalSkyRequested",Json::fromBool(post.physicalSky().enabled));
+            settings.set("nereidSurfaces",Json::number(int64_t(water.configuredSurfaces())));
+            settings.set("waterUsesRendererClock",Json::fromBool(water.configuredSurfaces()!=0));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
             settings.set("shadowResolution",Json::number(int64_t(renderer.shadowMapSize())));
             settings.set("shadowPcfSamples",Json::number(int64_t(options.profile=="low"?4:16)));
@@ -444,6 +451,7 @@ struct Bench {
         report.set("error",Json::string(error));report.set("frames",rows);
         std::ofstream f(options.output);f<<report.dump()<<"\n";if(!f)fail("cannot write report");
         if(model)releaseModel(d,*model);
+        water.shutdown(d);
         additions.release(d);screen.shutdown();post.shutdown();renderer.shutdown();platform::setHostedView(nullptr);
     }
 };

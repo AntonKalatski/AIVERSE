@@ -1,0 +1,71 @@
+// Compose native Terra terrain/Earthworks and NEREID authoring definitions.
+#include "engine/world/TerraWeaveRiverbed.h"
+#include "engine/world/TerraWeaveRocks.h"
+#include "engine/render/TerraWeaveRockModel.h"
+#include "engine/render/TerraWeaveTerrainPatchRender.h"
+#include "engine/world/NereidWaterManifest.h"
+#include "tools/terrain/ExportModel.h"
+#include <iostream>
+using namespace aiverse;
+using namespace aiverse::terraweave;
+using namespace aiverse::terrain_export;
+namespace fs=std::filesystem;
+int main(int argc,char** argv){try{
+    fs::path recipe,out,materials;
+    for(int i=1;i<argc;++i){std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");std::string v=argv[++i];if(k=="--recipe")recipe=v;else if(k=="--out")out=v;else if(k=="--materials")materials=v;else throw std::runtime_error("unknown option");}
+    if(recipe.empty()||out.empty()||materials.empty()||fs::exists(out))throw std::runtime_error("usage: aiverse_terraweave_landscape --recipe JSON --out NEW_DIR --materials TERRAIN_TEXTURES; no overwrite");
+    const auto doc=Json::parseFile(recipe.string());const auto& t=doc["terrain"];
+    TerrainSettings settings;settings.seed=uint64_t(t.getInt("seed",42));settings.baseHeightCm=int32_t(t.getInt("baseHeightCm",300));settings.reliefCm=int32_t(t.getInt("reliefCm",500));settings.basePeriodCm=int32_t(t.getInt("basePeriodCm",6400));settings.octaves=uint32_t(t.getInt("octaves",5));
+    EarthworksLayer earth(100,[&](int64_t x,int64_t z){return heightAtCm(settings,x,z);});
+    if(doc["brushes"].size()>64)throw std::runtime_error("too many terrain brushes");
+    for(const auto& b:doc["brushes"].items())earth.sculpt({b.getInt("xCm"),b.getInt("zCm"),int32_t(b.getInt("radiusCm")),int32_t(b.getInt("depthCm")),b.getStr("mode","fill")=="dig"?EarthworkMode::Dig:EarthworkMode::Fill});
+    const auto water=world::parseNereidWaterManifest(doc);
+    const auto& bounds=doc["tiles"];const int64_t x0=bounds.getInt("minX"),z0=bounds.getInt("minZ"),x1=bounds.getInt("maxX"),z1=bounds.getInt("maxZ");
+    if(x0< -128||x1>128||z0< -128||z1>128||x1<=x0||z1<=z0||(x1-x0)*(z1-z0)>128)throw std::runtime_error("tile budget");
+    for(const auto& w:water.surfaces)if(w.useGeometry&&w.geometry.kind==lib::nereid::WaterGeometryKind::RiverSpline)
+        for(auto z=z0;z<z1;++z)for(auto x=x0;x<x1;++x)carveNereidRiverbed(earth,w.body,w.geometry,{x*6400,z*6400,(x+1)*6400,(z+1)*6400},600);
+    fs::create_directories(out/"textures");const std::vector<std::string> mats={"grass","rock","snow","gravel_soil"};
+    for(const auto& name:mats)for(auto suffix:{"basecolor","normal","orm","ao"}){const auto base=name+"_"+suffix;fs::copy_file(materials/(base+"_repeat.png"),out/"textures"/(base+".png"));}
+    auto catalog=Json::object(),tiles=Json::array();
+    for(auto z=z0;z<z1;++z)for(auto x=x0;x<x1;++x){
+        const auto patch=bakeEarthworksTerrainPatch(earth,{int32_t(x),0,int32_t(z)},64,65);auto model=makeEarthworksTerrainModel(patch,nullptr,.30f);
+        auto material=model->materials[0];model->materials.clear();
+        for(size_t i=0;i<mats.size();++i){auto m=material;m.name=mats[i];m.baseColor=i==0?render::float4{.47f,.58f,.32f,1}:i==1?render::float4{.45f,.46f,.45f,1}:render::float4{.85f,.85f,.82f,1};m.roughness=1;model->materials.push_back(m);}
+        std::array<std::vector<uint32_t>,4> indices;
+        for(size_t i=0;i<model->indices.size();i+=3){auto& v=model->vertices[model->indices[i]];size_t mat=v.pos.y>6500*.01f&&v.nrm.y>.65f?2:v.nrm.y<.82f||v.pos.y>28?1:v.pos.y<.65f?3:0;
+            for(size_t k=0;k<3;++k){auto& p=model->vertices[model->indices[i+k]];if(mat==1)p.uv={float(x*64+p.pos.x)/12,(float(z*64+p.pos.z)+p.pos.y*1.5f)/12};indices[mat].push_back(model->indices[i+k]);}}
+        model->indices.clear();model->meshes[0].primitives.clear();
+        for(size_t i=0;i<4;++i)if(!indices[i].empty()){render::Primitive p;p.material=int(i);p.firstVertex=0;p.vertexCount=uint32_t(model->vertices.size());p.firstIndex=uint32_t(model->indices.size());p.indexCount=uint32_t(indices[i].size());model->indices.insert(model->indices.end(),indices[i].begin(),indices[i].end());model->meshes[0].primitives.push_back(p);}
+        render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
+        const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,mats);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));tiles.push(e);
+    }
+    // Same surface snapshot for vegetation and asset placement; no second noise.
+    auto heights=Json::array(),cover=Json::array(),ground=Json::object(),grass=Json::array();
+    const int64_t minX=x0*6400,minZ=z0*6400,nx=(x1-x0)*64+1,nz=(z1-z0)*64+1;
+    for(int64_t j=0;j<nz;++j)for(int64_t i=0;i<nx;++i){const int64_t x=minX+i*100,z=minZ+j*100;const auto h=earth.sampleHeightCm(x,z);heights.push(Json::number(int64_t(h)));bool wet=false;for(const auto& w:water.surfaces)wet|=lib::nereid::coversWaterBody(w.body,w.useGeometry?&w.geometry:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)});cover.push(Json::number(int64_t(wet||h<45||h>2500?0:750)));}
+    ground.set("originXcm",Json::number(minX));ground.set("originZcm",Json::number(minZ));ground.set("stepCm",Json::number(int64_t(100)));ground.set("columns",Json::number(nx));ground.set("rows",Json::number(nz));ground.set("heightCm",heights);ground.set("coverPermille",cover);
+    for(const auto& p:doc["grassPatches"].items())grass.push(p);ground.set("patches",grass);write(out/"ground.json",ground.dump());
+    auto placements=Json::array(),stones=Json::array();
+    const auto& area=doc["vegetationBounds"];
+    const RectCm region{area.getInt("minX"),area.getInt("minZ"),area.getInt("maxX"),area.getInt("maxZ")};
+    FoliageSpecies species;species.id=1;species.biomeMask=0xffffffffu;species.scaleMinPermille=650;species.scaleMaxPermille=1250;
+    ScatterSettings scatterSettings;scatterSettings.seed=settings.seed;scatterSettings.spacingCm=550;scatterSettings.densityPermille=760;
+    const auto wetAt=[&](int64_t x,int64_t z,int32_t margin){
+        for(const auto& w:water.surfaces){auto g=w.geometry;for(auto& p:g.points)p.halfWidth+=Fixed::fromRatio(margin,100);
+            if(lib::nereid::coversWaterBody(w.body,w.useGeometry?&g:nullptr,{Fixed::fromRatio(x,100),{},Fixed::fromRatio(z,100)}))return true;}return false;
+    };
+    for(const auto& at:scatter(settings,{},scatterSettings,region,{species})){
+        const auto h=earth.sampleHeightCm(at.xCm,at.zCm);
+        if(wetAt(at.xCm,at.zCm,200)||h>4800||h<40)continue;
+        auto e=Json::object();e.set("xCm",Json::number(at.xCm));e.set("zCm",Json::number(at.zCm));e.set("yCm",Json::number(int64_t(h-12)));e.set("yaw",Json::number(int64_t(at.yawMilliDegrees)));e.set("scale",Json::number(int64_t(at.scalePermille)));e.set("variant",Json::number(int64_t(rockVariant(terraweave::detail::floorDiv(at.xCm,550),terraweave::detail::floorDiv(at.zCm,550),settings.seed,12))));placements.push(e);
+    }
+    RockScatterSettings rs;rs.seed=settings.seed;rs.spacingCm=300;rs.radiusMinCm=35;rs.radiusMaxCm=140;rs.variants=12;rs.densityPermille=400;
+    std::vector<std::unique_ptr<render::Model>> rockModels;
+    for(uint32_t i=0;i<12;++i){RockProfile p;p.shape=RockShape(i%4);p.weatheringPermille=100+(i*173)%700;rockModels.push_back(makeRockModel(p,terraweave::detail::mix64(uint64_t(doc.getInt("rockSeed",42))^i)));}
+    for(const auto& at:scatterRocks(region,rs,[&](int64_t x,int64_t z)->std::optional<int32_t>{return earth.sampleHeightCm(x,z);},[&](const auto& at){return wetAt(at.xCm,at.zCm,600);})){
+        auto e=Json::object();const auto pose=rockPose(*rockModels[at.variant],at);
+        auto pos=Json::array();pos.push(Json::number(double(pose.position.x)));pos.push(Json::number(double(pose.position.y)));pos.push(Json::number(double(pose.position.z)));e.set("position",pos);e.set("scale",Json::number(double(pose.scale),6));e.set("xCm",Json::number(at.xCm));e.set("zCm",Json::number(at.zCm));e.set("yCm",Json::number(int64_t(at.groundCm)));e.set("radiusCm",Json::number(int64_t(at.radiusCm)));e.set("yaw",Json::number(int64_t(at.yawMilliDegrees)));e.set("variant",Json::number(int64_t(at.variant)));stones.push(e);
+    }
+    catalog.set("trees",placements);catalog.set("rocks",stones);
+    catalog.set("terrain",tiles);catalog.set("nereidWater",doc["nereidWater"]);write(out/"catalog.json",catalog.dump());write(out/"recipe.json",doc.dump());std::cout<<"Native Terra terrain tiles: "<<tiles.size()<<"; NEREID surfaces: "<<water.surfaces.size()<<'\n';return 0;
+}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

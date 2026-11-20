@@ -1,30 +1,14 @@
 // Authoring host for native Arbor/Grass APIs. No scene-specific morphology.
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveGrassRender.h"
-#include "tools/modeling/Modeling.h"
+#include "tools/terrain/ExportModel.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 namespace fs=std::filesystem;
 using aiverse::Json;
 using namespace aiverse::terraweave;
-static uint32_t u32(const std::string& s,size_t p){return uint32_t(uint8_t(s[p]))|uint32_t(uint8_t(s[p+1]))<<8|uint32_t(uint8_t(s[p+2]))<<16|uint32_t(uint8_t(s[p+3]))<<24;}
-static void write(const fs::path& p,const std::string& s){std::ofstream f(p,std::ios::binary);f.write(s.data(),std::streamsize(s.size()));if(!f)throw std::runtime_error("write failed: "+p.string());}
-static void save(const fs::path& out,const std::string& name,const aiverse::render::Model& model,const std::vector<std::string>& materials={}){
-    const auto glb=aiverse::modeling::exportGlb(model);const auto n=u32(glb,12);auto doc=Json::parse(glb.substr(20,n));const size_t bh=20+n;
-    doc.member("buffers").at(0).set("uri",Json::string(name+".bin"));
-    if(!materials.empty()){
-        auto images=Json::array(),textures=Json::array();int index=0;
-        for(size_t m=0;m<materials.size();++m){
-            auto binding=[](int i){auto t=Json::object();t.set("index",Json::number(int64_t(i)));return t;};
-            auto& mat=doc.member("materials").at(m);auto& pbr=mat.member("pbrMetallicRoughness");
-            pbr.set("baseColorTexture",binding(index));mat.set("normalTexture",binding(index+1));pbr.set("metallicRoughnessTexture",binding(index+2));mat.set("occlusionTexture",binding(index+3));
-            for(auto suffix:{"basecolor","normal","orm","ao"}){auto im=Json::object(),tx=Json::object();im.set("uri",Json::string("textures/"+materials[m]+"_"+suffix+".png"));tx.set("source",Json::number(int64_t(index++)));images.push(im);textures.push(tx);}
-        }
-        doc.set("images",images);doc.set("textures",textures);
-    }
-    write(out/(name+".gltf"),doc.dump());write(out/(name+".bin"),glb.substr(bh+8,u32(glb,bh)));
-}
+using namespace aiverse::terrain_export;
 int main(int argc,char** argv){try{
     fs::path out,materials,groundFile;uint64_t seed=42;
     for(int i=1;i<argc;++i){const std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");const std::string v=argv[++i];if(k=="--out")out=v;else if(k=="--materials")materials=v;else if(k=="--ground")groundFile=v;else if(k=="--seed")seed=std::stoull(v);else throw std::runtime_error("unknown option: "+k);}

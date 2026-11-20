@@ -36,7 +36,9 @@ source present, native compiled, host connected and visually verified are distin
 - Flat editor heightfield: use TerraWeave preview/generate through
   `skills/world/aiverse-terrain/SKILL.md`. Preserve authored edits and Undo.
   Never run flat MapDoc operations on FPS/planet formats.
-- Authored models/offline showcase: use native exporters and import ordinary assets.
+- Authored models/offline showcase: follow `docs/terrain/native-landscape-authoring.md`;
+  use `aiverse_terraweave_landscape`, then the native vegetation/rock exporters.
+  Import ordinary assets and keep the real NEREID manifest alongside them.
   An exported asset is not live terrain, ecology, streaming or physics integration.
 - For vegetation and rocks read `skills/world/aiverse-terra-vegetation/SKILL.md`.
 - Water belongs to NEREID; sky/postprocessing to PRISMA; climate/wind to PHYSIS.
