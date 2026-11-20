@@ -123,3 +123,26 @@ ordered object keys and pointer-free layouts. Refer to
 [Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md).
 These features are source-only; native compilation and runtime tests
 have NOT been run.
+
+
+
+## Stage 161 — independent child animation source
+
+A child may opt into its OWN compiled AnimationGraph with
+`"animated":true` and `"animationGraph":"graphs/lantern.animation.json"`.
+An enabled animated entry requires a nonempty unique stable `"id"`.
+Older JSON files without these fields remain static parent-pose sockets.
+A newly animated child is still represented by a scene-owned ECS child
+Entity, but is NOT drawn in the parent's static socket packet: its own
+`AnimatedSceneAttachmentSources` player evaluates an independent local
+Pose and composes its placement from the parent's named bone and stored
+affine matrices. Each Graph is updated ONCE; View receives a graphless
+precomputed child draw.
+
+Studio can compile its child Graph from the authored file and preview
+the result. Standalone ModelView preserves these JSON fields but
+currently rejects enabled animated children, rather than rendering
+them twice or treating their Graph as static. See
+[animated child API and caveats](animated-scene-attachments.md) and
+[Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+Native CMake/CTest/Metal-Vulkan-GLES and real animation tests NOT RUN.
