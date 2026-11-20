@@ -2103,6 +2103,9 @@ struct CreatorApp {
                        selected->vertexOverrideCount,sculptSourceIds,
                        morphSourceVertices,actualStream))
                     complete=false;
+                if(complete && actualStream.maskedSelection &&
+                   !gpuSculptPass.supportsActualGpuMaskedStream())
+                    complete=false;
                 if(complete)actualStreamPtr=&actualStream;
             }
             SkinnedWeightSurface otherSurface;
