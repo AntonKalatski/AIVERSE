@@ -176,8 +176,8 @@ void testStudioFacialNativePreview() {
     AIVERSE_TEST_CHECK(!preview.scalar("jawOpen",2.f));
     AIVERSE_TEST_CHECK(preview.scalar("jawOpen",.9f));
     // A failed Studio edit must not replace the current validated rig.
-    Json bad=authored();
-    bad["morphs"][size_t(0)].set("target",Json::string("missing"));
+    const Json bad=Json::parse(R"({"version":1,"morphs":[
+        {"parameter":"jawOpen","node":"Face","target":"missing"}]})");
     AIVERSE_TEST_CHECK(!preview.configure(model,bad,scalars,vectors,error));
     AIVERSE_TEST_CHECK(preview.ready());
     animator.evaluate(pose);
