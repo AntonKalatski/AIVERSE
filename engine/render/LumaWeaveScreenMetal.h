@@ -11,6 +11,7 @@
 #include "LumaWeavePbrMetalShader.h"
 #include "LumaWeaveDenoiseMetalShader.h"
 #include "GiGpuBvh.h"
+#include "LumaWeaveTextureRetirement.h"
 #include "../gfx/Gfx.h"
 #include <algorithm>
 #include <array>
@@ -123,8 +124,11 @@ public:
         return true;
     }
 
+    // The host must have proven graphics GPU idle before destroying ACTIVE
+    // resources. Resized resources are separately quarantined until a real
+    // completion fence or explicit drainAfterGpuIdle().
     bool shutdown() {
-        if(pending_)return false;
+        if(pending_ || retiredTextures_.pendingCount())return false;
         if(dev_) {
             for(auto b:{marker_,lightBuffer_,clusterBuffer_,indexBuffer_,triangleBuffer_,nodeBuffer_})
                 if(b.valid())dev_->destroyBuffer(b);
@@ -146,6 +150,24 @@ public:
         pendingProducesHistory_=false;
         width_=height_=confirmedWidth_=confirmedHeight_=0;
         nodeCount_=0;confirmedIndex_=pendingIndex_=0;
+        return true;
+    }
+
+    size_t pendingRetiredTextures() const { return retiredTextures_.pendingCount(); }
+    size_t unfencedRetiredTextures() const { return retiredTextures_.unfencedCount(); }
+    // Only the backend's contiguous submitted/completed GPU timeline counts.
+    // The compute completion marker is insufficient for HDR draw sampling.
+    size_t collectRetiredTextures() {
+        if(!dev_)return 0;
+        return retiredTextures_.collect(lumaWeaveCompletedFence(*dev_),
+            [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
+    }
+    // Call only after full graphics device/queue idle (not after a compute
+    // marker). The GPU callback state must already have been polled.
+    bool drainRetiredAfterGpuIdle() {
+        if(pending_)return false;
+        if(dev_)retiredTextures_.drainAfterGpuIdle(
+            [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
         return true;
     }
 
@@ -226,11 +248,19 @@ public:
     }
 
     bool resize(uint32_t w,uint32_t h) {
+        collectRetiredTextures();
         if(!ready()||busy()||!dev_->canUpdateSharedBuffers() ||
            !w||!h||uint64_t(w)*h>settings_.maxPixels ||
            uint64_t(w)*h>kAbsolutePixelCap)
             return false;
         if(width_==w&&height_==h&&raw_.valid())return true;
+        const size_t previousCount=size_t(raw_.valid())+
+            size_t(filtered_[0].valid())+size_t(filtered_[1].valid())+
+            size_t(normalDepth_[0].valid())+size_t(normalDepth_[1].valid());
+        // If the old RHI has no GPU fence, fail closed at the bounded
+        // quarantine limit rather than destroying images still sampled by
+        // a prior HDR composite or growing VRAM without limit.
+        if(!retiredTextures_.prepare(previousCount))return false;
         std::array<gfx::TextureHandle,5> created{};
         std::vector<uint16_t> zeroes(size_t(w)*h*4u,0);
         gfx::TextureDesc d;
@@ -245,8 +275,10 @@ public:
                 return false;
             }
         }
-        for(auto t:{raw_,filtered_[0],filtered_[1],normalDepth_[0],normalDepth_[1]})
-            if(t.valid())dev_->destroyTexture(t);
+        const uint64_t fence=lumaWeaveSubmittedFence(*dev_);
+        retiredTextures_.retire(raw_,fence);
+        for(auto& t:filtered_)retiredTextures_.retire(t,fence);
+        for(auto& t:normalDepth_)retiredTextures_.retire(t,fence);
         raw_=created[0];
         filtered_[0]=created[1];filtered_[1]=created[2];
         normalDepth_[0]=created[3];normalDepth_[1]=created[4];
@@ -472,6 +504,7 @@ private:
     bool pendingProducesHistory_=false;
     bool confirmedShaded_=false,pendingShaded_=false;
     std::shared_ptr<Fence> pending_;
+    LumaWeaveTextureRetirement retiredTextures_;
 };
 
 } // namespace aiverse::render
