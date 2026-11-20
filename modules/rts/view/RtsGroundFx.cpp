@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
@@ -130,6 +131,7 @@ void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& r
     // refs into the live owner; all previous mesh state has been shut down.
     dev_=&dev;
     rules_=&rules;
+    ++publicationRevision_;
     base_.swap(staged->base_);
     textures_.swap(staged->textures_);
     using std::swap;
@@ -294,6 +296,9 @@ void RtsGroundFx::parseLook(const Json& t) {
 
 void RtsGroundFx::freeMesh(Mesh& m) {
     if(!dev_)return;
+    // A staging clone holds shallow BORROWED references to published meshes.
+    // Clearing its slots must never retire those live GPU allocations.
+    if(stagingJournal_) {m=Mesh{};return;}
     retiredMeshes_.retireBuffer(*dev_,m.vb);
     retiredMeshes_.retireBuffer(*dev_,m.ib);
     m=Mesh{};
@@ -305,6 +310,15 @@ void RtsGroundFx::setMesh(Mesh& m, const MeshBuilder& b) {
     // publishing any of them. Outside a batch retain the legacy single-mesh
     // transactional path for compatibility with other GroundFX owners.
     if(activeMeshBatch_) {
+        if(stagingJournal_) {
+            // The clone owns NO published buffers. The GPU batch writes new
+            // resources into a private empty slot; commit later retires the
+            // matching live slot using its explicit changed-slot journal.
+            if(std::find(stagingJournal_->begin(),stagingJournal_->end(),&m)==
+               stagingJournal_->end())
+                stagingJournal_->push_back(&m);
+            m=Mesh{};
+        }
         activeMeshBatch_->stage(m,b);
         return;
     }
@@ -345,6 +359,7 @@ void RtsGroundFx::shutdown(gfx::Device& dev) {
     textures_.shutdown();
     dev_ = nullptr;
     invalid_ = true;
+    ++publicationRevision_;
 }
 
 float3 RtsGroundFx::ownerColor(int slot) const {
@@ -932,95 +947,232 @@ void RtsGroundFx::buildLanes(const RtsScene& s, const MapGrid& g, const RtsView&
 
 // ------------------------------------------------------------------ frame
 
-void RtsGroundFx::draw(Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& g, const RtsView& v) {
-    if(dev_)checkGpuDevice(*dev_);
-    if (!dev_ || !rules_ || g.w <= 0 || g.h <= 0) return;
-    time_ = float(std::fmod(time, 1000.0));
-    bool hi = r.materialQuality() != MaterialQuality::Low;
-    if (const char* q = std::getenv("AIVERSE_GROUNDFX")) hi = std::string(q) != "low";
-    if (hi != hi_) { hi_ = hi; invalid_ = true; }
-    if (invalid_ || g.w != gridW_ || g.h != gridH_ || s.viewer != viewer_) { viewer_ = s.viewer; resetGrid(g); }
-    if (geomDirty_) {
-        geomDirty_ = false;
-        for (Chunk& c : chunks_) c.dT = c.dD = c.dM = c.dR = c.dC = true;
-        laneCount_ = ~size_t(0);
-    }
-    // the layers change only through the sim (GameState::territoryDirty is a sticky hint the view may
-    // not reset), so they are compared a few times per second against the fog-of-war memory
-    if ((useT_ || useD_ || useR_ || useC_) && (time >= nextScan_ || nextScan_ < 0)) { scan(g, vision, viewer_); nextScan_ = time + (terr_.smooth ? 0.05 : 0.2); }
-    if (useT_ && terr_.on && terr_.smooth) animateTerritory(g, time);
 
-    // LENS: one atomic publication of lane/visible chunk mesh replacements.
-    // Limit work per frame, not the total map: remaining dirty chunks retain
-    // their old published buffers and are retried by the next primary frame.
+class RtsGroundFx::PreparedFrame final {
+    friend class RtsGroundFx;
+public:
+    PreparedFrame()=default;
+    PreparedFrame(const PreparedFrame&)=delete;
+    PreparedFrame& operator=(const PreparedFrame&)=delete;
+    ~PreparedFrame() noexcept {
+        if(committed_ || !device_)return;
+        // Private GPU handles are owned solely by the prepared frame. Original
+        // published handles copied into staged_ are BORROWED and untouched.
+        for(Mesh* mesh:journal_) {
+            if(mesh->vb.valid())try {device_->destroyBuffer(mesh->vb);}catch(...) {}
+            if(mesh->ib.valid())try {device_->destroyBuffer(mesh->ib);}catch(...) {}
+            *mesh=Mesh{};
+        }
+    }
+private:
+    RtsGroundFx* owner_=nullptr;
+    gfx::Device* device_=nullptr;
+    uint64_t revision_=0;
+    bool committed_=false, fullReset_=false, changedLane_=false;
+    std::unique_ptr<RtsGroundFx> staged_;
+    std::vector<Mesh*> journal_;
+    std::vector<std::pair<size_t,uint8_t>> changedChunks_;
+};
+
+std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareFrame(
+        Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& g,const RtsView& v) {
+    if(dev_)checkGpuDevice(*dev_);
+    if(!dev_ || !rules_ || g.w<=0 || g.h<=0)return {};
+    auto prepared=std::make_shared<PreparedFrame>();
+    prepared->owner_=this;
+    prepared->device_=dev_;
+    prepared->revision_=publicationRevision_;
+    prepared->staged_=std::make_unique<RtsGroundFx>();
+    RtsGroundFx& next=*prepared->staged_;
+    // Clone ONLY CPU mutable frame state and borrowed mesh handles. Shader,
+    // pipeline and TextureCache remain owned by this published view. The
+    // staging instance is never submitted and never calls shutdown().
+    next.dev_=dev_;
+    next.rules_=rules_;
+    next.terr_=terr_;
+    next.dig_=dig_;
+    next.lane_=lane_;
+    next.road_=road_;
+    next.conc_=conc_;
+    next.useT_=useT_;next.useD_=useD_;next.useR_=useR_;next.useC_=useC_;
+    next.hi_=hi_;next.invalid_=invalid_;next.geomDirty_=geomDirty_;
+    next.gridW_=gridW_;next.gridH_=gridH_;
+    next.chunksX_=chunksX_;next.chunksY_=chunksY_;
+    next.nextScan_=nextScan_;next.viewer_=viewer_;
+    next.memT_=memT_;next.memD_=memD_;next.memR_=memR_;
+    next.memM_=memM_;next.memC_=memC_;next.memW_=memW_;
+    next.memRoom_=memRoom_;
+    next.marked_=marked_;
+    next.chunks_=chunks_;next.visible_=visible_;
+    next.laneSig_=laneSig_;next.laneCount_=laneCount_;
+    next.lanes_=lanes_;next.time_=time_;
+    next.territoryBlend_=territoryBlend_;
+    next.territoryTime_=territoryTime_;
+    next.stagingJournal_=&prepared->journal_;
+    prepared->fullReset_=invalid_ || g.w!=gridW_ ||
+                         g.h!=gridH_ || s.viewer!=viewer_;
+    next.time_=float(std::fmod(time,1000.0));
+    bool highQuality=r.materialQuality()!=MaterialQuality::Low;
+    if(const char* q=std::getenv("AIVERSE_GROUNDFX"))
+        highQuality=std::string(q)!="low";
+    if(highQuality!=next.hi_){next.hi_=highQuality;next.invalid_=true;}
+    prepared->fullReset_=prepared->fullReset_ || next.invalid_;
+    if(next.invalid_ || g.w!=next.gridW_ || g.h!=next.gridH_ ||
+       s.viewer!=next.viewer_) {
+        next.viewer_=s.viewer;
+        next.resetGrid(g);
+    }
+    if(next.geomDirty_) {
+        next.geomDirty_=false;
+        for(Chunk& c:next.chunks_)c.dT=c.dD=c.dM=c.dR=c.dC=true;
+        next.laneCount_=~size_t(0);
+    }
+    if((next.useT_ || next.useD_ || next.useR_ || next.useC_) &&
+       (time>=next.nextScan_ || next.nextScan_<0)) {
+        next.scan(g,vision,next.viewer_);
+        next.nextScan_=time+(next.terr_.smooth?0.05:0.2);
+    }
+    if(next.useT_ && next.terr_.on && next.terr_.smooth)
+        next.animateTerritory(g,time);
+
+    // Prepare a bounded GPU batch in a completely private owner. The old
+    // Mesh handles are *not* retired by NativeMeshBatch::publish because each
+    // staged slot is set to empty BEFORE it is staged.
     constexpr size_t kBatchChunkLimit=16;
     constexpr size_t kBatchBytes=128ull*1024ull*1024ull;
-    render::NativeMeshBatch batch(*dev_,retiredMeshes_);
-    const uint32_t priorLaneSig=laneSig_;
-    const size_t priorLaneCount=laneCount_;
-    struct DirtyBefore {
-        size_t index;
-        std::array<bool,5> values;
-    };
-    std::vector<DirtyBefore> touched;
-    activeMeshBatch_=&batch;
+    NativeMeshBatch batch(*dev_,next.retiredMeshes_);
+    next.activeMeshBatch_=&batch;
     try {
-        if(lane_.on) {
+        if(next.lane_.on) {
             uint32_t sig=s.lanes?s.laneSignature:0u;
             size_t count=(s.lanes?s.lanes->size():0)*131+s.roads.size();
             for(auto& [a,b]:s.roads)
                 sig=sig*31u+uint32_t(int(a.x*4)*7+int(a.z*4)*13+
                                       int(b.x*4)*17+int(b.z*4)*19);
-            if(sig!=laneSig_ || count!=laneCount_) {
-                buildLanes(s,g,v);
-                laneSig_=sig;
-                laneCount_=count;
+            if(sig!=next.laneSig_ || count!=next.laneCount_) {
+                next.buildLanes(s,g,v);
+                next.laneSig_=sig;
+                next.laneCount_=count;
             }
         }
-        visible_.clear();
+        next.visible_.clear();
         const mat4& vp=r.viewProj();
         size_t builtChunks=0;
-        for(int cy=0;cy<chunksY_;++cy)
-            for(int cx=0;cx<chunksX_;++cx) {
-                const size_t index=size_t(cy*chunksX_+cx);
-                Chunk& c=chunks_[index];
-                float3 mn{float(cx*kChunk),c.yMin,float(cy*kChunk)};
-                float3 mx{float((cx+1)*kChunk),c.yMax,float((cy+1)*kChunk)};
+        for(int cy=0;cy<next.chunksY_;++cy)
+            for(int cx=0;cx<next.chunksX_;++cx) {
+                const size_t index=size_t(cy*next.chunksX_+cx);
+                Chunk& c=next.chunks_[index];
+                const float3 mn{float(cx*kChunk),c.yMin,float(cy*kChunk)};
+                const float3 mx{float((cx+1)*kChunk),c.yMax,float((cy+1)*kChunk)};
                 if(!boxVisible(vp,mn,mx))continue;
-                visible_.push_back(int(index));
-                const bool needs=(useT_ && terr_.on && c.dT) ||
-                    (useD_ && dig_.on && (c.dD || c.dM)) ||
-                    (useR_ && road_.on && c.dR) ||
-                    (useC_ && conc_.on && c.dC);
+                next.visible_.push_back(int(index));
+                const bool needs=(next.useT_ && next.terr_.on && c.dT) ||
+                    (next.useD_ && next.dig_.on && (c.dD || c.dM)) ||
+                    (next.useR_ && next.road_.on && c.dR) ||
+                    (next.useC_ && next.conc_.on && c.dC);
                 if(!needs)continue;
                 if(builtChunks>=kBatchChunkLimit ||
                    batch.stagedBytes()>=kBatchBytes)
                     continue;
-                touched.push_back({index,{c.dT,c.dD,c.dM,c.dR,c.dC}});
-                if(useT_ && terr_.on && c.dT)buildTerritory(c,cx,cy,g,v);
-                if(useD_ && dig_.on && c.dD)buildDig(c,cx,cy,g,v);
-                if(useD_ && dig_.on && c.dM)buildMarks(c,cx,cy,g,v);
-                if(useR_ && road_.on && c.dR)buildRoads(c,cx,cy,g,v);
-                if(useC_ && conc_.on && c.dC)buildConcrete(c,cx,cy,g,v);
+                if(next.useT_ && next.terr_.on && c.dT)
+                    next.buildTerritory(c,cx,cy,g,v);
+                if(next.useD_ && next.dig_.on && c.dD)
+                    next.buildDig(c,cx,cy,g,v);
+                if(next.useD_ && next.dig_.on && c.dM)
+                    next.buildMarks(c,cx,cy,g,v);
+                if(next.useR_ && next.road_.on && c.dR)
+                    next.buildRoads(c,cx,cy,g,v);
+                if(next.useC_ && next.conc_.on && c.dC)
+                    next.buildConcrete(c,cx,cy,g,v);
                 ++builtChunks;
             }
-        activeMeshBatch_=nullptr;
-        batch.publish(); // no fallible upload remains; retire all old VBs/IBs
-    }catch(...) {
-        activeMeshBatch_=nullptr;
-        laneSig_=priorLaneSig;
-        laneCount_=priorLaneCount;
-        for(const auto& saved:touched) {
-            Chunk& c=chunks_[saved.index];
-            c.dT=saved.values[0];
-            c.dD=saved.values[1];
-            c.dM=saved.values[2];
-            c.dR=saved.values[3];
-            c.dC=saved.values[4];
-        }
-        throw; // batch destructor destroys only unpublished replacements
+        next.activeMeshBatch_=nullptr;
+        // Publish only into the PRIVATE staging clone. All public old buffers
+        // are retired separately by commitFrame() after the shared cohort
+        // successfully prepares.
+        batch.publish();
+    } catch(...) {
+        next.activeMeshBatch_=nullptr;
+        throw;
     }
 
+    prepared->changedLane_=std::find(prepared->journal_.begin(),
+                                    prepared->journal_.end(),&next.lanes_)!=
+                           prepared->journal_.end();
+    // Build a compact no-allocation-at-commit slot journal; dense map chunks
+    // not touched by this frame keep the same stable RHI handles.
+    for(size_t i=0;i<next.chunks_.size();++i) {
+        Chunk& c=next.chunks_[i];
+        const std::array<Mesh*,8> slots={
+            &c.fill,&c.border,&c.rock,&c.veins,&c.gems,&c.marks,&c.road,&c.concrete
+        };
+        for(uint8_t k=0;k<slots.size();++k)
+            if(std::find(prepared->journal_.begin(),prepared->journal_.end(),
+                         slots[k])!=prepared->journal_.end())
+                prepared->changedChunks_.emplace_back(i,k);
+    }
+    return prepared;
+}
+
+void RtsGroundFx::commitFrame(std::shared_ptr<PreparedFrame> frame) noexcept {
+    if(!frame || frame->committed_)return;
+    if(frame->owner_!=this || frame->device_!=dev_ ||
+       frame->revision_!=publicationRevision_ || !frame->staged_)
+        std::terminate();
+    RtsGroundFx& next=*frame->staged_;
+    const auto releaseSlots=[this](Chunk& c) noexcept {
+        for(Mesh* m:{&c.fill,&c.border,&c.rock,&c.veins,&c.gems,
+                     &c.marks,&c.road,&c.concrete})freeMesh(*m);
+    };
+    if(frame->fullReset_) {
+        for(auto& c:chunks_)releaseSlots(c);
+    }else{
+        for(const auto& [index,slot]:frame->changedChunks_) {
+            if(index>=chunks_.size())std::terminate();
+            Chunk& c=chunks_[index];
+            Mesh* slots[]={&c.fill,&c.border,&c.rock,&c.veins,&c.gems,
+                           &c.marks,&c.road,&c.concrete};
+            freeMesh(*slots[slot]);
+        }
+    }
+    if(frame->changedLane_)freeMesh(lanes_);
+    using std::swap;
+    swap(chunks_,next.chunks_);
+    swap(lanes_,next.lanes_);
+    swap(territoryBlend_,next.territoryBlend_);
+    swap(territoryTime_,next.territoryTime_);
+    swap(memT_,next.memT_);swap(memD_,next.memD_);
+    swap(memR_,next.memR_);swap(memM_,next.memM_);
+    swap(memC_,next.memC_);swap(memW_,next.memW_);
+    swap(memRoom_,next.memRoom_);
+    swap(marked_,next.marked_);
+    swap(visible_,next.visible_);
+    swap(gridW_,next.gridW_);swap(gridH_,next.gridH_);
+    swap(chunksX_,next.chunksX_);swap(chunksY_,next.chunksY_);
+    swap(nextScan_,next.nextScan_);
+    swap(viewer_,next.viewer_);
+    swap(laneSig_,next.laneSig_);swap(laneCount_,next.laneCount_);
+    swap(useR_,next.useR_);
+    swap(hi_,next.hi_);swap(invalid_,next.invalid_);
+    swap(geomDirty_,next.geomDirty_);
+    swap(time_,next.time_);
+    frame->committed_=true;
+    ++publicationRevision_;
+}
+
+void RtsGroundFx::draw(Renderer3D& r,const RtsScene& s,double time,
+                       const std::vector<uint8_t>* vision,
+                       const MapGrid& g,const RtsView& v) {
+    auto pending=prepareFrame(r,s,time,vision,g,v);
+    commitFrame(std::move(pending));
+    drawPrepared(r,s,time,vision,g,v);
+}
+
+void RtsGroundFx::drawPrepared(Renderer3D& r,const RtsScene& s,double time,
+                               const std::vector<uint8_t>* vision,
+                               const MapGrid& g,const RtsView& v) {
+    if(!dev_ || !rules_ || g.w<=0 || g.h<=0)return;
     // rock blocks: ordinary lit opaque meshes (cast and receive sun shadows, point lights)
     if (useD_ && dig_.on)
         for (int ci : visible_) {

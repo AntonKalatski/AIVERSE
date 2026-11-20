@@ -12762,6 +12762,133 @@ TEST(native_mesh_batch_same_target_replacement_is_coalesced) {
     dev.destroyBuffer(mesh.vb);dev.destroyBuffer(mesh.ib);
 }
 
+TEST(lens_stage47_groundfx_late_owner_rejection_preserves_published_frame) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    rules.territory.enabled=false;
+    rules.diggables.clear();
+    rules.rooms.clear();
+    rules.roadNetwork.enabled=true;
+    rules.foundation.enabled=false;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::RtsGroundFx fx;
+    fx.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(65,4);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.flags[size_t(grid.index(1,1))]|=game::kCellRoad;
+    grid.flags[size_t(grid.index(40,1))]|=game::kCellRoad;
+    game::RtsScene scene;
+    render::RTSCamera cam;cam.target={32,0,2};
+    cam.distance=150;cam.pitch=1.1f;
+    renderer.beginScene(cam,1280,720);
+    fx.draw(renderer,scene,0.0,nullptr,grid,view);
+    renderer.render(gfx::PassDesc{});
+    CHECK(fx.pendingMeshGpuRetirements()==0);
+    grid.flags[size_t(grid.index(2,1))]|=game::kCellRoad;
+    grid.flags[size_t(grid.index(41,1))]|=game::kCellRoad;
+    const auto previousDeletes=dev.destroyedBuffers;
+    const auto previousRetire=fx.pendingMeshGpuRetirements();
+    renderer.beginScene(cam,1280,720);
+    struct GroundParticipant final: render::OwnerPrepareCommit::Participant {
+        game::RtsGroundFx& owner;
+        render::Renderer3D& renderer;
+        const game::RtsScene& scene;
+        const game::MapGrid& grid;
+        const game::RtsView& view;
+        std::shared_ptr<game::RtsGroundFx::PreparedFrame> pending;
+        GroundParticipant(game::RtsGroundFx& f,render::Renderer3D& r,
+                          const game::RtsScene& s,const game::MapGrid& g,
+                          const game::RtsView& v)
+            :owner(f),renderer(r),scene(s),grid(g),view(v){}
+        void prepare() override {
+            pending=owner.prepareFrame(renderer,scene,1.0,nullptr,grid,view);
+        }
+        void commit() noexcept override {owner.commitFrame(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } ground(fx,renderer,scene,grid,view);
+    struct LateParticipant final: render::OwnerPrepareCommit::Participant {
+        bool fail=true;
+        void prepare() override {
+            if(fail)throw std::runtime_error("fog failed late");
+        }
+        void commit() noexcept override {}
+        void rollback() noexcept override {}
+    } late;
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(ground);tx.add(late);
+        try {tx.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+    }
+    CHECK(failed);
+    CHECK(fx.pendingMeshGpuRetirements()==previousRetire);
+    CHECK(dev.destroyedBuffers>=previousDeletes+4); // discarded private meshes
+    CHECK(!ground.pending);
+    late.fail=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(ground);tx.add(late);
+        tx.prepareAll();
+        CHECK(tx.publish());
+    }
+    CHECK(fx.pendingMeshGpuRetirements()>=previousRetire+4);
+    renderer.beginScene(cam,1280,720);
+    fx.drawPrepared(renderer,scene,1.1,nullptr,grid,view);
+    renderer.render(gfx::PassDesc{});
+    fx.shutdown(dev);
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage47_groundfx_resize_candidate_discard_keeps_old_gpu_meshes) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    rules.territory.enabled=false;
+    rules.diggables.clear();
+    rules.rooms.clear();
+    rules.roadNetwork.enabled=true;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsView view;CHECK(view.init(dev,rules,missing));
+    game::RtsGroundFx fx;fx.init(dev,rules,missing,"");
+    game::MapGrid old;old.init(65,4);
+    for(auto& flag:old.flags)flag=game::kCellGround;
+    old.flags[size_t(old.index(1,1))]|=game::kCellRoad;
+    game::RtsScene scene;
+    render::RTSCamera cam;cam.target={24,0,2};
+    cam.distance=150;cam.pitch=1.1f;
+    renderer.beginScene(cam,1280,720);
+    fx.draw(renderer,scene,0.0,nullptr,old,view);
+    renderer.render(gfx::PassDesc{});
+    game::MapGrid replacement;replacement.init(33,4);
+    for(auto& flag:replacement.flags)flag=game::kCellGround;
+    replacement.flags[size_t(replacement.index(3,1))]|=game::kCellRoad;
+    renderer.beginScene(cam,1280,720);
+    const auto pendingBefore=fx.pendingMeshGpuRetirements();
+    {
+        auto abandoned=fx.prepareFrame(renderer,scene,1.0,nullptr,replacement,view);
+        CHECK(abandoned!=nullptr);
+        CHECK(fx.pendingMeshGpuRetirements()==pendingBefore);
+    }
+    CHECK(fx.pendingMeshGpuRetirements()==pendingBefore);
+    auto next=fx.prepareFrame(renderer,scene,1.1,nullptr,replacement,view);
+    CHECK(next!=nullptr);
+    fx.commitFrame(std::move(next));
+    CHECK(fx.pendingMeshGpuRetirements()>=pendingBefore+2);
+    renderer.beginScene(cam,1280,720);
+    fx.drawPrepared(renderer,scene,1.1,nullptr,replacement,view);
+    renderer.render(gfx::PassDesc{});
+    fx.shutdown(dev);
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(groundfx_visible_road_chunks_commit_together_or_rollback_on_late_upload_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();

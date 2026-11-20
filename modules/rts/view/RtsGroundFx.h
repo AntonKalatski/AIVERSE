@@ -18,6 +18,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
@@ -100,13 +101,28 @@ public:
     size_t pendingMeshGpuRetirements() const noexcept {
         return retiredMeshes_.pending();
     }
-    void invalidate() { geomDirty_ = true; }   // terrain rebuilt (heights may have changed): rebuild geometry
+    void invalidate() { geomDirty_ = true; ++publicationRevision_; }   // terrain rebuilt (heights may have changed): rebuild geometry
     // Map roads / lanes between buildings are drawn here (RtsView skips its flat road quads).
     bool drawsLinks() const { return lane_.on && pipe_.valid(); }
     // The terrain leaves diggable cells flat when these blocks are drawn instead.
     bool drawsDig() const { return dig_.on && rules_ && !rules_->diggables.empty(); }
-    void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision,
-              const MapGrid& grid, const RtsView& view);
+    // Stage GroundFX mesh uploads and CPU scene memory without mutating any
+    // published state. The returned opaque owner destroys private RHI buffers
+    // when abandoned. Suitable for the generic OwnerPrepareCommit coordinator.
+    class PreparedFrame;
+    std::shared_ptr<PreparedFrame> prepareFrame(
+        render::Renderer3D& r, const RtsScene& s, double time,
+        const std::vector<uint8_t>* vision, const MapGrid& grid,
+        const RtsView& view);
+    void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
+    // Draws the current published snapshot; no mesh rebuild or visibility scan.
+    void drawPrepared(render::Renderer3D& r, const RtsScene& s,
+                      double time, const std::vector<uint8_t>* vision,
+                      const MapGrid& grid, const RtsView& view);
+    // Standalone legacy caller uses the same prepare / publish / draw pipeline.
+    void draw(render::Renderer3D& r, const RtsScene& s, double time,
+              const std::vector<uint8_t>* vision, const MapGrid& grid,
+              const RtsView& view);
     // Looks as configured (planet overlays reuse them: RtsPlanetGroundFx).
     const TerritoryLook& territoryLook() const { return terr_; }
     const RoadLook& roadLook() const { return road_; }
@@ -153,7 +169,11 @@ private:
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     render::NativePresentationRetirement retiredMeshes_;
-    render::NativeMeshBatch* activeMeshBatch_ = nullptr; // draw's private transaction, never retained
+    render::NativeMeshBatch* activeMeshBatch_ = nullptr; // prepare-only GPU batch
+    // Non-null exclusively on a temporary CPU staging clone. Its copies of
+    // currently published Mesh handles are BORROWED, never destroyed/retired.
+    std::vector<render::Mesh*>* stagingJournal_ = nullptr;
+    uint64_t publicationRevision_ = 1;
     const Rules* rules_ = nullptr;
     std::string base_;
     render::TextureCache textures_;

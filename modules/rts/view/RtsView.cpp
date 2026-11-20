@@ -572,6 +572,32 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // completion-token retirement queue; no full-device idle preflight.
     const std::function<float(float,float)> groundHeight=
         [this,&grid](float x,float z) {return heightAt(grid,x,z);};
+    // GroundFX geometry is now prepared before any Roads/Shores/Fog owner
+    // publishes. If a later owner fails, GroundFX retains the old CPU memory
+    // snapshot, GPU meshes and retirement generations.
+    const bool tiles=twoD_ && twoD_->hasTiles();
+    struct PreparedGround final : render::OwnerPrepareCommit::Participant {
+        RtsGroundFx& owner;
+        Renderer3D& renderer;
+        const RtsScene& scene;
+        const std::vector<uint8_t>* vision;
+        const MapGrid& grid;
+        const RtsView& view;
+        double time;
+        bool active;
+        std::shared_ptr<RtsGroundFx::PreparedFrame> pending;
+        PreparedGround(RtsGroundFx& o,Renderer3D& r,const RtsScene& s,
+                       const std::vector<uint8_t>* mask,const MapGrid& g,
+                       const RtsView& v,double t,bool enabled)
+            :owner(o),renderer(r),scene(s),vision(mask),grid(g),view(v),
+             time(t),active(enabled){}
+        void prepare() override {
+            if(active)pending=owner.prepareFrame(renderer,scene,time,vision,
+                                                 grid,view);
+        }
+        void commit() noexcept override {owner.commitFrame(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } groundPart(groundFx_,r,s,vision,grid,*this,time,!tiles);
     struct PreparedRoad final : render::OwnerPrepareCommit::Participant {
         RtsRoadView& view;
         gfx::Device& device;
@@ -649,6 +675,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     } fogPart(fog_,*dev_,groundHeight,vision,grid.w,grid.h,
               time,fogFieldChanged,fogMeshDirty_);
     render::OwnerPrepareCommit ownerTransaction;
+    ownerTransaction.add(groundPart);
     ownerTransaction.add(roadsPart);
     ownerTransaction.add(shorePart);
     ownerTransaction.add(fogPart);
@@ -665,7 +692,6 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         geometryScene_.draw(r);
         publication.mark(Epoch::Geometry);
     });
-    const bool tiles = twoD_ && twoD_->hasTiles();
     layers.append("2D scene begin",LayerPhase::Background,[&] {
         if(twoD_)twoD_->beginFrame(r.camera(),time,r,&grid,
             rules_?float(rules_->levelHeight.toDouble()):1.5f);
@@ -678,7 +704,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         publication.mark(Epoch::Terrain);
     });
     layers.append("surface effects",LayerPhase::Effects,[&] {
-        if(!tiles)groundFx_.draw(r,s,time,vision,grid,*this);
+        if(!tiles)groundFx_.drawPrepared(r,s,time,vision,grid,*this);
         publication.mark(Epoch::Ground);
     });
     // External host-only layer providers. The engine View doesn't know
