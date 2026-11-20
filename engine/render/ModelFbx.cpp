@@ -66,6 +66,39 @@ struct Baked {
     ~Baked() { if (a) ufbx_free_baked_anim(a); }
 };
 
+// A multi-target FBX channel is piecewise-linear in *shape space*.
+// Each native shape is stored as one independent GPU morph slot. This
+// projects a source channel weight into nonnegative weights for the
+// two neighboring shape targets (base pose = zero shape), so the GPU
+// can reconstruct in-between geometry without a special morph shader.
+// The caller validates strictly increasing positive target weights.
+void appendFbxShapeBasis(const ufbx_blend_channel& channel,
+                         double value,std::vector<float>& out) {
+    const size_t n=channel.keyframes.count;
+    if(n==0 || !std::isfinite(value))
+        throw std::invalid_argument("invalid FBX blendshape evaluation");
+    const size_t offset=out.size();
+    out.resize(offset+n,0.f);
+    if(value<=0.0)return;
+    const auto* keys=channel.keyframes.data;
+    if(value<=keys[0].target_weight) {
+        out[offset]=float(std::clamp(
+            value/keys[0].target_weight,0.0,1.0));
+        return;
+    }
+    for(size_t i=1;i<n;++i) {
+        if(value>keys[i].target_weight)continue;
+        const double interval=keys[i].target_weight-
+                              keys[i-1].target_weight;
+        const double t=std::clamp(
+            (value-keys[i-1].target_weight)/interval,0.0,1.0);
+        out[offset+i-1]=float(1.0-t);
+        out[offset+i]=float(t);
+        return;
+    }
+    out[offset+n-1]=1.f;
+}
+
 // Vertex before palette assignment: global skin joint indices and float weights.
 struct RawVertex {
     ModelVertex v;
@@ -284,25 +317,45 @@ private:
         rigidJoint_ = -1;
         const std::string where = "mesh '" + md.name + "'";
         activeShapes_.clear();
-        std::set<std::string> seen;
+        std::set<std::string> seenChannels,seenShapeKeys;
         for(size_t di=0;di<mesh.blend_deformers.count;++di) {
             const auto* deform=mesh.blend_deformers.data[di];
             for(size_t ci=0;ci<deform->channels.count;++ci) {
                 const auto* ch=deform->channels.data[ci];
-                if(activeShapes_.size()>=size_t(kMaxMorphTargets))
-                    fail(where+": too many blendshape channels");
-                if(ch->keyframes.count!=1 || !ch->keyframes.data[0].shape)
-                    fail(where+": in-between blendshape targets unsupported");
                 const std::string name=str(ch->name);
-                if(name.empty() || !seen.insert(name).second)
+                if(name.empty() || !seenChannels.insert(name).second)
                     fail(where+": empty or duplicate blendshape channel name");
-                const double target=ch->keyframes.data[0].target_weight;
-                if(!std::isfinite(target) || target<=0 ||
-                   !std::isfinite(ch->weight))
+                if(ch->keyframes.count==0 ||
+                   ch->keyframes.count>
+                       size_t(kMaxMorphTargets)-activeShapes_.size())
+                    fail(where+": shape targets exceed GPU morph capacity");
+                double prior=0.0;
+                for(size_t key=0;key<ch->keyframes.count;++key) {
+                    const auto& target=ch->keyframes.data[key];
+                    if(!target.shape ||
+                       !std::isfinite(target.target_weight) ||
+                       target.target_weight<=prior)
+                        fail(where+": invalid/nonascending in-between target weights");
+                    prior=target.target_weight;
+                    // Preserve real FBX channel/shape names; for in-between
+                    // targets both are needed for a stable semantic ID.
+                    std::string semantic=name;
+                    if(ch->keyframes.count>1) {
+                        const std::string shapeName=str(target.shape->name);
+                        if(shapeName.empty())
+                            fail(where+": in-between shape without authored name");
+                        semantic+="::"+shapeName;
+                    }
+                    if(!seenShapeKeys.insert(semantic).second)
+                        fail(where+": duplicate semantic morph target name");
+                    if(target.shape->offset_weights.count!=0)
+                        fail(where+": per-control-point morph weights unsupported");
+                    activeShapes_.push_back(target.shape);
+                    md.morphTargetNames.push_back(std::move(semantic));
+                }
+                if(!std::isfinite(ch->weight))
                     fail(where+": invalid blendshape weight");
-                activeShapes_.push_back(ch->keyframes.data[0].shape);
-                md.morphTargetNames.push_back(name);
-                md.weights.push_back(float(std::clamp(ch->weight/target,0.0,1.0)));
+                appendFbxShapeBasis(*ch,ch->weight,md.weights);
             }
         }
         if (mesh.cache_deformers.count) warn(where + ": vertex caches are ignored");
