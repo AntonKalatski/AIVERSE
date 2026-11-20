@@ -117,8 +117,10 @@ struct Preview {
     bool pixelIdReady=false, imageDiffPassed=false;
     struct PixelProbe {
         bool requested=false, colourReady=false, idReady=false, checked=false;
+        bool sceneDepthReady=false, idDepthReady=false;
         uint64_t frameSerial=0;
         uint32_t x=0,y=0;
+        float sceneDepth=1.f,idDepth=1.f;
         std::array<uint8_t,4> colour{},id{};
     };
     std::array<PixelProbe,3> pixelProbes{};
@@ -301,26 +303,40 @@ struct Preview {
                         probe.frameSerial==request.frameSerial &&
                         probe.x==request.x && probe.y==request.y &&
                         completedId.actualOverride &&
+                        completedId.depthValid &&
                         completedId.rgba.size()==4,
                         "VIVID parity ID readback was stale or not GPU-sourced");
                 for(size_t c=0;c<4;++c)probe.id[c]=completedId.rgba[c];
                 probe.idReady=true;
+                probe.idDepth=completedId.depth01;
+                probe.idDepthReady=true;
             }
             for(int stageIndex=1;stageIndex<=2;++stageIndex) {
                 auto& probe=pixelProbes[std::size_t(stageIndex)];
                 if(!probe.requested || !probe.colourReady ||
-                   !probe.idReady || probe.checked)continue;
+                   !probe.idReady || !probe.sceneDepthReady ||
+                   !probe.idDepthReady || probe.checked)continue;
                 const auto comparison=vivid::compareSculptGpuColorIdCoverage(
                     probe.colour,probe.id,{20,26,33},36);
                 require(comparison.verdict==
                             vivid::SculptGpuColorPixelResult::Verdict::Covered,
                     "VIVID same-frame Metal Renderer3D colour and GPU actor ID pixel coverage differ");
+                constexpr float kMaxDepthDifference=0.003f;
+                const float depthDelta=std::fabs(
+                    probe.sceneDepth-probe.idDepth);
+                require(std::isfinite(depthDelta) &&
+                        probe.sceneDepth>=0.f && probe.sceneDepth<1.f &&
+                        probe.idDepth>=0.f && probe.idDepth<1.f &&
+                        depthDelta<=kMaxDepthDifference,
+                    "VIVID real Metal Renderer3D screen vs GPU ID depth mismatch");
                 probe.checked=true;
-                std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u PASS\n",
+                std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u depth_scene=%f depth_id=%f delta=%f PASS\n",
                     stageIndex,static_cast<unsigned long long>(probe.frameSerial),
                     probe.x,probe.y,comparison.distanceFromClear,
                     unsigned(probe.id[0]),unsigned(probe.id[1]),
-                    unsigned(probe.id[2]),unsigned(probe.id[3]));
+                    unsigned(probe.id[2]),unsigned(probe.id[3]),
+                    double(probe.sceneDepth),double(probe.idDepth),
+                    double(depthDelta));
             }
         }
         if(stage>=3 && captures.size()==3 &&
@@ -537,12 +553,32 @@ struct Preview {
             request.meshId=0;
             request.width=kWidth;request.height=kHeight;
             request.x=probe.x;request.y=probe.y;
-            require(pixelIdPass.record(
-                        *model,reference,model->vertices.size(),{},
-                        renderer.viewProj(),request,{}, {},&realGpu),
-                    "VIVID real-actor colour/ID pixel parity pass not encoded");
             probe.frameSerial=request.frameSerial;
             probe.requested=true;
+            const int probeStage=stage;
+            const uint64_t snapshotFrame=request.frameSerial;
+            require(dev.readTextureDepthPixelAsync(
+                        {},int(request.x),int(request.y),
+                        [this,probeStage,snapshotFrame](bool valid,float depth) {
+                            auto& target=pixelProbes[std::size_t(probeStage)];
+                            if(!target.requested ||
+                               target.frameSerial!=snapshotFrame ||
+                               target.sceneDepthReady || !valid ||
+                               !std::isfinite(depth)) {
+                                failed=true;
+                                std::fprintf(stderr,
+                                    "VIVID scene GPU depth callback missing/stale/invalid\n");
+                                platform::requestQuit();
+                                return;
+                            }
+                            target.sceneDepth=depth;
+                            target.sceneDepthReady=true;
+                        }),
+                    "VIVID actual Metal main-scene GPU depth readback unavailable");
+            require(pixelIdPass.record(
+                        *model,reference,model->vertices.size(),{},
+                        renderer.viewProj(),request,{}, {},&realGpu,true),
+                    "VIVID real-actor colour/ID/depth pixel parity pass not encoded");
             // No main-pass resume needed: preview ends the frame here.
         }
         ++frame;
