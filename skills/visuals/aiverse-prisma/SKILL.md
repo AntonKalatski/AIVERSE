@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md` (latest actual Editor compile blocker), `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,7 +1350,7 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
 
 ## Stage 96 — integrated main native acceptance
 
@@ -1440,3 +1440,22 @@ Next: on the same Mac worktree run `bash -n tools/prisma/acceptance.sh`
 and then `bash tools/prisma/acceptance.sh build/prisma-stage97`, capture
 exact exit and summary. See
 `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md`.
+
+## Stage97 consolidated acceptance — SpectraFX Editor previews compile fix
+
+Actual Mac Studio Stage97 one-shot Release acceptance reached 97%, then
+**FAILED** building `aiverse_editor`. Two old SpectraFX window calls
+omitted the now-mandatory `ViewportGpuRetirement&` fourth argument in
+`Viewport::ensure()`. Fixed only
+`apps/editor/windows/SpectraFxGpuAssetsWindow.cpp` and
+`apps/editor/windows/SpectraFxGraphWindow.cpp` to pass
+`ed.viewportRetirement()` and descriptive debug names. This uses the
+existing Editor-owned GPU-fence-aware viewport retirement queue, which
+survives window destruction. Never introduce a temporary/window-owned
+queue or bypass GPU fences. Previous `SpectraGraphWindow.cpp` unused
+warnings are not the compiler failure. The earlier actual full acceptance
+was exit=1 and skipped CTest; **post-fix native compilation is NOT YET
+CONFIRMED**. On the latest clean Mac worktree first rebuild just
+`aiverse_editor` and then rerun the complete acceptance runner. Read
+`docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md`
+for exact errors, commits, tests, constraints and next step.
