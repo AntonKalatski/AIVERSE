@@ -328,6 +328,7 @@ public:
         uint32_t vertexOverrideCount=0;
         bool visible=false,colourCandidate=false;
         bool gpuLodConditional=false,lodFade=false,batched=false;
+        bool alternativeMeshLod=false;
         bool skinning=false,baked=false,shaderVertexOffset=false;
         bool customGpuStream=false;
         mat4 world{};
