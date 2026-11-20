@@ -799,15 +799,23 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     "7AZ ID occluder source differs from actual Renderer3D draw");
                 const std::array<render::mat4,1> maskPose{{
                     render::mat4::identity()}};
-                const std::array<vivid::SculptGpuMaskSceneCandidate,1>
-                    candidates{{{maskModel.get(),0,maskPose}}};
+                const std::array<vivid::SculptGpuMaskSceneCandidate,2>
+                    candidates{{{maskModel.get(),0,maskPose},
+                                {extraMaskModel.get(),0,maskPose}}};
+                const std::size_t count=multiMaskParityEnabled?2u:1u;
                 require(vivid::collectSculptGpuRendererMaskOccluders(
-                            renderer,candidates,dev.frameSerial(),
+                            renderer,
+                            std::span<const vivid::SculptGpuMaskSceneCandidate>(
+                                candidates.data(),count),
+                            dev.frameSerial(),
                             selected->vertexOverride,maskBlockers) &&
-                        maskBlockers.size()==1u &&
+                        maskBlockers.size()==count &&
                         maskBlockers[0].actualVertexOverride==
-                            maskDeformedVertices,
-                    "7BA renderer did not collect the exact GPU-written Mask depth source");
+                            maskDeformedVertices &&
+                        (!multiMaskParityEnabled ||
+                         maskBlockers[1].actualVertexOverride==
+                            extraMaskDeformedVertices),
+                    "7BA collector lost one of the actual GPU-written Renderer3D Mask sources");
                 blockerPtr=&maskBlockers[0];
             }
             vivid::SkinnedWeightSurface reference;
@@ -889,11 +897,19 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                             target.sceneDepthReady=true;
                         }),
                     "VIVID actual Metal main-scene GPU depth readback unavailable");
+            const auto remainingMasks=maskBlockers.size()>1u
+                ?std::span<const vivid::SculptGpuVertexSource>(
+                    maskBlockers.data()+1,maskBlockers.size()-1u)
+                :std::span<const vivid::SculptGpuVertexSource>{};
             require(pixelIdPass.record(
                         *model,reference,model->vertices.size(),{},
                         renderer.viewProj(),request,{}, {},&realGpu,true,
-                        blockerPtr),
-                    "VIVID real-actor colour/ID/depth pixel parity pass not encoded");
+                        blockerPtr,remainingMasks),
+                    "VIVID real-actor multi-Mask colour/ID/depth pixel parity pass not encoded");
+            if(multiMaskParityEnabled)
+                std::printf("VIVID GPU mask sources=%zu frame=%llu\n",
+                    maskBlockers.size(),
+                    static_cast<unsigned long long>(request.frameSerial));
             // No main-pass resume needed: preview ends the frame here.
         }
         ++frame;
@@ -914,6 +930,10 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             device->destroyBuffer(maskDeformedVertices);
             maskDeformedVertices={};
         }
+        if(extraMaskDeformedVertices.valid()) {
+            device->destroyBuffer(extraMaskDeformedVertices);
+            extraMaskDeformedVertices={};
+        }
         if(maskDeformCompute.valid()) {
             device->destroyCompute(maskDeformCompute);
             maskDeformCompute={};
@@ -921,6 +941,10 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
         if(maskModel) {
             render::releaseModel(*device,*maskModel);
             maskModel.reset();
+        }
+        if(extraMaskModel) {
+            render::releaseModel(*device,*extraMaskModel);
+            extraMaskModel.reset();
         }
         for(auto& texture:maskTextures) {
             if(texture.valid())device->destroyTexture(texture);
