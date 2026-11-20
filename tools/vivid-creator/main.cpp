@@ -15,6 +15,7 @@
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SculptGpuIdPass.h"
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
+#include "engine/character/vivid/SculptGpuRendererView.h"
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
@@ -2027,7 +2028,33 @@ struct CreatorApp {
                              human.hair->vertices.size()*sizeof(ModelVertex));
         }
         renderer.beginScene(camera,dev.framebufferWidth(),dev.framebufferHeight());
+        // Renderer3D must select the view's actual model meshes, LODs,
+        // vertex overrides and material batches BEFORE the separate ID
+        // diagnostic is allowed to corroborate a CPU-picked source vertex.
+        // drawModel stages colour commands; render() executes them below.
+        renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
+        ModelDraw draw;
+        draw.model=human.head.get();
+        draw.nodeWorld=&facePose;
+        if((actor&&actor->attach(draw))||
+           (cpuActor&&cpuActor->attach(draw)))
+            renderer.drawModel(draw);
+        const int headIndex=human.rig.head;
+        const mat4& poseHead=facePose[std::size_t(headIndex)];
+        // Shared render/collision frame: head-local procedural groom,
+        // no extra head nonuniform scale applied to its card geometry.
+        const mat4 headRigid=rigidHeadMatrix(poseHead);
+        if(human.hair) {
+            ModelDraw hair;
+            hair.model=human.hair.get();
+            hair.world=headRigid;
+            renderer.drawModel(hair);
+        }
         if(gpuSculptToRecord.valid()) {
+            const auto actualView=renderer.modelViewProvenance(*human.head);
+            const auto viewCheck=validateSculptGpuRendererView(
+                actualView,*human.head,gpuSculptToRecord.meshId,
+                gpuSculptToRecord.frameSerial);
             // Build zero-ID depth geometry for every other imported model
             // mesh referenced by a visible node, for the actual floor, and
             // for the current procedurally simulated groom. All pieces are
@@ -2038,16 +2065,13 @@ struct CreatorApp {
             // polygon with zero ID; no false selectable IDs are created.
             std::vector<SculptGpuIdVertex> occluders;
             std::vector<SculptGpuMaskBatch> maskedOccluders;
-            bool complete=true;
-            std::vector<std::uint8_t> visited(human.head->meshes.size(),0);
+            // The render-source decision, not a second duplicated mesh
+            // enumerator, determines which other model meshes can block.
+            bool complete=viewCheck.canRenderDiagnostic;
             SkinnedWeightSurface otherSurface;
-            for(const auto& node:human.head->nodes) {
-                if(node.mesh<0)continue;
-                const auto meshId=std::size_t(node.mesh);
-                if(meshId>=visited.size()) {complete=false;break;}
-                if(meshId==gpuSculptToRecord.meshId || visited[meshId])
-                    continue;
-                visited[meshId]=1;
+            for(const auto selectedVisibleMesh:viewCheck.otherVisibleMeshes) {
+                if(!complete)break;
+                const auto meshId=std::size_t(selectedVisibleMesh);
                 if(!prepareSkinnedWeightSurface(
                        *human.head,meshId,facePose,otherSurface,
                        sculptPicker.morphedBindPositions()) ||
@@ -2074,26 +2098,10 @@ struct CreatorApp {
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
-                status="GPU scene ID unavailable; CPU BVH selection retained";
+                status="GPU scene ID unavailable ("+
+                    std::string(sculptGpuRendererViewReasonText(
+                        viewCheck.reason))+"); CPU BVH retained";
             }
-        }
-        renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
-        ModelDraw draw;
-        draw.model=human.head.get();
-        draw.nodeWorld=&facePose;
-        if((actor&&actor->attach(draw))||
-           (cpuActor&&cpuActor->attach(draw)))
-            renderer.drawModel(draw);
-        const int headIndex=human.rig.head;
-        const mat4& poseHead=facePose[std::size_t(headIndex)];
-        // Shared render/collision frame: head-local procedural groom,
-        // no extra head nonuniform scale applied to its card geometry.
-        const mat4 headRigid=rigidHeadMatrix(poseHead);
-        if(human.hair) {
-            ModelDraw hair;
-            hair.model=human.hair.get();
-            hair.world=headRigid;
-            renderer.drawModel(hair);
         }
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
