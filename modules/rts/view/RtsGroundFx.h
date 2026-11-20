@@ -27,6 +27,8 @@
 #include "../RtsData.h"
 #include "../RtsMap.h"
 
+namespace aiverse::render { class NativeMeshBatch; }
+
 namespace aiverse::game {
 
 struct RtsScene;
@@ -151,6 +153,7 @@ private:
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     render::NativePresentationRetirement retiredMeshes_;
+    render::NativeMeshBatch* activeMeshBatch_ = nullptr; // draw's private transaction, never retained
     const Rules* rules_ = nullptr;
     std::string base_;
     render::TextureCache textures_;
