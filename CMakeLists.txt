@@ -43,6 +43,13 @@ option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_TOOLS "Build aiversebuild packager" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot client" ${AIVERSE_DESKTOP})
 
+# Integrated HTML5 Studio is opt-in, macOS only. Enable Objective-C++
+# from the root scope before adding Studio targets.
+option(AIVERSE_BUILD_STUDIO_HTML5 "Build opt-in native HTML5 Studio" OFF)
+if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
+    enable_language(OBJCXX)
+endif()
+
 # Game being built (aiversebuild overrides these).
 set(AIVERSE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates/skirmish" CACHE PATH "Game content folder (contains game.json)")
 # build folders configured before games/ became templates/ keep the old cached path
@@ -2763,4 +2770,16 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vfx_assets_tests PRIVATE aiverse_fx)
     add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
     set_tests_properties(vfx_graph_assets PROPERTIES LABELS "SpectraFX")
+endif()
+
+
+# HTML5 Studio frontend/native host selectively imported from feature/studio-html5.
+# Uses the MotionWeave 64-morph renderer already in this integration branch.
+# Run frontend npm build first; do not enable this for headless/server builds.
+if(AIVERSE_BUILD_STUDIO_HTML5)
+    if(APPLE AND TARGET aiverse_editor_core)
+        add_subdirectory(apps/studio-native)
+    else()
+        message(WARNING "HTML5 Studio requires macOS and editor core")
+    endif()
 endif()
