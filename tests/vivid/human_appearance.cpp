@@ -113,6 +113,73 @@ void test() {
         expect(stats.triangles==human.hair->indices.size()/3,
                "groom card triangle stats mismatch");
     }
+    // Stage 7AF: quality is a presentation policy, independent of DNA and
+    // of geometry/morph source IDs. Old APIs default to High quality.
+    {
+        auto dna=HumanDNA::preset("neutral");
+        const auto baseline=dna.toJson();
+        const auto skinDefault=humanMaterial(HumanSurface::Skin,dna);
+        const auto skinHigh=humanMaterial(HumanSurface::Skin,dna,
+                                         HumanMaterialQuality::High);
+        expect(skinDefault.shaderGraph->glsl==skinHigh.shaderGraph->glsl &&
+               skinDefault.shaderGraph->msl==skinHigh.shaderGraph->msl,
+               "VIVID default shader graph must remain High-compatible");
+        for(const auto tier:{HumanMaterialQuality::Low,
+                             HumanMaterialQuality::Medium,
+                             HumanMaterialQuality::High}) {
+            const auto budget=humanMaterialBudget(tier);
+            const auto collection=humanMaterials(dna,tier);
+            for(const auto& material:{collection.skin,collection.iris,
+                                     collection.hair}) {
+                expect(material.shaderGraph &&
+                       material.shaderGraph->nodes<=budget.maxNodes &&
+                       material.shaderGraph->samples<=budget.maxSamples &&
+                       !material.shaderGraph->glsl.empty() &&
+                       !material.shaderGraph->msl.empty(),
+                       "VIVID material tier exceeded node/sample budget");
+            }
+            if(tier==HumanMaterialQuality::Low) {
+                expect(collection.skin.shading==render::ShadingModel::Pbr &&
+                       collection.iris.shading==render::ShadingModel::Pbr &&
+                       collection.cornea.shading==render::ShadingModel::Pbr &&
+                       collection.hair.shading==render::ShadingModel::Pbr,
+                       "mobile tier must avoid dedicated human BRDF branches");
+            } else {
+                expect(collection.skin.shading==render::ShadingModel::Skin &&
+                       collection.iris.shading==render::ShadingModel::Eye &&
+                       collection.hair.shading==render::ShadingModel::Hair,
+                       "medium/high tiers lost dedicated human BRDFs");
+            }
+        }
+        for(const auto surface:{HumanSurface::Skin,HumanSurface::Iris,
+                                HumanSurface::Hair}) {
+            const auto low=humanMaterial(surface,dna,HumanMaterialQuality::Low);
+            const auto medium=humanMaterial(surface,dna,HumanMaterialQuality::Medium);
+            const auto high=humanMaterial(surface,dna,HumanMaterialQuality::High);
+            expect(low.shaderGraph->nodes<medium.shaderGraph->nodes &&
+                   medium.shaderGraph->nodes<high.shaderGraph->nodes,
+                   "VIVID shader graph complexity must scale with quality");
+        }
+        render::Material imported;
+        imported.baseTex=7;imported.mrTex=8;
+        imported.normalTex=9;imported.occlusionTex=10;
+        imported.uvScale={1.25f,0.95f};
+        const auto mobile=humanMaterialFromSource(HumanSurface::Skin,dna,
+                                  imported,HumanMaterialQuality::Low);
+        expect(mobile.baseTex==7 && mobile.mrTex==8 &&
+               mobile.normalTex==9 && mobile.occlusionTex==10 &&
+               mobile.uvScale.x==1.25f,
+               "material quality discarded imported texture references");
+        auto preview=generateHumanPreview(dna,GroomQuality::Low,
+                                            HumanMaterialQuality::Low);
+        expect(preview.head && preview.hair &&
+               preview.hair->materials.front().shading==render::ShadingModel::Pbr &&
+               preview.hair->materials.front().shaderGraph->nodes<=
+                   humanMaterialBudget(HumanMaterialQuality::Low).maxNodes,
+               "low-quality human preview groom must use mobile material");
+        expect(dna.toJson()==baseline,
+               "selecting VIVID material quality modified versioned DNA");
+    }
     // Regression: custom head proportions must use an ellipsoid collision
     // matching generated roots, not a hard-coded sphere in world units.
     for(float width:{0.65f,1.0f,1.35f}) {
