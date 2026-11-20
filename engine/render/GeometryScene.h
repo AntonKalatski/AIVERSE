@@ -24,8 +24,11 @@ public:
     // Discard the current static presentation scene without waiting idle:
     // used on rules/project reload, not final Device teardown.
     void clear(gfx::Device& dev) {retireResident(dev);}
-    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
-    bool collectRetired(gfx::Device& dev) {return retirement_.collect(dev);}
+    size_t pendingGpuRetirements() const noexcept;
+    size_t pendingFailedStages() const noexcept {return failedStages_.size();}
+    // Render-owner-thread frame boundary only: poll both live and failed-stage
+    // retirement queues, releasing stages only after GPU completion proof.
+    bool collectRetired(gfx::Device& dev);
     void draw(Renderer3D& renderer);
     void setRuntimeOptions(bool hlod,bool geometry,bool surfaces,bool cache) { hlod_=hlod;geometryEnabled_=geometry;surfacesEnabled_=surfaces;cacheEnabled_=cache; }
     const Stats& stats() const { return stats_; }
@@ -49,6 +52,9 @@ private:
     void drawInstance(Renderer3D& renderer,const Instance& instance);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     NativePresentationRetirement retirement_;
+    // Failed transactions may still own GPU models after a refused idle.
+    // Retain those retirement queues for a later safe collect/shutdown.
+    std::vector<std::unique_ptr<GeometryScene>> failedStages_;
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
