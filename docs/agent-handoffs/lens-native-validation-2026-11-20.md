@@ -139,3 +139,15 @@ Full CTest NOT RUN. Commit `5effe65ed6dd2f2f90e15a90f45c700ded2b8c61` adds aiver
 the public aiverse_view INTERFACE because its inline appearance authoring API
 requires it. CMakeLists.txt only; no runtime/save change. Branch codex/lens-completion;
 CI NOT RUN. Next: repeat native build on KINGSTON; retain all open feature gates.
+
+## Pass 10 — fixture contracts
+
+At `c7241947d`, KINGSTON report `20261120-144146-9957`: three camera
+model-snapshot/terrain/sprite prepared API tests PASS. Report
+`20261120-144208-11202`: animation_budget_policy and animation_humanoid_retarget
+PASS, animation_ragdoll_asset FAIL (fixture omitted Neck but expected Chest body).
+Full quick runner `20261120-144131-9314`: configure PASS, build FAIL at
+model_image_transaction stub's obsolete setIndexBuffer signature; CTest NOT RUN.
+Commit `0dc0b409b3611f97a48540b469f17e1e73dd4686` updates that stub and gives ragdoll fixture an explicit Neck,
+plus sparse-avatar checks (2 bodies, no invalid joints). Production unchanged;
+branch codex/lens-completion; CI NOT RUN. Next: rebuild/retest on KINGSTON.
