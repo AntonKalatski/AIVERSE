@@ -697,3 +697,22 @@ A reviewed integration with the peer scene loader `SceneLoadCoordinator::SpawnPr
 The stage implements a genre-neutral `AnimatedSceneAttachmentSources` service over the existing `MotionWeaveSourceBridge` and `stepAnimationPresentation`. Its own presentation World owns one GraphInstance for EACH animated child stable `scene/object/childId` identity. Static children remain compiled socket draws using their parent's already computed pose; an authored `animated=true` child is excluded from that static packet and requires a published external `animationGraph` and stable nonempty child `id`. All child source Model/Graph/epoch validations and parent named socket compilation run before the independent child evaluator is advanced.
  
 The parent pose and bone matrices place the independent child's world transform; the child supplies its own evaluated local Pose, and the returned `View::Object.graph` is reset so a generic View never evaluates it a second time. Studio's real attachment preview imports/compiles child Graph assets and steps them once in pre-draw owner update before graphless render submission. ModelView retains authoring fields but does not yet support an independent child player; it fails closed. Full native scene-loader integration, tokenized provider shutdown, advanced morph/LOD parity and actual Metal/Vulkan/GLES/CMake/CTest/ASan-TSan testing remain outstanding. [Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+
+## Stage 180 — generic compiled facial Control Rig and native IK
+
+The opt-in `<aiverselib/animation/FacialControlRig.h>` /
+`AnimationFacialControlComponent` maps exact importer-authored
+mesh-local 64-channel morph names to named expression controls, applies
+per-character half-life smoothing, and executes existing
+`render::AnimationRig` Aim/AngularLimit/IK AFTER one Graph/Animator
+pose evaluation, BEFORE final matrices. Facial controls are a separate
+presentation ECS component (do not require changing existing Graph
+parameter layouts). Invalid/re-imported rig metadata and missing
+controls fail without mutating the incoming pose. Morph-only sources
+may use MotionWeave workers; any native face IK or host callbacks are
+routed through the serial owner-thread barrier.
+
+See [facial authoring and runtime](motionweave-facial-control-rig.md) and
+[Stage 180 handoff](agent-handoffs/animation-stage180-facial-control-rig-2026-11-20.md).
+This is source implementation only: CMake/CTest, real face/glTF/FBX
+assets, Metal/Vulkan/GLES GPU parity and performance **NOT RUN**.
