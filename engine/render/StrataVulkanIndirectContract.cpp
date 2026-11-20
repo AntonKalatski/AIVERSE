@@ -29,7 +29,8 @@ bool prepareVulkanIndirectContract(
        source.geometry || source.baked.tex.valid() ||
        source.nodes.size()!=1 || source.order.size()!=1 ||
        source.order.front()!=0 || source.bindWorld.size()!=1 ||
-       source.meshes.empty() || source.materials.empty())
+       source.meshes.size()!=1 || source.materials.size()!=1 ||
+       source.nodes.front().parent!=-1)
         return fail(error,"Vulkan indirect requires one immutable pooled rigid source and one main view");
 
     const auto& entry=staged.primitives.front();
@@ -48,7 +49,7 @@ bool prepareVulkanIndirectContract(
     const auto& p=mesh.primitives.front();
     const auto& material=source.materials[entry.material];
     if(p.material!=int(entry.material) || !p.indexCount ||
-       p.indexCount%3!=0 || p.morphTargets ||
+       p.indexCount%3!=0 || p.morphTargets || p.shadowBatched ||
        !p.jointPalette.empty() || !p.variantMaterial.empty() ||
        material.alpha!=AlphaMode::Opaque || material.transparent ||
        material.shaderGraph || source.gpuBaseVertex >
