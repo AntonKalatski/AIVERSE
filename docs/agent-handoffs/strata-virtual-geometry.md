@@ -3266,3 +3266,136 @@ starting those graphics render passes; never dispatch compute while
 inside an active graphics encoder. Keep production opt-in and require
 separate pass-specific parity acceptance before enabling the new
 routes. Finish original Vulkan/Metal/GLES3 acceptance in Stage 19.
+
+
+---
+
+## Stage 16.4c — spot-shadow and planar-reflection GPU camera passes (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`. Functional implementation,
+recording assertions and handoff committed. **No native CMake, CTest,
+actual Metal/Vulkan/GLES3 GPU test, main RGBA, sun/spot depth or planar
+reflection RTT pixel-parity acceptance was executed.** Stage 16.4
+is not a certified or benchmarked Nanite replacement; all GPU parity
+acceptance options remain FALSE by default.
+
+### Production architecture and API
+
+- `GeometryScene::setStrataVulkanGpuAuxiliaryParityGates(
+  sunShadowVerified, spotShadowVerified, reflectionVerified)` adds
+  **three independent pass-specific manual acceptance switches**,
+  all default false. Main `setStrataVulkanGpuParityGates(selection,
+  raster)` remains required too. A scene with enabled sun shadows
+  declines the GPU source route entirely unless its sun-shadow gate
+  is accepted; likewise a scene requesting planar reflections
+  declines when the reflection gate is still false. This prevents
+  enabling an untested secondary view just by accepting main-view
+  pixel parity. A disabled spot-shadow gate causes ONLY spot GPU
+  selection to decline; spot retains its original Legacy shadow
+  draw. GLES3/GL33/Metal do not enter this Vulkan-only GPU route.
+- `GpuIndexedSelectionPacket` includes borrowed
+  `GpuClusterCulling*` and GPU v2 metadata handle, stable scene
+  instance token, CPU-tested original primitive/material identity,
+  LOD threshold and explicit permissions for spot/reflection
+  authoring. The pointer is valid only from the scene's
+  `draw()` until `Renderer3D::render()` completes. This matches
+  the existing borrowed `Model*` lifetime requirement; never
+  call `GeometryScene::shutdown` between submit and render.
+  `Renderer3D::ModelItem` additionally owns independent
+  `gpuSpotShadowIndexed` and `gpuReflectionIndexed` **value
+  copies**, in addition to main and sun value copies.
+- **New `Renderer3D::prepareStrataAuxiliaryGpuPackets(pass, camera,
+  width,height)`** (implementation in Renderer3DModels.cpp) can only
+  encode Vulkan compute outside a graphics render pass. Before
+  dispatch it verifies live model VB/IB, resource revisions,
+  original primitive and material identity, opaque/ridid state,
+  no skinned/deformed/GI/alpha/shader graph, exact per-instance
+  node world transform and per-pass acceptance flag. Each eligible
+  ModelItem gets ONE new independent GPU selection slot with a
+  whole-original-primitive GPU fallback command. The method never
+  calls any graphics draw; failures leave that ModelItem's
+  auxiliary packet empty, so the original renderer item remains
+  fully drawable through Legacy.
+- `Renderer3DReflect.cpp::renderSpotShadow()` knows the spot
+  lightViewProj and spot texture size *after*
+  `lights.prepareSpotShadow()`, and now calls the auxiliary
+  compute method **BEFORE** `dev_->beginPass(spot)`.
+  `Renderer3DReflect.cpp::renderReflection()` computes the real
+  water-plane mirroring and reflected view projection first, then
+  calls the same method **BEFORE**
+  `lights.beginReflection(...)`. This avoids accidentally using
+  main-camera or sun-shadow cluster selections for either pass.
+  If a reflection plane is absent, no extra GPU work runs.
+- `Renderer3DModels.cpp::renderModels(phase)` selects precisely
+  `gpuIndexed` for main opaque, `gpuShadowIndexed` for sun,
+  `gpuSpotShadowIndexed` for the auxiliary phase0 spot shadow,
+  and `gpuReflectionIndexed` for the auxiliary phase1 mirrored
+  reflection view. `GpuIndexedSelectionPacket::matchesView()`
+  verifies **pass kind, exact GPU viewProjection and dimensions**.
+  All original material/light/instance U0 states are bound by
+  `drawModelBatch(...,submit=false)`, then one bounded GPU
+  `drawIndexedIndirect` submission replaces that original
+  ModelItem only if the RHI accepts it. Failed/missing/expired
+  packets are regular CPU/Legacy ModelItems, never double-drawn.
+  No changes to Vulkan/GLES3/Metal graphics shader semantics.
+- `ModelRenderStats` counts successful GPU spot/reflection
+  *preparations* separately from actual spot/reflection *draw
+  submissions*. GPU triangle counts remain unknown without
+  asynchronous readback; do not fabricate them.
+
+### Files and source commits
+
+- `engine/render/Renderer3D.h`: `586141eb86ee22e215880b4929685a5f4c692ee5`
+  (explicit spot packet/pass and borrowable selector), plus
+  `2855b76dbeb2e034aa4232a473fe08eaf68e72b5`
+  (separate per-pass prepared/submitted stats).
+- `engine/render/GeometryScene.h`:
+  `699935684a35a0fd84cb31bc5ab104128ed7c391`
+  (explicit independent pass parity acceptance flags).
+- `engine/render/GeometryScene.cpp`:
+  `33e57ae439c8d705b54115d45c3bbb68e3bb5a67`
+  (independent sun/spot/reflection gates; metadata and selector
+  source-specific handles into renderer packets).
+- `engine/render/Renderer3DModels.cpp`:
+  `7e2e9ff4a85d63423734252b0cceea06a3f471ad`
+  (just-in-time auxiliary prepass, camera-unique GPU slots and
+  exclusive renderer draw selection),
+  `b175f90b9d4add11e846f118a2409fd50735eb45`
+  (mutated mesh identity validation),
+  `1188bf1a07e1a396349fb121323815167f40d69c`
+  (per-pass preparation counters).
+- `engine/render/Renderer3DReflect.cpp`:
+  `8ea6d96437f76cc31170d693b06690448d5e4a55`
+  (spot/reflection compute BEFORE corresponding render pass).
+- Recording tests, authored **NOT RUN**:
+  `tests/render/strata_gpu_culling.cpp`
+  `41e6a1b59b0e8f34347c2645133f239d11dc9116`
+  tests unique slots/camera projection for main/sun/mirror dispatch.
+  `tests/render/strata_render_routing.cpp`
+  `0bd1c9af742cab4f933079898c9fd263e3dce8a4`
+  tests strict view/camera identity for spot/reflection packet
+  copies versus sun/main.
+
+### Status and outstanding acceptance
+
+| Function | Code | Actual tests |
+| --- | --- | --- |
+| Independent sun, spot and mirrored reflection GPU selection | Implemented | NOT RUN |
+| Just-in-time compute before each auxiliary render encoder | Implemented | NOT RUN |
+| Material+world state owned by one Renderer3D ModelItem | Implemented | NOT RUN |
+| Per-pass manual acceptance flags and Legacy fallback | Implemented | NOT RUN |
+| Multi-material + multi-instance main/shadow/reflection draw | Bounded implementation | NOT RUN |
+| Real Vulkan main RGBA A/B and sun/spot DEPTH A/B | NOT VERIFIED | N/A |
+| Real Vulkan planar reflection RTT A/B | NOT VERIFIED | N/A |
+| Real GPU performance/LOD occlusion/overdraw profiling | NOT VERIFIED | N/A |
+| Cracks between lossy neighboring cluster LODs | STAGE 17 REQUIRED | N/A |
+
+**Remaining:** Build an actual native Vulkan Renderer3D raster
+A/B harness (not just the earlier compute-byte test), compare
+main-color, sun/spot shadow depth and actual planar reflection RTT
+pixels across multiple cameras/materials/instances. Keep the
+pass-specific acceptance flags false until exact tested source
+SHA, driver and screenshot/depth evidence are recorded. Then
+Stage 17 crack-free lossy LOD, Stage 18 GPU performance and one
+combined final CI/native test pass. Preserve feature branch
+isolation; `main` contains concurrent unrelated renderer changes.
