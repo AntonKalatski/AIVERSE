@@ -8,6 +8,7 @@
 #include "engine/view/AttachmentLayout.h"
 #include "engine/view/EcsAttachmentScene.h"
 #include "engine/view/SceneAttachmentHost.h"
+#include "engine/view/AnimatedSceneAttachmentSources.h"
 #include "engine/render/Animation.h"
 #include <algorithm>
 #include <cmath>
@@ -34,6 +35,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         render::mat4 local{};
         render::mat4 childWorld{};
         std::string id; // optional stable prefab child key
+        bool animated=false;
+        std::string animationGraph; // project-relative Graph asset
     };
     struct Session {
         std::unique_ptr<render::ModelAssetProvider> provider;
@@ -43,6 +46,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         World presentation;
         Entity parentEntity{};
         std::unique_ptr<view::SceneAttachmentHost> attachmentHost;
+        std::map<std::string,Registry::Snapshot> animatedChildren;
         std::vector<Registry::Snapshot> children;
     };
 
@@ -61,6 +65,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     render::Renderer3D renderer_;
     Viewport viewport_;
     ::aiverse::View presentationView_; // render-only, no graph evaluation
+    ::aiverse::View animatedPreviewView_; // child poses precomputed in ONE host
+    view::AnimatedSceneAttachmentSources animatedSources_;
     render::Pose previewPose_;
     std::vector<render::mat4> previewMatrices_;
     float previewTime_=0.f,previewYaw_=0.6f,previewPitch_=0.4f;
@@ -110,6 +116,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             if(owned->attachmentHost)
                 owned->attachmentHost->clear();
             owned->attachmentHost.reset();
+            owned->animatedChildren.clear();
             owned->children.clear();
             owned->source.reset();
             owned->registry.reset();
@@ -239,7 +246,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         for(const auto& entry:layout.attachments) {
             (void)withinProject(entry.model);
             next.push_back({entry.model,entry.socket,entry.enabled,
-                            entry.local,entry.childWorld,entry.id});
+                            entry.local,entry.childWorld,entry.id,
+                            entry.animated,entry.animationGraph});
         }
         const auto parent=layout.parent.empty()?sourcePath_:layout.parent;
         if(!parent.empty())(void)withinProject(parent);
@@ -256,7 +264,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         for(const auto& child:authored_)
             layout.attachments.push_back({
                 child.model,child.socket,child.enabled,
-                child.local,child.childWorld,child.id});
+                child.local,child.childWorld,child.id,
+                child.animated,child.animationGraph});
         const Json root=view::AttachmentLayoutCodec::write(layout);
         std::ofstream output(path,std::ios::binary|std::ios::trunc);
         if(!output || !(output<<root.dump(2)))
@@ -294,7 +303,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             for(const auto& child:authored_) {
                 document.attachments.push_back({
                     child.model,child.socket,child.enabled,
-                    child.local,child.childWorld,child.id});
+                    child.local,child.childWorld,child.id,
+                child.animated,child.animationGraph});
                 if(!child.enabled)continue;
                 if(child.socket.empty())
                     throw std::invalid_argument("Child socket name must not be empty");
@@ -430,6 +440,11 @@ public:
             if(ui::inputString("Child Model",child.model))dirty_=true;
             if(ui::inputString("Socket",child.socket))dirty_=true;
             if(ui::inputString("Prefab child ID",child.id))dirty_=true;
+            if(ImGui::Checkbox("Independent animation",&child.animated))
+                dirty_=true;
+            if(child.animated &&
+               ui::inputString("Child AnimationGraph file",child.animationGraph))
+                dirty_=true;
             float position[]={
                 child.local.m[12],child.local.m[13],child.local.m[14]};
             if(ImGui::DragFloat3("Socket offset",position,0.01f)) {
