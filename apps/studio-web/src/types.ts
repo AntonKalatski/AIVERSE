@@ -27,6 +27,10 @@ export interface StudioAssetTransferResult {
   files: string[]; issues: Array<{name: string; message: string}>;
   repairedMaterialReferences?: number;
 }
+export interface StudioAssetReference {
+  document: string; owner: string; field: string; path: string;
+  guid: string; writable: boolean;
+}
 export interface StudioAssetDetail extends StudioAsset {
   importer: string; guid: string; directory: boolean; settings: Record<string,unknown>;
 }
@@ -49,7 +53,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
+export type StudioMethod = 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
   'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
@@ -60,6 +64,7 @@ export interface StudioParams {
   'studio.openProject': Record<string, never>;
   'studio.assets': Record<string, never>;
   'studio.assetByGuid': { guid: string };
+  'studio.assetReferences': Record<string, never>;
   'studio.assetMetaPatch': {guid:string;key:string;value:string|number|boolean};
   'studio.assetFolderCreate': { parent: string; name: string };
   'studio.assetMovePreview': { paths: string[]; destination: string };
@@ -97,6 +102,7 @@ export interface StudioResult {
   'studio.openProject': { cancelled: boolean; snapshot: StudioSnapshot | null };
   'studio.assets': StudioAssetList;
   'studio.assetByGuid': StudioAssetDetail;
+  'studio.assetReferences': StudioAssetReference[];
   'studio.assetMetaPatch': StudioAssetDetail;
   'studio.assetFolderCreate': { path: string };
   'studio.assetMovePreview': StudioAssetTransferPlan;
