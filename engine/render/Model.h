@@ -112,6 +112,10 @@ struct Primitive {
     int morphTargets = 0;                // 0..kMaxMorphTargets
     uint32_t morphTexel = 0;             // first texel of its deltas in Model::morphTex
     std::vector<float> morphDeltas;      // CPU: [target][vertex] position xyz, normal xyz (released after upload)
+    // Generated index-only visual LOD references the source primitive morph
+    // buffer and semantic channels without creating another GPU morph texture.
+    // Never set these for an independently authored/imported primitive.
+    int morphAliasMesh = -1, morphAliasPrimitive = -1;
     bool lightmapUv = false;             // vertices carry lightmap UVs in `joints` (unskinned only, see ModelVertex)
     bool shadowBatched = false;          // cast through MeshDef::shadowBatch instead of its own shadow draw
 };
@@ -123,7 +127,13 @@ struct MaterialBatch {
     std::vector<size_t> parts;
 };
 
-struct ModelLod { int mesh = -1; float maxPixels = 0; };
+struct ModelLod {
+    int mesh = -1;
+    float maxPixels = 0;
+    // Target LOD morph slot -> parent mesh morph slot, resolved from exact
+    // authored/imported semantic names. Empty only when no morphing exists.
+    std::vector<int> morphSourceForTarget{};
+};
 
 struct MeshDef {
     std::string name;
