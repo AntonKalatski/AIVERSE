@@ -121,3 +121,12 @@ Commit `daff707930b69d0e2eb2329b09eb75f8752c49f9` explicitly includes ModelClips
 and AnimationAssetLoader.h (same dependency), without API/format changes.
 Branch codex/lens-completion, CI NOT RUN. Next: rerun native build on KINGSTON;
 new terrain tests and real GPU checks remain pending.
+
+## Pass 8 — root motion tool header
+
+Quick runner `6f15a0e59`, KINGSTON report `20261120-143832-1521`:
+configure PASS, build FAIL at tools/animation/root_motion_bake.cpp missing
+findNodePath declaration. Humanoid/ragdoll targets now compile. Full CTest
+NOT RUN. Commit `8aec846519fa902f5e1932493fa57f84ca13ed99` includes ModelClips.h in that tool; no
+API/format change. Branch codex/lens-completion; CI NOT RUN. Next: repeat
+native build on KINGSTON. Feature and GPU validation gaps remain as above.
