@@ -12,6 +12,9 @@ class GeometryScene {
 public:
     struct Stats { uint32_t instances=0, groups=0, proxies=0, submitted=0, surfaceProxiesSubmitted=0; };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
+    // Stage a replacement scene independently, preserving the current scene
+    // on validation/model/GPU upload errors. Publish only after success.
+    void loadTransactional(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
     // Borrowed image handles must outlive the scene. GPU geometry is owned by the scene.
     void loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget=2000000);
