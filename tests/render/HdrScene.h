@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <fstream>
 
 namespace aiverse::test {
@@ -29,6 +30,16 @@ struct HdrScene {
     bool captured = false, failed = false, temporalVerify = false;
     bool prismaMultiViewVerify = false; // opt-in Stage 97 real-GPU camera lifetime probe
     bool prismaStressVerify = false; // Stage 98 repeated camera churn + actual fence drain
+    bool prismaGhostVerify = false; // Stage 98 moving actor after camera cut, GPU pixel readback
+    struct GhostRedSample {
+        int width=0, count=0;
+        double sumX=0;
+        std::vector<int> columns;
+        bool ready=false;
+    };
+    std::mutex ghostSampleMutex_;
+    GhostRedSample ghostBefore_,ghostAfter_;
+    int ghostFrameWait_=0;
     int prismaStressCycle = 0, prismaStressTicks = 0, prismaStressWait = 0;
     uint64_t prismaStressSubmittedFence = 0;
     uint64_t prismaStressMaxLiveBytes = 0;
@@ -42,16 +53,18 @@ struct HdrScene {
         temporalVerify=std::getenv("AIVERSE_TAA_VERIFY")!=nullptr;
         prismaMultiViewVerify=std::getenv("AIVERSE_PRISMA_MULTIVIEW_VERIFY")!=nullptr;
         prismaStressVerify=std::getenv("AIVERSE_PRISMA_STRESS_VERIFY")!=nullptr;
+        prismaGhostVerify=std::getenv("AIVERSE_PRISMA_GHOST_VERIFY")!=nullptr;
         advanced = temporalVerify || std::getenv("AIVERSE_SCREEN_LIGHTING") != nullptr;
-        if ((prismaMultiViewVerify || prismaStressVerify) && (temporalVerify ||
-            (prismaMultiViewVerify && prismaStressVerify) ||
+        const int prismaModes=int(prismaMultiViewVerify)+int(prismaStressVerify)+
+                              int(prismaGhostVerify);
+        if (prismaModes>1 || (prismaModes && (temporalVerify ||
             std::getenv("AIVERSE_HDR_VERIFY") ||
-            std::getenv("AIVERSE_SCREEN_LIGHTING"))) {
+            std::getenv("AIVERSE_SCREEN_LIGHTING")))) {
             std::fprintf(stderr, "PRISMA multiview: conflicting GPU fixture mode\n");
             failed = true;
             return;
         }
-        if (prismaMultiViewVerify || prismaStressVerify) {
+        if (prismaMultiViewVerify || prismaStressVerify || prismaGhostVerify) {
             // A test must explicitly turn on canonical temporal; the legacy
             // ScreenLighting TAA would test a different history owner.
             const auto enabled=[](const char* key) {
@@ -97,7 +110,7 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
-        if (prismaMultiViewVerify || prismaStressVerify) {
+        if (prismaMultiViewVerify || prismaStressVerify || prismaGhostVerify) {
             post.setSettings(parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"temporalResolve","historyWeight":0.86,"jitterPixels":0.5,"minQuality":"high"}]})"),Json()));
             post.setQuality(PrismaQuality::High);
         }
@@ -130,6 +143,7 @@ struct HdrScene {
         if (failed) return;
         if (prismaMultiViewVerify) { drawPrismaMultiView(d,w,h); return; }
         if (prismaStressVerify) { drawPrismaStress(d,w,h); return; }
+        if (prismaGhostVerify) { drawPrismaGhostPixels(d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(ownsFrame)d.beginFrame(w,h);
@@ -402,6 +416,113 @@ struct HdrScene {
                     static_cast<unsigned long long>(stats.knownPendingBytes),
                     static_cast<unsigned long long>(memory.liveKnownBytes));
                 fail("retired textures not reclaimed after confirmed GPU fence");
+            }
+        }
+        if(ownsFrame) d.endFrame();
+        ++frame;
+    }
+
+    // Stage 98: a visible unlit cube moves from one side of the camera to
+    // the other across an explicit camera cut. Read actual backend output
+    // pixels before and after the cut; residual red coverage in the old
+    // location must be bounded. This is a cut/ghost test, NOT certification
+    // for every motion-vector, transparency or disocclusion scenario.
+    void drawPrismaGhostPixels(gfx::Device& d,int w,int h) {
+        constexpr uint64_t cameraId=41001;
+        if(ownsFrame) d.beginFrame(w,h);
+        const int tick=frame;
+        if(tick<=5) {
+            if(tick==3) {
+                post.resetMotionHistory(cameraId);
+                renderer.resetObjectMotionHistory(cameraId);
+            }
+            post.setViewId(cameraId);
+            const auto dims=post.renderSizeForOutput(w,h);
+            if(dims.first!=w || dims.second!=h) {
+                std::fprintf(stderr,"PRISMA ghost FAIL: render dimensions unavailable\n");
+                failed=true;
+            } else {
+                auto cam=camera;
+                cam.yaw=0.f;cam.pitch=0.2f;cam.distance=12.f;
+                cam.target={0,0.5f,0};
+                renderer.beginScene(post.jitteredCamera(cam,w,h),w,h);
+                const float x=tick<3?-2.f:2.f;
+                renderer.drawMesh(cube,mat4::translate({x,0,0}),
+                                  {1.f,0.015f,0.01f,1.f},kDrawUnlit);
+                gfx::PassDesc out=output;
+                out.clearColor[0]=0.015f;
+                out.clearColor[1]=0.025f;
+                out.clearColor[2]=0.045f;
+                renderer.render(out,&post);
+                renderer.resolvePrisma();
+                if(!post.stats().temporalResolved || !post.lastError().empty()) {
+                    std::fprintf(stderr,"PRISMA ghost FAIL: temporal GPU pass missing: %s\n",
+                                 post.lastError().c_str());
+                    failed=true;
+                }
+                if(tick==2 || tick==5) {
+                    const bool before=tick==2;
+                    auto receive=[this,before](int cw,int ch,std::vector<uint8_t> pixels) {
+                        GhostRedSample sample;
+                        sample.width=cw;
+                        if(cw>0 && ch>0 &&
+                           pixels.size()==size_t(cw)*size_t(ch)*4) {
+                            sample.columns.assign(size_t(cw),0);
+                            for(int y=ch/4;y<3*ch/4;++y)
+                                for(int x=cw/8;x<7*cw/8;++x) {
+                                    const size_t i=(size_t(y)*size_t(cw)+size_t(x))*4;
+                                    const int red=pixels[i];
+                                    const int green=pixels[i+1];
+                                    const int blue=pixels[i+2];
+                                    if(red>95 && red>green+45 && red>blue+45) {
+                                        ++sample.count;
+                                        sample.sumX+=double(x);
+                                        ++sample.columns[size_t(x)];
+                                    }
+                                }
+                        }
+                        sample.ready=true;
+                        std::lock_guard<std::mutex> lock(ghostSampleMutex_);
+                        if(before) ghostBefore_=std::move(sample);
+                        else ghostAfter_=std::move(sample);
+                    };
+                    if(readOutput) readOutput(receive);
+                    else d.captureNextFrame(receive);
+                }
+                d.endPass();
+            }
+        } else {
+            // The CPU must not assume that an asynchronous Metal capture
+            // callback has completed immediately after endFrame.
+            GhostRedSample oldSample,newSample;
+            {
+                std::lock_guard<std::mutex> lock(ghostSampleMutex_);
+                if(ghostBefore_.ready && ghostAfter_.ready) {
+                    oldSample=ghostBefore_;newSample=ghostAfter_;
+                }
+            }
+            if(oldSample.ready && newSample.ready) {
+                const double oldX=oldSample.count>0 ?
+                    oldSample.sumX/double(oldSample.count) : 0.0;
+                const double newX=newSample.count>0 ?
+                    newSample.sumX/double(newSample.count) : 0.0;
+                int residual=0;
+                const int radius=oldSample.width/22;
+                for(int x=0;x<newSample.width;++x)
+                    if(std::abs(double(x)-oldX)<double(radius))
+                        residual+=newSample.columns[size_t(x)];
+                const bool ok=oldSample.width==newSample.width &&
+                    oldSample.count>30 && newSample.count>30 &&
+                    std::abs(newX-oldX)>double(oldSample.width)*0.05 &&
+                    residual<std::max(16,oldSample.count/10);
+                std::printf("PRISMA ghost: oldPixels=%d newPixels=%d "
+                            "centroidDelta=%.2f residualOld=%d %s\n",
+                            oldSample.count,newSample.count,
+                            std::abs(newX-oldX),residual,ok?"PASS":"FAIL");
+                captured=ok;failed=!ok;
+            } else if(++ghostFrameWait_>120) {
+                std::fprintf(stderr,"PRISMA ghost FAIL: GPU capture callbacks missing\n");
+                failed=true;
             }
         }
         if(ownsFrame) d.endFrame();
