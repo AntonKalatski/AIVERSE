@@ -4,6 +4,7 @@
 // readback are intentionally left to the canonical renderer integration.
 #pragma once
 #include "SculptGpuPickContract.h"
+#include "engine/gfx/Gfx.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -133,5 +134,37 @@ fragment float4 fs_main(SculptGpuIdOut input [[stage_in]]) {
     return input.identifier;
 }
 )MSL";
+
+// Canonical RHI descriptor helpers for a future opt-in GPU pass. They only
+// describe resources: they DO NOT allocate a shader, texture, pipeline, draw,
+// or read pixels. The host owns all resources and all completion fences.
+inline gfx::ShaderDesc sculptGpuIdShaderDesc() noexcept {
+    gfx::ShaderDesc d;
+    d.glslVertex=kSculptGpuIdVS;
+    d.glslFragment=kSculptGpuIdFS;
+    d.msl=kSculptGpuIdMSL;
+    d.textureSlots=0;
+    d.uniformSlots=1;
+    d.label="VIVID depth-tested mesh triangle ID";
+    return d;
+}
+inline gfx::PipelineDesc sculptGpuIdPipelineDesc(
+        gfx::ShaderHandle shader,
+        gfx::CullMode cull=gfx::CullMode::Back) noexcept {
+    gfx::PipelineDesc d;
+    d.shader=shader;
+    d.attrs[0]={0,gfx::VertexFormat::Float3,0};
+    d.attrs[1]={1,gfx::VertexFormat::UByte4N,12};
+    d.attrCount=2;
+    d.stride=sizeof(SculptGpuIdVertex);
+    d.primitive=gfx::Primitive::Triangles;
+    d.cull=cull;
+    d.depthTest=true;
+    d.depthWrite=true;
+    d.blend=gfx::BlendMode::Opaque;
+    d.colorFormat=gfx::PixelFormat::RGBA8;
+    d.label="VIVID linear ID/depth pass";
+    return d;
+}
 
 } // namespace aiverse::vivid
