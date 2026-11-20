@@ -400,9 +400,9 @@ public:
     void drawPreparedTerrainFog(render::Renderer3D& renderer,
                                 const MapGrid& grid,
                                 const std::vector<uint8_t>* vision,
-                                double seconds);
+                                double seconds,uint64_t expectedEpoch=0);
     // Same-frame sprite/tile draw-only pass, without sprite state changes.
-    void drawPreparedSprites(render::Renderer3D& renderer);
+    void drawPreparedSprites(render::Renderer3D& renderer,uint64_t expectedEpoch=0);
     // Optional LENS one-frame capture of pre-LOD MotionWeave model packets.
     // Owner must disable this before resources can be reimported or destroyed.
     void setCameraPreparedCapture(render::CameraModelSnapshot* target) noexcept {
