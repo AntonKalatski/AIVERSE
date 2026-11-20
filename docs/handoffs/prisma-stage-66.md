@@ -725,3 +725,10 @@ updated editor and server together; an old editor can reject newly listed tools.
 authored configuration, not proof of backend availability. Hardware gates remain.
 Next: consume the engine skills and MCP entity/component API for new authoring
 work; use map_save when persistence is intended and preserve entity ownership.
+
+
+## 2026-11-20 — Lighting main integration Stage 36
+
+Merge 9611d05d5aaf299f0892b1fe2f60b935a6c5bede on main preserves VT/LENS/Vulkan contracts and adds tested
+GI coexistence. See docs/agent-handoffs/lighting-main-stage36-merge-2026-11-20.md
+for exact builds/tests, initial failures and remaining platform gates.
