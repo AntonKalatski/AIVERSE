@@ -69,6 +69,16 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
             throw std::runtime_error("RtsView reload: staged sprite GPU recovery pending");
         pendingSpriteRecovery_.reset();
     }
+    // Previous failed road/shore staging is still a GPU ownership lease.
+    // Cleanup may fail again: keep each pointer intact until retry succeeds.
+    if(pendingRoadRecovery_) {
+        pendingRoadRecovery_->shutdown(dev);
+        pendingRoadRecovery_.reset();
+    }
+    if(pendingShoreRecovery_) {
+        pendingShoreRecovery_->shutdown(dev);
+        pendingShoreRecovery_.reset();
+    }
     // Stage the replacement sprites before touching the live view. A failed
     // sprite pipeline/texture allocation must not delete its predecessor.
     // The idle barrier is established for *all* existing RHI owners (not
@@ -185,8 +195,37 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
         overlays_.initPrepared(rules,std::move(incomingOverlaySet),contentBase_);
         overlays_.initGpu(dev);
-        roads_->init(dev, rj["roadTypes"], read_);
-        shores_->init(dev, rj["shoreTypes"], read_);   // water shores (docs/water.md)
+        // Prepare BOTH GPU kits before replacing the live map views. The
+        // old road and shore instances remain drawable if either kit fails.
+        auto nextRoad=std::make_unique<RtsRoadView>();
+        auto nextShore=std::make_unique<RtsShoreView>();
+        nextRoad->inheritRuntimeStateForReload(*roads_);
+        nextShore->inheritRuntimeStateForReload(*shores_);
+        auto rollbackNewKits=[&]() {
+            if(nextRoad && nextRoad->ownsGpuResources()) {
+                try {nextRoad->shutdown(dev);}
+                catch(...) {pendingRoadRecovery_=std::move(nextRoad);}
+            }
+            if(nextShore && nextShore->ownsGpuResources()) {
+                try {nextShore->shutdown(dev);}
+                catch(...) {pendingShoreRecovery_=std::move(nextShore);}
+            }
+        };
+        try {
+            nextRoad->init(dev,rj["roadTypes"],read_);
+            nextShore->init(dev,rj["shoreTypes"],read_);
+            // Complete device idle was established at the start of reload
+            // when presentation resources were already resident.
+            roads_->shutdown(dev);
+            shores_->shutdown(dev);
+        } catch(...) {
+            // Failed staged initialization never discards its GPU owner when
+            // cleanup cannot prove idle; retain it for the next host call.
+            rollbackNewKits();
+            throw;
+        }
+        roads_.swap(nextRoad);
+        shores_.swap(nextShore);   // water shores (docs/water.md)
     }
     if (!resources_.models().count("shape:generic")) buildShapes(dev);
     looks_.clear();
@@ -259,6 +298,14 @@ void RtsView::shutdown(gfx::Device& dev) {
         // The barrier above proves safe retirement of the failed staged view.
         pendingSpriteRecovery_->shutdown(dev);
         pendingSpriteRecovery_.reset();
+    }
+    if(pendingRoadRecovery_) {
+        pendingRoadRecovery_->shutdown(dev);
+        pendingRoadRecovery_.reset();
+    }
+    if(pendingShoreRecovery_) {
+        pendingShoreRecovery_->shutdown(dev);
+        pendingShoreRecovery_.reset();
     }
     geometryScene_.shutdown(dev);
     // IMPORTANT: detach borrowed Model, graph, skin pose and material
