@@ -279,42 +279,11 @@ public:
         // Renderer3D accepted ModelDraw source before passing it in.
         // Do not allow an arbitrary, untracked GPU buffer to be treated as
         // renderer-visible when no selected real-GPU source exists.
-        if(gpuMaskOccluder) {
-            const auto& occ=*gpuMaskOccluder;
-            if(!actualGpuSource || !supportsActualGpuMaskedStream() ||
-               !occ.maskedSelection || !occ.actualVertexOverride.valid() ||
-               occ.actualVertexOverride==actualGpuSource->actualVertexOverride ||
-               !occ.maskBaseTexture.valid() || !occ.sourceVertexCount ||
-               occ.sourceVertexCount>1000000u ||
-               occ.params.vertices!=occ.sourceVertexCount ||
-               occ.params.count!=occ.indices.size() ||
-               !occ.params.count || occ.params.count%3u ||
-               occ.params.count>3000000u ||
-               occ.maskInputs.size()!=occ.sourceVertexCount ||
-               occ.params.jointMatrices!=occ.jointMatrices.size() ||
-               occ.params.skinned!=(occ.jointMatrices.empty()?0u:1u) ||
-               (occ.params.skinned &&
-                occ.influences.size()!=occ.sourceVertexCount))
-                return false;
-            for(float x:occ.params.rigidWorld.m)
-                if(!std::isfinite(x))return false;
-            for(const auto& mat:occ.jointMatrices)
-                for(float x:mat.m)if(!std::isfinite(x))return false;
-            for(const auto& input:occ.maskInputs)
-                for(float x:input.uvAlpha)
-                    if(!std::isfinite(x))return false;
-            for(const auto& index:occ.indices)
-                if(index.vertex>=occ.sourceVertexCount)return false;
-            for(const auto& skin:occ.influences)
-                for(float x:skin.weights)
-                    if(!std::isfinite(x)||x<0.f||x>1.f)return false;
-            for(float x:occ.maskUniform.alpha)
-                if(!std::isfinite(x))return false;
-            for(float x:occ.maskUniform.uv0)
-                if(!std::isfinite(x))return false;
-            for(float x:occ.maskUniform.uv1)
-                if(!std::isfinite(x))return false;
-        }
+        if(gpuMaskOccluder &&
+           (!actualGpuSource || !supportsActualGpuMaskedStream() ||
+            !sculptGpuMaskedOccluderInputsValid(
+                *gpuMaskOccluder,actualGpuSource->actualVertexOverride)))
+            return false;
         if(maskedOccluders.size()+grouped.size()>256u)return false;
         std::size_t total=vertices_.size()+occluders.size();
         // Homogeneous selected GPU Mask geometry was intentionally
