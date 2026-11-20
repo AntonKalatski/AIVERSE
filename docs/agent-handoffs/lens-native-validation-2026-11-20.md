@@ -89,3 +89,14 @@ CameraDirector is untouched. Test source only, new binary/retest pending.
 Full build of `0a552ea5f` is separately running; this fixture was already built
 before the edit and needs a later explicit rebuild. No GPU parity or full-suite
 pass claim. Next: complete build and rerun this fixture.
+
+## Pass 5 — animation budget public ECS API
+
+Full quick runner at `0a552ea5f` configured successfully but failed to build
+AnimationBudgetPolicy's private World::poolIfExists call; CTest NOT RUN.
+KINGSTON report `20261120-142736-74339`. Fix `bc7c34f7d2054a0a3e8d686a13c6368d8a5fb8a0` uses
+countExisting and eachExistingConst instead, preserving read-only significance
+queries and prepared budget writes. Only AnimationBudgetPolicy.h changed; no
+save format or public API change. Branch codex/lens-completion. CI NOT RUN.
+Next: repeat full quick runner on KINGSTON, including rebuilt camera_rig.
+Terrain GPU parity, transient budget and complete owner rollback remain open.
