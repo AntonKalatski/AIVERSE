@@ -1,5 +1,7 @@
 #include "apps/studio-native/StudioSession.h"
 #include "tests/TestCheck.h"
+#include "apps/studio-native/StudioGameLaunch.h"
+#include "apps/studio-native/StudioGameInput.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
 #include <filesystem>
@@ -63,6 +65,10 @@ void entityWorkflow() {
             request.set("method",Json::string(method));request.set("params",std::move(params));
             return session.dispatch(request);
         };
+        const auto plan=studio::studioGameLaunch(session.workspace(),true);
+        AIVERSE_TEST_CHECK(plan.map && *plan.map==0);
+        AIVERSE_TEST_CHECK(plan.project==session.workspace().project.dir);
+        AIVERSE_TEST_CHECK(!studio::studioGameLaunch(session.workspace(),false).map);
         const auto catalog=call("studio.entityCatalog");
         AIVERSE_TEST_CHECK(catalog["result"].getBool("mapEntities"));
         AIVERSE_TEST_CHECK(catalog["result"]["types"].size()==1);
@@ -110,6 +116,10 @@ void entityWorkflow() {
         bool rejected=false;
         try { session.saveMapAs((project/"game.json").string()); } catch(const std::exception&) { rejected=true; }
         AIVERSE_TEST_CHECK(rejected);
+        bool dirtyPlayRejected=false;
+        try { (void)studio::studioGameLaunch(session.workspace(),true); }
+        catch(const std::exception&) {dirtyPlayRejected=true;}
+        AIVERSE_TEST_CHECK(dirtyPlayRejected);
         session.saveMapAs((project/"maps"/"new.json").string());
         AIVERSE_TEST_CHECK(fs::exists(project/"maps"/"new.json") && !session.workspace().map.dirty);
         AIVERSE_TEST_CHECK(call("studio.project")["result"]["maps"].size()==2);
@@ -128,6 +138,14 @@ void entityWorkflow() {
 int main() {
     using namespace aiverse;
     aiverse::studio::StudioSession session(".");
+    bool playRejected=false;
+    try { (void)studio::studioGameLaunch(session.workspace(),false); }
+    catch(const std::exception&) {playRejected=true;}
+    AIVERSE_TEST_CHECK(playRejected);
+    AIVERSE_TEST_CHECK(studio::studioGameKey("w")==platform::Key::W);
+    AIVERSE_TEST_CHECK(studio::studioGameKey("Escape")==platform::Key::Escape);
+    AIVERSE_TEST_CHECK(studio::studioGameKey("ArrowDown")==platform::Key::Down);
+    AIVERSE_TEST_CHECK(studio::studioGameKey("not-a-key")==platform::Key::Unknown);
     auto call = [&session](const char* json) { return session.dispatch(Json::parse(json)); };
     const Json snapshot = call(R"({"id":1,"method":"studio.snapshot","params":{}})");
     AIVERSE_TEST_CHECK(snapshot["result"].isObject());

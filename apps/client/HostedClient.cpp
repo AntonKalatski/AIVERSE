@@ -32,11 +32,12 @@ HostedClient::~HostedClient() {
 }
 
 void HostedClient::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets,
-                       render::RenderDeviceLifetime::Lease deviceLease) {
+                       render::RenderDeviceLifetime::Lease deviceLease, std::optional<size_t> initialMap) {
     if(deviceLease.device() && !deviceLease.validFor(dev))
         throw std::logic_error("HostedClient GPU device generation mismatch");
     stop();
     dev_ = &dev;
+    initialMap_ = initialMap;
     view_ = {};
     view_.contentRoot = projectDir;
     view_.engineAssets = engineAssets;
@@ -146,7 +147,10 @@ void HostedClient::frame(double dt, gfx::TextureHandle color, gfx::TextureHandle
     if (step_ < kSteps) {
         client_->initStep(*dev_, step_++);
         // AIVERSE_HOSTED_MAP=<index>: straight into a match of that map (automated tests / profiling, like the client's --map)
-        if (step_ == kSteps) if (const char* m = std::getenv("AIVERSE_HOSTED_MAP"); m && *m) client_->autostart(size_t(std::atoi(m)));
+        if (step_ == kSteps) {
+            if (initialMap_) client_->autostart(*initialMap_);
+            else if (const char* m = std::getenv("AIVERSE_HOSTED_MAP"); m && *m) client_->autostart(size_t(std::atoi(m)));
+        }
         return;
     }
     if (resized) { Event e; e.type = EventType::Resized; client_->event(e); }
@@ -219,6 +223,8 @@ void HostedClient::event(const Event& in) {
 }
 
 Simulation* HostedClient::simulation() { return client_ && step_ >= kSteps ? client_->simulation() : nullptr; }
+bool HostedClient::loading() const { return client_ && (step_ < kSteps || client_->mapLoading()); }
+std::string HostedClient::errorText() const { return client_ ? client_->errorText() : std::string(); }
 bool HostedClient::inMatch() const { return client_ && step_ >= kSteps && client_->inMatch(); }
 
 } // namespace aiverse::client

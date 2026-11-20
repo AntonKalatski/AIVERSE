@@ -19,6 +19,7 @@ import ShaderGraphPanel from './ShaderGraphPanel';
 import FacialRigPanel from './FacialRigPanel';
 import { studioSceneMode } from './sceneState';
 import HierarchyPanel from './HierarchyPanel';
+import GamePanel from './GamePanel';
 
 import ProjectPanel from './generated/ProjectPanel';
 
@@ -122,7 +123,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'facial_rig':
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
-      case 'game':
+      case 'game': return <GamePanel {...ctx}/>;
       case 'animation':
         return <div className="dock-unported" role="status">
           <Box size={28}/>

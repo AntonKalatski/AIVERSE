@@ -3,9 +3,9 @@
 # The sidecar metadata files are authoritative. This SQLite database is a
 # regenerable local GUID index; no data is migrated into the game runtime.
 find_package(SQLite3 REQUIRED)
-add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
+add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp mac/StudioGameSurface.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
-target_link_libraries(aiverse_studio PRIVATE SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
+target_link_libraries(aiverse_studio PRIVATE aiverse_hosted_client SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
 target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
 target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")

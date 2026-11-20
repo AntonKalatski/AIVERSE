@@ -42,3 +42,9 @@ test('document mutation requires a native project', async () => {
   await assert.rejects(mockInvoke('studio.openMap', {file:'maps/map.json'}), /native project/);
   await assert.rejects(mockInvoke('studio.saveAs', {}), /native project/);
 });
+
+test('browser demo never simulates native gameplay', async () => {
+  assert.equal((await mockInvoke('studio.gameState',{})).active,false);
+  await assert.rejects(mockInvoke('studio.gameStart',{entry:'map'}),/native AIVERSE/);
+  await assert.rejects(mockInvoke('studio.gameStop',{}),/native AIVERSE/);
+});

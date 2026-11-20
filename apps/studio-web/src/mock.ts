@@ -49,6 +49,8 @@ const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { 
  // cannot narrow generic M through a runtime method comparison.
 export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
 export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
+  if (method === 'studio.gameState') return {active:false,loading:false,progress:0,inMatch:false,tick:0,error:''};
+  if (method === 'studio.gameStart' || method === 'studio.gameStop') throw Error('Play requires the native AIVERSE host');
   if (method === 'studio.project') return {maps: [], currentMap: '', canCreateMap: false, maxMapSize: 0};
   if (method === 'studio.newMap' || method === 'studio.openMap' || method === 'studio.saveAs')
     throw Error('Document operations require a native project');

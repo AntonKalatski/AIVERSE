@@ -1,0 +1,4 @@
+.studio-game .au-panel__body { display:flex; flex-direction:column; min-height:0; }
+.studio-game__surface { flex:1; min-height:80px; position:relative; }
+.studio-game .au-panel__actions { flex-wrap:wrap; }
+.studio-game .au-panel__footer { gap:var(--au-space-2); flex-wrap:wrap; }

@@ -7,6 +7,7 @@
 // inside), keys while the Game window has focus. On a touch device profile the left button is a finger.
 #pragma once
 #include <memory>
+#include <optional>
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -25,7 +26,7 @@ public:
     ~HostedClient();
     // projectDir: content root; engineAssets: folder with the engine's assets ("engine/..." paths)
     void start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets,
-               render::RenderDeviceLifetime::Lease deviceLease={});
+               render::RenderDeviceLifetime::Lease deviceLease={}, std::optional<size_t> initialMap={});
     void stop();
     // A stopped hosted client may still own GPU handles referenced by a
     // submitted editor frame. Retire its GPU allocations only when the
@@ -40,7 +41,7 @@ public:
     size_t abandonOnDeviceLoss();
     size_t pendingRetiredClients() const { return retired_.size(); }
     bool active() const { return client_ != nullptr; }
-    bool loading() const { return active() && step_ < kSteps; }
+    bool loading() const;
     float progress() const;   // 0..1 while loading
     // One frame into color / depth (w x h pixels) showing a screen of pointsW x pointsH logical points.
     // While loading it runs the next init step instead (the window shows the progress).
@@ -55,6 +56,7 @@ public:
     bool capturing() const { return captured_; }
     Simulation* simulation();
     bool inMatch() const;
+    std::string errorText() const;
 
 private:
     struct Scope;
@@ -71,6 +73,7 @@ private:
     platform::HostedView view_;
     gfx::Device* dev_ = nullptr;
     int step_ = 0;
+    std::optional<size_t> initialMap_;
     float x_ = 0, y_ = 0, k_ = 1;
     bool focused_ = false, captured_ = false;
     bool finger_ = false;   // touch profile: the left button is down as finger 1 (event)

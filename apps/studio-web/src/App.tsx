@@ -212,7 +212,7 @@ export default function App() {
           title="Save current map"><Save size={15}/> Save</button>
         <button className="tool-button" disabled title="Available after native engine integration">
           <WandSparkles size={15}/> AI Assist</button>
-        <button className="play-button" disabled title="Play integration is pending">
+        <button className="play-button" disabled={!connected || !snapshot?.project.path} onClick={() => setDock(current => reopenTab(current,'game','dock-center'))} title="Open Game controls">
           <CirclePlay size={16}/> Play</button>
       </div>
     </div>

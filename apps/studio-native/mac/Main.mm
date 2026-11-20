@@ -7,6 +7,8 @@
 #include "apps/studio-native/StudioSession.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
+#include "apps/studio-native/mac/StudioGameSurface.h"
+#include "apps/studio-native/StudioGameInput.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -39,10 +41,17 @@
 @property(nonatomic, assign) StudioHost* host;
 @end
 
+@interface StudioGameView : StudioMetalView { NSTrackingArea* tracking_; }
+@end
+
 @interface StudioHost : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
     NSWindow* window_;
     WKWebView* web_;
     StudioMetalView* viewport_;
+    StudioGameView* gameViewport_;
+    std::unique_ptr<aiverse::studio::StudioGameSurface> game_;
+    aiverse::studio::NativeViewportPlacement gamePlacement_;
+    double gameFrameTime_;
     NSTimer* timer_;
     NSString* dist_;
     NSURL* devURL_;
@@ -71,6 +80,9 @@
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
 - (BOOL)confirmDiscardChanges;
+- (void)gameEvent:(const aiverse::platform::Event&)event;
+- (void)tickGame;
+- (aiverse::Json)gameState;
 - (void)saveMapSheetForRequestId:(int64_t)requestId;
 - (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
 @end
@@ -154,6 +166,87 @@
 }
 @end
 
+@implementation StudioGameView
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if(tracking_)[self removeTrackingArea:tracking_];
+    tracking_=[[NSTrackingArea alloc] initWithRect:NSZeroRect options:
+        NSTrackingMouseMoved|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect
+        owner:self userInfo:nil];
+    [self addTrackingArea:tracking_];
+}
+- (void)sendMouse:(NSEvent*)event type:(aiverse::platform::EventType)type {
+    if(type==aiverse::platform::EventType::MouseDown)[self.window makeFirstResponder:self];
+    const auto p=[self convertPoint:event.locationInWindow fromView:nil];
+    aiverse::platform::Event e;e.type=type;e.x=p.x;e.y=p.y;e.button=int(event.buttonNumber);
+    e.deltaX=event.deltaX;e.deltaY=event.deltaY;
+    // Cocoa's scrolling accessors are only valid for scroll-wheel events.
+    if(type==aiverse::platform::EventType::MouseWheel) {
+        e.wheelX=event.scrollingDeltaX;e.wheelY=event.scrollingDeltaY;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?aiverse::platform::kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?aiverse::platform::kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?aiverse::platform::kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?aiverse::platform::kModSuper:0);
+    [self.host gameEvent:e];
+}
+- (void)mouseDown:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseDown]; }
+- (void)rightMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)otherMouseDown:(NSEvent*)e { [self mouseDown:e]; }
+- (void)mouseUp:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseUp]; }
+- (void)rightMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)otherMouseUp:(NSEvent*)e { [self mouseUp:e]; }
+- (void)mouseMoved:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseMove]; }
+- (void)mouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)rightMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)otherMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
+- (void)scrollWheel:(NSEvent*)e { [self sendMouse:e type:aiverse::platform::EventType::MouseWheel]; }
+- (void)sendKey:(NSEvent*)event down:(BOOL)down {
+    using namespace aiverse::platform;
+    Event e;e.type=down?EventType::KeyDown:EventType::KeyUp;e.repeat=event.isARepeat;
+    NSString* text=event.charactersIgnoringModifiers;
+    e.key=aiverse::studio::studioGameKey(text.UTF8String?text.UTF8String:"");
+    switch(event.keyCode) {
+        case 53:e.key=Key::Escape;break;case 36:e.key=Key::Enter;break;case 48:e.key=Key::Tab;break;
+        case 51:e.key=Key::Backspace;break;case 117:e.key=Key::Delete;break;
+        case 123:e.key=Key::Left;break;case 124:e.key=Key::Right;break;
+        case 125:e.key=Key::Down;break;case 126:e.key=Key::Up;break;
+        case 115:e.key=Key::Home;break;case 119:e.key=Key::End;break;
+        case 116:e.key=Key::PageUp;break;case 121:e.key=Key::PageDown;break;
+        case 122:e.key=Key::F1;break;case 120:e.key=Key::F2;break;
+        case 99:e.key=Key::F3;break;case 118:e.key=Key::F4;break;
+        case 96:e.key=Key::F5;break;case 97:e.key=Key::F6;break;
+        case 98:e.key=Key::F7;break;case 100:e.key=Key::F8;break;
+        case 101:e.key=Key::F9;break;case 109:e.key=Key::F10;break;
+        case 103:e.key=Key::F11;break;case 111:e.key=Key::F12;break;
+    }
+    e.mods=((event.modifierFlags & NSEventModifierFlagShift)?kModShift:0)|
+        ((event.modifierFlags & NSEventModifierFlagControl)?kModCtrl:0)|
+        ((event.modifierFlags & NSEventModifierFlagOption)?kModAlt:0)|
+        ((event.modifierFlags & NSEventModifierFlagCommand)?kModSuper:0);
+    [self.host gameEvent:e];
+    if(down && !(e.mods&(kModCtrl|kModSuper))) {
+        NSString* chars=event.characters;
+        for(NSUInteger i=0;i<chars.length;++i) {
+            uint32_t c=[chars characterAtIndex:i];
+            if(c>=0xd800 && c<=0xdbff && i+1<chars.length) {
+                uint32_t low=[chars characterAtIndex:i+1];
+                if(low>=0xdc00 && low<=0xdfff){c=0x10000+((c-0xd800)<<10)+(low-0xdc00);++i;}
+            }
+            if(c>=32 && !(c>=0xd800 && c<=0xdfff) && !(c>=0xf700 && c<=0xf8ff)) {
+                Event input;input.type=EventType::Char;input.codepoint=c;[self.host gameEvent:input];
+            }
+        }
+    }
+}
+- (void)keyDown:(NSEvent*)e { [self sendKey:e down:YES]; }
+- (void)keyUp:(NSEvent*)e { [self sendKey:e down:NO]; }
+- (BOOL)resignFirstResponder {
+    aiverse::platform::Event e;e.type=aiverse::platform::EventType::FocusLost;[self.host gameEvent:e];
+    return [super resignFirstResponder];
+}
+@end
+
 @implementation StudioHost
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite {
     if ((self=[super init])) {
@@ -210,6 +303,10 @@
     viewport_.hidden=YES;
     [window_.contentView addSubview:viewport_
         positioned:(htmlComposite_ ? NSWindowBelow : NSWindowAbove) relativeTo:web_];
+    gameViewport_=[[StudioGameView alloc] initWithFrame:NSZeroRect];
+    gameViewport_.host=self;gameViewport_.hidden=YES;
+    [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
+    window_.acceptsMouseMovedEvents=YES;
     [window_ makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     if (devURL_) [web_ loadRequest:[NSURLRequest requestWithURL:devURL_]];
@@ -226,7 +323,27 @@
     timer_=[NSTimer timerWithTimeInterval:1.0/60 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:timer_ forMode:NSRunLoopCommonModes];
 }
+- (aiverse::Json)gameState {
+    if(game_)return game_->state();
+    return aiverse::Json::parse(R"({"active":false,"loading":false,"progress":0,"inMatch":false,"tick":0,"error":""})");
+}
+- (void)gameEvent:(const aiverse::platform::Event&)event {
+    if(game_ && !gameViewport_.hidden)game_->event(event);
+}
+- (void)windowDidResignKey:(NSNotification*)note { (void)note;if(game_)game_->suspend(); }
+- (void)tickGame {
+    const double now=CACurrentMediaTime(),dt=gameFrameTime_>0?now-gameFrameTime_:0;
+    gameFrameTime_=now;
+    if(!game_)return;
+    if(!gamePlacement_.visible || gameViewport_.hidden || window_.isMiniaturized || !window_.visible) {
+        game_->suspend();return;
+    }
+    game_->frame(gamePlacement_.pixelsW,gamePlacement_.pixelsH,
+        float(gamePlacement_.width),float(gamePlacement_.height),dt,
+        window_.isKeyWindow && window_.firstResponder==gameViewport_);
+}
 - (void)tick {
+    [self tickGame];
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
@@ -386,6 +503,7 @@
         if (result==NSModalResponseOK && panel.URL.path.length) {
             try {
                 payload.set("cancelled",aiverse::Json::fromBool(false));
+                if(game_)game_->stop();
                 payload.set("snapshot",session_->openProject(panel.URL.path.UTF8String));
                 if (preview_) preview_->resetCamera();
                 [self sendStudioEvent:"workspace.changed" message:""];
@@ -500,6 +618,22 @@
     if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
 }
 - (void)applyViewport:(const aiverse::Json&)params {
+    if(params.getStr("id")=="game") {
+        aiverse::studio::ViewportRect rect;
+        rect.x=params["x"].toDouble();rect.y=params["y"].toDouble();
+        rect.width=params["width"].toDouble();rect.height=params["height"].toDouble();
+        rect.dpr=params["dpr"].toDouble(1);rect.visible=params.getBool("visible");
+        gamePlacement_=aiverse::studio::viewportPlacement(rect,web_.bounds.size.width,
+            web_.bounds.size.height,window_.backingScaleFactor);
+        gameViewport_.hidden=!gamePlacement_.visible;
+        if(gamePlacement_.visible) {
+            gameViewport_.frame=NSMakeRect(gamePlacement_.x,gamePlacement_.y,gamePlacement_.width,gamePlacement_.height);
+            CAMetalLayer* layer=(CAMetalLayer*)gameViewport_.layer;
+            layer.contentsScale=window_.backingScaleFactor;
+            layer.drawableSize=CGSizeMake(gamePlacement_.pixelsW,gamePlacement_.pixelsH);
+        }else if(game_)game_->suspend();
+        return;
+    }
     aiverse::studio::ViewportRect rect;
     if (params.getStr("id") != "scene") { viewport_.hidden=YES; placement_={}; return; }
     rect.x=params["x"].toDouble(); rect.y=params["y"].toDouble();
@@ -608,6 +742,22 @@
             [self sendStudioReply:reply];
             return;
         }
+        const auto gameMethod=req.getStr("method");
+        if((gameMethod=="studio.gameStart" || gameMethod=="studio.gameStop" || gameMethod=="studio.gameState") && req["id"].isNumber()) {
+            aiverse::Json reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                if(gameMethod=="studio.gameStart") {
+                    const auto entry=req["params"].getStr("entry");
+                    if(entry!="map" && entry!="menu")throw std::runtime_error("Invalid game entry");
+                    const auto plan=aiverse::studio::studioGameLaunch(session_->workspace(),entry=="map");
+                    if(!game_)game_=std::make_unique<aiverse::studio::StudioGameSurface>((__bridge void*)gameViewport_.layer);
+                    game_->start(plan,std::string(AIVERSE_STUDIO_SOURCE_DIR)+"/engine/assets");
+                    gameFrameTime_=0;
+                }else if(gameMethod=="studio.gameStop" && game_)game_->stop();
+                reply.set("result",[self gameState]);
+            }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
+            [self sendStudioReply:reply];return;
+        }
         if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
             // Path is chosen by AppKit, never accepted from untrusted JavaScript.
             [self openProjectSheetForRequestId:req["id"].integer()];
@@ -639,6 +789,7 @@
             }
             return;
         }
+        if(game_ && (documentMethod=="studio.openMap" || documentMethod=="studio.newMap"))game_->stop();
         aiverse::Json reply;
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
@@ -674,6 +825,7 @@
     (void)note;
     [timer_ invalidate];
     timer_=nil;
+    game_.reset(); // hosted client/device retire before native surface
     preview_.reset(); // release GPU resources before CAMetalLayer
     [web_.configuration.userContentController removeScriptMessageHandlerForName:@"aiverse"];
 }
