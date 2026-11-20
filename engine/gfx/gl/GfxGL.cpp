@@ -475,13 +475,16 @@ public:
            !callback || x<0 || y<0 ||
            x>=texture->w || y>=texture->h ||
            pixelReads_.size()>=32u)return false;
-        GLint previousRead=0,previousPack=0,previousAlignment=0;
+        GLint previousRead=0,previousDraw=0,previousPack=0,
+              previousAlignment=0;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&previousRead);
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&previousDraw);
         glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&previousPack);
         glGetIntegerv(GL_PACK_ALIGNMENT,&previousAlignment);
         auto restore=[&]() {
             glBindBuffer(GL_PIXEL_PACK_BUFFER,GLuint(previousPack));
             glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(previousRead));
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER,GLuint(previousDraw));
             glPixelStorei(GL_PACK_ALIGNMENT,previousAlignment);
         };
         const auto framebuffer=framebufferFor(h.id,0);
@@ -499,6 +502,11 @@ public:
         // Native GLES/GL framebuffers use bottom-left coordinates.
         glReadPixels(x,texture->h-1-y,1,1,
                      GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+        if(glGetError()!=GL_NO_ERROR) {
+            restore();
+            glDeleteBuffers(1,&pbo);
+            return false;
+        }
         GLsync fence=glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
         glFlush();
         restore();
