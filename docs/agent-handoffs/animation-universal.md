@@ -3248,3 +3248,12 @@ ambiguity, test this rollback, then stage remaining owners before final publish.
 | Captured animation/events/lights rollback | implemented in source | run native fault fixture |
 | Full surface/Sprite/Overlay transaction | partial | stage remaining owners |
 | Integrated native build | partial | repair root_motion_bake ambiguity |
+
+
+### LENS montage parser integration repair — 2026-11-20
+Code `7fb7d1e7e0b7ae23e9ca4f0d92f4232c6157ebf4` on codex/lens-completion
+qualifies AnimationAssetLoader.h mask lookup to the existing generic full bone
+path function, avoiding ADL ambiguity with ModelClips.h after main integration.
+No API/JSON/save change. Observed build-3 error fixed in source, rebuild pending;
+full native/GPU checks NOT RUN for this repair. Next: finish build-3 remaining
+target diagnostics, rebuild and run animation_assets plus View/LENS fixtures.

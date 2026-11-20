@@ -439,3 +439,12 @@ fixture. `git diff --check` PASS. Current full build still RUNNING with -k on
 KINGSTON; observed next error AnimationAssetLoader.h ambiguous findNodePath.
 New overlay/core tests NOT RUN, GPU tests NOT RUN. Next repair integration,
 complete Sprite and surface owner barrier, run final native/GPU gates.
+
+
+### LENS montage parser integration repair — 2026-11-20
+Code `7fb7d1e7e0b7ae23e9ca4f0d92f4232c6157ebf4` on codex/lens-completion
+qualifies AnimationAssetLoader.h mask lookup to the existing generic full bone
+path function, avoiding ADL ambiguity with ModelClips.h after main integration.
+No API/JSON/save change. Observed build-3 error fixed in source, rebuild pending;
+full native/GPU checks NOT RUN for this repair. Next: finish build-3 remaining
+target diagnostics, rebuild and run animation_assets plus View/LENS fixtures.
