@@ -310,7 +310,8 @@ bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float
                                      int ringX, int ringY, int ringZ,
                                      const GiClipmapValidityTexture* validity) {
     if (!overlay) { clearDynamicGiOverlay(); return true; }
-    if (!dev_ || !dev_->supports(overlay->computeWritable()
+    if (!dev_ || matQuality_==MaterialQuality::Low ||
+        !dev_->supports(overlay->computeWritable()
                               ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
         !overlay->texture().valid() || overlay->device() != dev_ ||
         !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
@@ -320,8 +321,12 @@ bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float
         ringX >= nx || ringY >= ny || ringZ >= nz ||
         size_t(nx) * size_t(ny) * size_t(nz) != overlay->probeCount() ||
         (validity && (!validity->ready() || validity->device()!=dev_ ||
-                      validity->size()!=overlay->probeCount())))
+                      validity->size()!=overlay->probeCount()))) {
+        // Invalid bindings must never silently preserve a previous world's
+        // borrowed atlas. Fall back to baked/ambient-only instead.
+        clearDynamicGiOverlay();
         return false;
+    }
     dynamicGiOverlay_ = overlay; // caller owns it; exact same device required
     dynamicGiValidity_ = validity;
     dynamicGiFarOverlay_ = nullptr;
@@ -347,8 +352,10 @@ bool Renderer3D::setDynamicGiCascadeOverlay(const GiDynamicProbeTexture* far,
        nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
        ringX<0 || ringY<0 || ringZ<0 ||
        ringX>=nx || ringY>=ny || ringZ>=nz ||
-       size_t(nx)*size_t(ny)*size_t(nz)!=far->probeCount())
+       size_t(nx)*size_t(ny)*size_t(nz)!=far->probeCount()) {
+        dynamicGiFarOverlay_=dynamicGiThirdOverlay_=nullptr;
         return false;
+    }
     dynamicGiFarOrigin_={origin.x,origin.y,origin.z,1.f/spacing};
     dynamicGiFarSize_={float(nx),float(ny),float(nz),0.f};
     dynamicGiFarRing_={float(ringX),float(ringY),float(ringZ),0.f};
@@ -372,8 +379,10 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
        nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
        ringX<0 || ringY<0 || ringZ<0 ||
        ringX>=nx || ringY>=ny || ringZ>=nz ||
-       size_t(nx)*size_t(ny)*size_t(nz)!=third->probeCount())
+       size_t(nx)*size_t(ny)*size_t(nz)!=third->probeCount()) {
+        dynamicGiThirdOverlay_=nullptr;
         return false;
+    }
     dynamicGiThirdOrigin_={origin.x,origin.y,origin.z,1.f/spacing};
     dynamicGiThirdSize_={float(nx),float(ny),float(nz),0.f};
     dynamicGiThirdRing_={float(ringX),float(ringY),float(ringZ),0.f};
