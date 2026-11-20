@@ -1868,6 +1868,11 @@ struct CreatorApp {
             const float height=float(dev.framebufferHeight());
             float3 origin{},direction{};
             if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
+                // New user click invalidates any still-in-flight GPU response.
+                // A rejected/CPU-only click must never be overwritten later
+                // by an older completed Metal selection.
+                gpuSculptToken.cancel();
+                gpuSculptToRecord={};
                 const auto beforePick=std::chrono::steady_clock::now();
                 bool hardwareCandidate=false;
                 if(gpuSculptEnabled && !gpuSculptPass.pending() &&
