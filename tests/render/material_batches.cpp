@@ -678,13 +678,22 @@ int aiverseMain(int argc, char** argv) {
                     << sample.shadowDraws << ',' << sample.opaqueDraws << ','
                     << sample.shadowCpuMs << ',' << sample.opaqueCpuMs << ','
                     << sample.shadowBackendMs << ',' << sample.opaqueBackendMs;
-                if (threadCpuTiming)
+                if (threadCpuTiming) {
+                    // On macOS the native Mach thread accounting is the
+                    // cross-checked source. Keep the POSIX clock separately
+                    // for diagnosing its observed ~1/42 disagreement.
+#if defined(__APPLE__)
+                    const double trustedThreadMs = sample.machThreadCpuMs;
+#else
+                    const double trustedThreadMs = sample.threadCpuMs;
+#endif
                     csv << ',' << sample.threadCpuMs << ','
-                        << (sample.threadCpuMs >= 0.0
-                            ? std::max(0.0, sample.renderMs - sample.threadCpuMs)
+                        << (trustedThreadMs >= 0.0
+                            ? std::max(0.0, sample.renderMs - trustedThreadMs)
                             : -1.0)
                         << ',' << sample.processCpuMs
                         << ',' << sample.machThreadCpuMs;
+                }
                 csv << '\n';
             }
             csv.close();
