@@ -344,6 +344,31 @@ public:
     // Source-owned introspection; no cached parallel picking scene database.
     // Does not dereference async data or issue RHI operations.
     ModelViewProvenance modelViewProvenance(const Model& model) const;
+    // Stage 7AW: opt-in, frame-local record of *encoded main-colour*
+    // indexed commands, not an extrapolation from staged ModelItems.
+    // Only one queried model is tracked, avoiding a per-world audit cost.
+    enum class ModelSubmissionKind : uint8_t {
+        Direct, IndexedIndirect, GpuIndirect, GpuIcb
+    };
+    struct ModelSubmittedPrimitive {
+        ModelViewPrimitive source{};
+        ModelSubmissionKind kind=ModelSubmissionKind::Direct;
+        uint8_t phase=0; // 1 opaque main, 2 blended, 4 transparent depth
+        gfx::PipelineHandle pipeline{};
+    };
+    struct ModelSubmissionProvenance {
+        uint64_t frameSerial=0;
+        bool mainPassEncoded=false;
+        bool truncated=false;
+        std::vector<ModelSubmittedPrimitive> commands;
+    };
+    // Must be called after beginScene and before drawModel. Pointer is
+    // borrowed for the current scene; cleared automatically at beginScene.
+    void trackModelSubmissions(const Model* model) noexcept {
+        modelSubmissionTarget_=model;
+    }
+    ModelSubmissionProvenance modelSubmissionProvenance(
+        const Model& model) const;
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -555,6 +580,9 @@ private:
     void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
+    void recordModelSubmission(const ModelItem& item,int phase,
+                               ModelSubmissionKind kind,
+                               gfx::PipelineHandle pipeline);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
                         bool submit = true, bool gpuInstances = false,
                         bool instancePalette = false);
@@ -687,6 +715,10 @@ private:
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
     uint64_t modelDrawInvocation_=0; // reset per scene, no persistent identity
+    const Model* modelSubmissionTarget_=nullptr;
+    std::vector<ModelSubmittedPrimitive> modelSubmitted_;
+    bool modelSubmissionTruncated_=false;
+    bool modelSubmissionMainEncoded_=false;
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
