@@ -82,10 +82,15 @@ bool RtsView::collectRetiredModels() {
     if(!dev_)return false;
     const bool models=resources_.collectRetired(*dev_);
     const bool images=imageRollback_.collect(*dev_);
-    // Always poll all three queues, even while a previous one is pending.
-    const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
+    // Poll every queue even if one is pending. Road and shore collection
+    // is a void operation; their outstanding GPU tokens are exposed via
+    // pendingGpuRetirements(), not through a return value.
+    roads_->collectRetired(*dev_);
+    shores_->collectRetired(*dev_);
     const bool geometry=geometryScene_.collectRetired(*dev_);
-    return models && images && roads && shores && geometry;
+    return models && images && geometry &&
+           roads_->pendingGpuRetirements()==0 &&
+           shores_->pendingGpuRetirements()==0;
 }
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
@@ -532,7 +537,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // Remove presentation entities for no-longer-eligible objects every
     // frame. No model draws here; RtsViewDraw still applies materials,
     // terrain height, outlines, shadow, effects and other scene features.
-    if(!genericObjects.empty() && !genericView_) {
+    if(genericObjects.size()!=0 && !genericView_) {
         genericView_=std::make_unique<::aiverse::view::View>(
             ::aiverse::lib::animation::MotionWeaveWorkerPool::recommendedWorkers());
         genericView_->setRetargetScratchBudgetBytes(

@@ -272,11 +272,15 @@ public:
     render::GpuOwnedMemoryStats ownedModelGpuMemoryStats(
             const gfx::Device& device) const {
         render::GpuOwnedMemoryCounter counter(device);
-        for (const auto& [key, model] : models_) {
-            (void)key;
-            if (model) render::appendModelOwnedGpuMemory(*model,counter);
-        }
-        if (textureCache_) textureCache_->appendOwnedGpuMemory(counter);
+        // This cache owns both resident and GPU-retired Models. Borrowed
+        // page/image handles are excluded by appendModelOwnedGpuMemory.
+        resources_.forEachOwnedModel([&](const render::Model& model,bool) {
+            render::appendModelOwnedGpuMemory(model,counter);
+        });
+        // Account for the shared texture cache once, not for every
+        // Model/Image that borrows one of its resident handles.
+        if (const auto textures=resources_.textures())
+            textures->appendOwnedGpuMemory(counter);
         return counter.stats();
     }
     // Asset-owner view includes model caches, terrain chunk/detail
