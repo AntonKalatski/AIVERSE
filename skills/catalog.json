@@ -72,6 +72,20 @@
       "keywords": []
     },
     {
+      "id": "aiverse-animation-ecs",
+      "package": null,
+      "path": "skills/gameplay/aiverse-animation-ecs/SKILL.md",
+      "domain": "workflow",
+      "summary": "Legacy presentation animation ECS workflow; prefer MotionWeave",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "libraries/include/aiverselib/animation/EcsAnimationSystems.h",
+      "keywords": []
+    },
+    {
       "id": "aiverse-app-lifecycle",
       "package": "app-lifecycle",
       "path": "skills/ui/aiverse-app-lifecycle/SKILL.md",
@@ -2148,6 +2162,20 @@
       ]
     },
     {
+      "id": "aiverse-motionweave",
+      "package": null,
+      "path": "skills/gameplay/aiverse-motionweave/SKILL.md",
+      "domain": "workflow",
+      "summary": "Genre-independent animation scheduling, graph playback and source bridge",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "libraries/include/aiverselib/motionweave/MotionWeave.h",
+      "keywords": []
+    },
+    {
       "id": "aiverse-narrative-graphs",
       "package": "narrative-graphs",
       "path": "skills/gameplay/aiverse-narrative-graphs/SKILL.md",
@@ -4050,6 +4078,20 @@
       "backendDependencies": [],
       "requiresOwner": null,
       "source": "tests/check_headless_restore.py",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-view",
+      "package": null,
+      "path": "skills/gameplay/aiverse-view/SKILL.md",
+      "domain": "workflow",
+      "summary": "Genre-independent presentation View, scene packets and camera replay",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/view.md",
       "keywords": []
     },
     {

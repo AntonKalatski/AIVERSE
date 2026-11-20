@@ -86,6 +86,9 @@ ALIASES = {
 
 # MCP and repository workflows (no runtime library): id, summary, source of truth.
 WORKFLOWS=[
+ ('aiverse-animation-ecs','Legacy presentation animation ECS workflow; prefer MotionWeave','libraries/include/aiverselib/animation/EcsAnimationSystems.h'),
+ ('aiverse-motionweave','Genre-independent animation scheduling, graph playback and source bridge','libraries/include/aiverselib/motionweave/MotionWeave.h'),
+ ('aiverse-view','Genre-independent presentation View, scene packets and camera replay','docs/view.md'),
  ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
  ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
  ('aiverse-bots-debug','Diagnose bots that do not play and teach RtsAI a new mechanic','modules/rts/RtsMechAI.cpp'),
