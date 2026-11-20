@@ -12889,6 +12889,36 @@ TEST(lens_stage47_groundfx_resize_candidate_discard_keeps_old_gpu_meshes) {
     renderer.shutdown();
 }
 
+TEST(lens_stage47_groundfx_draw_prepared_never_allocates_material_textures) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    rules.territory.enabled=false;
+    rules.diggables.clear();
+    rules.rooms.clear();
+    rules.roadNetwork.enabled=true;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsView view;CHECK(view.init(dev,rules,missing));
+    game::RtsGroundFx fx;fx.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(6,5);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.flags[size_t(grid.index(2,2))]|=game::kCellRoad;
+    game::RtsScene scene;
+    render::RTSCamera cam;cam.target={3,0,2};
+    cam.distance=50;cam.pitch=1.0f;
+    renderer.beginScene(cam,800,600);
+    const auto afterKit=dev.textureAttempts;
+    auto staged=fx.prepareFrame(renderer,scene,1.0,nullptr,grid,view);
+    CHECK(staged!=nullptr);
+    CHECK(dev.textureAttempts==afterKit);
+    fx.commitFrame(std::move(staged));
+    fx.drawPrepared(renderer,scene,1.0,nullptr,grid,view);
+    CHECK(dev.textureAttempts==afterKit); // neither prepare nor draw can allocate textures
+    renderer.render(gfx::PassDesc{});
+    fx.shutdown(dev);view.shutdown(dev);renderer.shutdown();
+}
+
 TEST(groundfx_visible_road_chunks_commit_together_or_rollback_on_late_upload_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
@@ -13622,7 +13652,7 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     CHECK(fx.territoryOn()==publishedTerritory);
     CHECK(dev.destroyedShaders==previousShaders+1);
     CHECK(dev.destroyedPipelines==previousPipes+1);
-    CHECK(dev.destroyedTextures==previousTextures+1);
+    CHECK(dev.destroyedTextures==previousTextures+3); // white + 2 generated kit textures
     CHECK(!fx.shutdownAfterGpuIdle(dev));
     CHECK(fx.ownsGpuResources());
     fogfaulttest::Device foreign;

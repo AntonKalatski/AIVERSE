@@ -143,6 +143,8 @@ void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& r
     shader_=std::exchange(staged->shader_,{});
     pipe_=std::exchange(staged->pipe_,{});
     white_=std::exchange(staged->white_,{});
+    cobbleTexture_=staged->cobbleTexture_;
+    dirtTexture_=staged->dirtTexture_;
     useT_=staged->useT_; useD_=staged->useD_;
     useR_=staged->useR_; useC_=staged->useC_;
     invalid_=true;
@@ -204,6 +206,14 @@ void RtsGroundFx::initUnpublished(gfx::Device& dev, const Rules& rules, const Fi
     white_ = dev.createTexture(td);
     if(!white_.valid())
         throw std::runtime_error("RtsGroundFx: white texture allocation failed");
+    // Once-per-kit procedural textures. drawPrepared() must never create a
+    // new GPU texture after the multi-owner presentation transaction commits.
+    cobbleTexture_=textures_.addGenerated(
+        "builtin:groundfx-cobble",64,64,makeNoise(64,true),false);
+    dirtTexture_=textures_.addGenerated(
+        "builtin:groundfx-dirt",32,32,makeNoise(32,false),false);
+    if(!cobbleTexture_.valid() || !dirtTexture_.valid())
+        throw std::runtime_error("RtsGroundFx: generated material texture allocation failed");
     invalid_ = true;
 }
 
@@ -356,6 +366,7 @@ void RtsGroundFx::shutdown(gfx::Device& dev) {
     if (shader_.valid()) dev.destroyShader(shader_);
     if (white_.valid()) dev.destroyTexture(white_);
     pipe_ = {}; shader_ = {}; white_ = {};
+    cobbleTexture_={}; dirtTexture_={};
     textures_.shutdown();
     dev_ = nullptr;
     invalid_ = true;
@@ -1196,10 +1207,8 @@ void RtsGroundFx::drawPrepared(Renderer3D& r,const RtsScene& s,double time,
         gfx::TextureHandle texture;
         GU0 uniforms;
     };
-    const TextureRef cobble=hi_ && road_.cobbles ?
-        textures_.addGenerated("builtin:groundfx-cobble",64,64,makeNoise(64,true),false) : TextureRef{};
-    const TextureRef dirt=hi_ ?
-        textures_.addGenerated("builtin:groundfx-dirt",32,32,makeNoise(32,false),false) : TextureRef{};
+    const TextureRef cobble=hi_ && road_.cobbles ? cobbleTexture_ : TextureRef{};
+    const TextureRef dirt=hi_ ? dirtTexture_ : TextureRef{};
     const float pulse=hi_ && terr_.pulse ? 0.35f : 0.0f;
     std::vector<Packet> packets;
     packets.reserve(visible_.size()*6+1);

@@ -180,6 +180,7 @@ private:
     gfx::ShaderHandle shader_;
     gfx::PipelineHandle pipe_;
     gfx::TextureHandle white_;
+    render::TextureRef cobbleTexture_, dirtTexture_; // immutable GPU kit defaults
     TerritoryLook terr_;
     DigLook dig_;
     LaneLook lane_;
