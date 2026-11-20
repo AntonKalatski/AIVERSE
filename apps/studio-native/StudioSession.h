@@ -22,6 +22,7 @@ public:
                                const std::string& destination); // native picker ONLY
 private:
     Json snapshot() const;
+    Json propertiesFor(const std::string& entityId) const;
     int indexFor(const std::string& id) const;
     editor::Workspace ws_;
     std::string selected_;
