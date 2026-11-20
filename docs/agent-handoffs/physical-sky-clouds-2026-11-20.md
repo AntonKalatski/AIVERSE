@@ -295,3 +295,16 @@ read-only presentation positions into reveal updates. Add Studio controls only
 under the shared Studio UI contract on its required branch. Before raising
 limits or shipping Low/mobile, profile real target scenes and verify Vulkan
 shader/depth parity. Do not make fog a gameplay authority or force PHYSIS on.
+
+## Main integration — 2026-11-20
+
+User authorized main merge. Code `1397dfb52f163bb234b10692411bfe6d3311c8aa`
+on `codex/physical-sky-main`, based on main `f9aed9a705982e2c6b77b29869e309995ce8b163`.
+Imported only sky/PHYSIS/fog changes, excluding unrelated Studio ancestry;
+canonical owner is now `Prisma`, legacy `PostFx` remains its alias. Targets 200/201,
+atmosphere before exposure/temporal, native APIs remain compatible. Fixed main's
+missing Metal method brace. PASS 7 targeted CTests, 54 Metal HDR probes, Metal
+sky/fog/reveal and GL OBB smoke. Full commands, failed initial merge/build,
+limitations and next step are in
+`docs/handoffs/prisma-stage-physical-sky-main-2026-11-20.md`. Full suite, editor/
+client, Vulkan/mobile and CI NOT RUN. Feature branch history remains unchanged.
