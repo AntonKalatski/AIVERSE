@@ -308,3 +308,14 @@ sky/fog/reveal and GL OBB smoke. Full commands, failed initial merge/build,
 limitations and next step are in
 `docs/handoffs/prisma-stage-physical-sky-main-2026-11-20.md`. Full suite, editor/
 client, Vulkan/mobile and CI NOT RUN. Feature branch history remains unchanged.
+
+## Structured fog continuation — 2026-11-20
+
+Code `1fd380b6fe0ad1325162bc3c0a32e5c3eb1dab53`, branch
+`codex/structured-volumetric-fog`: opt-in 3D density noise, world-Y falloff,
+wind and explicit fog presentation clock, keeping sphere/OBB reveal semantics.
+Two user-reference directions have native synthetic forest/valley fixtures.
+PASS 7/7 targeted tests, GLSL/MSL compilers, Metal/GL rendering and exact full
+reveal/off comparisons. Uniform legacy image differs by only 3 one-level channel
+roundings; not bit-identical. See `docs/handoffs/prisma-stage-structured-fog-2026-11-20.md`
+for commands, limitations and visual tuning. Not merged to main in this stage.

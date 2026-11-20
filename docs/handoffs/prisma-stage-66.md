@@ -241,3 +241,11 @@ legacy shims. See [dedicated handoff](prisma-stage-physical-sky-main-2026-11-20.
 for exact source scope, main Metal brace repair, 7/7 targeted CTests, 54/54 Metal
 HDR probes and real Metal/GL captures. These local results do not assert outcomes
 for the historical CI runs above or the complete repository suite.
+
+## 2026-11-20 — structured fog validation checkpoint
+
+Code `1fd380b6fe0ad1325162bc3c0a32e5c3eb1dab53` on
+`codex/structured-volumetric-fog`; [dedicated handoff](prisma-stage-structured-fog-2026-11-20.md).
+PASS 7 targeted CTests, GLSL/MSL compile, Metal forest/valley/wind/reveal fixtures
+and GL forest smoke. Full suite/editor/client/Vulkan/mobile/performance NOT RUN.
+This is an opt-in extension of the existing PRISMA fog pass, not a new owner.
