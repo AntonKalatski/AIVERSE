@@ -1,6 +1,7 @@
 #include "StudioSession.h"
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"
+#include "apps/studio-native/StudioAssetReferences.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -458,6 +459,13 @@ Json StudioSession::dispatch(const Json& request) {
             const Json current = ws_.call("light_list",Json::object(),"studio");
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
+        } else if (method == "studio.assetReferences") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild();
+            const auto entries=catalog.all();
+            reply.set("result",studioReferenceGraphJson(studioCollectAssetReferences(
+                editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,entries)));
         } else if (method == "studio.assets") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             // Browser input cannot specify a filesystem directory. This scan
@@ -548,25 +556,7 @@ Json StudioSession::dispatch(const Json& request) {
             if (!relocated.empty()) {
                 try {
                     Json library=editor::loadMaterialLibrary(ws_);
-                    size_t updates=0;
-                    std::vector<std::pair<std::string,Json>> pendingMaterialUpdates;
-                    for (const auto& [materialName,material]:library.members()) {
-                        if (!material.isObject()) continue;
-                        Json changed=material;
-                        bool modified=false;
-                        for (const char* key:{"texture","normalMap","emissiveMap","teamMask",
-                                             "metallicRoughnessMap","occlusionMap"}) {
-                            if (!changed[key].isString()) continue;
-                            const auto found=relocated.find(changed.getStr(key));
-                            if (found==relocated.end()) continue;
-                            changed.set(key,str(found->second));
-                            ++updates;
-                            modified=true;
-                        }
-                        if (modified) pendingMaterialUpdates.emplace_back(materialName,std::move(changed));
-                    }
-                    for (auto& update:pendingMaterialUpdates)
-                        library.set(update.first,std::move(update.second));
+                    const size_t updates=studioRemapMaterialReferences(library,relocated);
                     if (updates) {
                         // Reuse the engine's validated material library write.
                         // Preserve all unrelated material fields and names.
