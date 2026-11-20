@@ -589,7 +589,16 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                 const GpuPassConfig& config, uint64_t frameSerial,
                                 GpuSelectionSubmission& out) {
     const bool vulkan=dev.info().backend==gfx::Backend::Vulkan;
+    const bool temporal=config.hysteresisFraction>0.f;
     if ((dev.info().backend != gfx::Backend::Metal && !vulkan) ||
+        !std::isfinite(config.hysteresisFraction) ||
+        config.hysteresisFraction<0.f || config.hysteresisFraction>.45f ||
+        (temporal && (instances.size()!=1 ||
+                      !config.temporalPassId ||
+                      !config.temporalRevision ||
+                      !config.temporalNodeCount ||
+                      config.temporalNodeCount>262144 ||
+                      !instances[0].enabled)) ||
         !dev.supportsCompute() || !gpuMetadataV2.valid() ||
         (vulkan && (config.maxOutputClusters>2048 ||
                     config.baseVertex<0 ||
@@ -621,6 +630,20 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                        vulkan ? kVulkanGpuCulling : nullptr,
                                        "Strata diagnostic GPU cluster culling"});
         if (!pipeline_.valid()) return false;
+    }
+    if(temporal){
+        if(!temporalResetPipeline_.valid())
+            temporalResetPipeline_=dev.createCompute({
+                vulkan?nullptr:kMetalTemporalReset,
+                vulkan?kVulkanTemporalReset:nullptr,
+                "STRATA GPU temporal refinement reset"});
+        if(!vulkan && !temporalSafetyPipeline_.valid())
+            temporalSafetyPipeline_=dev.createCompute({
+                kMetalTemporalSafety,nullptr,
+                "STRATA GPU temporal invalid-selection rollback"});
+        if(!temporalResetPipeline_.valid() ||
+           (!vulkan && !temporalSafetyPipeline_.valid()))
+            return false;
     }
     if(vulkan){
         if(!indirectClearPipeline_.valid())
@@ -679,8 +702,28 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         slot.counters = dev.createBuffer(desc);
         if (!slot.counters.valid()) return false;
     }
+    gfx::BufferHandle previousTemporal{},nextTemporal{};
+    TemporalKey temporalKey{};
+    bool warmTemporal=false;
+    if(temporal && !prepareTemporal(
+        dev,gpuMetadataV2,instances.front(),config,frameSerial,
+        previousTemporal,nextTemporal,warmTemporal,temporalKey)){
+        ++temporalStats_.refused;
+        return false; // caller uses unchanged CPU/Legacy draw route
+    }
     const GpuSelectionCounters zero{};
     dev.updateBuffer(slot.instances, instances.data(), inputBytes);
+    // GPU-only temporal mask reset; the previous frame's buffer is
+    // strictly read-only and kept alive by the bounded triple ring.
+    if(temporal){
+        if(!dev.beginCompute(temporalResetPipeline_))return false;
+        dev.setComputeBuffer(0,nextTemporal);
+        const uint32_t count=config.temporalNodeCount;
+        dev.setComputeUniforms(&count,sizeof(count));
+        const bool cleared=dev.dispatchChecked(count);
+        dev.endCompute();
+        if(!cleared)return false;
+    }
     dev.updateBuffer(slot.counters, &zero, sizeof(zero));
     if(vulkan){
         // First GPU pass clears all packet slots. It never requires
@@ -699,6 +742,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     dev.setComputeBuffer(2, slot.ranges);
     dev.setComputeBuffer(3, slot.counters);
     if(vulkan)dev.setComputeBuffer(4,slot.indirect);
+    if(temporal){
+        dev.setComputeBuffer(5,previousTemporal);
+        dev.setComputeBuffer(6,nextTemporal);
+    }
     GpuSelectionUniforms uniforms{};
     std::memcpy(uniforms.viewProjection, config.viewProjection.m,
                 sizeof(uniforms.viewProjection));
@@ -710,10 +757,25 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     uniforms.clipDepthZeroToOne = config.clipDepthZeroToOne ? 1u : 0u;
     uniforms.frustumCull = config.frustumCull ? 1u : 0u;
     uniforms.reserved=uint32_t(config.baseVertex);
+    uniforms.temporalNodeCount=temporal?config.temporalNodeCount:0;
+    uniforms.temporalHasPrevious=warmTemporal?1u:0u;
+    uniforms.hysteresisFraction=temporal?config.hysteresisFraction:0.f;
     dev.setComputeUniforms(&uniforms, sizeof(uniforms));
     const bool encoded=dev.dispatchChecked(uint32_t(instances.size()));
     dev.endCompute();
     if(!encoded) return false;
+    if(temporal && !vulkan){
+        if(!dev.beginCompute(temporalSafetyPipeline_))return false;
+        dev.setComputeBuffer(0,slot.counters);
+        dev.setComputeBuffer(1,previousTemporal);
+        dev.setComputeBuffer(2,nextTemporal);
+        const uint32_t control[2]{
+            config.temporalNodeCount,warmTemporal?1u:0u};
+        dev.setComputeUniforms(control,sizeof(control));
+        const bool safe=dev.dispatchChecked(config.temporalNodeCount);
+        dev.endCompute();
+        if(!safe)return false;
+    }
     if(vulkan){
         // Second GPU-only validation consumes counters from the selection
         // pass; invalid metadata/stack traversal or overflow zeroes ALL
@@ -725,15 +787,23 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         struct SafetyUniforms {
             uint32_t capacity=0, enableFallback=0, firstIndex=0, indexCount=0;
             int32_t baseVertex=0;
+            uint32_t temporalNodeCount=0, temporalHasPrevious=0;
         } safety{};
-        static_assert(sizeof(SafetyUniforms)==20);
+        static_assert(sizeof(SafetyUniforms)==28);
         safety.capacity=config.maxOutputClusters;
         safety.enableFallback=config.gpuFallbackEnabled ? 1u : 0u;
         safety.firstIndex=config.gpuFallbackFirstIndex;
         safety.indexCount=config.gpuFallbackIndexCount;
         safety.baseVertex=config.gpuFallbackBaseVertex;
+        safety.temporalNodeCount=temporal?config.temporalNodeCount:0;
+        safety.temporalHasPrevious=warmTemporal?1u:0u;
+        if(temporal){
+            dev.setComputeBuffer(2,previousTemporal);
+            dev.setComputeBuffer(3,nextTemporal);
+        }
         dev.setComputeUniforms(&safety,sizeof(safety));
-        const bool safe=dev.dispatchChecked(safety.capacity);
+        const bool safe=dev.dispatchChecked(std::max(
+            safety.capacity,safety.temporalNodeCount));
         dev.endCompute();
         if(!safe)return false;
     }
@@ -745,6 +815,24 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     ready.submittedInstances = uint32_t(instances.size());
     ready.frameSerial = frameSerial;
     ready.submission = submission;
+    if(temporal){
+        // Commit the next GPU mask only after reset, selection and GPU
+        // validity rollback have all been encoded successfully.
+        auto it=temporal_.find(temporalKey);
+        if(it==temporal_.end())return false;
+        auto& record=it->second;
+        const size_t stateSlot=size_t(frameSerial%kFramesInFlight);
+        record.frame[stateSlot]=frameSerial;
+        record.lastFrame=frameSerial;
+        record.width=uint32_t(config.width);
+        record.height=uint32_t(config.height);
+        record.clipDepthZeroToOne=config.clipDepthZeroToOne;
+        record.fraction=config.hysteresisFraction;
+        ready.temporalApplied=true;
+        ready.temporalState=nextTemporal;
+        ++temporalStats_.submitted;
+        if(!warmTemporal)++temporalStats_.coldStarts;
+    }
     ++cursors_[index];
     out = ready;
     return true;
@@ -762,6 +850,7 @@ void GpuClusterCulling::shutdown(gfx::Device& dev) {
     }
     epochs_.fill(0);
     cursors_.fill(0);
+    releaseTemporal(dev);
     if (pipeline_.valid()) dev.destroyCompute(pipeline_);
     if (indirectClearPipeline_.valid())
         dev.destroyCompute(indirectClearPipeline_);
