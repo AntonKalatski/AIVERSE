@@ -102,3 +102,21 @@ has been executed in this change set. CI/renderer, CTest, physics and
 network replay parity must be done before merging or enabling defaults.
 See all stage checkpoints in
 `docs/agent-handoffs/animation-universal.md`.
+
+## Stage 180: reusable facial Control Rig + gaze/mandible IK
+
+- Public `<aiverselib/animation/FacialControlRig.h>` compiles v1
+  `morphs` bindings from exact imported node+mesh semantic names to the
+  existing 64 sparse GPU morph channels; optional `rig` uses the
+  **existing** `render::AnimationRig` for bone aim, joint limits and IK.
+- The separate `AnimationFacialControlComponent` owns a per-source
+  `FacialControlState` and typed controls. Core evaluation is one
+  Graph/Animator pose + Montage/physics/recovery + facial overlay +
+  final matrices. The worker scheduler runs any face IK/host callback
+  on the owner thread; morph-only mappings remain worker eligible.
+- Never place face state in the authoritative World, and never share
+  mutable smoothing state between characters. Reject ambiguous names,
+  stale model/rig generations, invalid smoothing and nonfinite controls.
+  See `docs/motionweave-facial-control-rig.md`.
+- Test executable `aiverse_animation_facial_control_rig_tests` /
+  CTest `animation_facial_control_rig` was authored but **NOT RUN**.
