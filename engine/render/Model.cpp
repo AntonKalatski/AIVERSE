@@ -109,6 +109,45 @@ void Model::finalize() {
                 p.boundsMin = min3(p.boundsMin, v); p.boundsMax = max3(p.boundsMax, v);
             }
             if (p.indexCount == 0) p.boundsMin = p.boundsMax = {0, 0, 0};
+            // Conservatively include all morph targets for normalized
+            // weights [0,1]. For any vertex, each target can independently
+            // contribute its negative or positive displacement. The LOD
+            // selector only enables morph LOD when current weights lie in
+            // this bounded interval.
+            if(p.morphTargets>0 && !p.morphDeltas.empty()) {
+                const size_t first=size_t(p.firstVertex);
+                const size_t count=size_t(p.vertexCount);
+                const size_t channels=size_t(p.morphTargets);
+                if(channels>size_t(kMaxMorphTargets) ||
+                   first>vertices.size() ||
+                   count>vertices.size()-first ||
+                   count==0 ||
+                   channels>std::numeric_limits<size_t>::max()/6u/count ||
+                   p.morphDeltas.size()!=channels*count*6u)
+                    throw std::runtime_error("invalid morph bounds source");
+                for(size_t v=0;v<count;++v) {
+                    float3 low=vertices[first+v].pos;
+                    float3 high=low;
+                    for(size_t channel=0;channel<channels;++channel) {
+                        const size_t at=(channel*count+v)*6u;
+                        const float x=p.morphDeltas[at],
+                                    y=p.morphDeltas[at+1],
+                                    z=p.morphDeltas[at+2];
+                        if(!std::isfinite(x) || !std::isfinite(y) ||
+                           !std::isfinite(z))
+                            throw std::runtime_error("nonfinite morph displacement");
+                        low.x+=std::min(0.f,x); high.x+=std::max(0.f,x);
+                        low.y+=std::min(0.f,y); high.y+=std::max(0.f,y);
+                        low.z+=std::min(0.f,z); high.z+=std::max(0.f,z);
+                    }
+                    if(!std::isfinite(low.x) || !std::isfinite(low.y) ||
+                       !std::isfinite(low.z) || !std::isfinite(high.x) ||
+                       !std::isfinite(high.y) || !std::isfinite(high.z))
+                        throw std::runtime_error("morph bounds overflow");
+                    p.boundsMin=min3(p.boundsMin,low);
+                    p.boundsMax=max3(p.boundsMax,high);
+                }
+            }
             mesh.boundsMin = min3(mesh.boundsMin, p.boundsMin); mesh.boundsMax = max3(mesh.boundsMax, p.boundsMax);
             mesh.deformable |= !p.jointPalette.empty() || p.morphTargets > 0;
         }
