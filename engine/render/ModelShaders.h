@@ -346,6 +346,22 @@ void main() {
     ao = mix(1.0, texture(tex4, v_uv).r, m_pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // Opt-in linear signed world normal from the SAME PBR shading path,
+    // including tangent normal map and Shader Graph perturbations. W is
+    // roughness; an independent depth pass rejects mismatched occluders.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(normalize(n),clamp(rough,0.045,1.0));
+    return;
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // HDR side-channel: exact material diffuse base + metallic, not the
+    // already-illuminated scene color. Respect alpha mask, tint, PBR textures
+    // and Shader Graph overrides applied above. No legacy direct or GI term.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(clamp(base.rgb,vec3(0.0),vec3(1.0)),clamp(metallic,0.0,1.0));
+    return;
+#endif
     ao *= m_misc.w > 1.5 ? (m_misc.w > 3.5 && !gl_FrontFacing ? v_col.r : v_col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
@@ -822,6 +838,19 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     ao = mix(1.0, tex4.sample(s4, in.uv).r, m.pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // World-space signed normal.xyz and physically bounded roughness.w.
+    // Input has passed the same AlphaMask, normal map and PBR processing
+    // as the visible model, without applying any existing direct/indirect GI.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(normalize(n),clamp(rough,0.045f,1.0f));
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // Real linear material receiver for external direct lighting. The
+    // compute result is multiplied by the physically correct diffuse color.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(clamp(base.rgb,float3(0.0),float3(1.0)),clamp(metallic,0.0f,1.0f));
+#endif
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);

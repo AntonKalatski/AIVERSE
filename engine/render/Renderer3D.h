@@ -142,6 +142,14 @@ public:
     // True only while the post chain is accumulating a reprojection-validated HDR history.
     // Shadow sample scrambling must never be enabled without a temporal resolve pass.
     virtual bool temporalShadowResolve() const { return false; }
+    virtual bool wantsMaterialReceiverPass() const { return false; }
+    virtual gfx::PassDesc materialReceiverPass(int,int) { return {}; }
+    virtual void materialReceiverPublished(gfx::TextureHandle,int,int) {}
+    // Optional HIGH-quality PBR normal+roughness receiver. Independent depth
+    // attachment; producer must ensure it belongs to this same frame/view.
+    virtual bool wantsSurfaceReceiverPass() const { return false; }
+    virtual gfx::PassDesc surfaceReceiverPass(int,int) { return {}; }
+    virtual void surfaceReceiverPublished(gfx::TextureHandle,int,int) {}
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
     // Optional read-only presentation bridge for object motion vectors.
@@ -673,6 +681,19 @@ public:
     void bindLitFrame();
     // Opaque custom renderers (terrain): run first in the main pass, before meshes and models, so
     // translucent meshes (water) blend over them. Same lifetime rules as drawCustom.
+    // Optional per-view native surface callbacks for LumaWeave:
+    // - Material: RGBA16F (linear diffuse base RGB, metallic A)
+    // - Surface:  RGBA16F (signed world normal XYZ, roughness A)
+    // Both callbacks must draw the EXACT same frontmost opaque geometry and
+    // depth as their main scene submission; they never execute on default
+    // PostProcess paths that did not request the corresponding receiver pass.
+    // Call after beginScene; callbacks are cleared automatically next beginScene.
+    void drawCustomMaterialReceiver(CustomDraw fn) {
+        customMaterialReceiver_.push_back(std::move(fn));
+    }
+    void drawCustomSurfaceReceiver(CustomDraw fn) {
+        customSurfaceReceiver_.push_back(std::move(fn));
+    }
     void drawCustomOpaque(CustomDraw fn) { customOpaque_.push_back(std::move(fn)); }
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
@@ -1121,6 +1142,8 @@ private:
     ShadowQuality quality_ = ShadowQuality::Medium;
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
+    bool lumaMaterialCapture_=false,lumaSurfaceCapture_=false;
+    std::vector<CustomDraw> customMaterialReceiver_,customSurfaceReceiver_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     Camera3D cam_;
     mat4 viewProj_, lightViewProj_;

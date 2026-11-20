@@ -25,8 +25,9 @@ immutable `GiChunkedGeometrySnapshot`, stable geometry revisions, linear RGB
    complete. Rejected source data must not be presented as current data.
 4. Call `renderer.beginScene(...)`, then `renderer.setDynamicGiOverlay(bridge)`
    for every view. `beginScene` clears previous attachment. The bridge must outlive
-   all submitted draws. Shader Graph and GPU-instance/ICB receiver paths remain
-   excluded. Ordinary PBR models support High/Low and multiply GI by material AO.
+   all submitted draws. Textured Shader Graph receivers reserve tex13 for GI and
+   move graph samplers to tex14+. GPU-instance/ICB uses ordinary draws while GI
+   is attached. PBR receivers support High/Low and multiply GI by material AO.
 5. Terrain/custom pipelines bind after selecting their shader: built-in full
    terrain uses U6/tex21; compact tier0 terrain uses tex8 only without baked,
    detail or trace features. Generic custom/model samplers use tex13.

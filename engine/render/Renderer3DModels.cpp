@@ -363,6 +363,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
+    const bool surfaceCapture=lumaSurfaceCapture_ && giPhase;
+    const bool materialCapture=(lumaMaterialCapture_ || surfaceCapture) && giPhase;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
     // tex13 is Shader Graph's first sampler; opt-in GI and graph materials
     // move to tex14+ when GI occupies tex13. GPU-driven ICB uses a separate ABI.
@@ -372,7 +374,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
-    const uint32_t shaderKey = gpuInstanceShaderBit | studioShaderBits |
+    const uint32_t shaderKey = gpuInstanceShaderBit | (materialCapture ? 0u : studioShaderBits) |
+                               (materialCapture ? (1u<<24) : 0u) | (surfaceCapture ? (1u<<23) : 0u) |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
@@ -418,7 +421,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
         if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
-        if (studioShaderBits) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
+        if (materialCapture) defs += surfaceCapture ? "#define LUMAWEAVE_SURFACE 1\n" : "#define LUMAWEAVE_MATERIAL 1\n";
+        if (studioShaderBits && !materialCapture) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
         if (dynamicGi) defs += "#define DYNAMIC_GI 1\n";

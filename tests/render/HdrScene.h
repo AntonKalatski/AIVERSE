@@ -1,6 +1,7 @@
 // Deterministic, asset-free visual fixture shared by GL and Metal runners.
 #pragma once
 #include "engine/render/Prisma.h"
+#include "engine/render/LumaWeavePostProcess.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "HdrShaders.h"
 #include "TerrainGiReceiver.h"
@@ -15,6 +16,7 @@
 namespace aiverse::test {
 using namespace render;
 struct HdrScene;
+void drawLumaScene(HdrScene&,gfx::Device&,int,int);
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
 void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
@@ -27,6 +29,10 @@ struct HdrScene {
     bool computeGiVerify=false;
     bool dynamicGiVerify=false;
     Prisma post;
+    std::unique_ptr<LumaWeavePostProcess> luma;
+    LumaWeaveRegistry lumaSources;
+    LumaWeaveClusters lumaClusters;
+    bool lumaVerify=false;
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
@@ -81,7 +87,8 @@ struct HdrScene {
         computeGiVerify=std::getenv("AIVERSE_COMPUTE_GI_VERIFY")!=nullptr;
         terrainGiVerify=std::getenv("AIVERSE_TERRAIN_GI_VERIFY")!=nullptr;
         dynamicGiVerify=terrainGiVerify || computeGiVerify || std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
-        verify = dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
+        lumaVerify=std::getenv("AIVERSE_LUMA_VERIFY")!=nullptr;
+        verify = lumaVerify || dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
 #ifdef _WIN32
@@ -108,6 +115,7 @@ struct HdrScene {
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
+        if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
         if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
@@ -337,6 +345,12 @@ struct HdrScene {
         if(terrainGi.vertices.valid()) {
             if(d.waitForResourceIdle())terrainGi.shutdownAfterGpuIdle(d);else failed=true;
         }
+        if(luma) {
+            if(!d.waitForResourceIdle())failed=true;
+            luma->pollGpu();
+            if(!luma->drainRetiredAfterGpuIdle() || !luma->shutdown())failed=true;
+            luma.reset();
+        }
         renderer.clearDynamicGiOverlay();
         if(computeGi.ready()) {
             if(!d.waitForResourceIdle() || !computeGi.shutdownAfterGpuIdle())failed=true;
@@ -356,3 +370,5 @@ struct HdrScene {
 #include "ContactShadowScene.h"
 
 #include "DynamicGiScene.h"
+
+#include "LumaScene.h"
