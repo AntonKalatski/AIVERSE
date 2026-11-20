@@ -181,7 +181,7 @@ Declare `blp` if the client reads BLP textures, including BLP images referenced
 by model files. Without it, convert those textures before packaging. Host
 conversion tools retain BLP support.
 Declare `city-client` if the game uses the `AIVERSE_CITY` server connection.
-With the module excluded, setting `AIVERSE_CITY` produces a startup error.
+With the module excluded, setting `AIVERSE_CITY` produces an error when a match starts.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 
