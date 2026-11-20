@@ -22,6 +22,8 @@
 #include "../../engine/view/View.h"
 #include "../../engine/view/ImportedAttachmentAuthoring.h"
 #include "../../engine/view/AttachmentLayout.h"
+#include "../../engine/view/SceneAttachmentHost.h"
+#include "../../engine/view/AnimatedSceneAttachmentSources.h"
 #include "imgui.h"
 #include "Gallery.h"
 
@@ -70,10 +72,27 @@ struct Instance {
 
 // All parent Animator objects and their borrowed Model* stay with the
 // provider that created them until a GPU completion proof permits retirement.
+struct NativeAttachmentGeneration {
+    World world;
+    std::unique_ptr<::aiverse::view::SceneAttachmentHost> scenes;
+    ::aiverse::view::AnimatedSceneAttachmentSources animations;
+    std::vector<std::map<std::string,
+        ::aiverse::view::AppearanceAssetRegistry::Snapshot>> childGraphs;
+    NativeAttachmentGeneration()
+        : scenes(std::make_unique<::aiverse::view::SceneAttachmentHost>(world)) {}
+    void clear() {
+        animations.clear();
+        scenes->clear();
+        childGraphs.clear();
+    }
+    ~NativeAttachmentGeneration() { clear(); }
+};
+
 struct RetiredNativeScene {
     std::unique_ptr<ModelAssetProvider> provider;
     std::unique_ptr<::aiverse::view::AppearanceAssetRegistry> appearances;
     std::vector<Instance> instances;
+    std::unique_ptr<NativeAttachmentGeneration> generation;
 };
 
 struct Viewer {
@@ -110,6 +129,8 @@ struct Viewer {
     std::map<std::string,std::filesystem::file_time_type> sourceStamps;
     std::string nativeReloadError;
     ::aiverse::View attachmentView; // compose borrowed precomputed poses only
+    ::aiverse::View animatedChildView; // graphless independently evaluated poses
+    std::unique_ptr<NativeAttachmentGeneration> attachmentGeneration;
     std::vector<AttachmentSpec> attachmentSpecs;
     std::string attachmentConfigPath;
     char newAttachmentModel[512]{},newAttachmentSocket[256]{};
@@ -328,12 +349,16 @@ struct Viewer {
     bool buildAttachmentLayout(
             ModelAssetProvider& provider,
             ::aiverse::view::AppearanceAssetRegistry& registry,
-            std::vector<Instance>& actors,std::string& error) {
+            std::vector<Instance>& actors,
+            std::unique_ptr<NativeAttachmentGeneration>& outputGeneration,
+            std::string& error) {
         std::vector<Imported::Compiled> staged;
         std::vector<::aiverse::view::AppearanceAssetRegistry::Snapshot> parents;
         staged.reserve(actors.size());
         parents.reserve(actors.size());
         std::map<std::string,::aiverse::view::AppearanceAssetRegistry::Snapshot> children;
+        auto generation=std::make_unique<NativeAttachmentGeneration>();
+        generation->childGraphs.resize(actors.size());
         try {
             // Authoring identity/affine validation happens BEFORE any GPU
             // import, including disabled entries and duplicate stable IDs.
@@ -345,13 +370,8 @@ struct Viewer {
                     child.local,child.childWorld,child.id,
                     child.animated,child.animationGraph});
             (void)::aiverse::view::AttachmentLayoutCodec::write(check);
-            // ModelView currently has a parent-only Animator. Do not
-            // secretly submit animated children as static socket draws;
-            // use Studio's independent MotionWeave Graph owner.
-            for(const auto& child:attachmentSpecs)
-                if(child.enabled && child.animated)
-                    throw std::invalid_argument(
-                        "independent animated child preview requires Studio");
+            // Animated child sources are intentionally excluded from static
+            // parent sockets. Their graph clocks belong to this generation.
             // Import every real child Model before taking any source read
             // lease: the cache cannot evict/replace under active readers.
             for(const auto& entry:attachmentSpecs) {
@@ -359,7 +379,7 @@ struct Viewer {
                 if(entry.modelSource.empty() || entry.socketName.empty())
                     throw std::invalid_argument(
                         "attachment needs a Model file and named socket");
-                if(children.count(entry.modelSource))continue;
+                if(entry.animated || children.count(entry.modelSource))continue;
                 ::aiverse::view::AppearanceAssetRegistry::Snapshot published;
                 ::aiverse::view::AppearanceAssetRegistry::Request request;
                 if(!Imported::importChild(
@@ -387,7 +407,7 @@ struct Viewer {
                 std::vector<Imported::ChildRequest> requested;
                 requested.reserve(attachmentSpecs.size());
                 for(const auto& entry:attachmentSpecs) {
-                    if(!entry.enabled)continue;
+                    if(!entry.enabled || entry.animated)continue;
                     requested.push_back(Imported::childFromLayout(
                         ::aiverse::view::AttachmentLayoutItem{
                             entry.modelSource,entry.socketName,entry.enabled,
@@ -399,6 +419,46 @@ struct Viewer {
                 if(!Imported::compile(parent,provider.resources(),
                                       requested,compiled,&error))
                     throw std::runtime_error(error);
+                for(size_t j=0;j<attachmentSpecs.size();++j) {
+                    const auto& child=attachmentSpecs[j];
+                    if(!child.enabled || !child.animated)continue;
+                    Model* model=provider.load(*dev,child.modelSource);
+                    if(!model)
+                        throw std::runtime_error("animated child Model import failed");
+                    ::aiverse::view::AppearanceAssetRegistry::Request childRequest;
+                    childRequest.model=model;
+                    childRequest.sources.push_back(child.modelSource);
+                    childRequest.animationGraph=Json::string(child.animationGraph);
+                    childRequest.graphReader=readFile;
+                    childRequest.sourceId=uint64_t(j)+1;
+                    const auto graphKey="modelview/graph/"+std::to_string(i)+"/"+child.id;
+                    if(!registry.publish(graphKey,childRequest,{}, {},&error))
+                        throw std::runtime_error("animated child Graph: "+error);
+                    auto graph=registry.find(graphKey);
+                    if(!graph || !graph->graph || graph->graph->model()!=model)
+                        throw std::runtime_error("animated child Graph/model mismatch");
+                    generation->childGraphs[i].emplace(child.id,std::move(graph));
+                }
+                ::aiverse::view::AttachmentLayout document;
+                document.parent=actor.path;
+                for(const auto& child:attachmentSpecs)
+                    document.attachments.push_back({
+                        child.modelSource,child.socketName,child.enabled,
+                        child.local,child.childWorld,child.id,
+                        child.animated,child.animationGraph});
+                const auto resolver=[&](const std::string& source)
+                    ->::aiverse::view::AppearanceAssetRegistry::Snapshot {
+                    const auto found=children.find(source);
+                    return found==children.end()
+                        ?::aiverse::view::AppearanceAssetRegistry::Snapshot{}
+                        :found->second;
+                };
+                const Entity parentEntity=generation->world.create();
+                if(!generation->scenes->activate(
+                        {1,"actor-"+std::to_string(i)},parentEntity,
+                        ::aiverse::view::AttachmentLayoutCodec::write(document),
+                        parent,provider.resources(),resolver,&error))
+                    throw std::runtime_error("animated scene activate: "+error);
                 staged.push_back(std::move(compiled));
                 parents.push_back(std::move(parent));
             }
@@ -408,6 +468,7 @@ struct Viewer {
                 actors[i].attachmentsReady=true;
                 actors[i].lastAttachmentError.clear();
             }
+            outputGeneration=std::move(generation);
             return true;
         }catch(const std::exception& e) {
             error=e.what();
@@ -418,7 +479,9 @@ struct Viewer {
     bool rebuildAttachments() {
         if(!dev || !attachmentPreview || gallery)return false;
         std::string error;
-        if(buildAttachmentLayout(*nativeModels,*attachmentsRegistry,inst,error)) {
+        // Reimport/rebuild is one generation transaction; this also
+        // retains all old graph players and Model owners until retirement.
+        if(reimportModelFiles()) {
             log.push_back("attachment layout compiled for "+
                           std::to_string(inst.size())+" source Models");
             return true;
@@ -455,6 +518,7 @@ struct Viewer {
             for(auto& retired:retiredNativeScenes) {
                 if(!retired)continue;
                 try {
+                    retired->generation.reset();
                     retired->instances.clear();
                     retired->appearances.reset();
                     if(retired->provider)
@@ -536,16 +600,19 @@ struct Viewer {
             }
             if(!buildAttachmentLayout(*candidate->provider,
                                       *candidate->appearances,
-                                      candidate->instances,error))
+                                      candidate->instances,
+                                      candidate->generation,error))
                 throw std::runtime_error("compiled attachment reload: "+error);
             // Allocate the old-session owner BEFORE the atomic move/commit.
             auto retired=std::make_unique<RetiredNativeScene>();
             retired->provider=std::move(nativeModels);
             retired->appearances=std::move(attachmentsRegistry);
             retired->instances=std::move(inst);
+            retired->generation=std::move(attachmentGeneration);
             nativeModels=std::move(candidate->provider);
             attachmentsRegistry=std::move(candidate->appearances);
             inst=std::move(candidate->instances);
+            attachmentGeneration=std::move(candidate->generation);
             deferNativeScene(std::move(retired));
             nativeReloadError.clear();
             log.push_back("reimported "+
@@ -833,6 +900,7 @@ struct Viewer {
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
         // Old Animators and published snapshots must be destroyed BEFORE
         // their owning ModelProvider releases Model CPU/GPU storage.
+        attachmentGeneration.reset();
         inst.clear();
         attachmentsRegistry.reset();
         if(nativeModels) {
