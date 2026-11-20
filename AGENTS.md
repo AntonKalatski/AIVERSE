@@ -1522,3 +1522,27 @@ dirty/GPU-fence probe completion still applies. `GiWorldPresentationSync`
 retains source edits/events on refusal, to retry later. Never bypass
 controller binding and show stale dynamic GI while terrain/PHYSIS updates
 are pending. All new code/tests are source-only, CTest and GPU tests NOT RUN.
+
+
+## GI Stage 50 — source publication safety (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage50-source-publication-gates-2026-11-20.md`.
+`GiLightingController` now blocks old indirect light when a changed/invalid
+point, spot, sun or sky source cannot be accepted; it unblocks each source
+category only after a correct update. Identical stable-key source snapshots
+are valid no-ops even while a Metal/Vulkan dispatch is in flight.
+Do not bypass these gates by directly binding stale compute atlases.
+Tests are source-only; no native CTest or GPU pass established.
+
+## GI Stage 51 — Vulkan FP16 capability and real GPU test (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage51-vulkan-format-compute-validation-2026-11-20.md`.
+The Vulkan backend now distinguishes format capabilities by use:
+`supports(RGBA16F)` means sampleable, `createTexture(renderTarget=true)`
+requires COLOR_ATTACHMENT, and compute GI storage requires STORAGE_IMAGE
+plus sampled support. `vulkan_backend` CTest source now compiles the
+REAL Vulkan GI BVH kernel via glslang (even without a Vulkan driver)
+and on a compatible GPU dispatches a 64-thread test into RGBA16F storage,
+then samples the atlas in the same frame and checks captured pixels.
+These tests HAVE NOT BEEN EXECUTED IN THIS STAGE; GitHub queued CI does not
+mean PASS. Review Vulkan validation-layer diagnostics before any main merge.
