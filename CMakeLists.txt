@@ -2155,6 +2155,13 @@ if(AIVERSE_BUILD_STRATA)
             $<TARGET_OBJECTS:aiverse_runtime>)
         target_link_libraries(aiverse_strata_metal_parity PRIVATE
             aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
+        # Stage 17.4: opt-in native Metal GPU per-node temporal mask parity.
+        # Three consecutive frames, asynchronously checked against CPU LOD.
+        add_executable(aiverse_strata_metal_temporal
+            tests/render/strata_metal_temporal.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_temporal PRIVATE
+            aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
         # Stage 11: separate real Metal raster A/B; shares original source
         # VB/IB and Strata pooled index sidecar, no production draw switch.
         add_executable(aiverse_strata_metal_raster_parity
