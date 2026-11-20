@@ -241,6 +241,10 @@ int main() {
     check(world::NereidWaterScene::selectedLod(lodSurface,&farCam)==
           lib::nereid::WaterSurfaceLod::Far,
           "far-distance water should select far LOD");
+    Vec3 overhead{lodSurface.body.center.x,lodSurface.body.surfaceY+200_fx,lodSurface.body.center.z};
+    check(world::NereidWaterScene::selectedLod(lodSurface,&overhead)==
+          lib::nereid::WaterSurfaceLod::Far,
+          "camera altitude over water must select far LOD instead of staying near");
     Vec3 boundaryCam{31_fx,0_fx,0_fx};
     check(world::NereidWaterScene::selectedLod(
               lodSurface,&boundaryCam,lib::nereid::WaterSurfaceLod::Near)==

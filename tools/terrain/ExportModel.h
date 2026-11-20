@@ -2,6 +2,7 @@
 #include "tools/modeling/Modeling.h"
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 namespace aiverse::terrain_export {
 namespace fs=std::filesystem;
 static uint32_t u32(const std::string& s,size_t p){return uint32_t(uint8_t(s[p]))|uint32_t(uint8_t(s[p+1]))<<8|uint32_t(uint8_t(s[p+2]))<<16|uint32_t(uint8_t(s[p+3]))<<24;}
@@ -23,6 +24,10 @@ static void save(const fs::path& out,const std::string& name,const aiverse::rend
         if(clamp){auto samplers=Json::array(),sampler=Json::object();sampler.set("wrapS",Json::number(int64_t(33071)));sampler.set("wrapT",Json::number(int64_t(33071)));samplers.push(sampler);doc.set("samplers",samplers);for(size_t i=0;i<textures.size();++i)textures.at(i).set("sampler",Json::number(int64_t(0)));}
         doc.set("textures",textures);
     }
+    auto policy=Json::object();policy.set("autoLod",Json::fromBool(false));
+    const bool authored=std::any_of(model.meshes.begin(),model.meshes.end(),[](const auto& mesh){return !mesh.lods.empty();});
+    policy.set("independentShadowLod",Json::fromBool(authored));
+    write(out/(name+".gltf.batching.json"),policy.dump());
     write(out/(name+".gltf"),doc.dump());write(out/(name+".bin"),glb.substr(bh+8,u32(glb,bh)));
 }
 }

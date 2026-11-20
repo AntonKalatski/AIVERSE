@@ -15,7 +15,15 @@ int main(int argc,char** argv){try{
     fs::path recipe,out,materials;
     for(int i=1;i<argc;++i){std::string k=argv[i];if(i+1==argc)throw std::runtime_error("missing value");std::string v=argv[++i];if(k=="--recipe")recipe=v;else if(k=="--out")out=v;else if(k=="--materials")materials=v;else throw std::runtime_error("unknown option");}
     if(recipe.empty()||out.empty()||materials.empty()||fs::exists(out))throw std::runtime_error("usage: aiverse_terraweave_landscape --recipe JSON --out NEW_DIR --materials TERRAIN_TEXTURES; no overwrite");
-    const auto doc=Json::parseFile(recipe.string());const auto& t=doc["terrain"];
+    auto doc=Json::parseFile(recipe.string());
+    // New authored worlds opt into NEREID's existing camera-distance policy.
+    // An explicit manual/fixed choice in the recipe remains authoritative.
+    if(doc["nereidWater"].isObject()){
+        auto water=doc["nereidWater"];auto surfaces=water["surfaces"];
+        for(auto& surface:surfaces.itemsMut())if(!surface.has("autoLod"))surface.set("autoLod",Json::fromBool(true));
+        water.set("surfaces",surfaces);doc.set("nereidWater",water);
+    }
+    const auto& t=doc["terrain"];
     TerrainSettings settings;settings.seed=uint64_t(t.getInt("seed",42));settings.baseHeightCm=int32_t(t.getInt("baseHeightCm",300));settings.reliefCm=int32_t(t.getInt("reliefCm",500));settings.basePeriodCm=int32_t(t.getInt("basePeriodCm",6400));settings.octaves=uint32_t(t.getInt("octaves",5));
     std::vector<AlpinePeak> peaks;
     for(const auto& p:doc["peaks"].items())peaks.push_back({p.getInt("xCm"),p.getInt("zCm"),int32_t(p.getInt("radiusXcm",10000)),int32_t(p.getInt("radiusZcm",16000)),int32_t(p.getInt("heightCm",12000)),int32_t(p.getInt("shearPermille"))});

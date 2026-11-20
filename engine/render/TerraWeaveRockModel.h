@@ -72,7 +72,7 @@ inline std::unique_ptr<render::Model> makeRockModel(const RockProfile& profile,u
         throw std::invalid_argument("TerraWeave rock profile");
     using namespace rock_detail;
     auto model=std::make_unique<render::Model>();model->path="terraweave/rocks/"+std::to_string(seed);
-    model->batching.autoLod=false;
+    model->batching.autoLod=false;model->batching.independentShadowLod=true;
     render::Material material;material.name="TerraWeave Rock";material.baseColor={.65f,.65f,.65f,1};material.metallic=0;material.roughness=.88f;
     model->materials.push_back(material);
     Surface surface(profile,seed);

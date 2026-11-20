@@ -335,7 +335,11 @@ public:
         }
         const double dx=cx-observer->x.toDouble();
         const double dz=cz-observer->z.toDouble();
-        const double sq=dx*dx+dz*dz;
+        const auto fixed=[](double v){return Fixed::fromRaw(int64_t(std::llround(v*Fixed::kOne)));};
+        const Vec3 point{fixed(cx),{},fixed(cz)};
+        const Fixed height=s.body.surfaceY+(s.mesh.useGrade?lib::nereid::waterGradeOffset(s.mesh.grade,point):0_fx);
+        const double dy=height.toDouble()-observer->y.toDouble();
+        const double sq=dx*dx+dy*dy+dz*dz;
         // Schmitt trigger around each boundary avoids uploads while the
         // camera jitters within a narrow range. From Far, require crossing
         // the lower threshold; from Near, require crossing the upper one.

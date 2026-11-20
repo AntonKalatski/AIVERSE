@@ -25,6 +25,9 @@ struct TreeProfile {
     uint32_t branchRisePermille = 220;
     uint32_t leafRadiusCm = 95;
     CrownShape shape = CrownShape::Broadleaf;
+    uint32_t whorlSize = 0; // opt-in conifers: 2..8 limbs per irregular whorl
+    bool roundedConiferCrown = false; // pine-like upper crown, not a cone
+
 };
 
 struct TreeBranch {
@@ -59,6 +62,8 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
         p.primaryBranches > 256 || p.crownStartPermille >= 1000 ||
         p.branchLengthPermille > 2000 || p.branchRisePermille > 2000 ||
         p.leafRadiusCm > 100000 ||
+        (p.whorlSize && (p.whorlSize<2 || p.whorlSize>8 || p.shape!=CrownShape::Conifer)) ||
+        (p.roundedConiferCrown && p.shape!=CrownShape::Conifer) ||
         (p.shape != CrownShape::Broadleaf &&
          p.shape != CrownShape::Conifer && p.shape != CrownShape::Columnar))
         throw std::invalid_argument("TerraWeave Arbor profile");
@@ -91,12 +96,29 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
         const uint64_t h = detail::mix64(seed + uint64_t(i) * 0x9e3779b97f4a7c15ULL);
         int64_t dx = static_cast<int64_t>(h & 0xffffULL) - 32768;
         int64_t dz = static_cast<int64_t>((h >> 16) & 0xffffULL) - 32768;
+        int64_t baseY = crownBase + available * (2 * i + 1) / (2 * count);
+        if(p.whorlSize) {
+            // Fixed integer directions/jitter keep generation replayable.
+            static constexpr int32_t circle[16][2]={{32767,0},{30273,12539},{23170,23170},{12539,30273},{0,32767},{-12539,30273},{-23170,23170},{-30273,12539},{-32767,0},{-30273,-12539},{-23170,-23170},{-12539,-30273},{0,-32767},{12539,-30273},{23170,-23170},{30273,-12539}};
+            const uint32_t whorl=i/p.whorlSize,limb=i%p.whorlSize;
+            const uint32_t whorls=(count+p.whorlSize-1)/p.whorlSize;
+            const uint64_t wh=detail::mix64(seed^uint64_t(whorl)*0xd1b54a32d192ed03ULL);
+            const uint32_t direction=(uint32_t(wh%16)+limb*16/p.whorlSize)%16;
+            dx=circle[direction][0]+int64_t(h%3601)-1800;
+            dz=circle[direction][1]+int64_t((h>>16)%3601)-1800;
+            const int64_t step=2*int64_t(whorl)+1,total=2*int64_t(whorls);
+            // Shorter growth increments near the young upper crown avoid
+            // uniformly spaced bare trunk shelves without adding more cards.
+            baseY=crownBase+available*step*(3*total-step)/(2*total*total)+
+                available/int64_t(whorls)*(int64_t((h>>40)%201)-100)/1200;
+            baseY=std::clamp(baseY,crownBase,int64_t(height-1));
+        }
         const int64_t ax = dx < 0 ? -dx : dx, az = dz < 0 ? -dz : dz;
-        const int64_t denom = std::max<int64_t>(1, std::max(ax, az));
+        const int64_t denom = p.whorlSize?32768:std::max<int64_t>(1, std::max(ax, az));
         // Ordered trunk heights; azimuth jittered independently. All integer.
-        const int64_t baseY = crownBase + available * (2 * i + 1) / (2 * count);
         const int64_t remain = height - baseY;
-        int64_t length = remain * p.branchLengthPermille / 1000;
+        const int64_t envelope=p.roundedConiferCrown && available>0 ? remain*(2*available-remain)/available : remain;
+        int64_t length = envelope * p.branchLengthPermille / 1000;
         if (p.shape == CrownShape::Conifer) length = length * 80 / 100;
         if (p.shape == CrownShape::Columnar) length = length * 35 / 100;
         length = length * (850 + static_cast<int64_t>((h >> 32) % 301)) / 1000;

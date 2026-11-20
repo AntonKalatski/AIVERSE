@@ -21,6 +21,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
     auto model = std::make_unique<render::Model>();
     model->path = "terraweave/arbor/" + std::to_string(profile.speciesId) + "/" +
                   std::to_string(seed);
+    model->batching.independentShadowLod = true; // native authored tiers drive the camera independently
     model->batching.autoLod = false; // explicit generated geometric LOD meshes
     render::Material bark;
     bark.name = "TerraWeave Bark";
@@ -43,6 +44,13 @@ inline std::unique_ptr<render::Model> makeArborModel(
             tierSettings.longitudinalSegments=tier==TreeLOD::High?meshSettings.longitudinalSegments:tier==TreeLOD::Medium?3u:1u;
             tierSettings.radialSegments=tier==TreeLOD::High?meshSettings.radialSegments:tier==TreeLOD::Medium?4u:3u;
             tierSettings.sprayPairs=tier==TreeLOD::High?meshSettings.sprayPairs:tier==TreeLOD::Medium?std::max(2u,meshSettings.sprayPairs/2):2u;
+        }
+        if(meshSettings.compactConifer) {
+            tierSettings.doubleSidedLeaves=false; // material already draws both sides
+            tierSettings.longitudinalSegments=tier==TreeLOD::High?3u:tier==TreeLOD::Medium?2u:1u;
+            tierSettings.radialSegments=tier==TreeLOD::High?6u:tier==TreeLOD::Medium?4u:3u;
+            tierSettings.sprayPairs=tier==TreeLOD::High?4u:tier==TreeLOD::Medium?3u:1u;
+            tierSettings.leafPlanes=tier==TreeLOD::High?2u:1u;
         }
         const ArborMesh geometry = buildArborMesh(generateTree(profile, seed,
             meshSettings.naturalConifer?TreeLOD::High:tier), tierSettings);
@@ -102,7 +110,8 @@ inline std::unique_ptr<render::Model> makeArborModel(
     }
     // Renderer3D uses screen-size LOD selection with its existing fade policy.
     // Future billboard atlas should be added as LOD3, not a naked empty mesh.
-    model->meshes[0].lods = {{1, 128.0f}, {2, 32.0f}};
+    if(meshSettings.compactConifer)model->meshes[0].lods={{1,320.f},{2,112.f}};
+    else model->meshes[0].lods={{1,128.f},{2,32.f}};
     render::Node node;
     node.name = "TerraWeave Arbor";
     node.mesh = 0;
@@ -139,6 +148,7 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
     auto model = std::make_unique<render::Model>();
     model->path = "terraweave/arbor-branches/" + std::to_string(profile.speciesId) +
                   "/" + std::to_string(seed);
+    model->batching.independentShadowLod = true; // native authored tiers drive the camera independently
     model->batching.autoLod = false; // explicit per-branch LOD meshes
     render::Material bark;
     bark.name = "TerraWeave Branch Bark";

@@ -20,13 +20,13 @@ int main(int argc,char** argv){try{
     auto catalog=Json::object(),trees=Json::array(),patches=Json::array();
     for(uint32_t i=0;i<12;++i){
         const bool pine=i%3==0;TreeProfile p;p.speciesId=pine?2:1;p.shape=CrownShape::Conifer;
-        p.minHeightCm=pine?1100:850;p.maxHeightCm=pine?1700:1500;p.trunkRadiusCm=pine?28:24;
-        p.crownStartPermille=pine?430:90;p.primaryBranches=pine?105:140;
-        p.branchLengthPermille=pine?800:530;p.branchRisePermille=pine?180:40;p.leafRadiusCm=65;
-        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.naturalConifer=true;mesh.sprayPairs=9;
+        p.minHeightCm=pine?1200:900;p.maxHeightCm=pine?1800:1600;p.trunkRadiusCm=pine?28:24;
+        p.crownStartPermille=pine?490:100;p.primaryBranches=pine?60:95;p.whorlSize=pine?3:5;p.roundedConiferCrown=pine;
+        p.branchLengthPermille=pine?620:440;p.branchRisePermille=pine?90:35;p.leafRadiusCm=45;
+        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.naturalConifer=true;mesh.compactConifer=true;mesh.sprayDroop=pine?.08f:.42f;mesh.sprayPairs=4;
         auto model=makeArborModel(p,detail::mix64(seed^i),mesh);
         model->materials[0].baseColor={.68f,.62f,.53f,1};model->materials[0].roughness=1;
-        model->materials[1].baseColor={.90f,1.f,.85f,1};model->materials[1].roughness=1;model->materials[1].alpha=aiverse::render::AlphaMode::Mask;model->materials[1].alphaCutoff=.38f;
+        model->materials[1].baseColor={.65f,.80f,.62f,1};model->materials[1].roughness=1;model->materials[1].alpha=aiverse::render::AlphaMode::Mask;model->materials[1].alphaCutoff=.38f;
         const std::string name="tree-"+std::to_string(i),stem=pine?"pine":"spruce";save(out,name,*model,{stem+"_bark",stem+"_leaves"});
         auto e=Json::object(),tri=Json::array();e.set("file",Json::string(name+".gltf"));e.set("kind",Json::string(stem));
         for(const auto& m:model->meshes){uint32_t n=0;for(const auto& pr:m.primitives)n+=pr.indexCount/3;tri.push(Json::number(int64_t(n)));}e.set("triangles",tri);trees.push(e);
@@ -45,16 +45,8 @@ int main(int argc,char** argv){try{
             GrassRenderQuality q;q.maxBladesPerPatch=p.maximumBlades;q.crossedBlades=false;q.bladeSegments=3;q.bladeHeightCm=38;q.bladeHalfWidthCm=2;q.bladesPerTuft=16;q.tuftRadiusCm=15;
             const auto ground=[&](int64_t x,int64_t z){return sample("heightCm",x,z);};
             const auto allows=[&](int64_t x,int64_t z){if(doc.has("waterHeightCm")&&sample("heightCm",x,z)-sample("waterHeightCm",x,z)<270)return false;return int64_t(detail::mix64(uint64_t(x)^detail::mix64(uint64_t(z)))%1000)<sample("coverPermille",x,z);};
-            auto model=makeGrassPatchModel(p,ground,q,allows);
+            auto model=makeGrassPatchLodModel(p,ground,q,allows);
             if(!model)continue;
-            for(uint32_t divisor:{3u,8u}){
-                q.maxBladesPerPatch=std::max(1u,p.maximumBlades/divisor);auto lod=makeGrassPatchModel(p,ground,q,allows);if(!lod)continue;
-                const uint32_t vo=uint32_t(model->vertices.size()),io=uint32_t(model->indices.size());
-                model->vertices.insert(model->vertices.end(),lod->vertices.begin(),lod->vertices.end());for(auto index:lod->indices)model->indices.push_back(index+vo);
-                auto mesh=lod->meshes[0];for(auto& pr:mesh.primitives){pr.firstVertex+=vo;pr.firstIndex+=io;}
-                model->meshes[0].lods.push_back({int(model->meshes.size()),divisor==3?220.f:90.f});model->meshes.push_back(std::move(mesh));
-            }
-            model->finalize();
             model->materials[0].baseColor={.16f,.26f,.06f,1};const std::string name="grass-"+std::to_string(p.key);save(out,name,*model);
             auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(p.bounds.minX));e.set("zCm",Json::number(p.bounds.minZ));patches.push(e);
         }

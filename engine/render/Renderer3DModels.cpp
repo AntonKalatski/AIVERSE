@@ -1420,6 +1420,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
+            if(shadowOnly) {
+                if(shadowRole==1)return; // covered by the opaque shadow batch
+                shadowRole=2; // excludes shadow detail from reflections/auxiliary colour
+            }
             if (p.indexCount == 0 ||
                 (d.primitiveMaterialFilter >= 0 &&
                  p.material != d.primitiveMaterialFilter)) return;

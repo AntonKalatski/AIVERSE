@@ -21,6 +21,27 @@ int main() {
     const auto repeat=makeArborModel(conifer,909,sprays);
     assert(repeat->indices==natural->indices);
     for(size_t i=0;i<natural->vertices.size();++i)assert(natural->vertices[i].pos.x==repeat->vertices[i].pos.x);
+    // Far forest geometry has an explicit bounded budget, not just LOD labels.
+    conifer.primaryBranches=75;conifer.whorlSize=5;
+    sprays.compactConifer=true;
+    const auto compact=makeArborModel(conifer,909,sprays);
+    assert(triangles(compact->meshes[0])<6000);
+    assert(triangles(compact->meshes[1])<2500);
+    assert(triangles(compact->meshes[2])<1000);
+    assert(compact->meshes[0].lods[0].maxPixels==320.f);
+    assert(compact->meshes[0].lods[1].maxPixels==112.f);
+    for(const auto& v:compact->vertices)assert(std::abs(aiverse::render::length(v.nrm)-1.f)<.01f);
+    const auto whorled=generateTree(conifer,909);
+    assert(whorled.branches==generateTree(conifer,909).branches);
+    assert(whorled.branches!=generateTree(conifer,910).branches);
+    for(size_t i=1;i<whorled.branches.size();i+=5) {
+        int lo=whorled.branches[i].y0,hi=lo;
+        for(size_t j=i;j<std::min(i+5,whorled.branches.size());++j){lo=std::min(lo,whorled.branches[j].y0);hi=std::max(hi,whorled.branches[j].y0);assert(whorled.branches[j].parent==0);}
+        assert(hi-lo<100);
+    }
+    bool invalidWhorl=false;conifer.whorlSize=1;
+    try{(void)generateTree(conifer,909);}catch(const std::invalid_argument&){invalidWhorl=true;}
+    assert(invalidWhorl);
     // Bounded grass, exact terrain contact and a fully excluded patch.
     GrassPatch patch;patch.key=7;patch.seed=99;patch.bounds={-400,-400,400,400};patch.maximumBlades=2048;
     GrassRenderQuality quality;quality.maxBladesPerPatch=2048;quality.bladeSegments=3;quality.crossedBlades=false;
@@ -33,6 +54,11 @@ int main() {
     quality.bladesPerTuft=16;quality.tuftRadiusCm=15;
     const auto tufted=makeGrassPatchModel(patch,[](auto,auto){return 123;},quality);assert(tufted&&tufted->indices.size()==grass->indices.size());
     for(size_t start=0;start<2048;start+=16){const auto centre=(tufted->vertices[start*7].pos+tufted->vertices[start*7+1].pos)*.5f;for(size_t i=start;i<start+16;++i){const auto blade=(tufted->vertices[i*7].pos+tufted->vertices[i*7+1].pos)*.5f;assert(std::abs(blade.x-centre.x)<=.301f&&std::abs(blade.z-centre.z)<=.301f);}}
+    const auto grassLods=makeGrassPatchLodModel(patch,[](auto,auto){return 123;},quality);
+    assert(grassLods&&grassLods->meshes.size()==3&&grassLods->meshes[0].lods.size()==2);
+    assert(triangles(grassLods->meshes[0])>triangles(grassLods->meshes[1]));
+    assert(triangles(grassLods->meshes[1])>triangles(grassLods->meshes[2]));
+    assert(grassLods->batching.independentShadowLod&&!grassLods->materials[0].castShadow);
     quality.bladeSegments=5;bool badGrass=false;
     try{(void)makeGrassPatchModel(patch,[](auto,auto){return 0;},quality);}catch(const std::invalid_argument&){badGrass=true;}
     assert(badGrass);
@@ -49,6 +75,7 @@ int main() {
     assert(model->meshes[0].lods[0].mesh == 1);
     assert(model->meshes[0].lods[1].mesh == 2);
     assert(!model->batching.autoLod);
+    assert(model->batching.independentShadowLod);
     assert(model->boundsMax.y > 5.0f && model->boundsMax.y < 30.0f);
     assert(model->boundsMin.y >= -1.0f);
     assert(model->materials[1].doubleSided);

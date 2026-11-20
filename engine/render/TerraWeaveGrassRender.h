@@ -186,6 +186,30 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     return model;
 }
 
+// One shared authored density chain for both resident native patches and
+// offline export. CPU generation happens only on patch upload/rebuild.
+inline std::unique_ptr<render::Model> makeGrassPatchLodModel(
+        const GrassPatch& patch,const GrassSoilHeight& ground,
+        GrassRenderQuality quality={},const GrassPlacementFilter& allows={}) {
+    auto model=makeGrassPatchModel(patch,ground,quality,allows);
+    if(!model)return {};
+    const auto maximum=std::min(quality.maxBladesPerPatch,patch.maximumBlades);
+    for(uint32_t divisor:{3u,8u}) {
+        auto tier=quality;tier.maxBladesPerPatch=std::max(1u,maximum/divisor);
+        auto lod=makeGrassPatchModel(patch,ground,tier,allows);
+        if(!lod)continue;
+        const auto vo=uint32_t(model->vertices.size()),io=uint32_t(model->indices.size());
+        model->vertices.insert(model->vertices.end(),lod->vertices.begin(),lod->vertices.end());
+        for(auto index:lod->indices)model->indices.push_back(index+vo);
+        auto mesh=lod->meshes[0];
+        for(auto& primitive:mesh.primitives){primitive.firstVertex+=vo;primitive.firstIndex+=io;}
+        model->meshes[0].lods.push_back({int(model->meshes.size()),divisor==3?220.f:90.f});
+        model->meshes.push_back(std::move(mesh));
+    }
+    model->batching.independentShadowLod=true;
+    model->finalize();return model;
+}
+
 // Device-owned residency/culling. Caller publishes new patch snapshots after
 // one ECS tick and provides a terrain sampler valid on the current owner
 // thread only. No worker captures mutable Earthworks or runs gameplay code.
@@ -251,7 +275,7 @@ public:
                sameGrassPresentation(patch,old->second.patch))
                 continue;
             if(uploaded>=quality_.maxUploadsPerFrame)break;
-            auto candidate=makeGrassPatchModel(patch,ground,quality_);
+            auto candidate=makeGrassPatchLodModel(patch,ground,quality_);
             if(candidate) {
                 render::prepareModelUpload(*candidate);
                 if(!render::uploadModel(device,*candidate) ||
