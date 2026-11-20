@@ -99,6 +99,7 @@ struct CreatorApp {
     bool previewMotion=false;int previewPose=0;float previewTime=-1;
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
+    bool automaticLod=true;
     render::PostFx antialiasing;bool antialiasingReady=false,aaEnabled=true;
     bool previewHeadSweep=false;
     float captureCameraDistance=0;
@@ -193,6 +194,7 @@ struct CreatorApp {
         device=&dev;
         if(!renderer.init(dev))throw std::runtime_error("VIVID Creator: renderer init failed");
         rendererReady=true;
+        renderer.setModelLodEnabled(automaticLod);
         if(!antialiasing.init(dev))throw std::runtime_error("VIVID anti-aliasing init failed");
         antialiasingReady=true;
         PostFxSettings aa;aa.hdr=HdrMode::Off;aa.enabled=aaEnabled;
@@ -2383,6 +2385,10 @@ int aiverseMain(int argc,char** argv) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
+        }else if(std::strcmp(argv[i],"--lod")==0 && i+1<argc) {
+            const std::string mode=argv[++i];
+            if(mode!="auto" && mode!="highest")return 2;
+            application->automaticLod=mode=="auto";
         }else if(std::strcmp(argv[i],"--no-aa")==0) {
             application->aaEnabled=false;
         }else if(std::strcmp(argv[i],"--camera-distance")==0 && i+1<argc) {
