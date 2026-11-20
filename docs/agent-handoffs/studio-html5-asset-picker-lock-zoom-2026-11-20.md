@@ -230,3 +230,9 @@ Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python sou
 ### Actual validation / next
 - **Actual:** reviewed GitHub sources for existing transfer semantics, native Studio session startup, scene viewport and camera math; source commits applied. No executable C++/TS/Python tests, Metal visual QA or power-fail injection were performed.
 - **Next steps:** compile on Mac; add fixture-based native tests for crash after first rename/after sidecar/after material save/before committed marker; verify byte-for-byte restoration of material file and all GUID identities; test symlink and malformed manifest refusal, completed marker idempotence. Improve durability with fsync/F_FULLFSYNC for journal and backup files/parent directory and explicit single-writer lock, then revisit fully composed rules transaction. Verify free-camera controls in both GPU overlay modes at UI zoom 75/100/150/200%; do not merge until green.
+
+### Stage 10 follow-up: true right-button free look
+- `StudioMetalScene::look(dx,dy)` rotates yaw/pitch while preserving the camera's world-space eye, unlike `orbit` which rotates around the scene pivot. `StudioMetalScene.h` exposes the new method.
+- `Main.mm` adds validated `kind=="look"` to the WKWebView bridge and routes native `rightMouseDragged:` to this method. `ViewportPlaceholder.tsx` uses right-button free look and left-button orbit; middle/Shift+left remains pan. The typed bridge union includes `look`.
+- `tools/studio/test_reference_pin_zoom.py` now checks for the distinct look path and preserved eye computation. Source changes committed but **not compiled or tested**.
+- Commits: `e8fdeb7fa1a8d5ae269df6ce494b38999fd32320`, `7352c8e3209a112a23216b863ee5ee71ccf17c7e`, `39d32a674a39f6c3c558265734b291bb33ab608c`, `cb519f9710c50dd3ee7d143a6cfa8d40ca6a1602`, `8f604bbaa39850f845e441d477d617b3203b22c1`, `7d420f215cfd370ff0ae355a800d2f23579f9cf5`.
