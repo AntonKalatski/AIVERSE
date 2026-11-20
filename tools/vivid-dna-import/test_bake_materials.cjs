@@ -46,5 +46,8 @@ const {bakeMaterials,linear,srgb}=require('./bake_materials.cjs');
  await sharp(Buffer.from([255,255,255,0,255,255,255,128]),{raw:{width:2,height:1,channels:4}}).png().toFile(path.join(dir,'alpha-coverage.png'));
  await bakeMaterials(alphaDoc,{materials:[{material_name:'eyelashes',kind:'face_accessory',textures:{alpha:'alpha-coverage.png'},params:{base_color:[.05,.04,.03,1],roughness:.7}}]},dir,sharp);
  assert.deepEqual([...await sharp(alphaLash.getBaseColorTexture().getImage()).raw().toBuffer()],[255,255,255,0,255,255,255,128]);
+ const eyeDoc=new Document();const ocular=eyeDoc.createMaterial('eyeshell'),wet=eyeDoc.createMaterial('eyeEdge');
+ await bakeMaterials(eyeDoc,{materials:[{material_name:'eyeshell',face_slot:'eye_occlusion',params:{}},{material_name:'eyeEdge',face_slot:'wet',params:{}}]},dir,sharp);
+ assert.equal(ocular.getAlphaMode(),'BLEND');assert.ok(ocular.getBaseColorFactor()[3]<.2);assert.ok(wet.getBaseColorFactor()[3]<.1);assert.equal(wet.getMetallicFactor(),0);
  console.log('PASS: fractional red coverage, blended lashes, shared masked hair core, cloth linear-sRGB colours, unsafe path rejection');
 })().catch(e=>{console.error(e);process.exitCode=1;});

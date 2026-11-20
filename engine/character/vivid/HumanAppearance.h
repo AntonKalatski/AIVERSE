@@ -32,7 +32,7 @@ inline constexpr AppearanceField appearanceFields[]={
  {"hair.highlights","Highlight strand fraction",0,1,0},{"hair.highlightStrength","Highlight intensity",0,1,.5f},
  {"hair.coverage","Strand coverage",.25f,1.5f,1},{"hair.cutoff","Dense core threshold",.1f,.9f,.5f},
  {"lashes.coverage","Eyelash coverage",0,1.5f,1},{"lashes.roughness","Eyelash roughness",.15f,1,.75f},
- {"eyes.roughness","Eye roughness",.08f,.65f,.25f},{"eyes.irisSize","Iris radius (UV)",.08f,.19f,.14f},
+ {"eyes.roughness","Eye surface roughness",.08f,.65f,.6f},{"eyes.irisSize","Iris radius (UV)",.08f,.19f,.14f},
  {"eyes.pupilSize","Pupil radius (UV)",.008f,.075f,.033f},
  {"eyes.irisR","Iris red",0,1,.176f},{"eyes.irisG","Iris green",0,1,.077f},{"eyes.irisB","Iris blue",0,1,.045f},
  {"eyes.irisTexture","Iris texture detail",0,1,.7f},{"eyes.limbus","Limbus darkness",0,1,.35f},

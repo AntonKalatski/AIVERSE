@@ -1887,3 +1887,14 @@ toggle are in VIVID Appearance. Source data is not changed. See
 [preview animation](vivid-preview-animation.md) for semantic rig requirements,
 clip ownership, native methods and diagnostic capture controls. Full anatomical
 correctives, clothing collision and imported material repairs are not included.
+
+## Portable eye material baseline — 2026-11-20
+
+The single-layer glTF eye uses roughness 0.6 by default (still adjustable through
+`eyes.roughness`). Low roughness produced a broad gray highlight over the iris
+and pupil under the Studio lights. This is a portable PBR fallback, not a
+refractive cornea shader. The importer retains eye occlusion/lacrimal geometry
+with restrained translucent factors because the original UE procedural shaders
+are unavailable. Existing authored appearance values are preserved. Creator
+`--closeup` captures the real native viewport at a shorter camera distance.
+See [native eye comparison](qa/vivid-eyes-2026-11-20.md).

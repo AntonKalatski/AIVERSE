@@ -51,6 +51,16 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
     report.push({material:material.getName(),mode:'source '+key,path:t[key],width:raw.width,height:raw.height});
    }
   }
+  // UE occlusion/lacrimal shaders are not reproduced by flat opaque colors.
+  // Retain the geometry with a restrained portable translucent fallback.
+  if(spec.face_slot==='eye_occlusion'||spec.face_slot==='wet') {
+   const occlusion=spec.face_slot==='eye_occlusion';
+   material.setBaseColorTexture(null).setMetallicRoughnessTexture(null)
+    .setBaseColorFactor(occlusion?[.02,.015,.01,.12]:[.9,.88,.85,.04])
+    .setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0)
+    .setRoughnessFactor(occlusion?.8:.12);
+   report.push({material:material.getName(),mode:'portable eye overlay; original UE procedural shader unavailable'});
+  }
   let output=null,mode='',w=0,h=0;
   if(spec.kind==='cloth') {
    const mask=await read(t.mask),macro=await read(t.macro_overlay),ao=await read(t.ao);
@@ -130,7 +140,7 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
      output[k+c]=Math.round(clamp(srgb(mix(base,p.pupil_color[c],pupil)))*255);
     } output[k+3]=255;
    }
-   material.setBaseColorFactor([1,1,1,1]).setRoughnessFactor(.12).setMetallicFactor(0);
+   material.setBaseColorFactor([1,1,1,1]).setRoughnessFactor(.6).setMetallicFactor(0);
    mode='source iris R/B + authored radial iris/pupil in mesh UV; no refraction';
   }
   if(output) {
