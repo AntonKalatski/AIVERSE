@@ -933,3 +933,15 @@ relevant occlusion. Added deterministic small-capacity source test and CTest
 registration. This is still two suballocated GPU SSBO streams, NOT separate
 physical device memory pages. No real C++ build/CTest/Metal/Vulkan/GLES
 execution or performance validation performed.
+
+
+## Stage 58 — 2026-11-20 — GPU stable light identity and monotonic BVH publication (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage58-stable-light-identity-and-revisions-2026-11-20.md`.
+Fixed the Stage50 fast-path equality to include stable emitter IDs, so
+a destroyed/recreated same-position ECS lamp is not falsely an identical
+GPU source. The lower-level GPU runtime now rejects stale/duplicate
+full/regional immutable geometry revisions before changing TLAS/BLAS
+pages. New regression cases in `gi_gpu_dynamic_runtime` are source-only:
+no native compiler, CTest, Metal/Vulkan/GLES device or full acceptance
+run has been performed. Keep draft PR #47 until verified.
