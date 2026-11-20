@@ -3,6 +3,7 @@
 // MotionWeave animation systems; no duplicate game simulation.
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/VividPresentationSettings.h"
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/MorphLodMapping.h"
@@ -82,8 +83,7 @@ struct CreatorApp {
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
     int smokeFrames=0, smokeReady=0;
     std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
-    GroomQuality groomQuality=GroomQuality::High;
-    HumanMaterialQuality materialQuality=HumanMaterialQuality::High;
+    VividPresentationSettings presentation{};
     bool groomSelfCollision=true,groomSegmentCollision=true;
     float groomSelfSeparation=0.014f,groomSelfResponse=0.6f;
     float groomFriction=0.25f,groomCurlPreservation=0.3f;
@@ -92,6 +92,7 @@ struct CreatorApp {
     int draftGuides=512,draftSegments=8;
     std::array<char,128> rootBone{},headBone{},jawBone{},leftEyeBone{},rightEyeBone{};
     char recipeFile[512]="/tmp/aiverse-vivid-human.json";
+    char presentationFile[512]="/tmp/aiverse-vivid-presentation.json";
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
     HumanImportManifest importedPackage;
@@ -482,7 +483,7 @@ struct CreatorApp {
                         humanMaterialFromSource(
                             surface,session.dna(),
                             proposed.head->materials[std::size_t(index)],
-                            materialQuality);
+                            presentation.materialQuality);
                 }
                 const bool hasAuthoredHair=std::any_of(
                     manifest.materials.begin(),manifest.materials.end(),
@@ -491,17 +492,17 @@ struct CreatorApp {
                                pair.second==HumanSurface::Eyelash;
                     });
                 if(!hasAuthoredHair) {
-                    proposed.groom.generate(session.dna(),groomQuality);
+                    proposed.groom.generate(session.dna(),presentation.groomQuality);
                     proposedScalp=installImportedScalpCollider(
                         proposed.groom,*proposed.head,
                         manifest.scalpColliderMesh,proposed.rig);
-                    proposed.hair=proposed.groom.makeCardModel(session.dna(),materialQuality);
+                    proposed.hair=proposed.groom.makeCardModel(session.dna(),presentation.materialQuality);
                 }
                 // Artist-authored hair meshes are already in proposed.head,
                 // with their original strand/UV/alpha maps preserved by
                 // humanMaterialFromSource. Never overlay a second wig.
             } else {
-                proposed=generateHumanPreview(session.dna(),groomQuality,materialQuality);
+                proposed=generateHumanPreview(session.dna(),presentation.groomQuality,presentation.materialQuality);
             }
             SkinSeamSplit::Result seamSplit;
             if(!skinWeightEdits.edits().empty()) {
@@ -1048,28 +1049,43 @@ struct CreatorApp {
             }
             ImGui::Checkbox("Simulate hair",&inspectGroom);
             ImGui::SliderFloat("Wind",&wind,0,3);
-            if(ImGui::Button("Hair High")) {groomQuality=GroomQuality::High;pendingRebuild=true;}
+            if(ImGui::Button("Hair High")) {presentation.groomQuality=GroomQuality::High;pendingRebuild=true;}
             ImGui::SameLine();
-            if(ImGui::Button("Med")) {groomQuality=GroomQuality::Medium;pendingRebuild=true;}
+            if(ImGui::Button("Med")) {presentation.groomQuality=GroomQuality::Medium;pendingRebuild=true;}
             ImGui::SameLine();
-            if(ImGui::Button("Low")) {groomQuality=GroomQuality::Low;pendingRebuild=true;}
+            if(ImGui::Button("Low")) {presentation.groomQuality=GroomQuality::Low;pendingRebuild=true;}
         }
         ImGui::Separator();
         ImGui::Text("Material quality (Skin / Eye / Hair)");
         if(ImGui::Button("Material Low")) {
-            materialQuality=HumanMaterialQuality::Low;pendingRebuild=true;
+            presentation.materialQuality=HumanMaterialQuality::Low;pendingRebuild=true;
         }
         ImGui::SameLine();
         if(ImGui::Button("Material Medium")) {
-            materialQuality=HumanMaterialQuality::Medium;pendingRebuild=true;
+            presentation.materialQuality=HumanMaterialQuality::Medium;pendingRebuild=true;
         }
         ImGui::SameLine();
         if(ImGui::Button("Material High")) {
-            materialQuality=HumanMaterialQuality::High;pendingRebuild=true;
+            presentation.materialQuality=HumanMaterialQuality::High;pendingRebuild=true;
         }
         ImGui::Text("Active tier: %s",
-            materialQuality==HumanMaterialQuality::Low?"Low":
-            materialQuality==HumanMaterialQuality::Medium?"Medium":"High");
+            presentation.materialQuality==HumanMaterialQuality::Low?"Low":
+            presentation.materialQuality==HumanMaterialQuality::Medium?"Medium":"High");
+        ImGui::InputText("Presentation config",presentationFile,
+                         sizeof(presentationFile));
+        if(ImGui::Button("Save presentation config")) {
+            if(presentation.saveFile(presentationFile,&status))
+                status="Saved visual profile "+std::string(presentationFile);
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Load presentation config")) {
+            try {
+                auto updated=VividPresentationSettings::loadFile(presentationFile);
+                presentation=updated;
+                pendingRebuild=true;
+                status="Loaded visual profile "+std::string(presentationFile);
+            }catch(const std::exception& e){status=e.what();}
+        }
         ImGui::Separator();
         ImGui::Checkbox("Animate MotionWeave",&animate);
         ImGui::SliderFloat("Jaw open",&jaw,0,1);
@@ -1918,11 +1934,24 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--presentation-config")==0 && i+1<argc) {
+            try {
+                application->presentation=VividPresentationSettings::loadFile(argv[++i]);
+            }catch(const std::exception& e) {
+                std::fprintf(stderr,"VIVID presentation config: %s\n",e.what());
+                return 2;
+            }
+        }else if(std::strcmp(argv[i],"--groom-quality")==0 && i+1<argc) {
+            if(!VividPresentationSettings::parseGroomQuality(
+                   argv[++i],application->presentation.groomQuality)) {
+                std::fprintf(stderr,"VIVID: invalid groom quality\n");
+                return 2;
+            }
         }else if(std::strcmp(argv[i],"--material-quality")==0 && i+1<argc) {
             const std::string tier=argv[++i];
-            if(tier=="low")application->materialQuality=HumanMaterialQuality::Low;
-            else if(tier=="medium")application->materialQuality=HumanMaterialQuality::Medium;
-            else if(tier=="high")application->materialQuality=HumanMaterialQuality::High;
+            if(tier=="low")application->presentation.materialQuality=HumanMaterialQuality::Low;
+            else if(tier=="medium")application->presentation.materialQuality=HumanMaterialQuality::Medium;
+            else if(tier=="high")application->presentation.materialQuality=HumanMaterialQuality::High;
             else {
                 std::fprintf(stderr,"VIVID: invalid material quality '%s'\n",tier.c_str());
                 return 2;
