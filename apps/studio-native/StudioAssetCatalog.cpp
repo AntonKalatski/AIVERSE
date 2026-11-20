@@ -8,6 +8,7 @@
 #include <climits>
 #include <cmath>
 #include <fstream>
+#include <initializer_list>
 #include <random>
 #include <regex>
 #include <stdexcept>
@@ -40,7 +41,11 @@ std::string generateGuid() {
     return out;
 }
 bool isSidecar(const fs::path& p){
-    return p.extension()==".meta";
+    const auto name=p.filename().string();
+    return p.extension()==".meta" ||
+       name.find(".aiverse-meta-update")!=std::string::npos ||
+       name.find(".aiverse-tmp")!=std::string::npos ||
+       name.find(".aiverse-backup-")!=std::string::npos;
 }
 void writeMeta(const fs::path& path,const Json& doc) {
     const auto tmp=fs::path(path.string()+".aiverse-tmp");
@@ -116,6 +121,13 @@ StudioAssetCatalog::StudioAssetCatalog(const fs::path& project):project_(project
     std::error_code ec;
     fs::create_directories(cache,ec);
     if(ec)throw std::runtime_error("Cannot create AssetIndex cache: "+ec.message());
+    // SQLite is regenerable: keep DB and WAL files out of version control.
+    // This local ignore rule doesn't modify the game's root .gitignore.
+    const fs::path ignored=cache/".gitignore";
+    if(!fs::exists(ignored)){
+        std::ofstream ignore(ignored,std::ios::binary);
+        if(ignore)ignore<<"*\n!.gitignore\n";
+    }
     const std::string path=(cache/"asset-index.sqlite3").string();
     const int rc=sqlite3_open_v2(path.c_str(),&db_,
         SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,nullptr);
@@ -262,7 +274,8 @@ void validateMetaSetting(const std::string& importer,
             throw std::runtime_error("Unsupported importer option value: "+key);
     };
     auto boolean=[&]{
-        if(!value.isBool())throw std::runtime_error("Expected boolean importer setting: "+key);
+        if(value.type()!=Json::Type::Bool)
+            throw std::runtime_error("Expected boolean importer setting: "+key);
     };
     if(importer=="texture"){
         if(key=="compression")text({"auto","none","fast","high","lossless"});

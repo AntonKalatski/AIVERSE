@@ -74,6 +74,11 @@ inline std::vector<StudioContentAsset> studioContentFiles(
         std::error_code fileError;
         const fs::file_status status = it->symlink_status(fileError);
         if (fileError || !fs::is_regular_file(status)) continue;
+        const std::string name=it->path().filename().string();
+        if(it->path().extension()==".meta" ||
+           name.find(".aiverse-backup-")!=std::string::npos ||
+           name.find(".aiverse-meta-update")!=std::string::npos ||
+           name.find(".aiverse-tmp")!=std::string::npos)continue;
         const fs::path relative = it->path().lexically_relative(root);
         if (relative.empty() || relative.is_absolute()) continue;
 

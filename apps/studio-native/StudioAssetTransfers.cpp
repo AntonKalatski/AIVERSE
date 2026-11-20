@@ -244,6 +244,18 @@ Json StudioTransferPlan::apply(const std::string& token,
             throw std::runtime_error("Folder replacement requires a non-destructive keep-both decision");
         if(type_==StudioTransferType::Move&&action=="new-guid")
             throw std::runtime_error("Move must preserve the asset GUID");
+        // The preview may be minutes old; verify roots again before writing.
+        const fs::path contentRoot=studioContentRoot(project_);
+        const auto relativeParent=e.destination.parent_path().lexically_relative(contentRoot).generic_string();
+        (void)checkedFolder(project_,relativeParent=="."?"":relativeParent);
+        if(type_==StudioTransferType::Move)
+            (void)checkedSource(project_,e.relativeSource);
+        else {
+            const auto fresh=fs::symlink_status(e.source);
+            if(fs::is_symlink(fresh) ||
+               (!fs::is_regular_file(fresh)&&!fs::is_directory(fresh)))
+                throw std::runtime_error("External source changed since preview");
+        }
         fs::path destination=e.destination;
         if(action=="keep-both")destination=keepBothName(destination,e.directory);
         const bool exists=existsOrSymlink(destination);
