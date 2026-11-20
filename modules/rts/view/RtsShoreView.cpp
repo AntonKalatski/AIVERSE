@@ -819,6 +819,7 @@ void RtsShoreView::rebuild(gfx::Device& dev,
     staged.net_=net_;
     staged.images_=images_;
     staged.materials_=materials_;
+    staged.warnings_=warnings_; // preserve init/type diagnostics on commit
     staged.dirty_=true;
     try {
         staged.buildUnpublished(dev,heightAt,waterY,w,h);
