@@ -6,6 +6,10 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <set>
 #include <cmath>
 #include <stdexcept>
 
@@ -24,7 +28,120 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
+void StudioMetalScene::clearDocumentModels() {
+    if (device_) for (auto& [path,model]:documentModels_)
+        if (model) render::releaseModel(*device_,*model);
+    modelInstances_.clear();
+    documentModels_.clear();
+}
+
+void StudioMetalScene::syncDocumentModels(
+    const editor::MapDoc& doc,const std::string& projectPath,
+    const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
+    modelInstances_.clear();
+    if (projectPath.empty()) return;
+    namespace fs=std::filesystem;
+    const fs::path project=projectPath;
+    const fs::path root=project/"content";
+    if (!fs::is_directory(root) || fs::is_symlink(fs::symlink_status(root))) return;
+    // The proxy list is the authoritative list of actual document objects.
+    // Only existing, explicitly authored content/ model paths are accepted.
+    const auto& entities=doc.data.entities;
+    std::set<std::string> active;
+    for (const auto& proxy:proxies) {
+        if (proxy.id.rfind("entity:",0)!=0) continue;
+        const std::string ordinal=proxy.id.substr(7);
+        if (ordinal.empty() || ordinal.find_first_not_of("0123456789")!=std::string::npos)
+            continue;
+        const unsigned long index=std::stoul(ordinal);
+        if (index>=entities.size()) continue;
+        const auto& view=rules["types"][entities[index].type]["view"];
+        const Json& raw=view["model"];
+        std::string path;
+        if (raw.isString()) path=raw.str();
+        else if (raw.isArray() && raw.size()) {
+            const Json& first=raw[std::size_t(0)];
+            if (first.isString()) path=first.str();
+            else if (first.isObject()) path=first.getStr("file");
+        }
+        // Never load project-root arbitrary files or external paths.
+        if (path.rfind("content/",0)!=0 || path.size()>512) continue;
+        const std::string relative=path.substr(8);
+        const fs::path relativePath(relative);
+        if (relativePath.empty() || relativePath.is_absolute()) continue;
+        bool allowed=true;
+        fs::path current=root;
+        for (const auto& segment:relativePath) {
+            if (segment.empty() || segment=="." || segment=="..") {allowed=false;break;}
+            current/=segment;
+            std::error_code ec;
+            const auto status=fs::symlink_status(current,ec);
+            if (ec || fs::is_symlink(status)) {allowed=false;break;}
+        }
+        if (!allowed || !fs::is_regular_file(current)) continue;
+        active.insert(path);
+        if (!documentModels_.count(path)) {
+            // Model loaders may request .bin, textures, MTL beside the model.
+            // Resolve each request with the same root/symlink checks.
+            auto read=[project,root](const std::string& name,std::string& out)->bool {
+                if (name.rfind("content/",0)!=0 || name.size()>512) return false;
+                const fs::path rel(name.substr(8));
+                if (rel.empty() || rel.is_absolute()) return false;
+                fs::path file=root;
+                for(const auto& part:rel) {
+                    if(part.empty()||part=="."||part=="..") return false;
+                    file/=part;
+                    std::error_code ec;
+                    const auto st=fs::symlink_status(file,ec);
+                    if(ec || fs::is_symlink(st)) return false;
+                }
+                if (!fs::is_regular_file(file)) return false;
+                std::ifstream input(file,std::ios::binary);
+                if (!input) return false;
+                out.assign(std::istreambuf_iterator<char>(input),
+                           std::istreambuf_iterator<char>());
+                return bool(input) || input.eof();
+            };
+            try {
+                auto model=render::loadModel(path,read);
+                if (!model || model->skinned() || model->vertices.empty() ||
+                    model->indices.empty()) continue;
+                bool deformable=false;
+                for (const auto& mesh:model->meshes) deformable |= mesh.deformable;
+                if (deformable) continue; // cannot match animated geometry with CPU bind pose
+                model->batching.autoLod=false;
+                model->batching.mergeRigid=false;
+                model->batching.allowGeometryPool=false;
+                render::prepareModelUpload(*model);
+                if (!render::uploadModel(*device_,*model,true)) {
+                    render::releaseModel(*device_,*model);
+                    continue;
+                }
+                documentModels_.emplace(path,std::move(model));
+            } catch (const std::exception&) {
+                // Invalid resource stays a visible proxy rather than hiding
+                // the map object or pretending a model was rendered.
+                continue;
+            }
+        }
+        auto found=documentModels_.find(path);
+        if (found==documentModels_.end()) continue;
+        // Anchor model to the same authored entity location as its proxy.
+        // The source file's own node transforms are applied by drawModel and picker.
+        modelInstances_.push_back({proxy.id,found->second.get(),
+            render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
+            render::mat4::rotateY(proxy.yaw)});
+    }
+    for (auto it=documentModels_.begin();it!=documentModels_.end();) {
+        if (!active.count(it->first)) {
+            render::releaseModel(*device_,*it->second);
+            it=documentModels_.erase(it);
+        } else ++it;
+    }
+}
+
 StudioMetalScene::~StudioMetalScene() {
+    clearDocumentModels();
     if (device_) {
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
@@ -45,7 +162,17 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     // Pick the oriented cube mesh that Renderer3D actually draws, not its
     // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
-    return studioPickVisibleProxy(proxies,origin,direction).id;
+    // These are the exact model instances submitted by the previous frame.
+    const auto modelHit=studioPickModelInstances(modelInstances_,origin,direction);
+    std::vector<StudioDocumentProxy> fallback;
+    fallback.reserve(proxies.size());
+    for(const auto& proxy:proxies) {
+        bool drawnModel=false;
+        for(const auto& instance:modelInstances_) if(instance.id==proxy.id) {drawnModel=true;break;}
+        if(!drawnModel) fallback.push_back(proxy);
+    }
+    const auto proxyHit=studioPickVisibleProxy(fallback,origin,direction);
+    return modelHit.surface.distance<proxyHit.distance ? modelHit.id : proxyHit.id;
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
@@ -103,7 +230,8 @@ void StudioMetalScene::resetView() {
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
-                             uint64_t previewRevision, float levelHeight) {
+                             uint64_t previewRevision, float levelHeight,
+               const std::string& projectPath,const Json& rules) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
     if (materialRevision_ != previewRevision) {
@@ -217,7 +345,11 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({0,.01f,float(z)},{w,.01f,float(z)},rgba(55,84,109,120));
 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    syncDocumentModels(doc,projectPath,rules,proxies);
     for(const auto& entity:proxies) {
+        bool hasModel=false;
+        for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
+        if (hasModel) continue;
         renderer_.drawMesh(cube_,
             mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
             mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
@@ -231,6 +363,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             for(const auto& edge:edges)
                 renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
         }
+    }
+    for(const auto& instance:modelInstances_) {
+        render::ModelDraw draw;
+        draw.model=instance.model;
+        draw.world=instance.world;
+        if(instance.id==selectedId) draw.outline={.25f,.62f,1.0f,.035f};
+        renderer_.drawModel(draw);
     }
     // Editor gizmos for authored lights; actual light contribution is passed through
     // Renderer3D::lights, not faked with an overlay screenshot.
