@@ -14030,6 +14030,145 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3b2_unpublished_map_lease_consumes_with_primary) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)flag=game::kCellGround|game::kCellRoad;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    const std::vector<uint8_t> vision(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&vision,grid);
+    renderer.render(gfx::PassDesc{});
+
+    const float previousHeight=view.heightAt(grid,4.5f,3.5f);
+    const uint64_t previousRoad=view.roads().surfaceGeneration();
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareTerrainAtomicFrame(
+        dev,grid,renderer,scene,2.0,&vision));
+    const auto staged=view.surfacePrewarmStats();
+    CHECK(staged.staged>=1);
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-
+                    previousHeight)<1e-5f);
+    CHECK(view.roads().surfaceGeneration()==previousRoad);
+    CHECK(!view.visualFrameReadyFor(grid,1.0));
+    CHECK(!view.visualFrameReadyFor(grid,2.0));
+    // Ordinary LENS prewarm must reuse the pending topology owner instead
+    // of preparing the old geometry for a second time.
+    CHECK(view.prepareMapFrame(renderer,scene,2.0,&vision,grid));
+    CHECK(view.surfacePrewarmStats().staged==staged.staged);
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&vision,grid);
+    const auto published=view.surfacePrewarmStats();
+    CHECK(published.consumed==staged.consumed+1);
+    CHECK(published.discarded==staged.discarded);
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-1.0f)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==previousRoad+1);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48b3b2_stale_map_lease_discards_and_rebuilds) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&visible,grid);
+    renderer.render(gfx::PassDesc{});
+    const uint64_t beforeRoad=view.roads().surfaceGeneration();
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareTerrainAtomicFrame(
+        dev,grid,renderer,scene,2.0,&visible));
+    const auto before=view.surfacePrewarmStats();
+    grid.corner[0]=32;  // same pointer, stale topology candidate
+    renderer.beginScene(camera,640,480);
+    CHECK(!view.prepareMapFrame(renderer,scene,2.0,&visible,grid));
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    const auto after=view.surfacePrewarmStats();
+    CHECK(after.discarded==before.discarded+1);
+    CHECK(after.consumed==before.consumed);
+    CHECK(view.roads().surfaceGeneration()==beforeRoad+1);
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-1.0f)<1e-4f);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48b3b2_failed_prewarm_preserves_live_map) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    const float oldHeight=view.heightAt(grid,3.5f,3.5f);
+    const auto oldRoad=view.roads().surfaceGeneration();
+    const auto oldRetirement=view.pendingModelRetirements();
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
+    game::RtsScene scene;
+    const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    dev.failBuffer=dev.bufferAttempts+1;
+    bool failed=false;
+    try {(void)view.prepareTerrainAtomicFrame(
+        dev,grid,renderer,scene,2.0,&visible);}
+    catch(const std::runtime_error&){failed=true;}
+    dev.failBuffer=0;
+    CHECK(failed);
+    CHECK(std::fabs(view.heightAt(grid,3.5f,3.5f)-
+                    oldHeight)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoad);
+    CHECK(view.pendingModelRetirements()==oldRetirement);
+    CHECK(!view.visualFrameReadyFor(grid,2.0));
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareTerrainAtomicFrame(
+        dev,grid,renderer,scene,2.0,&visible));
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    CHECK(std::fabs(view.heightAt(grid,3.5f,3.5f)-1.0f)<1e-4f);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     struct InspectingDevice final : fogfaulttest::Device {
         bool inspecting=false,failGround=false,sawGround=false;

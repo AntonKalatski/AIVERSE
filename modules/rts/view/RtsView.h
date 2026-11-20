@@ -386,6 +386,15 @@ public:
     void buildTerrainAtomicScene(gfx::Device& dev,const MapGrid& grid,
         render::Renderer3D& renderer,const RtsScene& scene,double time,
         const std::vector<uint8_t>* vision);
+    // Stage a one-shot unpublished Terrain+Roads+Shores+GroundFX+Fog map
+    // and camera-visible GroundFX mesh bundle WITHOUT publishing any owner.
+    // Must follow renderer.beginScene(); returns false when initial Terrain
+    // kit, planet mode, hierarchical scene or 2D tiles forbid this path.
+    // A matching next primary draw commits once before it evaluates poses;
+    // a stale lease is discarded and rebuilt from the current source.
+    bool prepareTerrainAtomicFrame(gfx::Device& dev,const MapGrid& grid,
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision);
     // Optional painted material layer per cell (map key "terrainMaterial": rows of digits 0..3, '.' =
     // by cell kind; see docs/game-format.md). Takes effect at the next buildTerrain().
     void setTerrainMaterial(const Json& rows, int w, int h) {
@@ -907,6 +916,9 @@ private:
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,
                              double time,const std::vector<uint8_t>* vision,
                              const MapGrid& grid);
+    void publishPendingTerrainFrame(render::Renderer3D& renderer,
+        const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid);
     // Must be defined out-of-line: the opaque lease owns private GPU handles.
     void discardPendingSurfaceLease() noexcept;
     std::unique_ptr<PreparedSurfaceLease> pendingSurfaceLease_;
