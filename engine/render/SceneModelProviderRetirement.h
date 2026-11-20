@@ -80,7 +80,11 @@ public:
         try {
             const bool complete=queue_->collect(
                 [&]{return device.beginResourceRetirement();},
-                [&](uint64_t token){return device.resourceRetirementComplete(token);},
+                [&](uint64_t token){
+                    return device.resourceRetirementStatus(token)==
+                               gfx::ResourceRetirementStatus::Complete &&
+                           device.resourceRetirementComplete(token);
+                },
                 [&](uint64_t token){
                     if(device.resourceRetirementStatus(token)==
                        gfx::ResourceRetirementStatus::Complete)
@@ -89,7 +93,9 @@ public:
                 },
                 [&]{return queue_->pending()>=kNoTokenIdlePressure &&
                            device.waitForResourceIdle();},
-                [&](Owner& owner){shutdownOrQuarantine(device,owner);},
+                [&](Owner& owner){
+                    shutdownOrQuarantine(device,owner,true);
+                },
                 [&](uint64_t token){
                     return device.resourceRetirementStatus(token)==
                            gfx::ResourceRetirementStatus::Failed;
@@ -115,7 +121,9 @@ public:
                 [&](uint64_t token){
                     if(token)device.abandonRetirementTokenAfterIdle(token);
                 },
-                [&](Owner& owner){shutdownOrQuarantine(device,owner);});
+                [&](Owner& owner){
+                    shutdownOrQuarantine(device,owner,false);
+                });
             return complete && orphanedOwners_==0;
         }catch(...) {
             ++pollFailures_;
@@ -132,6 +140,9 @@ public:
     uint64_t enqueueFailures() const noexcept{return enqueueFailures_;}
     uint64_t pollFailures() const noexcept{return pollFailures_;}
     uint64_t shutdownFailures() const noexcept{return shutdownFailures_;}
+    uint64_t tokenApprovedShutdowns() const noexcept {
+        return tokenApprovedShutdowns_;
+    }
     uint64_t cpuQueueShutdownFailures() const noexcept {
         return cpuQueueShutdownFailures_;
     }
@@ -147,11 +158,23 @@ private:
             ++orphanedOwners_;
         }
     }
-    void shutdownOrQuarantine(gfx::Device& device,Owner& owner) noexcept {
+    void shutdownOrQuarantine(gfx::Device& device,Owner& owner,
+                              bool orderedTokenOrIdleProved) noexcept {
         if(!owner)return;
         try {
             if(device_.validFor(device)) {
-                owner->shutdown(device);
+                if(orderedTokenOrIdleProved) {
+                    // Called exclusively by AsyncResourceRetirementQueue
+                    // after a verified completed scene token OR a positive
+                    // waitForResourceIdle fallback. No nested pending cache
+                    // queue may bypass its own GPU-completion barrier.
+                    owner->shutdownAfterCompletedSceneToken(device);
+                    ++tokenApprovedShutdowns_;
+                }else {
+                    // An explicit full-idle drain owns the proof; use the
+                    // existing public shutdown for fallback/error paths.
+                    owner->shutdown(device);
+                }
                 owner.reset();
                 return;
             }
@@ -163,6 +186,7 @@ private:
     std::unique_ptr<Queue> queue_;
     uint64_t enqueueFailures_=0,pollFailures_=0;
     uint64_t shutdownFailures_=0,cpuQueueShutdownFailures_=0;
+    uint64_t tokenApprovedShutdowns_=0;
     uint64_t orphanedOwners_=0;
 };
 
