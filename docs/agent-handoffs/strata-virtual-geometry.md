@@ -4124,3 +4124,61 @@ Collect a true h=0 baseline. Then Stage19 clean integration worktree,
 full CMake/CTest and real Metal/Vulkan/GLES GPU acceptance. Never
 enable GPU temporal parity switch without evidence from an actual
 tested source SHA; never overwrite concurrent main render work.
+
+
+---
+
+## Stage 18.1 — bounded CPU/RHI telemetry for Strata GPU selection (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`; **not merged** into main.
+**Scope:** instrumentation only, no new render path, backend shader or
+production-parity gate enabled. All changes committed; native compilation,
+CTest and GPU execution **NOT RUN** in this agent environment.
+
+### Changes (exact implementation commits)
+- `1bbebe9d212cf173c4f5f36f9cba613853e8cdcd` —
+  `engine/render/StrataGpuCulling.h`: additive fields on
+  `GpuTemporalStats` for `peakRetainedBytes`, `peakHistories`,
+  `successfulDispatches`, `peakSubmissionsPerFrameSlot`.
+- `9344c09d12aacb2b819410a10fc8ff48dcaa6305` —
+  `engine/render/StrataGpuCulling.cpp`: update high-water marks
+  after successful mask-buffer allocation/cache creation and count
+  only successfully encoded/accepted dispatch submissions. Retired mask
+  bytes reduce `retainedBytes` but not the historical peak.
+- `e015a935abf4fa50d813fb20de82d36f6404cb9b` —
+  `tests/render/strata_gpu_culling.cpp`: recording-device fixtures
+  assert monotonic peaks and successful versus refused submissions.
+  The fixture is **authored, not executed**.
+
+### Semantics and safety
+Counters are accumulated by each `GpuClusterCulling` owner and reset
+by `shutdown`. They are **CPU-side logical RHI allocation and dispatch
+counts**, not GPU timestamp measurements, physical VRAM usage, GPU
+encoder overhead or frame times. All API changes are additive; the
+`GpuTemporalStats` method still returns a value snapshot.
+No GPU readback, extra dispatch, fence wait or memory allocation was
+added to the hot path. All default-OFF and parity flags remain OFF;
+no FPS uplift or performance win is claimed.
+
+### Stage 18 checklist
+
+| Workstream | Status | Verification |
+| --- | --- | --- |
+| GPU temporal cache high-water marks | SOURCE IMPLEMENTED | NOT RUN |
+| Successful dispatch/slot density counters | SOURCE IMPLEMENTED | NOT RUN |
+| Recording RHI regression assertions | AUTHORED | NOT RUN |
+| Per-pass GPU timestamps (Metal/Vulkan) | TODO | N/A |
+| Descriptor allocation/compute encoder counts | TODO | N/A |
+| GPU page upload/eviction churn baseline | TODO | N/A |
+| h=0 vs h>0 vs legacy workload bench | TODO | N/A |
+| LOD popping/error and lossy seam image audit | TODO | N/A |
+| Full Mac compile/CTest, actual GPU validation | DEFERRED | N/A |
+
+**Next stage:** instrument per-frame page request/upload/eviction totals
+and per-backend compute dispatch accounting without synchronous GPU waits;
+then add an opt-in benchmark recorder with identical fixed camera traces
+for h=0 and h>0. Preserve current user instruction: finish functionality
+first, run one combined native CMake/CTest/hardware pass on Mac afterward.
+Inspect current main before final integration, avoid overwriting other
+render/geometry agents' changes, and do not enable unverified Vulkan GPU
+parity routes.
