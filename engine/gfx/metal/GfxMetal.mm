@@ -1738,7 +1738,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!reported) {
                 reported = true;
                 std::fprintf(stderr,
-                    "[metal-icb-depth-uniforms] mode=%s eligible=1 slots=%d\\n",
+                    "[metal-icb-depth-uniforms] mode=%s eligible=1 slots=%d\n",
                     skipDepthFragmentUniforms ? "on" : "off",
                     uniformBindingCount);
             }
