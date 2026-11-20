@@ -72,18 +72,23 @@ export default function AssetReferencePicker({
     setOpen(false);
   };
   const drop = (event: DragEvent<HTMLElement>) => {
-    if (disabled) return;
+    if (disabled || !event.dataTransfer.types.includes(STUDIO_ASSET_DRAG_MIME)) return;
     const path = normalized(event.dataTransfer.getData(STUDIO_ASSET_DRAG_MIME));
-    const asset = catalog.files.find(item => item.path === path);
     event.preventDefault();
     event.stopPropagation();
-    if (asset) choose(asset);
-    else if (path && (!kinds?.length || kinds.includes(assetKind(path)))) {
-      // AssetsPanel drags only project paths. A missing catalog entry can be
-      // resolved by path; never accept OS file paths or arbitrary text.
-      onChange(path);
-      setOpen(false);
-    }
+    if (!path) return;
+    const asset = catalog.files.find(item => item.path === path);
+    if (asset) { choose(asset); return; }
+    // Do not commit unverified paths or bypass GUID assignment if catalog is
+    // stale. Native catalog remains the only authority for asset identities.
+    void invoke('studio.assets', {}).then(result => {
+      setCatalog(result);
+      const resolved = result.files.find(item => item.path === path);
+      if (resolved && (!kinds?.length || kinds.includes(assetKind(resolved.path)))) {
+        onChange(resolved.guid || resolved.path);
+        setOpen(false);
+      } else setError('Dropped asset is not present in project/content or has an incompatible type.');
+    }).catch(cause => setError(String(cause instanceof Error ? cause.message : cause)));
   };
   const dragOver = (event: DragEvent<HTMLElement>) => {
     if (!disabled && event.dataTransfer.types.includes(STUDIO_ASSET_DRAG_MIME)) {
