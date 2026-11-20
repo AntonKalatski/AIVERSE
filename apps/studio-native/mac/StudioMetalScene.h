@@ -8,6 +8,7 @@
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "apps/studio-native/mac/StudioFacialGpuPreview.h"
 
 namespace aiverse::studio {
@@ -32,6 +33,7 @@ public:
     void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); }
 private:
     std::unique_ptr<gfx::Device> device_;
+    std::unique_ptr<render::RenderDeviceLifetime> deviceLifetime_;
     render::Renderer3D renderer_;
     render::Mesh cube_;
     render::Mesh terrain_;

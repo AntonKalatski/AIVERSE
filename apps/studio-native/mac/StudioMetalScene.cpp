@@ -13,6 +13,8 @@ using namespace aiverse::render;
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
+    deviceLifetime_=std::make_unique<render::RenderDeviceLifetime>(*device_);
+    facialGpu_.setDeviceLease(deviceLifetime_->lease());
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
@@ -35,6 +37,7 @@ StudioMetalScene::~StudioMetalScene() {
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         renderer_.shutdown();
+        if(deviceLifetime_)deviceLifetime_->retire();
     }
 }
 std::string StudioMetalScene::pick(float x, float y, float width, float height,

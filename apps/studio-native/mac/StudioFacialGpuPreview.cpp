@@ -41,6 +41,15 @@ bool StudioFacialGpuPreview::readProjectFile(
 }
 
 bool StudioFacialGpuPreview::clear(gfx::Device& device) noexcept {
+    // Never free old GPU resources through a new device at the same address.
+    if(model_ && !gpuLease_.validFor(device)) {
+        (void)model_.release();
+        facial_.clear();
+        animator_.setModel(nullptr);
+        pose_.clear();
+        nodeWorld_.clear();
+        return false;
+    }
     if(model_) {
         try {
             if(!device.waitForResourceIdle()) {
@@ -80,6 +89,10 @@ bool StudioFacialGpuPreview::sync(
         gfx::Device& device,const std::string& projectRoot,
         const StudioFacialPreviewBinding& binding,std::string& error) {
     error.clear();
+    if(!gpuLease_.validFor(device)) {
+        error="Facial Model GPU epoch or owner thread mismatch";
+        return false;
+    }
     if(!binding.bound()) {
         if(!clear(device))error="Facial GPU retirement pending device completion";
         return error.empty();
@@ -181,6 +194,11 @@ bool StudioFacialGpuPreview::submit(
         const StudioFacialPreviewBinding& binding,
         float dt,std::string& error) {
     error.clear();
+    if(!gpuLease_.device() ||
+       !gpuLease_.validFor(*gpuLease_.device())) {
+        error="Facial GPU submission outside current device epoch";
+        return false;
+    }
     if(!ready() || !binding.bound() || binding.revision()!=revision_) {
         error="Facial render has no matching GPU Model generation";
         return false;

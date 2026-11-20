@@ -3,6 +3,7 @@
 // Only called on the Metal gfx::Device owner thread, never from browser code.
 #pragma once
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/Animation.h"
 #include "engine/render/Renderer3D.h"
 #include <aiverselib/animation/FacialPreviewSession.h>
@@ -19,6 +20,9 @@ public:
     StudioFacialGpuPreview()=default;
     StudioFacialGpuPreview(const StudioFacialGpuPreview&)=delete;
     StudioFacialGpuPreview& operator=(const StudioFacialGpuPreview&)=delete;
+    void setDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        gpuLease_=std::move(lease);
+    }
     // Discard GPU resources only after device completion; on failure leave
     // the Model quarantined instead of destroying in-flight handles.
     bool clear(gfx::Device& device) noexcept;
@@ -33,6 +37,7 @@ public:
 private:
     static bool readProjectFile(const std::filesystem::path& projectRoot,
                                 const std::string& key,std::string& bytes);
+    render::RenderDeviceLifetime::Lease gpuLease_;
     std::unique_ptr<render::Model> model_;
     lib::animation::FacialPreviewSession facial_;
     render::Animator animator_; // ONLY parent pose evaluator in this preview
