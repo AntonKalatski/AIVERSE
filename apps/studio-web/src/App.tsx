@@ -7,11 +7,11 @@ import {
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import {
-  closeDockPanel, defaultDockLayout, dockAreaOf, openDockPanel, readDockLayout, saveDockLayout
-} from './dockLayout';
-import type { DockPanel } from './dockLayout';
+  closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
+} from './nestedDock';
+import type { StudioPanel } from './nestedDock';
 import type { StudioEntity, StudioSnapshot } from './types';
-import DockWorkspace from './components/DockWorkspace';
+import NestedDockWorkspace from './components/NestedDockWorkspace';
 import PanelTitle from './components/PanelTitle';
 import PropertyField from './components/PropertyField';
 import ViewportPlaceholder from './components/ViewportPlaceholder';
@@ -28,12 +28,12 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dock, setDock] = useState(readDockLayout);
+  const [dock, setDock] = useState(readNestedDock);
   const [connected] = useState(nativeConnected);
 
   // Store browser-only layout (not engine state) with bounded write frequency.
   useEffect(() => {
-    const handle = window.setTimeout(() => saveDockLayout(dock), 180);
+    const handle = window.setTimeout(() => saveNestedDock(dock), 180);
     return () => window.clearTimeout(handle);
   }, [dock]);
 
@@ -110,8 +110,8 @@ export default function App() {
   };
   const rows = useMemo(() => hierarchyRows(snapshot?.scene.entities ?? []), [snapshot]);
   const selected = snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
-  const consoleOpen = dockAreaOf(dock, 'console') !== null;
-  const renderPanel = (panel: DockPanel) => {
+  const consoleOpen = panelStack(dock, 'console') !== null;
+  const renderPanel = (panel: StudioPanel) => {
     switch (panel) {
       case 'hierarchy':
         return <>
@@ -213,7 +213,7 @@ export default function App() {
         <button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}>
           <RefreshCw size={15}/></button>
         <button className="icon-button" aria-label="Reset Studio layout" title="Reset panel layout"
-          onClick={() => setDock(defaultDockLayout())}><Settings2 size={17}/></button>
+          onClick={() => setDock(defaultDockTree())}><Settings2 size={17}/></button>
       </div>
     </header>
     <div className="toolbar">
@@ -240,14 +240,14 @@ export default function App() {
       are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
-    <DockWorkspace layout={dock} setLayout={setDock} renderPanel={renderPanel}/>
+    <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}/>
     <footer className="statusbar">
       <div><span className={connected ? 'status-dot connected' : 'status-dot'}/>
         {connected ? 'Native transport connected' : 'Demo transport'}
       </div>
       <div className="statusbar-right">
         <button onClick={() => setDock(current => consoleOpen
-          ? closeDockPanel(current, 'console') : openDockPanel(current, 'console'))}>
+          ? closeTab(current, 'console') : reopenTab(current, 'console', 'dock-bottom'))}>
           <PanelBottom size={14}/> {consoleOpen ? 'Hide console' : 'Show console'}
         </button>
         <span><Terminal size={13}/> {snapshot?.logs.length ?? 0} messages</span>
