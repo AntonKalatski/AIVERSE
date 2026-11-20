@@ -915,3 +915,51 @@ Expected runner builds three forced real CPU MDI trials, asserts native CPU chec
 ### Stage 98 portability correction
 
 Source `da49fb94074dc1cab1295ed6aaf701a857061536` changes `cpuClockNs` to take a simple `bool processClock` argument rather than a cross-platform `clockid_t` parameter. The POSIX `clockid_t` type and `CLOCK_{THREAD,PROCESS}_CPUTIME_ID` references are now inside Apple/Linux compile guards. Windows builds still mark the optional clock unavailable, as before, rather than failing to parse the fixture. Source-level correction only; native compilation and runtime validation remain pending.
+
+
+---
+
+## Stage 99 — Stage 98 Mac thread accounting disproves claimed 97.6% off-CPU; fix diagnostics (2026-11-20)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119` (Draft PR #39). **Code commits:** `647ba1c1aef08cffabe1a959e8ec70478f14b08a` in `tests/render/material_batches.cpp` and `3aefac4c1983d03f48bf2b859cf3954cda0fd2e8` in `tools/batching-stage95-analyze.py`. This handoff follows separately. No renderer, Metal binding, CPU MDI encoding, AUTO selection, or GPU runtime code changes.
+
+### Real owner-provided Stage 98 Mac result
+
+Owner uploaded `stage95-thread-summary(1).csv` from the Stage 98 fixture (3 distinct forced MDI processes; 81 measured frames each). Exact medians, milliseconds:
+
+| Metric | MDI1 | MDI2 | MDI3 |
+|---|---:|---:|---:|
+| Wall time | 0.796541 | 0.812584 | 0.860833 |
+| Raw POSIX thread CPU | 0.018933 | 0.019307 | 0.020444 |
+| Previously calculated `offcpu` (INVALID) | 0.777585 | 0.793259 | 0.840432 |
+| Process CPU | 0.792 | 0.810 | 0.854 |
+| Mach thread CPU | 0.786 | 0.802 | 0.850 |
+| Backend CPU wall | 0.454166 | 0.463251 | 0.498332 |
+
+All three test runs fell entirely into the fast (<=1.2ms) population, with 81 measured MDI frames each; no slow MDI evidence from this set. Crucially, independent **Mach per-thread** CPU and **process** CPU both closely track wall time (~0.8ms), whereas the POSIX thread clock is about **41.5x smaller** despite a prior standalone CPU-bound clock control showing it behaved normally. There is an unresolved clock-accounting inconsistency specifically in the renderer fixture / timing context. **Do not interpret the raw POSIX-derived 97.6% offcpu as real wait, descheduling or GPU blocking.** The Stage 98 source and medians do not establish why this inconsistency occurs. The independently measured Mach thread CPU matches the process CPU and wall and is the preferable macOS measure for this fixture. There is no GPU execution/FPS timing.
+
+### Stage 99 fix and API
+
+- `tests/render/material_batches.cpp`: when Stage95 opt-in `AIVERSE_BATCH_THREAD_CPU_TIMING=1` is enabled, `render_offcpu_ms` now derives from `render_mach_thread_cpu_ms` **on macOS** (fallback unavailable -> `-1`), and from POSIX thread CPU on other supported platforms. `render_thread_cpu_ms` keeps its original **raw POSIX** reading for forensic diagnosis. `render_process_cpu_ms` and `render_mach_thread_cpu_ms` remain separate in CSV; no change to default ten columns without opt-in.
+- `tools/batching-stage95-analyze.py`: when a Mach column exists, reject negative/unavailable Mach measurements, recompute offcpu **from wall - Mach** for every row, and display `thread_median_ms` using trusted Mach time. It prints `posix_thread_median_ms` as a separate diagnostic, so older 14-column Stage98 CSVs can be safely reanalyzed without rerunning the Mac renderer. For older 12-column CSVs, it continues using POSIX as a *provisional unvalidated* measure; do not draw wait conclusions from those older files. The stage95 summary now includes `posix_thread_median_ms`. Historical `render_offcpu_ms` in Stage98 raw files is explicitly ignored when Mach exists.
+- No performance policy changes and no assumption that measured wall-Mach equals GPU runtime or pure scheduler waiting.
+
+**Validation:** user-provided Stage98 analyzer CSV inspected; Stage97 standalone native CPU sanity test previously PASS; GitHub source edits completed. **NOT YET verified:** Stage99 source compile, executable tests, rerunning the updated Python analyzer on raw Stage98 14-column files, GPU timer or macOS scheduler traces. Keep PR Draft.
+
+### Safe next step without recompilation
+
+On existing `AIVERSE-batching-stage98` detached worktree, retrieve only the updated Python analyzer into `/tmp` and rerun on already-existing three Stage98 frame CSVs:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage98 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage95-analyze.py > /tmp/aiverse-stage99-analyze.py || exit 1
+python3 /tmp/aiverse-stage99-analyze.py \
+  build/batching-stage98/trials/mdi-1-frames.csv \
+  build/batching-stage98/trials/mdi-2-frames.csv \
+  build/batching-stage98/trials/mdi-3-frames.csv
+```
+
+Expected: thread CPU ~0.79/0.80/0.85ms, `offcpu` near zero (~0.01ms), raw POSIX near 0.02ms. If investigating the patched fixture too, build it in a fresh `AIVERSE-batching-stage99` detached worktree and rerun native tests, or compile its changed C++ fixture separately after safely fetching the new branch; do not switch an existing rebasing worktree.
+
+**Next engineering decision:** capture a slow Stage99 run if reproducible; compare Mach thread time vs wall and the same backend CPU submission stages. A slow run with wall and Mach both rising suggests more actual CPU cost/clock-frequency changes rather than prolonged off-CPU waiting; a slow run with wall rising but Mach not rising motivates Instruments System Trace or Metal driver wait tracing. Further low-level Metal optimization should be evidence-based and retain pixel parity and other-platform builds.
