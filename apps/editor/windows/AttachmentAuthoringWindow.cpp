@@ -67,6 +67,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     ::aiverse::View presentationView_; // render-only, no graph evaluation
     ::aiverse::View animatedPreviewView_; // child poses precomputed in ONE host
     view::AnimatedSceneAttachmentSources animatedSources_;
+    bool animatedFrameReady_=false;
+    std::vector<view::AnimatedSceneAttachmentSources::Key> animatedFrameKeys_;
     render::Pose previewPose_;
     std::vector<render::mat4> previewMatrices_;
     float previewTime_=0.f,previewYaw_=0.6f,previewPitch_=0.4f;
@@ -210,21 +212,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             session_->attachmentHost->prepare(
                 1,"preview",session_->provider->resources(),
                 render::mat4{},packet,&error);
-        // Animated children are never included in the parent static
-        // socket draws. One separate MotionWeave presentation World owns
-        // ALL child Graph clocks and evaluates them ONCE per preview frame.
-        std::vector<view::AnimatedSceneAttachmentSources::Input> graphInputs;
-        graphInputs.reserve(session_->animatedChildren.size());
-        for(const auto& [childId,appearance]:session_->animatedChildren)
-            graphInputs.push_back({
-                {1,"preview",childId},appearance,appearance->parameters});
-        view::AnimatedSceneAttachmentSources::Statistics graphStats;
-        std::string graphError;
-        const bool graphSynced=ready &&
-            animatedSources_.sync(
-                *session_->attachmentHost,session_->provider->resources(),
-                graphInputs,previewPlaying_?1.f/60.f:0.f,
-                graphStats,&graphError);
+        // Graphs were stepped exactly ONCE by EditorWindow::update at
+        // the pre-draw structural barrier. This ImGui draw only prepares
+        // borrowed poses and sends graphless packets to Renderer3D.
         std::vector<view::AnimatedSceneAttachmentSources::Prepared>
             animatedPackets;
         if(ready) {
@@ -232,15 +222,15 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             packet.object.draw.pose=&previewPose_;
             packet.object.draw.nodeWorld=&previewMatrices_;
             presentationView_.submitOne(renderer_,packet.object);
-            if(graphSynced) {
-                animatedPackets.reserve(graphInputs.size());
-                for(const auto& input:graphInputs) {
+            if(animatedFrameReady_) {
+                animatedPackets.reserve(animatedFrameKeys_.size());
+                for(const auto& childKey:animatedFrameKeys_) {
                     view::AnimatedSceneAttachmentSources::Prepared child;
                     std::string childError;
                     if(animatedSources_.prepare(
                            *session_->attachmentHost,
                            session_->provider->resources(),
-                           input.key,packet.object.draw,
+                           childKey,packet.object.draw,
                            std::span<const render::mat4>(
                                previewMatrices_.data(),previewMatrices_.size()),
                            child,&childError)) {
@@ -250,7 +240,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                         animatedPackets.push_back(std::move(child));
                     } else message_="Animated child preview: "+childError;
                 }
-            } else message_="Animated Graph sync: "+graphError;
+            }
         } else message_="Preview packet rejected: "+error;
         gfx::PassDesc pass;
         pass.colorTarget=viewport_.color;
@@ -456,7 +446,7 @@ public:
     bool openByDefault() const override{return false;}
     int order() const override{return 35;}
 
-    void update(Editor& ed,double) override {
+    void update(Editor& ed,double dt) override {
         device_=&ed.device();
         // Advisory bounded cleanup, not one blocking barrier per edit.
         // Stage/Studio tests must verify GPU completion on each backend.
@@ -470,11 +460,33 @@ public:
                 try { stageAndPublish(ed); }
                 catch(const std::exception& e) { message_=e.what(); }
             }
+            animatedFrameReady_=false;
+            animatedFrameKeys_.clear();
+            if(open && session_ && session_->attachmentHost) {
+                std::vector<view::AnimatedSceneAttachmentSources::Input> inputs;
+                inputs.reserve(session_->animatedChildren.size());
+                for(const auto& [id,appearance]:session_->animatedChildren)
+                    inputs.push_back({
+                        {1,"preview",id},appearance,appearance->parameters});
+                view::AnimatedSceneAttachmentSources::Statistics stats;
+                std::string error;
+                const float delta=previewPlaying_
+                    ?float(std::clamp(dt,0.,0.1)):0.f;
+                if(animatedSources_.sync(
+                       *session_->attachmentHost,session_->provider->resources(),
+                       inputs,delta,stats,&error)) {
+                    animatedFrameReady_=true;
+                    for(const auto& input:inputs)
+                        animatedFrameKeys_.push_back(input.key);
+                } else message_="Animated child graph evaluation: "+error;
+            }
             return;
         }
         // Old GPU Models remain owned by the deferred provider even after
         // the project changes, until GPU idle can be proven on this device.
         animatedSources_.clear();
+        animatedFrameReady_=false;
+        animatedFrameKeys_.clear();
         deferSession(session_);
         project_=current;
         pendingReimport_=false;
