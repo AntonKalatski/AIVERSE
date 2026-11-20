@@ -1782,7 +1782,8 @@ struct CreatorApp {
         controller.set(Layer::Tracking,Channel::EyeBlinkRight,blink);
         controller.set(Layer::Tracking,Channel::MouthSmileLeft,smile);
         controller.set(Layer::Tracking,Channel::MouthSmileRight,smile);
-        controller.advance(step);
+        if(smoke && !animate)controller.snap();
+        else controller.advance(step);
         if(!human.rig.compose(pose.matrices,facePose,controller.frame())) {
             status="VIVID facial rig: invalid composition";
             return;
@@ -2268,6 +2269,9 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--still")==0) {
+            application->animate=false;
+            application->wind=0.0f;
         }else if(std::strcmp(argv[i],"--cpu-morph")==0) {
             application->forceCpuMorph=true;
         }else if(std::strcmp(argv[i],"--presentation-config")==0 && i+1<argc) {

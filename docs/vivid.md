@@ -6,6 +6,16 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## MetaHuman DNA diagnostic adapter — 2026-11-20
+
+`tools/vivid-dna-import` now provides an offline adapter through an externally
+supplied official DNA Calibration reader. Real Ada.dna LOD0 imports into Creator
+as 9 meshes / 34625 layout vertices; one selected source morph is routable through
+VIVID CPU/GPU. See [adapter guide](../tools/vivid-dna-import/README.md). This is
+**partial compatibility**: no RigLogic behavior, skeleton/skin weights, texture
+maps or groom import yet. The SDK and sample remain external on KINGSTON.
+`--smoke --still` provides a frozen pose and snapped face channels for comparison.
+
 ## Integration visual checkpoint — 2026-11-20
 
 The MotionWeave integration branch corrects CPU morph-library lifetime, first-frame

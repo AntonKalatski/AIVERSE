@@ -1426,3 +1426,8 @@ Blend/cornea depth-after, conditional LOD, ICB/MDI and
 Vulkan/GLES3 true GPU source readback. The API is a
 bounded opt-in collection mechanism, not an automatic
 all-scene GPU picking replacement.
+
+
+MetaHuman binary DNA diagnostic import is available through the separate
+[offline adapter](../vivid-dna-import/README.md). Use `--smoke --still` for a
+frozen MotionWeave pose and snapped facial channels in reproducible captures.
