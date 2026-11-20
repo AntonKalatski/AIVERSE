@@ -695,12 +695,20 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (!customVertexStream && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
-        auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
+        auto addItem = [&](const Primitive& p, uint8_t shadowRole,
+                           uint8_t materialRole = 0,
+                           uint32_t originalPrimitive=UINT32_MAX) {
             if (p.indexCount == 0) return;
             int mi = p.material;
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
             ModelItem it;
+            it.nodeIndex=uint32_t(n);
+            it.meshIndex=uint32_t(meshIndex);
+            it.primitiveIndex=originalPrimitive;
+            it.vertexOverrideCount=customVertexStream?
+                d.vertexOverrideCount:0;
+            it.displacedVertexSource=displaced;
             it.geometry = d.geometry;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
@@ -794,13 +802,57 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             bool covered = false;
             for (const auto* batch : colourBatches)
                 covered |= std::find(batch->parts.begin(), batch->parts.end(), i) != batch->parts.end();
-            addItem(p, shadowBatch && p.shadowBatched ? 1 : 0, covered ? 1 : 0);
+            addItem(p, shadowBatch && p.shadowBatched ? 1 : 0,
+                    covered ? 1 : 0,uint32_t(i));
         }
         for (const auto* batch : colourBatches) addItem(batch->primitive, 0, 2);
         if (shadowBatch) addItem(drawMesh.shadowBatch, 2);
         }
     }
 
+}
+
+Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
+        const Model& source) const {
+    ModelViewProvenance snapshot;
+    snapshot.frameSerial=dev_?dev_->frameSerial():0;
+    snapshot.complete=snapshot.frameSerial!=0;
+    for(const auto& it:modelItems_) {
+        if(it.model!=&source)continue;
+        snapshot.hasModel=true;
+        // Provenance is built from Renderer3D's own selected ModelItems,
+        // after its actual per-node LOD/culling/material batching choices,
+        // not from a duplicate simulation of those algorithms.
+        const bool candidate=it.inView && it.tint.w>0.f &&
+                             it.shadowRole!=2 && it.materialRole!=1;
+        if(!candidate)continue;
+        ModelViewPrimitive primitive;
+        primitive.model=&source;
+        primitive.nodeIndex=it.nodeIndex;
+        primitive.meshIndex=it.meshIndex;
+        primitive.primitiveIndex=it.primitiveIndex;
+        primitive.firstIndex=it.firstIndex;
+        primitive.indexCount=it.indexCount;
+        primitive.vertexOverride=it.vertexOverride;
+        primitive.vertexOverrideCount=it.vertexOverrideCount;
+        primitive.visible=it.inView;
+        primitive.colourCandidate=candidate;
+        primitive.gpuLodConditional=it.gpuLodAvailable;
+        primitive.lodFade=it.lodThreshold<1.f || it.lodInvert;
+        primitive.batched=it.materialRole!=0 ||
+                          it.primitiveIndex==UINT32_MAX;
+        primitive.skinning=it.joints>=0;
+        primitive.baked=it.baked;
+        primitive.shaderVertexOffset=it.displacedVertexSource;
+        primitive.customGpuStream=it.vertexOverride.valid();
+        primitive.world=it.world;
+        if(primitive.gpuLodConditional || primitive.lodFade ||
+           primitive.batched || primitive.shaderVertexOffset ||
+           primitive.baked) snapshot.complete=false;
+        snapshot.primitives.push_back(primitive);
+    }
+    if(snapshot.primitives.empty())snapshot.complete=false;
+    return snapshot;
 }
 
 void Renderer3D::packModelInstance(const ModelItem& x, int phase,
