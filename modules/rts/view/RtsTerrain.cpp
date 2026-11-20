@@ -49,8 +49,8 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
     // Any map rebuild invalidates the previous primary-frame publication.
     framePublication_.invalidate();
     ++terrainGeneration_; // conservative invalidation: cell edits can retain the MapGrid address
-    paintLayers_.shutdown();
-    if (planets_.active()) { // planet maps: the grid holds the stacked faces of every body (RtsSurface.h)
+    if (planets_.active()) {
+        paintLayers_.shutdown(); // planet maps: the grid holds the stacked faces of every body (RtsSurface.h)
         const PlanetWorld& W = planets_.world();
         if (W.sim && g.surf == W.sim) // cell flags changed (editor play / sim): recolour those bodies
             for (size_t i = 0; i < W.bodies.size(); ++i) {
@@ -68,7 +68,17 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
     }
     const bool flatDig = groundFx_.drawsDig() && g.dig.size() == g.flags.size(); // RtsGroundFx draws the rock blocks
     // ground overlays follow the surface: rebuild them whenever terrain geometry changed
-    if (terrain_.build(dev, g, flatDig) || !hasTerrain_) groundFx_.invalidate();
+    // Keep efficient same-map chunk and detail sculpting on its existing
+    // incremental path. A complete map-size transition uses the new private
+    // Terrain candidate and performs a no-upload/no-idle publication.
+    const bool topologyChange=terrain_.canPrepareMap() &&
+        !terrain_.mapMatches(g.w,g.h);
+    const bool changed=topologyChange
+        ? terrain_.commitMap(terrain_.prepareMap(dev,g,flatDig))
+        : terrain_.build(dev,g,flatDig);
+    // Do not invalidate paint or GroundFX if a candidate upload failed.
+    paintLayers_.shutdown();
+    if(changed || !hasTerrain_)groundFx_.invalidate();
     hasTerrain_ = true;
     fogMeshDirty_ = true;   // the fog sheet follows the ground
     fieldView_.invalidate();  // so do grid field overlays

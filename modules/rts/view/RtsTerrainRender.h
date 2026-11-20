@@ -19,6 +19,7 @@
 #pragma once
 #include "RtsFog.h"
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
@@ -87,10 +88,25 @@ public:
         if (materialLayer_ != layer) {
             materialLayer_ = std::move(layer);
             materialLayerChanged_ = true;
+            ++publicationRevision_;
         }
     }
     // (Re)builds the chunks whose inputs changed. Returns true when any geometry changed.
     bool build(gfx::Device& dev, const MapGrid& g, bool flatDig);
+    // External Stage 47B candidate for full-map/topology replacement.
+    // Only private CPU data and new GPU handles are built during prepare.
+    // All live terrain ownership remains unchanged until commitMap, which
+    // is no-throw and can participate in a multi-owner publication cohort.
+    class PreparedMap;
+    std::shared_ptr<PreparedMap> prepareMap(
+        gfx::Device& dev,const MapGrid& grid,bool flatDig);
+    bool commitMap(std::shared_ptr<PreparedMap> candidate) noexcept;
+    bool mapMatches(int w,int h) const noexcept {
+        return built_ && mapW_==w && mapH_==h;
+    }
+    bool canPrepareMap() const noexcept {
+        return dev_ && built_ && texturesLoaded_;
+    }
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
     // darken in the shader; levels maps keep the classic fog sheet drawn by RtsView).
     void draw(render::Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool flatDig);
@@ -200,6 +216,7 @@ private:
     uint64_t waterHash_ = 0;
     render::HeightField heightField_;
     bool heightDirty_ = true;
+    uint64_t publicationRevision_ = 1; // invalidates externally staged candidates
     int heightW_ = 0, heightH_ = 0;
     double heightBuiltAt_ = -1e9;               // seconds (steady clock), throttle while sculpting
     Stats stats_;

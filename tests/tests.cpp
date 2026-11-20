@@ -13305,6 +13305,114 @@ TEST(terrain_chunk_rebuild_preserves_old_gpu_mesh_on_index_failure) {
     CHECK(terrain.pendingMeshGpuRetirements()==0);
 }
 
+TEST(lens_stage47b_terrain_external_map_candidate_rolls_back_late_owner_failure) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid old;
+    old.init(4,4);
+    for(auto& f:old.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,old,false));
+    CHECK(terrain.canPrepareMap());
+    CHECK(terrain.mapMatches(4,4));
+    const auto oldChunks=terrain.stats().chunks;
+    const auto oldRetired=terrain.pendingMeshGpuRetirements();
+    game::MapGrid replacement;
+    replacement.init(65,4);
+    for(auto& f:replacement.flags)f=game::kCellGround;
+    replacement.flags[0]=game::kCellWater;
+    struct TerrainParticipant final:render::OwnerPrepareCommit::Participant {
+        game::TerrainRenderer& terrain;
+        fogfaulttest::Device& dev;
+        const game::MapGrid& grid;
+        std::shared_ptr<game::TerrainRenderer::PreparedMap> pending;
+        TerrainParticipant(game::TerrainRenderer& t,fogfaulttest::Device& d,
+                           const game::MapGrid& g):terrain(t),dev(d),grid(g){}
+        void prepare() override {pending=terrain.prepareMap(dev,grid,false);}
+        void commit() noexcept override {(void)terrain.commitMap(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } terrainPart(terrain,dev,replacement);
+    struct FailingParticipant final:render::OwnerPrepareCommit::Participant {
+        bool fail=true;
+        void prepare() override {
+            if(fail)throw std::runtime_error("late fog upload fault");
+        }
+        void commit() noexcept override {}
+        void rollback() noexcept override {}
+    } fogPart;
+    const auto oldDeletes=dev.destroyedBuffers;
+    bool refused=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainPart);tx.add(fogPart);
+        try{tx.prepareAll();}catch(const std::runtime_error&){refused=true;}
+    }
+    CHECK(refused);
+    CHECK(!terrainPart.pending);
+    CHECK(terrain.mapMatches(4,4));
+    CHECK(terrain.stats().chunks==oldChunks);
+    CHECK(terrain.pendingMeshGpuRetirements()==oldRetired);
+    CHECK(dev.destroyedBuffers>oldDeletes);
+    fogPart.fail=false;
+    dev.idleAllowed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainPart);tx.add(fogPart);
+        tx.prepareAll();
+        CHECK(terrain.mapMatches(4,4));
+        CHECK(tx.publish());
+    }
+    CHECK(terrain.mapMatches(65,4));
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()>=oldRetired+4);
+    dev.idleAllowed=true;
+    terrain.shutdown(dev);
+}
+
+TEST(lens_stage47b_terrain_external_detail_candidate_keeps_published_surface) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader smooth=[](const std::string& path,std::string& out) {
+        if(path!="game.json")return false;
+        out=R"({"terrain":{"style":"smooth","detailLook":{"scale":2}}})";
+        return true;
+    };
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,smooth,"");
+    game::MapGrid old;
+    old.init(4,4);
+    for(auto& f:old.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,old,false));
+    CHECK(terrain.detailActive());
+    const auto prior=terrain.surfaceAt(old,1.5f,1.5f);
+    const auto oldRetire=terrain.pendingMeshGpuRetirements();
+    game::MapGrid replacement;
+    replacement.init(8,4);
+    for(auto& f:replacement.flags)f=game::kCellGround;
+    replacement.level[size_t(replacement.index(2,2))]=2;
+    const auto deleted=dev.destroyedBuffers;
+    {
+        auto staged=terrain.prepareMap(dev,replacement,false);
+        CHECK(staged!=nullptr);
+        CHECK(terrain.mapMatches(4,4));
+        CHECK(terrain.detailActive());
+        CHECK(terrain.surfaceAt(old,1.5f,1.5f)==prior);
+        CHECK(terrain.pendingMeshGpuRetirements()==oldRetire);
+    }
+    CHECK(dev.destroyedBuffers>deleted);
+    auto staged=terrain.prepareMap(dev,replacement,false);
+    CHECK(staged!=nullptr);
+    CHECK(terrain.commitMap(staged));
+    CHECK(terrain.mapMatches(8,4));
+    CHECK(terrain.detailActive());
+    CHECK(terrain.detail()!=nullptr);
+    CHECK(!terrain.commitMap(std::move(staged)));
+    CHECK(terrain.pendingMeshGpuRetirements()>oldRetire);
+    terrain.shutdown(dev);
+}
+
 TEST(terrain_full_map_stages_all_chunks_apron_and_water_before_publish) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();

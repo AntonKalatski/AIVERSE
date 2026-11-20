@@ -42,6 +42,7 @@ float vnoise(float x, float y, uint32_t s) {
 } // namespace
 
 void TerrainRenderer::setDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) {
+    ++publicationRevision_;
     const bool has = d && d->valid();
     std::vector<uint8_t> sp = splat ? *splat : std::vector<uint8_t>{};
     // same size as the drawn surface: only the changed samples are rebuilt (editor sculpting)

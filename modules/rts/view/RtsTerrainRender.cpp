@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -132,6 +133,7 @@ void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReade
     gray_=nextGray;
     texturesLoaded_=false;
     built_=false;
+    ++publicationRevision_;
 }
 
 void TerrainRenderer::parseLook(const Json& t) {
@@ -253,6 +255,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     built_ = false;
     globalHash_ = 0;
     dev_ = nullptr;
+    ++publicationRevision_;
 }
 
 void TerrainRenderer::freeChunk(gfx::Device& dev, Chunk& c) {
@@ -353,8 +356,151 @@ uint64_t TerrainRenderer::chunkHash(const MapGrid& g, const Chunk& c, bool flatD
     return h.h;
 }
 
+// Private full-map terrain candidate. Never invokes TerrainRenderer::shutdown():
+// its kit references are borrowed from the published owner, whereas the CPU
+// maps and GPU geometry/field textures in `staged_` are newly allocated.
+class TerrainRenderer::PreparedMap final {
+    friend class TerrainRenderer;
+public:
+    PreparedMap()=default;
+    PreparedMap(const PreparedMap&)=delete;
+    PreparedMap& operator=(const PreparedMap&)=delete;
+    ~PreparedMap() noexcept {
+        if(committed_ || !staged_ || !device_)return;
+        auto dropBuffer=[this](gfx::BufferHandle& buffer) noexcept {
+            if(!buffer.valid())return;
+            try {device_->destroyBuffer(buffer);}catch(...) {}
+            buffer={};
+        };
+        auto dropTexture=[this](gfx::TextureHandle& texture) noexcept {
+            if(!texture.valid())return;
+            try {device_->destroyTexture(texture);}catch(...) {}
+            texture={};
+        };
+        for(auto& chunk:staged_->chunks_)
+            for(auto& lod:chunk.lods) {
+                dropBuffer(lod.vb);
+                dropBuffer(lod.ib);
+            }
+        dropBuffer(staged_->apron_.vb);
+        dropBuffer(staged_->apron_.ib);
+        dropBuffer(staged_->water_.vb);
+        dropBuffer(staged_->water_.ib);
+        for(auto* texture:{&staged_->cellTex_,&staged_->dynTex_,
+                           &staged_->splatTex_,&staged_->visionTex_,
+                           &staged_->detailNrmTex_,&staged_->detailSplatTex_,
+                           &staged_->heightField_.tex})
+            dropTexture(*texture);
+        // Shader, layer textures and fallback texture kit belong to the
+        // original live TerrainRenderer and are NOT destroyed here.
+    }
+private:
+    TerrainRenderer* owner_=nullptr;
+    gfx::Device* device_=nullptr;
+    uint64_t revision_=0;
+    bool committed_=false;
+    std::unique_ptr<TerrainRenderer> staged_;
+};
+
+std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
+        gfx::Device& dev,const MapGrid& grid,bool flatDig) {
+    checkGpuDevice(dev);
+    if(dev_!=&dev)
+        throw std::logic_error("TerrainRenderer map prepare: wrong device");
+    if(!texturesLoaded_ || !built_)
+        throw std::logic_error("TerrainRenderer map prepare: live GPU kit not primed");
+    if(grid.w<=0 || grid.h<=0)return {};
+    auto candidate=std::make_shared<PreparedMap>();
+    candidate->owner_=this;
+    candidate->device_=&dev;
+    candidate->revision_=publicationRevision_;
+    candidate->staged_=std::make_unique<TerrainRenderer>();
+    TerrainRenderer& staged=*candidate->staged_;
+    staged.dev_=&dev;
+    staged.gpuDeviceLease_=gpuDeviceLease_;
+    staged.rules_=rules_;
+    staged.look_=look_;
+    staged.materialLayer_=materialLayer_;
+    staged.hasFileDetail_=hasFileDetail_;
+    staged.fileDetail_=fileDetail_;
+    staged.fileSplat_=fileSplat_;
+    staged.fileDetailChanged_=fileDetailChanged_;
+    // A fully prepared, *published* material kit stays in its current owner.
+    // No material cache, shader or pipeline allocations are made in staging.
+    staged.texturesLoaded_=true;
+    (void)staged.build(dev,grid,flatDig); // complete private rebuild
+    return candidate;
+}
+
+bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept {
+    if(!candidate || candidate->committed_)return false;
+    if(candidate->owner_!=this || candidate->device_!=dev_ ||
+       candidate->revision_!=publicationRevision_ || !candidate->staged_)
+        std::terminate();
+    TerrainRenderer& next=*candidate->staged_;
+    gfx::Device& dev=*dev_;
+    for(auto& chunk:chunks_)freeChunk(dev,chunk);
+    retiredMeshes_.retireBuffer(dev,apron_.vb);
+    retiredMeshes_.retireBuffer(dev,apron_.ib);
+    retiredMeshes_.retireBuffer(dev,water_.vb);
+    retiredMeshes_.retireBuffer(dev,water_.ib);
+    for(auto* texture:{&cellTex_,&dynTex_,&splatTex_,&visionTex_,
+                      &detailNrmTex_,&detailSplatTex_,&heightField_.tex})
+        retiredMeshes_.retireTexture(dev,*texture);
+    // Swaps/moves of ready handles and standard vector storage only;
+    // no CPU allocations, GPU uploads, or waits are allowed in commit.
+    chunks_.swap(next.chunks_);
+    apron_=std::exchange(next.apron_,{});
+    water_=std::exchange(next.water_,{});
+    using std::swap;
+    swap(detail_,next.detail_);
+    swap(cellCol_,next.cellCol_);
+    swap(cellLayerOf_,next.cellLayerOf_);
+    swap(cellPx_,next.cellPx_);
+    swap(dynPx_,next.dynPx_);
+    swap(splatPx_,next.splatPx_);
+    swap(visionPx_,next.visionPx_);
+    swap(nrmPx_,next.nrmPx_);
+    swap(dsplatPx_,next.dsplatPx_);
+    cellTex_=std::exchange(next.cellTex_,{});
+    dynTex_=std::exchange(next.dynTex_,{});
+    splatTex_=std::exchange(next.splatTex_,{});
+    visionTex_=std::exchange(next.visionTex_,{});
+    detailNrmTex_=std::exchange(next.detailNrmTex_,{});
+    detailSplatTex_=std::exchange(next.detailSplatTex_,{});
+    heightField_={}; // trace texture rebuilt lazily after this publication
+    heightDirty_=true;
+    heightW_=heightH_=0;
+    heightBuiltAt_=-1e9;
+    mapW_=next.mapW_;mapH_=next.mapH_;
+    cw_=next.cw_;ch_=next.ch_;
+    lh_=next.lh_;
+    globalHash_=next.globalHash_;
+    lodLevels_=next.lodLevels_;
+    heightfield_=next.heightfield_;
+    built_=next.built_;
+    hasWater_=next.hasWater_;
+    waterSheet_=next.waterSheet_;
+    waterHash_=next.waterHash_;
+    texW_=next.texW_;texH_=next.texH_;dynRow_=next.dynRow_;
+    nrmW_=next.nrmW_;nrmH_=next.nrmH_;
+    dsplatW_=next.dsplatW_;dsplatH_=next.dsplatH_;
+    detailOn_=next.detailOn_;detailK_=next.detailK_;
+    geoBytes_=next.geoBytes_;frame_=next.frame_;
+    stats_=next.stats_;
+    materialLayerChanged_=false;
+    fileDetailChanged_=false;
+    dirtyI0_=dirtyJ0_=1<<30;dirtyI1_=dirtyJ1_=-1;
+    visionInit_=false;
+    fogFieldChanged_=true;
+    candidate->committed_=true;
+    ++publicationRevision_;
+    return true;
+}
+
 bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     checkGpuDevice(dev);
+    ++publicationRevision_;
     auto t0 = std::chrono::steady_clock::now();
     if (g.w <= 0 || g.h <= 0) return false;
     // Resolve the stable material kit before any map transaction is published.
