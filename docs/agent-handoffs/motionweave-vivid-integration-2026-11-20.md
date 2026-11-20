@@ -1216,3 +1216,35 @@ reflections of actual point-light directions from broad ambient response; rerun
 matched catalog capture and motion before delivering final media. Existing
 final-motion.mp4/gallery.html are pre-refinement artifacts. Full analysis/tests
 and known skin-normal/card-hair limits in docs/qa/vivid-eye-optics-2026-11-20.md.
+
+
+## 2026-11-20 — Local corneal glints; final reviewed delivery
+
+Code7773c40b0a141fa76907d828c776500d75086d3e, same integration branch.
+Replaces broad dynLight ds scaling with a bounded up-to8 actual point/spot-light
+reflection loop (distance/cone/normalized sharp lobe). Both GLSL/MSL changed;
+low keeps sun/environment coat and omits point glints/parallax. All ordinary
+PBR behavior and prior optical data/API preserved. No new asset/UV/exposure
+change during this refinement.
+
+Native Creator/Studio/appearance tests built PASS (build-local-glints.log).
+Appearance CTest PASS1/1 report20261120-200337-34885 following integration4/4
+report20261120-200027-32474. GLSL syntax12/12 PASS ES300/330 Q0/1/2, LDR
+skinned+morph+normal permutations (glsl-local-glints.log). Vulkan/OpenGL GPU,
+mobile, GUI, CI and realtime performance NOT RUN. No push this stage.
+
+Native Metal catalog comparison local-catalog.png restores brown iris/dark
+pupil with small sharp highlights; previous final-catalog.png was pale and is
+DIAGNOSTIC ONLY. Final local-motion168 frames completed, inspected turn36,
+blink41,tilt110; glints move without erasing iris; cartilage white edges gone.
+pipelineFailures0. Encoded eyes-reviewed.mp4:168frames1500x92024fps (7s).
+All artifacts /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/eye-optics/.
+gallery.html points at reviewed images/video, previous takes retained as history.
+Source content/Ada and assembled Ada-Eye-Optics retain previous stage's changes.
+
+Readiness: iris/material/optics/export/reassembly implemented+scoped verified;
+eyelid white-fleck fix and lash alpha/morph retention verified on this asset.
+MetaHuman reference parity is NOT established: no volumetric ray tracing, source
+skin-normal/card-hair artifacts persist; no all-rig/blendshape coverage claim.
+Next if requested: controlled Unreal reference comparison and broader facial
+corrective/eyelid deformation QA; do not re-enable broad grid specular as coat.
