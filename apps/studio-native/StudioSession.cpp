@@ -597,8 +597,9 @@ Json StudioSession::dispatch(const Json& request) {
                     "Studio Assets: repair material paths after move");
                 repaired=updates;
             };
-            Json result=pendingAssetTransfer_->apply(token,decisions,internal ? repair :
-                std::function<void()>{});
+            const std::function<void()> commitHook =
+                internal ? std::function<void()>(repair) : std::function<void()>{};
+            Json result=pendingAssetTransfer_->apply(token,decisions,commitHook);
             pendingAssetTransfer_.reset();
             if (internal) result.set("repairedMaterialReferences",num(int64_t(repaired)));
             reply.set("result",std::move(result));
