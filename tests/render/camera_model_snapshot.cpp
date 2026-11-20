@@ -136,4 +136,16 @@ int main(){
         ++specials;
     });
     assert(specials==2);
+    mixed.clear();
+    {
+        Mesh temporary;temporary.vb={71};temporary.ib={72};temporary.indexCount=9;
+        CameraGeometryCommand mesh;mesh.mesh=&temporary;
+        mixed.recordGeometry(mesh);
+        temporary.indexCount=100;
+    }
+    auto retained=mixed;
+    mixed.clear();
+    retained.forEachGeometry([](const CameraGeometryCommand& packet){
+        assert(packet.mesh && packet.mesh->vb.id==71 && packet.mesh->indexCount==9);
+    });
 }

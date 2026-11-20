@@ -3611,6 +3611,13 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_lens_sprite_gpu_faults PRIVATE aiverse_runtime aiverse_game_view aiverse_content_reader)
     add_test(NAME lens_sprite_gpu_faults COMMAND aiverse_lens_sprite_gpu_faults)
     set_tests_properties(lens_sprite_gpu_faults PROPERTIES LABELS "LENS;RHI")
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        add_executable(aiverse_lens_metal_frame tests/render/lens_metal_frame.cpp)
+        target_include_directories(aiverse_lens_metal_frame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(aiverse_lens_metal_frame PRIVATE aiverse_runtime aiverse_game_view aiverse_content_reader)
+        add_test(NAME lens_metal_frame COMMAND aiverse_lens_metal_frame)
+        set_tests_properties(lens_metal_frame PROPERTIES LABELS "LENS;GPU;Metal" SKIP_RETURN_CODE 77 TIMEOUT 90)
+    endif()
 endif()
 
 # SpectraFX graph CRUD is shared by the GUI Workspace and standalone MCP server.
