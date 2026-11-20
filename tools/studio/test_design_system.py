@@ -67,5 +67,13 @@ class StudioDesignSystemTests(unittest.TestCase):
         self.assertIn("StudioEmptyState",docs)
         self.assertIn("StudioField",docs)
 
+    def test_root_agent_discovery_and_skill(self):
+        root_agents=(ROOT/"AGENTS.md").read_text(encoding="utf-8")
+        skill=(ROOT/"skills/editor/studio-ui/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("docs/studio-design-system.md",root_agents)
+        self.assertIn("skills/editor/studio-ui/SKILL.md",root_agents)
+        self.assertIn("StudioPanel",skill)
+        self.assertIn("npm run typecheck",skill)
+
 if __name__=="__main__":
     unittest.main()
