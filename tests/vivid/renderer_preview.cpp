@@ -441,21 +441,34 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                    !probe.idDepthReady || probe.checked)continue;
                 const auto comparison=vivid::compareSculptGpuColorIdCoverage(
                     probe.colour,probe.id,{20,26,33},36);
-                require(comparison.verdict==
-                            vivid::SculptGpuColorPixelResult::Verdict::Covered,
-                    "VIVID same-frame Metal Renderer3D colour and GPU actor ID pixel coverage differ");
+                const bool expectMaskOcclusion=
+                    maskParityEnabled && stageIndex==2;
+                // 7AZ phase 1: alpha hole -> selected actor ID visible.
+                // Phase 2: solid 1x1 mask -> selected ID zero, actual
+                // Renderer3D colour/depth from independent GPU Mask actor.
+                // ID zero with coloured pixel is inconclusive *generally*,
+                // but here both accepted renderer submissions, fixed mask
+                // texel and depth comparison form an explicit oracle.
+                const auto expected=expectMaskOcclusion?
+                    vivid::SculptGpuColorPixelResult::Verdict::Inconclusive:
+                    vivid::SculptGpuColorPixelResult::Verdict::Covered;
+                require(comparison.verdict==expected &&
+                        comparison.triangleIdVisible!=expectMaskOcclusion,
+                    "VIVID two-actor alpha hole/solid colour-ID coverage mismatch");
                 const auto depthMatch=vivid::compareSculptGpuDepthPixels(
                     probe.sceneDepth,probe.idDepth,0.003f);
                 require(depthMatch.samplesValid && depthMatch.matching,
                     "VIVID real Metal Renderer3D screen vs GPU ID depth mismatch");
                 probe.checked=true;
-                std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u depth_scene=%f depth_id=%f delta=%f PASS\n",
+                std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u depth_scene=%f depth_id=%f delta=%f mask=%s PASS\n",
                     stageIndex,static_cast<unsigned long long>(probe.frameSerial),
                     probe.x,probe.y,comparison.distanceFromClear,
                     unsigned(probe.id[0]),unsigned(probe.id[1]),
                     unsigned(probe.id[2]),unsigned(probe.id[3]),
                     double(probe.sceneDepth),double(probe.idDepth),
-                    double(depthMatch.absoluteDifference));
+                    double(depthMatch.absoluteDifference),
+                    expectMaskOcclusion?"solid-occlusion":
+                        (maskParityEnabled?"alpha-hole":"none"));
             }
         }
         if(stage>=3 && captures.size()==3 &&
