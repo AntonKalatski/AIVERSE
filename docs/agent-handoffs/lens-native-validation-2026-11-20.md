@@ -309,3 +309,24 @@ provide a complete independent AnimationGraph state candidate (PlaybackSnapshot
 is insufficient), stage remaining owners, then publish only after every owner
 prepares successfully; fault-inject each boundary before real GPU validation.
 No branch push/merge performed. Public save formats remain unchanged.
+
+
+## Main integration continuation — 2026-11-20
+
+User explicitly requested completion and publication to main. Branch
+`codex/lens-completion`, merge `5d406deeb5ae67f288406ab57772cf632e99364f`
+incorporates main `076139d12d9ea2380a5445f823323f4e2c096811`. Resolved 26
+conflicted files preserving PRISMA/SpectraFX hooks, GPU completion owners,
+texture diagnostics, always-enabled test assertions and LENS retirement,
+frame publication and camera replay. Terrain draw captures the normal atlas
+by value, and its unpublished map borrows the immutable atlas shader kit.
+No intentional save-format change. Catalog regenerated after removing duplicate
+workflow registrations. Native all-target build RUNNING on KINGSTON with
+`cmake --build /Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug --parallel 4`
+(TMPDIR and CLANG_MODULE_CACHE_PATH also on KINGSTON); log
+`/Volumes/KINGSTON/AIVERSE-builds/lens-completion/main-integration-build.log`.
+No native/Metal/Vulkan pass claimed at this merge. Diff whitespace checks found
+existing main handoff trailing spaces and one preexisting LENS blank EOF;
+resolved source edits have no conflict markers. Merge committed locally,
+NOT pushed/main-published. Next: repair integration compilation, implement
+full owner staging, test the integrated result and only then publish.
