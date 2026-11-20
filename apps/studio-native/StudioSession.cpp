@@ -522,7 +522,13 @@ Json StudioSession::dispatch(const Json& request) {
             }
             pendingAssetTransfer_=StudioTransferPlan::internal(ws_.project.dir,
                 params.getStr("destination"),sources);
-            reply.set("result",pendingAssetTransfer_->describe());
+            Json preview=pendingAssetTransfer_->describe();
+            StudioAssetCatalog catalog(ws_.project.dir);
+            catalog.rebuild();
+            const auto dependencies=studioCollectAssetReferences(
+                editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,catalog.all());
+            preview.set("references",studioMoveReferenceImpact(preview,dependencies));
+            reply.set("result",std::move(preview));
         } else if (method == "studio.assetTransferCommit") {
             if(!pendingAssetTransfer_)throw std::runtime_error("No active asset transfer preview");
             const auto token=params.getStr("token");
@@ -533,6 +539,32 @@ Json StudioSession::dispatch(const Json& request) {
                 if(!d.isObject()||!d["id"].isNumber()||!d["action"].isString())
                     throw std::runtime_error("Invalid conflict decision");
                 decisions.push_back({int(d["id"].integer()),d.getStr("action")});
+            }
+            // Server-side safeguard: a browser can change decision values
+            // after preview. Never move a rules model reference that the
+            // reference graph cannot rewrite safely across included rules files.
+            Json currentPlan=pendingAssetTransfer_->describe();
+            if (currentPlan.getStr("source")=="internal") {
+                StudioAssetCatalog dependencyCatalog(ws_.project.dir);
+                dependencyCatalog.rebuild();
+                const auto dependencies=studioCollectAssetReferences(
+                    editor::loadMaterialLibrary(ws_),ws_.project.rulesJson,
+                    dependencyCatalog.all());
+                const Json impacted=studioMoveReferenceImpact(currentPlan,dependencies);
+                for (const auto& reference:impacted.items()) {
+                    if (reference.getBool("writable")) continue;
+                    const int id=int(reference["id"].integer());
+                    std::string action;
+                    for (const auto& item:currentPlan["items"].items())
+                        if (int(item["id"].integer())==id)
+                            action=item.getStr("conflict").empty()?"import":"skip";
+                    for (const auto& decision:decisions)
+                        if (decision.id==id) action=decision.action;
+                    if (action!="skip")
+                        throw std::runtime_error("Asset move blocked: rules model reference "+
+                            reference.getStr("owner")+" / "+reference.getStr("field")+
+                            " cannot yet be rewritten safely. Skip the item or edit its rules origin first.");
+                }
             }
             // Snapshot GUID->path before and after the transfer. Folder moves
             // are covered because every descendant file keeps its sidecar GUID.
