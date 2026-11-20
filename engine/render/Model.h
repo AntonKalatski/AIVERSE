@@ -127,6 +127,9 @@ struct MeshDef {
     std::string name;
     std::vector<Primitive> primitives;
     std::vector<float> weights;          // default morph weights
+    // Ordered mesh-local semantic morph names supplied by an importer.
+    // Empty means unavailable: never invent channel names from indices.
+    std::vector<std::string> morphTargetNames;
     std::vector<ModelLod> lods;          // coarse alternatives, descending maximum projected diameter
     // One index range covering the shadowBatched primitives (contiguous, opaque, same culling):
     // drawn once in shadow passes instead of each part. Not part of `primitives`. indexCount 0 = none.
