@@ -33,7 +33,10 @@ public:
         return std::isfinite(c.separation)&&c.separation>=0.001f&&
             c.separation<=0.1f&&std::isfinite(c.response)&&
             c.response>=0&&c.response<=1&&
-            c.maxPairChecks>=1024&&c.maxPairChecks<=2000000;
+            c.maxPairChecks>=1024&&c.maxPairChecks<=2000000&&
+            std::isfinite(c.friction)&&c.friction>=0&&c.friction<=1&&
+            std::isfinite(c.bendPreservation)&&
+            c.bendPreservation>=0&&c.bendPreservation<=1;
     }
     // Called after each Verlet constraint solve. Root particles remain pinned.
     // Each unordered cross-guide pair appears once (lexicographic grid order).
