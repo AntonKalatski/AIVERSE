@@ -2426,3 +2426,47 @@ inside the SAME primitive may have duplicated IDs and physically
 matching or mismatched boundary segments. See latest Stage17.2
 follow-up in the STRATA handoff; corresponding CTest source was
 written but not executed. Preserve Legacy on ambiguous source.
+
+
+## STRATA Stage17.3 — CPU/portable temporal LOD hysteresis (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.3, before changing projected LOD error, per-pass view
+selection or scene-resident index page demand. Current branch is
+`feature/strata-virtual-geometry`, NOT merged to main.
+
+- `StrataGeometry.h` and `StrataView`: opt-in validated
+  `hysteresisFraction` (0..0.45), prior per-node refined-state
+  mask and successful view's actual refined-state vector. A
+  previously coarse node needs error > threshold*(1+h) to refine,
+  a previously refined node stays fine until below
+  threshold*(1-h). Cold start and default h=0 retain the
+  original immediate threshold. Missing resident children,
+  malformed input, max-selected-node budgets and prior Stages17.1
+  and 17.2 seam admission always override hysteresis safely.
+- `PortableLodHistory`: a value history keyed by original
+  source+revision, instance, primitive, original source node and
+  camera/pass slot. It is only published after the complete
+  indexed source alias has been successfully prepared by
+  `PortableSource::prepareModel`; a failed GPU upload never
+  changes it. Force-finest late planar reflection resets the
+  history after successful preparation. Changing the scene
+  hysteresis policy also cold-resets all instance histories.
+- `PortableSource::collectResidencyDemands` must use the SAME
+  history/fraction as `prepareModel`. Otherwise Stage15 GPU
+  residency might evict child pages that a warmed LOD frontier
+  still requires. GeometryScene owns temporal state; no extra
+  Renderer3D submission path or duplicate vertex allocator.
+- All Stage17.3 new tests were AUTHORED, NOT RUN:
+  `strata_view` (cold/warm thresholds, invalid masks,
+  missing-residency and budget fallback) and
+  `strata_portable` (Metal/Vulkan/GLES3 recording backend,
+  isolated instance/camera histories, GPU-error transactional
+  safety, streamed demand alignment).
+- This is CPU-selected portable raster stability, **NOT**
+  Vulkan/Metal GPU-compute temporal history, continuous
+  geomorph or guaranteed invisible lossless shading.
+  Next Stage17.4 is GPU-compute per-pass history with actual
+  CPU/GPU temporal parity, then Stage18 benchmarks, Stage19
+  final build/CTest and hardware validation. Parity gates stay
+  OFF until an exact source SHA has real GPU evidence.
