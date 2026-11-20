@@ -198,6 +198,15 @@ public:
     uint64_t gpuShutdownFailures() const noexcept {
         return retirement_.shutdownFailures();
     }
+    uint64_t cpuLoaderShutdownFailures() const noexcept {
+        return retirement_.cpuQueueShutdownFailures();
+    }
+    uint64_t providerEnqueueFailures() const noexcept {
+        return retirement_.enqueueFailures();
+    }
+    uint64_t providerPollFailures() const noexcept {
+        return retirement_.pollFailures();
+    }
 
 private:
     struct Slot {
