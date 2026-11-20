@@ -12,22 +12,46 @@
 #include <chrono>
 #include <ctime>
 #include <vector>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_info.h>
+#endif
 using namespace aiverse;
 
 // CPU consumed by this calling thread, not whole-process CPU. Wall time
 // includes descheduling/waits; their delta is diagnostic, not proof of a GPU
 // stall or scheduler fault. Unsupported platforms report unavailable.
-static bool currentThreadCpuNs(uint64_t& result) {
+static bool cpuClockNs(clockid_t id, uint64_t& result) {
 #if defined(__APPLE__) || defined(__linux__)
     timespec ts{};
-    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0) return false;
+    if (clock_gettime(id, &ts) != 0) return false;
     result = uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
     return true;
 #else
+    (void)id;
     (void)result;
     return false;
 #endif
 }
+
+#if defined(__APPLE__)
+static bool machCurrentThreadCpuNs(uint64_t& result) {
+    thread_basic_info_data_t info{};
+    mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+    const thread_t thread = mach_thread_self();
+    const kern_return_t status = thread_info(thread, THREAD_BASIC_INFO,
+                                             reinterpret_cast<thread_info_t>(&info),
+                                             &count);
+    mach_port_deallocate(mach_task_self(), thread);
+    if (status != KERN_SUCCESS) return false;
+    const uint64_t seconds =
+        uint64_t(info.user_time.seconds) + uint64_t(info.system_time.seconds);
+    const uint64_t micros =
+        uint64_t(info.user_time.microseconds) + uint64_t(info.system_time.microseconds);
+    result = seconds * 1000000000ull + micros * 1000ull;
+    return true;
+}
+#endif
 // GPU-free invariants, including shared vertices and material overrides.
 static bool unitChecks() {
     using namespace render;
@@ -263,6 +287,8 @@ int aiverseMain(int argc, char** argv) {
         int index = 0;
         double renderMs = 0.0;
         double threadCpuMs = -1.0; // -1 means unsupported / clock read failed
+        double processCpuMs = -1.0;
+        double machThreadCpuMs = -1.0;
         uint64_t mdiSubmissions = 0;
         uint64_t mdiCommands = 0;
         uint32_t shadowDraws = 0, opaqueDraws = 0;
@@ -420,21 +446,43 @@ int aiverseMain(int argc, char** argv) {
         gfx::PassDesc pass;
         const auto startCpu = std::chrono::steady_clock::now();
         uint64_t threadCpuStartNs = 0, threadCpuEndNs = 0;
+        uint64_t processCpuStartNs = 0, processCpuEndNs = 0;
+        uint64_t machCpuStartNs = 0, machCpuEndNs = 0;
         const bool threadStartOk = threadCpuTiming &&
-            currentThreadCpuNs(threadCpuStartNs);
+            cpuClockNs(CLOCK_THREAD_CPUTIME_ID, threadCpuStartNs);
+        const bool processStartOk = threadCpuTiming &&
+            cpuClockNs(CLOCK_PROCESS_CPUTIME_ID, processCpuStartNs);
+#if defined(__APPLE__)
+        const bool machStartOk = threadCpuTiming &&
+            machCurrentThreadCpuNs(machCpuStartNs);
+#else
+        const bool machStartOk = false;
+#endif
         renderer.render(pass);
         const bool threadEndOk = threadStartOk &&
-            currentThreadCpuNs(threadCpuEndNs);
+            cpuClockNs(CLOCK_THREAD_CPUTIME_ID, threadCpuEndNs);
+        const bool processEndOk = processStartOk &&
+            cpuClockNs(CLOCK_PROCESS_CPUTIME_ID, processCpuEndNs);
+#if defined(__APPLE__)
+        const bool machEndOk = machStartOk &&
+            machCurrentThreadCpuNs(machCpuEndNs);
+#else
+        const bool machEndOk = false;
+#endif
         const auto endCpu = std::chrono::steady_clock::now();
         const double threadCpuMs = threadEndOk && threadCpuEndNs >= threadCpuStartNs
             ? double(threadCpuEndNs - threadCpuStartNs) * 1e-6 : -1.0;
+        const double processCpuMs = processEndOk && processCpuEndNs >= processCpuStartNs
+            ? double(processCpuEndNs - processCpuStartNs) * 1e-6 : -1.0;
+        const double machThreadCpuMs = machEndOk && machCpuEndNs >= machCpuStartNs
+            ? double(machCpuEndNs - machCpuStartNs) * 1e-6 : -1.0;
         if (frameTimeline && batch && frame <= captureAfterFrame) {
             const auto& stats = renderer.modelStats();
             const auto& profile = renderer.profile();
             frameCpuTimeline.push_back({
                 frame,
                 std::chrono::duration<double, std::milli>(endCpu-startCpu).count(),
-                threadCpuMs,
+                threadCpuMs, processCpuMs, machThreadCpuMs,
                 stats.multiDrawSubmissions, stats.indirectCommands,
                 profile.draws[0], profile.draws[1],
                 stats.mdiCpuStages[0].totalMs, stats.mdiCpuStages[1].totalMs,
@@ -619,7 +667,8 @@ int aiverseMain(int argc, char** argv) {
                    "shadow_draws,opaque_draws,shadow_cpu_ms,opaque_cpu_ms,"
                    "shadow_backend_ms,opaque_backend_ms";
             if (threadCpuTiming)
-                csv << ",render_thread_cpu_ms,render_offcpu_ms";
+                csv << ",render_thread_cpu_ms,render_offcpu_ms,"
+                       "render_process_cpu_ms,render_mach_thread_cpu_ms";
             csv << '\n';
             for (const auto& sample : frameCpuTimeline) {
                 csv << sample.index << ',' << sample.renderMs << ','
@@ -631,7 +680,9 @@ int aiverseMain(int argc, char** argv) {
                     csv << ',' << sample.threadCpuMs << ','
                         << (sample.threadCpuMs >= 0.0
                             ? std::max(0.0, sample.renderMs - sample.threadCpuMs)
-                            : -1.0);
+                            : -1.0)
+                        << ',' << sample.processCpuMs
+                        << ',' << sample.machThreadCpuMs;
                 csv << '\n';
             }
             csv.close();
