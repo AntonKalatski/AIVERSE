@@ -735,12 +735,8 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             auto& source=strataPortableSources_.at(model);
             std::string error;
             const auto* before=source->residencyStats();
-            const uint64_t beforeTransfer=before ? before->gpuTransferBytes : 0;
-            const uint64_t beforeUploaded=before ? before->uploadedBytes : 0;
-            const uint64_t beforePromotions=before ? before->uploads : 0;
-            const uint64_t beforeEvictions=before ? before->evictions : 0;
-            const uint64_t beforeDeferred=before ? before->deferredDemands : 0;
-            const uint64_t beforeFailures=before ? before->failedUploads : 0;
+            const strata::IndexResidencyStats snapshot=
+                before ? *before : strata::IndexResidencyStats{};
             stats_.strataStreamFrameDemandRecords+=requests[model].size();
             const bool incremental=before && before->incremental;
             size_t allowance=frameCap && incremental
@@ -756,25 +752,15 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
                !source->updateResidency(requests[model],&error,allowance))
                 ++stats_.strataStreamingPrepareFailures;
             if(const auto* status=source->residencyStats()){
-                const uint64_t copied=status->gpuTransferBytes>=beforeTransfer
-                    ? status->gpuTransferBytes-beforeTransfer : 0;
-                // Counters are monotonic within a resident source lifetime.
-                // Clamp defensive diffs if an implementation changes to
-                // reset its accounting on a new GPU generation.
-                const auto delta=[](uint64_t after,uint64_t beforeValue){
-                    return after>=beforeValue ? after-beforeValue : 0;
-                };
+                const auto change=strata::indexResidencyFrameDelta(
+                    snapshot,*status);
+                const uint64_t copied=change.gpuTransferBytes;
                 stats_.strataStreamFrameGpuTransferBytes+=copied;
-                stats_.strataStreamFrameUploadedBytes+=
-                    delta(status->uploadedBytes,beforeUploaded);
-                stats_.strataStreamFramePromotions+=
-                    delta(status->uploads,beforePromotions);
-                stats_.strataStreamFrameEvictions+=
-                    delta(status->evictions,beforeEvictions);
-                stats_.strataStreamFrameDeferrals+=
-                    delta(status->deferredDemands,beforeDeferred);
-                stats_.strataStreamFrameFailedUploads+=
-                    delta(status->failedUploads,beforeFailures);
+                stats_.strataStreamFrameUploadedBytes+=change.uploadedBytes;
+                stats_.strataStreamFramePromotions+=change.promotions;
+                stats_.strataStreamFrameEvictions+=change.evictions;
+                stats_.strataStreamFrameDeferrals+=change.deferredDemands;
+                stats_.strataStreamFrameFailedUploads+=change.failedUploads;
                 if(frameCap && incremental){
                     strataStreamingFrameBudgetLeft_=
                         copied>=strataStreamingFrameBudgetLeft_
