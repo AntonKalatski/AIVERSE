@@ -33,7 +33,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     SculptGpuIdPass& pass,
                                     const render::Model& model,
                                     const SkinnedWeightSurface& surface,
-                                    std::uint32_t x,std::uint32_t y) {
+                                    std::uint32_t x,std::uint32_t y,
+                                    std::span<const SculptGpuIdVertex> occluders={}) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -44,7 +45,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     req.x=x;req.y=y;
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
-                        viewProj,req),
+                        viewProj,req,occluders),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -112,6 +113,24 @@ void test() {
         const auto outside=runSample(*device,pass,model,surface,2,2);
         require(outside==std::vector<std::uint8_t>({0,0,0,0}),
                 "VIVID Metal GPU ID clear pixel is not zero");
+        // 7AP: a second world-space scene element, not in the selected
+        // model, must occlude the selectable near face by hardware depth.
+        const std::array<SculptGpuIdVertex,3> blocker{{
+            {{-0.7f,-0.7f,0.1f},{0,0,0,0}},
+            {{ 0.7f,-0.7f,0.1f},{0,0,0,0}},
+            {{ 0.0f, 0.7f,0.1f},{0,0,0,0}}
+        }};
+        const auto blocked=runSample(*device,pass,model,surface,32,32,blocker);
+        require(blocked==std::vector<std::uint8_t>({0,0,0,0}),
+                "VIVID Metal ignored nearer zero-ID depth occluder");
+        const std::array<SculptGpuIdVertex,3> behind{{
+            {{-0.7f,-0.7f,0.9f},{0,0,0,0}},
+            {{ 0.7f,-0.7f,0.9f},{0,0,0,0}},
+            {{ 0.0f, 0.7f,0.9f},{0,0,0,0}}
+        }};
+        const auto unobstructed=runSample(*device,pass,model,surface,32,32,behind);
+        require(unobstructed==std::vector<std::uint8_t>({2,0,0,0}),
+                "VIVID Metal allowed a farther occluder to hide nearer face");
         require(pass.shutdownAfterIdle(),
                 "VIVID Metal ID resources did not pass GPU idle retirement");
         std::cout<<"VIVID Metal sculpt ID depth/readback pass=1\n";
