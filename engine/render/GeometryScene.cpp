@@ -828,10 +828,10 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
         draw.gpuIndexed.geometryRevision=contract.geometryRevision;
         draw.gpuIndexed.materialRevision=contract.materialRevision;
         draw.gpuIndexed.commandCapacity=submitted.capacity;
+        // The original primitive's local index offset is already proven
+        // by the strict contract; do not re-index a possibly changed mesh.
         draw.gpuIndexed.sourceFirstIndex=
-            staged->primitives[0].geometry.nodes.empty()
-            ? 0 : instance.model->meshes[
-                staged->primitives[0].mesh].primitives[0].firstIndex;
+            contract.originalFirstIndex-instance.model->gpuFirstIndex;
         draw.gpuIndexed.sourceIndexCount=contract.originalIndexCount;
         draw.gpuIndexed.sourceBaseVertex=contract.pooledBaseVertex;
         draw.gpuIndexed.exclusive=true;
