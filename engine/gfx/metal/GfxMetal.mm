@@ -1636,7 +1636,16 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         }
 
         const auto afterArgs = std::chrono::steady_clock::now();
-        // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
+        // Controlled experiment: inherit only the shared pipeline from the
+        // parent encoder. Per-command vertex/fragment buffers remain explicit:
+        // their inheritance previously caused AGX G15 driver faults.
+        // Process-level opt-in is captured before the immutable descriptor is
+        // first allocated; never mix descriptor settings in one process.
+        static const bool inheritCpuIcbPipeline = [] {
+            const char* flag = std::getenv("AIVERSE_METAL_CPU_MDI_INHERIT_PIPELINE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        // Driver crash fix: explicit vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
         // fault inside executeCommandsInBufferCommon on Apple Silicon.
         // Descriptor configuration is identical for every model ICB. Keep one
@@ -1645,7 +1654,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             modelIcbDescriptor_ = [MTLIndirectCommandBufferDescriptor new];
             modelIcbDescriptor_.commandTypes = MTLIndirectCommandTypeDrawIndexed;
             modelIcbDescriptor_.inheritBuffers = NO;
-            modelIcbDescriptor_.inheritPipelineState = NO;
+            modelIcbDescriptor_.inheritPipelineState = inheritCpuIcbPipeline ? YES : NO;
             modelIcbDescriptor_.maxVertexBufferBindCount = 9;
             modelIcbDescriptor_.maxFragmentBufferBindCount = 9;
         }
@@ -1717,7 +1726,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 return false;
             id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
             if (!command) return false;
-            [command setRenderPipelineState:indirectPipeline];
+            if (!inheritCpuIcbPipeline)
+                [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
             for (int k = 0; k < uniformBindingCount; ++k) {
@@ -1743,7 +1753,14 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
             declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
         }
+        // With inherited pipeline state, each ICB command sees exactly the
+        // same per-batch compatible pipeline; restore the ordinary state so
+        // subsequent direct fallback draws behave identically.
+        if (inheritCpuIcbPipeline)
+            [enc_ setRenderPipelineState:indirectPipeline];
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
+        if (inheritCpuIcbPipeline)
+            [enc_ setRenderPipelineState:p->state];
         // Diagnostic only. Sample the four existing CPU ICB stage boundaries
         // after a submission, never inside the per-command encode loop.
         // Limit printing to avoid turning ordinary frames into a log benchmark.
