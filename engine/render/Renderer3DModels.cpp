@@ -2055,6 +2055,11 @@ void Renderer3D::prepareGpuModelDraws() {
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Explicit test-only isolation. Leave Metal pass begin/end and all
+    // non-model draws unchanged; never change production rendering by default.
+    if ((phase == 0 && !(diagnosticModelPassMask_ & 1u)) ||
+        (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+         !(diagnosticModelPassMask_ & 2u))) return;
     // Unsupported backends and unarmed Metal counters ignore this marker.
     // Marks bracket GPU commands emitted by renderModels (shadow/main only).
     const bool sampleModelGpu = !auxiliaryModelPass_ &&
