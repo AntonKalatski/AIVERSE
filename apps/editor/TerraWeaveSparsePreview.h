@@ -144,7 +144,10 @@ public:
             draw.model=found->second.gpu.get();
             draw.world=render::mat4::translate({
                 float(int64_t(c.tile.cell.x)*span)*0.01f,
-                0.0f,
+                // Scene's legacy RTS grid may still be drawn under this
+                // optional overlay. Lift VISUAL preview by 2 cm to avoid
+                // z-fighting; authored ECS soil and collider remain exact.
+                0.02f,
                 float(int64_t(c.tile.cell.z)*span)*0.01f
             });
             draw.flags=render::kDrawStatic;
