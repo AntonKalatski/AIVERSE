@@ -79,9 +79,13 @@ quality, so their timing difference is not an equal-quality speed comparison.
 
 - Android/Vulkan hardware rendering: NOT RUN. User explicitly confirmed no
   available test stand. Portable contracts/SPIR-V checks are not hardware parity.
-- Interactive native/HTML Studio screenshot/interaction acceptance: NOT RUN;
-  CUA reports locked Mac and unavailable native browser pipe. Actual native
-  Metal renderer captures and tests did run successfully.
+- Interactive native/WKWebView lighting smoke: PASS after user unlocked Mac
+  (Stage32). Actual 1440x928 screenshots inspected, native terrain and light
+  gizmo visible. Auto/GPU → CPU → Off and Undo restored CPU; disabled GI fields,
+  Add light, Undo/Redo and native Save verified. Disk JSON contains CPU/Luma and
+  the authored source. Screenshots are in the CUA conversation evidence, not
+  exported files. This is the RTS lighting smoke, not full editor UI parity or
+  an exhaustive browser/240px/error-state matrix.
 - Isolated production scene CPU/GPU performance: NOT ACCEPTED; repeat the
   provided runner without other compilation/render workloads.
 - Studio currently lights terrain/document proxies, not full game asset preview
@@ -95,6 +99,5 @@ quality, so their timing difference is not an equal-quality speed comparison.
 
 These external checks and production integration limits must not be described
 as complete merely because local tests pass. Next work when resources are
-available: unlock UI for actual panel interaction, run Android/Vulkan device
-acceptance, and measure representative gameplay workloads without background
-load before enabling production defaults.
+available: run Android/Vulkan device acceptance and measure representative
+gameplay workloads without background load before enabling production defaults.
