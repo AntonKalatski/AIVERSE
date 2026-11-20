@@ -758,3 +758,52 @@ If slow-frame **wall** increases while calling-thread **CPU time** stays near fa
 After the Stage 95 initial handoff, the standalone bash runner gained a hard assertion that the **terminal** pixel comparison line is `^changed_channels=0$` in addition to the separately verified actual-MDI capture. Source commit: `b36d8a5a23e7213b5966678dcece0c85d719feca`. This assertion was reviewed at source level but **not run on Mac**. Native compilation and validation remain pending.
 
 **Note:** The direct CPU-thread clock uses `CLOCK_THREAD_CPUTIME_ID` on macOS/Linux (per platform documentation), and the CSV intentionally retains its first 10 legacy fields. The new analyzer requires actual populated thread-time columns and rejects an unsupported `-1` value. Do not mistake the thread-vs-wall difference for a GPU timestamp or conclusive evidence of OS descheduling.
+
+
+---
+
+## Stage 96 — repair Stage 95 bash runner syntax and duplicated tail (2026-11-20)
+
+**Repository / branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Source fix:** `ef583ec975746b3e09e0ad26614d914759351ffc` in `tools/batching-stage95-trials.sh`. This handoff is a separate commit.
+
+### Actual user Mac Studio result
+
+The owner successfully configured and built `aiverse_material_batches` with AppleClang 17, including the new Stage 95 per-thread timing fixture, ending in `[100%] Built target aiverse_material_batches`. The subsequent shell script immediately failed:
+
+```text
+tools/batching-stage95-trials.sh: line 45: unexpected EOF while looking for matching `''
+```
+
+Inspection of the actual branch file found a **truncated shell line 36** `grep -q '^changed_channels=0` missing the closing quote / log argument, followed by a **duplicated malformed tail** after the first analyzer call. This was introduced in the previous runner hardening update. The user has not executed any Stage 95 forced-MDI trials after the syntax error; no new CPU thread/wall measurements or screenshot parity can be claimed.
+
+### Implemented repair
+
+Replaced the malformed runner tail with complete, single sequence:
+1. Assert CPU checks PASS.
+2. Assert captured actual CPU MDI frame parity `changed_channels=0`.
+3. Assert terminal image parity via `grep -q '^changed_channels=0$' "$name.log"`.
+4. Assert forced CPU MDI in all 81 measured frames.
+5. Assert buffered CSV emitted 106 frames and the output file exists.
+6. Close `for` loop exactly once, run the Stage 95 Python analyzer once, print the success message once.
+
+GitHub source rewrite succeeded; a Bash `bash -n` syntax check of a local reconstruction of the corrected runner completed PASS. **Not performed:** native Mac execution of repaired runner, renderer screenshots/benchmark, and CI. No C++ or Metal runtime changes in Stage 96.
+
+### Re-run on Mac Studio without rebuild or checkout mutation
+
+The owner's `AIVERSE-batching-stage95` worktree already has a successfully compiled Stage 95 executable, and some prior worktrees had unfinished rebase/merge operations. Do **not** reset or switch that worktree. Fetch and materialize **only the repaired shell runner** into a temporary file within `tools/`, because the script uses `cd "$(dirname "$0")/.."` to find project root:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage95 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage95-trials.sh \
+  > tools/batching-stage95-trials-fixed.sh || exit 1
+bash -n tools/batching-stage95-trials-fixed.sh || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage95/aiverse_material_batches \
+  bash tools/batching-stage95-trials-fixed.sh build/batching-stage95/trials 1024
+```
+
+If writing an untracked file to this worktree is undesirable, use a new clean detached worktree and its own separate CMake build; do not use `git reset --hard`. Expected: three real CPU MDI runs, 38 CPU checks and two pixel parity assertions per process, and `stage95-thread-summary.csv` showing `wall_median_ms`, `thread_median_ms`, `offcpu_median_ms`. Any analyzer `-1` unsupported clock or validation failure must remain a failure, not be silently suppressed. GPU timing/FPS remain unmeasured. Preserve Draft PR #39, CPU MDI/AUTO disabled by default.
+
+### Next agent step
+
+Inspect actual Stage 95 `stage95-thread-summary.csv` after Mac native run. Compare fast vs slow groups: if thread CPU stays constant while wall increases, investigate CPU blocking or descheduling; if thread CPU doubles, profile CPU execution/frequency with Instruments; if both, investigate both. Record results with a new handoff before any performance change.
