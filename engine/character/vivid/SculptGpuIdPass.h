@@ -141,11 +141,20 @@ public:
                batch.vertices.size()%3u ||
                batch.vertices.size()>3000000u-total)
                 return false;
-            for(const auto& v:batch.vertices)
+            for(const auto& v:batch.vertices) {
                 if(v.rgba[0]||v.rgba[1]||v.rgba[2]||v.rgba[3]||
                    !std::isfinite(v.world.x)||
                    !std::isfinite(v.world.y)||
                    !std::isfinite(v.world.z))return false;
+                for(float value:v.uvAlpha)
+                    if(!std::isfinite(value))return false;
+            }
+            for(float value:batch.uniform.alpha)
+                if(!std::isfinite(value))return false;
+            for(float value:batch.uniform.uv0)
+                if(!std::isfinite(value))return false;
+            for(float value:batch.uniform.uv1)
+                if(!std::isfinite(value))return false;
             total+=batch.vertices.size();
         }
         if(!total)return false;
