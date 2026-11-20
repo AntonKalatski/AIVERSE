@@ -467,7 +467,8 @@ void TerrainRenderer::updateDetailTextures(gfx::Device& dev, int i0, int j0, int
     dev.updateTexture(detailSplatTex_, 0, u0, TW, u1 - u0, &dsplatPx_[size_t(u0) * size_t(TW) * 4], TW * 4);
 }
 
-void TerrainRenderer::buildDetailLod(gfx::Device& dev, const MapGrid& g, Chunk& c, int L) {
+void TerrainRenderer::buildDetailLod(gfx::Device& dev,const MapGrid& g,
+                                    Chunk& c,int L,size_t* stagedBytes) {
     const int k = detail_.k, s = 1 << L, W = g.w, H = g.h;
     const int si0 = c.x0 * k, sj0 = c.y0 * k, si1 = c.x1 * k, sj1 = c.y1 * k;
     std::vector<int> is, js;
@@ -539,7 +540,10 @@ void TerrainRenderer::buildDetailLod(gfx::Device& dev, const MapGrid& g, Chunk& 
     Lod& l = c.lods[size_t(L)];
     upload(dev, v, idx, l);
     l.vertexCount = uint32_t(v.size());
-    geoBytes_ += size_t(l.indexCount) * 4 + size_t(l.vertexCount) * sizeof(TV);
+    const size_t footprint=size_t(l.indexCount)*sizeof(uint32_t)+
+                           size_t(l.vertexCount)*sizeof(TV);
+    if(stagedBytes)*stagedBytes+=footprint;
+    else geoBytes_+=footprint;
 }
 
 } // namespace aiverse::game

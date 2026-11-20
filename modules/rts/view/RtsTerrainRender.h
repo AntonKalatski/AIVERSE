@@ -116,6 +116,11 @@ public:
     std::shared_ptr<PreparedFrame> prepareFrame(
         const MapGrid& grid,const std::vector<uint8_t>* vision,
         const std::vector<uint8_t>* filteredVisibility=nullptr);
+    // Also stage missing Detail LOD buffers of the active primary camera.
+    std::shared_ptr<PreparedFrame> prepareFrameVisible(
+        const render::Renderer3D& renderer,const MapGrid& grid,
+        const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility=nullptr);
     void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
     // darken in the shader; levels maps keep the classic fog sheet drawn by RtsView).
@@ -165,7 +170,8 @@ private:
     // unchanged published meshes, and publish CPU/GPU images atomically.
     bool tryBuildDetailIncremental(gfx::Device& dev,const MapGrid& g,bool flatDig);
 
-    void buildDetailLod(gfx::Device& dev, const MapGrid& g, Chunk& c, int lod);
+    void buildDetailLod(gfx::Device& dev,const MapGrid& g,Chunk& c,
+                        int lod,size_t* stagedBytes=nullptr);
     void updateDetailTextures(gfx::Device& dev, int i0, int j0, int i1, int j1);
     uint64_t detailHash(const Chunk& c) const;
     size_t detailSampleCap() const;

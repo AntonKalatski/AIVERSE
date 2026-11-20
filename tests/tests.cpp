@@ -14029,6 +14029,46 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage47b3a_detail_lod_candidate_rollback_and_submission_only_draw) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader smooth=[](const std::string& path,std::string& out) {
+        if(path!="game.json")return false;
+        out=R"({"terrain":{"style":"smooth","detailLook":{"scale":2}}})";
+        return true;
+    };
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,smooth,"");
+    game::MapGrid grid;grid.init(8,8);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.detailActive());
+    render::Renderer3D renderer;CHECK(renderer.init(dev));
+    render::RTSCamera camera;
+    camera.target={4,0,4};camera.distance=14;camera.pitch=1.05f;
+    renderer.beginScene(camera,1024,720);
+    const auto before=dev.bufferAttempts;
+    const auto deleted=dev.destroyedBuffers;
+    const auto retired=terrain.pendingMeshGpuRetirements();
+    {
+        auto dropped=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+        CHECK(dropped!=nullptr);
+        CHECK(dev.bufferAttempts>before);
+        CHECK(terrain.pendingMeshGpuRetirements()==retired);
+    }
+    CHECK(dev.destroyedBuffers>deleted);
+    auto pending=terrain.prepareFrameVisible(renderer,grid,nullptr,nullptr);
+    CHECK(pending!=nullptr);
+    const auto beforeDraw=dev.bufferAttempts;
+    terrain.commitFrame(pending);
+    renderer.beginScene(camera,1024,720);
+    terrain.draw(renderer,grid,nullptr,false);
+    CHECK(dev.bufferAttempts==beforeDraw); // no primary fine-LOD uploads
+    renderer.render(gfx::PassDesc{});
+    terrain.commitFrame(std::move(pending));
+    terrain.shutdown(dev);renderer.shutdown();
+}
+
 TEST(lens_stage47b2_terrain_dynamic_vision_late_owner_rollback_and_retry) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();

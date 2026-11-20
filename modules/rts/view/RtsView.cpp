@@ -680,15 +680,17 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // every GroundFX/Roads/Shores/Fog GPU candidate is prepared successfully.
     struct PreparedTerrain final : render::OwnerPrepareCommit::Participant {
         TerrainRenderer& owner;
+        const Renderer3D& renderer;
         const MapGrid& grid;
         const std::vector<uint8_t>* vision;
         const PreparedFog& fog;
         bool active;
         std::shared_ptr<TerrainRenderer::PreparedFrame> pending;
-        PreparedTerrain(TerrainRenderer& t,const MapGrid& g,
-                        const std::vector<uint8_t>* mask,
+        PreparedTerrain(TerrainRenderer& t,const Renderer3D& r,
+                        const MapGrid& g,const std::vector<uint8_t>* mask,
                         const PreparedFog& f,bool enabled)
-            :owner(t),grid(g),vision(mask),fog(f),active(enabled){}
+            :owner(t),renderer(r),grid(g),vision(mask),fog(f),
+             active(enabled){}
         void prepare() override {
             if(!active)return;
             const std::vector<uint8_t>* filtered=nullptr;
@@ -699,11 +701,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 else if(fog.owner.field().size()==size_t(grid.w)*size_t(grid.h))
                     filtered=&fog.owner.field();
             }
-            pending=owner.prepareFrame(grid,vision,filtered);
+            pending=owner.prepareFrameVisible(renderer,grid,vision,filtered);
         }
         void commit() noexcept override {owner.commitFrame(std::move(pending));}
         void rollback() noexcept override {pending.reset();}
-    } terrainPart(terrain_,grid,vision,fogPart,hasTerrain_ && !tiles);
+    } terrainPart(terrain_,r,grid,vision,fogPart,hasTerrain_ && !tiles);
     render::OwnerPrepareCommit ownerTransaction;
     ownerTransaction.add(groundPart);
     ownerTransaction.add(roadsPart);

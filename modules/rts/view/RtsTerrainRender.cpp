@@ -1383,6 +1383,10 @@ public:
         if(committed_ || !device_)return;
         if(vision_.valid())try {device_->destroyTexture(vision_);}catch(...) {}
         if(dynamic_.valid())try {device_->destroyTexture(dynamic_);}catch(...) {}
+        for(auto& item:lods_) {
+            if(item.mesh.vb.valid())try {device_->destroyBuffer(item.mesh.vb);}catch(...) {}
+            if(item.mesh.ib.valid())try {device_->destroyBuffer(item.mesh.ib);}catch(...) {}
+        }
     }
 private:
     TerrainRenderer* owner_=nullptr;
@@ -1391,6 +1395,11 @@ private:
     bool committed_=false;
     gfx::TextureHandle dynamic_{},vision_{};
     std::vector<uint8_t> dynamicPx_,visionPx_;
+    struct PendingLod {
+        size_t chunk=0,level=0,bytes=0;
+        Lod mesh{};
+    };
+    std::vector<PendingLod> lods_;
     int nextDynRow_=0;
     bool nextVisionInit_=false;
 };
@@ -1477,6 +1486,49 @@ std::shared_ptr<TerrainRenderer::PreparedFrame> TerrainRenderer::prepareFrame(
     return next;
 }
 
+// Prepare only visible missing fine LODs. No published chunk, GPU
+// allocation or byte accounting is modified until commitFrame.
+std::shared_ptr<TerrainRenderer::PreparedFrame>
+TerrainRenderer::prepareFrameVisible(
+        const Renderer3D& camera,const MapGrid& g,
+        const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility) {
+    auto pending=prepareFrame(g,vision,filteredVisibility);
+    if(!pending || !detailOn_ || !dev_)return pending;
+    constexpr size_t kMaxNewLods=16;
+    pending->lods_.reserve(kMaxNewLods);
+    const auto frustum=::aiverse::view::SideFrustum::fromViewProjection(
+        camera.viewProj());
+    const float3 eye=camera.camera().eye();
+    for(size_t i=0;i<chunks_.size() &&
+                   pending->lods_.size()<kMaxNewLods;++i) {
+        const Chunk& published=chunks_[i];
+        if(!published.valid || published.lods.empty() ||
+           !frustum.visibleAABB(published.bmin,published.bmax))
+            continue;
+        float3 closest=max3(published.bmin,min3(eye,published.bmax));
+        const float distance=length(closest-eye);
+        float range=look_.detailRange*4.0f/float(std::max(detailK_,1));
+        int lod=0;
+        while(lod+1<lodLevels_ && distance>=range) {
+            ++lod;range*=2.0f;
+        }
+        if(size_t(lod)>=published.lods.size() ||
+           published.lods[size_t(lod)].indexCount)
+            continue;
+        // The shallow chunk copy borrows existing LOD handles. Clear the
+        // target slot so buildDetailLod only creates a new private pair.
+        Chunk staging=published;
+        staging.lods[size_t(lod)]={};
+        size_t bytes=0;
+        buildDetailLod(*dev_,g,staging,lod,&bytes);
+        Lod& newLod=staging.lods[size_t(lod)];
+        pending->lods_.push_back({i,size_t(lod),bytes,
+                                 std::exchange(newLod,Lod{})});
+    }
+    return pending;
+}
+
 void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept {
     if(!next || next->committed_)return;
     if(next->owner_!=this || next->device_!=dev_ ||
@@ -1494,6 +1546,15 @@ void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept 
     }
     dynRow_=next->nextDynRow_;
     visionInit_=next->nextVisionInit_;
+    for(auto& item:next->lods_) {
+        if(item.chunk>=chunks_.size() ||
+           item.level>=chunks_[item.chunk].lods.size() ||
+           chunks_[item.chunk].lods[item.level].indexCount)
+            std::terminate();
+        chunks_[item.chunk].lods[item.level]=
+            std::exchange(item.mesh,Lod{});
+        geoBytes_+=item.bytes;
+    }
     frameFieldsPrepared_=true;
     fogFieldChanged_=false;
     next->committed_=true;
@@ -1547,14 +1608,16 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         }
         // A secondary camera may use a coarser prebuilt level, but it may
         // not allocate/upload a new mesh while source GPU work is in flight.
-        if (detailOn_ && !c.lods[size_t(k)].indexCount && !preparedOnly)
-            buildDetailLod(dev, g, c, k);
-        if (detailOn_ && !preparedOnly) c.lastUse[size_t(k)] = frame_;
-        while(preparedOnly && k+1<lodLevels_ &&
-              !c.lods[size_t(k)].indexCount)++k;
-        if(preparedOnly && !c.lods[size_t(k)].indexCount) {
-            while(k>0 && !c.lods[size_t(k)].indexCount)--k;
+        if(detailOn_ && !c.lods[size_t(k)].indexCount &&
+           !preparedOnly && !stagedFields)
+            buildDetailLod(dev,g,c,k); // standalone legacy path only
+        // Published primary and secondary camera frames are read-only.
+        if(preparedOnly || stagedFields) {
+            while(k+1<lodLevels_ && !c.lods[size_t(k)].indexCount)++k;
+            if(!c.lods[size_t(k)].indexCount)
+                while(k>0 && !c.lods[size_t(k)].indexCount)--k;
         }
+        if(detailOn_ && !preparedOnly)c.lastUse[size_t(k)]=frame_;
         const Lod& l = c.lods[size_t(k)];
         if (!l.indexCount) continue;
         items->push_back({l, start, end});
