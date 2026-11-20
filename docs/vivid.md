@@ -1825,5 +1825,6 @@ See dedicated `docs/agent-handoffs/vivid-7BA-multi-gpu-mask-2026-11-20.md`.
 assembly. Clothes and accessories share one item contract; imported visibility
 masks multiply body alpha. `bakeHumanAppearance` converts the existing appearance
 DAG into ordinary PBR textures/factors. Body bind deformation and facial morphs
-are retained in the output; garment fitting is not automatic. Studio integration
-and real full-character acceptance follow in the next stage.
+are retained in the output; garment fitting is not automatic. The Studio wardrobe section now exposes native asynchronous assembly, masks and
+accessory sockets. See [character assembly](vivid-character-assembly.md) for
+workflow, output contract and limitations.

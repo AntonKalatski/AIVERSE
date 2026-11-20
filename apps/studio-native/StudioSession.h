@@ -1,6 +1,7 @@
 // UI-independent editor API for native HTML5 hosts; intentionally no ImGui.
 #pragma once
 #include <string>
+#include <future>
 #include <optional>
 #include <vector>
 #include <filesystem>
@@ -34,6 +35,9 @@ private:
     editor::Workspace ws_;
     std::string selected_;
     StudioFacialPreviewBinding facialPreview_;
+    std::future<Json> humanBuild_;
+    Json humanBuildResult_=Json::object();
+    std::string humanBuildProject_;
     std::string previewMaterialName_;
     Json previewMaterialFactors_;
     uint64_t previewMaterialRevision_ = 0;

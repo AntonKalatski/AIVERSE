@@ -271,7 +271,7 @@ struct CreatorApp {
                relative.find('\\')!=std::string::npos ||
                relative.find(':')!=std::string::npos)return false;
             try {
-                bytes=fileContents(directory/relative,64ull*1024ull*1024ull);
+                bytes=fileContents(directory/relative,128ull*1024ull*1024ull);
                 return true;
             }catch(...){return false;}
         };
@@ -523,7 +523,7 @@ struct CreatorApp {
                             presentation.materialQuality);
                 }
                 if(appearance)applyHumanAppearance(*proposed.head,*appearance);
-                const bool hasAuthoredHair=std::any_of(
+                const bool hasAuthoredHair=manifest.authoredHair || std::any_of(
                     manifest.materials.begin(),manifest.materials.end(),
                     [](const auto& pair) {
                         return pair.second==HumanSurface::Hair ||

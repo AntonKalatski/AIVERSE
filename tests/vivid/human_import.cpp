@@ -22,6 +22,9 @@ void contract() {
       "routes":[{"channel":"jawOpen","target":"jawOpen","gain":0.8}],
       "materials":{"skinMat":"skin"}
     })"));
+    auto baked=manifest;baked.authoredHair=true;
+    expect(HumanImportManifest::fromJson(baked.toJson()).authoredHair,"baked groom flag lost");
+    reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"head.obj","authoredHair":1})"));});
     expect(manifest.scalpColliderMesh=="closed_head_proxy",
            "import manifest lost explicit scalp proxy name");
     reject([] {

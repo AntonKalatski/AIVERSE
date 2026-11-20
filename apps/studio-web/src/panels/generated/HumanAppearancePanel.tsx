@@ -1,3 +1,4 @@
+import HumanWardrobeControls from '../HumanWardrobeControls';
 import { useEffect, useRef, useState } from 'react';
 import type { HumanLook, HumanLookInfo, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
@@ -96,6 +97,7 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
      </StudioSelect></StudioField>)}
     {!Object.keys(draft.materials).length&&<StudioAlert>Load the model profile or import appearance.json to assign its materials.</StudioAlert>}
    </StudioSection></details>
+   <HumanWardrobeControls key={project+guid} guid={guid} look={draft}/>
    <StudioSection title="Saved looks">
     <StudioField label="Profile name" htmlFor="human-look-name"><StudioInput id="human-look-name" value={name} disabled={busy} onChange={e=>setName(e.target.value)}/></StudioField>
     <StudioButton disabled={busy||!validName} onClick={()=>void run(async()=>{

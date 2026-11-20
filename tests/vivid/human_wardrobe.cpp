@@ -8,6 +8,14 @@ void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 int main(){try{
  auto doc=modeling::emptyDocument();doc.set("nodes",Json::parse(R"([{"id":"root"},{"id":"body","geometry":{"kind":"box"},"skin":"skin","bindJoint":"root"},{"id":"shirt","geometry":{"kind":"box"}}])"));doc.set("skins",Json::parse(R"([{"id":"skin","joints":["root"]}])"));
  auto built=modeling::build(doc);built.model->materials[0].name="Skin";auto& mesh=built.model->meshes[0];mesh.morphTargetNames={"jawOpen"};for(auto& p:mesh.primitives){p.morphTargets=1;p.morphDeltas.resize(size_t(p.vertexCount)*6,.01f);}
+ auto one=modeling::build(doc),shared=modeling::build(doc);
+ shared.model->meshes[0].primitives.push_back(shared.model->meshes[0].primitives[0]);
+ vivid::HumanAppearance proportions;proportions.values["body.height"]=1.2f;
+ vivid::bakeHumanBody(*one.model,proportions);vivid::bakeHumanBody(*shared.model,proportions);
+ for(size_t i=0;i<one.model->vertices.size();++i)check(length(one.model->vertices[i].pos-shared.model->vertices[i].pos)<1e-5f,"shared vertex was body-baked more than once");
+ auto quantized=modeling::build(doc);for(auto& v:quantized.model->vertices)if(v.weights[0]==255)v.weights[0]=254;
+ vivid::bakeHumanBody(*quantized.model,proportions);
+ for(size_t i=0;i<one.model->vertices.size();++i)check(length(one.model->vertices[i].pos-quantized.model->vertices[i].pos)<1e-5f,"body bake did not normalize packed skin weights like GPU");
  const auto shirtName=built.model->meshes[size_t(built.model->nodes[size_t(built.model->findNode("shirt"))].mesh)].name;
  auto accessory=modeling::build(modeling::robotDocument());accessory.model->clips.clear();
  std::map<std::string,std::string> files;files["base.glb"]=modeling::exportGlb(*built.model);files["watch.glb"]=modeling::exportGlb(*accessory.model);

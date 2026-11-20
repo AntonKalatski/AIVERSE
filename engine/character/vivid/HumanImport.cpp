@@ -147,12 +147,16 @@ void HumanImportManifest::validate() const {
     }
 }
 HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
-    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh","facialLods","appearance"});
+    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh","facialLods","appearance","authoredHair"});
     HumanImportManifest m;
     require(src.has("version"),"VIVID import: missing manifest version");
     m.version=integer(src["version"]);
     require(src["model"].isString(),"VIVID import: model path string required");
     m.modelPath=src["model"].str();
+    if(src.has("authoredHair")) {
+        require(src["authoredHair"].type()==Json::Type::Bool,"VIVID import: authoredHair must be boolean");
+        m.authoredHair=src.getBool("authoredHair");
+    }
     if(src.has("appearance")) {
         require(src["appearance"].isString(),"VIVID import: invalid appearance path");
         m.appearancePath=src["appearance"].str();
@@ -221,6 +225,7 @@ Json HumanImportManifest::toJson() const {
     auto j=Json::object();
     j.set("version",Json::number(std::int64_t(version)));
     j.set("model",Json::string(modelPath));
+    if(authoredHair)j.set("authoredHair",Json::fromBool(true));
     if(!appearancePath.empty())j.set("appearance",Json::string(appearancePath));
     if(!dnaPath.empty())j.set("dna",Json::string(dnaPath));
     if(!morphPath.empty())j.set("morphs",Json::string(morphPath));

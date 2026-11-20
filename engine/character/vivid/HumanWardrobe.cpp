@@ -54,6 +54,7 @@ void mask(Model& model,const Json& entry,const FileReader& reader,int size) {
 // the original single skeleton/Animator, with no live body modifier required.
 void body(Model& m,const HumanAppearance& look) {
  bool active=false;for(const auto& f:appearanceFields)if(std::string_view(f.key).starts_with("body.")&&look.get(f.key)!=1)active=true;if(!active)return;
+ const auto sourceVertices=m.vertices;
  const auto old=m.bindWorld;auto warped=old;applyHumanBody(m,look,warped);
  auto next=old;std::vector<bool> joints(m.nodes.size());for(const auto& skin:m.skins)for(int n:skin.joints)joints.at(size_t(n))=true;
  std::vector<float3> offsets(m.nodes.size());
@@ -63,18 +64,23 @@ void body(Model& m,const HumanAppearance& look) {
   auto local=next[ni].inverse();
   if(node.skin>=0){const auto& skin=m.skins.at(size_t(node.skin));need(!skin.joints.empty(),"Empty character skin");const auto rest=old.at(size_t(skin.joints[0]))*skin.inverseBind.at(0);for(size_t j=1;j<skin.joints.size();++j){const auto check=old.at(size_t(skin.joints[j]))*skin.inverseBind.at(j);for(int k=0;k<16;++k)need(std::abs(check.m[k]-rest.m[k])<.003f,"Nonuniform skin bind space cannot bake body");}local=rest.inverse();}
   auto& mesh=m.meshes[size_t(node.mesh)];
-  for(auto& p:mesh.primitives)for(uint32_t vi=0;vi<p.vertexCount;++vi){auto& v=m.vertices.at(p.firstVertex+vi);mat4 deform;
-   if(node.skin>=0&&!p.jointPalette.empty()){for(float& x:deform.m)x=0;const auto& skin=m.skins.at(size_t(node.skin));for(int k=0;k<4;++k)if(v.weights[k]){const size_t j=p.jointPalette.at(v.joints[k]);const auto matrix=local*warped.at(size_t(skin.joints.at(j)))*skin.inverseBind.at(j);for(int c=0;c<16;++c)deform.m[c]+=matrix.m[c]*(v.weights[k]/255.f);}}
+  for(auto& p:mesh.primitives){std::vector<bool> referenced(p.vertexCount);for(uint32_t ii=0;ii<p.indexCount;++ii){const auto vertex=m.indices.at(p.firstIndex+ii);need(vertex>=p.firstVertex&&vertex-p.firstVertex<p.vertexCount,"Primitive vertex range invalid");referenced[vertex-p.firstVertex]=true;}
+  for(uint32_t vi=0;vi<p.vertexCount;++vi){if(!referenced[vi])continue;auto& v=m.vertices.at(p.firstVertex+vi);v=sourceVertices.at(p.firstVertex+vi);mat4 deform;
+   // Quantized UNORM weights can sum to 254 or 256. Match the GPU
+   // normalization exactly; dividing by 255 dents adjacent triangles.
+   const bool skinned=node.skin>=0&&!p.jointPalette.empty();
+   if(skinned){mat4 rest;for(float& x:rest.m)x=0;for(float& x:deform.m)x=0;const auto& skin=m.skins.at(size_t(node.skin));const float total=float(v.weights[0])+v.weights[1]+v.weights[2]+v.weights[3];need(total>0,"Unweighted skinned vertex");for(int k=0;k<4;++k)if(v.weights[k]){const size_t j=p.jointPalette.at(v.joints[k]);const auto matrix=warped.at(size_t(skin.joints.at(j)))*skin.inverseBind.at(j);const auto original=old.at(size_t(skin.joints.at(j)))*skin.inverseBind.at(j);for(int c=0;c<16;++c){deform.m[c]+=matrix.m[c]*(v.weights[k]/total);rest.m[c]+=original.m[c]*(v.weights[k]/total);}}deform=rest.inverse()*deform;}
    else deform=local*warped[ni];
-   v.pos=deform.transformPoint(v.pos);const auto normal=deform.normalMatrix();v.nrm=normalize(direction(normal,v.nrm));const auto tangent=normalize(direction(deform,{v.tangent.x,v.tangent.y,v.tangent.z}));v.tangent={tangent.x,tangent.y,tangent.z,v.tangent.w};
+   v.pos=deform.transformPoint(v.pos);const auto normal=skinned?deform:deform.normalMatrix();v.nrm=normalize(direction(normal,v.nrm));const auto tangent=normalize(direction(deform,{v.tangent.x,v.tangent.y,v.tangent.z}));v.tangent={tangent.x,tangent.y,tangent.z,v.tangent.w};
    for(int target=0;target<p.morphTargets;++target){const size_t off=(size_t(target)*p.vertexCount+vi)*6;need(off+6<=p.morphDeltas.size(),"Missing CPU morphs");auto& d=p.morphDeltas;const auto dp=direction(deform,{d[off],d[off+1],d[off+2]}),dn=direction(normal,{d[off+3],d[off+4],d[off+5]});d[off]=dp.x;d[off+1]=dp.y;d[off+2]=dp.z;d[off+3]=dn.x;d[off+4]=dn.y;d[off+5]=dn.z;}
-  }
+  }}
  }
  for(auto& skin:m.skins)for(size_t j=0;j<skin.joints.size();++j){const size_t n=size_t(skin.joints[j]);skin.inverseBind[j]=next[n].inverse()*old[n]*skin.inverseBind[j];}
  for(auto& clip:m.clips)for(auto& c:clip.channels)if(c.path==AnimChannel::Translation){const auto d=offsets.at(size_t(c.node));const size_t stride=c.interp==AnimChannel::CubicSpline?9:3,start=c.interp==AnimChannel::CubicSpline?3:0;for(size_t k=start;k+2<c.values.size();k+=stride){c.values[k]+=d.x;c.values[k+1]+=d.y;c.values[k+2]+=d.z;}}
  m.finalize();
 }
 }
+void bakeHumanBody(Model& model,const HumanAppearance& look){(void)HumanAppearance::fromJson(look.toJson());body(model,look);}
 void validateHumanWardrobe(const Json& r) {
  known(r,{"version","hiddenMeshes","items"});need(r["version"].isNumber()&&r["version"].toDouble()==1,"Wardrobe version must be 1");names(r["hiddenMeshes"]);need(r["items"].isArray()&&r["items"].size()<=32,"Wardrobe allows up to 32 items");std::set<std::string> ids,slots;
  for(const auto& item:r["items"].items()){

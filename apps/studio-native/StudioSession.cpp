@@ -1,3 +1,4 @@
+#include "StudioHumanCharacterBuild.h"
 #include "StudioSession.h"
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"
@@ -179,6 +180,49 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method=="studio.humanWardrobeInfo" || method=="studio.humanWardrobeFromAsset" || method=="studio.humanCharacterBuild" || method=="studio.humanCharacterBuildStatus") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanCharacterBuildStatus") {
+                if(humanBuild_.valid()&&humanBuild_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
+                    try{humanBuildResult_=humanBuild_.get();}catch(const std::exception& e){humanBuildResult_=Json::object();humanBuildResult_.set("error",Json::string(e.what()));}
+                }
+                auto result=humanBuildProject_==ws_.project.dir?humanBuildResult_:Json::object();
+                result.set("running",Json::fromBool(humanBuild_.valid()));
+                if(!humanBuild_.valid()&&result.has("path")) {StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();const auto asset=catalog.byPath(result.getStr("path"));if(asset)result.set("guid",Json::string(asset->guid));}
+                reply.set("result",result);
+            } else {
+                StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();const auto source=StudioFacialPreviewBinding::checkedModelPath(catalog,params.getStr("guid"));
+                if(method=="studio.humanWardrobeFromAsset") {
+                    std::string bytes;const auto reader=humanCharacterReader(studioContentRoot(ws_.project.dir));
+                    const auto path=(std::filesystem::path(source).parent_path()/"wardrobe.json").generic_string();
+                    if(!reader(path,bytes)||bytes.size()>128*1024)throw std::runtime_error("No valid wardrobe.json beside this model");
+                    auto recipe=Json::parse(bytes);vivid::validateHumanWardrobe(recipe);
+                    for(size_t i=0;i<recipe["items"].size();++i){auto& item=recipe.member("items").at(i);for(const auto* field:{"translation","rotation","scale"})if(!item.has(field))item.set(field,Json::parse(std::string(field)=="scale"?"[1,1,1]":"[0,0,0]"));if(!item.has("finish"))item.set("finish",Json::string("source"));auto asset=catalog.byPath(item.getStr("asset"));if(!asset||asset->importer!="model")throw std::runtime_error("Wardrobe model not found in project");item.set("asset",Json::string(asset->guid));for(size_t j=0;j<item["masks"].size();++j){auto& mask=item.member("masks").at(j);auto texture=catalog.byPath(mask.getStr("texture"));if(!texture||texture->importer!="texture")throw std::runtime_error("Wardrobe mask not found in project");mask.set("texture",Json::string(texture->guid));}}
+                    reply.set("result",recipe);
+                } else if(method=="studio.humanWardrobeInfo") {
+                    auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
+                    if(!model)throw std::runtime_error("Cannot inspect character model");reply.set("result",vivid::inspectHumanWardrobe(*model));
+                } else {
+                    if(humanBuild_.valid())throw std::runtime_error("A character build is already running; check its status");
+                    const auto look=vivid::HumanAppearance::fromJson(params["look"]);auto wardrobe=params["wardrobe"];vivid::validateHumanWardrobe(wardrobe);
+                    const std::string name=params.getStr("name");if(!validStudioHumanLookName(name))throw std::invalid_argument("Invalid character name");
+                    for(size_t wi=0;wi<wardrobe["items"].size();++wi) {
+                        auto& item=wardrobe.member("items").at(wi);
+                        if(!item.getBool("enabled"))continue;
+                        item.set("asset",Json::string(StudioFacialPreviewBinding::checkedModelPath(catalog,item.getStr("asset"))));
+                        for(size_t mi=0;mi<item["masks"].size();++mi) {
+                            auto& mask=item.member("masks").at(mi);
+                            const auto asset=catalog.byGuid(mask.getStr("texture"));if(!asset||asset->directory||asset->importer!="texture")throw std::runtime_error("Body mask must be a project texture");
+                            mask.set("texture",Json::string(asset->path));
+                        }
+                    }
+                    if(!params["textureSize"].isNumber()||params["textureSize"].toDouble()!=double(params.getInt("textureSize")))throw std::invalid_argument("Invalid texture resolution");
+                    const auto root=ws_.project.dir;const int size=int(params.getInt("textureSize"));const Json editable=params;
+                    humanBuildProject_=root;humanBuildResult_=Json::object();
+                    humanBuild_=std::async(std::launch::async,[root,source,wardrobe,look,name,size,editable]{return buildStudioHumanCharacter(root,source,wardrobe,look,name,size,editable);});
+                    auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
+                }
+            }
         } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
                   method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
                   method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {

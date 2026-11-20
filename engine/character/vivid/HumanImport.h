@@ -28,6 +28,7 @@ struct HumanImportManifest {
     std::vector<HumanLodEntry> facialLods; // 0..8 immutable mapping sidecars
     std::vector<ShapeRoute> routes;
     std::map<std::string,HumanSurface> materials; // imported material name -> type
+    bool authoredHair=false; // baked/imported groom: do not generate an extra wig
     void validate() const;
     static HumanImportManifest fromJson(const Json& src);
     Json toJson() const;

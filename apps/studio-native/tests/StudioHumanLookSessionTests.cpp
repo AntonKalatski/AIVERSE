@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
+#include "tools/modeling/Modeling.h"
+#include <thread>
 using namespace aiverse;
 namespace fs=std::filesystem;
 int main() {
@@ -37,6 +39,28 @@ int main() {
   fs::remove(project/"content/Ada/appearance.json");
   fs::create_symlink(project/"human-looks/matte.json",project/"content/Ada/appearance.json");
   AIVERSE_TEST_CHECK(call("studio.humanAppearanceFromAsset",params).has("error"));
+  // Real build through native dispatch: async completion, self-contained GLB,
+  // no overwrite, no partial output and unknown source GUID rejection.
+  auto model=modeling::build(modeling::robotDocument());model.model->clips.clear();
+  const auto glb=modeling::exportGlb(*model.model);
+  {std::ofstream f(project/"content/person.glb",std::ios::binary);f.write(glb.data(),std::streamsize(glb.size()));}
+  catalog.rebuild();auto person=catalog.byPath("person.glb");AIVERSE_TEST_CHECK(person.has_value());
+  auto build=Json::object();build.set("guid",Json::string(person->guid));build.set("look",vivid::HumanAppearance{}.toJson());build.set("name",Json::string("assembled"));build.set("textureSize",Json::number(int64_t(256)));build.set("wardrobe",Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[]})"));
+  auto preset=Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[{"id":"watch","asset":"person.glb","slot":"wrist_left","enabled":true,"bone":"","hideMeshes":[],"masks":[]}]})");
+  {std::ofstream f(project/"content/wardrobe.json");f<<preset.dump();}
+  const auto presetResult=call("studio.humanWardrobeFromAsset",build);
+  AIVERSE_TEST_CHECK(!presetResult.has("error")&&presetResult["result"]["items"][0].getStr("asset")==person->guid);
+  AIVERSE_TEST_CHECK(presetResult["result"]["items"][0]["scale"].size()==3&&presetResult["result"]["items"][0].getStr("finish")=="source");
+  AIVERSE_TEST_CHECK(call("studio.humanWardrobeInfo",build)["result"]["meshes"].size()>0);
+  AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));
+  auto poll=[&](){Json status;for(int n=0;n<500;++n){status=call("studio.humanCharacterBuildStatus")["result"];if(!status.getBool("running"))return status;std::this_thread::sleep_for(std::chrono::milliseconds(10));}return status;};
+  auto result=poll();AIVERSE_TEST_CHECK(!result.getBool("running")&&!result.has("error")&&result.has("guid"));
+  AIVERSE_TEST_CHECK(fs::file_size(project/"content/Characters/assembled/model.glb")>100);
+  AIVERSE_TEST_CHECK(fs::is_regular_file(project/"content/Characters/assembled/source.json"));
+  AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));
+  AIVERSE_TEST_CHECK(poll().has("error"));
+  AIVERSE_TEST_CHECK(!fs::exists(project/"content/Characters/.assembled.pending"));
+  build.set("guid",Json::string("../../outside"));AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build).has("error"));
   fs::remove_all(root);
  } catch(...) {fs::remove_all(root);throw;}
 }
