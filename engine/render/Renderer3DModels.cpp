@@ -10,6 +10,9 @@
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+#include "StrataGpuCulling.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -2100,6 +2103,89 @@ void Renderer3D::prepareGpuModelDraws() {
     }
 }
 
+void Renderer3D::prepareStrataAuxiliaryGpuPackets(
+        GpuIndexedPass pass,const mat4& projection,int width,int height) {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(!dev_ || !dev_->gpuHealthy() ||
+       dev_->info().backend!=gfx::Backend::Vulkan ||
+       !dev_->supportsCompute() || !dev_->supportsMultiDrawIndirect() ||
+       !dev_->frameSerial() || width<=0 || height<=0 ||
+       (pass!=GpuIndexedPass::SpotShadow &&
+        pass!=GpuIndexedPass::PlanarReflection))return;
+    // This is called before renderSpotShadow()/beginReflection() starts a
+    // graphics pass. Compute cannot be encoded during an active Vulkan
+    // render pass; all dependent draw commands remain owned by Renderer3D.
+    for(auto& item:modelItems_){
+        auto& destination=pass==GpuIndexedPass::SpotShadow
+            ? item.gpuSpotShadowIndexed:item.gpuReflectionIndexed;
+        destination={};
+        const auto& source=item.gpuIndexed;
+        if(!source.valid() || !source.metadata.valid() ||
+           !source.selector ||
+           (pass==GpuIndexedPass::SpotShadow &&
+            (!source.allowSpotShadow || !item.castShadow)) ||
+           (pass==GpuIndexedPass::PlanarReflection &&
+            !source.allowReflection) ||
+           !item.model || !item.prim || !item.mat ||
+           item.model->vb!=source.vertex ||
+           item.model->ib!=source.index ||
+           item.model->geometryRevision!=source.geometryRevision ||
+           item.model->materialRevision!=source.materialRevision ||
+           source.sourceMesh!=0 ||
+           source.sourcePrimitive>=item.model->meshes[0].primitives.size() ||
+           item.prim!=&item.model->meshes[0].primitives[
+               source.sourcePrimitive] ||
+           source.expectedMaterial>=item.model->materials.size() ||
+           item.mat!=&item.model->materials[source.expectedMaterial] ||
+           !item.rigid || item.joints>=0 || item.morph>=0 ||
+           item.baked || item.mat->shaderGraph ||
+           item.mat->alpha!=AlphaMode::Opaque ||
+           item.mat->transparent || item.gi!=0 ||
+           item.materialRole || item.paletteMaterials ||
+           !(item.flags&kDrawStatic) || transparentItem(item.flags) ||
+           item.dissolve>0.f || item.tint.w<.99f ||
+           std::memcmp(item.world.m,source.selectedWorld.m,
+                       sizeof(source.selectedWorld.m))!=0)
+            continue;
+        const uint64_t originalFirstIndex=
+            uint64_t(item.model->gpuFirstIndex)+source.sourceFirstIndex;
+        if(originalFirstIndex>UINT32_MAX || !source.sourceIndexCount)
+            continue;
+        strata::GpuPassConfig config{};
+        config.viewProjection=projection;
+        config.width=width;
+        config.height=height;
+        config.clipDepthZeroToOne=dev_->info().clipDepthZeroToOne;
+        config.frustumCull=true;
+        config.errorThresholdPixels=source.errorThresholdPixels;
+        config.maxOutputClusters=source.commandCapacity;
+        config.baseVertex=source.sourceBaseVertex;
+        config.gpuFallbackEnabled=true;
+        config.gpuFallbackFirstIndex=uint32_t(originalFirstIndex);
+        config.gpuFallbackIndexCount=source.sourceIndexCount;
+        config.gpuFallbackBaseVertex=source.sourceBaseVertex;
+        const auto instance=strata::makeGpuSceneInstance(
+            item.world,source.sourcePrimitive,source.instanceToken,true);
+        strata::GpuSelectionSubmission selected{};
+        if(!source.selector->dispatch(*dev_,source.metadata,{instance},
+                                     config,dev_->frameSerial(),selected) ||
+           !selected.gpuIndirectPrepared() ||
+           selected.submittedInstances!=1 ||
+           selected.capacity!=source.commandCapacity ||
+           selected.frameSerial!=dev_->frameSerial())
+            continue;
+        destination=source;
+        destination.commands=selected.indirect;
+        destination.pass=pass;
+        destination.viewProjection=projection;
+        destination.viewWidth=width;
+        destination.viewHeight=height;
+    }
+#else
+    (void)pass;(void)projection;(void)width;(void)height;
+#endif
+}
+
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
     // Read the same dynamic indirect-buffer handle at both boundaries.
@@ -2693,8 +2779,12 @@ void Renderer3D::renderModels(int phase) {
         // successful indirect submission REPLACES (does not duplicate)
         // this exact original draw. No other pass is eligible.
         const ModelItem& strataItem=modelItems_[order_[i]];
-        const auto& packet=phase==0 ? strataItem.gpuShadowIndexed
-                                    : strataItem.gpuIndexed;
+        const auto& packet=phase==0
+            ? (auxiliaryModelPass_ ? strataItem.gpuSpotShadowIndexed
+                                   : strataItem.gpuShadowIndexed)
+            : ((phase==1 && !geometryMainView_)
+                ? strataItem.gpuReflectionIndexed
+                : strataItem.gpuIndexed);
         if(packet.valid()){
             ++modelStats_.strataGpuCandidates;
             const bool correctMain=phase==1 && geometryMainView_ &&
@@ -2709,7 +2799,18 @@ void Renderer3D::renderModels(int phase) {
                                    lightViewProj_,shadowSize_,shadowSize_) &&
                 strataItem.castShadow &&
                 !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
-            const bool eligible=(correctMain || correctSun) &&
+            const bool correctSpot=phase==0 &&
+                auxiliaryModelPass_ &&
+                packet.matchesView(GpuIndexedPass::SpotShadow,
+                    lightViewProj_,geometryShadowSize_,geometryShadowSize_) &&
+                strataItem.castShadow &&
+                !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
+            const bool correctReflection=phase==1 &&
+                auxiliaryModelPass_ && !geometryMainView_ &&
+                packet.matchesView(GpuIndexedPass::PlanarReflection,
+                    viewProj_,sceneW_,sceneH_);
+            const bool eligible=(correctMain || correctSun ||
+                                 correctSpot || correctReflection) &&
                 !drawCallDebug_ &&
                 dev_->info().backend==gfx::Backend::Vulkan &&
                 dev_->supportsMultiDrawIndirect() && dev_->gpuHealthy() &&
@@ -2753,7 +2854,6 @@ void Renderer3D::renderModels(int phase) {
                 (strataItem.flags&kDrawStatic)!=0 &&
                 !transparentItem(strataItem.flags) &&
                 strataItem.outline.w==0.f &&
-                !lights.reflectionsWanted() &&
                 std::memcmp(strataItem.world.m,
                             packet.selectedWorld.m,
                             sizeof(packet.selectedWorld.m))==0;
@@ -2764,6 +2864,8 @@ void Renderer3D::renderModels(int phase) {
                     lastItem_=&strataItem;
                     ++modelStats_.strataGpuSubmitted;
                     if(correctSun)++modelStats_.strataGpuSunShadowSubmitted;
+                    if(correctSpot)++modelStats_.strataGpuSpotShadowSubmitted;
+                    if(correctReflection)++modelStats_.strataGpuReflectionSubmitted;
                     ++drawCalls_;
                     ++profile_.draws[size_t(phase)];
                     ++profile_.instances[size_t(phase)];
