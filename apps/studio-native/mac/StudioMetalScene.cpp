@@ -43,7 +43,9 @@ StudioMetalScene::~StudioMetalScene() {
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
-    if (materialMode_ || !cameraInitialized_ ||
+    // Facial preview is an imported Model, not an object in the active map.
+    // Never route its clicks to unrelated MapDoc entities underneath.
+    if (materialMode_ || facialMode_ || !cameraInitialized_ ||
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     std::vector<editor::SceneRenderable> candidates;
