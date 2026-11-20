@@ -49,6 +49,19 @@ function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {
   visitor(node);
   if(node.kind==='split') { traverse(node.first,visitor); traverse(node.second,visitor); }
 }
+/** Collapse empty source docks so the adjacent panel immediately fills the space.
+ * Preserve one empty center stack when all windows are closed.
+ */
+function compactDockNode(node: DockNode): DockNode | null {
+  if(node.kind==='stack')return node.tabs.length>0?node:null;
+  const a=compactDockNode(node.first),b=compactDockNode(node.second);
+  if(!a)return b;
+  if(!b)return a;
+  return {...node,first:a,second:b};
+}
+function compactDockTree(tree: DockTree): DockTree {
+  return {version:3,root:compactDockNode(tree.root)??stack('dock-center',[],null)};
+}
 export function dockStacks(tree: DockTree): DockStack[] {
   const results: DockStack[]=[];
   traverse(tree.root,node=>{ if(node.kind==='stack')results.push(node); });
@@ -87,7 +100,7 @@ export function normalizeDockTree(input: unknown): DockTree {
     return null;
   }
   const root=visit(source.root,0);
-  return root ? {version:3,root} : defaultDockTree();
+  return root ? compactDockTree({version:3,root}) : defaultDockTree();
 }
 function update(node: DockNode, id: string, change: (node: DockNode)=>DockNode): DockNode {
   if(node.id===id)return change(node);
@@ -115,21 +128,37 @@ export function moveTab(tree: DockTree, panel: StudioPanel, stackId: string, bef
     if(at<0)tabs.push(panel);else tabs.splice(at,0,panel);
     return {...n,tabs,active:panel};
   });
-  return {version:3,root};
+  return compactDockTree({version:3,root});
 }
 export function closeTab(tree: DockTree, panel: StudioPanel): DockTree {
   const t=normalizeDockTree(tree);
-  return {version:3,root:remove(t.root,panel)};
+  return compactDockTree({version:3,root:remove(t.root,panel)});
 }
 export function activateTab(tree: DockTree, stackId: string, panel: StudioPanel): DockTree {
   const t=normalizeDockTree(tree);
   return {version:3,root:update(t.root,stackId,n=>n.kind==='stack' && n.tabs.includes(panel)?{...n,active:panel}:n)};
 }
-export function reopenTab(tree: DockTree, panel: StudioPanel, preferredStackId='dock-center'): DockTree {
+/** Reconstruct preferred regions pruned when their last tab moved away. */
+export function reopenTab(tree: DockTree, panel: StudioPanel, preferredStackId=STUDIO_PANEL_HOME[panel]): DockTree {
   const t=normalizeDockTree(tree);
+  if(!known(panel))return t;
   const present=panelStack(t,panel);
-  const target=present || (findDockStack(t,preferredStackId)?preferredStackId:dockStacks(t)[0]?.id);
-  return target?moveTab(t,panel,target):t;
+  if(present)return activateTab(t,present,panel);
+  const existing=findDockStack(t,preferredStackId);
+  if(existing)return moveTab(t,panel,existing.id);
+
+  const panes=dockStacks(t);
+  const anchor=findDockStack(t,'dock-center')??panes[0];
+  if(!anchor)return defaultDockTree();
+  if(panes.length>=24)return moveTab(t,panel,anchor.id);
+  const fresh=stack(preferredStackId,[panel],panel);
+  const splitId=newId(t,'split');
+  if(preferredStackId==='dock-bottom')
+    return normalizeDockTree({version:3,root:split(splitId,'vertical',.76,t.root,fresh)});
+  const early=preferredStackId==='dock-left';
+  const ratio=early?.19:.72;
+  return normalizeDockTree({version:3,root:update(t.root,anchor.id,n=>
+    split(splitId,'horizontal',ratio,early?fresh:n,early?n:fresh))});
 }
 export function resizeDockSplit(tree: DockTree, id: string, ratio: number): DockTree {
   const t=normalizeDockTree(tree);

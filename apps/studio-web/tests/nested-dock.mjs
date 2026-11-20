@@ -75,11 +75,53 @@ test('migration from v2 preserves tabs and active',()=>{
     active:{left:'assets',center:'scene',right:'inspector'},leftSize:300,rightSize:280,bottomSize:220});
   assert.equal(findDockStack(layout,'dock-left').active,'assets');
   assert.equal(findDockStack(layout,'dock-center').active,'scene');
-  assert.equal(findDockStack(layout,'dock-bottom').active,null);
+  assert.equal(findDockStack(layout,'dock-bottom'),null);
 });
 
 test('AI panel registry metadata matches every registered panel',()=>{
   assert.deepEqual(Object.keys(STUDIO_PANEL_TITLES).sort(),[...STUDIO_PANELS].sort());
   assert.deepEqual(Object.keys(STUDIO_PANEL_HOME).sort(),[...STUDIO_PANELS].sort());
   assert.equal(STUDIO_PANEL_HOME.scene,'dock-center');
+});
+
+test('moving a last tab prunes the source split and expands its neighbor',()=>{
+  const t=moveTab(defaultDockTree(),'hierarchy','dock-center');
+  assert.equal(findDockStack(t,'dock-left'),null);
+  assert.equal(dockStacks(t).length,3);
+  assert.equal(t.root.first.id,'split-body-right');
+});
+test('closing last right panels removes their obsolete split',()=>{
+  let t=closeTab(defaultDockTree(),'inspector');
+  assert.ok(findDockStack(t,'dock-right'));
+  t=closeTab(t,'lighting');
+  assert.equal(findDockStack(t,'dock-right'),null);
+  assert.equal(dockStacks(t).length,3);
+});
+test('reopening Inspector restores pruned right-hand dock',()=>{
+  let t=closeTab(closeTab(defaultDockTree(),'inspector'),'lighting');
+  t=reopenTab(t,'inspector','dock-right');
+  assert.equal(panelStack(t,'inspector'),'dock-right');
+  assert.equal(dockStacks(t).length,4);
+});
+test('reopening Assets restores pruned bottom dock',()=>{
+  let t=closeTab(closeTab(defaultDockTree(),'assets'),'console');
+  assert.equal(findDockStack(t,'dock-bottom'),null);
+  t=reopenTab(t,'assets','dock-bottom');
+  assert.equal(panelStack(t,'assets'),'dock-bottom');
+  assert.equal(t.root.axis,'vertical');
+  assert.equal(t.root.second.id,'dock-bottom');
+});
+test('when all tabs closed a single empty center stack allows reopening',()=>{
+  let t=defaultDockTree();
+  for(const name of STUDIO_PANELS)t=closeTab(t,name);
+  assert.equal(dockStacks(t).length,1);
+  assert.deepEqual(dockStacks(t)[0].tabs,[]);
+  t=reopenTab(t,'scene','dock-center');
+  assert.equal(panelStack(t,'scene'),'dock-center');
+});
+test('old saved empty leaves are compacted upon restoration',()=>{
+  const t=normalizeDockTree({root:{kind:'split',id:'outer',axis:'horizontal',ratio:.3,
+    first:{kind:'stack',id:'empty',tabs:[],active:null},
+    second:{kind:'stack',id:'dock-center',tabs:['scene'],active:'scene'}}});
+  assert.equal(t.root.id,'dock-center');
 });
