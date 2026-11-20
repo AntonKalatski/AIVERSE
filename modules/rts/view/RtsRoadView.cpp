@@ -2435,6 +2435,7 @@ struct RtsRoadView::PreparedRebuild {
     gfx::Device* device=nullptr;
     std::unique_ptr<RtsRoadView> staged;
     size_t priorImageCount=0;
+    bool replaceGeometry=false,replaceFilm=false,replacePuddles=false,replaceGhost=false;
     // The candidate is never submitted by a camera. It owns new Models and
     // generated images only; the previous kit's textures are borrowed.
     ~PreparedRebuild() noexcept {
@@ -2470,6 +2471,10 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
     candidate->priorImageCount=images_.size();
+    candidate->replaceGeometry=dirty_;
+    candidate->replaceFilm=dirty_ || int(std::lround(wet_*32.f))!=wetStep_;
+    candidate->replacePuddles=dirty_ || int(std::lround(puddles_*32.f))!=puddleStep_;
+    candidate->replaceGhost=dirty_ || ghostDirty_;
     candidate->staged=std::make_unique<RtsRoadView>();
     RtsRoadView& staged=*candidate->staged;
     staged.dev_=&dev;
@@ -2480,7 +2485,7 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     staged.net_=net_;
     staged.hasNet_=hasNet_;
     staged.ghost_=ghost_;
-    staged.ghostDirty_=true;
+    staged.ghostDirty_=candidate->replaceGhost;
     staged.wet_=wet_;
     staged.puddles_=puddles_;
     staged.weatherSet_=weatherSet_;
@@ -2494,9 +2499,19 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     // GPU kit in the original owner; the candidate destructor only releases
     // resources that it subsequently generated.
     for(auto& img:staged.images_)img.borrowedTexture=true;
-    staged.buildUnpublished(dev,heightAt);
+    if(candidate->replaceGeometry) {
+        staged.buildUnpublished(dev,heightAt);
+    }else {
+        // Weather/preview edits do not change lane geometry, wheel-surface
+        // samples, decal paint, or the road presentation generation.
+        staged.film_=film_;
+        staged.spots_=spots_;
+        staged.wetStep_=wetStep_;
+        staged.puddleStep_=puddleStep_;
+    }
     staged.buildWeather(dev);
-    if(staged.ghost_.on)staged.buildGhost(dev,heightAt);
+    if(candidate->replaceGhost && staged.ghost_.on)
+        staged.buildGhost(dev,heightAt);
     return candidate;
 }
 
@@ -2507,6 +2522,28 @@ void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noex
     // their original ownership policy back to the live owner at publication.
     for(size_t i=0;i<candidate->priorImageCount;++i)
         staged.images_[i].borrowedTexture=images_[i].borrowedTexture;
+    if(!candidate->replaceGeometry) {
+        if(candidate->replaceFilm) {
+            retireSpriteBuffer(*dev_,filmMesh_);
+            filmMesh_=std::exchange(staged.filmMesh_,SpriteMesh{});
+            wetStep_=staged.wetStep_;
+        }
+        if(candidate->replacePuddles) {
+            retireSpriteBuffer(*dev_,puddleMesh_);
+            puddleMesh_=std::exchange(staged.puddleMesh_,SpriteMesh{});
+            puddleStep_=staged.puddleStep_;
+        }
+        if(candidate->replaceGhost) {
+            retirement_.retireModel(*dev_,ghostModel_);
+            ghostModel_=std::move(staged.ghostModel_);
+            ghostDirty_=false;
+        }
+        images_.swap(staged.images_);
+        materials_.swap(staged.materials_);
+        painted_.swap(staged.painted_);
+        warnings_.swap(staged.warnings_);
+        return; // unchanged road geometry/surface generation
+    }
     release(*dev_);
     for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
     propModels_.clear();
