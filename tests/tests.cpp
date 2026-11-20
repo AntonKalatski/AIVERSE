@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -13198,10 +13199,25 @@ TEST(model_shadow_batches_material_overrides) {
 }
 
 int main(int argc, char** argv) {
+    // Diagnostic-only crash localization. CTest captures and buffers stdout,
+    // so the last visible [ OK ] line can precede the actual crashing case
+    // by many tests. Stderr is explicitly flushed before EACH invocation.
+    // No output/timing overhead unless AIVERSE_TEST_TRACE=1.
+    const char* traceEnv = std::getenv("AIVERSE_TEST_TRACE");
+    const bool trace = traceEnv && std::string(traceEnv) == "1";
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]
+        if (trace) {
+            std::fprintf(stderr, "[ RUN ] %s\n", name);
+            std::fflush(stderr);
+        }
         int before = g_failed;
         fn();
+        if (trace) {
+            std::fprintf(stderr, "[ DONE ] %s (%s)\n", name,
+                         g_failed == before ? "OK" : "FAIL");
+            std::fflush(stderr);
+        }
         std::printf("%s %s\n", g_failed == before ? "[ OK ]" : "[FAIL]", name);
     }
     std::printf("\n%d checks, %d failed\n", g_checks, g_failed);
