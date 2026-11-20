@@ -447,7 +447,7 @@ void test() {
         std::cout<<"VIVID groom 8192 sparse x2 CPU ms="<<elapsed
                  <<" particleEntries="<<particleScratch.entries.size()
                  <<" segmentCells="<<segmentScratch.cells.size()
-                 <<" segmentPairs="<<segmentScratch.pairs.size()<<"\\n";
+                 <<" segmentPairs="<<segmentScratch.pairs.size()<<"\n";
 
         // Every segment occupies the same small spatial region; the raw
         // candidate budget must skip this optional pass transactionally.
