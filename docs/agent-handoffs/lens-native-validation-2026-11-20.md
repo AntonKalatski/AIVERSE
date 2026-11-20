@@ -748,3 +748,34 @@ Consumers must restart/reconnect the rebuilt MCP server and native editor for
 new operation discovery; select either engine skill through the catalog.
 Future work can add a native asynchronous capture endpoint with real ownership
 and completion tests; do not advertise one from these authoring operations.
+
+
+## Concurrent main tools integration — 2026-11-20
+
+Integration commit: `edb294b8f3b50eea2eee818d1a341c3b31f7a92e`, same branch
+`codex/lens-completion`. Merged current main
+`a771d1484` (PHYSIS tools + STRATA PR #99) after LENS code/handoff commits.
+Resolved additive conflicts in Workspace registration, CMake tail, catalog
+aliases and AGENTS by retaining BOTH feature sets. No peer implementation was
+removed or rewritten. Regenerated skills/catalog.json: 231 entries; README
+counts updated in all nine languages, preserving PHYSIS text and LENS links.
+Camera v1 format/public runtime API unchanged.
+
+Actual final verification on KINGSTON:
+- CMake configure PASS; build targets aiverse_lens_ops_tests, aiversemcp,
+  aiverse_editor, aiverse_physis_authoring_test and aiverse_strata_editor_test
+  PASS, `--parallel 4`. logs: lens-merge-configure.log, lens-merge-build.log in
+  `/Volumes/KINGSTON/AIVERSE-builds/lens-completion`. No compiler warnings found.
+- CTest selection
+  `^(lens_ops|lens_mcp_stdio|camera_scene_asset|camera_scheduler|camera_model_snapshot|physis_authoring|physis_mcp|strata_editor)$`:
+  PASS 8/8, no skips, 14.95 seconds; lens-merge-ctest.log. This verifies actual
+  merged Workspace and MCP dispatch, not just conflict marker removal.
+- Skill catalog generate/check, routing tests, strict audit, nine README
+  structural checks and staged diff check PASS after merge.
+- Previous general library-catalog NEREID failure and unrun platform/GPU/full
+  suite limits remain unchanged; no CI run/status claimed.
+
+Next: ordinary push HEAD to main and verify exact remote SHA. Restart/reconnect
+rebuilt native editor and aiversemcp to expose new tools; read the two LENS
+skills from the engine catalog. Preserve this integrated registration if a
+newer main requires another merge. No primary checkout changes.
