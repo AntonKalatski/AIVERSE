@@ -106,7 +106,7 @@ export default function FacialLivePreview({
 
   return <StudioSection title="Live GPU model preview"
     actions={<StudioBadge tone={ready?'success':active?'warning':'neutral'}>
-      {ready?'Real GPU frame':active?'Preparing GPU':'Stopped'}
+      {ready?'GPU submitted':active?'Preparing GPU':'Stopped'}
     </StudioBadge>}>
     <div className="au-stack facial-live">
       <StudioField label="Model in current project" htmlFor="facial-preview-model"
