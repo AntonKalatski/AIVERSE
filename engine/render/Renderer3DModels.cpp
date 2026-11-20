@@ -1112,7 +1112,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // A real gfx indexed draw was encoded, not merely staged/warmed.
     for(uint32_t n=0;n<count;++n)
         recordModelSubmission(modelItems_[items[n]],phase,
-                              ModelSubmissionKind::Direct,ph);
+                              count==1u?ModelSubmissionKind::Direct:
+                                  ModelSubmissionKind::DirectInstanced,ph);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
