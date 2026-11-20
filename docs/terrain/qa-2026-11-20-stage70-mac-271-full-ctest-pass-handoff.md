@@ -61,17 +61,31 @@ GitHub comparison `main...integration/terraweave-physis-stage70-20261120`
 returned **ahead=155, behind=0**. PR #53 was open,
 `draft=true`, and `mergeable=true`.
 
-**Critical provenance caveat:** the submitted *excerpt* does NOT
-include the contents of `acceptance-reports/provenance.txt`.
-Therefore the exact `git_sha` that ran 271/271 is **not independently
-confirmed by the pasted log**. The expected checkout is `b17e775a`,
-because it was the last remote HEAD previously provided to the user,
-but do not state that the 271/271 suite validated that exact SHA until
-the saved local provenance is inspected. The script (as committed)
-includes a clean-worktree and mandatory-CTest-inventory preflight;
-the PASS footer indicates the script reached its end, but the
-individual reports are not accessible through the connected GitHub
-repository.
+**Exact Mac SHA subsequently confirmed:** after the 271/271 report,
+the user supplied the saved
+`build/terraweave-main-acceptance/acceptance-reports/provenance.txt`:
+
+```text
+repo=/Users/aleksandrfeer/Projects/AIVERSE-terraweave-stage70-local-qa
+git_sha=b17e775a922d9dc50981011c8f6e25d85fc7adec
+git_branch=
+required_main_sha=d6c8fa4646cf6aa205eea5f6a0b7c0c34ac479cb
+observed_origin_main_sha=d6c8fa4646cf6aa205eea5f6a0b7c0c34ac479cb
+```
+
+An empty `git_branch` is expected in detached-HEAD QA.
+The GitHub comparison from exact tested SHA
+`b17e775a922d9dc50981011c8f6e25d85fc7adec` to the
+then-current branch HEAD `ddb7f2efad5b6e19c1736a2c1cebf5cb3b70b967`
+confirmed **ahead=2, behind=0**, with **only**
+`docs/terrain/CURRENT_HANDOFF.md` and this QA Markdown file changed.
+No production code, CMake, tests or GPU source changed after the
+confirmed 271/271 pass at that checkpoint.
+
+The script's clean-worktree and mandatory-CTest-inventory gates were
+reached before the PASS footer. The exact tested SHA and the exact
+main ancestor are now confirmed from the actual Mac provenance;
+a separate direct read of the local `ctest.xml` has not been performed.
 
 No production gameplay/source code was modified in this QA
 documentation stage.
@@ -92,9 +106,10 @@ documentation stage.
 
 ## Remaining gates — NOT proven by 271/271
 
-1. Exact SHA attribution: inspect the Mac report
-   `acceptance-reports/provenance.txt` and the corresponding
-   `ctest.xml`. Do not treat a branch name as a tested SHA.
+1. **Completed:** exact SHA and required main ancestor were confirmed
+   from the user's saved `acceptance-reports/provenance.txt`.
+   The optional `ctest.xml` remains available for deeper run forensics
+   but is not required to attribute the observed 271/271 CTest result.
 2. Actual rendered-output/pixel parity and visual inspection on
    **Metal** (including SpectraFX preview, forest foliage LOD,
    resource lifetime and resize), and **Vulkan/GLES** build/runtime.
@@ -121,14 +136,14 @@ grep -E '100% tests passed|Total Test time' \
   build/terraweave-main-acceptance/acceptance-reports/ctest.log
 ```
 
-If the report's `git_sha` equals
-`b17e775a922d9dc50981011c8f6e25d85fc7adec` and the saved
-source is clean, mark that **exact SHA** accepted for the full native
-CTest. If not, record the actual tested SHA and compare changed files
-before claiming acceptance on the newest branch.
+**Provenance check COMPLETE:** the user supplied the saved report
+and confirmed `git_sha=b17e775a922d9dc50981011c8f6e25d85fc7adec`,
+`required_main_sha=d6c8fa4646cf6aa205eea5f6a0b7c0c34ac479cb`.
+The two later integration commits at that checkpoint were docs-only.
 
-The next agent should first finish this provenance check, then handle
-actual GPU rendering and sustained four-owner runtime acceptance.
+The next agent should handle actual GPU rendering and sustained
+four-owner runtime acceptance; do not repeat the same entire CTest
+only to revalidate documentation changes.
 Once those are reproducible, decide whether to promote PR #53 or
 start Stage71 as a **separate bounded feature** with its own
 implementation/tests/handoff. Avoid duplicating NEREID's hydrology or
