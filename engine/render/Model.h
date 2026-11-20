@@ -98,7 +98,10 @@ struct ModelVertex {
 static_assert(sizeof(ModelVertex) == 60, "ModelVertex layout is shared with the shaders");
 
 constexpr int kMaxPaletteJoints = 80;  // joint matrices per draw (3 x vec4 each, fits a 4 KB uniform block)
-constexpr int kMaxMorphTargets = 16;   // morph targets supported by GLSL/MSL U4 (4 vec4 weights)
+// Runtime facial-morph budget: >=52 ARKit-style channels plus spare slots.
+// The renderer uploads a per-draw SPARSE list, so GPU vertex work scales with
+// nonzero expressions rather than this maximum. GLSL/MSL U4 owns the same cap.
+constexpr int kMaxMorphTargets = 64;
 
 struct Primitive {
     uint32_t firstIndex = 0, indexCount = 0;
