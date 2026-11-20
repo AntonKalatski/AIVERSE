@@ -38,3 +38,36 @@ not freeze water, and its report explicitly records this limitation.
 The shared glTF exporter must finish edits to a nested Json member before adding
 sibling keys: Json objects store members in a vector, so sibling insertion may
 invalidate references. PBR bindings are written in that safe order.
+
+## Alpine profiles and continuous PBR authoring
+
+The optional `peaks` array uses native `AlpinePeak` fields `xCm,zCm,radiusXcm,
+radiusZcm,heightCm,shearPermille`. Up to 32 profiles combine by maximum relief,
+using the existing Terra integer noise at five scales. Optional
+`valleyHalfWidthCm` and `valleyBlendCm` reserve a broad X-centred, Z-running
+valley; this is an authored alpine height source, not a hydraulic erosion model.
+Default zero valley width preserves unrestricted peak composition. Terrain patch
+sampling is now 129 per 64m tile (0.5m). Normals use the same Earthworks samples
+outside tile borders, avoiding flat triangle lighting and normal seams.
+
+After native export, run:
+
+```
+python3 tools/terrain/bake_landscape_pbr.py NEW_DIR --size 2048
+```
+
+This required offline step bakes ordinary PBR textures from the native ground
+snapshot; it does not generate heights. Grass/sand/rock/scree/soil/snow weights
+blend continuously using height, slope and world-space cosmetic variation.
+Mountain rock/scree uses three projection axes to avoid cliff texture stretching.
+Base color blends in linear light; tangent detail normals are normalized and all
+materials remain dielectric. Atlas UVs clamp; standalone repeated material maps
+continue to repeat. Size range 256..4096; default 2048, 1024 is the bounded demo
+setting (16 texels/metre). Increase for close hero surfaces. Independent
+`--part i --parts n` partitions permit offline parallel baking. Keep atlas
+sampler indices when combining glTF assets. Exported terrain needs this bake
+before importing; an unbaked output has unresolved atlas paths.
+
+Riverbed shoreline endpoints rise 8cm above the NEREID surface so the water
+perimeter is buried in the bank. The visible edge follows the terrain/water
+intersection instead of exposing a rectangular cut of the water mesh.

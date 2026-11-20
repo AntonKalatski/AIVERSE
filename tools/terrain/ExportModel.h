@@ -6,7 +6,7 @@ namespace aiverse::terrain_export {
 namespace fs=std::filesystem;
 static uint32_t u32(const std::string& s,size_t p){return uint32_t(uint8_t(s[p]))|uint32_t(uint8_t(s[p+1]))<<8|uint32_t(uint8_t(s[p+2]))<<16|uint32_t(uint8_t(s[p+3]))<<24;}
 static void write(const fs::path& p,const std::string& s){std::ofstream f(p,std::ios::binary);f.write(s.data(),std::streamsize(s.size()));if(!f)throw std::runtime_error("write failed: "+p.string());}
-static void save(const fs::path& out,const std::string& name,const aiverse::render::Model& model,const std::vector<std::string>& materials={}){
+static void save(const fs::path& out,const std::string& name,const aiverse::render::Model& model,const std::vector<std::string>& materials={},bool clamp=false){
     const auto glb=aiverse::modeling::exportGlb(model);const auto n=u32(glb,12);auto doc=Json::parse(glb.substr(20,n));const size_t bh=20+n;
     doc.member("buffers").at(0).set("uri",Json::string(name+".bin"));
     if(!materials.empty()){
@@ -19,7 +19,9 @@ static void save(const fs::path& out,const std::string& name,const aiverse::rend
             mat.set("normalTexture",binding(index+1));mat.set("occlusionTexture",binding(index+3));
             for(auto suffix:{"basecolor","normal","orm","ao"}){auto im=Json::object(),tx=Json::object();im.set("uri",Json::string("textures/"+materials[m]+"_"+suffix+".png"));tx.set("source",Json::number(int64_t(index++)));images.push(im);textures.push(tx);}
         }
-        doc.set("images",images);doc.set("textures",textures);
+        doc.set("images",images);
+        if(clamp){auto samplers=Json::array(),sampler=Json::object();sampler.set("wrapS",Json::number(int64_t(33071)));sampler.set("wrapT",Json::number(int64_t(33071)));samplers.push(sampler);doc.set("samplers",samplers);for(size_t i=0;i<textures.size();++i)textures.at(i).set("sampler",Json::number(int64_t(0)));}
+        doc.set("textures",textures);
     }
     write(out/(name+".gltf"),doc.dump());write(out/(name+".bin"),glb.substr(bh+8,u32(glb,bh)));
 }

@@ -1,5 +1,6 @@
 // Compose native Terra terrain/Earthworks and NEREID authoring definitions.
 #include "engine/world/TerraWeaveRiverbed.h"
+#include "engine/world/TerraWeaveAlpine.h"
 #include "engine/world/TerraWeaveRocks.h"
 #include "engine/render/TerraWeaveRockModel.h"
 #include "engine/render/TerraWeaveTerrainPatchRender.h"
@@ -16,7 +17,9 @@ int main(int argc,char** argv){try{
     if(recipe.empty()||out.empty()||materials.empty()||fs::exists(out))throw std::runtime_error("usage: aiverse_terraweave_landscape --recipe JSON --out NEW_DIR --materials TERRAIN_TEXTURES; no overwrite");
     const auto doc=Json::parseFile(recipe.string());const auto& t=doc["terrain"];
     TerrainSettings settings;settings.seed=uint64_t(t.getInt("seed",42));settings.baseHeightCm=int32_t(t.getInt("baseHeightCm",300));settings.reliefCm=int32_t(t.getInt("reliefCm",500));settings.basePeriodCm=int32_t(t.getInt("basePeriodCm",6400));settings.octaves=uint32_t(t.getInt("octaves",5));
-    EarthworksLayer earth(100,[&](int64_t x,int64_t z){return heightAtCm(settings,x,z);});
+    std::vector<AlpinePeak> peaks;
+    for(const auto& p:doc["peaks"].items())peaks.push_back({p.getInt("xCm"),p.getInt("zCm"),int32_t(p.getInt("radiusXcm",10000)),int32_t(p.getInt("radiusZcm",16000)),int32_t(p.getInt("heightCm",12000)),int32_t(p.getInt("shearPermille"))});
+    EarthworksLayer earth(50,[&](int64_t x,int64_t z){return alpineHeightCm(settings,peaks,x,z,int32_t(doc.getInt("valleyHalfWidthCm",0)),int32_t(doc.getInt("valleyBlendCm",10000)));});
     if(doc["brushes"].size()>64)throw std::runtime_error("too many terrain brushes");
     for(const auto& b:doc["brushes"].items())earth.sculpt({b.getInt("xCm"),b.getInt("zCm"),int32_t(b.getInt("radiusCm")),int32_t(b.getInt("depthCm")),b.getStr("mode","fill")=="dig"?EarthworkMode::Dig:EarthworkMode::Fill});
     const auto water=world::parseNereidWaterManifest(doc);
@@ -28,16 +31,16 @@ int main(int argc,char** argv){try{
     for(const auto& name:mats)for(auto suffix:{"basecolor","normal","orm","ao"}){const auto base=name+"_"+suffix;fs::copy_file(materials/(base+"_repeat.png"),out/"textures"/(base+".png"));}
     auto catalog=Json::object(),tiles=Json::array();
     for(auto z=z0;z<z1;++z)for(auto x=x0;x<x1;++x){
-        const auto patch=bakeEarthworksTerrainPatch(earth,{int32_t(x),0,int32_t(z)},64,65);auto model=makeEarthworksTerrainModel(patch,nullptr,.30f);
-        auto material=model->materials[0];model->materials.clear();
-        for(size_t i=0;i<mats.size();++i){auto m=material;m.name=mats[i];m.baseColor=i==0?render::float4{.47f,.58f,.32f,1}:i==1?render::float4{.45f,.46f,.45f,1}:render::float4{.85f,.85f,.82f,1};m.roughness=1;model->materials.push_back(m);}
-        std::array<std::vector<uint32_t>,4> indices;
-        for(size_t i=0;i<model->indices.size();i+=3){auto& v=model->vertices[model->indices[i]];size_t mat=v.pos.y>6500*.01f&&v.nrm.y>.65f?2:v.nrm.y<.82f||v.pos.y>28?1:v.pos.y<.65f?3:0;
-            for(size_t k=0;k<3;++k){auto& p=model->vertices[model->indices[i+k]];if(mat==1)p.uv={float(x*64+p.pos.x)/12,(float(z*64+p.pos.z)+p.pos.y*1.5f)/12};indices[mat].push_back(model->indices[i+k]);}}
-        model->indices.clear();model->meshes[0].primitives.clear();
-        for(size_t i=0;i<4;++i)if(!indices[i].empty()){render::Primitive p;p.material=int(i);p.firstVertex=0;p.vertexCount=uint32_t(model->vertices.size());p.firstIndex=uint32_t(model->indices.size());p.indexCount=uint32_t(indices[i].size());model->indices.insert(model->indices.end(),indices[i].begin(),indices[i].end());model->meshes[0].primitives.push_back(p);}
+        const auto patch=bakeEarthworksTerrainPatch(earth,{int32_t(x),0,int32_t(z)},64,129);auto model=makeEarthworksTerrainModel(patch,nullptr,1.f/64.f);
+        model->materials[0].name="terrain";model->materials[0].baseColor={1,1,1,1};model->materials[0].roughness=1;
+        for(auto& v:model->vertices){
+            const int64_t wx=x*6400+int64_t(std::llround(v.pos.x*100)),wz=z*6400+int64_t(std::llround(v.pos.z*100));
+            const float dx=float(earth.sampleHeightCm(wx+50,wz)-earth.sampleHeightCm(wx-50,wz))*.01f;
+            const float dz=float(earth.sampleHeightCm(wx,wz+50)-earth.sampleHeightCm(wx,wz-50))*.01f;
+            v.nrm=render::normalize(render::float3{-dx,1,-dz});v.uv={v.pos.x/64,1-v.pos.z/64};
+        }
         render::generateTangents(model->vertices,model->indices,0,uint32_t(model->indices.size()));
-        const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,mats);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));tiles.push(e);
+        const std::string name="terrain-"+std::to_string(x)+"-"+std::to_string(z);save(out,name,*model,{name},true);auto e=Json::object();e.set("file",Json::string(name+".gltf"));e.set("xCm",Json::number(x*6400));e.set("zCm",Json::number(z*6400));tiles.push(e);
     }
     // Same surface snapshot for vegetation and asset placement; no second noise.
     auto heights=Json::array(),cover=Json::array(),ground=Json::object(),grass=Json::array();

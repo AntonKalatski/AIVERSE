@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Bake continuous PBR layer transitions on native Terra surface exports.
+No terrain generation: heights come exclusively from the native ground snapshot.
+Requires NumPy/Pillow. Bound memory by processing texture strips.
+"""
+from pathlib import Path
+import argparse,json
+import numpy as np
+from PIL import Image
+
+def smooth(a,b,x):
+ t=np.clip((x-a)/(b-a),0,1);return t*t*(3-2*t)
+def sample(a,u,v):
+ h,w=a.shape[:2];x=(u*w-.5)%w;y=(v*h-.5)%h
+ ix=np.floor(x).astype(int);iy=np.floor(y).astype(int);fx=(x-ix)[...,None];fy=(y-iy)[...,None]
+ return ((a[iy,ix]*(1-fx)+a[iy,(ix+1)%w]*fx)*(1-fy)+(a[(iy+1)%h,ix]*(1-fx)+a[(iy+1)%h,(ix+1)%w]*fx)*fy)
+def bake(root,materials,size,part=0,parts=1):
+ if size<256 or size>4096:raise ValueError('size 256..4096')
+ ground=json.loads((root/'ground.json').read_text());cat=json.loads((root/'catalog.json').read_text())
+ h=np.array(ground['heightCm'],dtype=np.float32).reshape(ground['rows'],ground['columns'])*.01
+ dz,dx=np.gradient(h,ground['stepCm']*.01);grid=np.stack([h,dx,dz],2)
+ maps={}
+ names=['grass','sand','rock','gravel_soil','soil','snow']
+ for n in names:
+  maps[n]={k:np.asarray(Image.open(materials/f'{n}_{k}_repeat.png').convert('RGB'),dtype=np.float32)/255 for k in ['basecolor','normal','orm']}
+ for index,tile in enumerate(cat['terrain']):
+  if index%parts!=part:continue
+  result={k:np.empty((size,size,3),np.uint8) for k in ['basecolor','normal','orm']}
+  for row in range(0,size,64):
+   x=tile['xCm']*.01+(np.arange(size)+.5)*64/size
+   z=tile['zCm']*.01+(np.arange(row,min(row+64,size))+.5)*64/size
+   X,Z=np.meshgrid(x,z)
+   # Interpolate the same native surface in centimetres, without wrapped bounds.
+   gx=np.clip((X-ground['originXcm']*.01)/(ground['stepCm']*.01),0,h.shape[1]-1.001)
+   gz=np.clip((Z-ground['originZcm']*.01)/(ground['stepCm']*.01),0,h.shape[0]-1.001)
+   ix=gx.astype(int);iz=gz.astype(int);fx=(gx-ix)[...,None];fz=(gz-iz)[...,None]
+   q=(grid[iz,ix]*(1-fx)+grid[iz,ix+1]*fx)*(1-fz)+(grid[iz+1,ix]*(1-fx)+grid[iz+1,ix+1]*fx)*fz
+   H=q[...,0];ny=1/np.sqrt(1+q[...,1]**2+q[...,2]**2)
+   variation=(np.sin(X*.081+np.sin(Z*.037)*2)+np.sin(Z*.12+X*.04))*.5
+   shore=1-smooth(.35,2.5,H+variation*.20)
+   stone=np.maximum(1-smooth(.55,.91,ny),smooth(18,48,H))
+   scree=smooth(.62,.9,ny)*(.3+.20*variation)
+   snow=smooth(100,155,H+variation*8)*smooth(.52,.88,ny)
+   weights={'grass':(1-shore)*(1-stone),'sand':shore*(1-stone),'rock':stone*(1-scree)*(1-snow),'gravel_soil':stone*scree*(1-snow),'soil':np.zeros_like(H),'snow':stone*snow}
+   total=sum(weights.values());weights={k:v/np.maximum(total,1e-6) for k,v in weights.items()}
+   # Rock maps are projected in world space on all three axes to avoid stretch.
+   axes=np.stack([np.abs(q[...,1]),np.ones_like(H),np.abs(q[...,2])],2)**4;axes/=axes.sum(2,keepdims=True)
+   out={k:np.zeros((*H.shape,3),np.float32) for k in result}
+   for n,w in weights.items():
+    if w.max()<1e-6:continue
+    scale=3 if n in ['grass','sand'] else 7
+    for k in result:
+     a=maps[n][k];value=sample(a,X/scale,Z/scale)
+     if n in ['rock','gravel_soil']:
+      value=value*axes[...,1,None]+sample(a,Z/scale,H/scale)*axes[...,0,None]+sample(a,X/scale,H/scale)*axes[...,2,None]
+     if k=='basecolor':
+      if n=='rock':value=value*.68
+      value=value**2.2
+     if k=='normal':value=value*2-1
+     out[k]+=value*w[...,None]
+   out['basecolor']=np.maximum(out['basecolor'],0)**(1/2.2)
+   out['normal']/=np.maximum(np.linalg.norm(out['normal'],axis=2,keepdims=True),1e-6);out['normal']=out['normal']*.5+.5
+   for k in result:result[k][row:row+H.shape[0]]=np.rint(np.clip(out[k],0,1)*255).astype('uint8')
+  stem=Path(tile['file']).stem
+  for k,a in result.items():Image.fromarray(a[::-1]).save(root/'textures'/f'{stem}_{k}.png')
+  Image.fromarray(result['orm'][::-1,:,0]).save(root/'textures'/f'{stem}_ao.png')
+  print(stem,flush=True)
+if __name__=='__main__':
+ p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('--materials',type=Path,default=Path(__file__).resolve().parents[2]/'engine/assets/materials/terrain/textures');p.add_argument('--size',type=int,default=2048);p.add_argument('--part',type=int,default=0);p.add_argument('--parts',type=int,default=1);a=p.parse_args();
+ if a.parts<1 or not 0<=a.part<a.parts:raise ValueError('invalid partition')
+ bake(a.root,a.materials,a.size,a.part,a.parts)

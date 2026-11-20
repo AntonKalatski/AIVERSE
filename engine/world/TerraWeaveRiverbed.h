@@ -39,12 +39,14 @@ inline EarthworkChange carveNereidRiverbed(EarthworksLayer& earth,
         const EarthVertex key{x,z};const auto before=earth.heightAt(key);
         const auto original=Fixed::fromRatio(before,100);
         Fixed requested;
+        // Bury the mesh perimeter inside the bank instead of ending over
+        // ground below water: the visible shoreline is the depth intersection.
         if(best<width){
             const auto t=fxClamp((best-width*Fixed::fromRatio(1,2))/(width*Fixed::fromRatio(1,2)),Fixed{},1_fx);
-            requested=body.bottomY+(body.surfaceY-Fixed::fromRatio(8,100)-body.bottomY)*t*t;
+            requested=body.bottomY+(body.surfaceY+Fixed::fromRatio(8,100)-body.bottomY)*t*t;
         }else{
             auto t=(best-width)/bank;t=t*t*(3_fx-2_fx*t);
-            requested=(body.surfaceY-Fixed::fromRatio(8,100))*(1_fx-t)+original*t;
+            requested=(body.surfaceY+Fixed::fromRatio(8,100))*(1_fx-t)+original*t;
         }
         const auto after=int32_t(std::max<int64_t>(earth.bedrockCm(),std::min<int64_t>(before,(requested*100_fx).floorInt())));
         if(after!=before)edits.push_back({key,before,after});
