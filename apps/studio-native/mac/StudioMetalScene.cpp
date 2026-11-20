@@ -190,16 +190,7 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
     // expanded axis-aligned bounding box. Empty rotated corners are unpickable.
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     // These are the exact model instances submitted by the previous frame.
-    const auto modelHit=studioPickModelInstances(modelInstances_,origin,direction);
-    std::vector<StudioDocumentProxy> fallback;
-    fallback.reserve(proxies.size());
-    for(const auto& proxy:proxies) {
-        bool drawnModel=false;
-        for(const auto& instance:modelInstances_) if(instance.id==proxy.id) {drawnModel=true;break;}
-        if(!drawnModel) fallback.push_back(proxy);
-    }
-    const auto proxyHit=studioPickVisibleProxy(fallback,origin,direction);
-    return modelHit.surface.distance<proxyHit.distance ? modelHit.id : proxyHit.id;
+    return studioPickSceneSurfaces(modelInstances_,proxies,origin,direction);
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
