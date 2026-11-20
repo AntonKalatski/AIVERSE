@@ -213,7 +213,10 @@ bool RtsView::collectRetiredModels() {
     const bool models=resources_.collectRetired(*dev_);
     const bool images=imageRollback_.collect(*dev_);
     // Always poll all three queues, even while a previous one is pending.
-    const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
+    roads_->collectRetired(*dev_);
+    shores_->collectRetired(*dev_);
+    const bool roads=roads_->pendingGpuRetirements()==0;
+    const bool shores=shores_->pendingGpuRetirements()==0;
     // Failed staged owners remain alive until a host-proven idle shutdown.
     // Poll their token queues too so they cannot accumulate GPU retirements.
     if(pendingRoadRecovery_)pendingRoadRecovery_->collectRetired(*dev_);
@@ -1238,7 +1241,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // Remove presentation entities for no-longer-eligible objects every
     // frame. No model draws here; RtsViewDraw still applies materials,
     // terrain height, outlines, shadow, effects and other scene features.
-    if(!genericObjects.empty() && !genericView_) {
+    if(genericObjects.size()!=0 && !genericView_) {
         genericView_=std::make_unique<::aiverse::view::View>(
             ::aiverse::lib::animation::MotionWeaveWorkerPool::recommendedWorkers());
         genericView_->setRetargetScratchBudgetBytes(

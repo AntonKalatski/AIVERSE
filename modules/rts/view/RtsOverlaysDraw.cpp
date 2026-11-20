@@ -135,7 +135,9 @@ void RtsOverlays::initGpu(gfx::Device& dev) {
         throw;
     }
 
-    const auto oldShader=shader_,oldWhite=white_,oldVb=vb_;
+    const auto oldShader=shader_;
+    const auto oldWhite=white_;
+    const auto oldVb=vb_;
     gfx::PipelineHandle oldPipes[4]{};
     for(int p=0;p<4;++p) {
         oldPipes[p]=pipes_[p];

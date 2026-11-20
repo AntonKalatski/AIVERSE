@@ -51,7 +51,7 @@ int main() {
     assert(first.visible==1);
     assert(first.drawable==0);
     assert(first.animated==0);
-    assert(scene.presentationEntity(42)==kNullEntity);
+    assert(scene.presentationEntity(42)==aiverse::kNullEntity);
     const auto second=scene.update(batch,1.f/60.f);
     assert(second.visible==first.visible);
     assert(second.animated==first.animated);
@@ -76,6 +76,6 @@ int main() {
     // Without an attached graph, View does not create a second player.
     const auto staged=scene.update(precomputed,1.f/60.f);
     assert(staged.animated==0);
-    assert(scene.presentationEntity(5)==kNullEntity);
-    assert(scene.presentationEntity(9)==kNullEntity);
+    assert(scene.presentationEntity(5)==aiverse::kNullEntity);
+    assert(scene.presentationEntity(9)==aiverse::kNullEntity);
 }
