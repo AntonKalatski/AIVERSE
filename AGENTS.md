@@ -1605,3 +1605,23 @@ idempotent; `borrowedRendererCount()` is diagnostic. Callers MUST
 still explicitly unbind before destroying renderer/controller; this
 registry has RHI owner-thread semantics, not arbitrary thread safety.
 Code and regression CTest sources committed, NATIVE/GPU TESTS NOT RUN.
+
+
+## GI Stage 56 — stable logical GPU BLAS pages with fenced TLAS (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage56-stable-paged-blas-tlas-2026-11-20.md`.
+`GiGpuPagedBvhArena` assigns independent stable suballocated page spans to
+each resident chunk BLAS, reserving the first 4096 nodes for a root-at-0
+TLAS. Unchanged per-chunk immutable BLAS keep their absolute triangle/node
+offsets while neighbors change or are removed; freed spans may be reused
+only after a completed Metal/Vulkan GPU ticket fence. The normal GPU
+runtime now plans pages transactionally and commits the page map ONLY when
+`GiGpuSmallScene::setPackedGeometry` accepted the upload.
+Storage streams still use ordinary 64-byte triangles and 48-byte nodes,
+with no shader descriptor ABI changes, and Stage54 sparse changed-range
+buffer uploads. This is logical suballocation in two SSBOs, NOT fully
+independent GPU `VkBuffer`/`MTLBuffer` per chunk or unbounded GPU GI.
+4096 TLAS reserved nodes / 2048 resident chunks / 8192 physical triangle
+slots remain explicit limits; fragmentation/compaction is still pending.
+New `gi_gpu_paged_bvh` CTest source and GPU runtime contract are
+UNEXECUTED. Do not claim a native/GPU PASS or merge to main yet.
