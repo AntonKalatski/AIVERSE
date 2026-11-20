@@ -240,7 +240,8 @@ void VisibilityField::shutdown() {
 
 void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height) {
     if (!dev_ || w <= 0 || h <= 0) return;
-    for (auto* b : {&vb_, &ib_}) if (b->valid()) { dev.destroyBuffer(*b); *b = {}; }
+    if (dev_ != &dev)
+        throw std::logic_error("VisibilityField build: GPU device mismatch");
     // draped sheet: one vertex per cell corner at the highest neighbouring cell centre, so plateaus
     // never poke through; coarser on big maps (the texture carries the detail)
     const int step = std::max(1, std::max(w, h) / 256);
@@ -266,21 +267,62 @@ void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<
             uint32_t a = uint32_t(j * (cw + 1) + i), b = a + 1, c = a + uint32_t(cw + 1), d = c + 1;
             idx.insert(idx.end(), {a, c, d, a, d, b});
         }
-    gfx::BufferDesc vb; vb.size = v.size() * sizeof(float); vb.data = v.data(); vb.label = "fog sheet";
-    vb_ = dev.createBuffer(vb);
-    gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = idx.size() * sizeof(uint32_t); ib.data = idx.data(); ib.label = "fog sheet idx";
-    ib_ = dev.createBuffer(ib);
-    indexCount_ = uint32_t(idx.size());
-    if (w != w_ || h != h_ || !tex_.valid()) {
-        if (tex_.valid()) dev.destroyTexture(tex_);
-        w_ = w; h_ = h;
-        target_.assign(size_t(w) * size_t(h), 0);
-        cur_ = target_; field_ = target_;
-        gfx::TextureDesc td;
-        td.width = w; td.height = h; td.format = gfx::PixelFormat::R8; td.filter = gfx::Filter::Linear; td.data = field_.data(); td.label = "fog of war";
-        tex_ = dev.createTexture(td);
-        lastTime_ = -1;
-        dirty_ = true;
+    // All CPU preparation happens before modifying the current published
+    // view. The GPU handles below are private staging objects until commit.
+    const bool resize=(w!=w_ || h!=h_ || !tex_.valid());
+    std::vector<uint8_t> nextTarget,nextCur,nextField;
+    if (resize) {
+        nextTarget.assign(size_t(w)*size_t(h),0);
+        nextCur=nextTarget;
+        nextField=nextTarget;
+    }
+    gfx::BufferHandle nextVb{},nextIb{};
+    gfx::TextureHandle nextTex{};
+    try {
+        gfx::BufferDesc vb; vb.size=v.size()*sizeof(float); vb.data=v.data(); vb.label="fog sheet";
+        nextVb=dev.createBuffer(vb);
+        if(!nextVb.valid())
+            throw std::runtime_error("VisibilityField build: vertex buffer allocation failed");
+        gfx::BufferDesc ib; ib.type=gfx::BufferType::Index;
+        ib.size=idx.size()*sizeof(uint32_t); ib.data=idx.data(); ib.label="fog sheet idx";
+        nextIb=dev.createBuffer(ib);
+        if(!nextIb.valid())
+            throw std::runtime_error("VisibilityField build: index buffer allocation failed");
+        if (resize) {
+            gfx::TextureDesc td;
+            td.width=w; td.height=h; td.format=gfx::PixelFormat::R8;
+            td.filter=gfx::Filter::Linear; td.data=nextField.data(); td.label="fog of war";
+            nextTex=dev.createTexture(td);
+            if(!nextTex.valid())
+                throw std::runtime_error("VisibilityField build: field texture allocation failed");
+        }
+        // New staging handles were never submitted. Earlier camera passes
+        // may still reference the *old* mesh and texture. A failed barrier
+        // must preserve them, without publishing the replacement.
+        if ((vb_.valid() || ib_.valid() || (resize && tex_.valid())) &&
+            !dev.waitForResourceIdle())
+            throw std::runtime_error("VisibilityField build: GPU idle barrier failed");
+    } catch (...) {
+        if(nextTex.valid())dev.destroyTexture(nextTex);
+        if(nextIb.valid())dev.destroyBuffer(nextIb);
+        if(nextVb.valid())dev.destroyBuffer(nextVb);
+        throw;
+    }
+    if(vb_.valid())dev.destroyBuffer(vb_);
+    if(ib_.valid())dev.destroyBuffer(ib_);
+    vb_=nextVb;
+    ib_=nextIb;
+    indexCount_=uint32_t(idx.size());
+    if(resize) {
+        if(tex_.valid())dev.destroyTexture(tex_);
+        tex_=nextTex;
+        w_=w; h_=h;
+        target_.swap(nextTarget);
+        cur_.swap(nextCur);
+        field_.swap(nextField);
+        lastTime_=-1;
+        dirty_=true;
+        fading_=false;
     }
 }
 
