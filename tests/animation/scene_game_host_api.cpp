@@ -29,6 +29,22 @@ bool instantiateCommitPath(view::MotionWeaveSceneGameHost& host,
     std::string error;
     return host.commitReady(ticket,build,stats,&error);
 }
+// Also instantiate the shared-residency path against canonical native
+// coordinator types; no GPU owner is created by this deferred fixture.
+bool instantiateSharedCommitPath(view::MotionWeaveSceneGameHost& host,
+                                 scene::SceneTicket ticket) {
+    auto build=[](const scene::SceneAsset&,
+                  const render::ModelAssetProvider*,
+                  view::MotionWeaveSceneGameHost::Owner&,
+                  std::vector<view::MotionWeaveSceneGameHost::Object>&,
+                  std::string&) -> bool {
+        return false;
+    };
+    view::MotionWeaveSceneGameHost::Statistics stats;
+    std::string error;
+    return host.commitReadyShared(
+        ticket,"common/characters",build,stats,&error);
+}
 } // namespace
 
 int main() {
@@ -53,7 +69,16 @@ int main() {
         decltype(std::declval<Host&>().collectRetired()),bool>);
     static_assert(std::is_same_v<
         decltype(std::declval<Host&>().completeForShutdown()),bool>);
+    using SharedLease=render::SceneModelProviderResidency::Lease;
+    static_assert(!std::is_copy_constructible_v<SharedLease>);
+    static_assert(!std::is_copy_assignable_v<SharedLease>);
+    static_assert(std::is_move_constructible_v<SharedLease>);
+    static_assert(std::is_move_assignable_v<SharedLease>);
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Host&>().sharedProviderReferences(
+            std::declval<const std::string&>())),size_t>);
     (void)&instantiateCommitPath;
+    (void)&instantiateSharedCommitPath;
 
     // Real canonical SceneState types from main, with persistent and
     // preparing records. Only Active scenes can retain visuals on Replace.
