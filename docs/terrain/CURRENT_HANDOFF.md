@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+
+> **Focused native live-nutrient+fall CTest PASS — 2026-11-20:**
+> Mac Studio user reports `aiverse_physis_terraweave_fall_bridge_test`
+> built successfully; `physis_terraweave_fall_bridge` **1/1 PASS,
+> 0.84s**, covering PHYSIS weather, NEREID 4m body IDs, nutrient
+> conservation/archive/COW replay and the existing real Box3D fall
+> bridge. [Executed-test handoff](qa-2026-11-20-stage70-live-native-micro-fall-ctest-green-handoff.md).
+> **Full CTest of SpectraFX-current-main merge has NOT RUN yet**.
+> Historical Mac 181/181 PASS is older `f55d8d4e`.
+>
+
 > **SpectraFX main two-parent merge + Stage70 live weather/water QA (2026-11-20):**
 > Two-parent merge `40ed8606` incorporates new main
 > `b80601eb` (SpectraFX and related concurrent changes) while
