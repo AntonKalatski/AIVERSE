@@ -206,7 +206,11 @@ bool VisibilityField::init(gfx::Device& dev) {
         pd.label = "fog of war";
         pipe = dev.createPipeline(pd);
         if (!pipe.valid()) {
-            dev.destroyShader(shader);
+            // Clear the local owner before destruction; if a backend throws
+            // on cleanup, the exception handler must not destroy twice.
+            const auto failedShader=shader;
+            shader={};
+            dev.destroyShader(failedShader);
             return false;
         }
     } catch (...) {
