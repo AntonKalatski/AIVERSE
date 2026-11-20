@@ -261,6 +261,54 @@ inline bool prepareSculptGpuVertexSource(
     return true;
 }
 
+// Stage 7AY: bounded pure-source validation for an independent sampled
+// Mask depth blocker. This proves only input shape/material finiteness;
+// the host still must verify the corresponding CURRENT Renderer3D
+// colour-pass ModelDraw/mesh/LOD/override before using its GPU buffer.
+inline bool sculptGpuMaskedOccluderInputsValid(
+        const SculptGpuVertexSource& source,
+        gfx::BufferHandle selectedGpuSource) noexcept {
+    if(!selectedGpuSource.valid() || !source.maskedSelection ||
+       !source.actualVertexOverride.valid() ||
+       source.actualVertexOverride==selectedGpuSource ||
+       !source.maskBaseTexture.valid() || !source.sourceVertexCount ||
+       source.sourceVertexCount>1000000u ||
+       source.params.vertices!=source.sourceVertexCount ||
+       source.params.count!=source.indices.size() ||
+       !source.params.count || source.params.count%3u ||
+       source.params.count>3000000u ||
+       source.maskInputs.size()!=source.sourceVertexCount ||
+       source.params.jointMatrices!=source.jointMatrices.size() ||
+       source.params.skinned!=(source.jointMatrices.empty()?0u:1u) ||
+       (source.params.skinned &&
+        source.influences.size()!=source.sourceVertexCount))
+        return false;
+    for(float x:source.params.rigidWorld.m)
+        if(!std::isfinite(x))return false;
+    for(const auto& mat:source.jointMatrices)
+        for(float x:mat.m)if(!std::isfinite(x))return false;
+    for(const auto& input:source.maskInputs)
+        for(float x:input.uvAlpha)
+            if(!std::isfinite(x))return false;
+    for(const auto& idx:source.indices)
+        if(idx.vertex>=source.sourceVertexCount)return false;
+    for(const auto& influence:source.influences) {
+        for(float x:influence.weights)
+            if(!std::isfinite(x)||x<0.f||x>1.f)return false;
+        for(std::size_t i=0;i<4u;++i)
+            if(influence.weights[i]>0.f &&
+               influence.joints[i]>=source.params.jointMatrices)
+                return false;
+    }
+    for(float x:source.maskUniform.alpha)
+        if(!std::isfinite(x))return false;
+    for(float x:source.maskUniform.uv0)
+        if(!std::isfinite(x))return false;
+    for(float x:source.maskUniform.uv1)
+        if(!std::isfinite(x))return false;
+    return true;
+}
+
 // The first 3 uint32 per source ModelVertex are exact IEEE754 position,
 // preserved by GpuMorphMeshStream's 48B→60B packing kernel. A CPU-built
 // position stream is NOT read by the GPU expansion: only the already
