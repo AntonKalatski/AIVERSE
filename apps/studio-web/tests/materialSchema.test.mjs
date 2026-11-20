@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MATERIAL_EDIT_KEYS,materialFields,materialNames,materialSwatchColor,editablePatch} from '../src/panels/materialSchema.ts';
+import {MATERIAL_PRESETS,MATERIAL_EDIT_KEYS,materialFields,materialNames,materialSwatchColor,editablePatch} from '../src/panels/materialSchema.ts';
 test('PBR field metadata exactly matches native allowlist',()=>{
  assert.deepEqual(materialFields({}).map(f=>f.key),[...MATERIAL_EDIT_KEYS]);
 });
@@ -22,6 +22,5 @@ test('patch output strips unsupported fields',()=>{
 });
 
 test('creation preset registry stays within native whitelist',()=>{
- const keys=['matte','metal','glass'];
- assert.deepEqual(keys,['matte','metal','glass']);
+ assert.deepEqual([...MATERIAL_PRESETS],['matte','metal','glass']);
 });
