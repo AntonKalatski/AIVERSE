@@ -10,6 +10,7 @@
 #include <limits>
 #include <span>
 #include <vector>
+#include <utility>
 
 namespace aiverse::vivid {
 struct SkinnedWeightSurface {
@@ -19,6 +20,13 @@ struct SkinnedWeightSurface {
     bool ready=false;
 };
 
+// Reused per-editor scratch: the currently published surface is never
+// changed until a complete replacement has passed validation.
+struct SkinnedWeightScratch {
+    SkinnedWeightSurface staging;
+    std::vector<std::size_t> firstPrimitive;
+};
+
 // Build a scratch world-space vertex stream for exactly one mesh. Reject
 // ambiguous multi-owner meshes and vertex IDs used with unequal palettes.
 // Rigid parts also work; skinned parts use sum(weight*jointWorld*inverseBind).
@@ -26,7 +34,8 @@ inline bool prepareSkinnedWeightSurface(
     const render::Model& model, std::size_t meshId,
     std::span<const render::mat4> nodeWorld,
     SkinnedWeightSurface& out,
-    std::span<const render::float3> deformedBindPositions={}) {
+    std::span<const render::float3> deformedBindPositions={},
+    SkinnedWeightScratch* scratch=nullptr) {
     using namespace render;
     if(meshId>=model.meshes.size() ||
        nodeWorld.size()!=model.nodes.size() ||
@@ -50,14 +59,22 @@ inline bool prepareSkinnedWeightSurface(
     for(const auto& matrix:nodeWorld)
         for(float component:matrix.m)
             if(!std::isfinite(component))return false;
-    SkinnedWeightSurface next;
+    if(scratch && &scratch->staging==&out)return false;
+    SkinnedWeightScratch local;
+    auto& workspace=scratch?*scratch:local;
+    auto& next=workspace.staging;
+    next.ready=false;
     next.mesh=meshId;
     next.world.resize(model.vertices.size());
     next.included.assign(model.vertices.size(),0);
-    // Store each vertex's first primitive palette. Verify any subsequent
-    // occurrences resolve the same skinned joint indices.
-    std::vector<std::vector<std::uint16_t>> palettes(model.vertices.size());
-    for(const auto& prim:model.meshes[meshId].primitives) {
+    // One first-primitive index per vertex replaces a million small
+    // palette vectors. Shared vertices must resolve equal palettes.
+    auto& firstPrimitive=workspace.firstPrimitive;
+    firstPrimitive.assign(model.vertices.size(),
+                          std::numeric_limits<std::size_t>::max());
+    const auto& primitives=model.meshes[meshId].primitives;
+    for(std::size_t primitiveIndex=0;primitiveIndex<primitives.size();++primitiveIndex) {
+        const auto& prim=primitives[primitiveIndex];
         const std::size_t start=prim.firstIndex;
         if(start>model.indices.size() ||
            prim.indexCount>model.indices.size()-start ||
@@ -67,9 +84,10 @@ inline bool prepareSkinnedWeightSurface(
             const auto id=model.indices[i];
             if(id>=model.vertices.size())return false;
             if(next.included[id]) {
-                if(palettes[id]!=prim.jointPalette)return false;
+                if(primitives[firstPrimitive[id]].jointPalette!=prim.jointPalette)
+                    return false;
             }else {
-                palettes[id]=prim.jointPalette;
+                firstPrimitive[id]=primitiveIndex;
                 next.included[id]=1;
             }
         }
@@ -77,6 +95,7 @@ inline bool prepareSkinnedWeightSurface(
     for(std::size_t id=0;id<model.vertices.size();++id) {
         if(!next.included[id])continue;
         const auto& v=model.vertices[id];
+        const auto& palette=primitives[firstPrimitive[id]].jointPalette;
         const float3 bind=deformedBindPositions.empty()
             ?v.pos:deformedBindPositions[id];
         if(!std::isfinite(bind.x)||!std::isfinite(bind.y)||
@@ -90,8 +109,8 @@ inline bool prepareSkinnedWeightSurface(
                 const auto weight=v.weights[influence];
                 if(weight==0)continue;
                 const auto localJoint=std::size_t(v.joints[influence]);
-                if(localJoint>=palettes[id].size())return false;
-                const auto index=std::size_t(palettes[id][localJoint]);
+                if(localJoint>=palette.size())return false;
+                const auto index=std::size_t(palette[localJoint]);
                 if(index>=skin->joints.size())return false;
                 const int joint=skin->joints[index];
                 if(joint<0||std::size_t(joint)>=nodeWorld.size())return false;
@@ -108,7 +127,8 @@ inline bool prepareSkinnedWeightSurface(
         next.world[id]=position;
     }
     next.ready=true;
-    out=std::move(next);
+    if(scratch)std::swap(out,next); // reuse previous published allocations
+    else out=std::move(next);
     return true;
 }
 
