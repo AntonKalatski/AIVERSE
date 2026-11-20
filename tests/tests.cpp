@@ -5529,6 +5529,32 @@ static std::string overlayError(const game::Rules& R, const char* json) {
 }
 static bool hasText(const std::string& s, const char* part) { return s.find(part) != std::string::npos; }
 
+TEST(overlay_prepared_reload_matches_direct_init) {
+    game::Rules R=skirmishRules();
+    const Json rules=Json::parse(R"([{"id":"selection","enabled":false},
+        {"id":"health_bars","style":{"thickness":0.1}}])");
+    const Json game=Json::parse(R"([{"id":"selection","enabled":true}])");
+    const game::OverlaySet prepared=game::loadOverlaySet(R,rules,game);
+    game::RtsOverlays oldPath,stagedPath;
+    oldPath.init(R,rules,game,"");
+    stagedPath.initPrepared(R,prepared,"");
+    CHECK(oldPath.set().defs.size()==stagedPath.set().defs.size());
+    CHECK(oldPath.set().warnings==stagedPath.set().warnings);
+    CHECK(oldPath.outlineSelected()==stagedPath.outlineSelected());
+    CHECK(oldPath.outlineHovered()==stagedPath.outlineHovered());
+    for(size_t i=0;i<oldPath.set().defs.size();++i) {
+        CHECK(oldPath.set().defs[i].id==stagedPath.set().defs[i].id);
+        CHECK(oldPath.set().defs[i].enabled==stagedPath.set().defs[i].enabled);
+    }
+    // The new path must not depend on the original JSON objects after
+    // preflight; it holds a complete CPU-side snapshot of overlay rules.
+    auto moved=game::loadOverlaySet(R,rules,game);
+    game::RtsOverlays movedPath;
+    movedPath.initPrepared(R,std::move(moved),"");
+    CHECK(movedPath.set().defs.size()==oldPath.set().defs.size());
+    CHECK(movedPath.outlineSelected()==oldPath.outlineSelected());
+}
+
 TEST(overlay_builtins_are_data) {
     game::Rules R = skirmishRules();
     game::OverlaySet set = game::loadOverlaySet(R, Json(), Json());
