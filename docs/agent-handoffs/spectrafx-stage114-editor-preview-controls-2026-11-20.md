@@ -46,3 +46,25 @@ bash tools/spectrafx/acceptance.sh build/spectrafx-validation
 ```
 
 Expected additional desktop `spectrafx_preview_policy` CTest (total test count may increase by 1); all 4 MetalGPU tests remain required. Record exact compiled SHA, CTest summary, Editor Preview observations, hard errors and next agent task. Never claim an unrun test passed.
+
+## Stage 114 source corrections and actual local verification
+
+Subsequent code commits:
+- `1d21a12591012696740034011f3672b0efca4190`: render-target allocation guard before opening the Editor preview pass; consume Step **only after** the actual emitter dispatch/start succeeded. Deferred/failed RHI reset and missing backend no longer consume the queued step. The wall-clock still advances in UI to avoid catch-up.
+- `04f775a97ed0f8b06dd47bed489e6d387b6a2fa4`: add regression asserting an unsuccessful GPU dispatch preserves pending Step, and a successful retry consumes exactly one step.
+- This handoff commit: acceptance script now explicitly includes the new standalone preview policy executable in its **focused core build** before full compilation.
+
+**Actual executed local test:** The committed `SpectraFxGpuPreviewPolicy.h` and `tests/spectrafx_preview_policy.cpp` were copied byte-for-byte into a local Linux Clang workspace; exact `git hash-object` checks matched the GitHub file blob SHAs:
+`dfe10b9c23474562dd9fa86d969ed4fa7917df3a` and
+`ebc4562cca8644daf76ffa2b08bfa1b9318009a1`.
+The exact committed source passed:
+
+```bash
+clang++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -I. \
+  tests/spectrafx_preview_policy.cpp -o spectrafx_preview_policy
+./spectrafx_preview_policy
+# PASS [spectrafx-preview-policy] pause, step, invalid draft,
+# revision retry, restart and reset
+```
+
+This verifies the **standalone pure CPU policy**, not a full Editor GUI build, macOS native Metal RHI or live input interactions. Those remain **NOT RUN** at the current Stage 114 SHA.

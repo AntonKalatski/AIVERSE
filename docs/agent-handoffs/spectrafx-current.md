@@ -1,5 +1,20 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 114 follow-up — exact-source Clang policy test PASS (Mac GUI NOT RUN)
+
+Code `9c387ed9559b07196e40814ad753d212db248115` introduces the
+Editor Preview policy, plus fixes
+`1d21a12591012696740034011f3672b0efca4190` (invalid RT guard and
+defer Step until successful dispatch) and
+`04f775a97ed0f8b06dd47bed489e6d387b6a2fa4` (regression test).
+**Pure CPU policy standalone Clang -Werror test PASS** in the local
+container. Exact header/test file Git blob SHAs matched committed GitHub
+source before execution. Acceptance core build now includes that target.
+**Full native CMake/Metal and actual Editor interactions NOT RUN** for
+Stage 114. Latest hardware-accepted code is still Stage 113's earlier SHA.
+See `docs/agent-handoffs/spectrafx-stage114-editor-preview-controls-2026-11-20.md`.
+
+
 ## Stage 114 — Editor Preview state correctness and deterministic policy test (NOT RUN)
 
 Pure new `SpectraFxGpuPreviewPolicy` controls Pause/Step, nonfinite

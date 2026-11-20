@@ -68,6 +68,7 @@ if stage configure cmake "${opts[@]}"; then
         aiverse_spectrafx_header_smoke aiverse_spectrafx_contract_tests
         aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests
         aiverse_spectrafx_retirement_tests
+        aiverse_spectrafx_preview_policy_tests
     )
     if [[ "$OS" == Darwin ]]; then
         targets+=(aiverse_spectrafx_metal_gpu_test aiverse_spectrafx_metal_billboard_test

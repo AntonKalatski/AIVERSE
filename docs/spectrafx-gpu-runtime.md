@@ -1,5 +1,23 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 114 — reliable Editor GPU Preview / revision retry
+
+Editor GPU Assets Preview uses the pure
+`apps/editor/windows/SpectraFxGpuPreviewPolicy.h` policy to control
+Pause/Resume/Step, nonfinite editor clock input and authored JSON
+revision changes. Successful dispatch is required before marking a
+revision live; failed ones do not trigger repeated GPU scene resets
+on every UI frame. Restart or changing the JSON explicitly retries.
+A requested Step is preserved through invalid JSON, unavailable RT
+attachments, unsafe scene-reset point and failed GPU dispatch.
+
+`spectrafx_preview_policy` is a new desktop CTest under SpectraFX and
+EDITOR labels. Its exact standalone source passed Linux Clang
+`-std=c++17 -O2 -Wall -Wextra -Werror -pedantic`; the live macOS
+Editor GUI has **NOT** been interactively tested on this new revision.
+See the Stage 114 handoff for regression details.
+
+
 ## Stage 111 — visual QA sheet and GPU performance diagnostics
 
 Set `AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene`
