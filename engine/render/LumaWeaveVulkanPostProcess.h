@@ -379,6 +379,10 @@ private:
            !viewKey_ || !input.hasMetadata ||
            !input.validFor(width_,height_,gfx::PixelFormat::RGBA16F) ||
            !dev_->frameSerial())return false;
+        if(!automaticallyProduced &&
+           (motionFrameSerial_!=dev_->frameSerial() ||
+            motionViewKey_!=viewKey_ || motionViewEpoch_!=viewEpoch_))
+            return false; // never launder stale manual input into this frame
         auto& slot=receiverSlots_[size_t(activeReceiverSlot_)];
         if(!slot.motion.valid() || input.texture.id==slot.motion.id)
             return false;
