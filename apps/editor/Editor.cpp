@@ -887,6 +887,7 @@ void Editor::syncGrid() {
             worldHash_ = h;
         }
     }
+    view_.setMapSurfaceEnabled(d.extra.getStr("terrainPresentation","legacy")!="entities");
     view_.setTerrainMaterial(d.extra["terrainMaterial"], d.w, d.h);
     if (!d.detail.empty() && d.detailScale > 0) {   // visual detail layer (TerrainOps sculpt / import)
         game::terrain::DetailSurface ds;

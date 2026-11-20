@@ -570,6 +570,7 @@ void main() {
         float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
+    float shoreCoverage=1.0;
     // NEREID optics: sample the existing opaque colour/depth capture only.
     // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     // Captured background depth must be below the water plane.
@@ -579,6 +580,13 @@ void main() {
         vec4 projected = u_viewProj * vec4(v_wpos, 1.0);
         if (projected.w > 0.0) {
             vec2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            // Contact coverage uses undistorted depth: refraction must not move
+            // the actual shoreline or expose the water mesh perimeter.
+            if(u_params.x > -2.5 && all(greaterThan(screen,vec2(0.001))) && all(lessThan(screen,vec2(0.999)))){
+                vec2 shoreUV=u_shadow.x>0.5?vec2(screen.x,1.0-screen.y):screen;
+                float shoreDepth=texture(tex5,shoreUV).r;
+                if(shoreDepth<0.9999){float depth=v_wpos.y-ssrUnproject(screen,shoreDepth).y;shoreCoverage=smoothstep(0.0,max(0.18,u_color.g),depth);}
+            }
             vec2 distorted = screen + n.xz * (0.009 * u_params.w);
             if (all(greaterThan(distorted, vec2(0.005))) &&
                 all(lessThan(distorted, vec2(0.995)))) {
@@ -602,14 +610,14 @@ void main() {
                             float shallow = clamp(1.0 - thickness / u_color.g, 0.0, 1.0);
                             float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
                             outc = mix(outc, vec3(0.82, 0.91, 0.92),
-                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                                       clamp(foamWeight * (0.10+0.10*pow(sin(dot(v_wpos.xz,vec2(3.7,5.1))+u_camPos.w),2.0)), 0.0, 0.2));
                         }
                     }
                 }
             }
         }
     }
-    o_color = vec4(outc, albedo.a);
+    o_color = vec4(outc, albedo.a*shoreCoverage);
 }
 )";
 
@@ -793,12 +801,18 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     }
     // NEREID optics: share captured opaque tex4/tex5 with SSR, no feedback.
     // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
+    float shoreCoverage=1.0;
     if (u.params.x < -0.5 && f.trace2.w > 0.5 &&
         (u.params.w > 0.001 || u.color.r > 0.001 ||
          u.color.g > 0.001 || u.color.b > 0.001)) {
         float4 projected = f.viewProj * float4(in.wpos, 1.0);
         if (projected.w > 0.0) {
             float2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            if(u.params.x > -2.5 && all(screen>float2(0.001)) && all(screen<float2(0.999))){
+                float2 shoreUV=f.shadow.x>0.5?float2(screen.x,1.0-screen.y):screen;
+                float shoreDepth=tex5.sample(s5,shoreUV);
+                if(shoreDepth<0.9999){float depth=in.wpos.y-ssrUnproject(f,screen,shoreDepth).y;shoreCoverage=smoothstep(0.0,max(0.18,u.color.g),depth);}
+            }
             float2 distorted = screen + n.xz * (0.009 * u.params.w);
             if (all(distorted > float2(0.005)) &&
                 all(distorted < float2(0.995))) {
@@ -820,14 +834,14 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                             float shallow = clamp(1.0 - thickness / u.color.g, 0.0, 1.0);
                             float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
                             outc = mix(outc, float3(0.82, 0.91, 0.92),
-                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                                       clamp(foamWeight * (0.10+0.10*pow(sin(dot(in.wpos.xz,float2(3.7,5.1))+f.camPos.w),2.0)), 0.0, 0.2));
                         }
                     }
                 }
             }
         }
     }
-    return float4(outc, albedo.a);
+    return float4(outc, albedo.a*shoreCoverage);
 }
 )";
 

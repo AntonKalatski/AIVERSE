@@ -64,6 +64,9 @@ def bake(root,materials,size,part=0,parts=1):
      if k=='normal':value=value*2-1
      out[k]+=value*w[...,None]
    out['basecolor']=np.maximum(out['basecolor'],0)**(1/2.2)
+   wet=1-smooth(.05,.45,H-surface)
+   out['basecolor']*=1-.35*wet[...,None]
+   out['orm'][...,1]*=1-.25*wet
    out['normal']/=np.maximum(np.linalg.norm(out['normal'],axis=2,keepdims=True),1e-6);out['normal']=out['normal']*.5+.5
    for k in result:result[k][row:row+H.shape[0]]=np.rint(np.clip(out[k],0,1)*255).astype('uint8')
   stem=Path(tile['file']).stem
