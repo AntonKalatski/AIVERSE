@@ -151,3 +151,12 @@ model_image_transaction stub's obsolete setIndexBuffer signature; CTest NOT RUN.
 Commit `0dc0b409b3611f97a48540b469f17e1e73dd4686` updates that stub and gives ragdoll fixture an explicit Neck,
 plus sparse-avatar checks (2 bodies, no invalid joints). Production unchanged;
 branch codex/lens-completion; CI NOT RUN. Next: rebuild/retest on KINGSTON.
+
+## Pass 11 — hybrid fixture syntax
+
+Quick runner at `773ef2ea9`, KINGSTON report `20261120-144337-14469`:
+configure PASS, build FAIL at motionweave_hybrid.cpp missing Json::parse close
+parenthesis; CTest NOT RUN. Commit `7b376345c82ac078a2f107f8500ef629ee93f7de` fixes only that syntax.
+Branch codex/lens-completion; no API/save change; CI NOT RUN. Next: repeat
+full quick runner with MAKEFLAGS=-k to collect independent compiler failures
+in one pass; outputs still exclusively on KINGSTON.
