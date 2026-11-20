@@ -7,6 +7,7 @@
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "engine/render/Model.h"
 #include "engine/character/vivid/HumanAppearance.h"
+#include "engine/character/vivid/HumanFaceShape.h"
 #include <optional>
 #include <array>
 #include <cmath>
@@ -24,7 +25,7 @@ namespace aiverse::studio {
 class StudioFacialPreviewBinding final {
 public:
     void reset() {
-        appearance_.reset();appearanceOnly_=false;
+        appearance_.reset();face_.reset();appearanceOnly_=false;
         guid_.clear();
         path_.clear();
         draft_=Json();
@@ -35,16 +36,19 @@ public:
         ++revision_;
     }
     const std::optional<vivid::HumanAppearance>& appearance() const {return appearance_;}
+    const std::optional<vivid::HumanFaceShape>& face() const {return face_;}
     bool appearanceOnly() const {return appearanceOnly_;}
     Json bindAppearance(const StudioAssetCatalog& catalog,const std::string& guid,
-                        uint64_t expected,const Json& look) {
+                        uint64_t expected,const Json& look,const Json* face=nullptr) {
         if(expected!=revision_)throw std::runtime_error("Stale character selection; refresh first");
         const auto path=checkedModelPath(catalog,guid);
         const auto candidate=vivid::HumanAppearance::fromJson(look);
+        auto candidateFace=guid_==guid?face_:std::optional<vivid::HumanFaceShape>{};
+        if(face){candidateFace.reset();if(!face->isNull())candidateFace=vivid::HumanFaceShape::fromJson(*face); }
         if(guid_!=guid || !bound()) {
             draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;
         }
-        guid_=guid;path_=path;appearance_=candidate;
+        guid_=guid;path_=path;appearance_=candidate;face_=candidateFace;
         gpuReady_=false;gpuError_.clear();++revision_;return describe();
     }
     bool bound() const {return !guid_.empty();}
@@ -120,7 +124,7 @@ public:
                 throw std::invalid_argument("Facial input declared as both scalar and vector: "+item.first);
         // Publish the COMPLETE new binding only after native GUID and
         // authoring schema checks. This is NOT a Model/Graph/GPU compile.
-        if(guid_!=guid)appearance_.reset();
+        if(guid_!=guid){appearance_.reset();face_.reset();}
         appearanceOnly_=false;
         guid_=guid;
         path_=path;
@@ -206,6 +210,7 @@ private:
     std::string guid_,path_;
     Json draft_;
     std::optional<vivid::HumanAppearance> appearance_;
+    std::optional<vivid::HumanFaceShape> face_;
     bool appearanceOnly_=false;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;

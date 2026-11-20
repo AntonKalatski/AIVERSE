@@ -60,6 +60,13 @@ int main() {
   AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));
   AIVERSE_TEST_CHECK(poll().has("error"));
   AIVERSE_TEST_CHECK(!fs::exists(project/"content/Characters/.assembled.pending"));
+  auto face=Json::parse(R"({"version":1,"meshes":[],"values":{"width":0.1},"landmarks":[]})");face.member("meshes").push(Json::string(model.model->meshes[0].name));
+  build.set("face",face);build.set("name",Json::string("face_baked"));
+  AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build)["result"].getBool("running"));AIVERSE_TEST_CHECK(!poll().has("error"));
+  auto scan=Json::object();scan.set("guid",Json::string(person->guid));scan.set("scanGuid",Json::string(person->guid));scan.set("face",face);scan.set("distance",Json::number(.1));scan.set("strength",Json::number(.5));
+  AIVERSE_TEST_CHECK(call("studio.humanFaceFitScan",scan)["result"].getBool("running"));auto fitted=poll();AIVERSE_TEST_CHECK(!fitted.has("error")&&fitted["face"]["landmarks"].size()>=4);
+  auto parts=Json::object();parts.set("guid",Json::string(person->guid));parts.set("headGuid",Json::string(person->guid));parts.set("bone",Json::string(""));parts.set("hiddenMeshes",Json::array());parts.set("name",Json::string("parts_imported"));
+  AIVERSE_TEST_CHECK(call("studio.humanHeadBodyImport",parts)["result"].getBool("running"));AIVERSE_TEST_CHECK(!poll().has("error"));
   build.set("guid",Json::string("../../outside"));AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build).has("error"));
   fs::remove_all(root);
  } catch(...) {fs::remove_all(root);throw;}

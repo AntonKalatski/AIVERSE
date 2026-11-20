@@ -154,6 +154,7 @@ bool StudioFacialGpuPreview::sync(
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
             ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
+        if(binding.face())vivid::applyHumanFaceShape(*prepared.model,*binding.face());
         if(binding.appearance())vivid::applyHumanAppearance(*prepared.model,*binding.appearance());
         if(!binding.appearanceOnly() && !newSession.configure(*prepared.model,binding.document(),
                                  binding.scalars(),ikTargets,error))

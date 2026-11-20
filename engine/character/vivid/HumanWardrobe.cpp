@@ -18,14 +18,26 @@ void compactMaterials(Model& m) {
 }
 void append(Model& dst,Model src,const Json& item) {
  const auto id=item.getStr("id"),bone=item.getStr("bone");
- need(src.clips.empty(),"Clothing must use character animations; remove its independent clips");
+ const bool independent=item.getBool("independentRig");
+ need(independent||src.clips.empty(),"Clothing must use character animations; remove its independent clips");
  const auto t=vec(item["translation"],{}),r=vec(item["rotation"],{}),s=vec(item["scale"],{1,1,1});
  const bool skinned=!src.skins.empty();
- need(!skinned || (bone.empty()&&t.x==0&&t.y==0&&t.z==0&&r.x==0&&r.y==0&&r.z==0&&s.x==1&&s.y==1&&s.z==1),"Skinned clothing requires matching bind pose, without socket offsets");
- const int parent=bone.empty()?-1:dst.findNode(bone);need(bone.empty()||parent>=0,"Accessory bone missing: "+bone);
+ need(independent||!skinned || (bone.empty()&&t.x==0&&t.y==0&&t.z==0&&r.x==0&&r.y==0&&r.z==0&&s.x==1&&s.y==1&&s.z==1),"Skinned clothing requires matching bind pose, without socket offsets");
+ int parent=bone.empty()?-1:dst.findNode(bone);need(bone.empty()||parent>=0,"Accessory bone missing: "+bone);
+ if(independent&&parent>=0){
+  // Retain the imported world bind frame while following the body's socket.
+  // Inverse TRS is represented exactly as three nodes, avoiding shear loss.
+  std::vector<Node> chain;for(int n=parent;n>=0;n=dst.nodes.at(size_t(n)).parent)chain.push_back(dst.nodes.at(size_t(n)));
+  int serial=0;for(const auto& n:chain){need(std::abs(n.s.x)>1e-6f&&std::abs(n.s.y)>1e-6f&&std::abs(n.s.z)>1e-6f,"Singular head attachment transform");
+   Node scale;scale.name="wardrobe/"+id+"/bind-scale-"+std::to_string(serial);scale.parent=parent;scale.s={1/n.s.x,1/n.s.y,1/n.s.z};parent=int(dst.nodes.size());dst.nodes.push_back(scale);
+   Node rotation;rotation.name="wardrobe/"+id+"/bind-rotation-"+std::to_string(serial);rotation.parent=parent;rotation.r={-n.r.x,-n.r.y,-n.r.z,n.r.w};parent=int(dst.nodes.size());dst.nodes.push_back(rotation);
+   Node translation;translation.name="wardrobe/"+id+"/bind-translation-"+std::to_string(serial++);translation.parent=parent;translation.t=-n.t;parent=int(dst.nodes.size());dst.nodes.push_back(translation);
+  }
+ }
+
  const int no=int(dst.nodes.size()),mo=int(dst.meshes.size()),ma=int(dst.materials.size()),io=int(dst.images.size()),so=int(dst.skins.size());
  const uint32_t vo=uint32_t(dst.vertices.size()),ix=uint32_t(dst.indices.size());
- for(auto& skin:src.skins)for(size_t j=0;j<skin.joints.size();++j){const int old=skin.joints[j];const auto& name=src.nodes.at(size_t(old)).name;int target=-1;for(size_t k=0;k<dst.nodes.size();++k)if(dst.nodes[k].name==name){need(target<0,"Ambiguous clothing bone: "+name);target=int(k);}need(target>=0,"Clothing bone not in character: "+name);
+ for(auto& skin:src.skins)for(size_t j=0;j<skin.joints.size();++j){const int old=skin.joints[j];if(independent){skin.joints[j]=old+no;continue;}const auto& name=src.nodes.at(size_t(old)).name;int target=-1;for(size_t k=0;k<dst.nodes.size();++k)if(dst.nodes[k].name==name){need(target<0,"Ambiguous clothing bone: "+name);target=int(k);}need(target>=0,"Clothing bone not in character: "+name);
   for(int k=0;k<16;++k)need(std::abs(src.bindWorld.at(size_t(old)).m[k]-dst.bindWorld.at(size_t(target)).m[k])<.002f,"Clothing bind pose differs: "+name);
   skin.joints[j]=target;
  }
@@ -36,6 +48,7 @@ void append(Model& dst,Model src,const Json& item) {
  if(parent>=0)dst.nodes[size_t(parent)].children.push_back(wrapperIndex);dst.nodes.push_back(std::move(wrapper));
  for(auto& mesh:src.meshes){mesh.name="wardrobe/"+id+"/"+mesh.name;mesh.lods.clear();mesh.materialBatches.clear();mesh.shadowBatch={};for(auto& p:mesh.primitives){p.firstVertex+=vo;p.firstIndex+=ix;p.material+=ma;p.variantMaterial.clear();}dst.meshes.push_back(std::move(mesh));}
  for(auto& m:src.materials){m.name="wardrobe/"+id+"/"+m.name;for(auto* tex:{&m.baseTex,&m.mrTex,&m.normalTex,&m.occlusionTex,&m.emissiveTex,&m.teamTex})if(*tex>=0)*tex+=io;need(!m.shaderGraph,"Clothing shader must be baked PBR");dst.materials.push_back(std::move(m));}
+ if(independent)for(auto& clip:src.clips){clip.name="wardrobe/"+id+"/"+clip.name;for(auto& c:clip.channels)c.node+=no;dst.clips.push_back(std::move(clip));}
  dst.vertices.insert(dst.vertices.end(),src.vertices.begin(),src.vertices.end());for(auto index:src.indices)dst.indices.push_back(index+vo);
  for(auto& im:src.images)dst.images.push_back(std::move(im));for(auto& skin:src.skins)dst.skins.push_back(std::move(skin));dst.finalize();
 }
@@ -84,15 +97,15 @@ void bakeHumanBody(Model& model,const HumanAppearance& look){(void)HumanAppearan
 void validateHumanWardrobe(const Json& r) {
  known(r,{"version","hiddenMeshes","items"});need(r["version"].isNumber()&&r["version"].toDouble()==1,"Wardrobe version must be 1");names(r["hiddenMeshes"]);need(r["items"].isArray()&&r["items"].size()<=32,"Wardrobe allows up to 32 items");std::set<std::string> ids,slots;
  for(const auto& item:r["items"].items()){
-  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish"});need(!item.has("finish")||item.getStr("finish")=="cloth"||item.getStr("finish")=="source","Unknown clothing finish");key(item["id"]);key(item["asset"]);key(item["slot"]);need(ids.insert(item.getStr("id")).second,"Duplicate clothing ID");need((item["enabled"]==Json::fromBool(true)||item["enabled"]==Json::fromBool(false)),"Clothing enabled must be boolean");
+  known(item,{"id","asset","slot","enabled","bone","translation","rotation","scale","hideMeshes","masks","finish","independentRig"});need(!item.has("independentRig")||item["independentRig"].type()==Json::Type::Bool,"Invalid independent rig flag");need(!item.has("finish")||item.getStr("finish")=="cloth"||item.getStr("finish")=="source","Unknown clothing finish");key(item["id"]);key(item["asset"]);key(item["slot"]);need(ids.insert(item.getStr("id")).second,"Duplicate clothing ID");need((item["enabled"]==Json::fromBool(true)||item["enabled"]==Json::fromBool(false)),"Clothing enabled must be boolean");
   if(item.getBool("enabled"))need(slots.insert(item.getStr("slot")).second,"Choose one clothing item per slot");
   need(item["bone"].isString()&&item.getStr("bone").size()<=256,"Invalid socket bone");vec(item["translation"],{});vec(item["rotation"],{});const auto s=vec(item["scale"],{1,1,1});need(s.x>.001f&&s.y>.001f&&s.z>.001f,"Accessory scale must be positive");names(item["hideMeshes"]);
   need(item["masks"].isArray()&&item["masks"].size()<=16,"Too many body masks");for(const auto& mask:item["masks"].items()){known(mask,{"material","texture"});key(mask["material"]);key(mask["texture"]);}
  }
 }
 Json inspectHumanWardrobe(const Model& model){auto result=Json::object(),meshes=Json::array(),bones=Json::array(),materials=Json::array();std::set<std::string> names;for(const auto& n:model.nodes){if(n.mesh>=0)names.insert(model.meshes.at(size_t(n.mesh)).name);bones.push(Json::string(n.name));}for(const auto& n:names)meshes.push(Json::string(n));for(const auto& m:model.materials)materials.push(Json::string(m.name));result.set("meshes",meshes);result.set("bones",bones);result.set("materials",materials);return result;}
-std::unique_ptr<Model> assembleHumanCharacter(const std::string& base,const FileReader& read,const Json& wardrobe,const HumanAppearance& look,int size){
- validateHumanWardrobe(wardrobe);auto model=loadModel(base,read);need(bool(model),"Cannot import base character");model->finalize();const auto bodyMin=model->boundsMin,bodyMax=model->boundsMax;
+std::unique_ptr<Model> assembleHumanCharacter(const std::string& base,const FileReader& read,const Json& wardrobe,const HumanAppearance& look,int size,const HumanFaceShape* face){
+ validateHumanWardrobe(wardrobe);auto model=loadModel(base,read);need(bool(model),"Cannot import base character");model->finalize();if(face)applyHumanFaceShape(*model,*face);const auto bodyMin=model->boundsMin,bodyMax=model->boundsMax;
  bakeHumanAppearance(*model,look,size);hide(*model,wardrobe["hiddenMeshes"]);
  for(const auto& item:wardrobe["items"].items())if(item.getBool("enabled")){
   hide(*model,item["hideMeshes"]);for(const auto& entry:item["masks"].items())mask(*model,entry,read,size);

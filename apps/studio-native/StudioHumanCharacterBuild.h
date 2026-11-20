@@ -21,7 +21,8 @@ inline Json buildStudioHumanCharacter(const std::string& project,const std::stri
  if(size!=256&&size!=512&&size!=1024&&size!=2048&&size!=4096)throw std::invalid_argument("Unsupported texture size");
  const auto content=studioContentRoot(project);if(fs::is_symlink(fs::symlink_status(content)))throw std::runtime_error("Content directory cannot be a symlink");
  const auto reader=humanCharacterReader(content);
- auto model=vivid::assembleHumanCharacter(source,reader,wardrobe,look,size);
+ std::optional<vivid::HumanFaceShape> face;if(editable.has("face")&&!editable["face"].isNull())face=vivid::HumanFaceShape::fromJson(editable["face"]);
+ auto model=vivid::assembleHumanCharacter(source,reader,wardrobe,look,size,face?&*face:nullptr);
  const auto bytes=modeling::exportGlb(*model);
  if(bytes.size()>128u*1024u*1024u)throw std::runtime_error("Character GLB exceeds 128 MiB import budget; reduce texture resolution or source maps");
  auto check=render::loadModel("character.glb",[&](const std::string& key,std::string& out){if(key!="character.glb")return false;out=bytes;return true;});

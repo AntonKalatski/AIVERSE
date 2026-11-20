@@ -16,9 +16,10 @@ int main(int argc,char** argv){try{
   std::cout<<"samples="<<count<<" maxPositionError="<<maxDistance<<" rms="<<std::sqrt(sum/count)<<" minNormalDot="<<minNormalDot<<'\n';return maxDistance<.001f?0:1;
  }
 
- if(argc!=7){std::cerr<<"usage: vivid_assemble PROJECT SOURCE_REL WARDROBE_JSON LOOK_JSON NAME RESOLUTION\n";return 2;}
+ if(argc!=7&&argc!=8){std::cerr<<"usage: vivid_assemble PROJECT SOURCE_REL WARDROBE_JSON LOOK_JSON NAME RESOLUTION [FACE_JSON]\n";return 2;}
  const auto recipe=aiverse::Json::parseFile(argv[3]);const auto look=aiverse::vivid::HumanAppearance::fromJson(aiverse::Json::parseFile(argv[4]));
  auto editable=aiverse::Json::object();editable.set("source",aiverse::Json::string(argv[2]));editable.set("wardrobe",recipe);editable.set("look",look.toJson());
+ if(argc==8)editable.set("face",aiverse::Json::parseFile(argv[7]));
  const auto result=aiverse::studio::buildStudioHumanCharacter(argv[1],argv[2],recipe,look,argv[5],std::stoi(argv[6]),editable);
  std::cout<<result.dump(2)<<'\n';return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

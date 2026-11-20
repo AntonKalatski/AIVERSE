@@ -1,6 +1,7 @@
+import HumanFaceControls from '../HumanFaceControls';
 import HumanWardrobeControls from '../HumanWardrobeControls';
 import { useEffect, useRef, useState } from 'react';
-import type { HumanLook, HumanLookInfo, StudioSnapshot } from '../../types';
+import type { HumanFaceShape, HumanLook, HumanLookInfo, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
 import AssetReferencePicker from '../../components/AssetReferencePicker';
 import { StudioPanel, StudioSection, StudioBadge, StudioAlert, StudioEmptyState,
@@ -13,17 +14,18 @@ const groups:Record<string,string>={skin:'Skin · tone & texture',hair:'Hair · 
 export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot|null}) {
  const project=snapshot?.project.path ?? '';
  const [info,setInfo]=useState<HumanLookInfo|null>(null);
+ const [face,setFace]=useState<HumanFaceShape|null>(null);
  const [draft,setDraft]=useState<HumanLook>(emptyLook);
  const [guid,setGuid]=useState('');const [name,setName]=useState('character');
  const [saved,setSaved]=useState<string[]>([]);const [selected,setSelected]=useState('');
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [status,setStatus]=useState('');
  const [undo,setUndo]=useState<HumanLook[]>([]);const [redo,setRedo]=useState<HumanLook[]>([]);
  const generation=useRef(0);
- useEffect(()=>{const gen=++generation.current;setInfo(null);setGuid('');setDraft(emptyLook());setUndo([]);setRedo([]);
+ useEffect(()=>{const gen=++generation.current;setInfo(null);setFace(null);setGuid('');setDraft(emptyLook());setUndo([]);setRedo([]);
   if(!project||!nativeConnected())return;
   setBusy(true);
   void Promise.all([invoke('studio.humanAppearanceInfo',{}),invoke('studio.humanAppearanceList',{})])
-   .then(([i,list])=>{if(gen!==generation.current)return;setInfo(i);setDraft(i.look);setGuid(i.preview.guid);setSaved(list.looks);setError('');})
+   .then(([i,list])=>{if(gen!==generation.current)return;setInfo(i);setFace(i.face);setDraft(i.look);setGuid(i.preview.guid);setSaved(list.looks);setError('');})
    .catch(e=>{if(gen===generation.current)setError(String(e));})
    .finally(()=>{if(gen===generation.current)setBusy(false);});
   return ()=>{++generation.current;};
@@ -33,7 +35,7 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
  const loadAsset=()=>run(async()=>{const result=await invoke('studio.humanAppearanceFromAsset',{guid});edit(result.look);setStatus('Model profile loaded; apply to preview');});
  const apply=()=>run(async()=>{
   const current=await invoke('studio.humanAppearanceInfo',{});
-  const result=await invoke('studio.humanAppearanceApply',{guid,revision:current.preview.revision,look:draft});
+  const result=await invoke('studio.humanAppearanceApply',{guid,revision:current.preview.revision,look:draft,face});
   setInfo(result);setDraft(result.look);setStatus('Applied; native model is loading');
  });
  useEffect(()=>{
@@ -56,9 +58,9 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
    {status&&<StudioAlert>{status}</StudioAlert>}
    {info?.preview.bound&&!info.preview.runtimeReady&&<StudioAlert tone="warning">{info.preview.reason}</StudioAlert>}
    <StudioSection title="Character">
-    <AssetReferencePicker value={guid} onChange={v=>{setGuid(v);setStatus('Load the selected model profile before applying');}} kinds={['model']} label="Character model" disabled={busy}/>
+    <AssetReferencePicker value={guid} onChange={v=>{setGuid(v);setFace(null);setStatus('Load the selected model profile before applying');}} kinds={['model']} label="Character model" disabled={busy}/>
     <div className="au-row"><StudioButton disabled={busy||!guid} onClick={()=>void loadAsset()}>Load model profile</StudioButton>
-    <StudioButton variant="primary" disabled={busy||!guid||!info||!Object.keys(draft.materials).length} onClick={()=>void apply()}>Apply to preview</StudioButton></div>
+    <StudioButton variant="primary" disabled={busy||!guid||!info} onClick={()=>void apply()}>Apply to preview</StudioButton></div>
     <StudioField label="Import appearance JSON" htmlFor="human-look-import" hint="Read a profile; native validation runs on Apply or Save.">
      <StudioInput id="human-look-import" type="file" accept=".json,application/json" disabled={busy} onChange={e=>{
       const file=e.target.files?.[0];if(!file)return;
@@ -97,7 +99,8 @@ export default function HumanAppearancePanel({snapshot}:{snapshot:StudioSnapshot
      </StudioSelect></StudioField>)}
     {!Object.keys(draft.materials).length&&<StudioAlert>Load the model profile or import appearance.json to assign its materials.</StudioAlert>}
    </StudioSection></details>
-   <HumanWardrobeControls key={project+guid} guid={guid} look={draft}/>
+   <HumanFaceControls key={"face"+project+guid} guid={guid} face={face} schema={info?.faceSchema??[]} onChange={setFace} onImported={v=>{setGuid(v);setFace(null);setDraft(emptyLook());}}/>
+   <HumanWardrobeControls key={project+guid} guid={guid} look={draft} face={face}/>
    <StudioSection title="Saved looks">
     <StudioField label="Profile name" htmlFor="human-look-name"><StudioInput id="human-look-name" value={name} disabled={busy} onChange={e=>setName(e.target.value)}/></StudioField>
     <StudioButton disabled={busy||!validName} onClick={()=>void run(async()=>{

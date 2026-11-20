@@ -73,7 +73,7 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_studio_facial_preview_binding_tests
         PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_facial_preview_binding_tests
-        PRIVATE SQLite::SQLite3 aiverse_editor_core)
+        PRIVATE SQLite::SQLite3 aiverse_editor_core AIVERSE::vivid_human)
     add_test(NAME studio_facial_preview_binding
         COMMAND aiverse_studio_facial_preview_binding_tests)
     set_tests_properties(studio_facial_preview_binding PROPERTIES LABELS "EDITOR")

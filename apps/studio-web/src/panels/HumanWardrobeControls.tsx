@@ -1,11 +1,11 @@
 import {useEffect,useState,useId,cloneElement,type ReactElement} from 'react';
-import type {HumanLook,HumanWardrobe,HumanWardrobeItem,HumanBuildStatus} from '../types';
+import type {HumanFaceShape,HumanLook,HumanWardrobe,HumanWardrobeItem,HumanBuildStatus} from '../types';
 import {invoke} from '../bridge';
 import AssetReferencePicker from '../components/AssetReferencePicker';
 import {StudioSection,StudioField,StudioInput,StudioSelect,StudioButton,StudioAlert} from '../ui';
 const empty=():HumanWardrobe=>({version:1,hiddenMeshes:[],items:[]});
 const slots=['top','bottom','feet','head','neck','wrist_left','wrist_right','ears','accessory_1','accessory_2'];
-export default function HumanWardrobeControls({guid,look}:{guid:string;look:HumanLook}) {
+export default function HumanWardrobeControls({guid,look,face}:{guid:string;look:HumanLook;face:HumanFaceShape|null}) {
  const [recipe,setRecipe]=useState<HumanWardrobe>(empty);
  const [history,setHistory]=useState<HumanWardrobe[]>([]);
  const [info,setInfo]=useState<{meshes:string[];bones:string[];materials:string[]}|null>(null);
@@ -44,9 +44,9 @@ export default function HumanWardrobeControls({guid,look}:{guid:string;look:Huma
   <div className="au-row"><StudioButton disabled={disabled||!info||recipe.items.length>=32} onClick={()=>edit({...recipe,items:[...recipe.items,{id:'item_'+Date.now(),asset:'',slot:slots.find(s=>!recipe.items.some(i=>i.enabled&&i.slot===s))??'accessory_1',enabled:true,bone:'',translation:[0,0,0],rotation:[0,0,0],scale:[1,1,1],finish:'cloth',hideMeshes:[],masks:[]}]})}>Добавить одежду / аксессуар</StudioButton><StudioButton disabled={disabled||!history.length} onClick={()=>{setRecipe(history[history.length-1]);setHistory(history.slice(0,-1));}}>Отменить изменение</StudioButton></div>
   <WardrobeField label="Имя собранного персонажа" hint="Новый ассет в content/Characters. Существующие сборки не перезаписываются."><StudioInput value={name} disabled={disabled} onChange={e=>setName(e.target.value)}/></WardrobeField>
   <WardrobeField label="Максимальный размер запекаемых текстур"><StudioSelect value={size} disabled={disabled} onChange={e=>setSize(Number(e.target.value))}>{[256,512,1024,2048,4096].map(n=><option key={n}>{n}</option>)}</StudioSelect></WardrobeField>
-  <StudioButton variant="primary" disabled={disabled||!guid||!(/^[A-Za-z0-9_-]{1,64}$/).test(name)} onClick={()=>void run(async()=>{setJob(await invoke('studio.humanCharacterBuild',{guid,look,wardrobe:recipe,name,textureSize:size}));})}>{job?.running?'Собирается…':'Собрать персонажа'}</StudioButton>
+  <StudioButton variant="primary" disabled={disabled||!guid||!(/^[A-Za-z0-9_-]{1,64}$/).test(name)} onClick={()=>void run(async()=>{setJob(await invoke('studio.humanCharacterBuild',{guid,look,wardrobe:recipe,name,textureSize:size,face}));})}>{job?.running?'Собирается…':'Собрать персонажа'}</StudioButton>
   {job?.running&&<StudioAlert>Импорт, запекание материалов и масок, сборка мешей, проверка повторным импортом GLB…</StudioAlert>}
-  {job?.path&&<><StudioAlert tone="success">{job.path} · {job.meshes} мешей · {job.materials} материалов · {job.vertices} вершин. Рецепт сохранён рядом в source.json.</StudioAlert><StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,look:{version:1,values:{},materials:{}}});})}>Показать собранного персонажа</StudioButton></>}
+  {job?.path&&<><StudioAlert tone="success">{job.path} · {job.meshes} мешей · {job.materials} материалов · {job.vertices} вершин. Рецепт сохранён рядом в source.json.</StudioAlert><StudioButton disabled={disabled||!job.guid} onClick={()=>void run(async()=>{const current=await invoke('studio.humanAppearanceInfo',{});await invoke('studio.humanAppearanceApply',{guid:job.guid!,revision:current.preview.revision,face:null,look:{version:1,values:{},materials:{}}});})}>Показать собранного персонажа</StudioButton></>}
  </StudioSection>;
 }
 

@@ -30,6 +30,18 @@ int main(){try{
  auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->meshes[0].morphTargetNames==mesh.morphTargetNames,"assembled facial names lost");
  auto invalid=recipe;invalid.member("items").push(recipe["items"][0]);bool rejected=false;try{vivid::validateHumanWardrobe(invalid);}catch(...){rejected=true;}check(rejected,"duplicate ID accepted");
  invalid=recipe;invalid.member("items").at(0).set("bone",Json::string("missing"));rejected=false;try{vivid::assembleHumanCharacter("base.glb",reader,invalid,look,16);}catch(...){rejected=true;}check(rejected,"missing socket silently ignored");
+ // Independent imported head keeps its skeleton and morphs, even with different names.
+ auto headDoc=doc;auto headModel=modeling::build(headDoc);headModel.model->nodes[0].name="headRoot";
+ headModel.model->meshes[0].morphTargetNames={"smile"};for(auto& p:headModel.model->meshes[0].primitives){p.morphTargets=1;p.morphDeltas.resize(size_t(p.vertexCount)*6,.01f);}
+ files["head.glb"]=modeling::exportGlb(*headModel.model);
+ auto headRecipe=Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[{"id":"head","asset":"head.glb","slot":"head","enabled":true,"bone":"root","independentRig":true,"hideMeshes":[],"masks":[]}]})");
+ auto attachBody=loadModel("base.glb",reader);attachBody->nodes[size_t(attachBody->findNode("root"))].t={.3f,.4f,.5f};attachBody->nodes[size_t(attachBody->findNode("root"))].s={2,3,4};attachBody->finalize();files["attachment.glb"]=modeling::exportGlb(*attachBody);
+ auto combined=vivid::assembleHumanCharacter("attachment.glb",reader,headRecipe,vivid::HumanAppearance{},16);
+ check(combined->skins.size()==2,"independent head skin lost");
+ const int hn=combined->findNode("wardrobe/head/headRoot");check(hn>=0,"independent head joint missing");
+ check(length(combined->bindWorld[size_t(hn)].transformPoint({0,0,0})-headModel.model->bindWorld[0].transformPoint({0,0,0}))<1e-5f,"head bind frame changed on socket attachment");
+ const auto before=combined->bindWorld[size_t(hn)].transformPoint({0,0,0});combined->nodes[size_t(combined->findNode("root"))].t.x+=2;combined->finalize();
+ check(std::abs(combined->bindWorld[size_t(hn)].transformPoint({0,0,0}).x-before.x-2)<1e-5f,"head did not follow body socket");
  // A bake must match the source base alpha and roughness rather than opaque defaults.
  Model p;p.materials.resize(1);p.materials[0].name="cloth";p.materials[0].baseColor={.2f,.3f,.4f,.25f};p.materials[0].alpha=AlphaMode::Blend;vivid::HumanAppearance fabric;fabric.materials["cloth"]="cloth";vivid::bakeHumanAppearance(p,fabric,16);check(p.images[0].rgba[3]==64&&p.materials[0].roughness>.8f&&!p.materials[0].shaderGraph,"fabric alpha/roughness bake");
  std::cout<<"Wardrobe, socket, masks, appearance and facial roundtrip PASS\n";return 0;

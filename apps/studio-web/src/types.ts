@@ -64,17 +64,20 @@ export interface StudioSnapshot {
   history: { canUndo: boolean; canRedo: boolean };
 }
 export type StudioMethod = 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
-  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
+  'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave' | 'studio.facialPreviewBind' | 'studio.facialPreviewControls' | 'studio.facialPreviewInfo' | 'studio.humanAppearanceInfo' | 'studio.humanAppearanceApply' | 'studio.humanAppearanceSave' | 'studio.humanAppearanceLoad' | 'studio.humanAppearanceList' | 'studio.humanAppearanceFromAsset' | 'studio.humanWardrobeFromAsset' | 'studio.humanFaceFitScan' | 'studio.humanHeadBodyImport' | 'studio.humanWardrobeInfo' | 'studio.humanCharacterBuild' | 'studio.humanCharacterBuildStatus';
 export interface HumanLook { version: 1; values: Record<string,number>; materials: Record<string,string> }
 export interface HumanLookField { key:string; label:string; min:number; max:number; initial:number }
-export interface HumanLookInfo {schema:HumanLookField[];look:HumanLook;preview:StudioFacialPreviewBinding}
+export interface HumanFaceShape {version:1;meshes:string[];values:Record<string,number>;landmarks:{from:[number,number,number];to:[number,number,number];radius:number;weight:number}[]}
+export interface HumanLookInfo {face:HumanFaceShape|null;faceSchema:{key:string;label:string;min:number;max:number}[];schema:HumanLookField[];look:HumanLook;preview:StudioFacialPreviewBinding}
 export interface StudioParams {
   'studio.humanWardrobeFromAsset': {guid:string};
+  'studio.humanFaceFitScan': {guid:string;scanGuid:string;face:HumanFaceShape;distance:number;strength:number};
+  'studio.humanHeadBodyImport': {guid:string;headGuid:string;bone:string;hiddenMeshes:string[];name:string};
   'studio.humanWardrobeInfo': {guid:string};
-  'studio.humanCharacterBuild': {guid:string;look:HumanLook;wardrobe:HumanWardrobe;name:string;textureSize:number};
+  'studio.humanCharacterBuild': {guid:string;look:HumanLook;wardrobe:HumanWardrobe;name:string;textureSize:number;face?:HumanFaceShape|null};
   'studio.humanCharacterBuildStatus': Record<string,never>;
   'studio.humanAppearanceInfo': Record<string,never>;
-  'studio.humanAppearanceApply': {guid:string;revision:number;look:HumanLook};
+  'studio.humanAppearanceApply': {guid:string;revision:number;look:HumanLook;face?:HumanFaceShape|null};
   'studio.humanAppearanceSave': {name:string;look:HumanLook};
   'studio.humanAppearanceLoad': {name:string};
   'studio.humanAppearanceList': Record<string,never>;
@@ -121,6 +124,8 @@ export interface StudioParams {
 export interface StudioResult {
   'studio.humanWardrobeFromAsset': HumanWardrobe;
   'studio.humanWardrobeInfo': {meshes:string[];bones:string[];materials:string[]};
+  'studio.humanFaceFitScan': HumanBuildStatus;
+  'studio.humanHeadBodyImport': HumanBuildStatus;
   'studio.humanCharacterBuild': HumanBuildStatus;
   'studio.humanCharacterBuildStatus': HumanBuildStatus;
   'studio.humanAppearanceInfo': HumanLookInfo;
@@ -171,4 +176,4 @@ export interface StudioResult {
 
 export interface HumanWardrobeItem {id:string;asset:string;slot:string;enabled:boolean;bone:string;translation:number[];rotation:number[];scale:number[];finish:'cloth'|'source';hideMeshes:string[];masks:{material:string;texture:string}[]}
 export interface HumanWardrobe {version:1;hiddenMeshes:string[];items:HumanWardrobeItem[]}
-export interface HumanBuildStatus {running:boolean;error?:string;path?:string;guid?:string;vertices?:number;meshes?:number;materials?:number;bytes?:number}
+export interface HumanBuildStatus {face?:HumanFaceShape;running:boolean;error?:string;path?:string;guid?:string;vertices?:number;meshes?:number;materials?:number;bytes?:number}
