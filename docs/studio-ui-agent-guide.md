@@ -135,7 +135,7 @@ Test the real WKWebView at ~1440×900 plus narrow docks. Capture UI screenshots 
 Commit changes to `feature/studio-html5` and create a new `docs/handoff/studio-html5/NN-*.md` documenting: what was implemented, public components/tokens added or changed, exact file list, compatibility, actual build/test commands and results, screenshot status, limitations, branch/SHA and next concrete step. Do not merge to main or remove legacy ImGui solely because the design looks finished.
 
 ## Project content directory / Assets (Stages 67–68)
-The standard resource root in the opened **game project folder** is exactly `content/` (lower-case). `StudioSession` creates it on open. UI calls `studio.assets({})` and receives only paths **relative to `content/`**; it must never ask to scan the whole project. The file scanner ignores symlinks. The content browser uses this root for breadcrumbs, folder navigation and search. `game.json`, `rules.json`, `maps/` and `.aiverse` stay outside it.
+The standard resource root in the opened **game project folder** is exactly `content/` (lower-case). `apps/editor/core/Projects.cpp::createProject` creates it for every new project (including all templates and genres), while `StudioSession` creates it on opening older projects if missing. UI calls `studio.assets({})` and receives only paths **relative to `content/`**; it must never ask to scan the whole project. The file scanner ignores symlinks. The content browser uses this root for breadcrumbs, folder navigation and search. `game.json`, `rules.json`, `maps/` and `.aiverse` stay outside it.
 
 Example:
 ```text

@@ -57,7 +57,7 @@ The generator creates a component and CSS under `src/panels/generated/`, registe
 The old App shell and NestedDockWorkspace use `src/ui/editor-shell.css` to inherit shared tokens without changing their event handling or native Metal geometry. Migrate each panel to true Studio UI components gradually, with macOS screenshots. Do not duplicate shell overrides in panel CSS or alter .viewport/.viewport-native rules to change the native renderer.
 
 ## Project assets: content/ convention (Stages 67–68)
-- HTML5 Studio creates a **lower-case `content/`** directory in the opened project root if missing (native `StudioContentDirectory.h`). Do not create it inside the engine repository when opening an unrelated project.
+- The shared `apps/editor/core/Projects.cpp::createProject` creates a lower-case `content/` directory for all new projects. HTML5 Studio also creates it for already-existing projects when opened, using `StudioContentDirectory.h`. Do not create it inside the engine repository when opening an unrelated project.
 - The Assets browser shows **only real regular files within `project/content/`**, and path strings in `studio.assets` are relative to `content` (e.g. `Models/Ship.glb`, not `content/Models/Ship.glb`).
 - API: `studio.assets` takes an empty parameters object and returns `{root:"content",files:[{path,bytes}]}`. Do not reintroduce an arbitrary browser-selected directory or expose game.json/rules.json/maps from the project root.
 - Existing project files **outside** `content/` are not moved automatically. If needed, instruct the user to move/copy assets consciously and update any existing references; never migrate by silently overwriting paths.
