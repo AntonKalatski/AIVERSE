@@ -240,7 +240,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 13; ++i) {
         if (pipes_[i].valid()) dev.destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev.destroyShader(shaders_[i]);
         pipes_[i] = {}; shaders_[i] = {}; shaderFailed_[i] = false;
@@ -835,15 +835,18 @@ int TerrainRenderer::tierFor(const Renderer3D& r) const {
     return std::min(tier(r.materialQuality()), deviceTier);
 }
 
-gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi) {
+gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi, bool compactGi) {
+    if(compactGi && (!dynamicGi || variant!=0 ||
+         dev.info().backend!=gfx::Backend::GLES3))return {};
     const int dbase = variant >= 3 ? 3 : 0;
     for (int tier = variant - dbase; tier >= 0; --tier) {
-        const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
+        const int slot = compactGi ? 12 : (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
         const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) +
             "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) +
             (dynamicGi ? "\n#define DYNAMIC_GI 1\n#define DYNAMIC_GI_TERRAIN 1" : "") +
+            (compactGi ? "\n#define DYNAMIC_GI_TERRAIN_COMPACT 1" : "") +
             "\n#define TERRAIN_GL_NORMAL_ATLAS " +
             std::to_string(layerNormalAtlas_.valid() && dev.info().backend ==
                            gfx::Backend::GL33 ? 1 : 0) + "\n";
@@ -851,7 +854,7 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, boo
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         sd.uniformSlots = dynamicGi ? 7 : 4;
-        sd.textureSlots = dynamicGi ? 22 : 21;
+        sd.textureSlots = compactGi ? 16 : dynamicGi ? 22 : 21;
         sd.label = dynamicGi ? "terrain + dynamic GI" : "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
         shaders_[slot] = dev.createShader(sd);
         if (!shaders_[slot].valid()) {
@@ -877,11 +880,11 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, boo
     // A Metal backend which compiled the detailed shader retains it.
     if (dbase) {
         std::fprintf(stderr, "[terrain] detail shader unavailable; falling back to non-detail tier %d\n", variant - dbase);
-        return pipeline(dev, variant - dbase, dynamicGi);
+        return pipeline(dev, variant - dbase, dynamicGi, compactGi);
     }
-    // If the optional GI shader cannot compile, keep the original terrain
-    // rather than losing a whole chunk or sampling an unbound tex21.
-    return dynamicGi ? pipeline(dev, variant, false) : gfx::PipelineHandle{};
+    // A failed GI shader must fall back to baseline terrain, not a black
+    // surface. On GLES avoid sampling a phantom tex8/tex18/tex19 source.
+    return dynamicGi ? pipeline(dev, variant, false, false) : gfx::PipelineHandle{};
 }
 
 void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool) {
@@ -933,14 +936,20 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     }
     stats_.geometryBytes = geoBytes_;
     const int tier = tierFor(r);
-    const bool giRequest = r.dynamicGiOverlayEnabled() &&
+    const bool mobileGi = r.dynamicGiOverlayEnabled() &&
+        dev.info().backend==gfx::Backend::GLES3 &&
+        !detailOn_ && !r.bakedActive() && !r.traceActive();
+    const bool fullGi = r.dynamicGiOverlayEnabled() &&
         (dev.info().backend==gfx::Backend::Metal ||
          dev.info().backend==gfx::Backend::Vulkan);
-    gfx::PipelineHandle pipe = pipeline(dev, tier + (detailOn_ ? 3 : 0),giRequest);
+    const bool giRequest=mobileGi || fullGi;
+    const int desiredVariant=mobileGi ? 0 : tier+(detailOn_ ? 3 : 0);
+    gfx::PipelineHandle pipe = pipeline(dev,desiredVariant,giRequest,mobileGi);
     if (!pipe.valid()) return;
     bool giPipeline=false;
-    for (int i=6;i<12;++i) if (pipes_[i].valid() && pipes_[i]==pipe)
+    for (int i=6;i<13;++i) if (pipes_[i].valid() && pipes_[i]==pipe)
         giPipeline=true;
+    const bool compactGi=giPipeline && pipes_[12].valid() && pipe==pipes_[12];
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
     u.mode[0] = 0.05f;
@@ -988,12 +997,13 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, pipe, apron, giPipeline](gfx::Device& d) {
+    r.drawCustomOpaque([this, &r, items, u, pipe, apron, giPipeline, compactGi](gfx::Device& d) {
         d.setPipeline(pipe);
         r.bindLitFrame();
-        r.bindTrace(18);
-        r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
-        if (giPipeline) (void)r.bindDynamicGiForCustomAt(21);
+        if(!compactGi) {
+            r.bindTrace(18);
+            r.bindBakedTerrain(3, 19, 20); // baked GI remains on its original route
+        }
         d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
         for (int i = 0; i < 4; ++i) {
             d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);
@@ -1004,6 +1014,10 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         d.setTexture(14, cliffNrm_.valid() ? cliffNrm_.tex : flatN_);
         d.setTexture(15, visionTex_);
         if (detailOn_) { d.setTexture(16, detailNrmTex_); d.setTexture(17, detailSplatTex_); }
+        // Put GI after legacy layer bindings: low GLES overwrites unused
+        // tex8; Metal/Vulkan use tex21, never cliff albedo tex13.
+        if (giPipeline)
+            (void)r.bindDynamicGiForCustomAt(compactGi ? 8 : 21);
         TU0 uu = u;
         auto drawLod = [&](const Lod& l, float s, float e) {
             uu.lod[0] = s; uu.lod[1] = e;

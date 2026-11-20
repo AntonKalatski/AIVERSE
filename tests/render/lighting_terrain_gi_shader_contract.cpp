@@ -7,6 +7,8 @@ int main() {
     // Textual shader ABI check; native GLSL/MSL compilation is a separate gate.
     const std::string glsl=kTerrainFS, metal=kTerrainMSL;
     AIVERSE_TEST_CHECK(glsl.find("#define tex13 tex21")!=std::string::npos);
+    AIVERSE_TEST_CHECK(glsl.find("#define tex13 tex8")!=std::string::npos);
+    AIVERSE_TEST_CHECK(glsl.find("DYNAMIC_GI_TERRAIN_COMPACT")!=std::string::npos);
     AIVERSE_TEST_CHECK(glsl.find("#undef tex13")!=std::string::npos);
     AIVERSE_TEST_CHECK(glsl.find("uniform highp sampler2D tex13;")!=std::string::npos);
     AIVERSE_TEST_CHECK(glsl.find("dynamicGiAt(v_wpos,n)")!=std::string::npos);

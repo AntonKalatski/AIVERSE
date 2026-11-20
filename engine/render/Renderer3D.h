@@ -417,9 +417,10 @@ public:
     // Reserve the sampled atlas texture slot explicitly. Models use 13;
     // the stock high-terrain shaders already own 13 for cliff albedo,
     // so their Metal/Vulkan GI variant must use 21 instead.
+    // Compact GLES3 terrain uses tex8 only when splat/baked/trace are off.
     bool bindDynamicGiForCustomAt(int textureSlot) {
         if(!dev_ || !dynamicGiAtlas_.valid() ||
-           (textureSlot!=13 && textureSlot!=21))return false;
+           (textureSlot!=8 && textureSlot!=13 && textureSlot!=21))return false;
         dev_->setUniforms(6,dynamicGiUniforms_.data(),
                           dynamicGiUniforms_.size()*sizeof(float));
         dev_->setTexture(textureSlot,dynamicGiAtlas_);

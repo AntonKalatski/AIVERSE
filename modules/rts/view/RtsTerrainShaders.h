@@ -87,7 +87,8 @@ inline const char* kTerrainFS =
     AIVERSE_GLSL_BAKED_TERRAIN("U3", "tex19", "tex20")
     // The built-in terrain owns tex13 (cliff albedo). Remap the shared L1
     // GI sampler to tex21 only for this explicit Metal/Vulkan permutation.
-    "#if defined(DYNAMIC_GI_TERRAIN)\n#define tex13 tex21\n#endif\n"
+    "#if defined(DYNAMIC_GI_TERRAIN_COMPACT)\n#define tex13 tex8\n"
+    "#elif defined(DYNAMIC_GI_TERRAIN)\n#define tex13 tex21\n#endif\n"
     AIVERSE_GLSL_DYNAMIC_GI
     "#if defined(DYNAMIC_GI_TERRAIN)\n#undef tex13\n#endif\n"
     R"(
@@ -95,7 +96,9 @@ uniform sampler2D tex4;
 uniform sampler2D tex5;
 uniform sampler2D tex6;
 uniform sampler2D tex7;
-uniform sampler2D tex8;
+#if !defined(DYNAMIC_GI_TERRAIN_COMPACT)
+uniform sampler2D tex8; // compact GI helper already declares tex8
+#endif
 uniform sampler2D tex9;
 uniform sampler2D tex10;
 uniform sampler2D tex11;
@@ -309,12 +312,20 @@ void main() {
     vec3 L = normalize(u_sunDir.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
+#if defined(DYNAMIC_GI_TERRAIN_COMPACT)
+    // Low-end mobile: no high-slot traced height texture. Preserve the
+    // standard sun shadow and clouds, never sample unbound tex18.
+    float sh = ndl > 0.0 ? shadowAt(v_wpos, n) : 1.0;
+#else
     float sh = ndl > 0.0 ? min(shadowAt(v_wpos, n), terrainShadow(v_wpos)) : 1.0;
+#endif
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
     vec3 amb = mix(ground, sky, n.y * 0.5 + 0.5);
+#if !defined(DYNAMIC_GI_TERRAIN_COMPACT)
     { vec3 bl; if (bakedTerrain(v_wpos, sun * ndl, sh, bl)) amb = bl; }   // baked lightmap (agent-lightbake)
+#endif
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(n, H), 0.0), 40.0) * t_mode.x;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
