@@ -27,6 +27,8 @@ if [[ ! -f "$ROOT/apps/studio-web/dist/index.html" ]]; then
   echo "Vite build did not produce dist/index.html" >&2
   exit 1
 fi
+echo "==== Step 1b: verify bundled ES module asset paths ===="
+python3 tools/studio/test_web_bundle.py
 
 echo "==== Step 2: CMake configure ===="
 cmake -S "$ROOT" -B "$BUILD_DIR" \

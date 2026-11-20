@@ -51,8 +51,12 @@ static NSError* studioAssetError(NSString* description) {
     }
 
     NSString* requestPath=[url.path stringByRemovingPercentEncoding];
+    // @"\\0" is NOT a valid embedded NUL sentinel here. Construct an actual
+    // length-1 NSString, otherwise an empty marker could reject every asset.
+    unichar nullCharacter=0;
+    NSString* nullMarker=[NSString stringWithCharacters:&nullCharacter length:1];
     if (!requestPath || ![requestPath hasPrefix:@"/"] ||
-        [requestPath containsString:@"\\"] || [requestPath containsString:@"\0"]) {
+        [requestPath containsString:@"\\"] || [requestPath containsString:nullMarker]) {
         [task didFailWithError:studioAssetError(@"Invalid Studio asset path")];
         return;
     }
@@ -90,6 +94,8 @@ static NSError* studioAssetError(NSString* description) {
                                                      MIMEType:mime
                                         expectedContentLength:(NSInteger)bytes.length
                                              textEncodingName:[mime hasPrefix:@"text/"] ? @"utf-8" : nil];
+    if ([relative isEqualToString:@"index.html"] || [resolved.pathExtension isEqualToString:@"js"])
+        NSLog(@"[studio-web] served %@ (%lu bytes)",relative,(unsigned long)bytes.length);
     [task didReceiveResponse:response];
     [task didReceiveData:bytes];
     [task didFinish];

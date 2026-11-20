@@ -106,10 +106,8 @@
 }
 - (BOOL)trusted:(NSURL*)url {
     if (!url) return NO;
-    if (url.isFileURL) {
-        NSString* path=[url.path stringByStandardizingPath];
-        return [path hasPrefix:[dist_ stringByAppendingString:@"/"]];
-    }
+    // file:// navigation is deliberately disallowed. All production assets
+    // must resolve through the read-only, same-origin app bundle scheme.
     if ([url.scheme isEqualToString:@"aiverse-studio"] &&
         [url.host isEqualToString:@"shell"])
         return [url.path isEqualToString:@"/index.html"] || [url.path isEqualToString:@"/"];
