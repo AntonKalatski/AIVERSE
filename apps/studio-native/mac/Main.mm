@@ -388,7 +388,7 @@
         if (!reply.has("error") &&
             (method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
-             method=="studio.lightingSet" || method=="studio.lightAdd" ||
+             method=="studio.renderLightingSet" || method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate")) {
             [self sendStudioEvent:"document.changed" message:""];

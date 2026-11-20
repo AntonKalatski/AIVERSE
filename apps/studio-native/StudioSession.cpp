@@ -2,6 +2,7 @@
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
+#include "engine/render/RenderLightingSettings.h"
 #include "apps/studio-native/StudioFpsLightingDocument.h"
 #include "apps/studio-native/StudioMaterialValidation.h"
 #include "apps/studio-native/StudioShaderGraphValidation.h"
@@ -317,6 +318,28 @@ Json StudioSession::dispatch(const Json& request) {
             Json result=Json::object();
             result.set("library",library);
             reply.set("result",std::move(result));
+        } else if(method=="studio.renderLighting" || method=="studio.renderLightingSet") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const Json current=ws_.map.toJson();
+            Json settings=render::renderLightingSettings(current["renderLighting"]);
+            if(method=="studio.renderLightingSet") {
+                const Json& patch=params["patch"];
+                if(!patch.isObject() || patch.size()==0 || patch.size()>10)
+                    throw std::runtime_error("Lighting patch requires 1..10 settings");
+                for(const auto& [key,value]:patch.members())settings.set(key,value);
+                settings=render::renderLightingSettings(settings); // validate BEFORE beginEdit
+                if(!(settings==current["renderLighting"])) {
+                    if(ws_.project.isFps()) {
+                        Json next=current;next.set("renderLighting",settings);
+                        Json input=Json::object();input.set("map",next);
+                        const auto updated=ws_.call("fps_set",input,"studio");
+                        if(updated.has("error"))throw std::runtime_error(updated.getStr("error"));
+                    } else {
+                        ws_.map.beginEdit();ws_.map.data.extra.set("renderLighting",settings);ws_.map.touched();
+                    }
+                }
+            }
+            reply.set("result",settings);
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {

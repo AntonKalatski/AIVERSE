@@ -47,6 +47,8 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
   if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
     throw Error('Editing materials requires the native AIVERSE host');
   }
+  if (method === 'studio.renderLighting') return { version: 1, indirect: 'off', direct: 'legacy', quality: 'high', probes: 8, layers: 4, spacing: 4, samples: 32, distance: 32, cpuBudgetMs: 2 } as StudioResult['studio.renderLighting'];
+  if (method === 'studio.renderLightingSet') throw new Error('Open the native Studio to edit lighting');
   if (method === 'studio.lighting') {
     return { lighting: null, lights: [] };
   }

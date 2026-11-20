@@ -5,6 +5,7 @@ import PropertyField from '../components/PropertyField';
 import { LIGHTING_KEYS, LIGHT_EDITABLE_KEYS, lightingProperties, lightProperties } from './lightingSchema';
 import type { LightEditableKey, LightingScalarKey, LightingState } from './lightingSchema';
 import './LightingPanel.css';
+import RenderLightingControls from './RenderLightingControls';
 
 interface LightingPanelProps { projectPath: string }
 const empty: LightingState = { lighting: null, lights: [] };
@@ -84,6 +85,7 @@ export default function LightingPanel({ projectPath }: LightingPanelProps) {
           {settings.map(property => <PropertyField key={property.key} property={property}
             disabled={busy || !available || !nativeConnected()} onChange={value => editSetting(property.key, value)}/>)}
         </div>
+        <RenderLightingControls projectPath={projectPath}/>
         <div className="lighting-section-heading lighting-list-heading">
           <span>Local lights ({state.lights.length})</span>
           <button className="lighting-add" disabled={busy || !available || !nativeConnected()}
