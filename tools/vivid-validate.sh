@@ -63,6 +63,7 @@ else
         aiverse_vivid_gpu_contract_tests \
         aiverse_vivid_metal_gpu_tests \
         aiverse_vivid_metal_rhi_tests \
+        aiverse_vivid_metal_sculpt_id_tests \
         aiverse_vivid_vertex_override_tests \
         aiverse_vivid_actor_retirement_tests \
         aiverse_vivid_human_dna_tests \
