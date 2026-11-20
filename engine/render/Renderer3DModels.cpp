@@ -1423,8 +1423,6 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
                           dynamicGiUniforms_.size()*sizeof(float));
         dev_->setTexture(13,dynamicGiAtlas_);
     }
-    if (false) {   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
-    }
     const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
     const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
