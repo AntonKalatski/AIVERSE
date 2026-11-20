@@ -7,6 +7,7 @@
 #include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/studio-native/StudioShaderGraphDraft.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
+#include "apps/studio-native/StudioFacialPreviewPaths.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -147,8 +148,19 @@ Json StudioSession::openProject(const std::string& path) {
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
     selected_.clear();
     previewMaterialName_.clear();
+    ++facialPreview_.generation;
+    facialPreview_.active=false;
+    facialPreview_.modelKey.clear();
+    facialPreview_.authoredRig=Json::object();
+    facialPreview_.controls={};
+    facialPreviewError_.clear();
     refreshMaterialPreview();
     return snapshot();
+}
+void StudioSession::failFacialPreview(const std::string& reason) noexcept {
+    facialPreview_.active=false;
+    ++facialPreview_.generation;
+    facialPreviewError_=reason;
 }
 int StudioSession::selectedEntityIndex() const {
     if (selected_.empty()) return -1;
@@ -164,6 +176,99 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if(method == "studio.facialPreviewStart" ||
+                  method == "studio.facialPreviewStop" ||
+                  method == "studio.facialPreviewScalar" ||
+                  method == "studio.facialPreviewVector" ||
+                  method == "studio.facialPreviewState") {
+            if(ws_.project.dir.empty())
+                throw std::runtime_error("Open a project before facial preview");
+            if(method=="studio.facialPreviewStart") {
+                const std::string name=params.getStr("name");
+                const std::string key=params.getStr("model");
+                if(!validStudioFacialRigName(name))
+                    throw std::runtime_error("Invalid facial rig preset");
+                // Reject missing, oversize or out-of-project models before
+                // any GPU work or change to the currently previewed scene.
+                (void)studioFacialAssetFile(ws_.project.dir,key,true);
+                const Json saved=readStudioFacialRig(ws_.project.dir,name);
+                StudioFacialPreviewState next=facialPreview_;
+                next.active=true;
+                next.projectRoot=ws_.project.dir;
+                next.modelKey=key;
+                next.rigName=name;
+                next.authoredRig=saved["rig"];
+                next.controls={};
+                const Json& doc=next.authoredRig;
+                for(const auto& binding:doc["morphs"].items())
+                    next.controls.values[binding.getStr("parameter")]=0.f;
+                if(doc["rig"].isArray())
+                    for(const auto& unit:doc["rig"].items()) {
+                        const std::string weight=unit.getStr("weightParameter");
+                        if(!weight.empty())
+                            next.controls.values[weight]=float(unit["weight"].toDouble(1.));
+                        for(const char* keyName:{"target","pole",
+                                                "translationParameter",
+                                                "rotationParameter","scaleParameter"}) {
+                            const std::string parameter=unit.getStr(keyName);
+                            if(parameter.empty())continue;
+                            next.controls.vectors[parameter]=
+                                std::string(keyName)=="target" ?
+                                render::float3{0.f,1.f,3.f} :
+                                std::string(keyName)=="pole" ?
+                                render::float3{0.f,0.f,1.f} :
+                                render::float3{};
+                        }
+                    }
+                ++next.generation;
+                ++next.controlsRevision;
+                facialPreview_=std::move(next);
+                facialPreviewError_.clear();
+            } else if(method=="studio.facialPreviewStop") {
+                ++facialPreview_.generation;
+                facialPreview_.active=false;
+                facialPreview_.controls={};
+            } else if(method=="studio.facialPreviewScalar") {
+                if(!facialPreview_.active)
+                    throw std::runtime_error("Start the facial preview first");
+                const std::string name=params.getStr("parameter");
+                const Json& raw=params["value"];
+                if(!raw.isNumber()||!std::isfinite(raw.toDouble())||
+                    raw.toDouble()<0.||raw.toDouble()>1. ||
+                    !facialPreview_.controls.values.contains(name))
+                    throw std::runtime_error("Unknown/nonfinite facial scalar control");
+                facialPreview_.controls.values[name]=float(raw.toDouble());
+                ++facialPreview_.controlsRevision;
+            } else if(method=="studio.facialPreviewVector") {
+                if(!facialPreview_.active)
+                    throw std::runtime_error("Start the facial preview first");
+                const std::string name=params.getStr("parameter");
+                const auto& x=params["x"],&y=params["y"],&z=params["z"];
+                if(!facialPreview_.controls.vectors.contains(name) ||
+                   !x.isNumber()||!y.isNumber()||!z.isNumber() ||
+                   !std::isfinite(x.toDouble())||
+                   !std::isfinite(y.toDouble())||
+                   !std::isfinite(z.toDouble())||
+                   std::abs(x.toDouble())>100. ||
+                   std::abs(y.toDouble())>100. ||
+                   std::abs(z.toDouble())>100.)
+                    throw std::runtime_error("Unknown/nonfinite facial IK target");
+                facialPreview_.controls.vectors[name]={
+                    float(x.toDouble()),float(y.toDouble()),float(z.toDouble())};
+                ++facialPreview_.controlsRevision;
+            }
+            Json result=Json::object();
+            result.set("active",Json::fromBool(facialPreview_.active));
+            result.set("model",Json::string(facialPreview_.modelKey));
+            result.set("name",Json::string(facialPreview_.rigName));
+            result.set("generation",Json::number(int64_t(facialPreview_.generation)));
+            result.set("controlsRevision",Json::number(
+                int64_t(facialPreview_.controlsRevision)));
+            // A successful request only stages parameters. The Metal host
+            // separately emits facial.preview.ready/error after actual render.
+            result.set("gpuReady",Json::fromBool(false));
+            result.set("error",Json::string(facialPreviewError_));
+            reply.set("result",std::move(result));
         } else if (method == "studio.facialRigList" ||
                    method == "studio.facialRigGet" ||
                    method == "studio.facialRigValidate" ||
