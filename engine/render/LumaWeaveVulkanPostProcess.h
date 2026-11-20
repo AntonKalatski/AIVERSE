@@ -142,10 +142,16 @@ public:
     const FrameStats& stats() const{return last_;}
     // Conservative preflight, queried by the native driver BEFORE excluding
     // legacy raster direct sources for this view. No GPU mutation.
-    bool canAcquireFrame() const {
+    static constexpr uint64_t kMaxReceiverRingBytes=512ull*1024ull*1024ull;
+    static constexpr uint64_t kBytesPerReceiverPixel=28u;
+    // Two RGBA16F material/normal images + three depth images per frame.
+    // Reject a 4K multi-view memory explosion BEFORE excluding raster lights.
+    bool canAcquireFrame(uint32_t viewW=0,uint32_t viewH=0) const {
         if(!ready() || !owner_.canSubmitScreen() ||
            !dev_->frameSerial() ||
            dev_->frameSerial()<=dev_->completedFrameSerial())return false;
+        if(viewW && viewH && uint64_t(viewW)*viewH*kBytesPerReceiverPixel*
+           receiverSlots_.size()>kMaxReceiverRingBytes)return false;
         const auto completed=dev_->completedFrameSerial();
         for(const auto& slot:receiverSlots_)
             if(slot.retireSerial<=completed)return true;
@@ -159,7 +165,9 @@ public:
         stats_={};
         const bool usable=w>0 && h>0 && w<=16384 && h<=16384 &&
             scene_.colorTarget.valid() && scene_.depthTarget.valid();
-        eligible_=enabled_ && canAcquireFrame() && downstream_.linearScene() &&
+        eligible_=enabled_ && canAcquireFrame(uint32_t(std::max(0,w)),
+                                             uint32_t(std::max(0,h))) &&
+            downstream_.linearScene() &&
             usable && quality_!=LumaWeaveQuality::Off &&
             legacy_.count()==0 && !legacy_.staticPointLightsActive();
         activeReceiverSlot_=-1;
@@ -271,7 +279,9 @@ private:
     };
 
     bool acquireReceiverSlot(int w,int h) {
-        if(!dev_ || w<=0 || h<=0)return false;
+        if(!dev_ || w<=0 || h<=0 ||
+           uint64_t(w)*uint64_t(h)*kBytesPerReceiverPixel*
+           receiverSlots_.size()>kMaxReceiverRingBytes)return false;
         const uint64_t frame=dev_->frameSerial();
         const uint64_t completed=dev_->completedFrameSerial();
         if(!frame || frame<=completed)return false;
