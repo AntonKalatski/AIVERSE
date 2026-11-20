@@ -457,6 +457,7 @@ void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
     }
     lastStepMs_=0;
     selfCollisionStats_={};
+    segmentWorkspace_.reset();
 }
 bool HumanGroomRuntime::step(float dt,render::float3 wind) {
     using namespace render;
@@ -525,7 +526,8 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
         if(selfCollision_.segmentEnabled) {
             GroomSelfCollisionStats segmentContacts;
             if(!GroomSegmentCollision::resolve(
-                guides_,selfCollision_,segmentContacts))return false;
+                guides_,selfCollision_,segmentContacts,segmentWorkspace_))
+                return false;
             selfCollisionStats_.pairChecks+=segmentContacts.pairChecks;
             selfCollisionStats_.contacts+=segmentContacts.contacts;
             selfCollisionStats_.budgetHit|=segmentContacts.budgetHit;
