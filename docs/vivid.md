@@ -1312,3 +1312,49 @@ skin/eyes/groom fidelity and topology-aware sculpt remain open. Do not
 merge overlapping Renderer3D/Texture RHI work to main without an isolated
 semantic integration and real hardware tests. See
 `docs/agent-handoffs/vivid-7AU-gpu-mask-2026-11-20.md`.
+
+
+## Stage 7AV — GPU-source skinning arithmetic parity with native Renderer3D (2026-11-20)
+
+The Stage 7AT/7AU Metal GPU ID kernels now use the **same 3-row × 4-float
+skinning matrix semantics and operation order** as the native
+`ModelShaders.h` `SKINNED` vertex deformation. Instead of first
+multiplying each skin matrix by the selected model-world transform
+and then blending transformed positions, VIVID now builds
+`nodeWorld[joint] * inverseBind[joint]` in *model space*, converts
+matrices to exact 48-byte `SculptGpuSkinRows`, accumulates weighted
+`float4` rows, computes three row–position dot products, then applies
+the Renderer3D-selected `I.model` world matrix. Both the 16-byte opaque
+and 32-byte alpha-masked GPU output variants use this same arithmetic.
+
+The source preserves original UNORM8-to-float vertex weights and normalises
+them in the GPU kernel, as Renderer3D does. Per-primitive palette sizes
+larger than `kMaxPaletteJoints = 80` fail closed, because the normal
+Renderer3D 4 KB joint uniform block cannot represent them. Source
+preparation retains its transactional last-good inputs on errors.
+
+The Creator now requires all selected Renderer3D source primitives
+to have one identical model-world matrix and skinned/unskinned mode,
+as well as one actor GPU override; otherwise CPU BVH remains authoritative.
+The selected sampled-mask path further verifies that the GPU expansion
+uses precisely the original indexed source UV/vertex alpha; an outdated
+mapping cannot claim GPU visibility.
+
+New unexecuted unit fixtures compare nonuniform two-joint U8 weight
+blends and a nonidentity world transform to the Renderer3D row algebra
+and check its MSL shader contract. Metal GPU fixture sources add a
+two-joint position-shift / inverse world-shift pixel oracle and reject
+stale sampled-mask UVs before GPU submission. Static source review
+checks passed on the GitHub branch. **Native C++/ObjC++ compile,
+Metal shader generation, GPU pixel capture, CTest and full AIVERSE
+regression: NOT RUN.** These source checks cannot establish actual
+numerical/pixel parity until the hardware suite executes.
+
+Remaining: renderer-owned actual final colour submission/depth parity,
+per-primitive alpha material/final colour occluders, GPU ICB/MDI
+culling, nonselected GPU-deformed occluders, ShaderGraph displacement,
+Blend/cornea and active LOD correspondence. Vulkan and GLES3 still lack
+the true GPU actor source expansion, despite their existing CPU-fed
+diagnostic ID support. Independent native driver testing and wider
+MetaHuman-level authoring work remain separate milestones. See
+`docs/agent-handoffs/vivid-7AV-renderer-skin-parity-2026-11-20.md`.
