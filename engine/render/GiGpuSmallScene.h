@@ -8,6 +8,7 @@
 #include "GiGpuSmallSceneShaders.h"
 #include "GiGpuVulkanShaders.h"
 #include "GiGpuBvh.h"
+#include "GiGpuSparsePatch.h"
 #include "GiDynamicProbeTexture.h"
 #include <algorithm>
 #include <array>
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <set>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace aiverse::render {
@@ -85,6 +87,7 @@ public:
             shutdown();
             return false;
         }
+        triCapacity_=nodeCapacity_=1; // one dummy element for empty scene
         return true;
     }
 
@@ -111,6 +114,7 @@ public:
         lastTriangles_.clear();
         lastNodes_.clear();
         geometryUpload_={};
+        triCapacity_=nodeCapacity_=0;
     }
 
     bool ready() const { return dev_ && compute_.valid() && atlas_.texture().valid(); }
@@ -148,50 +152,66 @@ public:
             return false;
         if (revision==geometryRevision_) return true;
         GeometryUploadStats stats;
-        // Stable chunk size/layout: blit only changed 64-byte triangle and
-        // 48-byte node ranges. RHI Metal storage updates are queue-ordered;
-        // caller MUST have waited on GiGpuTicketQueue's completion fence.
-        if (geometryRevision_!=0 &&
-            bvh.triangles.size()==lastTriangles_.size() &&
-            bvh.nodes.size()==lastNodes_.size()) {
-            const auto apply=[&]<class T>(const std::vector<T>& previous,
-                                          const std::vector<T>& current,
-                                          gfx::BufferHandle handle) {
-                size_t begin=0;
-                while(begin<current.size()) {
-                    if(std::memcmp(&previous[begin],&current[begin],sizeof(T))==0) {
-                        ++begin;
-                        continue;
-                    }
-                    size_t end=begin+1;
-                    while(end<current.size() &&
-                          std::memcmp(&previous[end],&current[end],sizeof(T))!=0)
-                        ++end;
-                    const size_t bytes=(end-begin)*sizeof(T);
-                    dev_->updateBuffer(handle,current.data()+begin,bytes,
-                                       begin*sizeof(T));
-                    stats.bytes+=bytes;
-                    ++stats.regions;
-                    begin=end;
-                }
-            };
-            apply(lastTriangles_,bvh.triangles,triBuffer_);
-            apply(lastNodes_,bvh.nodes,nodeBuffer_);
-        } else {
-            const auto triangles = allocate(std::max<size_t>(1,bvh.triangles.size())*sizeof(GpuTri),
-                                            bvh.triangles.empty()?nullptr:bvh.triangles.data());
-            if (!triangles.valid()) return false;
-            const auto nodes = allocate(std::max<size_t>(1,bvh.nodes.size())*sizeof(GpuNode),
-                                        bvh.nodes.empty()?nullptr:bvh.nodes.data());
-            if (!nodes.valid()) { dev_->destroyBuffer(triangles); return false; }
-            dev_->destroyBuffer(triBuffer_);
-            dev_->destroyBuffer(nodeBuffer_);
-            triBuffer_=triangles;
-            nodeBuffer_=nodes;
-            stats.full=true;
-            stats.bytes=bvh.triangles.size()*sizeof(GpuTri)+bvh.nodes.size()*sizeof(GpuNode);
-            stats.regions=2;
+        // Keep storage-buffer handles resident across changing chunk counts
+        // whenever the existing capacity suffices. Allocate new buffers
+        // only on exponential growth, NOT on shrink/append of a few triangles.
+        // All updates must be issued after the prior GPU ticket fence is ACKed.
+        const size_t triCount=bvh.triangles.size();
+        const size_t nodeCount=bvh.nodes.size();
+        const size_t nextTriCapacity=giGpuGrowCapacity(
+            triCapacity_,triCount,kMaxTriangles);
+        const size_t nextNodeCapacity=giGpuGrowCapacity(
+            nodeCapacity_,nodeCount,2*kMaxTriangles+4096);
+        const bool growTri=nextTriCapacity>triCapacity_;
+        const bool growNode=nextNodeCapacity>nodeCapacity_;
+        gfx::BufferHandle newTri{},newNode{};
+        if(growTri) {
+            newTri=allocate(nextTriCapacity*sizeof(GpuTri),nullptr);
+            if(!newTri.valid())return false;
         }
+        if(growNode) {
+            newNode=allocate(nextNodeCapacity*sizeof(GpuNode),nullptr);
+            if(!newNode.valid()) {
+                if(newTri.valid())dev_->destroyBuffer(newTri);
+                return false;
+            }
+        }
+        const auto triPlan=giGpuPlanSparsePatch(
+            lastTriangles_,bvh.triangles,growTri);
+        const auto nodePlan=giGpuPlanSparsePatch(
+            lastNodes_,bvh.nodes,growNode);
+        const auto upload=[&](const auto& data,const GiGpuPatchPlan& plan,
+                              gfx::BufferHandle target) {
+            using Element=typename std::decay_t<decltype(data)>::value_type;
+            for(const auto& range:plan.ranges) {
+                dev_->updateBuffer(target,data.data()+range.first,
+                                   range.count*sizeof(Element),
+                                   range.first*sizeof(Element));
+                stats.bytes+=range.count*sizeof(Element);
+                ++stats.regions;
+            }
+        };
+        upload(bvh.triangles,triPlan,growTri?newTri:triBuffer_);
+        upload(bvh.nodes,nodePlan,growNode?newNode:nodeBuffer_);
+        if(!dev_->gpuHealthy()) {
+            if(newTri.valid())dev_->destroyBuffer(newTri);
+            if(newNode.valid())dev_->destroyBuffer(newNode);
+            return false;
+        }
+        // Only after all allocations and uploads are encoded, switch the
+        // submission's buffer handles. Defer actual backend resource free
+        // through the RHI; pending submissions were fenced by the caller.
+        if(growTri) {
+            dev_->destroyBuffer(triBuffer_);
+            triBuffer_=newTri;
+            triCapacity_=nextTriCapacity;
+        }
+        if(growNode) {
+            dev_->destroyBuffer(nodeBuffer_);
+            nodeBuffer_=newNode;
+            nodeCapacity_=nextNodeCapacity;
+        }
+        stats.full=growTri || growNode || triPlan.full || nodePlan.full;
         lastTriangles_=bvh.triangles;
         lastNodes_=bvh.nodes;
         triangleCount_=bvh.triangles.size();
@@ -318,6 +338,7 @@ private:
     std::vector<GpuTri> lastTriangles_;
     std::vector<GpuNode> lastNodes_;
     GeometryUploadStats geometryUpload_{};
+    size_t triCapacity_=0,nodeCapacity_=0;
     uint64_t geometryRevision_=0;
     GiEnvironmentLight environment_{};
 };
