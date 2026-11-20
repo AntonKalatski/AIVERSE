@@ -64,6 +64,19 @@ public:
     // Default: from the renderer's material quality (AIVERSE_OVERLAYS=low|medium|high overrides).
     void setQuality(OverlayQuality q) { quality_ = q; qualityForced_ = true; }
     OverlayQuality quality() const { return quality_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        c.buffer(vb_);c.texture(white_);
+        const auto own=c.stats(), cache=textures_.ownedGpuMemoryStats();
+        render::GpuOwnedMemoryStats total=own;
+        total.textureKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(own.textureKnownBytes,cache.textureKnownBytes);
+        total.bufferKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(own.bufferKnownBytes,cache.bufferKnownBytes);
+        total.textures+=cache.textures;total.buffers+=cache.buffers;
+        total.unknownTextures+=cache.unknownTextures;total.unknownBuffers+=cache.unknownBuffers;
+        total.multiVersionBuffers+=cache.multiVersionBuffers;
+        return total;
+    }
     const OverlaySet& set() const { return set_; }
     // Mesh outlines follow the built-in "selection" / "hover" overlays: a game that disables one loses its outline too.
     bool outlineSelected() const { return outlineSelected_; }

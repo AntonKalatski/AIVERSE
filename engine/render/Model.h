@@ -16,6 +16,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "TextureCodec.h"
+#include "GpuOwnedMemory.h"
 #include "graph/ShaderGraph.h"
 
 namespace aiverse::render {
@@ -192,6 +193,14 @@ struct Model {
     // from its GLB alone. The default still prepares compatible material/shadow batches.
     struct Batching {
         bool mergeRigid = false;
+        // Per-asset shared GPU geometry pool admission. Inherit uses the
+        // current global upload policy; Dedicated always uses separate VB/IB;
+        // AllowRigidLods opts in safe rigid LODs for only this Model.
+        // Backend/safe/size gates continue to take precedence.
+        enum class GeometryPoolPolicy : uint8_t {
+            Inherit = 0, Dedicated = 1, AllowRigidLods = 2
+        };
+        GeometryPoolPolicy geometryPoolPolicy = GeometryPoolPolicy::Inherit;
         // Generate missing LOD meshes during CPU preparation. Explicit
         // authored LOD chains always win; generated LODs never merge nodes.
         bool autoLod = true;
@@ -212,6 +221,22 @@ struct Model {
         std::string reason; // e.g. source already has LOD, unsupported model
     } autoLod;
     bool uploadPrepared = false;
+    // Monotonic content revision used by opt-in CPU caches. In-place changes to
+    // bind transforms, nodes or geometry must call markGeometryChanged().
+    // Material factors alone do not alter cached geometric transforms.
+    uint64_t geometryRevision = 1;
+    void markGeometryChanged() noexcept {
+        if (++geometryRevision == 0) ++geometryRevision;
+    }
+    // Explicit identity revision for the materials, texture bindings, and
+    // shader graphs belonging to this Model. Call after in-place edits or
+    // texture content updates that preserve GPU handle IDs. Needed only for
+    // the opt-in versioned material-owner cache; ordinary batching still
+    // validates live GPU state each draw.
+    uint64_t materialRevision = 1;
+    void markMaterialChanged() noexcept {
+        if (++materialRevision == 0) ++materialRevision;
+    }
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
@@ -232,6 +257,9 @@ struct Model {
     // An empty page means legacy dedicated per-model buffers.
     std::shared_ptr<GeometryPoolPage> geometryPoolPage;
     uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
+    // Byte extents of the reserved rigid geometry page pair, retained after
+    // uploadModel releases CPU vertices/indices. Zero for dedicated models.
+    uint32_t gpuPoolVertexBytes = 0, gpuPoolIndexBytes = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;
@@ -303,9 +331,21 @@ void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& 
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
-bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
+// A speculative model import may borrow already resident shared textures,
+// but must not create new entries in the live shared GPU texture cache.
+// Pass publishSharedTextures=false only when an external host owns a staged
+// Model and can retire the entire Model on abort after a real GPU barrier.
+bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false,
+                 bool publishSharedTextures = true);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
+// Upload one host-staged image without touching any live Model::images vector.
+// Returns false if the GPU did not create a valid texture handle.
+bool uploadStandaloneImage(gfx::Device& dev, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
+// Unique owned model data (dedicated non-pooled vb/ib, nonborrowed images,
+// morph/baked textures). Shared model texture cache and pooled geometry pages
+// belong to their own owners and MUST NOT be counted through Model.
+void appendModelOwnedGpuMemory(const Model& m, GpuOwnedMemoryCounter& counter);
 void releaseModel(gfx::Device& dev, Model& m);
 
 } // namespace aiverse::render

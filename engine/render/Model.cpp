@@ -144,6 +144,8 @@ void Model::finalize() {
         }
     }
     if (boundsMin.x > boundsMax.x) boundsMin = boundsMax = {0, 0, 0};
+    markGeometryChanged(); // regenerated hierarchy, node transforms and bounds
+    markMaterialChanged(); // default/imported material table may have changed
 }
 
 namespace {
@@ -185,6 +187,23 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
+    // Optional per-asset policy for native importers and project sidecars.
+    // It is applied before GPU upload; editing it requires asset reupload.
+    if (config.has("geometryPool")) {
+        const Json& setting = config["geometryPool"];
+        if (!setting.isString())
+            throw std::runtime_error(path + ".batching.json: geometryPool must be a string");
+        const std::string value = setting.str();
+        using PoolPolicy = Model::Batching::GeometryPoolPolicy;
+        if (value == "inherit")
+            model.batching.geometryPoolPolicy = PoolPolicy::Inherit;
+        else if (value == "dedicated")
+            model.batching.geometryPoolPolicy = PoolPolicy::Dedicated;
+        else if (value == "rigidLod")
+            model.batching.geometryPoolPolicy = PoolPolicy::AllowRigidLods;
+        else
+            throw std::runtime_error(path + ".batching.json: geometryPool must be inherit, dedicated or rigidLod");
+    }
     if (config.has("maxExtent")) {
         const float extent = float(config["maxExtent"].toDouble());
         if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)
@@ -441,18 +460,166 @@ void ensureTangents(Model& m) {
 }
 } // namespace
 
+void ModelTextureCache::invalidateSource(const std::string& path) {
+    const auto key=std::filesystem::path(path).lexically_normal().generic_string();
+    if(key.empty())return;
+    {
+        // CPU workers may still hold shared pixel leases; removing an LRU
+        // entry does not invalidate those leases.
+        std::lock_guard lock(mutex_);
+        const auto it=decoded_.find(key);
+        if(it!=decoded_.end()) {
+            bytes_-=it->second.bytes;
+            decoded_.erase(it);
+        }
+    }
+    // Called only on render thread, like upload(). Existing GPU leases are
+    // never mutated or destroyed at this point.
+    ++sourceRevisions_[key];
+}
+
+std::string ModelTextureCache::gpuKey(const Image& image) const {
+    const auto revision=sourceRevisions_.find(image.textureKey);
+    const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
+    return image.textureKey+(image.repeat?"#repeat":"#clamp")+
+           (image.nearest?"#nearest":"#linear")+
+           "#revision"+std::to_string(epoch);
+}
+
+bool ModelTextureCache::borrowResident(Image& image) const {
+    if(image.textureKey.empty())return false;
+    const auto key=gpuKey(image);
+    const auto it=gpu_.find(key);
+    if(it==gpu_.end() || !it->second.tex.valid())return false;
+    image.tex=it->second.tex;
+    image.textureLease=it->second.textureLease;
+    image.borrowedTexture=true;
+    image.gpuCompressed=it->second.gpuCompressed;
+    return true;
+}
+
 void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
-    const auto key = image.textureKey + (image.repeat ? "#repeat" : "#clamp") + (image.nearest ? "#nearest" : "#linear");
+    const auto key=gpuKey(image);
     auto it = gpu_.find(key);
     if (it == gpu_.end()) {
-        Image owner = image; owner.textureCache.reset(); owner.borrowedTexture = false;
-        uploadImage(dev, owner);
-        if (!owner.tex.valid()) return;
-        owner.rgba.clear(); owner.sharedRgba.reset(); owner.compressed.reset(); owner.textureLease=std::make_shared<int>(0);
-        it = gpu_.emplace(key, std::move(owner)).first;
+        // Allocate the CPU lease/control block and map node BEFORE creating
+        // a GPU texture. An allocation failure after createTexture would
+        // otherwise destroy a local Image while its GPU handle is live,
+        // bypassing explicit Device retirement and GPU completion fences.
+        Image owner = image;
+        owner.textureCache.reset();
+        owner.borrowedTexture = false;
+        owner.textureLease = std::make_shared<int>(0);
+        auto [inserted, fresh] = gpu_.try_emplace(key, std::move(owner));
+        it = inserted;
+        if (fresh) {
+            try {
+                uploadImage(dev, it->second);
+            } catch (...) {
+                // uploadImage assigns a new handle only after a successful
+                // createTexture; no potentially live handle is destroyed on
+                // a failed Device allocation.
+                if (!it->second.tex.valid()) gpu_.erase(it);
+                throw;
+            }
+            if (!it->second.tex.valid()) {
+                gpu_.erase(it);
+                return;
+            }
+            it->second.rgba.clear();
+            it->second.sharedRgba.reset();
+            it->second.compressed.reset();
+        }
     }
     image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true;
 }
+ModelTextureCache::PreparedGpuPromotion
+ModelTextureCache::prepareGpuPromotion(
+        const std::vector<Model*>& models,
+        const std::vector<PendingImage>& appended) {
+    PreparedGpuPromotion plan(*this);
+    // Both existing scratch Model images and future material-override slots
+    // participate in ONE preallocated set of GPU-cache owner nodes.
+    const auto include=[&](const Image& image,Model* target,size_t index) {
+        if(image.textureCache.get()!=this || image.borrowedTexture ||
+           !image.tex.valid() || image.textureKey.empty())
+            return;
+        const auto key=gpuKey(image);
+        Image* owner=nullptr;
+        if(auto resident=gpu_.find(key);resident!=gpu_.end()) {
+            owner=&resident->second;
+        } else {
+            auto [it,inserted]=plan.pending_.try_emplace(key);
+            if(inserted) {
+                // Copying the descriptor does NOT transfer GPU ownership:
+                // the original Model/staged image retains its handle
+                // until the plan successfully commits.
+                Image prepared=image;
+                prepared.textureCache.reset();
+                prepared.borrowedTexture=false;
+                prepared.textureLease=std::make_shared<int>(0);
+                prepared.rgba.clear();
+                prepared.sharedRgba.reset();
+                prepared.compressed.reset();
+                it->second=std::move(prepared);
+            }
+            owner=&it->second;
+        }
+        plan.bindings_.push_back({target,index,owner});
+    };
+    for(Model* model:models) {
+        if(!model)continue;
+        for(size_t i=0;i<model->images.size();++i)
+            include(model->images[i],model,i);
+    }
+    for(const auto& proposed:appended) {
+        if(!proposed.model || !proposed.staged ||
+           proposed.appendIndex<proposed.model->images.size())
+            throw std::invalid_argument("invalid speculative material image reference");
+        include(*proposed.staged,proposed.model,proposed.appendIndex);
+    }
+    plan.redundant_.reserve(plan.bindings_.size());
+    return plan;
+}
+
+std::vector<Image> ModelTextureCache::PreparedGpuPromotion::commit() {
+    if(committed_ || !cache_)
+        throw std::logic_error("shared GPU texture plan already committed");
+    // All map keys are checked before the first node is transferred.
+    // A host that interleaves another cache publication must retry staging.
+    for(const auto& [key,owner]:pending_) {
+        (void)owner;
+        if(cache_->gpu_.contains(key))
+            throw std::logic_error("shared GPU texture key changed during staging: "+key);
+    }
+    // Material image slots are appended immediately before commit().
+    // Validate all indices BEFORE mutating shared GPU residency.
+    for(const auto& binding:bindings_)
+        if(!binding.model ||
+           binding.index>=binding.model->images.size())
+            throw std::logic_error("speculative material image was not committed");
+    // Merging preallocated std::map nodes does not create a new GPU object.
+    // Image* pointers into moved map nodes remain stable.
+    cache_->gpu_.merge(pending_);
+    for(const auto& binding:bindings_) {
+        Image& image=binding.model->images[binding.index];
+        const Image& owner=*binding.sharedOwner;
+        if(image.tex.valid() && image.tex!=owner.tex) {
+            Image retired;
+            retired.tex=image.tex;
+            retired.borrowedTexture=false;
+            // No allocation: redundant_ capacity was reserved in prepare.
+            redundant_.push_back(std::move(retired));
+        }
+        image.tex=owner.tex;
+        image.textureLease=owner.textureLease;
+        image.borrowedTexture=true;
+        image.gpuCompressed=owner.gpuCompressed;
+    }
+    committed_=true;
+    return std::move(redundant_);
+}
+
 void ModelTextureCache::trim(gfx::Device& dev) {
     for(auto it=gpu_.begin();it!=gpu_.end();) {
         if(it->second.textureLease && it->second.textureLease.use_count()==1) {
@@ -471,6 +638,7 @@ void ModelTextureCache::trim(gfx::Device& dev) {
 void ModelTextureCache::shutdown(gfx::Device& dev) {
     for (auto& [key, image] : gpu_) if (image.tex.valid()) dev.destroyTexture(image.tex);
     gpu_.clear();
+    sourceRevisions_.clear();
     std::lock_guard lock(mutex_); decoded_.clear(); bytes_ = 0;
 }
 
@@ -547,21 +715,73 @@ void prepareModelUpload(Model& m) {
         const char* materialBatches = std::getenv("AIVERSE_AUTO_MATERIAL_BATCHES");
         if (!materialBatches || std::string(materialBatches) != "off") prepareMaterialBatches(m);
     m.uploadPrepared = true;
+    m.markGeometryChanged(); // runtime LOD / static / shadow / material batches
 }
 
-bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
-    if (!m.vertices.empty() && !m.vb.valid()) {
+bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
+                 bool publishSharedTextures) {
+    const bool hasCpuVertices = !m.vertices.empty();
+    const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
+        m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
+    // Recover an incomplete previous standalone upload without mistaking its
+    // orphan VB/IB for a fully initialized Model. A shared-page Model always
+    // acquires both handles together and must be released by its owner.
+    if (m.vb.valid() != m.ib.valid()) {
+        if (m.geometryPoolPage) return false;
+        if (m.vb.valid()) dev.destroyBuffer(m.vb);
+        if (m.ib.valid()) dev.destroyBuffer(m.ib);
+        m.vb = {}; m.ib = {};
+    }
+    if (hasCpuVertices && !m.vb.valid()) {
         prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
-            m.vb = dev.createBuffer(vb);
+            const gfx::BufferHandle newVb = dev.createBuffer(vb);
+            if (!newVb.valid()) return false; // keep CPU arrays for retry
             gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
-            m.ib = dev.createBuffer(ib);
+            const gfx::BufferHandle newIb = dev.createBuffer(ib);
+            if (!newIb.valid()) {
+                dev.destroyBuffer(newVb);
+                return false; // do not publish a half-uploaded Model
+            }
+            m.vb = newVb;
+            m.ib = newIb;
         }
     }
+    if(hasCpuVertices && !m.geometryPoolPage &&
+       (!m.vb.valid() || !m.ib.valid()))
+        return false;
     for (auto& img : m.images) {
-        if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
-        if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
+        const auto previousTexture = img.tex;
+        if(img.textureCache && publishSharedTextures) {
+            img.textureCache->upload(dev,img);
+        } else if(img.textureCache && img.textureCache->borrowResident(img)) {
+            // Existing shared lease: a speculative model never owns this GPU texture.
+        } else {
+            // Missing from shared GPU residency: create a dedicated
+            // transaction-owned image. Rollback releases it with the Model
+            // behind a genuine completion token, never mutating gpu_.
+            // Keep textureCache and textureKey on a speculative miss.
+            // The texture remains Model-owned (borrowedTexture=false)
+            // until an outer successful transaction promotes it into
+            // the shared cache; an aborted Model is retired normally.
+            uploadImage(dev,img);
+        }
+        if (!(previousTexture == img.tex))
+            m.markMaterialChanged(); // GPU image binding changed
+        // Both shared-texture and speculative upload paths must reject an
+        // image with known nonzero dimensions but no GPU handle. On partial
+        // failure, the owning host retires earlier allocations behind a
+        // real GPU completion token instead of publishing a broken Model.
+        if(img.width>0 && img.height>0 && !img.tex.valid())
+            return false;
+        if (!keepCpu) {
+            // Non-throwing release of CPU pixels AFTER successful GPU upload.
+            // shrink_to_fit may throw on some vector implementations.
+            std::vector<uint8_t>{}.swap(img.rgba);
+            img.compressed.reset();
+            img.sharedRgba.reset();
+        }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
     size_t texels = 0;
@@ -577,7 +797,6 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
                 p.morphTexel = uint32_t(at);
                 for (size_t i = 0; i + 2 < p.morphDeltas.size(); i += 3, ++at)
                     for (int k = 0; k < 3; ++k) data[at * 4 + size_t(k)] = p.morphDeltas[i + size_t(k)];
-                if (!keepCpu) { p.morphDeltas.clear(); p.morphDeltas.shrink_to_fit(); }
             }
         gfx::TextureDesc td;
         td.width = width; td.height = height;
@@ -586,21 +805,64 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         td.data = data.data();
         td.label = "morph targets";
         m.morphTex = dev.createTexture(td);
+        if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
     if (!keepCpu) {
-        m.vertices.clear(); m.vertices.shrink_to_fit();
-        m.indices.clear(); m.indices.shrink_to_fit();
+        // Never discard morph deltas before a successful GPU morph texture
+        // allocation. Failed uploads retain their CPU source for diagnostics
+        // and safe retry/rollback by the host.
+        if (m.morphTex.valid()) {
+            for (auto& mesh : m.meshes)
+                for (auto& p : mesh.primitives)
+                    if (p.morphTargets > 0 && !p.morphDeltas.empty()) {
+                        std::vector<float>{}.swap(p.morphDeltas);
+                    }
+        }
+        std::vector<ModelVertex>{}.swap(m.vertices);
+        std::vector<uint32_t>{}.swap(m.indices);
     }
-    return m.vertices.empty() || m.vb.valid();
+    // Validate original upload request after possible CPU pixel cleanup.
+    return !needsGpuBuffers || bool(m.geometryPoolPage) ||
+           (m.vb.valid() && m.ib.valid());
+}
+
+bool uploadStandaloneImage(gfx::Device& dev, Image& image) {
+    uploadImage(dev,image);
+    return image.tex.valid();
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
-    for (size_t i = 0; i < m.images.size(); ++i) if (!img.name.empty() && m.images[i].name == img.name) return int(i);
+    for (size_t i = 0; i < m.images.size(); ++i)
+        if (!img.name.empty() && m.images[i].name == img.name)
+            return int(i);
+    // Preallocate Model storage before allocating a GPU texture; a vector
+    // growth failure after createTexture could otherwise drop a live handle.
+    m.images.reserve(m.images.size()+1);
     uploadImage(dev, img);
-    img.rgba.clear(); img.rgba.shrink_to_fit();
+    if (!img.tex.valid()) return -1; // never publish an invalid material index
+    // Empty-vector swap frees CPU pixels without a potentially throwing
+    // shrink_to_fit after the new GPU resource has been allocated.
+    std::vector<uint8_t>{}.swap(img.rgba);
     m.images.push_back(std::move(img));
+    m.markMaterialChanged(); // new texture may be selected by model materials
     return int(m.images.size() - 1);
+}
+
+void appendModelOwnedGpuMemory(const Model& m,
+                               GpuOwnedMemoryCounter& counter) {
+    // Shared pooled geometry is owned and counted by GlobalGeometryPool.
+    if (!m.geometryPoolPage) {
+        counter.buffer(m.vb);
+        counter.buffer(m.ib);
+    }
+    for (const auto& image : m.images)
+        // releaseModel frees precisely those images whose GPU handle is
+        // not leased from another owner; mirror its actual ownership flag.
+        if (!image.borrowedTexture)
+            counter.texture(image.tex);
+    counter.texture(m.morphTex);
+    counter.texture(m.baked.tex);
 }
 
 void releaseModel(gfx::Device& dev, Model& m) {
@@ -622,6 +884,8 @@ void releaseModel(gfx::Device& dev, Model& m) {
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};
+    m.markGeometryChanged(); // later upload may reuse the same GPU handle values
+    m.markMaterialChanged(); // texture bindings removed; handles may be reused
 }
 
 } // namespace aiverse::render

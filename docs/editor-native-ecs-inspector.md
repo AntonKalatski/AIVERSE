@@ -120,3 +120,60 @@ The built-in RTS `Transform` stores `Vec3 pos`, `Vec3 prevPos`, and `Fixed yaw`,
 6. Keep native fields read-only unless explicit persisted setter and Undo tests exist.
 
 **Current validation status:** API source edits were reviewed; no successful macOS build, runtime extension test or visual inspection has been recorded for this stage.
+
+
+## Immutable Shared/Static prefab configurations (opt-in)
+
+The `feature/ecs-static-prefab-scene-integration` branch adds a
+read-only, genre-independent Inspector adapter:
+
+`engine/scene/PrefabStaticInspector.h`
+
+A native module that already implements `inspectComponents(World&,
+Entity,Json& components,Json& schemas) const` can use
+`PrefabStaticInspectorRegistry` to show **all registered static
+configuration domains** through one hook:
+
+```cpp
+// During native module initialization (one-time):
+aiverse::scene::PrefabStaticInspectorRegistry inspectors;
+inspectors.add<WeaponConfig>(
+    weaponCatalog, "StaticWeapon", "Weapon config",
+    [](const WeaponConfig& value) {
+        Json out=Json::object();
+        out.set("damage",Json::number(int64_t(value.damage)));
+        return out;
+    });
+inspectors.add<AIConfig>(
+    aiCatalog, "StaticBrain", "AI config",
+    [](const AIConfig& value) {
+        Json out=Json::object();
+        out.set("aggression",Json::number(int64_t(value.aggression)));
+        return out;
+    });
+inspectors.seal();
+
+// In this module's existing inspectComponents callback:
+inspectors.append(world,entity,components,schemas);
+```
+
+Each reader fetches the **actual** `StaticRef<T>` from its
+World and dereferences its matching sealed
+`PrefabStaticCatalog<T>`. The generated schema marks every exposed
+field with `editable:false`. The Inspector may show two or more
+distinct immutable domains for the same entity without copying their
+configuration into the World or into the editor document.
+
+Editing a configuration is an **authoring operation**, not a runtime
+component write. The new `engine/scene/PrefabStaticAuthoring.h`
+strictly parses versioned JSON prefab configurations using typed
+project decoder hooks and seals a new catalog. Reimport/revision
+migration must occur at a safe host barrier and preserve save/network
+content identity.
+
+The editor's existing `EditorEcsWriteback.h` rules stay unchanged;
+no generic static config runtime writeback is enabled. This helper is
+opt-in per native GameModule because the editor cannot reflect
+arbitrary C++ config types automatically. Native contract test:
+`ecs_static_scene_editor_contract_test` (Stage 6 source exists but
+its native run is pending).

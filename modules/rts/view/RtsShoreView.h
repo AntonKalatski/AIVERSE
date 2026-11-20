@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/render/Model.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "RtsWater.h"
 
@@ -19,6 +20,10 @@ class RtsShoreView {
 public:
     void init(gfx::Device& dev, const Json& shoreTypes, render::FileReader reader);
     void shutdown(gfx::Device& dev);
+    // Called only at a frame boundary, BEFORE this frame's scene submissions.
+    // Polls actual GPU retirement tokens, never frame-count heuristics.
+    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     void setMap(const Json& map);   // its "waterNetwork"; rebuilt on the next draw
     void invalidateGround() { dirty_ = true; }
     // heightAt in world units; waterY: the water surface (world units); w, h: the map size in cells
@@ -26,6 +31,19 @@ public:
     bool active() const { return !net_.empty(); }
     const water::ShoreTypes& types() const { return types_; }
     const water::Network& network() const { return net_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        for (const auto& m : chunks_)
+            if (m) render::appendModelOwnedGpuMemory(*m,c);
+        for (const auto& m : transparent_)
+            if (m) render::appendModelOwnedGpuMemory(*m,c);
+        for (const auto& p : propModels_)
+            if (p.model) render::appendModelOwnedGpuMemory(*p.model,c);
+        // The shore kit owns its images; road/chunk meshes borrow them.
+        for (const auto& i : images_) c.texture(i.tex);
+        return c.stats();
+    }
     const std::vector<std::string>& warnings() const { return warnings_; }
 
     // extra materials after the road kit's (RtsRoadView::Mat)
@@ -46,6 +64,7 @@ private:
     bool dirty_ = false;
     float builtWaterY_ = 0;
     int builtW_ = 0, builtH_ = 0;
+    render::NativePresentationRetirement retirement_;
     std::vector<std::unique_ptr<render::Model>> chunks_, transparent_;
     std::vector<PropModel> propModels_;
     std::vector<PropInstance> props_;

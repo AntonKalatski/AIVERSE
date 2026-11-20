@@ -849,6 +849,9 @@ void Server::destroy(ObjectId id) {
 
 bool Server::exists(ObjectId id) const { return impl_->obj(id) != nullptr; }
 
+// Exactly the legacy Server::set semantics, with the object and class
+// layout already resolved by the caller. This is also used by batched
+// Place body/character updates: one ID lookup instead of 4-5 per tick.
 static void setResolvedField(Server::Impl& I, Server::Impl::Obj& o,
                              const ClassLayout& L, ObjectId id,
                              int field, const Value& v) {

@@ -42,6 +42,11 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
+// Pending != failed: a renderer must never infer GPU fence failure
+// from normal in-flight work or elapsed frame counters.
+enum class ResourceRetirementStatus : uint8_t {
+    Pending, Complete, Failed
+};
 enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
@@ -68,6 +73,11 @@ struct DrawIndexedIndirectCommand {
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 
+struct BufferInfo {
+    size_t logicalBytes = 0; // lower bound: excludes ring snapshots/driver padding
+    uint32_t versions = 1;   // dynamic GPU versions may occupy more VRAM
+};
+
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
@@ -75,6 +85,84 @@ struct BufferDesc {
     const void* data = nullptr;
     const char* label = nullptr;
     bool snapshotUpdates = false; // Dynamic: preserve earlier updates encoded in this frame
+    // Opt-in for dynamic buffers whose next offset-zero update replaces the
+    // entire *readable* payload. Old tail bytes need not be copied to a new
+    // GPU-safe version. Clients must only read the freshly written prefix.
+    // This does NOT relax snapshotUpdates or in-flight GPU lifetime rules.
+    bool discardOnUpdate = false;
+};
+
+// Read-only diagnostics for one dynamic indexed-indirect buffer, accumulated
+// since its creation. These are actual CPU memcpy/memcmp operations observed
+// in the backend; not GPU execution, bus transfers or driver allocations.
+// Backends without this instrumentation return available=false.
+struct BufferUpdateStats {
+    bool available = false;
+    uint64_t updateCalls = 0;
+    uint64_t requestedBytes = 0;
+    uint64_t mappedWriteBytes = 0;  // CPU memcpy into mapped GPU-visible memory
+    uint64_t cpuShadowWriteBytes = 0; // separate CPU-side shadow memcpy
+    uint64_t comparedBytes = 0;     // per memcmp length (one input span)
+    uint64_t skippedWriteBytes = 0; // verified equal spans not copied
+    uint64_t preservedBytes = 0;    // old GPU-visible data copied to new version
+    uint64_t allocations = 0;       // buffer versions/snapshots incl. initial
+    uint64_t reused = 0;            // existing safe snapshots/versions reused
+    size_t retainedBufferBytes = 0; // sum of live allocation logical capacities
+    size_t retainedCpuShadowBytes = 0;
+};
+
+// Compute only monotonic lifetime-counter deltas. Retained capacities are
+// point-in-time gauges, not additive and deliberately remain zero here.
+// An unsupported backend, destroyed handle or counter reset is unavailable.
+inline BufferUpdateStats bufferUpdateCounterDelta(
+    const BufferUpdateStats& before, const BufferUpdateStats& after) {
+    if (!after.available) return {};
+    const BufferUpdateStats empty{};
+    const BufferUpdateStats& previous = before.available ? before : empty;
+    if (after.updateCalls < previous.updateCalls ||
+        after.requestedBytes < previous.requestedBytes ||
+        after.mappedWriteBytes < previous.mappedWriteBytes ||
+        after.cpuShadowWriteBytes < previous.cpuShadowWriteBytes ||
+        after.comparedBytes < previous.comparedBytes ||
+        after.skippedWriteBytes < previous.skippedWriteBytes ||
+        after.preservedBytes < previous.preservedBytes ||
+        after.allocations < previous.allocations ||
+        after.reused < previous.reused) return {};
+    BufferUpdateStats delta{};
+    delta.available = true;
+    delta.updateCalls = after.updateCalls - previous.updateCalls;
+    delta.requestedBytes = after.requestedBytes - previous.requestedBytes;
+    delta.mappedWriteBytes = after.mappedWriteBytes - previous.mappedWriteBytes;
+    delta.cpuShadowWriteBytes = after.cpuShadowWriteBytes - previous.cpuShadowWriteBytes;
+    delta.comparedBytes = after.comparedBytes - previous.comparedBytes;
+    delta.skippedWriteBytes = after.skippedWriteBytes - previous.skippedWriteBytes;
+    delta.preservedBytes = after.preservedBytes - previous.preservedBytes;
+    delta.allocations = after.allocations - previous.allocations;
+    delta.reused = after.reused - previous.reused;
+    return delta;
+}
+
+// Sum deltas from repeated renderModels invocations for a single beginScene.
+// Do not sum retainedBufferBytes/retainedCpuShadowBytes or reinterpret the
+// counters as asynchronous GPU measurements.
+inline void accumulateBufferUpdateCounters(BufferUpdateStats& total,
+                                           const BufferUpdateStats& delta) {
+    if (!delta.available) return;
+    total.available = true;
+    total.updateCalls += delta.updateCalls;
+    total.requestedBytes += delta.requestedBytes;
+    total.mappedWriteBytes += delta.mappedWriteBytes;
+    total.cpuShadowWriteBytes += delta.cpuShadowWriteBytes;
+    total.comparedBytes += delta.comparedBytes;
+    total.skippedWriteBytes += delta.skippedWriteBytes;
+    total.preservedBytes += delta.preservedBytes;
+    total.allocations += delta.allocations;
+    total.reused += delta.reused;
+}
+
+struct TextureInfo {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
 };
 
 struct TextureDesc {
@@ -166,12 +254,34 @@ public:
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
+    // Checked shared geometry write. Metal/Vulkan report true only when the
+    // complete copy was encoded/mapped; other backends retain their existing
+    // updateBuffer contract. True is NOT a GPU completion fence.
+    virtual bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                           size_t size, size_t offset = 0) {
+        if (!h.valid() || !data || !size) return false;
+        updateBuffer(h, data, size, offset);
+        return true;
+    }
     virtual void destroyBuffer(BufferHandle h) = 0;
+    // Optional per-buffer diagnostics. No GPU stall/readback, and never
+    // authoritatively measures GPU memory bandwidth or execution.
+    virtual BufferUpdateStats bufferUpdateStats(BufferHandle) { return {}; }
+    // CPU-only live RHI buffer metadata, same contract as textureInfo.
+    // No GPU readback or synchronization; false if unsupported/stale.
+    virtual bool bufferInfo(BufferHandle h, BufferInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
+    // CPU-only RHI metadata lookup; no readback, synchronization or texture
+    // sampling. Unsupported providers return false and leave out unchanged.
+    virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     virtual ShaderHandle createShader(const ShaderDesc& d) = 0;   // returns invalid handle on failure (see lastError())
     // Start on the device thread, then poll on that same thread. Jobs must not outlive
     // the device. Dropping a job cancels publication; backend callbacks own their data.
@@ -186,7 +296,16 @@ public:
     virtual void destroyShader(ShaderHandle h) = 0;
     virtual PipelineHandle createPipeline(const PipelineDesc& d) = 0;
     // Poll preparation of a backend-selected colour-target variant. Device thread only.
+    // Legacy bool means "no longer pending", not "compiled successfully".
+    // Implementations may override the status API to distinguish permanent
+    // compilation failures from asynchronous Pending. Default preserves the
+    // behavior of older backends and third-party gfx::Device implementations.
+    enum class PipelineColorWarmStatus : uint8_t { Ready, Pending, Failed };
     virtual bool warmPipelineColor(PipelineHandle, PixelFormat) { return true; }
+    virtual PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) {
+        return warmPipelineColor(h, format) ? PipelineColorWarmStatus::Ready
+                                            : PipelineColorWarmStatus::Pending;
+    }
     virtual void destroyPipeline(PipelineHandle h) = 0;
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
@@ -195,6 +314,13 @@ public:
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.
     virtual bool copyColor(TextureHandle from, TextureHandle to) { (void)from; (void)to; return false; }
+    // Optional diagnostics only: synchronously read a completed RGBA8 render
+    // target into top-down RGBA bytes. Must be called BETWEEN frames (never
+    // during gameplay rendering); unsupported backends return false.
+    // No CPU readback is involved in normal SpectraFX GPU rendering.
+    virtual bool readColorRGBA8(TextureHandle target, std::vector<uint8_t>& rgba) {
+        (void)target; rgba.clear(); return false;
+    }
     // The screen may be a copyColor source (Metal: drawables stop being framebuffer-only from the next frame).
     virtual void setScreenReadable(bool readable) { (void)readable; }
 
@@ -204,6 +330,15 @@ public:
     struct GpuTiming { uint64_t tag = 0; double milliseconds = 0; bool valid = false; };
     virtual bool timeGpuFrame(uint64_t tag) { (void)tag; return false; }
     virtual std::vector<GpuTiming> takeGpuTimings() { return {}; }
+    // Optional exact GPU timeline of a bounded portion of ONE graphics frame.
+    // Begin outside a render pass, end after its last encoder/pass. These
+    // samples are asynchronous and kept separate from full-frame benchmark
+    // timing consumers. Unsupported backends must return false/empty, NEVER
+    // return whole-command-buffer timings falsely labeled as per-view.
+    // No nested scopes: overlapping queries are rejected by the backend.
+    virtual bool beginGpuScope(uint64_t tag) { (void)tag; return false; }
+    virtual void endGpuScope() {}
+    virtual std::vector<GpuTiming> takeGpuScopeTimings() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
@@ -227,6 +362,60 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // Highest fully completed queue serial. Zero means unknown/unsupported.
+    // A buffer range retired at frameSerial() may be overwritten ONLY when
+    // this value is nonzero and >= that retirement serial. This does not
+    // imply any safety for races on a live Model or unsubmitted GPU work.
+    virtual uint64_t completedFrameSerial() const { return 0; }
+    // GPU-completion timeline for safe nonblocking resource retirement.
+    // gpuSubmissionFence() returns a token covering commands encoded in
+    // the CURRENT GPU frame, including commands still to be submitted.
+    // It is valid only during a GPU frame. Zero means unsupported.
+    // gpuCompletedFence() is the greatest *contiguous* GPU-completed
+    // token observed by this device. It must never use a CPU frame index
+    // as a proxy for completion; zero means no verified completion yet.
+    virtual uint64_t gpuSubmissionFence() const { return 0; }
+    virtual uint64_t gpuCompletedFence() const { return 0; }
+    // Explicit memory-pressure synchronization. Call only on the graphics
+    // owner thread at a PRE-RENDER frame boundary, before encoding any work
+    // that could reference textures awaiting destruction. The backend waits
+    // for already SUBMITTED GPU commands; it must not require current-frame
+    // unsubmitted commands to finish. May block; never use every frame.
+    virtual bool waitForSubmittedGpuWork() { return false; }
+    // Explicit retirement barrier for old model/texture GPU allocations.
+    // Call on the device owner thread BEFORE recording any draw/transfer
+    // referring to retired resources in the CURRENT frame, outside passes.
+    // Blocks until all previously SUBMITTED GPU commands have completed.
+    // A false result MUST prevent hot-reload destruction; frameSerial()
+    // alone does not prove completion. May stall; never call per draw.
+    virtual bool waitForResourceIdle() { return false; }
+    // Nonblocking retirement token: enqueue an ordered GPU completion marker
+    // after all PREVIOUSLY SUBMITTED work. Call at a frame boundary before
+    // current-frame commands can reference retired objects.
+    // 0 means unsupported/failed: hosts may use waitForResourceIdle().
+    virtual uint64_t beginResourceRetirement() { return 0; }
+    // Poll on the device thread. False means pending OR failed; NEVER
+    // destroy resources based solely on frameSerial() or elapsed time.
+    virtual bool resourceRetirementComplete(uint64_t token) {
+        (void)token; return false;
+    }
+    // Backend-specific implementations can report an actual failed
+    // completion marker. The legacy default conservatively treats false
+    // as Pending; old Device subclasses remain source-compatible.
+    virtual ResourceRetirementStatus resourceRetirementStatus(uint64_t token) {
+        return resourceRetirementComplete(token) ?
+            ResourceRetirementStatus::Complete:
+            ResourceRetirementStatus::Pending;
+    }
+    // Release a COMPLETED token after checking resourceRetirementComplete().
+    // No backend may free a still-in-flight native fence here.
+    virtual void endResourceRetirement(uint64_t token) { (void)token; }
+    // Call ONLY after a successful waitForResourceIdle() barrier. This
+    // disposes native marker bookkeeping even when its status callback
+    // failed. Never use it to justify deleting an in-flight GPU resource.
+    virtual void abandonRetirementTokenAfterIdle(uint64_t token) {
+        (void)token;
+    }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
@@ -253,6 +442,14 @@ public:
     virtual void setUniforms(int slot, const void* data, size_t size) = 0;
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0) = 0;
     virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instanceCount = 1) = 0;
+    // Canonical indexed base vertex for pooled rigid models: the vertex
+    // offset is added to the fetched index (and shader-visible vertex ID).
+    // Vulkan differs from its historical direct drawIndexed() convention;
+    // unsupported RHI implementations preserve their usual direct path.
+    virtual void drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                                      int32_t baseVertex, uint32_t instanceCount) {
+        drawIndexed(indexCount, firstIndex, baseVertex, instanceCount);
+    }
     // One API render submission for several indexed GPU commands. Command buffer
     // must use BufferType::Indirect; count/stride are validated by backend.
     // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.

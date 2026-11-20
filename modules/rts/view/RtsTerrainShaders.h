@@ -139,6 +139,19 @@ vec3 planarNormal(vec3 n, vec3 tn) {
     vec3 B = cross(T, n);
     return normalize(T * tn.x - B * tn.y + n * tn.z);
 }
+#if TERRAIN_GL_NORMAL_ATLAS
+// Atlas uses four repeatable padded 2D tiles. t_blend.w contains the
+// content-tile UV scale. Explicit gradients avoid derivatives of fract()
+// at wrap seams (which otherwise select a wrong high mip).
+vec3 terrainLayerNormal(int layer, vec2 uv) {
+    float tileScale=t_blend.w;
+    float inset=(0.5-tileScale)*0.5;
+    vec2 quadrant=vec2(float(layer % 2),float(layer / 2))*0.5;
+    vec2 atlasUv=quadrant+vec2(inset)+fract(uv)*tileScale;
+    return unpackN(textureGrad(tex9,atlasUv,
+        dFdx(uv)*tileScale,dFdy(uv)*tileScale));
+}
+#endif
 #endif
 
 void main() {
@@ -205,10 +218,34 @@ void main() {
 #if TERRAIN_TIER >= 2
         if (t_mode.z > 0.5) {
             vec3 tn = vec3(0.0, 0.0, 0.001);
-            if (w.r > 0.002) tn += w.r * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex9, p / t_scale.x)), t_tint[0].w);
-            if (w.g > 0.002) tn += w.g * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex10, p / t_scale.y)), t_tint[1].w);
-            if (w.b > 0.002) tn += w.b * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex11, p / t_scale.z)), t_tint[2].w);
-            if (w.a > 0.002) tn += w.a * mix(vec3(0.0, 0.0, 1.0), unpackN(texture(tex12, p / t_scale.w)), t_tint[3].w);
+            if (w.r > 0.002) tn += w.r * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(0, p / t_scale.x)
+#else
+                unpackN(texture(tex9, p / t_scale.x))
+#endif
+                ), t_tint[0].w);
+            if (w.g > 0.002) tn += w.g * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(1, p / t_scale.y)
+#else
+                unpackN(texture(tex10, p / t_scale.y))
+#endif
+                ), t_tint[1].w);
+            if (w.b > 0.002) tn += w.b * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(2, p / t_scale.z)
+#else
+                unpackN(texture(tex11, p / t_scale.z))
+#endif
+                ), t_tint[2].w);
+            if (w.a > 0.002) tn += w.a * mix(vec3(0.0, 0.0, 1.0), (
+#if TERRAIN_GL_NORMAL_ATLAS
+                terrainLayerNormal(3, p / t_scale.w)
+#else
+                unpackN(texture(tex12, p / t_scale.w))
+#endif
+                ), t_tint[3].w);
             n = planarNormal(n, normalize(tn));
         }
 #endif
@@ -388,7 +425,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         texture2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]],
                         texture2d<float> tex13 [[texture(13)]], sampler s13 [[sampler(13)]],
-                        texture2d<float> tex14 [[texture(14)]], sampler s14 [[sampler(14)]],
+                        texture2d<float> tex14 [[texture(14)]],
                         texture2d<float> tex15 [[texture(15)]], sampler s15 [[sampler(15)]]
 #if TERRAIN_DETAIL
                         , texture2d<float> tex16 [[texture(16)]], texture2d<float> tex17 [[texture(17)]]
@@ -399,7 +436,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #if TERRAIN_DETAIL
     // Metal has sampler slots 0..15 per stage: the detail textures use constant samplers
     constexpr sampler s16(filter::linear, mip_filter::linear, address::clamp_to_edge);
-    constexpr sampler s17(filter::linear, mip_filter::linear, address::clamp_to_edge);
+    // Detail splat uses s16: same filtering, mip selection and addressing.
 #endif
     constexpr sampler s18(filter::linear, mip_filter::none, address::clamp_to_edge);   // height field (traced shadows)
     float3 n = normalize(in.nrm);
@@ -425,7 +462,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #if TERRAIN_TIER >= 1
     if (u.mode.y > 0.5) {
 #if TERRAIN_DETAIL
-        float4 w = tex17.sample(s17, in.wpos.xz * u.detail.xy + u.detail.zw, bias(outB));
+        float4 w = tex17.sample(s16, in.wpos.xz * u.detail.xy + u.detail.zw, bias(outB));
 #else
         float4 w = tex4.sample(s4, in.wpos.xz / u.lod.zw);
 #endif
@@ -476,7 +513,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
             float3 c = tex13.sample(s13, q.zy).rgb * bw.x + tex13.sample(s13, q.xz).rgb * bw.y + tex13.sample(s13, q.xy).rgb * bw.z;
             if (u.cliffTint.w > 0.5) {
                 float3 nn = geoN;
-                float3 tx = unpackN(tex14.sample(s14, q.zy)), ty = unpackN(tex14.sample(s14, q.xz)), tz = unpackN(tex14.sample(s14, q.xy));
+                float3 tx = unpackN(tex14.sample(s13, q.zy)), ty = unpackN(tex14.sample(s13, q.xz)), tz = unpackN(tex14.sample(s13, q.xy));
                 float3 wn = normalize(float3(0.0, tx.y, tx.x) * bw.x + float3(ty.x, 0.0, ty.y) * bw.y + float3(tz.x, tz.y, 0.0) * bw.z + nn);
                 n = normalize(mix(n, wn, cw));
             }

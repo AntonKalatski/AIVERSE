@@ -20,6 +20,8 @@
 #include "TextureCache.h"
 
 namespace aiverse::render {
+class Renderer3D; // optional reactive coverage integration
+
 
 // rpos: receive point for lighting (lit shader): xyz, w > 0 = upright sprite (see SpriteShaders.h)
 struct SpriteVertex { float3 pos; float2 uv; uint32_t color; uint32_t team; float4 rpos; };
@@ -66,7 +68,10 @@ public:
     bool init(gfx::Device& dev);
     void shutdown();
 
-    void begin() { quads_.clear(); verts_.clear(); casters_.clear(); }
+    void begin() {
+        quads_.clear(); verts_.clear(); casters_.clear();
+        waterReactive_.clear(); // never retain draw ranges from a previous frame
+    }
     // Corners in order top-left, top-right, bottom-right, bottom-left (as seen on screen);
     // uv = logical rect (u0, v0, u1, v1) inside `tex` (mapped through TextureRef, so atlases work;
     // an atlased sprite draws its spriteShape).
@@ -86,6 +91,14 @@ public:
     void flushCasters(gfx::Device& dev, const mat4& lightViewProj);   // inside the shadow pass
     size_t size() const { return quads_.size(); }
     uint32_t drawCalls() const { return drawCalls_; }
+    // GPU ownership is only the sprite batch's own dynamic/static/caster
+    // buffers; TextureRef, atlas pages and SpriteMesh are caller-owned.
+    GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        GpuOwnedMemoryCounter counter(*dev_);
+        counter.buffer(vb_);counter.buffer(ib_);counter.buffer(casterVb_);
+        return counter.stats();
+    }
 
     // Static meshes: build once, draw every frame before the dynamic sprites.
     static void appendQuad(std::vector<SpriteVertex>& out, const TextureRef& tex, const float3 (&corners)[4], float4 uv, uint32_t color);
@@ -97,15 +110,35 @@ public:
     // and the planar reflection on top (SpriteShaders.h kSpriteWaterFS). Needs `lighting`; without the water
     // pipeline (a failed shader) it draws as a lit decal.
     void drawWater(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting& lighting);
+    // Stage 32: after drawWater, register all current-frame water decal
+    // ranges with the renderer's optional reactive pass. This does not
+    // invoke GPU drawing now. The project must call it before resolvePrisma.
+    // Only live water mesh/textures may be registered; if the producer
+    // destroys those resources before resolve, the callback is invalid.
+    void registerWaterReactive(Renderer3D& renderer);
+    bool hasWaterReactive() const { return !waterReactive_.empty(); }
+    // Called only inside an already-open RGBA8 reactive pass.
+    uint32_t renderWaterReactive(gfx::Device& dev,
+                                 gfx::TextureHandle sceneDepth, int w, int h,
+                                 const SpriteMesh& mesh, gfx::TextureHandle tex,
+                                 const mat4& viewProj);
 
 private:
     struct Quad { gfx::TextureHandle tex; int layer; float key; uint32_t seq; uint32_t flags; SpriteVertex v[4]; };
     struct Caster { gfx::TextureHandle tex; SpriteVertex v[4]; };
+    struct WaterReactive {
+        SpriteMesh mesh;
+        gfx::TextureHandle texture;
+        mat4 viewProj;
+    };
     void drawRange(gfx::Device& dev, gfx::BufferHandle vb, uint32_t firstQuad, uint32_t count);
     void setUniforms(gfx::Device& dev, const mat4& viewProj, bool lit, const SpriteLighting* lighting);
 
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle shader_, litShader_, casterShader_, waterShader_;
+    gfx::ShaderHandle waterReactiveShader_;
+    gfx::PipelineHandle waterReactivePipe_;
+    std::vector<WaterReactive> waterReactive_;
     gfx::PipelineHandle blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_;
     gfx::BufferHandle vb_, ib_, casterVb_;
     std::vector<Caster> casters_;
