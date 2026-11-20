@@ -578,3 +578,22 @@ still had 9 failed assertions: ordinary rings use renderer lines/triangles, not
 the dedicated Overlay VB. Set onTop + thickness to force the intended batched
 allocation. Production code unchanged. git diff --check PASS. Next rebuild
 these two fixtures, run corrected acceptance and full CTest.
+
+
+## Consolidated acceptance checkpoint — 2026-11-20
+Documentation code `bdc8494cc366d34ec54dde6f707c767f959ac409`, branch codex/lens-completion. docs/camera-system.md
+now distinguishes implemented native frame integration from historical P2
+roadmap and preserves explicit paint/field and cross-platform limits.
+Build-7 PASS on KINGSTON. Corrected late-overlay fixture: 18 checks, 0 failed.
+Native Metal corrected fixture: PASS including teardown/status propagation;
+primary/replay mismatched channels=0, alternate camera changes=12146,
+nonuniform=25262; 46 pipelines, 0 pipeline failures. Logs lens-late-overlay-final.log
+and lens-metal-validated.log in KINGSTON lens-completion root.
+Editor automatic launch/screenshot PASS: QA copy of skirmish, authored cameras.json,
+valley map and LENS camera window loaded, 73 pipelines/0 failures. Screenshot
+lens-editor.png shows project scene and loaded LENS camera row. Expanded
+interactive preview inspection NOT RUN: CUA reported Mac locked and automatic
+unlock unavailable; no lock bypass attempted, temporary QA process terminated.
+Full CTest 326 tests is RUNNING (not passing yet), full-ctest.log/xml on KINGSTON.
+No CI run and no main push yet. Next inspect full results, repair actual failures,
+then recheck remote main and publish authorized integration.
