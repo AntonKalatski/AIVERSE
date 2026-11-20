@@ -2,6 +2,7 @@
 #include "apps/editor/SceneRenderable.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
+#include "apps/studio-native/StudioAuthoredLights.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -79,6 +80,17 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     device_->beginFrame(framebufferWidth, framebufferHeight);
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
+    renderer_.lighting=Lighting{}; // reset when project and lighting settings change
+    const auto day=previewDocumentDay(doc,fpsProject);
+    const Json& lightingSource=fpsProject ? doc.data.fps["lighting"] : doc.data.extra["lighting"];
+    if (lightingSource.isObject()) {
+        renderer_.lighting.sunIntensity=day.sun;
+        renderer_.lighting.skyColor={.5f*day.ambient,.58f*day.ambient,.7f*day.ambient};
+        renderer_.lights.setNightGlow(day.night*1.5f);
+        renderer_.lights.setClouds(day.clouds,.6f,16.f,0,0);
+    }
+    const auto activeLights=studioAuthoredLights(doc,fpsProject,levelHeight);
+    for(const auto& light:activeLights) renderer_.lights.add(light);
 
     // Real map dimensions and positions from the active native Workspace.
     // Temporary primitive preview (NOT legacy editor terrain, animation or materials).
@@ -114,6 +126,16 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             for(const auto& edge:edges)
                 renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
         }
+    }
+    // Editor gizmos for authored lights; actual light contribution is passed through
+    // Renderer3D::lights, not faked with an overlay screenshot.
+    for(const auto& light:activeLights) {
+        const auto at=light.pos;
+        const float extent=std::clamp(light.radius*.08f,.2f,2.f);
+        const uint32_t color=rgba(245,200,100);
+        renderer_.line({at.x-extent,at.y,at.z},{at.x+extent,at.y,at.z},color);
+        renderer_.line({at.x,at.y-extent,at.z},{at.x,at.y+extent,at.z},color);
+        renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
