@@ -2782,3 +2782,44 @@ MetaHuman reference parity is NOT established: no volumetric ray tracing, source
 skin-normal/card-hair artifacts persist; no all-rig/blendshape coverage claim.
 Next if requested: controlled Unreal reference comparison and broader facial
 corrective/eyelid deformation QA; do not re-enable broad grid specular as coat.
+
+
+## 2026-11-20 — User-rejected glass eyes; blink normal repair
+
+Implementation a1b0870f43f336d809e6613d32ac8f7ba7de6ac2 on
+integration/motionweave-studio-facial-stage184. Prior eye-optics delivery was
+explicitly rejected as glass-like. Softer/reduced cornea glints (GLSL/MSL), lower
+sclera/fiber intensity, UV-faded lid occlusion; defaults pupil .048/sclera .40.
+No schema/ABI/save changes; saved values override new defaults.
+
+User then reported black blink stripes. Color-coded accessories, unlit skin,
+normal-texture-off, shadow-off and morph-normal-off captures isolated malformed
+imported blink NORMAL deltas on head skin. New repair_morph_normals.cjs derives
+normal changes from deformed triangles, welds smooth coincident vertices and
+repairs only eyeBlinkLeft/Right on known companion head material in
+prepare_full_character.cjs. No position/UV/skin/morph-position changes. Creator
+adds --shadow-quality off|medium|high diagnostic flag; default medium preserved.
+Smoke gate permits zero shadow submissions only for explicit off.
+
+PASS: Creator/Studio/appearance build (build-final.log), final CLI Creator build
+(build-final-cli.log), CTest vivid_human_appearance 1/1, Node baker + folded-plane
+normal repair/idempotence tests, full Draco companion import, GLSL syntax12/12
+ES300/330 Q0/1/2. Initial nonexistent /Volumes/KINGSTON/tmp baker path failed;
+rerun existing directory PASS. Initial no-shadow smoke gate failed, corrected.
+All logs/media at /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/eye-natural/.
+No GUI/Vulkan/OpenGL GPU/CI runs; no push.
+
+Native Metal final-motion168frames/7s24fps captured; open, turn and both blinks
+reviewed. Broad black upper-lid stripe removed with full textures+shadows intact.
+eyes-blink-fixed.mp4 encoded168frames1500x920. Working content/Ada source
+updated with backed-up JSON/appearance, appended normal buffer/accessors and
+new eye/shell textures; old geometry/node/accessor IDs retained. Source reload
+42frames confirmed repaired blink (source-blink.png). Candidate
+content/Characters/Ada-Eyes-Repaired retains original groom/wardrobe bindings.
+Prior Ada-Eye-Optics remains an older comparison; do not deliver as latest.
+
+Known limits: small shadow/skin speckles around lids remain, card-hair edges, no
+full RigLogic corrective parity or MetaHuman visual acceptance. Current repair
+is deliberately scoped to known companion smooth head, not arbitrary hard-edge
+SKMs. QA details docs/qa/vivid-eye-optics-2026-11-20.md. Next: diagnose remaining
+shadow flecks and evaluate other expressions under matched reference lighting.
