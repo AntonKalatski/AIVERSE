@@ -155,6 +155,10 @@ int main() {
     // No-op input must not trigger arbitrary work.
     AIVERSE_TEST_CHECK(runtime.setLights({GiMovingLight{7,{0,0,0},{1,0,0},4,20}}));
     AIVERSE_TEST_CHECK(runtime.pendingProbes()==0);
+    // Same energy and position, DIFFERENT stable ECS source identity:
+    // deletion/replacement cannot be treated as an idempotent light snapshot.
+    AIVERSE_TEST_CHECK(runtime.setLights({GiMovingLight{8,{0,0,0},{1,0,0},4,20}}));
+    AIVERSE_TEST_CHECK(runtime.pendingProbes()>0);
     AIVERSE_TEST_CHECK(runtime.shutdown());
     AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
     return 0;
