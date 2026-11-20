@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -179,22 +180,95 @@ std::shared_ptr<const render::graph::Program> hairGraph(const HumanGroom& d) {
              g.binary("multiply",g.color(d.color),melaninDarkening),highlight));
     return g.finish(color,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
 }
+// Mobile/medium-specific graphs share the full ShaderGraph compiler, while
+// reducing nodes rather than hiding costly effects behind a runtime branch.
+std::shared_ptr<const render::graph::Program> compactSkinGraph(
+        const HumanSkin& d,HumanMaterialQuality quality) {
+    Nodes g;
+    std::array<float,3> pigment{};
+    for(int i=0;i<3;++i)
+        pigment[std::size_t(i)]=std::clamp(d.melaninColor[std::size_t(i)]*
+                    (1.04f-d.melanin*0.22f),0.02f,1.0f);
+    const auto base=g.binary("multiply",g.add("input"),g.color(pigment));
+    const auto rough=g.constant(std::clamp(
+        d.roughness*(1.0f-0.55f*d.oiliness-0.22f*d.wetness),0.04f,1.0f));
+    if(quality==HumanMaterialQuality::Low)return g.finish(base,rough);
+    const auto fresnel=g.ternary("fresnel",g.add("normal"),
+                                g.add("viewDirection"),g.constant(2.4f));
+    const auto blood=g.color({0.17f*d.hemoglobin,
+                             0.035f*d.hemoglobin,0.023f*d.hemoglobin});
+    const auto scatter=g.binary("multiply",fresnel,
+        g.binary("multiply",blood,g.constant(d.scatteringMm/8.0f)));
+    return g.finish(g.scalarOp("clamp",g.binary("add",base,scatter)),rough);
+}
+std::shared_ptr<const render::graph::Program> compactIrisGraph(
+        const HumanEyes& d,HumanMaterialQuality quality) {
+    Nodes g;
+    const auto uv=g.add("uv");
+    const auto center=g.add("constant",{},vector4(0.5f,0.5f,0,0));
+    const auto radius=g.scalarOp("length",g.binary("subtract",uv,center));
+    const auto irisRadius=std::max(0.10f,d.irisRadius*0.49f);
+    const auto pupilRadius=std::max(0.02f,d.irisRadius*d.pupil*0.5f);
+    const auto irisMask=g.scalarOp("oneMinus",g.ternary("smoothstep",
+        g.constant(irisRadius-0.012f),g.constant(irisRadius+0.012f),radius));
+    const auto pupilMask=g.scalarOp("oneMinus",g.ternary("smoothstep",
+        g.constant(pupilRadius-0.010f),g.constant(pupilRadius+0.010f),radius));
+    const auto sclera=g.color({0.92f,0.89f-d.scleraRedness*0.12f,
+                              0.86f-d.scleraRedness*0.18f});
+    auto iris=g.color(d.irisColor);
+    if(quality==HumanMaterialQuality::Medium) {
+        const auto grain=g.scalarOp("gradientNoise",
+            g.binary("multiply",uv,g.constant(43.0f)));
+        iris=g.binary("multiply",iris,
+            g.binary("add",g.constant(0.86f),
+                         g.binary("multiply",grain,g.constant(0.20f))));
+    }
+    const auto colored=g.ternary("mix",sclera,iris,irisMask);
+    const auto eye=g.ternary("mix",colored,
+                               g.color({0.008f,0.009f,0.012f}),pupilMask);
+    return g.finish(eye,g.constant(0.19f));
+}
+std::shared_ptr<const render::graph::Program> compactHairGraph(
+        const HumanGroom& d,HumanMaterialQuality quality) {
+    Nodes g;
+    const auto darkness=g.constant(1.0f-0.38f*d.melanin);
+    auto color=g.binary("multiply",g.color(d.color),darkness);
+    if(quality==HumanMaterialQuality::Medium) {
+        const auto grain=g.scalarOp("gradientNoise",
+            g.binary("multiply",g.add("uv"),
+                g.add("constant",{},vector4(65.0f,6.0f,0,0))));
+        color=g.binary("multiply",color,g.binary("add",
+            g.constant(0.75f),g.binary("multiply",grain,g.constant(0.30f))));
+    }
+    return g.finish(color,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
+}
+void enforceGraphBudget(const render::Material& material,
+                        HumanMaterialQuality quality) {
+    if(!material.shaderGraph)return;
+    const auto budget=humanMaterialBudget(quality);
+    if(material.shaderGraph->nodes>budget.maxNodes ||
+       material.shaderGraph->samples>budget.maxSamples)
+        throw std::runtime_error("VIVID material graph exceeded quality budget");
+}
 } // namespace
 
-render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
+render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna,
+                               HumanMaterialQuality quality) {
     dna.validate();
     render::Material m;
     switch(surface) {
     case HumanSurface::Skin:
         m=basic("VIVID skin",dna.skin.melaninColor,dna.skin.roughness);
-        m.shaderGraph=skinGraph(dna.skin);
+        m.shaderGraph=quality==HumanMaterialQuality::High
+            ?skinGraph(dna.skin):compactSkinGraph(dna.skin,quality);
         m.shading=render::ShadingModel::Skin;
         m.humanProfile={dna.skin.scatteringMm/6.0f,dna.skin.wetness};
         m.roughness=std::clamp(dna.skin.roughness-dna.skin.oiliness*0.23f,0.04f,1.0f);
         break;
     case HumanSurface::Iris:
         m=basic("VIVID layered iris",dna.eyes.irisColor,0.19f);
-        m.shaderGraph=irisGraph(dna.eyes);
+        m.shaderGraph=quality==HumanMaterialQuality::High
+            ?irisGraph(dna.eyes):compactIrisGraph(dna.eyes,quality);
         m.shading=render::ShadingModel::Eye;
         m.humanProfile={dna.eyes.corneaIor,dna.eyes.tearFilm};
         break;
@@ -217,7 +291,8 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
         break;
     case HumanSurface::Hair:
         m=basic("VIVID groom",dna.groom.color,dna.groom.roughness);
-        m.shaderGraph=hairGraph(dna.groom);
+        m.shaderGraph=quality==HumanMaterialQuality::High
+            ?hairGraph(dna.groom):compactHairGraph(dna.groom,quality);
         m.shading=render::ShadingModel::Hair;
         m.humanProfile={0.65f+dna.groom.clump*0.30f,dna.groom.roughness};
         m.doubleSided=true;
@@ -232,12 +307,22 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
         m=basic("VIVID teeth",{0.88f,0.83f,0.72f},0.25f);
         break;
     }
+    if(quality==HumanMaterialQuality::Low &&
+       (surface==HumanSurface::Skin || surface==HumanSurface::Iris ||
+        surface==HumanSurface::Cornea || surface==HumanSurface::Hair ||
+        surface==HumanSurface::Eyelash))
+        m.shading=render::ShadingModel::Pbr;
+    enforceGraphBudget(m,quality);
     return m;
+}
+render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
+    return humanMaterial(surface,dna,HumanMaterialQuality::High);
 }
 render::Material humanMaterialFromSource(HumanSurface surface,
                                         const HumanDNA& dna,
-                                        const render::Material& source) {
-    auto dst=humanMaterial(surface,dna);
+                                        const render::Material& source,
+                                        HumanMaterialQuality quality) {
+    auto dst=humanMaterial(surface,dna,quality);
     // The imported texture array remains in the owning render::Model; its
     // integer indices are still valid after remapping the material factors.
     dst.baseTex=source.baseTex;
@@ -266,13 +351,23 @@ render::Material humanMaterialFromSource(HumanSurface surface,
     return dst;
 }
 
+render::Material humanMaterialFromSource(HumanSurface surface,
+                                        const HumanDNA& dna,
+                                        const render::Material& source) {
+    return humanMaterialFromSource(surface,dna,source,
+                                   HumanMaterialQuality::High);
+}
+HumanSurfaceMaterials humanMaterials(const HumanDNA& dna,
+                                     HumanMaterialQuality quality) {
+    return {humanMaterial(HumanSurface::Skin,dna,quality),
+            humanMaterial(HumanSurface::Iris,dna,quality),
+            humanMaterial(HumanSurface::Sclera,dna,quality),
+            humanMaterial(HumanSurface::Cornea,dna,quality),
+            humanMaterial(HumanSurface::Hair,dna,quality),
+            humanMaterial(HumanSurface::Eyelash,dna,quality),
+            humanMaterial(HumanSurface::Teeth,dna,quality)};
+}
 HumanSurfaceMaterials humanMaterials(const HumanDNA& dna) {
-    return {humanMaterial(HumanSurface::Skin,dna),
-            humanMaterial(HumanSurface::Iris,dna),
-            humanMaterial(HumanSurface::Sclera,dna),
-            humanMaterial(HumanSurface::Cornea,dna),
-            humanMaterial(HumanSurface::Hair,dna),
-            humanMaterial(HumanSurface::Eyelash,dna),
-            humanMaterial(HumanSurface::Teeth,dna)};
+    return humanMaterials(dna,HumanMaterialQuality::High);
 }
 } // namespace aiverse::vivid
