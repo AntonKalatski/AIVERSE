@@ -12626,7 +12626,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     render::Renderer3D renderer;CHECK(renderer.init(dev));
     game::RtsView view;game::Rules rules=skirmishRules();
     CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
-    view.overlays().init(rules,Json::parse(R"([{"id":"fault-ring","anchor":"selected","shape":{"type":"ring","radius":1}}])"),Json(),"");
+    view.overlays().init(rules,Json::parse(R"([{"id":"fault-ring","anchor":"selected","shape":{"type":"ring","radius":1},"style":{"onTop":true,"thickness":0.1}}])"),Json(),"");
     game::MapGrid grid;grid.init(4,4);
     grid.corner.assign(25,0);
     std::vector<uint8_t> initialVisibility(16,2);

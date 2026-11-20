@@ -96,6 +96,10 @@ int aiverseMain(int,char**) {
             snapshot.clear();view.setCameraPreparedCapture(nullptr);view.shutdown(*device);
             targets.shutdownAfterGpuIdle();renderer.shutdown();
         }catch(const std::exception& e){std::fprintf(stderr,"FAIL teardown: %s\n",e.what());failed=true;}
+        // AppKit terminate exits instead of returning from platform::run.
+        // Report failure here so a failed native callback cannot exit zero.
+        if(failed || !done){std::fflush(nullptr);std::exit(1);}
+        std::puts("PASS LENS native Metal prepared frame and independent camera pixels");
     };
     platform::run(config,callbacks);
     if(done && !failed)std::puts("PASS LENS native Metal prepared frame and independent camera pixels");
