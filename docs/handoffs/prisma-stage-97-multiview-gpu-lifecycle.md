@@ -124,3 +124,19 @@ Then Stage98: true per-view GPU pixels (movement/ghosting), frequent
 cut/resize stress, verified completed fences and resource residency,
 and separate Vulkan/GLES compilation and runtime fixtures. Draft PR #84
 must stay unmerged until the native gate is reviewed.
+
+## Stage 97 final integration adjustment and agent-skill sync
+
+- `4068788c0ad48809eab7f4f504b88d6469c4a23f`:
+  `tools/prisma/acceptance.sh` now uses
+  `AIVERSE_PRISMA_CTEST_TIMEOUT` (validated 1–7200 seconds,
+  default 1800), since some genuine current AIVERSE full native
+  tests have exceeded the old 900-second per-case limit.
+  This avoids a false-red timeout without skipping or relaxing tests.
+- `b016e0853cf0741796c58c8fad0bf6ef85a9a02e`:
+  `skills/visuals/aiverse-prisma/SKILL.md` points to the Stage97
+  handoff, current backend fixture flags, correct GPU-fence semantics
+  and native validation limitations.
+- No changes to Vulkan/GLES or production shader paths. This
+  remains a source-only authored test extension; all native outcomes
+  are still **NOT RUN** in this stage.
