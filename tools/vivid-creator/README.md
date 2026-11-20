@@ -331,3 +331,40 @@ material resource identity. Read
 `docs/agent-handoffs/vivid-texture-rhi-integration-2026-11-20.md` before
 merging. No Vulkan/GLES/Metal runtime validation or performance benchmarking
 has been run on this stage's sources.
+
+
+## Sculpt source IDs through palette seams and authored LODs (Stage 7AK)
+
+An imported character's palette-seam repair may duplicate model-global
+vertices. A visible triangle can therefore reference an **appended clone**,
+even though the morph authoring sidecar still addresses the source vertex.
+The Creator now publishes a per-model original-source-ID table alongside
+its new model and morph CSR:
+
+- Original `0 .. sourceVertexCount-1` IDs map to themselves.
+- `SkinSeamSplit::Result::clones` map each actual appended seam clone to its
+  original authorable ID.
+- Authored/generated LOD vertices and seam clones **of those LOD vertices**
+  map to the invalid `UINT32_MAX` sentinel; sculpting cannot accidentally
+  overwrite them.
+- Wrong source/target indices and repeated clone targets reject the new
+  mapping transactionally. A rejected candidate cannot replace the previous
+  active selection map.
+- The raycast traverses real morphed+skinned triangles at their model IDs,
+  then converts the chosen hit vertex to its source ID *after* intersection.
+  Its world-space marker uses the actual chosen clone, not a bind-pose guess.
+
+Core opt-in functions are `buildSculptSourceVertexMap` and
+`pickDeformedSculptVertex(..., sourceVertexCount, authorIds)` from
+`engine/character/vivid/DeformedSculptPick.h`.
+The lower-level `pickSkinnedWeightVertex` accepts the same optional map;
+existing skin-weight painting calls remain unchanged.
+
+This is a bounded **on-click CPU reference**: above 1,000,000 model vertices,
+Creator still loads/renders the character but disables this sculpt picker.
+The old model-independent `pickSculptVertex` API remains available for
+standalone tools; it does not model skinning or morphs. A full Vulkan/Metal/
+GLES pixel-perfect ID/depth pass, inter-mesh occlusion, cloth-aware picking,
+GPU readbacks and acceleration for million-triangle meshes remain unbuilt.
+**Actual native C++ build, CTest, Creator GPU capture and performance tests
+have NOT RUN for Stage 7AK.** See the chronological agent handoff.
