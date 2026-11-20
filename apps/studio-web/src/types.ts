@@ -1,4 +1,5 @@
 export type { PropertyType } from './propertyLogic';
+export type { FacialRigDocument, FacialRigList, FacialRigResult, FacialRigValidation } from './panels/facialRigSchema';
 export type StudioProperty = import('./propertyLogic').FieldDescriptor;
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
@@ -23,7 +24,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -38,6 +39,10 @@ export interface StudioParams {
   'studio.shaderGraphs': Record<string, never>;
   'studio.shaderGraphGet': { name: string };
   'studio.shaderGraphCatalog': Record<string, never>;
+  'studio.facialRigList': Record<string, never>;
+  'studio.facialRigGet': { name: string };
+  'studio.facialRigValidate': { rig: import('./panels/facialRigSchema').FacialRigDocument };
+  'studio.facialRigSave': { name: string; rig: import('./panels/facialRigSchema').FacialRigDocument };
   'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
   'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };
   'studio.lighting': Record<string, never>;
@@ -64,6 +69,10 @@ export interface StudioResult {
   'studio.shaderGraphs': StudioShaderGraphList;
   'studio.shaderGraphGet': StudioShaderGraphDocument;
   'studio.shaderGraphCatalog': StudioShaderGraphCatalog;
+  'studio.facialRigList': import('./panels/facialRigSchema').FacialRigList;
+  'studio.facialRigGet': import('./panels/facialRigSchema').FacialRigResult;
+  'studio.facialRigValidate': import('./panels/facialRigSchema').FacialRigValidation;
+  'studio.facialRigSave': import('./panels/facialRigSchema').FacialRigResult;
   'studio.shaderGraphValidate': StudioShaderGraphDocument;
   'studio.shaderGraphSave': StudioShaderGraphDocument;
   'studio.lighting': StudioLightingState;
