@@ -15,6 +15,7 @@
 #include "../gfx/Gfx.h"
 #include "Lights.h"
 #include "Math3D.h"
+#include "PrismaMotionTextureInput.h"
 #include "Model.h"
 #include "ModelStaticEligibility.h"
 #include "CpuMdiAdaptivePolicy.h"
@@ -142,6 +143,23 @@ public:
     virtual gfx::PassDesc surfaceReceiverPass(int,int) { return {}; }
     virtual void surfaceReceiverPublished(gfx::TextureHandle,int,int) {}
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
+    // These match the current MAIN Renderer3D PRISMA object motion bridge.
+    // Older backends stay inert; the producer renders AFTER scene depth
+    // exists but BEFORE resolve(), so no camera-only fake velocity is used.
+    virtual bool wantsObjectMotionVectors() const { return false; }
+    virtual gfx::TextureHandle objectMotionSceneDepth() const { return {}; }
+    virtual uint64_t objectMotionEpoch(uint64_t) const { return 0; }
+    virtual bool objectMotionContext(uint64_t& viewId,mat4& previousViewProj) const {
+        (void)viewId;(void)previousViewProj;return false;
+    }
+    virtual void acceptObjectMotionVectors(gfx::TextureHandle) {}
+    virtual void acceptObjectMotionVectors(MotionTextureInput input) {
+        acceptObjectMotionVectors(input.texture);
+    }
+    virtual void acceptMotionReactiveMask(gfx::TextureHandle) {}
+    virtual void acceptMotionReactiveMask(MotionTextureInput input) {
+        acceptMotionReactiveMask(input.texture);
+    }
 };
 
 // Baked skinning sample (Animator::baseSample()): clip A blends to clip B by `mix`; clip -1 = bind pose.
