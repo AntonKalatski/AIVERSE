@@ -48,16 +48,18 @@ public:
     MotionWeaveScenePublication(const MotionWeaveScenePublication&)=delete;
     MotionWeaveScenePublication& operator=(const MotionWeaveScenePublication&)=delete;
 
-    // COMPLETE visual scene publication. All EcsAttachmentScene children and
-    // independent Graph players are built in a private candidate World.
-    // On any failure, previously visible scenes and player clocks remain.
-    // No authoritative SceneLoadCoordinator World or Entity is mutated.
-    // Call only at the owner pre-render barrier with old/new resource
-    // providers alive. Never use while any Prepared draw is still borrowed.
-    bool replaceScene(uint64_t sceneId,std::span<const Object> objects,
+    // Phase 1: stage all EcsAttachmentScene children, immutable appearances
+    // and independent Graph players into an unpublished private World.
+    // Use BEFORE SceneLoadCoordinator::commit() after the native host has
+    // prepublished the required assets; a failed/aborted coordinator commit
+    // calls discardStaged(), leaving the current scene untouched.
+    // A failed staging attempt also invalidates any older pending candidate.
+    // Call only at the owner pre-render barrier, never on asset workers.
+    bool stageScene(uint64_t sceneId,std::span<const Object> objects,
                       const render::ModelResourceCache& cache,
                       Statistics& stats,std::string* error=nullptr) {
         if(error)error->clear();
+        pending_.erase(sceneId);
         try {
             if(!sceneId)
                 throw std::invalid_argument("presentation scene ID must be nonzero");
@@ -72,7 +74,10 @@ public:
                    !object.parent->modelPublicationGeneration)
                     throw std::invalid_argument(
                         "presentation source Model is not published");
-                if(!object.resolveStaticChild)
+                bool needsStaticResolver=false;
+                for(const auto& child:object.layout.attachments)
+                    needsStaticResolver|=child.enabled && !child.animated;
+                if(needsStaticResolver && !object.resolveStaticChild)
                     throw std::invalid_argument(
                         "presentation static child resolver is missing");
 
@@ -99,9 +104,12 @@ public:
 
                 Entity visualParent=next->presentation.create();
                 std::string reason;
+                const Resolver resolver=object.resolveStaticChild
+                    ?object.resolveStaticChild
+                    :[](const std::string&) -> Snapshot {return {};};
                 if(!next->attachments.activate(
                        {sceneId,object.objectKey},visualParent,authored,
-                       object.parent,cache,object.resolveStaticChild,&reason))
+                       object.parent,cache,resolver,&reason))
                     throw std::runtime_error(
                         "scene visual attachment publish: "+reason);
                 next->parents.emplace(object.objectKey,object.parent);
@@ -115,7 +123,7 @@ public:
             // scene/object/stable child ID and copied rig hierarchy qualify.
             size_t playbackQueued=0,playbackDeclined=0;
             if(const auto previous=scenes_.find(sceneId);
-               previous!=scenes_.end()) {
+               previous!=scenes_.end() && previous->second) {
                 for(const auto& [key,children]:next->childSnapshots)
                     for(const auto& [childId,appearance]:children) {
                         const ChildSources::Key child{sceneId,key,childId};
@@ -156,19 +164,44 @@ public:
                         allocateDrawId());
                 }
 
-            // All compilation, animation preflight and entity construction
-            // succeeded. Map allocation happens BEFORE replacing the last
-            // good generation. Assignment of unique_ptr cannot throw.
-            auto [position,inserted]=scenes_.try_emplace(sceneId);
-            (void)inserted;
-            position->second=std::move(next);
-            stats={position->second->parents.size(),inputs.size(),
+            // Allocate the committed map slot here, BEFORE the host's
+            // authoritative SceneLoadCoordinator::commit. This makes
+            // phase-2 publication a move of unique_ptr with no map insert.
+            // An empty slot is not reported as a published scene.
+            (void)scenes_.try_emplace(sceneId);
+            const size_t objectCount=next->parents.size();
+            pending_.insert_or_assign(sceneId,std::move(next));
+            stats={objectCount,inputs.size(),
                    playbackQueued,playbackDeclined,initial};
             return true;
         }catch(const std::exception& ex) {
             if(error)*error=ex.what();
             return false;
         }
+    }
+
+    // Phase 2: call immediately AFTER a successful authoritative commit.
+    // This swaps the prevalidated visual generation without importing,
+    // compiling or allocating map slots after gameplay activation.
+    bool commitStaged(uint64_t sceneId) {
+        const auto prepared=pending_.find(sceneId);
+        const auto current=scenes_.find(sceneId);
+        if(prepared==pending_.end() || current==scenes_.end())
+            return false;
+        current->second=std::move(prepared->second);
+        pending_.erase(prepared);
+        return true;
+    }
+    bool discardStaged(uint64_t sceneId) {
+        return pending_.erase(sceneId)!=0;
+    }
+    // Convenience for hosts without a separate authoritative scene
+    // commit transaction (eg. Studio authoring/model preview).
+    bool replaceScene(uint64_t sceneId,std::span<const Object> objects,
+                      const render::ModelResourceCache& cache,
+                      Statistics& stats,std::string* error=nullptr) {
+        return stageScene(sceneId,objects,cache,stats,error) &&
+               commitStaged(sceneId);
     }
 
     // Exactly ONE presentation graph step per scene/frame, before renderer
@@ -178,7 +211,7 @@ public:
               std::string* error=nullptr) {
         if(error)error->clear();
         const auto it=scenes_.find(sceneId);
-        if(it==scenes_.end()) {
+        if(it==scenes_.end() || !it->second) {
             if(error)*error="presentation scene not published";
             return false;
         }
@@ -197,7 +230,7 @@ public:
                        std::string* error=nullptr) const {
         if(error)error->clear();
         const auto it=scenes_.find(sceneId);
-        if(it==scenes_.end()) {
+        if(it==scenes_.end() || !it->second) {
             if(error)*error="presentation scene not published";
             return false;
         }
@@ -226,7 +259,7 @@ public:
                       std::string* error=nullptr) const {
         if(error)error->clear();
         const auto it=scenes_.find(sceneId);
-        if(it==scenes_.end()) {
+        if(it==scenes_.end() || !it->second) {
             if(error)*error="presentation scene not published";
             return false;
         }
@@ -251,6 +284,7 @@ public:
     // Model/Graph CPU owners are retired. The asset host separately proves
     // GPU completion; CPU ModelReadLease is NOT a GPU fence.
     bool unload(uint64_t sceneId) {
+        pending_.erase(sceneId);
         return scenes_.erase(sceneId)!=0;
     }
 
@@ -267,6 +301,10 @@ public:
                 throw std::invalid_argument(
                     "active scene list contains zero or duplicate IDs");
         }
+        for(auto it=pending_.begin();it!=pending_.end();) {
+            if(keep.count(it->first)) {++it;continue;}
+            it=pending_.erase(it);
+        }
         size_t removed=0;
         for(auto it=scenes_.begin();it!=scenes_.end();) {
             if(keep.count(it->first)) {++it;continue;}
@@ -280,14 +318,25 @@ public:
     // presentation source IDs, Graph clocks and appearance epochs are
     // invalid. Clear them before queueing new scene residency restore.
     void resetAfterRollback() {clear();}
-    void clear() {scenes_.clear();}
-    bool contains(uint64_t sceneId) const noexcept {
-        return scenes_.find(sceneId)!=scenes_.end();
+    void clear() {
+        pending_.clear();
+        scenes_.clear();
     }
-    size_t sceneCount() const noexcept{return scenes_.size();}
+    bool contains(uint64_t sceneId) const noexcept {
+        const auto it=scenes_.find(sceneId);
+        return it!=scenes_.end() && bool(it->second);
+    }
+    size_t sceneCount() const noexcept {
+        size_t count=0;
+        for(const auto& [id,scene]:scenes_) {
+            (void)id;
+            count+=bool(scene);
+        }
+        return count;
+    }
     Json saveScene(uint64_t sceneId) const {
         const auto it=scenes_.find(sceneId);
-        if(it==scenes_.end())
+        if(it==scenes_.end() || !it->second)
             throw std::out_of_range("presentation scene not published");
         return it->second->attachments.saveScene(sceneId);
     }
@@ -330,6 +379,7 @@ private:
     }
     uint64_t nextDrawId_=1; // global to this host; never reused
     std::map<uint64_t,std::unique_ptr<Generation>> scenes_;
+    std::map<uint64_t,std::unique_ptr<Generation>> pending_;
 };
 
 } // namespace aiverse::view
