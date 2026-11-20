@@ -61,13 +61,43 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         throw std::logic_error("RtsView reload: sprite resources belong to a different GPU device");
     if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
         throw std::logic_error("RTS view stale GPU device generation");
-    // Establish completion before modifying *any* reload-owned presentation
-    // state. On failure, leave the previous loaded view usable and untouched.
-    if (twoD_) {
-        if (!twoD_->shutdownAfterGpuIdle(dev))
-            throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
+    // Stage the replacement sprites before touching the live view. A failed
+    // sprite pipeline/texture allocation must not delete its predecessor.
+    // The idle barrier is established first, so existing GPU resources may be
+    // retired only after the replacement has been prepared successfully.
+    if (twoD_ && !dev.waitForResourceIdle())
+        throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
+    const FileReader incomingRead = reader ? reader :
+        FileReader([](const std::string& p,std::string& out) {
+            return platform::readContentFile(p,out);
+        });
+    SpriteDefaults incomingSpriteDefaults{};
+    {
+        std::string text, rulesPath="rules.json";
+        Json game, rj;
+        try {
+            if(incomingRead("game.json",text)) {
+                game=Json::parse(text);
+                rulesPath=game.getStr("rules","rules.json");
+            }
+        } catch (...) {}
+        try {
+            rj=readComposedJson(rulesPath,[&](const std::string& p,std::string& out) {
+                return incomingRead(p,out);
+            });
+        } catch (...) {}
+        incomingSpriteDefaults=parseSpriteDefaults(rj["sprites"],game["sprites"]);
+    }
+    auto nextSprites=std::make_unique<Rts2DView>();
+    if(!nextSprites->init(dev,rules,contentBase_,incomingSpriteDefaults,deferredLoading_))
+        return false;
+    // A successful staging pass is not yet the complete RtsView transaction:
+    // later terrain/model/overlay initialization can still fail.
+    if(twoD_) {
+        twoD_->shutdown(dev); // validated idle above; no intervening draw pass
         twoD_.reset();
     }
+    twoD_=std::move(nextSprites);
     if(gpuDeviceLease_.device())
         resources_.bindResourceDevice(dev,gpuDeviceLease_);
     else resources_.bindResourceDevice(dev);
@@ -141,8 +171,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     if(deferredLoading_)for(size_t t=0;t<rules.types.size();++t)
         requestedModels_[t]=rules.types[t].view["streaming"].getStr("coarseModel");
     if (!deferredLoading_) for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
-    twoD_ = std::make_unique<Rts2DView>();
-    if (!twoD_->init(dev, rules, contentBase_, spriteDefaults_, deferredLoading_)) twoD_.reset();
+    // The replacement 2D view was initialized before mutating this view.
     lights_.init(rules);
     groundFx_.init(dev, rules, read_, contentBase_);
     terrain_.init(dev, rules, read_, contentBase_);
