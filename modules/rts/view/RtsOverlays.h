@@ -60,8 +60,17 @@ public:
     // Publish a CPU-prepared overlay definition snapshot without reparsing it
     // after the view has begun replacing live GPU presentation resources.
     void initPrepared(const Rules& rules, OverlaySet prepared, const std::string& contentBase);
-    void initGpu(gfx::Device& dev);   // after init: icon textures, batch shader (RtsOverlaysDraw.cpp)
+    // Stage all icon textures, shader, pipelines and fallback white texture
+    // before publication. Failure leaves the previous GPU owner intact.
+    void initGpu(gfx::Device& dev);
+    bool shutdownAfterGpuIdle(gfx::Device& dev);
+    // Caller has already established a full GPU idle barrier.
     void shutdown(gfx::Device& dev);
+    bool gpuReady() const noexcept {
+        if(!dev_ || !shader_.valid() || !white_.valid())return false;
+        for(const auto& pipe:pipes_)if(!pipe.valid())return false;
+        return true;
+    }
     void setContext(const OverlayContext& c) { ctx_ = c; }
     const OverlayContext& context() const { return ctx_; }
     // Default: from the renderer's material quality (AIVERSE_OVERLAYS=low|medium|high overrides).
