@@ -650,6 +650,34 @@ private:
         return slot.filtered;
     }
 
+    // Snapshot current REAL world normals and scene depth to the same
+    // output slot as this frame's filtered light. A filter without normal
+    // snapshot can still be presented, but can never become temporal history.
+    bool captureNormalHistory(const ScreenInputs& input,uint64_t frame,
+                              int slotIndex,uint32_t width,uint32_t height) {
+        if(!normalHistoryShader_.valid() || !dev_ ||
+           slotIndex<0 || slotIndex>=int(screenSlots_.size()))return false;
+        auto& slot=screenSlots_[size_t(slotIndex)];
+        if(!slot.normal.valid() || dev_->frameSerial()!=frame || !frame ||
+           !dev_->beginCompute(normalHistoryShader_))return false;
+        dev_->setComputeBuffer(0,lightBuffer_);
+        dev_->setComputeBuffer(1,receiverBuffer_);
+        dev_->setComputeBuffer(2,triangleBuffer_);
+        dev_->setComputeBuffer(3,nodeBuffer_);
+        dev_->setComputeTexture(0,slot.normal);
+        dev_->setComputeSampledTexture(0,input.sceneDepth);
+        dev_->setComputeSampledTexture(1,input.surface);
+        dev_->setComputeSampledTexture(2,input.surfaceDepth);
+        Params params{};
+        params.counts={0,width*height,0,0};
+        params.control={0,width,0,0};
+        dev_->setComputeUniforms(&params,sizeof(params));
+        dev_->dispatch(width*height,1);
+        const bool accepted=dev_->computeDispatchSucceeded();
+        dev_->endCompute();
+        return accepted;
+    }
+
     static uint64_t geometryFingerprint(const GiGpuBvh& bvh) {
         uint64_t h=1469598103934665603ull;
         const auto hashBytes=[&](const void* data,size_t size) {
