@@ -2666,10 +2666,17 @@ void Renderer3D::renderModels(int phase) {
                 strataItem.model->ib==packet.index &&
                 strataItem.model->geometryRevision==packet.geometryRevision &&
                 strataItem.model->materialRevision==packet.materialRevision &&
+                packet.sourceBaseVertex>=0 &&
                 strataItem.model->gpuBaseVertex==uint32_t(packet.sourceBaseVertex) &&
                 strataItem.firstIndex==packet.sourceFirstIndex &&
                 strataItem.indexCount==packet.sourceIndexCount &&
                 strataItem.model->geometryPoolPage &&
+                !strataItem.model->geometry &&
+                strataItem.model->meshes.size()==1 &&
+                strataItem.model->materials.size()==1 &&
+                strataItem.model->nodes.size()==1 &&
+                strataItem.model->meshes[0].primitives.size()==1 &&
+                strataItem.prim==&strataItem.model->meshes[0].primitives[0] &&
                 strataItem.rigid && strataItem.joints<0 &&
                 strataItem.morph<0 && !strataItem.baked &&
                 !strataItem.mat->shaderGraph &&
