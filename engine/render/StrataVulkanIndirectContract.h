@@ -11,10 +11,23 @@ struct VulkanIndirectContract {
     gfx::BufferHandle vertex, index;
     uint64_t geometryRevision=0, materialRevision=0;
     uint32_t expectedMaterial=0;
+    uint32_t primitiveOrdinal=0;
     uint32_t originalFirstIndex=0, originalIndexCount=0;
     int32_t pooledBaseVertex=0;
     uint64_t expectedFrameSerial=0;
 };
+
+// Stage 16.4a: one GPU submission per primitive and per scene instance.
+// A single Model can have up to 16 distinct opaque primitives and materials.
+// Each submission inherits its OWN material/transform U0 from Renderer3D,
+// never a material ID from an arbitrary GPU atomic output ordering.
+// All selected primitives must match the original uploaded pooled geometry.
+bool prepareVulkanIndirectPrimitiveContract(
+    gfx::Device& device,const Model& source,const ModelAsset& staged,
+    const GpuMetadataScene::IndexBinding& binding,uint32_t primitiveOrdinal,
+    const GpuPassConfig& view,bool hasShadowOrReflection,
+    VulkanIndirectContract& out,GpuPassConfig& guardedView,
+    std::string* error=nullptr);
 
 // Preconditions: one rigid opaque material/primitive/node, shared pooled GPU
 // VB/IB, no morph/skin/author LOD, and one main camera (no shadow/mirror).
