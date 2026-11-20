@@ -166,9 +166,12 @@ int main() {
     AIVERSE_TEST_CHECK(lost.submitted);
     d.endFrame();
     d.vulkanHealthy=false;
-    d.completedVkFrame=12;
+    d.completedVkFrame=11; // lost submission NEVER produced a VkFence signal
+    AIVERSE_TEST_CHECK(d.completedFrameSerial()<d.submittedVkFrame);
     vkStats=queue.poll(vs);
-    AIVERSE_TEST_CHECK(vkStats.aborted==1 && vs.pending()==1);
+    AIVERSE_TEST_CHECK(vkStats.aborted==1 && vkStats.pending==0);
+    AIVERSE_TEST_CHECK(vs.pending()==1 && vs.inFlight()==0);
+    AIVERSE_TEST_CHECK(!queue.safeToSample(vs));
     AIVERSE_TEST_CHECK(queue.shutdown());
     gpu.shutdown();
     AIVERSE_TEST_CHECK(d.buffers.empty() && d.textures.empty());
