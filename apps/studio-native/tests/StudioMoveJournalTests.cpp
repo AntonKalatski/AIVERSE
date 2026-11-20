@@ -101,6 +101,26 @@ int main() {
             expect(readFile(moved)=="external-edit","External edit lost");
             expect(readFile(original)=="pixels","Original file lost");
         }
+        // A malformed later journal entry must be rejected before any
+        // preceding item is rolled back. Reuse a fresh valid fixture.
+        fs::remove_all(project/".aiverse-cache"/"studio-move-journal");
+        fs::remove(moved);
+        fs::rename(original,moved);
+        {
+            StudioMoveJournal journal(project);
+            journal.begin({{"B/Stone.png","A/Stone.png"}});
+            // Pending manifest describes a valid first entry and an invalid
+            // second one. Prevalidation must leave both file locations intact.
+            const auto pending=project/".aiverse-cache"/"studio-move-journal"/"pending.json";
+            writeFile(pending,R"({"version":1,"materialExisted":true,"operations":[{"from":"B/Stone.png","to":"A/Stone.png"},{"from":"../escape","to":"A/other.png"}]})");
+            bool invalidRejected=false;
+            try { StudioMoveJournal::recover(project); }
+            catch (const std::runtime_error&) {invalidRejected=true;}
+            expect(invalidRejected,"Malformed later journal entry was accepted");
+            expect(fs::exists(moved),"Malformed journal mutated the valid source");
+            expect(!fs::exists(original),"Malformed journal partially restored the target");
+        }
+        fs::remove_all(project/".aiverse-cache"/"studio-move-journal");
         fs::remove_all(project);
         std::cout<<"PASS studio persistent move recovery and collision safety\n";
     } catch (...) {
