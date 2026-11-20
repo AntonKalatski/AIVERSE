@@ -494,6 +494,10 @@ private:
         const bool valid=fx::SpectraFxGpuEmitterAsset::readText(
             text_,candidate,&error);
         bool canDraw=false;
+        // GPU and CPU must advance using the same frame delta, after the
+        // revision has successfully started. Keep it in scope across the
+        // CPU preparation below (outside the valid-draft branch).
+        float dt=0.0f;
         if(!valid) {
             (void)previewPolicy_.advance(now,false);
             previewPolicy_.invalidDraft();
@@ -538,7 +542,7 @@ private:
                 canDraw=previewPolicy_.canDraw(hash);
                 // Consume a queued step ONLY after the new revision has
                 // really started. A failed reset/dispatch must not eat it.
-                const float dt=previewPolicy_.advance(now,canDraw);
+                dt=previewPolicy_.advance(now,canDraw);
                 if(canDraw)
                     previewHost_.prepareGpu(dt,view);
             } else {
