@@ -144,6 +144,19 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 ### Split builds and content download
 
+For packaged client builds, `packaging.engineModules` can select optional native
+engine modules. Omitting the field keeps the historical defaults; an explicit
+empty array disables all three optional modules. The supported names are
+`strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
+at runtime), and `vulkan` (Windows, Linux, Android only). A target-specific
+`packaging.targets.web.engineModules` or similar overrides the shared list.
+For example, `"packaging": {"engineModules": [], "targets":
+{"windows": {"engineModules": ["vulkan"]}}}` builds without these optional
+modules except for Vulkan on Windows. Declare `runtime-autolod` when the game
+relies on runtime LOD generation; otherwise prepare LODs before packaging.
+This selection affects the executable, not the content pack. Core client,
+renderer, and gameplay modules still follow their C++ dependency graph.
+
 Optionally a build can be split: the app carries only a base pack with what is needed to start, the rest goes into
 parts (`content.001.rpkc`, …) of a given size that the game downloads from any source. The game author decides
 everything, in `game.json` (shared settings and per platform) or with `aiversebuild` flags:
