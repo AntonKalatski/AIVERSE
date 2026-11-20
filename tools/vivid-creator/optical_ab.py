@@ -26,7 +26,19 @@ def read_ppm(path: Path):
     return width, height, payload
 
 
-def compare(first: Path, second: Path, threshold: int):
+def parse_roi(spec: str):
+    try:
+        values = tuple(float(value) for value in spec.split(","))
+    except ValueError as exc:
+        raise ValueError("ROI must be four numbers: left,top,right,bottom") from exc
+    if (len(values) != 4 or
+            not (0 <= values[0] < values[2] <= 1 and
+                 0 <= values[1] < values[3] <= 1)):
+        raise ValueError("ROI must be four ordered fractions in [0,1]")
+    return values
+
+
+def compare(first: Path, second: Path, threshold: int, roi=None):
     w, h, a = read_ppm(first)
     bw, bh, b = read_ppm(second)
     if (w, h) != (bw, bh):
@@ -35,6 +47,16 @@ def compare(first: Path, second: Path, threshold: int):
     top, bottom = h // 8, h * 7 // 8
     if right <= left or bottom <= top:
         raise ValueError("invalid viewport comparison crop")
+    if roi is not None:
+        x0, y0, x1, y1 = roi
+        initial_left, initial_top = left, top
+        initial_width, initial_height = right - left, bottom - top
+        left = initial_left + int(initial_width * x0)
+        right = initial_left + int(initial_width * x1)
+        top = initial_top + int(initial_height * y0)
+        bottom = initial_top + int(initial_height * y1)
+        if right <= left or bottom <= top:
+            raise ValueError("ROI is too small in pixels")
     pixels = (right - left) * (bottom - top)
     absolute = [0, 0, 0]
     changed_channel = [0, 0, 0]
@@ -54,6 +76,7 @@ def compare(first: Path, second: Path, threshold: int):
     return {
         "image_size": [w, h],
         "viewport_crop": [left, top, right, bottom],
+        "roi_normalized": list(roi) if roi is not None else None,
         "samples": pixels,
         "threshold": threshold,
         "changed_pixels": changed_rgb,
@@ -71,11 +94,15 @@ def main():
     parser.add_argument("--threshold", type=int, default=24)
     parser.add_argument("--min-changed", type=int, default=400)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--label", default="viewport")
+    parser.add_argument("--roi", help="ROI left,top,right,bottom fractions within viewport")
     args = parser.parse_args()
     if not 0 <= args.threshold <= 765 or args.min_changed < 0:
         parser.error("threshold must be 0..765 and min-changed >= 0")
     try:
-        result = compare(args.reference, args.candidate, args.threshold)
+        roi = parse_roi(args.roi) if args.roi else None
+        result = compare(args.reference, args.candidate, args.threshold, roi)
+        result["label"] = args.label
         result["reference"] = str(args.reference)
         result["candidate"] = str(args.candidate)
         result["min_changed"] = args.min_changed
