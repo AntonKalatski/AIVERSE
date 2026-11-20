@@ -19,10 +19,11 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("application/x-aiverse-content-path", picker)
         self.assertIn("application/x-aiverse-content-path", assets)
         self.assertIn("invoke('studio.assets'", picker)
-        self.assertIn("asset.guid || asset.path", picker)
+        self.assertIn("onChange(asset.guid);", picker)
         self.assertIn("Search assets", picker)
         self.assertIn("event.dataTransfer.types.includes(STUDIO_ASSET_DRAG_MIME)", picker)
         self.assertIn("result.files.find(item => item.path === path)", picker)
+        self.assertIn("if (!asset.guid)", picker)
         self.assertNotIn("else if (path &&", picker)
 
     def test_reference_fields_are_schema_typed(self):
@@ -48,6 +49,21 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         panel = self.source("panels/StudioPanelRenderer.tsx")
         self.assertIn("toggleInspectorPin", panel)
         self.assertIn("aria-pressed={inspectorPinned}", panel)
+
+    def test_native_material_reference_slots_validate_guid_and_importer(self):
+        native = NATIVE.read_text(encoding="utf-8")
+        validation = (ROOT/"apps/studio-native/StudioMaterialValidation.h").read_text(encoding="utf-8")
+        schema = self.source("panels/materialSchema.ts")
+        for key in ("texture", "normalMap", "emissiveMap", "teamMask",
+                    "metallicRoughnessMap", "occlusionMap"):
+            with self.subTest(key=key):
+                self.assertIn('key=="'+key+'"', validation)
+                self.assertIn("key:'"+key+"'", schema)
+        self.assertIn("studioMaterialTextureKey(key)", native)
+        self.assertIn("catalog.byGuid(value.str())", native)
+        self.assertIn('asset->importer != "texture"', native)
+        self.assertIn('str("content/" + asset->path)', native)
+        self.assertIn('std::move(validatedPatch)', native)
 
     def test_import_settings_lock_preserves_asset_context(self):
         assets = self.source("components/AssetsPanel.tsx")
