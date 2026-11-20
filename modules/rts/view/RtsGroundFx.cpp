@@ -122,10 +122,25 @@ void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& r
             throw std::runtime_error("RtsGroundFx: reload GPU idle barrier failed");
         if(dev_)shutdown(dev);
     } catch(...) {
-        // No commands have ever referenced staging resources. Release only
-        // the staging owner, even when the old live device is not idle.
-        if(staged->dev_)staged->shutdown(dev);
-        throw;
+        // The staging GPU kit was NEVER published or submitted. Its handles
+        // must be destroyed directly, not through shutdown(), which requires
+        // an idle proof intended for resources used by prior render passes.
+        // In particular, failed reload when the OLD owner is still busy must
+        // not leak the newly allocated procedural material textures.
+        const auto original=std::current_exception();
+        if(staged->dev_) {
+            if(staged->pipe_.valid())
+                try {dev.destroyPipeline(staged->pipe_);}catch(...) {}
+            if(staged->shader_.valid())
+                try {dev.destroyShader(staged->shader_);}catch(...) {}
+            if(staged->white_.valid())
+                try {dev.destroyTexture(staged->white_);}catch(...) {}
+            try {staged->textures_.shutdown();}catch(...) {}
+            staged->pipe_={};staged->shader_={};staged->white_={};
+            staged->cobbleTexture_={};staged->dirtTexture_={};
+            staged->dev_=nullptr;
+        }
+        std::rethrow_exception(original);
     }
     // No GPU allocation after this point. Swap the prepared kit, look and
     // refs into the live owner; all previous mesh state has been shut down.
