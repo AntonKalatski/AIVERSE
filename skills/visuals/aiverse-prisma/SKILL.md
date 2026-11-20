@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, the latest `docs/handoffs/prisma-stage-66.md`.
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (current main acceptance), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,4 +1350,21 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit `docs/handoffs/prisma-stage-66.md` on the same branch: exact SHA, architecture and API, all changed paths, actual tests/results, limitations, and the next actionable step. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-96-main-acceptance-runner.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+
+## Stage 96 — integrated main native acceptance
+
+PR #67 already merged PRISMA, MotionWeave and the universal View into `main`.
+The old `feature/prisma-postfx` is an ancestor of `main`: never repeat
+that merge. To verify a current, exact checkout, run
+`bash tools/prisma/acceptance.sh [build-dir]`. It records HEAD and dirty
+worktree metadata, configures/builds Release once, runs one full CTest, and
+on macOS independently checks real Metal 54+ HDR GPU probes, a native Metal
+TAA stationary sample and GL33 HDR probes. Separate normal-scene runs
+capture P6 PPM images; `AIVERSE_HDR_VERIFY` alone does not write one.
+The script does not establish Vulkan/GLES/WebGL GPU runtime parity, multi-view
+GPU-fence stress, or hardware image-quality superiority. Read the Stage 96
+handoff for exact environment flags, evidence and remaining work.
+The latest combined `main` has NOT yet been certified by this new runner;
+previous Apple M3 Ultra evidence (115/115 CTest, Metal/GL HDR probes) was
+for older source revisions. Never transfer old PASS to a new SHA.
