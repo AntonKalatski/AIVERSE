@@ -4,9 +4,9 @@
 import type { ReactNode } from 'react';
 import {
   Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
-  MoreHorizontal, Plus, Search, SlidersHorizontal
+  MoreHorizontal, Plus, Search, SlidersHorizontal, Lock, LockOpen
 } from 'lucide-react';
-import type { StudioEntity, StudioSnapshot } from '../types';
+import type { StudioEntity, StudioProperty, StudioSnapshot } from '../types';
 import type { StudioPanel } from '../nestedDock';
 import PanelTitle from '../components/PanelTitle';
 import PropertyField from '../components/PropertyField';
@@ -27,12 +27,15 @@ export interface StudioPanelContext {
   setSearch: (value: string) => void;
   rows: Array<{node: StudioEntity; depth: number}>;
   selected: StudioEntity | undefined;
+  inspectorProperties: StudioProperty[];
+  inspectorPinned: boolean;
+  toggleInspectorPin: () => void;
   select: (id: string | null) => Promise<void>;
   changeProperty: (key: string, value: string | number | boolean) => Promise<void>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,search,setSearch,rows,selected,select,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,search,setSearch,rows,selected,inspectorProperties,inspectorPinned,toggleInspectorPin,select,changeProperty}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
@@ -68,8 +71,11 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'inspector':
         return <>
           <PanelTitle title="INSPECTOR" right={
-            <button className="icon-button" disabled aria-label="Inspector menu">
-              <MoreHorizontal size={16}/>
+            <button className="icon-button" onClick={toggleInspectorPin}
+              disabled={!selected} aria-pressed={inspectorPinned}
+              title={inspectorPinned ? 'Unpin Inspector from selected object' : 'Lock Inspector to current object'}
+              aria-label={inspectorPinned ? 'Unlock Inspector' : 'Lock Inspector'}>
+              {inspectorPinned ? <Lock size={16}/> : <LockOpen size={16}/>}
             </button>}/>
           {selected ? <>
             <div className="selected-object">
@@ -78,7 +84,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             </div>
             <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>
-              {snapshot?.properties.map(property =>
+              {inspectorProperties.map(property =>
                 <PropertyField key={selected.id + ':' + property.key}
                   property={property} disabled={busy || property.editable === false}
                   onChange={value => void changeProperty(property.key, value)}/>)}
