@@ -1280,8 +1280,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 if(!planet()) {
                     auto& gs=mod().state(*sim_);
                     view_.drawPreparedTerrainFog(renderer,gs.grid,
-                        spectator_?nullptr:&gs.vision[human_],time_);
-                    view_.drawPreparedSprites(renderer);
+                        spectator_?nullptr:&gs.vision[human_],time_,published.id);
+                    view_.drawPreparedSprites(renderer,published.id);
                 }
                 // Renderer3D::beginScene reset the per-camera light list.
                 // Reuse primary-frame particle lights without collecting FX again.
