@@ -278,3 +278,34 @@ log lens-budget-42b7fe2e0.log; selection outline fixture **7 PASS**, log
 lens-selection-42b7fe2e0.log. CI/GPU visuals NOT RUN. Next: rebuild core once,
 retest sole baked-lighting failure and current camera/MotionWeave/View subset;
 do not represent earlier full runs as all-green.
+
+
+## Final validation checkpoint — 2026-11-20
+
+Branch `codex/lens-completion`; final code commit
+`4a065c85b2088773b516e948dde82ad08d59c52f`, tested at documentation HEAD
+`21d1617b1`. All builds, compiler cache, TMPDIR and reports are on KINGSTON.
+Actually executed after the final repair:
+- `cmake --build /Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug --target aiverse_tests --parallel 4`: PASS; log `test-reports/final-core-rebuild.log`.
+- `aiverse_tests baked_lighting_lightmap_and_probe_variants`: PASS, 13 checks, 0 failed; log `test-reports/baked-lighting-final.log`.
+- `bash ./run-tests.sh --quick --no-build --build-dir /Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug --filter '^(camera_|lens_|motionweave_|animation_|view_|skill_catalog$|skill_routing$|skill_audit$)' --jobs 4`: PASS, 77/77, 14.33s; report `test-reports/20261120-154324-94687`.
+- `git diff --check`: PASS.
+Commands used KINGSTON TMPDIR and CLANG_MODULE_CACHE_PATH as above. Paths for
+logs are relative to the KINGSTON debug build directory. The prior all-target
+build including editor passed; the last change affects only a core test fake.
+
+The complete core execution before that final fake repair had 274351 checks
+and one failure; its sole failure now passes the targeted rerun. Earlier full
+214-test CTest run was NOT green; repaired failures passed subsequent focused
+runs. Do not claim a single final all-suite green run. LENS core fixtures:
+408 checks PASS, recorded above. CI, real Metal/Vulkan visuals, ARM64 execution,
+sanitizers and GPU performance comparisons NOT RUN.
+
+This closes topology camera-resource preparation, its bounded allocation ledger,
+and native compilation/regression repair. It DOES NOT close full LENS: remaining
+Sprite/MotionWeave/Lighting/Overlay all-or-nothing rollback needs staged owners;
+FramePublicationEpoch alone is only an admission gate. Next implementation:
+provide a complete independent AnimationGraph state candidate (PlaybackSnapshot
+is insufficient), stage remaining owners, then publish only after every owner
+prepares successfully; fault-inject each boundary before real GPU validation.
+No branch push/merge performed. Public save formats remain unchanged.

@@ -3123,3 +3123,17 @@ before calling this stage validated.
 ## LENS topology camera-resource continuation — 2026-11-20
 
 Branch `codex/lens-completion`, implementation `00f87a503068f4f4eae603a4d991ea4e20b2a34b`. See [LENS Stage 48B.3B.3](lens-motionweave-integration-stage48b3b3-topology-camera-resources-2026-11-20.md). Terrain LOD/dynamic/visibility/trace candidates now belong to unpublished topology; primary publication reuses them. No MotionWeave clock change. Native/GPU tests NOT RUN; hard topology budget and remaining owner integration outstanding. All builds must use KINGSTON.
+
+
+## LENS native validation and topology budget — 2026-11-20
+
+Branch `codex/lens-completion`: topology camera-resource staging `00f87a503`,
+shared preparation budget `481c07e85` / R8 correction `fcf72fafd`, final native
+repair `4a065c85b`. All builds/cache/temp/logs on KINGSTON. All-target native
+Debug x86_64 build PASS; LENS core 408 checks PASS; final Camera/MotionWeave/
+Animation/View/skills selection 77/77 PASS; sole remaining full-core fake idle
+failure repaired and targeted rerun 13/13 PASS. No single final all-suite green
+claim, CI/GPU/ARM64 NOT RUN. See [native validation](lens-native-validation-2026-11-20.md)
+and [budget handoff](lens-topology-preparation-budget-2026-11-20.md) for exact
+commands, SHAs, limitations and next work. Full Sprite/MotionWeave/Lighting/
+Overlay rollback remains open; PlaybackSnapshot is not a complete graph clone.

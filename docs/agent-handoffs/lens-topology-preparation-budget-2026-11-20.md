@@ -42,3 +42,18 @@ Previous aiverse_game_view native build PASS; this correction and budget tests
 NOT RUN yet. git diff --check PASS. All build outputs on KINGSTON.
 Next: rebuild aiverse_tests and exercise both smooth/coarse topology tests
 after the earlier full core binary has completed. CI NOT RUN.
+
+
+## Native verification checkpoint — 2026-11-20
+
+Budget code `481c07e85` plus correction `fcf72fafd` verified in the final native
+Debug x86_64 build on branch `codex/lens-completion`: `aiverse_tests lens_`
+PASS, 408 checks, including shared lease/overflow and coarse/smooth rejection,
+rollback/retry, commit release. Log on KINGSTON:
+`/Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug/test-reports/lens-budget-42b7fe2e0.log`.
+Final related CTest selection PASS 77/77 at `21d1617b1`;
+report `20261120-154324-94687`. Full build PASS; see native-validation handoff
+for exact commands and full-suite failures with targeted repairs. CI/real GPU/
+ARM64 NOT RUN. Logical preparation budget exclusions above still apply.
+Next: staged remaining frame owners and full publication rollback, then actual
+Metal/Vulkan checks. Full LENS is not yet complete.
