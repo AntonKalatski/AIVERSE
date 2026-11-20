@@ -628,7 +628,17 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
         // A newly compiled Metal model pipeline can be Pending for several
         // frames. No blank or partially warmed frame may enter the image
         // comparison, but warmup itself is not a rendering failure.
-        const bool bothPasses = profile.draws[0] > 0 && profile.draws[1] > 0;
+        bool maskAccepted=true;
+        if(maskParityEnabled && stage>=1) {
+            const auto stagedMask=renderer.modelViewProvenance(*maskModel);
+            const auto submittedMask=renderer.modelSubmissionProvenance(
+                *maskModel);
+            maskAccepted=vivid::validateSculptGpuSubmittedView(
+                stagedMask,submittedMask,*maskModel,0,
+                dev.frameSerial()).accepted;
+        }
+        const bool bothPasses = profile.draws[0] > 0 &&
+                                 profile.draws[1] > 0 && maskAccepted;
         readyFrames = bothPasses ? readyFrames + 1 : 0;
         if (frame % 45 == 0 && !bothPasses)
             std::printf("VIVID preview waiting for colour/shadow pipelines: frame=%d stage=%d shadow=%u colour=%u pending=%d\n",
@@ -672,6 +682,46 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             require(selected && selected->customGpuStream &&
                     selected->vertexOverride.valid(),
                     "VIVID parity lost original 60B GPU actor source");
+            vivid::SculptGpuVertexSource blockerGpu;
+            const vivid::SculptGpuVertexSource* blockerPtr=nullptr;
+            if(maskParityEnabled) {
+                require(maskModel && maskGpuDeformedFrame==dev.frameSerial(),
+                        "7AZ Mask producer GPU frame differs from renderer frame");
+                const auto maskView=renderer.modelViewProvenance(*maskModel);
+                const auto maskSubmit=renderer.modelSubmissionProvenance(
+                    *maskModel);
+                require(vivid::validateSculptGpuSubmittedView(
+                    maskView,maskSubmit,*maskModel,0,dev.frameSerial())
+                        .accepted,
+                    "7AZ independent GPU mask missing accepted colour draw");
+                const render::Renderer3D::ModelViewPrimitive* maskSelected=nullptr;
+                for(const auto& entry:maskView.primitives)
+                    if(entry.meshIndex==0u) {
+                        if(maskSelected &&
+                           (maskSelected->vertexOverride!=entry.vertexOverride ||
+                            maskSelected->drawInvocation!=entry.drawInvocation))
+                            throw std::runtime_error(
+                                "7AZ duplicate independent mask owner");
+                        maskSelected=&entry;
+                    }
+                require(maskSelected && maskSelected->vertexOverride==
+                        maskDeformedVertices &&
+                        maskSelected->vertexOverrideCount==
+                            maskModel->vertices.size(),
+                    "7AZ ID occluder source differs from actual Renderer3D draw");
+                const std::array<render::mat4,1> maskPose{{
+                    render::mat4::identity()}};
+                require(vivid::prepareSculptGpuVertexSource(
+                            *maskModel,0,maskPose,maskSelected->world,
+                            maskSelected->vertexOverride,
+                            maskSelected->vertexOverrideCount,
+                            {},maskModel->vertices.size(),blockerGpu) &&
+                        blockerGpu.maskedSelection &&
+                        vivid::sculptGpuMaskedOccluderInputsValid(
+                            blockerGpu,selected->vertexOverride),
+                    "7AZ GPU-written Mask source/UV/cutoff preflight failed");
+                blockerPtr=&blockerGpu;
+            }
             vivid::SkinnedWeightSurface reference;
             require(vivid::prepareSkinnedWeightSurface(
                         *model,0,pose.matrices,reference),
@@ -753,7 +803,8 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                     "VIVID actual Metal main-scene GPU depth readback unavailable");
             require(pixelIdPass.record(
                         *model,reference,model->vertices.size(),{},
-                        renderer.viewProj(),request,{}, {},&realGpu,true),
+                        renderer.viewProj(),request,{}, {},&realGpu,true,
+                        blockerPtr),
                     "VIVID real-actor colour/ID/depth pixel parity pass not encoded");
             // No main-pass resume needed: preview ends the frame here.
         }
