@@ -83,10 +83,23 @@ class Plant:
         flip=np.einsum('ij,ij->i',cross,normals[faces[:,0]])<0;faces[flip]=faces[flip][:,[0,2,1]]
         if len(faces)>budget:
             positions,faces=simplify(positions,faces,target_count=budget,agg=7)
-        normals=np.zeros_like(positions)
+        # Collapsed tiny twigs can leave zero-area or doubled opposite faces.
+        # They have no surface and must not reach tangent/atlas generation.
         cross=np.cross(positions[faces[:,1]]-positions[faces[:,0]],positions[faces[:,2]]-positions[faces[:,0]])
-        for corner in range(3):np.add.at(normals,faces[:,corner],cross)
+        faces=faces[np.linalg.norm(cross,axis=1)>1e-10]
+        _,inverse,counts=np.unique(np.sort(faces,axis=1),axis=0,return_inverse=True,return_counts=True)
+        faces=faces[counts[inverse]==1]
+        normals=np.zeros_like(positions)
+        fallback=np.zeros_like(positions)
+        cross=np.cross(positions[faces[:,1]]-positions[faces[:,0]],positions[faces[:,2]]-positions[faces[:,0]])
+        for corner in range(3):
+            np.add.at(normals,faces[:,corner],cross)
+            fallback[faces[:,corner]]=cross
+        weak=np.linalg.norm(normals,axis=1)<1e-12
+        normals[weak]=fallback[weak]
         normals/=np.maximum(np.linalg.norm(normals,axis=1,keepdims=True),1e-12)
+        used,remap=np.unique(faces,return_inverse=True)
+        positions=positions[used];normals=normals[used];faces=remap.reshape(-1,3)
         # Bark projection is baked by bake_bark_atlas on a connected chart
         # unwrap, so runtime UVs never interpolate unrelated branch charts.
         return positions,normals,np.zeros((len(positions),2)),faces
