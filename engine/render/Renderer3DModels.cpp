@@ -850,11 +850,15 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
         primitive.skinning=it.joints>=0;
         primitive.baked=it.baked;
         primitive.shaderVertexOffset=it.displacedVertexSource;
+        primitive.translucent=it.mat->alpha==AlphaMode::Blend ||
+            it.mat->transparent || it.tint.w<0.99f ||
+            transparentItem(it.flags);
         primitive.customGpuStream=it.vertexOverride.valid();
         primitive.world=it.world;
         if(primitive.gpuLodConditional || primitive.lodFade ||
            primitive.alternativeMeshLod || primitive.batched ||
-           primitive.shaderVertexOffset || primitive.baked)
+           primitive.shaderVertexOffset || primitive.baked ||
+           primitive.translucent)
             snapshot.complete=false;
         snapshot.primitives.push_back(primitive);
     }
