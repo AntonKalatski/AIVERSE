@@ -316,6 +316,26 @@ inline bool sculptGpuMaskedOccluderInputsValid(
     return true;
 }
 
+// The same cap is enforced by renderer collection and ID compute.
+inline constexpr std::size_t kSculptGpuMaxMaskOccluders=4u;
+inline bool sculptGpuMaskSourceSetValid(
+        std::span<const SculptGpuVertexSource* const> sources,
+        gfx::BufferHandle selectedGpuBuffer) noexcept {
+    if(!selectedGpuBuffer.valid() ||
+       sources.size()>kSculptGpuMaxMaskOccluders)return false;
+    for(std::size_t i=0;i<sources.size();++i) {
+        if(!sources[i] ||
+           !sculptGpuMaskedOccluderInputsValid(
+                *sources[i],selectedGpuBuffer))
+            return false;
+        for(std::size_t j=0;j<i;++j)
+            if(sources[i]->actualVertexOverride==
+               sources[j]->actualVertexOverride)
+                return false;
+    }
+    return true;
+}
+
 // The first 3 uint32 per source ModelVertex are exact IEEE754 position,
 // preserved by GpuMorphMeshStream's 48B→60B packing kernel. A CPU-built
 // position stream is NOT read by the GPU expansion: only the already
