@@ -352,7 +352,6 @@ private:
     Renderer3D r3d_;
     render::CameraClientAdapter lensCameras_;
     render::CameraModelSnapshot lensModelSnapshot_;
-    uint64_t lensPresentationFrame_=0;
     bool lensCamerasActive_=false;
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
