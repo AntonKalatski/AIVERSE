@@ -144,8 +144,7 @@ void RtsOverlays::initGpu(gfx::Device& dev) {
     vb_={}; vbBytes_=0;
     // TextureCache map nodes own AtlasSprite pointers referred to by
     // TextureRef. Swapping both owners preserves those heap allocations.
-    using std::swap;
-    swap(textures_,stagedTextures);
+    textures_.swap(stagedTextures);
     images_.swap(stagedImages);
     set_.warnings.swap(stagedWarnings);
     buckets_.clear();
