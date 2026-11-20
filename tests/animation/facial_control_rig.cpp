@@ -91,6 +91,12 @@ void testCompiledRig() {
     model.meshes[0].morphTargetNames[0]="renamed";
     AIVERSE_TEST_CHECK(!rig.matches(model));
     AIVERSE_TEST_CHECK(!rig.apply(model,params,pose,state,.1f,1.f,&error));
+    model.meshes[0].morphTargetNames[0]="face-0";
+    model.nodes[1].t.y=2.f; // same pointer, changed bind hierarchy
+    AIVERSE_TEST_CHECK(!rig.matches(model));
+    model.nodes[1].t.y=1.f;
+    model.meshes[0].primitives[0].morphTargets=2; // same names, changed GPU cap
+    AIVERSE_TEST_CHECK(!rig.matches(model));
 }
 void testBadDefinitions() {
     auto m=modelWithFace();
@@ -156,17 +162,18 @@ void testEcsComposition() {
     auto& facial=presentation.add<AnimationFacialControlComponent>(e);
     facial.rig=std::move(compiled);
     facial.controls=faceParams;
-    auto& stats=presentation.add<AnimationDiagnosticsComponent>(e);
+    presentation.add<AnimationDiagnosticsComponent>(e);
     stepAnimationPresentation(presentation,.016f);
     const auto& pose=presentation.get<AnimationPoseComponent>(e);
     AIVERSE_TEST_CHECK(pose.valid && near(pose.local[0].w[0],.8f));
     AIVERSE_TEST_CHECK(near(pose.local[0].w[1],.25f));
-    AIVERSE_TEST_CHECK(stats.healthy);
-    AIVERSE_TEST_CHECK(stats.evaluations==1);
+    AIVERSE_TEST_CHECK(presentation.get<AnimationDiagnosticsComponent>(e).healthy);
+    AIVERSE_TEST_CHECK(presentation.get<AnimationDiagnosticsComponent>(e).evaluations==1);
     presentation.get<AnimationFacialControlComponent>(e).controls.values["jawOpen"]=
         std::numeric_limits<float>::infinity();
     stepAnimationPresentation(presentation,.016f);
-    AIVERSE_TEST_CHECK(!stats.healthy && !stats.error.empty());
+    const auto& status=presentation.get<AnimationDiagnosticsComponent>(e);
+    AIVERSE_TEST_CHECK(!status.healthy && !status.error.empty());
     AIVERSE_TEST_CHECK(pose.valid); // safe Graph fallback; face pose unchanged
 }
 } // namespace
