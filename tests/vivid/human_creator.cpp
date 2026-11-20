@@ -616,6 +616,80 @@ void test() {
             source.indices[0].triangleId==good[0].triangleId,
             "invalid skinned GPU joint palette overwrote published inputs");
     }
+    // 7AU: homogeneous sampled masks can use the GPU's actual 60B
+    // positions with immutable UV/alpha metadata. An unsupported/mixed
+    // material must not replace a previous valid transactional source.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(3);
+        model.vertices[0].uv={0.25f,0.5f};
+        model.vertices[1].uv={0.75f,0.5f};
+        model.vertices[2].uv={0.5f,0.9f};
+        model.vertices[0].color=0x7fffffff;
+        model.indices={0,1,2};
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=3;
+        primitive.material=0;
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(mesh);
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        model.images.emplace_back();
+        model.images[0].tex=aiverse::gfx::TextureHandle{17u};
+        model.materials.emplace_back();
+        auto& material=model.materials[0];
+        material.alpha=AlphaMode::Mask;
+        material.baseTex=0;
+        material.alphaCutoff=0.5f;
+        material.baseColor.w=0.75f;
+        material.vertexColors=true;
+        const std::array<mat4,1> pose{{mat4::identity()}};
+        SculptGpuVertexSource source;
+        req(prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{71},3,{},3,source) &&
+            source.maskedSelection &&
+            source.maskBaseTexture==model.images[0].tex &&
+            source.maskInputs.size()==3 &&
+            source.indices.size()==3 &&
+            source.indices[0].triangleId==1 &&
+            std::fabs(source.maskInputs[0].uvAlpha[0]-0.25f)<1.e-6f &&
+            std::fabs(source.maskInputs[0].uvAlpha[2]-127.f/255.f)<1.e-6f &&
+            std::fabs(source.maskUniform.alpha[0]-0.75f)<1.e-6f &&
+            std::fabs(source.maskUniform.alpha[1]-0.5f)<1.e-6f,
+            "GPU selected Mask lost exact actor source IDs, UV or alpha");
+        const auto savedCount=source.indices.size();
+        material.shaderGraph=std::make_shared<
+            const aiverse::render::graph::Program>();
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{71},3,{},3,source) &&
+            source.maskedSelection && source.indices.size()==savedCount,
+            "custom masked graph overwrote last-good GPU source");
+        material.shaderGraph.reset();
+        model.vertices[1].uv.x=std::numeric_limits<float>::quiet_NaN();
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{71},3,{},3,source) &&
+            source.maskedSelection && source.indices.size()==savedCount,
+            "nonfinite source UV overwrote GPU mask source");
+        model.vertices[1].uv.x=0.75f;
+        model.materials.emplace_back();
+        model.meshes[0].primitives.push_back(primitive);
+        model.meshes[0].primitives.back().material=1;
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{71},3,{},3,source) &&
+            source.maskedSelection && source.indices.size()==savedCount,
+            "mixed selected opaque/masked GPU draw was accepted");
+        const auto shader=std::string_view(kSculptGpuSourceMaskExpandMSL);
+        req(sizeof(SculptGpuSourceMaskInput)==16 &&
+            sizeof(SculptGpuMaskVertex)==32 &&
+            shader.find("source[offset]")!=std::string_view::npos &&
+            shader.find("masks[request.vertex].uvAlpha")!=
+                std::string_view::npos &&
+            shader.find("packed_float3 world")!=std::string_view::npos,
+            "GPU Mask vertex shader lost shared source/32B UV layout");
+    }
     // 7AS: confirm that an *actual Renderer3D-selected* ModelItem view
     // is required before our independent CPU-fed GPU ID pass can run.
     // This is a pure snapshot-fixture; the native renderer path still
