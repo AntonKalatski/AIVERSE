@@ -6,6 +6,7 @@
 #pragma once
 #include "SculptGpuPickShaders.h"
 #include "SculptGpuAlphaMask.h"
+#include "SculptGpuVertexSource.h"
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -23,11 +24,14 @@ public:
     struct Completed {
         SculptGpuPickRequest request{};
         std::vector<std::uint8_t> rgba;
+        bool actualOverride=false; // ID triangles came from the actor's GPU 60B buffer
     };
 private:
     struct Pending {
         gfx::BufferHandle vertex;
         std::vector<gfx::BufferHandle> masked;
+        std::vector<gfx::BufferHandle> expandedScratch;
+        bool actualOverride=false;
         std::shared_ptr<Reply> reply;
         SculptGpuPickRequest request{};
     };
@@ -36,6 +40,7 @@ private:
     gfx::PipelineHandle pipeline_{};
     gfx::ShaderHandle maskShader_{};
     gfx::PipelineHandle maskPipeline_{};
+    gfx::ComputeHandle expandCompute_{}; // native Metal real-vertex expansion
     gfx::TextureHandle color_,depth_;
     int width_=0,height_=0;
     std::vector<Pending> pending_;
@@ -77,6 +82,12 @@ public:
             device.destroyShader(shader);
             return false;
         }
+        // Source override expansion is opt-in: if the compute kernel
+        // cannot compile, the legacy CPU-fed GPU diagnostic remains usable.
+        if(backend==gfx::Backend::Metal && device.supportsCompute())
+            expandCompute_=device.createCompute({
+                kSculptGpuSourceExpandMSL,nullptr,
+                "VIVID ID actual 60B vertex expansion"});
         device_=&device;
         shader_=shader;
         pipeline_=pipeline;
@@ -86,6 +97,9 @@ public:
         return true;
     }
     bool supported() const noexcept {return supported_;}
+    bool supportsActualGpuVertexStream() const noexcept {
+        return supported_ && expandCompute_.valid();
+    }
     bool pending() const noexcept {return !pending_.empty();}
     bool hasTargets() const noexcept {return color_.valid()&&depth_.valid();}
 
@@ -100,7 +114,9 @@ public:
         // finished, so its immutable vertex allocation can be released.
         if(p.vertex.valid())device_->destroyBuffer(p.vertex);
         for(auto handle:p.masked)device_->destroyBuffer(handle);
+        for(auto handle:p.expandedScratch)device_->destroyBuffer(handle);
         out.request=p.request;
+        out.actualOverride=p.actualOverride;
         out.rgba=std::move(p.reply->rgba);
         return true;
     }
@@ -122,7 +138,8 @@ public:
                 const render::mat4& viewProj,
                 const SculptGpuPickRequest& request,
                 std::span<const SculptGpuIdVertex> occluders={},
-                std::span<const SculptGpuMaskBatch> maskedOccluders={}) {
+                std::span<const SculptGpuMaskBatch> maskedOccluders={},
+                const SculptGpuVertexSource* actualGpuSource=nullptr) {
         if(!device_||!supported_||!request.valid()||
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
@@ -298,6 +315,7 @@ public:
         for(auto& p:pending_) {
             if(p.vertex.valid())device_->destroyBuffer(p.vertex);
             for(auto buffer:p.masked)device_->destroyBuffer(buffer);
+            for(auto buffer:p.expandedScratch)device_->destroyBuffer(buffer);
         }
         pending_.clear();
         for(auto b:retiredWithoutCallback_)device_->destroyBuffer(b);
@@ -306,6 +324,7 @@ public:
         if(depth_.valid())device_->destroyTexture(depth_);
         if(maskPipeline_.valid())device_->destroyPipeline(maskPipeline_);
         if(maskShader_.valid())device_->destroyShader(maskShader_);
+        if(expandCompute_.valid())device_->destroyCompute(expandCompute_);
         if(pipeline_.valid())device_->destroyPipeline(pipeline_);
         if(shader_.valid())device_->destroyShader(shader_);
         color_=depth_={};
@@ -313,6 +332,7 @@ public:
         shader_={};
         maskPipeline_={};
         maskShader_={};
+        expandCompute_={};
         device_=nullptr;
         supported_=false;
         width_=height_=0;
