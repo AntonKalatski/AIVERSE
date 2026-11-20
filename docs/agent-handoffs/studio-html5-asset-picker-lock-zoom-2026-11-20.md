@@ -124,3 +124,30 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 1. Execute `npm ci && npm run typecheck && npm run test:web && npm run build` in `apps/studio-web`; run `python3 -m unittest discover -s tools/studio -p 'test_*.py'`; compile Studio native and CTest on Mac.
 2. Add live integration tests for moving single texture, directory subtree, keep-both and replace collision, unrelated assets, corrupt `materials.json`, missing GUID, and partial move with issue handling.
 3. Extend the reference graph beyond material library into `rules.json` and actual model/VFX/animation asset fields with explicit schema; build a preflight report and durable atomic move/repair transaction. Do not merge until tests pass.
+
+## Stage 7 — shared native asset reference inventory (2026-11-20)
+### Implemented
+- Added header-only `apps/studio-native/StudioAssetReferences.h` with typed `StudioAssetReference`, one allowlisted table of six material texture slots, a catalog-based GUID lookup, and two pure functions: `studioCollectAssetReferences(materials,rules,assets)` and `studioRemapMaterialReferences(materials,relocated)`.
+- Discovery covers real persisted material texture paths plus `rules.types[*].view.model` strings, arrays of strings and `{file:...}` entries. Matches under `content/` get GUIDs from authoritative asset metadata; legacy/unresolved paths are still visible with empty GUID. Model references are explicitly `writable=false` because the rules tree may be composed across multiple files and must not be blindly rewritten.
+- `StudioSession.cpp` uses the shared material remapper (replacing duplicated six-key loops) and exposes read-only `studio.assetReferences`. Catalog is rebuilt on demand for the inventory. Model references are NOT automatically repaired yet.
+- TypeScript `StudioAssetReference` and `studio.assetReferences` typed bridge added in `apps/studio-web/src/types.ts`; browser demo returns empty list rather than fake dependencies.
+- `AssetImportSettings.tsx` displays a `Used by` list for selected asset (filtered by GUID or exact project-relative path) with document, owner, field, writable/read-only. Styling added in `AssetsPanel.css`.
+- Updated `tools/studio/test_reference_pin_zoom.py` to replace stale checks for removed inline remapping and added source-level contracts for registry and usage UI.
+
+### Source commits
+- `892be4bae289e4e9bdb4795c8ace01484ccd9f79`: shared registry.
+- `75ab8eea26ef7b2c82f22bc4b9a8931c4fb1e473`: native bridge + material remap reuse.
+- `946651beeba8cfbe655c835221dd6c39f43c2c1d`: typed TS method.
+- `61f15c76d5f34f1b36b876173f353c08feafde88`: mock.
+- `eff852b1d1df19d9ae1d157e4ceb0096033842e7`: updated test contracts.
+- `43214454d6910c59071937678b7213d53c478037`: visible asset usage panel.
+- `4be92521945401272f3bd71fc1b4818465bfc07f`: style.
+- `704d639ce624f87a5b2efe05a03b389de0acf586`: registry source test.
+
+### Validation and boundaries
+- **Actual:** connected-source review of `StudioAssetTransfers`, `StudioAssetCatalog`, `MaterialOps`, `Workspace`, current HTML5/StudioSession files. Committed source and test changes through GitHub.
+- **NOT EXECUTED:** C++ compiler, npm typecheck/build, web tests, Python tests, native UI/Metal runtime tests. GitHub connector does not provide local worktree. Do not merge to main or declare CI success.
+- **Not atomic yet:** asset transfer and repair still occur in separate writes; failure of material save after move is reported as a partial transfer, not rolled back.
+- **Scope:** broad dependency inventory is a foundation, NOT complete graph for VFX, animation, audio, shader graph and arbitrary project files. No speculative string-key parsing and no blind rewrite of composed `rules.json`.
+- **Next:** build & fix actual compiler/type errors; add integration tests for move/collisions/folder/undo and preview impact on registered references. Implement a safe transactional rules project writer, including origins/includes and a rollback journal, before repairing model references. Extend owner adapters only after native DTOs are confirmed.
+
