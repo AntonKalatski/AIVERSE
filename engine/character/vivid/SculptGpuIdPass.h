@@ -293,6 +293,63 @@ public:
             }
             maskBuffers.push_back(buffer);
         }
+        std::vector<gfx::BufferHandle> expandedScratch;
+        gfx::BufferHandle expandedVertex{};
+        if(actualGpuSource) {
+            const auto& source=*actualGpuSource;
+            expandedScratch.reserve(4);
+            auto makeInput=[&](const void* data,std::size_t size,
+                               const char* label)->gfx::BufferHandle {
+                gfx::BufferDesc d{};
+                d.type=gfx::BufferType::Storage;
+                d.usage=gfx::Usage::Immutable;
+                d.size=size;
+                d.data=data;
+                d.label=label;
+                const auto handle=device_->createBuffer(d);
+                if(handle.valid())expandedScratch.push_back(handle);
+                return handle;
+            };
+            const std::array<SculptGpuSkinInfluence,1> rigidSkin{};
+            const std::array<render::mat4,1> rigidMatrix{{render::mat4{}}};
+            const auto requestBuffer=makeInput(
+                source.indices.data(),source.indices.size_bytes(),
+                "VIVID GPU source triangle index+ID");
+            const auto skinInput=source.influences.empty()
+                ?std::span<const SculptGpuSkinInfluence>(rigidSkin)
+                :std::span<const SculptGpuSkinInfluence>(source.influences);
+            const auto skinBuffer=makeInput(
+                skinInput.data(),skinInput.size_bytes(),
+                "VIVID GPU source vertex joint weights");
+            const auto jointInput=source.jointMatrices.empty()
+                ?std::span<const render::mat4>(rigidMatrix)
+                :std::span<const render::mat4>(source.jointMatrices);
+            const auto matrixBuffer=makeInput(
+                jointInput.data(),jointInput.size_bytes(),
+                "VIVID MotionWeave joint transform palette");
+            expandedVertex=makeInput(
+                nullptr,source.indices.size()*sizeof(SculptGpuIdVertex),
+                "VIVID GPU-source morphed/skinned triangle IDs");
+            if(!requestBuffer.valid()||!skinBuffer.valid()||
+               !matrixBuffer.valid()||!expandedVertex.valid()||
+               !device_->beginCompute(expandCompute_)) {
+                if(vertex.valid())device_->destroyBuffer(vertex);
+                for(auto handle:maskBuffers)device_->destroyBuffer(handle);
+                for(auto handle:expandedScratch)device_->destroyBuffer(handle);
+                return false; // no compute/draw work was encoded yet
+            }
+            device_->setComputeBuffer(0,source.actualVertexOverride);
+            device_->setComputeBuffer(1,requestBuffer);
+            device_->setComputeBuffer(2,skinBuffer);
+            device_->setComputeBuffer(3,matrixBuffer);
+            device_->setComputeBuffer(4,expandedVertex);
+            device_->setComputeUniforms(&source.params,sizeof(source.params));
+            device_->dispatch(source.params.count);
+            device_->endCompute();
+            // Compute and the following ID render share one ordered Metal
+            // command buffer, so the same actor GPU output is consumed
+            // before Renderer3D's normal colour pass on this frame.
+        }
         auto reply=std::make_shared<Reply>();
         // Metal viewport/scissor use the top-left convention exposed by
         // gfx::Device; no framebuffer origin conversion belongs in VIVID.
@@ -304,6 +361,12 @@ public:
         device_->beginPass(pass);
         device_->setViewport({0,0,w,h});
         device_->setScissor({int(request.x),int(request.y),1,1});
+        if(expandedVertex.valid()) {
+            device_->setPipeline(pipeline_);
+            device_->setVertexBuffer(expandedVertex);
+            device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
+            device_->draw(std::uint32_t(actualGpuSource->params.count));
+        }
         if(vertex.valid()) {
             device_->setPipeline(pipeline_);
             device_->setVertexBuffer(vertex);
@@ -335,6 +398,9 @@ public:
             if(vertex.valid())retiredWithoutCallback_.push_back(vertex);
             retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
                                            maskBuffers.begin(),maskBuffers.end());
+            retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
+                                           expandedScratch.begin(),
+                                           expandedScratch.end());
             // A readback failed AFTER GPU draw encoding. Disable further
             // submissions until shutdown confirms an idle barrier; retrying
             // could otherwise accumulate unbounded 1M-triangle buffers.
@@ -342,6 +408,8 @@ public:
             return false;
         }
         pending_.push_back({vertex,std::move(maskBuffers),
+                            std::move(expandedScratch),
+                            actualGpuSource!=nullptr,
                             std::move(reply),request});
         return true;
     }
