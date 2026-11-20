@@ -168,6 +168,11 @@ int main() {
         post.resolve(device,{},frame);
         AIVERSE_TEST_CHECK(post.stats().composited);
         AIVERSE_TEST_CHECK(post.stats().motionInputBound);
+        AIVERSE_TEST_CHECK(post.stats().motionSnapshotCopied);
+        AIVERSE_TEST_CHECK(!post.stats().motionAutoCaptured);
+        AIVERSE_TEST_CHECK(device.motionCopies==1);
+        AIVERSE_TEST_CHECK(device.lastMotionCopy.valid() &&
+                           device.lastMotionCopy.id!=velocity.id);
         AIVERSE_TEST_CHECK(post.stats().previousNormalCaptured);
         AIVERSE_TEST_CHECK(post.stats().temporalHistoryUsed);
         device.endFrame();
@@ -187,6 +192,8 @@ int main() {
         post.resolve(device,{},frame);
         AIVERSE_TEST_CHECK(post.stats().composited);
         AIVERSE_TEST_CHECK(!post.stats().motionInputBound);
+        AIVERSE_TEST_CHECK(!post.stats().motionSnapshotCopied);
+        AIVERSE_TEST_CHECK(device.motionCopies==1);
         device.endFrame();
         device.completed=23;
         AIVERSE_TEST_CHECK(gpu.poll());
