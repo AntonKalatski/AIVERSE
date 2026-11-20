@@ -31,6 +31,13 @@ test('receiver shadow diffusion defaults to zero and survives authoring patches'
  assert.equal(materialFields({shadowDiffusion:.025}).find(f=>f.key==='shadowDiffusion').value,.025);
  assert.deepEqual(editablePatch({shadowDiffusion:.125}),{shadowDiffusion:.125});
 });
+test('subsurface controls default off and retain linear RGB',()=>{
+ const fields=materialFields({sssColor:[1,.4,.2],sssStrength:.6});
+ assert.equal(fields.find(f=>f.key==='sssStrength')?.value,.6);
+ assert.equal(fields.find(f=>f.key==='sssColor')?.value,'1,0.4,0.2');
+ assert.equal(materialFields({}).find(f=>f.key==='sssStrength')?.value,0);
+ assert.deepEqual(editablePatch({sssScale:.4,sssColor:'1,0.4,0.2'}),{sssScale:.4,sssColor:'1,0.4,0.2'});
+});
 
 test('texture reference slots share typed asset picker and have string defaults',()=>{
  const keys=['texture','normalMap','emissiveMap','teamMask','metallicRoughnessMap','occlusionMap'];
