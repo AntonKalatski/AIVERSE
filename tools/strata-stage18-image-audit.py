@@ -84,6 +84,49 @@ def self_test():
         pass
 
 
+def audit_manifest(manifest_path: Path):
+    """Verify the expected per-backend/pass/LOD coverage, fail closed."""
+    doc = json.loads(manifest_path.read_text())
+    captures = doc.get("captures", [])
+    expected = doc.get("required", [])
+    if not isinstance(captures, list) or not isinstance(expected, list) or not expected:
+        raise ValueError("manifest requires nonempty required and captures arrays")
+    observations = {}
+    base = manifest_path.parent
+    for case in captures:
+        key = (case["backend"], case["pass"], case["view"], case["lod"])
+        if key in observations:
+            raise ValueError("duplicate audit case " + repr(key))
+        fmt = case["format"]
+        if fmt not in ("rgba8", "depth32"):
+            raise ValueError("unsupported capture format")
+        width, height = case["width"], case["height"]
+        roi = case.get("roi")
+        tol = case.get("tolerance", 0)
+        reference = (base / case["reference"]).read_bytes()
+        candidate = (base / case["candidate"]).read_bytes()
+        if fmt == "rgba8":
+            if not isinstance(tol, int):
+                raise ValueError("rgba tolerance must be integral")
+            diff = compare_rgba(reference, candidate, width, height, tol, roi)
+        else:
+            diff = compare_depth(reference, candidate, width, height, tol, roi)
+        diff.update(backend=key[0], render_pass=key[1], view=key[2],
+                    lod=key[3], format=fmt, passed=diff["changed_pixels"] == 0)
+        observations[key] = diff
+    for required in expected:
+        key = (required["backend"], required["pass"], required["view"],
+               required["lod"])
+        if key not in observations:
+            raise ValueError("missing required capture " + repr(key))
+        wanted_format = required.get("format")
+        if wanted_format and observations[key]["format"] != wanted_format:
+            raise ValueError("capture format mismatch for " + repr(key))
+    return {"passed": all(row["passed"] for row in observations.values()),
+            "cases": list(observations.values()), "required_count": len(expected),
+            "observed_count": len(observations)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference", type=Path)
@@ -95,10 +138,20 @@ def main():
     parser.add_argument("--roi", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"))
     parser.add_argument("--report", type=Path)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
     if args.self_test:
         self_test()
         print("PASS: stage18.5 offline comparator self-test")
+        return
+    if args.manifest:
+        result = audit_manifest(args.manifest)
+        report = json.dumps(result, indent=2, sort_keys=True)
+        if args.report:
+            args.report.write_text(report + "\\n")
+        print(report)
+        if not result["passed"]:
+            raise SystemExit(1)
         return
     if not args.reference or not args.candidate or not args.width or not args.height:
         parser.error("reference, candidate, width and height are required")
