@@ -1924,7 +1924,7 @@ int aiverseMain(int argc,char** argv) {
             else if(tier=="medium")application->materialQuality=HumanMaterialQuality::Medium;
             else if(tier=="high")application->materialQuality=HumanMaterialQuality::High;
             else {
-                std::fprintf(stderr,"VIVID: invalid material quality '%s'\\n",tier.c_str());
+                std::fprintf(stderr,"VIVID: invalid material quality '%s'\n",tier.c_str());
                 return 2;
             }
         }else if(std::strcmp(argv[i],"--optical-case")==0 && i+1<argc) {
