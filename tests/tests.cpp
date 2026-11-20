@@ -12568,6 +12568,70 @@ TEST(texture_cache_swap_transfers_gpu_owner_without_invalidating_handles) {
     CHECK(dev.destroyedTextures==2);
 }
 
+TEST(road_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
+    fogfaulttest::Device dev;
+    game::RtsRoadView roads;
+    // The first successful generated kit texture must remain owned when
+    // the following GPU texture allocation fails.
+    dev.failTexture=2;
+    bool failed=false;
+    try {roads.init(dev,Json(),{});}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(roads.ownsGpuResources());
+    CHECK(dev.destroyedTextures==0);
+    dev.idleAllowed=false;
+    bool idleRefused=false;
+    try {roads.shutdown(dev);}
+    catch(const std::runtime_error&){idleRefused=true;}
+    CHECK(idleRefused);
+    CHECK(roads.ownsGpuResources());
+    CHECK(dev.destroyedTextures==0);
+    dev.idleAllowed=true;
+    roads.shutdown(dev);
+    CHECK(!roads.ownsGpuResources());
+    CHECK(dev.destroyedTextures>=1);
+}
+
+TEST(shore_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
+    fogfaulttest::Device dev;
+    game::RtsShoreView shores;
+    dev.failTexture=2;
+    bool failed=false;
+    try {shores.init(dev,Json(),{});}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(shores.ownsGpuResources());
+    CHECK(dev.destroyedTextures==0);
+    dev.idleAllowed=false;
+    bool idleRefused=false;
+    try {shores.shutdown(dev);}
+    catch(const std::runtime_error&){idleRefused=true;}
+    CHECK(idleRefused);
+    CHECK(shores.ownsGpuResources());
+    CHECK(dev.destroyedTextures==0);
+    dev.idleAllowed=true;
+    shores.shutdown(dev);
+    CHECK(!shores.ownsGpuResources());
+    CHECK(dev.destroyedTextures>=1);
+}
+
+TEST(road_and_shore_staged_reload_preserves_cpu_runtime_settings) {
+    game::RtsRoadView roads,stagedRoads;
+    game::RtsShoreView shores,stagedShores;
+    roads.setWeather(0.7f,0.35f);
+    const Json map=Json::parse(R"({"roadNetwork":{"replaces":["city_road"]},
+        "waterNetwork":{}})");
+    roads.setMap(map);
+    shores.setMap(map);
+    stagedRoads.inheritRuntimeStateForReload(roads);
+    stagedShores.inheritRuntimeStateForReload(shores);
+    CHECK(stagedRoads.wet()==roads.wet());
+    CHECK(stagedRoads.puddles()==roads.puddles());
+    CHECK(stagedRoads.network().edges.size()==roads.network().edges.size());
+    CHECK(stagedShores.active()==shores.active());
+}
+
 TEST(overlays_gpu_init_is_atomic_and_retryable) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
