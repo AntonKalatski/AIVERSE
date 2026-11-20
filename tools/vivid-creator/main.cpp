@@ -12,6 +12,7 @@
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/DeformedSculptPick.h"
+#include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
 #include "engine/character/vivid/SkinLodSeamRemap.h"
@@ -102,6 +103,7 @@ struct CreatorApp {
     std::size_t morphSourceVertices=0;
     std::vector<MorphVec3> morphSourcePositions;
     std::vector<std::uint32_t> sculptSourceIds; // candidate-published source IDs
+    DeformedSculptWorkspace sculptPicker; // persistent per-creator CPU scratch/BVH
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
     int sculptMeshIndex=-1;
@@ -710,6 +712,7 @@ struct CreatorApp {
             }
             human=std::move(proposed);
             sculptSourceIds=std::move(proposedSculptSourceIds);
+            sculptPicker.reset(); // published Model owns new mesh topology
             sculptPickMarkerValid=false;
             actor=std::move(nextActor);
             cpuActor=std::move(nextCpuActor);
@@ -1811,7 +1814,7 @@ struct CreatorApp {
             const float height=float(dev.framebufferHeight());
             float3 origin{},direction{};
             if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
-                const auto pick=pickDeformedSculptVertex(
+                const auto pick=sculptPicker.pick(
                     *human.head,std::size_t(sculptMeshIndex),facePose,
                     human.facialShapes,human.facialBinding,
                     controller.frame(),origin,direction,morphSourceVertices,
@@ -1824,7 +1827,10 @@ struct CreatorApp {
                     sculptPickMarkerMesh=sculptMeshIndex;
                     sculptPickArmed=false;
                     status="Picked deformed face source vertex "+
-                        std::to_string(morphVertexIndex);
+                        std::to_string(morphVertexIndex)+
+                        " / BVH tris "+
+                        std::to_string(sculptPicker.stats().testedTriangles)+
+                        "/"+std::to_string(sculptPicker.stats().triangles);
                 }else {
                     sculptPickMarkerValid=false;
                     status="No valid deformed source triangle under cursor";
