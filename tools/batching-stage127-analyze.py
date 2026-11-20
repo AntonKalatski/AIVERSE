@@ -81,7 +81,7 @@ def main():
               f"CPU median={r['cpu_median_ms']:.6f}ms "
               f"submissions={r['mdi_submissions']} commands={r['mdi_commands']}")
     summary = []
-    for quality in ("off","high"):
+    for quality in ("off","on"):
         a = [r for r in records if r["quality"]==quality and r["mode"]=="direct"]
         b = [r for r in records if r["quality"]==quality and r["mode"]=="mdi"]
         if len(a)!=2 or len(b)!=2:
@@ -96,7 +96,7 @@ def main():
                             cpu_direct_ms=cd,cpu_mdi_ms=cm,
                             cpu_mdi_change_pct=100*(cm/cd-1),
                             mdi_submissions=18,mdi_commands=4086))
-        print(f"QUALITY {quality}: GPU Direct={gd:.6f} MDI={gm:.6f} "
+        print(f"PIPELINE {quality}: GPU Direct={gd:.6f} MDI={gm:.6f} "
               f"premium={gm-gd:.6f}ms ({100*(gm/gd-1):+.2f}%), "
               f"CPU MDI change={100*(cm/cd-1):+.2f}%")
     for filename, values in (
