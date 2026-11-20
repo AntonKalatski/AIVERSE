@@ -785,8 +785,9 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     if(!instanceToken || !sourceInstances || sourceInstances>16)return false;
     // Pass-specific GPU selection cannot be reused for shadows or
     // reflection cameras. Preserve all existing Legacy/portable passes.
-    if(renderer.shadowQuality()!=ShadowQuality::Off ||
-       renderer.lights.reflectionsWanted())return false;
+    if(renderer.lights.reflectionsWanted())return false;
+    const bool sunShadow=renderer.shadowQuality()!=ShadowQuality::Off &&
+                         renderer.shadowMapSize()>0;
 
     for(const auto& [key,model]:models_){
         if(model.get()!=instance.model)continue;
@@ -807,9 +808,10 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             strata::GpuPassConfig view{};
             strata::VulkanIndirectContract contract{};
             uint32_t ordinal=0;
+            GpuIndexedPass pass=GpuIndexedPass::MainOpaque;
         };
         std::vector<Planned> plan;
-        plan.reserve(staged->primitives.size());
+        plan.reserve(staged->primitives.size()*(sunShadow?2u:1u));
         std::string reason;
         bool accepted=true;
         // Preflight ALL material/primitive identities before the first GPU
@@ -834,13 +836,33 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
                 break;
             }
             plan.push_back(entry);
+            if(sunShadow){
+                Planned shadow{};
+                shadow.ordinal=uint32_t(i);
+                shadow.pass=GpuIndexedPass::SunShadow;
+                auto shadowView=view;
+                shadowView.viewProjection=renderer.lightViewProj();
+                shadowView.width=renderer.shadowMapSize();
+                shadowView.height=renderer.shadowMapSize();
+                shadowView.frustumCull=true;
+                if(!strata::prepareVulkanIndirectPrimitiveContract(
+                    *strataGpuDevice_,*instance.model,*staged,binding,
+                    shadow.ordinal,shadowView,false,shadow.contract,
+                    shadow.view,&reason)){
+                    accepted=false;
+                    break;
+                }
+                plan.push_back(shadow);
+            }
         }
         if(!accepted)break;
         if(!strataGpuCulling_)
             strataGpuCulling_ = std::make_shared<strata::GpuClusterCulling>();
 
         std::vector<GpuIndexedSelectionPacket> packets;
-        packets.reserve(plan.size());
+        std::vector<GpuIndexedSelectionPacket> shadowPackets;
+        packets.reserve(staged->primitives.size());
+        if(sunShadow)shadowPackets.reserve(staged->primitives.size());
         for(const auto& entry:plan){
             const auto gpuInstance=strata::makeGpuSceneInstance(
                 selectedWorld,entry.ordinal,instanceToken,true);
@@ -860,6 +882,10 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             packet.vertex=entry.contract.vertex;
             packet.index=entry.contract.index;
             packet.selectedWorld=selectedWorld;
+            packet.viewProjection=entry.view.viewProjection;
+            packet.viewWidth=entry.view.width;
+            packet.viewHeight=entry.view.height;
+            packet.pass=entry.pass;
             packet.frameSerial=entry.contract.expectedFrameSerial;
             packet.geometryRevision=entry.contract.geometryRevision;
             packet.materialRevision=entry.contract.materialRevision;
@@ -874,18 +900,25 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             packet.sourcePrimitive=stagedPrimitive.primitive;
             packet.expectedMaterial=entry.contract.expectedMaterial;
             packet.exclusive=true;
-            packets.push_back(packet);
+            if(entry.pass==GpuIndexedPass::SunShadow)
+                shadowPackets.push_back(packet);
+            else packets.push_back(packet);
         }
-        if(!accepted || packets.size()!=plan.size())break;
+        if(!accepted ||
+           packets.size()!=staged->primitives.size() ||
+           (sunShadow &&
+            shadowPackets.size()!=staged->primitives.size()))break;
         // No second geometry owner: the same ModelDraw and Renderer3D
         // ModelItems still bind each original material and world transform.
         draw.gpuIndexed={};
         draw.gpuIndexedPrimitives=std::move(packets);
+        draw.gpuShadowPrimitives=std::move(shadowPackets);
         draw.flags|=kDrawStatic;
         draw.geometry={};
         draw.staticCache=nullptr;
         draw.persistentId=0;
-        stats_.strataVulkanGpuPrepared+=draw.gpuIndexedPrimitives.size();
+        stats_.strataVulkanGpuPrepared+=
+            draw.gpuIndexedPrimitives.size()+draw.gpuShadowPrimitives.size();
         return true;
     }
     ++stats_.strataVulkanGpuDeclined;
