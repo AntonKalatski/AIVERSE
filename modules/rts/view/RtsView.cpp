@@ -566,18 +566,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             }
         }
     }
-    // LENS: commit Roads, Shores and Fog as one presentation cohort.
-    // A late Fog GPU failure must not publish already-prepared road/shore
-    // models. The external participant wrappers own unpublished candidates.
-    // The existing fog-sheet HEIGHT mesh rebuild is a separate preflight:
-    // its legacy build() still requires a full device-idle barrier and is
-    // not yet an externally staged member of the three-owner transaction.
-    if(vision && !vision->empty() && fogMeshDirty_ && dev_) {
-        fog_.build(*dev_,grid.w,grid.h,[&](float x,float z) {
-            return heightAt(grid,x,z);
-        });
-        fogMeshDirty_=false;
-    }
+    // LENS: stage Roads, Shores, Fog height-sheet AND visibility field
+    // together. A late Fog GPU failure can no longer publish the sheet or
+    // any earlier owner. In-flight cameras retain the old buffers via the
+    // completion-token retirement queue; no full-device idle preflight.
     const std::function<float(float,float)> groundHeight=
         [this,&grid](float x,float z) {return heightAt(grid,x,z);};
     struct PreparedRoad final : render::OwnerPrepareCommit::Participant {
@@ -613,29 +605,49 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     bool fogFieldChanged=false;
     struct PreparedFog final : render::OwnerPrepareCommit::Participant {
         FogOfWar& owner;
+        gfx::Device& device;
+        const std::function<float(float,float)>& ground;
         const std::vector<uint8_t>* vision;
         int width,height;
         double time;
         bool& changed;
+        bool& sheetDirty;
+        bool stagedSheet=false;
+        std::unique_ptr<FogOfWar::PreparedSheet> pendingSheet;
         std::unique_ptr<FogOfWar::PreparedUpdate> pending;
-        PreparedFog(FogOfWar& o,const std::vector<uint8_t>* mask,
-                    int w,int h,double seconds,bool& out)
-            :owner(o),vision(mask),width(w),height(h),
-             time(seconds),changed(out){}
+        PreparedFog(FogOfWar& o,gfx::Device& dev,
+                    const std::function<float(float,float)>& heightAt,
+                    const std::vector<uint8_t>* mask,int w,int h,
+                    double seconds,bool& out,bool& rebuildSheet)
+            :owner(o),device(dev),ground(heightAt),vision(mask),
+             width(w),height(h),time(seconds),changed(out),
+             sheetDirty(rebuildSheet){}
         void prepare() override {
-            if(vision && !vision->empty())
-                pending=owner.prepareUpdate(*vision,width,height,time);
+            if(!vision || vision->empty() || !owner.ready())return;
+            if(sheetDirty || owner.needsSheetRebuild(width,height)) {
+                pendingSheet=owner.prepareSheet(device,width,height,ground);
+                if(!pendingSheet)
+                    throw std::runtime_error("RtsView: fog sheet staging failed");
+                stagedSheet=true;
+            }
+            pending=owner.prepareUpdate(*vision,width,height,time,
+                                        pendingSheet.get());
+            if(!pending)
+                throw std::runtime_error("RtsView: fog field staging failed");
         }
         void commit() noexcept override {
-            if(!pending)return;
-            // All participants prepared without mutating this owner. A
-            // stale candidate between prepare and commit violates the
-            // single render-thread transaction contract (fail-closed).
-            try {changed=owner.commitPreparedUpdate(std::move(pending));}
-            catch(...) {std::terminate();}
+            if(!pending && !pendingSheet)return;
+            changed=owner.commitPreparedFrame(std::move(pendingSheet),
+                                              std::move(pending));
+            if(stagedSheet)sheetDirty=false;
         }
-        void rollback() noexcept override {pending.reset();}
-    } fogPart(fog_,vision,grid.w,grid.h,time,fogFieldChanged);
+        void rollback() noexcept override {
+            pending.reset();
+            pendingSheet.reset();
+            stagedSheet=false;
+        }
+    } fogPart(fog_,*dev_,groundHeight,vision,grid.w,grid.h,
+              time,fogFieldChanged,fogMeshDirty_);
     render::OwnerPrepareCommit ownerTransaction;
     ownerTransaction.add(roadsPart);
     ownerTransaction.add(shorePart);

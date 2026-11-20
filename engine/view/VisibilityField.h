@@ -54,6 +54,38 @@ public:
     void build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height);
     // Per frame: vision of the viewer (0/1/2 per cell) -> faded + blurred field, uploaded when it changed.
     // Returns true when the field changed this frame.
+    // Staged sheet mesh: GPU VB/IB and optional new map-sized CPU field are
+    // private until the owner cohort commits. Unlike legacy build(), this
+    // path never waits for full GPU idle or modifies live presentation state.
+    class PreparedSheet final {
+        friend class VisibilityField;
+    public:
+        PreparedSheet()=default;
+        PreparedSheet(const PreparedSheet&)=delete;
+        PreparedSheet& operator=(const PreparedSheet&)=delete;
+        ~PreparedSheet() noexcept {
+            if(!dev_)return;
+            if(ib_.valid())try {dev_->destroyBuffer(ib_);}catch(...) {}
+            if(vb_.valid())try {dev_->destroyBuffer(vb_);}catch(...) {}
+        }
+    private:
+        VisibilityField* owner_=nullptr;
+        gfx::Device* dev_=nullptr;
+        uint64_t revision_=0;
+        gfx::BufferHandle vb_{},ib_{};
+        uint32_t indexCount_=0;
+        int width_=0,height_=0;
+        bool resize_=false;
+        std::vector<uint8_t> target_,cur_,field_;
+    };
+    bool sheetMatches(int w,int h) const noexcept {
+        return vb_.valid() && ib_.valid() && w_==w && h_==h;
+    }
+    bool needsSheetRebuild(int w,int h) const noexcept {
+        return !sheetMatches(w,h);
+    }
+    std::unique_ptr<PreparedSheet> prepareSheet(gfx::Device& dev,int w,int h,
+        const std::function<float(float,float)>& height);
     // Phase 1 stages a new faded/blurred field and private R8 GPU texture,
     // with no mutation to the currently sampled fog texture or clock.
     // Phase 2 publishes the prepared result after all dependent owners have
@@ -82,7 +114,13 @@ public:
         bool dirty_=false,fading_=false,changed_=false,unchangedOnly_=false;
     };
     std::unique_ptr<PreparedUpdate> prepareUpdate(
-        std::span<const uint8_t> vision,int w,int h,double time);
+        std::span<const uint8_t> vision,int w,int h,double time,
+        const PreparedSheet* stagedSheet=nullptr);
+    // Publish BOTH sheet and field after the whole owner cohort prepares.
+    // Never allocates GPU resources or waits for idle during commit.
+    // Invariant violations are fatal because no partial publication may escape.
+    bool commitPreparedFrame(std::unique_ptr<PreparedSheet> sheet,
+                             std::unique_ptr<PreparedUpdate> field) noexcept;
     bool commitPreparedUpdate(std::unique_ptr<PreparedUpdate> candidate);
     bool update(std::span<const uint8_t> vision,int w,int h,double time);
     // Existing vector callers remain source-compatible; host buffers

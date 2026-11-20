@@ -13764,6 +13764,111 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage46_sheet_and_visibility_late_cohort_failure_rollback) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    const std::function<float(float,float)> ground=[](float,float){return 0.0f;};
+    fog.build(dev,4,4,ground);
+    const auto oldTexture=fog.texture();
+    const auto oldField=fog.field();
+    const size_t oldRetired=fog.pendingGpuRetirements();
+    const size_t deletedBuffers=dev.destroyedBuffers;
+    const size_t deletedTextures=dev.destroyedTextures;
+    auto look=fog.look();
+    look.height+=2.0f;
+    fog.setLook(look);
+    const std::vector<uint8_t> visible(16,2);
+    struct FogOwner final: render::OwnerPrepareCommit::Participant {
+        view::VisibilityField& fog;
+        fogfaulttest::Device& dev;
+        const std::function<float(float,float)>& height;
+        const std::vector<uint8_t>& vision;
+        std::unique_ptr<view::VisibilityField::PreparedSheet> sheet;
+        std::unique_ptr<view::VisibilityField::PreparedUpdate> field;
+        FogOwner(view::VisibilityField& f,fogfaulttest::Device& d,
+                 const std::function<float(float,float)>& h,
+                 const std::vector<uint8_t>& v)
+            :fog(f),dev(d),height(h),vision(v){}
+        void prepare() override {
+            sheet=fog.prepareSheet(dev,4,4,height);
+            CHECK(sheet!=nullptr);
+            field=fog.prepareUpdate(vision,4,4,2.0,sheet.get());
+            CHECK(field!=nullptr);
+        }
+        void commit() noexcept override {
+            (void)fog.commitPreparedFrame(std::move(sheet),std::move(field));
+        }
+        void rollback() noexcept override {field.reset();sheet.reset();}
+    } owner(fog,dev,ground,visible);
+    struct LastOwner final: render::OwnerPrepareCommit::Participant {
+        bool fail=true;
+        void prepare() override {
+            if(fail)throw std::runtime_error("late owner rejected");
+        }
+        void commit() noexcept override {}
+        void rollback() noexcept override {}
+    } last;
+    bool rejected=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(owner);tx.add(last);
+        try {tx.prepareAll();}
+        catch(const std::runtime_error&){rejected=true;}
+    }
+    CHECK(rejected);
+    CHECK(fog.texture().id==oldTexture.id);
+    CHECK(fog.field()==oldField);
+    CHECK(fog.sheetMatches(4,4));
+    CHECK(fog.pendingGpuRetirements()==oldRetired);
+    CHECK(dev.destroyedBuffers==deletedBuffers+2);
+    CHECK(dev.destroyedTextures==deletedTextures+1);
+    last.fail=false;
+    dev.idleAllowed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(owner);tx.add(last);
+        tx.prepareAll();
+        CHECK(tx.publish());
+    }
+    CHECK(fog.texture().valid() && fog.texture().id!=oldTexture.id);
+    CHECK(fog.pendingGpuRetirements()==oldRetired+3);
+    CHECK(fog.field().size()==16);
+    dev.idleAllowed=true;
+    CHECK(fog.shutdownAfterGpuIdle());
+}
+
+TEST(lens_stage46_sheet_resize_prepares_matching_gpu_field_without_gpu_idle) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    const std::function<float(float,float)> ground=[](float,float){return 1.0f;};
+    fog.build(dev,3,2,ground);
+    const auto oldTex=fog.texture();
+    const auto oldField=fog.field();
+    const auto oldPending=fog.pendingGpuRetirements();
+    const std::vector<uint8_t> vision(35,2);
+    dev.idleAllowed=false;
+    {
+        auto sheet=fog.prepareSheet(dev,7,5,ground);
+        CHECK(sheet!=nullptr);
+        auto field=fog.prepareUpdate(vision,7,5,1.0,sheet.get());
+        CHECK(field && field->changed());
+        CHECK(field->field().size()==35);
+        CHECK(fog.sheetMatches(3,2));
+        CHECK(fog.field()==oldField);
+        CHECK(fog.texture().id==oldTex.id);
+        CHECK(fog.pendingGpuRetirements()==oldPending);
+        CHECK(fog.commitPreparedFrame(std::move(sheet),std::move(field)));
+    }
+    CHECK(fog.sheetMatches(7,5));
+    CHECK(fog.field().size()==35);
+    CHECK(fog.texture().valid() && fog.texture().id!=oldTex.id);
+    CHECK(fog.pendingGpuRetirements()==oldPending+3);
+    dev.idleAllowed=true;
+    CHECK(fog.shutdownAfterGpuIdle());
+}
+
 TEST(visibility_field_prepared_gpu_upload_never_mutates_live_on_failure_or_discard) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;

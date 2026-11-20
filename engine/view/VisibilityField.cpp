@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <string>
 #include <stdexcept>
 
@@ -334,9 +335,89 @@ void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<
     ++revision_;
 }
 
+
+std::unique_ptr<VisibilityField::PreparedSheet> VisibilityField::prepareSheet(
+        gfx::Device& dev,int w,int h,
+        const std::function<float(float,float)>& height) {
+    if(!dev_ || w<=0 || h<=0)return {};
+    if(dev_!=&dev)
+        throw std::logic_error("VisibilityField sheet staging: wrong device");
+    auto next=std::make_unique<PreparedSheet>();
+    next->owner_=this;
+    next->dev_=&dev;
+    next->revision_=revision_;
+    next->width_=w;
+    next->height_=h;
+    next->resize_=(w!=w_ || h!=h_ || !tex_.valid());
+    if(next->resize_) {
+        next->target_.assign(size_t(w)*size_t(h),0);
+        next->cur_=next->target_;
+        next->field_=next->target_;
+    }
+    const int step=std::max(1,std::max(w,h)/256);
+    const int cw=(w+step-1)/step,ch=(h+step-1)/step;
+    std::vector<float> vertices;
+    vertices.reserve(size_t(cw+1)*size_t(ch+1)*3);
+    for(int j=0;j<=ch;++j)
+        for(int i=0;i<=cw;++i) {
+            const float x=float(std::min(i*step,w)),z=float(std::min(j*step,h));
+            float ground=-1e9f;
+            for(int dz=-1;dz<=0;++dz)
+                for(int dx=-1;dx<=0;++dx) {
+                    const float cx=std::clamp(x+dx*float(step)+float(step)*.5f,
+                                              .5f,float(w)-.5f);
+                    const float cz=std::clamp(z+dz*float(step)+float(step)*.5f,
+                                              .5f,float(h)-.5f);
+                    ground=std::max(ground,height(cx,cz));
+                }
+            vertices.push_back(x);
+            vertices.push_back(ground+look_.height);
+            vertices.push_back(z);
+        }
+    std::vector<uint32_t> indices;
+    indices.reserve(size_t(cw)*size_t(ch)*6);
+    for(int j=0;j<ch;++j)
+        for(int i=0;i<cw;++i) {
+            const uint32_t a=uint32_t(j*(cw+1)+i),b=a+1;
+            const uint32_t cc=a+uint32_t(cw+1),d=cc+1;
+            indices.insert(indices.end(),{a,cc,d,a,d,b});
+        }
+    gfx::BufferDesc vb;
+    vb.size=vertices.size()*sizeof(float);
+    vb.data=vertices.data();
+    vb.label="fog sheet staged";
+    next->vb_=dev.createBuffer(vb);
+    if(!next->vb_.valid())
+        throw std::runtime_error("VisibilityField sheet: staged vertex buffer failed");
+    gfx::BufferDesc ib;
+    ib.type=gfx::BufferType::Index;
+    ib.size=indices.size()*sizeof(uint32_t);
+    ib.data=indices.data();
+    ib.label="fog sheet indices staged";
+    next->ib_=dev.createBuffer(ib);
+    if(!next->ib_.valid())
+        throw std::runtime_error("VisibilityField sheet: staged index buffer failed");
+    next->indexCount_=uint32_t(indices.size());
+    return next;
+}
+
 std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
-        std::span<const uint8_t> vision,int w,int h,double time) {
-    if(!dev_ || w!=w_ || h!=h_ || vision.size()!=target_.size())
+        std::span<const uint8_t> vision,int w,int h,double time,
+        const PreparedSheet* stagedSheet) {
+    if(stagedSheet && (stagedSheet->owner_!=this ||
+       stagedSheet->dev_!=dev_ || stagedSheet->revision_!=revision_ ||
+       stagedSheet->width_!=w || stagedSheet->height_!=h))
+        throw std::logic_error("VisibilityField: stale prepared sheet");
+    const bool resize=stagedSheet && stagedSheet->resize_;
+    const auto& sourceTarget=resize?stagedSheet->target_:target_;
+    const auto& sourceCur=resize?stagedSheet->cur_:cur_;
+    const auto& sourceField=resize?stagedSheet->field_:field_;
+    const double sourceLast=resize?-1.0:lastTime_;
+    const bool sourceDirty=resize?true:dirty_;
+    const bool sourceFading=resize?false:fading_;
+    if(!dev_ || w!=(stagedSheet?stagedSheet->width_:w_) ||
+       h!=(stagedSheet?stagedSheet->height_:h_) ||
+       vision.size()!=sourceTarget.size())
         return {};
     auto next=std::make_unique<PreparedUpdate>();
     next->owner_=this;
@@ -345,27 +426,27 @@ std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
     next->lastTime_=time;
     // The common unchanged frame only advances its clock. Avoid copying
     // and reallocating the full CPU visibility field in that case.
-    if(!dirty_ && !fading_) {
+    if(!sourceDirty && !sourceFading) {
         bool identical=true;
         for(size_t i=0;i<vision.size();++i) {
             const uint8_t target=vision[i]>=2?255:vision[i]==1?128:0;
-            if(target_[i]!=target) {identical=false;break;}
+            if(sourceTarget[i]!=target) {identical=false;break;}
         }
         if(identical) {
             next->unchangedOnly_=true;
             return next;
         }
     }
-    next->target_=target_;
-    next->cur_=cur_;
-    next->field_=field_;
-    next->tmp_=tmp_;
+    next->target_=sourceTarget;
+    next->cur_=sourceCur;
+    next->field_=sourceField;
+    next->tmp_=resize?std::vector<uint16_t>{}:tmp_;
     next->lastTime_=time;
-    next->dirty_=dirty_;
-    next->fading_=fading_;
-    const float dt=lastTime_<0 ? 1e6f :
-        float(std::max(0.0,time-lastTime_));
-    bool changed=dirty_;
+    next->dirty_=sourceDirty;
+    next->fading_=sourceFading;
+    const float dt=sourceLast<0 ? 1e6f :
+        float(std::max(0.0,time-sourceLast));
+    bool changed=sourceDirty;
     for(size_t i=0;i<vision.size();++i) {
         const uint8_t t=vision[i]>=2?255:vision[i]==1?128:0;
         if(next->target_[i]!=t) {
@@ -394,12 +475,12 @@ std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
         if(look_.style==VisibilityLook::Smooth ||
            look_.style==VisibilityLook::Pattern) {
             if(blur_)blur_(next->field_,look_.softness);
-            else boxBlur(next->field_,next->tmp_,w_,h_,look_.softness);
+            else boxBlur(next->field_,next->tmp_,w,h,look_.softness);
         }
         // Copy-on-write GPU texture generation. Never mutate a texture
         // referenced by an already queued primary or RT camera.
         gfx::TextureDesc td;
-        td.width=w_;td.height=h_;
+        td.width=w;td.height=h;
         td.format=gfx::PixelFormat::R8;
         td.filter=gfx::Filter::Linear;
         td.data=nullptr;
@@ -408,7 +489,7 @@ std::unique_ptr<VisibilityField::PreparedUpdate> VisibilityField::prepareUpdate(
         if(!next->tex_.valid())
             throw std::runtime_error("VisibilityField: staged texture allocation failed");
         // An injected/real upload exception destroys only this private texture.
-        dev_->updateTexture(next->tex_,0,0,w_,h_,next->field_.data(),w_);
+        dev_->updateTexture(next->tex_,0,0,w,h,next->field_.data(),w);
     }
     return next;
 }
@@ -437,6 +518,44 @@ bool VisibilityField::commitPreparedUpdate(
     fading_=next->fading_;
     ++revision_;
     return changed;
+}
+
+bool VisibilityField::commitPreparedFrame(
+        std::unique_ptr<PreparedSheet> sheet,
+        std::unique_ptr<PreparedUpdate> field) noexcept {
+    if(!sheet) {
+        if(!field)return false;
+        try {return commitPreparedUpdate(std::move(field));}
+        catch(...) {std::terminate();}
+    }
+    // All assertions happen before publishing any resource. No other thread
+    // may mutate the owner between prepareAll and publish on the render thread.
+    if(!dev_ || sheet->owner_!=this || sheet->dev_!=dev_ ||
+       sheet->revision_!=revision_ || !field ||
+       field->owner_!=this || field->dev_!=dev_ ||
+       field->revision_!=revision_ ||
+       (sheet->resize_ && (!field->changed_ || field->unchangedOnly_)))
+        std::terminate();
+    retired_.retireBuffer(*dev_,vb_);
+    retired_.retireBuffer(*dev_,ib_);
+    vb_=std::exchange(sheet->vb_,gfx::BufferHandle{});
+    ib_=std::exchange(sheet->ib_,gfx::BufferHandle{});
+    indexCount_=sheet->indexCount_;
+    if(sheet->resize_) {
+        // Commit the fresh map-sized CPU baseline without invalidating the
+        // prepared field's source revision. The field publishes immediately
+        // afterwards, including its matching resized R8 texture.
+        w_=sheet->width_;
+        h_=sheet->height_;
+        target_.swap(sheet->target_);
+        cur_.swap(sheet->cur_);
+        field_.swap(sheet->field_);
+        lastTime_=-1;
+        dirty_=true;
+        fading_=false;
+    }
+    try {return commitPreparedUpdate(std::move(field));}
+    catch(...) {std::terminate();}
 }
 
 bool VisibilityField::update(std::span<const uint8_t> vision,int w,int h,double time) {
