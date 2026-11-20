@@ -32,13 +32,22 @@ VisibilityLook parseVisibilityLook(const Json& rulesFog, const Json& gameFog);
 
 class VisibilityField {
 public:
+    // Shader and pipeline are staged first; partial creation errors never
+    // publish GPU handles into a live field.
     bool init(gfx::Device& dev);
+    // Safe for hosts without a prior full-device completion proof. A refused
+    // idle barrier leaves all published handles owned and retryable.
+    bool shutdownAfterGpuIdle();
+    // Caller must already have established GPU idle (RtsView::shutdown does).
     void shutdown();
     bool ready() const { return pipe_.valid(); }
     void setLook(const VisibilityLook& look) { look_ = look; dirty_ = true; }
     const VisibilityLook& look() const { return look_; }
 
-    // Sheet draped over the ground (call when the terrain changed). height(x, z): ground height.
+    // Sheet draped over the ground. Creates replacement buffers/texture
+    // before replacing the live set; on failure throws and preserves old
+    // texture, buffers, visibility data and indices. Replacing live handles
+    // requires a successful full-device idle boundary.
     void build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height);
     // Per frame: vision of the viewer (0/1/2 per cell) -> faded + blurred field, uploaded when it changed.
     // Returns true when the field changed this frame.
