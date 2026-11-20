@@ -2300,3 +2300,34 @@ Renderer3D indexed draw submission or model metadata. Branch:
 - Metal selector remains diagnostic, GLES3 portable CPU path
   remains untouched. Avoid merging the divergent feature branch
   to main until the full final native acceptance run.
+
+
+## STRATA Stage 16.3 — exclusive Vulkan GPU raster handoff (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 16.3
+before changing `GeometryScene`, `Renderer3DModels.cpp` or
+Vulkan `GpuSelectionSubmission`. This work remains isolated on
+`feature/strata-virtual-geometry` and is NOT merged into main.
+
+- GeometryScene now prepares a Vulkan GPU-authored indexed command
+  candidate only when staging, GPU metadata, GPU compute and
+  `setStrataVulkanGpuIndirectEnabled(true)` are enabled **AND BOTH**
+  explicit CPU/GPU-selection and actual-raster-parity acceptance
+  flags are true. Defaults remain OFF; flags are not proof of PASS.
+- A matching Vulkan GPU selection is copied into the SAME source
+  `ModelDraw::gpuIndexed`; no source sidecar/VB or second draw is
+  submitted. The renderer's own main-opaque pass binds existing
+  material, lighting and instance uniforms, then may consume the
+  GPU-authored indirect array INSTEAD OF the normal indexed draw.
+  Any rejection runs ordinary CPU/Legacy as before.
+- Strictly one source instance, one rigid opaque mesh/primitive/
+  material/node, no author LOD/deform/alpha/auxiliary passes,
+  no active sun shadows or planar reflections. GLES3/Metal never
+  take this Vulkan-only route; shadow/reflection scenes still
+  render fully through Legacy/portable CPU.
+- File/commit list and Stage 16.3 progress table are in the
+  dedicated handoff. Authored tests have **NOT BEEN RUN**.
+  Do not assert Vulkan real GPU pixel parity or modify defaults.
+- Next: add real Vulkan Renderer3D main-view pixel parity fixture,
+  then extend multi-material/multi-instance support while retaining
+  exclusive pass ownership, before tackling crack-free LOD.
