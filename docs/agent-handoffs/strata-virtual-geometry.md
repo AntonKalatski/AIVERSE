@@ -3399,3 +3399,17 @@ SHA, driver and screenshot/depth evidence are recorded. Then
 Stage 17 crack-free lossy LOD, Stage 18 GPU performance and one
 combined final CI/native test pass. Preserve feature branch
 isolation; `main` contains concurrent unrelated renderer changes.
+
+
+### Stage 16.4c additional Vulkan offscreen GPU selection fixture
+
+`tests/render/strata_vulkan_kernel.cpp` commit
+`978cd6bf9ae1c017375f03d5b179bc6653194079`
+adds independent headless Vulkan compute readback/parity checks for two
+different clip projections (spot-shadow-like and reflected camera),
+using the same metadata/source model with an independent GPU command
+slot each time. The CPU oracle must agree with each projection's own
+selected clusters; no unrelated earlier main-view output is accepted.
+This tests selection and GPU argument generation, **NOT** actual
+`Renderer3D` spot-depth or planar RTT pixel-parity. These new
+assertions have NOT been compiled or run in this stage.
