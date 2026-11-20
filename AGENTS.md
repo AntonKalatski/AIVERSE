@@ -1546,3 +1546,17 @@ and on a compatible GPU dispatches a 64-thread test into RGBA16F storage,
 then samples the atlas in the same frame and checks captured pixels.
 These tests HAVE NOT BEEN EXECUTED IN THIS STAGE; GitHub queued CI does not
 mean PASS. Review Vulkan validation-layer diagnostics before any main merge.
+
+
+## GI Stage 52 — device-loss cancellation, no stale GPU samples (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage52-gpu-device-loss-recovery-2026-11-20.md`.
+`GiGpuTicketQueue` now aborts scheduler tickets after Vulkan/Metal
+`!Device::gpuHealthy()`, even when the submitted frame fence/readback
+callback will never arrive. This is a FAILED job, NEVER a successful
+GPU ACK. `safeToSample()` and `submit()` also require a healthy device.
+Underlying Vulkan/Metal RHI must still own device-lost resource teardown
+and true driver memory lifetime; GI cancellation alone does not restore
+the physical GPU. FakeDevice test source covers device loss without
+completed serial and prevention of new compute. Native builds/CTest/real
+device-loss hardware tests NOT RUN.
