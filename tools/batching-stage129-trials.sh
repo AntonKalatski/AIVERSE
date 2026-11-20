@@ -26,6 +26,7 @@ mkdir "$OUT"
  echo "icb_inherit_pipeline_off=0"
  echo "icb_inherit_pipeline_on=1"
  echo "order=off-direct1,off-mdi1,on-direct1,on-mdi1,on-mdi2,on-direct2,off-mdi2,off-direct2"
+ echo "mesh_order=interleaved_alternating_1-8_8-1_per_mode"
  echo "gpu=whole_completed_Metal_command_buffer_timestamps"
  echo "note=geometry_tessellation_and_pipeline_inheritance_explicit_ICB_buffers"
 } > "$OUT/manifest.txt"
@@ -47,15 +48,23 @@ CURRENT_LOG="$OUT/mesh-unit.log"
 "$BIN" --unit > "$CURRENT_LOG" 2>&1
 grep -Fqx 'mesh subdivision CPU checks=passed' "$CURRENT_LOG"
 CURRENT_LOG=""
-for subdivisions in 1 8; do
-  mkdir "$OUT/mesh$subdivisions"
-  for entry in off:direct:1 off:mdi:1 on:direct:1 on:mdi:1 on:mdi:2 on:direct:2 off:mdi:2 off:direct:2; do
+# Interleave N=1 and N=8 processes so thermal drift is not confounded
+# with a complete low-geometry block followed by a high-geometry block.
+mkdir "$OUT/mesh1" "$OUT/mesh8"
+caseIndex=0
+for entry in off:direct:1 off:mdi:1 on:direct:1 on:mdi:1 on:mdi:2 on:direct:2 off:mdi:2 off:direct:2; do
+  if (( caseIndex % 2 == 0 )); then
+    meshes=(1 8)
+  else
+    meshes=(8 1)
+  fi
+  for subdivisions in "${meshes[@]}"; do
   IFS=: read -r quality mode rep <<< "$entry"
   inherit_pipeline=0
   [[ "$quality" == on ]] && inherit_pipeline=1
   name="$OUT/mesh$subdivisions/2048-$quality-$mode$rep"
   CURRENT_LOG="$name.log"
-  echo "Stage129 $quality $mode repeat=$rep"
+  echo "Stage129 mesh=$subdivisions $quality $mode repeat=$rep"
   env -u AIVERSE_BATCH_AUTO -u AIVERSE_BATCH_AUTO_COST_TRACE \
       -u AIVERSE_BATCH_AUTO_TRACE -u AIVERSE_ICB_PROFILE \
       -u AIVERSE_ICB_SLOW_TRACE -u AIVERSE_BATCH_MODEL_GPU_COUNTERS \
@@ -93,6 +102,9 @@ for subdivisions in 1 8; do
   echo "PASS: mesh=$subdivisions $quality $mode #$rep"
   CURRENT_LOG=""
   done
+  caseIndex=$((caseIndex + 1))
+done
+for subdivisions in 1 8; do
   python3 tools/batching-stage127-analyze.py "$OUT/mesh$subdivisions"
 done
 python3 tools/batching-stage129-analyze.py "$OUT"
