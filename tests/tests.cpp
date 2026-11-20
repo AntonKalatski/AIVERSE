@@ -2,6 +2,7 @@
 #include "engine/view/VisibilityField.h"
 #include "engine/render/NativeMeshBatch.h"
 #include "engine/render/FramePublicationEpoch.h"
+#include "engine/render/OwnerPrepareCommit.h"
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -13393,6 +13394,156 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     CHECK(fx.ownsGpuResources());
     CHECK(fx.shutdownAfterGpuIdle(dev));
     CHECK(!fx.ownsGpuResources());
+}
+
+TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure) {
+    struct Participant final : render::OwnerPrepareCommit::Participant {
+        int& published;
+        int nextValue;
+        bool fail=false;
+        bool prepared=false;
+        int committed=0,rolledBack=0;
+        Participant(int& value,int next,bool error=false)
+            :published(value),nextValue(next),fail(error){}
+        void prepare() override {
+            prepared=true;
+            if(fail)throw std::runtime_error("late GPU owner failed");
+        }
+        void commit() noexcept override {
+            if(prepared) {published=nextValue; ++committed; prepared=false;}
+        }
+        void rollback() noexcept override {
+            if(prepared) {prepared=false; ++rolledBack;}
+        }
+    };
+    int geometry=10,visibility=20,shores=30;
+    Participant a(geometry,11),b(visibility,21),c(shores,31,true);
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(a);transaction.add(b);transaction.add(c);
+        CHECK(transaction.participantCount()==3);
+        try {transaction.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+        CHECK(failed);
+        CHECK(!transaction.publish());
+        CHECK(!transaction.published());
+    }
+    CHECK(geometry==10 && visibility==20 && shores==30);
+    CHECK(a.committed==0 && b.committed==0 && c.committed==0);
+    CHECK(a.rolledBack==1 && b.rolledBack==1 && c.rolledBack==1);
+    c.fail=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(a);transaction.add(b);transaction.add(c);
+        transaction.prepareAll();
+        CHECK(transaction.prepared());
+        CHECK(geometry==10 && visibility==20 && shores==30);
+        CHECK(transaction.publish());
+        CHECK(transaction.published());
+    }
+    CHECK(geometry==11 && visibility==21 && shores==31);
+    CHECK(a.committed==1 && b.committed==1 && c.committed==1);
+}
+
+TEST(visibility_field_prepared_gpu_upload_never_mutates_live_on_failure_or_discard) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    const auto height=[](float,float){return 0.0f;};
+    fog.build(dev,2,2,height);
+    const auto old=fog.texture();
+    const auto previousField=fog.field();
+    const auto destroyed=dev.destroyedTextures;
+    {
+        auto candidate=fog.prepareUpdate(std::vector<uint8_t>{2,2,2,2},2,2,1.0);
+        CHECK(candidate && candidate->changed());
+        CHECK(candidate->field().size()==4);
+        CHECK(fog.texture().id==old.id);
+        CHECK(fog.field()==previousField);
+        CHECK(fog.pendingGpuRetirements()==0);
+    }
+    CHECK(dev.destroyedTextures==destroyed+1); // discarded unpublished texture
+    CHECK(fog.texture().id==old.id);
+    dev.failTextureUpdate=dev.textureUpdates+1;
+    bool failed=false;
+    try {(void)fog.prepareUpdate(std::vector<uint8_t>{2,2,2,2},2,2,1.0);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(fog.texture().id==old.id);
+    CHECK(fog.field()==previousField);
+    CHECK(fog.pendingGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==destroyed+2);
+    dev.failTextureUpdate=0;
+    auto candidate=fog.prepareUpdate(std::vector<uint8_t>{2,2,2,2},2,2,1.0);
+    CHECK(candidate && candidate->changed());
+    CHECK(fog.commitPreparedUpdate(std::move(candidate)));
+    CHECK(fog.texture().valid() && fog.texture().id!=old.id);
+    CHECK(fog.pendingGpuRetirements()==1);
+    CHECK(fog.field().size()==4);
+    CHECK(fog.shutdownAfterGpuIdle());
+    CHECK(fog.pendingGpuRetirements()==0);
+}
+
+TEST(visibility_field_late_coordinator_failure_discards_private_gpu_texture) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    fog.build(dev,2,2,[](float,float){return 0.0f;});
+    const auto old=fog.texture();
+    const auto textureDeletes=dev.destroyedTextures;
+    struct FogCandidate final : render::OwnerPrepareCommit::Participant {
+        view::VisibilityField& owner;
+        std::unique_ptr<view::VisibilityField::PreparedUpdate> staged;
+        bool committed=false;
+        explicit FogCandidate(view::VisibilityField& fog):owner(fog){}
+        void prepare() override {
+            staged=owner.prepareUpdate(std::vector<uint8_t>{2,2,2,2},2,2,3.0);
+            if(!staged)throw std::runtime_error("no fog candidate");
+        }
+        void commit() noexcept override {
+            // Successful owner-local staging on the same render thread
+            // guarantees this prepared resource has not been superseded.
+            if(staged) {
+                try {(void)owner.commitPreparedUpdate(std::move(staged));committed=true;}
+                catch(...) {std::terminate();}
+            }
+        }
+        void rollback() noexcept override {staged.reset();}
+    } fogOwner(fog);
+    struct LastOwner final : render::OwnerPrepareCommit::Participant {
+        bool fail=true,prepared=false;
+        void prepare() override {
+            prepared=true;
+            if(fail)throw std::runtime_error("late scene owner failed");
+        }
+        void commit() noexcept override {prepared=false;}
+        void rollback() noexcept override {prepared=false;}
+    } last;
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(fogOwner);transaction.add(last);
+        try {transaction.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+        CHECK(failed);
+    }
+    CHECK(fog.texture().id==old.id);
+    CHECK(!fogOwner.committed);
+    CHECK(fog.pendingGpuRetirements()==0);
+    CHECK(dev.destroyedTextures==textureDeletes+1);
+    last.fail=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(fogOwner);transaction.add(last);
+        transaction.prepareAll();
+        CHECK(fog.texture().id==old.id);
+        CHECK(transaction.publish());
+    }
+    CHECK(fogOwner.committed);
+    CHECK(fog.texture().id!=old.id);
+    CHECK(fog.pendingGpuRetirements()==1);
+    CHECK(fog.shutdownAfterGpuIdle());
 }
 
 TEST(visibility_field_gpu_init_failure_is_retryable) {
