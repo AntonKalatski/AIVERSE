@@ -1905,8 +1905,8 @@ The previous single-layer fallback is superseded for opted-in eye materials.
 `Material::eyeOptics` stores iris UV centre, radius and optical depth. Zero radius
 keeps the legacy renderer unchanged. GLSL/MSL implement tangent-frame refracted
 UV displacement and a separate Fresnel wet coat with directional/point-light
-highlights. Medium/high evaluate the coat's point lobe separately; low reuses
-the existing lobe and skips parallax. This is a bounded real-time approximation,
+highlights. Medium/high evaluate up to eight actual point/spot-light directions for the coat;
+low keeps directional/environment reflection and skips point glints/parallax. This is a bounded real-time approximation,
 not a ray-traced volumetric cornea or a claim of Unreal visual parity.
 
 Material glTF `extras.aiverseEye` v1 stores `optics:[u,v,radius,depth]`, `ior` and

@@ -69,3 +69,24 @@ Status: implemented/verified iris contrast, native optical depth/Fresnel coat,
 cartilage white-fleck repair, alpha/morph retention, export/reassembly.
 MetaHuman reference parity remains unverified; optical model is an approximation
 and the existing source still has skin-normal/card-hair artifacts.
+
+## Local-glint refinement (supersedes final-catalog/final-motion above)
+
+Final matched catalog review caught excessive pale glare when scaling the entire
+dynLight specular output: that output also contains broad grid/environment energy.
+The delivered coat now evaluates up to8 actual point/spot-light directions with
+attenuation/cone and a normalized sharp lobe, never amplifying the grid response.
+Low quality retains the directional/environment coat and omits this loop/parallax.
+Matched `local-catalog.png` inspected: brown iris and dark pupil remain distinct
+with small localized highlights. No atlas/camera/exposure change for this test.
+
+Creator/Studio/appearance-test rebuild PASS (build-local-glints.log).
+Appearance CTest PASS1/1 report20261120-200337-34885, after prior complete4/4.
+GLSL12/12 syntax stages PASS again (glsl-local-glints.log).
+Remaining change only paired GLSL/MSL optical branch; old PBR path unchanged.
+
+Delivered native take: `local-motion/`,168 frames completed, pass1/pipelineFailures0.
+Inspected turn36 and full blink41 with the final local-light coat; sharp moving
+highlights retain iris contrast, white cartilage flecks remain eliminated.
+Final video name `eyes-reviewed.mp4`; gallery points only at the reviewed take.
+The earlier final-motion.mp4 is retained as diagnostic history, not delivery.

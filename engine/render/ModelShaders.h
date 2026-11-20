@@ -454,21 +454,32 @@ void main() {
         if (m_eyeOptics.z > 0.0) {
             // A smooth wet dielectric coat over a diffuse iris, not a broad
             // specular lobe added to the existing PBR lobe twice.
-            float coatRough = clamp(rough * 0.16 + (1.0-tear) * 0.06, 0.045, 0.22);
             float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
             float footprint = max(length(dFdx(n)), length(dFdy(n)));
             exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
             float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
-            vec3 coatDd, coatDs; float coatVisibility;
+            vec3 coatDs = vec3(0.0);
 #if AIVERSE_Q >= 1
-            dynLight(v_wpos,n,V,coatRough,coatDd,coatDs,coatVisibility,ao);
-#else
-            coatDs = ds;
+            // Reflect actual finite lights. dynLight's ds also contains broad
+            // grid/environment energy and must not be promoted to a corneal glint.
+            for (int i=0;i<8;++i) {
+                if(i>=int(l_info.x))break;
+                vec3 delta=l_pos[i].xyz-v_wpos;
+                float distance2=dot(delta,delta);
+                vec3 eyeL=delta*inversesqrt(max(distance2,1e-6));
+                float attenuation=clamp(1.0-distance2/max(l_pos[i].w*l_pos[i].w,1e-6),0.0,1.0);
+                attenuation*=attenuation;
+                if(l_spot[i].w>-1.5) {
+                    float cone=smoothstep(l_spot[i].w,l_col[i].w,dot(-eyeL,l_spot[i].xyz));
+                    attenuation*=cone*cone;
+                }
+                float lobe=pow(max(dot(n,normalize(eyeL+V)),0.0),exponent);
+                coatDs+=l_col[i].rgb*(attenuation*lobe*(exponent+8.0)*0.125*max(dot(n,eyeL),0.0));
+            }
 #endif
             vec3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
-            // Match point-lobe normalization (.04 in dynLight) to .125 above.
             col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
-                + sun * sh * glint * coatFresnel + coatDs * (coatFresnel * 3.125)
+                + sun * sh * glint * coatFresnel + coatDs * coatFresnel
                 + coatEnv * coatFresnel * ao;
         }
     } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
@@ -986,21 +997,32 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         if (m.eyeOptics.z > 0.0) {
             // A smooth wet dielectric coat over a diffuse iris, not a broad
             // specular lobe added to the existing PBR lobe twice.
-            float coatRough = clamp(rough * 0.16 + (1.0-tear) * 0.06, 0.045, 0.22);
             float exponent = mix(100.0, 480.0, tear) * mix(1.6, 0.7, rough);
             float footprint = max(length(dfdx(n)), length(dfdy(n)));
             exponent = min(exponent, 2.0 / max(0.004, footprint * footprint));
             float glint = pow(ndh, exponent) * (exponent + 8.0) * 0.125 * ndl;
-            float3 coatDd, coatDs; float coatVisibility;
+            float3 coatDs = float3(0.0);
 #if AIVERSE_Q >= 1
-            dynLight(lu,tex9,s9,in.wpos,n,V,coatRough,coatDd,coatDs,coatVisibility,ao);
-#else
-            coatDs = ds;
+            // Reflect actual finite lights. dynLight's ds also contains broad
+            // grid/environment energy and must not be promoted to a corneal glint.
+            for (int i=0;i<8;++i) {
+                if(i>=int(lu.info.x))break;
+                float3 delta=lu.pos[i].xyz-in.wpos;
+                float distance2=dot(delta,delta);
+                float3 eyeL=delta*rsqrt(max(distance2,1e-6));
+                float attenuation=clamp(1.0-distance2/max(lu.pos[i].w*lu.pos[i].w,1e-6),0.0,1.0);
+                attenuation*=attenuation;
+                if(lu.spot[i].w>-1.5) {
+                    float cone=smoothstep(lu.spot[i].w,lu.col[i].w,dot(-eyeL,lu.spot[i].xyz));
+                    attenuation*=cone*cone;
+                }
+                float lobe=pow(max(dot(n,normalize(eyeL+V)),0.0),exponent);
+                coatDs+=lu.col[i].rgb*(attenuation*lobe*(exponent+8.0)*0.125*max(dot(n,eyeL),0.0));
+            }
 #endif
             float3 coatEnv = mix(ground, sky, clamp(reflect(-V,n).y * 0.5 + 0.5, 0.0, 1.0));
-            // Match point-lobe normalization (.04 in dynLight) to .125 above.
             col = base.rgb * (amb * ao + direct + dd) * (1.0 - coatFresnel)
-                + sun * sh * glint * coatFresnel + coatDs * (coatFresnel * 3.125)
+                + sun * sh * glint * coatFresnel + coatDs * coatFresnel
                 + coatEnv * coatFresnel * ao;
         }
     } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
