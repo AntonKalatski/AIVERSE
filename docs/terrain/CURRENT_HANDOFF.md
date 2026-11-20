@@ -1,5 +1,21 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 latest main Stage116 Release test sync (2026-11-20):**
+> Real two-parent merge `910461a6d910dc0583762cb6dedfa4e9b97858b7`
+> incorporates main `f9aed9a705982e2c6b77b29869e309995ce8b163`
+> while preserving the Terra Vulkan/GLES + Metal forest source.
+> Three exact upstream paths: two Release-only render retirement/
+> model owner tests and one Stage116 handoff. GitHub compare
+> confirmed **main behind=0** at merge.
+> [New standalone merge handoff](qa-2026-11-20-stage70-stage116-main-merge-handoff.md).
+> **Postmerge Stage116 CMake/CTest NOT RUN.** Build
+> `aiverse_retirement_pressure_tests` and
+> `aiverse_model_resource_owner_tests` in Release;
+> Linux Vulkan/GLES acceptance and long four-owner integration
+> remain unverified. Existing Mac hardware forest PASS stays
+> attributed to `0133eb21`; PR #53 remains Draft.
+>
+>
 > **Stage70 Vulkan + GLES3 Linux forest acceptance authored (2026-11-20):**
 > Real Metal forest was **1/1 PASS** on tested
 > `0133eb21b211af62d205952db77c50589ae55a13`
