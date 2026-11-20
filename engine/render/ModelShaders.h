@@ -679,6 +679,9 @@ struct IcbPbrTextures {
     sampler s11 [[id(23)]];
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
+#if defined(DYNAMIC_GI)
+    texture2d<float> tex13 [[id(26)]];
+#endif
 };
 #endif
 
@@ -704,8 +707,10 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
 #if defined(DYNAMIC_GI)
-                        , constant GiDynamicU& dgi [[buffer(7)]],
-                        texture2d<float> tex13 [[texture(13)]]
+                        , constant GiDynamicU& dgi [[buffer(7)]]
+#if !defined(AIVERSE_ICB_PBR)
+                        , texture2d<float> tex13 [[texture(13)]]
+#endif
 #endif
                         GI_FARGS) {
 #if defined(AIVERSE_ICB_PBR)
@@ -731,6 +736,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #define s11 icbTextures.s11
 #define tex12 icbTextures.tex12
 #define s12 icbTextures.s12
+#if defined(DYNAMIC_GI)
+#define tex13 icbTextures.tex13
+#endif
 #endif
 #if defined(STUDIO_DEBUG_VIEW)
 #if STUDIO_DEBUG_VIEW == 2

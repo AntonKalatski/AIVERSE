@@ -368,7 +368,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
     // tex13 is Shader Graph's first sampler; opt-in GI and graph materials
     // move to tex14+ when GI occupies tex13. GPU-driven ICB uses a separate ABI.
-    const bool dynamicGi = giPhase && !gpuInstances &&
+    const bool dynamicGi = giPhase &&
                            dynamicGiAtlas_.valid();
     const int graphTextureSlot=kGraphTextureSlot+(dynamicGi?1:0);
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
@@ -1443,7 +1443,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     }
     // Even if the model pipeline is already bound, another pass may have
     // changed the texture/uniform state. Always refresh this opt-in borrow.
-    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances) {
+    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid()) {
         dev_->setUniforms(6,dynamicGiUniforms_.data(),
                           dynamicGiUniforms_.size()*sizeof(float));
         dev_->setTexture(13,dynamicGiAtlas_);
@@ -1521,7 +1521,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(2, &mu, sizeof mu);
     }
     if (materialStateChanged || newModel) {
-        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances)?1:0);
+        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid())?1:0);
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
@@ -1929,9 +1929,8 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
-    // GPU ICB has a distinct material/sampler ABI. While this view opts in
-    // to CPU GI, use normal CPU-authored model draws for correct tex13/U6.
-    if (dynamicGiAtlas_.valid()) return;
+    // Dynamic probe GI uses the ICB argument-buffer tex13 and inherited U6.
+    // Baked lightmaps/probes and deforming/graph models keep their own fallback.
 
     // Feedback from the previous completed pass, sampled before counters reset.
     // This is CPU submission feedback, not measured GPU busy-time.

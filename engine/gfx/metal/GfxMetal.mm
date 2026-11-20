@@ -69,7 +69,7 @@ struct MTBuffer {
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
-struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
+struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; bool icbDynamicGi = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
 
 MTLVertexFormat toMTL(VertexFormat f) {
     switch (f) {
@@ -775,6 +775,7 @@ public:
         }
         auto encoder = [cached.fragment newArgumentEncoderWithBufferIndex:8];
         if (!encoder) return;
+        pipeline.icbDynamicGi = src.find("#define DYNAMIC_GI 1") != std::string::npos;
         pipeline.icbPbrState = state;
         pipeline.icbPbrEncoder = encoder;
     }
@@ -1776,6 +1777,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                                                  atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
             }
+            if(pipeline->icbDynamicGi) {
+                if(!icbFragmentTextures_[13])return reject("GI ICB atlas not bound");
+                [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[13] atIndex:26];
+                declareIndirectRead(icbFragmentTextures_[13],MTLRenderStageFragment);
+            }
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
         }
@@ -1856,6 +1862,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             }
         }
 
+        if(pbr && p->icbDynamicGi) {
+            if(!icbFragmentTextures_[13])return false;
+            [p->icbPbrEncoder setTexture:icbFragmentTextures_[13] atIndex:26];
+            declareIndirectRead(icbFragmentTextures_[13],MTLRenderStageFragment);
+        }
         const auto afterArgs = std::chrono::steady_clock::now();
         // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to

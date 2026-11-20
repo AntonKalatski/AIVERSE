@@ -72,9 +72,20 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     if(s.terrainGiVerify)r.drawCustomOpaque([&s,test](gfx::Device& device) {
         if(!s.terrainGi.draw(device,s.renderer,test==2,test!=3))s.failed=true;
     });
-    else {ModelDraw draw;draw.model=s.probeBg.get();r.drawModel(draw);}
+    else {
+        ModelDraw draw;draw.model=s.probeBg.get();draw.flags=kDrawStatic;r.drawModel(draw);
+        if(std::getenv("AIVERSE_ICB_GI_VERIFY")) {
+            draw.world=mat4::translate({.7f,.7f,0})*mat4::scale({.1f,.1f,.1f});r.drawModel(draw);
+        }
+    }
     r.render(s.output,s.pipeline());r.resolvePrisma();
     if(s.frame==5) {
+        if(std::getenv("AIVERSE_ICB_GI_VERIFY")) {
+            const auto stats=r.gpuModelDrawStats();
+            const bool ok=stats.gpuEncodedSubmissions>0 && stats.gpuEncodedCommands>=2;
+            std::printf("GI ICB actual submissions %u commands %u %s\n",stats.gpuEncodedSubmissions,stats.gpuEncodedCommands,ok?"PASS":"FAIL");
+            if(!ok){s.failed=true;return;}
+        }
         const auto& cfg=s.dynamicGi.config();
         auto expected=sampleDynamicGi(s.dynamicGi.reference(),cfg.origin,cfg.spacing,
                                       cfg.nx,cfg.ny,cfg.nz,{0,0,0},{0,0,1});
