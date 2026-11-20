@@ -29,6 +29,18 @@
 - **Other dock panels:** Add lock toggles only where external selection should not mutate panel context (preview, shader graph, material editor as needed). Do not lock panes that never follow selection.
 - **Zoom QA:** Verify macOS WKWebView composited Metal viewport alignment, native hit-testing, drag boundaries, scrollbars, modal positions, high-DPI, 75%/100%/150%/200% and persistence across restart. CSS zoom must not scale gameplay world-space itself.
 
+
+## Follow-up implementation stage (2026-11-20)
+- Native `apps/studio-native/StudioSession.cpp`: removed the global-selection-equality guard for `studio.setProperty`. The write still requires an explicit nonempty entity ID, validates map IDs through `indexFor`, and validates FPS node IDs through the document node enumeration. This makes the Inspector lock's edit operation functional when scene selection moves.
+- `apps/studio-web/src/App.tsx`: pins are reset upon an actual project open and when snapshot project path changes. No cross-project pin carryover.
+- `apps/studio-web/src/components/AssetReferencePicker.tsx`: a dropped path is resolved against a fresh native `studio.assets` catalog before it may be accepted. Unknown paths and incompatible kinds produce an error; the picker never writes arbitrary drag text. GUID takes precedence when present.
+- `tools/studio/test_reference_pin_zoom.py`: added source-level contract tests for picker schema, shared MIME, native pinned writes, zoom and native viewport resize hook.
+- New implementation SHAs: `cc1f95ecb0072fb3fe8a417f0941303bd8a8a2bd`, `64656d0cb64e80270b3f86b9c919b1a690874011`, `7e1490a8eecd12f4ae84ecf718652fb111a4e382`, `a7d320fc4c4fe4d1e0dd01a1f5111f51b917d8cf`, `8be9c8aa9288de2af83f047e80ec51235b0c9263`.
+- **Actual checks:** inspected current native `studio.setProperty`, `studio.select`, `studio.assets`, React picker, native viewport code and source-level test definitions via GitHub connector. **Not run:** Python unit tests, Node typecheck, Vite bundle, macOS CMake/CTest, manual GPU compositor validation; remote sandbox lacks network checkout/build environment. Do not claim pass.
+- **Additional risk:** a pinned Inspector currently retains its properties as a UI snapshot and only applies its own successful writes. Undo/external changes do not refresh those pinned fields; implement native `studio.propertiesFor` with document ID and project-scoped validation to refresh without stealing selection.
+- **Schema gap:** existing native `studio.snapshot` emits `text`/`number` properties (entity type, transforms, owner); there is no current native `asset` property in this snapshot. The shared picker is ready for future typed asset-bearing schemas but cannot be claimed to cover every actual editor reference. Native material authoring currently exposes scalar PBR keys rather than texture binding fields. Enumerate actual persisted asset-reference fields before extending the backend, rather than inferring references from property names.
+- **Testing next:** run `python3 -m unittest tools.studio.test_reference_pin_zoom` or discover mode plus npm commands above, then add native tests verifying editing object A while selecting B, invalid/deleted entity rejection, and project switch.
+
 ## Validation required on developer Mac
 ```sh
 cd apps/studio-web
