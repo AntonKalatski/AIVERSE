@@ -50,6 +50,38 @@ void GeometryScene::shutdown(gfx::Device& dev) {
         throw std::runtime_error("geometry scene: GPU shutdown barrier failed");
 }
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
+void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const FileReader& read) {
+    GeometryScene staged;
+    try {
+        staged.loadImpl(dev,json,read,{},2000000);
+    } catch (...) {
+        // loadImpl has already enqueued any partially uploaded models.
+        // A staged instance has no live host, so drain it only with GPU
+        // completion proof. If idle is unavailable, its retirement queue
+        // deliberately retains GPU-owned model data beyond destruction.
+        (void)staged.retirement_.completeForShutdown(dev);
+        throw;
+    }
+    // Staged CPU containers own the newly uploaded resources. Moving them
+    // into the live instance is noexcept; enqueue old resident models first.
+    // Keep the live retirement queue (which tracks older in-flight frames).
+    retireResident(dev);
+    models_=std::move(staged.models_);
+    instances_=std::move(staged.instances_);
+    groups_=std::move(staged.groups_);
+    warnings_=std::move(staged.warnings_);
+    stats_=staged.stats_;
+    hlod_=staged.hlod_;
+    geometryEnabled_=staged.geometryEnabled_;
+    surfacesEnabled_=staged.surfacesEnabled_;
+    cacheEnabled_=staged.cacheEnabled_;
+    errorPixels_=staged.errorPixels_;
+    maxPixels_=staged.maxPixels_;
+    proxyVertices_=staged.proxyVertices_;
+    staged.stats_={};
+    staged.proxyVertices_=0;
+}
+
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
 void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader& read,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){
     validate(json);
