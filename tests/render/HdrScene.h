@@ -90,6 +90,25 @@ struct HdrScene {
             camera.target={0,0,0};camera.pitch=0;camera.yaw=0;camera.distance=10;
         }
         if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) initContactShadowScene(*this);
+        if(const char* skyCase=std::getenv("AIVERSE_PHYSICAL_SKY_TEST")) {
+            advanced=false;renderer.setModelReflectionsEnabled(false);
+            post.configure(Json::parse(R"({"hdr":"on","physicalSky":{"enabled":true},"effects":[{"type":"fxaa"}]})"),{});
+            post.setQuality(PostFxQuality::High);post.setPhysicalSkyTime(0);
+            camera.target={0,5,0};camera.distance=20;camera.pitch=-.12f;camera.yaw=0;
+            renderer.lighting.sunDir={.15f,.22f,-1};renderer.lighting.sunIntensity=1;
+            renderer.lighting.sunColor={1,1,1};
+            auto sky=post.physicalSky();sky.coverage=.53f;
+            const std::string which=skyCase;
+            if(which=="clear")sky.clouds=false;
+            if(which=="medium")post.setQuality(PostFxQuality::Medium);
+            if(which=="ortho")camera.ortho=true;
+            if(which=="night")renderer.lighting.sunDir={.15f,-.3f,-1};
+            if(which=="no-rays")sky.godRays=false;
+            if(which=="sunset")renderer.lighting.sunDir={.15f,.025f,-1};
+            if(which=="inside"){camera.target.y=2200;camera.pitch=.05f;}
+            if(which=="above"){camera.target.y=4000;camera.pitch=.35f;}
+            post.setPhysicalSky(sky);
+        }
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
     void draw(gfx::Device& d, int w, int h) {

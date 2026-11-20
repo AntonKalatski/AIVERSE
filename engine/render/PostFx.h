@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "PostFxData.h"
+#include "PhysicalSky.h"
 #include "Renderer3D.h"
 
 namespace aiverse::render {
@@ -116,6 +117,11 @@ public:
     const PostFxUnderwaterState& underwater()const{return underwater_;}
     void resetUnderwater(){underwater_={};}
 
+    void setPhysicalSky(PhysicalSkySettings s) { skySettings_=sanitizePhysicalSky(s); }
+    const PhysicalSkySettings& physicalSky() const { return skySettings_; }
+    // Explicit time permits paused/reproducible captures; negative resumes the host clock.
+    void setPhysicalSkyTime(double seconds) { skyTime_=seconds; }
+
     const PostFxSettings& settings() const { return settings_; }
 
     void setQuality(PostFxQuality q) { quality_ = q; }
@@ -161,6 +167,9 @@ private:
 
     gfx::Device* dev_ = nullptr;
     PostFxSettings settings_;
+    PhysicalSky sky_;
+    PhysicalSkySettings skySettings_;
+    double skyTime_=-1,skyEpoch_=-1;
     PostFxQuality quality_ = PostFxQuality::Medium;
     bool enabled_ = true;
     bool hdrFrame_ = false, sceneReady_ = false;

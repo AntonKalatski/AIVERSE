@@ -1007,6 +1007,7 @@ The worktree folder follows the branch: `.worktrees/feature/aiv142_city_traffic`
 | Runtime physics scene + character controller for authoritative hosts | `engine/physics/{Scene,Character}.*`, `tests/physics/scene_tests.cpp`, `docs/physics.md` § Scene / Character | agent-replica-physics (MAIN merges) |
 | Physics sandbox place on replica (first milestone): server / client logic, bots, SimNet load harness, graphical client, example scene | `apps/place`, `examples/place`, `tests/place`, `docs/replica.md` § First milestone; additive CMake block `aiverse_place` (after the physics demo), `place.*` keys in `engine/assets/lang/{en,ru}.json` | agent-place (MAIN merges) |
 | Vulkan RHI backend (Windows, Linux, Android; opt-in, GL fallback): device, swapchain + offscreen back buffer, memory, versioned dynamic buffers, GLSL → SPIR-V at run time (vendored glslang), offscreen backend test | `engine/gfx/vulkan`, `third_party/glslang`, `third_party/vulkan`, `tests/render/vulkan_tests.cpp`, `docs/vulkan.md`; hooks: `Gfx.h` (`Backend::Vulkan`), `engine/platform/GraphicsSettings.h` + `AppConfig::graphics`, device choice in `PlatformLinux` / `PlatformWin32` / `PlatformAndroid`, client `--gfx` + game.json `graphics`, CMake `AIVERSE_VULKAN`, CI lavapipe step, notices | agent-vulkan (MAIN merges) |
+| Physical sky, volumetric clouds and god rays | `engine/render/PhysicalSky*`, PostFx integration, `tests/render/physical_sky.cpp`, `docs/physical-sky.md` | `feature/physical-sky-clouds` (user assigned) |
 | Other areas | as assigned by the user | the agent the user assigned |
 | Bunker Wars energy skills: skill objects (`origins`/`consume`, `goal`, `onArrive`/`onExpire`/`onDeath`, `pull`), BW skill converter + modificator table | `modules/rts/RtsSkillObjects.cpp`, `tools/importers/bunkerwars/skills/`, `docs/bunkerwars-skills.md`, `tests/tests_skillobjects.inc`; hooks: `RtsEffects.cpp` (area / projectile spawn), `RtsUnits.cpp` (Enter), `RtsCombat.cpp` (deaths), `RtsSave.cpp` | agent-bw-skills (MAIN merges) |
 | Voxel worlds: chunked mutable block world, block JSON, codec / regions / parking, ray and box queries (`voxel-world`), sky and block light (`voxel-light`), chunk meshes (`voxel-mesh`), chunk generator (`voxel-gen`), fluids / falling / growth (`voxel-ticks`), mob A* and spawning (`voxel-nav`), chunk streaming to clients (`voxel-replication`); save record kinds 120..127 | `libraries/include/aiverselib/systems/{voxel,voxellight,voxelmesh,voxelgen,voxelticks}/`, `libraries/include/aiverselib/bots/voxelnav/`, `libraries/include/aiverselib/net/voxel/`, `tests/libraries/voxel_tests.cpp`, `tools/libraries/voxel_main.cpp` (`aiverse_voxel`), `examples/libraries/voxel/`, `docs/voxel.md`, `skills/*/aiverse-voxel-*`; the voxel game: `modules/voxel/`, `apps/voxel/`, `tests/voxel/`, `templates/voxel_sandbox/`; additive hooks: `add_subdirectory(modules/voxel)` in `CMakeLists.txt`, `voxel.*` keys in `engine/assets/lang/{en,ru}.json`, catalog entries, test / tool blocks in `CMakeLists.txt` and `tests/libraries/CMakeLists.txt`, skill aliases | agent-voxel (MAIN merges) |
@@ -2840,3 +2841,16 @@ rendering or test gates; new diagnostic binary remains
 unbuilt and exact GPU ICB counts are not yet recorded.
 Leave PR #34 Draft pending Vulkan, recycling, full CI
 and controlled A/B/A timing measurements.
+
+
+## Physical sky and volumetric clouds (2026-11-20)
+
+Presentation owner: `engine/render/PhysicalSky*`, integrated into `PostFx` via
+optional `postfx.physicalSky`. Read `docs/physical-sky.md` and
+`docs/agent-handoffs/physical-sky-clouds-2026-11-20.md`. Keep the shared GLSL/MSL
+shader body, HDR-before-tone-map ordering, separate sampled/writable depth,
+bounded quality steps and default OFF. PHYSIS remains authoritative weather;
+do not add a second climate simulation. God rays use both cloud optical depth
+and existing sun-shadow depth; legacy screen-space sunShafts is separate.
+No cloud-to-surface shadows, reflection/IBL integration or multiple scattering
+is claimed. Native hosts without PostFx must opt in explicitly.
