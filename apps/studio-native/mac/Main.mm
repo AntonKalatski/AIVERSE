@@ -17,6 +17,13 @@
 #define AIVERSE_STUDIO_SOURCE_DIR "."
 #endif
 
+// Transparent WKWebView is opt-in: the normal Metal-over-WebView host stays as fallback.
+@interface StudioTransparentWebView : WKWebView
+@end
+@implementation StudioTransparentWebView
+- (BOOL)isOpaque { return NO; }
+@end
+
 @class StudioHost;
 @interface StudioMetalView : NSView {
     NSPoint press_;
@@ -36,8 +43,9 @@
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
+    BOOL htmlComposite_;
 }
-- (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev;
+- (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
@@ -82,8 +90,9 @@
 @end
 
 @implementation StudioHost
-- (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev {
+- (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite {
     if ((self=[super init])) {
+        htmlComposite_=composite;
         std::string root=AIVERSE_STUDIO_SOURCE_DIR;
         session_=std::make_unique<aiverse::studio::StudioSession>(root,project);
         NSURL* bundled=[[NSBundle mainBundle] URLForResource:@"index" withExtension:@"html" subdirectory:@"studio-web"];
@@ -112,7 +121,10 @@
 
     WKWebViewConfiguration* cfg=[[WKWebViewConfiguration alloc] init];
     [cfg.userContentController addScriptMessageHandler:self name:@"aiverse"];
-    web_=[[WKWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+    if (htmlComposite_) {
+        web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
+        if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
+    } else web_=[[WKWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
     web_.navigationDelegate=self;
     web_.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     [window_.contentView addSubview:web_];
@@ -120,7 +132,8 @@
     viewport_=[[StudioMetalView alloc] initWithFrame:NSZeroRect];
     viewport_.host=self;
     viewport_.hidden=YES;
-    [window_.contentView addSubview:viewport_ positioned:NSWindowAbove relativeTo:web_];
+    [window_.contentView addSubview:viewport_
+        positioned:(htmlComposite_ ? NSWindowBelow : NSWindowAbove) relativeTo:web_];
     [window_ makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     if (devURL_) [web_ loadRequest:[NSURLRequest requestWithURL:devURL_]];
@@ -262,6 +275,10 @@
         layer.drawableSize=CGSizeMake(placement_.pixelsW,placement_.pixelsH);
     }
 }
+- (void)webView:(WKWebView*)view didFinishNavigation:(WKNavigation*)navigation {
+    (void)navigation;
+    if (htmlComposite_) [view evaluateJavaScript:@"document.documentElement.classList.add('native-composite');" completionHandler:nil];
+}
 - (void)webView:(WKWebView*)view decidePolicyForNavigationAction:(WKNavigationAction*)action decisionHandler:(void (^)(WKNavigationActionPolicy))done {
     (void)view;
     done([self trusted:action.request.URL] ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
@@ -276,6 +293,37 @@
     try {
         std::string bytes((const char*)data.bytes,(size_t)data.length);
         const aiverse::Json req=aiverse::Json::parse(bytes);
+        if (req.getStr("method")=="studio.viewportInput" && req["id"].isNumber()) {
+            aiverse::Json reply=aiverse::Json::object();
+            reply.set("id",req["id"]);
+            const auto& input=req["params"];
+            const std::string kind=input.getStr("kind");
+            aiverse::Json result=aiverse::Json::object();
+            if (!htmlComposite_ || !placement_.visible || !preview_ || viewport_.hidden) {
+                reply.set("error",aiverse::Json::string("Viewport input unavailable"));
+            } else if (kind=="orbit" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx)>1000 || std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid orbit delta"));
+                else { [self orbitX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="zoom" && input["amount"].isNumber()) {
+                const double wheel=input["amount"].toDouble();
+                if (!std::isfinite(wheel) || std::abs(wheel)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid zoom delta"));
+                else { [self zoom:wheel]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="pick" && input["x"].isNumber() && input["y"].isNumber() &&
+                       input["width"].isNumber() && input["height"].isNumber()) {
+                const double x=input["x"].toDouble(),y=input["y"].toDouble();
+                const double w=input["width"].toDouble(),h=input["height"].toDouble();
+                if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) || !std::isfinite(h) ||
+                    w<2 || h<2 || w>20000 || h>20000 || x<0 || y<0 || x>w || y>h)
+                    reply.set("error",aiverse::Json::string("Invalid pick coordinates"));
+                else { [self selectAtX:x y:y width:w height:h]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else reply.set("error",aiverse::Json::string("Unsupported viewport input"));
+            if (!reply.has("error")) reply.set("result",std::move(result));
+            [self sendStudioReply:reply];
+            return;
+        }
         if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
             // Path is chosen by AppKit, never accepted from untrusted JavaScript.
             [self openProjectSheetForRequestId:req["id"].integer()];
@@ -309,17 +357,18 @@
 int aiverseMain(int argc,char** argv) {
     @autoreleasepool {
         std::string project;
-        bool dev=false;
+        bool dev=false, composite=false;
         for(int i=1;i<argc;++i) {
             std::string arg(argv[i]);
             if(arg=="--dev")dev=true;
+            else if(arg=="--html-composite")composite=true;
             else if(arg=="--project"&&i+1<argc)project=argv[++i];
-            else { std::fprintf(stderr,"Usage: AiverseStudioHTML5 [--dev] [--project /path/to/project]\n"); return 2; }
+            else { std::fprintf(stderr,"Usage: AiverseStudioHTML5 [--dev] [--html-composite] [--project /path/to/project]\n"); return 2; }
         }
         try {
             [NSApplication sharedApplication];
             [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-            StudioHost* host=[[StudioHost alloc] initWithProject:project dev:dev];
+            StudioHost* host=[[StudioHost alloc] initWithProject:project dev:dev composite:composite];
             [NSApp setDelegate:host];
             [NSApp run];
         } catch(const std::exception& e) {

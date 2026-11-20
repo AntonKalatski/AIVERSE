@@ -642,3 +642,15 @@ button:focus-visible {
 .viewport.viewport-native .viewport-placeholder,
 .viewport.viewport-native .viewport-axis { display: none; }
 .viewport.viewport-native { background: #0b1422; }
+
+/* Experimental opt-in HTML-over-Metal composition. WebView must be transparent
+   and the Metal NSView placed underneath. HTML menus remain above the scene. */
+html.native-composite,
+html.native-composite body,
+html.native-composite #root,
+html.native-composite .studio,
+html.native-composite .work-area,
+html.native-composite .viewport.viewport-native {
+  background: transparent !important;
+}
+html.native-composite .viewport { touch-action: none; }

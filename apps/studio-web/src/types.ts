@@ -11,7 +11,7 @@ export interface StudioSnapshot {
   mode: 'edit' | 'play';
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.openProject';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -21,6 +21,7 @@ export interface StudioParams {
   'studio.select': { id: string | null };
   'studio.setProperty': { entityId: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
+  'studio.viewportInput': { kind: 'orbit'; dx: number; dy: number } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
   'studio.snapshot': StudioSnapshot;
@@ -31,4 +32,5 @@ export interface StudioResult {
   'studio.select': StudioSnapshot;
   'studio.setProperty': StudioSnapshot;
   'studio.viewportRect': { ok: boolean };
+  'studio.viewportInput': { ok: boolean };
 }

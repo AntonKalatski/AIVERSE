@@ -5,6 +5,8 @@ import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 /** Layout source of truth for a real native GPU surface. Never streams raster frames to JS. */
 export default function ViewportPlaceholder({ title, active }: { title: string; active: boolean }) {
   const element = useRef<HTMLElement>(null);
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const orbitDelta = useRef({ x: 0, y: 0, raf: 0 });
   const native = nativeConnected();
   const [gpuReady, setGpuReady] = useState(false);
   const [gpuError, setGpuError] = useState('');
@@ -65,8 +67,49 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     };
   }, [active, native]);
 
+  const composite = () => native && document.documentElement.classList.contains('native-composite');
+  const sendOrbit = (dx: number, dy: number) => {
+    const state = orbitDelta.current;
+    state.x += dx;
+    state.y += dy;
+    if (state.raf) return;
+    state.raf = requestAnimationFrame(() => {
+      state.raf = 0;
+      const x = state.x, y = state.y;
+      state.x = state.y = 0;
+      if (x !== 0 || y !== 0) void invoke('studio.viewportInput', { kind: 'orbit', dx: x, dy: y }).catch(console.warn);
+    });
+  };
   return <section ref={element} className={'viewport' + (native && active && gpuReady ? ' viewport-native' : '')}
-    aria-label={native && active ? 'Native Scene viewport' : 'Viewport placeholder'}>
+    aria-label={native && active ? 'Native Scene viewport' : 'Viewport placeholder'}
+    onPointerDown={event => {
+      if (!composite() || !active || !gpuReady) return;
+      drag.current = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }}
+    onPointerMove={event => {
+      const state=drag.current;
+      if (!state || !composite() || !gpuReady) return;
+      const dx=event.clientX-state.x,dy=event.clientY-state.y;
+      state.x=event.clientX; state.y=event.clientY;
+      if (Math.hypot(event.clientX-state.startX,event.clientY-state.startY)>5) state.moved=true;
+      if (state.moved) sendOrbit(dx,dy);
+    }}
+    onPointerUp={event => {
+      const state=drag.current;
+      drag.current=null;
+      if (!state || !composite() || !gpuReady) return;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (!state.moved) {
+        const bounds=event.currentTarget.getBoundingClientRect();
+        void invoke('studio.viewportInput',{kind:'pick', x:event.clientX-bounds.left,y:event.clientY-bounds.top,width:bounds.width,height:bounds.height}).catch(console.warn);
+      }
+    }}
+    onPointerCancel={() => { drag.current=null; }}
+    onWheel={event => {
+      if (!composite() || !active || !gpuReady) return;
+      void invoke('studio.viewportInput',{kind:'zoom',amount:-event.deltaY * 0.12}).catch(console.warn);
+    }}>
     <div className="viewport-grid"/>
     <div className="viewport-placeholder">
       <div className="viewport-cube"><Box size={44} strokeWidth={1.1}/></div>
