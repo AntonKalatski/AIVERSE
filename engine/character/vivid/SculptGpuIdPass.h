@@ -539,9 +539,10 @@ public:
                 device_->dispatch(occParams.count);
                 device_->endCompute();
             }
-            // Compute and the following ID render share one ordered Metal
-            // command buffer, so the same actor GPU output is consumed
-            // before Renderer3D's normal colour pass on this frame.
+            // The actor's published GPU positions and ID expansion
+            // share the gfx-owned ordered Metal command queue. Creator
+            // runs the ID after actual Renderer3D colour submission;
+            // both passes read the same borrowed current-frame source.
         }
         auto reply=std::make_shared<Reply>();
         // Metal viewport/scissor use the top-left convention exposed by
