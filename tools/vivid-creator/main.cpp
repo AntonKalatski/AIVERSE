@@ -1931,24 +1931,24 @@ int aiverseMain(int argc,char** argv) {
     if(!opticalCase.empty()) {
         if(!application->smoke || presetSupplied || application->commandLineAsset) {
             std::fprintf(stderr,
-                "VIVID optical capture requires --smoke and forbids --preset/--asset\\n");
+                "VIVID optical capture requires --smoke and forbids --preset/--asset\n");
             return 2;
         }
         HumanDNA variant=HumanDNA::preset("neutral");
         if(!OpticalCaptureCases::apply(variant,opticalCase)) {
-            std::fprintf(stderr,"VIVID: unknown optical case %s\\n",opticalCase.c_str());
+            std::fprintf(stderr,"VIVID: unknown optical case %s\n",opticalCase.c_str());
             return 2;
         }
         std::string error;
         if(!application->session.edit([&](HumanDNA& dna){dna=variant;},&error)) {
-            std::fprintf(stderr,"VIVID optical capture: %s\\n",error.c_str());
+            std::fprintf(stderr,"VIVID optical capture: %s\n",error.c_str());
             return 2;
         }
         application->syncDraft();
         application->animate=false;
         application->inspectGroom=false;
         application->wind=0.0f;
-        std::printf("VIVID optical case=%s staticCamera=1 staticLighting=1 frozenMotion=1\\n",
+        std::printf("VIVID optical case=%s staticCamera=1 staticLighting=1 frozenMotion=1\n",
                     opticalCase.c_str());
     }
     platform::AppConfig config;
