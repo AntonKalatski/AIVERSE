@@ -175,6 +175,16 @@ struct GpuIndexedSelectionPacket {
                commandCapacity<=2048 && sourceIndexCount &&
                viewWidth>0 && viewHeight>0;
     }
+    // Exact camera identity guard; sun / spot / reflection matrices must
+    // NEVER share a cluster selection simply because they share geometry.
+    bool matchesView(GpuIndexedPass expected,const mat4& projection,
+                     int width,int height) const {
+        if(!valid() || pass!=expected ||
+           viewWidth!=width || viewHeight!=height)return false;
+        for(unsigned i=0;i<16;++i)
+            if(viewProjection.m[i]!=projection.m[i])return false;
+        return true;
+    }
 };
 struct ModelDraw {
     const StaticModelCache* staticCache=nullptr;
