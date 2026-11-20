@@ -79,4 +79,31 @@ private:
     std::vector<Pending> pending_;
 };
 
+
+// Tracks graphics use of still-ACTIVE offscreen targets, pipelines and
+// shaders. A completed compute marker alone is never a graphics idle proof.
+// The first untracked/zero-token submission keeps release blocked until a
+// host-proven FULL GPU idle, even if later draws return a valid token.
+class LumaWeaveGraphicsUseGate {
+public:
+    void markUsed(uint64_t submittedFence) {
+        if(used_ && (!submittedFence_ || !submittedFence ||
+                     submittedFence<submittedFence_))
+            submittedFence_=0;
+        else submittedFence_=submittedFence;
+        used_=true;
+    }
+    bool canRelease(uint64_t completedFence) const {
+        return !used_ || (submittedFence_ && completedFence>=submittedFence_);
+    }
+    void afterGpuIdle() {
+        used_=false;
+        submittedFence_=0;
+    }
+    bool hasUnconfirmedWork() const { return used_; }
+private:
+    uint64_t submittedFence_=0;
+    bool used_=false;
+};
+
 } // namespace aiverse::render
