@@ -22,6 +22,15 @@
 #define AIVERSE_STUDIO_SOURCE_DIR "."
 #endif
 
+@interface StudioWindowChrome : NSView
+@end
+@implementation StudioWindowChrome
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { (void)event; return YES; }
+- (void)mouseDown:(NSEvent*)event {
+    if(event.clickCount==2)[self.window performZoom:nil];
+    else [self.window performWindowDragWithEvent:event];
+}
+@end
 @class StudioHost;
 // A native drop receiver is required because Finder drags local file URLs,
 // not JavaScript-provided paths. These are trusted only after NSDraggingDestination
@@ -273,9 +282,11 @@
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     (void)note;
     window_=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1440,900)
-        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable)
+        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskFullSizeContentView)
         backing:NSBackingStoreBuffered defer:NO];
-    window_.title=@"AIVERSE Studio HTML5";
+    window_.title=@"AIVERSE";
+    window_.titleVisibility=NSWindowTitleHidden;
+    window_.titlebarAppearsTransparent=YES;
     window_.delegate=self;
     [window_ center];
 
@@ -306,6 +317,21 @@
     gameViewport_=[[StudioGameView alloc] initWithFrame:NSZeroRect];
     gameViewport_.host=self;gameViewport_.hidden=YES;
     [window_.contentView addSubview:gameViewport_ positioned:NSWindowAbove relativeTo:web_];
+    StudioWindowChrome* chrome=[[StudioWindowChrome alloc]
+        initWithFrame:NSMakeRect(0,window_.contentView.bounds.size.height-44,80,44)];
+    chrome.autoresizingMask=NSViewMinYMargin;
+    NSInteger buttonIndex=0;
+    for(NSNumber* kind in @[@(NSWindowCloseButton),@(NSWindowMiniaturizeButton),@(NSWindowZoomButton)]) {
+        NSWindowButton buttonKind=(NSWindowButton)kind.integerValue;
+        [window_ standardWindowButton:buttonKind].hidden=YES;
+        NSButton* button=[NSWindow standardWindowButton:buttonKind forStyleMask:window_.styleMask];
+        button.target=window_;
+        button.action=buttonKind==NSWindowCloseButton ? @selector(performClose:) :
+            (buttonKind==NSWindowMiniaturizeButton ? @selector(performMiniaturize:) : @selector(performZoom:));
+        button.frame=NSMakeRect(14+20*buttonIndex++,15,14,14);
+        [chrome addSubview:button];
+    }
+    [window_.contentView addSubview:chrome positioned:NSWindowAbove relativeTo:nil];
     window_.acceptsMouseMovedEvents=YES;
     [window_ makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];

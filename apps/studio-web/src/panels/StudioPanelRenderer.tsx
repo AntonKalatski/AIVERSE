@@ -61,9 +61,12 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               {inspectorPinned ? <Lock size={16}/> : <LockOpen size={16}/>}
             </button>}/>
           {selected ? <>
-            <div className="selected-object">
-              <div className="object-icon"><Box size={21}/></div>
-              <div><h3>{selected.name}</h3><span>{selected.kind} · {selected.id}</span></div>
+            <div className="selected-object compact-object-header">
+              <input type="checkbox" className="au-checkbox__input" aria-label="Object active"
+                checked={selected.visible !== false} disabled
+                title="Object activation is not yet exposed by the native document API"/>
+              <input className="au-input" aria-label="Object name" value={selected.name} readOnly
+                title="Object naming is not yet exposed by the native document API"/>
             </div>
             <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>

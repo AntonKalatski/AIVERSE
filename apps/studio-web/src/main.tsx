@@ -6,6 +6,7 @@ import './ui/studio-ui.css';
 import './styles.css';
 import './ui/editor-shell.css';
 import './ui/first-concept.css';
+import './ui/compact-shell.css';
 
 const el = document.getElementById('root');
 if (!el) throw new Error('AIVERSE Studio root not found');

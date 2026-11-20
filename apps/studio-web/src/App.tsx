@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box, ChevronRight, CirclePlay, Code2, FileCode2, FolderOpen, FolderTree,
-  Layers3, PanelBottom, Redo2, RefreshCw, Save, Settings2, Terminal,
-  Undo2, WandSparkles
+  ChevronDown, CheckCircle2, FileCode2, FolderOpen,
+  PanelBottom, Redo2, RefreshCw, Save, Settings2, Terminal, Undo2
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import {
-  closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
 } from './nestedDock';
 import type { StudioPanel } from './nestedDock';
 import type { StudioEntity, StudioProperty, StudioSnapshot } from './types';
+import HeaderGameControls from './components/HeaderGameControls';
+import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 
@@ -165,23 +166,42 @@ export default function App() {
     }, setBusy
   });
 
-  return <div className="studio">
+  return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
     <header className="titlebar">
-      <div className="wordmark"><div className="brand-logo"><Layers3 size={19}/></div>
-        <strong>AIVERSE</strong><span>STUDIO</span></div>
-      <div className="project-breadcrumb"><span>Projects</span><ChevronRight size={14}/>
-        <b>{snapshot?.project.name ?? 'Loading...'}</b>
-        <span className={snapshot?.project.dirty ? 'dirty-dot active' : 'dirty-dot'}/>
+      <div className="wordmark"><img className="engine-mark" src={engineLogo} alt=""/>
+        <strong>AIVERSE</strong></div>
+      <button className="project-breadcrumb tool-button" onClick={() => void openProject()}
+        disabled={!connected || busy} title="Open project">
+        <b>{snapshot?.project.name ?? 'Loading…'}</b><ChevronDown size={13}/>
+      </button>
+      <span className="save-indicator" title={snapshot?.project.dirty ? 'Unsaved changes' : 'Saved'}>
+        <CheckCircle2 size={14}/><span>{snapshot?.project.dirty ? 'Unsaved' : 'Saved'}</span>
+      </span>
+      <div className="header-history">
+        <button className="icon-button" aria-label="Undo" onClick={() => void historyAction('studio.undo')}
+          disabled={busy || !snapshot?.history.canUndo}><Undo2 size={16}/></button>
+        <button className="icon-button" aria-label="Redo" onClick={() => void historyAction('studio.redo')}
+          disabled={busy || !snapshot?.history.canRedo}><Redo2 size={16}/></button>
+        <button className="icon-button" aria-label="Save current map" onClick={() => void historyAction('studio.save')}
+          disabled={busy || !connected || !snapshot?.project.path || !snapshot.project.dirty}><Save size={15}/></button>
       </div>
+      <HeaderGameControls enabled={connected && !!snapshot?.project.path}
+        onPlay={()=>setDock(current=>reopenTab(current,'game','dock-center'))} onError={setError}/>
+      <div className="header-drag-space"/>
       <div className="title-actions">
-        <button className="tool-button" onClick={() => void openProject()}
-          disabled={!connected || busy} title="Open AIVERSE project">
-          <FolderOpen size={15}/> Open Project
-        </button>
-        <span className={connected ? 'mode-pill online' : 'mode-pill demo'}>
-          {connected ? 'NATIVE' : 'DEMO · NO ENGINE'}
-        </span>
-        <button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}>
+        <button className="icon-button" onClick={() => void openProject()} disabled={!connected || busy}
+          aria-label="Open Project" title="Open Project"><FolderOpen size={17}/></button>
+        <details className="nested-panels-list">
+          <summary>Panels <ChevronDown size={12}/></summary>
+          <div className="nested-panels-popover">
+            {STUDIO_PANELS.map(panel=><label key={panel}>
+              <input type="checkbox" checked={panelStack(dock,panel)!==null}
+                onChange={event=>setDock(t=>event.target.checked
+                  ?reopenTab(t,panel,STUDIO_PANEL_HOME[panel]):closeTab(t,panel))}/>
+              {STUDIO_PANEL_TITLES[panel]}</label>)}
+          </div>
+        </details>
+        <button className="icon-button" title="Refresh from engine" aria-label="Refresh from engine" onClick={() => void refresh()}>
           <RefreshCw size={15}/></button>
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
@@ -196,26 +216,6 @@ export default function App() {
       <button type="button" onClick={() => setUiScale(1)}>Reset scale to 100%</button>
       <button type="button" onClick={() => setDock(defaultDockTree())}>Reset panel layout</button>
     </section>}
-    <div className="toolbar">
-      <div className="toolbar-left"><span className="toolbar-label"><Box size={16}/> Workspace</span>
-        <span className="toolbar-divider"/>
-        <button className="tool-button selected"><FolderTree size={15}/> Level Editor</button>
-        <button className="tool-button" disabled><Code2 size={15}/> Scripting</button>
-      </div>
-      <div className="toolbar-right">
-        <button className="tool-button" onClick={() => void historyAction('studio.undo')}
-          disabled={busy || !snapshot?.history.canUndo} title="Undo"><Undo2 size={15}/> Undo</button>
-        <button className="tool-button" onClick={() => void historyAction('studio.redo')}
-          disabled={busy || !snapshot?.history.canRedo} title="Redo"><Redo2 size={15}/> Redo</button>
-        <button className="tool-button" onClick={() => void historyAction('studio.save')}
-          disabled={busy || !connected || !snapshot?.project.path || !snapshot.project.dirty}
-          title="Save current map"><Save size={15}/> Save</button>
-        <button className="tool-button" disabled title="Available after native engine integration">
-          <WandSparkles size={15}/> AI Assist</button>
-        <button className="play-button" disabled={!connected || !snapshot?.project.path} onClick={() => setDock(current => reopenTab(current,'game','dock-center'))} title="Open Game controls">
-          <CirclePlay size={16}/> Play</button>
-      </div>
-    </div>
     {!connected && <div className="demo-banner"><span>Preview mode:</span> interface and edits
       are demonstrated locally. Native C++ Workspace and GPU renderer are not connected yet.</div>}
     {error && <div role="alert" className="error-banner">{error}

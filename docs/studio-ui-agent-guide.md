@@ -1,3 +1,5 @@
+> **Latest approved shell revision (2026-11-20):** the user approved the compact lamp-editor mockup from this conversation. It supersedes the older two-row application/workspace toolbar composition below. Use ONE 44px global header with real macOS controls, the actual engine mark at 21px, AIVERSE without STUDIO, project name, Undo/Redo immediately after the project, then Play/Pause/Stop, and right-side project/Panel/settings actions. No separator between traffic lights and logo. Panel tabs belong to local docks. Inspector object header contains only activity checkbox + name; no Tag/Layer/Static, no component icon beside its checkbox. Never invent missing native entity fields or rendered assets. Implementation: `src/ui/compact-shell.css`, App.tsx and native Main.mm. The remaining cinematic palette guidance still applies.
+
 # AIVERSE Studio — AI Agent Implementation Guide
 
 **Required reading for any AI agent building or redesigning editor windows.**

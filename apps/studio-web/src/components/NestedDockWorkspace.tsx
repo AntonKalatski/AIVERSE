@@ -143,7 +143,7 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Prop
     setActionsPanel(null);
   };
   return <div className="nested-workspace-root">
-    <div className="nested-toolbar">
+    <div className={"nested-toolbar"+(actionsPanel?" nested-toolbar--actions":"")}>
       {actionsPanel && currentStackId ? <div className="nested-action-bar" role="toolbar"
           aria-label={'Panel actions for '+STUDIO_PANEL_TITLES[actionsPanel]}>
         <strong className="nested-action-title">{STUDIO_PANEL_TITLES[actionsPanel]}</strong>
