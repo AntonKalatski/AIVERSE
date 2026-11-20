@@ -5,6 +5,7 @@
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SculptGpuPickContract.h"
 #include "engine/character/vivid/SculptGpuPickShaders.h"
+#include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -336,6 +337,83 @@ void test() {
             pipe.colorFormat==aiverse::gfx::PixelFormat::RGBA8,
             "GPU ID pass must retain linear RGBA8 and hardware depth writes");
 
+    }
+    // 7AP: scene depth occluders have ZERO selectable ID. A face lying
+    // behind an opaque body mesh, hair card or floor cannot be confirmed
+    // as visible by the selected-mesh GPU pick pass.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(6);
+        for(int i=0;i<6;++i)
+            model.vertices[std::size_t(i)].pos={
+                float(i%3==1),float(i%3==2),i<3?0.f:0.6f};
+        model.indices={0,1,2,3,4,5};
+        MeshDef face,body;
+        Primitive prim;
+        prim.firstIndex=0;prim.indexCount=3;prim.material=0;
+        face.primitives.push_back(prim);
+        prim.firstIndex=3;prim.indexCount=3;
+        body.primitives.push_back(prim);
+        model.meshes.push_back(face);
+        model.meshes.push_back(body);
+        model.materials.emplace_back();
+        model.nodes.resize(2);
+        model.nodes[0].mesh=0;
+        model.nodes[1].mesh=1;
+        const std::array<mat4,2> pose{{mat4{},mat4{}}};
+        SkinnedWeightSurface selected,other;
+        req(prepareSkinnedWeightSurface(model,0,pose,selected) &&
+            prepareSkinnedWeightSurface(model,1,pose,other),
+            "GPU scene occluder fixture skin surfaces unavailable");
+        std::vector<SculptGpuIdVertex> gpu;
+        req(buildSculptGpuIdVertices(model,selected,6,{},gpu) &&
+            gpu.size()==3 && gpu[0].rgba[0]==1,
+            "opaque selected face must carry one selectable triangle ID");
+        req(appendSculptGpuMeshOccluder(model,other,gpu) &&
+            gpu.size()==6 && gpu[3].rgba[0]==0 &&
+            gpu[3].rgba[3]==0 &&
+            std::fabs(gpu[3].world.z-0.6f)<1.e-5f,
+            "other-model mesh must append zero-ID depth geometry");
+
+        model.materials[0].alpha=AlphaMode::Mask;
+        std::vector<SculptGpuIdVertex> masked;
+        req(buildSculptGpuIdVertices(model,selected,6,{},masked) &&
+            masked.size()==3 && masked[0].rgba[0]==0,
+            "alpha-masked face must not return a selectable GPU ID");
+        model.materials[0].alpha=AlphaMode::Blend;
+        req(buildSculptGpuIdVertices(model,selected,6,{},masked) &&
+            masked[0].rgba[0]==0,
+            "transparent cornea must not return a selectable GPU ID");
+        model.materials[0].alpha=AlphaMode::Opaque;
+        model.materials[0].transparent=true;
+        req(buildSculptGpuIdVertices(model,selected,6,{},masked) &&
+            masked[0].rgba[0]==0,
+            "transparent depth-after material must not return a selectable GPU ID");
+
+        const std::array<float3,3> floor{{
+            {-1.f,-1.f,1.f},{1.f,-1.f,1.f},{0,1.f,1.f}
+        }};
+        const std::array<std::uint32_t,3> faceIndices{{0,1,2}};
+        std::vector<SculptGpuIdVertex> floorData;
+        req(appendSculptGpuWorldOccluder(
+                floor,faceIndices,mat4::identity(),floorData) &&
+            floorData.size()==3 && floorData[0].rgba[0]==0,
+            "floor occluder geometry was not represented in the ID pass");
+        std::array<ModelVertex,3> hair{};
+        for(int i=0;i<3;++i)hair[std::size_t(i)].pos=floor[i];
+        std::vector<SculptGpuIdVertex> hairData;
+        req(appendSculptGpuWorldOccluder(
+                hair,faceIndices,mat4::translate({0,0,-1}),hairData) &&
+            hairData.size()==3 && hairData[0].rgba[0]==0 &&
+            std::fabs(hairData[0].world.z)<1.e-5f,
+            "animated groom must produce world-space zero-ID occluders");
+        const auto before=hairData.size();
+        const std::array<std::uint32_t,3> invalidIndices{{0,1,99}};
+        req(!appendSculptGpuWorldOccluder(
+                hair,invalidIndices,mat4::identity(),hairData) &&
+            hairData.size()>=before,
+            "bad procedural occluder must be rejected");
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
