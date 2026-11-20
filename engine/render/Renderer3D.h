@@ -365,7 +365,16 @@ public:
     // Must be called after beginScene and before drawModel. Pointer is
     // borrowed for the current scene; cleared automatically at beginScene.
     void trackModelSubmissions(const Model* model) noexcept {
+        // Late opt-in cannot reconstruct already staged model sources
+        // or encoded colour draws. Mark the current scene ineligible.
+        if(modelDrawInvocation_!=0 || modelSubmissionMainEncoded_) {
+            modelSubmissionTarget_=model;
+            modelSubmissionTruncated_=true;
+            return;
+        }
         modelSubmissionTarget_=model;
+        modelSubmitted_.clear();
+        modelSubmissionTruncated_=false;
     }
     ModelSubmissionProvenance modelSubmissionProvenance(
         const Model& model) const;
