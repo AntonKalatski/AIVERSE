@@ -109,6 +109,16 @@ public:
     bool strataVulkanGpuIndirectEnabled() const {
         return strataVulkanGpuIndirectEnabled_;
     }
+    // Independent acceptance of real native per-pass pixel/depth parity.
+    // All three default false; main-view parity alone cannot certify
+    // sun/spot/reflection selections and their different cameras.
+    void setStrataVulkanGpuAuxiliaryParityGates(
+        bool sunShadowVerified,bool spotShadowVerified,
+        bool reflectionVerified) {
+        strataVulkanGpuSunShadowParityVerified_=sunShadowVerified;
+        strataVulkanGpuSpotShadowParityVerified_=spotShadowVerified;
+        strataVulkanGpuReflectionParityVerified_=reflectionVerified;
+    }
     // Positive budget enables bounded physical index-only GPU residency per
     // source, instead of eager full Strata sidecars. Must set before load.
     // Zero means classic fully resident mode; this does not affect source VB.
@@ -276,6 +286,9 @@ private:
     bool strataVulkanGpuIndirectEnabled_=false;
     bool strataVulkanGpuSelectionParityVerified_=false;
     bool strataVulkanGpuRasterParityVerified_=false;
+    bool strataVulkanGpuSunShadowParityVerified_=false;
+    bool strataVulkanGpuSpotShadowParityVerified_=false;
+    bool strataVulkanGpuReflectionParityVerified_=false;
     size_t strataStreamingIndexBudgetBytes_=0;
     size_t strataStreamingSceneBudgetBytes_=0;
     size_t strataGlobalIndexBudgetBytes_=0;
