@@ -316,3 +316,70 @@ animation parity NOT RUN. No CI/push/main checkout changes. Next step: bring
 actual body clips and validated facial routing into this full asset, then check
 pose/retarget and material fidelity independently. Do not conflate this successful
 full-body rest-pose import with full binary body-DNA/RigLogic support.
+
+
+## Ada companion textures and hair alpha — 2026-11-20
+
+User: "И текстуры". Implementation `e1dc2a63fe65f8519505ff62a4a3163492b24f86`,
+branch `integration/motionweave-studio-facial-stage184`, parent
+`6aa5aff8037a5a6e231eb2c6aca9346bb56d20ee`.
+
+New bake_materials.cjs + test_bake_materials.cjs under tools/vivid-dna-import;
+prepare_full_character.cjs accepts optional source-map directory after material
+JSON. Companion textures were obtained from the same published Ada directory:
+https://creategamecharacters.github.io/metahuman-to-glb/characters/ada/textures/
+Read the published assets/viewer.js as a material-channel reference, did not
+execute it. Existing 16 embedded images were copied directly where applicable;
+extra maps downloaded via curl with normal certificate checking. Python urllib
+attempts failed with local CERTIFICATE_VERIFY_FAILED; no TLS verification bypass.
+External sharp@0.34.5 added to the KINGSTON tooling/package-lock.
+
+Offline conversion: cloth RGB region masks now blend authored colours, available
+micro/macro detail and AO, with linear-to-sRGB output and a mip-like prefilter for
+highly tiled micro detail. Hair/brow/lash source red coverage becomes alpha in
+neutral RGB images. Eye R/B iris masks + UV pole/radial ramps become ordinary
+colour textures; original atlas transform is removed to avoid double zoom. Skin
+cavity and companion teeth colour/normal/mouth-occlusion are attached. Final
+package has 29 images and 13 conversion/attachment provenance records. All 16
+original image payloads verified byte-identical in output. Source-map SHA256s in
+full-character/texture-source-hashes.json. No image/model asset vendored.
+
+HumanMaterials.cpp high/compact hair graphs now use sampled input alpha via
+setAlpha rather than overwriting coverage with procedural RGB's constant alpha.
+This applies to existing colour and shadow graph evaluation; no renderer edits.
+Creator adds --portrait for close inspection of the normalized full-body asset.
+README and docs/vivid.md updated. No DNA/save/API/channel ordering, gameplay,
+shared scheduler, renderer GPU ABI or default experimental settings changed.
+
+Actually executed, all under /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid:
+- Native Creator + human appearance target build PASS: full-character/build-textures.log.
+- Studio rebuild PASS: full-character/build-studio-textures.log.
+- Unified run-tests.sh --no-build --build-dir .../native --filter
+  '^vivid_human_appearance$' --ctest-jobs 1: 1/1 PASS, including material quality
+  budgets. Log full-character/test-textures.log; report
+  native/test-reports/20261120-152153-72698.
+- node test_bake_materials.cjs <tooling> <KINGSTON tmp>: PASS,
+  full-character/test-bake-final.log. Synthetic fixtures deliberately separate R
+  coverage from source A; check correct alpha, authored cloth colour/sRGB values,
+  colour roundtrip and path traversal rejection. Syntax checks and diff --check PASS.
+- Final prepare-textured-filtered.log PASS. Final asset is
+  full-character/ada-textured-filtered/manifest.json. Earlier ada-textured-final
+  has unfiltered microdetail and is NOT the preferred delivery.
+- Real Metal --smoke --still --asset ... with default and --portrait:
+  **2/2 PASS**, head/model commands=47, shadow=44, colour=44, pipelineFailures=0.
+  full-character/ada-textures-final-{full,portrait}.{log,ppm,png}.
+  Both final PNGs viewed: whole figure and close skin/eyes/hair visible, cloth
+  moire removed. Intermediate unfiltered captures also succeeded technically but
+  showed an aliased large check pattern; prefilter was added and recaptured.
+
+Limitations: offline baked cloth at finite resolution, nearest source sampling;
+no view-dependent iris refraction, procedural sclera veins, tangent-atlas hair
+anisotropy or full UE skin/scattering parity. Specular glints/card edges remain
+visible and are not presented as final production fidelity. Full engine suite,
+Vulkan/GLES, complete facial/body rig animation and Studio UI visual parity NOT
+RUN. No CI/push/main mutation. Source worktree only intentional untracked web
+symlinks remain after commits.
+
+Next: validate original UE reference lighting/materials against native results,
+then integrate actual full-body clips and RigLogic-compatible facial routing.
+Texture wiring is verified in native Metal captures; photoreal/UE parity is partial.
