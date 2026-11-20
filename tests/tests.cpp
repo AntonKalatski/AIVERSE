@@ -12832,6 +12832,114 @@ TEST(texture_cache_swap_transfers_gpu_owner_without_invalidating_handles) {
     CHECK(dev.destroyedTextures==2);
 }
 
+TEST(road_view_staged_rebuild_preserves_old_gpu_and_wheel_surface_on_failure) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsRoadView roads;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    roads.init(dev,Json(),missing);
+    CHECK(!roads.types().empty());
+    game::RoadNetwork network;
+    game::RoadNode a,b;
+    a.id=1;b.id=2;
+    a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
+    b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
+    network.nodes={a,b};
+    game::RoadEdge edge;
+    edge.id=1;edge.a=1;edge.b=2;
+    edge.typeIndex=0;
+    edge.type=roads.types()[0].id;
+    network.edges.push_back(edge);
+    roads.setNetwork(network);
+    render::RTSCamera cam;
+    cam.target={48,0,6};
+    cam.distance=160;
+    cam.pitch=1.0f;
+    const auto height=[](float,float){return 0.0f;};
+    renderer.beginScene(cam,1200,800);
+    roads.draw(renderer,height);
+    CHECK(!roads.needsRebuild());
+    CHECK(roads.batchStats().uploadedChunks>0);
+    renderer.render(gfx::PassDesc{});
+    const size_t oldChunks=roads.batchStats().uploadedChunks;
+    const uint64_t oldGeneration=roads.surfaceGeneration();
+    const size_t oldRetirements=roads.pendingGpuRetirements();
+    const float oldSurface=roads.surfaceAt(48,6,0);
+
+    network.nodes[1].p.x=Fixed::fromInt(100);
+    roads.setNetwork(network);
+    dev.failBuffer=dev.bufferAttempts+2; // staged decal/mesh upload
+    bool failed=false;
+    const size_t destroyedBefore=dev.destroyedBuffers;
+    renderer.beginScene(cam,1200,800);
+    try {roads.draw(renderer,height);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(roads.needsRebuild());
+    CHECK(roads.batchStats().uploadedChunks==oldChunks);
+    CHECK(roads.surfaceGeneration()==oldGeneration);
+    CHECK(roads.pendingGpuRetirements()==oldRetirements);
+    CHECK(roads.surfaceAt(48,6,0)==oldSurface);
+    CHECK(dev.destroyedBuffers>destroyedBefore);
+    dev.failBuffer=0;
+
+    renderer.beginScene(cam,1200,800);
+    roads.draw(renderer,height);
+    CHECK(!roads.needsRebuild());
+    CHECK(roads.surfaceGeneration()==oldGeneration+1);
+    CHECK(roads.pendingGpuRetirements()>oldRetirements);
+    renderer.render(gfx::PassDesc{});
+    roads.shutdown(dev);
+    renderer.shutdown();
+    CHECK(roads.pendingGpuRetirements()==0);
+}
+
+TEST(road_view_weather_upload_failure_keeps_previous_generation) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsRoadView roads;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    roads.init(dev,Json(),missing);
+    CHECK(!roads.types().empty());
+    game::RoadNetwork network;
+    game::RoadNode a,b;
+    a.id=1;b.id=2;
+    a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
+    b.p={Fixed::fromInt(55),Fixed::fromInt(6)};
+    network.nodes={a,b};
+    game::RoadEdge edge;
+    edge.id=1;edge.a=1;edge.b=2;
+    edge.typeIndex=0;edge.type=roads.types()[0].id;
+    network.edges.push_back(edge);
+    roads.setNetwork(network);
+    render::RTSCamera cam;
+    cam.target={30,0,6};cam.distance=100;cam.pitch=1.0f;
+    const auto height=[](float,float){return 0.0f;};
+    renderer.beginScene(cam,800,600);
+    roads.draw(renderer,height);
+    renderer.render(gfx::PassDesc{});
+    const auto pending=roads.pendingGpuRetirements();
+    const auto generation=roads.surfaceGeneration();
+    roads.setWeather(0.75f,0.85f);
+    dev.failBuffer=dev.bufferAttempts+1;
+    bool failed=false;
+    renderer.beginScene(cam,800,600);
+    try {roads.draw(renderer,height);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed); // wet film is uploaded before modifying its live handle
+    CHECK(roads.pendingGpuRetirements()==pending);
+    CHECK(roads.surfaceGeneration()==generation);
+    dev.failBuffer=0;
+    renderer.beginScene(cam,800,600);
+    roads.draw(renderer,height);
+    CHECK(roads.surfaceGeneration()==generation);
+    renderer.render(gfx::PassDesc{});
+    roads.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(road_view_partial_gpu_kit_retains_ownership_until_idle_recovery) {
     fogfaulttest::Device dev;
     game::RtsRoadView roads;
