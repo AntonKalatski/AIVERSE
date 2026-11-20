@@ -1,5 +1,6 @@
 // AIVERSE LENS Stage 20: GPU allocation fault injection without a native GPU.
 #include "engine/render/SpriteBatch.h"
+#include "modules/rts/view/Rts2DView.h"
 #include "tests/cloth/FakeDevice.h"
 #include <stdexcept>
 #include <string>
@@ -81,6 +82,30 @@ int main() {
         require(sprites.init(dev),"reinitialization after safe cleanup failed");
         require(sprites.shutdownAfterGpuIdle(),"reinitialized shutdown failed");
         require(dev.clean(),"reinitialization leaked GPU objects");
+    }
+    // Stage 22: a failed initialization retains the original device identity.
+    // A different device must never be allowed to release those GPU handles.
+    {
+        struct FailedViewDevice final : FakeDevice {
+            bool idleAllowed=false;
+            int waits=0;
+            gfx::ShaderHandle createShader(const gfx::ShaderDesc&) override { return {}; }
+            bool waitForResourceIdle() override { ++waits; return idleAllowed; }
+        } owner, foreign;
+        aiverse::game::Rules rules;
+        aiverse::game::Rts2DView view;
+        bool failed=false;
+        try { (void)view.init(owner,rules,"",{},true); }
+        catch(const std::runtime_error&) { failed=true; }
+        require(failed && owner.waits>0,"failed init did not retain recovery state");
+        bool rejected=false;
+        try { (void)view.shutdownAfterGpuIdle(foreign); }
+        catch(const std::logic_error&) { rejected=true; }
+        require(rejected,"cross-device sprite view recovery was not rejected");
+        require(foreign.waits==0,"wrong device was asked for GPU idle");
+        owner.idleAllowed=true;
+        require(view.shutdownAfterGpuIdle(owner),"correct-device retry failed");
+        require(view.shutdownAfterGpuIdle(owner),"repeated cleanup was not idempotent");
     }
     return 0;
 }
