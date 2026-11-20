@@ -703,10 +703,10 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                 const auto maskView=renderer.modelViewProvenance(*maskModel);
                 const auto maskSubmit=renderer.modelSubmissionProvenance(
                     *maskModel);
-                require(vivid::validateSculptGpuSubmittedView(
-                    maskView,maskSubmit,*maskModel,0,dev.frameSerial())
-                        .accepted,
-                    "7AZ independent GPU mask missing accepted colour draw");
+                require(vivid::sculptGpuPairedRendererViewsAccepted(
+                    staged,submitted,*model,0,
+                    maskView,maskSubmit,*maskModel,0,dev.frameSerial()),
+                    "7AZ both independent GPU actor draws must share one renderer frame");
                 const render::Renderer3D::ModelViewPrimitive* maskSelected=nullptr;
                 for(const auto& entry:maskView.primitives)
                     if(entry.meshIndex==0u) {
