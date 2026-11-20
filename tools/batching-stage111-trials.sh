@@ -8,6 +8,23 @@ if [[ ! -x "$BIN" ]]; then echo "Missing benchmark binary: $BIN" >&2; exit 2; fi
 mkdir -p "$BASE"
 OUT="$BASE/capture-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir "$OUT"
+CURRENT_LOG=""
+failure_report() {
+  local status="$?"
+  trap - ERR
+  echo "Stage 111 FAILED: exit=$status" >&2
+  echo "Capture directory: $OUT" >&2
+  if [[ -n "$CURRENT_LOG" && -f "$CURRENT_LOG" ]]; then
+    echo "==== Last 70 lines of failing native log ====" >&2
+    tail -n 70 "$CURRENT_LOG" >&2
+  fi
+  echo "utc_end=$(date -u +%Y%m%dT%H%M%SZ)" >> "$OUT/manifest.txt"
+  echo "result=FAILED" >> "$OUT/manifest.txt"
+  tar -czf "$OUT.tar.gz" -C "$BASE" "$(basename "$OUT")" || true
+  echo "Stage 111 failure archive: $OUT.tar.gz" >&2
+  exit "$status"
+}
+trap failure_report ERR
 {
  echo "stage=111"
  echo "utc_start=$(date -u +%Y%m%dT%H%M%SZ)"
@@ -21,6 +38,7 @@ mkdir "$OUT"
 for items in 2048 4096; do
  for mode in direct mdi; do
   name="$OUT/$items-$mode"
+  CURRENT_LOG="$name.log"
   echo "Stage 111: $items unique primitives; $mode"
   env -u AIVERSE_BATCH_AUTO -u AIVERSE_BATCH_AUTO_COST_TRACE \
       -u AIVERSE_BATCH_AUTO_TRACE -u AIVERSE_ICB_PROFILE \
@@ -48,6 +66,7 @@ for items in 2048 4096; do
    grep -Eq '^stress benchmark policy=direct measured_mdi_frames=0 measured_direct_frames=81 measured_mdi_submissions=0$' "$name.log"
   fi
   echo "PASS $items $mode GPU counters + CPU + parity"
+  CURRENT_LOG=""
  done
 done
 python3 tools/batching-stage111-analyze.py "$OUT"
