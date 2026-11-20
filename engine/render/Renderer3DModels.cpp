@@ -1007,7 +1007,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // If Vulkan indirect is rejected later, original items still draw
         // through the exact conventional material/instance code path.
         const bool gpuPacketSource = d.gpuIndexed.valid() ||
-                                     !d.gpuIndexedPrimitives.empty();
+                                     !d.gpuIndexedPrimitives.empty() ||
+                                     !d.gpuShadowPrimitives.empty();
         const bool shadowBatch = !gpuPacketSource && !m->geometry &&
                                  !d.nodeMaterial && d.variant < 0 &&
                                  shadowBatchCompatible(drawMesh,mats);
@@ -1044,6 +1045,20 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                     }
                 }else{
                     it.gpuIndexed=d.gpuIndexed;
+                }
+                if(!d.gpuShadowPrimitives.empty()){
+                    const uint32_t primitiveId=uint32_t(
+                        &p-drawMesh.primitives.data());
+                    for(const auto& packet:d.gpuShadowPrimitives) {
+                        if(packet.sourceMesh==uint32_t(meshIndex) &&
+                           packet.sourcePrimitive==primitiveId &&
+                           packet.sourceFirstIndex==p.firstIndex &&
+                           packet.sourceIndexCount==p.indexCount &&
+                           packet.expectedMaterial==uint32_t(p.material)){
+                            it.gpuShadowIndexed=packet;
+                            break;
+                        }
+                    }
                 }
             }
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
@@ -2678,11 +2693,29 @@ void Renderer3D::renderModels(int phase) {
         // successful indirect submission REPLACES (does not duplicate)
         // this exact original draw. No other pass is eligible.
         const ModelItem& strataItem=modelItems_[order_[i]];
-        const auto& packet=strataItem.gpuIndexed;
+        const auto& packet=phase==0 ? strataItem.gpuShadowIndexed
+                                    : strataItem.gpuIndexed;
         if(packet.valid()){
             ++modelStats_.strataGpuCandidates;
-            const bool eligible=phase==1 && geometryMainView_ &&
-                !auxiliaryModelPass_ && !drawCallDebug_ &&
+            const bool correctMain=phase==1 && geometryMainView_ &&
+                !auxiliaryModelPass_ &&
+                packet.pass==GpuIndexedPass::MainOpaque &&
+                packet.viewWidth==sceneW_ && packet.viewHeight==sceneH_ &&
+                std::memcmp(packet.viewProjection.m,viewProj_.m,
+                            sizeof(viewProj_.m))==0 &&
+                (quality_==ShadowQuality::Off ||
+                 strataItem.gpuShadowIndexed.valid());
+            const bool correctSun=phase==0 &&
+                !auxiliaryModelPass_ && quality_!=ShadowQuality::Off &&
+                packet.pass==GpuIndexedPass::SunShadow &&
+                packet.viewWidth==shadowSize_ &&
+                packet.viewHeight==shadowSize_ &&
+                std::memcmp(packet.viewProjection.m,lightViewProj_.m,
+                            sizeof(lightViewProj_.m))==0 &&
+                strataItem.castShadow &&
+                !(strataItem.flags&(kDrawNoCastShadow|kDrawUnlit));
+            const bool eligible=(correctMain || correctSun) &&
+                !drawCallDebug_ &&
                 dev_->info().backend==gfx::Backend::Vulkan &&
                 dev_->supportsMultiDrawIndirect() && dev_->gpuHealthy() &&
                 dev_->frameSerial()==packet.frameSerial &&
@@ -2725,7 +2758,6 @@ void Renderer3D::renderModels(int phase) {
                 (strataItem.flags&kDrawStatic)!=0 &&
                 !transparentItem(strataItem.flags) &&
                 strataItem.outline.w==0.f &&
-                quality_==ShadowQuality::Off &&
                 !lights.reflectionsWanted() &&
                 std::memcmp(strataItem.world.m,
                             packet.selectedWorld.m,
@@ -2736,6 +2768,7 @@ void Renderer3D::renderModels(int phase) {
                         sizeof(gfx::DrawIndexedIndirectCommand))){
                     lastItem_=&strataItem;
                     ++modelStats_.strataGpuSubmitted;
+                    if(correctSun)++modelStats_.strataGpuSunShadowSubmitted;
                     ++drawCalls_;
                     ++profile_.draws[size_t(phase)];
                     ++profile_.instances[size_t(phase)];
