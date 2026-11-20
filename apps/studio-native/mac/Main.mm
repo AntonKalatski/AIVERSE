@@ -56,6 +56,10 @@
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
+- (void)panX:(CGFloat)dx y:(CGFloat)dy;
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward;
+- (void)focusSceneSelection;
+- (void)resetSceneView;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -121,6 +125,7 @@
         [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
 - (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
+- (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
 - (void)scrollWheel:(NSEvent*)event {
     const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
     [self.host zoom:wheel];
@@ -233,6 +238,20 @@
 - (void)zoom:(CGFloat)amount {
     if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
 }
+- (void)panX:(CGFloat)dx y:(CGFloat)dy {
+    if (preview_ && std::isfinite(double(dx)) && std::isfinite(double(dy)))
+        preview_->pan(float(dx),float(dy));
+}
+- (void)moveRight:(CGFloat)right up:(CGFloat)up forward:(CGFloat)forward {
+    if (preview_ && std::isfinite(double(right)) && std::isfinite(double(up)) &&
+        std::isfinite(double(forward)))
+        preview_->move(float(right),float(up),float(forward));
+}
+- (void)focusSceneSelection {
+    if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
+        session_->workspace().project.isFps(),session_->selectedObjectId());
+}
+- (void)resetSceneView { if (preview_) preview_->resetView(); }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
@@ -473,6 +492,24 @@
                 if (!std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx)>1000 || std::abs(dy)>1000)
                     reply.set("error",aiverse::Json::string("Invalid orbit delta"));
                 else { [self orbitX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="pan" && input["dx"].isNumber() && input["dy"].isNumber()) {
+                const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
+                if (!std::isfinite(dx)||!std::isfinite(dy)||std::abs(dx)>1000||std::abs(dy)>1000)
+                    reply.set("error",aiverse::Json::string("Invalid pan delta"));
+                else { [self panX:dx y:dy]; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="move" && input["right"].isNumber() &&
+                       input["up"].isNumber() && input["forward"].isNumber()) {
+                const double right=input["right"].toDouble(),up=input["up"].toDouble(),
+                             forward=input["forward"].toDouble();
+                if (!std::isfinite(right)||!std::isfinite(up)||!std::isfinite(forward)||
+                    std::abs(right)>50||std::abs(up)>50||std::abs(forward)>50)
+                    reply.set("error",aiverse::Json::string("Invalid camera movement"));
+                else { [self moveRight:right up:up forward:forward];
+                       result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="focus") {
+                [self focusSceneSelection]; result.set("ok",aiverse::Json::fromBool(true));
+            } else if (kind=="reset") {
+                [self resetSceneView]; result.set("ok",aiverse::Json::fromBool(true));
             } else if (kind=="zoom" && input["amount"].isNumber()) {
                 const double wheel=input["amount"].toDouble();
                 if (!std::isfinite(wheel) || std::abs(wheel)>1000)
