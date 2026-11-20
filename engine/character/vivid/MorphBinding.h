@@ -1,5 +1,5 @@
-// VIVID legacy-Model facial morph adapter.
-// This is explicitly an 8-slot bridge until the extended sparse GPU deformer lands.
+// VIVID Model facial morph adapter. Routes the fixed 52 semantic channels
+// into the shared MotionWeave palette (render::kMaxMorphTargets slots).
 #pragma once
 
 #include "Face.h"

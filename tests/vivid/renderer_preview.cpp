@@ -323,9 +323,9 @@ using namespace metal;
 kernel void cs_main(device const uint* source [[buffer(0)]],
                     device uint* output [[buffer(1)]],
                     constant float4& offset [[buffer(8)]],
-                    uint vertex [[thread_position_in_grid]]) {
-    if(vertex>=3u)return;
-    const uint start=vertex*15u;
+                    uint vertexIndex [[thread_position_in_grid]]) {
+    if(vertexIndex>=3u)return;
+    const uint start=vertexIndex*15u;
     for(uint word=0u;word<15u;++word)
         output[start+word]=source[start+word];
     for(uint axis=0u;axis<3u;++axis) {

@@ -77,12 +77,34 @@ void checkApply() {
     check(!binding.apply(corrupt, pose), "nonfinite semantic channel accepted");
     check(near(pose[0].w[1], before), "partially wrote pose on invalid channel");
 }
+void checkFullPalette() {
+    auto model=sample();
+    model.meshes[0].primitives[0].morphTargets=render::kMaxMorphTargets;
+    std::vector<MorphRoute> routes;
+    FaceFrame frame{};
+    for(std::size_t i=0;i<kChannelCount;++i) {
+        routes.push_back({static_cast<Channel>(i),0,int(i),1.f});
+        frame.values[i]=float(i+1)/float(kChannelCount);
+    }
+    render::Pose pose;
+    render::bindPose(model,pose);
+    const auto binding=MorphBinding::compile(model,routes);
+    check(binding.apply(frame,pose),"52 semantic channels rejected");
+    for(std::size_t i=0;i<kChannelCount;++i)
+        check(near(pose[0].w[i],frame.values[i]),"upper semantic channel truncated");
+    routes={{Channel::JawOpen,0,render::kMaxMorphTargets-1,1.f}};
+    check(MorphBinding::compile(model,routes).apply(frame,pose),"last Model slot rejected");
+    check(near(pose[0].w[render::kMaxMorphTargets-1],frame.value(Channel::JawOpen)),
+          "last Model slot not written");
+    reject(model,{{Channel::JawOpen,0,render::kMaxMorphTargets,1.f}});
+}
 } // namespace
 
 int main() {
     try {
         checkCompile();
         checkApply();
+        checkFullPalette();
         std::cout << "VIVID morph binding PASS (compile validation, pose blending, atomic failure)\n";
         return 0;
     } catch (const std::exception& ex) {

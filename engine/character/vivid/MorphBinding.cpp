@@ -19,7 +19,7 @@ MorphBinding MorphBinding::compile(const render::Model& model, std::span<const M
         if (route.node < 0 || static_cast<std::size_t>(route.node) >= model.nodes.size())
             throw std::invalid_argument("VIVID: route node out of bounds");
         if (route.target < 0 || route.target >= render::kMaxMorphTargets)
-            throw std::invalid_argument("VIVID: target outside legacy morph palette (0..7)");
+            throw std::invalid_argument("VIVID: target outside Model morph palette");
         if (!std::isfinite(route.scale) || route.scale < 0.0f || route.scale > 4.0f)
             throw std::invalid_argument("VIVID: route scale must be finite and within [0,4]");
         const auto& node = model.nodes[static_cast<std::size_t>(route.node)];
