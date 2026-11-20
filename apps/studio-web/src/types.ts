@@ -93,7 +93,7 @@ export interface StudioParams {
   'studio.select': { id: string | null };
   'studio.setProperty': { entityId: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
-  'studio.viewportInput': { kind: 'orbit'; dx: number; dy: number } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
+  'studio.viewportInput': { kind: 'orbit' | 'pan'; dx: number; dy: number } | { kind: 'move'; right: number; up: number; forward: number } | { kind: 'focus' | 'reset' } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
   'studio.snapshot': StudioSnapshot;
