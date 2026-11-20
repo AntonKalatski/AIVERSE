@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,7 +1350,7 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
 
 ## Stage 96 — integrated main native acceptance
 
@@ -1407,3 +1407,18 @@ by the assistant. Refer to
 `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md`.
 Do not reinterpret the user's preceding failed build as a PASS; rebuild
 the focused two HDR targets and then run native Metal/GL multiview.
+
+## Stage97 Apple M3 Ultra — user-confirmed real Metal multiview
+
+The user executed the Stage97 `aiverse_hdr_scene` real Metal fixture
+and posted `GPU: Metal Apple M3 Ultra; RGBA16F=1`,
+`PRISMA multiview: PASS cameras=2 cut=1 resize=1 lifecycle=2`,
+`pipelineFailures=0` for 22 pipelines, and reported `fenced=6`,
+`quarantined=0`, `completedFence=6`. The marked multiview smoke
+thus passed on that Mac Studio checkout. This does NOT prove all six
+pending retirements were destroyed, nor does it certify no VRAM leaks,
+per-pixel ghosting/quality, GL33, Vulkan/GLES, the full CTest suite,
+or exact tested Git SHA (not included in user log). The very next
+stage is focused GL33 multiview on that same Mac worktree, capture
+explicit process exit and Git SHA, followed by consolidated acceptance.
+See `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` for the exact commands and evidence.
