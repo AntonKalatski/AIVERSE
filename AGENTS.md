@@ -1685,3 +1685,20 @@ GPU fixture now dispatches twice on atlas A and once on atlas B, then
 samples both as fragment textures for distinct pixel parity. THIS IS
 SOURCE + TEST CODE ONLY, native Vulkan/SPIR-V/validation-layer CTest
 not yet executed. Do not merge the GI PR or claim a GPU PASS.
+
+
+## GI integration Stage 61 — real Linux ARM64 Release failure and ECS test checks (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage61-release-ci-ecs-assert-fix-2026-11-20.md`.
+Real GitHub Actions CI run 44693379411 / job 136144283268 FAILED at
+`cmake --build build/linux-release` (GCC 13, -O3 -DNDEBUG -Werror);
+configure/dependencies passed, CTest and Vulkan lavapipe were SKIPPED.
+Four ECS COW/guarded tests failed compilation because their standard
+`assert()` vanished in Release, leaving unused variables/parameters.
+Converted 59 checks across `tests/ecs_cow_snapshot_test.cpp`,
+`ecs_cow_exception_test.cpp`, `ecs_cow_parallel_test.cpp` and
+`ecs_guarded_parallel_test.cpp` to always-on `AIVERSE_TEST_CHECK()`.
+Never suppress the warnings or assume a CI PASS: the fixes are committed
+on the isolated GI branch but the new build/CTest has NOT yet completed.
+No production ECS behavior changed. Preserve parallel ECS agent changes
+when integrating with current main.
