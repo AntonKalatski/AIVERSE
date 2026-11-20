@@ -15,6 +15,7 @@ import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
 import ShaderGraphPanel from './ShaderGraphPanel';
+import FacialRigPanel from './FacialRigPanel';
 import { studioSceneMode } from './sceneState';
 
 export interface StudioPanelContext {
@@ -123,9 +124,10 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
           previewMaterial={snapshot?.previewMaterial}/>;
       case 'shader_graph':
         return <ShaderGraphPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'animation':
+        return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
-      case 'animation':
         return <div className="dock-unported" role="status">
           <Box size={28}/>
           <strong>{panel.charAt(0).toUpperCase() + panel.slice(1)} editor</strong>
