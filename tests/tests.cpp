@@ -12779,6 +12779,7 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
 
     fx.init(dev,rules,missing,"");
     CHECK(fx.ownsGpuResources());
+    const bool publishedTerritory=fx.territoryOn();
     const size_t previousShaders=dev.destroyedShaders;
     const size_t previousPipes=dev.destroyedPipelines;
     const size_t previousTextures=dev.destroyedTextures;
@@ -12788,11 +12789,18 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     catch(const std::runtime_error&) {failed=true;}
     CHECK(failed);
     CHECK(fx.ownsGpuResources());  // old kit still published
+    CHECK(fx.territoryOn()==publishedTerritory);
     CHECK(dev.destroyedShaders==previousShaders+1);
     CHECK(dev.destroyedPipelines==previousPipes+1);
     CHECK(dev.destroyedTextures==previousTextures+1);
     CHECK(!fx.shutdownAfterGpuIdle(dev));
     CHECK(fx.ownsGpuResources());
+    fogfaulttest::Device foreign;
+    bool wrongDevice=false;
+    try {fx.init(foreign,rules,missing,"");}
+    catch(const std::logic_error&) {wrongDevice=true;}
+    CHECK(wrongDevice);
+    CHECK(foreign.shaderAttempts==0);
 
     dev.idleAllowed=true;
     fx.init(dev,rules,missing,"");
