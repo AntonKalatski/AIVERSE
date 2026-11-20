@@ -171,3 +171,51 @@ and shader compiler/runtime parity before tightening thresholds.
 CTest, Metal, Vulkan, GLES and screenshot pixel comparison). An agent should
 check `docs/agent-handoffs/vivid.md` Stage 7AE, then run the deferred
 single consolidated acceptance sweep and fix observed issues.
+
+
+## Material quality profiles (Stage 7AF)
+
+VIVID provides three explicit **presentation-only** material quality tiers.
+They do not change versioned `HumanDNA`, MotionWeave, gameplay ECS state or
+the imported mesh. The default is **High**, preserving existing source-level
+appearance and C++ call signatures.
+
+| Profile | Material graph | Lighting model | Target |
+|---|---|---|---|
+| Low | Constant pigment/iris-pupil/hair-color graphs; no procedural surface noise | Generic PBR for skin, eyes, cornea, hair and lashes | Mobile/low-end GPUs |
+| Medium | Reduced skin Fresnel tint, a single iris grain and hair variation | Existing dedicated Skin/Eye/Hair BRDFs | Balanced desktop/mobile |
+| High | Existing full pores/wrinkles, layered iris, dual-lobe hair graph | Existing dedicated Skin/Eye/Hair BRDFs | Desktop/high quality |
+
+Native C++ APIs (old overloads remain High by default):
+
+```cpp
+auto skin = aiverse::vivid::humanMaterial(
+    aiverse::vivid::HumanSurface::Skin, dna,
+    aiverse::vivid::HumanMaterialQuality::Low);
+auto character = aiverse::vivid::generateHumanPreview(
+    dna, aiverse::vivid::GroomQuality::Medium,
+    aiverse::vivid::HumanMaterialQuality::Low);
+auto policy = aiverse::vivid::humanMaterialBudget(
+    aiverse::vivid::HumanMaterialQuality::Low);
+```
+
+The `humanMaterialFromSource` overload retains the imported PBR texture
+slots while selecting the quality tier. To preview tiers in Creator, use
+the **Material Low / Medium / High** controls or run:
+
+```bash
+AIVERSE_VIVID_CREATOR_CAPTURE=/tmp/vivid-mobile.ppm \
+  build/vivid-onepass/aiverse_vivid_creator --smoke --material-quality low
+```
+
+The source enforces a per-graph budget (Low: at most 24 nodes; Medium:
+48; High: 128; texture samples: 0 for current VIVID-authored graphs).
+Those limits count the compiled ShaderGraph DAG, **not** the entire
+fragment shader's GPU instructions, texture samplers from imported PBR
+maps, or the true device cost. In particular the renderer's base PBR
+path still runs. GPU cost and the correctness of compiled permutations
+on Vulkan/GLES must be measured on real target devices.
+
+The final one-pass macOS acceptance now includes Low and Medium Creator
+GPU smoke captures; none has been executed for this source stage.
+See `docs/agent-handoffs/vivid.md` Stage 7AF.
