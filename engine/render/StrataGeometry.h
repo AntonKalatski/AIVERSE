@@ -31,11 +31,21 @@ struct SelectionInput {
     uint32_t errorCount = 0;
     float thresholdPixels = 1.0f;
     uint32_t maxVisibleNodes = 65536;
+    // Stage17.3 opt-in temporal LOD stability. A previously refined node
+    // coarsens only below threshold*(1-h), while a previously coarse node
+    // refines only above threshold*(1+h). Cold start uses the exact original
+    // threshold; h=0 preserves all historic selector behavior.
+    float hysteresisFraction = 0.f; // 0..0.45
+    const uint8_t* previousRefined = nullptr;
+    uint32_t previousRefinedCount = 0;
 };
 struct SelectionOutput {
     std::vector<uint32_t> nodes;
     uint32_t missingRefinements = 0;
     bool budgetExceeded = false;
+    // Populated only when hysteresisFraction>0. Refined nodes are recorded
+    // BEFORE frustum culling so offscreen/auxiliary camera state stays valid.
+    std::vector<uint8_t> refinedNodes;
 };
 
 // Flat top-down hierarchy: child indices must be greater than parent indices.
@@ -78,10 +88,18 @@ inline bool select(const std::vector<ClusterNode>& nodes,
     if (!validate(nodes, roots) || !input.errorPixels ||
         input.errorCount != nodes.size() ||
         !std::isfinite(input.thresholdPixels) ||
-        input.thresholdPixels <= 0 || input.maxVisibleNodes == 0)
+        input.thresholdPixels <= 0 || input.maxVisibleNodes == 0 ||
+        !std::isfinite(input.hysteresisFraction) ||
+        input.hysteresisFraction < 0.f ||
+        input.hysteresisFraction > .45f ||
+        ((input.previousRefined || input.previousRefinedCount) &&
+         (!input.previousRefined ||
+          input.previousRefinedCount != nodes.size())))
         return false;
     for (uint32_t root : roots)
         if (!nodes[root].resident) return false;
+    if(input.hysteresisFraction>0.f)
+        out.refinedNodes.assign(nodes.size(),0);
     std::vector<uint32_t> pending(roots.rbegin(), roots.rend());
     while (!pending.empty()) {
         const uint32_t id = pending.back();
@@ -89,8 +107,15 @@ inline bool select(const std::vector<ClusterNode>& nodes,
         const auto& node = nodes[id];
         const float error = input.errorPixels[id];
         if (!std::isfinite(error) || error < 0) return false;
+        float threshold=input.thresholdPixels;
+        if(input.hysteresisFraction>0.f && input.previousRefined){
+            const bool wasRefined=input.previousRefined[id]!=0;
+            threshold*=wasRefined
+                ? (1.f-input.hysteresisFraction)
+                : (1.f+input.hysteresisFraction);
+        }
         bool refine = node.childCount != 0 &&
-                      error > input.thresholdPixels;
+                      error > threshold;
         if (refine) {
             for (uint32_t k = 0; k < node.childCount; ++k) {
                 if (!nodes[node.firstChild + k].resident) {
@@ -109,6 +134,7 @@ inline bool select(const std::vector<ClusterNode>& nodes,
             }
         }
         if (refine) {
+            if(!out.refinedNodes.empty())out.refinedNodes[id]=1;
             for (uint32_t k = node.childCount; k > 0; --k)
                 pending.push_back(node.firstChild + k - 1);
         } else {
