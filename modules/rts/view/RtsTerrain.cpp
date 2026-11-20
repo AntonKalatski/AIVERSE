@@ -46,6 +46,7 @@ float RtsView::groundAt(const MapGrid& g, float x, float z) const {
     return ::aiverse::view::composeSurfaceHeight(x,z,
         [this,&g](float px,float pz){return heightAt(g,px,pz);},
         [this](float px,float pz,float terrain) {
+            if(stagedRoadFn_)return (*stagedRoadFn_)(px,pz,terrain);
             return roads_ && roads_->hasSurface()
                 ? roads_->surfaceAt(px,pz,terrain):terrain;
         });

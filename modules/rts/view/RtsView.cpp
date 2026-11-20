@@ -168,10 +168,10 @@ struct RtsView::PreparedSurfaceLease final {
     std::unique_ptr<render::OwnerPrepareCommit> transaction;
     bool matches(const RtsView& view,const Renderer3D& r,
                  const RtsScene& s,double seconds,
-                 const std::vector<uint8_t>* field,const MapGrid& g) const {
+                 const std::vector<uint8_t>* field,const MapGrid& g, bool advanced=false) const {
         return owner==&view && device==view.dev_ &&
             renderer==&r && scene==&s && map==&g && vision==field &&
-            time==seconds && frameStamp==view.frame_ &&
+            time==seconds && frameStamp+uint64_t(advanced)==view.frame_ &&
             terrainGeneration==view.terrainGeneration_ &&
             tiles==bool(view.twoD_ && view.twoD_->hasTiles()) &&
             roadRevision==view.roads_->stateRevision() &&
@@ -1074,7 +1074,35 @@ private:
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
     // A matching topology prewarm MUST publish before even the first
     // hierarchy/animation height query or FramePublicationEpoch::begin().
-    const auto topologyFrame=publishPendingTerrainFrame(r,input,time,vision,grid);
+    std::unique_ptr<PreparedSurfaceLease> surfaceLease;
+    std::optional<bool> topologyFrame;
+    if(cameraPreparedCapture_ && pendingSurfaceLease_ && pendingSurfaceLease_->topology) {
+        if(!pendingSurfaceLease_->matches(*this,r,input,time,vision,grid)) {
+            pendingSurfaceLease_.reset();++surfacePrewarmStats_.discarded;
+            if(!dev_ || !prepareTerrainAtomicFrame(*dev_,grid,r,input,time,vision))
+                throw std::logic_error("LENS: topology source cannot be prepared atomically");
+        }
+        surfaceLease=std::move(pendingSurfaceLease_);
+    } else if(!cameraPreparedCapture_) {
+        topologyFrame=publishPendingTerrainFrame(r,input,time,vision,grid);
+    }
+    // The temporary ground source is visible only during synchronous private
+    // frame preparation; published queries recover their old source on abort.
+    const std::function<float(float,float)> candidateHeight=[&](float x,float z) {
+        return terrain_.preparedSurfaceAt(surfaceLease->topologyCandidate,grid,x,z);
+    };
+    const std::function<float(float,float,float)> candidateRoad=[&](float x,float z,float h) {
+        return roads_->candidateSurfaceAt(surfaceLease->roadCandidate,x,z,h);
+    };
+    struct RestoreSources {
+        RtsView& view;
+        ~RestoreSources(){view.stagedHeightFn_=nullptr;view.stagedHeightGrid_=nullptr;
+            view.stagedRoadFn_=nullptr;}
+    } restoreSources{*this};
+    if(surfaceLease) {
+        stagedHeightGrid_=&grid;stagedHeightFn_=&candidateHeight;
+        stagedRoadFn_=&candidateRoad;
+    }
     // Resource retirement is driven by the explicit owner frame hook,
     // never by this draw function (which can be called several times).
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
@@ -1205,7 +1233,18 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
     // Primary and optional scene-aware warmup reuse the same atomic
     // surface-owner transaction; only draw publishes a complete camera epoch.
-    const bool fogFieldChanged=topologyFrame?*topologyFrame:
+    bool fogFieldChanged=false;
+    if(cameraPreparedCapture_) {
+        if(!surfaceLease) {
+            surfaceLease=std::move(pendingSurfaceLease_);
+            if(surfaceLease && !surfaceLease->matches(*this,r,s,time,vision,grid)) {
+                surfaceLease.reset();++surfacePrewarmStats_.discarded;
+            }
+            if(!surfaceLease)surfaceLease=stageSurfaceFrame(r,s,time,vision,grid);
+        }
+        stagedRoadFn_=&candidateRoad;
+        fogFieldChanged=surfaceLease->fogUpdate && surfaceLease->fogUpdate->changed();
+    }else fogFieldChanged=topologyFrame?*topologyFrame:
         publishSurfaceFrame(r,s,time,vision,grid);
     const bool tiles=twoD_ && twoD_->hasTiles();
     const auto afterSetup = std::chrono::steady_clock::now();
@@ -1224,13 +1263,20 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     bars_.assign(s.objects.size(), {});
     layers.append("surface",LayerPhase::Geometry,[&] {
-        if(hasTerrain_ && !tiles)
-            terrain_.draw(r,grid,vision,groundFx_.drawsDig());
+        if(surfaceLease && surfaceLease->topology)
+            terrain_.drawMapCandidate(surfaceLease->topologyCandidate,r,grid,vision);
+        else if(hasTerrain_ && !tiles) {
+            if(surfaceLease)terrain_.drawCandidate(surfaceLease->terrainCandidate,r,grid,vision);
+            else terrain_.draw(r,grid,vision,groundFx_.drawsDig());
+        }
         if(hasTerrain_ && tiles)terrain_.drawWater(r);
         publication.mark(Epoch::Terrain);
     });
     layers.append("surface effects",LayerPhase::Effects,[&] {
-        if(!tiles)groundFx_.drawPrepared(r,s,time,vision,grid,*this);
+        if(!tiles) {
+            if(surfaceLease)groundFx_.drawCandidate(surfaceLease->groundCandidate,r,s,time,vision,grid,*this);
+            else groundFx_.drawPrepared(r,s,time,vision,grid,*this);
+        }
         publication.mark(Epoch::Ground);
     });
     // External host-only layer providers. The engine View doesn't know
@@ -1238,7 +1284,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     ::aiverse::view::ViewLayerProviders surfaceProviders;
     surfaceProviders.add("path surface",[&](auto& queue,const auto&){
         queue.append("paths",LayerPhase::Geometry,[&]{
-            if(roads_->active() || roads_->needsRebuild())
+            if(surfaceLease)roads_->drawCandidate(surfaceLease->roadCandidate,r);
+            else if(roads_->active() || roads_->needsRebuild())
                 roads_->draw(r,[this,&grid](float x,float z){
                     return heightAt(grid,x,z);
                 });
@@ -1247,7 +1294,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     surfaceProviders.add("shore surface",[&](auto& queue,const auto&){
         queue.append("shorelines",LayerPhase::Geometry,[&]{
-            if(shores_->active())
+            if(surfaceLease)shores_->drawCandidate(surfaceLease->shoreCandidate,r);
+            else if(shores_->active())
                 shores_->draw(r,[this,&grid](float x,float z){
                     return heightAt(grid,x,z);
                 },terrain_.look().waterOffset,grid.w,grid.h);
@@ -1546,8 +1594,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             if(vision && !vision->empty()) {
                 const bool low=r.shadowQuality()==ShadowQuality::Off ||
                     r.shadowQuality()==ShadowQuality::Low;
-                if(hasTerrain_ && !tiles && terrain_.shaderFog())
-                    terrain_.setFog(&fog_.field(),fog_.look(),fogFieldChanged);
+                if(hasTerrain_ && !tiles && terrain_.shaderFog()) {
+                    if(!surfaceLease)terrain_.setFog(&fog_.field(),fog_.look(),fogFieldChanged);
+                }else if(surfaceLease)
+                    fog_.drawCandidate(surfaceLease->fogSheet.get(),surfaceLease->fogUpdate.get(),r,time,low);
                 else fog_.draw(r,time,low);
             }
             publication.mark(Epoch::Fog);
@@ -1568,6 +1618,18 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     ::aiverse::view::ViewLayerQueue latePasses;
     viewProviders.collect(latePasses,{time,dt,frame_});
     latePasses.flush();
+    if(surfaceLease) {
+        if(!surfaceLease->matches(*this,r,s,time,vision,grid,true) || !publication.ready())
+            throw std::logic_error("LENS: source changed during private frame preparation");
+        if(!surfaceLease->transaction->publish())
+            throw std::logic_error("LENS: surface cohort was not prepared");
+        ++surfacePrewarmStats_.consumed;
+        if(surfaceLease->topology) {
+            hasTerrain_=true;fogMeshDirty_=false;fieldView_.invalidate();
+        }
+        if(hasTerrain_ && !tiles && terrain_.shaderFog())
+            terrain_.setFog(&fog_.field(),fog_.look(),surfaceLease->fogChanged);
+    }
     if(!publication.finish())
         throw std::logic_error("RtsView: incomplete visual frame publication");
     if(animationLease)animationLease->commit();

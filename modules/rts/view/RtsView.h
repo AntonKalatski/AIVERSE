@@ -986,6 +986,7 @@ private:
     // RtsGroundFx::prepareMapSceneFrame call, including its throw path.
     const MapGrid* stagedHeightGrid_ = nullptr;
     const std::function<float(float,float)>* stagedHeightFn_ = nullptr;
+    const std::function<float(float,float,float)>* stagedRoadFn_ = nullptr;
     render::mat4 viewProj_;
     render::float3 camPos_;
     // planets

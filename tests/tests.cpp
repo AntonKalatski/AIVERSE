@@ -12628,6 +12628,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
     game::MapGrid grid;grid.init(4,4);
     for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
     render::RTSCamera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
     render::CameraModelSnapshot snapshot;
     view.setCameraPreparedCapture(&snapshot);
@@ -12654,6 +12655,29 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     view.draw(renderer,scene,1.1,nullptr,grid);
     CHECK(view.publishedVisualFrame().ready());
     CHECK(view.publishedVisualFrame().sourceFrame==first.sourceFrame+1);
+    renderer.render(gfx::PassDesc{});
+    // A topology prewarm must also remain private through late Overlay failure.
+    game::MapGrid replacement;replacement.init(6,5);
+    for(auto& f:replacement.flags)f=game::kCellGround;
+    replacement.corner.assign(size_t(7*6),32);
+    std::vector<uint8_t> visibility(30,2);
+    renderer.beginScene(camera,320,240);
+    CHECK(view.prepareTerrainAtomicFrame(dev,replacement,renderer,scene,1.2,&visibility));
+    CHECK(view.surfacePresentationMapReady(grid));
+    dev.failOverlays=true;failed=false;
+    try {view.draw(renderer,scene,1.2,&visibility,replacement);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(view.surfacePresentationMapReady(grid));
+    CHECK(!view.surfacePresentationMapReady(replacement));
+    CHECK(std::fabs(view.heightAt(grid,2,2))<1e-4f);
+    dev.failOverlays=false;
+    renderer.beginScene(camera,320,240);
+    CHECK(view.prepareTerrainAtomicFrame(dev,replacement,renderer,scene,1.2,&visibility));
+    view.draw(renderer,scene,1.2,&visibility,replacement);
+    CHECK(view.surfacePresentationMapReady(replacement));
+    CHECK(std::fabs(view.heightAt(replacement,2,2)-2.f)<1e-4f);
+    CHECK(view.publishedVisualFrame().sourceFrame==first.sourceFrame+2);
     renderer.render(gfx::PassDesc{});
     view.setCameraPreparedCapture(nullptr);view.shutdown(dev);renderer.shutdown();
 }

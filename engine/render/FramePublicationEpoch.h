@@ -64,6 +64,10 @@ public:
                 throw std::logic_error("FramePublicationEpoch: owner not required");
             owner_->attempt_.completed|=owners;
         }
+        bool ready() const noexcept {
+            return owner_ && owner_->active_ && owner_->attempt_.id==id_ &&
+                (owner_->attempt_.completed & owner_->attempt_.required)==owner_->attempt_.required;
+        }
         bool finish() noexcept {
             if(!owner_ || !owner_->active_ || owner_->attempt_.id!=id_)
                 return false;
