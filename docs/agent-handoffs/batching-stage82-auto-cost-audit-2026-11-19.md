@@ -1005,3 +1005,26 @@ AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
 ```
 
 Send summary and **one slow process's full `mdi-N-frames.csv` if found**. If no slow process, report the negative result; the intermittent issue remains unproven during that batch. Next investigate whether slow-run Mach thread CPU doubles together with wall and backend CPU: if it does, pursue Instruments CPU Time Profiler, CPU frequency/thermal/driver CPU cost; if wall alone doubles, pursue blocking/descheduling and System Trace. Do not modify AUTO thresholds or force-enable MDI until repeatable cross-platform perf and pixel parity are verified. Keep Draft PR #39.
+
+
+---
+
+## Stage 101 — three new uploads are the earlier Stage 98 fast timelines, not evidence of a slow Stage 100 capture (2026-11-20)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Type:** documentation/evidence-only. No renderer/Metal RHI, AUTO, benchmark implementation or CI modifications.
+
+The user uploaded `mdi-1-frames(2).csv`, `mdi-2-frames(2).csv`, `mdi-3-frames(2).csv`. The assistant loaded all three exact files with Python and verified each has 106 rows (frame 90..195), 14 columns including Mach thread and process CPU. For each measured frame 115..195, `mdi_submissions=10` and `mdi_commands=2048` (81 frames per file). All three contain **zero** measured frames with `render_cpu_ms>1.2` ms.
+
+| Run | Wall median ms | Mach thread median ms | Metal backend median ms | Slow frames |
+|---|---:|---:|---:|---:|
+| mdi-1 | 0.79654 | 0.786 | 0.4542 | 0/81 |
+| mdi-2 | 0.81258 | 0.802 | 0.4633 | 0/81 |
+| mdi-3 | 0.86083 | 0.850 | 0.4983 | 0/81 |
+
+These medians and the 14-column schema match the **previously analyzed Stage 98 three fast runs**, not a freshly reproduced slow Stage 100 run. Without new log/runner `summary.csv` metadata we should not assert that the bounded Stage100 runner was actually executed; merely re-uploading copies of these three CSVs adds no new slow-frame evidence.
+
+**Important:** the uploaded raw `render_offcpu_ms` column uses the now-rejected POSIX thread CPU time clock (~0.02ms) rather than validated Mach. Ignore that raw column; the Stage99 Python analyzer recomputes offcpu using `max(0, wall - Mach)` if the Mach column exists, yielding medians about 0.0105/0.0101/0.0114ms in the existing Stage99 output.
+
+**Verification truth:** 3 CSV files read and parsed directly, numbers cross-checked against prior Stage98/99 owner evidence. **Not verified:** a new Stage100 native run, native build in this turn, slow-process system trace, GPU execution timing or performance stability at other loads. Existing Stage100 script remains the next diagnostic mechanism. Keep PR #39 Draft.
+
+**Next required artifact:** run the bounded Stage100 script using the already-built Stage98 fixture and share `build/batching-stage98/slow-capture/summary.csv`; if `slow_frames>=10` in any process, share that run's `mdi-N-frames.csv`. Do not infer cause from three old fast runs.
