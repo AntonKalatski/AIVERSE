@@ -1,0 +1,257 @@
+// AIVERSE MotionWeave — scene publication transaction for cosmetic ECS.
+// Genre-neutral: no SceneOwner, gameplay World, simulation or network writes.
+// A native scene loader calls replaceScene() ONLY after its commit succeeds
+// at the presentation owner barrier, and unload() at its unload barrier.
+#pragma once
+#include "AnimatedSceneAttachmentSources.h"
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <set>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace aiverse::view {
+
+class MotionWeaveScenePublication final {
+public:
+    using Snapshot=AppearanceAssetRegistry::Snapshot;
+    using Resolver=EcsAttachmentScene::Resolver;
+    using ChildSources=AnimatedSceneAttachmentSources;
+    using StaticPrepared=ImportedAttachmentAuthoring::Prepared;
+
+    // One committed logical object in the host's scene manifest.
+    // objectKey is stable across reload/rollback, e.g. decimal SceneObjectAsset::id.
+    // A caller must publish Model/Graph snapshots in the SAME cache before
+    // calling this. The resolver is used only during this synchronous call.
+    struct Object {
+        std::string objectKey;
+        AttachmentLayout layout;
+        Snapshot parent;
+        Resolver resolveStaticChild;
+        std::map<std::string,Snapshot> animatedChildren;
+    };
+    struct Statistics {
+        size_t objects=0;
+        size_t animatedChildren=0;
+        size_t playbackQueued=0;
+        size_t playbackDeclined=0;
+        ChildSources::Statistics initialGraph;
+    };
+
+    MotionWeaveScenePublication()=default;
+    MotionWeaveScenePublication(const MotionWeaveScenePublication&)=delete;
+    MotionWeaveScenePublication& operator=(const MotionWeaveScenePublication&)=delete;
+
+    // COMPLETE visual scene publication. All EcsAttachmentScene children and
+    // independent Graph players are built in a private candidate World.
+    // On any failure, previously visible scenes and player clocks remain.
+    // No authoritative SceneLoadCoordinator World or Entity is mutated.
+    // Call only at the owner pre-render barrier with old/new resource
+    // providers alive. Never use while any Prepared draw is still borrowed.
+    bool replaceScene(uint64_t sceneId,std::span<const Object> objects,
+                      const render::ModelResourceCache& cache,
+                      Statistics& stats,std::string* error=nullptr) {
+        if(error)error->clear();
+        try {
+            if(!sceneId)
+                throw std::invalid_argument("presentation scene ID must be nonzero");
+            auto next=std::make_unique<Generation>();
+            std::set<std::string> keys;
+            for(const auto& object:objects) {
+                if(object.objectKey.empty() || object.objectKey.size()>256 ||
+                   !keys.insert(object.objectKey).second)
+                    throw std::invalid_argument(
+                        "duplicate, empty or oversized presentation object key");
+                if(!object.parent || !object.parent->model ||
+                   !object.parent->modelPublicationGeneration)
+                    throw std::invalid_argument(
+                        "presentation source Model is not published");
+                if(!object.resolveStaticChild)
+                    throw std::invalid_argument(
+                        "presentation static child resolver is missing");
+
+                // Validate complete authored document, including disabled
+                // child identities, before adding ANY ECS children for this
+                // object. Unexpected supplied animated snapshots are errors.
+                const Json authored=AttachmentLayoutCodec::write(object.layout);
+                std::set<std::string> animatedKeys;
+                for(const auto& child:object.layout.attachments) {
+                    if(!child.enabled || !child.animated)continue;
+                    const auto it=object.animatedChildren.find(child.id);
+                    if(it==object.animatedChildren.end() ||
+                       !it->second || !it->second->model ||
+                       !it->second->modelPublicationGeneration ||
+                       !it->second->graph ||
+                       it->second->graph->model()!=it->second->model)
+                        throw std::invalid_argument(
+                            "missing/mismatched published independent child Graph");
+                    animatedKeys.insert(child.id);
+                }
+                if(animatedKeys.size()!=object.animatedChildren.size())
+                    throw std::invalid_argument(
+                        "unexpected independent child Graph snapshot");
+
+                Entity visualParent=next->presentation.create();
+                std::string reason;
+                if(!next->attachments.activate(
+                       {sceneId,object.objectKey},visualParent,authored,
+                       object.parent,cache,object.resolveStaticChild,&reason))
+                    throw std::runtime_error(
+                        "scene visual attachment publish: "+reason);
+                next->parents.emplace(object.objectKey,object.parent);
+                next->parentEntities.emplace(object.objectKey,visualParent);
+                next->childSnapshots.emplace(
+                    object.objectKey,object.animatedChildren);
+            }
+
+            // Capture portable Graph clocks from the currently presented
+            // scene BEFORE destroying its Graph players. Only matching
+            // scene/object/stable child ID and copied rig hierarchy qualify.
+            size_t playbackQueued=0,playbackDeclined=0;
+            if(const auto previous=scenes_.find(sceneId);
+               previous!=scenes_.end()) {
+                for(const auto& [key,children]:next->childSnapshots)
+                    for(const auto& [childId,appearance]:children) {
+                        const ChildSources::Key child{sceneId,key,childId};
+                        const auto snapshot=
+                            previous->second->animated.capturePlayback(child);
+                        if(!snapshot) {++playbackDeclined;continue;}
+                        if(next->animated.queuePlayback(
+                                child,*snapshot,*appearance->model))
+                            ++playbackQueued;
+                        else ++playbackDeclined;
+                    }
+            }
+            std::vector<ChildSources::Input> inputs=collectInputs(
+                sceneId,*next);
+            ChildSources::Statistics initial{};
+            std::string reason;
+            if(!next->animated.sync(
+                   next->attachments,cache,inputs,0.f,initial,&reason))
+                throw std::runtime_error(
+                    "independent child Graph publication: "+reason);
+
+            // All compilation, animation preflight and entity construction
+            // succeeded. Map allocation happens BEFORE replacing the last
+            // good generation. Assignment of unique_ptr cannot throw.
+            auto [position,inserted]=scenes_.try_emplace(sceneId);
+            (void)inserted;
+            position->second=std::move(next);
+            stats={position->second->parents.size(),inputs.size(),
+                   playbackQueued,playbackDeclined,initial};
+            return true;
+        }catch(const std::exception& ex) {
+            if(error)*error=ex.what();
+            return false;
+        }
+    }
+
+    // Exactly ONE presentation graph step per scene/frame, before renderer
+    // submission. Call on the same owner thread as replaceScene().
+    bool sync(uint64_t sceneId,const render::ModelResourceCache& cache,
+              float dt,ChildSources::Statistics& stats,
+              std::string* error=nullptr) {
+        if(error)error->clear();
+        const auto it=scenes_.find(sceneId);
+        if(it==scenes_.end()) {
+            if(error)*error="presentation scene not published";
+            return false;
+        }
+        const auto inputs=collectInputs(sceneId,*it->second);
+        return it->second->animated.sync(
+            it->second->attachments,cache,inputs,dt,stats,error);
+    }
+
+    // Prepare the existing host-precomputed parent pose, without advancing
+    // an AnimationGraph. The caller sets draw.pose and draw.nodeWorld from
+    // its ONE parent animation owner and retains the move-only Prepared
+    // through Renderer3D::render().
+    bool prepareParent(uint64_t sceneId,const std::string& objectKey,
+                       const render::ModelResourceCache& cache,
+                       const render::mat4& world,StaticPrepared& out,
+                       std::string* error=nullptr) const {
+        if(error)error->clear();
+        const auto it=scenes_.find(sceneId);
+        if(it==scenes_.end()) {
+            if(error)*error="presentation scene not published";
+            return false;
+        }
+        return it->second->attachments.prepare(
+            sceneId,objectKey,cache,world,out,error);
+    }
+
+    // The child pose is already evaluated by sync(), never by the render
+    // View. The returned Object is graphless and owns frame-scoped leases.
+    bool prepareChild(uint64_t sceneId,const std::string& objectKey,
+                      const std::string& childId,
+                      const render::ModelResourceCache& cache,
+                      const render::ModelDraw& parentDraw,
+                      std::span<const render::mat4> parentNodeMatrices,
+                      ChildSources::Prepared& out,
+                      std::string* error=nullptr) const {
+        if(error)error->clear();
+        const auto it=scenes_.find(sceneId);
+        if(it==scenes_.end()) {
+            if(error)*error="presentation scene not published";
+            return false;
+        }
+        return it->second->animated.prepare(
+            it->second->attachments,cache,{sceneId,objectKey,childId},
+            parentDraw,parentNodeMatrices,out,error);
+    }
+
+    // Authoritative scene unload/replace MUST invoke this on the same
+    // owner barrier after the last CPU Prepared draw, but BEFORE old
+    // Model/Graph CPU owners are retired. The asset host separately proves
+    // GPU completion; CPU ModelReadLease is NOT a GPU fence.
+    bool unload(uint64_t sceneId) {
+        return scenes_.erase(sceneId)!=0;
+    }
+    void clear() {scenes_.clear();}
+    bool contains(uint64_t sceneId) const noexcept {
+        return scenes_.find(sceneId)!=scenes_.end();
+    }
+    size_t sceneCount() const noexcept{return scenes_.size();}
+    Json saveScene(uint64_t sceneId) const {
+        const auto it=scenes_.find(sceneId);
+        if(it==scenes_.end())
+            throw std::out_of_range("presentation scene not published");
+        return it->second->attachments.saveScene(sceneId);
+    }
+
+private:
+    struct Generation {
+        World presentation;
+        SceneAttachmentHost attachments;
+        ChildSources animated;
+        std::map<std::string,Snapshot> parents;
+        std::map<std::string,Entity> parentEntities;
+        std::map<std::string,std::map<std::string,Snapshot>> childSnapshots;
+        Generation():attachments(presentation){}
+        Generation(const Generation&)=delete;
+        Generation& operator=(const Generation&)=delete;
+        ~Generation() {
+            // Detach all Graph players FIRST, before ECS attachment children
+            // and appearance snapshots. No borrowed rig outlives this World.
+            animated.clear();
+            attachments.clear();
+        }
+    };
+    static std::vector<ChildSources::Input> collectInputs(
+            uint64_t sceneId,const Generation& scene) {
+        std::vector<ChildSources::Input> result;
+        for(const auto& [objectKey,children]:scene.childSnapshots)
+            for(const auto& [childId,appearance]:children)
+                result.push_back({{sceneId,objectKey,childId},
+                                  appearance,appearance->parameters});
+        return result;
+    }
+    std::map<uint64_t,std::unique_ptr<Generation>> scenes_;
+};
+
+} // namespace aiverse::view
