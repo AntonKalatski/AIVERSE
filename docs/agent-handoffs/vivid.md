@@ -2550,3 +2550,52 @@ Next: locate usable Unreal installation or skeletal-animation export, then
 validate retargeting with garment rigs and independent face/body clips. Keep
 all project copies/builds/caches/captures on KINGSTON. Current procedural idle
 is not MetaHuman-quality parity; eyelash alpha and T-pose shirt defects remain.
+
+
+## 2026-11-20 — Idle phase, motion recordings and actual eyelash alpha fix
+
+Implementation `cdf6db13da6e401ec3bbbdc1402192f4c94e6ca7`, branch integration/motionweave-studio-facial-stage184.
+Paths: HumanPreviewAnimation.h, render/Animation.h/.cpp, StudioFacialGpuPreview,
+StudioHumanLookSessionTests, vivid-creator, vivid-dna-import baker/test/docs;
+Studio stage90 and docs/qa/vivid-motion-review-2026-11-20.md contain evidence.
+Three-spine breathing, gentle resting arms, named conjugate gaze and smooth
+asymmetric blink envelope. Existing four poses; 0.65s transitions preserve phase.
+New optional Animator::Play.startTime defaults0, no existing caller behavior or
+save/bridge format change. IMPORTANT first attempt used seek after play, which
+clears the fade; test caught it. Final uses initial time during play, retaining
+outgoing track. No new production scheduler; Creator offline sequence pauses
+MotionWeave and samples a diagnostic pose via the shared Animator helper.
+--preview-sequence N writes 24fps fixed-step frames (1..720), path is directory;
+requires --smoke --preview-pose, no --preview-time. Not FPS/UI parity evidence.
+
+Actual source eyelash PNG has RGB entirely255 and meaningful alpha:935962 zero,
+76 full, remainder fractional. Baker now infers A only for white-RGB meaningful-A
+lash exports; explicit metadata wins; hair retains R. Node fixture covers both.
+New external Ada-Motion-Review GLB has repaired lashes, original face-edited GLB
+unchanged. Working content/Ada/baseColor_8.png repaired with original backed up
+under full-character/motion-review/source-texture-backup. Other baked packages
+still need rebake. No third-party assets added to Git.
+
+All builds/artifacts on /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid.
+CMake aiverse_studio, aiverse_vivid_creator, aiverse_studio_human_appearance_session_tests,
+aiverse_studio_facial_gpu_tests PASS (build-motion-phase-fix.log).
+First tests FAIL1/2 due seek cancelling fade (test-motion-review.log), corrected
+run PASS2/2 (test-motion-phase-fix.log), report native/test-reports/20261120-174042-42412.
+Node test_bake_materials.cjs PASS; git diff --check PASS. Web NOT RUN (no frontend
+changes); Studio manual UI, other platforms, real-time pacing/complete orbit NOT RUN.
+No CI/push. Existing compiler warnings. First body/ sequence is pre-fix, not final.
+
+Final native Metal body-final/:360 distinct frames→body-poses.mp4 15s, face/:168
+frames→face-idle.mp4 7s, both1500x920@24fps. AVFoundation encoding successful.
+full-character/motion-review/gallery.html includes videos and inspected native
+PNGs. Source frames at open/two blinks, relaxed endpoints/intermediate/A/T inspected.
+No pipelineFailures, actor=MODEL_MORPH. Hair remains attached in inspected views
+but coarse card silhouette FAIL; lashes now transparent and blink with eyelids,
+fine edges still imperfect; gray eye artifacts FAIL; T shoulder skin poke-through
+FAIL, relaxed/A samples acceptable. Not full MetaHuman Creator quality parity.
+
+Next: author genuine shirt visibility masks/correctives for shoulder skin, isolate
+iris/eye-shell shading and hair coverage/filtering; then orbit/continuous UI checks.
+Do not hide entire body or mark existing synthetic BodyVisibility test patch as
+artist-approved clothing coverage. Root/legs stay bind: no weight-transfer/foot IK,
+cloth collision or physically simulated hair was added. Preserve source backups.
