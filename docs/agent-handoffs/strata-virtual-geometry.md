@@ -2918,3 +2918,156 @@ Legacy fallback as authoritative.
 | Shadow/reflection/material GPU rendering parity | NOT IMPLEMENTED | N/A | Stage 16.3/17 |
 | Vulkan/GLES3 final hardware acceptance | NOT RUN | N/A | Combined final test |
 
+
+
+---
+
+## Stage 16.3 — exclusive Renderer3D Vulkan GPU-indirect routing, one rigid material (2026-11-20)
+
+**Repository/branch:** `chromealex/AIVERSE`, `feature/strata-virtual-geometry`.
+**Status:** Stage 16.3 narrow production-path code and regression fixture
+authored and COMMITTED. **No CMake, CTest, real Metal/Vulkan/GLES3
+renderer run, screenshots or GPU performance tests were executed.**
+Do NOT claim production pixel parity passed. Do NOT merge to `main`.
+
+### What has been implemented
+
+1. **Single existing draw owner, no double geometry**:
+   `engine/render/Renderer3D.h` introduces POD
+   `GpuIndexedSelectionPacket` appended to `ModelDraw` (preserves
+   prior positional aggregate field order), with one GPU-author
+   `BufferType::Indirect` handle, source VB/IB, selected instance
+   world matrix, RHI frame serial, original model geometry/material
+   revisions, source primitive index span/baseVertex and command
+   capacity. It is COPIED BY VALUE into a `Renderer3D::ModelItem`
+   only for an unbatched source primitive, never a pointer into
+   `GeometryScene`. ModelRenderStats adds submitted/rejected/fallback
+   counters.
+2. **Actual main-view raster consumption**:
+   `engine/render/Renderer3DModels.cpp` `renderModels(phase)`
+   checks the packet only during the main camera's phase-1 opaque
+   pass, with Vulkan + MDI support and healthy RHI, exact current
+   frame/Model source VB/IB/revisions, same original primitive
+   range and pooled base vertex, bitwise-identical source-to-world
+   transform, rigid static opaque material, no morph/skin, no
+   baked GI/material palette/author LOD/cutaway/outline/alpha,
+   no auxiliary reflection pass, no sun-shadow rendering, and
+   no competing GPU model command path. It first calls the
+   **existing** `drawModelBatch(...,submit=false)` to bind the
+   original model graphics pipeline, lighting/material textures
+   and per-instance U0, then consumes all bounded GPU-authored
+   command slots through the existing Vulkan
+   `Device::drawIndexedIndirect(...)`. On successful RHI
+   submission it increments STRATA GPU counters and SKIPS the
+   original indexed draw. On any rejection or backend failure
+   it retains the same model item in normal `renderModels`
+   sorting/Legacy/CPU-MDI fallback. No independent graphics pass,
+   shader, material state, VB or alternative draw list is created.
+3. **Scene-level prepare once before Renderer3D submission**:
+   `GeometryScene::tryStrataVulkanGpuDraw` builds one immutable
+   GPU-visible STRATA selection for the camera, using
+   `GpuMetadataScene`'s pooled source index lease and the exact
+   original source Node 0 bind transform. Only one scene instance
+   of the source is admitted. It runs the independent Stage 16.2
+   `prepareVulkanIndirectContract` and
+   `validateVulkanIndirectSubmission`, checks RHI frame serial,
+   and annotates the **same** `ModelDraw`. If GPU packet is ready
+   it does NOT also produce a portable CPU STRATA alias.
+   If dispatch fails or view/contract is unsuitable, the existing
+   portable/Legacy branch runs unchanged. Source remains the
+   original Model; its RHI pooled index sidecar and compute buffer
+   live until scene shutdown AFTER the draw.
+4. **EXPLICIT verification gates, default OFF**:
+   `GeometryScene::setStrataVulkanGpuIndirectEnabled(true)` opts in.
+   The independent switches
+   `setStrataVulkanGpuParityGates(selectionVerified,rasterVerified)`
+   must *both* be true, in addition to
+   `setStrataStagingEnabled(true)`,
+   `setStrataGpuMetadataEnabled(true)`, and
+   `setStrataGpuCullingEnabled(true)`, before any source can
+   qualify. This uses the existing
+   `chooseExclusiveRenderRoute(RenderRouteGate)`. The parity
+   switches are MANUAL declarations and do NOT automatically
+   validate that the executable/source revision actually passed
+   native A/B tests. Until the owner's real pixel tests succeed,
+   leave them false in production.
+5. **Bounded initial scope and correct fallback**:
+   one pooled source, one opaque material, one mesh/primitive/node,
+   one instance/world transform and **main camera only**.
+   `StrataVulkanIndirectContract.cpp` additionally rejects
+   authored shadow-batched primitives, extra source meshes/materials
+   and a node with a parent. With sun shadows or planar water
+   reflections active, the GPU route does NOT engage — Legacy or
+   portable selection draws the COMPLETE usual passes instead.
+   GLES3/GL33/Metal are unchanged; Vulkan GPU path remains
+   default OFF and never steals their existing render commands.
+   Full multi-material/instance shadow/reflection GPU raster is
+   still a distinct future step after verified parity.
+6. **Statistics**:
+   `GeometryScene::Stats` adds
+   `strataVulkanGpuCandidates/Prepared/Declined`;
+   `ModelRenderStats` separately counts attempted/submitted/
+   rejected/fallback GPU RHI draw packets. A GPU-culling result
+   contains an unknown triangle count until asynchronous readback;
+   the renderer intentionally does not invent that value.
+
+### Exact modified files and commits
+
+- `engine/render/Renderer3D.h`:
+  `92809abc569fa9317a2730adf60c428b66df35c5` (POD packet),
+  `fba72cb0416c7ba414809cf5b4b405295472c15f`
+  (append-only ModelDraw layout compatibility).
+- `engine/render/Renderer3DModels.cpp`:
+  `183ed1530542129330f5bf6a0919680300e1a047`
+  (one draw owner and CPU fallback),
+  `18a5ab52fc49c94c3ef14c09e1b8669806d854ae`
+  (one primitive/positive base vertex final RHI gate).
+- `engine/render/GeometryScene.h`:
+  `33b261ee206547955c0c330eed1d736c3a49b92f`
+  (default-off scene options and counters).
+- `engine/render/GeometryScene.cpp`:
+  `2ba2fdc0c1a97f7bd879c912549d316dd7cc7c00`
+  (single source selection+safe draw ownership and fallback).
+- `engine/render/StrataVulkanIndirectContract.cpp`:
+  `fea3d6a453feab4a241bb67a1fb3e402e4829c75`
+  (exactly one real source material/mesh and no shadow-batch path).
+- `tests/render/strata_render_routing.cpp`:
+  `cb5aab5827fd06e6dc5ac1d2a1f3fd15d437564b`
+  (POD packet copy and invalid exclusive/handle contracts).
+
+### Unexecuted final verification matrix
+
+| Component | Stage 16.3 code | Actual validation |
+| --- | --- | --- |
+| Exclusive Vulkan Renderer3D main opaque indirect draw | Written | NOT RUN |
+| Renderer3D original PBR material and U0 binding | Reuses existing function | NOT RUN |
+| Stale RHI frame/source/mesh/transform fallback | Guards written | NOT RUN |
+| Shader output buffer clear/select/safety | Stage 16.2 written | NOT RUN |
+| Multi-view, shadows, reflection preservation | GPU route declined; Legacy owns passes | NOT RUN |
+| Metal/GLES3 unchanged | No GPU route on these backends | NOT RUN |
+| Full multi-material + multi-instance Vulkan GPU raster | NOT DONE | N/A |
+| Vulkan source-vs-GPU pixel parity, shadow and reflection parity | NOT VERIFIED | N/A |
+| Full CMake + CTest + native Vulkan RHI fixture | NOT EXECUTED | N/A |
+
+Native acceptance needs an actual Vulkan-capable machine
+(e.g. Linux Mesa lavapipe for compilation/logic and a Vulkan GPU
+for real performance). The existing Stage 16.2
+`strata_vulkan_kernel` fixture verifies compute selection/indirect
+bytes but does **NOT** verify this Renderer3D raster path.
+Add an actual `Renderer3D` legacy-vs-Vulkan-indirect main-camera
+RGBA A/B fixture on one pooled opaque source; later widen pass
+coverage after Stage 17 LOD seam guarantees. Report the exact tested
+commit SHA and failures in this handoff before changing production
+defaults.
+
+### Stage 16.3 continuation
+
+Finish a self-contained native Renderer3D pixel-parity runner and
+extend the one-source metadata and GPU-indirect packet to multi-material
+per-primitive shaders/instance uniforms, then coordinated
+per-pass sun shadow/reflection GPU routing (without duplicate
+ModelDraw). Do not infer GPU success from SPIR-V compile or
+mock-RHI tests; keep parity gates OFF until real screenshots and
+timings are reviewed. Finish remaining STRATA Stage 17 crack-free
+LOD and Stage 18 performance optimization before the owner's
+single final compilation/test pass.
