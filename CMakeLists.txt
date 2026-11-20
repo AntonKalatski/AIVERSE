@@ -648,6 +648,16 @@ if(AIVERSE_BUILD_TESTS)
         PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME model_asset_provider_api COMMAND aiverse_model_asset_provider_api_tests)
 endif()
+# Stage 176: actual SceneLoadCoordinator and MotionWeave native type
+# integration, prepared now and run in the final coordinated Mac suite.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_animation_scene_game_host_api_tests
+        tests/animation/scene_game_host_api.cpp)
+    target_link_libraries(aiverse_animation_scene_game_host_api_tests
+        PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine Threads::Threads)
+    add_test(NAME animation_scene_game_host_api
+        COMMAND aiverse_animation_scene_game_host_api_tests)
+endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_retirement_pressure_tests
         tests/render/retirement_pressure.cpp)
