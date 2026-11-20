@@ -945,3 +945,16 @@ full/regional immutable geometry revisions before changing TLAS/BLAS
 pages. New regression cases in `gi_gpu_dynamic_runtime` are source-only:
 no native compiler, CTest, Metal/Vulkan/GLES device or full acceptance
 run has been performed. Keep draft PR #47 until verified.
+
+
+## Stage 59 — 2026-11-20 — fail-closed GPU BVH packet validation (SOURCE; NOT RUN)
+
+Full agent handoff:
+`docs/agent-handoffs/gi-stage59-gpu-bvh-packet-validation-2026-11-20.md`.
+Added `GiGpuBvhValidator.h` with root-reachable TLAS/BLAS bounds,
+pointer/cycle, stack-depth, leaf range and triangle/material validation
+before any Metal/Vulkan storage upload. Reserved/unreachable paged
+slots remain permitted; malformed parent/leaf AABBs are rejected to
+avoid false ray pruning/light leaks. Low-level packet publisher
+rejects stale and duplicate source revisions. New CPU/FakeDevice
+regression and CTest registration; **native C++/CTest/GPU tests NOT RUN**.
