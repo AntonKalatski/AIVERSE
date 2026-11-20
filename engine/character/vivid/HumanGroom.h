@@ -35,6 +35,39 @@ struct GroomSelfCollisionStats {
 };
 // Reused broadphase scratch owned by one groom on its render-owner thread.
 // Separate from gameplay ECS and from GPU resource lifetime.
+// Owner-local scratch for deterministic particle broadphase. No global cache.
+struct GroomParticleWorkspace {
+    struct Cell {
+        int x=0,y=0,z=0;
+        bool operator<(const Cell& b) const noexcept {
+            if(x!=b.x)return x<b.x;
+            if(y!=b.y)return y<b.y;
+            return z<b.z;
+        }
+    };
+    struct Particle {
+        std::uint32_t guide=0,segment=0;
+        render::float3 point{};
+    };
+    struct Entry {
+        Cell cell{};
+        std::size_t particle=0;
+        bool operator<(const Entry& rhs) const noexcept {
+            if(cell<rhs.cell)return true;
+            if(rhs.cell<cell)return false;
+            return particle<rhs.particle;
+        }
+    };
+    std::vector<Particle> particles;
+    std::vector<Cell> cells;
+    std::vector<Entry> entries;
+    std::vector<render::float3> corrections;
+    std::vector<std::uint16_t> counts;
+    void reset() noexcept {
+        particles.clear();cells.clear();entries.clear();
+        corrections.clear();counts.clear();
+    }
+};
 struct GroomSegmentWorkspace {
     struct Cell {
         int x=0,y=0,z=0;
@@ -110,6 +143,7 @@ private:
     std::size_t segments_=0;
     GroomSelfCollisionConfig selfCollision_{};
     GroomSelfCollisionStats selfCollisionStats_{};
+    GroomParticleWorkspace particleWorkspace_{};
     GroomSegmentWorkspace segmentWorkspace_{};
     float stiffness_=0.55f,damping_=0.25f,gravity_=0.65f,windStrength_=0.15f;
     // Scalp ellipsoid matches the DNA-generated guide root geometry.
