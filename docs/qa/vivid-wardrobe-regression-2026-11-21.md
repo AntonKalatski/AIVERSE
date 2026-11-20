@@ -22,17 +22,17 @@ sole collision/contact or cloth simulation. Normal interactive rendering is not
 sampled; diagnostics run only on offline sequence frame advances.
 
 Executed on KINGSTON:
-- cmake --build <native> --target aiverse_vivid_creator aiverse_studio -j8 PASS,
+- cmake --build <native> --target aiverse_vivid_creator aiverse_studio -j 8 PASS,
   build-metrics.log/build-receiver-background.log. No new unit suite for these
   reversible host/diagnostic changes; existing unit tests not re-run this stage.
 - --smoke --still --studio-lighting catalog --preview-pose relaxed
-  --preview-sequence360 --lod highest --asset <Bruce-Full/manifest.json>:
-  actual CLI uses separate '--preview-sequence 360'.360frames/15s/24fps,
+  --preview-sequence 360 --lod highest --asset <Bruce-Full/manifest.json>:
+  360 frames / 15 s / 24 fps,
   relaxed→A→T→portrait→relaxed, existing.65s crossfades. Checkpoints100/175/295
   inspected; no old protruding shoulder skin or needle-like jacket folds there.
 - --smoke --still --studio-lighting neutral --preview-pose relaxed
-  --preview-fixed-pose --preview-sequence384 --preview-light-sweep --lod highest
-  --asset <manifest>: actual CLI uses separate '--preview-sequence 384'.384frames,
+  --preview-fixed-pose --preview-sequence 384 --preview-light-sweep --lod highest
+  --asset <manifest>: 384 frames,
   all8final checkpoints inspected (neutral,portrait,warm,cool,dramatic,rim,gel,catalog).
 - Corrected reruns final-transitions/final-lights: exact frame counts confirmed,
   pipelineFailures0 in both logs. Max endpoint drift transitions0.00050682 with

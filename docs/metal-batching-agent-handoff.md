@@ -493,3 +493,7 @@ AIVERSE_ADAPTIVE_DRAW_GROUPS=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTH
 ## 2026-11-21 — VIVID skinned fixed-PCF visual repair
 
 Implementation `93fb42cbd79a4c3877bf6f460331d9733d907e33`, integration/motionweave-studio-facial-stage184. No batching/RHI/timing changes. Shaders.h GLSL/MSL suppress receiver-plane extrapolation on SKINNED/BAKED fixed-PCF surfaces, with bounded footprint-dependent normal offset1..4x. Rigid floor/cyclorama slope correction and PCSS unchanged. Creator/Studio Metal builds and native Bruce/Ada captures PASS, glslang12/12 syntax PASS. This is visual acne mitigation, not performance or Vulkan/mobile parity evidence. Detailed failure experiments/artifacts/limits: docs/qa/vivid-bruce-clothing-2026-11-21.md. Keep experimental ICB defaults unchanged.
+
+## 2026-11-21 — human studio backdrop receiver-only host flag
+
+Implementation `ba0f89312774dbd21ecafa52cc12f87f88ca578a` on integration/motionweave-studio-facial-stage184 sets existing kDrawNoCastShadow only for the VIVID cyclorama in Creator/Studio facial view. Background still receives character shadows. No common renderer, cache, RHI, batching or timing edits; no ICB default changes. Native eight-light and pose captures on Metal plus Creator/Studio builds verified; no performance/Vulkan claims. Evidence and limits: docs/qa/vivid-wardrobe-regression-2026-11-21.md.
