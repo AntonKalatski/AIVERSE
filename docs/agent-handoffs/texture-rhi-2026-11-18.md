@@ -12753,3 +12753,11 @@ color probes and six shader/packer tests pass. New indexed Renderer3D
 fixture fails because unsupported ICB submission is attempted every frame;
 pixels still match direct rendering. Full build is in progress on KINGSTON.
 [Failure evidence and exact next action](texture-rhi-final-gates-2026-11-20.md).
+
+## 2026-11-20 — indexed VT early admission fix
+
+Code `b17dba1a02066fd23d9764a5e07fbc16b9e27e63`: indexed bindings are
+excluded before legacy ICB preflight; eligible counters match actual supported
+items. Full Debug build PASS; targeted legacy/indexed Renderer3D scenes 2/2
+PASS, with zero execution errors. Full 300-test regression is RUNNING, not
+yet accepted. [Exact evidence and continuation](texture-rhi-indexed-admission-fix-2026-11-20.md).
