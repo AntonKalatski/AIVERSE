@@ -994,7 +994,7 @@ void RtsGroundFx::draw(Renderer3D& r, const RtsScene& s, double time, const std:
                     (useC_ && conc_.on && c.dC);
                 if(!needs)continue;
                 if(builtChunks>=kBatchChunkLimit ||
-                   (builtChunks>0 && batch.stagedBytes()>=kBatchBytes))
+                   batch.stagedBytes()>=kBatchBytes)
                     continue;
                 touched.push_back({index,{c.dT,c.dD,c.dM,c.dR,c.dC}});
                 if(useT_ && terr_.on && c.dT)buildTerritory(c,cx,cy,g,v);
