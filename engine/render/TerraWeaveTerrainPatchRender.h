@@ -232,6 +232,35 @@ public:
         return true;
     }
 
+    // Camera LOD is presentation-only. If the authoritative soil revision
+    // did not change, switch just the GPU geometry without rebuilding
+    // collision triangles, navmesh or dirty ECS events.
+    bool replaceVisual(gfx::Device& device,const TerrainPatch& visual,
+                       std::array<uint32_t,4> neighbors={},
+                       const render::Model* materialSource=nullptr,
+                       float uvScale=0.05f) {
+        if(!model_ || !visual.presentationOnly ||
+           visual.cell!=cell_ || visual.sourceRevision!=revision_ ||
+           visual.cellSizeMetres!=cellSizeMetres_)
+            throw std::invalid_argument("TerraWeave visual LOD state mismatch");
+        if(visual.resolution==visualResolution_ &&
+           neighbors==neighborResolution_)return true;
+        // This must be called at a graphics owner PRE-RENDER boundary.
+        if(!device.waitForResourceIdle())return false;
+        auto candidate=makeEarthworksTerrainModel(visual,materialSource,uvScale);
+        render::prepareModelUpload(*candidate);
+        if(!render::uploadModel(device,*candidate) ||
+           !candidate->vb.valid() || !candidate->ib.valid()) {
+            render::releaseModel(device,*candidate);
+            return false;
+        }
+        render::releaseModel(device,*model_);
+        model_=std::move(candidate);
+        visualResolution_=visual.resolution;
+        neighborResolution_=neighbors;
+        return true;
+    }
+
     void submit(render::Renderer3D& renderer,
                 TerrainPatchRenderOriginCm origin={}) const {
         if(!model_)return;
