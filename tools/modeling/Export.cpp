@@ -76,8 +76,15 @@ std::string exportGlb(const Model &m) {
         j.set("translation", floats({n.t.x, n.t.y, n.t.z}));
         j.set("rotation", floats({n.r.x, n.r.y, n.r.z, n.r.w}));
         j.set("scale", floats({n.s.x, n.s.y, n.s.z}));
-        if (n.mesh >= 0)
+        if (n.mesh >= 0) {
             j.set("mesh", num(n.mesh));
+            const auto& mesh=m.meshes.at(size_t(n.mesh));
+            if(!mesh.primitives.empty() && mesh.primitives[0].morphTargets) {
+                auto weights=Json::array();
+                for(int k=0;k<mesh.primitives[0].morphTargets;++k)weights.push(Json::number(double(n.weights[k]),8));
+                j.set("weights",weights);
+            }
+        }
         if (n.skin >= 0)
             j.set("skin", num(n.skin));
         if (!n.children.empty()) {
@@ -167,6 +174,21 @@ std::string exportGlb(const Model &m) {
             std::string indices;
             for (uint32_t i = 0; i < p.indexCount; ++i)
                 u32(indices, m.indices[p.firstIndex + i] - p.firstVertex);
+            if(p.morphTargets) {
+                require(p.morphTargets<=kMaxMorphTargets && p.morphDeltas.size()==size_t(p.morphTargets)*p.vertexCount*6,
+                        "GLB export: unavailable morph deltas");
+                auto targets=Json::array();
+                for(int k=0;k<p.morphTargets;++k) {
+                    std::vector<float> dp,dn;
+                    for(uint32_t v=0;v<p.vertexCount;++v)for(int c=0;c<3;++c) {
+                        const size_t offset=(size_t(k)*p.vertexCount+v)*6;
+                        dp.push_back(p.morphDeltas[offset+c]);dn.push_back(p.morphDeltas[offset+3+c]);
+                    }
+                    auto target=Json::object();target.set("POSITION",num(w.accessor(dp,3,"VEC3",true)));
+                    target.set("NORMAL",num(w.accessor(dn,3,"VEC3")));targets.push(target);
+                }
+                pj.set("targets",targets);
+            }
             pj.set("attributes", attrs);
             pj.set("indices", num(w.add(indices, 5125, int(p.indexCount), "SCALAR")));
             pj.set("material", num(p.material));
@@ -174,6 +196,11 @@ std::string exportGlb(const Model &m) {
         }
         j.set("primitives", prims);
         if(!mesh.lods.empty()) { auto levels=Json::array();for(auto lod:mesh.lods){auto level=Json::object();level.set("mesh",num(lod.mesh));level.set("maxPixels",Json::number(double(lod.maxPixels),8));levels.push(level);}auto extras=Json::object();extras.set("rtsLods",levels);j.set("extras",extras); }
+        if(!mesh.weights.empty()){auto weights=Json::array();for(float v:mesh.weights)weights.push(Json::number(double(v),8));j.set("weights",weights);}
+        if(!mesh.morphTargetNames.empty()) {
+            auto names=Json::array();for(const auto& name:mesh.morphTargetNames)names.push(Json::string(name));
+            auto extras=j.has("extras")?j["extras"]:Json::object();extras.set("targetNames",names);j.set("extras",extras);
+        }
         w.root.member("meshes").push(j);
     }
     for (auto &skin : m.skins) {
@@ -196,7 +223,7 @@ std::string exportGlb(const Model &m) {
         for (auto &c : clip.channels) {
             auto s = Json::object();
             s.set("input", num(w.accessor(c.times, 1, "SCALAR", true)));
-            s.set("output", num(w.accessor(c.values, c.comps, c.comps == 4 ? "VEC4" : "VEC3")));
+            s.set("output", num(w.accessor(c.values, c.path==AnimChannel::Weights?1:c.comps, c.path==AnimChannel::Weights?"SCALAR":c.comps == 4 ? "VEC4" : "VEC3")));
             s.set("interpolation", Json::string(c.interp == AnimChannel::Step          ? "STEP"
                                                 : c.interp == AnimChannel::CubicSpline ? "CUBICSPLINE"
                                                                                        : "LINEAR"));
@@ -204,6 +231,7 @@ std::string exportGlb(const Model &m) {
             ch.set("sampler", num(int64_t(samplers.size())));
             target.set("node", num(c.node));
             target.set("path", Json::string(c.path == AnimChannel::Translation ? "translation"
+                                            : c.path == AnimChannel::Weights   ? "weights"
                                             : c.path == AnimChannel::Scale     ? "scale"
                                                                                : "rotation"));
             ch.set("target", target);
