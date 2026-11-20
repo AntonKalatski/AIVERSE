@@ -668,3 +668,83 @@ above; CI was not manually dispatched or represented as passing.
 Next agent: start from current main and this QA report; do not repeat completed
 preparation/rollback implementation. Any further paint/field transaction work,
 Vulkan/GLES/ARM64 acceptance or P2 features are separate explicitly scoped work.
+
+
+## Engine skills and MCP camera authoring — 2026-11-20
+
+Branch: `codex/lens-completion`. Base main: `505d7b62f` (PHYSIS documentation
+fast-forward only). Implementation: `cc96364c96f7ce4e8ac91500071859a9d01ecb42`.
+User explicitly requested skills inside the engine, alongside MCP support;
+all native builds, temporary test projects and build logs remain on KINGSTON.
+The primary Studio checkout and its uncommitted changes were not touched.
+
+### Delivered scope and compatibility
+
+- `apps/editor/core/LensOps.cpp`, additive Workspace/CMake/MCP discovery hooks:
+  lens_scene_get, lens_scene_validate, lens_scene_set, lens_camera_set and
+  lens_camera_delete. CPU-only authoring works in standalone aiversemcp and
+  shares the native editor registry. No HTML5 bridge allowlist change.
+- `skills/visuals/aiverse-lens/SKILL.md` owns project camera authoring;
+  `skills/visuals/aiverse-lens-native/SKILL.md` owns existing native APIs,
+  prepared-frame replay/capture and GPU lifetime guidance. Both are registered
+  workflow skills with runtime none; no duplicate camera library or global
+  skill installation. Camera-controller skill links to the new owner.
+- Catalog/aliases/routing tests, camera-system docs, AGENTS and nine README
+  versions updated. Generated catalog contains 229 entries; previous README
+  count 200 was stale (base catalog had 227).
+- cameras.json remains version 1. Validation reuses CameraSceneAsset in a scratch
+  World, returns normalized defaults/clamping and texture-only clientCompatible.
+  This is not strict unknown-key or GPU/scheduler validation. Source fields are
+  preserved on save. Positive camera ids and last-read expectedScene protect
+  normal serialized edits from stale requests; this is not a filesystem lock
+  against concurrent external writers. Sibling staging and rename preserve the
+  last-good file on failure, with no destructive remove fallback; 1 MiB bound
+  and symlink refusal apply. Windows replacement behavior is unverified.
+- Saves are immediate and outside undo. Reload the native LENS window before
+  subsequent UI edits/save; restart the client. No hot activation, lens.enabled
+  modification, headless capture endpoint, simulation or renderer change.
+
+### Executed validation
+
+Build root: `/Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug`.
+TMPDIR, CLANG_MODULE_CACHE_PATH, PYTHONPYCACHEPREFIX are sibling directories
+under `/Volumes/KINGSTON/AIVERSE-builds/lens-completion`.
+
+- `cmake -S . -B <build-root>`: PASS.
+- `cmake --build <build-root> --target aiverse_lens_ops_tests aiversemcp --parallel 4`:
+  PASS, no compiler warnings found in lens-ops-build.log.
+- `cmake --build <build-root> --target aiverse_editor --parallel 4`: PASS;
+  lens-editor-tools-build.log. Native macOS x86_64 Debug, not ARM64 acceptance.
+- `ctest --test-dir <build-root> -R '^(lens_ops|lens_mcp_stdio|camera_scene_asset|camera_scheduler|camera_model_snapshot)$' --output-on-failure`:
+  PASS 5/5, 0 skips, 3.52 seconds; lens-ops-ctest.log.
+  Tests cover CRUD, unrelated-record preservation, malformed/oversized assets,
+  invalid clips/duplicate ids, stale edits, missing project/id, symlinks where
+  supported, actual MCP tools/list and tools/call, error envelopes, persisted
+  data across a fresh server process and deletion. No editor launched by stdio.
+- `python3 tools/skills/catalog.py generate` and `check`: PASS.
+- `python3 tests/skills/catalog_test.py`: PASS.
+- `python3 tools/skills/audit.py --strict`: PASS, 0 errors/warnings.
+- `python3 tools/readme/check.py`: PASS, nine files.
+- skill-creator `scripts/quick_validate.py` on both new skill directories: PASS.
+  Initial invocation lacked PyYAML. Installed PyYAML 6.0.3 only under KINGSTON
+  python-tools (pip-cache there), then reran with PYTHONPATH pointing there.
+- `git diff --check`: PASS (Git emitted normal CRLF conversion notices).
+
+Investigations/failures retained for reproducibility: the first build-log write
+was denied by the filesystem sandbox before starting a build, then succeeded
+with the authorized KINGSTON access. Initial stdio fixture used empty rules;
+open_game correctly rejected it with "rules: no types defined". The fixture
+now provides one minimal type and the real protocol test passes.
+`python3 tools/libraries/catalog.py check` still FAILS on its existing status
+allowlist: six NEREID packages use experimental. Confirmed identical entries
+in HEAD/base origin/main; neither catalog nor validator was changed here.
+Library/native isolation tests NOT RUN: no runtime library selection changed.
+Full core suite, interactive GUI capture, GPU parity, other OS/architectures
+NOT RUN for this tooling-only stage; previous integration evidence remains
+separate. CI not dispatched/observed; no CI URL or green-status claim.
+
+Next: ordinary authorized push to main (never force), verify exact remote SHA.
+Consumers must restart/reconnect the rebuilt MCP server and native editor for
+new operation discovery; select either engine skill through the catalog.
+Future work can add a native asynchronous capture endpoint with real ownership
+and completion tests; do not advertise one from these authoring operations.
