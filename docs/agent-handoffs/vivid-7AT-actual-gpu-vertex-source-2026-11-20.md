@@ -38,6 +38,12 @@ No CMake edits required in 7AT: `SculptGpuVertexSource.h` and expansion shader a
 5. Only eligible fully opaque selected primitives use the GPU-source expansion: sampled alpha-mask selection, custom ShaderGraph displacement, source/LOD ambiguity and other unsupported shader paths fail closed rather than faking GPU-stream equivalence. Other Creator floor/hair/head depth occluders still use existing CPU-derived snapshot until they also have verified renderer-owned deformed GPU streams.
 6. The GPU callback still carries the exact model publication/frame/viewport/pending-click token, resolves triangle ID against the original authoring source mapping and **cannot override** the CPU BVH-selected author ID. A successful `actualOverride=true` says only that the selected ID pass consumed the same actor GPU 60B vertex source, **not** that its separate skinning kernel/material/depth differs by 0 pixels from final Renderer3D.
 
+### Late safety follow-up — Renderer3D transparency source policy
+
+- `Renderer3D.h` commit `b692e2dcbc97a0d15960711d55a4d79e6b791e18`, `Renderer3DModels.cpp` commit `6eb5917d9dbe3d4a682d8d22877a672ca5c1db19`, and `SculptGpuRendererView.h` commit `094b3afecaeaa0c5e164d06d16cb5612dfa1d5e9` extend the frame-local source provenance with the actual main colour-pass translucent classification (material Blend/transparent, instance tint alpha, DrawFlags transparency). The GPU source expansion must refuse translucent/depth-after source rather than interpret its zero-ID depth semantics as an opaque GPU-confirmed surface.
+- Unexecuted regression source `tests/vivid/human_creator.cpp` commit `2bb360b24b7f90977b1713737dd2b40a9bbe26e1` verifies translucent source rejection.
+- These source changes do NOT add final transparent/cornea pixels to the GPU ID path; the existing CPU BVH remains the authoring selection.
+
 ## Actual validation and exact next commands
 
 **Actually performed**: remote GitHub source reads/writes and created commits.  
