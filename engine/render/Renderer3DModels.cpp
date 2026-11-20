@@ -39,6 +39,25 @@ struct ProfileTimer {
 };
 
 bool transparentItem(uint32_t flags) { return (flags & kDrawTransparent) != 0; }
+// Freeze exactly the sampled Mask state of the actual selected
+// Renderer3D material, with no borrowed Material pointers in provenance.
+void fillModelMaskProvenance(
+        Renderer3D::ModelViewPrimitive& result,
+        const Model& model,const Material& material) {
+    result.maskedMaterial=material.alpha==AlphaMode::Mask;
+    if(!result.maskedMaterial)return;
+    if(material.baseTex>=0 &&
+       std::size_t(material.baseTex)<model.images.size())
+        result.maskBaseTexture=
+            model.images[std::size_t(material.baseTex)].tex;
+    result.maskAlpha=material.baseColor.w;
+    result.maskCutoff=material.alphaCutoff;
+    result.maskUvOffset=material.uvOffset;
+    result.maskUvScale=material.uvScale;
+    result.maskUvRotation=material.uvRotation;
+    result.maskVertexColors=material.vertexColors;
+}
+
 // Model fragment slots 0..6, 9..12 are taken (12: SSR scene depth); up to four graph textures follow.
 // Metal has sampler slots 0..15 only, so graph slots from 16 use a constexpr repeat/linear sampler.
 constexpr int kGraphTextureSlot = 13;
@@ -854,6 +873,7 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
             it.mat->transparent || it.tint.w<0.99f ||
             transparentItem(it.flags);
         primitive.customGpuStream=it.vertexOverride.valid();
+        fillModelMaskProvenance(primitive,*it.model,*it.mat);
         primitive.world=it.world;
         if(primitive.gpuLodConditional || primitive.lodFade ||
            primitive.alternativeMeshLod || primitive.batched ||
@@ -920,6 +940,7 @@ void Renderer3D::recordModelSubmission(
         it.mat->transparent || it.tint.w<0.99f ||
         transparentItem(it.flags);
     p.customGpuStream=it.vertexOverride.valid();
+    fillModelMaskProvenance(p,*it.model,*it.mat);
     p.world=it.world;
     out.phase=uint8_t(phase);
     out.kind=kind;
