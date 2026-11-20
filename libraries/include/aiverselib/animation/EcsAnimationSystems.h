@@ -30,6 +30,11 @@ struct AnimationPlayerComponent {
     // Model/AnimationGraph asset replacement. Never persisted in sim ECS.
     std::optional<render::AnimationGraphInstance::PlaybackSnapshot>
         pendingPlayback;
+    // Telemetry for the most recent attempted named playback restore;
+    // queued is not synonymous with successfully restored.
+    uint64_t playbackRestoreAttempts=0;
+    uint64_t playbackRestoreAccepted=0;
+    uint64_t playbackRestoreDeclined=0;
 };
 struct AnimationPoseComponent {
     render::Pose local;
@@ -218,10 +223,14 @@ inline void evaluateAnimationPresentationRange(World& world,
                     // renamed state/clip or allocation failure simply
                     // leaves the freshly reset graph at authored defaults.
                     // Never replay old notifies, contacts or root motion.
-                    (void)player.instance->restorePlayback(*player.pendingPlayback);
+                    ++player.playbackRestoreAttempts;
+                    if(player.instance->restorePlayback(*player.pendingPlayback))
+                        ++player.playbackRestoreAccepted;
+                    else ++player.playbackRestoreDeclined;
                 }catch(...) {
                     // CPU-only cosmetic handoff is optional. The new graph's
                     // rig/pose must remain valid even after a failed restore.
+                    ++player.playbackRestoreDeclined;
                 }
                 player.pendingPlayback.reset();
             }
