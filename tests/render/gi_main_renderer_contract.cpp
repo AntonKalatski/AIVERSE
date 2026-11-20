@@ -65,6 +65,16 @@ int main() {
         dev,cpu,{std::numeric_limits<float>::quiet_NaN(),0,0},
         1,2,2,2));
 
+    // Vulkan and GL33 use the same CPU-traced RGBA32F L1 texture contract
+    // as GLES3, with no claim of a Vulkan GPU GI clipmap compute shader.
+    dev.info_.backend=gfx::Backend::Vulkan;
+    AIVERSE_TEST_CHECK(GiRendererOverlayPolicy::acceptBase(
+        dev,cpu,{0,0,0},1,2,2,2));
+    dev.info_.backend=gfx::Backend::GL33;
+    AIVERSE_TEST_CHECK(GiRendererOverlayPolicy::acceptBase(
+        dev,cpu,{0,0,0},1,2,2,2));
+    dev.info_.backend=gfx::Backend::GLES3;
+
     GiFake other;
     other.info_.backend=gfx::Backend::GLES3;
     AIVERSE_TEST_CHECK(!GiRendererOverlayPolicy::acceptBase(
@@ -85,6 +95,8 @@ int main() {
     GiDynamicProbeTexture gpu;
     AIVERSE_TEST_CHECK(gpu.initialize(dev,8,true));
     AIVERSE_TEST_CHECK(gpu.computeWritable());
+    AIVERSE_TEST_CHECK(GiRendererOverlayPolicy::acceptBase(
+        dev,gpu,{0,0,0},2,2,2,2,0,0,0,&validity));
     AIVERSE_TEST_CHECK(GiRendererOverlayPolicy::acceptMetalCascade(
         dev,gpu,{0,0,0},2,2,2,2));
     AIVERSE_TEST_CHECK(!GiRendererOverlayPolicy::acceptMetalCascade(
