@@ -426,12 +426,9 @@ public:
         dev_->setComputeSampledTexture(2,inputs.materialDepth);
         dev_->setComputeSampledTexture(3,inputs.surface);
         dev_->setComputeSampledTexture(4,inputs.surfaceDepth);
-        // Dummy bindings are sampled only when their flags are true. No
-        // fabricated zero velocity can be mistaken for a valid object vector.
-        dev_->setComputeSampledTexture(5,motionBound?
-            request.motionVectors:slot.raw);
-        dev_->setComputeSampledTexture(6,usePrevious?
-            screenSlots_[size_t(historySlot_)].normal:slot.raw);
+        // The screen shader declares EXACTLY FIVE sampled textures.
+        // Motion and history belong exclusively in encodeDenoise(), not
+        // this raw-light dispatch. Do not bind undefined denoise locals.
         Params params{};
         params.counts={sourceCount_,uint32_t(pixels),nodeCount_,samples};
         params.control={seed,width,triangleCount_,0};
