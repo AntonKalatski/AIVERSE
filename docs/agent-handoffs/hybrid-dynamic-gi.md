@@ -986,3 +986,19 @@ actually execute in Release, preserving checks and side effects. These
 commits are NOT YET BUILD/CTEST VERIFIED; old CI explicitly FAILED during
 Build, so tests/Vulkan were SKIPPED. No claim of GI GPU parity or full
 acceptance. Continue real CI log-driven remediation and separate handoffs.
+
+
+## Stage 62 — 2026-11-20 — Release CI wave-replay assertion repair (SOURCE FIX; RETEST PENDING)
+
+Detailed handoff: `docs/agent-handoffs/gi-stage62-release-wave-replay-ci-2026-11-20.md`.
+Actual CI run `44695330522` Linux arm64 GCC job `136150631963`
+on SHA `3e364b79f681feb4d159af5135b54b4b9326d609`
+**FAILED during Release Build**: `tests/ecs_wave_replay_test.cpp`
+`originalChecksum` and `sequential` used only by erased `assert`
+under `-DNDEBUG -Werror`. Commit
+`01cafe0c522a74d6a14971eb7279277cd9f12b1d` replaced
+four assertions with existing always-on `AIVERSE_TEST_CHECK`.
+**No native compile or CTest was run after the patch**; all GI/Vulkan
+GPU acceptance is still pending. Next: inspect new CI logs,
+unblock remaining Release compilation issues, run actual GI/Vulkan/Metal/GLES
+validation on exact SHA, then controlled current-main reconciliation.
