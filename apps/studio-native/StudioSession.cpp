@@ -1,4 +1,5 @@
 #include "StudioSession.h"
+#include "apps/editor/EditorWorldEdit.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
@@ -408,6 +409,53 @@ Json StudioSession::dispatch(const Json& request) {
             }
             selected_ = next;
             reply.set("result", snapshot());
+        } else if (method == "studio.entityCatalog") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            Json catalog=Json::object(), types=Json::array();
+            for (const auto& type : ws_.project.rules.types) {
+                Json row=Json::object(); row.set("id",str(type.id)); row.set("name",str(type.name));
+                types.push(std::move(row));
+            }
+            catalog.set("types",std::move(types));
+            catalog.set("mapEntities",Json::fromBool(!ws_.project.isFps()));
+            reply.set("result",std::move(catalog));
+        } else if (method == "studio.entityCreate" || method == "studio.entityDelete" ||
+                   method == "studio.entityDuplicate") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) throw std::runtime_error("This operation requires a map entity document");
+            if (method == "studio.entityCreate") {
+                const std::string type=params.getStr("type");
+                if (ws_.project.rules.findType(type)<0) throw std::runtime_error("Unknown entity type");
+                for (const char* key : {"x","z","owner"}) {
+                    if (!params[key].isNumber()) throw std::runtime_error("Expected numeric entity field");
+                    const double value=params[key].toDouble();
+                    if (!std::isfinite(value) || value < -1000000 || value > 1000000)
+                        throw std::runtime_error("Entity field out of range");
+                }
+                const double owner=params["owner"].toDouble();
+                if (owner!=std::floor(owner) || owner < -1 || owner > 10000)
+                    throw std::runtime_error("Invalid owner");
+                Json args=Json::object();
+                for (const char* key : {"type","x","z","owner"}) args.set(key,params[key]);
+                const Json result=ws_.call("entity_place",args,"studio");
+                if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                selected_="entity:"+std::to_string(ws_.map.data.entities.size()-1);
+            } else {
+                const std::string id=params.getStr("entityId");
+                if (selected_.empty() || id!=selected_) throw std::runtime_error("Selection changed while editing");
+                const int index=indexFor(id);
+                if (method == "studio.entityDelete") {
+                    Json args=Json::object(); args.set("index",num(index));
+                    const Json result=ws_.call("entity_delete",args,"studio");
+                    if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                    selected_.clear();
+                } else {
+                    const auto copies=editor::worldedit::duplicate(ws_.map,{index});
+                    if (copies.empty()) throw std::runtime_error("Unable to duplicate entity");
+                    selected_="entity:"+std::to_string(copies.front());
+                }
+            }
+            reply.set("result",snapshot());
         } else if (method == "studio.save") {
             const Json r = ws_.call("map_save", Json::object(), "studio");
             if (r.has("error")) throw std::runtime_error(r.getStr("error"));
@@ -415,10 +463,12 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.undo") {
             if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");
             ws_.map.undo();
+            selected_.clear();
             reply.set("result", snapshot());
         } else if (method == "studio.redo") {
             if (!ws_.map.canRedo()) throw std::runtime_error("Nothing to redo");
             ws_.map.redo();
+            selected_.clear();
             reply.set("result", snapshot());
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");

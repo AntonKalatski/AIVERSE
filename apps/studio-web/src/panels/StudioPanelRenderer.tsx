@@ -3,8 +3,7 @@
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
 import {
-  Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
-  MoreHorizontal, Plus, Search, SlidersHorizontal
+  Activity, Box, ChevronDown, FolderOpen, MoreHorizontal, SlidersHorizontal
 } from 'lucide-react';
 import type { StudioEntity, StudioSnapshot } from '../types';
 import type { StudioPanel } from '../nestedDock';
@@ -16,10 +15,13 @@ import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
 import ShaderGraphPanel from './ShaderGraphPanel';
 import { studioSceneMode } from './sceneState';
+import HierarchyPanel from './HierarchyPanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
+  setBusy: (value: boolean) => void;
+  updateSnapshot: (value: StudioSnapshot) => void;
   connected: boolean;
   openProject: () => Promise<void>;
   search: string;
@@ -31,37 +33,11 @@ export interface StudioPanelContext {
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,connected,openProject,search,setSearch,rows,selected,select,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,selected,changeProperty}=ctx;
   const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
-        return <>
-          <PanelTitle title="HIERARCHY" right={<>
-            <button className="icon-button" disabled title="Create entity (pending)"><Plus size={16}/></button>
-            <button className="icon-button" disabled title="Hierarchy menu (pending)"><MoreHorizontal size={16}/></button>
-          </>}/>
-          <label className="search-box"><Search size={15}/>
-            <input aria-label="Search hierarchy" placeholder="Search objects..."
-              value={search} onChange={e => setSearch(e.target.value)}/>
-            <kbd>⌘ K</kbd>
-          </label>
-          <div className="tree-label"><ChevronDown size={14}/><FolderTree size={15}/>
-            <span>{connected && !snapshot?.project.path ? 'No project' : snapshot?.scene.name ?? 'Scene'}</span>
-          </div>
-          <div className="tree-list">
-            {rows.filter(({ node }) => node.name.toLowerCase().includes(search.toLowerCase()))
-              .map(({ node, depth }) =>
-                <button key={node.id}
-                  className={'tree-row ' + (snapshot?.selectedId === node.id ? 'active' : '')}
-                  style={{ paddingLeft: 14 + depth * 16 }} onClick={() => void select(node.id)}
-                  disabled={busy}>
-                  {node.kind === 'Light' ? <Lightbulb size={15}/> :
-                    node.kind === 'Camera' ? <MonitorPlay size={15}/> : <Box size={15}/>}
-                  <span>{node.name}</span>
-                </button>)}
-          </div>
-          <div className="panel-footer">{snapshot?.scene.entities.length ?? 0} objects</div>
-        </>;
+        return <HierarchyPanel {...ctx}/>;
       case 'assets':
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':

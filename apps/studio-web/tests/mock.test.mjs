@@ -28,3 +28,10 @@ test('native-only editing rejects in DEMO mode', async () => {
   await assert.rejects(mockInvoke('studio.lightAdd', {}), /native AIVERSE host/);
   await assert.rejects(mockInvoke('studio.save', {}), /native AIVERSE host/);
 });
+
+test('entity authoring never writes through the browser demo', async () => {
+  assert.deepEqual(await mockInvoke('studio.entityCatalog', {}), {types: [], mapEntities: false});
+  await assert.rejects(mockInvoke('studio.entityCreate', {type:'unit',x:0,z:0,owner:0}), /native project/);
+  await assert.rejects(mockInvoke('studio.entityDelete', {entityId:'entity:0'}), /native project/);
+  await assert.rejects(mockInvoke('studio.entityDuplicate', {entityId:'entity:0'}), /native project/);
+});

@@ -116,7 +116,7 @@ export default function App() {
   const consoleOpen = panelStack(dock, 'console') !== null;
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
-    select, changeProperty, openProject
+    select, changeProperty, openProject, updateSnapshot: setSnapshot, setBusy
   });
 
   return <div className="studio">

@@ -23,8 +23,13 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog';
+export interface StudioEntityCatalog { types: Array<{id: string; name: string}>; mapEntities: boolean }
+export type StudioMethod = 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog';
 export interface StudioParams {
+  'studio.entityCatalog': Record<string, never>;
+  'studio.entityCreate': {type: string; x: number; z: number; owner: number};
+  'studio.entityDelete': {entityId: string};
+  'studio.entityDuplicate': {entityId: string};
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
   'studio.undo': Record<string, never>;
@@ -51,6 +56,10 @@ export interface StudioParams {
   'studio.viewportInput': { kind: 'orbit'; dx: number; dy: number } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }
 export interface StudioResult {
+  'studio.entityCatalog': StudioEntityCatalog;
+  'studio.entityCreate': StudioSnapshot;
+  'studio.entityDelete': StudioSnapshot;
+  'studio.entityDuplicate': StudioSnapshot;
   'studio.snapshot': StudioSnapshot;
   'studio.save': StudioSnapshot;
   'studio.undo': StudioSnapshot;

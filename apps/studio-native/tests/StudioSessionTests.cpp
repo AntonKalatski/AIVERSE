@@ -1,6 +1,71 @@
 #include "apps/studio-native/StudioSession.h"
 #include "tests/TestCheck.h"
 #include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+
+namespace {
+void entityWorkflow() {
+    using namespace aiverse;
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/("studio-entities-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto project=root/"templates"/"fixture";
+    fs::create_directories(project/"maps");
+    std::ofstream(project/"game.json") << R"({"name":"Studio fixture","module":"rts","rules":"rules.json","maps":[{"file":"maps/scene.json"}]})";
+    std::ofstream(project/"rules.json") << R"({"types":{"unit":{"health":{"max":100}}}})";
+    editor::MapDoc map;
+    map.reset(16,16);
+    editor::DocEntity entity; entity.type="unit";entity.id="original";entity.x=2;entity.z=3;
+    entity.extra=Json::parse(R"({"inventory":{"wood":20}})");
+    map.data.entities.push_back(entity);
+    entity.id="other";entity.x=5;map.data.entities.push_back(entity);
+    map.data.roads.emplace_back(0,1);
+    AIVERSE_TEST_CHECK(map.save((project/"maps/scene.json").string(),nullptr));
+    {
+        studio::StudioSession session(root.string(),project.string());
+        auto call=[&](const char* method,Json params=Json::object()) {
+            Json request=Json::object();request.set("id",Json::number(int64_t(1)));
+            request.set("method",Json::string(method));request.set("params",std::move(params));
+            return session.dispatch(request);
+        };
+        const auto catalog=call("studio.entityCatalog");
+        AIVERSE_TEST_CHECK(catalog["result"].getBool("mapEntities"));
+        AIVERSE_TEST_CHECK(catalog["result"]["types"].size()==1);
+        const auto before=session.workspace().map.toJson();
+        AIVERSE_TEST_CHECK(call("studio.entityCreate",Json::parse(R"({"type":"missing","x":1,"z":2,"owner":0})")).has("error"));
+        AIVERSE_TEST_CHECK(call("studio.entityCreate",Json::parse(R"({"type":"unit","x":1,"z":2,"owner":0.5})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.toJson()==before);
+        AIVERSE_TEST_CHECK(!session.workspace().map.canUndo());
+        const auto created=call("studio.entityCreate",Json::parse(R"({"type":"unit","x":4,"z":6,"owner":0,"count":100})"));
+        AIVERSE_TEST_CHECK(!created.has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==3); // unallowlisted count ignored
+        AIVERSE_TEST_CHECK(created["result"].getStr("selectedId")=="entity:2");
+        AIVERSE_TEST_CHECK(call("studio.entityDelete",Json::parse(R"({"entityId":"entity:0"})")).has("error"));
+        AIVERSE_TEST_CHECK(!call("studio.select",Json::parse(R"({"id":"entity:0"})")).has("error"));
+        AIVERSE_TEST_CHECK(!call("studio.entityDuplicate",Json::parse(R"({"entityId":"entity:0"})")).has("error"));
+        const auto& copy=session.workspace().map.data.entities.back();
+        AIVERSE_TEST_CHECK(copy.id!="original" && copy.extra==entity.extra && copy.x==3 && copy.z==4);
+        AIVERSE_TEST_CHECK(!call("studio.entityDelete",Json::parse(R"({"entityId":"entity:3"})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==3);
+        AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==4 && session.selectedObjectId().empty());
+        AIVERSE_TEST_CHECK(!call("studio.redo").has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==3);
+        AIVERSE_TEST_CHECK(!call("studio.save").has("error"));
+        AIVERSE_TEST_CHECK(!session.workspace().map.dirty);
+        session.openProject(project.string());
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==3);
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities[2].x==4);
+        AIVERSE_TEST_CHECK(!call("studio.select",Json::parse(R"({"id":"entity:0"})")).has("error"));
+        AIVERSE_TEST_CHECK(!call("studio.entityDelete",Json::parse(R"({"entityId":"entity:0"})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.roads.empty());
+        AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.roads.size()==1);
+    }
+    fs::remove_all(root);
+}
+}
 
 int main() {
     using namespace aiverse;
@@ -38,5 +103,6 @@ int main() {
     try { session.openProject("/nonexistent/aiverse-project"); }
     catch (const std::exception&) { openRejected = true; }
     AIVERSE_TEST_CHECK(openRejected);
+    entityWorkflow();
     std::cout << "studio session contract PASS\n";
 }

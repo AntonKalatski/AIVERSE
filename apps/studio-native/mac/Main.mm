@@ -386,7 +386,8 @@
             [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
         }
         if (!reply.has("error") &&
-            (method=="studio.setProperty" || method=="studio.save" ||
+            (method=="studio.entityCreate" || method=="studio.entityDelete" ||
+             method=="studio.entityDuplicate" || method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
              method=="studio.lightingSet" || method=="studio.lightAdd" ||
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
