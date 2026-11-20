@@ -181,7 +181,6 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("primitive.morphTargets>0",adapter)
         self.assertIn("triangleBudgetPerModel",adapter)
         self.assertIn("studioPickModelInstances({",cases)
-        self.assertIn("collider",self.source("panels/StudioPanelRenderer.tsx").lower() + " collider")
         self.assertIn("add_test(NAME studio_model_picking",cmake)
 
     def test_scene_selection_hits_rendered_oriented_proxy_not_aabb(self):
