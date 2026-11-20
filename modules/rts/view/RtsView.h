@@ -830,6 +830,10 @@ private:
     }
     std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
     std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
+    // Staged GPU kits may still own RHI handles after a refused full-idle
+    // rollback. Do not drop their owner until a later host recovery/shutdown.
+    std::unique_ptr<RtsRoadView> pendingRoadRecovery_;
+    std::unique_ptr<RtsShoreView> pendingShoreRecovery_;
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
     RtsOverlays overlays_;   // data-driven overlays (RtsOverlays.cpp)
