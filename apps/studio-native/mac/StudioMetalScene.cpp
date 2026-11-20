@@ -234,6 +234,21 @@ void StudioMetalScene::move(float right, float up, float forward) {
 }
 void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
                                       const std::string& selectedId) {
+    for (const auto& instance:modelInstances_) {
+        if (instance.id!=selectedId || !instance.model) continue;
+        const auto lo=instance.model->boundsMin,hi=instance.model->boundsMax;
+        float3 worldMin{1e30f,1e30f,1e30f},worldMax{-1e30f,-1e30f,-1e30f};
+        for (int corner=0;corner<8;++corner) {
+            const float3 local{corner&1?hi.x:lo.x,corner&2?hi.y:lo.y,corner&4?hi.z:lo.z};
+            const auto p=instance.world.transformPoint(local);
+            worldMin={std::min(worldMin.x,p.x),std::min(worldMin.y,p.y),std::min(worldMin.z,p.z)};
+            worldMax={std::max(worldMax.x,p.x),std::max(worldMax.y,p.y),std::max(worldMax.z,p.z)};
+        }
+        camera_.target=(worldMin+worldMax)*.5f;
+        const auto size=worldMax-worldMin;
+        camera_.distance=std::clamp(std::max({size.x,size.y,size.z,1.0f})*2.5f,2.0f,100000.0f);
+        return;
+    }
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     for (const auto& proxy:proxies) {
         if (proxy.id != selectedId) continue;
