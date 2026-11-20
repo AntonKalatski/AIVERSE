@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileAudio, FileBox2, FileCode2, FileImage, FileText, RefreshCw, Search } from 'lucide-react';
+import { FileAudio, FileBox, FileCode2, FileImage, FileText, RefreshCw, Search } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import type { StudioAsset, StudioAssetList } from '../types';
 
@@ -11,7 +11,7 @@ function formatBytes(bytes: number): string {
 function AssetIcon({ path }: { path: string }) {
   const extension = path.split('.').pop()?.toLowerCase();
   if (['png', 'jpg', 'jpeg', 'webp', 'dds', 'ktx2', 'tga'].includes(extension ?? '')) return <FileImage size={15}/>;
-  if (['glb', 'gltf', 'fbx', 'obj', 'mesh'].includes(extension ?? '')) return <FileBox2 size={15}/>;
+  if (['glb', 'gltf', 'fbx', 'obj', 'mesh'].includes(extension ?? '')) return <FileBox size={15}/>;
   if (['wav', 'ogg', 'mp3', 'flac'].includes(extension ?? '')) return <FileAudio size={15}/>;
   if (['json', 'lua', 'ts', 'js', 'cpp', 'h', 'glsl', 'hlsl'].includes(extension ?? '')) return <FileCode2 size={15}/>;
   return <FileText size={15}/>;

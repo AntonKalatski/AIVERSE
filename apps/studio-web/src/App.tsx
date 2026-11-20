@@ -6,8 +6,10 @@ import PanelTitle from './components/PanelTitle';
 import PropertyField from './components/PropertyField';
 import ViewportPlaceholder from './components/ViewportPlaceholder';
 import AssetsPanel from './components/AssetsPanel';
+import { DEFAULT_STUDIO_LAYOUT, readStudioLayout, saveStudioLayout } from './layout';
+import type { StudioEditorTab } from './layout';
 
-type Section = 'scene' | 'game' | 'materials' | 'animation';
+type Section = StudioEditorTab;
 const sections: { id: Section; title: string }[] = [
   { id: 'scene', title: 'Scene' },
   { id: 'game', title: 'Game' },
@@ -19,16 +21,28 @@ function hierarchyRows(nodes: StudioEntity[], parentId?: string, depth = 0): Arr
     .flatMap(node => [{ node, depth }, ...hierarchyRows(nodes, node.id, depth + 1)]);
 }
 
+const initialLayout = readStudioLayout();
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
-  const [selectedTab, setSelectedTab] = useState<Section>('scene');
+  const [selectedTab, setSelectedTab] = useState<Section>(initialLayout.selectedTab);
   const [search, setSearch] = useState('');
-  const [leftTab, setLeftTab] = useState<'hierarchy' | 'assets'>('hierarchy');
+  const [leftTab, setLeftTab] = useState<'hierarchy' | 'assets'>(initialLayout.leftTab);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [showConsole, setShowConsole] = useState(true);
-  const [leftSize, setLeftSize] = useState(260);
-  const [rightSize, setRightSize] = useState(300);
+  const [showConsole, setShowConsole] = useState(initialLayout.showConsole);
+  const [leftSize, setLeftSize] = useState(initialLayout.leftSize);
+  const [rightSize, setRightSize] = useState(initialLayout.rightSize);
+  useEffect(() => {
+    saveStudioLayout({ selectedTab, leftTab, leftSize, rightSize, showConsole });
+  }, [selectedTab, leftTab, leftSize, rightSize, showConsole]);
+  const resetLayout = () => {
+    setSelectedTab(DEFAULT_STUDIO_LAYOUT.selectedTab);
+    setLeftTab(DEFAULT_STUDIO_LAYOUT.leftTab);
+    setLeftSize(DEFAULT_STUDIO_LAYOUT.leftSize);
+    setRightSize(DEFAULT_STUDIO_LAYOUT.rightSize);
+    setShowConsole(DEFAULT_STUDIO_LAYOUT.showConsole);
+  };
   const [connected] = useState(nativeConnected);
   const refresh = useCallback(async () => {
     try { setSnapshot(await invoke('studio.snapshot', {})); setError(''); }
@@ -107,7 +121,7 @@ export default function App() {
     <header className="titlebar">
       <div className="wordmark"><div className="brand-logo"><Layers3 size={19}/></div><strong>AIVERSE</strong><span>STUDIO</span></div>
       <div className="project-breadcrumb"><span>Projects</span><ChevronRight size={14}/><b>{snapshot?.project.name ?? 'Loading...'}</b><span className={snapshot?.project.dirty ? 'dirty-dot active' : 'dirty-dot'}/></div>
-      <div className="title-actions"><button className="tool-button" onClick={() => void openProject()} disabled={!connected || busy} title="Open AIVERSE project"><FolderOpen size={15}/> Open Project</button><span className={connected ? 'mode-pill online' : 'mode-pill demo'}>{connected ? 'NATIVE' : 'DEMO · NO ENGINE'}</span><button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}><RefreshCw size={15}/></button><button className="icon-button" aria-label="Settings (not available)" disabled><Settings2 size={17}/></button></div>
+      <div className="title-actions"><button className="tool-button" onClick={() => void openProject()} disabled={!connected || busy} title="Open AIVERSE project"><FolderOpen size={15}/> Open Project</button><span className={connected ? 'mode-pill online' : 'mode-pill demo'}>{connected ? 'NATIVE' : 'DEMO · NO ENGINE'}</span><button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}><RefreshCw size={15}/></button><button className="icon-button" aria-label="Reset Studio layout" title="Reset panel layout" onClick={resetLayout}><Settings2 size={17}/></button></div>
     </header>
     <div className="toolbar">
       <div className="toolbar-left"><span className="toolbar-label"><Box size={16}/> Workspace</span><span className="toolbar-divider"/><button className="tool-button selected"><FolderTree size={15}/> Level Editor</button><button className="tool-button" disabled><Code2 size={15}/> Scripting</button></div>
