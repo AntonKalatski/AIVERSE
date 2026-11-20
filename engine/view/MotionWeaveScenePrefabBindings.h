@@ -4,6 +4,7 @@
 #pragma once
 
 #include "MotionWeaveSceneAssetBuilder.h"
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <map>
@@ -137,6 +138,11 @@ public:
                      render::RenderDeviceLifetime::Lease lease,
                      render::FileReader reader,Host::Statistics& stats,
                      std::string* error=nullptr) const {
+        if(!sealed_) {
+            if(error)*error="visual prefab catalogue must be sealed before activation";
+            if(host.ready(ticket))(void)host.cancel(ticket);
+            return false;
+        }
         MotionWeaveSceneAssetBuilder builder(
             device,std::move(lease),std::move(reader),
             [this](const scene::SceneObjectAsset& obj,
@@ -155,6 +161,11 @@ public:
                            render::RenderDeviceLifetime::Lease lease,
                            render::FileReader reader,Host::Statistics& stats,
                            std::string* error=nullptr) const {
+        if(!sealed_) {
+            if(error)*error="visual prefab catalogue must be sealed before activation";
+            if(host.ready(ticket))(void)host.cancel(ticket);
+            return false;
+        }
         MotionWeaveSceneAssetBuilder fresh(
             device,std::move(lease),std::move(reader),
             [this](const scene::SceneObjectAsset& obj,
@@ -178,19 +189,6 @@ public:
             }
             return fresh(manifest,next,objects,reason);
         };
-        // A nonsealed catalogue cannot publish with an arbitrary/stale key.
-        // Let the coordinator adapter cancel this Ready ticket at the same
-        // barrier (and retire any partially uploaded GPU owner) on rejection.
-        if(!sealed_) {
-            auto reject=[](const scene::SceneAsset&,
-                           const render::ModelAssetProvider*,Owner&,
-                           std::vector<Object>&,std::string& reason)->bool {
-                reason="visual prefab catalogue must be sealed before activation";
-                return false;
-            };
-            return host.commitReadyShared(
-                ticket,"unsealed-rejected",reject,stats,error);
-        }
         return host.commitReadyShared(ticket,key_,build,stats,error);
     }
 
