@@ -48,7 +48,7 @@ struct Device : gfx::Device {
     void setScissor(const gfx::Rect&) override{}
     void setPipeline(gfx::PipelineHandle) override{}
     void setVertexBuffer(gfx::BufferHandle,size_t) override{}
-    void setIndexBuffer(gfx::BufferHandle) override{}
+    void setIndexBuffer(gfx::BufferHandle,size_t=0) override{}
     void setTexture(int,gfx::TextureHandle) override{}
     void setUniforms(int,const void*,size_t) override{}
     void draw(uint32_t,uint32_t) override{}
