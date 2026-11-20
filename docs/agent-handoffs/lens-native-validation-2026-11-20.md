@@ -231,3 +231,18 @@ Actually executed: catalog.py generate/check PASS (222 entries),
 audit.py --strict PASS (0 errors/warnings), tests/skills/catalog_test.py PASS,
 git diff --check PASS. CI NOT RUN. Full CTest remains in progress at checkpoint.
 Next: finish full run; rebuild/retest the preceding native regression fixes.
+
+## Core abort and deferred-loading teardown
+
+The 74f076f42 full run aborted aiverse_tests after 382.31s at the first
+terrain-free primary draw: stageSurfaceFrame incorrectly required a Terrain
+map even when hasTerrain_ was false (the Terrain participant already skips
+that case). Commit `a2ef3047f7ff2417a5777b450fb1b9b19ec6dd1d` scopes the map-match gate to hasTerrain_,
+preserving the epoch fixture and non-terrain hosts. Deferred-loading fake
+device also supplies explicit idle=true (no real GPU), fixing its shutdown
+abort; production idle safety is unchanged. Two affected paths: RtsView.cpp
+and tests/deferred_loading.cpp. Branch codex/lens-completion; no API/save change.
+Focused rerun at 8987223a9 report `20261120-150848-57940`: all six preceding
+regression fixes PASS after targeted 3-target rebuild. Full CTest still pending
+other long checks. CI/GPU visuals NOT RUN. Next: rebuild these targets and run
+epoch, LENS and deferred-loading filters before another expensive core run.
