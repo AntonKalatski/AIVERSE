@@ -412,7 +412,10 @@ private:
                 parentOf_[ci] = int(i);
             }
             if (const Json& w = j["weights"]; w.size() > 0) {
-                for (size_t k = 0; k < std::min<size_t>(w.size(), kMaxMorphTargets); ++k) n.weights[k] = float(num(w[k], 0));
+                if(w.size()>size_t(kMaxMorphTargets))
+                    fail("node '"+n.name+"': morph weights exceed 64-channel limit");
+                for(size_t k=0;k<w.size();++k)
+                    n.weights[k]=float(num(w[k],0));
                 nodeWeights_.insert(int(i));
             }
             if (j.has("camera")) warn("node '" + n.name + "': cameras are ignored");
@@ -504,6 +507,8 @@ private:
                 }
             }
             for (size_t pi = 0; pi < prims.size(); ++pi) loadPrimitive(prims[pi], md, skinOfMesh.count(int(mi)) > 0);
+            if(jm["weights"].size()>size_t(kMaxMorphTargets))
+                fail("mesh '"+md.name+"': default morph weights exceed 64-channel limit");
             for (const auto& w : jm["weights"].items()) md.weights.push_back(float(num(w, 0)));
             float previousPixels = 1e30f;
             for (const auto& level : jm["extras"]["rtsLods"].items()) {
@@ -795,7 +800,9 @@ private:
                     comps = want;
                     nv /= size_t(want);
                 }
-                c.comps = uint8_t(std::min(want, 255));
+                if(c.path==AnimChannel::Weights && want>kMaxMorphTargets)
+                    fail("animation '"+clip.name+"': animated morph weights exceed 64-channel limit");
+                c.comps=uint8_t(want);
                 if (comps != want || nv < nt * perKey || nt == 0) { warn("animation '" + clip.name + "': malformed channel skipped"); continue; }
                 c.times.assign(t.begin(), t.end());
                 c.values.reserve(nt * perKey * size_t(want));
