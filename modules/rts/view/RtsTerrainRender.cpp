@@ -238,8 +238,8 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     water_={};
     if(!retiredMeshes_.completeForShutdown(dev))
         throw std::runtime_error("TerrainRenderer: pending GPU mesh retirement could not reach idle");
-    for (auto t : {cellTex_, dynTex_, splatTex_, visionTex_, white_, flatN_, gray_, heightField_.tex}) if (t.valid()) dev.destroyTexture(t);
-    cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
+    for (auto t : {cellTex_, dynTex_, splatTex_, visionTex_, detailNrmTex_, detailSplatTex_, white_, flatN_, gray_, heightField_.tex}) if (t.valid()) dev.destroyTexture(t);
+    cellTex_ = dynTex_ = splatTex_ = visionTex_ = detailNrmTex_ = detailSplatTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
     // High/detail variants can allocate all six shader/pipeline slots.
@@ -369,6 +369,155 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     gh.add(uint64_t(g.w)); gh.add(uint64_t(g.h)); gh.add(uint64_t(heightfield_)); gh.add(uint64_t(detail ? 99 : lodLevels_));
     uint32_t lhBits; std::memcpy(&lhBits, &lh_, 4); gh.add(lhBits);
     bool all = gh.h != globalHash_ || !built_;
+    // Detail rebuilds are staged as one visual publication. The old CPU
+    // surface, normal/splat images, coarse LOD meshes and water remain live
+    // until every replacement upload has finished successfully.
+    if (detail) {
+        bool needsDetailRebuild=all || !detailOn_ || fileDetailChanged_ ||
+            dirtyI1_>dirtyI0_ || materialLayerChanged_;
+        if (!needsDetailRebuild)
+            for (const auto& c:chunks_) {
+                if (!c.valid || chunkHash(g,c,flatDig)!=c.hash) {
+                    needsDetailRebuild=true;
+                    break;
+                }
+            }
+        if (!needsDetailRebuild) {
+            // Dynamic field/creep data can change without a geometry rebuild.
+            updateCellTextures(dev,g,flatDig);
+            updateDynamic(dev,g,true);
+            stats_.rebuilt=0;
+            stats_.chunks=int(chunks_.size());
+            stats_.lodMax=lodLevels_;
+            stats_.detailK=detailK_;
+            stats_.buildMs=std::chrono::duration<double,std::milli>(
+                std::chrono::steady_clock::now()-t0).count();
+            return false;
+        }
+
+        TerrainRenderer staged;
+        staged.dev_=&dev;
+        staged.gpuDeviceLease_=gpuDeviceLease_;
+        try {
+            staged.rules_=rules_;
+            staged.look_=look_;
+            staged.lh_=lh_;
+            staged.heightfield_=heightfield_;
+            staged.lodLevels_=lodLevels_;
+            staged.materialLayer_=materialLayer_;
+            staged.hasFileDetail_=hasFileDetail_;
+            staged.fileDetail_=fileDetail_;
+            staged.fileSplat_=fileSplat_;
+            staged.fileDetailChanged_=fileDetailChanged_;
+            staged.mapW_=g.w;
+            staged.mapH_=g.h;
+            staged.cw_=(g.w+kChunk-1)/kChunk;
+            staged.ch_=(g.h+kChunk-1)/kChunk;
+            staged.frame_=frame_;
+            staged.chunks_.resize(size_t(staged.cw_*staged.ch_));
+            for (int cy=0;cy<staged.ch_;++cy)
+                for (int cx=0;cx<staged.cw_;++cx) {
+                    Chunk& c=staged.chunks_[size_t(cy*staged.cw_+cx)];
+                    c.x0=cx*kChunk;
+                    c.y0=cy*kChunk;
+                    c.x1=std::min(g.w,c.x0+kChunk);
+                    c.y1=std::min(g.h,c.y0+kChunk);
+                }
+            staged.updateCellTextures(dev,g,flatDig);
+            // Always rebuild a complete new detail CPU surface; this is
+            // intentionally conservative for editor edits and avoids any
+            // published-in-place mutation of detail height or textures.
+            staged.buildDetail(dev,g,flatDig,true);
+            staged.buildApron(dev,g);
+            staged.buildWater(dev,g,flatDig);
+            staged.updateDynamic(dev,g,true);
+            // Prepare a compact fallback LOD for every camera before publish.
+            // Fine LODs remain lazy and follow existing primary-view policy.
+            const int coarse=staged.lodLevels_-1;
+            for(auto& c:staged.chunks_) {
+                staged.buildDetailLod(dev,g,c,coarse);
+                c.lastUse.assign(size_t(staged.lodLevels_),frame_);
+            }
+        } catch (...) {
+            // All staging handles are private: no camera has submitted them.
+            for(auto& c:staged.chunks_)
+                for(auto& l:c.lods) {
+                    if(l.vb.valid())dev.destroyBuffer(l.vb);
+                    if(l.ib.valid())dev.destroyBuffer(l.ib);
+                }
+            if(staged.apron_.vb.valid())dev.destroyBuffer(staged.apron_.vb);
+            if(staged.apron_.ib.valid())dev.destroyBuffer(staged.apron_.ib);
+            if(staged.water_.vb.valid())dev.destroyBuffer(staged.water_.vb);
+            if(staged.water_.ib.valid())dev.destroyBuffer(staged.water_.ib);
+            for(auto* t:{&staged.cellTex_,&staged.dynTex_,&staged.splatTex_,
+                         &staged.visionTex_,&staged.detailNrmTex_,&staged.detailSplatTex_})
+                if(t->valid())dev.destroyTexture(*t);
+            lh_=previousLh;
+            heightfield_=previousHeightfield;
+            lodLevels_=previousLodLevels;
+            throw;
+        }
+        for(auto& c:chunks_)freeChunk(dev,c);
+        retiredMeshes_.retireBuffer(dev,apron_.vb);
+        retiredMeshes_.retireBuffer(dev,apron_.ib);
+        retiredMeshes_.retireBuffer(dev,water_.vb);
+        retiredMeshes_.retireBuffer(dev,water_.ib);
+        for(auto* t:{&cellTex_,&dynTex_,&splatTex_,&visionTex_,
+                     &detailNrmTex_,&detailSplatTex_})
+            retiredMeshes_.retireTexture(dev,*t);
+        chunks_=std::move(staged.chunks_);
+        apron_=staged.apron_;
+        water_=staged.water_;
+        hasWater_=staged.hasWater_;
+        waterSheet_=staged.waterSheet_;
+        mapW_=staged.mapW_;
+        mapH_=staged.mapH_;
+        cw_=staged.cw_;
+        ch_=staged.ch_;
+        globalHash_=gh.h;
+        detail_=std::move(staged.detail_);
+        detailOn_=true;
+        detailK_=staged.detailK_;
+        geoBytes_=staged.geoBytes_;
+        cellCol_=std::move(staged.cellCol_);
+        cellLayerOf_=std::move(staged.cellLayerOf_);
+        cellTex_=std::exchange(staged.cellTex_,gfx::TextureHandle{});
+        dynTex_=std::exchange(staged.dynTex_,gfx::TextureHandle{});
+        splatTex_=std::exchange(staged.splatTex_,gfx::TextureHandle{});
+        visionTex_=std::exchange(staged.visionTex_,gfx::TextureHandle{});
+        detailNrmTex_=std::exchange(staged.detailNrmTex_,gfx::TextureHandle{});
+        detailSplatTex_=std::exchange(staged.detailSplatTex_,gfx::TextureHandle{});
+        cellPx_=std::move(staged.cellPx_);
+        dynPx_=std::move(staged.dynPx_);
+        splatPx_=std::move(staged.splatPx_);
+        visionPx_=std::move(staged.visionPx_);
+        nrmPx_=std::move(staged.nrmPx_);
+        dsplatPx_=std::move(staged.dsplatPx_);
+        texW_=staged.texW_;
+        texH_=staged.texH_;
+        nrmW_=staged.nrmW_;
+        nrmH_=staged.nrmH_;
+        dsplatW_=staged.dsplatW_;
+        dsplatH_=staged.dsplatH_;
+        dynRow_=staged.dynRow_;
+        visionInit_=false;
+        fogFieldChanged_=true;
+        fileDetailChanged_=false;
+        dirtyI0_=dirtyJ0_=1<<30;
+        dirtyI1_=dirtyJ1_=-1;
+        materialLayerChanged_=false;
+        heightDirty_=true;
+        built_=true;
+        stats_.rebuilt=staged.stats_.rebuilt;
+        stats_.chunks=int(chunks_.size());
+        stats_.lodMax=lodLevels_;
+        stats_.detailK=detailK_;
+        stats_.geometryBytes=geoBytes_;
+        stats_.buildMs=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-t0).count();
+        if (!texturesLoaded_)loadTextures(dev);
+        return true;
+    }
     // Whole-map non-detail rebuild is transactional across every chunk, the
     // apron and water. Never retire any published GPU handle until the final
     // replacement upload has succeeded. The detail path is handled separately.
@@ -484,17 +633,6 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     }
     if (!texturesLoaded_) loadTextures(dev);
     stats_.rebuilt = 0;
-    if (detail) { // sub-cell detail surface (RtsTerrainDetailMesh.cpp)
-        updateCellTextures(dev, g, flatDig);
-        const bool changed = buildDetail(dev, g, flatDig, all);
-        updateDynamic(dev, g, true);
-        if (changed) { buildWater(dev, g, flatDig); heightDirty_ = true; }
-        built_ = true;
-        stats_.chunks = int(chunks_.size());
-        stats_.lodMax = lodLevels_;
-        stats_.buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-        return changed;
-    }
     detailOn_=false;
     for(auto& c:chunks_) {
         const uint64_t h=chunkHash(g,c,flatDig);
