@@ -599,13 +599,20 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             int maxChannels=0;
             for(const auto& p:baseMesh.primitives)
                 maxChannels=std::max(maxChannels,p.morphTargets);
-            const float* weights=usePose
-                ? (*d.pose)[size_t(n)].w:node.weights;
-            for(int k=0;k<maxChannels;++k)
-                if(!std::isfinite(weights[k]) ||
-                   weights[k]<0.f || weights[k]>1.f) {
-                    morphWeightsBounded=false;break;
-                }
+            if(maxChannels>kMaxMorphTargets) {
+                // Native Models may bypass importer upload preflight.
+                // Never read beyond NodePose::w for such invalid assets.
+                morphWeightsBounded=false;
+                morphMappingsReady=false;
+            }else {
+                const float* weights=usePose
+                    ? (*d.pose)[size_t(n)].w:node.weights;
+                for(int k=0;k<maxChannels;++k)
+                    if(!std::isfinite(weights[k]) ||
+                       weights[k]<0.f || weights[k]>1.f) {
+                        morphWeightsBounded=false;break;
+                    }
+            }
             // Native hosts may author ModelLod directly. If their morph
             // remap is absent/incomplete, fall back to LOD0 instead of
             // displaying a bind-face or mismatched expression on LOD1.
