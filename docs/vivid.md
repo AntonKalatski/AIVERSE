@@ -1570,3 +1570,91 @@ only. Do not infer final Renderer3D occluder parity, Blend/cornea,
 ShaderGraph displacement, ICB/MDI, alternative LOD, Vulkan/GLES3
 GPU-source expansion or MetaHuman-grade realism from it. See the
 Stage 7AY dedicated handoff.
+
+
+## Stage 7AZ — two independently GPU-deformed models in normal Renderer3D + ID (2026-11-20)
+
+The native one-actor VIVID Metal visual fixture gains a **separate
+alpha-masked occluder Model** and a second genuine Metal compute
+vertex-stream producer. The host first draws the usual selected
+VIVID GPU-morphed human, then the independently GPU-deformed mask
+actor through **normal `Renderer3D::drawModel` colour/depth**.
+The same GPU-written 60-byte `ModelVertex` source of the mask actor
+is passed into the existing 7AY GPU-ID zero-ID occluder compute
+path. The immutable CPU bind mesh is not rewritten with the
+per-frame delta. Only the test fixture enables this opt-in mode
+via `AIVERSE_VIVID_MASK_PARITY=1`; normal Creator and crowd
+rendering remain unchanged.
+
+`Renderer3D::trackModelSubmissions(selected, occluder)` now accepts
+an optional second Model pointer, preserving the old single-model
+call. Its bounded per-frame accepted-command log stores both
+sources, and `modelSubmissionProvenance(model)` filters the recorded
+commands by the requested Model. Both pointers are cleared at
+`beginScene`, and late tracking still fails closed.
+`sculptGpuPairedRendererViewsAccepted` validates each main-colour
+draw through the already strict original source, current frame,
+direct index/LOD/vertexOverride and pipeline gate; it requires
+distinct actual GPU source handles. If the second Mask actor is
+missing, culled, batched unexpectedly, using an alternate source,
+stale or compiled without a usable pipeline, the one-pixel
+corroboration is rejected before an independent GPU-ID draw.
+
+The Metal fixture creates two immutable 1×1 RGBA8 base textures
+with exactly the same colour but alpha 0 or 255, and a
+conventional double-sided `AlphaMode::Mask` model with a
+real renderer-owned material/UV/cutoff. During morph-stage
+(stage 1), its producer writes an offset +0.075 world-X into
+a distinct 60-byte vertex buffer and selects the alpha-hole
+texture; the normal colour renderer should show the original
+selected human behind the discarded mask fragment, with a
+nonzero selected GPU-ID triangle. During MotionWeave animation
+(stage 2), the producer writes a different -0.065 X offset,
+selects the solid texture and the mask actor should visibly
+occlude the source. Both native main colour/depth and VIVID
+offscreen ID/depth must then agree on the same closer
+GPU-written Mask triangle and yield **selected ID zero**.
+
+The same frame is checked with the 7AY exact-frame
+`copyColor`/single-pixel RGBA8 readback and actual hardware
+`Depth32Float` readbacks from both colour and ID depths.
+The existing `compareSculptGpuColorIdCoverage` reports
+`Inconclusive` for any coloured pixel with ID zero; Stage
+7AZ interprets that as an expected Mask occlusion **only
+after** two separate direct renderer submissions, distinct
+current-frame GPU streams, the explicitly known alpha-solid
+texel, and measured same-depth comparison all validate.
+This does not make unrelated unknown occluders positive hits.
+
+`tools/vivid-validate.sh` adds a separate GUI process
+with `AIVERSE_VIVID_MASK_PARITY=1`, three actual
+Renderer3D screenshots and required `stage=1
+mask=alpha-hole` / `stage=2 mask=solid-occlusion`
+GPU coverage/depth log entries. The original single-actor
+and 12-actor crowd modes remain intact. A portable synthetic
+fixture tests that a second renderer source with a shared
+GPU buffer, stale frame, absent accepted draw or altered
+index range cannot claim 7AZ parity.
+
+**Status:** implementation, test sources, GitHub commits and
+23 source-only contract inspections are complete. **NOT RUN:**
+C++/ObjC++ build, native Metal compute/pipeline compilation,
+GUI screenshots, GPU pixel/depth readbacks, CTest,
+`bash tools/vivid-validate.sh --full`, Vulkan/GLES device
+tests and performance. No hardware PASS or main-merge
+claim is made here.
+
+**Limitations:** This is a bounded, non-instanced, single
+screen-pixel alpha-hole/solid scenario, not general automatic
+GPU culling/LOD/transparency/multiple-occluder parity.
+The mask model's GPU buffer is written by a small fixture
+compute shader rather than the production facial morph
+algorithm; it nevertheless uses the normal Renderer3D
+colour path and the same actual GPU-produced buffer in
+the ID path. Arbitrary ShaderGraph displacement, cornea/Blend,
+late compositing, GPU ICB/MDI, alternate LOD, skinned
+unrelated occluders and Vulkan/GLES true GPU-source
+readback remain open. A full native Mac acceptance and
+isolated semantic integration with concurrent renderer
+and Texture RHI work are required before merging.
+See `docs/agent-handoffs/vivid-7AZ-second-actor-mask-parity-2026-11-20.md`.
