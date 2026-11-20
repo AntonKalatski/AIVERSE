@@ -471,6 +471,15 @@ private:
         // so camera-specific matrices and the CPU particle view agree.
         const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
         previewViewport_.ensure(*previewDevice_,int(width*dpi),int(height*dpi));
+        if(!previewViewport_.color.valid() ||
+           !previewViewport_.depth.valid() ||
+           previewViewport_.w<=0 || previewViewport_.h<=0) {
+            // Never submit a scene pass with incomplete RHI attachments.
+            // Keep pending Step intact and show the actual allocation fault.
+            (void)previewPolicy_.advance(ed.time(),false);
+            ImGui::TextUnformatted("GPU preview render target unavailable");
+            return;
+        }
         const int viewW=std::max(1,previewViewport_.w);
         const int viewH=std::max(1,previewViewport_.h);
         const float aspect=float(viewW)/float(viewH);
@@ -499,7 +508,6 @@ private:
             }
         } else {
             initPreview(ed);
-            const float dt=previewPolicy_.advance(now,previewInitialized_);
             if(previewInitialized_) {
                 const uint64_t hash=previewHash(text_);
                 if(previewPolicy_.needsStart(hash)) {
@@ -527,10 +535,14 @@ private:
                         previewMessage_="GPU preview reset deferred to safe frame";
                     }
                 }
-                if(previewPolicy_.canDraw(hash)) {
-                    canDraw=true;
+                canDraw=previewPolicy_.canDraw(hash);
+                // Consume a queued step ONLY after the new revision has
+                // really started. A failed reset/dispatch must not eat it.
+                const float dt=previewPolicy_.advance(now,canDraw);
+                if(canDraw)
                     previewHost_.prepareGpu(dt,view);
-                }
+            } else {
+                (void)previewPolicy_.advance(now,false);
             }
         }
         auto& renderer=ed.renderer();
