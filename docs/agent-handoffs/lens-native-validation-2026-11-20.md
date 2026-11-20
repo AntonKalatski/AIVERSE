@@ -263,3 +263,18 @@ unexpected exceptions as failed tests, prints their names and flushes output
 before continuing. Failure exit status remains nonzero. tests/tests.cpp only.
 CI NOT RUN. Budget-stage native tests still pending. Next: rebuild core, run
 selection/LENS/budget filters, then complete the remaining full core gate.
+
+## Complete core execution — one remaining recorder failure
+
+At 42b7fe2e0, all-target native build PASS (log final-build-42b7fe2e0.log).
+Full core report 20261120-152514-77511 completed in 901.75s: **274351 checks,
+1 failed**, solely baked_lighting_lightmap_and_probe_variants throwing at
+Renderer3D shutdown because its CPU-only ShaderRecorder lacked idle proof.
+Commit `4a065c85b2088773b516e948dde82ad08d59c52f` adds idle=true to that fake only (tests/bake/tests_baked_render.inc).
+No production/API change. Native binary is macOS Debug x86_64 (verified with file);
+no ARM64/GPU parity claim. All artifacts/cache/temp files under KINGSTON.
+New budget and all LENS-named core fixtures at 42b7fe2e0: **408 checks PASS**,
+log lens-budget-42b7fe2e0.log; selection outline fixture **7 PASS**, log
+lens-selection-42b7fe2e0.log. CI/GPU visuals NOT RUN. Next: rebuild core once,
+retest sole baked-lighting failure and current camera/MotionWeave/View subset;
+do not represent earlier full runs as all-green.
