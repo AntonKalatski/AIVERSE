@@ -1849,3 +1849,12 @@ Native Creator accepts `--studio-lighting neutral` (or another preset ID) for
 repeatable captures. Without this option its legacy optical-test setup is retained.
 
 Workflow reference: [Epic MetaHuman viewport environments](https://dev.epicgames.com/documentation/metahuman/navigating-metahuman-creator-in-unreal-engine).
+
+## Default preview idle and poses — 2026-11-20
+
+Native Studio now defaults to a relaxed pose with a generated six-second facial
+idle, sampled by its existing Animator. Four poses, pause, speed and facial idle
+toggle are in VIVID Appearance. Source data is not changed. See
+[preview animation](vivid-preview-animation.md) for semantic rig requirements,
+clip ownership, native methods and diagnostic capture controls. Full anatomical
+correctives, clothing collision and imported material repairs are not included.

@@ -115,8 +115,11 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             device_->beginFrame(framebufferWidth,framebufferHeight);
             renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
             const auto* model=facialGpu_.model();
-            const float h=std::max(.01f,model->boundsMax.y-model->boundsMin.y);
-            const float3 foot{(model->boundsMin.x+model->boundsMax.x)*.5f,model->boundsMin.y,(model->boundsMin.z+model->boundsMax.z)*.5f};
+            // Match the exact normalization used by StudioFacialGpuPreview::submit.
+            const auto extent=model->boundsMax-model->boundsMin;
+            const float scale=2.f/std::max({extent.x,extent.y,extent.z,.0001f});
+            const float h=std::max(.01f,extent.y*scale);
+            const float3 foot{0,-extent.y*.5f*scale,0};
             vivid::applyHumanStudioLighting(renderer_,facialBinding.studioLighting,foot,h);
             renderer_.setShadowQuality(ShadowQuality::Medium);
             const auto bg=facialBinding.studioLighting.rig().background;

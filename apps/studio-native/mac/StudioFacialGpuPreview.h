@@ -48,6 +48,7 @@ private:
     lib::animation::FacialPreviewSession facial_;
     render::Animator animator_; // ONLY parent pose evaluator in this preview
     render::Pose pose_;
+    int previewClipBase_=-1,activePreviewClip_=-1;
     std::vector<render::mat4> nodeWorld_;
     std::string projectRoot_,guid_;
     std::string readerProject_,pendingSource_,pendingProject_,pendingGuid_,modelKey_;

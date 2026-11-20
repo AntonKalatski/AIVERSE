@@ -9,6 +9,7 @@
 #include "engine/character/vivid/HumanAppearance.h"
 #include "engine/character/vivid/HumanFaceShape.h"
 #include "engine/character/vivid/HumanStudioLighting.h"
+#include "engine/character/vivid/HumanPreviewAnimation.h"
 #include <optional>
 #include <array>
 #include <cmath>
@@ -26,8 +27,9 @@ namespace aiverse::studio {
 class StudioFacialPreviewBinding final {
 public:
     vivid::HumanStudioLighting studioLighting;
+    vivid::HumanPreviewAnimation previewAnimation;
     void reset() {
-        studioLighting={};
+        studioLighting={};previewAnimation={};
         appearance_.reset();face_.reset();appearanceOnly_=false;
         guid_.clear();
         path_.clear();

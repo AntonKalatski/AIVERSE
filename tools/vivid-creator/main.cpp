@@ -1,3 +1,4 @@
+#include "engine/character/vivid/HumanPreviewAnimation.h"
 #include "engine/character/vivid/HumanStudioLighting.h"
 // VIVID Creator: standalone non-destructive digital-human authoring and
 // actual Renderer3D preview. Uses AIVERSE's existing ImGui/RHI/Model and
@@ -94,6 +95,8 @@ struct CreatorApp {
     bool animate=true, inspectGroom=false, wetPreview=false;
     bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
     bool portraitCapture=false;
+    bool previewMotion=false;int previewPose=0;float previewTime=-1;
+    motionweave::AnimationPoseComponent previewCapturePose;
     bool studioLightingEnabled=false;
     vivid::HumanStudioLighting studioLighting;
     float3 studioFoot{};float studioHeight=3.8f;
@@ -625,6 +628,7 @@ struct CreatorApp {
                              bind.x,bind.y+0.055f,bind.z,
                              bind.x,bind.y,bind.z};
             idle.channels.push_back(std::move(headMove));
+            if(previewMotion){idle=humanPreviewClip(*proposed.head,previewPose,true);idle.name="vivid_idle";}
             proposed.head->clips.push_back(std::move(idle));
             proposed.head->uploadPrepared=true;
             auto newGraph=AnimationGraph::compile(*proposed.head,Json::parse(
@@ -1782,7 +1786,10 @@ struct CreatorApp {
         }
         const float step=std::clamp(float(dt),0.0f,0.04f);
         motionweave::MotionWeave::update(*world,animate?step:0.0f);
-        const auto& pose=world->get<motionweave::AnimationPoseComponent>(entity);
+        const auto& sourcePose=world->get<motionweave::AnimationPoseComponent>(entity);
+        const auto* poseSource=&sourcePose;
+        if(previewMotion&&previewTime>=0){previewCapturePose=sourcePose;bindPose(*human.head,previewCapturePose.local);sampleClip(human.head->clips.back(),previewTime,previewCapturePose.local);worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);poseSource=&previewCapturePose;}
+        const auto& pose=*poseSource;
         if(!pose.valid || pose.matrices.size()!=human.head->nodes.size()) {
             status="MotionWeave pose temporarily unavailable";
             return;
@@ -1792,11 +1799,12 @@ struct CreatorApp {
         for(std::size_t i=0;i<kChannelCount;++i)
             controller.set(Layer::Tracking,static_cast<Channel>(i),
                            session.dna().expressionRest[i]);
-        controller.set(Layer::Tracking,Channel::JawOpen,jaw);
-        controller.set(Layer::Tracking,Channel::EyeBlinkLeft,blink);
-        controller.set(Layer::Tracking,Channel::EyeBlinkRight,blink);
-        controller.set(Layer::Tracking,Channel::MouthSmileLeft,smile);
-        controller.set(Layer::Tracking,Channel::MouthSmileRight,smile);
+        if(previewMotion){std::array<float,kChannelCount> values{};for(size_t n=0;n<human.head->nodes.size();++n){const int mesh=human.head->nodes[n].mesh;if(mesh<0)continue;const auto& names=human.head->meshes[size_t(mesh)].morphTargetNames;for(size_t k=0;k<std::min(names.size(),size_t(kMaxMorphTargets));++k){Channel channel;if(channelFromName(names[k],channel))values[size_t(channel)]=std::max(values[size_t(channel)],pose.local[n].w[k]);}}for(size_t i=0;i<kChannelCount;++i)controller.set(Layer::Tracking,Channel(i),values[i]);}
+        if(!previewMotion||jaw>0)controller.set(Layer::Tracking,Channel::JawOpen,jaw);
+        if(!previewMotion||blink>0)controller.set(Layer::Tracking,Channel::EyeBlinkLeft,blink);
+        if(!previewMotion||blink>0)controller.set(Layer::Tracking,Channel::EyeBlinkRight,blink);
+        if(!previewMotion||smile>0)controller.set(Layer::Tracking,Channel::MouthSmileLeft,smile);
+        if(!previewMotion||smile>0)controller.set(Layer::Tracking,Channel::MouthSmileRight,smile);
         if(smoke && !animate)controller.snap();
         else controller.advance(step);
         if(!human.rig.compose(pose.matrices,facePose,controller.frame())) {
@@ -2075,7 +2083,10 @@ struct CreatorApp {
         ModelDraw draw;
         draw.model=human.head.get();
         draw.nodeWorld=&facePose;
-        const bool headSubmitted=(actor&&actor->attach(draw))||
+        // Imported semantic clips use the same native morph texture path as Studio.
+        // The sparse actor override suppresses Model morphs, so do not attach it here.
+        if(previewMotion)draw.pose=&pose.local;
+        const bool headSubmitted=previewMotion || (actor&&actor->attach(draw))||
                                  (cpuActor&&cpuActor->attach(draw));
         if(headSubmitted)
             renderer.drawModel(draw);
@@ -2244,7 +2255,7 @@ struct CreatorApp {
                         out.write(reinterpret_cast<const char*>(pixels.data()+i),3);
                     smokeCompleted=bool(out);
                     std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s headCommands=%zu actor=%s shadow=%u colour=%u pass=%d\n",
-                        smokePath.c_str(),headCommands,actor?"GPU":"CPU",
+                        smokePath.c_str(),headCommands,previewMotion?"MODEL_MORPH":actor?"GPU":"CPU",
                         unsigned(shadowDraws),unsigned(colourDraws),int(smokeCompleted));
                     platform::requestQuit();
                 });
@@ -2300,6 +2311,10 @@ int aiverseMain(int argc,char** argv) {
             }catch(const std::exception& e){std::fprintf(stderr,"VIVID appearance: %s\n",e.what());return 2;}
         }else if(std::strcmp(argv[i],"--studio-lighting")==0 && i+1<argc) {
             application->studioLighting.preset=argv[++i];(void)application->studioLighting.rig();application->studioLightingEnabled=true;
+        }else if(std::strcmp(argv[i],"--preview-pose")==0 && i+1<argc) {
+            HumanPreviewAnimation settings;settings.pose=argv[++i];try{application->previewPose=settings.poseIndex();application->previewMotion=true;}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 2;}
+        }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
+            try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--portrait")==0) {
             application->portraitCapture=true;
         }else if(std::strcmp(argv[i],"--still")==0) {

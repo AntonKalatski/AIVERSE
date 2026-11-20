@@ -159,6 +159,7 @@ bool StudioFacialGpuPreview::sync(
         if(!binding.appearanceOnly() && !newSession.configure(*prepared.model,binding.document(),
                                  binding.scalars(),ikTargets,error))
             throw std::runtime_error(error);
+        const int previewBase=vivid::appendHumanPreviewClips(*prepared.model);
         // CPU decoding/preparation is complete; validate the rig BEFORE any
         // GPU publication. Fresh owner keys preserve last-good on failure.
         const auto key="studio-facial-generation/"+std::to_string(++publicationSerial_);
@@ -178,11 +179,7 @@ bool StudioFacialGpuPreview::sync(
         modelKey_=key;
         facial_=std::move(newSession);
         animator_.setModel(model_);
-        if(!model_->clips.empty()) {
-            render::Animator::Play play;
-            play.restart=true;play.fade=0.f;
-            animator_.play(0,0,play);
-        }
+        previewClipBase_=previewBase;activePreviewClip_=-1;
         projectRoot_=projectRoot;guid_=binding.guid();revision_=binding.revision();
         pendingRevision_=0;pendingSource_.clear();pendingGuid_.clear();pendingProject_.clear();
         rejectedRevision_=0;rejectedGuid_.clear();rejectedProject_.clear();rejectedError_.clear();
@@ -225,7 +222,11 @@ bool StudioFacialGpuPreview::submit(
             return false;
         }
     const float frameDt=std::clamp(dt,0.f,0.1f);
-    animator_.update(frameDt);
+    const auto& animation=binding.previewAnimation;
+    const int requestedClip=previewClipBase_+animation.poseIndex()*2+(animation.faceIdle?1:0);
+    if(activePreviewClip_!=requestedClip){render::Animator::Play play;play.restart=true;play.fade=activePreviewClip_<0||!animation.playing?0.f:.25f;animator_.play(0,requestedClip,play);activePreviewClip_=requestedClip;}
+    animator_.setSpeed(0,animation.speed);
+    animator_.update(animation.playing?frameDt:0.f);
     animator_.evaluate(pose_); // one parent writer, bind/clip pose once
     if(!appearanceOnly_ && !facial_.apply(*model_,pose_,frameDt,error))
         return false; // FacialControlRig is transactional on failure
