@@ -84,6 +84,10 @@ public:
     // ACTIVE program/targets. An uncollected retired texture is never freed
     // just because the compute readback completed or CPU frames advanced.
     bool shutdown() {
+        // Even a fully completed Luma compute callback does not prove that
+        // the last material receiver or additive HDR graphics pass finished.
+        if(!graphicsUse_.canRelease(dev_?lumaWeaveCompletedFence(*dev_):0))
+            return false;
         if(retiredTextures_.pendingCount() || producer_.pendingRetiredTextures())
             return false;
         if(!producer_.shutdown())return false;
@@ -110,6 +114,7 @@ public:
         sourcesPublished_=geometryPublished_=enabled_=false;
         requestedQuality_=quality_=LumaWeaveQuality::Balanced;
         adaptiveEnabled_=false;
+        graphicsUse_.afterGpuIdle();
         frame_={};last_={};
         return true;
     }
@@ -133,6 +138,7 @@ public:
         if(producer_.busy() || !producer_.drainRetiredAfterGpuIdle())return false;
         if(dev_)retiredTextures_.drainAfterGpuIdle(
             [this](gfx::TextureHandle h){dev_->destroyTexture(h);});
+        graphicsUse_.afterGpuIdle();
         return true;
     }
 
@@ -261,6 +267,7 @@ public:
         p.clearDepthEnabled=true;
         p.clearColor[0]=p.clearColor[1]=p.clearColor[2]=0;
         p.clearColor[3]=1; // absent fragments have black albedo, no artificial light
+        graphicsUse_.markUsed(lumaWeaveSubmittedFence(*dev_));
         return p;
     }
     void materialReceiverPublished(gfx::TextureHandle texture,int w,int h) override {
@@ -290,6 +297,7 @@ public:
         p.clearDepthEnabled=true;
         p.clearColor[0]=p.clearColor[1]=p.clearColor[2]=0;
         p.clearColor[3]=1;
+        graphicsUse_.markUsed(lumaWeaveSubmittedFence(*dev_));
         return p;
     }
     void surfaceReceiverPublished(gfx::TextureHandle texture,int w,int h) override {
@@ -486,7 +494,7 @@ private:
     }
 
     bool additiveCompose(gfx::Device& d,gfx::TextureHandle direct,
-                         bool materialShaded) const {
+                         bool materialShaded) {
         if(!pipeline_.valid()||!scene_.colorTarget.valid()||
            !scene_.depthTarget.valid()||!direct.valid())return false;
         struct Params {float4 options;};
@@ -496,6 +504,7 @@ private:
         p.depthTarget=composeDepth_; // must differ from sampled scene_.depthTarget
         p.clearColorEnabled=false;
         p.clearDepthEnabled=true;
+        graphicsUse_.markUsed(lumaWeaveSubmittedFence(*dev_));
         d.beginPass(p);
         d.setViewport({0,0,viewWidth_,viewHeight_});
         d.setPipeline(pipeline_);
@@ -514,6 +523,7 @@ private:
     LightSystem& legacy_;
     LumaWeaveScreenMetal producer_;
     LumaWeaveTextureRetirement retiredTextures_;
+    LumaWeaveGraphicsUseGate graphicsUse_;
     gfx::Device* dev_=nullptr;
     gfx::ShaderHandle shader_{};
     gfx::PipelineHandle pipeline_{};
