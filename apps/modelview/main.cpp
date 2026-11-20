@@ -960,6 +960,52 @@ struct Viewer {
                 }
                 ImGui::PopID();
             }
+            // Live, host-owned graph overrides; edit parameters without
+            // republishing immutable Models/Graphs or mutating worker state.
+            if(attachmentGeneration) {
+                for(size_t actor=0;actor<attachmentGeneration->childGraphs.size();++actor) {
+                    for(const auto& [childId,published]:
+                        attachmentGeneration->childGraphs[actor]) {
+                        if(!published || !published->graph)continue;
+                        ImGui::PushID(int(actor));
+                        ImGui::PushID(childId.c_str());
+                        if(ImGui::TreeNode("Animated child parameters")) {
+                            ImGui::Text("Actor %zu / %s",actor,childId.c_str());
+                            const auto& defaults=published->graph->defaults();
+                            auto& override=attachmentGeneration->parameterOverrides[
+                                {actor,childId}];
+                            for(const auto& [name,value]:defaults.values) {
+                                float edited=value;
+                                const auto found=override.values.find(name);
+                                if(found!=override.values.end())edited=found->second;
+                                if(ImGui::DragFloat(name.c_str(),&edited,0.01f))
+                                    override.values[name]=edited;
+                            }
+                            for(const auto& [name,value]:defaults.vectors) {
+                                float edited[3]{value.x,value.y,value.z};
+                                const auto found=override.vectors.find(name);
+                                if(found!=override.vectors.end()) {
+                                    edited[0]=found->second.x;
+                                    edited[1]=found->second.y;
+                                    edited[2]=found->second.z;
+                                }
+                                if(ImGui::DragFloat3(name.c_str(),edited,0.01f))
+                                    override.vectors[name]={edited[0],edited[1],edited[2]};
+                            }
+                            if(ImGui::SmallButton("Reset graph overrides"))
+                                override={};
+                            const auto status=attachmentGeneration->animations.restoreResult(
+                                {1,"actor-"+std::to_string(actor),childId});
+                            ImGui::Text("Playback restore: %llu accepted / %llu rejected",
+                                static_cast<unsigned long long>(status.restored),
+                                static_cast<unsigned long long>(status.rejected));
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                        ImGui::PopID();
+                    }
+                }
+            }
             ImGui::InputText("Child model file",newAttachmentModel,
                              sizeof(newAttachmentModel));
             ImGui::InputText("Socket name",newAttachmentSocket,
