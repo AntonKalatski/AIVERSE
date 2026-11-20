@@ -5,6 +5,7 @@
 #pragma once
 #include "CameraTemporalPolicy.h"
 #include "ScreenLighting.h"
+#include "Prisma.h"
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -12,7 +13,7 @@
 namespace aiverse::render {
 class CameraPostFxPool {
     struct Entry {
-        PostFx post;
+        Prisma post;
         ScreenLighting screen;
         CameraTemporalSignature signature{};
         bool initialized=false;
@@ -24,7 +25,7 @@ class CameraPostFxPool {
     PostFxSettings settings_{};
     PostFxQuality quality_=PostFxQuality::Medium;
     bool temporalEnabled_=false;
-    PostFx::ImageLoader loader_{};
+    Prisma::ImageLoader loader_{};
     std::unordered_map<uint64_t,std::unique_ptr<Entry>> entries_;
 public:
     bool init(gfx::Device& device) {
@@ -46,7 +47,7 @@ public:
             }
         }
     }
-    void setImageLoader(PostFx::ImageLoader loader) {
+    void setImageLoader(Prisma::ImageLoader loader) {
         loader_=std::move(loader);
         for(auto& [id,e]:entries_)if(e->initialized)e->post.setImageLoader(loader_);
     }
