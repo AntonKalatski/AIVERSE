@@ -12,6 +12,7 @@
 #include "StaticCrossModelBatchPolicy.h"
 #include "GiDynamicProbeTexture.h"
 #include "GiClipmapValidityTexture.h"
+#include "GiRendererOverlayPolicy.h"
 
 #include <algorithm>
 #include <array>
@@ -310,21 +311,10 @@ bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float
                                      int ringX, int ringY, int ringZ,
                                      const GiClipmapValidityTexture* validity) {
     if (!overlay) { clearDynamicGiOverlay(); return true; }
-    if (!dev_ || matQuality_==MaterialQuality::Low ||
-        !dev_->supports(overlay->computeWritable()
-                              ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
-        !overlay->texture().valid() || overlay->device() != dev_ ||
-        !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
-        !std::isfinite(spacing) || spacing < .25f || spacing > 1000.f ||
-        nx < 1 || ny < 1 || nz < 1 || nx > 256 || ny > 256 || nz > 256 ||
-        ringX < 0 || ringY < 0 || ringZ < 0 ||
-        ringX >= nx || ringY >= ny || ringZ >= nz ||
-        size_t(nx) * size_t(ny) * size_t(nz) != overlay->probeCount() ||
-        (validity && (!validity->ready() || validity->device()!=dev_ ||
-                      validity->size()!=overlay->probeCount()))) {
-        // Invalid bindings must never silently preserve a previous world's
-        // borrowed atlas. Fall back to baked/ambient-only instead.
-        clearDynamicGiOverlay();
+    if(!dev_ || !GiRendererOverlayPolicy::acceptBase(
+           *dev_,*overlay,origin,spacing,nx,ny,nz,ringX,ringY,ringZ,
+           validity,matQuality_!=MaterialQuality::Low)) {
+        clearDynamicGiOverlay(); // no stale source from previous world
         return false;
     }
     dynamicGiOverlay_ = overlay; // caller owns it; exact same device required
@@ -342,17 +332,9 @@ bool Renderer3D::setDynamicGiCascadeOverlay(const GiDynamicProbeTexture* far,
                                             int nx,int ny,int nz,
                                             int ringX,int ringY,int ringZ) {
     if(!far) { dynamicGiFarOverlay_=nullptr; dynamicGiThirdOverlay_=nullptr; return true; }
-    if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
-       !dynamicGiOverlay_ || !dynamicGiValidity_ ||
-       !far->texture().valid() || !far->computeWritable() ||
-       far->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
-       !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
-       !std::isfinite(origin.z) || !std::isfinite(spacing) ||
-       spacing<.25f || spacing>1000.f ||
-       nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
-       ringX<0 || ringY<0 || ringZ<0 ||
-       ringX>=nx || ringY>=ny || ringZ>=nz ||
-       size_t(nx)*size_t(ny)*size_t(nz)!=far->probeCount()) {
+    if(!dev_ || !dynamicGiOverlay_ || !dynamicGiValidity_ ||
+       !GiRendererOverlayPolicy::acceptMetalCascade(
+           *dev_,*far,origin,spacing,nx,ny,nz,ringX,ringY,ringZ)) {
         dynamicGiFarOverlay_=dynamicGiThirdOverlay_=nullptr;
         return false;
     }
@@ -369,17 +351,10 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
                                                   int nx,int ny,int nz,
                                                   int ringX,int ringY,int ringZ) {
     if(!third) {dynamicGiThirdOverlay_=nullptr;return true;}
-    if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
-       !dynamicGiOverlay_ || !dynamicGiValidity_ || !dynamicGiFarOverlay_ ||
-       !third->computeWritable() || !third->texture().valid() ||
-       third->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
-       !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
-       !std::isfinite(origin.z) || !std::isfinite(spacing) ||
-       spacing<.25f || spacing>1000.f ||
-       nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
-       ringX<0 || ringY<0 || ringZ<0 ||
-       ringX>=nx || ringY>=ny || ringZ>=nz ||
-       size_t(nx)*size_t(ny)*size_t(nz)!=third->probeCount()) {
+    if(!dev_ || !dynamicGiOverlay_ || !dynamicGiValidity_ ||
+       !dynamicGiFarOverlay_ ||
+       !GiRendererOverlayPolicy::acceptMetalCascade(
+           *dev_,*third,origin,spacing,nx,ny,nz,ringX,ringY,ringZ)) {
         dynamicGiThirdOverlay_=nullptr;
         return false;
     }
