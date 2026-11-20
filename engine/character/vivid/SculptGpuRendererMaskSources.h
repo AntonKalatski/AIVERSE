@@ -10,8 +10,6 @@
 
 namespace aiverse::vivid {
 
-inline constexpr std::size_t kSculptGpuMaxMaskOccluders=4u;
-
 struct SculptGpuMaskSceneCandidate {
     const render::Model* model=nullptr;
     std::size_t mesh=0;
