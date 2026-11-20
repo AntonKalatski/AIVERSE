@@ -166,7 +166,6 @@ struct GpuIndexedSelectionPacket {
     }
 };
 struct ModelDraw {
-    GpuIndexedSelectionPacket gpuIndexed{};
     const StaticModelCache* staticCache=nullptr;
     GeometryPolicy geometry;
     const Model* model = nullptr;
@@ -202,6 +201,8 @@ struct ModelDraw {
     const BakedSample* baked = nullptr;            // skin from Model::baked instead of nodeWorld
     float dissolve = 0;                            // 0..1: burn away (spawn, death, construction)
     float4 outline{0, 0, 0, 0};                    // rgb (linear) + width in world units; a = 0: none
+    // Appended to preserve existing positional aggregate ModelDraw callers.
+    GpuIndexedSelectionPacket gpuIndexed{};
 };
 
 enum DrawFlags : uint32_t {
