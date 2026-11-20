@@ -123,7 +123,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
                     throw std::runtime_error("Material preview GPU upload failed");
             }
             materialSphere_->materials.at(0)=studioPbrPreviewMaterial(previewFactors,previewName);
-            materialSphere_->markMaterialChanged(); // invalidate renderer-owned material signature
+            // MotionWeave branch resolves model material state per draw.
+            // Do not call Studio branch's materialRevision-only API here:
+            // it is not part of this 64-morph Model contract.
         }
     }
     if (materialMode_ != materialRequested) {
