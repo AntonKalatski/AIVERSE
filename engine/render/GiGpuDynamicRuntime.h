@@ -73,6 +73,9 @@ public:
     size_t pendingProbes() const {return scheduler_.pending();}
     const GiGpuSmallScene& backend() const {return gpu_;}
     const GiUpdateScheduler& scheduler() const {return scheduler_;}
+    // Read-only accepted source snapshot for safe one-way GPU->CPU transport
+    // failover. Call only after outstanding GPU tickets are fence-acknowledged.
+    const std::vector<GiMovingLight>& lights() const {return lights_;}
 
     // Published geometry is owned for the whole duration of GPU jobs.
     // Do not publish a new revision until all previous frame fences have arrived.
