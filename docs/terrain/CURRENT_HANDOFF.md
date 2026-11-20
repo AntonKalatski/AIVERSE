@@ -1,5 +1,19 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 strict focused GPU/runtime acceptance authored (2026-11-20):**
+> New QA-only stress fixture `bf06b609` runs 128 due iterations
+> (32,768 virtual ticks) and checks v3 mass conservation, bounded
+> scheduling and byte-identical midpoint replay. CMake registration
+> `35c618f4` adds `terraweave_stage70_sustained`; focused Mac runner
+> `99721c44` reuses the existing acceptance build and enforces
+> real 4/4 MetalGPU hardware PASS plus seven PPM frame checks.
+> [Dedicated implementation/QA handoff](qa-2026-11-20-stage70-focused-gpu-runtime-acceptance-handoff.md).
+> **SOURCE COMMITTED; new C++ compile, targeted CTest and Metal
+> visual execution NOT RUN.** Previous 271/271 PASS is tied only to
+> `b17e775a`. Vulkan/GLES and long live 4-owner simulation
+> remain open. PR #53 stays Draft.
+>
+>
 > **Stage70 exact Mac native provenance CONFIRMED (2026-11-20):**
 > User provided `acceptance-reports/provenance.txt` with tested
 > `git_sha=b17e775a922d9dc50981011c8f6e25d85fc7adec`,
