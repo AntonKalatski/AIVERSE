@@ -36,7 +36,8 @@ docs/handoff/studio-html5/55-visual-smoke-and-empty-project.md
 ## Validation actually performed
 - Developer screenshot: React shell VISIBLE; native bridge CONNECTED; rendered 3D Scene VISIBLE; inspector and dock panels VISIBLE.
 - Previous developer run: full native CMake build and 14/14 studio CTests passed before runtime loader changes.
-- Stage 55 frontend/native source changes committed. Full rebuild, local browser visual check, interaction test, and new `test:scene` execution are NOT confirmed in this turn.
+- Stage 55 frontend/native source committed. On Node.js v22.16.0, reconstructed exact standalone `sceneState.ts` logic and `sceneState.test.mjs` passed **3/3 tests** (no failures). Standalone `tsc v5.8.3 --noEmit --strict --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM` passed.
+- Full React/Vite application rebuild, actual macOS visual QA of the new welcome screen, and end-to-end project-opening flow are NOT confirmed in this turn.
 - Do not conflate a rendered grid with a successfully opened project.
 
 ## Remaining and next
