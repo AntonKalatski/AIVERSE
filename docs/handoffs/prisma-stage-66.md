@@ -757,3 +757,8 @@ Merge 73c5849b9ba7ac77404cdbdcc4b4e3b129cea800 preserves peer structured fog
 and Stage36 lighting. Fresh Metal HDR 54/54 and scoped integration 10/10 PASS.
 See docs/agent-handoffs/lighting-main-stage37-main-sync-2026-11-20.md.
 Remote push awaits explicit authorization required by automatic approval review.
+
+
+Lighting publication follow-up: explicit user push authorization received.
+origin/main published at 8dcb2528df7c342626af4cb073f7743e4d0b85fc and verified
+with git ls-remote; prior publication blocker is resolved. See Stage37 handoff.

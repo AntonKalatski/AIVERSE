@@ -34,3 +34,13 @@ review requires explicit permission to publish to the remote default branch.
 The rejected combined command did not execute. Local merge is complete;
 this handoff is committed independently. Ask for explicit push authorization,
 then normal push and remote ancestry check; never force-push or bypass review.
+
+## Publication confirmed — 2026-11-20
+
+User explicitly approved: “Да, отправляй main”. The approval blocker above
+is resolved. Normal git push origin main succeeded (no force), advancing remote
+7d7bd7c99 to 8dcb2528df7c342626af4cb073f7743e4d0b85fc. git ls-remote
+confirmed that exact main SHA; git merge-base --is-ancestor confirmed lighting
+merge 9611d05d5aaf299f0892b1fe2f60b935a6c5bede is included. Working tree clean
+before this documentation checkpoint. No source changes or new builds; previous
+verification remains applicable. CI not checked.
