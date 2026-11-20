@@ -10,6 +10,7 @@
 #include <limits>
 #include <span>
 #include <vector>
+#include <utility>
 
 namespace aiverse::vivid {
 // Build once per successful imported-model candidate publication. Generated
@@ -51,7 +52,8 @@ inline bool prepareSculptMorphPositions(
         const render::Model& model,
         const SparseMorphLibrary& library,
         std::span<const float> weights,
-        std::vector<render::float3>& output) {
+        std::vector<render::float3>& output,
+        std::vector<render::float3>* scratch=nullptr) {
     if(library.vertices()!=model.vertices.size() ||
        weights.size()!=library.targets() ||
        model.vertices.size()>1000000u)return false;
@@ -61,7 +63,10 @@ inline bool prepareSculptMorphPositions(
     const auto deltas=library.gpuDeltas();
     if(offsets.size()!=model.vertices.size()+1 ||
        offsets.front()!=0 || offsets.back()!=links.size())return false;
-    std::vector<render::float3> candidate;
+    if(scratch==&output)return false;
+    std::vector<render::float3> local;
+    auto& candidate=scratch?*scratch:local;
+    candidate.clear();
     candidate.reserve(model.vertices.size());
     for(std::size_t i=0;i<model.vertices.size();++i) {
         auto p=model.vertices[i].pos;
@@ -80,7 +85,8 @@ inline bool prepareSculptMorphPositions(
             return false;
         candidate.push_back(p);
     }
-    output=std::move(candidate);
+    if(scratch)std::swap(output,candidate);
+    else output=std::move(candidate);
     return true;
 }
 
