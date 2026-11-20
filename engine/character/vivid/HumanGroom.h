@@ -5,6 +5,8 @@
 #include "engine/render/Model.h"
 #include <cstdint>
 #include <memory>
+#include <utility>
+#include <cstddef>
 #include <span>
 #include <vector>
 
@@ -30,6 +32,36 @@ struct GroomSelfCollisionStats {
     std::size_t pairChecks=0;
     std::size_t contacts=0;
     bool budgetHit=false;
+};
+// Reused broadphase scratch owned by one groom on its render-owner thread.
+// Separate from gameplay ECS and from GPU resource lifetime.
+struct GroomSegmentWorkspace {
+    struct Cell {
+        int x=0,y=0,z=0;
+        bool operator<(const Cell& b)const noexcept {
+            if(x!=b.x)return x<b.x;
+            if(y!=b.y)return y<b.y;
+            return z<b.z;
+        }
+    };
+    struct Entry {
+        Cell cell{};
+        std::size_t segment=0;
+        bool operator<(const Entry& b)const noexcept {
+            if(cell<b.cell)return true;
+            if(b.cell<cell)return false;
+            return segment<b.segment;
+        }
+    };
+    std::vector<Entry> cells;
+    std::vector<std::pair<std::size_t,std::size_t>> pairs;
+    std::vector<std::size_t> offsets;
+    std::vector<render::float3> displacements;
+    std::vector<float> counts;
+    void reset() noexcept {
+        cells.clear();pairs.clear();offsets.clear();
+        displacements.clear();counts.clear();
+    }
 };
 struct GroomStats {
     std::size_t guides=0,segments=0,triangles=0;
@@ -72,6 +104,7 @@ private:
     std::size_t segments_=0;
     GroomSelfCollisionConfig selfCollision_{};
     GroomSelfCollisionStats selfCollisionStats_{};
+    GroomSegmentWorkspace segmentWorkspace_{};
     float stiffness_=0.55f,damping_=0.25f,gravity_=0.65f,windStrength_=0.15f;
     // Scalp ellipsoid matches the DNA-generated guide root geometry.
     // Stored per instance, not inferred from a fixed human head preset.
