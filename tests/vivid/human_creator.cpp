@@ -582,15 +582,31 @@ void test() {
             "GPU-selected indirect LOD cannot be guessed in VIVID");
         view.primitives[0].gpuLodConditional=false;
         view.primitives[1].nodeIndex=0;
-        req(validateSculptGpuRendererView(view,model,0,77)
-            .canRenderDiagnostic,
-            "different meshes under same node should still be distinguishable");
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "mesh from a different renderer LOD/node cannot be invented");
         view.primitives[1].nodeIndex=1;
+        // Renderer-selected base mesh remains eligible even when an authored
+        // LOD exists; the renderer-selected alternative must be rejected.
+        model.meshes[0].lods.push_back({1,20.f});
+        req(validateSculptGpuRendererView(view,model,0,77)
+                .canRenderDiagnostic,
+            "actual renderer-selected LOD0 should remain a valid CPU snapshot");
+        view.primitives[0].alternativeMeshLod=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "actual alternate renderer LOD must fail closed");
+        view.primitives[0].alternativeMeshLod=false;
+        model.meshes[0].lods.clear();
+        // Multiple node owners are supported in Renderer3D but NOT by our
+        // single-surface CPU picking reconstructor.
+        model.nodes[1].mesh=0;
         view.primitives.push_back(view.primitives[0]);
         view.primitives.back().nodeIndex=1;
         req(validateSculptGpuRendererView(view,model,0,77).reason==
                 SculptGpuRendererViewReason::MultipleMeshOwners,
             "multiple node owners of same mesh must fail closed");
+        model.nodes[1].mesh=1;
         view.primitives.pop_back();
         view.primitives.pop_back();
         req(check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot,
