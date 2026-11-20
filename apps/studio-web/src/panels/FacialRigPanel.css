@@ -28,3 +28,9 @@
   .facial-morphs { grid-template-columns:minmax(0,1fr); }
   .facial-morph-list { max-height:180px; }
 }
+
+.facial-morph-row {display:flex;align-items:center;min-width:0;border-bottom:1px solid var(--au-line);}
+.facial-morph-row:last-child {border-bottom:0;}
+.facial-morph-row .facial-morph-item {flex:1;min-width:0;}
+.facial-morph-row .facial-gain-slider {width:60px;min-width:48px;flex:none;margin:0 var(--au-space-2);accent-color:var(--au-accent);padding:0;}
+.facial-morph-row .facial-morph-item+.facial-morph-item {border-top:0;}
