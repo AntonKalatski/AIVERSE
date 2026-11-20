@@ -79,3 +79,13 @@ An isolated integration branch `integration/motionweave-studio-facial-stage184` 
 **Important:** this Studio branch still has only `kMaxMorphTargets=8` in `Model.h`; it does not yet contain MotionWeave Stage 180/183's real 64-channel `FacialControlRig`/`FacialPreviewSession`. Therefore `runtimeReady=false` / `runtimeVerified=false` are intentional. The new binding is neither imported Model validation nor a GPU facial preview. Next step is conflict-aware true 64-channel renderer/Model provider integration on the isolated branch, then native Studio 3D facial viewport and the final Mac test campaign. See `docs/handoff/studio-html5/78-motionweave-stage184-facial-preview-binding-2026-11-20.md`.
 
 **NOT RUN:** npm typecheck/build, C++/CMake/CTest, macOS WKWebView, Metal/Vulkan/GLES, sanitizer/crowd/VRAM. Native test source `studio_facial_preview_binding` is committed but not executed.
+
+
+## Stage 184 continuation — typed IK vectors and atomic updates
+
+The original Stage 184 code commit sequence now also includes:
+- `7206ef7fe319c4d5e824b54dbe440b14012b82a6`: `StudioFacialPreviewBinding` collects named IK vectors from the authored `rig` operations (`target`, `pole`, transform translation/rotation/scale parameters) alongside scalar expressions and IK blend weights. Whitelisted `studio.facialPreviewControls` accepts optional `vectors: Record<string,[number,number,number]>`. All finite components must be within +/-1,000,000, and scalar/vector updates commit atomically at the same binding revision. HTML5 supplies explicit XYZ inputs. This still **does not evaluate** IK or render a GPU face.
+- `2921bf31fcea11af332c75baa94b198ad8c47a70`, `d854af4922eaa693ab1fec9fe4e535cb85d3eb98`: correct and strengthen the deferred native C++ fixture, including a named eye Aim vector, valid target update and rollback on invalid scalar/vector. The fixture uses explicit `Json::object` / array construction to avoid ambiguous test source expressions.
+- `f29a7665d5637014632932365e0b468024d4b759`: self-contained C++ includes, unambiguous scalar/vector type-conflict inspection, and renderer capacity diagnostics from the **actual** native `render::kMaxMorphTargets`.
+
+**Validation remains NOT RUN**: these are authored source commits; C++ compilation, the new CTest and HTML5 typecheck/build/UI remain unverified. This addendum deliberately does not change the earlier claims that Studio GPU facial rendering is blocked by the separate 64-slot MotionWeave runtime/renderer branch. The follow-on merge must consume `FacialPreviewSession::vector` for real typed eye gaze/IK without reintroducing a second solver. Stage 184 completion here means the **host-asset and input-binding boundary only**, not the full live visual preview.
