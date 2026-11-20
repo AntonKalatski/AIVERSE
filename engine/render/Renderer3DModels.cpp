@@ -583,6 +583,12 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
         const bool rigid = node.skin < 0 && !baseMesh.deformable && !displaced;
+        // Facial morphing is a deformation even without bones. Permit
+        // explicitly authored morph-aware LODs for such models; the current
+        // draw packet still has the only parent/child pose writer.
+        const bool morphLod = node.skin<0 && !displaced &&
+            std::any_of(baseMesh.primitives.begin(),baseMesh.primitives.end(),
+                [](const Primitive& p){return p.morphTargets>0;});
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -595,7 +601,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
         const bool skinLod = node.skin >= 0 && !displaced && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
-        const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
+        const bool lodEligible = (rigid || skinLod || morphLod) &&
+                                 !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
@@ -665,6 +672,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
+        // The authored LOD edge owns the mapping. A visual LOD can have
+        // fewer/reordered expression channels than the original source mesh.
+        // Never use target slot indices to read source NodePose weights.
+        const ModelLod* morphMapping=nullptr;
+        if(meshIndex!=node.mesh)
+            for(const auto& lod:baseMesh.lods)
+                if(lod.mesh==meshIndex) {morphMapping=&lod;break;}
         const bool shadowBatch = !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
         if (!m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
@@ -748,33 +762,39 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
                 const float* weights = usePose
                     ? (*d.pose)[size_t(n)].w : node.weights;
-                // Sparse palette: compact all nonzero weights and their
-                // original mesh-local source channel indices, no dropping
-                // active expressions. Dirty/NaN poses fail closed.
-                bool valid = true;
-                for(int channel=0;channel<p.morphTargets;++channel)
-                    if(!std::isfinite(weights[channel])) {
-                        valid=false; break;
+                const auto sourceChannelFor=[&](int target)->int {
+                    if(!morphMapping)return target; // original LOD0 order
+                    const auto& map=morphMapping->morphSourceForTarget;
+                    return size_t(target)<map.size()?map[size_t(target)]:-1;
+                };
+                // Sparse palette indexes TARGET morph texture slots, while
+                // values come from the exact mapped SOURCE NodePose channel.
+                // Invalid/unmapped source indices or NaNs cannot enter GPU.
+                bool valid=true;
+                int active=0;
+                for(int channel=0;channel<p.morphTargets;++channel) {
+                    const int source=sourceChannelFor(channel);
+                    if(source<0 || source>=kMaxMorphTargets ||
+                       !std::isfinite(weights[source])) {
+                        valid=false;break;
                     }
-                if(valid) {
-                    int active=0;
-                    for(int channel=0;channel<p.morphTargets;++channel)
-                        active+=weights[channel]!=0.f;
-                    if(active>0) {
-                        it.morph=int32_t(morphData_.size());
-                        const size_t off=morphData_.size();
-                        morphData_.resize(
-                            off+2u*size_t(kMaxMorphTargets)+1u,0.f);
-                        int slot=0;
-                        for(int channel=0;channel<p.morphTargets;++channel) {
-                            if(weights[channel]==0.f)continue;
-                            morphData_[off+size_t(slot)]=weights[channel];
-                            morphData_[off+size_t(kMaxMorphTargets)+size_t(slot)]=
-                                float(channel);
-                            ++slot;
-                        }
-                        morphData_[off+2u*size_t(kMaxMorphTargets)]=float(slot);
+                    active+=weights[source]!=0.f;
+                }
+                if(valid && active>0) {
+                    it.morph=int32_t(morphData_.size());
+                    const size_t off=morphData_.size();
+                    morphData_.resize(
+                        off+2u*size_t(kMaxMorphTargets)+1u,0.f);
+                    int slot=0;
+                    for(int channel=0;channel<p.morphTargets;++channel) {
+                        const float value=weights[sourceChannelFor(channel)];
+                        if(value==0.f)continue;
+                        morphData_[off+size_t(slot)]=value;
+                        morphData_[off+size_t(kMaxMorphTargets)+size_t(slot)]=
+                            float(channel);
+                        ++slot;
                     }
+                    morphData_[off+2u*size_t(kMaxMorphTargets)]=float(slot);
                 }
             }
             float3 wc = it.world.transformPoint((p.boundsMin + p.boundsMax) * 0.5f);
