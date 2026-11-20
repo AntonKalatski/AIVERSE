@@ -172,6 +172,11 @@ int main() {
     AIVERSE_TEST_CHECK(vkStats.aborted==1 && vkStats.pending==0);
     AIVERSE_TEST_CHECK(vs.pending()==1 && vs.inFlight()==0);
     AIVERSE_TEST_CHECK(!queue.safeToSample(vs));
+    d.beginFrame(200,150);
+    const auto unhealthy=queue.submit(gpu,vs,1,{0,0,0},16,6);
+    AIVERSE_TEST_CHECK(!unhealthy.submitted && queue.pending()==0);
+    AIVERSE_TEST_CHECK(vs.pending()==1); // retrace only after device recovery
+    d.endFrame();
     AIVERSE_TEST_CHECK(queue.shutdown());
     gpu.shutdown();
     AIVERSE_TEST_CHECK(d.buffers.empty() && d.textures.empty());
