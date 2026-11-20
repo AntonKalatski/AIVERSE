@@ -12736,3 +12736,12 @@ No runtime edits or production default changes during this acceptance.
 See [exact source, commands, log hashes and remaining gates](texture-rhi-stage3-native-acceptance-2026-11-20.md).
 Next: publish branch and inspect PR #86/CI/base; do not update main or infer
 Vulkan/GLES/WebGL/indexed-anisotropic GPU validation from these tests.
+
+## 2026-11-20 — indexed native Metal sampling acceptance
+
+Code `ed1a427a61960b02a658e1c46f29dc1ac4261ee7`, branch
+`codex/texture-completion`: 18 indexed mip/anisotropic GPU color probes
+plus 136 preserved bilinear probes PASS (7.28 s) through the unified runner,
+Debug build entirely on KINGSTON. Runtime/API/save formats unchanged.
+[Exact commands, limitations and next step](texture-rhi-indexed-metal-2026-11-20.md).
+Prior focused Linux/GLES/Vulkan CI remains queued; no CI PASS claimed.

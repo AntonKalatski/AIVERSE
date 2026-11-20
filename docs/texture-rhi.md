@@ -4598,3 +4598,23 @@ runtime resource limits, nonuniform mip transition/trilinear
 and anisotropic visual tests, streaming stress and real GPU
 time/FPS benchmark. PR #21 remains Draft; the Metal
 GPU-authored ICB path remains experimental and OFF by default.
+
+## Indexed Metal sampling acceptance (2026-11-20)
+
+The opt-in `metal_vt_bilinear_gpu` test now also executes the canonical
+MSL indexed trilinear and anisotropic helpers through the real Metal RHI.
+Its additional 18 RGBA8 readback probes use independently authored solid
+colors with a deliberately permuted physical slice order: fine left/right
+pages, fractional/clamped virtual LOD, logical layer stride, missing-page
+fallback/blending, invalid layer, Repeat/MirrorRepeat, 1/2/4/8-tap footprints,
+mip bias and a Y-major derivative. Color expectations are closed-form;
+the test does not call the shader lookup algorithm to derive expected values.
+The existing 136 nonuniform logical-texel/gutter probes remain in the same gate.
+
+This isolates canonical shader sampling. It does not certify indexed
+Renderer3D/ICB integration, physical mip-chain filtering, nonuniform
+anisotropic quality, streaming stress, other backends or performance.
+Use the existing `AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON` option
+and a Debug build on `/Volumes/KINGSTON/AIVERSE-builds/`; run via
+`run-tests.sh --no-build --build-dir <external-build> --filter '^metal_vt_bilinear_gpu$'`.
+Exact results and code SHA are recorded in the stage handoff.
