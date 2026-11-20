@@ -171,8 +171,11 @@ public:
     // independent of the camera: a truly flat tile is ALWAYS resolution 2.
     // Iterative queue refinement keeps adjacent non-flat tiers <=1 apart.
     std::vector<SparseTerrainView> view(int64_t camXcm,int64_t camZcm,
-                                       SparseTerrainLod s={})const {
+                                       SparseTerrainLod s={},
+                                       int64_t maxDistanceCm=0)const {
         validateSparseTerrainLod(s);
+        if(maxDistanceCm<0 || maxDistanceCm>kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave invalid view streaming radius");
         if(camXcm<=-kWorldLimitCm || camXcm>=kWorldLimitCm ||
            camZcm<=-kWorldLimitCm || camZcm>=kWorldLimitCm)
             throw std::out_of_range("TerraWeave camera outside world");
@@ -182,6 +185,9 @@ public:
             const int64_t dx=int64_t(cell.x)*span+span/2-camXcm;
             const int64_t dz=int64_t(cell.z)*span+span/2-camZcm;
             const uint64_t d2=uint64_t(dx*dx)+uint64_t(dz*dz);
+            if(maxDistanceCm &&
+               d2>uint64_t(maxDistanceCm)*uint64_t(maxDistanceCm))
+                continue; // skip distant chunks before any flatness work
             uint8_t tier=0;
             for(int64_t threshold:s.distancesCm)
                 if(d2>=uint64_t(threshold)*threshold)++tier;
