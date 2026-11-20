@@ -1062,6 +1062,12 @@ if(AIVERSE_BUILD_TESTS)
         target_compile_definitions(aiverse_tests PRIVATE AIVERSE_TESTS_EDITOR_CORE=1)
     endif()
     target_compile_definitions(aiverse_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    # aiverse_models compiles out FBX privately when AIVERSE_FBX=OFF.
+    # Expose the same selection to its test runner, so a disabled loader
+    # checks its rejection path instead of trying to parse cube.fbx.
+    if(NOT AIVERSE_FBX)
+        target_compile_definitions(aiverse_tests PRIVATE AIVERSE_NO_FBX=1)
+    endif()
     add_test(NAME aiverse_tests COMMAND aiverse_tests)
     if(TARGET aiverse_editor_core)
         add_executable(aiverse_editor_scene_adapter_tests tests/editor/scene_entity_adapter_tests.cpp)
