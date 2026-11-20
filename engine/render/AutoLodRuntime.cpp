@@ -187,7 +187,10 @@ size_t generateMissingModelLods(Model& model) {
     // gains references to independently simplified index streams.
     model.meshes.reserve(sourceMeshes * 4);
     for (size_t mi = 0; mi < sourceMeshes; ++mi) {
-        const MeshDef original = model.meshes[mi];
+        // Capacity is reserved for source plus 3 levels each: references
+        // remain stable while coarse meshes are appended. Avoid copying the
+        // potentially huge 64-channel CPU morph arrays at every LOD level.
+        const MeshDef& original = model.meshes[mi];
         if (!used[mi] || !eligible(model, original)) continue;
         size_t baseIndices = 0;
         for (const Primitive& p : original.primitives) baseIndices += p.indexCount;
@@ -197,21 +200,35 @@ size_t generateMissingModelLods(Model& model) {
         size_t previousIndices = baseIndices;
         float previousPixels = std::numeric_limits<float>::max();
         for (size_t level = 0; level < kRatios.size(); ++level) {
-            MeshDef coarse = original;
+            MeshDef coarse;
             coarse.name = original.name + "-auto-lod" + std::to_string(level + 1);
-            // Index-only LOD: each coarse primitive borrows the original
-            // contiguous vertex span and morph texture, never clones 52/64
-            // expression deltas into another GPU allocation.
-            for(size_t pi=0;pi<original.primitives.size();++pi)
-                if(original.primitives[pi].morphTargets>0) {
-                    auto& p=coarse.primitives[pi];
-                    p.morphDeltas.clear();
-                    p.morphAliasMesh=int(mi);
-                    p.morphAliasPrimitive=int(pi);
+            coarse.weights = original.weights;
+            coarse.morphTargetNames = original.morphTargetNames;
+            coarse.primitives.reserve(original.primitives.size());
+            // Copy metadata only. Never duplicate large authored 52/64
+            // channel CPU morph arrays just to generate an index-only LOD.
+            for(size_t pi=0;pi<original.primitives.size();++pi) {
+                const Primitive& src=original.primitives[pi];
+                Primitive dst;
+                dst.firstIndex=src.firstIndex;
+                dst.indexCount=src.indexCount;
+                dst.material=src.material;
+                dst.jointPalette=src.jointPalette;
+                dst.variantMaterial=src.variantMaterial;
+                dst.boundsMin=src.boundsMin;
+                dst.boundsMax=src.boundsMax;
+                dst.firstVertex=src.firstVertex;
+                dst.vertexCount=src.vertexCount;
+                dst.morphTargets=src.morphTargets;
+                dst.morphTexel=src.morphTexel;
+                dst.lightmapUv=src.lightmapUv;
+                dst.shadowBatched=false;
+                if(src.morphTargets>0) {
+                    dst.morphAliasMesh=int(mi);
+                    dst.morphAliasPrimitive=int(pi);
                 }
-            coarse.lods.clear();
-            coarse.materialBatches.clear();
-            coarse.shadowBatch = {};
+                coarse.primitives.push_back(std::move(dst));
+            }
             std::vector<uint32_t> appended;
             float maximumError = 0.f;
             size_t total = 0;
