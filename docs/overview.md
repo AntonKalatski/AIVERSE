@@ -146,13 +146,13 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all eight selectable modules. The supported names are
+empty array disables all nine selectable modules. The supported names are
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
 at runtime), `vulkan` (Windows, Linux, Android only), `spine` (Spine UI
 animation and its Lua API), `gamepad` (controller input and action bindings),
 `fx` (SpectraFX particles and the RTS effect bridge), `fbx` (runtime FBX
 import using ufbx), and `legacy-models` (runtime VOX/VXL, PLY/STL, 3DS,
-DAE, MDX/MDL, 3DO and W3D loaders).
+DAE, MDX/MDL, 3DO and W3D loaders), and `obj` (runtime OBJ loader).
 A target-specific
 `packaging.targets.web.engineModules` or similar overrides the shared list.
 For example, `"packaging": {"engineModules": [], "targets":
@@ -174,6 +174,8 @@ without a converted `.glb` sidecar. Host conversion tools retain FBX support.
 Declare `legacy-models` if clients load any of those model formats directly.
 Without it, convert them to GLB before packaging. Host conversion tools retain
 the legacy loaders.
+Declare `obj` if the client loads OBJ directly; otherwise convert OBJ assets
+to GLB before packaging. Host conversion tools retain OBJ support.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 

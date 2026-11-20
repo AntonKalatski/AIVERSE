@@ -481,12 +481,17 @@ add_library(aiverse_models STATIC
     engine/render/ModelMerge.cpp   # static batching of parts that share a material
     engine/render/GlobalGeometryPool.cpp
     engine/render/ModelGltf.cpp
-    engine/render/ModelObj.cpp
     engine/render/Animation.cpp
     engine/render/TextureCodec.cpp
     engine/render/ImageBlp.cpp
     engine/render/ImageDds.cpp
     engine/render/TextureGen.cpp)
+option(AIVERSE_OBJ "Runtime OBJ model import" ON)
+if(AIVERSE_OBJ)
+    target_sources(aiverse_models PRIVATE engine/render/ModelObj.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_OBJ=1)
+endif()
 option(AIVERSE_LEGACY_MODELS "Runtime VOX/VXL, PLY/STL, 3DS, DAE, MDX/MDL, 3DO and W3D import" ON)
 if(AIVERSE_LEGACY_MODELS)
     target_sources(aiverse_models PRIVATE

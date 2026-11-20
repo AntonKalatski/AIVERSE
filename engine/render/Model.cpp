@@ -154,7 +154,10 @@ namespace {
 using Loader = std::unique_ptr<Model> (*)(const std::string&, const std::string&, const FileReader&, std::vector<std::string>*);
 struct Format { const char* ext; Loader load; };
 const Format kFormats[] = {
-    {".gltf", loadGltf}, {".glb", loadGltf}, {".obj", loadObj},
+    {".gltf", loadGltf}, {".glb", loadGltf},
+#if !defined(AIVERSE_NO_OBJ)
+    {".obj", loadObj},
+#endif
 #if !defined(AIVERSE_NO_FBX)
     {".fbx", loadFbx},
 #endif
@@ -260,6 +263,9 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         }
 #if defined(AIVERSE_NO_FBX)
         if (ext == ".fbx") throw std::runtime_error(path + ": FBX import is disabled in this build (AIVERSE_FBX=OFF); convert to .glb");
+#endif
+#if defined(AIVERSE_NO_OBJ)
+        if (ext == ".obj") throw std::runtime_error(path + ": OBJ import is disabled in this build (AIVERSE_OBJ=OFF); convert to .glb");
 #endif
 #if defined(AIVERSE_NO_LEGACY_MODELS)
         if (ext == ".vox" || ext == ".vxl" || ext == ".ply" || ext == ".stl" || ext == ".3ds" ||
