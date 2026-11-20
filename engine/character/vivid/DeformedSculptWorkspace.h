@@ -3,6 +3,7 @@
 #pragma once
 #include "DeformedSculptPick.h"
 #include "SculptPickBvh.h"
+#include "SculptSkinningPlan.h"
 
 namespace aiverse::vivid {
 
@@ -11,7 +12,8 @@ class DeformedSculptWorkspace final {
     std::vector<float> weights_;
     std::vector<render::float3> morphBind_,morphScratch_;
     SkinnedWeightSurface surface_;
-    SkinnedWeightScratch skinScratch_;
+    SkinnedWeightScratch skinScratch_; // retained for legacy skin picker compatibility
+    SculptSkinningPlan skinPlan_;
     SculptPickBvh bvh_;
 public:
     DeformedSculptWorkspace()=default;
@@ -21,6 +23,7 @@ public:
     void reset() noexcept {
         model_=nullptr;
         bvh_.clear();
+        skinPlan_.clear();
         surface_.ready=false;
         // Keep vector capacities for a later similarly sized asset.
         weights_.clear();
@@ -54,7 +57,12 @@ public:
            bvh_.mesh()!=meshId || bvh_.vertices()!=model.vertices.size()) {
             bvh_.clear();
             model_=nullptr;
-            if(!bvh_.build(model,meshId))return noHit;
+            if(!bvh_.build(model,meshId) ||
+               !skinPlan_.build(model,meshId)){
+                bvh_.clear();
+                skinPlan_.clear();
+                return noHit;
+            }
             model_=&model;
         }
         weights_.resize(morphs.targets());
@@ -62,9 +70,8 @@ public:
         if(!prepareSculptMorphPositions(model,morphs,weights_,
                                         morphBind_,&morphScratch_))
             return noHit;
-        if(!prepareSkinnedWeightSurface(model,meshId,nodeWorld,surface_,
-                                        morphBind_,&skinScratch_))
-            return noHit;
+        if(!skinPlan_.evaluate(model,nodeWorld,morphBind_,
+                               surface_,skinScratch_.staging))return noHit;
         if(!bvh_.refit(surface_))return noHit;
         return bvh_.pick(surface_,origin,direction,
                          sourceVertexCount,sourceVertexIds);
