@@ -58,3 +58,31 @@ Validation on final code tree before commit:
 
 Limits: 2x non-temporal filter lookups versus Stage 2, up to 128/64 instead of 64/32, no GPU performance claim. 8-bit output and finite sampling can still band at extreme contrast/zoom; no universal artifact-free claim. Original foliage, full editor, full test suite, Vulkan/Android/WebGL GPU NOT RUN. Earlier independent 17-sampler TAA terrain compile blocker remains. No push/CI dispatched; CI URL/status N/A.
 Next: rebuild editor and inspect original foliage at native display scale with camera motion, compare GPU cost on target hardware; if cost or extreme penumbrae remain unacceptable, implement a separate filtered shadow-mask/history path rather than continuing to multiply per-fragment PCF taps.
+
+
+## Stage 4: material receiver shadow diffusion (2026-11-20)
+
+Code: `9e3f12ddbc09c31f0681f701ace9d396afce82fa` on `feature/studio-html5`.
+User requested surface-dependent received-shadow softness as a material parameter.
+
+Added `Material::shadowDiffusion`, default 0, range [0,1] in world units. Model sun-shadow shaders combine its projected radius with the existing PCSS radius in quadrature. Both GLSL/MSL use previously unused emissive.w: GPU uniform size/layout unchanged. Old shadowAt callers retain zero diffusion. Low returns before diffusion; Medium/High receive the effect. Nonzero diffusion avoids the no-blocker early return so nearby shadows can soften across the receiver. No additional filter taps, but this can increase filtering work on otherwise early-returning pixels.
+
+Paths: engine/render/{Model.h,Renderer3DModels.cpp,ModelShaders.h,Shaders.h,GpuMaterialState.h,ModelMerge.cpp,GeometryScene.cpp}; modules/rts/view/RtsLook.cpp; apps/editor/core/MaterialOps.cpp; apps/studio-native/{StudioMaterialValidation.h,StudioPbrMaterialPreview.h,CMakeLists.txt}; apps/studio-web/src/panels/materialSchema.ts; their focused tests, tests/render/{HdrScene.h,model_batching_policy.cpp}; docs/models.md.
+
+Material library load/save, native preview and Studio schema support the optional property; Studio exposes “Shadow diffusion (world units)” using existing shared controls. GPU material hash/equality, merge and palette compatibility include it. Versioned material owners must still advance revisions after mutation. Existing material files default to zero; no gameplay/save-format migration. Public C++ Material has an appended member: rebuild consumers for struct ABI compatibility. No bridge allowlist changes, browser filesystem writes or experimental batching default changes.
+
+Executed checks (isolated Debug build /private/tmp/aiverse-shadow-noise-20261120):
+- python3 tests/render/check_model_lod_shaders.py: PASS 32 desktop GLSL/GLES links.
+- cmake --build <build> --target aiverse_hdr_scene aiverse_hdr_gl aiverse_model_batching_policy_tests aiverse_studio_material_validation_tests aiverse_studio_pbr_adapter_tests -j6: PASS (material-build.log).
+- cmake --build <build> --target aiverse_game_view -j6: PASS (material-view-build.log), including RtsLook loader.
+- cmake --build <build> --target aiverse_studio -j6: PASS (material-studio-build.log), full native Studio app with updated web bundle. User's running editor binary was not replaced.
+- ./run-tests.sh --no-build --build-dir /private/tmp/aiverse-shadow-noise-20261120 --filter '^(hdr_policy|model_batching_policy|studio_material_validation|studio_material_schema|studio_pbr_adapter)$': PASS 5/5. Report test-reports/20261120-140120-20504/summary.txt. Includes real material library roundtrip, range validation and batching separation.
+- Studio npm run typecheck && npm run build && npm run test:web: PASS. After final description edit, repeated typecheck/build/test:materials: PASS, 7 material tests.
+- python3 -m unittest discover -s tools/studio -p 'test_*.py': PASS 19/19 (material-ui-contracts.log).
+- Apple M3 Ultra Metal and desktop GL captures: six runs exit 0; material-captures/{legacy,zero,fabric,fabric-gl,low-zero,low-fabric}.ppm. AIVERSE_CONTACT_SHADOW_TEST=1; AIVERSE_SHADOW_DIFFUSION_TEST selects PBR receiver and parameter. Fabric uses exaggerated 0.2 for measurement. Metal edge widths zero 3/7/13 versus fabric 9/12/16; GL fabric 9/13/16. Low zero/fabric byte-identical. Legacy mesh byte-identical to Stage 3 importance-captures/contact-new.ppm. Wall, block and lit-floor comparison ROIs have zero changed pixels. Viewed final fabric.png.
+- git diff --check: PASS. No push/CI; URL/status N/A.
+
+Limits: artistic receiver filter approximation, not physical fibre scattering. Applies to model received sun shadow maps, not terrain splats, point lights, baked shadows, unlit or nonreceiving materials. Suggested .005–.03 for metre-scale fabrics is tuning guidance, not measured physical data. Native UI interaction/screenshots NOT RUN: CUA failed with native pipe path unavailable; temporary Vite server stopped. Original foliage, full repository suite, performance and other GPU backends NOT RUN. Earlier independent TAA terrain 17-sampler compilation blocker remains; no temporal end-to-end claim.
+
+Studio handoff: docs/handoff/studio-html5/62-material-shadow-diffusion.md.
+Next: launch isolated apps/studio-native/AiverseStudioHTML5.app, edit/save/reopen a material and inspect the original scene with stone=0 and fabric around .02; measure GPU cost and verify moving-camera/TAA behavior once the separate sampler blocker is resolved.
