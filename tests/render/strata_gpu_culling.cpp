@@ -419,6 +419,13 @@ int main() {
     assert(callbacks == 4);
     assert(decoded.status == GpuSelectionReadback::Status::ReadbackFailed);
     assert(dev.drawCalls == 0);
+    // Stage18: cumulative CPU/RHI instrumentation counts only accepted
+    // dispatches; it does not report GPU execution time or physical VRAM.
+    const auto computeTelemetry = compute.temporalStats();
+    assert(computeTelemetry.successfulDispatches >= 2);
+    assert(computeTelemetry.peakSubmissionsPerFrameSlot >= 2);
+    assert(computeTelemetry.peakRetainedBytes >= computeTelemetry.retainedBytes);
+    assert(computeTelemetry.peakHistories >= computeTelemetry.histories);
     compute.shutdown(dev);
     assert(dev.buffers.empty());
 
@@ -486,6 +493,9 @@ int main() {
     GpuSelectionSubmission unchanged=vkResult;
     assert(!gpuVk.dispatch(vk,{99},{ia},referencePass,201,vkResult));
     assert(vkResult.ranges==unchanged.ranges);
+    const auto vkTelemetry=gpuVk.temporalStats();
+    assert(vkTelemetry.successfulDispatches==3); // rejected 4th is excluded
+    assert(vkTelemetry.peakSubmissionsPerFrameSlot==3);
     gpuVk.shutdown(vk);
     assert(vk.buffers.empty());
     return 0;
