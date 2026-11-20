@@ -1445,3 +1445,42 @@ triangular collar/cloth patches and shoulder intersections; do not claim polishe
 clothing or complete MH Creator parity. No GUI/Vulkan/mobile/CI/performance/push.
 Next: isolate clothing faceting/shadow vs deformation and mask head shoulders
 against outfit; validate idle on additional body rigs and actual ankle targets.
+
+## 2026-11-21 — Bruce clothing deformation/visibility and fixed-PCF repair
+
+Implementation `93fb42cbd79a4c3877bf6f460331d9733d907e33`; branch
+`integration/motionweave-studio-facial-stage184`. Explicit offline jacket weight
+smoothing (final8iterations/.8 strength,top4normalized) and closed-outfit skin
+index mask (3302triangles removed,neck ancestry+hands retained) repair Bruce's
+spikes/skin protrusions. Geometry/UV/normals and texture contents unchanged.
+Original source remains model-final.glb; corrected model-clothing-fixed.glb and
+manifest published under KINGSTON content/Characters/Bruce-Full. Manifest backup
+manifest.before-clothing-fix.json; clothing-repair.json + clothing-visibility-mask.json
+record reversible parameters. Source binaries not vendored. Mask is outfit-specific;
+rebuild from original for other clothes. Imported vertex numbering can change,
+so external CSR/LOD sidecars must not be reused blindly (this fixture has none).
+
+Common preview now synchronizes missing-leg pelvis only with complete rigs sharing
+the same bind-world frame; resolves modular face detachment during weight shift.
+Native regression rejects a distant donor. Ada42frame before/after inspected: broad
+shoulder patch disappears without source edits. Creator --preview-bind-pose added.
+
+GLSL/MSL fixed-PCF SKINNED/BAKED path omits triangle receiver-plane extrapolation
+and bounds normal offset to1..4 existing texel offsets by filter footprint. Rigid
+receivers/cyclorama and PCSS unchanged. No RHI/batching/ECS/save changes.
+Unconditional shadow derivative call experiment did not help; global removal of
+receiver-plane bias leaked background, rejected. First4/.65 weight/mask variant
+still exposed neck skin in T pose; final8/.8+neck ancestry resolved inspected case.
+
+PASS Creator/Studio/native session builds; CTest wardrobe/face/session3/3;
+modular-pelvis wardrobe regression additionally rebuilt and PASS. JS smoothing
+test PASS; actual-asset geometry/normal/UV/weight/index subset validation PASS
+(validation8.log). GLSL ES300/GL330 Q0/1/2 skinned+morph+normal12/12 glslang PASS.
+Native Metal approved-motion144frames24fps + torso37frames + Tpose1frame inspected;
+55headcommands,50colour/shadow,pipelineFailures0. Final video
+bruce-clothing-approved.mp4 encoded144frames1500x920. Earlier reviewed/fixed videos
+are intermediate variants; final still approved-torso.png, t-pose8.png. All under
+/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/full-character/cloth-review/.
+QA docs/qa/vivid-bruce-clothing-2026-11-21.md. No GUI/Vulkan/mobile/CI/perf/push.
+Next: broader outfits/pose/material-quality checks and authored corrective poses.
+No claim of full Unreal cloth physics or universal zero-shadow-artifact behavior.

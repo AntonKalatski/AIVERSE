@@ -489,3 +489,7 @@ AIVERSE_ADAPTIVE_DRAW_GROUPS=1 AIVERSE_METAL_CPU_MDI=1 AIVERSE_METAL_MDI_MIN_COM
 # Experimental GPU adaptive: only on tested Metal devices, NOT production
 AIVERSE_ADAPTIVE_DRAW_GROUPS=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_ADAPTIVE=1 AIVERSE_ICB_TRACE=1 AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
 ```
+
+## 2026-11-21 — VIVID skinned fixed-PCF visual repair
+
+Implementation `93fb42cbd79a4c3877bf6f460331d9733d907e33`, integration/motionweave-studio-facial-stage184. No batching/RHI/timing changes. Shaders.h GLSL/MSL suppress receiver-plane extrapolation on SKINNED/BAKED fixed-PCF surfaces, with bounded footprint-dependent normal offset1..4x. Rigid floor/cyclorama slope correction and PCSS unchanged. Creator/Studio Metal builds and native Bruce/Ada captures PASS, glslang12/12 syntax PASS. This is visual acne mitigation, not performance or Vulkan/mobile parity evidence. Detailed failure experiments/artifacts/limits: docs/qa/vivid-bruce-clothing-2026-11-21.md. Keep experimental ICB defaults unchanged.
