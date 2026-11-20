@@ -2,6 +2,7 @@
 // buffer versioning inside a frame, textures, shadow compare, GLSL translation. Skips without a driver.
 #include "engine/gfx/vulkan/Vulkan.h"
 #include "engine/gfx/vulkan/VkShaderCompiler.h"
+#include "engine/render/GiGpuVulkanShaders.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -124,6 +125,14 @@ void translation() {
     aiverse::gfx::vk::SpirvProgram p;
     CHECK(aiverse::gfx::vk::compileProgram(kVs, kColorFs, false, p) && !p.vertex.empty() && !p.fragment.empty());
     CHECK(!aiverse::gfx::vk::compileProgram(kVs, "void main() { undefined_call(); }", false, p) && !p.error.empty());
+    // Compile the REAL Vulkan GI BVH kernel even without a Vulkan driver.
+    // This is glslang SPIR-V compilation, not a source-text substring check.
+    std::vector<uint32_t> computeSpirv;
+    std::string computeError;
+    const bool computeOk=aiverse::gfx::vk::compileComputeProgram(
+        aiverse::render::gi_gpu::kVulkanSmallScene,computeSpirv,computeError);
+    if(!computeOk)std::printf("Vulkan GI SPIR-V: %s\\n",computeError.c_str());
+    CHECK(computeOk && !computeSpirv.empty());
 }
 } // namespace
 
