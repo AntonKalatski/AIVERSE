@@ -859,6 +859,8 @@ public:
         return gpuHealthy();
     }
     virtual void endCompute() {}
+    // True only when the latest dispatch was successfully encoded; not GPU completion.
+    virtual bool computeDispatchSucceeded() const { return false; }
     // Debug/readback only, between frames. Never used in normal simulation/rendering.
     virtual bool readBuffer(BufferHandle,void*,size_t) { return false; }
     // Small asynchronous status readback, inside a frame and outside encoders. Callback on

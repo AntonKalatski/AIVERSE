@@ -62,6 +62,14 @@ if(AIVERSE_TEXTURE_WITH_LIBKTX)
     target_compile_definitions(aiverse_texture_libktx INTERFACE AIVERSE_TEXTURE_WITH_LIBKTX=1)
 endif()
 
+# Register Objective-C++ in the ROOT directory before creating any targets.
+# CMake does not propagate a language enabled only in a child directory back
+# to parent-scoped targets; otherwise it can fail with CMAKE_OBJCXX_COMPILE_OBJECT.
+option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+if(APPLE AND AIVERSE_BUILD_STUDIO_HTML5)
+    enable_language(OBJCXX)
+endif()
+
 # Game being built (aiversebuild overrides these).
 set(AIVERSE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates/skirmish" CACHE PATH "Game content folder (contains game.json)")
 # build folders configured before games/ became templates/ keep the old cached path
@@ -1115,6 +1123,10 @@ if(AIVERSE_VULKAN)
         add_executable(aiverse_vulkan_tests tests/render/vulkan_tests.cpp)
         target_link_libraries(aiverse_vulkan_tests PRIVATE aiverse_gfx_vulkan)
         add_test(NAME vulkan_backend COMMAND aiverse_vulkan_tests)
+        add_executable(aiverse_lighting_vulkan_compute_shader tests/render/lighting_vulkan_compute_shader.cpp)
+        target_link_libraries(aiverse_lighting_vulkan_compute_shader PRIVATE aiverse_gfx_vulkan)
+        add_test(NAME lighting_vulkan_compute_shader COMMAND aiverse_lighting_vulkan_compute_shader)
+        set_tests_properties(lighting_vulkan_compute_shader PROPERTIES LABELS "Lighting")
     endif()
 endif()
 
@@ -4019,4 +4031,173 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core AND AIVERSE_BUILD_STRATA)
     add_executable(aiverse_strata_editor_test tests/strata_editor_test.cpp)
     target_link_libraries(aiverse_strata_editor_test PRIVATE aiverse_editor_core)
     add_test(NAME strata_editor COMMAND aiverse_strata_editor_test)
+endif()
+
+# Lighting main integration: CPU-only source/cluster/indirect composition and
+# backend admission contracts. No rendering feature is activated by this.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    foreach(lighting_fixture IN ITEMS
+            lumaweave_clusters
+            lumaweave_gpu_packet
+            gi_lighting_composition
+            lighting_gles_admission
+            gi_chunked_geometry
+            lumaweave_direct_reference
+            gi_dynamic_probe_reference
+            gi_cpu_trace_budget
+            lighting_gi_cpu_sampling
+            gi_dynamic_probe_texture
+            lighting_cpu_gi_bridge
+            lighting_gpu_bridge
+            lighting_luma_mobile_fallback
+            lighting_model_gi_shader_contract
+            lighting_terrain_gi_shader_contract)
+        add_executable(aiverse_lighting_${lighting_fixture}_test
+                       tests/render/${lighting_fixture}.cpp)
+        target_include_directories(aiverse_lighting_${lighting_fixture}_test
+                                   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME lighting_${lighting_fixture}
+                 COMMAND aiverse_lighting_${lighting_fixture}_test)
+        set_tests_properties(lighting_${lighting_fixture} PROPERTIES LABELS "Lighting")
+    endforeach()
+endif()
+
+# Exercise the real CPU GI atlas -> PBR receiver, beyond source-string checks.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_dynamic_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_dynamic_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_dynamic_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_dynamic_gi_gl PROPERTIES
+            ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
+            TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_icb_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_icb_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_ICB_GI_VERIFY=1;AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_ICB_TRACE=1"
+        LABELS "Lighting;GPU;Experimental" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    add_test(NAME lighting_icb_compute_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_icb_compute_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_ICB_GI_VERIFY=1;AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_GPU_ENCODED_ICB=1"
+        LABELS "Lighting;GPU;Experimental" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    add_test(NAME lighting_compute_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_terrain_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_terrain_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_TERRAIN_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_terrain_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_terrain_gi_gl PROPERTIES
+            ENVIRONMENT "AIVERSE_TERRAIN_GI_VERIFY=1" LABELS "Lighting;GPU"
+            TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    set(_lighting_auto_backend any)
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        set(_lighting_auto_backend gpu)
+    endif()
+    add_test(NAME lighting_native_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_native_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-native-host ${_lighting_auto_backend})
+    set_tests_properties(lighting_native_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 330)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_native_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_native_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-native-host-gl cpu)
+        set_tests_properties(lighting_native_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 330)
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_graph_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_graph_gi_gpu PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_GRAPH_GI_VERIFY=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_graph_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_graph_gi_gl PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_GRAPH_GI_VERIFY=1"
+            LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
+        LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_luma_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_luma_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-luma-host gpu)
+    set_tests_properties(lighting_luma_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 240)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_luma_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_luma_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-luma-host-gl legacy)
+        set_tests_properties(lighting_luma_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 240)
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_models)
+    add_executable(aiverse_lighting_model_geometry_test tests/render/lighting_model_geometry.cpp)
+    target_include_directories(aiverse_lighting_model_geometry_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_lighting_model_geometry_test PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME lighting_model_geometry COMMAND aiverse_lighting_model_geometry_test)
+    set_tests_properties(lighting_model_geometry PROPERTIES LABELS "Lighting")
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench)
+    add_test(NAME lighting_animated_host COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_animated_host.py
+        $<TARGET_FILE:aiverse_renderbench> ${CMAKE_BINARY_DIR}/lighting-animated-host ${_lighting_auto_backend})
+    set_tests_properties(lighting_animated_host PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 420)
+    if(TARGET aiverse_renderbench_gl)
+        add_test(NAME lighting_animated_host_gl COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/lighting_animated_host.py
+            $<TARGET_FILE:aiverse_renderbench_gl> ${CMAKE_BINARY_DIR}/lighting-animated-host-gl cpu)
+        set_tests_properties(lighting_animated_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 420)
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# Experimental HTML5 Studio host. Production editor still uses its existing UI.
+# ---------------------------------------------------------------------------
+if(AIVERSE_BUILD_STUDIO_HTML5)
+    if(APPLE AND TARGET aiverse_editor_core)
+        add_subdirectory(apps/studio-native)
+    else()
+        message(WARNING "AIVERSE Studio HTML5 currently requires macOS and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
+    endif()
+endif()
+
+# Main integration: exercise virtual material sampling and probe GI together.
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_hdr_scene AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_virtual_material_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_virtual_material_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_VT_GI_VERIFY=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()

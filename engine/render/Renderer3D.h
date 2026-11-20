@@ -45,6 +45,9 @@ namespace strata {
     class GpuClusterCulling;
 }
 
+class GiMainGpuBridge;
+class GiMainCpuBridge; // optional per-scene CPU-bounced-light producer
+
 struct Mesh {
     gfx::BufferHandle vb, ib;
     uint32_t indexCount = 0;
@@ -148,6 +151,14 @@ public:
     // True only while the post chain is accumulating a reprojection-validated HDR history.
     // Shadow sample scrambling must never be enabled without a temporal resolve pass.
     virtual bool temporalShadowResolve() const { return false; }
+    virtual bool wantsMaterialReceiverPass() const { return false; }
+    virtual gfx::PassDesc materialReceiverPass(int,int) { return {}; }
+    virtual void materialReceiverPublished(gfx::TextureHandle,int,int) {}
+    // Optional HIGH-quality PBR normal+roughness receiver. Independent depth
+    // attachment; producer must ensure it belongs to this same frame/view.
+    virtual bool wantsSurfaceReceiverPass() const { return false; }
+    virtual gfx::PassDesc surfaceReceiverPass(int,int) { return {}; }
+    virtual void surfaceReceiverPublished(gfx::TextureHandle,int,int) {}
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
     // Optional read-only presentation bridge for object motion vectors.
@@ -508,6 +519,34 @@ public:
     // preparation before destroying its private CPU owners. No RHI work.
     void discardSceneSubmission() noexcept;
     void drawMeshSnapshot(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+
+    // Explicit per-view opt-in for CPU dynamic GI on ordinary PBR ModelDraws.
+    // Call AFTER beginScene and BEFORE render. Shader Graph and GPU ICB paths
+    // remain excluded; runtime never enables this for a view automatically.
+    // The host retains the GI owner and its atlas until GPU completion.
+    bool setDynamicGiOverlay(const GiMainCpuBridge& bridge);
+    bool setDynamicGiOverlay(const GiMainGpuBridge& bridge);
+    void clearDynamicGiOverlay() noexcept { dynamicGiAtlas_={}; }
+    bool dynamicGiOverlayEnabled() const noexcept { return dynamicGiAtlas_.valid(); }
+    // Generic custom terrain/foliage/mesh hook: call ONLY inside a valid
+    // custom graphics draw, after its shader pipeline has been bound.
+    // That shader must explicitly include GiDynamicShaders.h and declare
+    // U6 + tex13 (GLSL) / buffer(7) + texture(13) (Metal). No implicit
+    // material inference, no sampling during a shadow/depth-only pass.
+    // The producer must stay alive through the GPU completion fence.
+    bool bindDynamicGiForCustom() { return bindDynamicGiForCustomAt(13); }
+    // Reserve the sampled atlas texture slot explicitly. Models use 13;
+    // the stock high-terrain shaders already own 13 for cliff albedo,
+    // so their Metal/Vulkan GI variant must use 21 instead.
+    // Compact GLES3 terrain uses tex8 only when splat/baked/trace are off.
+    bool bindDynamicGiForCustomAt(int textureSlot) {
+        if(!dev_ || !dynamicGiAtlas_.valid() ||
+           (textureSlot!=8 && textureSlot!=13 && textureSlot!=21))return false;
+        dev_->setUniforms(6,dynamicGiUniforms_.data(),
+                          dynamicGiUniforms_.size()*sizeof(float));
+        dev_->setTexture(textureSlot,dynamicGiAtlas_);
+        return true;
+    }
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Bridge the current opaque immediate-mesh scene queue into VT feedback.
     // The caller supplies a compatible feedback pipeline and per-mesh
@@ -829,6 +868,19 @@ public:
     void bindLitFrame();
     // Opaque custom renderers (terrain): run first in the main pass, before meshes and models, so
     // translucent meshes (water) blend over them. Same lifetime rules as drawCustom.
+    // Optional per-view native surface callbacks for LumaWeave:
+    // - Material: RGBA16F (linear diffuse base RGB, metallic A)
+    // - Surface:  RGBA16F (signed world normal XYZ, roughness A)
+    // Both callbacks must draw the EXACT same frontmost opaque geometry and
+    // depth as their main scene submission; they never execute on default
+    // PostProcess paths that did not request the corresponding receiver pass.
+    // Call after beginScene; callbacks are cleared automatically next beginScene.
+    void drawCustomMaterialReceiver(CustomDraw fn) {
+        customMaterialReceiver_.push_back(std::move(fn));
+    }
+    void drawCustomSurfaceReceiver(CustomDraw fn) {
+        customSurfaceReceiver_.push_back(std::move(fn));
+    }
     void drawCustomOpaque(CustomDraw fn) { customOpaque_.push_back(std::move(fn)); }
     // Optional rigid-model feedback. Animated/skinned/morphed model
     // primitives require a matching deformation pipeline and are excluded
@@ -1547,6 +1599,8 @@ private:
     std::vector<DrawItem> items_;
     std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;
+    bool lumaMaterialCapture_=false,lumaSurfaceCapture_=false;
+    std::vector<CustomDraw> customMaterialReceiver_,customSurfaceReceiver_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<FeedbackCustomDraw> customFeedback_;
     VirtualTextureFeedbackScheduler feedbackScheduler_;
@@ -1988,6 +2042,10 @@ private:
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
+    // One-view borrowed atlas; beginScene drops it before the next view.
+    // U6 (three float4): origin+inverseSpacing, dimensions, ring offset=0.
+    gfx::TextureHandle dynamicGiAtlas_{};
+    std::array<float,12> dynamicGiUniforms_{};
     gfx::PipelineHandle currentPipe_;
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)

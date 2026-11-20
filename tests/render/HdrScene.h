@@ -1,9 +1,14 @@
 // Deterministic, asset-free visual fixture shared by GL and Metal runners.
 #pragma once
 #include "engine/render/Prisma.h"
+#include "engine/render/LumaWeavePostProcess.h"
 #include "engine/render/PrismaScreenLighting.h"
 #include "engine/world/PhysisSkyBridge.h"
 #include "HdrShaders.h"
+#include "TerrainGiReceiver.h"
+#include "engine/render/GiMainCpuBridge.h"
+#include "engine/render/GiMainGpuBridge.h"
+#include "engine/render/GiDynamicSampling.h"
 #include "engine/render/graph/ShaderGraph.h"
 #include <cstdio>
 #include <cstdlib>
@@ -12,17 +17,31 @@
 namespace aiverse::test {
 using namespace render;
 struct HdrScene;
+void drawLumaScene(HdrScene&,gfx::Device&,int,int);
 void initContactShadowScene(HdrScene&);
 void drawContactShadowScene(HdrScene&);
+void drawDynamicGiScene(HdrScene&,gfx::Device&,int,int);
 struct HdrScene {
     Renderer3D renderer;
+    gfx::TextureHandle giVtAtlas{},giVtTable{};
+    GiMainCpuBridge dynamicGi;
+    GiMainGpuBridge computeGi;
+    TerrainGiReceiver terrainGi;
+    bool terrainGiVerify=false;
+    bool computeGiVerify=false;
+    bool dynamicGiVerify=false;
     Prisma post;
+    std::unique_ptr<LumaWeavePostProcess> luma;
+    LumaWeaveRegistry lumaSources;
+    LumaWeaveClusters lumaClusters;
+    bool lumaVerify=false;
     PrismaScreenLighting screen;
     bool advanced = false, ownsFrame = true, materialGallery = false;
     PostProcess* pipeline() { return advanced ? static_cast<PostProcess*>(&screen) : static_cast<PostProcess*>(&post); }
     RTSCamera camera;
     Mesh floor, cube, water;
     std::unique_ptr<Model> spheres;
+    std::unique_ptr<Model> shadowReceiver;
     int frame = 0, probeIndex = 0, gridProbe = -1;
     bool verify = false;
     std::unique_ptr<Model> probeBg, probeFg;
@@ -68,7 +87,11 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
-        verify = std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
+        computeGiVerify=std::getenv("AIVERSE_COMPUTE_GI_VERIFY")!=nullptr;
+        terrainGiVerify=std::getenv("AIVERSE_TERRAIN_GI_VERIFY")!=nullptr;
+        dynamicGiVerify=terrainGiVerify || computeGiVerify || std::getenv("AIVERSE_DYNAMIC_GI_VERIFY")!=nullptr;
+        lumaVerify=std::getenv("AIVERSE_LUMA_VERIFY")!=nullptr;
+        verify = lumaVerify || dynamicGiVerify || std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
 #ifdef _WIN32
@@ -90,7 +113,17 @@ struct HdrScene {
             renderer.setShadowQuality(ShadowQuality::Off);renderer.lights.setQuality(LightQuality::Off);
             camera.target={0,0,0};camera.pitch=0;camera.yaw=0;camera.distance=10;
         }
-        if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) initContactShadowScene(*this);
+        if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) {
+            initContactShadowScene(*this);
+            if (const char* diffusion=std::getenv("AIVERSE_SHADOW_DIFFUSION_TEST")) {
+                MeshBuilder receiverMesh; receiverMesh.box({0,-0.16f,0},{18,0.2f,14});
+                Material receiver; receiver.baseColor={.34f,.36f,.4f,1};
+                receiver.shadowDiffusion=std::clamp(std::strtof(diffusion,nullptr),0.0f,1.0f);
+                std::vector<ModelPart> receiverParts={{"receiver",&receiverMesh,receiver,{}}};
+                shadowReceiver=modelFromParts("material shadow diffusion",receiverParts);
+                if (!uploadModel(d,*shadowReceiver)) { failed=true; return; }
+            }
+        }
         if(const char* skyCase=std::getenv("AIVERSE_PHYSICAL_SKY_TEST")) {
             advanced=false;renderer.setModelReflectionsEnabled(false);
             post.configure(Json::parse(R"({"hdr":"on","physicalSky":{"enabled":true},"effects":[{"type":"fxaa"}]})"),{});
@@ -148,6 +181,8 @@ struct HdrScene {
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
+        if (lumaVerify) { drawLumaScene(*this,d,w,h); return; }
+        if (dynamicGiVerify) { drawDynamicGiScene(*this,d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(const char* fogCase=std::getenv("AIVERSE_LOCAL_FOG_TEST"); fogCase&&frame==3&&std::string(fogCase)=="move") {
@@ -156,7 +191,8 @@ struct HdrScene {
         }
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
-        renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
+        if (shadowReceiver) { ModelDraw receiver; receiver.model=shadowReceiver.get(); renderer.drawModel(receiver); }
+        else renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
         if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) drawContactShadowScene(*this); else {
         ModelDraw md; md.model=spheres.get(); renderer.drawModel(md);
         if(!materialGallery){
@@ -377,8 +413,29 @@ struct HdrScene {
         d.endPass();if(ownsFrame)d.endFrame();++frame;
     }
     void shutdown(gfx::Device& d) {
+        if(terrainGi.vertices.valid()) {
+            if(d.waitForResourceIdle())terrainGi.shutdownAfterGpuIdle(d);else failed=true;
+        }
+        if(luma) {
+            if(!d.waitForResourceIdle())failed=true;
+            luma->pollGpu();
+            if(!luma->drainRetiredAfterGpuIdle() || !luma->shutdown())failed=true;
+            luma.reset();
+        }
+        renderer.clearDynamicGiOverlay();
+        if(computeGi.ready()) {
+            if(!d.waitForResourceIdle() || !computeGi.shutdownAfterGpuIdle())failed=true;
+        }
+        if(dynamicGi.ready()) {
+            if(!d.waitForResourceIdle() || !dynamicGi.shutdownAfterGpuIdle())failed=true;
+        }
+        if(giVtAtlas.valid() || giVtTable.valid()) {
+            if(d.waitForResourceIdle()) { d.destroyTexture(giVtAtlas); d.destroyTexture(giVtTable); }
+            else failed=true;
+        }
         if(probeBg)releaseModel(d,*probeBg);
         if(probeFg)releaseModel(d,*probeFg);
+        if(shadowReceiver) releaseModel(d,*shadowReceiver);
         if(spheres) releaseModel(d,*spheres);
         for(auto* m:{&floor,&cube,&water}) {d.destroyBuffer(m->vb);d.destroyBuffer(m->ib);}
         screen.shutdown();post.shutdown(); renderer.shutdown();
@@ -387,3 +444,7 @@ struct HdrScene {
 }
 
 #include "ContactShadowScene.h"
+
+#include "DynamicGiScene.h"
+
+#include "LumaScene.h"
