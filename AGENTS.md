@@ -1670,3 +1670,18 @@ malformed candidate or roll back accepted geometry after bad input.
 The new `gi_gpu_bvh_validation` regression is REGISTERED BUT NOT RUN;
 real native Clang/CMake/CTest and Metal/Vulkan device validation remain
 required before main integration.
+
+
+## GI Stage 60 — Vulkan sequential compute image-barrier correctness (2026-11-20)
+
+See `docs/agent-handoffs/gi-stage60-vulkan-consecutive-compute-barriers-2026-11-20.md`.
+`VkCompute.cpp` now synchronizes consecutive dispatches on the same
+storage atlas with a compute shader write→read/write memory barrier.
+Switching to another storage texture within the compute pass MUST restore
+the old image from GENERAL to SHADER_READ_ONLY_OPTIMAL, then transition
+the new image to GENERAL before its dispatch; `endCompute` returns
+the final image to shader-read layout. The `vulkan_backend` offscreen
+GPU fixture now dispatches twice on atlas A and once on atlas B, then
+samples both as fragment textures for distinct pixel parity. THIS IS
+SOURCE + TEST CODE ONLY, native Vulkan/SPIR-V/validation-layer CTest
+not yet executed. Do not merge the GI PR or claim a GPU PASS.
