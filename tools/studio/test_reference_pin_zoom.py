@@ -82,6 +82,20 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         assets = self.source("components/AssetsPanel.tsx")
         self.assertIn("response.repairedMaterialReferences", assets)
 
+    def test_shared_reference_registry_inventory_and_usage_panel(self):
+        registry=(ROOT/"apps/studio-native/StudioAssetReferences.h").read_text(encoding="utf-8")
+        native=NATIVE.read_text(encoding="utf-8")
+        ui=self.source("components/AssetImportSettings.tsx")
+        types=self.source("types.ts")
+        self.assertIn("studioCollectAssetReferences", registry)
+        self.assertIn("studioRemapMaterialReferences", registry)
+        self.assertIn('append("rules.json", name, "view.model"', registry)
+        self.assertIn("kStudioTextureFields", registry)
+        self.assertIn('method == "studio.assetReferences"', native)
+        self.assertIn("studioReferenceGraphJson(", native)
+        self.assertIn("studio.assetReferences", ui)
+        self.assertIn("interface StudioAssetReference", types)
+
     def test_import_settings_lock_preserves_asset_context(self):
         assets = self.source("components/AssetsPanel.tsx")
         settings = self.source("components/AssetImportSettings.tsx")
