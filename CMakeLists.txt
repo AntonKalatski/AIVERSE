@@ -2015,7 +2015,9 @@ if(AIVERSE_BUILD_STRATA)
         engine/render/StrataSeamTopology.cpp)
     target_link_libraries(aiverse_strata_builder PUBLIC aiverse_meshoptimizer_lod)
     target_include_directories(aiverse_strata_builder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    add_library(aiverse_strata_model_adapter STATIC engine/render/StrataModelAdapter.cpp)
+    add_library(aiverse_strata_model_adapter STATIC
+        engine/render/StrataModelAdapter.cpp
+        engine/render/StrataSourceSeams.cpp)
     target_link_libraries(aiverse_strata_model_adapter PUBLIC aiverse_strata_builder aiverse_models)
     target_include_directories(aiverse_strata_model_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # Per-pass CPU reference selection, using existing Geometry.cpp projection.
