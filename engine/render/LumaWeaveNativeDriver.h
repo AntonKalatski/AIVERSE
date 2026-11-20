@@ -223,7 +223,23 @@ public:
                     true);
             }
         }
-        if(!vulkanChosen)vulkanPost_.setEnabled(false);
+        if(!vulkanChosen) {
+            // The Vulkan backend may have two frames in flight. It is safe
+            // to use raster direct for THIS frame while the previous GPU
+            // dispatch completes without invalidating that previous history
+            // ONLY when the native view/world/source/BVH identities match.
+            // A real route disable, camera cut or source/scene change resets it.
+            const bool samePendingView=input.enableVulkanDirect &&
+                input.vulkanReceiverCoverageConfirmed &&
+                device_.info().backend==gfx::Backend::Vulkan &&
+                vulkanDirect_.busy() && input.vulkanHistoryKey!=0 &&
+                input.vulkanHistoryKey==vulkanPost_.historyKey() &&
+                input.vulkanHistoryEpoch==vulkanPost_.historyEpoch() &&
+                coordinator_.registry().revision()==vulkanDirect_.sourceRevision() &&
+                input.sceneGeometry && input.geometryRevision &&
+                input.geometryRevision==vulkanDirect_.geometryRevision();
+            vulkanPost_.setEnabled(false,samePendingView);
+        }
         result.vulkanDirectSelected=vulkanChosen;
         // Metal can run cascaded GPU GI. Vulkan now supports opt-in GPU
         // DIRECT via its compute RHI, but portable bounced GI remains an
