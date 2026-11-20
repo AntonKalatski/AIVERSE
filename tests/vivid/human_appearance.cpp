@@ -1,4 +1,5 @@
 #include "engine/character/vivid/HumanPreview.h"
+#include "tools/vivid-creator/OpticalCaptureCases.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GroomSelfCollision.h"
 #include "engine/character/vivid/GroomSegmentCollision.h"
@@ -612,6 +613,43 @@ void test() {
         expect(!skin.evaluate(pose,render::mat4{},output) &&
                render::length(output[0]-first)<0.0001f,
                "bad MotionWeave pose modified last-good scalp vertices");
+    }
+    // 7AE isolated Creator capture variants: one DNA scalar per case.
+    {
+        const auto neutral=HumanDNA::preset("neutral");
+        struct Case {const char* id;float scatter,ior,rough;};
+        for(const auto& scenario:std::array<Case,7>{{
+            {"reference",neutral.skin.scatteringMm,
+                         neutral.eyes.corneaIor,neutral.groom.roughness},
+            {"skin-scatter-low",0.10f,neutral.eyes.corneaIor,neutral.groom.roughness},
+            {"skin-scatter-high",4.0f,neutral.eyes.corneaIor,neutral.groom.roughness},
+            {"eye-ior-low",neutral.skin.scatteringMm,1.25f,neutral.groom.roughness},
+            {"eye-ior-high",neutral.skin.scatteringMm,1.45f,neutral.groom.roughness},
+            {"hair-rough-low",neutral.skin.scatteringMm,neutral.eyes.corneaIor,0.08f},
+            {"hair-rough-high",neutral.skin.scatteringMm,neutral.eyes.corneaIor,0.90f}
+        }}) {
+            auto candidate=neutral;
+            expect(OpticalCaptureCases::apply(candidate,scenario.id),
+                   "Creator optical capture case is not recognized");
+            candidate.validate();
+            expect(candidate.skin.scatteringMm==scenario.scatter &&
+                   candidate.eyes.corneaIor==scenario.ior &&
+                   candidate.groom.roughness==scenario.rough,
+                   "optical case did not set the specified scalar");
+            expect(candidate.skin.melanin==neutral.skin.melanin &&
+                   candidate.eyes.pupil==neutral.eyes.pupil &&
+                   candidate.groom.guideCount==neutral.groom.guideCount &&
+                   candidate.groom.color==neutral.groom.color &&
+                   candidate.anatomy.headScale==neutral.anatomy.headScale &&
+                   candidate.expressionRest==neutral.expressionRest,
+                   "optical case unintentionally changed unrelated DNA");
+        }
+        auto rejected=neutral;
+        expect(!OpticalCaptureCases::apply(rejected,"unknown") &&
+               rejected.skin.scatteringMm==neutral.skin.scatteringMm &&
+               rejected.eyes.corneaIor==neutral.eyes.corneaIor &&
+               rejected.groom.roughness==neutral.groom.roughness,
+               "unknown optical case must fail without changing DNA");
     }
     // 7AC contract: shader-model optical lobes must exist in both
     // backends. Source checks complement (do not replace) GPU image tests.
