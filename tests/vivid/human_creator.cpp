@@ -1,6 +1,8 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
+#include "engine/character/vivid/DeformedSculptPick.h"
+#include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
 #include "engine/character/vivid/MorphLodMapping.h"
@@ -124,6 +126,83 @@ void test() {
         req(!pickSculptVertex(model,0,pose,
             {2,2,2},{0,0,-1},3).hit,
             "viewport sculpt accepted ray missing the triangle");
+    }
+    // 7AJ: published GPU morph is sampled in bind space BEFORE skinning.
+    // Picking must return the original vertex ID and final world position,
+    // including the case where the morphed triangle differs from bind pose.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(3);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        for(auto& v:model.vertices) {
+            v.joints[0]=0;
+            v.weights[0]=255;
+        }
+        model.indices={0,1,2};
+        MeshDef mesh;
+        Primitive prim;
+        prim.firstIndex=0;
+        prim.indexCount=3;
+        prim.jointPalette={0};
+        mesh.primitives.push_back(prim);
+        model.meshes.push_back(std::move(mesh));
+        model.nodes.resize(2);
+        model.nodes[0].mesh=0;
+        model.nodes[0].skin=0;
+        model.skins.resize(1);
+        model.skins[0].joints={1};
+        model.skins[0].inverseBind={mat4{}};
+        const std::array<mat4,2> pose{{mat4{},mat4::translate({0,0,2})}};
+        MorphTargetInput shape;
+        shape.name="lift";
+        MorphDelta delta;
+        delta.vertex=0;
+        delta.position={0.4f,0,0};
+        shape.deltas.push_back(delta);
+        const auto library=SparseMorphLibrary::compile(3,{shape});
+        const std::array<ShapeRoute,1> routes{{
+            {Channel::JawOpen,"lift",1.0f}
+        }};
+        const auto binding=FaceShapeBinding::compile(library,routes);
+        FaceFrame face;
+        face.values[std::size_t(Channel::JawOpen)]=1.0f;
+        const auto hit=pickDeformedSculptVertex(model,0,pose,
+            library,binding,face,{0.42f,0.05f,4.0f},{0,0,-1},3);
+        req(hit.hit && hit.vertex==0 &&
+            std::fabs(hit.worldPosition.x-0.4f)<1.e-5f &&
+            std::fabs(hit.worldPosition.z-2.0f)<1.e-5f,
+            "morphed/skinned sculpt pick missed actual GPU-visible vertex");
+        face.values[std::size_t(Channel::JawOpen)]=0.0f;
+        const auto neutral=pickDeformedSculptVertex(model,0,pose,
+            library,binding,face,{0.05f,0.05f,4.0f},{0,0,-1},3);
+        req(neutral.hit && neutral.vertex==0 &&
+            std::fabs(neutral.worldPosition.x)<1.e-6f &&
+            std::fabs(neutral.worldPosition.z-2.0f)<1.e-5f,
+            "neutral morph/rig picking differs from expected skinned geometry");
+        req(!pickDeformedSculptVertex(model,0,pose,
+            library,binding,face,{2,2,4},{0,0,-1},3).hit,
+            "deformed sculpt accepted ray missing all triangles");
+        req(!pickDeformedSculptVertex(model,0,pose,
+            library,binding,face,{0.05f,0.05f,4},{0,0,-1},2).hit,
+            "deformed sculpt authored generated/non-source triangle");
+        auto badPose=pose;
+        badPose[1].at(0,3)=std::numeric_limits<float>::quiet_NaN();
+        req(!pickDeformedSculptVertex(model,0,badPose,
+            library,binding,face,{0.05f,0.05f,4},{0,0,-1},3).hit,
+            "invalid MotionWeave pose did not fail closed");
+        auto badModel=model;
+        badModel.meshes[0].primitives[0].jointPalette.clear();
+        req(!pickDeformedSculptVertex(badModel,0,pose,
+            library,binding,face,{0.05f,0.05f,4},{0,0,-1},3).hit,
+            "invalid skin palette accepted for deformed sculpt pick");
+        auto shortLibrary=SparseMorphLibrary::compile(2,{});
+        std::vector<float3> scratch{{9,9,9}};
+        req(!prepareSculptMorphPositions(model,shortLibrary,{},scratch) &&
+            scratch.size()==1 && scratch[0].x==9,
+            "invalid morph source changed last-good picking scratch");
     }
     {
         auto target=MorphTargetInput{};
