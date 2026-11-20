@@ -583,13 +583,29 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             dev.setComputeUniforms(&deformation,sizeof(deformation));
             dev.dispatch(std::uint32_t(maskModel->vertices.size()));
             dev.endCompute();
+            if(multiMaskParityEnabled) {
+                require(extraMaskModel && extraMaskDeformedVertices.valid() &&
+                        dev.beginCompute(maskDeformCompute),
+                        "7BA third GPU Mask compute producer unavailable");
+                dev.setComputeBuffer(0,extraMaskModel->vb);
+                dev.setComputeBuffer(1,extraMaskDeformedVertices);
+                dev.setComputeUniforms(&deformation,sizeof(deformation));
+                dev.dispatch(std::uint32_t(extraMaskModel->vertices.size()));
+                dev.endCompute();
+                extraMaskModel->materials[0].baseTex=stage==1?0:1;
+            }
             maskGpuDeformedFrame=dev.frameSerial();
             maskModel->materials[0].baseTex=stage==1?0:1;
         }
         renderer.beginScene(camera,kWidth,kHeight);
-        if(actorCount==1)
-            renderer.trackModelSubmissions(model.get(),
+        if(actorCount==1) {
+            if(multiMaskParityEnabled && stage>=1) {
+                const std::array<const render::Model*,3> tracked{{
+                    model.get(),maskModel.get(),extraMaskModel.get()}};
+                renderer.trackModelSubmissionsMany(tracked);
+            }else renderer.trackModelSubmissions(model.get(),
                 maskParityEnabled && stage>=1?maskModel.get():nullptr);
+        }
         renderer.drawMesh(floor,{}, {0.32f,0.38f,0.45f,1});
         const int columns=std::min(actorCount,4);
         const int rows=(actorCount+columns-1)/columns;
@@ -620,6 +636,19 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
                         render::ModelVertexOverrideStatus::Ready,
                     "7AZ Renderer3D rejected GPU-produced mask source");
             renderer.drawModel(maskDraw);
+            if(multiMaskParityEnabled) {
+                render::ModelDraw thirdDraw;
+                thirdDraw.model=extraMaskModel.get();
+                thirdDraw.vertexOverride=extraMaskDeformedVertices;
+                thirdDraw.vertexOverrideCount=
+                    std::uint32_t(extraMaskModel->vertices.size());
+                require(render::modelVertexOverrideStatus(
+                        *extraMaskModel,thirdDraw.vertexOverride,
+                        thirdDraw.vertexOverrideCount)==
+                            render::ModelVertexOverrideStatus::Ready,
+                        "7BA third GPU Mask renderer source invalid");
+                renderer.drawModel(thirdDraw);
+            }
         }
         // Stage 7AS: inspect the actual current-frame Renderer3D staging
         // rather than re-deriving visibility/LOD from the source Model.
@@ -689,6 +718,12 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             maskAccepted=vivid::validateSculptGpuSubmittedView(
                 stagedMask,submittedMask,*maskModel,0,
                 dev.frameSerial()).accepted;
+            if(multiMaskParityEnabled)
+                maskAccepted=maskAccepted &&
+                    vivid::validateSculptGpuSubmittedView(
+                        renderer.modelViewProvenance(*extraMaskModel),
+                        renderer.modelSubmissionProvenance(*extraMaskModel),
+                        *extraMaskModel,0,dev.frameSerial()).accepted;
         }
         const bool bothPasses = profile.draws[0] > 0 &&
                                  profile.draws[1] > 0 && maskAccepted;
