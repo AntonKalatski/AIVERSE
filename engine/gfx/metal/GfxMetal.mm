@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <map>
