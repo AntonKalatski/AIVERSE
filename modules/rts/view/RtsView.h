@@ -787,6 +787,10 @@ private:
     std::vector<ViewEffect> effects_;
     bool outline_ = true, animLod_ = true;
     std::unique_ptr<Rts2DView> twoD_;
+    // Failed staging may retain GPU allocations when device idle is refused.
+    // Keep it owned until a host-confirmed idle/recovery, never let a local
+    // unique_ptr silently drop the recovery path.
+    std::unique_ptr<Rts2DView> pendingSpriteRecovery_;
     SpriteDefaults spriteDefaults_;
     std::string contentBase_;
     std::vector<render::float3> bars_;   // per scene object: health bar anchor of sprite objects
