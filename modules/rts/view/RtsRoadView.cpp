@@ -12,6 +12,7 @@
 #include <map>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 namespace aiverse::game {
 
