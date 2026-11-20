@@ -3177,3 +3177,27 @@ both source tips and remote integration handoffs. See
 [merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
 Source/ancestry checks complete; build/CTest/GPU/CI **NOT RUN** by merge-only
 request. Next: ordinary integration-branch push and remote SHA verification.
+
+
+## LENS complete graph candidate — 2026-11-20
+
+Branch `codex/lens-completion`, code `ac60e887da19931e947ff8e193611848057bee22`.
+`AnimationGraphInstance::cloneForPreparation()` copies all clocks, fades, poses,
+native spans, events, health diagnostics and parameters, then recursively
+detaches mutable child graphs, MotionPlayers, controller players, rigs and
+trait rigs. Immutable graph/model/environment references remain shared; host
+callbacks must not mutate external state. This is frame preparation, not asset
+hot reload or simulation rollback. Public API additive; save/JSON unchanged.
+Paths: engine/render/AnimationGraph.h/.cpp, tests/animation/graphs.cpp. Added
+native-state retry/isolation and interrupted-fade continuity tests.
+`git diff --check` PASS. Integrated native all-target build still RUNNING on
+KINGSTON; tests/Metal/Vulkan NOT RUN for this stage. Full LENS owner transaction
+remains partial; this primitive alone does not make RtsView atomic. Next:
+connect detached graph state to presentation/legacy owner staging, preserve
+single evaluation and commit only after all owners prepare.
+
+| Subsystem | Status | Remaining |
+|---|---|---|
+| Complete graph candidate | implemented in source | native tests |
+| Multi-owner frame rollback | partial | integrate Sprite/View/light/overlay candidates |
+| GPU validation | not tested | actual Metal/Vulkan runs |
