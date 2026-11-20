@@ -12954,6 +12954,94 @@ TEST(terrain_detail_stage_rolls_back_late_lod_and_normal_splat_failures) {
     CHECK(terrain.pendingMeshGpuRetirements()==0);
 }
 
+TEST(terrain_detail_incremental_rebuild_only_uploads_dirty_chunk_and_rolls_back) {
+    fogfaulttest::Device dev;
+    game::TerrainRenderer terrain;
+    game::Rules rules=skirmishRules();
+    const render::FileReader smooth=[](const std::string& path,std::string& out) {
+        if(path!="game.json")return false;
+        out=R"({"terrain":{"style":"smooth","detailLook":{"scale":2}}})";
+        return true;
+    };
+    terrain.init(dev,rules,smooth,"");
+    game::MapGrid grid;
+    grid.init(65,4); // three 32-cell chunks
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.detailActive());
+    CHECK(terrain.stats().chunks==3);
+    const auto buffersBefore=dev.bufferAttempts;
+    const auto retiredBefore=terrain.pendingMeshGpuRetirements();
+    const float heightBefore=terrain.surfaceAt(grid,1.5f,1.5f);
+
+    grid.flags[1] |= game::kCellRock; // far from chunk 1/2 boundaries
+    const auto deletedBefore=dev.destroyedBuffers;
+    dev.failBuffer=dev.bufferAttempts+2; // fail the dirty coarse LOD index
+    bool failed=false;
+    try {(void)terrain.build(dev,grid,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()==retiredBefore);
+    CHECK(dev.destroyedBuffers==deletedBefore+1); // new unpublished VB
+    dev.failBuffer=0;
+
+    const auto successfulStart=dev.bufferAttempts;
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.stats().rebuilt==1);
+    CHECK(dev.bufferAttempts==successfulStart+2); // one VB/IB, not 3 chunks
+    CHECK(terrain.pendingMeshGpuRetirements()>retiredBefore);
+    const auto afterEdit=dev.bufferAttempts;
+    CHECK(!terrain.build(dev,grid,false)); // no redundant coarse rebuild
+    CHECK(dev.bufferAttempts==afterEdit);
+    CHECK(std::isfinite(heightBefore));
+    CHECK(dev.bufferAttempts-buffersBefore<12); // two attempts (fault) + two successful
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
+TEST(terrain_detail_incremental_explicit_splat_edit_keeps_all_chunk_buffers) {
+    fogfaulttest::Device dev;
+    game::TerrainRenderer terrain;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;
+    grid.init(65,4);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    game::terrain::DetailSurface surface;
+    surface.init(65,4,2);
+    std::vector<uint8_t> splat(surface.hgt.size()*4,0);
+    for(size_t i=0;i<surface.hgt.size();++i)splat[i*4]=255;
+    terrain.setDetail(&surface,&splat);
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.detailActive());
+    const auto beforeBuffer=dev.bufferAttempts;
+    const auto beforeRetired=terrain.pendingMeshGpuRetirements();
+    const auto h=terrain.surfaceAt(grid,1.5f,1.5f);
+    const size_t sample=size_t(3*surface.sw()+5);
+    splat[sample*4]=0;
+    splat[sample*4+1]=255;
+    terrain.setDetail(&surface,&splat);
+
+    dev.failTextureUpdate=dev.textureUpdates+4;
+    bool failed=false;
+    try {(void)terrain.build(dev,grid,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.pendingMeshGpuRetirements()==beforeRetired);
+    CHECK(dev.bufferAttempts==beforeBuffer);
+    dev.failTextureUpdate=0;
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.stats().rebuilt==0);
+    CHECK(dev.bufferAttempts==beforeBuffer); // splat only: preserve all LODs
+    CHECK(std::fabs(terrain.surfaceAt(grid,1.5f,1.5f)-h)<1e-5f);
+    CHECK(terrain.pendingMeshGpuRetirements()>beforeRetired);
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
 TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
