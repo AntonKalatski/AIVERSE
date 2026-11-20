@@ -511,6 +511,13 @@ int main() {
     underwaterLake.body.bottomY=-50_fx;
     underwaterLake.style.absorption=0.5f;
     underwaterLake.style.deepR=0.1f;
+    auto inclined=underwaterLake;inclined.mesh.useGrade=true;
+    inclined.mesh.grade.risePerMetre={Fixed::fromRatio(1,10),Fixed{}};
+    const auto belowGrade=world::sampleNereidUnderwater({inclined},{10_fx,10_fx,0_fx});
+    check(belowGrade.submerged&&std::abs(belowGrade.waterSurfaceY-11.0)<.001,
+          "underwater camera must use graded local water surface");
+    check(!world::sampleNereidUnderwater({inclined},{-10_fx,10_fx,0_fx}).submerged,
+          "above local grade must not inherit reference-plane submersion");
     const std::vector<world::NereidSceneSurface> opticalVolumes{underwaterLake};
     auto submerged=world::sampleNereidUnderwater(opticalVolumes,
                                                  {0_fx,8_fx,0_fx});

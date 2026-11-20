@@ -2,6 +2,7 @@
 // Reuses NEREID parsing/residency/draw; does not create gameplay water authority.
 #pragma once
 #include "engine/world/NereidWaterManifest.h"
+#include "engine/world/NereidUnderwaterPrisma.h"
 namespace aiverse::world {
 class NereidManifestHost {
 public:
@@ -27,12 +28,18 @@ public:
         };
         const Vec3 observer{fixed(camera.x),fixed(camera.y),fixed(camera.z)};
         scene_.update(device,&observer);
+        observer_=observer;
+    }
+    NereidUnderwaterView underwater()const{return sampleNereidUnderwater(scene_,observer_);}
+    void updateUnderwater(render::Prisma& prisma,float deltaSeconds)const{
+        prisma.setUnderwater(nereidPrismaUnderwaterInput(underwater(),observer_.y.toDouble()),deltaSeconds);
     }
     void draw(render::Renderer3D& renderer)const{scene_.draw(renderer,{},1);}
     void shutdown(gfx::Device& device){scene_.shutdown(device);signature_.clear();configured_=0;}
     size_t configuredSurfaces()const{return configured_;}
 private:
     NereidWaterScene scene_;
+    Vec3 observer_{};
     std::string signature_;
     size_t configured_=0;
 };

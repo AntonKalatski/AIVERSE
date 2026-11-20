@@ -394,6 +394,7 @@ struct Bench {
         renderer.setLodDiagnosticsEnabled(true);
         water.configure(config);
         water.prepare(d,camera.eye());
+        water.updateUnderwater(post,1.f/60.f);
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);

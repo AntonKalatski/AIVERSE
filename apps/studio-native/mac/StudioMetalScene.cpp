@@ -9,6 +9,7 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -467,6 +468,9 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     StudioFrameScope scope{*device_};
     nereid_.configure(fpsProject?Json::object():editor::authoredWaterDocument(doc));
     nereid_.prepare(*device_,camera_.eye());
+    const double opticalNow=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
+    underwaterFrameTime_=opticalNow;
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
@@ -544,7 +548,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
-    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):nullptr);
+    renderer_.render(pass,useLighting?lightingRuntime_.pipeline(post_):static_cast<PostProcess*>(&post_));
     renderer_.resolvePrisma();
     lightingRuntime_.presented();
 

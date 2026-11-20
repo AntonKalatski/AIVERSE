@@ -1774,6 +1774,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     try {
         nereidPreview_.configure(authoredWaterDocument(doc()));
         nereidPreview_.prepare(*dev_,useCam.eye());
+        nereidPreview_.updateUnderwater(prisma_,ImGui::GetIO().DeltaTime);
     } catch(const std::exception& e) {
         std::fprintf(stderr,"[nereid-preview] %s\n",e.what());
     }
@@ -1933,6 +1934,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     try {
         nereidPreview_.configure(authoredWaterDocument(doc()));
         nereidPreview_.prepare(*dev_,cam.eye());
+        nereidPreview_.updateUnderwater(prisma_,ImGui::GetIO().DeltaTime);
     } catch(const std::exception& e) {
         std::fprintf(stderr,"[nereid-game-preview] %s\n",e.what());
     }
