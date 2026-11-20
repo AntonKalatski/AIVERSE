@@ -1345,3 +1345,65 @@ fully animated cross-model visibility. Production Creator does
 not automatically enumerate every other GPU object; extending
 that requires renderer-owned provenance, backend fences,
 and real hardware colour+ID acceptance.
+
+
+### Stage 7BA — multiple renderer-verified GPU Mask occluders
+
+The VIVID ID pass now accepts up to four distinct, independently
+GPU-deformed sampled Mask blockers, all with zero selectable IDs
+and true Metal hardware depth. Existing single-occluder calls to
+`SculptGpuIdPass::record` continue working. New callers may
+add a trailing `std::span<const SculptGpuVertexSource>`
+of additional mask sources. The limit includes the legacy
+single-source pointer. The ID pass checks each original
+60-byte stream is independent, material/UV/skin inputs are
+finite and triangle budgets are within bounds. It expands
+each stream on Metal, binds the blocker's own original sampled
+texture/cutoff, depth-tests all occluders and retains every
+input/output buffer until actual asynchronous GPU completion
+or confirmed device idle.
+
+A new host-side `SculptGpuRendererMaskSources.h` collector
+derives eligible GPU mask buffers from **normal Renderer3D's
+actual current-frame main-colour staged/accepted commands**
+instead of manually trusting pointer metadata.
+Usage: register the selected human Model plus up to four
+candidate scene Models with
+`renderer.trackModelSubmissionsMany(models)` immediately
+after `beginScene` and before any `drawModel`.
+After `renderer.render`, give the collector the selected
+GPU buffer, the same `frameSerial`, and each candidate
+`{model,mesh,nodeWorld}`. A single missing, untracked,
+batched, blended, unknown-LOD, stale or unsupported source
+rejects the whole optional GPU pick; preserve CPU BVH
+selection as the authoring truth. Normal Editor/Creator
+cannot discover or authorize an arbitrary game object
+without the host providing its known scene candidates.
+
+Renderer3D provenance includes a snapshot of the source
+Mask's actual base texture, alpha factor/cutoff,
+UV offset/scale/rotation and vertex-colour option;
+the collector requires exact equality with the independent
+GPU-ID source. The new entry point does not copy Materials
+across frames and never skips a visible unknown occluder.
+
+Native Metal preview mode `AIVERSE_VIVID_MASK_PARITY=2`
+adds a *third* Model with its own GPU-compute-written 60B
+vertex stream. Together with the selected human and first
+Mask actor, both sampled Mask models draw through
+Renderer3D's normal colour/depth pass. The collector passes
+both to the real independent GPU ID pass. Positive alpha-hole
+and solid occlusion cases must agree in the current-frame
+colour and true Depth32Float pixel, including the nearer
+Mask's depth. `tools/vivid-validate.sh` now executes this
+mode separately in addition to its original single human,
+one Mask actor and 12-human crowd cases.
+
+**No native Metal/CMake/CTest or real pixel tests were run
+for Stage 7BA on this environment**; source inspection
+only. Missing multi-occluder cases: unknown scene objects,
+true GPU opaque streams, ShaderGraph vertex displacement,
+Blend/cornea depth-after, conditional LOD, ICB/MDI and
+Vulkan/GLES3 true GPU source readback. The API is a
+bounded opt-in collection mechanism, not an automatic
+all-scene GPU picking replacement.
