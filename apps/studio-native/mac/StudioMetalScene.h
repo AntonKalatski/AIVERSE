@@ -61,6 +61,8 @@ private:
                             const Json& rules, const std::vector<StudioDocumentProxy>& proxies);
     render::RTSCamera camera_;
     bool cameraInitialized_ = false;
+    bool lodDiagnostics_ = false;
+    uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;
     int lastMapHeight_ = 0;
 };

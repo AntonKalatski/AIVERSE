@@ -7,6 +7,8 @@
 #include "apps/studio-native/StudioAuthoredLights.h"
 #include "apps/studio-native/StudioPbrMaterialPreview.h"
 #include <algorithm>
+#include <cstdlib>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -20,6 +22,8 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
     if (!renderer_.init(*device_)) throw std::runtime_error("AIVERSE Renderer3D init failed");
+    lodDiagnostics_=std::getenv("AIVERSE_LOD_DIAGNOSTICS")!=nullptr;
+    renderer_.setLodDiagnosticsEnabled(lodDiagnostics_);
     renderer_.setShadowQuality(ShadowQuality::Off); // cheap editor preview until full scene parity
     MeshBuilder builder;
     builder.color(rgba(255,255,255));
@@ -457,6 +461,13 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;
     renderer_.render(pass);
+    if(lodDiagnostics_&&++diagnosticFrames_%120==0){
+        const auto& stats=renderer_.modelStats();
+        std::fprintf(stderr,"[studio-lod] instances=%zu assets=%zu cameraTriangles=%llu shadowTriangles=%u lod=%llu/%llu/%llu/%llu chains=%llu blocked=%llu shadowLimited=%llu\n",
+            modelInstances_.size(),documentModels_.size(),(unsigned long long)renderer_.profile().cameraModelTriangles,renderer_.profile().triangles[0],
+            (unsigned long long)stats.cameraLodNodes[0],(unsigned long long)stats.cameraLodNodes[1],(unsigned long long)stats.cameraLodNodes[2],(unsigned long long)stats.cameraLodNodes[3],
+            (unsigned long long)stats.cameraLodChains,(unsigned long long)stats.cameraLodBlocked,(unsigned long long)stats.cameraShadowLimitedLod);
+    }
     device_->endPass();
     device_->endFrame();
 }

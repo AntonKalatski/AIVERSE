@@ -226,6 +226,7 @@ struct Model {
         size_t primitivesBefore = 0, primitivesAfter = 0;
         bool compacted = false;
         std::string reason;
+        bool independentShadowLod = false; // opt-in camera/shadow mesh selection
     } batching;
     struct AutoLodInfo {
         bool attempted = false;

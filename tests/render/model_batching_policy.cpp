@@ -468,13 +468,14 @@ int main() {
     const auto read = [&](const std::string& path, std::string& out) {
         if (path == "fixture.obj") { out = obj; return true; }
         if (path == "fixture.obj.batching.json") {
-            out = R"({"mergeRigid":true,"maxExtent":12,"preserveNodes":["shell"],"mutableNodes":["shell"]})";
+            out = R"({"mergeRigid":true,"independentShadowLod":true,"maxExtent":12,"preserveNodes":["shell"],"mutableNodes":["shell"]})";
             return true;
         }
         return false;
     };
     auto imported = loadModel("fixture.obj", read);
     CHECK(imported->batching.mergeRigid);
+    CHECK(imported->batching.independentShadowLod);
     CHECK(imported->batching.maxExtent == 12.0f);
     CHECK(imported->batching.preserveNodes.size() == 1);
     CHECK(imported->findNode("shell") >= 0);
