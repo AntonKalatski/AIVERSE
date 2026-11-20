@@ -93,10 +93,12 @@ struct Preview {
     // 7AZ: optional second independent Mask actor, rendered through the
     // NORMAL Renderer3D colour/depth pass, then used as an ID occluder.
     std::unique_ptr<render::Model> maskModel;
+    std::unique_ptr<render::Model> extraMaskModel; // 7BA bounded third actor
     std::array<gfx::TextureHandle,2> maskTextures{};
     gfx::ComputeHandle maskDeformCompute{};
     gfx::BufferHandle maskDeformedVertices{};
-    bool maskParityEnabled=false;
+    gfx::BufferHandle extraMaskDeformedVertices{};
+    bool maskParityEnabled=false,multiMaskParityEnabled=false;
     std::uint64_t maskGpuDeformedFrame=0;
     std::unique_ptr<vivid::SparseMorphLibrary> shapes;
     std::unique_ptr<vivid::FaceShapeBinding> shapeBinding;
@@ -185,7 +187,11 @@ struct Preview {
             actorCount=std::clamp(requested,1,32);
         }
         const char* maskMode=std::getenv("AIVERSE_VIVID_MASK_PARITY");
-        maskParityEnabled=maskMode && std::strcmp(maskMode,"1")==0;
+        maskParityEnabled=maskMode &&
+            (std::strcmp(maskMode,"1")==0 ||
+             std::strcmp(maskMode,"2")==0);
+        multiMaskParityEnabled=maskMode &&
+            std::strcmp(maskMode,"2")==0;
         require(!maskParityEnabled || actorCount==1,
                 "VIVID 7AZ mask provenance probe requires one selected actor");
         if(actorCount==1) {
@@ -340,6 +346,39 @@ kernel void cs_main(device const uint* source [[buffer(0)]],
             maskDeformedVertices=dev.createBuffer(output);
             require(maskDeformedVertices.valid(),
                     "VIVID 7AZ GPU Mask output allocation failed");
+            if(multiMaskParityEnabled) {
+                // Third Model uses independent native GPU-source/index
+                // memory but the same sampled colour and alpha resources.
+                // Slightly closer along the camera ray tests true depth
+                // winner with TWO distinct GPU-deformed Mask blockers.
+                extraMaskModel=std::make_unique<render::Model>();
+                auto& third=*extraMaskModel;
+                third.path="VIVID 7BA third native GPU Mask actor";
+                third.vertices=blocker.vertices;
+                third.indices=blocker.indices;
+                third.meshes.resize(1);
+                third.meshes[0].primitives=
+                    blocker.meshes[0].primitives;
+                third.nodes=blocker.nodes;
+                third.nodes[0].name="7BA third GPU mask";
+                third.materials=blocker.materials;
+                third.images=blocker.images;
+                for(auto& v:third.vertices)v.pos+=toward*.24f;
+                third.finalize();
+                third.batching.autoLod=false;
+                render::prepareModelUpload(third);
+                require(render::uploadModel(dev,third,true) &&
+                        !third.geometryPoolPage &&
+                        third.vb.valid() && third.ib.valid() &&
+                        !third.gpuBaseVertex,
+                        "VIVID 7BA third Mask model cannot use own GPU override");
+                output.size=third.vertices.size()*sizeof(render::ModelVertex);
+                output.label="VIVID 7BA third independently GPU-deformed Mask";
+                extraMaskDeformedVertices=dev.createBuffer(output);
+                require(extraMaskDeformedVertices.valid() &&
+                        extraMaskDeformedVertices!=maskDeformedVertices,
+                        "VIVID 7BA third Mask output aliased second actor");
+            }
         }
         render::MeshBuilder ground;
         ground.box({0,-0.12f,0},{10,0.2f,9});
