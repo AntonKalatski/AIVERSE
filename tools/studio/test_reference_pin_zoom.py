@@ -49,6 +49,23 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("toggleInspectorPin", panel)
         self.assertIn("aria-pressed={inspectorPinned}", panel)
 
+    def test_import_settings_lock_preserves_asset_context(self):
+        assets = self.source("components/AssetsPanel.tsx")
+        settings = self.source("components/AssetImportSettings.tsx")
+        self.assertIn("pinnedAssetPath", assets)
+        self.assertIn("const detailPath=pinnedAssetPath ?? selected;", assets)
+        self.assertIn("locked={pinnedAssetPath!==null}", assets)
+        self.assertIn("onToggleLock={toggleAssetPin}", assets)
+        self.assertIn("setPinnedAssetPath(null)", assets)
+        self.assertIn("aria-pressed={locked}", settings)
+        self.assertIn("Lock import settings", settings)
+
+    def test_shader_graph_pointer_drag_accounts_for_editor_zoom(self):
+        graph = self.source("panels/ShaderGraphPanel.tsx")
+        self.assertIn("document.documentElement.style.zoom", graph)
+        self.assertIn("(event.clientX-current.x)/zoom", graph)
+        self.assertIn("(event.clientY-current.y)/zoom", graph)
+
     def test_global_zoom_persists_and_resizes_native_viewport(self):
         app = self.source("App.tsx")
         self.assertIn("aiverse.studio.uiScale", app)
