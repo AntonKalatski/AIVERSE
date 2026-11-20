@@ -178,7 +178,7 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn('render::loadModel(path,read)',scene)
         self.assertIn('render::uploadModel(*device_,*model,true)',scene)
         self.assertIn('syncDocumentModels(doc,projectPath,rules,proxies)',scene)
-        self.assertIn('studioPickModelInstances(modelInstances_,origin,direction)',scene)
+        self.assertIn('studioPickSceneSurfaces(modelInstances_,proxies,origin,direction)',scene)
         self.assertIn('renderer_.drawModel(draw)',scene)
         self.assertIn('draw.world=instance.world',scene)
         self.assertIn('modelInstances_.push_back({proxy.id',scene)
@@ -197,12 +197,14 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("studioRayTriangle",adapter)
         self.assertIn("studioPickModelSurface",adapter)
         self.assertIn("studioPickModelInstances",adapter)
+        self.assertIn("studioPickSceneSurfaces",adapter)
         self.assertIn("world*model.bindWorld[n]",adapter)
         self.assertIn("if (model.vertices.empty() || model.indices.empty()",adapter)
         self.assertIn("node.skin>=0 || model.meshes",adapter)
         self.assertIn("primitive.morphTargets>0",adapter)
         self.assertIn("triangleBudgetPerModel",adapter)
         self.assertIn("studioPickModelInstances({",cases)
+        self.assertIn("studioPickSceneSurfaces(instances,",cases)
         self.assertIn("add_test(NAME studio_model_picking",cmake)
 
     def test_scene_selection_hits_rendered_oriented_proxy_not_aabb(self):
