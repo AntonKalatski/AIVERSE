@@ -37,3 +37,6 @@
 .dock-body .log-list{height:100%;overflow:auto}
 .dock-body .tree-list{min-height:0}
 @media(max-width:1000px){.dock-hint{display:none}}
+
+.dock-resizer:focus-visible{outline:2px solid var(--studio-accent);outline-offset:-2px}
+.dock-tab-label:focus-visible,.dock-close:focus-visible,.dock-move:focus-visible{outline:2px solid var(--studio-accent);outline-offset:-2px}

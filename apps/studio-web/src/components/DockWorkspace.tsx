@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Dispatch, DragEvent, PointerEvent, ReactNode, SetStateAction } from 'react';
+import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from 'react';
 import { GripVertical, LayoutPanelLeft, X } from 'lucide-react';
 import {
   DOCK_AREAS, DOCK_PANELS, PANEL_TITLES, closeDockPanel, defaultDockLayout,
@@ -42,7 +42,8 @@ function DockSlot({ area, layout, setLayout, renderPanel, hovered, setHovered }:
     onDragEnter={event => { event.preventDefault(); setHovered(area); }}
     onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }}
     onDragLeave={event => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null);
+      if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))
+        setHovered(null);
     }}
     onDrop={event => drop(event)}>
     <div className="dock-tabs" role="tablist" aria-label={AREA_NAMES[area] + ' tabs'}>
@@ -81,16 +82,37 @@ function DockSlot({ area, layout, setLayout, renderPanel, hovered, setHovered }:
 export default function DockWorkspace({ layout, setLayout, renderPanel }: Props) {
   const [hovered, setHovered] = useState<DockArea | null>(null);
   const safe = normalizeDockLayout(layout);
-  const resize = (field: 'leftSize' | 'rightSize' | 'bottomSize', event: PointerEvent<HTMLDivElement>) => {
+  type ResizeField = 'leftSize' | 'rightSize' | 'bottomSize';
+  const updateSize = (field: ResizeField, proposed: number) => {
+    const bounds = field === 'bottomSize' ? [110, 480] : [180, 600];
+    const value = Math.min(bounds[1], Math.max(bounds[0], Math.round(proposed)));
+    setLayout(current => ({ ...current, [field]: value }));
+  };
+  const keyboardResize = (field: ResizeField, event: React.KeyboardEvent<HTMLDivElement>) => {
+    const horizontal = field !== 'bottomSize';
+    const positive = horizontal ? 'ArrowRight' : 'ArrowUp';
+    const negative = horizontal ? 'ArrowLeft' : 'ArrowDown';
+    const sign = field === 'rightSize' ? -1 : 1;
+    if (event.key === positive || event.key === negative) {
+      event.preventDefault();
+      const direction = event.key === positive ? sign : -sign;
+      updateSize(field, safe[field] + direction * (event.shiftKey ? 32 : 8));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      updateSize(field, field === 'bottomSize' ? 110 : 180);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      updateSize(field, field === 'bottomSize' ? 480 : 600);
+    }
+  };
+  const resize = (field: ResizeField, event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX, startY = event.clientY;
     const original = safe[field];
-    const move = (next: globalThis.PointerEvent) => {
+    const move = (next: PointerEvent) => {
       const delta = field === 'leftSize' ? next.clientX - startX :
         field === 'rightSize' ? startX - next.clientX : startY - next.clientY;
-      const bounds = field === 'bottomSize' ? [110, 480] : [180, 600];
-      const value = Math.min(bounds[1], Math.max(bounds[0], Math.round(original + delta)));
-      setLayout(current => ({ ...current, [field]: value }));
+      updateSize(field, original + delta);
     };
     const stop = () => {
       window.removeEventListener('pointermove', move);
@@ -130,15 +152,21 @@ export default function DockWorkspace({ layout, setLayout, renderPanel }: Props)
     }}>
       {slot('left')}
       <div className="dock-resizer dock-resize-left" role="separator"
-        aria-label="Resize left dock" aria-orientation="vertical"
+        aria-label="Resize left dock" aria-orientation="vertical" tabIndex={0}
+        aria-valuemin={180} aria-valuemax={600} aria-valuenow={safe.leftSize}
+        onKeyDown={event => keyboardResize('leftSize', event)}
         onPointerDown={event => resize('leftSize', event)}/>
       {slot('center')}
       <div className="dock-resizer dock-resize-right" role="separator"
-        aria-label="Resize right dock" aria-orientation="vertical"
+        aria-label="Resize right dock" aria-orientation="vertical" tabIndex={0}
+        aria-valuemin={180} aria-valuemax={600} aria-valuenow={safe.rightSize}
+        onKeyDown={event => keyboardResize('rightSize', event)}
         onPointerDown={event => resize('rightSize', event)}/>
       {slot('right')}
       <div className="dock-resizer dock-resize-bottom" role="separator"
-        aria-label="Resize bottom dock" aria-orientation="horizontal"
+        aria-label="Resize bottom dock" aria-orientation="horizontal" tabIndex={0}
+        aria-valuemin={110} aria-valuemax={480} aria-valuenow={safe.bottomSize}
+        onKeyDown={event => keyboardResize('bottomSize', event)}
         onPointerDown={event => resize('bottomSize', event)}/>
       {slot('bottom')}
     </div>
