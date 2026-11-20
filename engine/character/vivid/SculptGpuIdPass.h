@@ -94,7 +94,7 @@ public:
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
            request.meshId!=surface.mesh ||
-           !pending_.empty() ||
+           !pending_.empty() || retiredWithoutCallback_.size()>=8u ||
            request.width>4096u || request.height>4096u ||
            !device_->gpuHealthy() ||
            !buildSculptGpuIdVertices(model,surface,authorCount,
@@ -139,7 +139,8 @@ public:
         const auto vertex=device_->createBuffer(v);
         if(!vertex.valid())return false;
         auto reply=std::make_shared<Reply>();
-        // The present-frame GL/Metal scissor is top-left, like request x/y.
+        // Metal viewport/scissor use the top-left convention exposed by
+        // gfx::Device; no framebuffer origin conversion belongs in VIVID.
         gfx::PassDesc pass;
         pass.colorTarget=color_;
         pass.depthTarget=depth_;
