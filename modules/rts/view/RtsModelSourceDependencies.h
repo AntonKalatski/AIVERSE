@@ -105,19 +105,19 @@ private:
         const auto path=std::filesystem::path(source).lexically_normal().generic_string();
         return path=="."?std::string{}:path;
     }
-    static bool usesLibrary(const Json& value) {
-        if(value.isString())return true;
-        if(value.isObject()) {
-            if(value["use"].isString() || value["base"].isString())
-                return true;
-            for(const auto& [name,child]:value.members()) {
-                (void)name;
-                if(usesLibrary(child))return true;
-            }
+    static bool materialUsesLibrary(const Json& reference) {
+        if(reference.isString())return true;
+        if(!reference.isObject())return false;
+        // Only material references are library keys. Texture paths, shader
+        // names and other string-valued material properties are not keys.
+        return materialUsesLibrary(reference["use"]) ||
+               materialUsesLibrary(reference["base"]);
+    }
+    static bool usesLibrary(const Json& assignments) {
+        for(const auto& [pattern,reference]:assignments.members()) {
+            (void)pattern;
+            if(materialUsesLibrary(reference))return true;
         }
-        if(value.isArray())
-            for(const auto& child:value.items())
-                if(usesLibrary(child))return true;
         return false;
     }
     void add(const std::string& source,ModelSourceKind kind,size_t type) {

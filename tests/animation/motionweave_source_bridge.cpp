@@ -39,8 +39,7 @@ int main() {
     assert(p.get<AnimationPlayerComponent>(e).restart);
     // Duplicate IDs and invalid models fail before mutation.
     bool threw=false;
-    try {bridge.sync(p,{frames.data(),1},true);
-         std::vector<AnimationSourceFrame> duplicates={frames[0],frames[0]};
+    try {std::vector<AnimationSourceFrame> duplicates={frames[0],frames[0]};
          bridge.sync(p,duplicates,true);
     }catch(const std::invalid_argument&){threw=true;}
     assert(threw && bridge.size()==2);

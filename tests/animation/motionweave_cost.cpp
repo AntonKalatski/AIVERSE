@@ -41,6 +41,12 @@ int main(){
     assert(stats.serialEntities==1);
     assert(stats.parallelEntities==95);
     assert(stats.estimatedSafeCost>0);
-    assert(stats.usedWorkers==(scheduler.workerCount()>0));
+    assert(!stats.usedWorkers); // bind-only crowd stays below default cost gate
+    auto options=scheduler.options();
+    options.minimumParallelCost=1;
+    scheduler.setOptions(options);
+    const auto parallel=scheduler.update(w,.01f);
+    assert(parallel.usedWorkers==(scheduler.workerCount()>0));
+    assert(parallel.parallelEntities==95 && parallel.serialEntities==1);
     assert(stats.workerPhaseMs>=0 && stats.serialPhaseMs>=0);
 }
