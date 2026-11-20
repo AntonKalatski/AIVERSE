@@ -113,6 +113,10 @@ struct Primitive {
     int morphTargets = 0;                // 0..kMaxMorphTargets
     uint32_t morphTexel = 0;             // first texel of its deltas in Model::morphTex
     std::vector<float> morphDeltas;      // CPU: [target][vertex] position xyz, normal xyz (released after upload)
+    // Generated index-only morph LODs borrow the EXACT source primitive's
+    // vertex span and GPU morph texture allocation (no second upload).
+    // Both remain -1 for independently authored/imported morph primitives.
+    int morphAliasMesh = -1, morphAliasPrimitive = -1;
     bool lightmapUv = false;             // vertices carry lightmap UVs in `joints` (unskinned only, see ModelVertex)
     bool shadowBatched = false;          // cast through MeshDef::shadowBatch instead of its own shadow draw
 };

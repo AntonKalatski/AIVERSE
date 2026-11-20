@@ -109,6 +109,24 @@ void Model::finalize() {
                 p.boundsMin = min3(p.boundsMin, v); p.boundsMax = max3(p.boundsMax, v);
             }
             if (p.indexCount == 0) p.boundsMin = p.boundsMax = {0, 0, 0};
+            // AutoLOD's index-only morph alias must retain the source
+            // channel envelope even if this LOD drops extreme triangles.
+            if(p.morphAliasMesh>=0) {
+                if(p.morphAliasPrimitive<0 ||
+                   size_t(p.morphAliasMesh)>=meshes.size() ||
+                   size_t(p.morphAliasPrimitive)>=
+                       meshes[size_t(p.morphAliasMesh)].primitives.size())
+                    throw std::runtime_error("invalid AutoLOD morph source");
+                const Primitive& source=meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 ||
+                   source.morphTargets!=p.morphTargets ||
+                   source.firstVertex!=p.firstVertex ||
+                   source.vertexCount!=p.vertexCount)
+                    throw std::runtime_error("incompatible AutoLOD morph source");
+                p.boundsMin=min3(p.boundsMin,source.boundsMin);
+                p.boundsMax=max3(p.boundsMax,source.boundsMax);
+            }
             // Conservatively include all morph targets for normalized
             // weights [0,1]. For any vertex, each target can independently
             // contribute its negative or positive displacement. The LOD
@@ -740,10 +758,30 @@ void prepareModelUpload(Model& m) {
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
                  bool publishSharedTextures) {
-    // Check morph layout BEFORE creating any GPU buffers or textures.
-    // Prevent shader out-of-bounds access and partially uploaded assets.
+    // CPU preparation can create morph aliases. Preflight the FINAL model
+    // topology before allocating a single GPU buffer/texture.
+    if(!m.vertices.empty() && !m.vb.valid())prepareModelUpload(m);
     for(const auto& mesh:m.meshes)
         for(const auto& primitive:mesh.primitives) {
+            if(primitive.morphAliasMesh>=0) {
+                const size_t sm=size_t(primitive.morphAliasMesh);
+                if(primitive.morphAliasPrimitive<0 ||
+                   sm>=m.meshes.size() ||
+                   size_t(primitive.morphAliasPrimitive)>=m.meshes[sm].primitives.size() ||
+                   !primitive.morphDeltas.empty() ||
+                   m.meshes[sm].morphTargetNames!=mesh.morphTargetNames)
+                    return false;
+                const auto& source=m.meshes[sm].primitives[
+                    size_t(primitive.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 || source.morphTargets<=0 ||
+                   source.morphTargets!=primitive.morphTargets ||
+                   source.firstVertex!=primitive.firstVertex ||
+                   source.vertexCount!=primitive.vertexCount ||
+                   (source.morphDeltas.empty() && !m.morphTex.valid()))
+                    return false;
+                continue;
+            }
+            if(primitive.morphAliasPrimitive>=0)return false;
             if(primitive.morphTargets<0 ||
                primitive.morphTargets>kMaxMorphTargets)return false;
             if(primitive.morphTargets==0) {
@@ -766,7 +804,6 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
     // into a false-positive upload result.
     const bool hasGeometry=!m.vertices.empty() && !m.indices.empty();
     if (!m.vertices.empty() && !m.vb.valid()) {
-        prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
             m.vb = dev.createBuffer(vb);
@@ -854,6 +891,13 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
+    // Resolve generated coarse primitives AFTER source offsets were assigned
+    // by the only RGBA32F allocation; aliases never consume extra texels.
+    for(auto& mesh:m.meshes)
+        for(auto& p:mesh.primitives)
+            if(p.morphAliasMesh>=0)
+                p.morphTexel=m.meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)].morphTexel;
     if (!keepCpu) {
         // Never discard morph deltas before a successful GPU morph texture
         // allocation. Failed uploads retain their CPU source for diagnostics
