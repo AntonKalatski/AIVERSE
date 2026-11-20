@@ -116,7 +116,14 @@ public:
             // dedicated provider in host_.slots_ is independent and alive.
             if(!coordinator.commit(ticket)) {
                 host_.discard(device_,ticket.scene.value);
-                if(error)*error=coordinator.error(ticket);
+                const std::string reason=coordinator.error(ticket);
+                // SceneRuntime may still contain the rejected Loading
+                // scene. Cancel at the same authoritative structural
+                // barrier, without touching any successful prior scene.
+                // Preserve the original commit failure for diagnostics.
+                try {(void)coordinator.cancel(ticket);}catch(...) {}
+                if(error)*error=reason.empty()
+                    ? "authoritative scene commit rejected":reason;
                 return false;
             }
             committed=true;
