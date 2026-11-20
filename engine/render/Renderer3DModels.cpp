@@ -10,6 +10,8 @@
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
+#include "GiDynamicProbeTexture.h"
+#include "GiClipmapValidityTexture.h"
 
 #include <algorithm>
 #include <array>
@@ -299,6 +301,101 @@ void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     min={1e30f,1e30f,1e30f};max={-1e30f,-1e30f,-1e30f};
     for(int i=0;i<8;++i){auto p=world.transformPoint({c.x+(i&1?e.x:-e.x),c.y+(i&2?e.y:-e.y),c.z+(i&4?e.z:-e.z)});min=min3(min,p);max=max3(max,p);}
 }
+bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float3 origin,
+                                     float spacing, int nx, int ny, int nz,
+                                     int ringX, int ringY, int ringZ,
+                                     const GiClipmapValidityTexture* validity) {
+    if (!overlay) { clearDynamicGiOverlay(); return true; }
+    if (!dev_ || !dev_->supports(overlay->computeWritable()
+                              ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
+        !overlay->texture().valid() || overlay->device() != dev_ ||
+        !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+        !std::isfinite(spacing) || spacing < .25f || spacing > 1000.f ||
+        nx < 1 || ny < 1 || nz < 1 || nx > 256 || ny > 256 || nz > 256 ||
+        ringX < 0 || ringY < 0 || ringZ < 0 ||
+        ringX >= nx || ringY >= ny || ringZ >= nz ||
+        size_t(nx) * size_t(ny) * size_t(nz) != overlay->probeCount() ||
+        (validity && (!validity->ready() || validity->device()!=dev_ ||
+                      validity->size()!=overlay->probeCount())))
+        return false;
+    dynamicGiOverlay_ = overlay; // caller owns it; exact same device required
+    dynamicGiValidity_ = validity;
+    dynamicGiFarOverlay_ = nullptr;
+    dynamicGiThirdOverlay_ = nullptr;
+    dynamicGiOrigin_ = {origin.x, origin.y, origin.z, 1.0f / spacing};
+    dynamicGiSize_ = {float(nx), float(ny), float(nz), 0.0f};
+    dynamicGiRing_ = {float(ringX), float(ringY), float(ringZ), 0.0f};
+    return true;
+}
+
+bool Renderer3D::setDynamicGiCascadeOverlay(const GiDynamicProbeTexture* far,
+                                            float3 origin,float spacing,
+                                            int nx,int ny,int nz,
+                                            int ringX,int ringY,int ringZ) {
+    if(!far) { dynamicGiFarOverlay_=nullptr; dynamicGiThirdOverlay_=nullptr; return true; }
+    if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
+       !dynamicGiOverlay_ || !dynamicGiValidity_ ||
+       !far->texture().valid() || !far->computeWritable() ||
+       far->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
+       !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
+       !std::isfinite(origin.z) || !std::isfinite(spacing) ||
+       spacing<.25f || spacing>1000.f ||
+       nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
+       ringX<0 || ringY<0 || ringZ<0 ||
+       ringX>=nx || ringY>=ny || ringZ>=nz ||
+       size_t(nx)*size_t(ny)*size_t(nz)!=far->probeCount())
+        return false;
+    dynamicGiFarOrigin_={origin.x,origin.y,origin.z,1.f/spacing};
+    dynamicGiFarSize_={float(nx),float(ny),float(nz),0.f};
+    dynamicGiFarRing_={float(ringX),float(ringY),float(ringZ),0.f};
+    dynamicGiFarOverlay_=far;
+    dynamicGiThirdOverlay_=nullptr;
+    return true;
+}
+
+bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* third,
+                                                  float3 origin,float spacing,
+                                                  int nx,int ny,int nz,
+                                                  int ringX,int ringY,int ringZ) {
+    if(!third) {dynamicGiThirdOverlay_=nullptr;return true;}
+    if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
+       !dynamicGiOverlay_ || !dynamicGiValidity_ || !dynamicGiFarOverlay_ ||
+       !third->computeWritable() || !third->texture().valid() ||
+       third->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
+       !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
+       !std::isfinite(origin.z) || !std::isfinite(spacing) ||
+       spacing<.25f || spacing>1000.f ||
+       nx<1 || ny<1 || nz<1 || nx>256 || ny>256 || nz>256 ||
+       ringX<0 || ringY<0 || ringZ<0 ||
+       ringX>=nx || ringY>=ny || ringZ>=nz ||
+       size_t(nx)*size_t(ny)*size_t(nz)!=third->probeCount())
+        return false;
+    dynamicGiThirdOrigin_={origin.x,origin.y,origin.z,1.f/spacing};
+    dynamicGiThirdSize_={float(nx),float(ny),float(nz),0.f};
+    dynamicGiThirdRing_={float(ringX),float(ringY),float(ringZ),0.f};
+    dynamicGiThirdOverlay_=third;
+    return true;
+}
+
+bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
+                                  bool /*gpuInstances*/, bool /*instancePalette*/) const {
+    // U6 and tex13..16 are view-shared (not per-instance) and the model
+    // shader evaluates GI from each instance's world position/normal.
+    // Standard and CPU MDI instancing remain eligible. Stage23 suppresses
+    // experimental Metal PBR ICB for GI view to avoid a buffer8 conflict
+    // with U7 far cascade; never draw a batch without bounced light.
+    if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
+        !dynamicGiOverlay_->texture().valid() ||
+        !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
+        it.mat->shading == ShadingModel::Unlit)
+        return false;
+    const auto& program = it.mat->shaderGraph;
+    // Shader Graph textures start at slot 13, which the opt-in GI overlay uses.
+    // A graph with no textures remains eligible; never steal texture slot 13.
+    return !program || int(matQuality_) < program->minQuality ||
+           program->textures.empty();
+}
+
 void Renderer3D::setMaterialQuality(MaterialQuality q) {
     if(q==matQuality_)return;
     if(dev_)retireModelPrograms();
