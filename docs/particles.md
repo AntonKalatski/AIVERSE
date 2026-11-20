@@ -1,5 +1,22 @@
 # Particles
 
+## SpectraFX — universal graph frontend
+
+**AIVERSE SpectraFX** (`aiverse::spectra`) is the official name of the
+genre-independent VFX system. The existing CPU `engine/fx/ParticleSystem`
+remains its first rendering backend; existing `fx/*.json` effects continue to
+work unchanged. SpectraFX adds versioned graphs (`fx/graphs/*.vfx.json`),
+exposed-parameter variants, an opt-in read-only ECS presentation bridge and a
+native C++ API. See [SpectraFX architecture and API](spectrafx.md), skill
+`skills/visuals/aiverse-spectrafx/SKILL.md` and its mandatory
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` continuation log.
+
+**Current limits:** GPU particle simulation and full Niagara-like programmable
+dataflow are not implemented. A basic editor graph-v1 canvas exists (untested GUI),
+with in-memory CPU preview; production RTS/FPS graph integration is still pending.
+New tests and GUI interaction have not yet been verified as passing.
+
+
 Presentation-only particle effects: CPU simulation (`engine/fx/ParticleSystem`), drawn through the
 RHI with one dynamic vertex buffer per frame. The simulation never sees them; effects are started from
 `SimEvent`s by `modules/rts/fx/RtsFx` (the same read-only event collector as `RtsAudio`).

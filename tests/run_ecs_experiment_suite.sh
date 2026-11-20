@@ -78,6 +78,35 @@ compile_run ecs-hitscan-resolution -Ilibraries/include \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+# CI exercises all NEREID tests, independently of genre/runtime/render targets.
+NEREID_CORE=(
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp
+    engine/data/Json.cpp engine/data/JsonCompose.cpp
+)
+for nereid in water buoyancy geometry query_index native_pipeline; do
+    compile_run "ecs-nereid-$nereid" -Ilibraries/include \
+        "tests/ecs_nereid_${nereid}_test.cpp" "${NEREID_CORE[@]}"
+done
+# CPU presentation manifests call worldInteger/worldVector from WorldAssets.cpp;
+# the translation unit also references Sha256 from verifiedReader, so compile
+# both sources in this standalone runner (CMake tests link aiverse_world).
+NEREID_WORLD_MANIFEST=(
+    engine/world/WorldAssets.cpp engine/pack/Sha256.cpp
+)
+# Renderer/JSON contracts do not create a graphics Device or window.
+compile_run ecs-nereid-renderer-contract -Ilibraries/include \
+    tests/ecs_nereid_renderer_contract_test.cpp "${NEREID_CORE[@]}" \
+    "${NEREID_WORLD_MANIFEST[@]}"
+compile_run ecs-nereid-confluence-contract -Ilibraries/include \
+    tests/ecs_nereid_confluence_contract_test.cpp "${NEREID_CORE[@]}" \
+    "${NEREID_WORLD_MANIFEST[@]}"
+# Legacy bridge imports only from the editor-time RtsWater geometry code.
+# Presentation geometry must compile on both Linux and macOS independently of RHI.
+compile_run ecs-nereid-surface-mesh -Ilibraries/include \
+    tests/ecs_nereid_surface_mesh_test.cpp "${NEREID_CORE[@]}"
+compile_run ecs-nereid-legacy-raster -Ilibraries/include \
+    tests/ecs_nereid_legacy_raster_test.cpp modules/rts/view/RtsWater.cpp \
+    "${NEREID_CORE[@]}"
 compile_run ecs-native-persistence tests/ecs_native_persistence_test.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp \
     engine/data/Json.cpp engine/data/JsonCompose.cpp
@@ -124,6 +153,8 @@ if [[ "$DO_BENCH" == 1 ]]; then
     compile_run ecs-hier-bench tests/ecs_hierarchical_bench.cpp
     compile_run ecs-persistent-bench tests/ecs_persistent_jobs_bench.cpp
     compile_run ecs-adaptive-bench tests/ecs_adaptive_jobs_bench.cpp
+    compile_run ecs-nereid-sampling-bench -Ilibraries/include \
+        tests/ecs_nereid_sampling_bench.cpp "${NEREID_CORE[@]}"
     compile_run ecs-cow-bench tests/ecs_cow_bench.cpp
     compile_run ecs-hierarchy-bench tests/ecs_scene_hierarchy_bench.cpp
 fi

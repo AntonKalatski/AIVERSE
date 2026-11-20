@@ -1,0 +1,75 @@
+name: NEREID CPU regression
+
+on:
+  push:
+    branches: [feature/nereid-water-core]
+    paths:
+      - 'libraries/include/aiverselib/water/**'
+      - 'libraries/catalog.json'
+      - 'engine/world/Nereid*'
+      - 'engine/render/Nereid*'
+      - 'engine/fx/**'
+      - 'tests/ecs_nereid_*'
+      - 'tests/vfx_*'
+      - 'tools/nereid/**'
+      - 'tools/skills/**'
+      - 'skills/catalog.json'
+      - 'skills/gameplay/aiverse-nereid-*/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/nereid-regression.yml'
+  pull_request:
+    paths:
+      - 'libraries/include/aiverselib/water/**'
+      - 'libraries/catalog.json'
+      - 'engine/world/Nereid*'
+      - 'engine/render/Nereid*'
+      - 'tests/ecs_nereid_*'
+      - 'tools/nereid/**'
+      - 'skills/gameplay/aiverse-nereid-*/**'
+      - '.github/workflows/nereid-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nereid-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-contract:
+    if: github.event_name != 'pull_request' || github.head_ref == 'feature/nereid-water-core'
+    name: NEREID CPU / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux development headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libx11-dev libegl-dev libgles-dev
+      - name: Configure CPU-only regression targets
+        run: >-
+          cmake -S . -B build/nereid-validation
+          -DCMAKE_BUILD_TYPE=Release
+          -DAIVERSE_BUILD_TESTS=ON
+          -DAIVERSE_BUILD_EDITOR=OFF
+          -DAIVERSE_BUILD_CLIENT=OFF
+          -DAIVERSE_BUILD_TOOLS=OFF
+          -DAIVERSE_BUILD_HEADLESS=OFF
+          -DAIVERSE_BUILD_SERVER=OFF
+      - name: Validate NEREID, native ECS, VFX presentation and skills
+        shell: bash
+        run: bash tools/nereid/validate.sh --focused
+      - name: Preserve validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nereid-cpu-${{ matrix.os }}-${{ github.run_id }}
+          path: build/nereid-validation/nereid-logs/
+          if-no-files-found: ignore

@@ -10,16 +10,30 @@
 namespace aiverse::render {
 
 namespace {
-struct DrawUniformsR { float model[16]; float color[4]; float params[4]; };   // = DrawUniforms (Renderer3D.cpp)
+struct DrawUniformsR { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };   // = DrawUniforms (Renderer3D.cpp)
 } // namespace
 
 void Renderer3D::renderReflection() {
     if (!lights.reflectionsWanted()) return;
     const auto t0 = std::chrono::steady_clock::now();
-    // the water: the flat translucent glossy mesh (the terrain draws it with specular ~0.9)
+    // Prefer explicit NEREID water over unrelated translucent glossy surfaces
+    // (glass can also have specular > 0.85). For old RTS maps, preserve the
+    // original first-glossy-water fallback when no tagged NEREID water exists.
     const DrawItem* water = nullptr;
-    for (const auto& it : items_)
-        if (it.color.w < 0.99f && it.specular >= 0.85f && !(it.flags & kDrawUnlit)) { water = &it; break; }
+    for (const auto& it : items_) {
+        if ((it.flags & kDrawWaterSurface) &&
+            !(it.flags & kDrawNereidCascade) && it.color.w < 0.99f &&
+            it.specular >= 0.85f && !(it.flags & kDrawUnlit)) {
+            water = &it; break;
+        }
+    }
+    if (!water) {
+        for (const auto& it : items_) {
+            if (it.color.w < 0.99f && !(it.flags & kDrawNereidCascade) &&
+                it.specular >= 0.85f &&
+                !(it.flags & kDrawUnlit)) {water = &it;break;}
+        }
+    }
     if (!water) return;
     const float planeY = water->model.transformPoint((water->mesh->boundsMin + water->mesh->boundsMax) * 0.5f).y;
     const int w = sceneW_ > 0 ? sceneW_ : dev_->framebufferWidth(), h = sceneH_ > 0 ? sceneH_ : dev_->framebufferHeight();
@@ -36,6 +50,8 @@ void Renderer3D::renderReflection() {
 
     const float3 sky = (lighting.fogColor + lighting.skyColor) * 0.5f;
     if (lights.beginReflection(w, h, sky)) {
+        reflectionPlaneY_ = planeY;
+        reflectionPlaneValid_ = true;
         dev_->setPipeline(litPipe_);
         uploadFrameUniforms(false);
         dev_->setTexture(0, shadowMap_);

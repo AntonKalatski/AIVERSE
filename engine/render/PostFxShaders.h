@@ -205,6 +205,78 @@ inline const char* kComposite = R"(
         col += vec3((pfHash(g + px.w * vec2(17.0, 31.0)) - 0.5) * gain.w);
     }
 #endif
+#ifdef PF_UNDERWATER
+    {
+        // Prisma owns the full-screen composite. All distortion samples use
+        // the resolved scene source, with a clamped UV to avoid edge wraps.
+        // underwater1.z is distortion strength, .w is scattering.
+        // graphFrame.y is a decaying impulse on crossing the water surface.
+        float phase = graphFrame.x;
+        float pulse = graphFrame.y;
+        float strength = clamp(underwater0.w * underwater1.z +
+                               pulse * 0.004, 0.0, 0.02);
+        // Low: one directional wave; Medium: two; High: three.
+        // Dynamic uniforms retain one shared shader variant for all tiers.
+        vec2 wave = vec2(sin(s.y * 31.0 + phase * 2.7), 0.0);
+        if (underwater2.z > 1.5)
+            wave += vec2(0.35 * sin(s.x * 43.0 - phase * 1.8),
+                         cos(s.x * 27.0 + phase * 2.1));
+        if (underwater2.z > 2.5)
+            wave += vec2(0.16 * sin((s.x + s.y) * 67.0 + phase * 1.1),
+                         0.12 * cos((s.x - s.y) * 59.0 - phase));
+        vec2 warped = clamp(uv + TDIR(wave * strength),
+                            vec2(0.002), vec2(0.998));
+        if (strength > 0.00001) {
+            vec3 warpedColor = TEX0(warped).rgb;
+            col = mix(col, warpedColor, clamp(underwater0.w + pulse * 0.35,0.0,1.0));
+        }
+        // Screen-space approximation: near-depth haze and environmental
+        // scattering. No per-object depth/caustics are claimed here.
+        float opticalDistance = min(underwater1.y + 5.0, 120.0);
+#ifdef PF_UNDERWATER_DEPTH
+        // Sample the completed scene depth. Unproject through four columns
+        // of inverse view-projection supplied by the renderer.
+        // Invalid sky depth falls back to the camera-depth approximation.
+        float rawDepth = PF_DEPTH_SAMPLE(TUV(s));
+        if (rawDepth < 0.9999 && rawDepth >= 0.0) {
+            float ndcZ = underwaterCamera.w > 0.5 ?
+                         rawDepth : rawDepth * 2.0 - 1.0;
+            vec4 clip = vec4(s * 2.0 - 1.0, ndcZ, 1.0);
+            vec4 worldPosition =
+                inverseViewProj0 * clip.x +
+                inverseViewProj1 * clip.y +
+                inverseViewProj2 * clip.z +
+                inverseViewProj3 * clip.w;
+            if (abs(worldPosition.w) > 0.00001) {
+                vec3 hitPosition = worldPosition.xyz / worldPosition.w;
+                // Optical absorption only along the portion of the ray
+                // below the water plane (camera may be above it).
+                float startDepth = underwater2.w;  // surfaceY - cameraY
+                float endDepth = startDepth +
+                                 (underwaterCamera.y - hitPosition.y);
+                float immersedFraction = 0.0;
+                if (startDepth >= 0.0 && endDepth >= 0.0)
+                    immersedFraction = 1.0;
+                else if (startDepth > 0.0 || endDepth > 0.0)
+                    immersedFraction = max(startDepth, endDepth) /
+                        max(abs(startDepth) + abs(endDepth), 0.00001);
+                opticalDistance = clamp(
+                    length(hitPosition - underwaterCamera.xyz) *
+                    immersedFraction, 0.0, 120.0);
+            }
+        }
+#endif
+        float extinction = 1.0 - exp(-underwater1.x * opticalDistance);
+        float scatterWeight = clamp(underwater1.w * underwater2.y *
+                                    (0.2 + 0.8 * extinction),0.0,1.0);
+        float weight = clamp(underwater0.w *
+                             max(0.12, extinction + scatterWeight * 0.25),
+                             0.0, 1.0);
+        col = mix(col, underwater0.rgb, weight);
+        col += underwater0.rgb * scatterWeight * underwater0.w * 0.06;
+        col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
+    }
+#endif
 #ifdef PF_FADE
     col = mix(col, fade.rgb, fade.w);
 #endif

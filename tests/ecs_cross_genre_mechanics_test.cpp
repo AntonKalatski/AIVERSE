@@ -5,7 +5,7 @@
 #include <aiverselib/genre/Locomotion.h>
 #include <aiverselib/genre/Weapons.h>
 #include <aiverselib/genre/Match.h>
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <iostream>
 #include <map>
@@ -42,17 +42,17 @@ public:
                 input.grounded=true;
                 const auto result=lg::stepMotion(config,c.gameplay.motion,
                                                   input,s.tick(),s.dt());
-                assert(result.has_value());
+                AIVERSE_TEST_CHECK(result.has_value());
                 const bool accepted=lg::stepRecoil(
                     lg::RecoilConfig{},c.gameplay.recoil,s.tick()%3==0);
-                assert(accepted);
+                AIVERSE_TEST_CHECK(accepted);
             });
         sim.addSystem("shared-capture-objective",[](Simulation& s) {
             auto* capture=s.world().resource<lg::CaptureState>();
-            assert(capture);
+            AIVERSE_TEST_CHECK(capture);
             std::map<int64_t,uint32_t> occupants{{1,32}};
             const auto result=lg::stepCapture(*capture,occupants,4,s.tick());
-            assert(result.has_value());
+            AIVERSE_TEST_CHECK(result.has_value());
         });
     }
     void applyCommand(Simulation&,const Command&) override {}
@@ -67,7 +67,7 @@ public:
             hash.i64(m.recoil.pitch.raw);
         });
         const auto* objective=world.resourceConst<lg::CaptureState>();
-        assert(objective);
+        AIVERSE_TEST_CHECK(objective);
         hash.i64(objective->owner);
         hash.i64(objective->candidate);
         hash.u32(objective->progress);
@@ -88,13 +88,13 @@ uint64_t runGenre(bool cow) {
     const auto expected=sim.checksum();
     sim.loadState(snapshot);
     for(int i=0;i<10;++i)sim.step();
-    assert(sim.checksum()==expected);
+    AIVERSE_TEST_CHECK(sim.checksum()==expected);
     return expected;
 }
 int main(){
     const auto baseline=runGenre<ShooterCharacter>(false);
-    assert(runGenre<StrategySoldier>(false)==baseline);
-    assert(runGenre<ShooterCharacter>(true)==baseline);
-    assert(runGenre<StrategySoldier>(true)==baseline);
+    AIVERSE_TEST_CHECK(runGenre<StrategySoldier>(false)==baseline);
+    AIVERSE_TEST_CHECK(runGenre<ShooterCharacter>(true)==baseline);
+    AIVERSE_TEST_CHECK(runGenre<StrategySoldier>(true)==baseline);
     std::cout<<"PASS cross-genre ECS locomotion/recoil/capture policies, COW rollback and checksum parity\n";
 }

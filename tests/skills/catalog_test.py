@@ -6,6 +6,17 @@ ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('skills',ROOT/'tools/skills/catalog.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 data=m.generate();entries=m.validate(data)
+# Opt-in native ECS config storage is a registered gameplay recipe rather
+# than a separate CMake library. It must stay discoverable and routable.
+shared=entries['aiverse-ecs-shared-static']
+assert shared['domain']=='gameplay'
+assert shared['runtime']=='none'
+assert shared['source']=='engine/sim/SharedStaticComponents.h'
+assert shared['path']=='skills/gameplay/aiverse-ecs-shared-static/SKILL.md'
+assert m.search(entries,'aiverse-ecs-shared-static')[0][1]['id']==shared['id']
+shared_plan=m.plan(entries,[shared['id']],'both')
+assert shared_plan['read']==[shared['path']]
+assert shared_plan['cmake']==[]
 roots=[e['id'] for score,e in m.search(entries,'магазин чат','meta') if score>=4]
 assert set(roots)=={'meta-economy','meta-social'}
 server=m.plan(entries,roots,'server')

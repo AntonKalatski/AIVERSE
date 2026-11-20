@@ -1,6 +1,7 @@
 #include "Renderer3D.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
+#include "NereidWaterReflectionPolicy.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -13,7 +14,7 @@ namespace aiverse::render {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 
-struct DrawUniforms { float model[16]; float color[4]; float params[4]; };
+struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };
 struct FrameUniforms {
     float viewProj[16];
     float lightViewProj[16];
@@ -127,6 +128,22 @@ void Renderer3D::shutdown() {
     }
     persistentIds_.clear();
     persistentScene_ = {};
+    staticModelCaches_.clear();
+    staticRenderPackets_.clear();
+    staticModelEligibility_.clear();
+    staticMaterialOwners_.clear();
+    staticMaterialOwnerBytes_ = 0;
+    staticMaterialOwnerSerial_ = 0;
+    staticMaterialOwnerEpoch_ = 0;
+    staticRenderPacketBytes_ = 0;
+    staticModelCacheEpoch_ = 0;
+    staticRenderPacketEpoch_ = 0;
+    staticEligibilityEpoch_ = 0;
+    cpuMdiAdaptive_ = {};
+    cpuMdiPages_.clear();
+    cpuMdiPageEpoch_ = 0;
+    cpuMdiPageStats_ = {};
+    staticCrossPreflight_.release();
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -145,6 +162,62 @@ void Renderer3D::shutdown() {
     dev_ = nullptr;
 }
 
+// Static cache entries hold borrowed Model/Primitive pointers only. Remove
+// them before the owner unloads an asset or reuses a persistent draw identity.
+// These methods must be called on the renderer's submission thread, between
+// drawModel calls; they do not cancel items already queued this frame.
+void Renderer3D::invalidateStaticModelCache(uint64_t persistentId) {
+    if (!persistentId) return;
+    if (staticModelCaches_.erase(persistentId))
+        ++staticModelCacheStats_.evicted;
+    auto it = staticRenderPackets_.find(persistentId);
+    if (it != staticRenderPackets_.end()) {
+        staticRenderPacketBytes_ -= staticPacketBytes(it->second);
+        staticRenderPackets_.erase(it);
+        ++staticRenderPacketStats_.evicted;
+    }
+}
+
+void Renderer3D::invalidateSharedMaterialState(
+    const Model* model, uint64_t materialOwnerKey) {
+    if (!model || !materialOwnerKey) return;
+    auto it = staticMaterialOwners_.find(MaterialOwnerKey{model, materialOwnerKey});
+    if (it == staticMaterialOwners_.end()) return;
+    staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+    staticMaterialOwners_.erase(it);
+    ++sharedMaterialStateStats_.evicted;
+}
+
+void Renderer3D::invalidateModelCachesFor(const Model* model) {
+    if (!model) return;
+    for (auto it = staticMaterialOwners_.begin(); it != staticMaterialOwners_.end();) {
+        if (it->first.model == model) {
+            staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+            it = staticMaterialOwners_.erase(it);
+            ++sharedMaterialStateStats_.evicted;
+        } else ++it;
+    }
+    if (staticModelEligibility_.erase(model))
+        ++staticEligibilityStats_.evicted;
+    // Compare pointer identity only, never dereference a model being released.
+    for (auto it = staticModelCaches_.begin(); it != staticModelCaches_.end();) {
+        if (it->second.cache.model == model) {
+            it = staticModelCaches_.erase(it);
+            ++staticModelCacheStats_.evicted;
+        } else ++it;
+    }
+    for (auto it = staticRenderPackets_.begin(); it != staticRenderPackets_.end();) {
+        if (it->second.draw.model == model) {
+            staticRenderPacketBytes_ -= staticPacketBytes(it->second);
+            it = staticRenderPackets_.erase(it);
+            ++staticRenderPacketStats_.evicted;
+        } else ++it;
+    }
+    // A mixed-model command layout borrows every source Model pointer.
+    // Asset unload must not leave any of those pointers in a layout cache.
+    retireIndirectLayoutsFor(model);
+}
+
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
@@ -152,6 +225,142 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     }();
     persistentSceneEnabled_ = enablePersistentScene;
     if (persistentSceneEnabled_) ++persistentSceneEpoch_;
+    static const bool enableCpuStaticCache = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_CPU_MODEL_CACHE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    staticModelCacheEnabled_ = enableCpuStaticCache;
+    staticModelCacheStats_ = {};
+    static const bool enablePackets = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_CPU_PACKETS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    staticRenderPacketsEnabled_ = enablePackets;
+    // A separate opt-in for pooled static geometry sorting. It uses existing
+    // CPU MDI submission and honors the global MDI disable/safety flags.
+    static const bool enableStaticCrossModelBatches = [] {
+        const char* value = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    // Studio may explicitly opt a single Scene viewport in/out without
+    // changing the process env or the Game view. Re-evaluate at each
+    // beginScene (the view boundary), not during individual draw calls.
+    staticCrossModelBatchesEnabled_ =
+        staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Enable ||
+        (staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Environment &&
+         enableStaticCrossModelBatches);
+    // Every policy is resolved at the view/scene boundary, not from the
+    // inner draw loop. The defaults exactly preserve the old env semantics.
+    static const bool envLayoutCacheEnabled = [] {
+        const char* flag = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
+        return !flag || (std::strcmp(flag, "off") != 0 &&
+                         std::strcmp(flag, "0") != 0);
+    }();
+    static const bool envGeometrySortEnabled = [] {
+        const char* flag = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    mdiLayoutCacheEnabled_ =
+        mdiLayoutCacheMode_ == CpuMdiPolicyMode::Enable ||
+        (mdiLayoutCacheMode_ == CpuMdiPolicyMode::Environment && envLayoutCacheEnabled);
+    mdiGeometrySortRequested_ =
+        mdiGeometrySortMode_ == CpuMdiPolicyMode::Enable ||
+        (mdiGeometrySortMode_ == CpuMdiPolicyMode::Environment &&
+         envGeometrySortEnabled);
+    // Adaptive feedback affects only the Stage 17 static pooled sort, not
+    // ordinary CPU MDI or the separate GPU-authored ICB path.
+    static const bool enableCpuMdiAdaptive = [] {
+        const char* value = std::getenv("AIVERSE_CPU_MDI_ADAPTIVE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const double cpuMdiMaxUsPerCommand = [] {
+        const char* value = std::getenv("AIVERSE_CPU_MDI_MAX_US_PER_COMMAND");
+        if (!value || !*value) return 25.0; // conservative, tunable experiment
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        return end != value && *end == '\0' &&
+            std::isfinite(parsed) && parsed >= 1.0 && parsed <= 1000.0
+            ? parsed : 25.0;
+    }();
+    cpuMdiAdaptiveEnabled_ = staticCrossModelBatchesEnabled_ &&
+        (cpuMdiAdaptiveMode_ == CpuMdiPolicyMode::Enable ||
+         (cpuMdiAdaptiveMode_ == CpuMdiPolicyMode::Environment &&
+          enableCpuMdiAdaptive));
+    cpuMdiAdaptiveBudgetUs_ = cpuMdiAdaptiveBudgetOverrideUs_ > 0.0
+        ? cpuMdiAdaptiveBudgetOverrideUs_ : cpuMdiMaxUsPerCommand;
+    cpuMdiPageStats_ = {};
+    if (cpuMdiAdaptiveEnabled_) {
+        ++cpuMdiPageEpoch_;
+        // Track shared pages only while their allocation is live/recent.
+        // Weak lifetime prevents address-reuse from inheriting old costs.
+        if (cpuMdiPageEpoch_ % 64u == 0u) {
+            for (auto it = cpuMdiPages_.begin(); it != cpuMdiPages_.end();) {
+                if (it->second.lifetime.expired() ||
+                    (cpuMdiPageEpoch_ > it->second.seen &&
+                     cpuMdiPageEpoch_ - it->second.seen > 128u)) {
+                    it = cpuMdiPages_.erase(it);
+                    ++cpuMdiPageStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
+    staticRenderPacketStats_ = {};
+    staticEligibilityStats_ = {};
+    sharedMaterialStateStats_ = {};
+    if (staticRenderPacketsEnabled_) {
+        ++staticMaterialOwnerEpoch_;
+        if ((staticMaterialOwnerEpoch_ % 64u) == 0u) {
+            for (auto it = staticMaterialOwners_.begin();
+                 it != staticMaterialOwners_.end();) {
+                if (staticMaterialOwnerEpoch_ > it->second.seen + 128u) {
+                    staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+                    it = staticMaterialOwners_.erase(it);
+                    ++sharedMaterialStateStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
+    if (staticModelCacheEnabled_ || staticRenderPacketsEnabled_) {
+        ++staticEligibilityEpoch_;
+        // Memo is model-scoped, not per visible entity; keep entries alive
+        // across transient Scene/Game viewports and prune abandoned assets.
+        if ((staticEligibilityEpoch_ % 64u) == 0u) {
+            for (auto it = staticModelEligibility_.begin();
+                 it != staticModelEligibility_.end();) {
+                if (staticEligibilityEpoch_ > it->second.seen + 128u) {
+                    it = staticModelEligibility_.erase(it);
+                    ++staticEligibilityStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
+    if (staticRenderPacketsEnabled_) {
+        ++staticRenderPacketEpoch_;
+        // Bound packet templates by retiring long-unseen object identities.
+        // The grace period protects alternating Scene/Game viewports.
+        if ((staticRenderPacketEpoch_ % 64u) == 0u) {
+            for (auto it = staticRenderPackets_.begin(); it != staticRenderPackets_.end();) {
+                if (it->second.seen + 4 < staticRenderPacketEpoch_) {
+                    staticRenderPacketBytes_ -= staticPacketBytes(it->second);
+                    it = staticRenderPackets_.erase(it);
+                    ++staticRenderPacketStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
+    if (staticModelCacheEnabled_) {
+        ++staticModelCacheEpoch_;
+        // Bounded persistent memory. Delayed removal tolerates alternating
+        // Scene/Game viewports and temporary invisibility without rebuilding.
+        if ((staticModelCacheEpoch_ % 64u) == 0u) {
+            for (auto it = staticModelCaches_.begin(); it != staticModelCaches_.end();) {
+                if (it->second.seen + 4 < staticModelCacheEpoch_) {
+                    it = staticModelCaches_.erase(it);
+                    ++staticModelCacheStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     bakedLightmapped_ = bakedCountLm_; bakedProbed_ = bakedCountPr_; bakedCountLm_ = bakedCountPr_ = 0;   // agent-lightbake
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_ < 0) graphEpoch_ = now;
@@ -164,8 +373,11 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     camFwd_ = normalize(cam.target - camPos_);
     cam_ = cam;
     ssrThisFrame_ = false;
+    reflectionPlaneValid_ = false;
+    reflectionPlaneY_ = 0.f;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear(); customFeedback_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
+    maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
     // material identity across frames, asset reloads or another viewport.
@@ -226,6 +438,24 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
 
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
+}
+void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
+        float4 color,float specular,float refraction,
+        const std::array<float4,16>& ripples,
+        uint32_t firstIndex,uint32_t indexCount,
+        const std::array<float4,16>& wakeShapes,float4 wind,
+        float4 hydraulics,float4 rapidColor) {
+    drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
+             specular,refraction);
+    if(!items_.empty()) {
+        items_.back().waterRipples=ripples;
+        items_.back().waterWakeShapes=wakeShapes;
+        items_.back().waterWind=wind;
+        items_.back().waterHydraulics=hydraulics;
+        items_.back().waterRapidColor=rapidColor;
+        items_.back().waterFirstIndex=firstIndex;
+        items_.back().waterIndexCount=indexCount;
+    }
 }
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
@@ -437,10 +667,29 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         DrawUniforms u{};
         std::memcpy(u.model, it.model.m, sizeof u.model);
         u.color[0] = it.color.x; u.color[1] = it.color.y; u.color[2] = it.color.z; u.color[3] = it.color.w;
-        u.params[0] = (it.flags & kDrawUnlit) ? 1.f : 0.f;
+        // Shader -1: reflective NEREID water. -2: NEREID water at a
+        // different elevation than the single planar reflection texture.
+        // Keep waves and SSR on secondary surfaces, but skip the wrong plane.
+        const bool markedWater=(it.flags & kDrawWaterSurface)!=0;
+        const bool otherPlane=markedWater && reflectionPlaneValid_ &&
+            !sameWaterReflectionPlane(
+                it.model.transformPoint((it.mesh->boundsMin+
+                                         it.mesh->boundsMax)*0.5f).y,
+                reflectionPlaneY_);
+        u.params[0] = markedWater ?
+                      ((it.flags & kDrawNereidCascade) ? -3.f :
+                       (otherPlane ? -2.f : -1.f)) :
+                      ((it.flags & kDrawUnlit) ? 1.f : 0.f);
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
         u.params[3] = it.emissive;
+        std::memcpy(u.waterRipples,it.waterRipples.data(),sizeof u.waterRipples);
+        std::memcpy(u.waterWakeShapes,it.waterWakeShapes.data(),sizeof u.waterWakeShapes);
+        std::memcpy(u.waterWind,&it.waterWind,sizeof u.waterWind);
+        std::memcpy(u.waterHydraulics,&it.waterHydraulics,
+                    sizeof u.waterHydraulics);
+        std::memcpy(u.waterRapidColor,&it.waterRapidColor,
+                    sizeof u.waterRapidColor);
         if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
             u.params[0] = 10.0f + float(studioDebugMode_);
         if (drawCallDebug_) {
@@ -451,10 +700,11 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setUniforms(0, &u, sizeof u);
         dev_->setVertexBuffer(it.mesh->vb);
         dev_->setIndexBuffer(it.mesh->ib);
-        dev_->drawIndexed(it.mesh->indexCount);
+        const uint32_t drawCount=it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount;
+        dev_->drawIndexed(drawCount,it.waterFirstIndex);
         ++drawCalls_;
         // drawItem is only used by the current camera's colour pass.
-        profile_.cameraMeshTriangles += uint64_t(it.mesh->indexCount) / 3;
+        profile_.cameraMeshTriangles += uint64_t(it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount) / 3;
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
     // The per-phase profile also includes reflection/SSR replay. Snapshot

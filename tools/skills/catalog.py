@@ -20,6 +20,7 @@ def load_meta():
 
 # Search vocabulary is routing metadata, not another copy of skill instructions.
 ALIASES = {
+ 'aiverse-ecs-shared-static':'ecs shared static immutable configuration prefab interned dedup memory snapshot rollback staticref sharedref scene read-only component component storage game editor общие статические компоненты префаб память конфиг дедупликация снапшот откат',
  'aiverse-voxel-world':'voxel voxels block blocks chunk chunks minecraft dig mine place raycast region save воксел блок чанк майнкрафт копат ставит регион',
  'aiverse-voxel-light':'voxel light skylight blocklight torch shadow flood свет освещен факел тень воксел',
  'aiverse-voxel-mesh':'voxel mesh meshing greedy ambient occlusion chunk render меш воксел затенен рендер чанк',
@@ -34,6 +35,12 @@ ALIASES = {
  'aiverse-derived-keys':'cache keys trigger variables lookup performance кэш ключ переменн поиск производительн',
  'aiverse-city-traffic':'traffic cars lanes signals lights pedestrians bus police ambulance fire tow gangs population трафик машин полос светофор пешеход автобус полици скор пожар эвакуатор банд жител',
  'aiverse-rules-files':'rules include split rules_io правила разбить include',
+ 'aiverse-nereid-water':'water ocean lake river swim nereid вода река океан',
+ 'aiverse-nereid-buoyancy':'buoyancy float drag swimming water плавучесть сила вода',
+ 'aiverse-nereid-interactions':'water splash ripple wake entry exit брызги волны след',
+ 'aiverse-nereid-cascades':'cascade waterfall river flow join водопад каскад соединение',
+ 'aiverse-nereid-currents':'current river flow stream shear течени река скорость',
+ 'aiverse-nereid-vortices':'vortex water eddy whirlpool swirl вихрь водоворот течение',
  'aiverse-physics':'box3d physics rigid collider collision hinge weld sensor raycast физик коллайдер столкнов шарнир датчик character controller kinematic capsule prediction platform push персонаж предсказание',
  'meta-economy':'shop store offer currency wallet магазин оффер валют кошелек покупк',
  'meta-social':'leaderboard ranking chat лидeрборд лидерборд рейтинг таблица чат',
@@ -90,6 +97,8 @@ WORKFLOWS=[
  ('aiverse-new-mechanic','End-to-end engine mechanic: branch, data, code, tests, AI, docs, prototype, checksums','docs/game-format.md'),
  ('aiverse-look','Lighting, post effects with phone cost, materials, model view blocks, screenshots','docs/postfx.md'),
  ('aiverse-fx','Visual effects from templates or Unity prefabs, tuning, event binding, preview','docs/particles.md'),
+ ('aiverse-niagara-vfx','Legacy Niagara-style discovery alias; use the official SpectraFX workflow','docs/spectrafx.md'),
+ ('aiverse-spectrafx','SpectraFX universal graphs, particle assets and ECS presentation for native games','docs/spectrafx.md'),
  ('aiverse-game-screens','Game screens and HUD with RmlUi and Lua, validation, phone previews','docs/ui-scripting.md'),
  ('aiverse-release-build','Platform packaging: branding, toolchains, size estimate, build and status','docs/overview.md'),
  ('aiverse-port-game','Port Unity or Godot projects: scan, import, resolve report items, verify','docs/engine-import.md'),
@@ -111,7 +120,9 @@ WORKFLOWS=[
  ('aiverse-docs-upkeep','README and translations, translated docs, format sections, readme check','tools/readme/check.py'),
  ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/genre-implementation.json'),
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
+ ('aiverse-terraweave','Procedural world terrain, biomes, Arbor/Flora, Horizon HLOD, authored seams and native C++ scene integration','docs/terrain/TERRAWEAVE.md'),
  ('aiverse-water','Spline straits, rivers and open sea with shore types, bridges and the water window','docs/water.md'),
+ ('aiverse-physis','Genre-neutral nature, climate, wind, gravity, storms, ECS and Box3D adapter with editor diagnostics','docs/physis.md'),
  ('aiverse-city-blocks','City block paving, curb elevations, planting beds and street furniture','skills/world/aiverse-city-blocks/SKILL.md'),
  ('aiverse-city-planner','Procedural city maps with the city / metropolis generator preset','docs/city-planner.md'),
  ('aiverse-city-economy','City-game commerce, careers and the top-down hero arsenal','docs/commerce.md'),
@@ -136,6 +147,7 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
  'aiverse-replica':'replica replication server authoritative snapshot delta interest budget prediction interpolation schema репликация сервер авторитетный снапшот предсказание',
@@ -157,6 +169,7 @@ WORKFLOW_ALIASES={
  'aiverse-docs-upkeep':'docs readme documentation translation документац ридми перевод',
  'aiverse-capability-audit':'capability audit gap gaps missing feasibility estimate limits can engine genre minecraft voxel sandbox чего не хватает оценк можно ли сделать возможност ограничен пробел жанр движок умеет',
  'aiverse-terrain':'terrain relief heightfield heightmap sculpt cliff detail splat рельеф высот скульпт обрыв ландшафт',
+ 'aiverse-terraweave':'terraweave terra weave terrain foliage forest arbor flora horizon hlod canopy biome tree generation seam near far генерация лес деревья биомы ландшафт',
  'aiverse-water':'water river strait sea shore beach cliff embankment вода река пролив море берег пляж набережн',
  'aiverse-city-blocks':'city blocks plaza courtyard curb sidewalk planter flowerbed paving zfight квартал площадь двор бордюр тротуар клумб мощение',
  'aiverse-city-planner':'city town streets blocks district generator gta город улиц квартал генератор',
@@ -184,6 +197,8 @@ WORKFLOW_ALIASES={
  'aiverse-new-mechanic':'mechanic feature engine branch механик фича движок',
  'aiverse-look':'look lighting light postfx bloom material texture visual свет освещен постэффект материал текстур вид',
  'aiverse-fx':'fx effect particles explosion эффект частиц взрыв',
+ 'aiverse-niagara-vfx':'niagara unreal vfx legacy compatibility ниягара анриал старая совместимость',
+ 'aiverse-spectrafx':'spectrafx spectra vfx particles particle graph effects visual ecs game genre gpu cpu spectrum спектрафх эффекты частицы граф универсальн',
  'aiverse-game-screens':'ui screen menu hud shop rml интерфейс экран меню худ магазин',
  'aiverse-release-build':'build release platform android ios web windows macos linux package сборк релиз платформ',
  'aiverse-port-game':'port import unity godot перенос импорт порт',
@@ -221,6 +236,15 @@ def generate():
     entries.append(dict(id='aiverse-roads',package=None,path='skills/world/aiverse-roads/SKILL.md',domain='gameplay',
         summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
         side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
+    # Native ECS opt-in engine feature, not a separately installed library.
+    # Register it as a gameplay recipe (runtime=none) so skill routing reads
+    # its native headers without inventing a duplicate CMake library target.
+    entries.append(dict(id='aiverse-ecs-shared-static',package=None,
+        path='skills/gameplay/aiverse-ecs-shared-static/SKILL.md',
+        domain='gameplay',
+        summary='Immutable SharedRef and StaticRef ECS configs, prefab dedup, snapshots and multi-world scene integration',
+        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],
+        source='engine/sim/SharedStaticComponents.h'))
     for name,summary,source in WORKFLOWS:
         entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))
