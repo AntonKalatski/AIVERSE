@@ -548,7 +548,10 @@ Json StudioSession::dispatch(const Json& request) {
             reply.set("result", snapshot());
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
-            if (selected_.empty() || selected_ != entityId) throw std::runtime_error("Selection changed while editing");
+            // A pinned Inspector may edit its own explicitly addressed entity while
+            // the global selection points elsewhere. Both document branches below
+            // validate the target ID against the current project before writing.
+            if (entityId.empty()) throw std::runtime_error("Missing document entity ID");
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
             if (entityId.compare(0, 7, "entity:") != 0) {
