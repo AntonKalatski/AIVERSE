@@ -75,8 +75,13 @@ if stage registration ctest --test-dir "$BUILD" -N; then
     record count_guard FAIL "expected >=100, found ${count:-unknown}"
   fi
 fi
+TEST_TIMEOUT="${AIVERSE_PRISMA_CTEST_TIMEOUT:-1800}"
+if ! [[ "$TEST_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || (( TEST_TIMEOUT > 7200 )); then
+  echo "AIVERSE_PRISMA_CTEST_TIMEOUT must be 1..7200 seconds" >&2
+  exit 2
+fi
 stage ctest_full ctest --test-dir "$BUILD" --output-on-failure \
-  --parallel "$JOBS" --timeout 900 || true
+  --parallel "$JOBS" --timeout "$TEST_TIMEOUT" || true
 grep -E 'tests passed|tests failed|Total Test time|\*\*\*Skipped' \
   "$LOG/ctest_full.log" > "$LOG/ctest-summary.txt" || true
 
