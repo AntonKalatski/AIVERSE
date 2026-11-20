@@ -3413,3 +3413,14 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench)
         set_tests_properties(lighting_native_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 330)
     endif()
 endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_test(NAME lighting_graph_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_graph_gi_gpu PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_GRAPH_GI_VERIFY=1"
+        LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    if(TARGET aiverse_hdr_gl)
+        add_test(NAME lighting_graph_gi_gl COMMAND aiverse_hdr_gl)
+        set_tests_properties(lighting_graph_gi_gl PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1;AIVERSE_GRAPH_GI_VERIFY=1"
+            LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+    endif()
+endif()

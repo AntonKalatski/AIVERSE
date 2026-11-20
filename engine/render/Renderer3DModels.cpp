@@ -365,9 +365,10 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool giPhase = phase == 1 || phase == 2;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
     // tex13 is Shader Graph's first sampler; opt-in GI and graph materials
-    // cannot occupy the same slot. GPU-driven ICB uses a separate ABI.
-    const bool dynamicGi = giPhase && !gpuInstances && !it.mat->shaderGraph &&
+    // move to tex14+ when GI occupies tex13. GPU-driven ICB uses a separate ABI.
+    const bool dynamicGi = giPhase && !gpuInstances &&
                            dynamicGiAtlas_.valid();
+    const int graphTextureSlot=kGraphTextureSlot+(dynamicGi?1:0);
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
@@ -435,9 +436,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(!vertexOnly) {
                     std::string declarations, args, macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)), index=std::to_string(i);
+                        const auto slot=std::to_string(graphTextureSlot+int(i)), index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE"+index+"(uv) "+(metal?"tex"+slot+".sample(s"+slot+",uv)":"texture(tex"+slot+",uv)")+"\n";
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
@@ -472,9 +473,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+=v3+" sg_view="+(metal?"f.camPos.xyz":"u_camPos.xyz")+"-sg_world; "+v+" sg_color="+(metal?"in.col":"a_col")+"; float sg_time="+(metal?"f.camPos.w":"u_camPos.w")+";\n";
                     std::string args,declarations,macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)),index=std::to_string(i);
+                        const auto slot=std::to_string(graphTextureSlot+int(i)),index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphTextureSlot+int(i));
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
                     if(metal)replace(source,"vs_main(VERTEX_ARGS)","vs_main(VERTEX_ARGS"+args+")");else source=declarations+source;
@@ -486,7 +487,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 }
             };
             inject(vs,false,true);inject(fs,false,false);inject(msl,true,false);
-            for(int slot=16;slot<kGraphTextureSlot+int(graph->textures.size());++slot) {
+            for(int slot=16;slot<graphTextureSlot+int(graph->textures.size());++slot) {
                 const auto at=msl.find("using namespace metal;");
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
@@ -494,7 +495,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = dynamicGi ? 7 : shadow ? 5 : 6; sd.textureSlots = dynamicGi ? 14 : graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+        sd.uniformSlots = dynamicGi ? 7 : shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? graphTextureSlot+int(graph->textures.size()) : dynamicGi ? 14 : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
@@ -1438,8 +1439,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     }
     // Even if the model pipeline is already bound, another pass may have
     // changed the texture/uniform state. Always refresh this opt-in borrow.
-    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances &&
-        !it.mat->shaderGraph) {
+    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances) {
         dev_->setUniforms(6,dynamicGiUniforms_.data(),
                           dynamicGiUniforms_.size()*sizeof(float));
         dev_->setTexture(13,dynamicGiAtlas_);
@@ -1516,11 +1516,12 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(2, &mu, sizeof mu);
     }
     if (materialStateChanged || newModel) {
+        const int graphTextureSlot=kGraphTextureSlot+(((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances)?1:0);
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
-        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(kGraphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
+        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(graphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
             dev_->setTexture(3, tex(mt.normalTex, flatNormal_));

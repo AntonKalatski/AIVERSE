@@ -47,6 +47,19 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     material.shading=ShadingModel::Pbr;material.baseColor={1,1,1,1};
     material.roughness=1;material.metallic=0;material.vertexColors=false;
     material.occlusionTex=test==3?1:-1;
+    if(std::getenv("AIVERSE_GRAPH_GI_VERIFY") && !material.shaderGraph) {
+        auto graph=Json::parse(R"({"version":1,"domain":"material","nodes":[
+          {"id":"uv","op":"uv"},
+          {"id":"a","op":"sampleTexture","texture":"textures/a.png","inputs":["uv"]},
+          {"id":"b","op":"sampleTexture","texture":"textures/b.png","inputs":["uv"]},
+          {"id":"c","op":"sampleTexture","texture":"textures/c.png","inputs":["uv"]},
+          {"id":"d","op":"sampleTexture","texture":"textures/d.png","inputs":["uv"]},
+          {"id":"ab","op":"multiply","inputs":["a","b"]},
+          {"id":"cd","op":"multiply","inputs":["c","d"]},
+          {"id":"color","op":"multiply","inputs":["ab","cd"]}],"outputs":{"color":"color"}})");
+        material.shaderGraph=std::make_shared<graph::Program>(graph::compile(graph,"material"));
+        std::fill(std::begin(material.graphTextures),std::end(material.graphTextures),-1); // four independently bound white fallback textures
+    }
     PrismaSettings settings;settings.hdr=HdrMode::On;
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
     r.beginScene(s.camera,w,h);
