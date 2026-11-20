@@ -31,10 +31,15 @@ export default function FacialLivePreview({
   const parameters=useMemo(
     ()=>[...new Set(saved?.morphs.map(m=>m.parameter)??[])],
     [saved]);
-  const vectors=useMemo(
-    ()=>[...new Set((saved?.rig??[]).flatMap(unit=>
-      [unit.target,unit.pole].filter((v):v is string=>!!v)))],
-    [saved]);
+  const vectorDefaults=useMemo(()=>{
+    const defaults:Record<string,[number,number,number]>={};
+    for(const unit of saved?.rig??[]) {
+      if(unit.target)defaults[unit.target]=[0,1,3];
+      if(unit.pole)defaults[unit.pole]=[0,0,1];
+    }
+    return defaults;
+  },[saved]);
+  const vectors=useMemo(()=>Object.keys(vectorDefaults),[vectorDefaults]);
   useEffect(()=>{
     let mounted=true;
     if(!connected || !projectPath) {
@@ -90,7 +95,7 @@ export default function FacialLivePreview({
   };
   const setVector=(name:string,axis:number,value:number)=>{
     if(!active||!Number.isFinite(value))return;
-    const old=targets[name]??[0,1,3];
+    const old=targets[name]??vectorDefaults[name]??[0,1,3];
     const next:[number,number,number]=[old[0],old[1],old[2]];
     next[axis]=value;
     setTargets(current=>({...current,[name]:next}));
@@ -148,7 +153,7 @@ export default function FacialLivePreview({
                 htmlFor={'facial-live-ik-'+name+'-'+axis}>
                 <StudioInput type="number" step={0.1} min={-100} max={100}
                   id={'facial-live-ik-'+name+'-'+axis}
-                  value={(targets[name]??[0,1,3])[index]}
+                  value={(targets[name]??vectorDefaults[name]??[0,1,3])[index]}
                   onChange={e=>{
                     const value=Number(e.target.value);
                     if(e.target.value!==''&&Number.isFinite(value))
