@@ -2132,6 +2132,7 @@ void Renderer3D::prepareStrataAuxiliaryGpuPackets(
            item.model->geometryRevision!=source.geometryRevision ||
            item.model->materialRevision!=source.materialRevision ||
            source.sourceMesh!=0 ||
+           item.model->meshes.size()!=1 ||
            source.sourcePrimitive>=item.model->meshes[0].primitives.size() ||
            item.prim!=&item.model->meshes[0].primitives[
                source.sourcePrimitive] ||
