@@ -30,6 +30,11 @@ public:
     static constexpr uint64_t kMaxCandidateChecks=524288;
     static constexpr uint32_t kMaxScreenPixels=16384;
     static constexpr uint64_t kMaxScreenCandidateChecks=24000000;
+    // Four image slots allow three pending GPU screens plus one completed
+    // history. Slots also track *reader* fences: a retired history image
+    // can still be sampled by already-encoded newer frames.
+    static constexpr size_t kScreenSlotCount=4;
+    static constexpr size_t kMaxPendingScreens=3;
 
     struct alignas(16) Params {
         std::array<uint32_t,4> counts{};  // lights,receivers,nodes,samples
@@ -69,6 +74,14 @@ public:
     struct DenoiseStatus {
         bool requested=false,encoded=false,historyUsed=false;
         LumaVulkanHistoryReason reason=LumaVulkanHistoryReason::Disabled;
+    };
+    struct ScreenSlot {
+        gfx::TextureHandle raw{},filtered{};
+        uint32_t width=0,height=0,receivers=0;
+        uint64_t submitted=0,readerUntil=0,historyGeneration=0;
+        uint64_t submissionOrdinal=0;
+        LumaVulkanHistoryStamp stamp{};
+        bool hasFilter=false;
     };
     struct Submission {
         bool encoded=false;
@@ -127,19 +140,21 @@ public:
             for(auto handle:{receiverBuffer_,lightBuffer_,triangleBuffer_,nodeBuffer_})
                 if(handle.valid())dev_->destroyBuffer(handle);
             if(output_.valid())dev_->destroyTexture(output_);
-            if(screenOutput_.valid())dev_->destroyTexture(screenOutput_);
-            for(auto texture:filtered_)if(texture.valid())dev_->destroyTexture(texture);
+            for(const auto& slot:screenSlots_)
+                for(auto t:{slot.raw,slot.filtered})
+                    if(t.valid())dev_->destroyTexture(t);
             if(denoiseShader_.valid())dev_->destroyCompute(denoiseShader_);
             if(screenShader_.valid())dev_->destroyCompute(screenShader_);
             if(shader_.valid())dev_->destroyCompute(shader_);
         }
         dev_=nullptr;shader_={};output_={};
-        screenShader_={};denoiseShader_={};screenOutput_={};activeOutput_={};
-        filtered_.fill({});filteredWidth_=filteredHeight_=0;
+        screenShader_={};denoiseShader_={};activeOutput_={};
+        screenSlots_={};
         screenWidth_=screenHeight_=0;
-        pendingFrame_=0;pendingFilterSlot_=-1;historySlot_=-1;
-        historyValid_=false;historyGeneration_=1;pendingHistoryGeneration_=0;
-        historyStamp_={};pendingHistoryStamp_={};denoiseStatus_={};
+        pendingFrame_=0;historySlot_=-1;activeScreenSlot_=-1;
+        lastEncodedFrame_=0;submissionOrdinal_=0;
+        historyValid_=false;historyGeneration_=1;
+        historyStamp_={};denoiseStatus_={};
         receiverBuffer_={};lightBuffer_={};triangleBuffer_={};nodeBuffer_={};
         sourcesReady_=geometryReady_=outputValid_=false;
         sourceRevision_=geometryRevision_=geometryHash_=0;
@@ -159,8 +174,35 @@ public:
     }
     uint32_t screenWidth() const {return screenWidth_;}
     uint32_t screenHeight() const {return screenHeight_;}
-    bool busy() const {return pendingFrame_!=0;}
-    uint64_t pendingFrameSerial() const {return pendingFrame_;}
+    bool busy() const {
+        if(pendingFrame_)return true;
+        for(const auto& slot:screenSlots_)if(slot.submitted)return true;
+        return false;
+    }
+    size_t screenFramesInFlight() const {
+        size_t count=0;
+        for(const auto& slot:screenSlots_)if(slot.submitted)++count;
+        return count;
+    }
+    uint64_t pendingFrameSerial() const {
+        uint64_t oldest=pendingFrame_;
+        for(const auto& slot:screenSlots_)
+            if(slot.submitted && (!oldest || slot.submitted<oldest))
+                oldest=slot.submitted;
+        return oldest;
+    }
+    bool canSubmitScreen() const {
+        if(!screenAvailable() || pendingFrame_ ||
+           screenFramesInFlight()>=kMaxPendingScreens || !dev_->gpuHealthy())
+            return false;
+        const uint64_t completed=dev_->completedFrameSerial();
+        for(size_t i=0;i<screenSlots_.size();++i) {
+            const auto& slot=screenSlots_[i];
+            if(!slot.submitted && slot.readerUntil<=completed &&
+               int(i)!=historySlot_)return true;
+        }
+        return false;
+    }
     uint64_t sourceRevision() const {return sourceRevision_;}
     uint64_t geometryRevision() const {return geometryRevision_;}
     size_t sourceCount() const {return sourceCount_;}
@@ -175,13 +217,17 @@ public:
     // Same-command-buffer consumer may sample the image AFTER dispatch()
     // and VkCompute::endCompute() inserted its shader-read barrier.
     gfx::TextureHandle encodedOutput(uint64_t exactFrameSerial) const {
-        return ready() && busy() && dev_->gpuHealthy() &&
-               pendingFrame_==exactFrameSerial && dev_->frameSerial()==exactFrameSerial ?
+        if(!ready() || !dev_->gpuHealthy() ||
+           lastEncodedFrame_!=exactFrameSerial ||
+           dev_->frameSerial()!=exactFrameSerial)return {};
+        if(pendingFrame_==exactFrameSerial)return activeOutput_;
+        return activeScreenSlot_>=0 &&
+               screenSlots_[size_t(activeScreenSlot_)].submitted==exactFrameSerial ?
                activeOutput_:gfx::TextureHandle{};
     }
 
     bool setSources(const LumaWeaveRegistry& registry) {
-        if(!ready() || busy() || !dev_->canUpdateSharedBuffers())return false;
+        if(!ready() || !dev_->canUpdateSharedBuffers())return false;
         if(sourcesReady_ && sourceRevision_==registry.revision()) {
             // Two different worlds may each have revision 1. Equal revision
             // alone must NOT silently retain another world's light energy.
@@ -190,7 +236,8 @@ public:
                    std::equal(current.begin(),current.end(),
                               acceptedLights_.begin(),lumaSameLight);
         }
-        if(sourcesReady_ && registry.revision()<=sourceRevision_)return false;
+        if(busy() || (sourcesReady_ && registry.revision()<=sourceRevision_))
+            return false;
         if(registry.lights().size()>LumaWeaveRegistry::kMaxSources)return false;
         std::vector<LumaGpuLight> packed;
         packed.reserve(registry.lights().size());
@@ -227,12 +274,12 @@ public:
     }
 
     bool setGeometry(const GiGpuBvh& bvh,uint64_t revision) {
-        if(!ready() || busy() || !dev_->canUpdateSharedBuffers() ||
+        if(!ready() || !dev_->canUpdateSharedBuffers() ||
            !revision)return false;
         const uint64_t contentHash=geometryFingerprint(bvh);
         if(geometryReady_ && revision==geometryRevision_)
-            return contentHash==geometryHash_;
-        if(geometryReady_ && revision<geometryRevision_)return false;
+            return contentHash==geometryHash_; // read-only even if GPU busy
+        if(busy() || (geometryReady_ && revision<geometryRevision_))return false;
         // Require strict root-reachable geometry containment and bounded
         // traversal BEFORE any storage-buffer writes; Stage62 float-ULP fix.
         if(!giValidateGpuBvh(bvh).valid)return false;
@@ -299,7 +346,8 @@ public:
         if(!accepted)return out;
         pendingFrame_=frame;
         activeOutput_=output_;
-        pendingFilterSlot_=-1;
+        lastEncodedFrame_=frame;
+        activeScreenSlot_=-1;
         invalidateHistory(); // explicit receiver path never supplies screen history
         outputValid_=false;
         pendingReceivers_=uint32_t(receivers.size());
