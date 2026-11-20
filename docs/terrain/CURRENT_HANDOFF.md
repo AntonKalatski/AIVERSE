@@ -8,7 +8,11 @@
 > on the tested build, with no test filter or weakened assertions.
 > PHYSIS, NEREID, TerraWeave, SpectraFX and 4 MetalGPU CTests passed.
 > [Executed full-suite QA handoff](qa-2026-11-20-stage70-mac-191-unfiltered-ctest-pass-handoff.md).
-> **Exact run SHA pending `acceptance-reports/provenance.txt`.**
+> **Verified exact Mac tested SHA:**
+> `346dc66aeb0a89e1dc69ad889134fe7079ecb169` from user-supplied
+> `acceptance-reports/provenance.txt` (detached HEAD worktree).
+> Remote comparison confirmed the four then-later branch commits
+> modified **docs only**, no engine/CMake source after the PASS.
 > Newer GitHub `main` `d6942dde` is NOT included in that
 > accepted SpectraFX checkpoint; initial comparison found 2177
 > newer main commits. Latest-main integration and GPU Vulkan/GLES
