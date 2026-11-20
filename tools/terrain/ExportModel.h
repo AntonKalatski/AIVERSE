@@ -21,7 +21,7 @@ static void save(const fs::path& out,const std::string& name,const aiverse::rend
             for(auto suffix:{"basecolor","normal","orm","ao"}){auto im=Json::object(),tx=Json::object();im.set("uri",Json::string("textures/"+materials[m]+"_"+suffix+".png"));tx.set("source",Json::number(int64_t(index++)));images.push(im);textures.push(tx);}
         }
         doc.set("images",images);
-        if(clamp){auto samplers=Json::array(),sampler=Json::object();sampler.set("wrapS",Json::number(int64_t(33071)));sampler.set("wrapT",Json::number(int64_t(33071)));samplers.push(sampler);doc.set("samplers",samplers);for(size_t i=0;i<textures.size();++i)textures.at(i).set("sampler",Json::number(int64_t(0)));}
+        {auto samplers=Json::array(),sampler=Json::object();sampler.set("magFilter",Json::number(int64_t(9729)));sampler.set("minFilter",Json::number(int64_t(9987)));sampler.set("wrapS",Json::number(int64_t(clamp?33071:10497)));sampler.set("wrapT",Json::number(int64_t(clamp?33071:10497)));samplers.push(sampler);doc.set("samplers",samplers);for(size_t i=0;i<textures.size();++i)textures.at(i).set("sampler",Json::number(int64_t(0)));}
         doc.set("textures",textures);
     }
     auto policy=Json::object();policy.set("autoLod",Json::fromBool(false));
