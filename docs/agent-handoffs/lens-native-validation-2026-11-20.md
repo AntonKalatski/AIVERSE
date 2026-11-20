@@ -110,3 +110,14 @@ using public const queries, and updates terrain/sprite compile-only API fixtures
 for the existing expectedEpoch argument. No production signature/save change.
 Branch codex/lens-completion; CI NOT RUN. Camera rig binary rebuilt this pass,
 retest pending. Next: repeat full build on KINGSTON; same feature gaps remain.
+
+## Pass 7 — public animation headers
+
+At `a8e3cb6e9`, focused camera runner with the same 13-test filter: **13/13 PASS**,
+KINGSTON report `20261120-143716-97866`, including rebuilt camera_rig.
+Full quick runner report `20261120-143706-97258`: configure PASS, build FAIL
+in HumanoidRetarget's missing findNodePath declaration; full CTest NOT RUN.
+Commit `daff707930b69d0e2eb2329b09eb75f8752c49f9` explicitly includes ModelClips.h in HumanoidRetarget.h
+and AnimationAssetLoader.h (same dependency), without API/format changes.
+Branch codex/lens-completion, CI NOT RUN. Next: rerun native build on KINGSTON;
+new terrain tests and real GPU checks remain pending.
