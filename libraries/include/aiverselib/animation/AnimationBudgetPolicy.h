@@ -39,28 +39,27 @@ inline AnimationBudgetStats assignAnimationBudgets(
           std::isfinite(policy.hiddenInterval) &&
           policy.hiddenInterval>=policy.lowInterval))
         return stats;
-    const auto* source=presentation.poolIfExists<AnimationSignificanceComponent>();
-    if (!source) return stats;
+    const auto count=presentation.countExisting<AnimationSignificanceComponent>();
+    if (!count) return stats;
     auto* budgets=presentation.prepareExistingWrite<AnimationBudgetComponent>();
     if (!budgets) return stats;
     std::vector<Candidate> visible;
-    visible.reserve(source->size());
-    for (size_t i=0;i<source->size();++i) {
-        const Entity e=source->entityAt(i);
-        if (!presentation.alive(e) || !budgets->has(e.index)) continue;
-        const auto& s=source->dataAt(i);
+    visible.reserve(count);
+    presentation.eachExistingConst<AnimationSignificanceComponent>(
+      [&](Entity e, const AnimationSignificanceComponent& s) {
+        if (!presentation.alive(e) || !budgets->has(e.index)) return;
         auto* budget=budgets->tryGet(e.index);
         if (!s.visible) {
             budget->visible=false;
             budget->interval=policy.hiddenInterval;
             ++stats.hidden;
-            continue;
+            return;
         }
         budget->visible=true;
         const float pixels=std::isfinite(s.pixels)?std::max(0.f,s.pixels):0.f;
         const float importance=std::isfinite(s.importance)?std::max(0.f,s.importance):0.f;
         visible.push_back({e,pixels*importance,s.alwaysEvaluate});
-    }
+    });
     std::stable_sort(visible.begin(),visible.end(),
         [](const Candidate& a,const Candidate& b) {
             if (a.force!=b.force) return a.force>b.force;
