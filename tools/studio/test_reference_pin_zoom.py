@@ -168,6 +168,20 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("injected material write failure",transfer)
         self.assertIn("assert(replaceRejected)",transfer)
 
+    def test_scene_selection_hits_rendered_oriented_proxy_not_aabb(self):
+        renderer=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
+        picker=(ROOT/"apps/studio-native/StudioVisualPicking.h").read_text(encoding="utf-8")
+        cases=(ROOT/"apps/studio-native/tests/StudioVisualPickingTests.cpp").read_text(encoding="utf-8")
+        cmake=(ROOT/"apps/studio-native/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("studioPickVisibleProxy(proxies,origin,direction).id",renderer)
+        self.assertNotIn("pickSceneRenderable(candidates,origin,direction)",renderer)
+        self.assertIn("studioRayProxyBox",picker)
+        self.assertIn("cosine*relative.x-sine*relative.z",picker)
+        self.assertIn("nearT>=0 ? nearT : farT",picker)
+        self.assertIn("corner.x<rotated.boundsMax.x",cases)
+        self.assertIn("collider:rotated",cases)
+        self.assertIn("studio_visual_picking",cmake)
+
     def test_scene_camera_navigation_is_editor_only(self):
         web=self.source("components/ViewportPlaceholder.tsx")
         types=self.source("types.ts")
