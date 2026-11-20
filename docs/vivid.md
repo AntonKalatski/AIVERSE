@@ -1415,3 +1415,73 @@ GPU-moved alpha-masked occluder) is a distinct upcoming stage.
 Other GPU-deformed occluders and final material/Prisma depth may
 still disagree. See
 `docs/agent-handoffs/vivid-7AW-accepted-draw-provenance-2026-11-20.md`.
+
+
+## Stage 7AX — actual single-actor Metal colour/ID pixel coverage probes (2026-11-20)
+
+Stage 7AW proved only that the normal Renderer3D **encoded** an eligible
+colour draw. Stage 7AX adds a real Metal **GPU pixel test source** to the
+existing macOS `aiverse_vivid_renderer_preview` acceptance. Its
+one-actor normal renderer screenshot and the optional VIVID RGBA8
+triangle-ID target are now sampled at the **same projected head-centre
+pixel in the same render frame** for (1) GPU facial morph and
+(2) MotionWeave-animated actor frames. The actual 60-byte
+`ModelDraw::vertexOverride` position source is used by the GPU ID
+compute (not a CPU-morphed position surrogate).
+
+Before the ID draw, the native preview demands an exact
+`modelViewProvenance` ↔ `modelSubmissionProvenance` match, an
+available Metal GPU-source compute shader and the current GPU actor
+buffer. It first records and presents the real Renderer3D colour pass,
+then submits its offscreen GPU ID compute/raster/readback outside
+the colour pass. Both results arrive asynchronously: the screenshot
+callback and the independent RGBA8 pixel callback are correlated
+with the immutable stage/request/frame/viewport coordinates and
+checked only after **both** have arrived. Timeout, stale frame,
+empty native GPU reply or absence of an actual vertex override fails
+the acceptance; pending GPU scratch remains owned until its callback
+or a verified device-idle barrier. The 12-actor crowd preview is
+unchanged and does not run the one-actor parity probes.
+
+`SculptGpuColorPixelOracle.h` makes the comparison explicitly a
+**coverage test**. A nonzero triangle ID and a displayed colour
+pixel visibly different from the presentation clear colour yield
+`Covered`; a nonzero ID at clear-colour screen is `Mismatch`.
+A nonzero scene-colour pixel with ID zero is **inconclusive**, not
+automatically a mismatch, because another opaque/alpha-masked
+object can legitimately hide the selected vertex. RGB bytes are
+not compared directly with encoded triangle-ID bytes and this
+does **not** test numerical depth-buffer equality.
+
+The separate production-Metal `vivid_metal_sculpt_id` fixture source
+now tests an *unrelated* nearer, GPU-sampled zero-ID Mask triangle
+in front of the source: an alpha-hole texel must preserve source ID,
+while a solid texel must suppress it through native depth testing.
+This tests negative alpha/depth **inside the real Metal ID pass**,
+but the extra occluder is CPU-geometry-staged, **not** a shared
+GPU-deformed occluder from a final Renderer3D colour pass.
+
+`tools/vivid-validate.sh` demands actual log records for both
+new same-frame one-actor probes in addition to the three original
+Renderer3D screenshots. Source-only unit fixtures validate
+`Covered`, `Mismatch`, `ClearBackground` and
+`Inconclusive` outcomes. Existing GPU scene selection and HumanDNA
+asset contracts remain unchanged.
+
+**Actual verification:** GitHub connector reads/writes and static source
+inspection. **NOT RUN:** CMake, ObjC++/C++ compile, the native
+`vivid_human_creator` and `vivid_metal_sculpt_id` CTests, the
+GUI preview, Metal shader/raster/readback, full
+`bash tools/vivid-validate.sh --full`, Vulkan/GLES tests, or performance
+and VRAM measurements. These are executable test *definitions*,
+not verified real-hardware pass claims.
+
+Still open: compare a final **Renderer3D colour plus depth target**
+against the VIVID ID pixel under an unrelated, independently GPU-deformed
+sampled Mask occluder. RHI currently exposes only RGBA8 offscreen
+pixel readback, not arbitrary native depth readback, so true numerical
+depth parity requires an explicit RHI-safe depth encoding or an owned
+shared-depth ID target. Final Blend/cornea/ShaderGraph/LOD/ICB parity,
+Vulkan/GLES actor GPU vertex expansion, and complete MetaHuman-grade
+authoring/appearance are separate incomplete milestones. See the
+dedicated Stage 7AX handoff for exact files and next steps.
