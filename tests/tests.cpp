@@ -14029,6 +14029,104 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3a_same_size_fog_sheet_keeps_explored_r8_history) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    const std::function<float(float,float)> flat=[](float,float){return 0.0f;};
+    const std::function<float(float,float)> sculpt=[](float,float){return 2.0f;};
+    fog.build(dev,8,6,flat);
+    const std::vector<uint8_t> seen(size_t(8*6),2);
+    CHECK(fog.update(seen,8,6,1.0));
+    const auto previousTexture=fog.texture().id;
+    const auto previousField=fog.field();
+    const auto previousRetired=fog.pendingGpuRetirements();
+    dev.failBuffer=dev.bufferAttempts+2; // private Fog Sheet index upload
+    bool failed=false;
+    try {(void)fog.prepareSheet(dev,8,6,sculpt);}
+    catch(const std::runtime_error&){failed=true;}
+    dev.failBuffer=0;
+    CHECK(failed);
+    CHECK(fog.texture().id==previousTexture);
+    CHECK(fog.field()==previousField);
+    CHECK(fog.pendingGpuRetirements()==previousRetired);
+    auto pending=fog.prepareSheet(dev,8,6,sculpt);
+    CHECK(pending!=nullptr);
+    dev.idleAllowed=false; // sheet commit must not require full GPU idle
+    CHECK(fog.commitPreparedSheet(std::move(pending)));
+    CHECK(fog.sheetMatches(8,6));
+    CHECK(fog.texture().id==previousTexture);
+    CHECK(fog.field()==previousField);
+    CHECK(fog.pendingGpuRetirements()==previousRetired+2);
+    dev.idleAllowed=true;
+    CHECK(fog.shutdownAfterGpuIdle());
+}
+
+TEST(lens_stage48b3a_opt_in_atomic_sculpt_keeps_sync_editor_contract) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(12,9);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={6,0,4};camera.distance=35;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&visible,grid);
+    CHECK(view.visualFrameReadyFor(grid,1.0));
+    renderer.render(gfx::PassDesc{});
+    const uint64_t oldRoadGeneration=view.roads().surfaceGeneration();
+    const float previousHeight=view.heightAt(grid,3.5f,2.5f);
+    CHECK(std::fabs(previousHeight)<1e-4f);
+
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),32);
+    dev.failBuffer=dev.bufferAttempts+1; // initial private terrain VB
+    bool rejected=false;
+    try {view.buildTerrainAtomic(dev,grid);}
+    catch(const std::runtime_error&){rejected=true;}
+    dev.failBuffer=0;
+    CHECK(rejected);
+    CHECK(std::fabs(view.heightAt(grid,3.5f,2.5f)-previousHeight)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoadGeneration);
+    CHECK(!view.publishedVisualFrame().ready());
+
+    dev.idleAllowed=false; // GPU idle is not part of the 5-owner commit
+    view.buildTerrainAtomic(dev,grid);
+    CHECK(view.surfacePresentationMapReady(grid));
+    CHECK(std::fabs(view.heightAt(grid,3.5f,2.5f)-2.0f)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoadGeneration+1);
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    dev.idleAllowed=true;
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48b3a_atomic_same_size_map_before_first_camera_uses_r8_baseline) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    // No primary frame yet; the Fog sheet and R8 may still be absent.
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
+    view.buildTerrainAtomic(dev,grid);
+    CHECK(view.surfacePresentationMapReady(grid));
+    CHECK(std::fabs(view.heightAt(grid,1.5f,1.5f)-1.0f)<1e-4f);
+    view.shutdown(dev);
+}
+
 TEST(lens_stage48b2b_unpublished_scene_lease_is_consumed_once) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

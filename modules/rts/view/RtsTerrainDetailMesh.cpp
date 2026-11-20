@@ -68,9 +68,16 @@ void TerrainRenderer::setDetail(const terrain::DetailSurface* d, const std::vect
     fileDetailChanged_ = true;
 }
 
-float TerrainRenderer::surfaceAt(const MapGrid& g, float x, float z) const {
-    if (detailOn_ && detail_.w == g.w && detail_.h == g.h) return detail_.sample(x, z);
-    return terrain::heightAt(g, lh_, x, z);
+float TerrainRenderer::surfaceAt(const MapGrid& g,float x,float z) const {
+    if(detailOn_ && detail_.valid())
+        return detail_.sample(x,z);
+    // MapGrid may have been edited in place before buildTerrainAtomic().
+    // Query the LAST SUCCESSFULLY PUBLISHED height geometry, not mutable
+    // input. This also keeps road/shore and camera heights coherent when
+    // a pending GPU map candidate fails and is discarded.
+    if(publishedSurfaceGrid_)
+        return terrain::heightAt(*publishedSurfaceGrid_,lh_,x,z);
+    return terrain::heightAt(g,lh_,x,z);
 }
 
 size_t TerrainRenderer::detailSampleCap() const {

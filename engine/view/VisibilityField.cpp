@@ -520,6 +520,25 @@ bool VisibilityField::commitPreparedUpdate(
     return changed;
 }
 
+bool VisibilityField::commitPreparedSheet(
+        std::unique_ptr<PreparedSheet> sheet) noexcept {
+    if(!sheet)return false;
+    // This path is ONLY for unchanged map dimensions. It must never
+    // publish an RHI mesh with a texture of another size, nor mutate
+    // the user's explored visibility field or fade clock.
+    if(!dev_ || sheet->owner_!=this || sheet->dev_!=dev_ ||
+       sheet->revision_!=revision_ || sheet->resize_ ||
+       sheet->width_!=w_ || sheet->height_!=h_ || !tex_.valid())
+        std::terminate();
+    retired_.retireBuffer(*dev_,vb_);
+    retired_.retireBuffer(*dev_,ib_);
+    vb_=std::exchange(sheet->vb_,gfx::BufferHandle{});
+    ib_=std::exchange(sheet->ib_,gfx::BufferHandle{});
+    indexCount_=sheet->indexCount_;
+    ++revision_;
+    return true;
+}
+
 bool VisibilityField::commitPreparedFrame(
         std::unique_ptr<PreparedSheet> sheet,
         std::unique_ptr<PreparedUpdate> field) noexcept {

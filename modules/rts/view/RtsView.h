@@ -371,6 +371,13 @@ public:
     // the editor changes the grid. Resource fields / creep changing in a match need no call (the
     // terrain shader reads them from per-cell textures).
     void buildTerrain(gfx::Device& dev, const MapGrid& grid);
+    // Opt-in fully staged editor sculpt/detail update. Unlike the normal
+    // sparse buildTerrain path this regenerates the full terrain candidate,
+    // road/shore height samples, GroundFX grid geometry state and Fog Sheet
+    // before a single five-owner commit. Existing Fog R8/visibility history
+    // survives same-size edits. Higher temporary GPU memory; use only for
+    // explicit transactional edits, not every brush sample.
+    void buildTerrainAtomic(gfx::Device& dev,const MapGrid& grid);
     // Optional painted material layer per cell (map key "terrainMaterial": rows of digits 0..3, '.' =
     // by cell kind; see docs/game-format.md). Takes effect at the next buildTerrain().
     void setTerrainMaterial(const Json& rows, int w, int h) {
@@ -870,6 +877,8 @@ private:
         animDt = dt;
         return age + dt;
     }
+    void buildTerrainImpl(gfx::Device& dev,const MapGrid& grid,
+                          bool forceAtomic);
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;

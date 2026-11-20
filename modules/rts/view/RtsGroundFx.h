@@ -121,7 +121,8 @@ public:
     // Visible chunks are then filled by prepareFrame on the first primary
     // camera. This lets synchronous editor buildTerrain join the same
     // topology cohort as Roads/Shores/Fog.
-    std::shared_ptr<PreparedFrame> prepareMapReset(const MapGrid& grid);
+    std::shared_ptr<PreparedFrame> prepareMapReset(
+        const MapGrid& grid,bool forceSameSize=false);
     bool mapMatches(int w,int h) const noexcept {
         return gridW_==w && gridH_==h && !invalid_;
     }

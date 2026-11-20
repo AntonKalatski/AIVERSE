@@ -1001,13 +1001,14 @@ private:
 };
 
 std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareMapReset(
-        const MapGrid& grid) {
+        const MapGrid& grid,bool forceSameSize) {
     if(!dev_ || !rules_ || grid.w<=0 || grid.h<=0)
         return {};
     checkGpuDevice(*dev_);
     // Rebuilding the same map is handled by the ordinary frame's sparse
     // geometry journal. Avoid retiring all chunks for an unchanged grid.
-    if(mapMatches(grid.w,grid.h))return {};
+    const bool sameMap=mapMatches(grid.w,grid.h);
+    if(sameMap && !forceSameSize)return {};
     auto candidate=std::make_shared<PreparedFrame>();
     candidate->owner_=this;
     candidate->device_=dev_;
@@ -1029,6 +1030,20 @@ std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareMapReset(
     // destroy old published GPU handles.
     next.invalid_=true;
     next.resetGrid(grid);
+    if(sameMap) {
+        // Preserve knowledge learned by the viewer across an editor
+        // height/detail sculpt. Only geometry is replaced; ownership,
+        // room, dig and mark visibility memory must not be erased.
+        next.memT_=memT_;next.memD_=memD_;
+        next.memR_=memR_;next.memM_=memM_;
+        next.memC_=memC_;next.memW_=memW_;
+        next.memRoom_=memRoom_;
+        next.marked_=marked_;
+        next.territoryBlend_=territoryBlend_;
+        next.territoryTime_=territoryTime_;
+        next.viewer_=viewer_;
+        next.nextScan_=-1; // rescan edits before first primary submission
+    }
     next.geomDirty_=true;
     next.lanes_={}; // a lane built for the old map is never replayed
     return candidate;

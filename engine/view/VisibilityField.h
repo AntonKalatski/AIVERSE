@@ -121,6 +121,11 @@ public:
     // Invariant violations are fatal because no partial publication may escape.
     bool commitPreparedFrame(std::unique_ptr<PreparedSheet> sheet,
                              std::unique_ptr<PreparedUpdate> field) noexcept;
+    // Same-size editor sculpt: update only the height-draped Fog Sheet.
+    // Retains the R8 GPU texture, all target/cur/blur pixels, animation
+    // clock and viewer memory. A map-size change must still use
+    // commitPreparedFrame(sheet,field) to install a new sized R8 image.
+    bool commitPreparedSheet(std::unique_ptr<PreparedSheet> sheet) noexcept;
     bool commitPreparedUpdate(std::unique_ptr<PreparedUpdate> candidate);
     bool update(std::span<const uint8_t> vision,int w,int h,double time);
     // Existing vector callers remain source-compatible; host buffers

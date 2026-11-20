@@ -94,6 +94,11 @@ public:
     }
     // (Re)builds the chunks whose inputs changed. Returns true when any geometry changed.
     bool build(gfx::Device& dev, const MapGrid& g, bool flatDig);
+    // Published source heights are copied before any fallible GPU upload.
+    // Editor MapGrid may mutate in place while the old terrain is displayed.
+    // surfaceAt/heightAt must use this immutable published CPU snapshot until
+    // the next successful Terrain owner commit.
+
     // External Stage 47B candidate for full-map/topology replacement.
     // Only private CPU data and new GPU handles are built during prepare.
     // All live terrain ownership remains unchanged until commitMap, which
@@ -164,6 +169,7 @@ private:
         bool valid = false;
         std::vector<uint32_t> lastUse;               // detail mode: frame each LOD was last drawn (LRU)
     };
+    bool buildInternal(gfx::Device& dev,const MapGrid& g,bool flatDig);
     void parseLook(const Json& t);
     void loadTextures(gfx::Device& dev);
     uint64_t chunkHash(const MapGrid& g, const Chunk& c, bool flatDig) const;
@@ -229,6 +235,10 @@ private:
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;
     bool texturesLoaded_ = false;
 
+    // Only the arrays required by terrain::heightAt are copied (no
+    // gameplay state/pathfinding/network data). Shared pointer swap is
+    // no-throw during commitMap() and never depends on mutable map bytes.
+    std::unique_ptr<MapGrid> publishedSurfaceGrid_;
     std::vector<Chunk> chunks_;
     int cw_ = 0, ch_ = 0, mapW_ = 0, mapH_ = 0, lodLevels_ = 1;
     bool heightfield_ = false, built_ = false;

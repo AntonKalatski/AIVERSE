@@ -21,9 +21,10 @@ using namespace render;
 // The single height query of the view: models, sprites, overlays, lights, editor gizmos. Matches the
 // mesh: heightfield corners (two triangles per cell) when the map has them, otherwise levels + fine
 // heights + ramps.
-float RtsView::heightAt(const MapGrid& g, float x, float z) const {
-    if (terrain_.detailActive()) return terrain_.surfaceAt(g, x, z);   // the sub-cell detail surface that is drawn
-    return terrain::heightAt(g, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f, x, z);
+float RtsView::heightAt(const MapGrid& g,float x,float z) const {
+    // Always sample the last published Terrain surface, not in-place editor
+    // source mutations that have not committed across all GPU owners.
+    return terrain_.surfaceAt(g,x,z);
 }
 
 float RtsView::groundAt(const MapGrid& g, float x, float z) const {
@@ -52,7 +53,14 @@ void RtsView::setTerrainDetail(const Json& map) {
     }
 }
 
-void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
+void RtsView::buildTerrain(gfx::Device& dev,const MapGrid& g) {
+    buildTerrainImpl(dev,g,false);
+}
+void RtsView::buildTerrainAtomic(gfx::Device& dev,const MapGrid& g) {
+    buildTerrainImpl(dev,g,true);
+}
+void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
+                               bool forceAtomic) {
     discardPendingSurfaceLease();
     // Any map rebuild invalidates the previous primary-frame publication.
     framePublication_.invalidate();
@@ -79,8 +87,15 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
     // synchronous path. A topology change stages the NEW Terrain surface
     // first, then uses that exact unpublished height for both road wheel
     // samples and shore geometry before any owner commits.
+    const bool sameDimensions=terrain_.mapMatches(g.w,g.h);
+    const bool sculptTransaction=forceAtomic && sameDimensions;
+    // Same-sized terrain might not have a Fog sheet yet (e.g. the first
+    // editor build before any primary draw). Sheet-only publication is
+    // legal only when there is already a matching R8 texture and mesh.
+    const bool preserveFog=sculptTransaction &&
+        fog_.sheetMatches(g.w,g.h);
     const bool topologyChange=terrain_.canPrepareMap() &&
-        !terrain_.mapMatches(g.w,g.h);
+        (!sameDimensions || forceAtomic);
     bool changed=false;
     if(topologyChange) {
         std::shared_ptr<TerrainRenderer::PreparedMap> stagedTerrain;
@@ -133,7 +148,8 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
             [&] {
                 // No camera is needed to atomically replace the cell grid.
                 // Meshes will be built by the first scene-aware primary frame.
-                stagedGroundFx=groundFx_.prepareMapReset(g);
+                stagedGroundFx=groundFx_.prepareMapReset(
+                    g,sculptTransaction);
             },
             [&] {groundFx_.commitFrame(std::move(stagedGroundFx));},
             [&] {stagedGroundFx.reset();});
@@ -144,14 +160,24 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
                 stagedFogSheet=fog_.prepareSheet(dev,g.w,g.h,newHeight);
                 if(!stagedFogSheet)
                     throw std::runtime_error("RtsView: fog sheet map staging failed");
-                stagedFogField=fog_.prepareUpdate(
-                    unexplored,g.w,g.h,0.0,stagedFogSheet.get());
-                if(!stagedFogField)
-                    throw std::runtime_error("RtsView: fog field map staging failed");
+                if(!preserveFog) {
+                    // A map resize has no viewer mask at this synchronous
+                    // boundary, so publish an unexplored baseline. Same
+                    // dimensions MUST preserve all learned Fog visibility.
+                    stagedFogField=fog_.prepareUpdate(
+                        unexplored,g.w,g.h,0.0,stagedFogSheet.get());
+                    if(!stagedFogField)
+                        throw std::runtime_error("RtsView: fog field map staging failed");
+                }
             },
             [&] {
-                (void)fog_.commitPreparedFrame(
-                    std::move(stagedFogSheet),std::move(stagedFogField));
+                if(preserveFog) {
+                    (void)fog_.commitPreparedSheet(
+                        std::move(stagedFogSheet));
+                } else {
+                    (void)fog_.commitPreparedFrame(
+                        std::move(stagedFogSheet),std::move(stagedFogField));
+                }
             },
             [&] {
                 stagedFogField.reset();
@@ -182,8 +208,9 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
     paintLayers_.shutdown();
     if(changed || !hasTerrain_)groundFx_.invalidate();
     hasTerrain_ = true;
-    // A full-size topology cohort already published the matching fog sheet
-    // and R8 field. Same-size sculpting still needs a height-sheet refresh.
+    // Both full-size map transitions and explicit same-size sculpt cohorts
+    // already published the correctly draped Fog Sheet. Only the sparse
+    // legacy same-size path needs a Fog Sheet rebuild on next primary draw.
     fogMeshDirty_ = !topologyChange;
     fieldView_.invalidate();  // so do grid field overlays
     if (twoD_) twoD_->buildTiles(dev, g, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);

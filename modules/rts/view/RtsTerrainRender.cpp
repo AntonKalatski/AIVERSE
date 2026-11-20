@@ -251,6 +251,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
         pipes_[i] = {}; shaders_[i] = {}; shaderFailed_[i] = false;
     }
     textures_.shutdown();
+    publishedSurfaceGrid_.reset();
     texW_ = texH_ = 0;
     built_ = false;
     globalHash_ = 0;
@@ -462,6 +463,7 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     // Swaps/moves of ready handles and standard vector storage only;
     // no CPU allocations, GPU uploads, or waits are allowed in commit.
     chunks_.swap(next.chunks_);
+    publishedSurfaceGrid_.swap(next.publishedSurfaceGrid_);
     apron_=std::exchange(next.apron_,{});
     water_=std::exchange(next.water_,{});
     using std::swap;
@@ -511,7 +513,27 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     return true;
 }
 
-bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
+bool TerrainRenderer::build(gfx::Device& dev,const MapGrid& g,
+                            bool flatDig) {
+    // Stage CPU height inputs before touching GPU resources. A late GPU
+    // failure leaves both the old height snapshot and old meshes intact.
+    std::unique_ptr<MapGrid> nextSurface;
+    if(g.w>0 && g.h>0) {
+        nextSurface=std::make_unique<MapGrid>();
+        nextSurface->w=g.w;
+        nextSurface->h=g.h;
+        nextSurface->flags=g.flags;
+        nextSurface->level=g.level;
+        nextSurface->height=g.height;
+        nextSurface->corner=g.corner;
+    }
+    const bool changed=buildInternal(dev,g,flatDig);
+    if(changed)publishedSurfaceGrid_.swap(nextSurface);
+    return changed;
+}
+
+bool TerrainRenderer::buildInternal(gfx::Device& dev,
+                                    const MapGrid& g,bool flatDig) {
     checkGpuDevice(dev);
     ++publicationRevision_;
     auto t0 = std::chrono::steady_clock::now();
