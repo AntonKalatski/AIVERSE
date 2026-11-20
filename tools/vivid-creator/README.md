@@ -420,3 +420,61 @@ implemented GPU ID/depth rendering here.
 Metal / Vulkan / GLES tests / performance benchmarks are NOT RUN on
 this stage's new source.** The final macOS one-pass acceptance remains
 `bash tools/vivid-validate.sh --full` after the remaining functions.
+
+
+## Cached skinning and opt-in sculpt benchmark (Stage 7AM)
+
+The persistent editor `DeformedSculptWorkspace` now also owns
+`SculptSkinningPlan` (in
+`engine/character/vivid/SculptSkinningPlan.h`). First use validates
+model/mesh ownership, bone palettes, skin influence slots and inverse-bind
+matrices, building one immutable per-vertex influence plan. Every
+subsequent user click evaluates **one combined world × inverse-bind
+matrix per skin joint** rather than rebuilding the triangle palette
+lookup and each vertex's palette on every ray. The vertex positions
+still follow VIVID's morph-before-skin pipeline and the same refitted
+BVH from Stage 7AL. Both source-ID and seam-clone rules remain unchanged.
+
+- `build(model,meshId)` is transactional; failures do not overwrite an
+  existing plan. No GPU resources or ownership transfer is involved.
+- `evaluate(model,nodeWorld,morphBind,output,staging)` preserves the
+  last-good surface on an invalid pose, nonfinite morphed bind position,
+  or missing skin joint. No special case allows picking against a
+  stale model when the presented pose is invalid.
+- `reset()` on the workspace invalidates both BVH topology and skinning
+  plan after **every successfully published character candidate**. If an
+  external host changes skin weights, bone palettes, inverse binds or
+  Model topology *in place* it must call `reset()` before picking.
+- The existing generic `prepareSkinnedWeightSurface` and
+  `pickDeformedSculptVertex` remain the independent baseline used for
+  parity checking. This cache does not become animation state.
+
+### Reproducible CPU performance probe
+
+A test-only, opt-in standalone benchmark is available; not part of CTest
+and not run automatically by the Creator:
+
+```bash
+cmake -S . -B build/vivid-onepass -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_VIVID_SCULPT_BENCH=ON
+cmake --build build/vivid-onepass --target aiverse_vivid_sculpt_pick_bench -j 4
+build/vivid-onepass/aiverse_vivid_sculpt_pick_bench 3 \
+  > build/vivid-onepass/sculpt-pick-benchmark.json
+```
+
+It creates synthetic imported-style meshes of 10,000, 100,489 and
+1,000,000 model vertices. A checkerboard topology keeps the 1M-vertex
+case below the 1M selected-mesh triangle cap. It records cold build +
+first click, median warm clicks, one complete linear-reference
+reconstruction/raycast, BVH visited nodes, tested triangles and
+source-ID/ray-distance parity into JSON. This is a CPU performance
+measurement on the **actual execution host** only. No claimed threshold
+or fabricated GPU/FPS numbers are attached.
+
+The benchmark is a synthetic rigid-mesh profile, not evidence of a real
+skinned 1M-vertex character under full joint/morph load. Use the separate
+`vivid_human_creator` regression fixtures for multiple skinned joints,
+joint movement, invalid pose rollback, morph and seam-clone behavior.
+Actual macOS build, CPU timing and Metal/Vulkan/GLES parity are **NOT RUN**
+at this source stage. Continue with the deferred consolidated acceptance
+before merging anything to main.
