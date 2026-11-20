@@ -1,6 +1,7 @@
 #include <chrono>
 #include "engine/view/VisibilityField.h"
 #include "engine/render/NativeMeshBatch.h"
+#include "engine/render/FramePublicationEpoch.h"
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -12554,6 +12555,90 @@ struct Device : entityfxtest::RecordingDevice {
     }
     bool waitForResourceIdle() override {++idleRequests;return idleAllowed;}
 };
+}
+
+TEST(frame_publication_epoch_requires_every_owner_before_secondary_camera) {
+    using Epoch=render::FramePublicationEpoch;
+    Epoch epoch;
+    constexpr uint32_t required=Epoch::Terrain|Epoch::Ground|
+        Epoch::Fog|Epoch::Animation|Epoch::Sprites;
+    auto ticket=epoch.begin(required,17,64,32,12.5);
+    CHECK(epoch.active());
+    CHECK(!epoch.published().ready());
+    ticket.mark(Epoch::Terrain|Epoch::Ground);
+    CHECK(!epoch.readyFor(64,32,12.5));
+    ticket.mark(Epoch::Fog|Epoch::Animation|Epoch::Sprites);
+    CHECK(ticket.finish());
+    const auto published=epoch.published();
+    CHECK(!epoch.active() && published.ready());
+    CHECK(published.sourceFrame==17);
+    CHECK(published.completed==required && published.required==required);
+    CHECK(epoch.readyFor(64,32,12.5));
+    CHECK(!epoch.readyFor(65,32,12.5));
+    CHECK(!epoch.readyFor(64,32,12.6));
+}
+
+TEST(frame_publication_epoch_aborts_late_owner_failure_and_never_replays_previous) {
+    using Epoch=render::FramePublicationEpoch;
+    Epoch epoch;
+    constexpr uint32_t required=Epoch::Geometry|Epoch::Terrain|Epoch::Fog;
+    {
+        auto previous=epoch.begin(required,100,8,8,1.0);
+        previous.mark(required);
+        CHECK(previous.finish());
+    }
+    const uint64_t old=epoch.published().id;
+    CHECK(old!=0);
+    try {
+        auto candidate=epoch.begin(required,101,8,8,2.0);
+        candidate.mark(Epoch::Geometry|Epoch::Terrain);
+        CHECK(!epoch.published().ready());
+        throw std::runtime_error("late Fog upload failed");
+    } catch(const std::runtime_error&) {}
+    CHECK(!epoch.active());
+    CHECK(!epoch.published().ready());
+    CHECK(!epoch.readyFor(8,8,1.0));
+    CHECK(!epoch.readyFor(8,8,2.0));
+    {
+        auto recovered=epoch.begin(required,102,8,8,3.0);
+        recovered.mark(required);
+        CHECK(recovered.finish());
+    }
+    CHECK(epoch.published().ready());
+    CHECK(epoch.published().id>old);
+    CHECK(epoch.readyFor(8,8,3.0));
+    epoch.invalidate();
+    CHECK(!epoch.published().ready());
+}
+
+TEST(frame_publication_epoch_rejects_incomplete_and_nested_publications) {
+    using Epoch=render::FramePublicationEpoch;
+    Epoch epoch;
+    {
+        auto ticket=epoch.begin(Epoch::Terrain|Epoch::Shores,7,4,4,0.0);
+        ticket.mark(Epoch::Terrain);
+        bool nested=false;
+        try {(void)epoch.begin(Epoch::Fog,8,4,4,0.0);}
+        catch(const std::logic_error&){nested=true;}
+        CHECK(nested);
+        CHECK(!ticket.finish());
+        CHECK(!epoch.active() && !epoch.published().ready());
+    }
+    {
+        auto ticket=epoch.begin(Epoch::Terrain,9,4,4,0.0);
+        bool forbidden=false;
+        try {ticket.mark(Epoch::Ground);}
+        catch(const std::logic_error&){forbidden=true;}
+        CHECK(forbidden);
+        CHECK(!epoch.published().ready());
+    }
+    {
+        auto ticket=epoch.begin(Epoch::Geometry,10,4,4,0.0);
+        auto moved=std::move(ticket);
+        moved.mark(Epoch::Geometry);
+        CHECK(moved.finish());
+    }
+    CHECK(epoch.published().ready());
 }
 
 TEST(native_mesh_batch_second_upload_failure_preserves_all_published_handles) {
