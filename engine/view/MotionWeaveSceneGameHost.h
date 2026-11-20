@@ -72,6 +72,37 @@ public:
             },stats,error);
     }
 
+    // Opt-in shared GPU residency across multiple Active scenes:
+    // Build(manifest, const residentProviderOrNull, newProviderOutput,
+    //       objectsOutput, error). The first scene must prewarm and return
+    // a new owner. Later scenes reuse its already resident immutable models
+    // without allocating a second native GPU Model provider.
+    template<class Build>
+    bool commitReadyShared(scene::SceneTicket ticket,
+                           const std::string& residencyKey,Build&& build,
+                           Statistics& stats,std::string* error=nullptr) {
+        return adapter_.commitReadyShared(
+            scenes_,ticket,residencyKey,std::forward<Build>(build),
+            [this] {
+                const World& authoritative=simulation_.world();
+                return MotionWeaveSceneCoordinatorAdapter::
+                    canonicalActiveSceneIds(
+                        authoritative.resourceConst<scene::SceneState>());
+            },stats,error);
+    }
+
+    // This is a short-lived structural-barrier lookup. The returned
+    // Model pointers are not an extra lease and must never outlive the
+    // current scene operation or render-device generation.
+    const render::ModelAssetProvider* sharedProvider(
+            const std::string& residencyKey) const noexcept {
+        return visualHost_.sharedProvider(residencyKey);
+    }
+    size_t sharedProviderReferences(
+            const std::string& residencyKey) const noexcept {
+        return visualHost_.sharedProviderReferences(residencyKey);
+    }
+
     bool cancel(scene::SceneTicket ticket) {
         return adapter_.cancel(scenes_,ticket);
     }
