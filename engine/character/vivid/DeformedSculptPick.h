@@ -28,12 +28,16 @@ inline bool buildSculptSourceVertexMap(
         modelVertices,std::numeric_limits<std::uint32_t>::max());
     for(std::size_t i=0;i<sourceVertices;++i)
         mapped[i]=static_cast<std::uint32_t>(i);
+    std::vector<std::uint8_t> assigned(modelVertices,0);
     for(const auto& clone:clones) {
-        if(clone.source>=sourceVertices || clone.target<sourceVertices ||
-           clone.target>=modelVertices ||
-           mapped[clone.target]!=std::numeric_limits<std::uint32_t>::max())
+        // Seams on authored LOD vertices can also be split. Keep those
+        // clones non-authorable, but reject duplicate or invalid targets.
+        if(clone.source>=modelVertices || clone.target<sourceVertices ||
+           clone.target>=modelVertices || assigned[clone.target])
             return false;
-        mapped[clone.target]=clone.source;
+        assigned[clone.target]=1;
+        mapped[clone.target]=clone.source<sourceVertices
+            ?clone.source:std::numeric_limits<std::uint32_t>::max();
     }
     output=std::move(mapped);
     return true;
