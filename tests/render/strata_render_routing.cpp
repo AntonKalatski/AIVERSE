@@ -238,6 +238,26 @@ static void testMultiMaterialGpuPackets() {
         GpuIndexedPass::SunShadow,camera.viewProjection,1024,1024));
     assert(!draw.gpuShadowPrimitives[0].matchesView(
         GpuIndexedPass::PlanarReflection,sun.viewProjection,1024,1024));
+    // Spot-shadow and reflection use independent camera selections,
+    // NEVER the earlier sun/main array even when source geometry is equal.
+    auto spot=draw.gpuShadowPrimitives.front();
+    spot.pass=GpuIndexedPass::SpotShadow;
+    spot.viewProjection=mat4::scale({.7f,.6f,1.f});
+    spot.viewWidth=spot.viewHeight=512;
+    spot.commands={567};
+    assert(spot.matchesView(GpuIndexedPass::SpotShadow,
+        spot.viewProjection,512,512));
+    assert(!spot.matchesView(GpuIndexedPass::SunShadow,
+        sun.viewProjection,1024,1024));
+    auto mirror=draw.gpuIndexedPrimitives.front();
+    mirror.pass=GpuIndexedPass::PlanarReflection;
+    mirror.viewProjection=mat4::scale({-1.f,1.f,1.f});
+    mirror.commands={568};
+    assert(mirror.matchesView(GpuIndexedPass::PlanarReflection,
+        mirror.viewProjection,camera.width,camera.height));
+    assert(!mirror.matchesView(GpuIndexedPass::MainOpaque,
+        camera.viewProjection,camera.width,camera.height));
+    assert(spot.commands!=mirror.commands);
     assert(draw.gpuIndexedPrimitives[0].commands!=
            draw.gpuIndexedPrimitives[1].commands);
     ModelDraw anotherInstance=draw;
