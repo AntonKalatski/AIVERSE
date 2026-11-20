@@ -299,12 +299,17 @@ inline const char* compiledRetargetStatusName(
 
 struct CompiledModelPoseRetarget final {
     struct NodeStep {
+        struct MorphTransfer { int target=-1,source=-1; };
         int source=-1;
         render::float3 sourceBindT{},sourceBindS{1,1,1};
         render::quat inverseSourceBind{};
         render::float3 targetBindT{},targetBindS{1,1,1};
         render::quat targetBindR{};
         std::array<int,render::kMaxMorphTargets> morph{};
+        // Compiled sparse channel remap: no 0..kMaxMorphTargets scan per
+        // node, per actor, per draw for absent expressions.
+        std::array<MorphTransfer,render::kMaxMorphTargets> morphTransfers{};
+        size_t morphTransferCount=0;
     };
     const render::Model* sourceModel=nullptr; // identity only, never dereference until generation check
     const render::Model* visualModel=nullptr;
@@ -387,8 +392,13 @@ compileModelPoseRetarget(const render::Model& source,
         step.sourceBindS=src.s;
         const render::quat rotation=render::qnormalize(src.r);
         step.inverseSourceBind={-rotation.x,-rotation.y,-rotation.z,rotation.w};
-        if(!map.sourceMorphForVisual.empty())
+        if(!map.sourceMorphForVisual.empty()) {
             step.morph=map.sourceMorphForVisual[i];
+            for(size_t k=0;k<step.morph.size();++k)
+                if(step.morph[k]>=0)
+                    step.morphTransfers[step.morphTransferCount++]={
+                        int(k),step.morph[k]};
+        }
         ++compiled->mappedNodes;
     }
     return compiled;
@@ -572,9 +582,12 @@ inline bool retargetCompiledModelPose(
                      pose.r.x,pose.r.y,pose.r.z,pose.r.w,
                      pose.s.x,pose.s.y,pose.s.z})
             if(!std::isfinite(f))return false;
-        for(int from:step.morph)
-            if(from>=0 && (from>=render::kMaxMorphTargets ||
-                           !std::isfinite(pose.w[from])))return false;
+        for(size_t k=0;k<step.morphTransferCount;++k) {
+            const auto mapping=step.morphTransfers[k];
+            if(mapping.source<0 ||
+               mapping.source>=render::kMaxMorphTargets ||
+               !std::isfinite(pose.w[mapping.source]))return false;
+        }
     }
     // Assignment reuses the output's vector capacity from earlier draws.
     // Renderer3D consumes it before the next synchronous submitModel.
@@ -594,13 +607,9 @@ inline bool retargetCompiledModelPose(
             step.targetBindS.z*(pose.s.z/step.sourceBindS.z)};
         for(float f:{dst.t.x,dst.t.y,dst.t.z,dst.s.x,dst.s.y,dst.s.z})
             if(!std::isfinite(f))return false;
-        for(size_t k=0;k<step.morph.size();++k) {
-            const int from=step.morph[k];
-            if(from<0)continue;
-            if(from>=render::kMaxMorphTargets)return false;
-            const float value=pose.w[from];
-            if(!std::isfinite(value))return false;
-            dst.w[k]=value;
+        for(size_t k=0;k<step.morphTransferCount;++k) {
+            const auto mapping=step.morphTransfers[k];
+            dst.w[mapping.target]=pose.w[mapping.source];
         }
     }
     // worldMatrices resizes in place, preserving matrix capacity as well.
