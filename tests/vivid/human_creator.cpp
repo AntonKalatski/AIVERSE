@@ -3,6 +3,7 @@
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
+#include "engine/character/vivid/SculptGpuPickContract.h"
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
@@ -127,6 +128,104 @@ void test() {
         req(!pickSculptVertex(model,0,pose,
             {2,2,2},{0,0,-1},3).hit,
             "viewport sculpt accepted ray missing the triangle");
+    }
+    // 7AN: GPU colour-ID/depth callback contract. These tests require no
+    // graphics backend; real ID pass/rasterized visibility is a separate gate.
+    {
+        std::uint32_t ordinal=123u;
+        const auto first=packSculptTriangleId(0u);
+        req(first==std::array<std::uint8_t,4>{{1,0,0,0}} &&
+            unpackSculptTriangleId(first,ordinal) && ordinal==0u,
+            "GPU triangle ID packing broke first ordinal");
+        const auto largest=packSculptTriangleId(999999u);
+        req(unpackSculptTriangleId(largest,ordinal) && ordinal==999999u,
+            "GPU triangle ID packing broke upper bounded ordinal");
+        ordinal=456u;
+        req(!unpackSculptTriangleId({0,0,0,0},ordinal) && ordinal==456u &&
+            !unpackSculptTriangleId({255,255,255,255},ordinal) &&
+            !unpackSculptTriangleId(packSculptTriangleId(1000000u),ordinal),
+            "GPU triangle ID clear/overflow must fail without writing ordinal");
+        SculptGpuPickProtocol protocol;
+        const auto older=protocol.begin(7u,20u,0u,800u,600u,200u,300u);
+        const auto newer=protocol.begin(7u,21u,0u,800u,600u,200u,300u);
+        req(older.valid() && newer.valid() &&
+            older.generation!=newer.generation &&
+            protocol.pending(),"GPU pick protocol did not replace older click");
+        const SculptGpuPickPixel pixel{packSculptTriangleId(0u),0.45f,true};
+        req(!protocol.consume(older,pixel,7u,22u,800u,600u,ordinal) &&
+            protocol.pending(),
+            "stale GPU pixel callback stole a newer sculpt selection");
+        req(!protocol.consume(newer,pixel,8u,22u,800u,600u,ordinal) &&
+            !protocol.consume(newer,pixel,7u,20u,800u,600u,ordinal) &&
+            !protocol.consume(newer,pixel,7u,22u,801u,600u,ordinal) &&
+            protocol.pending(),
+            "GPU pick accepted wrong actor revision, frame or viewport size");
+        SculptGpuPickPixel badDepth=pixel;
+        badDepth.depth01=std::numeric_limits<float>::quiet_NaN();
+        req(!protocol.consume(newer,badDepth,7u,22u,800u,600u,ordinal) &&
+            protocol.pending(),
+            "invalid GPU depth was incorrectly accepted");
+        req(protocol.consume(newer,pixel,7u,22u,800u,600u,ordinal) &&
+            ordinal==0u && !protocol.pending(),
+            "valid GPU ID/depth callback was not resolved");
+        const auto obsolete=protocol.begin(7u,23u,0u,800u,600u,200u,300u);
+        protocol.cancel(); // caller has published a different character
+        req(!protocol.consume(obsolete,pixel,7u,25u,800u,600u,ordinal) &&
+            !protocol.pending(),
+            "old GPU pixel was accepted after character publication");
+        req(!protocol.begin(7u,26u,0u,800u,600u,801u,300u).valid() &&
+            !protocol.pending(),
+            "off-viewport GPU picking request should be rejected");
+    }
+    {
+        // GPU supplies one mesh-local triangle ID. CPU resolves only that
+        // triangle, with morphed+skinned positions and a seam-clone source map.
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(4);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.vertices[3]=model.vertices[0];
+        model.indices={3,1,2};
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;primitive.indexCount=3;
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(std::move(mesh));
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        const std::array<mat4,1> pose{{mat4::translate({0,0,2})}};
+        MorphTargetInput morph;
+        morph.name="lift";
+        MorphDelta delta;
+        delta.vertex=3;delta.position={0.4f,0,0};
+        morph.deltas={delta};
+        const auto library=SparseMorphLibrary::compile(4,{morph});
+        std::array<float,1> weights{{1.f}};
+        std::vector<float3> morphed;
+        req(prepareSculptMorphPositions(model,library,weights,morphed),
+            "GPU pick CPU corroboration morph pose unavailable");
+        SkinnedWeightSurface surface;
+        req(prepareSkinnedWeightSurface(model,0,pose,surface,morphed),
+            "GPU pick CPU corroboration world pose unavailable");
+        const std::array<std::uint32_t,4> map{{0,1,2,0}};
+        const auto picked=resolveSculptGpuTriangle(
+            model,surface,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map);
+        req(picked.hit && picked.vertex==0u &&
+            std::fabs(picked.worldPosition.x-0.4f)<1.e-5f &&
+            std::fabs(picked.worldPosition.z-2.f)<1.e-5f,
+            "GPU triangle ID did not resolve to seam-clone author vertex");
+        req(!resolveSculptGpuTriangle(
+            model,surface,2u,{0.42f,0.05f,4.f},{0,0,-1},3,map).hit &&
+            !resolveSculptGpuTriangle(
+                model,surface,0u,{2,2,4},{0,0,-1},3,map).hit,
+            "GPU triangle ID accepted nonexistent or ray-incompatible hit");
+        auto uneditable=map;
+        uneditable[3]=std::numeric_limits<std::uint32_t>::max();
+        req(!resolveSculptGpuTriangle(
+            model,surface,0u,{0.42f,0.05f,4.f},{0,0,-1},3,uneditable).hit,
+            "GPU ID lookup returned a generated LOD vertex as authorable");
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
