@@ -1793,7 +1793,7 @@ if(AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS)
     endforeach()
 endif()
 if(TARGET aiverse_editor_core) # lighting agent: light_* / lighting_set operations
-    target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightOps.cpp apps/editor/core/PhysisOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PlanetOps.cpp apps/editor/core/PlanetDetailOps.cpp)   # planet-render agent: planet sculpt / paint
 endif()
 if(TARGET aiverse_tests) # lighting agent: GPU-free lighting logic under test
@@ -2791,6 +2791,10 @@ if(AIVERSE_BUILD_STRATA)
     target_link_libraries(aiverse_strata_render_routing PUBLIC
         aiverse_strata_gpu_scene aiverse_strata_view)
     target_include_directories(aiverse_strata_render_routing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    if(TARGET aiverse_editor_core)
+        target_link_libraries(aiverse_editor_core PUBLIC aiverse_strata_model_adapter)
+        target_compile_definitions(aiverse_editor_core PRIVATE AIVERSE_STRATA_EDITOR_ENABLED=1)
+    endif()
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC
@@ -3831,6 +3835,12 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_authoring_test PRIVATE aiverse_editor_core)
         add_test(NAME physis_authoring COMMAND aiverse_physis_authoring_test)
         set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+        if(TARGET aiversemcp AND Python3_Interpreter_FOUND)
+            add_test(NAME physis_mcp COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physis_mcp_smoke.py
+                $<TARGET_FILE:aiversemcp> ${CMAKE_CURRENT_SOURCE_DIR})
+            set_tests_properties(physis_mcp PROPERTIES LABELS "PHYSIS;EDITOR;MCP" TIMEOUT 30)
+        endif()
     endif()
 endif()
 
@@ -4003,4 +4013,10 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiversemcp AND Python3_EXECUTABLE)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/lens_mcp_test.py
         $<TARGET_FILE:aiversemcp> ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(lens_mcp_stdio PROPERTIES TIMEOUT 60)
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core AND AIVERSE_BUILD_STRATA)
+    add_executable(aiverse_strata_editor_test tests/strata_editor_test.cpp)
+    target_link_libraries(aiverse_strata_editor_test PRIVATE aiverse_editor_core)
+    add_test(NAME strata_editor COMMAND aiverse_strata_editor_test)
 endif()

@@ -4705,3 +4705,19 @@ stage replacement without deleting last-good data on failure. They save immediat
 without undo: Reload the LENS window before further UI edits; restart the client.
 Do not equate loader validation/clientCompatible with GPU capture acceptance.
 Keep lens_ops regression tests and the separate LENS stage handoff.
+
+## STRATA engine skill and MCP authoring (2026-11-20)
+
+Use `skills/visuals/aiverse-strata/SKILL.md` for STRATA asset authoring,
+MCP analysis and native verification. It is registered in the engine skill
+catalog. The shared editor/MCP operations `strata_capabilities` and
+`strata_model_analyze` provide read-only compiled-support and CPU import results;
+they never enable GPU parity gates or certify measured rendering performance.
+See `docs/strata.md` and the Stage 23 tools handoff for limits and verification.
+## PHYSIS agent map authoring
+
+Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,
+`physis_validate`, `physis_set` in the shared editor/MCP Workspace. These
+are revision-checked document edits with Undo/Redo, never live ECS writes.
+For physical sky and local fog/reveal use the atmosphere reference linked
+from `skills/visuals/aiverse-prisma/SKILL.md`; rendering remains PRISMA-owned.

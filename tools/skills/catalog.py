@@ -128,6 +128,7 @@ WORKFLOWS=[
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
  ('aiverse-terraweave','Procedural world terrain, biomes, Arbor/Flora, Horizon HLOD, authored seams and native C++ scene integration','docs/terrain/TERRAWEAVE.md'),
  ('aiverse-water','Spline straits, rivers and open sea with shore types, bridges and the water window','docs/water.md'),
+ ('aiverse-physis-authoring','PHYSIS map configuration through revision-checked MCP operations and Undo/Redo','apps/editor/core/PhysisOps.cpp'),
  ('aiverse-physis','Genre-neutral nature, climate, wind, gravity, storms, ECS and Box3D adapter with editor diagnostics','docs/physis.md'),
  ('aiverse-city-blocks','City block paving, curb elevations, planting beds and street furniture','skills/world/aiverse-city-blocks/SKILL.md'),
  ('aiverse-city-planner','Procedural city maps with the city / metropolis generator preset','docs/city-planner.md'),
@@ -143,6 +144,7 @@ WORKFLOWS=[
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
  ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
+ ('aiverse-strata','STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification','docs/strata.md'),
  ('aiverse-texture-rhi','Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance','docs/texture-rhi.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
@@ -155,6 +157,9 @@ WORKFLOWS=[
 WORKFLOW_ALIASES={
  'aiverse-lens':'lens camera cameras capture offscreen minimap камер захват линз',
  'aiverse-lens-native':'lens native camera replay snapshot gpu capture натив камер захват',
+
+ 'aiverse-strata':'strata страта virtual geometry meshlet streaming lod batching батчинг геометрия',
+ 'aiverse-physis-authoring':'physis authoring mcp map config validate weather wind gravity настройка погода карта',
  'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
