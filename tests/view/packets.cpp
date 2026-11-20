@@ -51,7 +51,7 @@ int main() {
     AIVERSE_TEST_CHECK(first.visible==1);
     AIVERSE_TEST_CHECK(first.drawable==0);
     AIVERSE_TEST_CHECK(first.animated==0);
-    AIVERSE_TEST_CHECK(scene.presentationEntity(42)==kNullEntity);
+    AIVERSE_TEST_CHECK(scene.presentationEntity(42)==aiverse::kNullEntity);
     const auto second=scene.update(batch,1.f/60.f);
     AIVERSE_TEST_CHECK(second.visible==first.visible);
     AIVERSE_TEST_CHECK(second.animated==first.animated);
@@ -76,6 +76,6 @@ int main() {
     // Without an attached graph, View does not create a second player.
     const auto staged=scene.update(precomputed,1.f/60.f);
     AIVERSE_TEST_CHECK(staged.animated==0);
-    AIVERSE_TEST_CHECK(scene.presentationEntity(5)==kNullEntity);
-    AIVERSE_TEST_CHECK(scene.presentationEntity(9)==kNullEntity);
+    AIVERSE_TEST_CHECK(scene.presentationEntity(5)==aiverse::kNullEntity);
+    AIVERSE_TEST_CHECK(scene.presentationEntity(9)==aiverse::kNullEntity);
 }
