@@ -176,8 +176,7 @@ public:
             return false;
         // Reject source reimports that reuse the same Model pointer and
         // reorder bones/mesh assignments or rename/reorder morph channels.
-        const auto now=view::importedModelMorphChannelNames(model);
-        if(now!=names_)return false;
+        static const std::vector<std::string> noMorphs;
         for(std::size_t i=0;i<model.nodes.size();++i) {
             const auto& bone=model.nodes[i];
             if(bone.name!=nodeNames_[i] ||
@@ -203,6 +202,9 @@ public:
                     count=std::max(count,prim.morphTargets);
             }
             if(count!=channelCounts_[i])return false;
+            const auto& morphNames=bone.mesh<0
+                ?noMorphs:model.meshes[std::size_t(bone.mesh)].morphTargetNames;
+            if(morphNames!=names_[i])return false;
         }
         return true;
     }
@@ -224,6 +226,17 @@ public:
                 throw std::invalid_argument("invalid facial dt or weight");
             if(state.initialized && state.smoothed.size()!=bindings_.size())
                 throw std::invalid_argument("stale facial instance state");
+            for(const auto& [name,value]:parameters.values) {
+                (void)name;
+                if(!std::isfinite(value))
+                    throw std::invalid_argument("nonfinite facial/IK float parameter");
+            }
+            for(const auto& [name,value]:parameters.vectors) {
+                (void)name;
+                if(!std::isfinite(value.x) || !std::isfinite(value.y) ||
+                   !std::isfinite(value.z))
+                    throw std::invalid_argument("nonfinite facial/IK vector parameter");
+            }
             render::Pose candidate=pose;
             FacialControlState next=state;
             if(!next.initialized) {
