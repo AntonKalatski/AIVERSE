@@ -192,3 +192,15 @@ Facial texture libraries and authored wrinkle/mole masks are not bundled.
 Body shaping is a Y-up post-animation field over skin joints, including separate
 clothing rigs. It does not alter source skeletons, gameplay, physics or DNA. It
 requires a full skinned character; extreme shapes need garment collision checks.
+
+
+### Eyelash coverage correction — 2026-11-20
+
+A coverage PNG may contain white RGB and the actual mask in alpha. The baker
+now infers A for that unambiguous eyelash layout when alpha_channel is omitted;
+explicit channel metadata still wins, hair retains its R default. The Ada source
+Eyelashes_L_SlightCurl_Coverage.png has all-white RGB and 935962 transparent alpha
+texels, which the former R default converted to an opaque rectangle. Regression
+fixtures cover both red-mask and white-RGB/alpha-mask exports. Existing packages
+must be rebaked or their affected texture replaced; changing code alone cannot
+repair already baked pixels.

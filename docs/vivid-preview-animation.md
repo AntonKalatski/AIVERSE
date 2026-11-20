@@ -8,7 +8,7 @@ These settings are native session state, not project asset edits or export data.
 `HumanPreviewAnimation.h` builds eight six-second clips (four poses × face on/off)
 on the unpublished preview model. Existing source clips remain intact. One
 existing Studio Animator samples the selected generated clip. Changing a pose
-crossfades over0.25s; while paused it switches immediately. Manual FacialControlRig
+crossfades over0.65s; while paused it switches immediately. Manual FacialControlRig
 is applied afterward, retaining precedence. No second scheduler or authoritative
 ECS state is introduced. Creator uses its existing MotionWeave AnimationGraph.
 
@@ -47,3 +47,27 @@ Visual checkpoint: default relaxed/A-pose and open/closed portrait were rendered
 on Ada. T-pose exposes shoulder/skin poke-through in its shirt; this requires
 asset body masks or corrective deformation and is NOT clean wardrobe acceptance.
 Known source eyelash alpha loss and hair-card artifacts remain visible.
+
+
+## Motion review continuation — 2026-11-20
+
+Preview now includes three-spine-joint breathing, gentle resting arm motion,
+conjugate named gaze channels and smooth blinks with faster closure than opening.
+Root and legs remain in bind, so this is stationary upper-body idle, not weight
+transfer, locomotion, foot IK or a replacement for authored MetaHuman animations.
+All four existing poses remain available. Pose changes preserve the six-second
+face/breath phase through `Animator::Play::startTime` (new default-zero optional
+field). Calling `seek` after `play` would discard the fade; the regression test
+caught that and the final implementation does not call it.
+
+Creator diagnostic `--preview-sequence N` (1–720) requires `--smoke` and
+`--preview-pose`, forbids `--preview-time`. AIVERSE_VIVID_CREATOR_CAPTURE must point
+to an output directory. It writes numbered PPMs at a deterministic 24fps sample
+step, advancing once per completed readback. Full body cycles relaxed/A/T/portrait/
+relaxed every three seconds; --portrait holds portrait for continuous facial idle.
+It uses the same Animator helper as Studio on a diagnostic pose copy; MotionWeave
+is paused during this offline sequence. It does not prove real-time frame pacing,
+UI button operation or complete cloth/hair simulation. Native renderer/materials
+are unchanged. Legacy single-shot smoke capture remains available.
+
+See docs/qa/vivid-motion-review-2026-11-20.md for actual videos and remaining defects.

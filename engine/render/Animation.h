@@ -46,6 +46,7 @@ public:
         float speed = 1;
         float fade = 0.2f;      // cross-fade seconds
         bool restart = false;   // restart even if this clip is already playing
+        float startTime = 0;    // initial clip seconds; preserves the outgoing fade track
     };
     void setModel(const Model* m);
     const Model* model() const { return model_; }

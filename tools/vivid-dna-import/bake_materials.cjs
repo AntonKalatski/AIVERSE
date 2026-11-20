@@ -91,7 +91,15 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
    const source=spec.kind==='hair'?await read(t.alpha_r||t.alpha):await read(t.alpha||t.basecolor);
    if(!source)throw Error('Coverage texture missing: '+material.getName());
    w=source.width;h=source.height;output=Buffer.alloc(w*h*4);
-   const channel={r:0,g:1,b:2,a:3}[p.alpha_channel||'r'];
+   // Some exported coverage PNGs carry white RGB and the actual mask in A.
+   // Respect explicit metadata; infer A only for that unambiguous layout.
+   let whiteRGB=true,hasAlpha=false;
+   for(let k=0;k<source.data.length;k+=4){
+    whiteRGB&&=source.data[k]===255&&source.data[k+1]===255&&source.data[k+2]===255;
+    hasAlpha||=source.data[k+3]!==255;
+   }
+   const inferred=spec.kind!=='hair'&&whiteRGB&&hasAlpha?'a':'r';
+   const channel={r:0,g:1,b:2,a:3}[p.alpha_channel||inferred];
    if(channel===undefined)throw Error('Unknown coverage channel');
    for(let k=0;k<output.length;k+=4) {
     output[k]=output[k+1]=output[k+2]=255;

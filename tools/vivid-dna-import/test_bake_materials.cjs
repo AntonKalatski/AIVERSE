@@ -42,5 +42,9 @@ const {bakeMaterials,linear,srgb}=require('./bake_materials.cjs');
  // Path validation tested with a real material rather than relying on decoder errors.
  const unsafe=new Document();unsafe.createMaterial('hair');
  await assert.rejects(()=>bakeMaterials(unsafe,{materials:[{material_name:'hair',kind:'hair',textures:{alpha_r:'../outside.png'},params:{}}]},dir,sharp),/Unsafe texture path/);
+ const alphaDoc=new Document();const alphaLash=alphaDoc.createMaterial('eyelashes');
+ await sharp(Buffer.from([255,255,255,0,255,255,255,128]),{raw:{width:2,height:1,channels:4}}).png().toFile(path.join(dir,'alpha-coverage.png'));
+ await bakeMaterials(alphaDoc,{materials:[{material_name:'eyelashes',kind:'face_accessory',textures:{alpha:'alpha-coverage.png'},params:{base_color:[.05,.04,.03,1],roughness:.7}}]},dir,sharp);
+ assert.deepEqual([...await sharp(alphaLash.getBaseColorTexture().getImage()).raw().toBuffer()],[255,255,255,0,255,255,255,128]);
  console.log('PASS: fractional red coverage, blended lashes, shared masked hair core, cloth linear-sRGB colours, unsafe path rejection');
 })().catch(e=>{console.error(e);process.exitCode=1;});

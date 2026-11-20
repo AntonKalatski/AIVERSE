@@ -224,7 +224,7 @@ bool StudioFacialGpuPreview::submit(
     const float frameDt=std::clamp(dt,0.f,0.1f);
     const auto& animation=binding.previewAnimation;
     const int requestedClip=previewClipBase_+animation.poseIndex()*2+(animation.faceIdle?1:0);
-    if(activePreviewClip_!=requestedClip){render::Animator::Play play;play.restart=true;play.fade=activePreviewClip_<0||!animation.playing?0.f:.25f;animator_.play(0,requestedClip,play);activePreviewClip_=requestedClip;}
+    if(activePreviewClip_!=requestedClip){vivid::playHumanPreview(animator_,requestedClip,animation.playing);activePreviewClip_=requestedClip;}
     animator_.setSpeed(0,animation.speed);
     animator_.update(animation.playing?frameDt:0.f);
     animator_.evaluate(pose_); // one parent writer, bind/clip pose once

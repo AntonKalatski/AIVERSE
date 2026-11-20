@@ -6,6 +6,16 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Preview motion continuation — 2026-11-20
+
+Stationary preview idle includes upper-body breathing, resting arm movement,
+conjugate morph gaze and smooth blink envelopes. Four poses crossfade over 0.65s
+without resetting facial phase. Native offline video capture now exercises the
+shared Animator transition path. Eyelash white-RGB/alpha-mask conversion is fixed.
+[Motion QA](qa/vivid-motion-review-2026-11-20.md) records the actual two videos:
+T-pose shirt intersections, coarse hair silhouette and gray eye artifacts remain.
+This is not MetaHuman Creator quality parity or a complete clothing solver.
+
 ## Imported appearance controls — 2026-11-20
 
 `HumanAppearance.h` defines a separate version-1 recipe with 72 bounded controls,

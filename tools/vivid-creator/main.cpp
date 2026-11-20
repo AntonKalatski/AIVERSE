@@ -97,6 +97,9 @@ struct CreatorApp {
     bool portraitCapture=false;
     bool previewMotion=false;int previewPose=0;float previewTime=-1;
     motionweave::AnimationPoseComponent previewCapturePose;
+    int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
+    render::Animator sequenceAnimator; // offline diagnostic only; no runtime clock
+
     bool studioLightingEnabled=false;
     vivid::HumanStudioLighting studioLighting;
     float3 studioFoot{};float studioHeight=3.8f;
@@ -630,6 +633,7 @@ struct CreatorApp {
             idle.channels.push_back(std::move(headMove));
             if(previewMotion){idle=humanPreviewClip(*proposed.head,previewPose,true);idle.name="vivid_idle";}
             proposed.head->clips.push_back(std::move(idle));
+            if(sequenceFrames)sequenceBase=appendHumanPreviewClips(*proposed.head);
             proposed.head->uploadPrepared=true;
             auto newGraph=AnimationGraph::compile(*proposed.head,Json::parse(
                 R"({"nodes":[{"id":"idle","kind":"clip","clip":"vivid_idle"}],"output":"idle"})"));
@@ -1785,10 +1789,27 @@ struct CreatorApp {
             return;
         }
         const float step=std::clamp(float(dt),0.0f,0.04f);
-        motionweave::MotionWeave::update(*world,animate?step:0.0f);
+        motionweave::MotionWeave::update(*world,animate&&!sequenceFrames?step:0.0f);
         const auto& sourcePose=world->get<motionweave::AnimationPoseComponent>(entity);
         const auto* poseSource=&sourcePose;
-        if(previewMotion&&previewTime>=0){previewCapturePose=sourcePose;bindPose(*human.head,previewCapturePose.local);sampleClip(human.head->clips.back(),previewTime,previewCapturePose.local);worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);poseSource=&previewCapturePose;}
+        if(previewMotion&&previewTime>=0&&!sequenceFrames){previewCapturePose=sourcePose;bindPose(*human.head,previewCapturePose.local);sampleClip(human.head->clips.back(),previewTime,previewCapturePose.local);worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);poseSource=&previewCapturePose;}
+        if(sequenceFrames){
+            if(sequenceSampled!=sequenceFrame){
+                if(sequenceSampled<0)sequenceAnimator.setModel(human.head.get());
+                // 3s relaxed, A, T, portrait, then relaxed. Face close-up stays
+                // portrait to show uninterrupted blink/gaze and loop continuity.
+                const int poses[]={0,1,2,3,0};
+                const int index=portraitCapture?3:poses[std::min(sequenceFrame/72,4)];
+                const int clip=sequenceBase+index*2+1;
+                if(sequenceAnimator.clip(0)!=clip)playHumanPreview(sequenceAnimator,clip,true);
+                if(sequenceSampled>=0)sequenceAnimator.update(1.f/24);
+                previewCapturePose=sourcePose;
+                sequenceAnimator.evaluate(previewCapturePose.local);
+                worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);
+                sequenceSampled=sequenceFrame;
+            }
+            poseSource=&previewCapturePose;
+        }
         const auto& pose=*poseSource;
         if(!pose.valid || pose.matrices.size()!=human.head->nodes.size()) {
             status="MotionWeave pose temporarily unavailable";
@@ -2249,15 +2270,20 @@ struct CreatorApp {
                         platform::requestQuit();
                         return;
                     }
-                    std::ofstream out(smokePath,std::ios::binary);
+                    char frameName[32];std::snprintf(frameName,sizeof(frameName),"frame-%04d.ppm",sequenceFrame);
+                    const auto outputPath=sequenceFrames?(std::filesystem::path(smokePath)/frameName).string():smokePath;
+                    std::ofstream out(outputPath,std::ios::binary);
                     out<<"P6\n"<<w<<" "<<h<<"\n255\n";
                     for(std::size_t i=0;i<pixels.size();i+=4)
                         out.write(reinterpret_cast<const char*>(pixels.data()+i),3);
+                    out.flush();
                     smokeCompleted=bool(out);
                     std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s headCommands=%zu actor=%s shadow=%u colour=%u pass=%d\n",
-                        smokePath.c_str(),headCommands,previewMotion?"MODEL_MORPH":actor?"GPU":"CPU",
+                        outputPath.c_str(),headCommands,previewMotion?"MODEL_MORPH":actor?"GPU":"CPU",
                         unsigned(shadowDraws),unsigned(colourDraws),int(smokeCompleted));
-                    platform::requestQuit();
+                    if(sequenceFrames&&smokeCompleted&&++sequenceFrame<sequenceFrames){
+                        smokeCompleted=false;smokeCaptureRequested=false;smokeFrames=0;
+                    }else platform::requestQuit();
                 });
             }
             if(++smokeFrames>300 && !smokeCompleted)
@@ -2313,6 +2339,8 @@ int aiverseMain(int argc,char** argv) {
             application->studioLighting.preset=argv[++i];(void)application->studioLighting.rig();application->studioLightingEnabled=true;
         }else if(std::strcmp(argv[i],"--preview-pose")==0 && i+1<argc) {
             HumanPreviewAnimation settings;settings.pose=argv[++i];try{application->previewPose=settings.poseIndex();application->previewMotion=true;}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 2;}
+        }else if(std::strcmp(argv[i],"--preview-sequence")==0 && i+1<argc) {
+            try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
             try{application->previewTime=std::stof(argv[++i]);if(!std::isfinite(application->previewTime)||application->previewTime<0||application->previewTime>6)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--portrait")==0) {
@@ -2368,6 +2396,12 @@ int aiverseMain(int argc,char** argv) {
             std::fprintf(stderr,"VIVID Creator: unsupported argument %s\n",argv[i]);
             return 2;
         }
+    }
+    if(application->sequenceFrames){
+        if(!application->smoke||!application->previewMotion||application->previewTime>=0){
+            std::fprintf(stderr,"preview-sequence requires --smoke --preview-pose and no --preview-time\n");return 2;
+        }
+        std::filesystem::create_directories(application->smokePath);
     }
     // Optical A/B captures use one fixed neutral human, camera and light.
     // They cannot be combined with a preset or external mesh, since either
