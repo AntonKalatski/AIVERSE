@@ -12626,7 +12626,10 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     render::Renderer3D renderer;CHECK(renderer.init(dev));
     game::RtsView view;game::Rules rules=skirmishRules();
     CHECK(view.init(dev,rules,[](const std::string&,std::string&){return false;}));
+    view.overlays().init(rules,Json::parse(R"([{"id":"fault-ring","anchor":"selected","shape":{"type":"ring","radius":1}}])"),Json(),"");
     game::MapGrid grid;grid.init(4,4);
+    grid.corner.assign(25,0);
+    std::vector<uint8_t> initialVisibility(16,2);
     for(auto& f:grid.flags)f=game::kCellGround;
     view.buildTerrain(dev,grid);
     render::RTSCamera camera;camera.target={2,0,2};camera.distance=18;camera.pitch=1;
@@ -12634,7 +12637,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     view.setCameraPreparedCapture(&snapshot);
     game::RtsScene scene;
     renderer.beginScene(camera,320,240);
-    view.draw(renderer,scene,1,nullptr,grid);
+    view.draw(renderer,scene,1,&initialVisibility,grid);
     const auto first=view.publishedVisualFrame();CHECK(first.ready());
     renderer.render(gfx::PassDesc{});
     game::SceneObject object;object.entity={1,1};object.pos={2,0,2};
@@ -12644,7 +12647,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     dev.failOverlays=true;bool failed=false;
     {
         render::CameraModelSnapshot::CaptureGuard capture(snapshot,renderer);
-        try {view.draw(renderer,scene,1.1,nullptr,grid);}
+        try {view.draw(renderer,scene,1.1,&initialVisibility,grid);}
         catch(const std::runtime_error&){failed=true;}
     }
     CHECK(failed);
@@ -12652,7 +12655,7 @@ TEST(lens_late_overlay_failure_rolls_back_animation_frame_and_clears_packets) {
     CHECK(snapshot.size()==0 && snapshot.geometryCount()==0 && snapshot.preparedCount()==0);
     dev.failOverlays=false;
     renderer.beginScene(camera,320,240);
-    view.draw(renderer,scene,1.1,nullptr,grid);
+    view.draw(renderer,scene,1.1,&initialVisibility,grid);
     CHECK(view.publishedVisualFrame().ready());
     CHECK(view.publishedVisualFrame().sourceFrame==first.sourceFrame+1);
     renderer.render(gfx::PassDesc{});

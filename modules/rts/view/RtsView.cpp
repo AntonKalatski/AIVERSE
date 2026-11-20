@@ -1017,6 +1017,8 @@ public:
          reload(view.reloadPlayback_),choices(view.streamingChoices_),tracers(view.tracers_),
          events(view.events_),effects(view.effects_),bars(view.bars_),
          shadows(view.shadowDraws_),ground(view.groundMerged_),lights(view.lights_),
+         obstacles(view.animationObstacles_),surfaces(view.animationSurfaceFrames_),
+         rendererHeight(renderer.heightField()),
          rendererLights(renderer.lights.capturePrepared()),lighting(renderer.lighting),
          lastTime(view.lastTime_),lastTick(view.lastTick_),frame(view.frame_),
          viewProj(view.viewProj_),camPos(view.camPos_),fx(view.fx_) {
@@ -1035,7 +1037,7 @@ public:
         r.discardSceneSubmission();
         if(v.cameraPreparedCapture_)v.cameraPreparedCapture_->clear();
         swapOwners();
-        r.lights.swapPrepared(rendererLights);r.lighting=lighting;
+        r.lights.swapPrepared(rendererLights);r.lighting=lighting;r.setHeightField(rendererHeight);
         v.lastTime_=lastTime;v.lastTick_=lastTick;v.frame_=frame;
         v.viewProj_=viewProj;v.camPos_=camPos;v.fx_=fx;
     }
@@ -1050,6 +1052,7 @@ private:
         v.reloadPlayback_.swap(reload);v.streamingChoices_.swap(choices);
         v.tracers_.swap(tracers);v.events_.swap(events);v.effects_.swap(effects);
         v.bars_.swap(bars);v.shadowDraws_.swap(shadows);v.groundMerged_.swap(ground);
+        v.animationObstacles_.swap(obstacles);v.animationSurfaceFrames_.swap(surfaces);
         using std::swap;swap(v.lights_,lights);
     }
     RtsView& v;Renderer3D& r;bool committed=false;
@@ -1063,6 +1066,9 @@ private:
     decltype(RtsView::bars_) bars;
     decltype(RtsView::shadowDraws_) shadows,ground;
     RtsLights lights;
+    decltype(RtsView::animationObstacles_) obstacles;
+    decltype(RtsView::animationSurfaceFrames_) surfaces;
+    render::HeightField rendererHeight;
     std::shared_ptr<RtsOverlays::PreparedFrame> overlays;
     std::shared_ptr<Rts2DView::PreparedFrame> sprites;
     render::LightSystem::PreparedFrame rendererLights;
