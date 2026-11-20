@@ -2181,6 +2181,9 @@ void Renderer3D::prepareStrataAuxiliaryGpuPackets(
         destination.viewProjection=projection;
         destination.viewWidth=width;
         destination.viewHeight=height;
+        if(pass==GpuIndexedPass::SpotShadow)
+            ++modelStats_.strataGpuSpotShadowPrepared;
+        else ++modelStats_.strataGpuReflectionPrepared;
     }
 #else
     (void)pass;(void)projection;(void)width;(void)height;
