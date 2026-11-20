@@ -30,3 +30,15 @@ Next: finish prior core run (source 6a5d3bf6d, report 20261120-151300-62204),
 rebuild aiverse_tests, run lens_preparation_budget/lens_topology filters; inspect
 all failures before claiming readiness. See validation handoff for existing
 380 LENS checks PASS and remaining full-suite gates.
+
+## Review correction
+
+Commit `fcf72fafd934b226c3878684000d61a001baf263`: Terrain visibility is R8, so the allocator must admit
+R8 with one byte/pixel as well as RGBA8 with four. The initial source gate
+would have rejected valid map preparations (caught by review before tests).
+Added RtsView setTerrainTopologyPreparationBudgetBytes and usage accessor so
+hosts can tune the limit without accessing the private renderer. No save change.
+Previous aiverse_game_view native build PASS; this correction and budget tests
+NOT RUN yet. git diff --check PASS. All build outputs on KINGSTON.
+Next: rebuild aiverse_tests and exercise both smooth/coarse topology tests
+after the earlier full core binary has completed. CI NOT RUN.
