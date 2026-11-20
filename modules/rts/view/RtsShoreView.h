@@ -32,6 +32,14 @@ public:
     void invalidateGround() { dirty_ = true; }
     // heightAt in world units; waterY: the water surface (world units); w, h: the map size in cells
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt, float waterY, int w, int h);
+    struct PreparedRebuild;
+    bool needsVisualPreparation(float waterY,int w,int h) const noexcept {
+        return dirty_ || waterY!=builtWaterY_ || w!=builtW_ || h!=builtH_;
+    }
+    std::unique_ptr<PreparedRebuild> prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        float waterY,int w,int h);
+    void commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept;
     bool active() const { return !net_.empty(); }
     const water::ShoreTypes& types() const { return types_; }
     const water::Network& network() const { return net_; }
