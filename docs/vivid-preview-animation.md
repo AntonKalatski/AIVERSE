@@ -71,3 +71,15 @@ UI button operation or complete cloth/hair simulation. Native renderer/materials
 are unchanged. Legacy single-shot smoke capture remains available.
 
 See docs/qa/vivid-motion-review-2026-11-20.md for actual videos and remaining defects.
+
+## Modular head shoulder correction — 2026-11-20
+
+Ada's head includes shoulder geometry and upperarm joints but no lowerarm joints.
+The old pose builder skipped those chains, leaving exposed rest-pose shoulders
+while shirt/body arms moved. The generator now transfers the arm direction from
+complete same-semantic chains only when full bind-world frames agree within
+relative1e-3 and all eligible directions agree. Unrelated/distant rigs stay skipped.
+Real Ada frame differences are ~5.7e-6 left and8.0e-5 right. No visibility masks or
+geometry deletion were used. Native T-pose shoulder-sync/t-pose.png removes large
+exposed patches; minor collar-edge intersections remain. CPU fixture covers a
+coincident truncated joint and a distant same-name joint that must stay unchanged.

@@ -42,11 +42,33 @@ inline render::AnimClip humanPreviewClip(const render::Model& model,int poseInde
  using namespace render;if(poseIndex<0||poseIndex>=4)throw std::invalid_argument("Invalid pose index");
  AnimClip clip;clip.name="__vivid_preview_"+std::to_string(poseIndex)+(faceIdle?"_face":"_body");clip.duration=6;
  std::vector<std::string> names;for(const auto& n:model.nodes)names.push_back(humanBoneSemantic(n.name));
+ // A modular head may retain shoulder joints but omit the lower arms. Resolve
+ // directions from complete chains first, then share only between coincident
+ // same-semantic bind frames. Never guess from a differently placed character.
+ std::vector<float3> armDirections(model.nodes.size());std::vector<bool> complete(model.nodes.size());
+ for(size_t i=0;i<names.size();++i)if(names[i]=="upperarm_l"||names[i]=="upperarm_r"){
+  const auto target=names[i]=="upperarm_l"?"lowerarm_l":"lowerarm_r";
+  for(size_t k=0;k<names.size();++k)if(names[k]==target){bool descendant=false;for(int parent=model.nodes[k].parent;parent>=0;parent=model.nodes[size_t(parent)].parent)if(parent==int(i)){descendant=true;break;}
+   if(descendant){const auto d=model.bindWorld[k].transformPoint({})-model.bindWorld[i].transformPoint({});if(length(d)>1e-6f){armDirections[i]=normalize(d);complete[i]=true;}break;}
+  }
+ }
+ const auto originalDirections=armDirections;
+ for(size_t i=0;i<names.size();++i)if(!complete[i]&&(names[i]=="upperarm_l"||names[i]=="upperarm_r")){
+  bool found=false,ambiguous=false;float3 direction;
+  for(size_t j=0;j<names.size();++j)if(complete[j]&&names[i]==names[j]){
+   bool same=true;for(int k=0;k<16;++k)if(std::abs(model.bindWorld[i].m[k]-model.bindWorld[j].m[k])>1e-3f*(1+std::abs(model.bindWorld[j].m[k])))same=false;
+   if(!same)continue;
+   if(found&&dot(direction,originalDirections[j])<.999f)ambiguous=true;
+   direction=originalDirections[j];found=true;
+  }
+  if(found&&!ambiguous)armDirections[i]=direction;
+ }
  for(size_t i=0;i<model.nodes.size();++i){const auto& node=model.nodes[i];const auto& name=names[i];
   bool arm=name=="upperarm_l"||name=="upperarm_r",neck=name=="neck_01",spine=name=="spine_01"||name=="spine_02"||name=="spine_03";quat armDelta;
-  if(arm){int end=-1;const auto targetName=name=="upperarm_l"?"lowerarm_l":"lowerarm_r";for(size_t k=0;k<names.size();++k)if(names[k]==targetName){for(int parent=model.nodes[k].parent;parent>=0;parent=model.nodes[size_t(parent)].parent)if(parent==int(i)){end=int(k);break;}if(end>=0)break;}
-   if(end<0)arm=false;else{auto a=model.bindWorld[i].transformPoint({}),b=model.bindWorld[size_t(end)].transformPoint({});auto from=normalize(b-a);float sign=from.x<0?-1.f:1.f;auto to=normalize(poseIndex==2?float3{sign,0,0}:poseIndex==1?float3{sign*.7f,-.7f,0}:float3{sign*.18f,-1,0});auto axis=cross(from,to);if(length(axis)>1e-5f)armDelta=quat::axisAngle(axis,std::acos(std::clamp(dot(from,to),-1.f,1.f)));}
+  if(arm){const auto from=armDirections[i];if(length(from)<.5f)arm=false;
+   else{float sign=from.x<0?-1.f:1.f;auto to=normalize(poseIndex==2?float3{sign,0,0}:poseIndex==1?float3{sign*.7f,-.7f,0}:float3{sign*.18f,-1,0});auto axis=cross(from,to);if(length(axis)>1e-5f)armDelta=quat::axisAngle(axis,std::acos(std::clamp(dot(from,to),-1.f,1.f)));}
   }
+
   if(arm||neck||spine){AnimChannel c;c.node=int(i);c.path=AnimChannel::Rotation;c.comps=4;const auto parent=node.parent<0?quat{}:rotationOf(model.bindWorld[size_t(node.parent)]);const quat inv{-parent.x,-parent.y,-parent.z,parent.w};
    for(int frame=0;frame<=120;++frame){const float t=frame*.05f,wave=std::sin(t*6.28318530718f/6);const bool resting=poseIndex==0||poseIndex==3;
     // Upper-body breathing and small delayed arm settling. Root/legs stay in
