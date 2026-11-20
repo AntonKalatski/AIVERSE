@@ -41,6 +41,12 @@ on_error() {
  exit "$code"
 }
 trap on_error ERR
+# The rebuilt benchmark must implement the new geometry, not merely accept
+# a stale stage127 binary with the environment knob silently ignored.
+CURRENT_LOG="$OUT/mesh-unit.log"
+"$BIN" --unit > "$CURRENT_LOG" 2>&1
+grep -Fqx 'mesh subdivision CPU checks=passed' "$CURRENT_LOG"
+CURRENT_LOG=""
 for subdivisions in 1 8; do
   mkdir "$OUT/mesh$subdivisions"
   for entry in off:direct:1 off:mdi:1 on:direct:1 on:mdi:1 on:mdi:2 on:direct:2 off:mdi:2 off:direct:2; do
