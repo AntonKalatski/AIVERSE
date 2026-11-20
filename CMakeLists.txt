@@ -2789,3 +2789,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
     set_tests_properties(vfx_graph_assets PROPERTIES LABELS "SpectraFX")
 endif()
+
+# LENS Stage 20: exercise SpriteBatch partial GPU initialization and
+# failed/retried idle barriers with a fault-injecting CPU-only gfx::Device.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_lens_sprite_gpu_faults tests/render/lens_sprite_gpu_fault_injection.cpp)
+    target_include_directories(aiverse_lens_sprite_gpu_faults PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_lens_sprite_gpu_faults PRIVATE aiverse_runtime)
+    add_test(NAME lens_sprite_gpu_faults COMMAND aiverse_lens_sprite_gpu_faults)
+    set_tests_properties(lens_sprite_gpu_faults PROPERTIES LABELS "LENS;RHI")
+endif()
