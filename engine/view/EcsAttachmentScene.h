@@ -39,6 +39,7 @@ struct SceneAttachmentChildComponent {
     render::mat4 childWorld{};
     // Stable authored prefab child key (may be empty in legacy layouts).
     std::string authoredId;
+    bool animated=false;
 };
 
 // One explicit presentation World source/root instance. It retains
@@ -106,7 +107,9 @@ public:
             std::vector<ImportedAttachmentAuthoring::ChildRequest> requests;
             requests.reserve(layout.attachments.size());
             for(const auto& child:layout.attachments) {
-                if(!child.enabled)continue;
+                // An animated child owns its OWN Graph/pose source and must
+                // never be included in a parent-pose static socket packet.
+                if(!child.enabled || child.animated)continue;
                 const auto resolved=resolveChild(child.model);
                 if(!resolved)
                     throw std::invalid_argument(
@@ -136,7 +139,8 @@ public:
                     entity,SceneAttachmentChildComponent{
                         parent,candidate.revision,uint32_t(i),
                         child.model,child.socket,child.enabled,
-                        child.local,child.childWorld,child.id});
+                        child.local,child.childWorld,child.id,
+                        child.animated});
                 candidate.children.push_back(entity);
             }
             // The source Entity is externally owned and is NEVER destroyed.
@@ -216,6 +220,7 @@ public:
                child->modelSource!=authored.model ||
                child->socketName!=authored.socket ||
                child->authoredId!=authored.id ||
+               child->animated!=authored.animated ||
                child->enabled!=authored.enabled ||
                !sameMatrix(child->local,authored.local) ||
                !sameMatrix(child->childWorld,authored.childWorld))
