@@ -866,6 +866,59 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
     return snapshot;
 }
 
+Renderer3D::ModelSubmissionProvenance Renderer3D::modelSubmissionProvenance(
+        const Model& source) const {
+    ModelSubmissionProvenance result;
+    result.frameSerial=dev_?dev_->frameSerial():0;
+    if(modelSubmissionTarget_!=&source || !result.frameSerial)return result;
+    result.mainPassEncoded=modelSubmissionMainEncoded_;
+    result.truncated=modelSubmissionTruncated_;
+    result.commands=modelSubmitted_;
+    return result;
+}
+
+void Renderer3D::recordModelSubmission(
+        const ModelItem& it,int phase,ModelSubmissionKind kind,
+        gfx::PipelineHandle pipeline) {
+    if(modelSubmissionTarget_!=it.model || !geometryMainView_ ||
+       (phase!=1 && phase!=2 && phase!=4))return;
+    if(modelSubmitted_.size()>=4096u) {
+        modelSubmissionTruncated_=true;
+        return;
+    }
+    ModelSubmittedPrimitive out;
+    auto& p=out.source;
+    p.model=it.model;
+    p.nodeIndex=it.nodeIndex;
+    p.meshIndex=it.meshIndex;
+    p.primitiveIndex=it.primitiveIndex;
+    p.drawInvocation=it.drawInvocation;
+    p.firstIndex=it.firstIndex;
+    p.indexCount=it.indexCount;
+    p.vertexOverride=it.vertexOverride;
+    p.vertexOverrideCount=it.vertexOverrideCount;
+    p.visible=it.inView;
+    p.colourCandidate=phase==1 && it.inView;
+    p.gpuLodConditional=it.gpuLodAvailable;
+    p.lodFade=it.lodThreshold<1.f || it.lodInvert;
+    p.alternativeMeshLod=
+        it.nodeIndex>=it.model->nodes.size() ||
+        it.model->nodes[it.nodeIndex].mesh!=int(it.meshIndex);
+    p.batched=it.materialRole!=0 || it.primitiveIndex==UINT32_MAX;
+    p.skinning=it.joints>=0;
+    p.baked=it.baked;
+    p.shaderVertexOffset=it.displacedVertexSource;
+    p.translucent=it.mat->alpha==AlphaMode::Blend ||
+        it.mat->transparent || it.tint.w<0.99f ||
+        transparentItem(it.flags);
+    p.customGpuStream=it.vertexOverride.valid();
+    p.world=it.world;
+    out.phase=uint8_t(phase);
+    out.kind=kind;
+    out.pipeline=pipeline;
+    modelSubmitted_.push_back(std::move(out));
+}
+
 void Renderer3D::packModelInstance(const ModelItem& x, int phase,
                                    const float4& callColour, float* d,
                                    uint32_t instanceMaterial) const {
@@ -1056,6 +1109,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     }
     dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
                       int32_t(it.model->gpuBaseVertex), count);
+    // A real gfx indexed draw was encoded, not merely staged/warmed.
+    for(uint32_t n=0;n<count;++n)
+        recordModelSubmission(modelItems_[items[n]],phase,
+                              ModelSubmissionKind::Direct,ph);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
@@ -1206,6 +1263,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             drawModelBatch(items + n, 1, phase);
         return true;
     }
+    for(uint32_t n=0;n<count;++n)
+        recordModelSubmission(modelItems_[items[n]],phase,
+                              ModelSubmissionKind::IndexedIndirect,
+                              currentPipe_);
     const auto afterSubmit = std::chrono::steady_clock::now();
     if (traceIndirect) {
         static uint32_t samples = 0;
@@ -1876,6 +1937,10 @@ void Renderer3D::renderModels(int phase) {
                 ++gpuIcbExecuteFailed_;
                 continue;
             }
+            for(const uint32_t idx:group.items)
+                recordModelSubmission(modelItems_[idx],phase,
+                                      ModelSubmissionKind::GpuIcb,
+                                      currentPipe_);
             lastItem_ = &modelItems_[group.items.back()];
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
@@ -1917,6 +1982,8 @@ void Renderer3D::renderModels(int phase) {
                     gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                     size_t(gpuModelSlots_[modelIndex]) * sizeof(gfx::DrawIndexedIndirectCommand))) {
                 const ModelItem& item = modelItems_[modelIndex];
+                recordModelSubmission(item,phase,
+                    ModelSubmissionKind::GpuIndirect,currentPipe_);
                 lastItem_ = &item;
                 ++gpuModelDrawn_;
                 ++drawCalls_;
