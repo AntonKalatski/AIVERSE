@@ -261,3 +261,28 @@ Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python sou
 - macOS: configure/build HTML5 Studio and targets `aiverse_studio_move_journal_tests`, `aiverse_studio_asset_transfer_tests`, `aiverse_studio_visual_picking_tests`; run `ctest --test-dir <build-dir> -R 'studio_(move_journal|asset_transfers|visual_picking)'`.
 - Verify clicks on rotated collider visible faces, empty AABB corners, overlapping front/back proxies, blank Scene, UI zoom 75/100/150/200, both WebKit-composite and native overlay input modes. Confirm camera navigation remains independent of selection and game view.
 - Execute `npm run typecheck && npm run test:web && npm run build` and Python source suite; fix any failures before merging.
+
+## Stage 13 — CPU triangle picking adapter for actual imported Model geometry (2026-11-20)
+
+### Source review and design boundary
+- Inspected `engine/render/Model.h`, `Model.cpp`, `Math3D.h`, and HTML5 Studio's native `StudioMetalScene.cpp`. Model CPU geometry is held in `Model::vertices`/`indices`, `Primitive::firstIndex/indexCount`, `Node::mesh`, and finalized `Model::bindWorld` matrices. Actual renderer geometry may discard CPU vertex/index arrays during `uploadModel`. The current HTML5 Scene still draws `StudioDocumentProxy` boxes for authored document entries, **not** imported models.
+- The existing rotated-box picker remains correct for those currently visible proxies and must NOT be replaced with triangle-only selection until imported model rendering actually exists.
+- Added `apps/studio-native/StudioModelPicking.h`: Möller–Trumbore double-sided ray/triangle hit with barycentric bounds, world x bindWorld node transforms, valid triangle/index checking, bounded triangle budget, rigid-only safeguard. Empty/released CPU buffers return no hit, never a misleading AABB approximation.
+- Added `StudioModelPickInstance` / `studioPickModelInstances` choosing the closest actual surface across multiple rendered model instances; the instance list must come from the exact submissions the Scene renderer draws.
+- Added `apps/studio-native/tests/StudioModelPickingTests.cpp`: triangle hit/miss inside triangle AABB, back-face hit, compound world+node transform, CPU buffer removed, skinned/morphed cases rejected, invalid index, degenerate/invalid ray, frontmost hit across model instances. Registered executable CTest `studio_model_picking` in `apps/studio-native/CMakeLists.txt`.
+- Extended `tools/studio/test_reference_pin_zoom.py` with static source contracts for the new adapter and test target.
+
+### Commits
+- `f04d3164d1bf134dd4fc22ac7f4a1a4bf9059d0d` — triangle adapter.
+- `d7f0cf291823259f0d85417bc6886edf020109fe` — initial native triangle tests.
+- `75ab642c8421e3c66293395a7343bbdcf111e94d` — CMake test.
+- `d4075dee6f95d888b3225533fc50cd9a7ae5163e` — nearest model instance hit.
+- `59a288643a4aff7846a9f32fda8c3353bc358efb` — frontmost model object test.
+- `0805d442b3acbc694cfcec23f9db3da1da4e8273`, `01fef36826b5f1ab91c468a17afbd83eb45c775a` — source contract checks.
+
+### Validation and next work
+- **Actually performed:** connected GitHub source inspection and remote commits; verified primitive indexing shape in `Model::finalize`. 
+- **Not performed:** compiling, running CTest, metal GPU render acceptance, importing GLB and checking pick against its visible triangles.
+- **Critically not integrated yet:** `studioPickModelInstances` is an isolated geometry adapter; HTML5 Studio does not yet draw imported models in Scene. Do NOT claim Scene object selection uses this adapter yet. `StudioMetalScene::pick` continues to use `studioPickVisibleProxy` for presently drawn cubes.
+- **Important limitations:** skinned/morphed geometry and GPU-only buffers cannot be picked via this bind-pose CPU helper. Real render parity needs identical LOD/visibility/material-alpha handling, CPU geometry retention or a GPU ID/depth pass, and depth-consistent mixed proxy/model selection.
+- **Next:** wire an actual Model scene rendering path with ownership, GPU upload/release, transforms and project-relative path validation; build model render submission list, and only then feed the exact same list to `studioPickModelInstances` or adopt GPU ID buffer. Run `cmake --build <build> --target aiverse_studio_model_picking_tests`, `ctest --test-dir <build> -R studio_model_picking --output-on-failure`, `npm run typecheck` and existing editor tests. Resolve test/build failures on the macOS host before merging.
