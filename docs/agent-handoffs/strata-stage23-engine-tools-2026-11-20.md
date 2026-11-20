@@ -62,3 +62,14 @@ Publish code plus this separate handoff through an ordinary PR to main.
 Consumers must use the rebuilt MCP/editor registry to see the new tools; verify
 against the actual project assets when adopting. Continue outstanding backend
 visual gates from Stage 21/22 independently; leave production opt-ins unchanged.
+
+### Main integration follow-up
+
+PR https://github.com/chromealex/AIVERSE/pull/99 initially overlapped new PHYSIS
+skill entries. Merge commit `f56ab295575abdaeddfe82f6b1f0fc090114a789`
+integrates main `bcb646d65736ba7aa47c90ad9b9e4599e1c29b14`.
+Resolved additive AGENTS/catalog alias conflicts by keeping both features and
+regenerating the catalog (229 entries). No semantic renderer changes.
+Rebuilt both new editor test and MCP after the merge: PASS. Focused strata_editor
+CTest: PASS, 2.79 s (`merge-build.log`, `merge-test.log` on KINGSTON).
+Catalog check and strict STRATA skill audit PASS. CI remains unverified.
