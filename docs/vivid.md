@@ -1090,3 +1090,53 @@ scene-occlusion checks. **These checks have not been compiled or
 run in this stage.** No shader result, timing, GPU parity, Vulkan
 or GLES native execution is claimed. See the detailed Stage 7AQ
 handoff for changed files, commits and remaining requirements.
+
+
+## Stage 7AR — Vulkan/GLES native GPU ID readback and CPU-source parity (2026-11-20)
+
+The experimental ID/depth pass from Stages 7AO–7AQ is no longer
+hard-coded to Metal. It may now initialize on **Metal, Vulkan and native
+GLES3/GL33** RHI devices. `SculptGpuIdPass::record` still requires a
+nonzero active device frame serial and records the current actor
+publication, selected source mesh and viewport in a one-click async
+request token. The CPU BVH result remains immediate and authoritative;
+a matching GPU callback only corroborates the **CPU-fed snapshot**,
+and a differing ID cannot silently replace the source vertex.
+This is deliberate while the ID pass does not use Renderer3D's
+`ModelDraw::vertexOverride`/real visible LOD/ShaderGraph vertex
+program. The normal editing workflow and default `gpuSculptEnabled=false`
+are unchanged.
+
+The Vulkan backend now implements true asynchronous
+`gfx::Device::readTexturePixelAsync` for single RGBA8 linear
+offscreen target pixels through a 4-byte host-visible coherent
+staging VkBuffer, `vkCmdCopyImageToBuffer`, explicit transfer-to-host
+memory barriers and the existing frame-slot fence completion
+timeline. Only a **signaled GPU frame fence** permits delivering bytes
+on the later device-owner `beginFrame`. Failure reports empty bytes
+and never publishes an unverified serial as completed. Vulkan's
+`frameSerial()` exposes the current submission identity only while
+the frame is recording, not completion proof. Top-left RHI readback
+coordinates are converted to the current GL-oriented Vulkan
+render-target storage.
+
+Native GLES3/GL33 now exposes a frame-local monotonic serial,
+complementing the already implemented per-pixel PBO/GLsync
+readback. The real fence, not the counter, authorizes the callback.
+WebGL2/Emscripten and custom Windows GL loader still return
+unsupported and retain CPU BVH. The GPU ID pass is only an opt-in
+diagnostic and a successful test pixel is **not** evidence of
+whole-scene Renderer3D parity.
+
+Two independent real-hardware CTest fixtures have been added:
+`vivid_vulkan_sculpt_id` (offscreen Vulkan/no window) and
+`vivid_gles_sculpt_id` (native EGL GLES3 pbuffer). Both verify
+near/far hardware depth, clear RGBA8 and a closer independent
+zero-ID scene occluder with async readback; they return CTest SKIP
+77 if the native driver/context is unavailable, and FAIL if a
+working GPU supplies the wrong result. The macOS Metal fixture is
+unchanged. **All new source/GPU tests remain NOT RUN.** The user
+requested one consolidated test pass only after feature closure.
+See `tools/vivid-creator/README.md` and the detailed Stage 7AR
+handoff for independent Linux/Vulkan/GLES commands, exact commit SHAs
+and remaining renderer-stream integration work.
