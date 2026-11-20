@@ -212,6 +212,16 @@ void TerrainRenderer::loadTextures(gfx::Device&) {
     cliffNrm_ = load(look_.cliffNormal);
 }
 
+bool TerrainRenderer::shutdownAfterGpuIdle(gfx::Device& dev) {
+    checkGpuDevice(dev);
+    if(!dev_)return true;
+    if(dev_!=&dev)
+        throw std::logic_error("TerrainRenderer shutdown: GPU device owner mismatch");
+    if(!dev.waitForResourceIdle())return false;
+    shutdown(dev);
+    return true;
+}
+
 void TerrainRenderer::shutdown(gfx::Device& dev) {
     checkGpuDevice(dev);
     if(!dev_)return;
