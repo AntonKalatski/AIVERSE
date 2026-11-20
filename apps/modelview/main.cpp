@@ -38,6 +38,7 @@
 #include <memory>
 #include <sstream>
 #include <set>
+#include <span>
 #include <stdexcept>
 
 using namespace aiverse;
@@ -389,6 +390,18 @@ struct Viewer {
                     throw std::runtime_error(error);
                 children.emplace(entry.modelSource,std::move(published));
             }
+            // Import every animated child Model before ANY parent cache read
+            // lease is held. An import may evict/reallocate cache entries.
+            std::map<std::string,Model*> animatedModels;
+            for(const auto& child:attachmentSpecs) {
+                if(!child.enabled || !child.animated ||
+                   animatedModels.count(child.modelSource))continue;
+                auto* imported=provider.load(*dev,child.modelSource);
+                if(!imported)
+                    throw std::runtime_error("animated child Model import failed: "+
+                                             child.modelSource);
+                animatedModels.emplace(child.modelSource,imported);
+            }
             for(size_t i=0;i<actors.size();++i) {
                 auto& actor=actors[i];
                 if(!actor.model)
@@ -422,9 +435,7 @@ struct Viewer {
                 for(size_t j=0;j<attachmentSpecs.size();++j) {
                     const auto& child=attachmentSpecs[j];
                     if(!child.enabled || !child.animated)continue;
-                    Model* model=provider.load(*dev,child.modelSource);
-                    if(!model)
-                        throw std::runtime_error("animated child Model import failed");
+                    Model* model=animatedModels.at(child.modelSource);
                     ::aiverse::view::AppearanceAssetRegistry::Request childRequest;
                     childRequest.model=model;
                     childRequest.sources.push_back(child.modelSource);
@@ -856,6 +867,17 @@ struct Viewer {
                     spec.id=authoredId;
                     attachmentsDirty=true;
                 }
+                if(ImGui::Checkbox("Independent animation",&spec.animated))
+                    attachmentsDirty=true;
+                char graphPath[512]{};
+                std::snprintf(graphPath,sizeof(graphPath),"%s",
+                              spec.animationGraph.c_str());
+                if(spec.animated &&
+                   ImGui::InputText("AnimationGraph file",graphPath,
+                                    sizeof(graphPath))) {
+                    spec.animationGraph=graphPath;
+                    attachmentsDirty=true;
+                }
                 float offset[]={spec.local.m[12],spec.local.m[13],spec.local.m[14]};
                 if(ImGui::DragFloat3("Socket offset",offset,0.01f)) {
                     spec.local.m[12]=offset[0];
@@ -943,6 +965,10 @@ struct Viewer {
                 (void)key;
                 (void)model.release();
             }
+            // Preserve graph Worlds and registries with quarantined CPU
+            // Models rather than release borrowed graph/pose owners first.
+            (void)attachmentGeneration.release();
+            (void)attachmentsRegistry.release();
             (void)nativeModels.release();
             for(auto& scene:retiredNativeScenes)(void)scene.release();
             retiredNativeScenes.clear();
