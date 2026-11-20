@@ -363,3 +363,36 @@ TEST(geometry_transactional_gpu_hlod_proxy_upload_failure_preserves_live) {
     CHECK(scene.stats().instances==2);
     scene.shutdown(dev);
 }
+
+
+TEST(geometry_failed_gpu_idle_preserves_staging_retirement_for_retry) {
+    using namespace render;
+    geometrytest::GpuUploadFailDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"old","model":"old.obj"}]})");
+    const auto candidate=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj"}]})");
+    const auto reader=[](const std::string&,std::string& bytes) {
+        bytes=geometrytest::boxObj();return true;
+    };
+    scene.loadTransactional(dev,original,reader);
+    const auto before=scene.stats();
+    dev.failAt=dev.attempts+3; // fail second source after partial upload
+    dev.allowIdle=false;
+    bool rejected=false;
+    try {scene.loadTransactional(dev,candidate,reader);}
+    catch(const std::exception&) {rejected=true;}
+    CHECK(rejected);
+    CHECK(scene.stats().instances==before.instances);
+    CHECK(scene.pendingFailedStages()==1);
+    CHECK(scene.pendingGpuRetirements()>0);
+    CHECK(dev.refused>0);
+    // Successful reload must not delete the earlier failed-stage owner.
+    dev.failAt=0;
+    dev.allowIdle=true;
+    scene.loadTransactional(dev,candidate,reader);
+    CHECK(scene.stats().instances==2);
+    CHECK(scene.pendingFailedStages()==1);
+    scene.shutdown(dev); // retry retirement after the device resumes
+    CHECK(scene.pendingFailedStages()==0);
+    CHECK(scene.pendingGpuRetirements()==0);
+}
