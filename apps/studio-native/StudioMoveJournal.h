@@ -6,6 +6,12 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "engine/data/Json.h"
 #include <filesystem>
+#include <cerrno>
+#include <cstring>
+#if defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -27,6 +33,33 @@ public:
 
     static void recover(const fs::path& project) {
         StudioMoveJournal(project).restoreOrCleanup();
+    }
+
+    // Persistence boundary for the project-local journal and renamed assets.
+    // Fail closed when a filesystem cannot honor durable metadata writes.
+    static void syncPath(const fs::path& path) {
+#if defined(__unix__) || defined(__APPLE__)
+        const int descriptor=::open(path.c_str(),O_RDONLY|O_NOFOLLOW);
+        if (descriptor<0)
+            throw std::runtime_error("Cannot open Studio journal sync path: "+path.string());
+        int code=0;
+#if defined(__APPLE__)
+        // F_FULLFSYNC is stronger than fsync on filesystems that implement it.
+        // Some filesystems do not implement it; ordinary fsync is the fallback.
+        code=::fcntl(descriptor,F_FULLFSYNC);
+        if (code!=0) code=::fsync(descriptor);
+#else
+        code=::fsync(descriptor);
+#endif
+        const int failure=code!=0?errno:0;
+        ::close(descriptor);
+        if (failure)
+            throw std::runtime_error("Cannot synchronize Studio journal path: "+
+                path.string()+" ("+std::strerror(failure)+")");
+#else
+        (void)path;
+        throw std::runtime_error("Studio durable journal requires a POSIX filesystem");
+#endif
     }
 
     void begin(const std::vector<StudioMoveJournalOperation>& operations) {
@@ -52,6 +85,7 @@ public:
                 if (!fs::is_regular_file(materialStatus))
                     throw std::runtime_error("Invalid material library before move");
                 fs::copy_file(material,folder_/"materials.backup",fs::copy_options::none);
+                syncPath(folder_/"materials.backup");
             }
             Json state=Json::object();
             state.set("version",Json::number(int64_t(1)));
@@ -69,6 +103,7 @@ public:
             // Manifest is published atomically before the first asset rename.
             writeFile(folder_/"pending.tmp",state.dump(2)+"\n");
             fs::rename(folder_/"pending.tmp",folder_/"pending.json");
+            syncPath(folder_);
         } catch (...) {
             std::error_code ec;
             fs::remove_all(folder_,ec);
@@ -80,7 +115,11 @@ public:
         if (!fs::exists(folder_/"pending.json")) return;
         // Durable commit marker precedes best-effort cleanup. Recovery must
         // never reverse a committed transaction.
+        const fs::path material=project_/"materials.json";
+        if (fs::exists(material)) syncPath(material);
+        syncPath(project_);
         fs::rename(folder_/"pending.json",folder_/"committed.json");
+        syncPath(folder_);
         std::error_code ignored;
         fs::remove_all(folder_,ignored);
     }
@@ -137,8 +176,13 @@ public:
         }
         // Reverse order handles file + .meta pairs. Each replay is idempotent
         // when a crash happens midway through recovery itself.
-        for (auto it=steps.rbegin();it!=steps.rend();++it)
-            if (it->moveBack) fs::rename(it->destination,it->source);
+        for (auto it=steps.rbegin();it!=steps.rend();++it) {
+            if (!it->moveBack) continue;
+            fs::rename(it->destination,it->source);
+            syncPath(it->source.parent_path());
+            if (it->source.parent_path()!=it->destination.parent_path())
+                syncPath(it->destination.parent_path());
+        }
         const fs::path material=project_/"materials.json";
         if (state.getBool("materialExisted")) {
             const fs::path backup=folder_/"materials.backup";
@@ -147,10 +191,15 @@ public:
             const fs::path staged=folder_/"materials.restore";
             fs::copy_file(backup,staged,fs::copy_options::overwrite_existing);
             fs::rename(staged,material);
+            syncPath(material);
+            syncPath(project_);
         } else {
             // No prior library: only remove a newly written file if recovery
             // requires doing so. Other writers must not run concurrently.
-            if (fs::exists(material)) fs::remove(material);
+            if (fs::exists(material)) {
+                fs::remove(material);
+                syncPath(project_);
+            }
         }
         fs::remove_all(folder_);
     }
@@ -160,6 +209,9 @@ private:
         std::ofstream stream(filename,std::ios::binary|std::ios::trunc);
         if (!stream || !(stream<<data) || !(stream.flush()))
             throw std::runtime_error("Cannot write Studio move recovery journal");
+        stream.close();
+        if (!stream) throw std::runtime_error("Cannot close Studio move journal");
+        syncPath(filename);
     }
     static void validateRelative(const std::string& value) {
         if (value.empty() || value.size()>1024 || value.front()=='/' ||
