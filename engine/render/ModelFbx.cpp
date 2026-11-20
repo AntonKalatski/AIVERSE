@@ -9,9 +9,10 @@
 // missing), UV0, vertex colours, tangents, one primitive per material, PBR material maps (base
 // colour, roughness, metalness, normal, emission, opacity), external and embedded textures,
 // skin deformers (4 strongest influences per vertex, split into kMaxPaletteJoints palettes),
-// animation stacks baked to linear TRS and supported simple blendshape weight channels.
-// Not supported: blendshape in-betweens, vertex caches, extra UV / colour sets,
-// more than 4 influences, cameras, lights.
+// animation stacks baked to linear TRS and FBX blendshape weight channels,
+// including named in-between targets flattened to up to 16 morph GPU slots.
+// Not supported: over-capacity facial rigs, per-control morph weights, vertex
+// caches, extra UV/colour sets, more than 4 influences, cameras, lights.
 #include "Model.h"
 #include "LightmapUv.h"
 
@@ -776,7 +777,7 @@ private:
     std::map<uint32_t, int> texCache_;       // ufbx texture element_id -> image index
     const ufbx_vertex_vec2* uv2_ = nullptr;   // current mesh: lightmap UV set (unskinned meshes with two UV sets)
     int defaultMat_ = -1;
-    std::vector<const ufbx_blend_shape*> activeShapes_; // current mesh, importer-owned
+    std::vector<const ufbx_blend_shape*> activeShapes_; // flattened in-between slots, importer-owned
     int meshNode_ = -1, rigidJoint_ = -1;   // current mesh: its node, extra joint for unweighted vertices
 };
 
