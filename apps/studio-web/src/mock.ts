@@ -1,0 +1,114 @@
+import type { StudioMethod, StudioParams, StudioResult, StudioSnapshot } from './types';
+
+let snapshot: StudioSnapshot = {
+  project: { name: 'AIVERSE Demo', path: 'DEMO / no native project', dirty: false },
+  scene: {
+    name: 'Sample scene',
+    entities: [
+      { id: 'root', name: 'Environment', kind: 'Group', visible: true },
+      { id: 'sun', name: 'Directional Light', kind: 'Light', parentId: 'root', visible: true },
+      { id: 'terrain', name: 'Terrain', kind: 'Mesh', parentId: 'root', visible: true },
+      { id: 'camera', name: 'Main Camera', kind: 'Camera', visible: true },
+      { id: 'player', name: 'Player', kind: 'Entity', visible: true }
+    ]
+  },
+  selectedId: 'camera',
+  properties: [
+    { key: 'name', label: 'Name', type: 'text', value: 'Main Camera' },
+    { key: 'x', label: 'Position X', type: 'number', value: 0 },
+    { key: 'y', label: 'Position Y', type: 'number', value: 3 },
+    { key: 'z', label: 'Position Z', type: 'number', value: -6 },
+    { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
+  ],
+  logs: [{ level: 'info', text: 'HTML5 Studio preview loaded — native engine is not connected.', time: 'preview' }],
+  mode: 'edit',
+  history: { canUndo: false, canRedo: false }
+};
+const undoStack: StudioSnapshot[] = [];
+const redoStack: StudioSnapshot[] = [];
+const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
+
+// Public overload preserves method -> parameter -> result correlation.
+// Implementation uses the union of valid method results, since TypeScript
+ // cannot narrow generic M through a runtime method comparison.
+export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
+export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
+  if (method === 'studio.facialRigList')return {rigs: []};
+  if (method === 'studio.facialRigGet' || method === 'studio.facialRigSave')
+    throw Error('Facial Rig project files require the native AIVERSE host');
+  if (method === 'studio.facialRigValidate') {
+    // Browser demo never claims native compile/model/morph verification.
+    throw Error('Facial Rig native validation requires the AIVERSE host');
+  }
+  if (method === 'studio.materials') {
+    return { library: {} };
+  }
+  if (method === 'studio.shaderGraphCatalog') return {nodes:[]};
+  if (method === 'studio.shaderGraphs') return {graphs:[]};
+  if (method === 'studio.shaderGraphGet' || method === 'studio.shaderGraphValidate' ||
+      method === 'studio.shaderGraphSave')
+    throw Error('Shader Graph documents require a native project');
+  if (method === 'studio.materialPreview') {
+    throw Error('GPU material preview requires the native AIVERSE host');
+  }
+  if (method === 'studio.materialPatch' || method === 'studio.materialCreate') {
+    throw Error('Editing materials requires the native AIVERSE host');
+  }
+  if (method === 'studio.lighting') {
+    return { lighting: null, lights: [] };
+  }
+  if (method === 'studio.lightingSet' || method === 'studio.lightAdd' ||
+      method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
+    throw Error('Editing map lights requires the native AIVERSE host');
+  }
+  if (method === 'studio.assets') {
+    // Empty DEMO catalog: never imply that mock file names exist in the user project.
+    return { files: [] };
+  }
+  if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
+    return { ok: true }; // Browser preview has no native surface.
+  }
+  if (method === 'studio.select') {
+    const id = (params as StudioParams['studio.select']).id;
+    if (id !== null && !snapshot.scene.entities.some(entity => entity.id === id)) throw Error('Unknown entity: ' + id);
+    snapshot.selectedId = id;
+    snapshot.properties = id === null ? [] : [
+      { key: 'name', label: 'Name', type: 'text', value: snapshot.scene.entities.find(e => e.id === id)?.name ?? '' },
+      { key: 'x', label: 'Position X', type: 'number', value: 0 },
+      { key: 'y', label: 'Position Y', type: 'number', value: 0 },
+      { key: 'z', label: 'Position Z', type: 'number', value: 0 },
+      { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
+    ];
+  } else if (method === 'studio.openProject') {
+    throw Error('Opening projects requires the native AIVERSE host');
+  } else if (method === 'studio.save') {
+    throw Error('Saving a project requires the native AIVERSE host');
+  } else if (method === 'studio.undo') {
+    if (!undoStack.length) throw Error('Nothing to undo');
+    redoStack.push(clone());
+    snapshot = undoStack.pop()!;
+  } else if (method === 'studio.redo') {
+    if (!redoStack.length) throw Error('Nothing to redo');
+    undoStack.push(clone());
+    snapshot = redoStack.pop()!;
+  } else if (method === 'studio.setProperty') {
+    const { entityId, key, value } = params as StudioParams['studio.setProperty'];
+    if (entityId !== snapshot.selectedId) throw Error('Selection changed while editing');
+    const property = snapshot.properties.find(p => p.key === key);
+    if (!property) throw Error('Unknown property: ' + key);
+    if (typeof value !== property.type.replace('text', 'string').replace('number', 'number').replace('boolean', 'boolean')) {
+      throw Error('Property type mismatch');
+    }
+    undoStack.push(clone());
+    redoStack.length = 0;
+    property.value = value;
+    if (key === 'name') {
+      const entity = snapshot.scene.entities.find(e => e.id === entityId);
+      if (entity) entity.name = String(value);
+    }
+    snapshot.project.dirty = true;
+  } else if (method !== 'studio.snapshot') {
+    throw Error('Unsupported operation');
+  }
+  return clone();
+}
