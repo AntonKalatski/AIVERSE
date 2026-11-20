@@ -97,6 +97,20 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     const SpriteDefaults incomingSpriteDefaults=
         parseSpriteDefaults(incomingRules["sprites"],incomingGame["sprites"]);
+    // Parse non-GPU shared materials before publishing the staged sprite
+    // view. Keep warnings until warnings_ is reset by the normal reload.
+    Json incomingMaterials=Json::object();
+    std::vector<std::string> incomingMaterialWarnings;
+    {
+        std::string text;
+        if(incomingRead("materials.json",text)) {
+            try { incomingMaterials=Json::parse(text)["materials"]; }
+            catch(const std::exception& e) {
+                incomingMaterialWarnings.push_back(std::string("materials.json: ")+e.what());
+            }
+            if(!incomingMaterials.isObject())incomingMaterials=Json::object();
+        }
+    }
     auto nextSprites=std::make_unique<Rts2DView>();
     bool spritesReady=false;
     try {
@@ -165,15 +179,10 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         }
     } catch (const std::exception& e) { warnings_.push_back(e.what()); }
 
-    {   // shared materials of the game (docs/models.md "Material library")
-        materialLib_ = Json::object();
-        std::string text;
-        if (read_("materials.json", text)) {
-            try { materialLib_ = Json::parse(text)["materials"]; }
-            catch (const std::exception& e) { warnings_.push_back(std::string("materials.json: ") + e.what()); }
-            if (!materialLib_.isObject()) materialLib_ = Json::object();
-        }
-    }
+    // Publish the same materials snapshot parsed before sprite staging.
+    materialLib_=std::move(incomingMaterials);
+    warnings_.insert(warnings_.end(),
+                     incomingMaterialWarnings.begin(),incomingMaterialWarnings.end());
     for (auto& w : overlays_.set().warnings) warnings_.push_back(w);
     if(genericView_)genericView_->clear();
     anims_.clear(); streamingChoices_.clear(); reloadPlayback_.clear(); animationCache_.clear();
