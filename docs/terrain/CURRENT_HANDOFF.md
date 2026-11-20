@@ -1,5 +1,23 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 real TerraWeave forest Metal GPU fixture committed (2026-11-20):**
+> Source commits `510d1390`, `d7439549`, `f872f5f2`,
+> `03cefb9f`, `47e9d4a1` add the hardware
+> `terraweave_metal_forest` CTest plus a strict one-command
+> Mac acceptance runner. The new test uploads production Arbor
+> BranchLOD + 8-azimuth alpha-mask impostor, reads actual Metal
+> GPU pixels from two camera directions and resized RTs, checks
+> transparency/LOD policy, and releases models only after the
+> explicit RHI GPU-idle barrier.
+> [New dedicated code/QA handoff](qa-2026-11-20-stage70-real-metal-forest-render-handoff.md).
+> **New AppleClang C++/Objective-C++ build, GPU test and PPM
+> captures NOT RUN**. Previous 4/4 SpectraFX Metal PASS and 2/2
+> Stage114 Release PASS remain valid only for their tested
+> versions; do not claim forest GPU success before hardware QA.
+> Vulkan/GLES and long real PHYSIS/NEREID/Terra/Box3D erosion
+> remain separate gates. PR #53 stays Draft.
+>
+>
 > **Stage70 postmerge Stage114 Mac Release tests 2/2 PASS (2026-11-20):**
 > User's local Release build compiled
 > `aiverse_resource_retirement_tests` and
