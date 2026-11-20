@@ -676,19 +676,27 @@ void TerrainRenderer::buildApron(gfx::Device& dev, const MapGrid& g) {
 // terrain dips. Bodies: every connected water area gets its own surface just below its lowest shore
 // corner, so lakes on plateaus and heightfield valleys hold water at their own level.
 void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDig) {
-    dev.destroyBuffer(water_.vb); dev.destroyBuffer(water_.ib);
-    water_ = {};
-    hasWater_ = false;
+    // The existing water mesh can still be referenced by submitted cameras.
+    // Publish replacement only after the new mesh has uploaded successfully.
+    auto publish=[&](Mesh replacement,bool has,bool sheet) {
+        retiredMeshes_.retireBuffer(dev,water_.vb);
+        retiredMeshes_.retireBuffer(dev,water_.ib);
+        water_=replacement;
+        hasWater_=has;
+        waterSheet_=sheet;
+    };
+    bool nextHasWater=false;
     const int W = g.w, H = g.h;
-    for (auto f : g.flags) if ((f & kCellWater) && !(f & kCellGround)) { hasWater_ = true; break; }
-    waterSheet_ = look_.water == TerrainLook::Water::Sheet || (look_.water == TerrainLook::Water::Auto && !heightfield_);
+    for (auto f : g.flags) if ((f & kCellWater) && !(f & kCellGround)) { nextHasWater = true; break; }
+    const bool nextWaterSheet=look_.water==TerrainLook::Water::Sheet ||
+        (look_.water==TerrainLook::Water::Auto && !heightfield_);
     MeshBuilder wb;
     wb.color(rgba(255, 255, 255));
-    if (waterSheet_) {
-        if (!hasWater_) return;
+    if (nextWaterSheet) {
+        if (!nextHasWater) { publish({},false,nextWaterSheet); return; }
         const float a = float(kApron), y = look_.waterOffset;
         wb.quad({-a, y, -a}, {-a, y, float(H) + a}, {float(W) + a, y, float(H) + a}, {float(W) + a, y, -a});
-        water_ = wb.upload(dev);
+        publish(wb.upload(dev),true,nextWaterSheet);
         return;
     }
     std::vector<int> body(size_t(W * H), -1);
@@ -760,8 +768,9 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
                 i = j;
             }
         }
-    hasWater_ = !wb.empty();
-    if (hasWater_) water_ = wb.upload(dev);
+    nextHasWater = !wb.empty();
+    if(nextHasWater)publish(wb.upload(dev),true,nextWaterSheet);
+    else publish({},false,nextWaterSheet);
 }
 
 // ------------------------------------------------------------------ per-cell textures
