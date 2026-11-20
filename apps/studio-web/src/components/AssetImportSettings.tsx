@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {X, FileCog, ClipboardCopy} from 'lucide-react';
+import {X, FileCog, ClipboardCopy, Lock, LockOpen} from 'lucide-react';
 import {invoke} from '../bridge';
 import type {StudioAsset,StudioAssetDetail} from '../types';
 
@@ -30,8 +30,9 @@ function SettingToggle({label,value,disabled,onChange}:{
       onChange={e=>onChange(e.target.checked)}/>
   </label>;
 }
-export default function AssetImportSettings({asset,onClose,onSaved,onError}:{
+export default function AssetImportSettings({asset,onClose,onSaved,onError,locked,onToggleLock}:{
   asset:StudioAsset;onClose:()=>void;onSaved:()=>void;onError:(message:string)=>void;
+  locked:boolean;onToggleLock:()=>void;
 }){
   const [detail,setDetail]=useState<StudioAssetDetail|null>(null);
   const [busy,setBusy]=useState(false);
@@ -66,6 +67,11 @@ export default function AssetImportSettings({asset,onClose,onSaved,onError}:{
     typeof platforms[key]==='string'?String(platforms[key]):'auto';
   return <aside className="studio-asset-import-settings" aria-label="Asset import settings">
     <header><FileCog size={16}/><strong>Import Settings</strong>
+      <button type="button" onClick={onToggleLock} aria-pressed={locked}
+        title={locked ? 'Unlock asset import settings from Assets selection' : 'Lock asset import settings to this asset'}
+        aria-label={locked ? 'Unlock import settings' : 'Lock import settings'}>
+        {locked ? <Lock size={16}/> : <LockOpen size={16}/>}
+      </button>
       <button type="button" title="Close asset import settings" aria-label="Close import settings"
         onClick={onClose}><X size={16}/></button></header>
     {loading?<div className="studio-asset-settings-note">Loading metadata…</div>:
