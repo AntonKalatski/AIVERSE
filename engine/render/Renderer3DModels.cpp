@@ -930,11 +930,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(3, pal, sizeof pal);
     }
     if (it.morph >= 0) {
-        float mo[16] = {};
-        std::memcpy(mo, morphData_.data() + it.morph, 8 * sizeof(float));
-        mo[8] = float(it.prim->morphTexel); mo[9] = float(it.prim->firstVertex); mo[10] = float(it.prim->vertexCount); mo[11] = float(it.prim->morphTargets);
-        mo[12] = float(it.model->morphTexWidth);
-        dev_->setUniforms(4, mo, sizeof mo);
+        // U4: 16 morph weights + two vec4 metadata entries.
+        // Keep exactly the GLSL std140 and MSL MU4 member order.
+        float mo[kMaxMorphTargets + 8] = {};
+        std::memcpy(mo,morphData_.data()+it.morph,
+                    size_t(kMaxMorphTargets)*sizeof(float));
+        mo[kMaxMorphTargets+0]=float(it.prim->morphTexel);
+        mo[kMaxMorphTargets+1]=float(it.prim->firstVertex);
+        mo[kMaxMorphTargets+2]=float(it.prim->vertexCount);
+        mo[kMaxMorphTargets+3]=float(it.prim->morphTargets);
+        mo[kMaxMorphTargets+4]=float(it.model->morphTexWidth);
+        dev_->setUniforms(4,mo,sizeof mo);
     }
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
