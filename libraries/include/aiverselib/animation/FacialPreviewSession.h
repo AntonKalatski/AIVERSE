@@ -3,9 +3,11 @@
 // genre-neutral compiled rig, one parent pose and actor-local smoothing state.
 #pragma once
 #include <aiverselib/animation/FacialControlRig.h>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <string>
+#include <stdexcept>
 #include <utility>
 
 namespace aiverse::lib::animation {
