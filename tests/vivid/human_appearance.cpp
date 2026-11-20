@@ -158,6 +158,14 @@ void test() {
         invalid=settings.toJson();
         invalid.set("textureStreaming",Json::fromBool(true));
         expect(reject(invalid),"VIVID presentation silently accepted unsupported texture toggle");
+        settings.materialQuality=HumanMaterialQuality::Low;
+        settings.groomQuality=GroomQuality::Low;
+        auto reference=generateHumanPreview(
+            HumanDNA::preset("neutral"),settings);
+        expect(reference.head && reference.hair &&
+               reference.hair->materials.front().shading==render::ShadingModel::Pbr &&
+               reference.groom.stats().guides>0,
+               "project presentation settings did not propagate to the renderer");
         expect(HumanDNA::preset("neutral").toJson()==before,
                "VIVID presentation quality must not mutate HumanDNA");
     }
