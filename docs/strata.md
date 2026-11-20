@@ -2279,3 +2279,92 @@ benchmark was conducted on this code. Extended existing
 `strata_view` and `strata_portable` test fixtures are
 **authored but unexecuted**. See the Stage17.3 handoff in
 `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Stage 17.4 — GPU-only temporal LOD hysteresis (Metal + Vulkan)
+
+Stage17.3 CPU portable LOD hysteresis now has a corresponding
+GPU-only implementation for the existing Metal/Vulkan compute
+cluster selectors. The same scene setting controls the
+hysteresis band for both CPU and GPU:
+
+```cpp
+scene.setStrataLodHysteresisFraction(0.20f);
+
+// These earlier flags are required for experimental Vulkan GPU raster.
+// Keep all acceptance flags FALSE until passing real device parity:
+scene.setStrataVulkanGpuIndirectEnabled(true);
+scene.setStrataVulkanGpuParityGates(false,false);
+scene.setStrataVulkanGpuAuxiliaryParityGates(false,false,false);
+
+// NEW: independent acceptance for GPU temporal (warm-history) parity.
+// Stateless GPU parity is NOT sufficient.
+scene.setStrataGpuTemporalParityVerified(false);
+```
+
+### How the GPU histories work
+
+`GpuClusterCulling` maintains independent GPU Storage masks for
+each source metadata identity, original primitive, scene-instance
+token, camera/pass (main/sun/spot/planar reflection), and model/policy
+revision. A completed warm history allows a previously refined node
+to coarsen only when projected error falls below
+`threshold*(1-h)`, and a previously coarse node to refine only
+above `threshold*(1+h)`. Cold start uses the original threshold.
+A history is discarded on source revision/policy changes, camera
+viewport/clip-depth changes, or more than two missing RHI epochs.
+
+Masks are **GPU-only** and triple-buffered by RHI frame serial.
+The previous frame's mask remains read-only while the current
+frame writes another buffer. No in-flight slot is reused without
+a completion fence. Three compute steps reset the candidate mask,
+perform the same hierarchy traversal with hysteresis, and restore
+the previous mask if selection reports invalid metadata or overflow.
+No synchronous GPU readback affects rendering; async reads are
+reserved for diagnostics and test fixtures.
+
+One selector has explicit limits: up to 262,144 nodes in its
+metadata, 256 independent temporal history keys, and 32 MiB of
+logical GPU Storage masks. Exceeding limits declines experimental
+GPU temporal submission; original portable CPU/Legacy remains.
+These limits do not account for extra physical RHI versions,
+original geometry, indirect arguments or other worlds.
+
+For users calling `GpuClusterCulling::dispatch` directly,
+`GpuPassConfig` now exposes `hysteresisFraction`,
+`temporalNodeCount`, `temporalPassId` and
+`temporalRevision` (all needed for h>0). Only one enabled
+instance may be dispatched per temporal history. The 112-byte
+`GpuSelectionUniforms` preserves all previous 96 bytes of
+shader ABI. `GpuSelectionSubmission::temporalApplied`
+means an acceptable GPU command sequence was encoded, not
+that hardware parity was proven. `GpuTemporalStats` and
+`GeometryScene::Stats` expose mask memory, sources/cameras,
+cold starts and budget rejections.
+
+### Tests and remaining work
+
+Recording backend regressions are authored for independent
+camera histories, revision changes, triple-frame GPU fence
+protection, 32 MiB caps and default-stateless behavior.
+Real Vulkan offscreen GPU fixtures queue four consecutive
+frames and compare asynchronously returned selected clusters
+and refined-node masks against the CPU cold/warm oracle.
+A separate opt-in macOS `aiverse_strata_metal_temporal`
+runner covers the first three consecutive GPU temporal frames
+on actual Metal. These are **NOT compiled or run** yet.
+`AIVERSE_STRATA_METAL_GPU_TESTS=ON` builds that native Metal
+runner. No Metal/Vulkan temporal pixel/depth, shadow or
+reflection parity is yet certified. GLES3/GL33/WebGL2 still
+use Stage17.3 CPU/portable hysteresis, without GPU compute.
+
+This stage stabilizes **which LOD geometry is drawn**; it does
+not morph vertices, fade between interior surfaces, reconcile
+unrelated terrain chunks or guarantee continuous normal/UV
+shading. Stage17.1/17.2 boundary certification remains
+mandatory. Next Stage18 covers performance, descriptor/encoder
+count, GPU mask bandwidth, memory/high-water and frame-time
+comparison to the zero-hysteresis baseline; Stage19 is the
+single final full build, CTest and real hardware acceptance.
+Exact commits/next-agent handoff:
+`docs/agent-handoffs/strata-virtual-geometry.md`, Stage17.4.
