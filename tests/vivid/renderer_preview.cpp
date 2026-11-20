@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -88,6 +89,14 @@ struct Preview {
     render::Renderer3D renderer;
     render::Mesh floor;
     std::unique_ptr<render::Model> model;
+    // 7AZ: optional second independent Mask actor, rendered through the
+    // NORMAL Renderer3D colour/depth pass, then used as an ID occluder.
+    std::unique_ptr<render::Model> maskModel;
+    std::array<gfx::TextureHandle,2> maskTextures{};
+    gfx::ComputeHandle maskDeformCompute{};
+    gfx::BufferHandle maskDeformedVertices{};
+    bool maskParityEnabled=false;
+    std::uint64_t maskGpuDeformedFrame=0;
     std::unique_ptr<vivid::SparseMorphLibrary> shapes;
     std::unique_ptr<vivid::FaceShapeBinding> shapeBinding;
     vivid::FaceController face{0.0f};
@@ -174,6 +183,10 @@ struct Preview {
             const int requested=std::atoi(value);
             actorCount=std::clamp(requested,1,32);
         }
+        const char* maskMode=std::getenv("AIVERSE_VIVID_MASK_PARITY");
+        maskParityEnabled=maskMode && std::strcmp(maskMode,"1")==0;
+        require(!maskParityEnabled || actorCount==1,
+                "VIVID 7AZ mask provenance probe requires one selected actor");
         if(actorCount==1) {
             // readTexturePixelAsync needs an offscreen RGBA8 target.
             // copyColor from this exact screen frame requires a readable
@@ -221,6 +234,112 @@ struct Preview {
             for(std::size_t j=i+1;j<actors.size();++j)
                 require(actors[i]->vertexBuffer()!=actors[j]->vertexBuffer(),
                         "VIVID actors accidentally share writable GPU output");
+        if(maskParityEnabled) {
+            // Two immutable 1x1 alpha textures eliminate runtime texture
+            // update races while prior Metal command buffers are in flight.
+            // Only the alpha differs, the material/UV/cutoff stay identical.
+            for(std::size_t n=0;n<maskTextures.size();++n) {
+                const std::array<std::uint8_t,4> texel{{
+                    255,90,30,std::uint8_t(n==0?0:255)}};
+                gfx::TextureDesc td{};
+                td.width=td.height=1;
+                td.format=gfx::PixelFormat::RGBA8;
+                td.filter=gfx::Filter::Nearest;
+                td.data=texel.data();
+                td.label="VIVID 7AZ normal Renderer3D Mask alpha texel";
+                maskTextures[n]=dev.createTexture(td);
+                require(maskTextures[n].valid(),
+                        "VIVID 7AZ Mask alpha test texture unavailable");
+            }
+            maskModel=std::make_unique<render::Model>();
+            auto& blocker=*maskModel;
+            blocker.path="VIVID 7AZ GPU-written normal Renderer3D Mask actor";
+            blocker.vertices.resize(3);
+            blocker.indices={0,1,2};
+            blocker.meshes.resize(1);
+            render::Primitive tri{};
+            tri.firstIndex=0;tri.indexCount=3;
+            tri.firstVertex=0;tri.vertexCount=3;
+            blocker.meshes[0].primitives.push_back(tri);
+            blocker.nodes.resize(1);
+            blocker.nodes[0].mesh=0;
+            blocker.nodes[0].name="7AZ mask actor";
+            blocker.materials.resize(1);
+            auto& material=blocker.materials[0];
+            material.name="7AZ sampled mask";
+            material.alpha=render::AlphaMode::Mask;
+            material.baseTex=0;
+            material.alphaCutoff=.5f;
+            material.doubleSided=true;
+            material.castShadow=false;
+            material.receiveShadow=false;
+            material.vertexColors=false;
+            material.baseColor={0.95f,0.38f,0.12f,1.f};
+            blocker.images.resize(2);
+            for(std::size_t n=0;n<2;++n) {
+                blocker.images[n].tex=maskTextures[n];
+                blocker.images[n].borrowedTexture=true;
+                blocker.images[n].width=blocker.images[n].height=1;
+            }
+            render::RTSCamera fixedCamera;
+            fixedCamera.target={0,0.45f,0};
+            fixedCamera.distance=5.8f;
+            fixedCamera.pitch=0.25f;
+            fixedCamera.yaw=0.18f;
+            const render::float3 headCentre{0,1.15f,0};
+            const auto toward=render::normalize(fixedCamera.eye()-headCentre);
+            const auto right=render::normalize(
+                render::cross({0,1,0},toward));
+            const auto up=render::normalize(render::cross(toward,right));
+            const auto front=headCentre+toward*1.25f;
+            blocker.vertices[0].pos=front-right*.55f-up*.5f;
+            blocker.vertices[1].pos=front+right*.55f-up*.5f;
+            blocker.vertices[2].pos=front+up*.65f;
+            for(auto& vertex:blocker.vertices) {
+                vertex.uv={0.5f,0.5f};
+                vertex.nrm=toward;
+                vertex.color=0xffffffffu;
+            }
+            blocker.finalize();
+            blocker.batching.autoLod=false;
+            render::prepareModelUpload(blocker);
+            require(render::uploadModel(dev,blocker,true),
+                    "VIVID 7AZ normal Renderer3D Mask GPU asset upload failed");
+            require(!blocker.geometryPoolPage && blocker.vb.valid() &&
+                    blocker.ib.valid() && !blocker.gpuBaseVertex,
+                    "VIVID 7AZ Mask GPU vertex override cannot use pooled geometry");
+            // GPU writes the entire 60-byte ModelVertex (15 uint32 words).
+            // CPU mesh positions intentionally remain immutable.
+            constexpr const char* kMaskDeformMSL=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+kernel void cs_main(device const uint* source [[buffer(0)]],
+                    device uint* output [[buffer(1)]],
+                    constant float4& offset [[buffer(8)]],
+                    uint vertex [[thread_position_in_grid]]) {
+    if(vertex>=3u)return;
+    const uint start=vertex*15u;
+    for(uint word=0u;word<15u;++word)
+        output[start+word]=source[start+word];
+    for(uint axis=0u;axis<3u;++axis) {
+        const float p=as_type<float>(source[start+axis]);
+        output[start+axis]=as_type<uint>(p+offset[axis]);
+    }
+}
+)MSL";
+            maskDeformCompute=dev.createCompute({
+                kMaskDeformMSL,nullptr,"VIVID 7AZ GPU-producer Mask vertex stream"});
+            require(maskDeformCompute.valid(),
+                    "VIVID 7AZ native Metal GPU mask deformation unavailable");
+            gfx::BufferDesc output{};
+            output.type=gfx::BufferType::Storage;
+            output.usage=gfx::Usage::Immutable;
+            output.size=blocker.vertices.size()*sizeof(render::ModelVertex);
+            output.label="VIVID 7AZ independent GPU-compute-written 60B Mask";
+            maskDeformedVertices=dev.createBuffer(output);
+            require(maskDeformedVertices.valid(),
+                    "VIVID 7AZ GPU Mask output allocation failed");
+        }
         render::MeshBuilder ground;
         ground.box({0,-0.12f,0},{10,0.2f,9});
         floor = ground.upload(dev);
