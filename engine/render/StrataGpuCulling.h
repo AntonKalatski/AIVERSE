@@ -163,6 +163,11 @@ bool compareGpuSelection(const ModelAsset& source,
 struct GpuTemporalStats {
     size_t retainedBytes=0, histories=0;
     uint64_t submitted=0, coldStarts=0, expired=0, refused=0;
+    // Stage18 cumulative instrumentation. These are CPU-side RHI accounting
+    // metrics, NOT measured GPU memory allocations or GPU execution time.
+    size_t peakRetainedBytes=0, peakHistories=0;
+    uint64_t successfulDispatches=0;
+    size_t peakSubmissionsPerFrameSlot=0;
 };
 
 // One diagnostic selection dispatch per source and view; caller must retain
