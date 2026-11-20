@@ -1625,3 +1625,17 @@ independent GPU `VkBuffer`/`MTLBuffer` per chunk or unbounded GPU GI.
 slots remain explicit limits; fragmentation/compaction is still pending.
 New `gi_gpu_paged_bvh` CTest source and GPU runtime contract are
 UNEXECUTED. Do not claim a native/GPU PASS or merge to main yet.
+
+
+## GI Stage 57 — compact fragmented GPU page address space (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage57-page-defragmentation-2026-11-20.md`.
+`GiGpuPagedBvhArena::plan` first preserves unchanged resident BLAS page
+offsets; ONLY if a GPU logical address capacity is exhausted by fragmentation
+does it build a fresh compact candidate with rewritten BLAS and TLAS pointers.
+The old accepted mapping is untouched until the RHI upload returns success
+and the arena explicitly commits the plan. Run only after real completed
+Metal/Vulkan GPU GI tickets; no silent occluder clipping. If even compaction
+does not fit, return an explicit failure, keep world edits pending and block
+outdated GI. Stage57 CTest source `gi_gpu_page_compaction` is registered but
+native compilation, CTest and GPU device tests are NOT RUN.
