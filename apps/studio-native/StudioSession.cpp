@@ -120,12 +120,29 @@ Json StudioSession::snapshot() const {
     result.set("mode", str("edit"));
     return result;
 }
+void StudioSession::refreshMaterialPreview() {
+    if (previewMaterialName_.empty()) {
+        previewMaterialFactors_ = Json();
+        ++previewMaterialRevision_;
+        return;
+    }
+    Json request=Json::object();
+    request.set("name",str(previewMaterialName_));
+    const Json result=ws_.call("material_get",request,"studio");
+    if(result.has("error")) throw std::runtime_error(result.getStr("error"));
+    const Json& resolved=result["resolved"];
+    if(!resolved.isObject()) throw std::runtime_error("Resolved PBR preview material missing");
+    previewMaterialFactors_=resolved;
+    ++previewMaterialRevision_;
+}
 Json StudioSession::openProject(const std::string& path) {
     if (path.empty()) throw std::runtime_error("Project path is empty");
     std::string error;
     if (!ws_.openGame(path, &error))
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
     selected_.clear();
+    previewMaterialName_.clear();
+    refreshMaterialPreview();
     return snapshot();
 }
 int StudioSession::selectedEntityIndex() const {
@@ -142,6 +159,19 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.materialPreview") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const std::string name=params.getStr("name");
+            if(!name.empty() && !validStudioMaterialName(name))
+                throw std::runtime_error("Invalid material name");
+            if(!name.empty() && !editor::loadMaterialLibrary(ws_)[name].isObject())
+                throw std::runtime_error("Unknown material");
+            previewMaterialName_=name;
+            refreshMaterialPreview();
+            Json result=Json::object();
+            result.set("active",Json::fromBool(!name.empty()));
+            result.set("name",str(name));
+            reply.set("result",std::move(result));
         } else if (method == "studio.materials" || method == "studio.materialPatch" ||
                    method == "studio.materialCreate") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
@@ -202,6 +232,11 @@ Json StudioSession::dispatch(const Json& request) {
                 // explicit Apply is required in the frontend.
                 const Json result=ws_.call("material_set",request,"studio");
                 if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+            }
+            if (method!="studio.materials" && !previewMaterialName_.empty()) {
+                // Refresh preview when the selected disk material was modified,
+                // including inherited/base changes.
+                refreshMaterialPreview();
             }
             const Json library=editor::loadMaterialLibrary(ws_);
             Json result=Json::object();
