@@ -517,3 +517,19 @@ fenced retirement owners. discardSceneSubmission also clears heightfield binding
 No save-format changes. git diff --check PASS. Build-4 still running on KINGSTON;
 these edits NOT YET built/tested. Next wire host final publication barrier, add
 late failure/retry fixtures and run fresh build. Real GPU/CI NOT RUN.
+
+
+## Captured-frame final publication barrier — 2026-11-20
+Code `8a748e2579680b03d2d5aa422e90171bf2499c9d`, branch codex/lens-completion. Captured LENS frames retain the
+prepared surface cohort until Animation/Sprite/Lighting/Overlay packet assembly
+finishes. Topology candidates provide scoped height and road-surface queries
+without changing the published map; candidate packets are assembled before the
+noexcept publication. Owner/source revisions and completed epoch mask are checked
+again before commit. Late failure clears packets and restores animation/event
+clocks while surface candidate destruction releases private GPU handles. Legacy
+noncapture path unchanged. Added late-overlay topology discard/retry fixture.
+No asset/save changes. git diff --check PASS; new checks NOT RUN yet.
+Build-4 nearly complete but predates this stage; fresh rebuild required.
+Paint layers/field visual caches remain legacy host providers outside the declared
+surface cohort; this is preparation atomicity, not rollback of GPU execution.
+Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.

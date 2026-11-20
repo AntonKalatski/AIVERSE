@@ -3257,3 +3257,19 @@ path function, avoiding ADL ambiguity with ModelClips.h after main integration.
 No API/JSON/save change. Observed build-3 error fixed in source, rebuild pending;
 full native/GPU checks NOT RUN for this repair. Next: finish build-3 remaining
 target diagnostics, rebuild and run animation_assets plus View/LENS fixtures.
+
+
+## Captured-frame final publication barrier — 2026-11-20
+Code `8a748e2579680b03d2d5aa422e90171bf2499c9d`, branch codex/lens-completion. Captured LENS frames retain the
+prepared surface cohort until Animation/Sprite/Lighting/Overlay packet assembly
+finishes. Topology candidates provide scoped height and road-surface queries
+without changing the published map; candidate packets are assembled before the
+noexcept publication. Owner/source revisions and completed epoch mask are checked
+again before commit. Late failure clears packets and restores animation/event
+clocks while surface candidate destruction releases private GPU handles. Legacy
+noncapture path unchanged. Added late-overlay topology discard/retry fixture.
+No asset/save changes. git diff --check PASS; new checks NOT RUN yet.
+Build-4 nearly complete but predates this stage; fresh rebuild required.
+Paint layers/field visual caches remain legacy host providers outside the declared
+surface cohort; this is preparation atomicity, not rollback of GPU execution.
+Next run fresh KINGSTON build, fault fixtures, full CTest and GPU validation.
