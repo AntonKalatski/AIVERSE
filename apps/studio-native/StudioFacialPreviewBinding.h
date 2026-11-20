@@ -1,6 +1,6 @@
-// Stage 184 — Studio facial-preview asset binding, source-only contract.
-// This branch has an 8-channel Renderer3D; do NOT claim GPU facial preview
-// for 52/64 channels until the MotionWeave 64-channel runtime is integrated.
+// Studio facial-preview asset binding for the shared MotionWeave palette.
+// Native runtime readiness and independently verified visual quality remain
+// separate; browser inputs cannot declare GPU acceptance.
 #pragma once
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioContentDirectory.h"

@@ -340,8 +340,24 @@ model files on CPU workers without involving the ECS World or GPU:
 `AsyncModelCpuQueue`. The default remains one worker; an editor or
 native host can opt into more. Workers have no knowledge of genre,
 FPS/RTS player types, scene packets or MotionWeave graph evaluation.
-Only `ModelAssetProvider::publishReady(device,...)` may upload a
-prepared Model on the render/device owner thread.
+`ModelAssetProvider::publishReady(device,...)` uploads prepared Models
+on the render/device owner thread. Authoring hosts needing validation
+before GPU publication may instead call `takePrepared(result)`, compile
+their rig against `result.model`, then call `publishPrepared(device,
+freshGenerationKey,std::move(result.model))`. This path uses the same
+staging transaction and rejects publication while a Model read lease is
+active. `cancelAsync(source)` invalidates pending CPU results without
+evicting the last-good resident Model; `stopAsync()` joins the reader
+before its project is destroyed. Retire the old generation only after
+successful publication, detaching pose and renderer caches first.
+
+Studio's native facial preview uses this split path. One `ModelReadLease`
+spans pose evaluation through the synchronous Renderer3D submission.
+Project changes drain the old owner and its texture cache, so identical
+relative paths cannot reuse another project's textures. CPU preparation
+runs in the worker; GPU upload/retirement and the single Animator stay
+on the render thread. Bad imports retain last-good ownership and report
+the rejected generation instead of drawing a stale asset.
 
 Priorities are `Interactive`, `Visible`, `Background`. Pending
 jobs of equal priority are FIFO; after sustained high-priority

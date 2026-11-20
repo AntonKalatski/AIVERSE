@@ -28,7 +28,7 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
 }
 StudioMetalScene::~StudioMetalScene() {
     if (device_) {
-        (void)facialGpu_.clear(*device_);
+        (void)facialGpu_.clear(*device_,renderer_);
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -89,10 +89,17 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     }
     // A real imported Model is drawn through the SAME Metal Renderer3D used
     // for native materials and the map; no HTML fake character, no second
-    // Animator/Graph clock. All CPU imports and GPU ownership are owner-thread.
+    // Animator/Graph clock. CPU import is asynchronous; GPU publication and
+    // retirement remain on this owner thread before frame submissions.
     if(facialRequested) {
         std::string reason;
-        if(facialGpu_.sync(*device_,projectRoot,facialBinding,reason)) {
+        if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
+            // Spans both pose evaluation and the deferred renderer draw list.
+            const auto modelRead=facialGpu_.acquireRead();
+            if(!modelRead) {
+                facialError_="Facial Model read lease unavailable";
+                return;
+            }
             if(!cameraInitialized_) {
                 camera_.target={0,0,0};
                 camera_.distance=4.2f;
@@ -127,7 +134,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         facialError_=reason;
         cameraInitialized_=false;
     }else if(!facialBinding.bound()) {
-        if(!facialGpu_.clear(*device_))
+        if(!facialGpu_.clear(*device_,renderer_))
             facialError_="Previous facial Model retirement lacks GPU completion";
     }
     if (materialRevision_ != previewRevision) {

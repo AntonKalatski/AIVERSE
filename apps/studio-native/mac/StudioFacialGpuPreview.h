@@ -4,6 +4,7 @@
 #pragma once
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/ModelAssetProvider.h"
 #include "engine/render/Animation.h"
 #include "engine/render/Renderer3D.h"
 #include <aiverselib/animation/FacialPreviewSession.h>
@@ -25,25 +26,32 @@ public:
     }
     // Discard GPU resources only after device completion; on failure leave
     // the Model quarantined instead of destroying in-flight handles.
-    bool clear(gfx::Device& device) noexcept;
-    bool sync(gfx::Device& device,const std::string& projectRoot,
+    bool clear(gfx::Device& device,render::Renderer3D& renderer) noexcept;
+    bool sync(gfx::Device& device,render::Renderer3D& renderer,const std::string& projectRoot,
               const StudioFacialPreviewBinding& binding,std::string& error);
     bool submit(render::Renderer3D& renderer,
                 const StudioFacialPreviewBinding& binding,
                 float dt,std::string& error);
-    const render::Model* model() const noexcept {return model_.get();}
+    // Keep this lease alive through Animator evaluation AND renderer.render().
+    render::ModelReadLease acquireRead() const {
+        return provider_?provider_->resources().acquireModelRead(model_):render::ModelReadLease{};
+    }
+    const render::Model* model() const noexcept {return model_;}
     bool ready() const noexcept {return bool(model_) && facial_.ready();}
     uint64_t sourceRevision() const noexcept {return revision_;}
 private:
     static bool readProjectFile(const std::filesystem::path& projectRoot,
                                 const std::string& key,std::string& bytes);
     render::RenderDeviceLifetime::Lease gpuLease_;
-    std::unique_ptr<render::Model> model_;
+    std::unique_ptr<render::ModelAssetProvider> provider_;
+    render::Model* model_=nullptr; // borrowed from provider, guarded per frame
     lib::animation::FacialPreviewSession facial_;
     render::Animator animator_; // ONLY parent pose evaluator in this preview
     render::Pose pose_;
     std::vector<render::mat4> nodeWorld_;
     std::string projectRoot_,guid_;
+    std::string readerProject_,pendingSource_,pendingProject_,pendingGuid_,modelKey_;
+    uint64_t pendingRevision_=0,publicationSerial_=0;
     uint64_t revision_=0;
     uint64_t rejectedRevision_=0;
     std::string rejectedGuid_,rejectedProject_,rejectedError_;

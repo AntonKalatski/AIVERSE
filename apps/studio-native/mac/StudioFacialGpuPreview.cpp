@@ -40,53 +40,42 @@ bool StudioFacialGpuPreview::readProjectFile(
     return bool(input) || input.eof();
 }
 
-bool StudioFacialGpuPreview::clear(gfx::Device& device) noexcept {
-    // Never free old GPU resources through a new device at the same address.
-    if(model_ && !gpuLease_.validFor(device)) {
-        (void)model_.release();
-        facial_.clear();
-        animator_.setModel(nullptr);
-        pose_.clear();
-        nodeWorld_.clear();
-        return false;
-    }
-    if(model_) {
-        try {
-            if(!device.waitForResourceIdle()) {
-                (void)model_.release(); // quarantine GPU resources on failed fence
-                facial_.clear();
-                animator_.setModel(nullptr);
-                pose_.clear();
-                nodeWorld_.clear();
-                return false;
-            }
-            render::releaseModel(device,*model_);
-            model_.reset();
-        }catch(...) {
-            (void)model_.release();
-            facial_.clear();
-            animator_.setModel(nullptr);
-            pose_.clear();
-            nodeWorld_.clear();
-            return false;
-        }
-    }
+bool StudioFacialGpuPreview::clear(
+        gfx::Device& device,render::Renderer3D& renderer) noexcept {
+    // Detach CPU readers before the shared owner drains GPU retirements.
     facial_.clear();
     animator_.setModel(nullptr);
     pose_.clear();
     nodeWorld_.clear();
-    guid_.clear();
-    projectRoot_.clear();
-    revision_=0;
-    rejectedRevision_=0;
-    rejectedGuid_.clear();
-    rejectedProject_.clear();
-    rejectedError_.clear();
-    return true;
+    model_=nullptr;
+    guid_.clear();projectRoot_.clear();modelKey_.clear();
+    pendingSource_.clear();pendingProject_.clear();pendingGuid_.clear();
+    pendingRevision_=revision_=rejectedRevision_=0;
+    rejectedGuid_.clear();rejectedProject_.clear();rejectedError_.clear();
+    readerProject_.clear();
+    if(!provider_)return true;
+    try {
+        provider_->stopAsync();
+        if(!gpuLease_.validFor(device))
+            throw std::runtime_error("Facial Model GPU epoch expired");
+        for(const auto& [key,model]:provider_->resources().models()) {
+            (void)key;
+            if(model)renderer.invalidateModelCachesFor(model.get());
+        }
+        provider_->shutdown(device);
+        provider_.reset();
+        return true;
+    }catch(...) {
+        // The shared cache still owns partial/resident GPU resources. Do
+        // not destroy its CPU ownership when completion cannot be proven.
+        (void)provider_.release();
+        return false;
+    }
 }
 
 bool StudioFacialGpuPreview::sync(
-        gfx::Device& device,const std::string& projectRoot,
+        gfx::Device& device,render::Renderer3D& renderer,
+        const std::string& projectRoot,
         const StudioFacialPreviewBinding& binding,std::string& error) {
     error.clear();
     if(!gpuLease_.validFor(device)) {
@@ -94,99 +83,110 @@ bool StudioFacialGpuPreview::sync(
         return false;
     }
     if(!binding.bound()) {
-        if(!clear(device))error="Facial GPU retirement pending device completion";
+        if(!clear(device,renderer))error="Facial GPU retirement pending device completion";
         return error.empty();
     }
-    // Rebind only when the immutable project/asset/rig generation changes.
-    // Sliders and IK targets alter live session controls, not GPU ownership.
-    if(model_ && revision_==binding.revision() &&
-       guid_==binding.guid() && projectRoot_==projectRoot)
-        return true;
-    // Bad external GLBs/rigs are not re-imported 60 times/sec while the
-    // Studio viewport is visible. Explicit Bind increments the revision.
-    if(rejectedRevision_==binding.revision() &&
-       rejectedGuid_==binding.guid() &&
-       rejectedProject_==projectRoot && !rejectedError_.empty()) {
-        error=rejectedError_;
-        return false;
-    }
-    if(model_ && !device.waitForResourceIdle()) {
-        error="Cannot switch facial model: previous GPU frame is still active";
-        return false;
-    }
-    // A failed GPU upload can leave partial VB/IB/texture handles. Keep the
-    // candidate alive through catch and retire behind a real device barrier.
-    std::unique_ptr<render::Model> candidate;
-    bool gpuUploadStarted=false;
     try {
-        auto read=[root=fs::path(projectRoot)](
-                const std::string& key,std::string& data) {
-            return readProjectFile(root,key,data);
-        };
-        candidate=render::loadModel(
-            "content/"+binding.path(),read);
-        if(!candidate)throw std::runtime_error("Model import returned no Model");
-        if(candidate->nodes.empty() || candidate->vertices.empty())
+        // Identical relative texture paths in different projects must never
+        // reuse the previous project's decoded/GPU texture cache.
+        if(provider_ && !readerProject_.empty() && readerProject_!=projectRoot)
+            if(!clear(device,renderer))
+                throw std::runtime_error("Previous project GPU retirement failed");
+        if(!provider_) {
+            provider_=std::make_unique<render::ModelAssetProvider>();
+            provider_->setGpuDeviceLease(gpuLease_);
+            provider_->setCpuMaxQueued(1);
+        }
+        // Poll before beginFrame and before acquiring the render read lease.
+        provider_->collectRetired(device);
+        if(model_ && revision_==binding.revision() &&
+           guid_==binding.guid() && projectRoot_==projectRoot)return true;
+        if(rejectedRevision_==binding.revision() &&
+           rejectedGuid_==binding.guid() && rejectedProject_==projectRoot &&
+           !rejectedError_.empty()) {
+            error=rejectedError_;
+            return false;
+        }
+        const std::string source="content/"+binding.path();
+        if(pendingRevision_!=binding.revision() ||
+           pendingGuid_!=binding.guid() || pendingProject_!=projectRoot) {
+            if(!pendingSource_.empty())provider_->cancelAsync(pendingSource_);
+            render::ModelAssetProvider::Prepared discarded;
+            while(provider_->takePrepared(discarded)) {}
+            if(readerProject_!=projectRoot) {
+                // Rare project switch joins the old reader's CPU work.
+                // Ordinary generation changes only invalidate its result.
+                provider_->setReader([root=fs::path(projectRoot)](
+                        const std::string& key,std::string& bytes) {
+                    return readProjectFile(root,key,bytes);
+                });
+                readerProject_=projectRoot;
+            }
+            if(!provider_->requestAsync(source,render::ModelLoadPriority::Interactive)) {
+                error="Facial model import waiting for resource capacity";
+                return false;
+            }
+            pendingSource_=source;
+            pendingRevision_=binding.revision();
+            pendingGuid_=binding.guid();
+            pendingProject_=projectRoot;
+        }
+        render::ModelAssetProvider::Prepared prepared;
+        if(provider_->publicationBackpressured()) {
+            error="Facial model publication waiting for GPU retirement";
+            return false;
+        }
+        if(!provider_->takePrepared(prepared)) {
+            error="Loading facial model";
+            return false;
+        }
+        if(prepared.source!=pendingSource_) {
+            error="Loading facial model";
+            return false; // stale different-source result never gets published
+        }
+        if(!prepared.model)
+            throw std::runtime_error(prepared.warnings.empty()
+                ?"Model import returned no Model":prepared.warnings.back());
+        if(prepared.model->nodes.empty() || prepared.model->vertices.empty())
             throw std::runtime_error("Imported facial Model has no geometry");
-        // Respect the imported asset's normal autoLod policy. The shared
-        // Stage 186 generator now supports unskinned semantic morphs with
-        // source texture aliasing. Authored/skinned LODs keep importer policy.
         lib::animation::FacialPreviewSession newSession;
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
             ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
-        if(!newSession.configure(*candidate,binding.document(),
+        if(!newSession.configure(*prepared.model,binding.document(),
                                  binding.scalars(),ikTargets,error))
             throw std::runtime_error(error);
-        // Source validation completed before publishing any GPU Model.
-        // Preparation and upload remain on the owning native device thread.
-        render::prepareModelUpload(*candidate);
-        gpuUploadStarted=true;
-        if(!render::uploadModel(device,*candidate,true))
-            throw std::runtime_error("GPU facial Model upload failed");
-        // Previous owner is now completion-proven, so it can retire safely.
-        if(model_) {
-            render::releaseModel(device,*model_);
-            model_.reset();
+        // CPU decoding/preparation is complete; validate the rig BEFORE any
+        // GPU publication. Fresh owner keys preserve last-good on failure.
+        const auto key="studio-facial-generation/"+std::to_string(++publicationSerial_);
+        auto* published=provider_->publishPrepared(device,key,std::move(prepared.model));
+        if(!modelKey_.empty()) {
+            // Generation keys identify publications, not CPU source paths;
+            // retire them without adding synthetic queue revision entries.
+            provider_->resources().invalidateSources(device,{modelKey_},[&](const auto& affected) {
+                for(const auto& item:affected)
+                    if(item.model)renderer.invalidateModelCachesFor(item.model);
+                animator_.setModel(nullptr);
+                facial_.clear();
+            });
         }
-        model_=std::move(candidate);
+        model_=published;
+        modelKey_=key;
         facial_=std::move(newSession);
-        animator_.setModel(model_.get());
+        animator_.setModel(model_);
         if(!model_->clips.empty()) {
             render::Animator::Play play;
-            play.restart=true;
-            play.fade=0.f;
+            play.restart=true;play.fade=0.f;
             animator_.play(0,0,play);
         }
-        projectRoot_=projectRoot;
-        guid_=binding.guid();
-        revision_=binding.revision();
-        rejectedRevision_=0;
-        rejectedGuid_.clear();
-        rejectedProject_.clear();
-        rejectedError_.clear();
+        projectRoot_=projectRoot;guid_=binding.guid();revision_=binding.revision();
+        pendingRevision_=0;pendingSource_.clear();pendingGuid_.clear();pendingProject_.clear();
+        rejectedRevision_=0;rejectedGuid_.clear();rejectedProject_.clear();rejectedError_.clear();
         return true;
     }catch(const std::exception& ex) {
         error=ex.what();
         rejectedRevision_=binding.revision();
-        rejectedGuid_=binding.guid();
-        rejectedProject_=projectRoot;
-        if(candidate && gpuUploadStarted) {
-            // A candidate is not published until ALL GPU allocations succeed.
-            // Never let CPU destructor release possibly submitted GPU objects.
-            try {
-                if(device.waitForResourceIdle())
-                    render::releaseModel(device,*candidate);
-                else {
-                    (void)candidate.release();
-                    error+=" (partial GPU Model quarantined: no completion proof)";
-                }
-            }catch(...) {
-                (void)candidate.release();
-                error+=" (partial GPU Model quarantined: cleanup failed)";
-            }
-        }
-        rejectedError_=error;
+        rejectedGuid_=binding.guid();rejectedProject_=projectRoot;rejectedError_=error;
         return false;
     }
 }
@@ -203,6 +203,10 @@ bool StudioFacialGpuPreview::submit(
     }
     if(!ready() || !binding.bound() || binding.revision()!=revision_) {
         error="Facial render has no matching GPU Model generation";
+        return false;
+    }
+    if(!provider_ || provider_->resources().activeModelReaders()==0) {
+        error="Facial render requires a frame Model read lease";
         return false;
     }
     for(const auto& [name,value]:binding.scalars())
@@ -228,7 +232,7 @@ bool StudioFacialGpuPreview::submit(
     const float scale=2.f/extent;
     const render::float3 center{(a.x+b.x)*.5f,(a.y+b.y)*.5f,(a.z+b.z)*.5f};
     render::ModelDraw draw;
-    draw.model=model_.get();
+    draw.model=model_;
     draw.pose=&pose_;
     draw.nodeWorld=&nodeWorld_;
     draw.world=render::mat4::scale({scale,scale,scale}) *

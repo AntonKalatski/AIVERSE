@@ -2,6 +2,8 @@
 // The real Metal/Vulkan/GL loading and GPU lifetime tests are separate.
 #include "engine/render/ModelAssetProvider.h"
 #include <cassert>
+#include <chrono>
+#include <thread>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -24,5 +26,22 @@ int main() {
     assert(provider.resources().pendingRetirements()==0);
     assert(provider.warnings().empty());
     provider.clearWarnings();
+    // An authoring host can inspect/validate prepared CPU data without
+    // publishing a Model or touching a gfx::Device.
+    provider.setReader([](const std::string&,std::string& bytes) {
+        bytes="v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+        return true;
+    });
+    assert(provider.requestAsync("preview.obj",render::ModelLoadPriority::Interactive));
+    ModelAssetProvider::Prepared prepared;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+    while(!provider.takePrepared(prepared) && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    assert(prepared.model && prepared.source=="preview.obj");
+    assert(!prepared.model->vb.valid() && !prepared.model->ib.valid());
+    assert(provider.find("preview.obj")==nullptr);
+    provider.cancelAsync("preview.obj");
+    provider.stopAsync();
+    assert(provider.cpuStats().liveThreads==0);
     return 0;
 }
