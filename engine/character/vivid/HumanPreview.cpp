@@ -42,10 +42,11 @@ struct Builder {
     }
 };
 }
-HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality) {
+HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality,
+                                       HumanMaterialQuality materialQuality) {
     dna.validate();
     HumanPreviewAsset result;
-    const auto mat=humanMaterials(dna);
+    const auto mat=humanMaterials(dna,materialQuality);
     const auto& a=dna.anatomy;
     const float hs=a.headScale;
     const float eyeSpacing=0.27f+0.16f*a.eyeSpacing;
@@ -190,8 +191,12 @@ HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality)
         {Channel::MouthSmileRight,"mouthSmileRight",1.0f}};
     result.facialBinding=FaceShapeBinding::compile(result.facialShapes,routes);
     result.groom.generate(dna,quality);
-    result.hair=result.groom.makeCardModel(dna);
+    result.hair=result.groom.makeCardModel(dna,materialQuality);
     if(!result.hair)throw std::runtime_error("VIVID hair model generation failed");
     return result;
+}
+HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
+                                       GroomQuality quality) {
+    return generateHumanPreview(dna,quality,HumanMaterialQuality::High);
 }
 } // namespace aiverse::vivid
