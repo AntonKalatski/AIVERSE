@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
+#include <memory>
+#include <cstdint>
 #include <utility>
 
 namespace aiverse::game {
@@ -641,21 +643,36 @@ void RtsOverlays::flush(Renderer3D& r) {
         vb_=replacement;
         vbBytes_=capacity;
     }
-    const mat4 vp = r.viewProj();
-    r.drawCustom([this, vp, bytes](gfx::Device& dev) {
-        dev.updateBuffer(vb_, upload_.data(), bytes);
-        uint32_t first = 0;
-        for (auto& b : buckets_) {
-            const uint32_t n = uint32_t(b.verts.size());
-            if (!n) continue;
-            if (pipes_[b.pipe].valid()) {
-                dev.setPipeline(pipes_[b.pipe]);
-                dev.setUniforms(0, vp.m, sizeof vp.m);
-                dev.setVertexBuffer(vb_);
-                dev.setTexture(0, b.tex);
-                dev.draw(n, first);
-            }
-            first += n;
+    // Capture each submitted camera's data and RHI handles. A queued
+    // drawCustom callback must NOT read this->upload_, buckets_, vb_ or
+    // pipelines_: another camera can overwrite them before it executes.
+    struct Command {
+        gfx::PipelineHandle pipe;
+        gfx::TextureHandle texture;
+        uint32_t first=0,count=0;
+    };
+    std::vector<Command> commands;
+    commands.reserve(buckets_.size());
+    uint32_t first=0;
+    for(const auto& b:buckets_) {
+        if(b.verts.size()>UINT32_MAX-first)
+            throw std::overflow_error("RtsOverlays: draw vertex index overflow");
+        const uint32_t count=uint32_t(b.verts.size());
+        if(count && pipes_[b.pipe].valid())
+            commands.push_back({pipes_[b.pipe],b.tex,first,count});
+        first+=count;
+    }
+    const auto snapshot=std::make_shared<const std::vector<BatchVertex>>(upload_);
+    const mat4 vp=r.viewProj();
+    const gfx::BufferHandle buffer=vb_;
+    r.drawCustom([snapshot,commands=std::move(commands),vp,buffer,bytes](gfx::Device& dev) {
+        dev.updateBuffer(buffer,snapshot->data(),bytes);
+        for(const auto& cmd:commands) {
+            dev.setPipeline(cmd.pipe);
+            dev.setUniforms(0,vp.m,sizeof vp.m);
+            dev.setVertexBuffer(buffer);
+            dev.setTexture(0,cmd.texture);
+            dev.draw(cmd.count,cmd.first);
         }
     });
 }
