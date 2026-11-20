@@ -406,6 +406,165 @@ void indexedOracle(Device& device,Probe& probe) {
     std::printf("VT indexed independent color oracle: samples=%u\n",samples);
     device.destroyTexture(table);device.destroyTexture(atlas);
 }
+// Hand-authored physical mip colors isolate hardware derivative selection
+// from virtual LOD and from the CPU mip generator tested by mip_pipeline.
+void physicalMipOracle(Device& device,Probe& probe) {
+    TextureDesc desc;
+    desc.width=8;desc.height=8;desc.arrayLayers=1;desc.mipLevels=4;
+    desc.dimension=TextureDimension::Texture2DArray;
+    auto atlas=device.createTexture(desc);
+    desc.width=2;desc.height=1;desc.arrayLayers=2;desc.mipLevels=1;
+    desc.filter=Filter::Nearest;
+    auto table=device.createTexture(desc);
+    require(atlas.valid() && table.valid(),"physical mip oracle textures allocated");
+    if(!atlas.valid() || !table.valid()) {
+        if(atlas.valid())device.destroyTexture(atlas);
+        if(table.valid())device.destroyTexture(table);
+        return;
+    }
+    const std::array<Color,4> palette{{{240,0,0,255},{0,200,0,255},
+                                      {0,0,160,255},{80,80,80,255}}};
+    for(int mip=0;mip<4;++mip) {
+        const int width=8>>mip;
+        std::vector<Color> pixels(size_t(width*width),palette[size_t(mip)]);
+        TextureUploadDesc upload;
+        upload.mipLevel=mip;upload.width=upload.height=width;
+        upload.rowPitchBytes=width*4;upload.slicePitchBytes=width*width*4;
+        upload.data=pixels.data();
+        require(device.updateTextureRegion(atlas,upload),"authored physical mip upload");
+    }
+    std::array<Color,2> entries{{{0,0,0,255},{0,0,0,255}}};
+    for(int layer=0;layer<2;++layer) {
+        TextureUploadDesc upload;
+        upload.width=2;upload.height=1;upload.arrayLayer=layer;
+        upload.rowPitchBytes=upload.slicePitchBytes=8;upload.data=entries.data();
+        require(device.updateTextureRegion(table,upload),"physical mip table upload");
+    }
+    unsigned samples=0;
+    for(float lod:{0.f,.5f,1.f,1.5f,2.f,3.f}) {
+        const int low=int(lod),high=std::min(3,low+1);
+        Color actual{};
+        // 12 logical pixels / physical page mapping: rho = derivative * 12.
+        require(probe.sample(atlas,table,0,0,.25f,.4f,actual,0,1,1,
+                {std::exp2(lod)/12,0,0,0}),"physical mip GPU readback");
+        for(size_t c=0;c<4;++c) {
+            const int expected=int(std::lround(palette[size_t(low)][c]*(1-(lod-low))+
+                                               palette[size_t(high)][c]*(lod-low)));
+            require(std::abs(int(actual[c])-expected)<=2,"physical mip derivative color blend");
+        }
+        ++samples;
+    }
+    std::printf("VT physical mip oracle: samples=%u\n",samples);
+    device.destroyTexture(table);device.destroyTexture(atlas);
+}
+// Nonuniform logical images are authored independently at both virtual mips.
+// The mip-1 tint makes missing detail visibly different from resident detail.
+Color mipTexel(int x,int y,int mip,int wrap) {
+    if(!mip)return logicalTexel(x,y,wrap);
+    x=addressIndex(x,6,wrap);y=addressIndex(y,3,0);
+    return {uint8_t(170-13*x+3*y),uint8_t(25+17*x+9*y),
+            uint8_t(45+5*x+19*y),255};
+}
+std::array<float,4> mipReference(float u,float v,int mip,int wrap) {
+    const float x=addressUv(u,wrap)*float(12>>mip)-.5f;
+    const float y=clamp01(v)*float(6>>mip)-.5f;
+    const int ix=int(std::floor(x)),iy=int(std::floor(y));
+    const float fx=x-ix,fy=y-iy;
+    std::array<float,4> result{};
+    for(int dy=0;dy<2;++dy)for(int dx=0;dx<2;++dx) {
+        const auto pixel=mipTexel(ix+dx,iy+dy,mip,wrap);
+        const float weight=(dx?fx:1-fx)*(dy?fy:1-fy);
+        for(size_t c=0;c<4;++c)result[c]+=pixel[c]*weight;
+    }
+    return result;
+}
+void streamedMipOracle(Device& device,Probe& probe) {
+    unsigned samples=0,transitions=0;
+    int maxDelta=0;
+    for(int wrap:{0,1,2}) {
+        TextureStreamConfig budget;
+        budget.gpuBudgetBytes=4096;budget.stagingBudgetBytes=2048;
+        budget.uploadBytesPerFrame=256;budget.uploadsPerFrame=1;
+        VirtualTextureStreamer stream(device,budget);
+        VirtualTextureStreamConfig config;
+        config.tilesX=2;config.tilesY=1;config.mipLevels=2;
+        config.physicalPages=2;config.physicalPageSize=8;
+        config.physicalMipLevels=4;config.indexedMipTable=true;
+        require(stream.initialize(config),"indexed nonuniform stream initialized");
+        if(!stream.ready())return;
+        auto stage=[&](int mip,int tile,bool pin) {
+            std::array<Color,64> pixels;
+            for(int y=0;y<8;++y)for(int x=0;x<8;++x)
+                pixels[size_t(y*8+x)]=mipTexel(tile*6+x-1,y-1,mip,wrap);
+            auto ticket=stream.stage({mip,tile,0,0},pixels.data(),sizeof(pixels),pin);
+            require(ticket.valid(),"nonuniform physical mip chain staged");
+            return ticket;
+        };
+        auto drain=[&](int mip,int tile) {
+            for(int frame=0;frame<8 && !stream.resolveExact({mip,tile,0,0}).valid();++frame)
+                stream.drain();
+            require(stream.resolveExact({mip,tile,0,0}).valid(),"all physical mips atomically published");
+        };
+        stage(1,0,true);drain(1,0);
+        int resident=-1;
+        auto reference=[&](float u,float v,float lod) {
+            const int tile=std::min(1,int(addressUv(u,wrap)*2));
+            auto fine=mipReference(u,v,tile==resident?0:1,wrap);
+            const auto coarse=mipReference(u,v,1,wrap);
+            for(size_t c=0;c<4;++c)fine[c]=fine[c]*(1-lod)+coarse[c]*lod;
+            return fine;
+        };
+        auto sample=[&](float u,float lod,int taps) {
+            std::array<float,4> expected{};
+            if(taps) {
+                // Unit-minor-axis footprints: chosen counts 2/4/8 exactly
+                // cover this many logical texels. Their virtual LOD is zero.
+                for(int i=0;i<taps;++i) {
+                    const float offset=(float(i)+.5f-float(taps)/2)/12;
+                    auto tap=reference(u+offset,.41f,0);
+                    for(size_t c=0;c<4;++c)expected[c]+=tap[c]/float(taps);
+                }
+            } else expected=reference(u,.41f,lod);
+            Color actual{};
+            require(probe.sample(stream.physicalAtlas(),stream.indexedMipPageTableTexture(),
+                0,wrap,u,.41f,actual,lod,taps?2:1,taps?taps:1,
+                taps?std::array<float,4>{float(taps)/12,0,0,1.f/6}:std::array<float,4>{}),
+                "nonuniform indexed GPU readback");
+            ++samples;
+            for(size_t c=0;c<4;++c) {
+                const int delta=std::abs(int(actual[c])-int(std::lround(expected[c])));
+                maxDelta=std::max(maxDelta,delta);
+                if(delta>2) {
+                    ++failures;
+                    std::fprintf(stderr,"FAIL: streamed wrap=%d resident=%d u=%.3f lod=%.2f taps=%d channel=%zu expected=%.2f got=%u\n",
+                        wrap,resident,double(u),double(lod),taps,c,double(expected[c]),unsigned(actual[c]));
+                }
+            }
+        };
+        auto sweep=[&]() {
+            for(float u:{-.02f,.02f,.25f,.48f,.5f,.52f,.75f,.98f,1.02f})
+                for(float lod:{0.f,.25f,.5f,.75f,1.f})sample(u,lod,0);
+            for(float u:{0.f,.5f,1.f})for(int taps:{2,4,8})sample(u,0,taps);
+        };
+        sweep();
+        // Repeated replacement exercises LRU slice reuse and table refresh.
+        for(int iteration=0;iteration<6;++iteration) {
+            int tile=iteration%2;
+            stage(0,tile,false);
+            resident=-1; // old fine page is retired before its slice is overwritten
+            stream.drain();
+            require(!stream.resolveExact({0,tile,0,0}).valid(),
+                    "one uploaded mip cannot publish an incomplete physical chain");
+            sample(.25f,0,0);sample(.75f,0,0);
+            drain(0,tile);resident=tile;++transitions;
+            sweep();
+        }
+        stream.shutdown();
+    }
+    require(samples==1170 && transitions==18,"all nonuniform mip and LRU probes executed");
+    std::printf("VT nonuniform indexed oracle: samples=%u transitions=%u max_delta=%d\n",
+                samples,transitions,maxDelta);
+}
 int run() {
     id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
     if(!metal) {
@@ -532,6 +691,8 @@ int run() {
             "all Repeat/MirrorRepeat native bilinear GPU probes completed");
     require(seamSamples>=20,"multiple page and wrap boundary probes really sampled");
     indexedOracle(*device,probe);
+    streamedMipOracle(*device,probe);
+    physicalMipOracle(*device,probe);
     require(device->gpuHealthy(),"Metal command buffers completed without GPU errors");
     std::printf("VT bilinear independent CPU oracle: samples=%u seam_samples=%u max_delta=%d\n",
                 samples,seamSamples,largestDelta);

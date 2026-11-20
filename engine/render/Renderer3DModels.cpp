@@ -2214,21 +2214,31 @@ void Renderer3D::prepareGpuModelDraws() {
             !(it.mat->alpha == AlphaMode::Mask && alphaCoverage))
             continue;
         eligibleIndices.push_back(i);
-        if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
-        if (it.gpuLodAvailable) ++gpuModelLodEligible_;
     }
-    gpuModelEligible_ = uint32_t(eligibleIndices.size());
-    if (!gpuModelEligible_) return;
+    if (eligibleIndices.empty()) return;
     // Resolve once for this scene/viewport so the preflight, cache key,
     // exact equivalence and command encoding observe the SAME VT domain.
     // Revision changes between frames invalidate GPU batch signatures.
     std::vector<ModelVirtualTextureBinding> vtBindings(modelItems_.size());
     std::vector<uint8_t> vtEnabled(modelItems_.size(), uint8_t(0));
+    size_t acceptedCount=0;
     for (uint32_t index : eligibleIndices) {
         const auto& item=modelItems_[index];
-        if (resolveModelVirtualTexture(*item.model,*item.mat,vtBindings[index]))
+        if (resolveModelVirtualTexture(*item.model,*item.mat,vtBindings[index])) {
+            // The Metal ICB material ABI carries only the legacy 16-byte VT
+            // parameters. Indexed sampling needs the 48-byte U6 contract and
+            // has no ICB shader permutation. Exclude it before preflight/cache
+            // construction instead of attempting an unsupported draw each frame.
+            if (vtBindings[index].indexedMipTable) continue;
             vtEnabled[index] = 1;
+        }
+        eligibleIndices[acceptedCount++]=index;
+        if (!(item.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
+        if (item.gpuLodAvailable) ++gpuModelLodEligible_;
     }
+    eligibleIndices.resize(acceptedCount);
+    gpuModelEligible_=uint32_t(acceptedCount);
+    if (!gpuModelEligible_) return;
     // An additional explicit opt-in allows different VT archives for the
     // same GPU-equivalent non-graph material. It requires the actual
     // per-command Metal fragment ABI, never the ordinary homogeneous ICB.
