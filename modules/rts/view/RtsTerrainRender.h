@@ -20,6 +20,7 @@
 #include "RtsFog.h"
 #include <cstdint>
 #include <memory>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
@@ -107,6 +108,15 @@ public:
     bool canPrepareMap() const noexcept {
         return dev_ && built_ && texturesLoaded_;
     }
+    // LENS Stage 47B.2: copy-on-write terrain dynamic + vision RHI
+    // textures. Prepare mutates no published bytes/handles; a late owner
+    // preparation failure discards all new textures. Returned handles are
+    // private to a PreparedFrame until the shared owner cohort commits.
+    class PreparedFrame;
+    std::shared_ptr<PreparedFrame> prepareFrame(
+        const MapGrid& grid,const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility=nullptr);
+    void commitFrame(std::shared_ptr<PreparedFrame> candidate) noexcept;
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
     // darken in the shader; levels maps keep the classic fog sheet drawn by RtsView).
     void draw(render::Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool flatDig);
@@ -200,6 +210,9 @@ private:
     bool fogFieldChanged_ = true;
     int texW_ = 0, texH_ = 0, dynRow_ = 0;
     bool visionInit_ = false;
+    // This primary frame's shader inputs were published by OwnerPrepareCommit.
+    // Prevent drawInternal from updating already-submitted GPU textures in place.
+    bool frameFieldsPrepared_ = false;
     std::vector<uint8_t> materialLayer_;
     bool materialLayerChanged_ = false; // detail splat depends on painted cell layers
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;

@@ -14029,6 +14029,96 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage47b2_terrain_dynamic_vision_late_owner_rollback_and_retry) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    grid.corner.resize(size_t(grid.w+1)*size_t(grid.h+1),0);
+    CHECK(terrain.build(dev,grid,false));
+    CHECK(terrain.shaderFog());
+    const size_t previousRetire=terrain.pendingMeshGpuRetirements();
+    const size_t previousDeletes=dev.destroyedTextures;
+    const std::vector<uint8_t> visible(size_t(grid.w*grid.h),2);
+    std::vector<uint8_t> blurred(visible.size(),192);
+    grid.fieldRes[0]=1;
+    grid.fieldAmt[0]=Fixed::fromInt(30);
+    struct GroundOwner final: render::OwnerPrepareCommit::Participant {
+        game::TerrainRenderer& owner;
+        const game::MapGrid& grid;
+        const std::vector<uint8_t>& vision;
+        const std::vector<uint8_t>& filtered;
+        std::shared_ptr<game::TerrainRenderer::PreparedFrame> pending;
+        GroundOwner(game::TerrainRenderer& o,const game::MapGrid& g,
+                    const std::vector<uint8_t>& v,
+                    const std::vector<uint8_t>& f)
+            :owner(o),grid(g),vision(v),filtered(f){}
+        void prepare() override {
+            pending=owner.prepareFrame(grid,&vision,&filtered);
+            CHECK(pending!=nullptr);
+        }
+        void commit() noexcept override {owner.commitFrame(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } terrainOwner(terrain,grid,visible,blurred);
+    struct LastOwner final: render::OwnerPrepareCommit::Participant {
+        bool fail=true;
+        void prepare() override {
+            if(fail)throw std::runtime_error("late owner failed");
+        }
+        void commit() noexcept override {}
+        void rollback() noexcept override {}
+    } last;
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainOwner);tx.add(last);
+        try {tx.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+    }
+    CHECK(failed);
+    CHECK(!terrainOwner.pending);
+    CHECK(terrain.pendingMeshGpuRetirements()==previousRetire);
+    CHECK(dev.destroyedTextures==previousDeletes+2); // discarded dynamic + R8
+    last.fail=false;
+    dev.idleAllowed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainOwner);tx.add(last);
+        tx.prepareAll();
+        CHECK(tx.publish());
+    }
+    CHECK(terrain.pendingMeshGpuRetirements()==previousRetire+2);
+    dev.idleAllowed=true;
+    terrain.shutdown(dev);
+}
+
+TEST(lens_stage47b2_terrain_unchanged_frame_skips_gpu_texture_allocations) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::TerrainRenderer terrain;
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid grid;grid.init(4,4);
+    for(auto& f:grid.flags)f=game::kCellGround;
+    grid.corner.resize(size_t(grid.w+1)*size_t(grid.h+1),0);
+    CHECK(terrain.build(dev,grid,false));
+    const std::vector<uint8_t> vision(size_t(grid.w*grid.h),0);
+    auto first=terrain.prepareFrame(grid,&vision);
+    CHECK(first!=nullptr);
+    terrain.commitFrame(std::move(first));
+    const size_t textures=dev.textureAttempts;
+    const size_t previous=terrain.pendingMeshGpuRetirements();
+    auto unchanged=terrain.prepareFrame(grid,&vision);
+    CHECK(unchanged!=nullptr);
+    CHECK(dev.textureAttempts==textures);
+    terrain.commitFrame(std::move(unchanged));
+    CHECK(terrain.pendingMeshGpuRetirements()==previous);
+    terrain.shutdown(dev);
+}
+
 TEST(lens_stage46_sheet_and_visibility_late_cohort_failure_rollback) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;

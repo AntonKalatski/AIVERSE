@@ -254,6 +254,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     texW_ = texH_ = 0;
     built_ = false;
     globalHash_ = 0;
+    frameFieldsPrepared_=false;
     dev_ = nullptr;
     ++publicationRevision_;
 }
@@ -469,6 +470,7 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     detailNrmTex_=std::exchange(next.detailNrmTex_,{});
     detailSplatTex_=std::exchange(next.detailSplatTex_,{});
     heightField_={}; // trace texture rebuilt lazily after this publication
+    frameFieldsPrepared_=false;
     heightDirty_=true;
     heightW_=heightH_=0;
     heightBuiltAt_=-1e9;
@@ -1368,6 +1370,136 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
     return {};
 }
 
+// Dynamic fields and visibility are published with all other LENS owners.
+// A staged frame owns at most two private textures and the matching CPU image
+// generations. It never references the live handle for GPU writes.
+class TerrainRenderer::PreparedFrame final {
+    friend class TerrainRenderer;
+public:
+    PreparedFrame()=default;
+    PreparedFrame(const PreparedFrame&)=delete;
+    PreparedFrame& operator=(const PreparedFrame&)=delete;
+    ~PreparedFrame() noexcept {
+        if(committed_ || !device_)return;
+        if(vision_.valid())try {device_->destroyTexture(vision_);}catch(...) {}
+        if(dynamic_.valid())try {device_->destroyTexture(dynamic_);}catch(...) {}
+    }
+private:
+    TerrainRenderer* owner_=nullptr;
+    gfx::Device* device_=nullptr;
+    uint64_t revision_=0;
+    bool committed_=false;
+    gfx::TextureHandle dynamic_{},vision_{};
+    std::vector<uint8_t> dynamicPx_,visionPx_;
+    int nextDynRow_=0;
+    bool nextVisionInit_=false;
+};
+
+std::shared_ptr<TerrainRenderer::PreparedFrame> TerrainRenderer::prepareFrame(
+        const MapGrid& g,const std::vector<uint8_t>* vision,
+        const std::vector<uint8_t>* filteredVisibility) {
+    if(!dev_ || !built_ || mapW_!=g.w || mapH_!=g.h ||
+       texW_!=g.w || texH_!=g.h || g.w<=0 || g.h<=0)
+        return {};
+    checkGpuDevice(*dev_);
+    const size_t count=size_t(g.w)*size_t(g.h);
+    if(dynPx_.size()!=count*4 || visionPx_.size()!=count ||
+       g.fieldRes.size()<count || g.fieldAmt.size()<count ||
+       g.creep.size()<count)
+        throw std::logic_error("TerrainRenderer: malformed dynamic map fields");
+    auto next=std::make_shared<PreparedFrame>();
+    next->owner_=this;
+    next->device_=dev_;
+    next->revision_=publicationRevision_;
+    next->dynamicPx_=dynPx_;
+    next->nextDynRow_=dynRow_;
+    next->nextVisionInit_=visionInit_;
+    const int W=g.w,H=g.h;
+    const int rows=std::clamp(65536/std::max(W,1),1,H);
+    bool changedDynamic=false;
+    for(int row=0;row<rows;++row) {
+        const int y=(dynRow_+row)%H;
+        for(int x=0;x<W;++x) {
+            const size_t i=size_t(y)*size_t(W)+size_t(x);
+            uint8_t px[4]={0,0,0,255};
+            if(g.fieldRes[i]>=0 && g.fieldAmt[i].raw>0) {
+                const float k=std::min(1.0f,float(g.fieldAmt[i].toDouble())/60.0f)*
+                    (0.55f+noiseOf(x,y)*0.25f);
+                px[0]=uint8_t(std::clamp(k*255.0f+0.5f,1.0f,255.0f));
+                px[1]=uint8_t((g.fieldRes[i]%3)*127);
+            }
+            if(g.creep[i])px[2]=255;
+            uint8_t* dst=&next->dynamicPx_[i*4];
+            if(std::memcmp(dst,px,4)!=0) {
+                std::memcpy(dst,px,4);
+                changedDynamic=true;
+            }
+        }
+    }
+    next->nextDynRow_=(dynRow_+rows)%H;
+    if(changedDynamic) {
+        gfx::TextureDesc td;
+        td.width=W;td.height=H;td.filter=gfx::Filter::Nearest;
+        td.data=next->dynamicPx_.data();
+        td.label="terrain dynamic COW";
+        next->dynamic_=dev_->createTexture(td);
+        if(!next->dynamic_.valid())
+            throw std::runtime_error("TerrainRenderer: private dynamic texture allocation failed");
+    }
+    // Heightfield terrain samples the processed visibility field; classic
+    // terrain continues to use the separate Fog Sheet owner. A resized or
+    // changed Fog candidate may supply its unpublished processed pixel field.
+    if(heightfield_ && vision && vision->size()==count) {
+        const bool filtered=filteredVisibility && filteredVisibility->size()==count;
+        next->visionPx_=visionPx_;
+        bool changed=!visionInit_;
+        for(size_t i=0;i<count;++i) {
+            const uint8_t v=filtered?(*filteredVisibility)[i]:
+                ((*vision)[i]>=2?uint8_t(255):
+                 ((*vision)[i]==1?uint8_t(128):uint8_t(0)));
+            if(next->visionPx_[i]!=v) {
+                next->visionPx_[i]=v;
+                changed=true;
+            }
+        }
+        next->nextVisionInit_=true;
+        if(changed) {
+            gfx::TextureDesc td;
+            td.width=W;td.height=H;td.filter=gfx::Filter::Linear;
+            td.format=gfx::PixelFormat::R8;
+            td.data=next->visionPx_.data();
+            td.label="terrain visibility COW";
+            next->vision_=dev_->createTexture(td);
+            if(!next->vision_.valid())
+                throw std::runtime_error("TerrainRenderer: private visibility texture allocation failed");
+        }
+    }
+    return next;
+}
+
+void TerrainRenderer::commitFrame(std::shared_ptr<PreparedFrame> next) noexcept {
+    if(!next || next->committed_)return;
+    if(next->owner_!=this || next->device_!=dev_ ||
+       next->revision_!=publicationRevision_)
+        std::terminate();
+    if(next->dynamic_.valid()) {
+        retiredMeshes_.retireTexture(*dev_,dynTex_);
+        dynTex_=std::exchange(next->dynamic_,{});
+        dynPx_.swap(next->dynamicPx_);
+    }
+    if(next->vision_.valid()) {
+        retiredMeshes_.retireTexture(*dev_,visionTex_);
+        visionTex_=std::exchange(next->vision_,{});
+        visionPx_.swap(next->visionPx_);
+    }
+    dynRow_=next->nextDynRow_;
+    visionInit_=next->nextVisionInit_;
+    frameFieldsPrepared_=true;
+    fogFieldChanged_=false;
+    next->committed_=true;
+    ++publicationRevision_;
+}
+
 void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g,
                            const std::vector<uint8_t>* vision, bool) {
     drawInternal(r,g,vision,false);
@@ -1381,9 +1513,13 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
                                    bool preparedOnly) {
     if (!built_ || !dev_ || g.w != mapW_ || g.h != mapH_) return;
     gfx::Device& dev = *dev_;
-    if(!preparedOnly)updateDynamic(dev, g, false);
+    // A LENS primary owner transaction has already installed the immutable
+    // copy-on-write texture generations. Standalone legacy draws retain
+    // the old path until their callers use prepareFrame explicitly.
+    const bool stagedFields=!preparedOnly && frameFieldsPrepared_;
+    if(!preparedOnly && !stagedFields)updateDynamic(dev, g, false);
     const bool fog = heightfield_ && vision && !vision->empty();
-    if (fog && !preparedOnly) {
+    if (fog && !preparedOnly && !stagedFields) {
         if (fogField_ && fogField_->size() == visionPx_.size()) { if (fogFieldChanged_) { visionPx_ = *fogField_; dev.updateTexture(visionTex_, 0, 0, texW_, texH_, visionPx_.data(), texW_); visionInit_ = true; } }
         else updateVision(dev, *vision);
         fogFieldChanged_ = false;
@@ -1440,6 +1576,11 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
             }
     }
     if(!preparedOnly)stats_.geometryBytes = geoBytes_;
+    if(!preparedOnly && stagedFields) {
+        // Consume one prepared primary frame, never reuse a stale skip flag
+        // for standalone draws on later frames.
+        frameFieldsPrepared_=false;
+    }
     const int tier = tierFor(r);
     gfx::PipelineHandle pipe{};
     if(preparedOnly) {

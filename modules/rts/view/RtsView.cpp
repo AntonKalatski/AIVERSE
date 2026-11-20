@@ -674,11 +674,42 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         }
     } fogPart(fog_,*dev_,groundHeight,vision,grid.w,grid.h,
               time,fogFieldChanged,fogMeshDirty_);
+    // Last participant: Terrain copy-on-write dynamic + heightfield vision.
+    // Read Fog's private *processed* field only when it exists; otherwise
+    // reuse its last published field. No Terrain R8 write can occur before
+    // every GroundFX/Roads/Shores/Fog GPU candidate is prepared successfully.
+    struct PreparedTerrain final : render::OwnerPrepareCommit::Participant {
+        TerrainRenderer& owner;
+        const MapGrid& grid;
+        const std::vector<uint8_t>* vision;
+        const PreparedFog& fog;
+        bool active;
+        std::shared_ptr<TerrainRenderer::PreparedFrame> pending;
+        PreparedTerrain(TerrainRenderer& t,const MapGrid& g,
+                        const std::vector<uint8_t>* mask,
+                        const PreparedFog& f,bool enabled)
+            :owner(t),grid(g),vision(mask),fog(f),active(enabled){}
+        void prepare() override {
+            if(!active)return;
+            const std::vector<uint8_t>* filtered=nullptr;
+            if(owner.shaderFog()) {
+                if(fog.pending && fog.pending->changed() &&
+                   fog.pending->field().size()==size_t(grid.w)*size_t(grid.h))
+                    filtered=&fog.pending->field();
+                else if(fog.owner.field().size()==size_t(grid.w)*size_t(grid.h))
+                    filtered=&fog.owner.field();
+            }
+            pending=owner.prepareFrame(grid,vision,filtered);
+        }
+        void commit() noexcept override {owner.commitFrame(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } terrainPart(terrain_,grid,vision,fogPart,hasTerrain_ && !tiles);
     render::OwnerPrepareCommit ownerTransaction;
     ownerTransaction.add(groundPart);
     ownerTransaction.add(roadsPart);
     ownerTransaction.add(shorePart);
     ownerTransaction.add(fogPart);
+    ownerTransaction.add(terrainPart);
     ownerTransaction.prepareAll(); // any error automatically rolls all back
     if(!ownerTransaction.publish())
         throw std::logic_error("RtsView: owner frame publication incomplete");
