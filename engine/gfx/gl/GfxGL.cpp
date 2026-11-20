@@ -471,7 +471,7 @@ public:
         return false;
 #else
         auto* texture=textures_.get(h.id);
-        if(!texture||texture->fmt!=PixelFormat::RGBA8||
+        if(inPass_ || !texture || texture->fmt!=PixelFormat::RGBA8 ||
            !callback || x<0 || y<0 ||
            x>=texture->w || y>=texture->h ||
            pixelReads_.size()>=32u)return false;
@@ -549,6 +549,7 @@ public:
     }
 
     void beginPass(const PassDesc& d) override {
+        inPass_=true;
         const auto* color = textures_.get(d.colorTarget.id);
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         glBindVertexArray(vao_);
@@ -583,6 +584,7 @@ public:
         pipelineId_ = 0;
     }
     void endPass() override {
+        inPass_=false;
         if (passW_ != fbW_ || passH_ != fbH_ || true) glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDisable(GL_POLYGON_OFFSET_FILL);
         if (srgbWrite_) { glDisable(kGL_FRAMEBUFFER_SRGB); srgbWrite_ = false; }
@@ -757,6 +759,7 @@ private:
     bool srgbWrite_ = false;   // GL33: GL_FRAMEBUFFER_SRGB enabled for the current pass
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
+    bool inPass_=false; // reject async offscreen readback during an encoder/pass
     std::vector<GLFramebuffer> fbos_;
     uint64_t nextRetirementToken_=1;
     std::map<uint64_t,GLsync> retirementFences_;
