@@ -2531,3 +2531,22 @@ Default clips are procedural presentation helpers, not licensed mocap assets.
 Imported source eye alpha/hair problems from QA remain (do not claim fixed).
 Next: fix companion eyelash alpha, shoulder mask/corrective deformation for T-pose,
 then unlocked panel switching/pause/idle and continuous blink/orbit validation.
+
+
+## 2026-11-20 — Unreal preview reference and animation source discovery
+
+Investigation commit `e3f59a8d064b1cd33089535071e9fd6ff3899cfc`, branch
+`integration/motionweave-studio-facial-stage184`. See
+`docs/qa/vivid-unreal-animation-source-2026-11-20.md`. User asks for Unreal-like
+preview. Local MetaHumanSample 5.7 contains MM_Idle and f/m sample AnimSequence
+packages, but no portable animation exports. Standard Mac editor executable
+paths are absent; launcher UE_5.7 directory contains plugin remnants. Custom
+unindexed engine locations remain possible. Official Creator documentation
+confirms separate head/body animation assignment. No asset export/import, code,
+public API, save format, runtime behavior or screenshot changes in this stage.
+Executed read-only filesystem/launcher discovery and official documentation
+lookup. Builds/tests NOT RUN (investigation only); CI NOT RUN; no push.
+Next: locate usable Unreal installation or skeletal-animation export, then
+validate retargeting with garment rigs and independent face/body clips. Keep
+all project copies/builds/caches/captures on KINGSTON. Current procedural idle
+is not MetaHuman-quality parity; eyelash alpha and T-pose shirt defects remain.
