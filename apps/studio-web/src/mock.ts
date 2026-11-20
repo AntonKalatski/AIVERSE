@@ -34,6 +34,15 @@ const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { 
 export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
 export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
   if (method === 'studio.facialRigList')return {rigs: []};
+  if (method === 'studio.facialPreviewState')return {
+    active:false, model:'', name:'', generation:0,
+    controlsRevision:0,gpuReady:false,error:''
+  };
+  if (method === 'studio.facialPreviewStart' ||
+      method === 'studio.facialPreviewStop' ||
+      method === 'studio.facialPreviewScalar' ||
+      method === 'studio.facialPreviewVector')
+    throw Error('Real facial GPU preview requires the native AIVERSE host');
   if (method === 'studio.facialRigGet' || method === 'studio.facialRigSave')
     throw Error('Facial Rig project files require the native AIVERSE host');
   if (method === 'studio.facialRigValidate') {
