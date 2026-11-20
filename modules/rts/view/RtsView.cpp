@@ -97,6 +97,23 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     const SpriteDefaults incomingSpriteDefaults=
         parseSpriteDefaults(incomingRules["sprites"],incomingGame["sprites"]);
+    // Parse the optional geometry descriptor before retiring the old sprite
+    // owner; GPU geometry resources are still loaded/published later.
+    Json incomingGeometry;
+    bool incomingGeometryPresent=false;
+    std::string incomingGeometryWarning;
+    try {
+        const std::string file=incomingGame.getStr("geometryScene");
+        if (!file.empty()) {
+            std::string bytes;
+            if (!incomingRead(file,bytes))
+                throw std::runtime_error("geometryScene: file not found: "+file);
+            incomingGeometry=Json::parse(bytes);
+            incomingGeometryPresent=true;
+        }
+    } catch(const std::exception& e) {
+        incomingGeometryWarning=e.what();
+    }
     // Parse non-GPU shared materials before publishing the staged sprite
     // view. Keep warnings until warnings_ is reset by the normal reload.
     Json incomingMaterials=Json::object();
@@ -167,17 +184,11 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     // static/HLOD Models still referenced by an earlier rendered frame.
     // Final teardown continues to call the blocking shutdown barrier.
     geometryScene_.clear(dev);
-    try {
-        // Reuse the same game.json snapshot as sprite/fog/overlay staging.
-        // Re-reading game.json could switch the geometry file mid-reload.
-        const auto file=incomingGame.getStr("geometryScene");
-        if (!file.empty()) {
-            std::string text;
-            if (!read_(file,text))
-                throw std::runtime_error("geometryScene: file not found: " + file);
-            geometryScene_.load(dev,Json::parse(text),read_);
-        }
-    } catch (const std::exception& e) { warnings_.push_back(e.what()); }
+    if(!incomingGeometryWarning.empty())warnings_.push_back(incomingGeometryWarning);
+    if(incomingGeometryPresent) {
+        try { geometryScene_.load(dev,incomingGeometry,read_); }
+        catch (const std::exception& e) { warnings_.push_back(e.what()); }
+    }
 
     // Publish the same materials snapshot parsed before sprite staging.
     materialLib_=std::move(incomingMaterials);
