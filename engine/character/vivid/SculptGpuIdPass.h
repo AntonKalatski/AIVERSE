@@ -159,7 +159,8 @@ public:
                 std::span<const SculptGpuMaskBatch> maskedOccluders={},
                 const SculptGpuVertexSource* actualGpuSource=nullptr,
                 bool captureDepth=false,
-                const SculptGpuVertexSource* gpuMaskOccluder=nullptr) {
+                const SculptGpuVertexSource* gpuMaskOccluder=nullptr,
+                std::span<const SculptGpuVertexSource> gpuMaskOccluders={}) {
         if(!device_||!supported_||!request.valid()||
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
@@ -167,6 +168,31 @@ public:
            !pending_.empty() || !retiredWithoutCallback_.empty() ||
            request.width>4096u || request.height>4096u ||
            !device_->gpuHealthy())return false;
+        // Stage 7BA: bounded set of independent GPU Mask blockers. Keep the
+        // legacy single pointer for ABI/source-compatible existing callers.
+        constexpr std::size_t kMaxGpuMaskOccluders=4u;
+        std::vector<const SculptGpuVertexSource*> gpuMaskSources;
+        gpuMaskSources.reserve(kMaxGpuMaskOccluders);
+        if(gpuMaskOccluder)gpuMaskSources.push_back(gpuMaskOccluder);
+        if(gpuMaskOccluders.size()>
+           kMaxGpuMaskOccluders-gpuMaskSources.size())return false;
+        for(const auto& blocker:gpuMaskOccluders)
+            gpuMaskSources.push_back(&blocker);
+        if(!gpuMaskSources.empty() &&
+           (!actualGpuSource || !supportsActualGpuMaskedStream()))
+            return false;
+        // No shared writable stream identity may masquerade as several
+        // independent current-frame Renderer3D actor sources.
+        for(std::size_t i=0;i<gpuMaskSources.size();++i) {
+            if(!sculptGpuMaskedOccluderInputsValid(
+                    *gpuMaskSources[i],
+                    actualGpuSource->actualVertexOverride))
+                return false;
+            for(std::size_t j=0;j<i;++j)
+                if(gpuMaskSources[i]->actualVertexOverride==
+                   gpuMaskSources[j]->actualVertexOverride)
+                    return false;
+        }
         vertices_.clear();
         std::vector<SculptGpuMaskBatch> grouped;
         if(!appendSculptGpuMaterialGeometry(
@@ -274,16 +300,9 @@ public:
             // GPU-expanded source, not the legacy CPU masked batches.
             if(source.maskedSelection)grouped.clear();
         }
-        // Stage 7AY: one independently GPU-deformed, texture-masked
-        // ZERO-ID scene blocker. The host must validate its exact current
-        // Renderer3D accepted ModelDraw source before passing it in.
-        // Do not allow an arbitrary, untracked GPU buffer to be treated as
-        // renderer-visible when no selected real-GPU source exists.
-        if(gpuMaskOccluder &&
-           (!actualGpuSource || !supportsActualGpuMaskedStream() ||
-            !sculptGpuMaskedOccluderInputsValid(
-                *gpuMaskOccluder,actualGpuSource->actualVertexOverride)))
-            return false;
+        // Every GPU-sourced mask blocker has a separate live 60B buffer.
+        // The external caller must also prove its actual Renderer3D colour
+        // submission/LOD/material provenance before calling this ID pass.
         if(maskedOccluders.size()+grouped.size()>256u)return false;
         std::size_t total=vertices_.size()+occluders.size();
         // Homogeneous selected GPU Mask geometry was intentionally
@@ -320,9 +339,9 @@ public:
                 if(!std::isfinite(value))return false;
             total+=batch.vertices.size();
         }
-        if(gpuMaskOccluder) {
-            if(gpuMaskOccluder->params.count>3000000u-total)return false;
-            total+=gpuMaskOccluder->params.count;
+        for(const auto* blocker:gpuMaskSources) {
+            if(blocker->params.count>3000000u-total)return false;
+            total+=blocker->params.count;
         }
         if(!total)return false;
         for(const auto& batch:maskedOccluders)
@@ -405,10 +424,17 @@ public:
             maskBuffers.push_back(buffer);
         }
         std::vector<gfx::BufferHandle> expandedScratch;
-        gfx::BufferHandle expandedVertex{},expandedOccluder{};
+        struct GpuMaskOccluderDraw {
+            const SculptGpuVertexSource* source=nullptr;
+            gfx::BufferHandle request{},skin{},rows{},uv{},output{};
+        };
+        std::vector<GpuMaskOccluderDraw> gpuOccluderDraws;
+        gpuOccluderDraws.reserve(gpuMaskSources.size());
+        gfx::BufferHandle expandedVertex{};
         if(actualGpuSource) {
             const auto& source=*actualGpuSource;
-            expandedScratch.reserve(source.maskedSelection?5u:4u);
+            expandedScratch.reserve(
+                (source.maskedSelection?5u:4u)+gpuMaskSources.size()*5u);
             auto makeInput=[&](const void* data,std::size_t size,
                                const char* label)->gfx::BufferHandle {
                 gfx::BufferDesc d{};
@@ -454,50 +480,51 @@ public:
                     (source.maskedSelection?sizeof(SculptGpuMaskVertex):
                                             sizeof(SculptGpuIdVertex)),
                 "VIVID GPU-source morphed/skinned triangle IDs");
-            // Upload the second actor's original UV/joint data and its
-            // OWN 60B GPU-morphed vertex buffer. Triangle IDs are force-zero
-            // in this transient staging buffer; even a malformed source
-            // cannot turn an unrelated occluder into an editable vertex.
-            gfx::BufferHandle occRequest{},occSkin{},occRows{},occUvs{};
-            std::vector<SculptGpuSourceIndex> zeroIds;
-            SculptGpuSourceParams occParams{};
-            if(gpuMaskOccluder) {
-                const auto& occ=*gpuMaskOccluder;
-                zeroIds=occ.indices;
-                for(auto& idx:zeroIds)idx.triangleId=0;
-                occParams=occ.params;
+            // One immutable GPU index/UV/palette stream and 32-byte
+            // expanded output per blocker. Every triangle ID is forced
+            // to zero; the GPU will write depth, never a selectable hit.
+            for(const auto* blocker:gpuMaskSources) {
+                GpuMaskOccluderDraw draw;
+                draw.source=blocker;
+                auto zeroIds=blocker->indices;
+                for(auto& idx:zeroIds)idx.triangleId=0u;
                 const auto occMatrices=sculptGpuRendererSkinRows(
-                    std::span<const render::mat4>(occ.jointMatrices));
-                const auto occSkinInput=occ.influences.empty()
+                    std::span<const render::mat4>(blocker->jointMatrices));
+                const auto occSkinInput=blocker->influences.empty()
                     ?std::span<const SculptGpuSkinInfluence>(rigidSkin)
-                    :std::span<const SculptGpuSkinInfluence>(occ.influences);
-                const auto occMatrixInput=occMatrices.empty()
+                    :std::span<const SculptGpuSkinInfluence>(blocker->influences);
+                const auto occRowsInput=occMatrices.empty()
                     ?std::span<const SculptGpuSkinRows>(rigidRows)
                     :std::span<const SculptGpuSkinRows>(occMatrices);
-                occRequest=makeInput(zeroIds.data(),zeroIds.size()*
-                    sizeof(SculptGpuSourceIndex),
-                    "VIVID actual GPU occluder indexed ZERO IDs");
-                occSkin=makeInput(occSkinInput.data(),
-                    occSkinInput.size_bytes(),
-                    "VIVID independent GPU occluder skin weights");
-                occRows=makeInput(occMatrixInput.data(),
-                    occMatrixInput.size_bytes(),
-                    "VIVID independent GPU occluder joint rows");
-                occUvs=makeInput(occ.maskInputs.data(),
-                    occ.maskInputs.size()*sizeof(SculptGpuSourceMaskInput),
-                    "VIVID independent GPU occluder UV alpha");
-                expandedOccluder=makeInput(nullptr,
-                    zeroIds.size()*sizeof(SculptGpuMaskVertex),
-                    "VIVID independent GPU alpha occluder depth");
+                draw.request=makeInput(
+                    zeroIds.data(),zeroIds.size()*sizeof(SculptGpuSourceIndex),
+                    "VIVID GPU mask blocker immutable ZERO indices");
+                draw.skin=makeInput(
+                    occSkinInput.data(),occSkinInput.size_bytes(),
+                    "VIVID GPU mask blocker original skin weights");
+                draw.rows=makeInput(
+                    occRowsInput.data(),occRowsInput.size_bytes(),
+                    "VIVID GPU mask blocker native skin 3x4 rows");
+                draw.uv=makeInput(
+                    blocker->maskInputs.data(),
+                    blocker->maskInputs.size()*sizeof(SculptGpuSourceMaskInput),
+                    "VIVID GPU mask blocker sampled UV and alpha");
+                draw.output=makeInput(
+                    nullptr,zeroIds.size()*sizeof(SculptGpuMaskVertex),
+                    "VIVID GPU mask blocker depth-only output");
+                gpuOccluderDraws.push_back(draw);
             }
             const auto compute=source.maskedSelection?
                 expandMaskCompute_:expandCompute_;
             if(!requestBuffer.valid()||!skinBuffer.valid()||
                !matrixBuffer.valid()||!expandedVertex.valid()||
                (source.maskedSelection&&!maskInput.valid())||
-               (gpuMaskOccluder && (!occRequest.valid()||
-                !occSkin.valid()||!occRows.valid()||
-                !occUvs.valid()||!expandedOccluder.valid()))||
+               std::any_of(gpuOccluderDraws.begin(),
+                           gpuOccluderDraws.end(),[](const auto& draw) {
+                   return !draw.request.valid() || !draw.skin.valid() ||
+                          !draw.rows.valid() || !draw.uv.valid() ||
+                          !draw.output.valid();
+               }) ||
                !device_->beginCompute(compute)) {
                 if(vertex.valid())device_->destroyBuffer(vertex);
                 for(auto handle:maskBuffers)device_->destroyBuffer(handle);
@@ -513,10 +540,10 @@ public:
             device_->setComputeUniforms(&source.params,sizeof(source.params));
             device_->dispatch(source.params.count);
             device_->endCompute();
-            if(gpuMaskOccluder) {
-                // This second compute occurs AFTER the selected compute,
-                // before any ID render pass, on the same ordered GPU queue.
-                // A failed begin after encoding must NOT free scratch now.
+            for(const auto& draw:gpuOccluderDraws) {
+                // Already encoded the selected actor's compute. Failed
+                // later source expansion must retain ALL input/output
+                // buffers until a genuine GPU owner-thread idle barrier.
                 if(!device_->beginCompute(expandMaskCompute_)) {
                     if(vertex.valid())retiredWithoutCallback_.push_back(vertex);
                     retiredWithoutCallback_.insert(
@@ -528,15 +555,15 @@ public:
                     supported_=false;
                     return false;
                 }
-                device_->setComputeBuffer(0,
-                    gpuMaskOccluder->actualVertexOverride);
-                device_->setComputeBuffer(1,occRequest);
-                device_->setComputeBuffer(2,occSkin);
-                device_->setComputeBuffer(3,occRows);
-                device_->setComputeBuffer(4,expandedOccluder);
-                device_->setComputeBuffer(5,occUvs);
-                device_->setComputeUniforms(&occParams,sizeof(occParams));
-                device_->dispatch(occParams.count);
+                device_->setComputeBuffer(0,draw.source->actualVertexOverride);
+                device_->setComputeBuffer(1,draw.request);
+                device_->setComputeBuffer(2,draw.skin);
+                device_->setComputeBuffer(3,draw.rows);
+                device_->setComputeBuffer(4,draw.output);
+                device_->setComputeBuffer(5,draw.uv);
+                device_->setComputeUniforms(&draw.source->params,
+                                            sizeof(draw.source->params));
+                device_->dispatch(draw.source->params.count);
                 device_->endCompute();
             }
             // The actor's published GPU positions and ID expansion
@@ -567,17 +594,16 @@ public:
             device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
             device_->draw(std::uint32_t(actualGpuSource->params.count));
         }
-        if(expandedOccluder.valid()) {
-            // Draw AFTER selectable source, with real depth test and
-            // source's sampled Mask texture. All triangle IDs are zero,
-            // so only opaque cutout texels suppress selected IDs.
+        for(const auto& draw:gpuOccluderDraws) {
+            // Independently sampled masks write depth according to their
+            // actual GPU-deformed positions; all IDs remain zero.
             device_->setPipeline(maskPipeline_);
-            device_->setVertexBuffer(expandedOccluder);
-            device_->setTexture(0,gpuMaskOccluder->maskBaseTexture);
-            device_->setUniforms(1,&gpuMaskOccluder->maskUniform,
-                                sizeof(gpuMaskOccluder->maskUniform));
+            device_->setVertexBuffer(draw.output);
+            device_->setTexture(0,draw.source->maskBaseTexture);
+            device_->setUniforms(1,&draw.source->maskUniform,
+                                sizeof(draw.source->maskUniform));
             device_->setUniforms(0,viewProj.m,sizeof(viewProj.m));
-            device_->draw(gpuMaskOccluder->params.count);
+            device_->draw(draw.source->params.count);
         }
         if(vertex.valid()) {
             device_->setPipeline(pipeline_);
