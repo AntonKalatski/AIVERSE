@@ -58,7 +58,7 @@ export const ARKIT52 = [
 ] as const;
 export function newFacialRig(): FacialRigDocument { return {version:1,morphs:[],rig:[]}; }
 export function arkitFaceMapping(faceNode='Face'): FacialRigDocument {
-  return {version:1,morphs:ARKIT52.map(name=>({
+  return {version:1,morphs:ARKIT52.map((name):FacialMorphBinding=>({
     parameter:name,node:faceNode,target:name,gain:1,bias:0,halfLife:0.06,blend:'override'
   })),rig:[]};
 }
