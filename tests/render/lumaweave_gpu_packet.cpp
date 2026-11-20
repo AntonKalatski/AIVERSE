@@ -125,4 +125,23 @@ int main() {
     AIVERSE_TEST_CHECK(lumaWeaveCompletedFence(LegacyRhi{})==0);
     AIVERSE_TEST_CHECK(lumaWeaveSubmittedFence(FenceRhi{})==11);
     AIVERSE_TEST_CHECK(lumaWeaveCompletedFence(FenceRhi{})==9);
+
+    // Active graphics program and target ownership remains locked even
+    // when an unrelated compute callback reports completion. The queue
+    // needs the real graphics submission fence or a host-proven idle.
+    LumaWeaveGraphicsUseGate active;
+    AIVERSE_TEST_CHECK(active.canRelease(0));
+    active.markUsed(0); // old RHI has no graphics submission token
+    AIVERSE_TEST_CHECK(!active.canRelease(999));
+    active.markUsed(12); // later fence cannot retroactively prove unknown work
+    AIVERSE_TEST_CHECK(!active.canRelease(999));
+    active.afterGpuIdle();
+    AIVERSE_TEST_CHECK(active.canRelease(0));
+    active.markUsed(12);
+    AIVERSE_TEST_CHECK(!active.canRelease(11));
+    AIVERSE_TEST_CHECK(active.canRelease(12));
+    active.markUsed(0); // losing fence support fails closed again
+    AIVERSE_TEST_CHECK(!active.canRelease(999));
+    active.afterGpuIdle();
+    AIVERSE_TEST_CHECK(active.canRelease(0));
 }
