@@ -4,9 +4,10 @@
 import type { ReactNode } from 'react';
 import {
   Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
-  MoreHorizontal, Plus, Search, SlidersHorizontal, Lock, LockOpen
+  MoreHorizontal, Plus, Search, SlidersHorizontal, Focus, RotateCcw, Lock, LockOpen
 } from 'lucide-react';
 import type { StudioEntity, StudioProperty, StudioSnapshot } from '../types';
+import { invoke } from '../bridge';
 import type { StudioPanel } from '../nestedDock';
 import PanelTitle from '../components/PanelTitle';
 import PropertyField from '../components/PropertyField';
@@ -99,6 +100,14 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
                 <SlidersHorizontal size={15}/></button>
               <span className="toolbar-divider"/>
               <span className="viewport-label">Perspective</span>
+              <button type="button" className="viewport-control" title="Focus selected object (F)"
+                aria-label="Focus selected Scene object" disabled={!connected || !selected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'focus'}).catch(console.warn)}>
+                <Focus size={15}/></button>
+              <button type="button" className="viewport-control" title="Reset Scene camera (Home)"
+                aria-label="Reset Scene camera" disabled={!connected}
+                onClick={()=>void invoke('studio.viewportInput',{kind:'reset'}).catch(console.warn)}>
+                <RotateCcw size={15}/></button>
             </div>
             <span className="render-badge"><Activity size={13}/>
               {sceneMode === 'welcome' ? 'Open project to render' : 'Native Renderer3D (experimental)'}
