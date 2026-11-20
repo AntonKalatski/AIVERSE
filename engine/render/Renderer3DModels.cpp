@@ -870,17 +870,22 @@ Renderer3D::ModelSubmissionProvenance Renderer3D::modelSubmissionProvenance(
         const Model& source) const {
     ModelSubmissionProvenance result;
     result.frameSerial=dev_?dev_->frameSerial():0;
-    if(modelSubmissionTarget_!=&source || !result.frameSerial)return result;
+    if((&source!=modelSubmissionTarget_ &&
+        &source!=modelSubmissionSecondary_) || !result.frameSerial)
+        return result;
     result.mainPassEncoded=modelSubmissionMainEncoded_;
     result.truncated=modelSubmissionTruncated_;
-    result.commands=modelSubmitted_;
+    for(const auto& command:modelSubmitted_)
+        if(command.source.model==&source)
+            result.commands.push_back(command);
     return result;
 }
 
 void Renderer3D::recordModelSubmission(
         const ModelItem& it,int phase,ModelSubmissionKind kind,
         gfx::PipelineHandle pipeline) {
-    if(modelSubmissionTarget_!=it.model || !geometryMainView_ ||
+    if((modelSubmissionTarget_!=it.model &&
+        modelSubmissionSecondary_!=it.model) || !geometryMainView_ ||
        (phase!=1 && phase!=2 && phase!=4))return;
     if(modelSubmitted_.size()>=4096u) {
         modelSubmissionTruncated_=true;
