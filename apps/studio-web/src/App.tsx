@@ -100,12 +100,12 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
-  const changeProperty = async (key: string, value: string | number | boolean) => {
+  const changeProperty = async (key: string, value: string | number | boolean, componentId?: string) => {
     if (!snapshot?.selectedId) return;
     setBusy(true);
     try {
       setSnapshot(await invoke('studio.setProperty', {
-        entityId: snapshot.selectedId, key, value
+        entityId: snapshot.selectedId, componentId, key, value
       }));
       setError('');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }

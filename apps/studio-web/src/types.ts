@@ -18,6 +18,8 @@ export interface StudioSnapshot {
   scene: { name: string; entities: StudioEntity[] };
   selectedId: string | null;
   properties: StudioProperty[];
+  entityProperties?: StudioProperty[];
+  components?: Array<{ id: string; title: string; properties: StudioProperty[] }>;
   logs: StudioLog[];
   mode: 'edit' | 'play';
   previewMaterial?: string | null;
@@ -46,10 +48,10 @@ export interface StudioParams {
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
   'studio.lightAdd': Record<string, never>;
-  'studio.lightUpdate': { index: number; key: import('./panels/lightingSchema').LightEditableKey; value: string | number | boolean };
-  'studio.lightDelete': { index: number };
+  'studio.lightUpdate': { index: number; entityId?: string; key: import('./panels/lightingSchema').LightEditableKey; value: string | number | boolean };
+  'studio.lightDelete': { index: number; entityId?: string };
   'studio.select': { id: string | null };
-  'studio.setProperty': { entityId: string; key: string; value: string | number | boolean };
+  'studio.setProperty': { entityId: string; componentId?: string; key: string; value: string | number | boolean };
   'studio.viewportRect': { id: 'scene'; x: number; y: number; width: number; height: number; dpr: number; visible: boolean };
   'studio.viewportInput': { kind: 'orbit'; dx: number; dy: number } | { kind: 'zoom'; amount: number } | { kind: 'pick'; x: number; y: number; width: number; height: number };
 }

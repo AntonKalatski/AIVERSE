@@ -16,6 +16,7 @@ struct StudioDocumentProxy {
     render::float3 half{.5f,.5f,.5f};
     render::float4 color{.67f,.75f,.84f,1};
     float yaw = 0;
+    bool light = false;
     render::float3 boundsMin{}, boundsMax{};
 
     void calculateBounds() {
@@ -36,9 +37,14 @@ inline std::vector<StudioDocumentProxy> studioDocumentProxies(
         if(proxies.size()>=2000)break;
         if(!node.hasPosition)continue;
         StudioDocumentProxy p;
-        p.id=studioDocumentId(node.ref);
+        p.id=studioDocumentId(map,node.ref);
         p.center={float(node.position.x),float(node.position.y),float(node.position.z)};
         switch(node.ref.source) {
+          case editor::DocumentEntityRef::Source::MapLight:
+          case editor::DocumentEntityRef::Source::FpsLight:
+            p.light=true;p.half={.25f,.25f,.25f};p.color={1,.8f,.4f,1};
+            if(!fpsProject)p.center.y+=terrainPreviewHeight(map.data,p.center.x,p.center.z,levelHeight);
+            break;
           case editor::DocumentEntityRef::Source::MapEntity: {
             const auto* source=editor::documentMapEntity(map,node.ref);
             if(!source || !source->at.isNull())continue; // planet coordinate needs a planet adapter

@@ -1,3 +1,4 @@
+#include "apps/editor/core/DocumentLightIdentity.h"
 // FPS authoring lighting adapter: modify a COPY and commit it via fps_set.
 // Do not use MapDoc.extra for FPS lighting: MapDoc::toJson() serializes fps instead.
 #pragma once
@@ -56,6 +57,7 @@ inline Json editFpsLighting(Json document, const std::string& method, const Json
             editor::applyLightParams(document.member("lights").at(size_t(index)),patch);
         }
     } else throw std::runtime_error("Unsupported lighting method");
+    editor::ensureDocumentLightIds(document);
     return document;
 }
 } // namespace aiverse::studio

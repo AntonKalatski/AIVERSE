@@ -243,7 +243,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
 
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
     for(const auto& entity:proxies) {
-        if(!lightingModel_)renderer_.drawMesh(cube_,
+        if(!lightingModel_ && !entity.light)renderer_.drawMesh(cube_,
             mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
             mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
         if(entity.id==selectedId) {

@@ -30,6 +30,7 @@ inline std::unique_ptr<render::Model> studioLightingPreview(const editor::MapDoc
     Material base;base.metallic=0;base.roughness=.8f;
     std::vector<ModelPart> parts{{"Terrain preview",&ground,base,mat4{}}};
     for(const auto& proxy:proxies) {
+        if(proxy.light)continue; // editor handle is not a receiver or shadow caster
         auto material=base;material.vertexColors=false;material.baseColor=proxy.color;
         parts.push_back({proxy.id,&box,material,mat4::translate(proxy.center)*
             mat4::rotateY(proxy.yaw)*mat4::scale(proxy.half*2.f)});

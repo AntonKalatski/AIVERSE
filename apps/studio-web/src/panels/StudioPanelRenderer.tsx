@@ -2,6 +2,7 @@
 // For a new editor panel, register a typed panel ID in nestedDock.ts,
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
+import { StudioSection } from '../ui';
 import {
   Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
   MoreHorizontal, Plus, Search, SlidersHorizontal
@@ -27,7 +28,7 @@ export interface StudioPanelContext {
   rows: Array<{node: StudioEntity; depth: number}>;
   selected: StudioEntity | undefined;
   select: (id: string | null) => Promise<void>;
-  changeProperty: (key: string, value: string | number | boolean) => Promise<void>;
+  changeProperty: (key: string, value: string | number | boolean, componentId?: string) => Promise<void>;
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
@@ -75,13 +76,24 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               <div className="object-icon"><Box size={21}/></div>
               <div><h3>{selected.name}</h3><span>{selected.kind} · {selected.id}</span></div>
             </div>
-            <div className="inspector-section">
+            {snapshot?.entityProperties?.map(property =>
+              <PropertyField key={'entity:' + selected.id + ':' + property.key} property={property}
+                disabled={busy || property.editable === false}
+                onChange={value => void changeProperty(property.key, value, 'Entity')}/>)}
+            {snapshot?.components?.map(component =>
+              <StudioSection key={selected.id + ':' + component.id} title={component.title}>
+                {component.properties.map(property =>
+                  <PropertyField key={component.id + ':' + property.key} property={property}
+                    disabled={busy || property.editable === false}
+                    onChange={value => void changeProperty(property.key, value, component.id)}/>)}
+              </StudioSection>)}
+            {!!snapshot?.properties.length && <div className="inspector-section">
               <div className="section-heading"><ChevronDown size={13}/> Properties</div>
               {snapshot?.properties.map(property =>
                 <PropertyField key={selected.id + ':' + property.key}
                   property={property} disabled={busy || property.editable === false}
                   onChange={value => void changeProperty(property.key, value)}/>)}
-            </div>
+            </div>}
           </> : <div className="empty-panel">Select an entity to inspect its properties.</div>}
         </>;
       case 'scene':
@@ -117,7 +129,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             </div>)}
         </div>;
       case 'lighting':
-        return <LightingPanel projectPath={snapshot?.project.path ?? ''}/>;
+        return <LightingPanel projectPath={snapshot?.project.path ?? ''} selectedId={snapshot?.selectedId ?? null} onSelect={select}/>;
       case 'materials':
         return <MaterialsPanel projectPath={snapshot?.project.path ?? ''}
           previewMaterial={snapshot?.previewMaterial}/>;
