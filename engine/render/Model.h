@@ -124,7 +124,14 @@ struct MaterialBatch {
     std::vector<size_t> parts;
 };
 
-struct ModelLod { int mesh = -1; float maxPixels = 0; };
+struct ModelLod {
+    int mesh = -1;
+    float maxPixels = 0;
+    // Authored visual LOD mesh-local morph slot -> source node morph slot.
+    // Compiled by an importer from exact semantic channel names; empty only
+    // for morph-free LODs. Never infer channel equivalence by index.
+    std::vector<int> morphSourceForTarget;
+};
 
 struct MeshDef {
     std::string name;
