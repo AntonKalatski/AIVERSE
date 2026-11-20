@@ -11,5 +11,5 @@ static_assert(std::is_same_v<
     void(TerrainRenderer::*)(Renderer3D&,const MapGrid&,const std::vector<uint8_t>*)>);
 static_assert(std::is_same_v<
     decltype(&RtsView::drawPreparedTerrainFog),
-    void(RtsView::*)(Renderer3D&,const MapGrid&,const std::vector<uint8_t>*,double)>);
+    void(RtsView::*)(Renderer3D&,const MapGrid&,const std::vector<uint8_t>*,double,uint64_t)>);
 int main(){return 0;}

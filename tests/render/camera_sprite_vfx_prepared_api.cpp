@@ -12,7 +12,7 @@ static_assert(std::is_same_v<
     void(game::Rts2DView::*)(render::Renderer3D&)>);
 static_assert(std::is_same_v<
     decltype(&game::RtsView::drawPreparedSprites),
-    void(game::RtsView::*)(render::Renderer3D&)>);
+    void(game::RtsView::*)(render::Renderer3D&,uint64_t)>);
 static_assert(std::is_same_v<
     decltype(&client::ClientFx::renderPrepared),
     void(client::ClientFx::*)(const render::Camera3D&,const render::mat4&,

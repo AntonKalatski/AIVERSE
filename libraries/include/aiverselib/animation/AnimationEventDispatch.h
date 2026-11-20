@@ -19,12 +19,10 @@ struct AnimationCue {
 inline std::vector<AnimationCue> collectAnimationCues(const World& world,
                                                      size_t maxEvents=8192) {
     std::vector<AnimationCue> cues;
-    auto* players=world.poolIfExists<AnimationAssetComponent>();
-    if(!players)return cues;
     uint64_t sequence=0;
-    for(size_t i=0;i<players->size() && cues.size()<maxEvents;++i) {
-        const Entity entity=players->entityAt(i);
-        if(!world.alive(entity))continue;
+    world.eachExistingConst<AnimationAssetComponent>(
+      [&](Entity entity,const AnimationAssetComponent&) {
+        if(cues.size()>=maxEvents || !world.alive(entity))return;
         if(auto* g=world.tryGetConst<AnimationGraphNotifiesComponent>(entity))
             for(const auto& event:g->events) {
                 if(cues.size()>=maxEvents)break;
@@ -36,7 +34,7 @@ inline std::vector<AnimationCue> collectAnimationCues(const World& world,
                 if(cues.size()>=maxEvents)break;
                 cues.push_back({entity,event.name,"montage",0.5f,sequence++});
             }
-    }
+    });
     std::stable_sort(cues.begin(),cues.end(),
         [](const AnimationCue& a,const AnimationCue& b) {
             return a.framePhase!=b.framePhase?a.framePhase<b.framePhase:
