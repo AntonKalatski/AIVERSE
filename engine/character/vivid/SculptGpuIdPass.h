@@ -246,7 +246,10 @@ public:
                         return false;
                 }
             }
-            if(sourceOrdinal!=selectedOpaqueCount)return false;
+            // Selected Mask IDs are in grouped[] instead of vertices_.
+            // Comparing to selectedOpaqueCount rejected every legal GPU
+            // masked source even when original indices matched exactly.
+            if(sourceOrdinal!=selectedSourceCount)return false;
             for(const auto& matrix:source.jointMatrices)
                 for(float value:matrix.m)
                     if(!std::isfinite(value))return false;
