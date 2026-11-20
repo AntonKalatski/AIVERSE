@@ -589,3 +589,19 @@ colour controls require packed root/seed attributes and do not regenerate hair
 geometry. No MetaHuman face texture-index library/region masks, tangent-atlas
 anisotropy or full cornea/SSS parity. Control reference documents this explicitly.
 Only pre-existing dist/node_modules symlinks should remain untracked after commit.
+
+## Wardrobe prerequisite: preserve facial export — 2026-11-20
+
+Implementation `4a7f0a3da4c54c210ac75450413ed6f165a54b2a`, branch `integration/motionweave-studio-facial-stage184`.
+Updated tools/modeling/Export.cpp and tests/modeling/modeling.cpp: GLB now exports
+position/normal morph deltas, semantic targetNames, mesh/node weights and SCALAR
+weight-animation channels. Previously morphs were silently lost and weight clips
+were serialized as rotation. CPU deltas must exist; missing data fails clearly.
+No save schema/runtime/renderer change. Wardrobe, body masks, baking and Studio
+assembly button are still outstanding; this is a prerequisite, not completed UI.
+Verified cmake build target aiverse_modeling_tests and run-tests.sh --no-build
+--filter '^modeling_authoring$' --ctest-jobs 1: 1/1 PASS including skinned morph
+roundtrip. All builds/logs on KINGSTON: motionweave-vivid/full-character/
+{build,test}-wardrobe-export.log; report native/test-reports/20261120-155942-27803.
+git diff --check PASS. Full regression/UI/other platforms NOT RUN. No CI/push.
+Next: native wardrobe recipe, masking and bake pipeline, then typed Studio UI.
