@@ -100,3 +100,13 @@ queries and prepared budget writes. Only AnimationBudgetPolicy.h changed; no
 save format or public API change. Branch codex/lens-completion. CI NOT RUN.
 Next: repeat full quick runner on KINGSTON, including rebuilt camera_rig.
 Terrain GPU parity, transient budget and complete owner rollback remain open.
+
+## Pass 6 — MotionWeave queries and epoch contracts
+
+Quick runner at `05741cdac`: configure PASS, build FAIL, CTest NOT RUN.
+KINGSTON report `20261120-143539-92785`. Commit `f0c227f4e866a9dddb4c8c6ded7f115314794d7e` fixes
+remaining private pool queries in MotionWeaveScheduler and AnimationEventDispatch
+using public const queries, and updates terrain/sprite compile-only API fixtures
+for the existing expectedEpoch argument. No production signature/save change.
+Branch codex/lens-completion; CI NOT RUN. Camera rig binary rebuilt this pass,
+retest pending. Next: repeat full build on KINGSTON; same feature gaps remain.
