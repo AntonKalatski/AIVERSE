@@ -686,3 +686,93 @@ compilation, CTest, real GPU pixels and timing remain NOT RUN.
 The experimental option remains off by default. Ordinary picking
 still uses the CPU BVH and can proceed if GPU readback is unsupported,
 invalid, occluded or conservatively blocked.
+
+
+## Stage 7AQ — GPU alpha-masked ID pass and native GLES3 pixel readback
+
+The Stage 7AP conservative whole-polygon mask has been upgraded **only
+for standard material cutouts** where the original GPU base-colour
+texture is available and the material has no custom ShaderGraph or
+team/vertex-occlusion semantics that would change alpha processing.
+The new `SculptGpuAlphaMask.h` defines a 32-byte
+`SculptGpuMaskVertex`, a 48-byte std140/Metal
+`SculptGpuMaskUniform`, paired GLSL ES300/MSL shaders and a
+standard `gfx::ShaderDesc`/`gfx::PipelineDesc` pair. Supported
+`AlphaMode::Mask` primitives use a separate fragment shader with
+the original `Image::tex` GPU sampler, interpolated vertex alpha,
+the exact `Material::uvScale/uvOffset/uvRotation` transform convention
+and `Material::baseColor.w * textureAlpha * vertexAlpha` versus
+`Material::alphaCutoff`. Fragments below the cutoff are discarded;
+they do not write zero-ID depth, allowing geometry behind true
+holes to remain visible in the selection ID pass.
+
+The same hardware depth target receives opaque triangles, scene
+zero-ID blockers and standard sampled mask batches. Selectable
+masked fragments produce the true mesh-local triangle ID; masks on
+other meshes produce zero ID but only on non-discarded pixels.
+The established `SculptGpuIdPass` GPU resource owner retains each
+temporary vertex buffer until the corresponding async pixel callback
+has completed (or a verified GPU-idle barrier in a failure/shutdown
+path). A per-click source material batch is capped, and external
+masked occluders must carry zero ID and finite UV/uniform inputs.
+
+`SculptGpuPickEligibility.h` explicitly rejects optional GPU
+confirmation if the selected or any node-attached scene mesh has an
+authored LOD chain, if mesh ownership is ambiguous or if a referenced
+mesh is invalid. The current ID pass does not consume Renderer3D's
+exact authored/generated LOD selection and must **not** guess which
+level was actually rendered. This check only affects experimental
+GPU confirmation: the existing CPU BVH picker remains active.
+
+### Renderer / texture compatibility
+
+The mask shader matches the ordinary ModelShaders alpha test only
+when the conventional base-colour sampling path is representable.
+Custom ShaderGraph alpha, team blending, local AO/back-occlusion
+vertex-color overrides and missing base texture references still
+use conservative full-polygon zero-ID blockers. `AlphaMode::Blend`
+and depth-after/transparent cornea are also conservatively blocked
+because real colour-pass transparent ordering is not mirrored here.
+The normal render stage may apply texture derivatives, mip-residency,
+LOD fade, virtual-texture sampling or custom vertex modifiers that
+this diagnostic ID pass has not yet reproduced. This is **not**
+a general guarantee of pixel-exact Renderer3D parity.
+
+### GLES3 progress
+
+`gfx::Device::readTexturePixelAsync` now also has a native
+OpenGL ES 3 / native GL3 implementation using a 4-byte PBO, a
+`glFenceSync`, non-blocking owner-frame polling, `glMapBufferRange`
+**after** GPU completion and top-left-to-bottom-left coordinate
+conversion. It preserves previous draw/read FBO, pack buffer and
+pixel alignment bindings. Failed/unsupported requests return false
+instead of blocking on a synchronous full-screen readback.
+**WebGL2/Emscripten and the Windows GL-loader return unsupported**,
+as they require separately verified data access/lifetime paths.
+
+The experimental VIVID GPU ID pass remains **Metal-only** for now:
+native GLES3 readback being available does not by itself supply the
+completed-slot-safe `gfx::Device::frameSerial()` contract used for
+actor/frame publication validation. GL currently reports no such
+serial. Do not enable GLES scene picking by inventing a frameSerial.
+Vulkan offscreen single-pixel readback also remains to be implemented
+in the shared RHI, not copied into VIVID.
+
+### Source fixtures and actual verification
+
+`tests/vivid/human_creator.cpp` now covers GPU mask batching,
+material alpha cutoff, UV rotation/scale/offset fields, source image
+binding, packed vertex/fragment shader contract, no-ID fallback for
+missing or custom alpha, and fail-closed authored-LOD eligibility.
+`tests/vivid/metal_sculpt_id.mm` extends the real hardware CTest to
+render fully transparent vs opaque texels from a Metal source texture,
+expecting a zero/background ID from the hole and the normal nearest
+mesh-local triangle ID from a solid texel.
+
+**All newly added C++ tests, GLSL/MSL shader compilations, Metal ID
+pixels and native GLES3 PBO callbacks are NOT RUN.** Do not mark the
+latest branch validated until a specific Mac/Linux/Android build and
+GPU tests report exact outcomes. The still-missing production-level
+steps are true Renderer3D GPU vertex-override parity, actual visible
+LOD/culling selection, complete alpha/Blend ordering, Vulkan pixel
+readback and tested GLES/WebGL2 capability.
