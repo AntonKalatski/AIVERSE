@@ -859,17 +859,21 @@ couldn't be compiled are listed in the commit message as unverified.
 
 ### Where build output goes (all agents)
 
-**Never create builds in the shared engine checkout's `build/` folder** (the user's main
-checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
-integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+**Owner instruction (2026-11-20): all builds must run on KINGSTON.**
+This overrides earlier local/worktree build examples and release paths in this file.
 
-- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
-  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
-- Game / project work (packaging, native modules, test runs of a game): the project's own
-  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
-  and `aiversebuild` already use this layout).
-- Logs, bundles, patches and scratch archives belong with the build that produced them,
-  not loose in `build/` or `build/.temp/`. Delete your build trees when the task is merged.
+- Use `/Volumes/KINGSTON/AIVERSE-builds/<worktree-or-task>/<configuration>` for
+  CMake build trees, compiler intermediates, test reports, logs, packages and archives.
+  Give concurrent tasks separate directories; never share a CMake cache between sources.
+- Pass an explicit external `-B` directory to CMake and `--build-dir` to test runners.
+  For frontend/package builds, also redirect generated output and build caches to KINGSTON.
+  Keep build temporary files on KINGSTON using a task-specific temporary directory.
+- Game/native-module builds and release packaging must also use KINGSTON-backed output.
+  If a tool hard-codes a local output path, configure or adapt it before running it.
+- Check that `/Volumes/KINGSTON` is mounted and writable before starting. If unavailable,
+  stop the build and report it; never silently fall back to the internal disk or `/tmp`.
+- Source repositories may stay in their existing locations. Existing build trees are not
+  automatically relocated or deleted by this instruction; do not disrupt running builds.
 
 ## 5. Working in parallel
 
