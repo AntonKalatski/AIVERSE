@@ -45,6 +45,7 @@
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
+    uint64_t facialReadyEmitted_; // actual successful GPU generation
     BOOL htmlComposite_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
@@ -172,19 +173,34 @@
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
                 session_->previewMaterialName(), session_->previewMaterialFactors(),
-                session_->previewMaterialRevision(),
+                session_->previewMaterialRevision(),session_->facialPreview(),
                 float(session_->workspace().project.rules.levelHeight.toDouble()));
+            if(session_->facialPreview().active &&
+               preview_->renderedFacialGeneration()==
+                   session_->facialPreview().generation &&
+               facialReadyEmitted_!=session_->facialPreview().generation) {
+                facialReadyEmitted_=session_->facialPreview().generation;
+                [self sendStudioEvent:"facial.preview.ready" message:"Native GPU face pose rendered"];
+            }
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
             }
         } catch (const std::exception& e) {
             NSLog(@"AIVERSE native Scene failed: %s",e.what());
-            [self sendStudioEvent:"viewport.error" message:e.what()];
-            readyEmitted_=NO;
-            viewport_.hidden=YES;
-            placement_.visible=false;
-            preview_.reset();
+            if(session_->facialPreview().active) {
+                // Fail closed for a missing rig/model/GPU program. Preserve
+                // the real Scene surface, which can resume next frame.
+                session_->failFacialPreview(e.what());
+                facialReadyEmitted_=0;
+                [self sendStudioEvent:"facial.preview.error" message:e.what()];
+            } else {
+                [self sendStudioEvent:"viewport.error" message:e.what()];
+                readyEmitted_=NO;
+                viewport_.hidden=YES;
+                placement_.visible=false;
+                preview_.reset();
+            }
         }
     }
 }
@@ -256,6 +272,7 @@
                 payload.set("cancelled",aiverse::Json::fromBool(false));
                 payload.set("snapshot",session_->openProject(panel.URL.path.UTF8String));
                 if (preview_) preview_->resetCamera();
+                facialReadyEmitted_=0;
                 [self sendStudioEvent:"workspace.changed" message:""];
             } catch (const std::exception& ex) {
                 reply.set("error",aiverse::Json::string(ex.what()));
@@ -384,6 +401,14 @@
         const std::string method=req.getStr("method");
         if (!reply.has("error") && method=="studio.materialPreview") {
             [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
+        }
+        if(!reply.has("error") && method=="studio.facialPreviewStart") {
+            facialReadyEmitted_=0;
+            [self sendStudioEvent:"facial.preview.requested" message:"GPU model is loading"];
+        }
+        if(!reply.has("error") && method=="studio.facialPreviewStop") {
+            facialReadyEmitted_=0;
+            [self sendStudioEvent:"facial.preview.stopped" message:"Preview released"];
         }
         if (!reply.has("error") &&
             (method=="studio.setProperty" || method=="studio.save" ||
