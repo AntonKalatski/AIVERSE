@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 namespace aiverse::studio {
@@ -46,7 +47,7 @@ inline bool validStudioFacialRigDraft(const Json& doc,std::string* error=nullptr
     if(!morphs.isArray() || morphs.size()>256 ||
        (!rig.isNull() && (!rig.isArray() || rig.size()>64)))
         return reject("Invalid facial morph/IK array or size limit");
-    if(morphs.empty() && (rig.isNull() || rig.empty()))
+    if(morphs.size()==0 && (rig.isNull() || rig.size()==0))
         return reject("Facial rig must contain morph mappings or IK");
     std::set<std::pair<std::string,std::string>> destinations;
     for(const Json& m:morphs.items()) {
