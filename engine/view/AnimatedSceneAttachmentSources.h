@@ -46,6 +46,8 @@ public:
         lib::animation::AnimationBridgeStats bridge;
         size_t playbackSeeded=0;
         size_t playbackDeclined=0;
+        size_t playbackRestored=0;
+        size_t playbackRestoreRejected=0;
     };
 
     // Portable, pointer-free playback only. Parent Model/Graph owners are
@@ -54,6 +56,23 @@ public:
         render::AnimationGraphInstance::PlaybackSnapshot playback;
         std::vector<std::pair<std::string,int>> rig;
     };
+
+    // Actual worker result from the most recent bridge sync.
+    struct RestoreResult {
+        uint64_t attempts=0,restored=0,rejected=0;
+    };
+    RestoreResult restoreResult(const Key& key) const {
+        const auto it=active_.find(key);
+        if(it==active_.end())return {};
+        const Entity entity=bridge_.find(it->second.sourceId);
+        const auto* player=animationWorld_.tryGetConst<
+            lib::animation::AnimationPlayerComponent>(entity);
+        return player
+            ?RestoreResult{player->playbackRestoreAttempts,
+                           player->playbackRestoreAccepted,
+                           player->playbackRestoreDeclined}
+            :RestoreResult{};
+    }
 
     std::optional<PlaybackHandoff> capturePlayback(const Key& key) const {
         const auto it=active_.find(key);
@@ -238,7 +257,18 @@ public:
             pendingPlayback_.clear();
             lib::animation::stepAnimationPresentation(animationWorld_,dt);
             active_.swap(next);
-            stats={active_.size(),bridgeStats,seeded,declined};
+            size_t restored=0,rejected=0;
+            for(const auto& [key,record]:active_) {
+                (void)key;
+                const auto* player=animationWorld_.tryGetConst<
+                    lib::animation::AnimationPlayerComponent>(
+                        bridge_.find(record.sourceId));
+                if(!player)continue;
+                restored+=size_t(player->playbackRestoreAccepted);
+                rejected+=size_t(player->playbackRestoreDeclined);
+            }
+            stats={active_.size(),bridgeStats,seeded,declined,
+                   restored,rejected};
             return true;
         }catch(const std::exception& ex) {
             // Preflight errors leave active_ intact. If the underlying ECS
