@@ -357,6 +357,8 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
     checkGpuDevice(dev);
     auto t0 = std::chrono::steady_clock::now();
     if (g.w <= 0 || g.h <= 0) return false;
+    // Resolve the stable material kit before any map transaction is published.
+    if (!texturesLoaded_) loadTextures(dev);
     const float previousLh=lh_;
     const bool previousHeightfield=heightfield_;
     const int previousLodLevels=lodLevels_;
@@ -515,7 +517,6 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         stats_.geometryBytes=geoBytes_;
         stats_.buildMs=std::chrono::duration<double,std::milli>(
             std::chrono::steady_clock::now()-t0).count();
-        if (!texturesLoaded_)loadTextures(dev);
         return true;
     }
     // Whole-map non-detail rebuild is transactional across every chunk, the
@@ -592,7 +593,17 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         cw_=staged.cw_;
         ch_=staged.ch_;
         globalHash_=gh.h;
+        // Switching from detail to ordinary terrain retires all old normal
+        // and splat textures too, not just the shared per-cell textures.
+        retiredMeshes_.retireTexture(dev,detailNrmTex_);
+        retiredMeshes_.retireTexture(dev,detailSplatTex_);
+        detail_={};
         detailOn_=false;
+        detailK_=0;
+        stats_.detailK=0;
+        nrmPx_.clear();
+        dsplatPx_.clear();
+        nrmW_=nrmH_=dsplatW_=dsplatH_=0;
         geoBytes_=0;
         cellTex_=std::exchange(staged.cellTex_,gfx::TextureHandle{});
         dynTex_=std::exchange(staged.dynTex_,gfx::TextureHandle{});
@@ -608,7 +619,6 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         dynRow_=staged.dynRow_;
         visionInit_=false;
         fogFieldChanged_=true;
-        if (!texturesLoaded_) loadTextures(dev);
         heightDirty_=true;
         built_=true;
         stats_.rebuilt=int(chunks_.size());
@@ -631,7 +641,6 @@ bool TerrainRenderer::build(gfx::Device& dev, const MapGrid& g, bool flatDig) {
         globalHash_ = gh.h;
         buildApron(dev, g);
     }
-    if (!texturesLoaded_) loadTextures(dev);
     stats_.rebuilt = 0;
     detailOn_=false;
     for(auto& c:chunks_) {
