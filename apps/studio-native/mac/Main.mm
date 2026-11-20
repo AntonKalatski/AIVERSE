@@ -181,7 +181,7 @@
                facialReadyEmitted_!=session_->facialPreview().generation) {
                 facialReadyEmitted_=session_->facialPreview().generation;
                 session_->markFacialPreviewReady(facialReadyEmitted_);
-                [self sendStudioEvent:"facial.preview.ready" message:"Native GPU face pose rendered"];
+                [self sendStudioEvent:"facial.preview.ready" message:"Native facial draw submitted to GPU"];
             }
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
