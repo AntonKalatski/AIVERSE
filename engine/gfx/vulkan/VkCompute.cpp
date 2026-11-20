@@ -53,7 +53,7 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
     }
     auto sl=vkStruct<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
     sl.bindingCount=5+c.sampledTextureSlots;
-    sl.pBindings=bindings;
+    sl.pBindings=bindings.data();
     if(vkCreateDescriptorSetLayout(device_,&sl,nullptr,&c.setLayout)!=VK_SUCCESS)
         return fail();
 
