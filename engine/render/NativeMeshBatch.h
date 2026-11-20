@@ -23,6 +23,9 @@ public:
 
     void stage(Mesh& published,const MeshBuilder& builder) {
         if(published_)throw std::logic_error("NativeMeshBatch: already published");
+        const size_t footprint=builder.empty()?0:
+            builder.vertexCount()*sizeof(MeshVertex)+
+            builder.indices().size()*sizeof(uint32_t);
         Mesh replacement{};
         if(!builder.empty())replacement=builder.upload(device_);
         try {
@@ -30,10 +33,11 @@ public:
                 if(entry.target==&published) {
                     destroyPrivate(entry.replacement);
                     entry.replacement=replacement;
+                    entry.bytes=footprint;
                     recalculateBytes();
                     return;
                 }
-            pending_.push_back({&published,replacement});
+            pending_.push_back({&published,replacement,footprint});
             recalculateBytes();
         }catch(...) {
             destroyPrivate(replacement);
@@ -60,7 +64,7 @@ public:
         bytes_=0;
     }
 private:
-    struct Pending {Mesh* target; Mesh replacement;};
+    struct Pending {Mesh* target; Mesh replacement; size_t bytes;};
     void destroyPrivate(Mesh& mesh) noexcept {
         // These buffers have never been bound to any submitted draw.
         if(mesh.vb.valid())device_.destroyBuffer(mesh.vb);
@@ -68,12 +72,9 @@ private:
         mesh={};
     }
     void recalculateBytes() noexcept {
-        // The exact builder upload size is reported separately by callers
-        // when they need it. Use conservative buffer footprint accounting for
-        // chunk-budget decisions via the staged builder size argument below.
         bytes_=0;
         for(const auto& entry:pending_)
-            bytes_+=entry.replacement.indexCount*sizeof(uint32_t);
+            bytes_+=entry.bytes;
     }
     gfx::Device& device_;
     NativePresentationRetirement& retirement_;
