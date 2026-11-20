@@ -100,6 +100,39 @@ inline std::size_t studioRemapMaterialReferences(
     return updated;
 }
 
+// Resolve the set of known dependencies affected by an internal move.
+// This is a preview, not a rename executor. Exact paths and folder descendants
+// are matched; an unaffected resource in another folder must not match.
+inline Json studioMoveReferenceImpact(const Json& transfer,
+    const std::vector<StudioAssetReference>& references) {
+    Json result=Json::array();
+    for (const auto& item:transfer["items"].items()) {
+        if (!item["id"].isNumber() || !item["from"].isString() ||
+            !item["to"].isString()) continue;
+        const std::string source="content/"+item.getStr("from");
+        const std::string destination="content/"+item.getStr("to");
+        if (source==destination) continue;
+        const bool folder=item.getBool("directory");
+        for (const auto& ref:references) {
+            const bool exact=ref.path==source;
+            const bool inside=folder && ref.path.size()>source.size() &&
+                ref.path.compare(0,source.size(),source)==0 &&
+                ref.path[source.size()]=='/';
+            if (!exact && !inside) continue;
+            Json row=Json::object();
+            row.set("id",item["id"]);
+            row.set("document",Json::string(ref.document));
+            row.set("owner",Json::string(ref.owner));
+            row.set("field",Json::string(ref.field));
+            row.set("from",Json::string(ref.path));
+            row.set("to",Json::string(destination+ref.path.substr(source.size())));
+            row.set("writable",Json::fromBool(ref.writable));
+            result.push(std::move(row));
+        }
+    }
+    return result;
+}
+
 inline Json studioReferenceGraphJson(const std::vector<StudioAssetReference>& refs) {
     Json result = Json::array();
     for (const auto& ref : refs) {
