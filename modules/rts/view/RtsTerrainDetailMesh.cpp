@@ -190,21 +190,33 @@ bool TerrainRenderer::buildDetail(gfx::Device& dev, const MapGrid& g, bool flatD
 void TerrainRenderer::updateDetailTextures(gfx::Device& dev, int i0, int j0, int i1, int j1) {
     const int SW = detail_.sw(), SH = detail_.sh(), W = detail_.w, H = detail_.h, k = detail_.k;
     const int TW = std::min(SW, maxTexSide()), TH = std::min(SH, maxTexSide());
-    if (TW != nrmW_ || TH != nrmH_ || !detailNrmTex_.valid()) {
-        if (detailNrmTex_.valid()) dev.destroyTexture(detailNrmTex_);
-        if (detailSplatTex_.valid()) dev.destroyTexture(detailSplatTex_);
-        nrmW_ = TW; nrmH_ = TH;
-        nrmPx_.assign(size_t(TW) * size_t(TH) * 4, 128);
-        dsplatPx_.assign(size_t(TW) * size_t(TH) * 4, 0);
-        gfx::TextureDesc td; td.width = TW; td.height = TH; td.filter = gfx::Filter::Linear; td.mipmaps = true;
-        td.data = nrmPx_.data(); td.label = "terrain detail normals"; detailNrmTex_ = dev.createTexture(td);
+    if (TW != nrmW_ || TH != nrmH_ ||
+        !detailNrmTex_.valid() || !detailSplatTex_.valid()) {
+        // Staged same-resolution updates inherit the last published CPU
+        // pixel caches. Keep unchanged texels and compute only the dirty
+        // rectangle. GPU images remain private until the transaction commits.
+        const size_t pixelBytes=size_t(TW)*size_t(TH)*4;
+        const bool preservePixels=(nrmW_==TW && nrmH_==TH &&
+            nrmPx_.size()==pixelBytes && dsplatPx_.size()==pixelBytes);
+        if (!preservePixels) {
+            nrmPx_.assign(pixelBytes,128);
+            dsplatPx_.assign(pixelBytes,0);
+        }
+        if(detailNrmTex_.valid())retiredMeshes_.retireTexture(dev,detailNrmTex_);
+        if(detailSplatTex_.valid())retiredMeshes_.retireTexture(dev,detailSplatTex_);
+        nrmW_=TW; nrmH_=TH;
+        gfx::TextureDesc td;
+        td.width=TW; td.height=TH; td.filter=gfx::Filter::Linear; td.mipmaps=true;
+        td.data=nrmPx_.data(); td.label="terrain detail normals";
+        detailNrmTex_=dev.createTexture(td);
         if (!detailNrmTex_.valid())
             throw std::runtime_error("TerrainRenderer: detail normal texture allocation failed");
-        td.data = dsplatPx_.data(); td.label = "terrain detail splat"; detailSplatTex_ = dev.createTexture(td);
+        td.data=dsplatPx_.data(); td.label="terrain detail splat";
+        detailSplatTex_=dev.createTexture(td);
         if (!detailSplatTex_.valid())
             throw std::runtime_error("TerrainRenderer: detail splat texture allocation failed");
-        dsplatW_ = TW; dsplatH_ = TH;
-        i0 = 0; j0 = 0; i1 = SW; j1 = SH;
+        dsplatW_=TW; dsplatH_=TH;
+        if (!preservePixels) {i0=0; j0=0; i1=SW; j1=SH;}
     }
     // texel t <-> sample t * (S - 1) / (T - 1)
     const float sx = float(SW - 1) / float(std::max(TW - 1, 1)), sz = float(SH - 1) / float(std::max(TH - 1, 1));
