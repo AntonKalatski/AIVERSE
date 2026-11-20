@@ -767,13 +767,24 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             img.sharedRgba.reset();
         }
     }
-    // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
-    size_t texels = 0;
-    for (auto& mesh : m.meshes)
-        for (auto& p : mesh.primitives) if (p.morphTargets > 0 && !p.morphDeltas.empty()) texels += p.morphDeltas.size() / 3;
+    // Two RGBA32F texels per (morph channel, mesh vertex). The texture
+    // base offset is supplied to GLSL/MSL as a FLOAT uniform, which has
+    // exact integer precision only up to 2^24. Cap this texture accordingly
+    // rather than silently sampling the wrong channel on large facial rigs.
+    constexpr size_t kMorphWidth=2048u;
+    constexpr size_t kMaxMorphTexels=1u<<24; // 256 MiB RGBA32F, float-exact offsets
+    size_t texels=0;
+    for(const auto& mesh:m.meshes)
+        for(const auto& primitive:mesh.primitives)
+            if(primitive.morphTargets>0 && !primitive.morphDeltas.empty()) {
+                const size_t added=primitive.morphDeltas.size()/3u;
+                if(added>kMaxMorphTexels-texels)return false;
+                texels+=added;
+            }
     if (texels > 0 && !m.morphTex.valid()) {
-        const int width = 2048, height = int((texels + width - 1) / width);
-        std::vector<float> data(size_t(width) * size_t(height) * 4, 0.0f);
+        const size_t rows=(texels+kMorphWidth-1u)/kMorphWidth;
+        const int width=int(kMorphWidth),height=int(rows);
+        std::vector<float> data(kMorphWidth*rows*4u, 0.0f);
         size_t at = 0;
         for (auto& mesh : m.meshes)
             for (auto& p : mesh.primitives) {
