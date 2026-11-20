@@ -39,7 +39,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `physis` | `apps/editor/windows/PhysisWindow.cpp` | Missing functional HTML5 implementation |
 | `postfx` | `apps/editor/windows/PrismaWindow.cpp` | Missing functional HTML5 implementation |
 | `studio_asset_audit` | `apps/editor/windows/ProjectAuditWindow.cpp` | Missing functional HTML5 implementation |
-| `project` | `apps/editor/windows/ProjectWindow.cpp` | Missing functional HTML5 implementation |
+| `project` | `apps/editor/windows/ProjectWindow.cpp` | Partial: native map new/open/save/save-as and dirty close/quit protection (Stage 71); project creation/settings/import/FPS templates and visual QA pending |
 | `raid` | `apps/editor/windows/RaidWindow.cpp` | Missing functional HTML5 implementation |
 | `roads` | `apps/editor/windows/RoadsWindow.cpp` | Missing functional HTML5 implementation |
 | `rules` | `apps/editor/windows/RulesWindow.cpp` | Missing functional HTML5 implementation |
@@ -77,4 +77,4 @@ Record implementation commit, frontend panel, explicit native methods, normal/er
 
 ## Next bounded stage
 
-Native validated entity creation/deletion/duplication and a real HTML5 Hierarchy panel using Studio UI v1. Cover mutations, selection invalidation, undo/redo and save/reopen with native integration fixtures. Then document the remaining grouping/multiselect/FPS source variants separately.
+Entity CRUD (69), incremental packaging (70) and map lifecycle (71) have native automated evidence. Next: real game lifecycle using shared runtime ownership, then continue remaining matrix. Native interactive QA remains blocked by the locked Mac; no full-parity or main-merge claim is justified yet.
