@@ -628,3 +628,14 @@ was used for the successful second run. No source template/user project changed.
 Full CTest still waits on CPU-active aiverse_tests; 325/326 complete, with the
 two now-fixed regressions and one opt-in GPU skip. Do not call it all passing
 until core completes and CTest reruns record repaired cases. Main not pushed.
+
+
+### Latest main integration — 2026-11-20
+Merge `2fd08e44abcd0b407df79211d3892753dfc7cd81` incorporates origin/main
+`291908eb95054b1a331b1b7c54c8147d0330ef2f` (PR #98 STRATA QA). Clean merge;
+10 paths, primarily docs plus KTX2/LOD benchmark/Vulkan fixture and Linux-only
+CTest registration. No LENS/renderer production change. Existing full CTest
+core remains running on the premerge binary; unaffected by this documentation
+and test-source merge. Next rebuild all configured targets, rerun changed
+KTX2/LOD fixtures and repaired animation cases, preserve the full core outcome.
+No main push yet. Vulkan runtime is not claimed on this Mac.
