@@ -2,6 +2,7 @@
 // presentation-only secondary motion. Supports mobile card LOD fallback.
 #pragma once
 #include "HumanDNA.h"
+#include "HumanMaterials.h"
 #include "engine/render/Model.h"
 #include <cstdint>
 #include <memory>
@@ -133,6 +134,8 @@ public:
     void clearCollisionMesh() noexcept;
     bool hasCollisionMesh() const noexcept {return !collisionTriangles_.empty();}
     std::unique_ptr<render::Model> makeCardModel(const HumanDNA& dna) const;
+    std::unique_ptr<render::Model> makeCardModel(
+        const HumanDNA& dna,HumanMaterialQuality quality) const;
     bool updateCardVertices(std::span<render::ModelVertex> output) const;
     std::size_t vertexCount() const noexcept {return guides_.size()*(segments_+1)*2;}
     std::size_t triangleCount() const noexcept {return guides_.size()*segments_*2;}
