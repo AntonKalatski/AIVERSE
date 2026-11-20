@@ -19,6 +19,10 @@ namespace aiverse::game {
 class RtsShoreView {
 public:
     void init(gfx::Device& dev, const Json& shoreTypes, render::FileReader reader);
+    // CPU runtime configuration carried to a staged replacement before GPU
+    // initialization. Meshes and RHI resources are deliberately not copied.
+    void inheritRuntimeStateForReload(const RtsShoreView& old);
+    bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
     void shutdown(gfx::Device& dev);
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
@@ -44,6 +48,9 @@ private:
     int propModel(gfx::Device& dev, const std::string& path);
 
     gfx::Device* dev_ = nullptr;
+    // GPU kit uploads may throw before images_ receives ownership. Preserve
+    // this unpublished kit for an idle-gated shutdown or recovery retry.
+    std::unique_ptr<render::Model> buildingKit_;
     render::FileReader read_;
     water::ShoreTypes types_;
     water::Network net_;
