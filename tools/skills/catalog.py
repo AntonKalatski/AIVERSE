@@ -87,6 +87,8 @@ ALIASES = {
 
 # MCP and repository workflows (no runtime library): id, summary, source of truth.
 WORKFLOWS=[
+ ('aiverse-scene-entities','Native scene entity and component MCP authoring with stable light identity','docs/studio-light-entities.md'),
+ ('aiverse-lighting','Light entity authoring, probe GI and Luma through native MCP and shared runtime','docs/dynamic-gi.md'),
  ('studio-ui','HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA','docs/studio-design-system.md'),
  ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
  ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
@@ -203,6 +205,8 @@ WORKFLOW_ALIASES={
  'aiverse-fx':'fx effect particles explosion эффект частиц взрыв',
  'aiverse-niagara-vfx':'niagara unreal vfx legacy compatibility ниягара анриал старая совместимость',
  'aiverse-spectrafx':'spectrafx spectra vfx particles particle graph effects visual ecs game genre gpu cpu spectrum спектрафх эффекты частицы граф универсальн',
+ 'aiverse-scene-entities':'scene entity component inspector hierarchy transform mcp сущность компоненты лампа свет',
+ 'aiverse-lighting':'lighting light luma gi probes mcp освещение свет лампа пробы',
  'aiverse-prisma':'prisma postfx postprocess post-processing bloom hdr exposure tonemap lut grade depth of field motion blur taa ssr volume screen-space постобработка постэффект призма камера',
  'aiverse-animation-ecs':'animation ecs clip montage retarget budget fixed root motion animation system анимация бюджет корневая',
  'aiverse-motionweave':'motionweave animation rig retarget pose workers scheduler shared universal анимация риг потоки',

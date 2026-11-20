@@ -1904,6 +1904,31 @@
       "keywords": []
     },
     {
+      "id": "aiverse-lighting",
+      "package": null,
+      "path": "skills/visuals/aiverse-lighting/SKILL.md",
+      "domain": "workflow",
+      "summary": "Light entity authoring, probe GI and Luma through native MCP and shared runtime",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/dynamic-gi.md",
+      "keywords": [
+        "lighting",
+        "light",
+        "luma",
+        "gi",
+        "probes",
+        "mcp",
+        "освещение",
+        "свет",
+        "лампа",
+        "пробы"
+      ]
+    },
+    {
       "id": "aiverse-localization",
       "package": null,
       "path": "skills/ui/aiverse-localization/SKILL.md",
@@ -3354,6 +3379,32 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/gameplay/Saves.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-scene-entities",
+      "package": null,
+      "path": "skills/editor/aiverse-scene-entities/SKILL.md",
+      "domain": "workflow",
+      "summary": "Native scene entity and component MCP authoring with stable light identity",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/studio-light-entities.md",
+      "keywords": [
+        "scene",
+        "entity",
+        "component",
+        "inspector",
+        "hierarchy",
+        "transform",
+        "mcp",
+        "сущность",
+        "компоненты",
+        "лампа",
+        "свет"
+      ]
     },
     {
       "id": "aiverse-screens",

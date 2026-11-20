@@ -56,6 +56,15 @@ All builds for this task must stay on KINGSTON, as required by the owner.
 - Общее окружение/настройки сцены и определения ресурсов сами по себе не являются
   размещёнными объектами. Любой их экземпляр в мире подчиняется правилу entity.
 
+## Agent lighting/entity tools (2026-11-20)
+
+Use `skills/editor/aiverse-scene-entities/SKILL.md` for native scene entities and
+component edits, and `skills/visuals/aiverse-lighting/SKILL.md` for Light/GI/Luma.
+The existing AIVERSE MCP exposes scene_entity_list/get, scene_component_set,
+scene_light_create/delete and scene_render_lighting_get/set through the shared
+Workspace registry. Use returned entity IDs, native component validation and
+map_save; never create independent light state. See docs/studio-light-entities.md.
+
 ## HTML5 Studio UI design system (all future editor windows)
 For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
 **Studio UI v1** style library, not a panel-specific visual language:

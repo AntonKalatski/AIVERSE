@@ -1,3 +1,4 @@
+#include "SceneEntityOps.h"
 #include "apps/editor/core/DocumentLightIdentity.h"
 #include "LightOps.h"
 #include <stdexcept>
@@ -52,6 +53,7 @@ void applyLightParams(Json& l, const Json& p) {
 }
 
 void registerLightOps(Workspace& ws) {
+    registerSceneEntityOps(ws);
     auto add = [&ws](const char* name, const char* desc, const std::string& schema, Workspace::OpFn fn, bool gui = false) {
         ws.registerOp({name, desc, Json::parse(schema), std::move(fn), gui});
     };
