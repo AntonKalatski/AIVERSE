@@ -879,6 +879,9 @@ private:
     }
     void buildTerrainImpl(gfx::Device& dev,const MapGrid& grid,
                           bool forceAtomic);
+    // Same conservative fingerprint as the scene prewarm lease, shared
+    // across C++ translation units to reject mid-staging editor changes.
+    static uint64_t mapSourceFingerprint(const MapGrid& grid) noexcept;
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;

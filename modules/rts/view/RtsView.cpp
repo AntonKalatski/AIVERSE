@@ -108,6 +108,12 @@ uint64_t visibilityLeaseFingerprint(
 }
 } // namespace
 
+// Both topology publication and render-frame preflight must validate the
+// same map bytes. Keep this one conservative source signature in one place.
+uint64_t RtsView::mapSourceFingerprint(const MapGrid& grid) noexcept {
+    return mapLeaseFingerprint(grid);
+}
+
 // Owner-specific candidates stay private until the primary frame validates
 // this one-shot lease and publishes the full OwnerPrepareCommit transaction.
 struct RtsView::PreparedSurfaceLease final {

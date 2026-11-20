@@ -8,6 +8,7 @@
 #include "RtsShoreView.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -196,7 +197,31 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
         tx.add(shorePart);
         tx.add(groundFxPart);
         tx.add(fogPart); // a late R8 upload failure rolls back all owners
+        // An editor or GPU callback can update MapGrid or mutate an owner
+        // while the private GPU builders are running. Never commit a
+        // mixture of topology generations from different input revisions.
+        // The fingerprint also covers same-address, same-size brush edits.
+        const uint64_t inputFingerprint=mapSourceFingerprint(g);
+        const uint64_t originalGeneration=terrainGeneration_;
+        const std::array<uint64_t,5> ownerRevisions={
+            terrain_.stateRevision(),roads_->stateRevision(),
+            shores_->stateRevision(),groundFx_.stateRevision(),
+            fog_.stateRevision()};
         tx.prepareAll();
+        const std::array<uint64_t,5> finalRevisions={
+            terrain_.stateRevision(),roads_->stateRevision(),
+            shores_->stateRevision(),groundFx_.stateRevision(),
+            fog_.stateRevision()};
+        if(inputFingerprint!=mapSourceFingerprint(g) ||
+           originalGeneration!=terrainGeneration_ ||
+           ownerRevisions!=finalRevisions || dev_!=&dev ||
+           planets_.active()) {
+            // OwnerPrepareCommit rolls back in reverse order; not one live
+            // owner or retired GPU queue is published by this attempt.
+            tx.rollback();
+            throw std::runtime_error(
+                "RtsView: map source changed during topology preparation");
+        }
         if(!tx.publish())
             throw std::logic_error("RtsView: topology cohort not published");
         changed=true;

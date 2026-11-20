@@ -14029,6 +14029,60 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3b0_topology_discards_mid_prepare_editor_mutation) {
+    // Simulate a same-pointer editor brush edit from an RHI callback while
+    // the first unpublished Terrain buffer is being prepared.
+    struct MutatingDevice final : fogfaulttest::Device {
+        game::MapGrid* edit=nullptr;
+        size_t mutateAtBuffer=0;
+        bool mutated=false;
+        gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
+            if(edit && !mutated && bufferAttempts+1==mutateAtBuffer) {
+                edit->corner[0]=32;
+                mutated=true;
+            }
+            return fogfaulttest::Device::createBuffer(desc);
+        }
+    };
+    MutatingDevice dev;
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&) {
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    view.buildTerrain(dev,grid);
+    const float publishedHeight=view.heightAt(grid,2.5f,2.5f);
+    const uint64_t roadGeneration=view.roads().surfaceGeneration();
+    const size_t pendingBefore=view.pendingModelRetirements();
+    // An atomic candidate starts with an all-one-unit edited surface.
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),16);
+    dev.edit=&grid;
+    dev.mutateAtBuffer=dev.bufferAttempts+1;
+    bool rejected=false;
+    try {view.buildTerrainAtomic(dev,grid);}
+    catch(const std::runtime_error& e) {
+        rejected=std::string(e.what()).find(
+            "map source changed during topology preparation")!=
+                std::string::npos;
+    }
+    CHECK(dev.mutated);
+    CHECK(rejected);
+    CHECK(std::fabs(view.heightAt(grid,2.5f,2.5f)-
+                    publishedHeight)<1e-5f);
+    CHECK(view.roads().surfaceGeneration()==roadGeneration);
+    CHECK(view.pendingModelRetirements()==pendingBefore);
+    // Retry against the now-stable source: all owners can publish together.
+    dev.edit=nullptr;
+    view.buildTerrainAtomic(dev,grid);
+    CHECK(view.surfacePresentationMapReady(grid));
+    CHECK(std::fabs(view.heightAt(grid,2.5f,2.5f)-1.0f)<1e-5f);
+    CHECK(view.roads().surfaceGeneration()==roadGeneration+1);
+    view.shutdown(dev);
+}
+
 TEST(lens_stage48b3a1_unbuilt_terrain_uses_rules_level_height) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
