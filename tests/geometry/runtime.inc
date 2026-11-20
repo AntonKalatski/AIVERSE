@@ -396,3 +396,112 @@ TEST(geometry_failed_gpu_idle_preserves_staging_retirement_for_retry) {
     CHECK(scene.pendingFailedStages()==0);
     CHECK(scene.pendingGpuRetirements()==0);
 }
+
+
+namespace geometrytest {
+// CPU-only fake GPU completion tokens. An individual completed token is the
+// *only* condition that allows collectRetired to destroy that stage's models.
+struct GpuTokenDevice : GpuUploadFailDevice {
+    uint64_t nextToken=1;
+    std::set<uint64_t> completedTokens;
+    std::set<uint64_t> closedTokens;
+    uint64_t beginResourceRetirement() override {return nextToken++;}
+    bool resourceRetirementComplete(uint64_t token) override {
+        return completedTokens.count(token)!=0;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        closedTokens.insert(token);
+    }
+};
+}
+
+TEST(geometry_failed_stages_collect_only_their_completed_gpu_tokens) {
+    using namespace render;
+    geometrytest::GpuTokenDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"old","model":"old.obj"}]})");
+    const auto candidate=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj"}]})");
+    const auto reader=[](const std::string&,std::string& out) {
+        out=geometrytest::boxObj();
+        return true;
+    };
+    scene.loadTransactional(dev,original,reader);
+    const auto oldStats=scene.stats();
+    dev.allowIdle=false;
+    for(int i=0;i<2;++i) {
+        // First source is uploaded; the following allocation fails.
+        dev.failAt=dev.attempts+3;
+        bool rejected=false;
+        try {scene.loadTransactional(dev,candidate,reader);}
+        catch(const std::exception&) {rejected=true;}
+        CHECK(rejected);
+    }
+    CHECK(scene.pendingFailedStages()==2);
+    CHECK(scene.stats().instances==oldStats.instances);
+    const auto pending=scene.pendingGpuRetirements();
+    CHECK(pending>=2);
+    CHECK(!scene.collectRetired(dev)); // two fresh, still-pending tokens
+    CHECK(dev.nextToken==3);
+    CHECK(scene.pendingFailedStages()==2);
+    CHECK(scene.pendingGpuRetirements()==pending);
+    CHECK(dev.closedTokens.empty());
+    dev.completedTokens.insert(1);
+    CHECK(!scene.collectRetired(dev)); // second token remains pending
+    CHECK(scene.pendingFailedStages()==1);
+    CHECK(scene.pendingGpuRetirements()>0);
+    CHECK(dev.closedTokens.count(1)==1);
+    CHECK(dev.closedTokens.count(2)==0);
+    dev.completedTokens.insert(2);
+    CHECK(scene.collectRetired(dev));
+    CHECK(scene.pendingFailedStages()==0);
+    CHECK(scene.pendingGpuRetirements()==0);
+    CHECK(dev.closedTokens.count(2)==1);
+    CHECK(scene.stats().instances==oldStats.instances);
+    dev.allowIdle=true;
+    scene.shutdown(dev);
+}
+
+TEST(geometry_failed_stage_backpressure_and_explicit_idle_recovery) {
+    using namespace render;
+    geometrytest::GpuUploadFailDevice dev;
+    GeometryScene scene;
+    const auto original=Json::parse(R"({"version":1,"instances":[{"id":"old","model":"old.obj"}]})");
+    const auto candidate=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"a.obj"},{"id":"b","model":"b.obj"}]})");
+    size_t reads=0;
+    const auto reader=[&](const std::string&,std::string& out) {
+        ++reads;
+        out=geometrytest::boxObj();
+        return true;
+    };
+    scene.loadTransactional(dev,original,reader);
+    dev.allowIdle=false;
+    for(size_t n=0;n<GeometryScene::kMaxFailedStages;++n) {
+        dev.failAt=dev.attempts+3;
+        bool rejected=false;
+        try {scene.loadTransactional(dev,candidate,reader);}
+        catch(const std::exception&) {rejected=true;}
+        CHECK(rejected);
+        CHECK(scene.pendingFailedStages()==n+1);
+    }
+    CHECK(scene.stats().instances==1);
+    const size_t attemptedBuffers=dev.attempts;
+    const size_t attemptedReads=reads;
+    bool throttled=false;
+    try {scene.loadTransactional(dev,candidate,reader);}
+    catch(const std::runtime_error&) {throttled=true;}
+    CHECK(throttled);
+    CHECK(scene.rejectedFailedStageLoads()==1);
+    CHECK(scene.pendingFailedStages()==GeometryScene::kMaxFailedStages);
+    CHECK(dev.attempts==attemptedBuffers);
+    CHECK(reads==attemptedReads); // backpressure before source loading
+    CHECK(!scene.recoverFailedStagesAfterGpuIdle(dev));
+    CHECK(scene.pendingFailedStages()==GeometryScene::kMaxFailedStages);
+    dev.failAt=0;
+    dev.allowIdle=true;
+    CHECK(scene.recoverFailedStagesAfterGpuIdle(dev));
+    CHECK(scene.pendingFailedStages()==0);
+    CHECK(scene.pendingGpuRetirements()==0);
+    scene.loadTransactional(dev,candidate,reader);
+    CHECK(scene.stats().instances==2);
+    scene.shutdown(dev);
+}
