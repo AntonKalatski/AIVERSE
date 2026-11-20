@@ -51,8 +51,8 @@ clamped. Wrong JSON types and unknown fields produce configuration issues.
 `configure` resets settings and the animation epoch between maps/projects.
 `setPhysicalSkyTime(seconds)` freezes animation for reproducible screenshots;
 a negative value resumes the presentation clock. Sampling never advances PHYSIS.
-A native PHYSIS consumer may map its committed read-only weather snapshot into
-coverage/wind settings; no automatic weather adapter is installed.
+The optional PHYSIS bridge below maps committed read-only weather snapshots.
+Hosts explicitly attach it; no weather simulation is automatically installed.
 
 ## Rendering and cost
 
@@ -86,3 +86,56 @@ The ordinary HDR GPU fixture accepts `AIVERSE_PHYSICAL_SKY_TEST` values `clouds`
 `AIVERSE_BUILD_HDR_TESTS=ON`; run the same fixture on Metal and `aiverse_hdr_gl`
 for GL. Exact executed results and remaining platforms are in
 [the handoff](agent-handoffs/physical-sky-clouds-2026-11-20.md).
+
+## PHYSIS weather binding
+
+Include `engine/world/PhysisSkyBridge.h` at the host boundary. PHYSIS core does
+not depend on the renderer, and the renderer does not install PHYSIS. Keep one
+`world::PhysisSkyBinding` per independent scene/view. Retain the original authored
+settings separately; never feed the last mapped settings back as the baseline.
+
+```cpp
+// Once after project configuration:
+auto authoredSky = post.physicalSky();
+world::PhysisSkyBinding skyWeather;
+
+// Render owner thread, after the committed World read barrier:
+auto frame = skyWeather.update(sim.world(), probePositionInFixedMeters,
+                               worldGeneration, secondsPerPhysisTick,
+                               authoredSky);
+world::applyPhysisSkyFrame(post, frame);
+// Then render/resolve the ordinary PostFx chain.
+```
+
+`worldGeneration` is a host-owned nonzero source token: change it after replacing
+or loading a World, including same-tick restores. `secondsPerPhysisTick` is the
+host's actual PHYSIS update interval, not frame delta. The probe uses Fixed metres
+in PHYSIS coordinates; convert renderer units/origin explicitly. At one probe
+this controls the entire visible cloud layer, not a spatial weather texture.
+
+PHYSIS has humidity, rain/snow and wind but no canonical cloud coverage field.
+`PhysisSkyPolicy` supplies an artistic transfer function: humidity interpolates
+`dryCoverage` (0.15) to `humidCoverage` (0.65); maximum rain/snow/storm boost blends
+towards `stormCoverage` (0.9), scales extinction up to 2x and haze up to 3x.
+Rain is not converted to water volume. Wind uses the existing 3D sampler,
+including zones and storms, projected to X/Z. Coverage, extinction and haze
+changes are immediate; no claim of physically calibrated cloud formation.
+
+The binding integrates previous committed wind over elapsed climate ticks and
+publishes a metre displacement through `PostFx::setPhysicalSkyAdvection`.
+Repeated renders of the same tick do not move clouds; changing wind does not
+retroactively multiply all elapsed time. Decreasing ticks, source-token changes,
+changed tick duration/cloud scale and gaps above 60 seconds reset cosmetic phase.
+A valid sample overrides the manual sky time; otherwise manual animation remains.
+The transient displacement is not a persisted replay state: rollback intentionally
+resets cloud phase instead of claiming exact historical visual reconstruction.
+
+Missing PHYSIS, out-of-grid atmosphere, zero source token or invalid tick duration
+restores the supplied authored settings and clears advection. On explicit detach,
+restore those settings and call `post.clearPhysicalSkyAdvection()`; reset the
+binding. `PostFx::configure` and shutdown also clear advection. No change enables
+sky/clouds/god rays when the author disabled them. There is no automatic editor
+or RTS/FPS host attachment in this stage; the real native GPU fixture demonstrates
+the complete World -> bridge -> PostFx path with `physis-dry` / `physis-storm`.
+
+Tests: `./run-tests.sh --filter '^(physical_sky|physis_sky|physis_presentation)$'`.

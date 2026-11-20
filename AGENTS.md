@@ -2854,3 +2854,16 @@ do not add a second climate simulation. God rays use both cloud optical depth
 and existing sun-shadow depth; legacy screen-space sunShafts is separate.
 No cloud-to-surface shadows, reflection/IBL integration or multiple scattering
 is claimed. Native hosts without PostFx must opt in explicitly.
+
+
+### Physical sky stage 2 — PHYSIS read-only binding
+
+Use `engine/world/PhysisSkyBridge.h` (`PhysisSkyBinding`, `applyPhysisSkyFrame`)
+after a committed World read barrier. Keep authored sky settings separate from
+mapped settings. Supply Fixed-metre probe coordinates, actual seconds per PHYSIS
+tick and a nonzero host source token changed on map/load/same-tick restore.
+One binding per view; missing atmosphere restores authored settings. Cosmetic
+advection follows committed ticks, resets on rollback/source changes, and is not
+saved ECS state. PHYSIS remains renderer-independent; no automatic weather
+installation or genre-host attachment. See `docs/physical-sky.md` and stage 2
+in the physical-sky handoff. Native tests `physis_sky` / `physical_sky`.

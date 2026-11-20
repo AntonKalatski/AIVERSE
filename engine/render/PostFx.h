@@ -118,6 +118,9 @@ public:
     void resetUnderwater(){underwater_={};}
 
     void setPhysicalSky(PhysicalSkySettings s) { skySettings_=sanitizePhysicalSky(s); }
+    // Positive displacement moves clouds along positive world X/Z (metres).
+    void setPhysicalSkyAdvection(float2 meters) { skyDisplacement_=meters;skyAdvection_=true; }
+    void clearPhysicalSkyAdvection() { skyDisplacement_={};skyAdvection_=false; }
     const PhysicalSkySettings& physicalSky() const { return skySettings_; }
     // Explicit time permits paused/reproducible captures; negative resumes the host clock.
     void setPhysicalSkyTime(double seconds) { skyTime_=seconds; }
@@ -170,6 +173,8 @@ private:
     PhysicalSky sky_;
     PhysicalSkySettings skySettings_;
     double skyTime_=-1,skyEpoch_=-1;
+    float2 skyDisplacement_{};
+    bool skyAdvection_=false;
     PostFxQuality quality_ = PostFxQuality::Medium;
     bool enabled_ = true;
     bool hdrFrame_ = false, sceneReady_ = false;

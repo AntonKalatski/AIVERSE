@@ -10,6 +10,7 @@ using namespace aiverse::gfx;
 #define CHECK(c) do{if(!(c)){std::fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#c);std::exit(1);}}while(0)
 struct DeviceProbe final:Device {
     DeviceInfo deviceInfo;std::string error="injected failure",vs,fs,msl;
+    float weatherX=0,weatherZ=0;
     int draws=0,shaders=0,destroyed=0;bool fail=false,open=false;
     TextureHandle attachment,depthAttachment;
     const DeviceInfo& info()const override{return deviceInfo;}
@@ -34,7 +35,7 @@ struct DeviceProbe final:Device {
     void setVertexBuffer(BufferHandle,size_t)override{}
     void setIndexBuffer(BufferHandle,size_t)override{}
     void setTexture(int,TextureHandle t)override{CHECK(t.valid()&&t!=attachment&&t!=depthAttachment);}
-    void setUniforms(int,const void* ptr,size_t bytes)override{CHECK(bytes==272);const auto* f=static_cast<const float*>(ptr);for(size_t i=0;i<bytes/4;++i)CHECK(std::isfinite(f[i]));}
+    void setUniforms(int,const void* ptr,size_t bytes)override{CHECK(bytes==272);const auto* f=static_cast<const float*>(ptr);for(size_t i=0;i<bytes/4;++i)CHECK(std::isfinite(f[i]));weatherX=f[56];weatherZ=f[57];}
     void draw(uint32_t count,uint32_t)override{CHECK(count==3&&open);++draws;}
     void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t)override{}
 };
@@ -54,6 +55,10 @@ int main(int argc,char** argv){
     s.enabled=true;CHECK(render({3}));CHECK(device.draws==1&&!device.open);
     CHECK(render({3}));CHECK(device.shaders==1); // pipeline reuse
     if(argc==2){const std::string base=argv[1];std::ofstream(base+".vert")<<"#version 330 core\n"<<device.vs;std::ofstream(base+".frag")<<"#version 330 core\n"<<device.fs;std::ofstream(base+".metal")<<device.msl;}
+    const float2 displacement{12,-8};
+    CHECK(sky.draw(device,frame,s,3,999,{1},{2},{3},{4},{1},&displacement));
+    CHECK(device.weatherX==-12&&device.weatherZ==8); // positive world advection
+    CHECK(render({3}));CHECK(device.weatherX==s.windX*12); // legacy clock unchanged
     sky.shutdown(device);CHECK(device.destroyed==2);
     device.fail=true;CHECK(!render({3}));CHECK(!sky.lastError().empty());
     const int attempts=device.shaders;CHECK(!render({3}));CHECK(device.shaders==attempts);

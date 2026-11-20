@@ -71,7 +71,8 @@ public:
     void shutdown(gfx::Device&);
     bool draw(gfx::Device&,const PostFrame&,const PhysicalSkySettings&,int quality,double seconds,
               gfx::TextureHandle source,gfx::TextureHandle depth,
-              gfx::TextureHandle target,gfx::TextureHandle scratchDepth,gfx::BufferHandle triangle);
+              gfx::TextureHandle target,gfx::TextureHandle scratchDepth,gfx::BufferHandle triangle,
+              const float2* displacementMeters=nullptr);
     const std::string& lastError()const{return error_;}
 private:
     gfx::ShaderHandle shader_;

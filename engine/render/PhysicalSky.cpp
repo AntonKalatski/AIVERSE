@@ -18,7 +18,7 @@ void PhysicalSky::shutdown(gfx::Device& d) {
 bool PhysicalSky::draw(gfx::Device& d,const PostFrame& f,const PhysicalSkySettings& input,
                        int quality,double seconds,gfx::TextureHandle source,
                        gfx::TextureHandle depth,gfx::TextureHandle target,
-                       gfx::TextureHandle scratchDepth,gfx::BufferHandle triangle) {
+                       gfx::TextureHandle scratchDepth,gfx::BufferHandle triangle,const float2* displacementMeters) {
     if(!input.enabled||quality<=0||failed_||!source.valid()||!depth.valid()||
        !target.valid()||!scratchDepth.valid()||source==target||depth==scratchDepth)return false;
     if(!pipe_.valid()) {
@@ -51,6 +51,9 @@ bool PhysicalSky::draw(gfx::Device& d,const PostFrame& f,const PhysicalSkySettin
     const auto sun=normalize(f.lighting.sunDir);
     // Bound coordinates during long sessions; wrap only after 65536 weather cells.
     auto drift=[&](float speed){return float(std::fmod((std::isfinite(seconds)?seconds:0.0)*speed,double(s.cloudScale)*65536.0));};
+    const auto offset=[&](float v){return std::isfinite(v)?-std::fmod(v,s.cloudScale*65536.f):0.f;};
+    const float dx=displacementMeters?offset(displacementMeters->x):drift(s.windX);
+    const float dz=displacementMeters?offset(displacementMeters->y):drift(s.windZ);
     const float intensity=std::max(f.lighting.sunIntensity,0.f);
     Uniforms u{f.viewProj.inverse(),f.lightViewProj,
         {1.f/std::max(f.width,1),1.f/std::max(f.height,1),d.info().renderTargetFlipY?1.f:0.f,d.info().clipDepthZeroToOne?1.f:2.f},
@@ -59,7 +62,7 @@ bool PhysicalSky::draw(gfx::Device& d,const PostFrame& f,const PhysicalSkySettin
         {f.lighting.sunColor.x*intensity,f.lighting.sunColor.y*intensity,f.lighting.sunColor.z*intensity,0},
         {s.rayleigh,s.mie,s.sunRadiance,0},
         {s.cloudBase,s.cloudThickness,s.cloudScale,s.clouds?s.coverage:0.f},
-        {drift(s.windX),drift(s.windZ),s.extinction,s.haze},
+        {dx,dz,s.extinction,s.haze},
         {float(b.atmosphereSteps),float(b.cloudSteps),float(b.lightSteps),float(b.raySteps)},
         {s.godRays?1.f:0.f,s.rayDistance,f.sunShadow.valid()?1.f:0.f,0}};
     gfx::PassDesc pass;pass.colorTarget=target;pass.depthTarget=scratchDepth;

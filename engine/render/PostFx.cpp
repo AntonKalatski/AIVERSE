@@ -118,7 +118,7 @@ void PostFx::shutdown() {
         for (auto& [k, d] : s.depths) release(d);
     }
     sizes_.clear();
-    sky_.shutdown(*dev_);skySettings_={};skyTime_=skyEpoch_=-1;
+    sky_.shutdown(*dev_);skySettings_={};skyTime_=skyEpoch_=-1;clearPhysicalSkyAdvection();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
@@ -148,7 +148,7 @@ void PostFx::configure(const Json& game, const Json& map, std::vector<std::strin
     std::vector<std::string> local;
     setSettings(parsePostFx(game, map, issues ? issues : &local));
     skySettings_=parsePhysicalSky(game,map,issues?issues:&local);
-    skyEpoch_=-1;skyTime_=-1;
+    skyEpoch_=-1;skyTime_=-1;clearPhysicalSkyAdvection();
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
 }
 
@@ -421,7 +421,8 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         if(skyEpoch_<0)skyEpoch_=now;
         const Target skyTarget=target(set,kPhysicalSky,w,h);
         if(sky_.draw(dev,f,skySettings_,int(quality_),skyTime_>=0?skyTime_:now-skyEpoch_,
-                     scene.tex,depthFor(set,w,h),skyTarget.tex,depthFor(set,w,h,2),triangle_)) {
+                     scene.tex,depthFor(set,w,h),skyTarget.tex,depthFor(set,w,h,2),triangle_,
+                     skyAdvection_?&skyDisplacement_:nullptr)) {
             src=skyTarget;++stats_.passes;++stats_.effects;
         } else if(!sky_.lastError().empty())error_=sky_.lastError();
     }

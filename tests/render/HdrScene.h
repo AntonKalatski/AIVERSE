@@ -1,6 +1,7 @@
 // Deterministic, asset-free visual fixture shared by GL and Metal runners.
 #pragma once
 #include "engine/render/PostFx.h"
+#include "engine/world/PhysisSkyBridge.h"
 #include "engine/render/ScreenLighting.h"
 #include "HdrShaders.h"
 #include "engine/render/graph/ShaderGraph.h"
@@ -108,6 +109,17 @@ struct HdrScene {
             if(which=="inside"){camera.target.y=2200;camera.pitch=.05f;}
             if(which=="above"){camera.target.y=4000;camera.pitch=.35f;}
             post.setPhysicalSky(sky);
+            if(which=="physis-dry"||which=="physis-storm") {
+                World weatherWorld;physis::Settings config;config.width=config.height=1;
+                physis::initialize(weatherWorld,config);
+                const Vec3 location{1_fx,0_fx,1_fx};
+                auto& atmosphere=weatherWorld.get<physis::Atmosphere>(physis::cellAtPosition(weatherWorld,location));
+                atmosphere.humidity=which=="physis-dry"?0_fx:1_fx;
+                atmosphere.rain=which=="physis-dry"?0_fx:1_fx;
+                atmosphere.wind={10_fx,-2_fx};
+                world::PhysisSkyBinding binding;
+                world::applyPhysisSkyFrame(post,binding.update(weatherWorld,location,1,1.0/30,sky));
+            }
         }
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
