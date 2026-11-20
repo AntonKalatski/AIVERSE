@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <cmath>
+#include <chrono>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -386,6 +387,98 @@ void test() {
                "groom spatial grid exceeded the bounded contact budget");
         expect(colliding.stats().updatedMs>=0,
                "groom collision timing instrumentation invalid");
+    }
+
+    // Stage 7AA: 8192-guide stress fixture (one segment per guide).
+    // Sparse and overloaded distributions exercise both successful
+    // broadphase reuse and bounded, non-destructive overload handling.
+    {
+        constexpr std::size_t guideCount=8192;
+        std::vector<GroomGuide> sparse(guideCount);
+        for(std::size_t i=0;i<guideCount;++i) {
+            const float x=float(i)*0.2f;
+            auto& guide=sparse[i];
+            guide.root={x,0.f,0.f};
+            guide.rest=guide.position={guide.root,
+                                       {x,0.005f,0.f}};
+            guide.previous=guide.position;
+        }
+        GroomSelfCollisionConfig cfg;
+        cfg.enabled=true;
+        cfg.segmentEnabled=true;
+        cfg.separation=0.02f;
+        cfg.maxPairChecks=1024;
+        GroomParticleWorkspace particleScratch;
+        GroomSegmentWorkspace segmentScratch;
+        const auto start=std::chrono::steady_clock::now();
+        auto first=sparse;
+        GroomSelfCollisionStats p1,s1;
+        expect(GroomSelfCollision::resolve(first,cfg,p1,particleScratch) &&
+               GroomSegmentCollision::resolve(first,cfg,s1,segmentScratch),
+               "8192-guide sparse collision solve failed");
+        expect(!p1.budgetHit && !s1.budgetHit &&
+               p1.contacts==0 && s1.contacts==0 &&
+               p1.pairChecks<=cfg.maxPairChecks &&
+               s1.pairChecks<=cfg.maxPairChecks &&
+               segmentScratch.segments.size()==guideCount,
+               "8192-guide sparse workload unexpectedly exceeded collision budgets");
+        const auto pCap=particleScratch.entries.capacity();
+        const auto sCap=segmentScratch.cells.capacity();
+        const auto segmentCap=segmentScratch.segments.capacity();
+        auto second=sparse;
+        GroomSelfCollisionStats p2,s2;
+        expect(GroomSelfCollision::resolve(second,cfg,p2,particleScratch) &&
+               GroomSegmentCollision::resolve(second,cfg,s2,segmentScratch),
+               "8192-guide repeated collision solve failed");
+        expect(p1.pairChecks==p2.pairChecks &&
+               s1.pairChecks==s2.pairChecks &&
+               p1.contacts==p2.contacts && s1.contacts==s2.contacts &&
+               particleScratch.entries.capacity()==pCap &&
+               segmentScratch.cells.capacity()==sCap &&
+               segmentScratch.segments.capacity()==segmentCap,
+               "8192-guide collision changed result or reallocated scratch");
+        for(std::size_t i=0;i<guideCount;++i)
+            expect(render::length(second[i].position[0]-sparse[i].root)<1.e-7f &&
+                   render::length(first[i].position[1]-second[i].position[1])<1.e-7f &&
+                   finite(first[i].position[1]),
+                   "8192-guide stress moved roots or lost deterministic positions");
+        const auto elapsed=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-start).count();
+        std::cout<<"VIVID groom 8192 sparse x2 CPU ms="<<elapsed
+                 <<" particleEntries="<<particleScratch.entries.size()
+                 <<" segmentCells="<<segmentScratch.cells.size()
+                 <<" segmentPairs="<<segmentScratch.pairs.size()<<"\\n";
+
+        // Every segment occupies the same small spatial region; the raw
+        // candidate budget must skip this optional pass transactionally.
+        std::vector<GroomGuide> dense(guideCount);
+        for(std::size_t i=0;i<guideCount;++i) {
+            auto& guide=dense[i];
+            guide.root={0.f,0.f,0.f};
+            guide.rest=guide.position={{0.f,0.f,0.f},
+                                       {0.f,0.005f,0.f}};
+            guide.previous=guide.position;
+        }
+        const auto before=dense.front().position[1];
+        GroomSelfCollisionStats overloaded;
+        expect(GroomSegmentCollision::resolve(dense,cfg,overloaded,
+                                               segmentScratch) &&
+               overloaded.budgetHit && overloaded.contacts==0 &&
+               overloaded.pairChecks==0,
+               "8192-guide dense segment grid did not skip safely");
+        for(const auto& guide:dense)
+            expect(render::length(guide.position[0]-guide.root)<1.e-7f &&
+                   render::length(guide.position[1]-before)<1.e-7f,
+                   "8192-guide dense budget skip mutated live hair");
+        GroomSelfCollisionStats bounded;
+        expect(GroomSelfCollision::resolve(dense,cfg,bounded,
+                                           particleScratch) &&
+               bounded.budgetHit && bounded.pairChecks==cfg.maxPairChecks,
+               "8192-guide dense particle search did not respect pair cap");
+        for(const auto& guide:dense)
+            expect(render::length(guide.position[0]-guide.root)<1.e-7f &&
+                   finite(guide.position[1]),
+                   "8192-guide bounded particle solve corrupted roots");
     }
 
     // Variable presentation frame rates must use small bounded substeps.
