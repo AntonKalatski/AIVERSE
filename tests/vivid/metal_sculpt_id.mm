@@ -39,7 +39,8 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
                                     const SculptGpuVertexSource* gpuSource=nullptr,
                                     bool* usedGpuSource=nullptr,
                                     std::span<const SculptGpuMaskBatch> masks={},
-                                    float* actualDepth=nullptr) {
+                                    float* actualDepth=nullptr,
+                                    const SculptGpuVertexSource* actualMaskOccluder=nullptr) {
     device.beginFrame(64,64);
     SculptGpuPickRequest req;
     req.generation=1;
@@ -51,7 +52,7 @@ std::vector<std::uint8_t> runSample(gfx::Device& device,
     const auto viewProj=render::mat4::identity();
     require(pass.record(model,surface,model.vertices.size(),{},
                         viewProj,req,occluders,masks,gpuSource,
-                        actualDepth!=nullptr),
+                        actualDepth!=nullptr,actualMaskOccluder),
             "VIVID Metal offscreen ID pass could not record");
     device.endFrame();
     SculptGpuIdPass::Completed completed;
@@ -218,6 +219,105 @@ void test() {
                 "VIVID actual Metal solid-mask depth did not block source");
         require(hiddenBehindSolid==std::vector<std::uint8_t>({0,0,0,0}),
                 "Metal nearer sampled alpha occluder failed depth/zero-ID blocking");
+
+        // 7AY: unlike the preceding CPU-position masked occluder, this
+        // second actor has its own actual GPU ModelVertex[60B] buffer.
+        // Its CPU bind triangle is always in front of the selected head;
+        // when GPU bytes move its position outside the click, the original
+        // triangle ID MUST remain visible despite an opaque mask texel.
+        render::Model maskActor;
+        maskActor.vertices.resize(3);
+        for(std::size_t i=0;i<3u;++i) {
+            maskActor.vertices[i].pos=xy[i];
+            maskActor.vertices[i].pos.z=0.1f;
+            maskActor.vertices[i].uv={0.5f,0.5f};
+        }
+        maskActor.indices={0,1,2};
+        render::MeshDef maskMesh;
+        render::Primitive maskPrimitive;
+        maskPrimitive.firstIndex=0;
+        maskPrimitive.indexCount=3;
+        maskMesh.primitives.push_back(maskPrimitive);
+        maskActor.meshes.push_back(std::move(maskMesh));
+        render::Node maskNode;maskNode.mesh=0;
+        maskActor.nodes.push_back(maskNode);
+        maskActor.images.emplace_back();
+        maskActor.images[0].tex=alphaTexture;
+        maskActor.materials.emplace_back();
+        maskActor.materials[0].alpha=render::AlphaMode::Mask;
+        maskActor.materials[0].baseTex=0;
+        maskActor.materials[0].alphaCutoff=0.5f;
+        std::vector<render::ModelVertex> maskGpuBytes=maskActor.vertices;
+        gfx::BufferDesc actorDesc;
+        actorDesc.type=gfx::BufferType::Storage;
+        actorDesc.usage=gfx::Usage::Immutable;
+        actorDesc.size=model.vertices.size()*sizeof(render::ModelVertex);
+        actorDesc.data=model.vertices.data();
+        actorDesc.label="VIVID selected actual 60B actor for GPU occluder test";
+        auto selectedSourceBuffer=device->createBuffer(actorDesc);
+        require(selectedSourceBuffer.valid(),
+                "Metal independent selected GPU actor source missing");
+        SculptGpuVertexSource selectedGpu;
+        require(prepareSculptGpuVertexSource(
+                    model,0,pose,render::mat4::identity(),
+                    selectedSourceBuffer,std::uint32_t(model.vertices.size()),
+                    {},model.vertices.size(),selectedGpu),
+                "Metal selected GPU actor topology invalid");
+        gfx::BufferDesc maskDescGpu=actorDesc;
+        maskDescGpu.size=maskGpuBytes.size()*sizeof(render::ModelVertex);
+        maskDescGpu.label="VIVID actual independent GPU masked occluder";
+        for(auto& v:maskGpuBytes)v.pos.x+=2.f;
+        maskDescGpu.data=maskGpuBytes.data();
+        auto movedMaskBuffer=device->createBuffer(maskDescGpu);
+        require(movedMaskBuffer.valid(),
+                "Metal moved GPU mask actor source missing");
+        SculptGpuVertexSource maskGpu;
+        require(prepareSculptGpuVertexSource(
+                    maskActor,0,pose,render::mat4::identity(),
+                    movedMaskBuffer,std::uint32_t(maskGpuBytes.size()),
+                    {},maskGpuBytes.size(),maskGpu) &&
+                maskGpu.maskedSelection,
+                "Metal actual independent GPU Mask source preparation failed");
+        device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
+        float movedMaskDepth=-1.f;
+        bool usedTwoGpuActors=false;
+        const auto unaffected=runSample(
+            *device,pass,model,surface,32,32,{},&selectedGpu,
+            &usedTwoGpuActors,{},&movedMaskDepth,&maskGpu);
+        require(usedTwoGpuActors &&
+                unaffected==std::vector<std::uint8_t>({2,0,0,0}) &&
+                std::fabs(movedMaskDepth-0.2f)<0.001f,
+                "Metal GPU-mask blocker used CPU bind pose instead of moved GPU source");
+        device->destroyBuffer(movedMaskBuffer);
+        maskDescGpu.data=maskActor.vertices.data();
+        auto visibleMaskBuffer=device->createBuffer(maskDescGpu);
+        require(visibleMaskBuffer.valid(),
+                "Metal in-view GPU masked actor source missing");
+        require(prepareSculptGpuVertexSource(
+                    maskActor,0,pose,render::mat4::identity(),
+                    visibleMaskBuffer,std::uint32_t(maskActor.vertices.size()),
+                    {},maskActor.vertices.size(),maskGpu),
+                "Metal in-view GPU masked source preparation failed");
+        float solidMaskDepth=-1.f;
+        const auto gpuBlocked=runSample(
+            *device,pass,model,surface,32,32,{},&selectedGpu,
+            &usedTwoGpuActors,{},&solidMaskDepth,&maskGpu);
+        require(usedTwoGpuActors &&
+                gpuBlocked==std::vector<std::uint8_t>({0,0,0,0}) &&
+                std::fabs(solidMaskDepth-0.1f)<0.001f,
+                "Metal independent real GPU alpha actor failed depth-only blocking");
+        device->updateTexture(alphaTexture,0,0,1,1,alphaHole.data(),4);
+        float holeMaskDepth=-1.f;
+        const auto gpuHole=runSample(
+            *device,pass,model,surface,32,32,{},&selectedGpu,
+            &usedTwoGpuActors,{},&holeMaskDepth,&maskGpu);
+        require(usedTwoGpuActors &&
+                gpuHole==std::vector<std::uint8_t>({2,0,0,0}) &&
+                std::fabs(holeMaskDepth-0.2f)<0.001f,
+                "Metal independent GPU masked alpha hole failed to reveal source");
+        device->destroyBuffer(visibleMaskBuffer);
+        device->destroyBuffer(selectedSourceBuffer);
+        device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
 
         // 7AT: the actual 60B GPU override is the positional authority.
         // Move every GPU vertex completely off-screen WITHOUT changing the
