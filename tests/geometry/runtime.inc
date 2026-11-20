@@ -318,8 +318,9 @@ TEST(geometry_transactional_gpu_source_upload_failure_preserves_live) {
     scene.loadTransactional(dev,original,reader);
     CHECK(scene.stats().instances==1);
     const auto before=scene.stats();
-    // A source model's first GPU buffer allocation must fail.
-    dev.failAt=dev.attempts+1;
+    // Let the first source upload allocate its vertex/index buffers.
+    // Fail the next model's vertex buffer to exercise partial staging.
+    dev.failAt=dev.attempts+3;
     bool rejected=false;
     try {scene.loadTransactional(dev,replacement,reader);}
     catch(const std::exception&) {rejected=true;}
