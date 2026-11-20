@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
+#include <utility>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainShaders.h"
 #include "RtsTerrainSurface.h"
@@ -59,29 +61,76 @@ std::vector<uint8_t> parseMaterialRows(const Json& rows, int w, int h) {
 
 void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReader& read, const std::string& contentBase) {
     checkGpuDevice(dev);
-    if (dev_) shutdown(*dev_);
-    dev_ = &dev;
-    rules_ = &rules;
-    base_ = contentBase;
-    read_ = read;
-    textures_.init(dev);
-    look_ = {};
-    if (read) { // visual `terrain` block: rules file first, game.json overrides per key (as RtsGroundFx)
-        std::string text, rulesPath = "rules.json";
+    if (dev_ && dev_ != &dev)
+        throw std::logic_error("TerrainRenderer: GPU device owner mismatch");
+
+    // Parse and allocate *before* touching an existing published terrain.
+    // The three fallback textures are unpublished until the complete kit
+    // exists. Missing textures must fail, not leave a half-bound renderer.
+    TerrainRenderer parsed;
+    parsed.look_ = {};
+    if(read) {
+        std::string text, rulesPath="rules.json";
         Json game;
-        try { if (read("game.json", text)) { game = Json::parse(text); rulesPath = game.getStr("rules", "rules.json"); } } catch (...) {}
-        try { parseLook(readComposedJson(rulesPath, [&](const std::string& p, std::string& o) { return read(p, o); })["terrain"]); } catch (...) {}
-        if (game.isObject()) parseLook(game["terrain"]);
+        try {
+            if(read("game.json",text)) {
+                game=Json::parse(text);
+                rulesPath=game.getStr("rules","rules.json");
+            }
+        }catch(...) {}
+        try {
+            parsed.parseLook(readComposedJson(rulesPath,
+                [&](const std::string& p,std::string& out){return read(p,out);})["terrain"]);
+        }catch(...) {}
+        if(game.isObject())parsed.parseLook(game["terrain"]);
     }
-    auto tex1 = [&](uint32_t px, const char* label) {
-        gfx::TextureDesc td; td.width = td.height = 1; td.data = &px; td.repeat = true; td.label = label;
+    std::string nextBase=contentBase;
+    FileReader nextReader=read;
+    gfx::TextureHandle nextWhite{},nextFlatNormal{},nextGray{};
+    const auto tex1=[&](uint32_t px,const char* label) {
+        gfx::TextureDesc td;
+        td.width=td.height=1;
+        td.data=&px;
+        td.repeat=true;
+        td.label=label;
         return dev.createTexture(td);
     };
-    white_ = tex1(0xffffffffu, "terrain white");
-    flatN_ = tex1(0xffff8080u, "terrain flat normal");
-    gray_ = tex1(0xff808080u, "terrain gray");
-    texturesLoaded_ = false;
-    built_ = false;
+    try {
+        nextWhite=tex1(0xffffffffu,"terrain white");
+        if(!nextWhite.valid())
+            throw std::runtime_error("TerrainRenderer: white GPU texture allocation failed");
+        nextFlatNormal=tex1(0xffff8080u,"terrain flat normal");
+        if(!nextFlatNormal.valid())
+            throw std::runtime_error("TerrainRenderer: flat normal GPU texture allocation failed");
+        nextGray=tex1(0xff808080u,"terrain gray");
+        if(!nextGray.valid())
+            throw std::runtime_error("TerrainRenderer: gray GPU texture allocation failed");
+
+        // A previous draw may still refer to the old terrain kit. Never
+        // destroy it without an actual full-device idle boundary.
+        if(dev_ && !dev.waitForResourceIdle())
+            throw std::runtime_error("TerrainRenderer: reload GPU idle barrier failed");
+        if(dev_)shutdown(dev);
+    }catch(...) {
+        // These unpublished textures cannot be referenced by a draw call.
+        if(nextGray.valid())dev.destroyTexture(nextGray);
+        if(nextFlatNormal.valid())dev.destroyTexture(nextFlatNormal);
+        if(nextWhite.valid())dev.destroyTexture(nextWhite);
+        throw;
+    }
+
+    dev_=&dev;
+    rules_=&rules;
+    base_.swap(nextBase);
+    read_.swap(nextReader);
+    using std::swap;
+    swap(look_,parsed.look_);
+    textures_.init(dev);
+    white_=nextWhite;
+    flatN_=nextFlatNormal;
+    gray_=nextGray;
+    texturesLoaded_=false;
+    built_=false;
 }
 
 void TerrainRenderer::parseLook(const Json& t) {
