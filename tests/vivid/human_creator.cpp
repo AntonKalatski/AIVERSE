@@ -7,6 +7,7 @@
 #include "engine/character/vivid/SculptGpuPickShaders.h"
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SculptGpuAlphaMask.h"
+#include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -500,6 +501,42 @@ void test() {
             opaque.size()==3 && masks.empty() &&
             opaque[0].rgba[0]==0,
             "unknown custom ShaderGraph alpha must remain conservative");
+    }
+    // 7AQ: no false claim of hardware pixel parity when the normal
+    // Renderer3D may draw an alternate authored LOD or an ambiguously
+    // instanced mesh. In those cases the CPU BVH remains authoritative.
+    {
+        aiverse::render::Model model;
+        model.meshes.resize(2);
+        model.nodes.resize(2);
+        model.nodes[0].mesh=0;
+        model.nodes[1].mesh=1;
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::Eligible,
+            "ordinary selected-mesh ID pick should be supported");
+        model.meshes[1].lods.push_back({0,50.f});
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::AuthoredLodSelection,
+            "another scene mesh's authored LOD must disallow unverified picking");
+        model.meshes[1].lods.clear();
+        model.meshes[0].lods.push_back({1,20.f});
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::AuthoredLodSelection,
+            "selected face authored LOD mismatch must fail closed");
+        model.meshes[0].lods.clear();
+        model.nodes[1].mesh=0;
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::AmbiguousOwner,
+            "same mesh under multiple owners cannot share one source pose");
+        model.nodes[1].mesh=-1;
+        model.nodes[0].mesh=-1;
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::MissingOwner,
+            "unreferenced mesh should not be treated as visible");
+        model.nodes[0].mesh=99;
+        req(sculptGpuPickEligibility(model,0)==
+                SculptGpuPickEligibility::InvalidSceneMesh,
+            "corrupt scene mesh node must disallow GPU confirmation");
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
