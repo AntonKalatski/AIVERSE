@@ -13512,6 +13512,151 @@ TEST(groundfx_gpu_kit_staging_recovers_from_pipeline_texture_idle_failure) {
     CHECK(!fx.ownsGpuResources());
 }
 
+TEST(lens_road_shore_fog_cohort_late_fog_failure_preserves_all_published_owners) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsRoadView roads;
+    game::RtsShoreView shores;
+    view::VisibilityField fog;
+    roads.init(dev,Json(),missing);
+    shores.init(dev,Json(),missing);
+    CHECK(fog.init(dev));
+    const std::function<float(float,float)> height=[](float,float){return 0.0f;};
+    fog.build(dev,100,48,height);
+
+    game::RoadNetwork network;
+    game::RoadNode a,b;
+    a.id=1;b.id=2;
+    a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
+    b.p={Fixed::fromInt(92),Fixed::fromInt(6)};
+    network.nodes={a,b};
+    game::RoadEdge e;
+    e.id=1;e.a=1;e.b=2;
+    int asphalt=0;
+    for(size_t i=0;i<roads.types().size();++i)
+        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+           roads.types()[i].drivable()) {asphalt=int(i);break;}
+    e.typeIndex=asphalt;e.type=roads.types()[size_t(asphalt)].id;
+    network.edges={e};
+    roads.setNetwork(network);
+    const Json shoreMap=Json::parse(R"JSON({
+      "waterNetwork":{"bodies":[{"id":1,"kind":"sea","side":"south",
+        "shore":[[4,12],[92,12]],
+        "shores":[{"side":1,"from":0,"to":1000,"type":"embankment"}]}]}
+    })JSON");
+    shores.setMap(shoreMap);
+    render::RTSCamera camera;
+    camera.target={48,0,8};camera.distance=150;camera.pitch=1.0f;
+    renderer.beginScene(camera,1200,800);
+    roads.draw(renderer,height);
+    shores.draw(renderer,height,0.0f,100,48);
+    renderer.render(gfx::PassDesc{});
+    const std::vector<uint8_t> visible(size_t(100*48),2);
+    CHECK(fog.update(visible,100,48,1.0));
+    const auto oldFog=fog.texture().id;
+    const uint64_t oldRoadGeneration=roads.surfaceGeneration();
+    const auto oldRoadRetired=roads.pendingGpuRetirements();
+    const auto oldShoreRetired=shores.pendingGpuRetirements();
+    const auto oldFogRetired=fog.pendingGpuRetirements();
+    const auto oldWheelHeight=roads.surfaceAt(48,6,0);
+
+    network.nodes[1].p.x=Fixed::fromInt(98);
+    roads.setNetwork(network);
+    shores.invalidateGround();
+    const std::vector<uint8_t> changedVision(size_t(100*48),0);
+    struct RoadPart final: render::OwnerPrepareCommit::Participant {
+        game::RtsRoadView& road;gfx::Device& dev;
+        const std::function<float(float,float)>& ground;
+        std::shared_ptr<game::RtsRoadView::PreparedRebuild> pending;
+        RoadPart(game::RtsRoadView& r,gfx::Device& d,
+                 const std::function<float(float,float)>& h)
+            :road(r),dev(d),ground(h){}
+        void prepare() override {pending=road.prepareRebuild(dev,ground);}
+        void commit() noexcept override {road.commitRebuild(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } roadPart(roads,dev,height);
+    struct ShorePart final: render::OwnerPrepareCommit::Participant {
+        game::RtsShoreView& shore;gfx::Device& dev;
+        const std::function<float(float,float)>& ground;
+        std::shared_ptr<game::RtsShoreView::PreparedRebuild> pending;
+        ShorePart(game::RtsShoreView& s,gfx::Device& d,
+                  const std::function<float(float,float)>& h)
+            :shore(s),dev(d),ground(h){}
+        void prepare() override {
+            pending=shore.prepareRebuild(dev,ground,0.0f,100,48);
+        }
+        void commit() noexcept override {shore.commitRebuild(std::move(pending));}
+        void rollback() noexcept override {pending.reset();}
+    } shorePart(shores,dev,height);
+    struct FogPart final: render::OwnerPrepareCommit::Participant {
+        view::VisibilityField& fog;fogfaulttest::Device& dev;
+        const std::vector<uint8_t>& vision;
+        std::unique_ptr<view::VisibilityField::PreparedUpdate> pending;
+        bool fail=false;
+        FogPart(view::VisibilityField& f,fogfaulttest::Device& d,
+                const std::vector<uint8_t>& v):fog(f),dev(d),vision(v){}
+        void prepare() override {
+            if(fail)dev.failTextureUpdate=dev.textureUpdates+1;
+            pending=fog.prepareUpdate(vision,100,48,2.0);
+            dev.failTextureUpdate=0;
+        }
+        void commit() noexcept override {
+            if(pending) {
+                try {(void)fog.commitPreparedUpdate(std::move(pending));}
+                catch(...) {std::terminate();}
+            }
+        }
+        void rollback() noexcept override {
+            dev.failTextureUpdate=0;
+            pending.reset();
+        }
+    } fogPart(fog,dev,changedVision);
+    fogPart.fail=true;
+    const auto beforeCleanup=dev.destroyedBuffers;
+    bool failed=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(roadPart);
+        transaction.add(shorePart);
+        transaction.add(fogPart);
+        try {transaction.prepareAll();}
+        catch(const std::runtime_error&){failed=true;}
+        CHECK(failed);
+        CHECK(!transaction.publish());
+    }
+    CHECK(dev.destroyedBuffers>beforeCleanup);
+    CHECK(roads.needsRebuild() && shores.needsVisualPreparation(0.0f,100,48));
+    CHECK(roads.surfaceGeneration()==oldRoadGeneration);
+    CHECK(roads.surfaceAt(48,6,0)==oldWheelHeight);
+    CHECK(roads.pendingGpuRetirements()==oldRoadRetired);
+    CHECK(shores.pendingGpuRetirements()==oldShoreRetired);
+    CHECK(fog.pendingGpuRetirements()==oldFogRetired);
+    CHECK(fog.texture().id==oldFog);
+    fogPart.fail=false;
+    {
+        render::OwnerPrepareCommit transaction;
+        transaction.add(roadPart);
+        transaction.add(shorePart);
+        transaction.add(fogPart);
+        transaction.prepareAll();
+        CHECK(roads.surfaceGeneration()==oldRoadGeneration);
+        CHECK(fog.texture().id==oldFog);
+        CHECK(transaction.publish());
+    }
+    CHECK(roads.surfaceGeneration()==oldRoadGeneration+1);
+    CHECK(!roads.needsRebuild() && !shores.needsVisualPreparation(0.0f,100,48));
+    CHECK(roads.pendingGpuRetirements()>oldRoadRetired);
+    CHECK(shores.pendingGpuRetirements()>oldShoreRetired);
+    CHECK(fog.pendingGpuRetirements()>oldFogRetired);
+    CHECK(fog.texture().id!=oldFog);
+    roads.shutdown(dev);
+    shores.shutdown(dev);
+    CHECK(fog.shutdownAfterGpuIdle());
+    renderer.shutdown();
+}
+
 TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure) {
     struct Participant final : render::OwnerPrepareCommit::Participant {
         int& published;
