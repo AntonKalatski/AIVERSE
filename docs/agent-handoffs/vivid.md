@@ -1597,3 +1597,7 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 ## 2026-11-20 — combined MotionWeave Studio integration
 
 User-authorized merge `1d8c76e99c924f0373067ba413fac7b5d4803018` preserves VIVID and Studio source histories. See [joint handoff](motionweave-vivid-integration-2026-11-20.md). Native build has RtsView API failures; no native/GPU PASS yet. Builds and logs on KINGSTON only.
+
+## 2026-11-20 combined native build checkpoint
+
+Code `4f7d6afd60c962b7a6594aea97f8eef01acc0ce0` on `integration/motionweave-studio-facial-stage184`: Creator and Studio compile; combined runner 12/17 passes with five failures under investigation. Full commands/logs and next steps: [integration handoff](motionweave-vivid-integration-2026-11-20.md). All builds on KINGSTON; no complete acceptance claim.

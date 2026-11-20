@@ -27,3 +27,13 @@ Fix RtsView API mismatches without changing animation ownership, finish native b
 | Studio frontend | partial | native WKWebView screenshot |
 | Shared provider in Studio facial preview | not implemented | adopt existing provider safely |
 | GPU/backend acceptance | not tested | Metal pixel suite; Vulkan/GLES |
+
+## Native build checkpoint — 2026-11-20
+
+Implementation: `4f7d6afd60c962b7a6594aea97f8eef01acc0ce0`, same integration branch. Fixed RTS retirement result forwarding and ScenePacketBatch size query; qualified shared render::findNodePath and made retarget/loader headers self-contained; corrected VIVID groom subtraction, Creator slider helper pointer type, and portable gfx fixture namespace (also present in upstream 6064542).
+
+Actual KINGSTON builds: Studio, facial runtime/binding, AutoLOD, VIVID Creator PASS. Remaining acceptance target build still running in `build-fix4.log`. Earlier failed attempts retained as build.log/build-fix1..3.log. No animation save schema, 52 channel ordering, UI layout or gameplay ownership changes.
+
+Unified Debug runner (tests-first.log): 12/17 PASS, 5 FAIL: auto_lod_runtime (malformed envelope throws), vivid_human_appearance (irisRadius fixture out of schema bounds), vivid_human_import (invalid fixture accepted), vivid_metal_sculpt_id (record rejected), vivid_actor_retirement (initialization rejected). Real Metal GPU and RHI tests PASS. Studio facial runtime and binding PASS. Python Studio contracts: 24/29 PASS; stale CMake/asset catalog/doc assertions and Python 3.8 Path.is_relative_to compatibility need repair. Do not report full suite passing. CI NOT RUN; GUI/pixel preview NOT RUN yet.
+
+Next: finish acceptance target build, diagnose the five failures without relaxing runtime validation, update stale contracts, run combined tests and real Renderer3D preview. Studio async provider adoption remains open. Correction to previous entry: RTS error was void collectRetired used as bool (not init).
