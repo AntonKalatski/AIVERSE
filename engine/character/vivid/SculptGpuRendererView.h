@@ -90,6 +90,7 @@ inline SculptGpuRendererViewCheck validateSculptGpuRendererView(
     }
     std::vector<std::uint8_t> selected(sourcePrimitives.size(),0);
     std::vector<std::uint32_t> owners(source.meshes.size(),UINT32_MAX);
+    std::vector<std::uint64_t> instances(source.meshes.size(),0);
     std::uint32_t selectedNode=UINT32_MAX;
     for(const auto& p:view.primitives) {
         if(p.model!=&source || p.nodeIndex>=source.nodes.size() ||
@@ -98,6 +99,7 @@ inline SculptGpuRendererViewCheck validateSculptGpuRendererView(
             return result;
         }
         if(!p.colourCandidate || !p.visible || !p.indexCount ||
+           !p.drawInvocation ||
            p.batched || p.gpuLodConditional || p.lodFade ||
            p.alternativeMeshLod ||
            source.nodes[p.nodeIndex].mesh!=int(p.meshIndex) ||
@@ -105,12 +107,18 @@ inline SculptGpuRendererViewCheck validateSculptGpuRendererView(
             result.reason=SculptGpuRendererViewReason::RendererUnsupportedView;
             return result;
         }
-        if(owners[p.meshIndex]!=UINT32_MAX &&
-           owners[p.meshIndex]!=p.nodeIndex) {
+        if((owners[p.meshIndex]!=UINT32_MAX &&
+            owners[p.meshIndex]!=p.nodeIndex) ||
+           (instances[p.meshIndex] &&
+            instances[p.meshIndex]!=p.drawInvocation)) {
+            // Repeated ModelDraw submissions of one Model may share node and
+            // mesh IDs but have different world transforms. One world-space
+            // CPU skin surface cannot stand in for multiple instances.
             result.reason=SculptGpuRendererViewReason::MultipleMeshOwners;
             return result;
         }
         owners[p.meshIndex]=p.nodeIndex;
+        instances[p.meshIndex]=p.drawInvocation;
         if(p.meshIndex!=selectedMesh)continue;
         if(p.primitiveIndex>=sourcePrimitives.size()) {
             result.reason=SculptGpuRendererViewReason::PrimitiveIndexMismatch;
