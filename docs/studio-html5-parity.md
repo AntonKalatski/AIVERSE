@@ -25,7 +25,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `effects` | `apps/editor/windows/FxWindow.cpp` | Missing functional HTML5 implementation |
 | `game` | `apps/editor/windows/GameWindow.cpp` | Missing functional HTML5 implementation |
 | `generate` | `apps/editor/windows/GenWindow.cpp` | Missing functional HTML5 implementation |
-| `hierarchy` | `apps/editor/windows/HierarchyWindow.cpp` | Partial; native visual parity pending |
+| `hierarchy` | `apps/editor/windows/HierarchyWindow.cpp` | Partial: map entity create/duplicate/delete, single selection/search, undo/save/reopen tested (Stage 69); grouping/multiselect/FPS authoring and visual QA pending |
 | `project_import` | `apps/editor/windows/ImportProjectWindow.cpp` | Missing functional HTML5 implementation |
 | `input` | `apps/editor/windows/InputWindow.cpp` | Missing functional HTML5 implementation |
 | `inspector` | `apps/editor/windows/InspectorWindow.cpp` | Partial; native visual parity pending |
