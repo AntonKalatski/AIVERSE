@@ -382,6 +382,63 @@ static void testIncrementalPortable(gfx::Backend backend) {
     assert(dev.data_.empty());
 }
 
+static void testStreamedTemporalDemands() {
+    Recorder dev(gfx::Backend::Vulkan,false);
+    Model model=makeModel();
+    const auto asset=makeAsset();
+    gfx::BufferDesc desc{};
+    desc.type=gfx::BufferType::Vertex;
+    desc.size=model.vertices.size()*sizeof(ModelVertex);
+    desc.data=model.vertices.data();
+    model.vb=dev.createBuffer(desc);
+    desc.type=gfx::BufferType::Index;
+    desc.size=model.indices.size()*sizeof(uint32_t);
+    desc.data=model.indices.data();
+    model.ib=dev.createBuffer(desc);
+    PortableSource source;
+    std::string error;
+    assert(source.stage(dev,model,asset,&error,48));
+    assert(source.streamingEnabled());
+    const auto& b=asset.primitives[0].geometry.bounds[0];
+    const float projected=geometryErrorPixels(mat4::identity(),
+        {b.min[0],b.min[1],b.min[2]},
+        {b.max[0],b.max[1],b.max[2]},
+        asset.primitives[0].geometry.nodes[0].geometricError,
+        800,600,true);
+    assert(std::isfinite(projected) && projected>0);
+    PortablePassView pass{mat4::identity(),800,600,true,projected*.95f};
+    PortableLodHistory history;
+    std::vector<IndexDemand> demands;
+    assert(source.collectResidencyDemands(mat4::identity(),{pass},false,
+                                          demands,&history,.2f));
+    assert(demands.size()==2);
+    assert(source.updateResidency(demands,&error));
+    Model alias;
+    assert(source.prepareModel(mat4::identity(),{pass},false,alias,
+                               &error,&history,.2f));
+    assert(alias.meshes[0].primitives.size()==2);
+    pass.errorThresholdPixels=projected*1.08f;
+    std::vector<IndexDemand> retained,unstable;
+    assert(source.collectResidencyDemands(mat4::identity(),{pass},false,
+                                          retained,&history,.2f));
+    assert(retained.size()==2);
+    assert(retained[0].node!=0 && retained[1].node!=0);
+    // Unmodified CPU selection would have requested only the parent,
+    // potentially evicting the children this frame still uses.
+    assert(source.collectResidencyDemands(mat4::identity(),{pass},false,
+                                          unstable));
+    assert(unstable.size()==1 && unstable[0].node==0);
+    assert(source.updateResidency(retained,&error));
+    assert(source.prepareModel(mat4::identity(),{pass},false,alias,
+                               &error,&history,.2f));
+    assert(alias.meshes[0].primitives.size()==2);
+    alias=Model{};
+    source.shutdown(dev);
+    dev.destroyBuffer(model.vb);
+    dev.destroyBuffer(model.ib);
+    assert(dev.data_.empty());
+}
+
 static void testPortableTemporalHysteresis(gfx::Backend backend) {
     Recorder dev(backend,false);
     Model original=makeModel();
@@ -467,6 +524,7 @@ static void testPortableTemporalHysteresis(gfx::Backend backend) {
 }
 
 int main(){
+    testStreamedTemporalDemands();
     testPortableTemporalHysteresis(gfx::Backend::Metal);
     testPortableTemporalHysteresis(gfx::Backend::Vulkan);
     testPortableTemporalHysteresis(gfx::Backend::GLES3);
