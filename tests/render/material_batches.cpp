@@ -245,6 +245,19 @@ int aiverseMain(int argc, char** argv) {
     }
     const std::string scenario = std::getenv("AIVERSE_PALETTE_TEST_CASE") ? std::getenv("AIVERSE_PALETTE_TEST_CASE") : "default";
     const bool stress = scenario == "auto_stress";
+    // Experimental fixture switch, not a product-level quality option.
+    // Compare full/one-pass Direct vs MDI at equal visual workloads.
+    const std::string diagnosticPass = stress &&
+        std::getenv("AIVERSE_BATCH_DIAGNOSTIC_MODEL_PASS")
+        ? std::getenv("AIVERSE_BATCH_DIAGNOSTIC_MODEL_PASS") : "full";
+    if (diagnosticPass != "full" && diagnosticPass != "shadow" &&
+        diagnosticPass != "opaque") {
+        std::fprintf(stderr, "Invalid AIVERSE_BATCH_DIAGNOSTIC_MODEL_PASS: %s\n",
+                     diagnosticPass.c_str());
+        return 2;
+    }
+    const uint8_t modelPassMask = diagnosticPass == "shadow" ? 1u
+        : diagnosticPass == "opaque" ? 2u : 3u;
     size_t stressItems = 0;
     if (stress) {
         const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
@@ -395,6 +408,9 @@ int aiverseMain(int argc, char** argv) {
             failed = true;
             return;
         }
+        renderer.setDiagnosticModelPassMask(modelPassMask);
+        if (stress) std::printf("stress diagnostic model pass=%s mask=%u\n",
+                                diagnosticPass.c_str(), unsigned(modelPassMask));
         renderer.setProfiling(true); renderer.setShadowQuality(render::ShadowQuality::High);
         renderer.lighting.fogDensity=0;
         if (const char* q=std::getenv("AIVERSE_PALETTE_TEST_QUALITY")) renderer.setMaterialQuality(render::MaterialQuality(std::atoi(q)));
