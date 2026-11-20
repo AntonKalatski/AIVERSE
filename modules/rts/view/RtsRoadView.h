@@ -5,6 +5,7 @@
 // them. Textures: the game's (road type "look.textures") or procedural tiles generated at init. No shaders of its own:
 // everything is drawn through Renderer3D::drawModel (PBR, shadows, lightmaps as static scenery).
 #pragma once
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
