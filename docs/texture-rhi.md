@@ -4618,3 +4618,40 @@ Use the existing `AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON` option
 and a Debug build on `/Volumes/KINGSTON/AIVERSE-builds/`; run via
 `run-tests.sh --no-build --build-dir <external-build> --filter '^metal_vt_bilinear_gpu$'`.
 Exact results and code SHA are recorded in the stage handoff.
+
+## Final local acceptance gates (2026-11-20)
+
+`metal_vt_bilinear_gpu` additionally covers 1170 nonuniform indexed GPU
+samples against logical-space CPU bilinear references, with independently
+authored coarse/detail images, fractional virtual LOD, Clamp/Repeat/MirrorRepeat,
+2/4/8-tap cross-page footprints and 18 detail-page LRU transitions. Each page
+has four physical mip levels; an intentionally one-upload-per-frame budget
+checks that partial mip chains do not become visible. Six separate authored
+physical-mip color probes check derivative-selected hardware mip blending.
+
+`metal_renderer_indexed_vt_gpu` runs the existing nonuniform disk-backed
+Shader Graph scene with indexed table slices and the 48-byte sampling
+uniforms. It compares direct draws with ICB opt-in enabled, verifies the
+independent scene-color oracle, and requires zero GPU-encoded commands:
+indexed graph VT deliberately uses the safe direct fallback. GPU admission
+excludes indexed bindings before preflight and command-cache construction;
+unsupported 48-byte parameters never enter the legacy 16-byte ICB ABI. This is the
+supported behavior; it is not evidence of indexed ICB acceleration. Legacy
+mixed-material ICB tests continue to require actual indirect submissions.
+All eight native Metal tests are serial in CTest, including full-suite runs.
+
+The final verifier accepts a clean main/feature checkout, an optional
+`--expected-ref` revision and an explicit absolute `--build-root` (or
+`AIVERSE_TEXTURE_FINAL_BUILD_ROOT`). Safe/GPU builds, logs, temporary files
+and the Clang module cache live beneath this root; both caches are Debug.
+On the owner's Mac use a directory under `/Volumes/KINGSTON/AIVERSE-builds/`:
+
+```sh
+bash tools/texture-rhi-final-verify.sh --expected-ref HEAD \
+  --build-root /Volumes/KINGSTON/AIVERSE-builds/texture-final --full-engine --jobs 8
+```
+
+The focused CI workflow now also triggers on texture changes merged to main.
+Local MSL/GLSL/SPIR-V compilation and Metal image tests cannot substitute for
+GL/GLES/Vulkan runtime readbacks on their respective backends. See the final
+stage handoff for actual commands/results, skips and external blockers.
