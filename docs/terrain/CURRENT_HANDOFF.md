@@ -1,5 +1,22 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 strict GPU/runtime PASS + latest-main sync (2026-11-20):**
+> Mac-tested exact `b1bb27c8f1e9f803ff49af29ea7dc0769b9cb264`:
+> focused runtime PASS, **4/4 actual Metal GPU PASS** (0 SKIP),
+> **5/5 real PPM visual checks PASS**, changed A/B/PRISMA
+> 192/322/232 pixels. [Evidence](qa-2026-11-20-stage70-strict-metal-runtime-green-handoff.md).
+> A subsequent true two-parent merge `25828ffce44f27d449f15f3cf992e2ee736fa2e8`
+> integrated new main `ad175f624ef6f25e7c6dc19cabe199cb30623201`
+> (Stage114 Release-retirement **test-only** fixes), preserving
+> Terra source and exact upstream three-file blobs. GitHub
+> compare confirmed **main behind=0**.
+> [Main integration handoff and focused Release test commands](qa-2026-11-20-stage70-main-stage114-release-retirement-sync-handoff.md).
+> **Postmerge Release/native CTest NOT RUN**. Previous 271/271 full
+> and 4/4 Metal results are tied to their exact earlier SHAs.
+> Forest GPU visual parity, Vulkan/GLES, sustained live four-owner
+> erosion and completed CI remain open; PR #53 stays Draft.
+>
+>
 > **Stage70 strict focused GPU/runtime acceptance authored (2026-11-20):**
 > New QA-only stress fixture `bf06b609` runs 128 due iterations
 > (32,768 virtual ticks) and checks v3 mass conservation, bounded
