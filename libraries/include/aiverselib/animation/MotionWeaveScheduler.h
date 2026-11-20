@@ -53,6 +53,7 @@ public:
         const auto* inputs=read.poolIfExists<AnimationInputsComponent>();
         const auto* assets=read.poolIfExists<AnimationAssetComponent>();
         const auto* hints=read.poolIfExists<AnimationWorkHintComponent>();
+        const auto* facial=read.poolIfExists<AnimationFacialControlComponent>();
         // Reuse allocation capacity across frames. Cache graph classification
         // only within the current frame: hot reload may reuse freed addresses.
         safe_.clear();unsafe_.clear();weight_.clear();graphPlans_.clear();
@@ -66,6 +67,7 @@ public:
             const auto* asset=assets?assets->tryGet(e.index):nullptr;
             const auto* input=inputs?inputs->tryGet(e.index):nullptr;
             const auto* hint=hints?hints->tryGet(e.index):nullptr;
+            const auto* face=facial?facial->tryGet(e.index):nullptr;
             GraphPlan plan{};
             if(asset && asset->graph) {
                 const auto* compiled=asset->graph.get();
@@ -76,7 +78,14 @@ public:
                 }
                 plan=it->second;
             }
-            const bool workerSafe=plan.safe &&
+            // Facial morph-only layers contain no callbacks and may run
+            // parallel. An opt-in facial IK program can invoke native
+            // AnimationRig contacts/host environment, so route it through
+            // the same serial owner-thread barrier as other callback rigs.
+            const bool facialWorkerSafe=!face || !face->enabled ||
+                !face->rig ||
+                (!face->rig->hasIk() && !face->controls.environment);
+            const bool workerSafe=plan.safe && facialWorkerSafe &&
                 (!input || !input->overrides.environment) &&
                 (!hint || !hint->mainThread);
             if(!workerSafe){unsafe_.push_back(i);continue;}
