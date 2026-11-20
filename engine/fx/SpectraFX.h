@@ -7,8 +7,19 @@
 #pragma once
 #include "VfxGraphAssets.h"
 #include "SpectraModuleSchema.h"
+#include "SpectraAuthoring.h"
+#include "SpectraFunctionAssets.h"
 #include "SpectraGpuParticles.h"
+#include "SpectraGpuFramePlan.h"
+#include "SpectraGpuProgram.h"
+#include "SpectraGpuVmDispatch.h"
+#include "SpectraGpuSourceParameters.h"
+#include "SpectraGpuParticleSlots.h"
 #include "SpectraGraphRuntime.h"
+#include "SpectraBatchWorld.h"
+#include "SpectraCueScheduler.h"
+#include "SpectraGpuPoolWorld.h"
+#include "SpectraGpuCueBridge.h"
 
 namespace aiverse::spectra {
 
@@ -22,7 +33,8 @@ using GraphAssets = fx::SpectraGraphAssets;
 using GraphLoadResult = fx::SpectraGraphLoadResult;
 
 inline constexpr const char* kName = "AIVERSE SpectraFX";
-inline constexpr int kGraphVersion = 1;
+inline constexpr int kGraphVersion = 2; // latest authoring format
+inline constexpr int kLegacyGraphVersion = 1; // still supported
 
 inline bool compileGraph(const Json& graph, const Json& overrides, Effect& out,
                          std::vector<std::string>& errors) {

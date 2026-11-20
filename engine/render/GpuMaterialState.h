@@ -17,7 +17,8 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
         if (g.domain != h.domain || g.vertexGlsl != h.vertexGlsl ||
             g.vertexMsl != h.vertexMsl || g.glsl != h.glsl ||
             g.msl != h.msl || g.outputs != h.outputs ||
-            g.textures != h.textures || g.minQuality != h.minQuality) return false;
+            g.textures != h.textures || g.minQuality != h.minQuality ||
+            g.usesVirtualTexture != h.usesVirtualTexture) return false;
     }
     auto state = [](const Material& m) {
         return std::tie(m.shading, m.alpha, m.alphaCutoff, m.doubleSided,
@@ -29,7 +30,7 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
             m.emissive.z, m.emissiveStrength, m.uvOffset.x,
             m.uvOffset.y, m.uvScale.x, m.uvScale.y, m.uvRotation,
             m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w,
-            m.fixedShade.x, m.fixedShade.y);
+            m.shadowDiffusion, m.fixedShade.x, m.fixedShade.y);
     };
     if (state(a) != state(b)) return false;
     auto texture = [](const Model& model, int slot) -> uint32_t {
@@ -40,6 +41,14 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
     const int tb[] = {b.baseTex, b.mrTex, b.normalTex, b.occlusionTex, b.emissiveTex, b.teamTex};
     for (size_t i = 0; i < 6; ++i)
         if (texture(ma, ta[i]) != texture(mb, tb[i])) return false;
+    // A reduced VT base image can have a different full-resolution R8
+    // alpha mask despite otherwise equivalent material parameters.
+    const auto alphaTexture = [](const Model& model,const Material& material) {
+        return material.baseTex >= 0 &&
+               size_t(material.baseTex) < model.images.size() ?
+               model.images[size_t(material.baseTex)].virtualAlphaMask.id : 0u;
+    };
+    if (alphaTexture(ma,a) != alphaTexture(mb,b)) return false;
     if (a.shaderGraph) {
         for (size_t i = 0; i < a.shaderGraph->textures.size() && i < 4; ++i)
             if (texture(ma, a.graphTextures[i]) != texture(mb, b.graphTextures[i])) return false;
@@ -62,6 +71,7 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
         const auto& g = *m.shaderGraph;
         str(g.domain); str(g.vertexGlsl); str(g.vertexMsl);
         str(g.glsl); str(g.msl); u(g.minQuality);
+        u(g.usesVirtualTexture ? 1u : 0u);
         u(g.textures.size());
         for (const auto& t : g.textures) str(t);
         u(g.outputs.size());
@@ -78,18 +88,103 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
     f(m.uvOffset.x); f(m.uvOffset.y);
     f(m.uvScale.x); f(m.uvScale.y); f(m.uvRotation);
     f(m.fixedLight.x); f(m.fixedLight.y); f(m.fixedLight.z); f(m.fixedLight.w);
-    f(m.fixedShade.x); f(m.fixedShade.y);
+    f(m.shadowDiffusion); f(m.fixedShade.x); f(m.fixedShade.y);
     auto texture = [&](int index) {
         u(index >= 0 && size_t(index) < model.images.size()
             ? model.images[size_t(index)].tex.id : 0);
     };
     for (int t : {m.baseTex, m.mrTex, m.normalTex, m.occlusionTex, m.emissiveTex, m.teamTex}) texture(t);
+    u(m.baseTex >= 0 && size_t(m.baseTex) < model.images.size() ?
+        model.images[size_t(m.baseTex)].virtualAlphaMask.id : 0u);
     if (m.shaderGraph)
         for (size_t i = 0; i < m.shaderGraph->textures.size() && i < 4; ++i)
             texture(m.graphTextures[i]);
     return hash;
 }
 
+
+// Experimental Metal GPU-ICB *built-in opaque* material compatibility.
+// U2 factors and textures 1..6 are per-command only with the opt-in
+// descriptor ABI. Pipeline-sensitive features remain equal. Graph,
+// masked/transparent, and alpha coverage variants remain excluded.
+// The normal-texture presence affects the NORMAL_MAP shader permutation.
+inline bool equivalentGpuIcbPbrPipelineMaterial(const Material& a,
+                                                const Material& b) {
+    return !a.shaderGraph && !b.shaderGraph &&
+           a.alpha == AlphaMode::Opaque && b.alpha == AlphaMode::Opaque &&
+           !a.transparent && !b.transparent &&
+           a.doubleSided == b.doubleSided &&
+           a.castShadow == b.castShadow &&
+           a.receiveShadow == b.receiveShadow &&
+           (a.normalTex >= 0) == (b.normalTex >= 0);
+}
+
+inline uint64_t gpuIcbPbrPipelineHash(const Material& m) {
+    uint64_t h=14695981039346656037ull;
+    const auto mix=[&](uint64_t value) {
+        h^=value; h*=1099511628211ull;
+    };
+    mix(m.shaderGraph ? 1u : 0u);
+    mix(uint32_t(m.alpha));
+    mix(m.transparent ? 1u : 0u);
+    mix(m.doubleSided ? 1u : 0u);
+    mix(m.castShadow ? 1u : 0u);
+    mix(m.receiveShadow ? 1u : 0u);
+    mix(m.normalTex >= 0 ? 1u : 0u);
+    return h;
+}
+
+// Experimental fragment-only Shader Graph compatibility for Metal GPU ICB.
+// Nodes may differ in texture *path* only if their compiled shader source,
+// graph wiring, output map and sampler count are identical. Actual source
+// textures and U2 are distinct per-command resource-table signatures.
+inline bool gpuIcbFragmentGraphEligible(const Material& m) {
+    if (!m.shaderGraph || m.alpha != AlphaMode::Opaque || m.transparent)
+        return false;
+    const auto& g=*m.shaderGraph;
+    return g.domain == "material" && g.textures.size() <= 4 &&
+           g.vertexGlsl.empty() && g.vertexMsl.empty() &&
+           !g.outputs.count("vertexOffset") &&
+           !g.outputs.count("vertexNormal") &&
+           g.outputs.count("color") != 0;
+}
+inline bool equivalentGpuIcbGraphPipelineMaterial(const Material& a,
+                                                   const Material& b) {
+    if (!gpuIcbFragmentGraphEligible(a) ||
+        !gpuIcbFragmentGraphEligible(b)) return false;
+    if (a.doubleSided != b.doubleSided ||
+        a.castShadow != b.castShadow ||
+        a.receiveShadow != b.receiveShadow ||
+        (a.normalTex>=0) != (b.normalTex>=0)) return false;
+    const auto& x=*a.shaderGraph;
+    const auto& y=*b.shaderGraph;
+    return x.domain == y.domain && x.minQuality == y.minQuality &&
+           x.glsl == y.glsl && x.msl == y.msl &&
+           x.vertexGlsl == y.vertexGlsl &&
+           x.vertexMsl == y.vertexMsl &&
+           x.outputs == y.outputs &&
+           x.usesVirtualTexture == y.usesVirtualTexture &&
+           x.textures.size() == y.textures.size();
+}
+inline uint64_t gpuIcbGraphPipelineHash(const Material& material) {
+    uint64_t h=gpuIcbPbrPipelineHash(material);
+    if (!gpuIcbFragmentGraphEligible(material)) return h;
+    const auto& g=*material.shaderGraph;
+    const auto mix=[&](uint64_t n) {
+        h^=n;h*=1099511628211ull;
+    };
+    const auto str=[&](std::string_view v) {
+        mix(v.size());for(unsigned char c:v)mix(c);
+    };
+    str(g.domain);str(g.glsl);str(g.msl);
+    str(g.vertexGlsl);str(g.vertexMsl);
+    mix(uint64_t(g.minQuality));mix(g.usesVirtualTexture ? 1u : 0u);
+    mix(g.textures.size());
+    for(const auto& [name,value]:g.outputs) {
+        str(name);str(value);
+    }
+    return h;
+}
 
 // Indirect per-instance material palette: those three scalar factors travel
 // with each indexed command instead of being inherited from U2. Every other

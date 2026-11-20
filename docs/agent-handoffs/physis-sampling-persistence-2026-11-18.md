@@ -1,7 +1,7 @@
 # PHYSIS Stage 13 — consolidated nature sampling and persistent schema compatibility (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.  
-**Status:** source committed and tests registered; **NOT RUN**: native CMake build, CTest, CI result, real editor, Box3D Scene and cross-branch integration.  
+**Branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.
+**Status:** source committed and tests registered; **NOT RUN**: native CMake build, CTest, CI result, real editor, Box3D Scene and cross-branch integration.
 **Related:** previous Stage 12 `docs/agent-handoffs/physis-numerical-ci-2026-11-18.md`.
 
 ## Exact implementation/test commits

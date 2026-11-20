@@ -78,4 +78,33 @@ int main() {
     AIVERSE_TEST_CHECK(staged.animated==0);
     AIVERSE_TEST_CHECK(scene.presentationEntity(5)==aiverse::kNullEntity);
     AIVERSE_TEST_CHECK(scene.presentationEntity(9)==aiverse::kNullEntity);
+    // A candidate has its own source bridge, clocks and mutable graph state.
+    aiverse::render::Model model;model.nodes.resize(1);model.order={0};
+    auto operation=std::make_shared<aiverse::render::AnimationOperation>();
+    operation->stateFloats=1;
+    operation->update=[](const auto&,const auto&,float dt,std::span<float> state) noexcept {state[0]+=dt;};
+    operation->evaluate=[](const auto&,const auto&,const auto&,std::span<const float> state,auto& pose) noexcept {pose[0].t.y=state[0];};
+    auto graph=aiverse::render::AnimationGraph::compile(model,aiverse::Json::parse(R"({
+        "nodes":[{"id":"base","kind":"bind"},
+        {"id":"clock","kind":"native","input":"base","operation":"clock"}],"output":"clock"})"),{{"clock",operation}});
+    Object animated;animated.id=77;animated.draw.model=&model;animated.graph=graph;
+    std::vector<Object> input{animated};
+    scene.update(input,.1f);
+    using Player=aiverse::lib::animation::AnimationPlayerComponent;
+    auto original=scene.presentation().get<Player>(scene.presentationEntity(77)).instance;
+    auto candidate=scene.prepareUpdate(input,.1f);
+    auto stagedPlayer=candidate->presentation().get<Player>(candidate->presentationEntity(77)).instance;
+    AIVERSE_TEST_CHECK(original!=stagedPlayer);
+    AIVERSE_TEST_CHECK(std::abs(original->stateTime()-.1f)<.001f);
+    AIVERSE_TEST_CHECK(std::abs(stagedPlayer->stateTime()-.2f)<.001f);
+    aiverse::render::Pose originalPose,nextPose;
+    original->evaluate(originalPose);stagedPlayer->evaluate(nextPose);
+    AIVERSE_TEST_CHECK(std::abs(originalPose[0].t.y-.1f)<.001f);
+    AIVERSE_TEST_CHECK(std::abs(nextPose[0].t.y-.2f)<.001f);
+    candidate.reset();
+    auto retry=scene.prepareUpdate(input,.1f);
+    AIVERSE_TEST_CHECK(std::abs(retry->presentation().get<Player>(retry->presentationEntity(77)).instance->stateTime()-.2f)<.001f);
+    input[0].id=0;bool rejected=false;
+    try {auto invalid=scene.prepareUpdate(input,.1f);}catch(const std::invalid_argument&){rejected=true;}
+    AIVERSE_TEST_CHECK(rejected && std::abs(original->stateTime()-.1f)<.001f);
 }

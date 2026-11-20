@@ -26,6 +26,14 @@ public:
     const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; items_[id - 1] = T{}; free_.push_back(id - 1); } }
     template <class F> void each(F&& f) { for (size_t i = 0; i < items_.size(); ++i) if (alive_[i]) f(items_[i]); }
+    template <class F> void eachWithId(F&& f) {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) f(uint32_t(i + 1), items_[i]);
+    }
+    template <class F> void eachWithId(F&& f) const {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) f(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -74,9 +82,22 @@ struct VTexture {
     Allocation alloc;
     PixelFormat format = PixelFormat::RGBA8;
     VkFormat vkFormat = VK_FORMAT_UNDEFINED;
-    int width = 0, height = 0, levels = 1;
-    bool depth = false, renderTarget = false, generateMips = false, compressed = false;
+    int width = 0, height = 0, volumeDepth = 1, layers = 1, levels = 1;
+    int samples = 1; // multisampled render-only images cannot be bound as sampled textures
+    TextureDimension dimension = TextureDimension::Texture2D;
+    bool depth = false, renderTarget = false, generateMips = false, compressed = false, storage = false;
 };
+
+struct VCompute {
+    VkShaderModule shader = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    bool bufferPushConstants = false;
+    uint32_t bufferBindings = 4;
+};
+struct VTextureView { VkImageView native = VK_NULL_HANDLE; uint32_t parentId = 0; };
+struct VSampler { VkSampler native = VK_NULL_HANDLE; };
 
 struct VShader {
     std::string vs, fs;                          // GLSL bodies (HDR variant compiled from them)
@@ -88,11 +109,27 @@ struct VShader {
 
 struct VPipeline {
     PipelineDesc desc;
-    struct Variant { uint64_t key; VkPipeline pipeline; };
+    struct Variant {
+        uint64_t key;
+        VkPipeline pipeline;
+        int colorCount = 1;
+        std::array<VkFormat, kMaxRenderTargetColors> formats{};
+        int samples = 1;
+        uint32_t resolveMask = 0;
+    };
     std::vector<Variant> variants;               // per render pass format (and HDR shader)
 };
 
 struct FrameSlot {
+    // Offscreen RT readbacks are owned by the submitting frame slot until its
+    // fence signals. Never recycle staging storage while a copy is in flight.
+    struct TextureCapture {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation allocation{};
+        int width=0, height=0;
+        Device::CaptureFn callback;
+    };
+    std::vector<TextureCapture> textureCaptures;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer pre = VK_NULL_HANDLE, main = VK_NULL_HANDLE;
     bool preRecording = false;
@@ -114,10 +151,32 @@ public:
     bool setWindow(const VulkanWindow* window);
 
     const DeviceInfo& info() const override { return info_; }
+    // Descriptor limits are device-dependent, not necessarily 16.
+    int maxFragmentTextureSlots() const override { return textureSlots_; }
     uint64_t frameSerial() const override { return healthy_ ? serial_ : 0; }
     uint64_t completedFrameSerial() const override { return healthy_ ? completed_ : 0; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
+    std::vector<TextureResourceInfo> textureResources() const override;
+    bool supportsCompute() const override { return device_ && healthy_ && computeQueue_ &&
+        gpuProps_.limits.maxComputeWorkGroupInvocations >= 64 &&
+        gpuProps_.limits.maxComputeWorkGroupSize[0] >= 64; }
+    bool supportsStorageTexture(PixelFormat,TextureDimension) const override;
+    ComputeHandle createCompute(const ComputeDesc&) override;
+    void destroyCompute(ComputeHandle) override;
+    bool beginCompute(ComputeHandle) override;
+    void setComputeBuffer(int,BufferHandle) override;
+    void setComputeTexture(int,TextureHandle) override;
+    bool bindComputeStorageTexture(int,TextureHandle) override;
+    void setComputeUniforms(const void*,size_t) override;
+    void dispatch(uint32_t,uint32_t) override;
+    bool dispatchChecked(uint32_t,uint32_t=1) override;
+    bool readBufferAsync(BufferHandle,size_t,BufferReadFn) override;
+    void endCompute() override;
+    bool supportsTextureViews() const override { return true; }
+    bool supportsTextureDimension(TextureDimension d) const override {
+        return d != TextureDimension::CubeArray || cubeArray_;
+    }
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
@@ -128,14 +187,22 @@ public:
     BufferUpdateStats bufferUpdateStats(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
+    bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override;
     bool textureInfo(TextureHandle h, TextureInfo& out) const override;
     void destroyTexture(TextureHandle h) override;
+    TextureViewHandle createTextureView(TextureHandle texture, const TextureViewDesc& desc) override;
+    void destroyTextureView(TextureViewHandle h) override;
+    SamplerHandle createSampler(const SamplerDesc& desc) override;
+    void destroySampler(SamplerHandle h) override;
+    bool bindTextureView(int slot, TextureViewHandle view, SamplerHandle sampler = {}) override;
     ShaderHandle createShader(const ShaderDesc& d) override;
     void destroyShader(ShaderHandle h) override;
     PipelineHandle createPipeline(const PipelineDesc& d) override;
     void destroyPipeline(PipelineHandle h) override;
     bool copyColor(TextureHandle from, TextureHandle to) override;
+    bool readTextureAsync(TextureHandle, TextureReadbackDesc, TextureReadFn) override;
     bool gpuHealthy() const override { return healthy_; }
+    bool waitIdle() override;
     // serial_ names the currently recording VkFence-backed frame. This is
     // NOT evidence of completion. completed_ advances only after a real
     // vkWaitForFences return of VK_SUCCESS for its recorded frame slot.
@@ -156,8 +223,11 @@ public:
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
+    bool captureTexture(TextureHandle source,CaptureFn callback) override;
 
     void beginPass(const PassDesc& d) override;
+    bool supportsRenderTargetPasses() const override { return true; }
+    bool beginRenderTargets(const RenderTargetPassDesc& desc) override;
     void endPass() override;
     void setViewport(const Rect& r) override;
     void setScissor(const Rect& r) override;
@@ -174,6 +244,8 @@ public:
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
 
+    bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override;
+
 private:
     // GfxVulkan.cpp
     bool createInstance(bool wantSurface, std::string& error);
@@ -186,6 +258,10 @@ private:
     void collectGarbage();
     void present();
     void readBackBuffer();
+    void completeTextureCaptures(FrameSlot& slot,bool succeeded);
+    void deliverTextureReads();
+    void deliverComputeReadbacks();
+    void shutdownCompute();
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
     VkBufferUsageFlags bufferUsage(BufferType t) const;
@@ -198,20 +274,28 @@ private:
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);
     void* stagingWrite(size_t size, VkBuffer& buf, VkDeviceSize& offset);
-    void uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb);
+    bool uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb,
+                     int z = 0, int depth = 1, int baseArrayLayer = 0, int layerCount = 1);
     void generateMips(VTexture& t, VkCommandBuffer cb);
     void initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear);
     // VkDraw.cpp
     VkRenderPass renderPassFor(VkFormat color, VkFormat depth, bool clearColor, bool clearDepth);
+    VkRenderPass renderPassForMrt(
+        const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+        VkFormat depth, int colors, uint32_t clearMask, bool clearDepth,
+        int samples = 1, uint32_t resolveMask = 0);
     VkFramebuffer framebufferFor(VkImageView color, VkImageView depth, VkRenderPass rp, int w, int h, uint32_t colorId, uint32_t depthId);
-    VkPipeline pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr);
+    VkPipeline pipelineFor(VPipeline& p,
+                           const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+                           VkFormat depth, bool hdr, int colorCount = 1,
+                           int samples = 1, uint32_t resolveMask = 0);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one
     void barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels = VK_REMAINING_MIP_LEVELS,
-                      uint32_t baseLevel = 0);
+                      uint32_t baseLevel = 0, uint32_t arrayLayers = 1);
     void deferDestroy(std::function<void()> fn) { garbage_.push_back({serial_, std::move(fn)}); }
     VkFormat vkFormat(PixelFormat f) const;
 
@@ -219,6 +303,9 @@ private:
     DeviceInfo info_;
     std::string error_;
     bool multiDrawIndirect_ = false;
+    bool cubeArray_ = false;
+    bool computeQueue_ = false;
+    bool samplerAnisotropy_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;
@@ -264,31 +351,82 @@ private:
     // resources
     Pool<VBuffer> buffers_;
     Pool<VTexture> textures_;
+    Pool<VTextureView> views_;
+    Pool<VSampler> customSamplers_;
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
+    Pool<VCompute> computes_;
+    struct PendingComputeRead {
+        uint64_t serial=0;
+        VkBuffer buffer=VK_NULL_HANDLE;
+        Allocation allocation{};
+        size_t bytes=0;
+        BufferReadFn callback;
+    };
+    std::vector<PendingComputeRead> computeReads_;
+
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
     std::vector<SamplerKey> samplers_;
     struct RenderPassKey { uint64_t key; VkRenderPass pass; };
     std::vector<RenderPassKey> renderPasses_;
+    struct MrtRenderPass {
+        std::array<VkFormat, kMaxRenderTargetColors> formats{};
+        VkFormat depth = VK_FORMAT_UNDEFINED;
+        int colorCount = 0;
+        uint32_t clearMask = 0;
+        bool clearDepth = false;
+        int samples = 1;
+        uint32_t resolveMask = 0;
+        VkRenderPass pass = VK_NULL_HANDLE;
+    };
+    std::vector<MrtRenderPass> mrtRenderPasses_;
     struct FramebufferKey { uint32_t color, depth; VkRenderPass pass; int w, h; VkFramebuffer fb; };
     std::vector<FramebufferKey> framebuffers_;
     struct StagingChunk { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; size_t size = 0, used = 0; uint64_t serial = 0; };
     std::vector<StagingChunk> staging_;
+    struct TextureRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc;
+        size_t bytes = 0;
+        int width = 0, height = 0;
+        PixelFormat format = PixelFormat::RGBA8;
+        uint64_t serial = 0;
+        TextureReadFn callback;
+    };
+    std::vector<TextureRead> textureReads_;
 
     // pass state
     bool inPass_ = false, passSkipped_ = false, hdrPass_ = false;
+    // Explicit mip/layer passes allocate temporary 2D views + framebuffer.
+    // Deferred destruction happens only after vkCmdEndRenderPass and GPU completion.
+    VkFramebuffer scopedPassFb_ = VK_NULL_HANDLE;
+    std::array<VkImageView, kMaxRenderTargetColors> scopedPassColors_{};
+    std::array<VkImageView, kMaxRenderTargetColors> scopedPassResolves_{};
+    VkImageView scopedPassDepth_ = VK_NULL_HANDLE;
+    int passColors_ = 1, passSamples_ = 1;
+    uint32_t passResolveMask_ = 0;
+    bool explicitMrtPass_ = false;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
+    std::array<VkFormat, kMaxRenderTargetColors> passFormats_{};
     uint32_t pipelineId_ = 0;
     VkPipeline boundPipeline_ = VK_NULL_HANDLE;
     uint32_t vbId_ = 0, ibId_ = 0;
     size_t vbOffset_ = 0, ibOffset_ = 0;
     std::array<uint32_t, kMaxTextureSlots> textures_bound_{};
+    std::array<uint32_t, kMaxTextureSlots> views_bound_{};
+    std::array<uint32_t, kMaxTextureSlots> samplers_bound_{};
     std::array<uint32_t, kUniformSlots> uniformOffsets_{};
     bool descriptorsDirty_ = true;
     VkDescriptorSet currentSet_ = VK_NULL_HANDLE;
+    uint32_t activeComputeId_ = 0;
+    std::array<TextureHandle,4> computeStorage_{};
+    std::array<TextureHandle,8> computeSampled_{};
+    std::array<BufferHandle,8> computeBuffers_{};
+    bool computeStateValid_ = false;
+    std::vector<uint8_t> computeUniforms_;
 };
 
 } // namespace aiverse::gfx::vk

@@ -660,7 +660,9 @@ void killedProcessReleasesJournalLock() {
         JournalProcessLock held;
         std::string reason;
         const char state=held.acquire(journal,&reason)?'Y':'N';
-        (void)::write(ready[1],&state,1);
+        ssize_t sent=-1;
+        do {sent=::write(ready[1],&state,1);} while(sent<0 && errno==EINTR);
+        if(sent!=1)::_exit(44);
         ::close(ready[1]);
         if(state!='Y')::_exit(42);
         for(;;)::pause();
@@ -672,7 +674,11 @@ void killedProcessReleasesJournalLock() {
     while(polled<0 && errno==EINTR);
     char acquired='N';
     if(polled>0 && (descriptor.revents&POLLIN))
-        (void)::read(ready[0],&acquired,1);
+    {
+        ssize_t count=-1;
+        do {count=::read(ready[0],&acquired,1);} while(count<0 && errno==EINTR);
+        if(count!=1)acquired='N';
+    }
     ::close(ready[0]);
     CHECK(polled>0 && acquired=='Y');
     if(acquired=='Y') {
@@ -819,7 +825,9 @@ void killedEndpointRecoversQueuedJournal() {
         const bool unknown=opened && endpoint.gateway().entries().size()==1 &&
             endpoint.gateway().entries().begin()->second.receipt.result==Result::Unknown;
         const char state=unknown?'Y':'N';
-        (void)::write(ready[1],&state,1);
+        ssize_t sent=-1;
+        do {sent=::write(ready[1],&state,1);} while(sent<0 && errno==EINTR);
+        if(sent!=1)::_exit(44);
         ::close(ready[1]);
         if(!unknown)::_exit(43);
         for(;;)::pause();
@@ -831,7 +839,11 @@ void killedEndpointRecoversQueuedJournal() {
     while(polled<0 && errno==EINTR);
     char received='N';
     if(polled>0 && (descriptor.revents&POLLIN))
-        (void)::read(ready[0],&received,1);
+    {
+        ssize_t count=-1;
+        do {count=::read(ready[0],&received,1);} while(count<0 && errno==EINTR);
+        if(count!=1)received='N';
+    }
     ::close(ready[0]);
     CHECK(polled>0 && received=='Y');
     if(received=='Y') {

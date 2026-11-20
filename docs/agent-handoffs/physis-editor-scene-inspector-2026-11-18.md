@@ -1,6 +1,6 @@
 # PHYSIS Stage 18 — Scene viewport, Inspector authoring and generic native config (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`. **Feature branch:** `feature/physis-nature-simulation`, draft PR #25.  
+**Repository:** `chromealex/AIVERSE`. **Feature branch:** `feature/physis-nature-simulation`, draft PR #25.
 **Prerequisite merged main:** `810feba70f01cdc35003ac80ea8486f39dc16049` (first parent PHYSIS `4eaee58e20631c2466eba3694dfd9b2700ab18d8`, second parent main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`). Detailed merge handoff: `docs/agent-handoffs/physis-main-merge-2026-11-18.md`.
 
 **Stage 18 implementation/test commits, in order:**

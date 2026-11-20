@@ -1,7 +1,7 @@
 # PHYSIS Stage 10 — hurricane and tornado ECS storm fields (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`, draft PR #25.  
-**Code/test commits:** `d8e3ccf2df5db8607ff174a4a908803eaa1ac216`, `856a5848fce47a954bdcdf079af3012c1c719aa1`, `e06b166d28db923dd898c27d3ed5068c02e0fe9c`, `b13b0a6e8010d7fc47a5e3398c34cd4b346e7303`, `c2f3a185d7f405963db012be6d419c038868c00c`, `90fabffa00659af6843ecde73923e95d7d907566`, `01910ef60e247b0018f38c753a7679a1060112dd`, `6a732754a4e39955b76b8cdf71b583501d81ba07`.  
+**Branch:** `feature/physis-nature-simulation`, draft PR #25.
+**Code/test commits:** `d8e3ccf2df5db8607ff174a4a908803eaa1ac216`, `856a5848fce47a954bdcdf079af3012c1c719aa1`, `e06b166d28db923dd898c27d3ed5068c02e0fe9c`, `b13b0a6e8010d7fc47a5e3398c34cd4b346e7303`, `c2f3a185d7f405963db012be6d419c038868c00c`, `90fabffa00659af6843ecde73923e95d7d907566`, `01910ef60e247b0018f38c753a7679a1060112dd`, `6a732754a4e39955b76b8cdf71b583501d81ba07`.
 **Verification:** NOT RUN — no CMake configure/build, CTest, CI, production rendering, or physics scene execution.
 
 ## Implementation

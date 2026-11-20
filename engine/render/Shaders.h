@@ -254,7 +254,42 @@ namespace aiverse::render::shaders {
     "    vec2(-0.025, 0.919), vec2(-0.389, -0.144), vec2(0.733, -0.627), vec2(0.282, 0.512),\n" \
     "    vec2(-0.900, 0.160), vec2(0.880, 0.250), vec2(-0.480, -0.860), vec2(0.490, 0.860),\n" \
     "    vec2(-0.080, -0.980), vec2(0.970, -0.360), vec2(-0.960, -0.360), vec2(0.410, -0.730));\n" \
-    "float shadowAt(vec3 wpos, vec3 n) {\n" \
+    "// Importance-sampled radial tent: CDF(r) = 2*r*r - r*r*r*r.\n" \
+    "// Equal contributions avoid the large central weights of a sparse weighted disk.\n" \
+    "const vec2 kStableDisk[128] = vec2[128](\n" \
+    "    vec2(0.04421579, 0.00000000), vec2(-0.05652615, 0.05178259), vec2(0.00866079, -0.09868521), vec2(0.07138893, 0.09311421),\n" \
+    "    vec2(-0.13113854, -0.02319656), vec2(0.12435092, -0.07910188), vec2(-0.04163508, 0.15488041), vec2(-0.07948352, -0.15304068),\n" \
+    "    vec2(0.17262428, 0.06304211), vec2(-0.17977209, 0.07420731), vec2(0.08675201, -0.18538401), vec2(0.06417452, 0.20459848),\n" \
+    "    vec2(-0.19362615, -0.11221031), vec2(0.22738593, -0.04999016), vec2(-0.13891793, 0.19759646), vec2(-0.03212767, -0.24792703),\n" \
+    "    vec2(0.19744529, 0.16640710), vec2(-0.26598819, 0.01099945), vec2(0.19423021, -0.19328500), vec2(-0.01300907, 0.28133303),\n" \
+    "    vec2(-0.18521937, -0.22195471), vec2(0.29373554, 0.03952170), vec2(-0.24916135, 0.17335998), vec2(0.06816230, -0.30298825),\n" \
+    "    vec2(0.15783562, 0.27544420), vec2(-0.30890787, -0.09855004), vec2(0.30041176, -0.13879785), vec2(-0.13029751, 0.31133925),\n" \
+    "    vec2(-0.11642414, -0.32368877), vec2(0.31015843, 0.16301058), vec2(-0.34491835, 0.09091937), vec2(0.19628927, -0.30527491),\n" \
+    "    vec2(0.06251629, 0.36376439), vec2(-0.29663340, -0.22972958), vec2(0.37991403, -0.03147510), vec2(-0.26292571, 0.28421499),\n" \
+    "    vec2(0.00191758, -0.39308014), vec2(0.26803797, 0.29547274), vec2(-0.40300366, -0.03735029), vec2(0.32696954, -0.24815822),\n" \
+    "    vec2(-0.07448873, 0.40945591), vec2(-0.22466921, -0.35702184), vec2(0.41224071, 0.11297809), vec2(-0.38524547, 0.19770161),\n" \
+    "    vec2(0.15244573, -0.41119618), vec2(0.16742263, 0.41126953), vec2(-0.40619649, -0.19250410), vec2(0.43473964, -0.13403488),\n" \
+    "    vec2(-0.23275384, 0.39715316), vec2(-0.09777499, -0.45532109), vec2(0.38401622, 0.27278713), vec2(-0.47270189, 0.05891193),\n" \
+    "    vec2(0.31219111, -0.36677493), vec2(0.01774490, 0.48659572), vec2(-0.34545833, -0.35055144), vec2(0.49674464, 0.02539889),\n" \
+    "    vec2(-0.38745589, 0.32013535), vec2(0.07016688, -0.50292169), vec2(0.29091459, 0.42249801), vec2(-0.50493321, -0.11618395),\n" \
+    "    vec2(0.45528077, -0.25794388), vec2(-0.16305549, 0.50262088), vec2(-0.22140934, -0.48542014), vec2(0.49586355, 0.21037063),\n" \
+    "    vec2(-0.51254863, 0.18153421), vec2(0.25770567, -0.48457873), vec2(0.13857736, 0.53631873), vec2(-0.46872378, -0.30462768),\n" \
+    "    vec2(0.55640617, -0.09283140), vec2(-0.35069810, 0.44829675), vec2(-0.04462059, -0.57251303), vec2(0.42333693, 0.39547658),\n" \
+    "    vec2(-0.58437071, -0.00570165), vec2(0.43852474, -0.39392499), vec2(-0.05775540, 0.59174258), vec2(-0.36018279, -0.47940998),\n" \
+    "    vec2(0.59442644, 0.11113724), vec2(-0.51770935, 0.32227287), vec2(0.16542339, -0.59225666), vec2(0.28039750, 0.55301323),\n" \
+    "    vec2(-0.58510609, -0.22017315), vec2(0.58492904, -0.23479746), vec2(-0.27493246, 0.57288755), vec2(-0.18575039, -0.61308480),\n" \
+    "    vec2(0.55555504, 0.32923761), vec2(-0.63713251, 0.13356885), vec2(0.38261911, -0.53310460), vec2(0.07859802, 0.65675136),\n" \
+    "    vec2(-0.50557475, -0.43460559), vec2(0.67165075, -0.02121308), vec2(-0.48472787, 0.47304652), vec2(0.03818375, -0.68157301),\n" \
+    "    vec2(0.43564318, 0.53252292), vec2(-0.68629587, -0.09916644), vec2(0.57753795, -0.39352937), vec2(-0.16128873, 0.68563462),\n" \
+    "    vec2(-0.34690998, -0.61933440), vec2(0.67944389, 0.22408792), vec2(-0.65749190, 0.29602837), vec2(0.28708911, -0.66761904),\n" \
+    "    vec2(0.24116424, 0.69161218), vec2(-0.65009720, -0.34980961), vec2(0.72132289, -0.18263082), vec2(-0.41176380, 0.62685770),\n" \
+    "    vec2(-0.12077147, -0.74628134), vec2(0.59792208, 0.47246845), vec2(-0.76617822, 0.05595554), vec2(0.53144862, -0.56335344),\n" \
+    "    vec2(-0.01142688, 0.78074135), vec2(-0.52325497, -0.58824449), vec2(0.78973959, 0.08097152), vec2(-0.64241960, 0.47776761),\n" \
+    "    vec2(0.15226862, -0.79298739), vec2(0.42706634, 0.69357159), vec2(-0.79035036, -0.22491505), vec2(0.74134729, -0.37135454),\n" \
+    "    vec2(-0.29853255, 0.78175370), vec2(-0.31085520, -0.78546678), vec2(0.76719649, 0.37279801), vec2(-0.82576636, 0.24579628),\n" \
+    "    vec2(0.44750035, -0.74678107), vec2(0.17638381, 0.86228870), vec2(-0.72078458, -0.52266675), vec2(0.89551311, -0.10274371),\n" \
+    "    vec2(-0.59891828, 0.68988219), vec2(-0.02475624, -0.92716389), vec2(0.65623978, 0.67904063), vec2(-0.96645424, -0.05887443));\n" \
+    "float shadowAtSurface(vec3 wpos, vec3 n, float diffusion) {\n" \
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);          // grazing surfaces need the most offset\n" \
@@ -285,17 +320,35 @@ namespace aiverse::render::shaders {
     "            float delta = d + dot(gradient, o) - sunDepth(uv + o);\n" \
     "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
     "        }\n" \
-    "        if (blockers == 0.0) return 1.0;\n" \
+    "        if (blockers == 0.0 && diffusion <= 0.0) return 1.0;\n" \
     "        float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;\n" \
     "        float uvPerWorld = 0.5 * length(vec3(u_lightViewProj[0].x, u_lightViewProj[1].x, u_lightViewProj[2].x));\n" \
-    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        float penumbra = (gap / max(blockers, 1.0)) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, u_shadow.w * 0.5), r);\n" \
     "    }\n" \
-    "    // per-pixel rotation (interleaved gradient noise) turns banding into fine grain; a kernel of a\n" \
-    "    // few texels can't band (each tap is a bilinear compare), where the grain would only show as stipple\n" \
+    "    // Per-pixel rotation requires temporal resolve; without it the noise remains visible as stipple.\n" \
+    "    // Without TAA use a denser tapered disk; small temporal kernels keep a fixed disk.\n" \
     "    // Temporal sampling rotates the PCSS disk between frames only when HDR TAA is active.\n" \
+    "    // Receiver-only spread approximates surface fibres; it never changes caster geometry.\n" \
+    "    if (diffusion > 0.0) {\n" \
+    "        float receiverRadius = clamp(diffusion, 0.0, 1.0) * 0.5 * length(vec3(u_lightViewProj[0].x, u_lightViewProj[1].x, u_lightViewProj[2].x));\n" \
+    "        r = sqrt(r * r + receiverRadius * receiverRadius);\n" \
+    "    }\n" \
+    "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
+    "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    if (fract(u_quality.x) <= 0.25) {\n" \
+    "        int count = u_quality.x > 16.0 ? 128 : 64;\n" \
+    "        int stride = count == 128 ? 1 : 2;\n" \
+    "        float total = 0.0;\n" \
+    "        for (int i = 0; i < 128; ++i) {\n" \
+    "            if (i >= count) break;\n" \
+    "            vec2 o = kStableDisk[i * stride];\n" \
+    "            total += sunCompare(uv + o * r, d + dot(gradient, o * r));\n" \
+    "        }\n" \
+    "        return total / float(count);\n" \
+    "    }\n" \
     "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float a = fract(u_quality.x) <= 0.25 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
     "    int n_ = int(u_quality.x);\n" \
     "    float s = 0.0;\n" \
@@ -306,7 +359,8 @@ namespace aiverse::render::shaders {
     "        s += sunCompare(uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(n_);\n" \
-    "}\n"
+    "}\n" \
+    "float shadowAt(vec3 wpos, vec3 n) { return shadowAtSurface(wpos, n, 0.0); }\n"
 
 #define AIVERSE_MSL_SHADOW \
     AIVERSE_MSL_SUN_FILTER \
@@ -317,7 +371,42 @@ namespace aiverse::render::shaders {
     "    float2(-0.025, 0.919), float2(-0.389, -0.144), float2(0.733, -0.627), float2(0.282, 0.512),\n" \
     "    float2(-0.900, 0.160), float2(0.880, 0.250), float2(-0.480, -0.860), float2(0.490, 0.860),\n" \
     "    float2(-0.080, -0.980), float2(0.970, -0.360), float2(-0.960, -0.360), float2(0.410, -0.730)};\n" \
-    "static float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) {\n" \
+    "// Importance-sampled radial tent: CDF(r) = 2*r*r - r*r*r*r.\n" \
+    "// Equal contributions avoid the large central weights of a sparse weighted disk.\n" \
+    "constant float2 kStableDisk[128] = {\n" \
+    "    float2(0.04421579, 0.00000000), float2(-0.05652615, 0.05178259), float2(0.00866079, -0.09868521), float2(0.07138893, 0.09311421),\n" \
+    "    float2(-0.13113854, -0.02319656), float2(0.12435092, -0.07910188), float2(-0.04163508, 0.15488041), float2(-0.07948352, -0.15304068),\n" \
+    "    float2(0.17262428, 0.06304211), float2(-0.17977209, 0.07420731), float2(0.08675201, -0.18538401), float2(0.06417452, 0.20459848),\n" \
+    "    float2(-0.19362615, -0.11221031), float2(0.22738593, -0.04999016), float2(-0.13891793, 0.19759646), float2(-0.03212767, -0.24792703),\n" \
+    "    float2(0.19744529, 0.16640710), float2(-0.26598819, 0.01099945), float2(0.19423021, -0.19328500), float2(-0.01300907, 0.28133303),\n" \
+    "    float2(-0.18521937, -0.22195471), float2(0.29373554, 0.03952170), float2(-0.24916135, 0.17335998), float2(0.06816230, -0.30298825),\n" \
+    "    float2(0.15783562, 0.27544420), float2(-0.30890787, -0.09855004), float2(0.30041176, -0.13879785), float2(-0.13029751, 0.31133925),\n" \
+    "    float2(-0.11642414, -0.32368877), float2(0.31015843, 0.16301058), float2(-0.34491835, 0.09091937), float2(0.19628927, -0.30527491),\n" \
+    "    float2(0.06251629, 0.36376439), float2(-0.29663340, -0.22972958), float2(0.37991403, -0.03147510), float2(-0.26292571, 0.28421499),\n" \
+    "    float2(0.00191758, -0.39308014), float2(0.26803797, 0.29547274), float2(-0.40300366, -0.03735029), float2(0.32696954, -0.24815822),\n" \
+    "    float2(-0.07448873, 0.40945591), float2(-0.22466921, -0.35702184), float2(0.41224071, 0.11297809), float2(-0.38524547, 0.19770161),\n" \
+    "    float2(0.15244573, -0.41119618), float2(0.16742263, 0.41126953), float2(-0.40619649, -0.19250410), float2(0.43473964, -0.13403488),\n" \
+    "    float2(-0.23275384, 0.39715316), float2(-0.09777499, -0.45532109), float2(0.38401622, 0.27278713), float2(-0.47270189, 0.05891193),\n" \
+    "    float2(0.31219111, -0.36677493), float2(0.01774490, 0.48659572), float2(-0.34545833, -0.35055144), float2(0.49674464, 0.02539889),\n" \
+    "    float2(-0.38745589, 0.32013535), float2(0.07016688, -0.50292169), float2(0.29091459, 0.42249801), float2(-0.50493321, -0.11618395),\n" \
+    "    float2(0.45528077, -0.25794388), float2(-0.16305549, 0.50262088), float2(-0.22140934, -0.48542014), float2(0.49586355, 0.21037063),\n" \
+    "    float2(-0.51254863, 0.18153421), float2(0.25770567, -0.48457873), float2(0.13857736, 0.53631873), float2(-0.46872378, -0.30462768),\n" \
+    "    float2(0.55640617, -0.09283140), float2(-0.35069810, 0.44829675), float2(-0.04462059, -0.57251303), float2(0.42333693, 0.39547658),\n" \
+    "    float2(-0.58437071, -0.00570165), float2(0.43852474, -0.39392499), float2(-0.05775540, 0.59174258), float2(-0.36018279, -0.47940998),\n" \
+    "    float2(0.59442644, 0.11113724), float2(-0.51770935, 0.32227287), float2(0.16542339, -0.59225666), float2(0.28039750, 0.55301323),\n" \
+    "    float2(-0.58510609, -0.22017315), float2(0.58492904, -0.23479746), float2(-0.27493246, 0.57288755), float2(-0.18575039, -0.61308480),\n" \
+    "    float2(0.55555504, 0.32923761), float2(-0.63713251, 0.13356885), float2(0.38261911, -0.53310460), float2(0.07859802, 0.65675136),\n" \
+    "    float2(-0.50557475, -0.43460559), float2(0.67165075, -0.02121308), float2(-0.48472787, 0.47304652), float2(0.03818375, -0.68157301),\n" \
+    "    float2(0.43564318, 0.53252292), float2(-0.68629587, -0.09916644), float2(0.57753795, -0.39352937), float2(-0.16128873, 0.68563462),\n" \
+    "    float2(-0.34690998, -0.61933440), float2(0.67944389, 0.22408792), float2(-0.65749190, 0.29602837), float2(0.28708911, -0.66761904),\n" \
+    "    float2(0.24116424, 0.69161218), float2(-0.65009720, -0.34980961), float2(0.72132289, -0.18263082), float2(-0.41176380, 0.62685770),\n" \
+    "    float2(-0.12077147, -0.74628134), float2(0.59792208, 0.47246845), float2(-0.76617822, 0.05595554), float2(0.53144862, -0.56335344),\n" \
+    "    float2(-0.01142688, 0.78074135), float2(-0.52325497, -0.58824449), float2(0.78973959, 0.08097152), float2(-0.64241960, 0.47776761),\n" \
+    "    float2(0.15226862, -0.79298739), float2(0.42706634, 0.69357159), float2(-0.79035036, -0.22491505), float2(0.74134729, -0.37135454),\n" \
+    "    float2(-0.29853255, 0.78175370), float2(-0.31085520, -0.78546678), float2(0.76719649, 0.37279801), float2(-0.82576636, 0.24579628),\n" \
+    "    float2(0.44750035, -0.74678107), float2(0.17638381, 0.86228870), float2(-0.72078458, -0.52266675), float2(0.89551311, -0.10274371),\n" \
+    "    float2(-0.59891828, 0.68988219), float2(-0.02475624, -0.92716389), float2(0.65623978, 0.67904063), float2(-0.96645424, -0.05887443)};\n" \
+    "static float shadowAtSurface(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss, float diffusion) {\n" \
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
     "    float k = 1.0 - clamp(dot(n, L), 0.0, 1.0);\n" \
@@ -348,14 +437,32 @@ namespace aiverse::render::shaders {
     "            float delta = d + dot(gradient, o) - sunDepth(sm, uv + o);\n" \
     "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
     "        }\n" \
-    "        if (blockers == 0.0) return 1.0;\n" \
+    "        if (blockers == 0.0 && diffusion <= 0.0) return 1.0;\n" \
     "        float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;\n" \
     "        float uvPerWorld = 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
-    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        float penumbra = (gap / max(blockers, 1.0)) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, f.shadow.w * 0.5), r);\n" \
     "    }\n" \
+    "    // Receiver-only spread approximates surface fibres; it never changes caster geometry.\n" \
+    "    if (diffusion > 0.0) {\n" \
+    "        float receiverRadius = clamp(diffusion, 0.0, 1.0) * 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
+    "        r = sqrt(r * r + receiverRadius * receiverRadius);\n" \
+    "    }\n" \
+    "    // Sample the smooth radial density directly, with equal per-tap contributions.\n" \
+    "    // More samples and a broader taper reduce residual bands without pixel noise.\n" \
+    "    if (fract(f.quality.x) <= 0.25) {\n" \
+    "        int count = f.quality.x > 16.0 ? 128 : 64;\n" \
+    "        int stride = count == 128 ? 1 : 2;\n" \
+    "        float total = 0.0;\n" \
+    "        for (int i = 0; i < 128; ++i) {\n" \
+    "            if (i >= count) break;\n" \
+    "            float2 o = kStableDisk[i * stride];\n" \
+    "            total += sunCompare(sm, uv + o * r, d + dot(gradient, o * r));\n" \
+    "        }\n" \
+    "        return total / float(count);\n" \
+    "    }\n" \
     "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
-    "    float a = r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
+    "    float a = fract(f.quality.x) <= 0.25 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
     "    float2 cs = float2(cos(a), sin(a));\n" \
     "    int cnt = int(f.quality.x);\n" \
     "    float s = 0.0;\n" \
@@ -366,7 +473,8 @@ namespace aiverse::render::shaders {
     "        s += sunCompare(sm, uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(cnt);\n" \
-    "}\n"
+    "}\n" \
+    "float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) { return shadowAtSurface(f, wpos, n, fragCoord, sm, ss, 0.0); }\n"
 
 inline const char* kLitVS =
     AIVERSE_GLSL_BLOCKS

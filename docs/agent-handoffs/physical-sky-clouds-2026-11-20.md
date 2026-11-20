@@ -295,3 +295,40 @@ read-only presentation positions into reveal updates. Add Studio controls only
 under the shared Studio UI contract on its required branch. Before raising
 limits or shipping Low/mobile, profile real target scenes and verify Vulkan
 shader/depth parity. Do not make fog a gameplay authority or force PHYSIS on.
+
+## Main integration — 2026-11-20
+
+User authorized main merge. Code `1397dfb52f163bb234b10692411bfe6d3311c8aa`
+on `codex/physical-sky-main`, based on main `f9aed9a705982e2c6b77b29869e309995ce8b163`.
+Imported only sky/PHYSIS/fog changes, excluding unrelated Studio ancestry;
+canonical owner is now `Prisma`, legacy `PostFx` remains its alias. Targets 200/201,
+atmosphere before exposure/temporal, native APIs remain compatible. Fixed main's
+missing Metal method brace. PASS 7 targeted CTests, 54 Metal HDR probes, Metal
+sky/fog/reveal and GL OBB smoke. Full commands, failed initial merge/build,
+limitations and next step are in
+`docs/handoffs/prisma-stage-physical-sky-main-2026-11-20.md`. Full suite, editor/
+client, Vulkan/mobile and CI NOT RUN. Feature branch history remains unchanged.
+
+## Structured fog continuation — 2026-11-20
+
+Code `1fd380b6fe0ad1325162bc3c0a32e5c3eb1dab53`, branch
+`codex/structured-volumetric-fog`: opt-in 3D density noise, world-Y falloff,
+wind and explicit fog presentation clock, keeping sphere/OBB reveal semantics.
+Two user-reference directions have native synthetic forest/valley fixtures.
+PASS 7/7 targeted tests, GLSL/MSL compilers, Metal/GL rendering and exact full
+reveal/off comparisons. Uniform legacy image differs by only 3 one-level channel
+roundings; not bit-identical. See `docs/handoffs/prisma-stage-structured-fog-2026-11-20.md`
+for commands, limitations and visual tuning. Not merged to main in this stage.
+
+## Fog billows/self-shadowing — 2026-11-20
+
+Code `19d2d8f1a2f2357b235dc9ef6dd08da70d243cb9`, same structured-fog branch.
+User rejected flat appearance: added world-space height crests, 3D domain warp,
+edge erosion and bounded 4/6-sample optical sun self-shadowing through all fog/
+reveal volumes. Zero defaults preserve compatibility. Native fixtures now expose
+bank surfaces at low/elevated angles and A/B self-shadowing. PASS 7/7 CTests,
+GLSL/MSL, Metal/GL, full reveal exact-pixel and shadow/wind difference checks.
+See `docs/handoffs/prisma-stage-fog-billows-2026-11-20.md` for evidence/limits.
+**All future builds/caches/compiler temporary files on KINGSTON**, per user:
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky`; local build/sky is only
+an alias. Internal duplicate removed after external compilation. No main merge.

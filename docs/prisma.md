@@ -4166,3 +4166,30 @@ compatible. These features are disabled by default. Native region/settings APIs
 are owner-wide: a multi-camera host must set each view's cosmetic data before
 its resolve, or use a separate Prisma owner. Camera-volume profile blending does
 not yet author or interpolate these atmosphere settings. No gameplay changes.
+
+### Structured fog continuation
+
+`FogVolume::structure` optionally shapes local fog with periodic 3D noise,
+per-axis world scale, height attenuation and wind; `Prisma::setLocalFogTime`
+provides a reproducible presentation clock. Default uniform fog is preserved.
+The existing local fog pass owns this, with no extra history or render targets.
+See the structured banks section in `docs/local-volumetric-fog.md`. No terrain
+sampling, gameplay visibility or PHYSIS state mutation is introduced.
+
+Local fog now also supports `heightVariation`, three-dimensional `warp`, boundary
+`edgeErosion` and optional `selfShadow`/`shadowDistance`. Self-shadowing ray-marches
+all active volumes and reveal holes toward the sun, independently of the existing
+geometry shadow map. This is bounded single scattering; no new temporal buffers,
+shadow-map ownership, terrain dependency or authoritative simulation state.
+
+
+### Inspector graph-v2 preview composition (2026-11-20)
+
+The integrated optional `spectra::GpuPoolWorld` editor preview contributes through
+`Editor::drawSpectraGpuPreview()` in the same open HDR scene pass, immediately
+before `Renderer3D::resolvePrisma()`. SpectraFX owns emitters, per-frame simulation
+and particle GPU resources. PRISMA retains the full-screen resolve, camera volumes,
+reactive coverage and viewport GPU timing. Main's existing completion timeline is
+preserved; no new postprocess implementation or renderer default is introduced.
+See `docs/agent-handoffs/inspector-spectrafx-main-2026-11-20.md` for integration
+verification and remaining UI/platform coverage.

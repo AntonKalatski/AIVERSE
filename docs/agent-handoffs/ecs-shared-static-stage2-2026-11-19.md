@@ -1,8 +1,8 @@
 # AIVERSE Shared/Static ECS — Stage 2 COW Release validation handoff
 
-Date: 2026-11-19  
-Repository: `chromealex/AIVERSE`  
-Branch: `feature/ecs-shared-static-components`  
+Date: 2026-11-19
+Repository: `chromealex/AIVERSE`
+Branch: `feature/ecs-shared-static-components`
 Status: **corrected Release COW and hierarchy tests confirmed passing on Mac Studio (4/4)**; full RTS/FPS integration and process RSS still pending.
 
 ## Why this stage exists

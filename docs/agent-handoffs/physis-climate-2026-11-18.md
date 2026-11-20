@@ -1,8 +1,8 @@
 # PHYSIS Stage 2 — climate zones and spatial weather fronts (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`  
-**Implementation SHA:** `e874e518450109ebd689a8e66f0f2c58b73865b8`  
-**Handoff SHA:** see `git log -1 -- docs/agent-handoffs/physis-climate-2026-11-18.md` after checkout.  
+**Branch:** `feature/physis-nature-simulation`
+**Implementation SHA:** `e874e518450109ebd689a8e66f0f2c58b73865b8`
+**Handoff SHA:** see `git log -1 -- docs/agent-handoffs/physis-climate-2026-11-18.md` after checkout.
 **Verification:** **NOT RUN** (GitHub connector-only changes; no local checkout, compiler/CTest results, CI or rendering validation).
 
 ## Completed implementation

@@ -1175,3 +1175,14 @@ Prior Stage81 user macOS 2/2 nature tests PASS confirmed;
 Stage82 native compile/CTest **NOT RUN**. PR #25 remains
 Draft. Handoff:
 `docs/agent-handoffs/physis-stage82-fracture-outbox-2026-11-19.md`.
+
+## MCP map configuration
+
+The engine skill `skills/world/aiverse-physis-authoring/SKILL.md` describes
+`physis_get`, `physis_validate`, and `physis_set` in `aiversemcp`.
+Read the current config/default and document revision, validate the complete
+candidate, then set it with `expectedRevision`. Stale edits fail without
+mutation. Explicit `config:null` removes the block; missing config fails.
+Edits use ordinary MapDoc Undo/Redo and do not save files, tick/install
+PHYSIS, or submit live/remote edits. Existing map/native formats are unchanged.
+Physical sky and fog remain presentation APIs documented in the PRISMA skill.

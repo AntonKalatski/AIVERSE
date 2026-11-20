@@ -1,10 +1,10 @@
 # PHYSIS stage 18 prerequisite — merge main into PHYSIS (2026-11-18)
 
-**Destination:** `feature/physis-nature-simulation`, draft PR #25.  
-**Integration merge commit:** `810feba70f01cdc35003ac80ea8486f39dc16049`.  
-**First parent:** `4eaee58e20631c2466eba3694dfd9b2700ab18d8` (PHYSIS, including saved Stage 17+ branch audit).  
-**Second parent:** `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` (main).  
-**Shared merge-base:** `309d7035e7317c5e3be66e8118298d2b64d490a1`.  
+**Destination:** `feature/physis-nature-simulation`, draft PR #25.
+**Integration merge commit:** `810feba70f01cdc35003ac80ea8486f39dc16049`.
+**First parent:** `4eaee58e20631c2466eba3694dfd9b2700ab18d8` (PHYSIS, including saved Stage 17+ branch audit).
+**Second parent:** `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` (main).
+**Shared merge-base:** `309d7035e7317c5e3be66e8118298d2b64d490a1`.
 **Resulting tree:** `fa5699c2180e4b8ef1b3492dac1cdfb08bb7e41b`.
 
 ## Outcome and conflict resolution

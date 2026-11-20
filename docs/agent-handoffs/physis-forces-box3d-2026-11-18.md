@@ -1,7 +1,7 @@
 # PHYSIS Stage 11 — universal forces + optional Box3D Scene adapter (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`, draft PR #25.  
-**Code/test commits:** `f9a6cbd0cfd73164ba8bd0889d48f5c4d7e05f3e`, `4aff85e8757ff17562501c86bea44fb45bbf63bb`, `4baaedd9d38adab2510d9e3a893af998086f5a14`, `5463327340d8f66265625b9665b0e9bc9ed5ca0c`, `7811b1b7bf21364762d2af709fde01acfa829359`, `a7aa67ed76dca8663c41ca78401f725d0c9191fc`, `9eb5c2be09b592c3ef6393325da0e48f5c190f48`, `9ebe9e35c16faa5718965f2a91a19c23aaa4317c`.  
+**Branch:** `feature/physis-nature-simulation`, draft PR #25.
+**Code/test commits:** `f9a6cbd0cfd73164ba8bd0889d48f5c4d7e05f3e`, `4aff85e8757ff17562501c86bea44fb45bbf63bb`, `4baaedd9d38adab2510d9e3a893af998086f5a14`, `5463327340d8f66265625b9665b0e9bc9ed5ca0c`, `7811b1b7bf21364762d2af709fde01acfa829359`, `a7aa67ed76dca8663c41ca78401f725d0c9191fc`, `9eb5c2be09b592c3ef6393325da0e48f5c190f48`, `9ebe9e35c16faa5718965f2a91a19c23aaa4317c`.
 **Verification:** NOT RUN: no native C++ compile, CTest, CI, Box3D scene execution, editor or FPS/RTS integration.
 
 ## What was implemented

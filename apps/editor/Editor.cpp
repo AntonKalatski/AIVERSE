@@ -9,6 +9,11 @@
 #include "engine/fx/FxModelMesh.h"
 #include "engine/render/PrismaVolumeData.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include "engine/fx/SpectraGpuPoolWorld.h"
+#include "engine/fx/SpectraDiagnosticBundle.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
+#include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -37,6 +42,22 @@ using namespace render;
 
 namespace {
 // Models / textures of the open game (view blocks reference them relative to the game folder).
+// Avoid exposing absolute GPU frame serials even in the file name of a
+// PRIVACY-SAFE diagnostic. Bounded distinct local names, no overwrite.
+fs::path unusedSafeDiagnosticName(const fs::path& directory,
+                                  const std::string& prefix,size_t group,
+                                  const std::string& suffix) {
+    for(uint32_t ordinal=1;ordinal<=1000;++ordinal) {
+        const fs::path candidate=directory/(
+            prefix+"-group-"+std::to_string(group)+"-"+
+            std::to_string(ordinal)+suffix);
+        std::error_code check;
+        if(!fs::exists(candidate,check) && !check)return candidate;
+        if(check)return {};
+    }
+    return {};
+}
+
 FileReader projectReader(const std::string& dir) {
     return [dir](const std::string& p, std::string& out) {
         std::ifstream f(dir + "/" + p, std::ios::binary);
@@ -56,6 +77,15 @@ void Editor::refreshPrismaVolumes() {
     std::vector<std::string> issues;
     prismaVolumes_ = render::parsePrismaVolumes(game, map, &issues);
     for (const auto& issue : issues) ws_.log("prisma", issue, true);
+}
+
+Editor::Editor(Options o) : opt_(std::move(o)) {}
+
+Editor::~Editor() {
+    captureLifetime_->store(false,std::memory_order_release);
+    // Explicit shutdown proves GPU idle. Otherwise retain the GPU owner.
+    if(spectraPreviewGpu_) (void)spectraPreviewGpu_.release();
+    for(auto& retired:retiredSpectraPreviews_) (void)retired.pool.release();
 }
 
 // ============================ viewport ============================
@@ -244,6 +274,13 @@ void Editor::shutdown() {
     if(!dev_->waitForResourceIdle())
         throw std::runtime_error(
             "Editor shutdown: GPU completion barrier failed");
+    if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+        spectraGpuTelemetry_=nullptr;
+    spectraPreviewGpu_.reset();
+    retiredSpectraPreviews_.clear();
+    spectraPreviewFrameOpen_=false;
+    spectraPreviewRequest_.pending=false;
+    spectraGpuTelemetry_=nullptr;
     clientHost_.stop();
     // A hosted GameClient may have submitted resources in an earlier GUI
     // frame. Its GPU handles must survive until a true graphics completion
@@ -256,6 +293,7 @@ void Editor::shutdown() {
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
+    for(auto& window:windows_)window->shutdownAfterGpuIdle(*this);
     windows_.clear(); // All windows (including ShaderGraph previews) retire owned resources.
     // The last submitted GPU frame may still reference ShaderGraph
     // pipelines/buffers/portrait resources queued by window destruction.
@@ -1133,6 +1171,551 @@ void Editor::drawEditOverlays3D() {
     }
 }
 
+void Editor::queueSpectraGpuPreview(fx::EffectDef effect,
+    std::array<float,8> params,fx::float3 position,bool inGame,bool loop) {
+    spectraPreviewRequest_.effect=std::move(effect);
+    spectraPreviewRequest_.params=params;
+    spectraPreviewRequest_.position=position;
+    spectraPreviewRequest_.inGame=inGame;
+    spectraPreviewRequest_.loop=loop;
+    spectraPreviewRequest_.pending=true;
+    spectraPreviewStop_=false;
+}
+void Editor::stopSpectraGpuPreview() {
+    spectraPreviewRequest_.pending=false;
+    spectraPreviewStop_=true; // resources release before a future scene pass
+    spectraPreviewRestart_=false;
+    spectraPreviewStepRequests_=0;
+}
+void Editor::setSpectraGpuPreviewSpeed(float speed) {
+    if(std::isfinite(speed))
+        spectraPreviewSpeed_=std::clamp(speed,0.1f,2.0f);
+}
+bool Editor::queueSpectraGpuPreviewFrames(uint32_t frames) {
+    // Advance only while frozen, where a frame request has an unambiguous
+    // 1/60-second visual-only meaning. No secret GPU frame replay/scrubbing.
+    constexpr uint32_t kMaxAdvanceFrames=300;
+    if(!spectraGpuPreviewActive() || !spectraPreviewFrozen_ || frames==0 ||
+       frames>kMaxAdvanceFrames ||
+       spectraPreviewStepRequests_>kMaxAdvanceFrames-frames)
+        return false;
+    spectraPreviewStepRequests_+=frames;
+    return true;
+}
+bool Editor::restartSpectraGpuPreview() {
+    if(!spectraGpuPreviewActive() || spectraPreviewStop_)return false;
+    spectraPreviewRestart_=true; // executes before the next scene pass
+    spectraPreviewStepRequests_=0;
+    return true;
+}
+bool Editor::requestSpectraGpuPreviewCheckpoint() {
+    if(!spectraGpuPreviewActive() || spectraPreviewStop_)return false;
+    // The GPU must stop changing particle state while readback chunks
+    // complete on a later graphics frame. Queued Step GPU is cancelled.
+    spectraPreviewFrozen_=true;
+    spectraPreviewStepRequests_=0;
+    spectraGpuCaptureState_=SpectraGpuCaptureState::Queued;
+    spectraGpuCaptureNote_="Awaiting a frozen graphics pre-pass";
+    return true;
+}
+bool Editor::queueSpectraExternalGpuCapture(size_t groupIndex) {
+    // This is only a request for another native graphics owner to consume
+    // at its own pre-render phase. Never perform Metal reads from ImGui.
+    return spectraGpuMailbox_ && spectraGpuTelemetry_ &&
+           spectraGpuTelemetry_!=spectraPreviewGpu_.get() &&
+           spectraGpuTelemetry_->ready() &&
+           groupIndex<spectraGpuTelemetry_->gpuGroupCount() &&
+           spectraGpuMailbox_->request(groupIndex);
+}
+bool Editor::releaseSpectraExternalGpuCapture() {
+    return spectraGpuMailbox_ &&
+           spectraGpuMailbox_->requestRelease();
+}
+bool Editor::queueSpectraExternalVisualReset() {
+    // This cannot encode a Metal reset. The native host receives status
+    // only and services it after Device.beginFrame at its own safe point.
+    return spectraGpuRecoveryHost_ &&
+           spectraGpuTelemetry_ &&
+           spectraGpuTelemetry_!=spectraPreviewGpu_.get() &&
+           spectraGpuRecoveryHost_->requestPresentationReset(
+               "explicit editor VFX-only reset");
+}
+
+bool Editor::saveFreshSpectraGpuCheckpoint(
+    std::string& output,size_t requestedGroup) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked()) {
+        output="No healthy active SpectraFX GPU pool is attached";
+        return false;
+    }
+    // Export only existing current-revision snapshot bytes. This calls no
+    // blocking RHI readBuffer and never requests a new GPU capture.
+    std::vector<uint8_t> bytes;
+    std::string reason;
+    size_t chosen=0;
+    bool found=false;
+    if(requestedGroup!=static_cast<size_t>(-1)) {
+        if(requestedGroup>=pool->gpuGroupCount()) {
+            output="Selected SpectraFX GPU group is out of range";
+            return false;
+        }
+        chosen=requestedGroup;
+        found=pool->exportFreshCheckpoint(
+            chosen,bytes,spectra::kGpuCheckpointExportMaxBytes,&reason);
+    } else {
+        // Backwards compatible single-argument API: select first ready group.
+        for(size_t i=0;i<pool->gpuGroupCount();++i) {
+            if(pool->exportFreshCheckpoint(
+                i,bytes,spectra::kGpuCheckpointExportMaxBytes,&reason)) {
+                chosen=i;found=true;break;
+            }
+        }
+    }
+    if(!found) {
+        output="No fresh and complete GPU checkpoint is ready: "+reason;
+        return false;
+    }
+    // Same-build diagnostic file integrity is independently verifiable.
+    // Never write bytes that fail the V2 length/magic/CRC contract.
+    if(!spectra::validateGpuCheckpointDiagnostic(bytes)) {
+        output="SpectraFX checkpoint export failed V2 header/CRC validation";
+        return false;
+    }
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create SpectraFX diagnostic directory: "+ec.message();
+        return false;
+    }
+    const std::string filename="checkpoint-"+
+        std::to_string(dev_?dev_->frameSerial():0)+
+        "-group-"+std::to_string(chosen)+".spfx";
+    const fs::path destination=directory/filename;
+    const fs::path temporary=directory/(filename+".tmp");
+    {
+        std::ofstream file(temporary,std::ios::binary|std::ios::trunc);
+        if(!file) {
+            output="Cannot open SpectraFX diagnostic temporary file";
+            return false;
+        }
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   std::streamsize(bytes.size()));
+        file.flush();
+        if(!file) {
+            file.close();
+            fs::remove(temporary,ec);
+            output="Failed to write complete SpectraFX checkpoint payload";
+            return false;
+        }
+    }
+    fs::rename(temporary,destination,ec);
+    if(ec) {
+        fs::remove(temporary);
+        output="Cannot publish SpectraFX checkpoint: "+ec.message();
+        return false;
+    }
+    output=destination.string();
+    return true;
+}
+bool Editor::saveSafeSpectraGpuReport(
+    std::string& output,size_t groupIndex,
+    bool includeWorldBounds,bool includeGpuIdentifiers) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked() ||
+       groupIndex>=pool->gpuGroupCount()) {
+        output="A healthy SpectraFX pool and valid GPU group are required";
+        return false;
+    }
+    // This is an EXPLICIT local action. It copies one already-completed
+    // checkpoint through the strict Stage-39 freshness gate without RHI reads.
+    std::vector<uint8_t> diagnostic;
+    std::string why;
+    if(!pool->exportFreshCheckpoint(groupIndex,diagnostic,
+            spectra::kGpuCheckpointExportMaxBytes,&why)) {
+        output="No current-revision GPU checkpoint is ready: "+why;
+        return false;
+    }
+    const auto inspected=spectra::inspectGpuCheckpointDiagnostic(diagnostic);
+    if(!inspected.structurallyValid()) {
+        output="SpectraFX diagnostic CRC or header failed integrity check";
+        return false;
+    }
+    const spectra::GpuDiagnosticReportPrivacy privacy{
+        includeWorldBounds,includeGpuIdentifiers
+    };
+    // The JSON report NEVER includes the original GPU blob, individual
+    // particle positions or VM scalar values. Even if includeWorldBounds
+    // is true, only min/max coordinates are included, never per-slot data.
+    Json report=Json::parse(spectra::gpuDiagnosticReportJson(inspected,privacy));
+    report.set("groupIndex",Json::number(int64_t(groupIndex)));
+    Json timeline=Json::array();
+    // An externally attached GPU pool belongs to another renderer. Do not
+    // include the Editor's unrelated preview-history samples in its report.
+    const size_t historyCount=
+        pool==spectraPreviewGpu_.get()?spectraPreviewHistory_.size():0u;
+    for(size_t i=0;i<historyCount;++i) {
+        const auto& sample=spectraPreviewHistory_[i];
+        Json row=Json::object();
+        row.set("sample",Json::number(int64_t(i)));
+        row.set("estimatedParticles",
+                Json::number(int64_t(sample.estimatedParticles)));
+        row.set("stepAccepted",Json::fromBool(sample.stepAccepted));
+        row.set("freshGroups",Json::number(int64_t(sample.freshGroups)));
+        row.set("staleGroups",Json::number(int64_t(sample.staleGroups)));
+        row.set("pendingGroups",Json::number(int64_t(sample.pendingGroups)));
+        row.set("killsAwaitingCompletion",
+                Json::number(int64_t(sample.killedSlotsWaiting)));
+        row.set("deviceHealthy",Json::fromBool(sample.deviceHealthy));
+        // No absolute graphics frame serial, visual time or scene pose.
+        timeline.push(std::move(row));
+    }
+    report.set("previewTimelineSummary",std::move(timeline));
+    report.set("automaticUpload",Json::fromBool(false));
+    const std::string serialized=report.dump(2);
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create diagnostics directory: "+ec.message();
+        return false;
+    }
+    const fs::path target=unusedSafeDiagnosticName(
+        directory,"safe-report",groupIndex,".json");
+    if(target.empty()) {
+        output="No unused privacy-safe diagnostic filename is available";
+        return false;
+    }
+    const fs::path tmp=target.string()+".tmp";
+    {
+        std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+        if(!file) {
+            output="Cannot open redacted report temporary file";
+            return false;
+        }
+        file.write(serialized.data(),std::streamsize(serialized.size()));
+        file.flush();
+        if(!file) {
+            file.close();
+            fs::remove(tmp,ec);
+            output="Failed to write redacted SpectraFX report";
+            return false;
+        }
+    }
+    fs::rename(tmp,target,ec);
+    if(ec) {
+        fs::remove(tmp);
+        output="Cannot publish redacted report: "+ec.message();
+        return false;
+    }
+    output=target.string();
+    return true;
+}
+bool Editor::saveSafeSpectraGpuBundle(
+    std::string& output,size_t groupIndex) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked() ||
+       groupIndex>=pool->gpuGroupCount()) {
+        output="Safe ZIP requires a healthy pool and valid group";
+        return false;
+    }
+    std::vector<uint8_t> diagnostic;
+    std::string error;
+    if(!pool->exportFreshCheckpoint(groupIndex,diagnostic,
+            spectra::kGpuCheckpointExportMaxBytes,&error)) {
+        output="Safe ZIP needs an existing fresh GPU checkpoint: "+error;
+        return false;
+    }
+    const spectra::GpuDiagnosticInspection inspected=
+        spectra::inspectGpuCheckpointDiagnostic(diagnostic);
+    if(!inspected.structurallyValid()) {
+        output="Safe ZIP rejected invalid checkpoint CRC/header";
+        return false;
+    }
+    // Stronger policy than ordinary JSON report: every ZIP entry is created
+    // from strict fixed-schema aggregate values. Raw bytes are NEVER included
+    // regardless of sensitive checkboxes on the SpectraFX window.
+    std::vector<spectra::GpuSafeTimelineFrame> frames;
+    const size_t historyCount=
+        pool==spectraPreviewGpu_.get()?spectraPreviewHistory_.size():0u;
+    frames.reserve(historyCount);
+    for(size_t i=0;i<historyCount;++i) {
+        const auto& src=spectraPreviewHistory_[i];
+        spectra::GpuSafeTimelineFrame frame{};
+        frame.sample=uint32_t(i);
+        frame.estimatedParticles=src.estimatedParticles;
+        frame.freshGroups=src.freshGroups;
+        frame.staleGroups=src.staleGroups;
+        frame.pendingGroups=src.pendingGroups;
+        frame.killsAwaitingCompletion=src.killedSlotsWaiting;
+        frame.stepAccepted=src.stepAccepted;
+        frame.deviceHealthy=src.deviceHealthy;
+        frames.push_back(frame);
+    }
+    std::vector<uint8_t> zip;
+    if(!spectra::makeSafeGpuDiagnosticZip(inspected,frames,zip)) {
+        output="Safe ZIP exceeded 128 KiB or has invalid diagnostic state";
+        return false;
+    }
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create SpectraFX diagnostic directory: "+ec.message();
+        return false;
+    }
+    const fs::path target=unusedSafeDiagnosticName(
+        directory,"safe-bundle",groupIndex,".zip");
+    if(target.empty()) {
+        output="No unused privacy-safe ZIP filename is available";
+        return false;
+    }
+    const fs::path temporary=target.string()+".tmp";
+    {
+        std::ofstream out(temporary,std::ios::binary|std::ios::trunc);
+        if(!out) {
+            output="Cannot open SpectraFX safe ZIP temporary file";
+            return false;
+        }
+        out.write(reinterpret_cast<const char*>(zip.data()),
+                  std::streamsize(zip.size()));
+        out.flush();
+        if(!out) {
+            out.close();
+            fs::remove(temporary,ec);
+            output="Failed to write complete SpectraFX safe ZIP";
+            return false;
+        }
+    }
+    fs::rename(temporary,target,ec);
+    if(ec) {
+        fs::remove(temporary);
+        output="Cannot publish SpectraFX safe ZIP: "+ec.message();
+        return false;
+    }
+    output=target.string();
+    return true;
+}
+bool Editor::spectraGpuPreviewActive() const {
+    return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
+}
+std::string Editor::spectraGpuPreviewHistoryJson() const {
+    Json out=Json::object();
+    out.set("kind",Json::string("spectrafx_gpu_preview_diagnostics"));
+    out.set("replayable",Json::fromBool(false));
+    out.set("historyCapacity",Json::number(int64_t(180)));
+    Json frames=Json::array();
+    for(const auto& frame:spectraPreviewHistory_) {
+        Json item=Json::object();
+        item.set("deviceFrame",Json::number(int64_t(frame.deviceFrame)));
+        item.set("visualSeconds",Json::number(frame.visualSeconds,6));
+        item.set("estimatedParticles",Json::number(int64_t(frame.estimatedParticles)));
+        item.set("freshGroups",Json::number(int64_t(frame.freshGroups)));
+        item.set("staleGroups",Json::number(int64_t(frame.staleGroups)));
+        item.set("pendingGroups",Json::number(int64_t(frame.pendingGroups)));
+        item.set("killedSlotsWaiting",Json::number(int64_t(frame.killedSlotsWaiting)));
+        item.set("stepAccepted",Json::fromBool(frame.stepAccepted));
+        item.set("deviceHealthy",Json::fromBool(frame.deviceHealthy));
+        frames.push(std::move(item));
+    }
+    out.set("frames",std::move(frames));
+    return out.dump(2);
+}
+void Editor::retireSpectraPreview(std::unique_ptr<spectra::GpuPoolWorld>& pool) {
+    if(!pool)return;
+    // Includes any references already encoded in this frame. Unknown fences
+    // retain the owner until shutdown proves complete GPU idle.
+    retiredSpectraPreviews_.push_back({dev_?dev_->gpuSubmissionFence():0,std::move(pool)});
+}
+void Editor::collectRetiredSpectraPreviews() {
+    const uint64_t done=dev_ && dev_->gpuHealthy()?dev_->gpuCompletedFence():0;
+    if(!done)return;
+    std::erase_if(retiredSpectraPreviews_,[done](const auto& owner) {
+        return owner.fence && owner.fence<=done;
+    });
+}
+void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
+    collectRetiredSpectraPreviews();
+    if(spectraPreviewStop_) {
+        if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+            spectraGpuTelemetry_=nullptr;
+        retireSpectraPreview(spectraPreviewGpu_);
+        spectraPreviewStop_=false;
+        spectraPreviewLoop_=false;
+        spectraPreviewPaused_=spectraPreviewFrozen_=false;
+        spectraPreviewStepRequests_=0;
+        spectraPreviewRestart_=false;
+        spectraPreviewVisualSeconds_=0;
+        spectraPreviewLastError_.clear();
+        spectraPreviewHistory_.clear();
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_.clear();
+    }
+    if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game &&
+       retiredSpectraPreviews_.size()>=8) {
+        spectraPreviewLastError_="Metal preview replacement waiting for GPU resource retirement";
+    }
+    if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game &&
+       retiredSpectraPreviews_.size()<8) {
+        auto pending=std::move(spectraPreviewRequest_);
+        spectraPreviewRequest_.pending=false;
+        auto candidate=std::make_unique<spectra::GpuPoolWorld>();
+        spectra::PoolWorldBudgets budgets;
+        budgets.maxGpuGroups=1;
+        bool ok=candidate->init(dev_,budgets);
+        if(ok) {
+            spectra::GraphRuntimeOptions options;
+            options.preference=spectra::ComputePreference::RequireGpu;
+            options.quality=fx::FxQuality::High;
+            options.gpuProgram=true;options.gpuMaterial=true;
+            // The Metal preview is opt-in. Bound periodic checkpoints make
+            // freshness/restore diagnostics and the Stage 39 export useful;
+            // all normal native projects retain checkpointEveryFrames=0.
+            options.checkpointEveryFrames=15;
+            options.adaptiveCheckpoint.enabled=true;
+            options.adaptiveCheckpoint.maxIntervalFrames=120;
+            ok=candidate->defineEffect("__editor_gpu_preview",pending.effect,options);
+        }
+        if(!ok) {
+            spectraPreviewLastError_="Metal preview not available: "+candidate->reason();
+            ws_.log("spectrafx",spectraPreviewLastError_,true);
+            retireSpectraPreview(candidate);
+        } else {
+            if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+                spectraGpuTelemetry_=nullptr;
+            retireSpectraPreview(spectraPreviewGpu_);
+            spectraPreviewGpu_=std::move(candidate);
+            spectraGpuTelemetry_=spectraPreviewGpu_.get();
+            spectraPreviewInGame_=game;
+            spectraPreviewSimulatedFrame_=~uint64_t{0};
+            spectraPreviewLoop_=pending.loop;
+            spectraPreviewPaused_=spectraPreviewFrozen_=false;
+            spectraPreviewSpeed_=1.f;
+            spectraPreviewStepRequests_=0;
+            spectraPreviewRestart_=false;
+            spectraPreviewVisualSeconds_=0;
+            spectraPreviewLastError_.clear();
+            spectraPreviewHistory_.clear();
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+            spectraGpuCaptureNote_.clear();
+            spectraPreviewParams_=pending.params;
+            spectraPreviewPosition_=pending.position;
+            spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
+        }
+    }
+    if(!spectraPreviewGpu_ || spectraPreviewInGame_!=game || w<=0 || h<=0)
+        return;
+    if(spectraPreviewRestart_) {
+        spectraPreviewRestart_=false;
+        if(!spectraPreviewGpu_->resetForRollback()) {
+            spectraPreviewLastError_="Metal preview restart rejected: "+
+                                    spectraPreviewGpu_->reason();
+            ws_.log("spectrafx",spectraPreviewLastError_,true);
+            return;
+        }
+        spectraPreviewVisualSeconds_=0;
+        spectraPreviewHistory_.clear();
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_.clear();
+        spectraPreviewNextBurst_=-1;
+        spectraPreviewStepRequests_=0;
+        spectraPreviewLastError_.clear();
+    }
+    const auto viewProjection=cam.proj(float(w)/float(h),
+        dev_->info().clipDepthZeroToOne)*cam.view();
+    if(!spectraPreviewGpu_->beginPresentationFrame(cam,viewProjection,w,h)) {
+        ws_.log("spectrafx","Metal preview begin: "+spectraPreviewGpu_->reason(),true);
+        return;
+    }
+    spectraPreviewFrameOpen_=true;
+    // Scene and Game can render the same preview in one device frame.
+    // Rebuild view-dependent billboards for each, but advance time/births once.
+    const uint64_t previewFrame=dev_->frameSerial();
+    const bool advancePreview=spectraPreviewSimulatedFrame_!=previewFrame;
+    spectraPreviewSimulatedFrame_=previewFrame;
+    if(advancePreview && !spectraPreviewPaused_ && !spectraPreviewFrozen_ &&
+       (spectraPreviewNextBurst_<0 ||
+       (spectraPreviewLoop_ &&
+        spectraPreviewVisualSeconds_>=spectraPreviewNextBurst_))) {
+        if(!spectraPreviewGpu_->burst("__editor_gpu_preview",
+                spectraPreviewPosition_,{0,1,0},{1,1,1,1},&spectraPreviewParams_))
+            ws_.log("spectrafx","Metal preview emission: "+spectraPreviewGpu_->reason(),true);
+        // Repeat using visual elapsed time, not the editor's wall clock.
+        spectraPreviewNextBurst_=spectraPreviewVisualSeconds_+0.5;
+    }
+    // Freeze stops visual time; Pause only blocks future births while living
+    // particles continue updating. Neither state changes gameplay simulation.
+    float dt=(!advancePreview || spectraPreviewFrozen_)?0.f:
+        std::clamp(ImGui::GetIO().DeltaTime*spectraPreviewSpeed_,0.f,0.1f);
+    if(advancePreview && spectraPreviewFrozen_ && spectraPreviewStepRequests_>0) {
+        dt=1.f/60.f; // one simulation frame, no new bursts while frozen
+        --spectraPreviewStepRequests_;
+    }
+    const bool accepted=spectraPreviewGpu_->step(dt);
+    if(!accepted) {
+        spectraPreviewLastError_="Metal preview step: "+spectraPreviewGpu_->reason();
+        ws_.log("spectrafx",spectraPreviewLastError_,true);
+    } else {
+        spectraPreviewVisualSeconds_+=dt;
+        spectraPreviewLastError_.clear();
+    }
+    const auto checkpoint=spectraPreviewGpu_->checkpointStats();
+    if(spectraGpuCaptureState_==SpectraGpuCaptureState::Queued) {
+        if(!accepted) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="Metal simulation rejected before checkpoint: "+
+                                   spectraPreviewLastError_;
+        } else if(checkpoint.exportReadyGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Ready;
+            spectraGpuCaptureNote_="Current GPU revision is ready for binary export";
+        } else if(checkpoint.pendingGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::InFlight;
+            spectraGpuCaptureNote_="Waiting for GPU checkpoint readback";
+        } else if(spectraPreviewGpu_->requestGpuCheckpoint(0)) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::InFlight;
+            spectraGpuCaptureNote_="Checkpoint readback queued on the Metal graphics frame";
+        } else {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="GPU checkpoint rejected: "+
+                                   spectraPreviewGpu_->reason();
+        }
+    } else if(spectraGpuCaptureState_==SpectraGpuCaptureState::InFlight) {
+        if(checkpoint.exportReadyGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Ready;
+            spectraGpuCaptureNote_="Fresh GPU checkpoint complete; save the binary diagnostic";
+        } else if(checkpoint.pendingGroups==0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="GPU checkpoint completed without fresh data; retry while frozen";
+        }
+    } else if(spectraGpuCaptureState_==SpectraGpuCaptureState::Ready &&
+              checkpoint.exportReadyGroups==0) {
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_="GPU particle revision advanced; previous checkpoint is stale";
+    }
+    SpectraGpuPreviewFrameRecord record{};
+    record.deviceFrame=dev_?dev_->frameSerial():0;
+    record.visualSeconds=spectraPreviewVisualSeconds_;
+    record.estimatedParticles=spectraPreviewGpu_->stats().gpuParticlesEstimated;
+    record.freshGroups=checkpoint.freshGroups;
+    record.staleGroups=checkpoint.staleGroups;
+    record.pendingGroups=checkpoint.pendingGroups;
+    record.killedSlotsWaiting=checkpoint.killedSlotsAwaitingFence;
+    record.stepAccepted=accepted;
+    record.deviceHealthy=checkpoint.gpuDeviceHealthKnown &&
+                         checkpoint.gpuDeviceHealthy;
+    constexpr size_t kHistoryFrames=180;
+    if(spectraPreviewHistory_.size()>=kHistoryFrames)
+        spectraPreviewHistory_.pop_front();
+    spectraPreviewHistory_.push_back(record);
+}
+void Editor::drawSpectraGpuPreview() {
+    if(!spectraPreviewFrameOpen_ || !spectraPreviewGpu_)return;
+    spectraPreviewGpu_->draw({r3d_.lighting.fogColor,r3d_.lighting.fogDensity});
+}
+
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
     if (playing() && !ws_.project.isFps()) { renderGame(vp, cam, 1ULL); return; }
@@ -1239,6 +1822,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         }
     }
     if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
+    tickSpectraGpuPreview(useCam,renderW,renderH,false);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -1266,10 +1850,15 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
                 gameFx_.renderReactive(gpu,sceneDepth,width,height);
             });
     }
+    drawSpectraGpuPreview();
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
     if (sceneGpuScope) dev_->endGpuScope();
+    if(spectraPreviewFrameOpen_ && spectraPreviewGpu_) {
+        spectraPreviewGpu_->endPresentationFrame();
+        spectraPreviewFrameOpen_=false;
+    }
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
         static unsigned samples = 0;
@@ -1354,6 +1943,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, gs.grid, time_);
     nereidPreview_.draw(r3d_);
     tickFx(cam,renderW,renderH,&sc.objects);
+    tickSpectraGpuPreview(cam,renderW,renderH,true);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -1373,10 +1963,15 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
                 gfx::TextureHandle sceneDepth, int width, int height) {
             gameFx_.renderReactive(gpu,sceneDepth,width,height);
         });
+    drawSpectraGpuPreview();
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
     if (gameGpuScope) dev_->endGpuScope();
+    if(spectraPreviewFrameOpen_ && spectraPreviewGpu_) {
+        spectraPreviewGpu_->endPresentationFrame();
+        spectraPreviewFrameOpen_=false;
+    }
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 

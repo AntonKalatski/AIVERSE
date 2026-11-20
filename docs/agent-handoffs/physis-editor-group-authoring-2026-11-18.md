@@ -1,9 +1,9 @@
 # PHYSIS Stage 21 — multi-selection, grouped transforms, duplication and deletion (2026-11-18)
 
-**Repository:** chromealex/AIVERSE  
-**Branch:** feature/physis-nature-simulation  
-**PR:** #25, DRAFT. Do not mark ready before native tests and editor QA.  
-**Main baseline:** 9ee6ff6fbf390bd45363bc92c838f492dfe92eee (an ancestor; no main merge needed at Stage 21 start).  
+**Repository:** chromealex/AIVERSE
+**Branch:** feature/physis-nature-simulation
+**PR:** #25, DRAFT. Do not mark ready before native tests and editor QA.
+**Main baseline:** 9ee6ff6fbf390bd45363bc92c838f492dfe92eee (an ancestor; no main merge needed at Stage 21 start).
 **Previous handoff:** docs/agent-handoffs/physis-editor-gizmo-snapping-resize-2026-11-18.md (Stage 20, last head 7cffd3441bd0e869f15f44bdad9d5b7b4047bd42).
 
 ## Actual commits, in order
@@ -73,7 +73,7 @@ PHYSIS owns deterministic nature/climate/weather/wind/storm/gravity simulation. 
 ## Next agent: required concrete steps
 
 1. Update checkout of feature/physis-nature-simulation, inspect concurrent editor merges and rebase/merge main ONLY if it has moved. Compile C++ and editor. Run:
-   
+
        ./run-tests.sh --filter '^physis_'
        cmake -S . -B build/physis-editor -DCMAKE_BUILD_TYPE=Debug -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_ENABLE_PHYSICS=ON
        cmake --build build/physis-editor --target aiverse_editor aiverse_physis_field_authoring_test aiverse_physis_field_assets_test aiverse_physis_project_config_test -j4

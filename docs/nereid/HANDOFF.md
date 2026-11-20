@@ -400,7 +400,7 @@ Also run legacy `water_*` tests, FPS and RTS ECS tests.
   rectangle counts/import time and indexed sampling. Then add a native
   opt-in migration path or independent render/shoreline adapter, with
   further per-stage handoff.
- 
+
 ## Stage 6 — adaptive sampling, native setup, CI coverage
 
 **Branch**: `feature/nereid-water-core` (base:

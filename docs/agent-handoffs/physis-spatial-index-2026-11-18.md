@@ -1,7 +1,7 @@
 # PHYSIS Stage 16 — transient COW spatial index for wind, gravity, storms (2026-11-18)
 
-**Repository:** `chromealex/AIVERSE`  
-**Branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.  
+**Repository:** `chromealex/AIVERSE`
+**Branch:** `feature/physis-nature-simulation`, draft PR #25, base `feature/universal-entity-inspector-fps`.
 **Status:** implementation, tests, CMake/CI and docs committed. **NATIVE COMPILATION, CTEST, CI PASS, GPU/EDITOR PREVIEW AND PERFORMANCE BENCHMARKS NOT RUN / UNVERIFIED.** The local shell cannot clone GitHub (`Could not resolve host: github.com`); GitHub connector writes succeed but do not constitute a compiled test.
 
 ## Implementation commits / changed files

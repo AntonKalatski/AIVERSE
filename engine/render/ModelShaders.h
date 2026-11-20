@@ -22,6 +22,7 @@
 //                 vec4 lod (x incoming coverage, y outgoing flag); 144 bytes per instance
 //   U1 per frame: as the lit shader (Shaders.h)
 //   U2 material:  vec4 base; vec4 emissive (rgb, linear, premultiplied by strength);
+//                 emissive.w: received sun-shadow diffusion radius in world units (0 = legacy).
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
 //                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, fixed shade ambient, diffuse);
@@ -37,6 +38,7 @@
 #pragma once
 #include "Shaders.h"
 #include "BakedShaders.h"
+#include "GiDynamicShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -191,9 +193,12 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI
     R"(
 uniform mediump sampler2D tex1;
+#if defined(VIRTUAL_ALPHA_MASK)
+uniform mediump sampler2D tex15;
+#endif
 uniform mediump sampler2D tex2;
 uniform mediump sampler2D tex3;
 uniform mediump sampler2D tex4;
@@ -273,7 +278,11 @@ void main() {
 #if defined(ALPHAMASK)
     // Mask pass uses original geometry and must exclude discarded foliage,
     // grills and other cutout surfaces from the selection silhouette.
+#if defined(VIRTUAL_ALPHA_MASK)
+    if (texture(tex15, v_uv).r * PALETTE_BASE.a < m_misc.x) discard;
+#else
     if (texture(tex1, v_uv).a * PALETTE_BASE.a < m_misc.x) discard;
+#endif
 #endif
     o_color = vec4(rtsEncodeScene(v_team.rgb), v_tint.a);
 #else
@@ -295,6 +304,9 @@ void main() {
         edge = 1.0 - smoothstep(0.0, 0.06, nz - v_draw.y);
     }
     vec4 tb = texture(tex1, v_uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    tb.a = texture(tex15, v_uv).r;
+#endif
     vec4 base = PALETTE_BASE * vec4(toLinear(tb.rgb), tb.a);
     if (mod(m_misc.w,2.0) > 0.5) base *= vec4(v_col.rgb, m_misc.w > 1.5 ? 1.0 : v_col.a);
     int teamMode = int(m_misc.y + 0.5);
@@ -345,6 +357,22 @@ void main() {
     ao = mix(1.0, texture(tex4, v_uv).r, m_pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // Opt-in linear signed world normal from the SAME PBR shading path,
+    // including tangent normal map and Shader Graph perturbations. W is
+    // roughness; an independent depth pass rejects mismatched occluders.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(normalize(n),clamp(rough,0.045,1.0));
+    return;
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // HDR side-channel: exact material diffuse base + metallic, not the
+    // already-illuminated scene color. Respect alpha mask, tint, PBR textures
+    // and Shader Graph overrides applied above. No legacy direct or GI term.
+    if(m_uv1.y > 0.5) discard;
+    o_color=vec4(clamp(base.rgb,vec3(0.0),vec3(1.0)),clamp(metallic,0.0,1.0));
+    return;
+#endif
     ao *= m_misc.w > 1.5 ? (m_misc.w > 3.5 && !gl_FrontFacing ? v_col.r : v_col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
@@ -353,7 +381,7 @@ void main() {
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && v_draw.x > 0.5) ? min(shadowAt(v_wpos, shadowNormal), terrainShadow(v_wpos)) : 1.0;
+    float sh = (ndl > 0.0 && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
@@ -408,6 +436,10 @@ void main() {
 #endif
     ambSpec *= giOcc;
     vec3 col = diff * (amb * ao + direct) + sun * spec * sh + ambSpec * ao;
+#if defined(DYNAMIC_GI)
+    // Add INDIRECT diffuse only: no extra sun, specular or baked base.
+    col += diff * dynamicGiAt(v_wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (u_trace2.w > 1.5 && m_uv1.y < 0.5 && rough < 0.8) {
         float hit; vec3 reflected = ssrWater(v_wpos + n * 0.02, n, V, hit);
@@ -451,6 +483,9 @@ inline const char* kModelShadowFS =
     AIVERSE_GLSL_MODEL_BLOCKS
     R"(
 uniform mediump sampler2D tex1;
+#if defined(VIRTUAL_ALPHA_MASK)
+uniform mediump sampler2D tex15;
+#endif
 in vec2 v_uv;
 in vec3 v_wpos; in vec3 v_opos; in vec3 v_nrm; in vec4 v_col;
 flat in vec4 v_lod;
@@ -463,6 +498,9 @@ void main() {
 #endif
 #if defined(ALPHAMASK)
     vec4 base = m_base * texture(tex1, v_uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    base.a = m_base.a * texture(tex15, v_uv).r;
+#endif
     // SG_COLOR
     if (base.a < m_misc.x) discard;
 #endif
@@ -568,7 +606,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX AIVERSE_MSL_DYNAMIC_GI
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -657,6 +695,58 @@ struct IcbPbrTextures {
     sampler s11 [[id(23)]];
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
+#if defined(DYNAMIC_GI)
+    texture2d<float> tex13 [[id(26)]];
+#endif
+#if defined(AIVERSE_SG_ICB_GRAPH)
+    // Fragment-only graph source slots 13..16 use the same 2*slot IDs
+    // as the standard PBR argument table; source tex16 uses a constexpr
+    // sampler because Metal has only 16 dynamic fragment sampler slots.
+#if AIVERSE_SG_TEXTURE_COUNT >= 1
+    texture2d<float> tex13 [[id(26)]];
+    sampler s13 [[id(27)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 2
+    texture2d<float> tex14 [[id(28)]];
+    sampler s14 [[id(29)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 3
+    texture2d<float> tex15 [[id(30)]];
+    sampler s15 [[id(31)]];
+#endif
+#if AIVERSE_SG_TEXTURE_COUNT >= 4
+    texture2d<float> tex16 [[id(32)]];
+#endif
+#if defined(AIVERSE_MODEL_VT)
+    // The graph VT atlas/page table immediately follow the graph's
+    // N sources. Neither requires another dynamic Metal sampler.
+#if AIVERSE_SG_TEXTURE_COUNT == 0
+    texture2d_array<float, access::sample> tex13 [[id(26)]];
+    texture2d_array<float, access::read> tex14 [[id(28)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 1
+    texture2d_array<float, access::sample> tex14 [[id(28)]];
+    texture2d_array<float, access::read> tex15 [[id(30)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 2
+    texture2d_array<float, access::sample> tex15 [[id(30)]];
+    texture2d_array<float, access::read> tex16 [[id(32)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 3
+    texture2d_array<float, access::sample> tex16 [[id(32)]];
+    texture2d_array<float, access::read> tex17 [[id(34)]];
+#elif AIVERSE_SG_TEXTURE_COUNT == 4
+    texture2d_array<float, access::sample> tex17 [[id(34)]];
+    texture2d_array<float, access::read> tex18 [[id(36)]];
+#endif
+#endif
+#else
+#if defined(AIVERSE_MODEL_VT)
+    texture2d_array<float, access::sample> tex13 [[id(26)]];
+    texture2d_array<float, access::read> tex14 [[id(28)]];
+#endif
+#if defined(VIRTUAL_ALPHA_MASK)
+    texture2d<float> tex15 [[id(30)]];
+    sampler s15 [[id(31)]];
+#endif
+#endif
 };
 #endif
 
@@ -681,8 +771,23 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
-                        GI_FARGS) {
+#if defined(DYNAMIC_GI)
+                        , constant GiDynamicU& dgi [[buffer(DYNAMIC_GI_BUFFER)]]
+#if !defined(AIVERSE_ICB_PBR)
+                        , texture2d<float> DYNAMIC_GI_TEXTURE [[texture(DYNAMIC_GI_SLOT)]]
+#endif
+#endif
+                        GI_FARGS
+#if defined(VIRTUAL_ALPHA_MASK) && !defined(AIVERSE_ICB_PBR)
+                        , texture2d<float> tex15 [[texture(15)]],
+                          sampler s15 [[sampler(15)]]
+#endif
+                        ) {
 #if defined(AIVERSE_ICB_PBR)
+#if defined(VIRTUAL_ALPHA_MASK)
+#define tex15 icbTextures.tex15
+#define s15 icbTextures.s15
+#endif
 #define tex0 icbTextures.tex0
 #define s0 icbTextures.s0
 #define tex1 icbTextures.tex1
@@ -705,6 +810,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #define s11 icbTextures.s11
 #define tex12 icbTextures.tex12
 #define s12 icbTextures.s12
+#if defined(DYNAMIC_GI)
+#define tex13 icbTextures.tex13
+#endif
 #endif
 #if defined(STUDIO_DEBUG_VIEW)
 #if STUDIO_DEBUG_VIEW == 2
@@ -742,8 +850,13 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
 #if defined(OUTLINE)
 #if defined(ALPHAMASK)
+#if defined(VIRTUAL_ALPHA_MASK)
+    if (tex15.sample(s15, in.uv).r * m.base.a < m.misc.x)
+        discard_fragment();
+#else
     if (tex1.sample(s1, in.uv).a * m.base.a < m.misc.x)
         discard_fragment();
+#endif
 #endif
     return float4(rtsEncodeScene(in.team.rgb), in.tint.a);
 #else
@@ -765,6 +878,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         edge = 1.0 - smoothstep(0.0, 0.06, nz - in.draw.y);
     }
     float4 tb = tex1.sample(s1, in.uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    tb.a = tex15.sample(s15, in.uv).r;
+#endif
     float4 base = m.base * float4(toLinear(tb.rgb), tb.a);
     if (fmod(m.misc.w,2.0) > 0.5) base *= float4(in.col.rgb, m.misc.w > 1.5 ? 1.0 : in.col.a);
     int teamMode = int(m.misc.y + 0.5);
@@ -813,6 +929,19 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     ao = mix(1.0, tex4.sample(s4, in.uv).r, m.pbr.w);
 #endif
     // SG_SURFACE
+#if defined(LUMAWEAVE_SURFACE)
+    // World-space signed normal.xyz and physically bounded roughness.w.
+    // Input has passed the same AlphaMask, normal map and PBR processing
+    // as the visible model, without applying any existing direct/indirect GI.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(normalize(n),clamp(rough,0.045f,1.0f));
+#endif
+#if defined(LUMAWEAVE_MATERIAL)
+    // Real linear material receiver for external direct lighting. The
+    // compute result is multiplied by the physically correct diffuse color.
+    if(m.uv1.y > 0.5) discard_fragment();
+    return float4(clamp(base.rgb,float3(0.0),float3(1.0)),clamp(metallic,0.0f,1.0f));
+#endif
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
@@ -821,7 +950,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float3 V = normalize(f.camPos.xyz - in.wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && in.draw.x > 0.5) ? min(shadowAt(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
+    float sh = (ndl > 0.0 && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
     sh *= cloudShade(lu, in.wpos);
     float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
     float3 sky = rtsDecodeScene(f.skyColor.rgb), ground = rtsDecodeScene(f.groundColor.rgb);
@@ -876,6 +1005,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
     ambSpec *= giOcc;
     float3 col = diff * (amb * ao + direct) + sun * spec * sh + ambSpec * ao;
+#if defined(DYNAMIC_GI)
+    col += diff * dynamicGiAt(DYNAMIC_GI_TEXTURE,dgi,in.wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (f.trace2.w > 1.5 && m.uv1.y < 0.5 && rough < 0.8) {
         float hit; float3 reflected = ssrWater(f, tex11, s11, tex12, s12, in.wpos + n * 0.02, n, V, hit);
@@ -913,7 +1045,12 @@ vertex VOut vs_main(VERTEX_ARGS) {
 }
 #if defined(ALPHAMASK) || defined(LODFADE)
 fragment void fs_main(VOut in [[stage_in]], constant MU2& m [[buffer(3)]], constant U1& f [[buffer(2)]],
-                      texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]]) {
+                      texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]]
+#if defined(VIRTUAL_ALPHA_MASK)
+                      , texture2d<float> tex15 [[texture(15)]],
+                        sampler s15 [[sampler(15)]]
+#endif
+                      ) {
 #if defined(LODFADE)
     uint2 lp=uint2(in.pos.xy) & uint2(3);
     uint rank=((lp.x & 1u) ^ (lp.y & 1u))*8u+(lp.y & 1u)*4u+((lp.x>>1u) ^ (lp.y>>1u))*2u+(lp.y>>1u);
@@ -922,6 +1059,9 @@ fragment void fs_main(VOut in [[stage_in]], constant MU2& m [[buffer(3)]], const
 #endif
 #if defined(ALPHAMASK)
     float4 base = m.base * tex1.sample(s1, in.uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    base.a = m.base.a * tex15.sample(s15, in.uv).r;
+#endif
     // SG_COLOR
     if (base.a < m.misc.x) discard_fragment();
 #endif

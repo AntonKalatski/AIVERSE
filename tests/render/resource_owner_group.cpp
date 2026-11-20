@@ -2,7 +2,7 @@
 // without counting duplicate host registrations or borrowed images as VRAM.
 // Do not construct a GPU Device or pretend estimates equal driver heap bytes.
 #include "engine/render/RenderResourceOwnerGroup.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <cstdint>
 #include <memory>
 
@@ -36,26 +36,26 @@ int main() {
     group.add(portrait);
     group.add(raw);
     group.add(scene); // idempotent registration
-    assert(group.size()==3);
+    AIVERSE_TEST_CHECK(group.size()==3);
     const auto healthy=group.snapshotOwners();
-    assert(healthy.uniqueOwners==3);
-    assert(healthy.residentModels==3);
-    assert(healthy.retiredModels==0);
-    assert(healthy.uniqueTextureOwners==3);
-    assert(healthy.uniqueTextures==0); // borrowed handles not cache-owned
-    assert(healthy.geometryPages.uniquePages==0);
-    assert(healthy.health==RenderResourceHealth::Ready);
+    AIVERSE_TEST_CHECK(healthy.uniqueOwners==3);
+    AIVERSE_TEST_CHECK(healthy.residentModels==3);
+    AIVERSE_TEST_CHECK(healthy.retiredModels==0);
+    AIVERSE_TEST_CHECK(healthy.uniqueTextureOwners==3);
+    AIVERSE_TEST_CHECK(healthy.uniqueTextures==0); // borrowed handles not cache-owned
+    AIVERSE_TEST_CHECK(healthy.geometryPages.uniquePages==0);
+    AIVERSE_TEST_CHECK(healthy.health==RenderResourceHealth::Ready);
     const auto bytes=uint64_t(3)*(8*sizeof(ModelVertex)+12*sizeof(uint32_t));
-    assert(healthy.residentModelKnownBytes==bytes);
-    assert(healthy.estimatedKnownBytes()==bytes);
+    AIVERSE_TEST_CHECK(healthy.residentModelKnownBytes==bytes);
+    AIVERSE_TEST_CHECK(healthy.estimatedKnownBytes()==bytes);
     group.setEstimatedBudgetBytes(bytes);
-    assert(!group.mayAdmitNewSources(healthy));
+    AIVERSE_TEST_CHECK(!group.mayAdmitNewSources(healthy));
     group.setEstimatedBudgetBytes(bytes+1);
-    assert(group.mayAdmitNewSources(healthy));
+    AIVERSE_TEST_CHECK(group.mayAdmitNewSources(healthy));
     const auto unhealthy=group.snapshotOwners(false);
-    assert(unhealthy.health==RenderResourceHealth::DeviceUnhealthy);
-    assert(!group.mayAdmitNewSources(unhealthy));
+    AIVERSE_TEST_CHECK(unhealthy.health==RenderResourceHealth::DeviceUnhealthy);
+    AIVERSE_TEST_CHECK(!group.mayAdmitNewSources(unhealthy));
     group.clear();
-    assert(group.size()==0);
-    assert(group.snapshotOwners().estimatedKnownBytes()==0);
+    AIVERSE_TEST_CHECK(group.size()==0);
+    AIVERSE_TEST_CHECK(group.snapshotOwners().estimatedKnownBytes()==0);
 }

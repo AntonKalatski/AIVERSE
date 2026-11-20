@@ -13,7 +13,7 @@
 namespace aiverse::editor {
 
 struct DocumentEntityRef {
-    enum class Source : uint8_t { MapEntity, FpsCollider, FpsSpawn };
+    enum class Source : uint8_t { MapEntity, FpsCollider, FpsSpawn, MapLight, FpsLight };
     Source source = Source::MapEntity;
     size_t index = 0;
 
@@ -21,9 +21,12 @@ struct DocumentEntityRef {
     static DocumentEntityRef fpsCollider(size_t i) { return {Source::FpsCollider, i}; }
     static DocumentEntityRef fpsSpawn(size_t i) { return {Source::FpsSpawn, i}; }
 
+    static DocumentEntityRef light(size_t i,bool fps) { return {fps?Source::FpsLight:Source::MapLight,i}; }
+    bool isLight() const { return source==Source::MapLight || source==Source::FpsLight; }
+
     // FPS refs use the high bit for spawns; zero is reserved for no entity.
     uint64_t fpsKey() const {
-        if (source == Source::MapEntity) return 0;
+        if (source == Source::MapEntity || isLight()) return 0;
         if (uint64_t(index) >= (uint64_t(1) << 63) - 1) return 0;
         return (source == Source::FpsSpawn ? (uint64_t(1) << 63) : 0)
                | (uint64_t(index) + 1);
@@ -70,6 +73,17 @@ inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
     return &fps.member(collection).at(ref.index);
 }
 
+// Legacy storage adapter: Transform and Light are views of one light payload.
+inline const Json* documentLight(const MapDoc& map,DocumentEntityRef ref) {
+    if(!ref.isLight())return nullptr;
+    const auto& list=(ref.source==DocumentEntityRef::Source::FpsLight?map.data.fps:map.data.extra)["lights"];
+    return list.isArray() && ref.index<list.size() && list[ref.index].isObject()?&list[ref.index]:nullptr;
+}
+inline Json* documentLight(MapDoc& map,DocumentEntityRef ref) {
+    if(!documentLight(static_cast<const MapDoc&>(map),ref))return nullptr;
+    return &(ref.source==DocumentEntityRef::Source::FpsLight?map.data.fps:map.data.extra).member("lights").at(ref.index);
+}
+
 struct DocumentTransform {
     double x = 0, y = 0, z = 0;
 };
@@ -78,7 +92,10 @@ struct DocumentTransform {
 // The returned value is a copy, never a pointer into a mutable JSON array.
 inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
                                   DocumentTransform& out) {
-    if (ref.source == DocumentEntityRef::Source::MapEntity) {
+    if(ref.isLight()) {
+        const auto* light=documentLight(map,ref);if(!light)return false;
+        out={(*light)["x"].toDouble(),(*light)["height"].toDouble(1),(*light)["z"].toDouble()};
+    } else if (ref.source == DocumentEntityRef::Source::MapEntity) {
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return false;
         if (!std::isfinite(entity->x) || !std::isfinite(entity->z)) return false;
@@ -137,7 +154,13 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
     if (!std::isfinite(after.x) || !std::isfinite(after.y) || !std::isfinite(after.z))
         return false;
     if (delta.x == 0 && delta.y == 0 && delta.z == 0) return false;
-    if (ref.source == DocumentEntityRef::Source::MapEntity) {
+    if(ref.isLight()) {
+        if(after.x < -1000000 || after.x > 1000000 || after.z < -1000000 || after.z > 1000000 ||
+           after.y < -1000 || after.y > 10000)return false;
+        auto* light=documentLight(map,ref);if(!light)return false;
+        light->set("x",Json::number(after.x,3));light->set("z",Json::number(after.z,3));
+        light->set("height",Json::number(after.y,3));light->erase("pos");
+    } else if (ref.source == DocumentEntityRef::Source::MapEntity) {
         // RTS maps are 2D in their serialized format. Never silently discard Y.
         DocEntity* entity = documentMapEntity(map, ref);
         if (!entity || (delta.y!=0&&!authoredEntity(*entity))) return false;
@@ -288,7 +311,10 @@ inline bool translateDocumentEntities(MapDoc& map,
                                      current.z + delta.z};
         if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.z))
             return false;
-        if (ref.source == DocumentEntityRef::Source::MapEntity) {
+        if(ref.isLight()) {
+            if(next.x < -1000000 || next.x > 1000000 || next.z < -1000000 || next.z > 1000000 ||
+               next.y < -1000 || next.y > 10000)return false;
+        } else if (ref.source == DocumentEntityRef::Source::MapEntity) {
             if (delta.y != 0 || !std::isfinite(float(next.x)) ||
                 !std::isfinite(float(next.z))) return false;
         } else {
@@ -334,7 +360,7 @@ inline bool translateDocumentEntities(MapDoc& map,
 }
 
 enum class DocumentComponentKind : uint8_t {
-    Transform, Renderable, Collider, Spawn, Gameplay
+    Transform, Renderable, Collider, Spawn, Gameplay, Light
 };
 struct DocumentComponentDescriptor {
     DocumentComponentKind kind;
@@ -352,6 +378,9 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
     if (!readDocumentTransform(map, ref, transform)) return components;
     components.push_back({DocumentComponentKind::Transform, "Transform", "Transform", true});
     switch (ref.source) {
+    case DocumentEntityRef::Source::MapLight:
+    case DocumentEntityRef::Source::FpsLight:
+        components.push_back({DocumentComponentKind::Light,"Light","Light",true});break;
     case DocumentEntityRef::Source::MapEntity: {
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return {};
@@ -421,6 +450,12 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         }
         return false;
     }
+    if(ref.isLight() && kind==DocumentComponentKind::Light) {
+        const auto* light=documentLight(map,ref);if(!light)return false;
+        result=*light;
+        for(const char* key:{"entityId","name","x","z","height","pos"})result.erase(key);
+        return true;
+    }
     const Json* object = fpsDocumentEntity(map.data.fps, ref);
     if (!object) return false;
     if (kind == DocumentComponentKind::Collider &&
@@ -454,6 +489,28 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
         out = {array[0].toDouble(), array[1].toDouble(), array[2].toDouble()};
         return true;
     };
+    if(ref.isLight() && kind==DocumentComponentKind::Light) {
+        auto* light=documentLight(map,ref);if(!light)return false;
+        Json next=*light;
+        for(const auto& [key,item]:value.members()) {
+            if(key=="type") {if(!item.isString() || (item.str()!="point" && item.str()!="spot"))return false;}
+            else if(key=="bake") {if(!item.isString() || (item.str()!="realtime" && item.str()!="mixed" && item.str()!="baked"))return false;}
+            else if(key=="electric" || key=="nightOnly") {if(item.type()!=Json::Type::Bool)return false;}
+            else if(key=="color") {
+                if(!item.isArray() || item.size()!=3)return false;
+                for(const auto& c:item.items())if(!c.isNumber() || !std::isfinite(c.toDouble()) || c.toDouble()<0 || c.toDouble()>1)return false;
+            } else {
+                if(!item.isNumber() || !std::isfinite(item.toDouble()))return false;
+                const double n=item.toDouble();
+                if(key=="radius") {if(n<=0 || n>100000)return false;}
+                else if(key=="intensity") {if(n<0 || n>10000)return false;}
+                else return false;
+            }
+            next.set(key,item);
+        }
+        if(next==*light)return false;
+        *light=std::move(next);map.touched();return true;
+    }
     if (kind == DocumentComponentKind::Transform) {
         if (ref.source == DocumentEntityRef::Source::MapEntity) {
             auto* entity=documentMapEntity(map,ref);

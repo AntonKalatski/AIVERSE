@@ -1,6 +1,6 @@
 # PHYSIS Stage 12 — numerical stability, native CI and agent skill (2026-11-18)
 
-**Branch**: `feature/physis-nature-simulation`, draft PR #25 (base `feature/universal-entity-inspector-fps`).  
+**Branch**: `feature/physis-nature-simulation`, draft PR #25 (base `feature/universal-entity-inspector-fps`).
 **Implementation commits**:
 - `0a55829786eff6adac9d1403319eec763afc323c`: new discoverable `skills/world/aiverse-physis/SKILL.md`, documenting Box3D/NEREID/Terra ownership and native integration.
 - `480b336263e87f400c0d80c194d054d771bab51e`: GitHub Actions `.github/workflows/physis.yml` focused Linux/macOS C++/CTest run including opt-in real Box3D Scene.

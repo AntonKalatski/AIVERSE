@@ -1,7 +1,7 @@
 # PHYSIS Stage 8 — 3D wind fields, gust zones and shelter (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`, draft PR #25.  
-**Implementation SHAs:** `89c303aabd4bcf92bf9be808403c295a6adfa0b4`, `9b706fe1b957b8ef8561153fbf38b20b7f130f20`, `66c1e731d51583afc108fb17220dc2d3e61cb031`, `1797e37700f4b9ce1131a84c2ab654c9913af2a0`, `5f97e5566f450da750e8b696334be2baf438641b`.  
+**Branch:** `feature/physis-nature-simulation`, draft PR #25.
+**Implementation SHAs:** `89c303aabd4bcf92bf9be808403c295a6adfa0b4`, `9b706fe1b957b8ef8561153fbf38b20b7f130f20`, `66c1e731d51583afc108fb17220dc2d3e61cb031`, `1797e37700f4b9ce1131a84c2ab654c9913af2a0`, `5f97e5566f450da750e8b696334be2baf438641b`.
 **Test status: NOT RUN**. GitHub connector edits are not evidence of C++ compilation, CI or CTest success.
 
 ## Implemented

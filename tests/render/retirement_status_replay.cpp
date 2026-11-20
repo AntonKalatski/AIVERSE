@@ -4,7 +4,7 @@
 #include "engine/render/RetirementStatusReplay.h"
 #include "engine/render/AsyncResourceRetirementQueue.h"
 #include <algorithm>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <memory>
 #include <vector>
 
@@ -29,32 +29,32 @@ int main() {
     auto failed=[&](uint64_t token){return replay.failed(token);};
 
     queue.enqueue(std::make_unique<int>(10));
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
-    assert(queue.stats().pendingResources==1);
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK(queue.stats().pendingResources==1);
     replay.advance();
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
-    assert(queue.stats().failedFenceBatches==0);
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK(queue.stats().failedFenceBatches==0);
     replay.advance();
-    assert(queue.collect(begin,completed,close,waitIdle,destroy,failed));
-    assert((destroyed==std::vector<int>{10}));
+    AIVERSE_TEST_CHECK(queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK((destroyed==std::vector<int>{10}));
 
     queue.enqueue(std::make_unique<int>(20));
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
     replay.advance(); // token #2 fails
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
-    assert(queue.stats().failedFenceBatches==1);
-    assert(queue.stats().unresolvedFailedFences==1);
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK(queue.stats().failedFenceBatches==1);
+    AIVERSE_TEST_CHECK(queue.stats().unresolvedFailedFences==1);
     queue.enqueue(std::make_unique<int>(30));
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
     replay.advance(); // token #3 completes but token #2 stays failed
-    assert(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
-    assert((destroyed==std::vector<int>{10}));
-    assert(!queue.drain(waitIdle,close,destroy));
-    assert((destroyed==std::vector<int>{10}));
+    AIVERSE_TEST_CHECK(!queue.collect(begin,completed,close,waitIdle,destroy,failed));
+    AIVERSE_TEST_CHECK((destroyed==std::vector<int>{10}));
+    AIVERSE_TEST_CHECK(!queue.drain(waitIdle,close,destroy));
+    AIVERSE_TEST_CHECK((destroyed==std::vector<int>{10}));
     idle=true; // synthetic explicit full-GPU completion barrier
-    assert(queue.drain(waitIdle,close,destroy));
-    assert((destroyed==std::vector<int>{10,20,30}));
-    assert(queue.stats().unresolvedFailedFences==0);
+    AIVERSE_TEST_CHECK(queue.drain(waitIdle,close,destroy));
+    AIVERSE_TEST_CHECK((destroyed==std::vector<int>{10,20,30}));
+    AIVERSE_TEST_CHECK(queue.stats().unresolvedFailedFences==0);
 
     const auto failures=std::count_if(trace.begin(),trace.end(),[](const auto& e) {
         return e.kind==RetirementDiagnosticKind::Failed;
@@ -62,7 +62,7 @@ int main() {
     const auto recoveries=std::count_if(trace.begin(),trace.end(),[](const auto& e) {
         return e.kind==RetirementDiagnosticKind::RecoveredAfterIdle;
     });
-    assert(failures==1 && recoveries==1);
-    assert(replay.events().size()>=5);
-    assert(replay.status(999)==Status::Failed); // unknown token never completes
+    AIVERSE_TEST_CHECK(failures==1 && recoveries==1);
+    AIVERSE_TEST_CHECK(replay.events().size()>=5);
+    AIVERSE_TEST_CHECK(replay.status(999)==Status::Failed); // unknown token never completes
 }

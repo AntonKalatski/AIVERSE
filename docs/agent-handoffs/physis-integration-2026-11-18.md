@@ -1,8 +1,8 @@
 # PHYSIS Stage 5 — generic Simulation and persistence bridge (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation`  
-**Implementation SHA:** `eb598fa5edb32550c4fcf043add5827c5eaf3095`  
-**Handoff commit:** use `git log -1 -- docs/agent-handoffs/physis-integration-2026-11-18.md`.  
+**Branch:** `feature/physis-nature-simulation`
+**Implementation SHA:** `eb598fa5edb32550c4fcf043add5827c5eaf3095`
+**Handoff commit:** use `git log -1 -- docs/agent-handoffs/physis-integration-2026-11-18.md`.
 **Status:** code, test source and CMake target committed. **COMPILATION, CTEST, CI AND LIVE INTEGRATION NOT RUN** in the current connector-only environment.
 
 ## Delivered

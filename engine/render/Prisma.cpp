@@ -514,7 +514,7 @@ void Prisma::shutdown() {
         throw std::runtime_error("Prisma shutdown: GPU retirement barrier failed");
     // Existing host teardown must synchronize the GPU before shutdown.
     // Unlike per-frame resize, shutdown is a full GPU idle safe point.
-    fog_.shutdown(*dev_);fogSettings_={};fogScene_.clear();
+    fog_.shutdown(*dev_);fogSettings_={};fogScene_.clear();fogTime_=fogEpoch_=-1;
     sky_.shutdown(*dev_);skySettings_={};skyTime_=skyEpoch_=-1;clearPhysicalSkyAdvection();
     releaseRetiredSizesAfterGpuIdle();
     for (auto& s : sizes_) destroySized(s);
@@ -585,7 +585,7 @@ void Prisma::setImageLoader(ImageLoader fn) {
 void Prisma::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
     std::vector<std::string> local;
     setSettings(parsePrisma(game, map, issues ? issues : &local));
-    fogSettings_={};fogScene_.clear();
+    fogSettings_={};fogScene_.clear();fogTime_=fogEpoch_=-1;
     skySettings_=parsePhysicalSky(game,map,issues?issues:&local);
     skyEpoch_=-1;skyTime_=-1;clearPhysicalSkyAdvection();
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
@@ -1505,9 +1505,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         } else if(!sky_.lastError().empty())error_=sky_.lastError();
     }
     if(fogSettings_.enabled&&hdrFrame_) {
+        const double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if(fogEpoch_<0)fogEpoch_=now;
         const Target fogTarget=target(set,kLocalFog,w,h);
         if(fog_.draw(dev,f,fogSettings_,fogScene_,int(quality_),scene.tex,depthFor(set,w,h),
-                     fogTarget.tex,depthFor(set,w,h,true),triangle_)) {
+                     fogTarget.tex,depthFor(set,w,h,true),triangle_,fogTime_>=0?fogTime_:now-fogEpoch_)) {
             scene=fogTarget;++stats_.passes;++stats_.effects;
         } else if(!fog_.lastError().empty())error_=fog_.lastError();
     }

@@ -1,6 +1,6 @@
 # AIVERSE — additive scene collision namespaces
 
-Branch: `feature/ecs-static-prefab-scene-integration`  
+Branch: `feature/ecs-static-prefab-scene-integration`
 Status: **optional source implementation; native build and CTest pending**.
 
 ## Problem solved

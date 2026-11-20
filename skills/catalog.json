@@ -1874,6 +1874,55 @@
       "keywords": []
     },
     {
+      "id": "aiverse-lens",
+      "package": null,
+      "path": "skills/visuals/aiverse-lens/SKILL.md",
+      "domain": "workflow",
+      "summary": "LENS camera scene authoring, MCP validation and native Studio PNG capture",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "apps/editor/core/LensOps.cpp",
+      "keywords": [
+        "lens",
+        "camera",
+        "cameras",
+        "capture",
+        "offscreen",
+        "minimap",
+        "камер",
+        "захват",
+        "линз"
+      ]
+    },
+    {
+      "id": "aiverse-lens-native",
+      "package": null,
+      "path": "skills/visuals/aiverse-lens-native/SKILL.md",
+      "domain": "workflow",
+      "summary": "LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/camera-system.md",
+      "keywords": [
+        "lens",
+        "native",
+        "camera",
+        "replay",
+        "snapshot",
+        "gpu",
+        "capture",
+        "натив",
+        "камер",
+        "захват"
+      ]
+    },
+    {
       "id": "aiverse-library-showcase",
       "package": "library-showcase",
       "path": "skills/workflow/aiverse-library-showcase/SKILL.md",
@@ -1902,6 +1951,31 @@
       "requiresOwner": null,
       "source": "tools/libraries/project_checks.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-lighting",
+      "package": null,
+      "path": "skills/visuals/aiverse-lighting/SKILL.md",
+      "domain": "workflow",
+      "summary": "Light entity authoring, probe GI and Luma through native MCP and shared runtime",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/dynamic-gi.md",
+      "keywords": [
+        "lighting",
+        "light",
+        "luma",
+        "gi",
+        "probes",
+        "mcp",
+        "освещение",
+        "свет",
+        "лампа",
+        "пробы"
+      ]
     },
     {
       "id": "aiverse-localization",
@@ -2816,6 +2890,33 @@
       ]
     },
     {
+      "id": "aiverse-physis-authoring",
+      "package": null,
+      "path": "skills/world/aiverse-physis-authoring/SKILL.md",
+      "domain": "workflow",
+      "summary": "PHYSIS map configuration through revision-checked MCP operations and Undo/Redo",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "apps/editor/core/PhysisOps.cpp",
+      "keywords": [
+        "physis",
+        "authoring",
+        "mcp",
+        "map",
+        "config",
+        "validate",
+        "weather",
+        "wind",
+        "gravity",
+        "настройка",
+        "погода",
+        "карта"
+      ]
+    },
+    {
       "id": "aiverse-place-server",
       "package": null,
       "path": "skills/network/aiverse-place-server/SKILL.md",
@@ -3356,6 +3457,32 @@
       "keywords": []
     },
     {
+      "id": "aiverse-scene-entities",
+      "package": null,
+      "path": "skills/editor/aiverse-scene-entities/SKILL.md",
+      "domain": "workflow",
+      "summary": "Native scene entity and component MCP authoring with stable light identity",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/studio-light-entities.md",
+      "keywords": [
+        "scene",
+        "entity",
+        "component",
+        "inspector",
+        "hierarchy",
+        "transform",
+        "mcp",
+        "сущность",
+        "компоненты",
+        "лампа",
+        "свет"
+      ]
+    },
+    {
       "id": "aiverse-screens",
       "package": "screens",
       "path": "skills/ui/aiverse-screens/SKILL.md",
@@ -3753,6 +3880,31 @@
       ]
     },
     {
+      "id": "aiverse-strata",
+      "package": null,
+      "path": "skills/visuals/aiverse-strata/SKILL.md",
+      "domain": "workflow",
+      "summary": "STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/strata.md",
+      "keywords": [
+        "strata",
+        "страта",
+        "virtual",
+        "geometry",
+        "meshlet",
+        "streaming",
+        "lod",
+        "batching",
+        "батчинг",
+        "геометрия"
+      ]
+    },
+    {
       "id": "aiverse-strategic-campaign",
       "package": null,
       "path": "skills/gameplay/aiverse-strategic-campaign/SKILL.md",
@@ -4070,6 +4222,20 @@
         "биомы",
         "ландшафт"
       ]
+    },
+    {
+      "id": "aiverse-texture-rhi",
+      "package": null,
+      "path": "skills/visuals/aiverse-texture-rhi/SKILL.md",
+      "domain": "workflow",
+      "summary": "Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/texture-rhi.md",
+      "keywords": []
     },
     {
       "id": "aiverse-themes",
@@ -5516,6 +5682,20 @@
       "backendDependencies": [],
       "requiresOwner": null,
       "source": "modules/rts/RtsModule.h",
+      "keywords": []
+    },
+    {
+      "id": "studio-ui",
+      "package": null,
+      "path": "skills/editor/studio-ui/SKILL.md",
+      "domain": "workflow",
+      "summary": "HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/studio-design-system.md",
       "keywords": []
     }
   ]

@@ -7,6 +7,18 @@ description: Reuse AIVERSE PHYSIS for deterministic weather, wind, gusts, storms
 
 **Never reimplement PHYSIS inside an FPS/RTS/RPG module.** PHYSIS core must remain genre-independent, renderer-independent and headless. Read `docs/physis.md`, `engine/physis/AGENTS.md`, and `docs/physis-nereid-terraweave-integration.md` before editing.
 
+## Agent authoring and current verification
+
+For MCP map configuration use `skills/world/aiverse-physis-authoring/SKILL.md`:
+`physis_get`, `physis_validate`, `physis_set`. They edit authored documents only.
+For physical sky, volumetric clouds/god rays and sphere/OBB fog/reveal, use
+`skills/visuals/aiverse-prisma/references/atmosphere.md`; PRISMA owns rendering.
+
+Historical NOT RUN notes below are stage-local. Latest scoped evidence is in
+`docs/agent-handoffs/physis-stage107-qa-fixes-2026-11-20.md` (30+2 native tests)
+and `docs/qa/physis-gui-resume-2026-11-20.md` (demo ticks 25→26→86→25).
+Neither certifies full live-host or reference-image visual acceptance.
+
 ## Ownership
 
 - **PHYSIS:** atmospheric/weather climate, wind/gust/shelter, storms (hurricanes/tornadoes), snow/wetness/ice, fire/quakes, configurable gravity and environmental force **policy**.

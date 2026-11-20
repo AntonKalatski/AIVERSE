@@ -1,9 +1,9 @@
 # PHYSIS Stage 7 — external water authority switch (2026-11-18)
 
-**Branch:** `feature/physis-nature-simulation` (draft PR #25), based on `feature/universal-entity-inspector-fps`.  
-**Code and test commits:** `509a622ccb3cd3aeb4839611f6b3327d2adc05bd`, `fc4099ad8dde64cf863c79982ef30c25e70fa003`, `4c5292022e1dc276322239c9ea96f09d6ba684fc`, `456121681135878575e44c291ffafbad69e1d511`, `2ec64b1d18b60069ffe3fe63c8f75b0bbf0ca809`, `b5a3e00ec44614ba214eb6f3e0133a1517bd7b75`, `cde7a3cd397b3710ded94c296f08322dddd3707c`.  
-**Documentation commits:** `db51be68c5f90d963b2ea641ee07582b73682c65`, `bc7ec59a0ca5d6f8c4b6372d2ae3db0b9c28167c`, `f3200da09c76975b21eaa8374c9b6ff3219120f3`, `6dd71c4112b29975359332f5c3cef9f48d047ffb`.  
-**Stage 6 ownership handoff:** `docs/agent-handoffs/physis-ownership-terra-water-2026-11-18.md`.  
+**Branch:** `feature/physis-nature-simulation` (draft PR #25), based on `feature/universal-entity-inspector-fps`.
+**Code and test commits:** `509a622ccb3cd3aeb4839611f6b3327d2adc05bd`, `fc4099ad8dde64cf863c79982ef30c25e70fa003`, `4c5292022e1dc276322239c9ea96f09d6ba684fc`, `456121681135878575e44c291ffafbad69e1d511`, `2ec64b1d18b60069ffe3fe63c8f75b0bbf0ca809`, `b5a3e00ec44614ba214eb6f3e0133a1517bd7b75`, `cde7a3cd397b3710ded94c296f08322dddd3707c`.
+**Documentation commits:** `db51be68c5f90d963b2ea641ee07582b73682c65`, `bc7ec59a0ca5d6f8c4b6372d2ae3db0b9c28167c`, `f3200da09c76975b21eaa8374c9b6ff3219120f3`, `6dd71c4112b29975359332f5c3cef9f48d047ffb`.
+**Stage 6 ownership handoff:** `docs/agent-handoffs/physis-ownership-terra-water-2026-11-18.md`.
 **Verification:** source edits and tests written through GitHub connector. **NO C++ compilation, CTest, CI, editor or runtime executed.**
 
 ## Implementation

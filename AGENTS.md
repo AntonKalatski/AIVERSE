@@ -25,6 +25,19 @@ legacy gameplay/save compatibility until a deliberate, tested migration; do not
 claim source APIs or static exports prove live simulation. PRISMA/PHYSIS/SpectraFX
 retain sky/weather/VFX ownership rather than duplicating them in Terra or NEREID.
 
+## Dynamic indirect GI (lighting integration branch, 2026-11-20)
+
+Reuse `engine/render/GiMainCpuBridge.h` / `GiMainGpuBridge.h` and
+`Renderer3D::setDynamicGiOverlay`; do not create genre-specific GI engines.
+Native host: `apps/renderbench/DynamicGiHost.h`; contracts: `docs/dynamic-gi.md`.
+Read the latest `docs/agent-handoffs/lighting-main-stage*-2026-11-20.md`;
+Stage 24 adds automatic native animated snapshots. Shared pose extraction:
+`GiModelGeometry.h`; Luma HDR contract: `docs/luma-native-lighting.md`.
+Compute is bounded and fence-backed; larger scenes use explicit CPU fallback.
+Metal/desktop GL pixels and native glTF host are checked. Vulkan SPIR-V compiles;
+Vulkan/mobile GPU acceptance and production performance remain separate gates.
+All builds for this task must stay on KINGSTON, as required by the owner.
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
@@ -44,7 +57,360 @@ retain sky/weather/VFX ownership rather than duplicating them in Terra or NEREID
 
 **Agent handoff:** Every PRISMA implementation stage MUST have a **separate, committed** `docs/handoffs/prisma-stage-XX.md` on its working branch, naming code changes, public APIs, real test commands/results, untested paths, current SHA and precise next step. Never mark unrun tests PASS. SpectraFX has a separate living handoff `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`; do not overwrite it with PRISMA changes. Any shared-render integration must be documented in both systems' design docs and note the exact common interface.
 
+## Все объекты сцены — Entity (обязательное правило, 2026-11-20)
+
+Любой объект сцены/мира должен быть entity с устойчивой идентичностью и
+компонентами. Это относится в том числе к источникам света, камерам, мешам,
+коллайдерам, точкам появления, VFX, звуковым источникам и триггерам. Нельзя
+создавать отдельную модель объектов для каждого типа или жанра.
+
+- Hierarchy, Inspector, выбор во viewport, transform, Undo/Redo и сохранение
+  должны обращаться к одной entity и её компонентам.
+- Свет — компонент entity; панель Lighting является представлением/редактором
+  этих же данных, а не владельцем отдельного списка независимых объектов.
+- При миграции старых форматов разрешены совместимые адаптеры с явно указанным
+  каноническим владельцем; запрещены две независимо изменяемые копии состояния.
+  Не объявлять миграцию завершённой, пока старые объекты лишь отображаются как
+  строки Hierarchy без единой идентичности, компонентов и операций.
+- Presentation-компоненты и GPU-ресурсы не переносить в авторитетную
+  детерминированную симуляцию; сохранять существующие ECS-контракты проекта.
+- Общее окружение/настройки сцены и определения ресурсов сами по себе не являются
+  размещёнными объектами. Любой их экземпляр в мире подчиняется правилу entity.
+
+## Agent lighting/entity tools (2026-11-20)
+
+Use `skills/editor/aiverse-scene-entities/SKILL.md` for native scene entities and
+component edits, and `skills/visuals/aiverse-lighting/SKILL.md` for Light/GI/Luma.
+The existing AIVERSE MCP exposes scene_entity_list/get, scene_component_set,
+scene_light_create/delete and scene_render_lighting_get/set through the shared
+Workspace registry. Use returned entity IDs, native component validation and
+map_save; never create independent light state. See docs/studio-light-entities.md.
+
+## HTML5 Studio UI design system (all future editor windows)
+For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
+**Studio UI v1** style library, not a panel-specific visual language:
+- Handbook: \`docs/studio-design-system.md\`; implementation: \`apps/studio-web/src/ui/\`.
+- Colors, spacing, typography, control states: \`apps/studio-web/src/theme/tokens.css\` (\`--au-*\` tokens).
+- React components: \`StudioPanel\`, \`StudioSection\`, \`StudioButton\`, \`StudioIconButton\`,
+  \`StudioField\`, \`StudioInput\`, \`StudioSelect\`, \`StudioBadge\`, \`StudioAlert\`,
+  \`StudioEmptyState\`, \`StudioTabs\`, \`StudioListRow\`, etc. Import from \`src/ui\`.
+- Generate new panels via \`python3 tools/studio/new_panel.py --id world_stats --title "World Statistics" --area right\`; generated windows already use the UI library.
+- Agent skill: \`skills/editor/studio-ui/SKILL.md\`. Every change needs a new stage handoff under \`docs/handoff/studio-html5/\`.
+- No raw hard-coded palette/button/input styles in new panels, no ImGui additions and no browser-side project file writes. Preserve the native Renderer3D Metal viewport and \`src/bridge.ts\` allowlist.
+- Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
+
+
 ## AIVERSE SpectraFX (universal VFX, in progress)
+
+**Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
+**Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
+**System documentation:** [docs/spectrafx.md](docs/spectrafx.md).
+
+<!-- Historical incoming Inspector/SpectraFX branch contracts; current integration gates still apply. -->
+**Latest implementation handoff (Stage 44, actual standalone tests RUN):**
+[docs/agent-handoffs/spectrafx-stage-44-offline-diagnostics-tested-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-44-offline-diagnostics-tested-2026-11-19.md).
+New `tests/vfx_spfx_diagnostics_test.cpp` and
+`aiverse_vfx_spfx_diagnostics_test` (CTest:
+`vfx_spfx_diagnostics`, label `SpectraFX`) cover
+raw SPFX V2 checkpoint CRC, bad magic/version/size,
+redacted/opted-in JSON, fixed 3-entry ZIP STORE
+structure and CRC. The offline CLI and test were
+compiled and actually executed on GCC 14.2 Linux,
+using byte-exact GitHub source mirrors (six
+`git hash-object` comparisons passed), with minimal
+`render::float4`/checkpoint ABI stubs. C++20
+`-Wall -Wextra -Werror`, real Python `zipfile`
+extraction, CLI valid/corrupt/missing-file exit
+codes, standalone CMake/CTest **1/1 PASS**, and
+ASAN+UBSAN of portable diagnostics also PASS.
+A separate Linux/macOS workflow is now available:
+`.github/workflows/spectrafx-diagnostics.yml`,
+and `.github/workflows/spectrafx-validation.yml`
+builds the new focused test target.
+
+**NOT VERIFIED:** full AIVERSE/CMake project
+compilation, editor/Metal/Objective-C++ shaders,
+GPU checkpoint readback and recovery, live device
+testing or CPU/GPU parity. GitHub Actions checks
+were still queued/pending when inspected. Do not
+claim those tests passed. Do not merge `main` or
+change other agents' branches without instruction.
+Keep the separate Stage 44 handoff and all existing
+genre-neutral ECS presentation ownership rules.
+
+
+**Latest implementation handoff (Stage 43, source committed; actual native tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md).
+The offline CLI/editor now create one **explicit local SAFE ZIP**
+diagnostic bundle, at most 128 KiB, with fixed manifest,
+checkpoint summary and sanitized preview timeline JSON.
+Never add raw `.spfx` GPU particle/VM state, source filenames,
+world bounds, exact RHI identifiers or unrelated editor history
+to this safe ZIP. Raw SPFX remains a separate, sensitive export.
+Safe filenames exclude absolute GPU frame serials; sensitive
+report opt-ins reset on group/pool change.
+
+The public native `GpuCaptureRequestMailbox` is a same-owner-thread
+non-owning editor/native request slot. Editor UI can QUEUE a
+selected GPU group and request release, but it never calls GPU
+readback/compute/reset directly. The native render host claims the
+request before the scene pass and uses the existing one-at-a-time
+`GpuPoolCaptureHost`; Stage 32 shared readback budgets,
+Stage 35 completed-fence quarantine, Stage 40 checked buffer
+staging and Stage 42 current revision checks remain mandatory.
+Detach Editor's telemetry/capture/recovery pointers BEFORE the
+native pool, mailbox or Device is destroyed. Never store graphics
+handles or visual timelines in authoritative ECS, and never
+add genre-specific VFX code.
+
+`GpuPoolRecoveryHost` now supports a bounded GPU reset retry
+pump at the native gfx Device pre-pass phase, no background
+work or busy GPU loop: exponential host-frame cooldown up to
+32 frames. Events expose retry failure counts and earliest
+owner frame; editor can display them and queue only reset
+intent. Failed/lost graphics Device still requires an explicit
+NEW platform GPU Device; live particles are not recovered.
+Stage 43 C++/ObjC++/MSL builds, CTest, ZIP extraction,
+CLI execution, editor UI and Metal device tests have
+NOT RUN. Keep separate dated handoffs, preserve other
+agents' changes and do not merge to main without request.
+
+
+**Latest implementation handoff (Stage 42; committed source, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md).
+`SpectraDiagnosticReport.h` now generates **privacy-redacted**
+V2 `.spfx` JSON by default: NO raw particle/VM data,
+world-coordinate bounds, exact GPU frame/revision/CRC identifiers
+or original file path. Only explicit `includeWorldBounds` /
+`includeGpuIdentifiers` options reveal their respective
+aggregate fields. The offline inspector CLI defaults to
+redaction and writes local JSON only with `--report`; it
+never auto-uploads. Raw `.spfx` itself remains SENSITIVE.
+Editor has two separate opt-in actions: Save safe JSON report
+and Save RAW GPU checkpoint (sensitive), both scoped to the
+selected GPU group with fresh V2 snapshot eligibility.
+
+`GpuPoolWorld::gpuGroupCount/gpuGroupSummary` provide safe
+per-group status, and native `GpuPoolCaptureHost::requestNext`
+selects ONE capture by RoundRobin, largest prior particle
+estimate, or missing/stalest checkpoint. Continue to enforce
+Stage 32 shared readback limits, current-revision capture
+freshness and Stage 35 completed-GPU-fence slot quarantine.
+Only the editor's OWN group-0 preview may be scheduled by
+its UI; external render-host pools are non-owning telemetry.
+
+`GpuPoolRecoveryHost` now supports a queued
+`requestPresentationReset` with explicit ResetRequested phase,
+distinct ResetRetryRequired/DeviceRecreationRequired status,
+stable monotonic transition sequences and visible reset/rebuild
+attempt counters. It does not allocate a Device, operate
+asynchronously or restore live GPU particles; the native host
+must execute reset in an active graphics frame outside encoders
+or recreate a distinct healthy Device, preserving the old
+Device until old resources are released. Renderer/ECS source
+handles remain entirely presentation-only and genre-neutral.
+Stage 42 C++/Metal compilation, CTest, CLI execution, editor
+screenshots, GPU multi-group capture and hardware recovery
+have NOT RUN. Keep mandatory handoffs; do not merge to main
+or overwrite parallel agents' work without instruction.
+
+
+**Latest implementation handoff (Stage 41, source-only; native tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md).
+Use `engine/fx/SpectraCheckpointInspector.h` and
+`tools/spectrafx/inspect_spfx.cpp` for offline **V2 only**
+`.spfx` diagnostics. The bounded native reader distinguishes
+magic, header, version, payload length, truncation/trailing
+bytes and CRC errors, then reports finite/live/dead GPU
+particle properties without ever opening a graphics Device.
+This is NOT a portable savegame or GPU state importer.
+
+The native presentation layer now exports
+`GpuPoolCaptureHost` through `<aiverselib/genre/SpectraFX.h>`.
+It holds ONE capture request, submits async readback ONLY after
+pool.step and before the render pass, and polls on the Device
+owner thread at the next beginFrame before any new particle
+mutation. It rejects stale or incorrect pool-lifetime epochs
+and request IDs and uses weak callback ownership with a
+600-graphics-frame poll limit. Source GPU state must remain
+frozen while a request is queued/in flight/ready; the
+`examples/spectrafx/native_ecs_attachments.h` sample now
+models this without writing renderer handles into gameplay
+ECS. Cancel before rollback, shutdown or gfx::Device
+recreation; callback cancellation DOES NOT cancel RHI GPU
+reads, which must settle their Stage 32 budget normally.
+`GpuPoolRecoveryHost` also rejects replacing an existing
+Device with the exact same old graphics object.
+**Stage 41 native compilation, the CLI execution, CTest,
+Metal readback and device-loss smoke tests have NOT RUN.**
+Do not claim successful tests or modify main without request.
+Keep distinct Stage 35/40 ownership, readback and kill-fence
+rules and separate agent handoff for every stage.
+
+
+**Latest implementation handoff (Stage 40, source committed; execution NOT verified):**
+[docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md).
+A truly frozen Metal frame with no births/kills/live VM parameter
+changes now performs geometry gather without Update VM and without
+advancing the GPU particle-state revision. The opt-in SpectraFX editor
+can **Freeze & capture GPU state** using async per-group
+`requestGpuCheckpoint` and only offers binary export for complete,
+current-revision data. V2 diagnostic `.spfx` binaries use a 48-byte
+header and CRC32 validator; legacy V1 was 40 bytes and is superseded.
+These are NOT native game saves or GPU replay/timeline state.
+
+Metal Spawn/VM/Gather input buffers now use checked storage uploads.
+A partial upload/compute-begin failure keeps pending births/slots,
+invalidates checkpoints, disables stale draws/VM-error diagnostics
+and retries inputs on the next GPU step. The State-32 shared readback
+budget and State-35 completed-fence quarantine remain mandatory.
+`GpuPoolRecoveryHost` preserves its CPU-only effect catalog across
+failed replacement-Device imports; the platform host owns the
+actual new graphics Device and old GPU particles are NOT restored.
+The opt-in VFX load policy now uses hysteresis with a recovery
+threshold (default 85%) instead of flapping near particle/readback
+limits. Never store renderer state in gameplay ECS or add FPS/RTS
+special cases. Do not assert GPU parity or performance from source.
+Stage 40 C++/Metal compile, CTest, editor screenshots, checkpoint
+CRC fault checks, GPU readback and Device-loss recovery have NOT RUN.
+Do not modify main or force-push another agent's branch without
+explicit request. Read the dated Stage 40 handoff before further work.
+
+
+**Latest implementation handoff (Stage 39; functional source, verification deferred):**
+[docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md).
+The new `GpuPoolRecoveryHost` is a **native renderer-owned**
+status/event coordinator for GPU-reset retry and explicit fresh
+graphics-Device recreation. It never owns/replaces platform
+`gfx::Device` autonomously and never restores living GPU
+particles or old presenter source generations. `PoolRecoveryEvent`
+reports exact actions and accepted reset group counts; the game host
+must keep the OLD Device alive through old-pool shutdown.
+The CPU-only `PoolRecoveryManifest` rebuilds effect definitions.
+`GpuPoolWorld::exportFreshCheckpoint` exports **only** fully
+complete, CURRENT GPU revision binary diagnostics with no pending
+births/kills/reset/readback and a strict <=528KiB+header bound.
+This is NOT a portable ECS save, rollback file or replay timeline.
+The editor can save the blob only when eligible, and never
+starts an implicit GPU readback for the Save button.
+`PoolLoadSheddingPolicy` opt-in throttles continuous births under
+estimated particle/readback pressure, rotates source start for
+fairness, and reserves bursts for manual one-shot VFX. Avoid
+genre-specific throttling, hard-coded RTS/FPS pipelines, unsafe
+GPU slot recycling, or a blanket claim of measured performance.
+No CMake/ObjC++/Metal compiler, CTest, editor launch, real
+GPU export or device-loss test was run for this stage. Continue
+the mandatory dated per-stage handoff and do not merge to main
+without explicit instruction.
+
+
+**Latest implementation handoff (Stage 38, source implementation; tests still deferred):**
+[docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md).
+Multi-group Metal rollback now records `PoolResetReport` with the
+count of groups whose reset uploads were accepted, retry/failure state
+and a latched Device-loss signal. If any group rejects its reset,
+`GpuPoolWorld::presentationBlocked()` prevents starting new VFX
+frames, creating sources and drawing old GPU vertices until a
+successful safe-frame retry. This is a restartable ordered GPU command
+*preparation*, NOT cross-group hardware atomicity. On irrecoverable
+device loss, export `PoolRecoveryManifest` (compiled effect
+definitions, policies, parameter defaults only), release the old
+pool while the OLD gfx Device still lives, then import into a new
+pool on a healthy Device. Live particles and source generations
+do NOT survive. Explicitly reconstruct ECS attachments from the
+committed World.
+
+Native games may use new `GpuEcsPoseInterpolator` from
+`<aiverselib/genre/SpectraFX.h>` to store only two renderer-side
+committed pose snapshots and interpolate adjacent ticks of the SAME
+`Entity::packed()` generation. Do not place float render poses,
+GPU tokens or physical particle handles in authoritative ECS.
+The editor's last 180 GPU preview attempts are telemetry-only
+and can be copied as JSON; they are NOT a scrub/replayable particle
+snapshot. Forward-only timeline behavior is unchanged. C++/Metal
+build, CTest, on-device recovery, editor launch, screenshots and
+performance testing have NOT RUN. Preserve SpectraFX/Prisma
+ownership boundaries and all handoff documents. Do not merge to
+main or overwrite concurrent agents without user request.
+
+
+**Latest implementation handoff (Stage 37, features source, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md).
+The read-only `GpuEcsAttachmentPresenter` now stages new source handles
+and checks binding revisions, source capacity, finite poses and detach
+preconditions before retiring old attachments. GPU hardware failure
+during a later detach can still leave a partial application, so it
+returns false and requires safe retry; do not claim cross-GPU
+transactions are atomic. Use `ComputeParticles::tryClear()` for
+checked Metal reset **inside an active Device graphics frame**,
+outside all encoders. Partial reset sets a dirty state and blocks
+new GPU births/steps/checkpoints until retry. The pooled rollback
+must not advance/replay visual sources on rejected reset. Failed
+per-group steps must not draw old GPU vertices. The editor Metal
+timeline only advances forward with bounded 1/60 steps (300 queued),
+tracks actual visual elapsed time, and has explicit checked restart.
+Metal device health/categorized upload, compute and reset failures
+are exposed without inventing successful GPU operation. This stage
+has NOT RUN native C++, MSL, CTest, editor or on-device Metal checks.
+Preserve Stage 32 checkpoint budget, Stage 35 kill fences and
+Stage 36 scatter-kill ordering. Do not alter main without request.
+
+
+**Latest implementation handoff (Stage 36, functional source, execution NOT verified):**
+[docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md).
+GPU kill mode 6 operates on a compact uint32 physical-slot list at
+compute buffer slot 14, dispatched **before** Spawn/Integrate/Compact,
+replacing fragmented per-range Metal state blits. The Stage 35
+`completedFrameSerial()` quarantine remains mandatory before
+recycling dead physical slots. Do not turn GPU-kill submission into
+a CPU-only free-list update, and do not claim performance improvement
+without hardware measurements. A reusable native ECS attachment
+example (not an executable) is in
+`examples/spectrafx/native_ecs_attachments.h` with README.
+The editor's Metal preview gains speed and single-frame stepping,
+without modifying gameplay ECS, production CPU preview or simulation
+time. Clang/CMake, MSL, CTest, editor launch and Metal hardware
+execution have NOT RUN. Preserve earlier handoffs and avoid genre
+coupling, force pushes or unrequested changes to main.
+
+
+**Latest implementation handoff (Stage 35, source-only, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md).
+The working SpectraFX branch already contained main at Stage 35 start
+(main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature
+`4a50d05329840e713d6179a1519fb2f16a8d8604`); no merge/rebase
+was performed. New native `GpuEcsAttachmentPresenter` is a read-only
+adapter for the existing `SpectraSourceComponent`; only presentation
+owns generation-safe source IDs, no genre-specific ECS changes.
+Explicit `syncCommitted` checks for decreasing ticks, requiring
+`resetForRollback()` to clear the entire shared presentation pool.
+Non-unit ECS source scale is **not** silently approximated on Metal:
+the strict pooled path rejects it. Metal source-kill uploads now use
+`gfx::Device::updateStorageBufferChecked`; killed slots are not
+recycled until `completedFrameSerial()` confirms successful GPU
+frame completion. Other RHIs default to unsupported. The editor's
+opt-in Metal GPU preview has Pause/Play, Freeze, Loop and Stop.
+**NOT RUN:** compiler, Metal shaders, device tests, editor screenshots,
+CTest, fault injection, performance. Preserve Stage 34 source ownership,
+Stage 32 readback budgets and all agent handoffs. Never force-push,
+merge to main or claim production GPU validation based on these writes.
+
+
+**Latest implementation handoff (Stage 34, source-only; tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md).
+In `SpectraGpuPoolWorld`, persistent presentation sources are generation-safe
+`PoolSourceId` handles with optional transform snapshots and bounded
+rate/distance emissions. `stopSource(id,true)` selectively cancels/invalidates
+that source's GPU physical slots (or tracked CPU FX handles); `retireSource`
+alone does **not** kill existing particles. Tagged GPU slot reuse is deferred
+until an ordered compute step. The editor now has explicit opt-in Metal
+`fx_graph_preview {gpu:true}` for the strict GPU subset; CPU preview remains
+the default. No native C++/Metal compilation, scene preview, GPU fences, CTest
+or loss/parity tests have actually run for this stage. These sources MUST NOT
+be promoted as validated or used in authoritative gameplay/ECS. Independent
+agents must preserve this feature's scene-pass ordering, generation keys,
+pending GPU kills and device lifetime when editing neighboring modules.
+
 
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).
 **Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).
@@ -96,6 +462,399 @@ No local checkout/build was available for this stage. Continue
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` after
 each future implementation stage.
 
+**Stage 12 — SpectraFX GPU sparse range and failure-state corrections
+(source committed, tests NOT RUN):** `engine/fx/SpectraGpuParticles.*`
+limits compute and indexed drawing to the occupied slot prefix
+(`ComputeStats::submittedSlots`), skips empty-pool compute and records
+loss during GPU→CPU fallback. This is not compaction. `RequireGpu`
+never silently becomes CPU after a device-health failure.
+`GraphRuntime::step` propagates backend readiness and diagnostics.
+The recording RHI test now covers multiple-frame slot reuse and
+clear/health failures; real Metal validation is still required.
+The focused `.github/workflows/spectrafx-validation.yml` is a
+CI gate for headless regression and editor compilation, **not**
+proof of a real shader/GPU render. Mandatory continuation log:
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
+**Stage 13 — SpectraFX Metal dense vertex gather (source committed,
+NOT TESTED):** `engine/fx/SpectraGpuShaders.h` uses compute storage
+slot 4 for a per-frame CPU-published list of live particle slot IDs,
+and `Uniforms.meta.w` for the post-step alive count. The shader
+gathers physical GPU particle state into contiguous GPU quad vertices;
+`ComputeParticles` draws exactly the live count. No GPU state is
+read back to CPU, but the live-slot list costs 4 bytes per live
+particle per frame and the CPU still owns lifetime bookkeeping.
+**This is NOT GPU-resident prefix-sum/atomic compaction or indirect
+drawing.** `ComputeStats::submittedSlots` now means dense emitted
+quads, superseding Stage 12 sparse-prefix semantics. GPU implementation
+and recording tests have been committed but **real Metal GPU execution
+and CTest have not been verified**. Continue the fixed handoff protocol
+in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` and
+keep existing CPU/native RTS/FPS behavior unchanged by default.
+
+**Stage 14 — SpectraFX opt-in GPU-authored indirect draw (source committed,
+NOT VERIFIED):** The general `gfx::Device` adds
+`supportsGpuAuthoredIndirectDraw()` (default false; Metal reports
+support via plain indexed indirect, not experimental ICB). Only when
+`ComputeEmitterDesc::gpuIndirect` or
+`GraphRuntimeOptions::gpuIndirect` is explicitly true and the RHI
+supports the method may the restricted additive-sprite path use
+GPU atomic alive compaction and GPU-authored indirect arguments.
+Shader compute storage slots 5/6 are 4-byte alive counter and
+20-byte draw args; MSL and future GLSL sources share the contract.
+Legacy CPU-published gather, full CPU effects and all genre clients
+remain defaults. CPU still owns physical particle lifetime/slot
+bookkeeping. If indirect submission fails, skip rather than emit
+an unsafe CPU draw with stale vertices.
+`tests/vfx_metal_compaction_smoke.mm` is a real Metal shader smoke
+on macOS (no device => CTest SKIP); it does not verify image parity.
+No real Metal run or passing CI result was available while writing
+this stage. Continue the required separate handoff file after every
+bounded implementation stage. Do not claim GPU-resident lifecycle,
+FPS/RTS production integration or GPU performance measurements.
+
+**Stage 14B — universal cross-instance SpectraFX batching (source
+committed, not build-verified):** `engine/fx/SpectraBatchWorld.{h,cpp}`
+owns a *single shared* `fx::ParticleSystem` and reuses the
+`ParticleSystem::batchFor` material key (GPU atlas texture handle,
+blend, shader-graph identity, primitive type). Independent graph
+instances can opt into the same context via
+`GraphRuntime::initEffect(BatchWorld&, ...)` or
+`GraphRuntime::initGraph(BatchWorld&, ...)`. The common host must
+call `BatchWorld::setView/update/draw` exactly once per frame;
+per-instance `GraphRuntime::step/draw` must NOT re-render/tick
+the shared particle world. `GraphRuntime::clear/shutdown` kill
+only their own effect handles, not the whole scene. One
+`drawIndexed` call can cover particles of different effects and
+UV rects sharing one atlas; incompatible blend/pipeline states or
+mesh vs quad must remain separate, and large runs split at the
+16-bit index cap. Do **not** create a fresh CPU particle renderer
+per effect source in native integrations that need batching.
+Existing FPS/RTS one-world renderers already share this behavior.
+GPU graph execution remains experimental; the new shared API
+does not coalesce separate Metal compute emitters, and rejects
+`RequireGpu` rather than silently changing the requested backend.
+The `vfx_shared_batch_world` regression source exists, but no
+confirmed CTest result was available when authored. See
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
+**Stage 15 — SpectraFX shared CPU cue scheduler and read-only ECS
+adapter (source committed; tests NOT VERIFIED):**
+`engine/fx/SpectraCueScheduler.{h,cpp}` adds the bounded
+`spectra::CueScheduler` over the **existing**
+`spectra::BatchWorld`, not another ParticleSystem. Native ECS
+projects use `libraries/include/aiverselib/genre/SpectraCueEcsAdapter.h`
+through `<aiverselib/genre/SpectraFX.h>`; it reads the
+**existing** `SpectraSourceComponent`, resolves positions from
+a caller-provided genre-agnostic callback and converts committed
+`SimEvent` values to presentation cues. The scheduler never
+mutates ECS/gameplay state or reads GPU resource handles into it.
+Effects are registered by complete definition/graph, and module
+event types are caller-defined, not hardcoded to FPS/RTS.
+
+`acceptTick` de-duplicates committed tick IDs, `flush` is
+bounded per frame, `syncAttachments` uses generation-safe
+`Entity::packed()` keys, and `resetForRollback` kills only
+this scheduler's handles plus pending cues. Source detaches are
+released **before** admitting new attached sources against the
+budget; tracked one-shot ring overflow explicitly kills oldest
+particle handles to prevent rollback leaks. The host still
+calls `BatchWorld::update/draw` ONCE per presentation frame.
+The BatchWorld MUST outlive the scheduler. This is a shared
+**CPU** simulation/RHI batching path: opt-in experimental Metal
+`gpuIndirect` stays separate and unsupported multi-emitter GPU
+graphs are NOT automatically enabled. Run `vfx_cue_scheduler`,
+`vfx_shared_batch_world`, the full `ctest -L SpectraFX` suite,
+editor and Apple Metal smoke before claiming production readiness.
+Continue `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with a separate handoff commit for every code stage.
+
+**Stage 16 — SpectraFX typed graph v2 (source committed, tests deferred):**
+`engine/fx/SpectraValueGraph.h` and
+`engine/fx/SpectraGraphV2.h` add a strictly bounded
+data-node DAG with numeric/vector math, typed exposed parameters,
+data-port edges, age-sampled CPU curves and advanced FxEffect
+module stages (noise, collision, force, trail, light,
+sub-emitters, etc.). `engine/fx/VfxGraph.h` dispatches on
+`version:1|2`; `spectra::compileGraph`, native graph assets,
+MCP and existing runtime clients keep their API.
+V2 lowers to the already-established v1 effect compiler and
+`fx::parseEffect`; invalid output fields must NEVER bypass
+that parser, and no GPU-only or genre-specific source is
+permitted. This is a typed **authoring frontend**, not
+arbitrary executable per-particle shader/bytecode.
+An example is `examples/spectrafx/typed_noise_trail_v2.vfx.json`.
+The user requested completing functionality before running tests.
+Continue adding features with bounded implementation stages and
+a **separate handoff commit after each stage**; record tests as
+NOT RUN until actually executed.
+
+**Stage 17 — SpectraFX graph-v2 editor and safe drafts
+(source committed; tests deferred):**
+`engine/fx/SpectraAuthoring.h` is the pure common node catalog
+and model for execution/data links; `apps/editor/windows/SpectraGraphWindow.cpp`
+now creates v2 graphs, supports the grouped node catalog,
+math/data wires, field/curve/gradient editors, legacy v1 upgrades
+and separate incomplete drafts. `apps/editor/core/SpectraGraphOps.cpp`
+exposes `fx_graph_node_catalog`, `fx_graph_edit` (memory-only),
+and `fx_graph_draft_set/get/list/publish`. Drafts reside under
+`fx/graphs/_drafts` and MUST NOT be consumed by production
+GraphAssets; published assets still compile through the strict
+`fx::parseEffect` path. Never silently publish invalid graphs,
+destroy working assets while editing, or duplicate a genre-specific
+VFX editor. No CMake/CTest/ImGui runtime verification was executed
+because user prioritizes closing functionality first.
+Follow the separate per-stage handoff protocol.
+
+**Stage 18 — SpectraFX reusable typed function graphs and libraries
+(source committed, tests deferred):** V2 graph assets may define
+pure functions under root `functions`, called using data node
+`FunctionCall` with typed arguments and a declared output.
+`engine/fx/SpectraValueGraph.h` evaluates nested functions with
+bounded depth and recursion guards; `engine/fx/SpectraGraphV2.h`
+validates function definitions, types and call DAGs even if
+dormant. `engine/fx/SpectraFunctionAssets.h` provides
+I/O-injected last-good hot reload and safe import of version-1
+function library packages `fx/functions/*.vfxfn.json`.
+`apps/editor/core/SpectraFunctionOps.cpp` implements
+`fx_function_list/get/set/import/export` and the graph
+editor exposes embedded function editing and import/export.
+Never execute arbitrary source code as a VFX function;
+compile into the existing FxEffect schema, preserve the
+published/draft separation and no-genre/no-ECS-mutation
+rules. The user explicitly deferred tests, so record them
+NOT RUN, and continue the separate handoff after every
+bounded code stage.
+
+**Stage 19 — SpectraFX per-particle program runtime (source committed,
+tests intentionally deferred):**
+`engine/fx/SpectraParticleProgram.h` defines a bounded
+pure scalar expression VM (fixed stack, precompiled
+instructions, no allocations on particle update).
+`EmitterDef::particleProgram` is validated in
+`engine/fx/FxEffect.cpp`, compiled into each
+`ParticleSystem::Impl::EmitterRT`, and invoked on
+Spawn, Update, Death, Collision and Trigger hooks
+in `FxEmit.cpp`/`ParticleSystem.cpp`.
+Eight custom float attributes belong to each
+*visual* particle, not to authoritative ECS.
+Graph-v2 `ParticleProgramModule` lowers to
+`particleProgram`, preserving the CPU fallback for
+advanced effects and legacy compatibility for
+old effect files. Never interpret JSON in a
+per-particle hot loop or allow arbitrary user
+code/external IO from the VM. Program effects are
+unsupported by the experimental limited Metal
+backend and must retain the full CPU EffectDef.
+Example: `examples/spectrafx/runtime_particle_program_v2.vfx.json`.
+User deferred testing; keep recorded status NOT RUN.
+A separate handoff commit is mandatory before the
+next implementation stage.
+
+**Stage 20 — named SpectraFX graph-v2 runtime instance scalar inputs
+(implemented in source, tests deferred):** `engine/fx/SpectraInstanceParameters.h`
+validates up to eight `instanceParameters` declarations with unique
+slots, finite defaults and bounds. `InstanceParameter` value nodes
+are runtime-only and lower into read-only CPU VM `param0..param7`
+instructions. `fx::ParticleSystem::playWithProgramParameters`
+(and `spectra::BatchWorld` counterpart) applies the full
+8-value array BEFORE prewarm and Spawn, without changing legacy
+`play`. Per-handle `setProgramParameter` can update new or
+already-live particles. `spectra::GraphRuntime` exposes raw and
+named per-source setters, and the existing `CueScheduler` carries
+optional masked values for event cues/attached sources.
+
+The SpectraFX editor right panel now supports named schema JSON,
+per-preview-instance sliders and `fx_graph_preview {instanceValues}`.
+Keep separate compile-time `parameters` and runtime
+`instanceParameters`; do not accidentally constant-fold the latter.
+Never put these parameters in authoritative gameplay ECS,
+silently switch a runtime VM graph to the limited GPU kernel,
+or claim GPU expression parity. The latest `main` was explicitly
+merged into `feature/universal-entity-inspector-fps` through
+two-parent merge commit `463f69f230f7d02cdaca4c824b014ff1221402c1`
+before these editor updates, preserving InputFlow and other
+concurrent work. User explicitly deferred tests; mark native
+compilation, CTest, real Metal and editor interactions as NOT RUN.
+Maintain the separate per-stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
+**Stage 21 — shader graph inputs sourced from CPU particle VM
+(source committed, tests postponed):** `FxEffect::EmitterDef::graphInputs`
+is an optional strict four-string array selecting `age`, `lifetime`,
+`random`, `zero`, `attribute0..7`, or `param0..7`.
+`FxEffect.cpp` validates and serializes this mapping. The
+CPU emitter runtime precompiles each source to a byte selector
+and fills the **existing 40-byte vertex** `graphData` lanes
+without altering render-state batching or shader code.
+The shader material compiler exposes the four lanes as
+`sg_particle`. No new node language, shader JIT,
+renderer handle in ECS, or duplicate FPS/RTS engine exists.
+No authored `graphInputs` retains exactly the preexisting
+age/lifetime/random/zero values; full unsupported
+particleProgram and material graph effects must remain
+CPU with strict Metal eligibility fallback.
+
+User deferred tests until functional completion. Mark
+CMake/CTest, GPU shader compilation, editor input
+and visual output as **NOT RUN**. Continue the required
+stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with a separate commit and keep native C++ usage
+compatible across genres.
+
+**Stage 22 — SpectraFX Metal bounded scalar GPU VM (source committed,
+tests NOT RUN):** `engine/fx/SpectraGpuProgram.h` already
+defined a fixed ABI payload; Stage 22 adds strict executable
+budget/ABI checks and an **actual MSL interpreter** during GPU
+particle Spawn/Update in `SpectraGpuShaders.h`. No recompilation
+of user text into MSL is performed. `ComputeEmitterDesc::gpuProgram`
+and `GraphRuntimeOptions::gpuProgram` default to false and
+require explicit opt-in, one simple additive soft-sprite emitter,
+a validated subset of 24 statements / 192 scalar VM ops, and
+Metal compute support. Unsupported effects preserve the entire
+CPU particle-program definition; `RequireGpu` refuses fallback.
+
+Metal storage binding slots 7/9/10 hold 32-byte spawn parameter
+snapshots, 32-byte persistent per-particle values, and the
+10,256-byte validated GPU VM payload (ABI version 1).
+Slot 8 remains the standard GPU frame uniforms. Fields/opcode
+numbers are static-asserted against the CPU VM types. No
+GPU custom attributes, arbitrary shader graphs, ribbons,
+collisions, user-script execution or non-Metal GPU VM is
+implemented. Gameplay ECS remains authoritative and unaffected.
+Named v2 `instanceParameters` can be set before Spawn or
+updated for existing GPU particles without reading positions
+back. Existing/simple effects remain on their original backend
+unless explicitly configured.
+
+Native editor and MCP now distinguish ordinary billboard GPU
+compatibility from `metalVmEligible`/`metalVmReason`.
+These are **schema checks**, not GPU availability or success.
+The user explicitly deferred CMake/CTest/Metal/device tests.
+Mark all Stage-22 test outcomes **NOT RUN**, and append a
+separate mandatory handoff commit to
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+before starting another feature stage. Preserve multi-agent
+branches and do not merge into `main` without user request.
+
+**Stage 26 — integrated Metal VM custom scalar attributes
+(SOURCE COMMITTED, tests deferred by user):**
+`SpectraGpuProgram.h` now accepts VM `attribute0..7`
+reads/writes for the restricted Spawn/Update Metal interpreter.
+`SpectraGpuShaders.h` binds a separate 32-byte-per-physical-slot
+attribute storage buffer at compute slot **11**, resets registers
+on every GPU birth and persists changes after every Update.
+`SpectraGpuParticles.{h,cpp}` allocates, releases, and clears that
+buffer without changing the 64-byte particle state, 40-byte
+vertex format, or VM payload ABI version. Strict whole-effect
+GPU eligibility and CPU fallback remain mandatory; this does
+NOT implement arbitrary `shaderGraph` materials on GPU.
+
+`gpu_program::MetalVmPass` is a **different, standalone**
+compute utility without custom register storage. It must
+reject any payload reading/writing attribute fields 16–23;
+never silently substitute zero or report parity.
+Example: `examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json`.
+User explicitly deferred tests until functional completion:
+CMake/CTest, MSL compilation, Apple GPU rendering and
+CPU/GPU numerical parity are **NOT RUN**. Preserve all
+unrelated agent changes and record a separate stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
+**Stage 27 — restricted Metal particle material shaderGraph and CPU-compatible
+vertex source bindings (CODE COMMITTED, TESTS DEFERRED):**
+`engine/fx/SpectraGpuMaterial.h` validates an opt-in, bounded
+particle-domain `shaderGraph` through the **existing**
+`render::graph::compile` system. It allows only trusted
+fragment-node operations, the builtin sprite texture, no
+external samplers or vertex graph, and maps four `graphInputs`
+to `attribute0..7`, `param0..7`, age/lifetime/zero.
+Stable UID `random` is currently GPU-unsupported and must
+NOT silently substitute another value. The generated Metal/GLSL
+material shaders share the CPU shader graph language.
+Only the shaderGraph material variant uses vertex Float4
+attribute 3 at offset 24; other GPU sprites retain the
+existing pipeline.
+
+`GraphRuntimeOptions::gpuMaterial` and
+`ComputeEmitterDesc::gpuMaterial` default FALSE. The full
+GPU eligibility gate must validate the whole EffectDef,
+including `shaderGraph` and `graphInputs`; an unsupported
+graph stays on full CPU, and `RequireGpu` must report an
+error rather than discard authored features. The GPU
+compute material source map is a 16-byte one-time buffer
+bound at slot 13, and the CPU fallback carries the full
+shaderGraph/graphInputs as originally authored. No
+FPS/RTS dependency, gameplay ECS mutation, external shader
+source, GPU mesh/ribbon or texture graph extension is
+introduced. Example:
+`examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json`.
+
+User requested feature implementation first: native compilation,
+CTest, actual MSL compilation, GPU screenshots, performance and
+CPU/GPU visual parity are **NOT RUN**. Keep the mandatory
+handoff in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with implementation SHAs, exact limitations and next step.
+
+**Stage 28 — shared genre-neutral GPU emitter resource world
+(SOURCE COMMITTED; user-deferred tests):**
+`engine/fx/SpectraGpuPoolWorld.{h,cpp}` introduces
+`spectra::GpuPoolWorld`, exported from
+`engine/fx/SpectraFX.h`, linked through
+`AIVERSE::spectrafx`. It deduplicates by the
+**complete serialized effect definition** plus effective
+GPU program/material/indirect policy, capacity and
+quality, then shares one `ComputeParticles` and
+one draw for several logical sources with identical
+effects. Unsupported effects use one existing
+CPU `spectra::BatchWorld`; `RequireGpu` fails
+instead of dropping authored features.
+
+This is a pool of **per-effect GPU resource groups**,
+NOT a monolithic cross-material GPU allocator.
+Each source name retains independent bounded
+`instanceParameters` defaults and source burst
+snapshots. GPU material-only graphs may now read
+`param0..7` without a separate VM program.
+`PoolWorldBudgets` bounds group count/capacity
+and one-shot births per frame. The host must call
+`beginPresentationFrame`, `step`, `draw`,
+`endPresentationFrame` ONCE in proper RHI order;
+`resetForRollback` clears this pool's entire
+visual scene only when no render/compute encoder
+is active and device health permits.
+
+Persistent attached ECS emitters, per-source GPU
+kill/stop, a single physical GPU pool across
+different material groups, global transparent
+sorting, GPU-only allocator and native production
+FPS/RTS migration are **not implemented**.
+Use the mature shared CPU CueScheduler for
+persistent sources. No gameplay ECS mutation.
+No native compile, CTest, GPU MSL execution,
+pixel capture or benchmark was run per user's
+explicit request; record **NOT RUN** and update
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with exact SHAs in its own separate commit.
+
+**Stage 29 — bounded pooled GPU/CPU one-shot cue routing (SOURCE COMMITTED,
+TESTS DEFERRED):** `engine/fx/SpectraGpuCueBridge.{h,cpp}`
+builds a genre-neutral presentation cue scheduler above the **existing**
+`GpuPoolWorld`, rather than a new CPU/GPU particle simulation.
+Native ECS projects include `SpectraGpuCueEcsAdapter.h` via
+`<aiverselib/genre/SpectraFX.h>` to convert committed
+`SimEvent` positions read-only. Each tick is consumed only once;
+bounded queue/tick/frame budgets and a pool-level budget apply.
+`resetForRollback()` resets the WHOLE pool before clearing tick
+state; rejected resets preserve bridge state for safe retries.
+**Do not claim per-source GPU kill/move/lifecycle**: the pool currently
+supports only one-shot bursts, and attached/continuous effects
+remain with CPU `CueScheduler`. Existing engine ECS and FPS/RTS
+renderers remain unchanged by default. Tests/build/Metal GUI are
+NOT RUN by explicit user instruction. Preserve a separate
+Stage-29 handoff and continue feature work before testing.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
@@ -128,6 +887,47 @@ The handoff must make it possible for another agent to resume without
 re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
+
+## Shared texture RHI / streaming — reuse instead of regenerating (2026-11-18)
+
+For any native game project needing Texture2D/3D/arrays/cubes,
+offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
+`skills/visuals/aiverse-texture-rhi/SKILL.md` and
+`docs/texture-rhi.md`. Use the existing `gfx::Device`,
+`gfx::RenderTargetSet`, `gfx::TextureStreamQueue`,
+`gfx::TextureMipResidency`, `gfx::TextureResidentStreamer`,
+`gfx::VirtualTextureStreamer`, `gfx::VirtualTexturePrefetchPlanner`,
+`gfx::prefetchVisibleVirtualPages`, `gfx::VirtualTextureFeedbackRuntime`,
+`gfx::VirtualTextureFeedbackPass`,
+`Device::readTextureAsync`,
+`render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
+`render::parseDdsTexture`, `render::uploadContainerTexture`,
+`render::uploadKtx2WithLibktx`, and `render::loadOpenExrWithLibrary`.
+Do not regenerate or fork genre-specific texture managers in FPS,
+RTS or other projects. Rendering/streaming is presentation state:
+do not make it ECS-authoritative or add it to deterministic save hashes.
+Native project modules can include these public C++ headers directly.
+Optional BasisLZ/UASTC LDR, UASTC_HDR -> RGBA16F, and
+compressed OpenEXR decoding use explicit system Khronos
+libktx and OpenEXR 3 build flags; do not
+copy codecs into genre modules. Vulkan writable compute textures
+are opt-in and require capability checks; do not assume GL33/GLES3
+or WebGL2 support. The GPU inspector now permits bounded 3D
+mip-slice readback on native backends, not compressed/depth/MSAA.
+
+Texture format/dimension feature support differs per backend:
+explicitly check `supports`, `supportsTextureDimension` and resource
+creation results. Unavailable features must fail visibly, never silently
+reinterpret Cube/Array/3D as 2D, ignore resolve requests or misread
+compressed mip payloads. A streaming queue owns its textures and must
+be destroyed before the GPU Device. Do not sample mips until the
+residency planner reports every required layer/face resident.
+Metal/GL/Vulkan API branches and 7A–7E streaming work are source changes,
+**NOT verified production behavior** until native build/CTest/GPU checks
+pass. After each implementation stage append
+`docs/agent-handoffs/texture-rhi-2026-11-18.md` in a separate commit
+with actual (not assumed) test results. PR #21 must remain Draft
+until source integration and graphics validation gates pass.
 
 **Incremental static CPU cache, LOD-aware packets and ECS presentation (2026-11-19, opt-in):**
 The common `engine/render/Renderer3D` owns experimental per-`persistentId`
@@ -478,6 +1278,113 @@ Read `docs/view.md` and `skills/gameplay/aiverse-view/SKILL.md`.
 Every bounded implementation must be followed by its own
 committed agent handoff. User deferred actual tests: mark
 NOT RUN until executed.
+
+## Strata virtualized geometry work (2026-11-19)
+
+Strata development is isolated on `feature/strata-virtual-geometry`.
+Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
+indirect batching, read `docs/strata.md` and
+`docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
+`docs/metal-batching-agent-handoff.md`. Stages 2–8 build CPU meshlet/LOD assets, opt-in static
+`GeometryScene` staging, per-pass CPU reference selection, auxiliary
+source-attached `GlobalGeometryPool` indices and version-2 GPU metadata.
+Stage 8 adds **diagnostic Metal compute culling** through
+`StrataGpuCulling.h` and `GeometryScene::dispatchStrataGpuView`, default
+OFF. It is **NOT a GPU render submission path**: `Renderer3D` is still
+the only draw authority. Never use GPU selection buffers to draw until
+real Metal shader execution + CPU oracle selection parity, overflow
+checks and full screenshot parity are verified.
+`GpuPassConfig::viewProjection` is VIEW PROJECTION only; each
+`GpuSceneInstance::objectToWorld` already includes the source node bind
+transform. `cpuReferenceView` composes the two. Treat GPU output order
+as nondeterministic and any overflow/invalid flag as non-drawable.
+`GpuPrimitive::gpuFirstIndex` (version 2 only) is the absolute shared
+GPU index base for a primitive; `GpuNode::sourceFirstIndex` is only
+primitive-local and never directly a `Model::gpuFirstIndex`.
+Do not fork the underlying GPU geometry pool, ECS scene or batching
+submission. GPU selection slots are explicit frame-serial scoped and
+cannot be recycled until prior GPU completion. Keep all Strata staging,
+GPU metadata and compute diagnostics default-OFF, including
+`AIVERSE_BUILD_STRATA=OFF` portable fallback.
+Coordinate with the batching agent: share a single instance/material/indirect
+grouping authority, do not duplicate rendered primitives or transforms.
+Stage 8.2 adds `GpuClusterCulling::requestReadback` (Metal async counters
+plus <=2048 selected cluster records) and `compareGpuSelection` CPU oracle.
+Output is diagnostic and must never be submitted to `Renderer3D`. Any
+invalid/overflow/readback-failed status is not drawable. The real macOS
+`aiverse_strata_metal_parity` fixture is manual and opt-in
+(`AIVERSE_STRATA_METAL_GPU_TESTS=ON`) and requires genuine Metal shader
+execution before GPU parity can be claimed. The owner-confirmed Mac Studio
+run for **previous Stage 8 code** passed 5/5 CPU/mocked CTests in 1.19s;
+that does not prove the newer shader or readback behavior.
+Stage 9 adds `StrataRenderRouting.h/.cpp` and the additive
+`GeometryScene::prepareStrataRenderCandidate` diagnostic preflight.
+Batching PR #34 has merged into main; Strata synchronized its updates at
+merge commit `a77cd830` without overwriting batching ownership.
+`RenderRouteGate` defaults to Legacy and requires independent proof of
+CPU/GPU selection parity, raster parity, source safety, residency and
+Renderer3D submission ownership. Even a complete gate only prepares
+commands; **no live renderer suppresses legacy ModelDraw or executes
+Strata commands yet**. Do not turn it on until the actual Metal parity
+runner, material and shadow screenshots, and exclusive per-primitive
+ownership are verified. `encodeRendererCommands` revalidates the
+current Model pointer, geometry/material revisions and live
+`GpuMetadataScene` sidecar lease before preparing shared-RHI indirect
+command bytes. Never use a stale candidate after source unload.
+Stage 10 adds a **dry-run only** bridge into real `Renderer3D` ModelDraw
+passes. `StrataRendererPreview.h/.cpp` supports pure preflight of each
+rigid node/primitive in independent main-camera and sun-shadow views;
+`GeometryScene::setStrataRenderPreviewEnabled(true)` is an additional
+scene opt-in (in addition to CPU/GPU staging and the separate GPU culling
+flag), default OFF. It invokes
+`renderer.previewStrataModel(...)` synchronously and ALWAYS follows with
+the original `renderer.drawModel(d)` exactly once. No Strata GPU command
+or indexed draw is submitted by preview. Renderer3D counters are
+diagnostic only and reset at beginScene. Never infer GPU/raster parity
+from a preview-ready count; actual Metal validation and exclusive route
+ownership remain mandatory before legacy suppression can be added.
+Stage 11 adds opt-in `aiverse_strata_metal_raster_parity`: a
+real Metal/CAMetalLayer A/B visual fixture using **the ordinary
+Renderer3D model material and shadow passes**, with exclusive
+per-frame Legacy or Strata source alias. The aliases borrow the same
+source GPU VB and existing pooled Strata sidecar IB — no extra GPU
+geometry pool and no second GPU draw path. A blank baseline must
+differ from Legacy, fine/coarse raster screenshots must match Legacy
+byte-for-byte for a deliberately **lossless** two-triangle hierarchy,
+and only one ModelDraw is submitted per candidate frame. It is NOT
+yet a production Strata routing path or a proof of real simplified
+LOD crack-free visuals, water reflection parity or GPU-authored
+selected-command rendering. Stage 11 has **not been run** until
+native output is returned; do not conflate with the previously
+confirmed real Metal compute 5/5 or focused CPU 6/6.
+The Strata-focused workflow's previously malformed regex was
+replaced; CI compiles both Metal fixtures on macOS, but intentionally
+does not run GUI tests headlessly.
+Stage 11.1 owner Mac Studio real Metal raster attempt FAILED at
+`Legacy and empty screenshots identical` while GPU selection remained 5/5
+PASS. Do not attribute that to geometry blindly: the test requested
+`captureNextFrame` on the final frame of each mode while Metal may
+delay capture until the next mode (framebufferOnly drawable).
+`bcc471e9` fixes capture scheduling with `setScreenReadable(true)`
+and mid-mode snapshots (4/15/26/37), retaining strict pixel equality
+and nonblank baseline. This fix requires native rerun and cannot
+be marked PASS from its mere GitHub commit. Confirm callback-frame
+and main/shadow draw diagnostics if failing. No production renderer
+or Strata draw path was enabled.
+Update from owner Mac Studio after `bcc471e9`: **Stage 11.1
+native Metal raster A/B PASSED**, `Legacy/Fine
+changed_channels=0`, `Legacy/Coarse changed_channels=0`,
+`status=PASSED frames=44`. The screenshots' actual capture
+callback frames were Empty 6, Legacy 17, Fine 28, Coarse 39
+(requested 4,15,26,37); the renderer recorded source shadow/opaque
+submissions Legacy 1/1, Fine 2/2, Coarse 1/1, Empty 0/0, with
+`pipelines=16 pipelineFailures=0`. Previous blank-baseline
+failure is superseded for this fixed native fixture; do NOT
+extrapolate to independent shadow-map depth, reflection,
+mixed materials or lossy LOD visual parity.
+Production Strata draw route remains opt-in diagnostic only.
+On each bounded Strata step: implementation commit first; append and commit the
+handoff separately, recording unrun tests honestly.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
@@ -979,17 +1886,21 @@ couldn't be compiled are listed in the commit message as unverified.
 
 ### Where build output goes (all agents)
 
-**Never create builds in the shared engine checkout's `build/` folder** (the user's main
-checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
-integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+**Owner instruction (2026-11-20): all builds must run on KINGSTON.**
+This overrides earlier local/worktree build examples and release paths in this file.
 
-- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
-  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
-- Game / project work (packaging, native modules, test runs of a game): the project's own
-  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
-  and `aiversebuild` already use this layout).
-- Logs, bundles, patches and scratch archives belong with the build that produced them,
-  not loose in `build/` or `build/.temp/`. Delete your build trees when the task is merged.
+- Use `/Volumes/KINGSTON/AIVERSE-builds/<worktree-or-task>/<configuration>` for
+  CMake build trees, compiler intermediates, test reports, logs, packages and archives.
+  Give concurrent tasks separate directories; never share a CMake cache between sources.
+- Pass an explicit external `-B` directory to CMake and `--build-dir` to test runners.
+  For frontend/package builds, also redirect generated output and build caches to KINGSTON.
+  Keep build temporary files on KINGSTON using a task-specific temporary directory.
+- Game/native-module builds and release packaging must also use KINGSTON-backed output.
+  If a tool hard-codes a local output path, configure or adapt it before running it.
+- Check that `/Volumes/KINGSTON` is mounted and writable before starting. If unavailable,
+  stop the build and report it; never silently fall back to the internal disk or `/tmp`.
+- Source repositories may stay in their existing locations. Existing build trees are not
+  automatically relocated or deleted by this instruction; do not disrupt running builds.
 
 ## 5. Working in parallel
 
@@ -1653,6 +2564,19 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+## Validation follow-up for CPU MDI GPU safety (2026-11-19)
+
+The Vulkan `writableVersion` API now returns `nullptr` when a
+new GPU-safe version could not be allocated, **never** a writable
+reference to an in-flight VkBuffer. `updateBuffer` must select a
+safe destination BEFORE modifying its CPU shadow, and transactional
+growth must preserve the old allocations on failure. Do not revert
+to overwriting the previous serial's memory to avoid an OOM. Existing
+`tests/render/model_batching_policy.cpp` now exercises Stage 21–24
+preflight rank/bucket/generation behavior and Stage 28–29 monotonic
+RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
+CI results must be reported only when the corresponding workflow run
+actually completes, not inferred from test source or staging.
 
 
 ## PRISMA post-processing rules (short reference)
@@ -3528,6 +4452,486 @@ rendering or test gates; new diagnostic binary remains
 unbuilt and exact GPU ICB counts are not yet recorded.
 Leave PR #34 Draft pending Vulkan, recycling, full CI
 and controlled A/B/A timing measurements.
+
+
+## Strata Stage 12 — real Metal shadow Depth32Float + two independent views (2026-11-19)
+
+Implementing `Strata` must remain fully genre-independent: no
+FPS/RTS-specific camera or renderer routing assumptions. There is
+still only one production `Renderer3D` and one
+`GlobalGeometryPool` source geometry owner.
+
+The new **diagnostic-only** `gfx::Device::readDepthTextureAsync`
+has a default-unsupported generic RHI implementation and a bounded
+Metal `Depth32Float` GPU blit implementation. It does not stall the
+GPU; Metal delivers packed 32-bit float depth bytes on the main
+device thread at a later beginFrame. The renderer's
+`requestSunShadowDepthReadback` method delegates readback of its
+own sun shadow map after normal passes finish, without leaking
+ownership of the texture. Never use readback as a runtime
+render decision or allocate a separate Strata GPU pool.
+
+`tests/render/strata_metal_depth_multiview_parity.cpp` is a separate
+macOS GUI test target `aiverse_strata_metal_depth_multiview_parity`
+built with `AIVERSE_STRATA_METAL_GPU_TESTS=ON`.
+It renders Empty, Legacy, Strata Fine and Strata Coarse
+lossless geometry in separate frames for **two distinct cameras**,
+and reads back both real 800x600 RGBA and 512x512 shadow depth.
+Success requires real nonblank color/depth, finite depth, exact
+Legacy-vs-Fine/Coarse equality of both pixel buffers in each view,
+distinct camera images, correct main+sun-shadow draws and
+one ModelDraw per frame. There is NO production Strata draw
+switch, no GPU-selected indirect draw and no claim that lossy
+LOD or reflection parity has been verified.
+
+**Current truth:** Stage 11 owner-verified Metal main-color raster
+A/B is PASS with zero changed channels; real Metal compute
+selection is PASS 5/5; six focused native Strata CPU/mock tests
+were PASS. This **new Stage 12 native C++ compilation and GPU
+runtime verification have NOT been performed** by the agent.
+CI compile-only is not runtime parity. Run the new fixture on
+Mac Studio, record exact output and commit separate handoff.
+No merge to main until shadow-depth, reflection and advanced
+material/LOD gates pass.
+
+Docs: `docs/strata.md`,
+`docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 12 verification — Mac Studio real Metal PASS (2026-11-19)
+
+The owner **actually built and ran** the new Stage 12
+`aiverse_strata_metal_depth_multiview_parity` GUI fixture on Mac Studio.
+All eight RGBA and eight genuine `Depth32Float` GPU captures
+completed across two independent cameras and four mutually exclusive
+Empty/Legacy/Fine/Coarse model modes each. The real GPU readbacks
+showed **ZERO changed colour channels and ZERO changed depth bytes**
+between Legacy/Fine and Legacy/Coarse in **both views**.
+The shadow maps were nonconstant: 73,179 non-clear samples in
+view 0 and 34,765 in view 1. The new fixture ended
+`status=PASSED views=2 modes=4 frames=89`, with 16 Metal pipelines
+and 0 pipeline failures. The owner's same output reconfirmed
+the earlier real GPU cluster selection **5/5 PASS** and the
+Stage 11 real Metal raster A/B **PASS**.
+
+Do not accidentally reassert the historical 'Stage 12 NOT RUN':
+it refers to the state before this owner-provided Mac Studio run.
+The precise tested checkout SHA was not printed in the terminal
+log. No production renderer switch, lossy LOD fidelity, reflection
+RTT, mixed materials, Vulkan, streaming or performance was tested.
+Stage 12's strict equality is **only for intentionally lossless
+test geometry**. Preserve single Renderer3D submission authority,
+the shared GlobalGeometryPool source, opt-in diagnostics and
+conservative unsupported-case fallback.
+
+Next independent gate: true planar reflection RTT readback and
+material/UV-boundary parity with multiple cameras, followed by
+lossy LOD seam and GPU-selected drawing tests. Keep PR #35 Draft.
+Stage handoff: `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 13 — reflection RTT, 2 material groups and UV seams (2026-11-19)
+
+The new \`gfx::Device::readColorTextureAsync(TextureHandle,ColorReadFn)\`
+is a diagnostics-only virtual API with default-unsupported
+behavior on non-Metal backends. Metal implements bounded,
+non-blocking GPU blit of an **actual offscreen LDR RGBA8 render
+target** into owner-thread callback RGBA8 bytes, with
+BGRA swizzle and row-stride repacking. It must NOT fake a
+reflection result by taking a screenshot of the presented
+main camera. It does not change rendering or geometry
+allocation when unused.
+
+\`LightSystem::requestPlanarReflectionColorReadback\` and
+\`Renderer3D::requestPlanarReflectionColorReadback\` provide
+read-only diagnostic access to the existing half-resolution
+LDR reflection RTT after the production reflection pass,
+with the actual renderer and selected water plane.
+\`strata::RenderPass::PlanarReflection\` is a pass-specific
+CPU selection contract, not permission to submit GPU draws.
+
+The manual macOS \`aiverse_strata_metal_reflection_material_parity\`
+test uses one shared source VB/IB, one Strata auxiliary index
+lease, two adjacent opaque materials with **duplicated seam
+vertices, independent UV transforms and separate GPU checker
+textures**. Parent geometry is deliberately LOSSLESS, so
+Legacy/Fine/Coarse should be pixel-identical. It exercises
+two independent cameras and four mutually exclusive modes
+each. The test obtains the actual main image, sun shadow
+Depth32Float map, and half-resolution reflection GPU RTT:
+**24 total GPU captures**. It requires Legacy != Empty for
+all three targets, exact source-vs-cluster parity, distinct
+camera results, separate material/primitive submission
+counts and no doubled ModelDraw. Reflections use the
+existing \`Renderer3D\` water path; there is no second
+raster implementation or Strata GPU allocator.
+
+This test has **NOT YET been compiled or run natively**.
+Mac Studio Stage 12, Stage 11 and cluster-culling
+results were owner-verified PASS in prior steps, but those
+DO NOT prove this newer reflection/multi-material fixture.
+The test is compiled but NOT executed by the focused macOS
+CI workflow. Keep PR #35 Draft and do not change \`main\`.
+After the user runs Stage 13, record every real result and
+failure with exact source commit (if available) in
+\`docs/agent-handoffs/strata-virtual-geometry.md\`.
+Then proceed to genuine lossy cluster LOD seam quality,
+GPU-selected draw submission and guarded Legacy fallback.
+
+
+## Strata Stage 13.1 — native Mac Studio reflection RTT parity PASS (2026-11-19)
+
+The owner independently built and ran the real Metal
+`aiverse_strata_metal_reflection_material_parity` fixture in
+the clean isolated `AIVERSE-strata-stage13` worktree.
+**Both cameras passed with exactly ZERO differences** for
+Legacy vs Strata Fine/Coarse in all three actual GPU outputs:
+main 800x600 RGBA, sun shadow 512x512 Depth32Float, and
+offscreen planar reflection 400x300 RTT RGBA.
+The fixture completed 24 real GPU captures, asserted that
+the actual RTT differed from Empty, confirmed two independent
+opaque PBR materials with separate UV/textures and a duplicated
+UV seam, and verified no dual ModelDraw source submissions.
+Observed final `[strata-reflect] status=PASSED views=2 modes=4 frames=89`;
+Metal reported 16 pipelines, 0 failures.
+
+This supersedes the historical Stage 13 pre-execution note.
+The owner's output did not print the checkout commit SHA;
+do not make an SHA-specific hardware validation claim.
+Scope remains intentionally **lossless** cluster triangles:
+real simplified-LOD seam quality, GPU-selected raster commands,
+streaming, Vulkan, HDR reflection and performance remain unverified.
+The branch has diverged from main; this PASS cannot be
+extrapolated to an untested integrated main+Strata tree.
+Keep the PR Draft, one GPU geometry pool and one production
+Renderer3D draw owner. Record and test a separate main
+integration before any merge. Handoff in
+`docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## STRATA Stage 15.3 — async disk page handoff (2026-11-20)
+
+Current work is on `feature/strata-virtual-geometry`, not main.
+Full details, exact implementation commits, API changes, authored
+but **unrun** tests and next steps are in
+`docs/agent-handoffs/strata-virtual-geometry.md`, Stage 15.3.
+
+- `aiverse_strata_disk` is a separate reusable offline/runtime
+  archive library: `SceneStaging::writeDiskArchives(directory)`
+  produces verified `.strataidx` files per source key.
+- Metal/Vulkan `IndexResidency` uses bounded background archive
+  reads for child cluster indices, with roots checked synchronously
+  during scene load and parent fallback until complete siblings
+  are resident and GPU-uploaded.
+- `GeometryScene` opts in with `setStrataDiskPageDirectory` and
+  `setStrataStreamingFrameUploadBudgetBytes`, after enabling portable
+  plus incremental streaming and setting a positive index budget.
+  GLES3/WebGL2 continue the old CPU-selected index fallback.
+- Do not claim disk mode reduces the original CPU `ModelAsset`
+  index memory: full CPU indices remain required by current planners.
+  FNV checksums detect accidental corruption, not malicious assets.
+- Do not replace the source vertex buffer, bypass Renderer3D, or
+  merge this divergent feature branch into main until a clean native
+  build, focused CTest and actual Metal/Vulkan/GLES parity run pass.
+  No Stage 15.3 tests have been executed yet.
+
+Next: Stage 15.4 global multi-world CPU/GPU streaming coordination,
+then Vulkan compute GPU selection and crack-free lossy LOD. Append a
+new handoff after each bounded implementation stage.
+
+
+## STRATA Stage 15.4 — multi-world streaming continuation (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 15.4
+before editing indexed geometry, IO, GPU residency, scene load/unload
+or RHI buffer lifetime. Current branch:
+`feature/strata-virtual-geometry` (do NOT merge into main yet).
+
+- `StrataStreamingCoordinator.h/.cpp`: one Device-wide reserved
+  STRATA INDEX budget, a per-RHI-frame checked GPU transfer cap,
+  process-wide bounded shared native disk IO workers and verified
+  ready-page CPU cache. Settings/leases must be shared across ECS
+  worlds using the same gfx::Device; no FPS/RTS dependencies.
+- `DiskIndexPages` no longer starts one std::thread per archive.
+  Worker jobs reference-count their own archive State, never a
+  GeometryScene/ModelAsset; source close cancels pending jobs and
+  releases global cache budget.
+- `GeometryScene`: default-OFF, optional release of duplicate
+  staged `Asset::indices` only after archive fingerprint and pinned
+  GPU root admission, with all conflicting diagnostic/metadata paths
+  disabled. `planView` uses immutable logical index counts.
+- The shared index cap is NOT complete physical GPU VRAM including
+  Vulkan versions/in-flight buffers, and CPU release does NOT delete
+  original source Model geometry. Never claim those objectives met.
+- New/extended tests are authored but **NOT RUN**. Finish all
+  functionality before the owner's final native CMake/CTest and GPU
+  acceptance pass; record exact failures and tested commit SHA.
+
+Next functional target: Stage 16 actual Vulkan compute selected cluster
+visibility, followed by Stage 17 crack-free lossy LOD. Preserve one
+Renderer3D draw owner and Metal/Vulkan/GLES3 fallback semantics.
+
+
+## STRATA Stage 16.1–16.2 — Vulkan GPU compute + indirect candidates (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`, Stage
+16.1 and 16.2, **before** editing `VkCompute`, Strata GPU selection,
+Renderer3D indexed draw submission or model metadata. Branch:
+`feature/strata-virtual-geometry`, NOT merged to `main`.
+
+- `VkCompute.cpp`: Vulkan compute RHI, standalone GLSL450 SPIR-V,
+  storage descriptors, checked 64-thread dispatch, GPU barriers and
+  async fence-completed readback. Preserve legacy Vulkan graphics
+  indexing and Storage vertex+index pooled buffer usages.
+- `StrataVulkanCullingShaders.h`: version-2 metadata shared with
+  Metal; GLSL GPU hierarchy selection + GPU indexed-indirect command
+  clear/select/safety. Overflow/invalid counters disable partial
+  commands on GPU, optionally replacing them with one original indexed
+  primitive only when strict one-material fallback fields are set.
+- `StrataVulkanIndirectContract.h/.cpp`: eligible static opaque,
+  single-primitive/material/node pooled source; no animation, author
+  LOD, shader graph, shadows/reflections or multi-instance alias.
+  Checks model revisions, handles and frame serial. Strict rejection
+  keeps the authoritative CPU/Legacy renderer route.
+- `GpuClusterCulling::dispatch` now emits Vulkan
+  `GpuSelectionSubmission::indirect` in addition to diagnostic ranges.
+  **DO NOT interpret `gpuIndirectPrepared()` as permission to
+  submit a production Renderer3D draw.** Vulkan RHI has an explicit
+  `drawIndexedGpuIndirect` method but no exclusive Renderer3D
+  production bridge is enabled yet. Next Stage 16.3 must own the
+  full renderer state and establish actual pixel parity before opt-in.
+- Stage16 authored CMake targets / tests are **NOT EXECUTED**:
+  `strata_vulkan_kernel` (real Vulkan+SPIR-V when available),
+  `strata_gpu_culling`, `strata_render_routing`. Do not claim
+  GPU parity from older Stage13 Metal lossless fixture.
+- Metal selector remains diagnostic, GLES3 portable CPU path
+  remains untouched. Avoid merging the divergent feature branch
+  to main until the full final native acceptance run.
+
+
+## STRATA Stage 16.3 — exclusive Vulkan GPU raster handoff (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 16.3
+before changing `GeometryScene`, `Renderer3DModels.cpp` or
+Vulkan `GpuSelectionSubmission`. This work remains isolated on
+`feature/strata-virtual-geometry` and is NOT merged into main.
+
+- GeometryScene now prepares a Vulkan GPU-authored indexed command
+  candidate only when staging, GPU metadata, GPU compute and
+  `setStrataVulkanGpuIndirectEnabled(true)` are enabled **AND BOTH**
+  explicit CPU/GPU-selection and actual-raster-parity acceptance
+  flags are true. Defaults remain OFF; flags are not proof of PASS.
+- A matching Vulkan GPU selection is copied into the SAME source
+  `ModelDraw::gpuIndexed`; no source sidecar/VB or second draw is
+  submitted. The renderer's own main-opaque pass binds existing
+  material, lighting and instance uniforms, then may consume the
+  GPU-authored indirect array INSTEAD OF the normal indexed draw.
+  Any rejection runs ordinary CPU/Legacy as before.
+- Strictly one source instance, one rigid opaque mesh/primitive/
+  material/node, no author LOD/deform/alpha/auxiliary passes,
+  no active sun shadows or planar reflections. GLES3/Metal never
+  take this Vulkan-only route; shadow/reflection scenes still
+  render fully through Legacy/portable CPU.
+- File/commit list and Stage 16.3 progress table are in the
+  dedicated handoff. Authored tests have **NOT BEEN RUN**.
+  Do not assert Vulkan real GPU pixel parity or modify defaults.
+- Next: add real Vulkan Renderer3D main-view pixel parity fixture,
+  then extend multi-material/multi-instance support while retaining
+  exclusive pass ownership, before tackling crack-free LOD.
+
+
+## STRATA Stage 16.4 — multi-material, instance and camera GPU routing (2026-11-20)
+
+Read Stage16.4a, 16.4b and 16.4c of
+`docs/agent-handoffs/strata-virtual-geometry.md` before editing
+Vulkan GPU selection, `GeometryScene` or `Renderer3D`. The
+complete implementation remains on
+`feature/strata-virtual-geometry`; do NOT merge directly to main.
+
+- Stage16.4a supports up to 16 opaque primitives/materials and up
+  to 16 source instances, with independent GPU indexed packets;
+  Renderer3D binds each original PBR/material/U0 state and owns the
+  ONLY actual draw. CPU material/shadow proxy batching is disabled
+  for selected GPU packet sources, not for Legacy sources.
+- Stage16.4b prepares a separate sun-camera selection before
+  the shadow render pass, with strict pass/projection/resolution
+  identity checks and same-model Legacy fallback.
+- Stage16.4c prepares **spot and planar reflection** GPU selection
+  only after their actual camera matrices are known in
+  `Renderer3DReflect.cpp`, **before opening render encoders**.
+  A separate `GpuIndexedSelectionPacket` is owned by each
+  Renderer3D ModelItem for every camera. Never reuse a main-view
+  command buffer in sun, spot or mirrored reflection.
+- EXPLICIT acceptance flags are all default FALSE:
+  `setStrataVulkanGpuParityGates(selection,mainRaster)` and
+  `setStrataVulkanGpuAuxiliaryParityGates(sun,spot,reflection)`.
+  The user must establish separate real Vulkan main RGBA and
+  sun/spot DEPTH, planar reflection RTT pixel parity for the
+  exact source SHA before accepting each pass. A manual flag is
+  not a test result.
+- `GpuClusterCulling` is borrowed from GeometryScene by ModelItems
+  only until `Renderer3D::render` completes; scene Model/metadata
+  cannot be destroyed between draw and render.
+- All 16.4 source + recording fixtures are committed but **NONE
+  WERE COMPILED OR EXECUTED**. Next stage: Stage17 crack-free lossy
+  cluster LOD boundaries, then Stage18 performance, then one full
+  native CMake/CTest and real hardware acceptance run. Preserve
+  genre independence and Metal/Vulkan/GLES3 fallback behavior.
+
+
+## STRATA Stage 17.1–17.2 — welded and cross-material crack-resistant LOD (2026-11-20)
+
+Current branch: `feature/strata-virtual-geometry`. For the full
+architecture, exact commit list, test plan, known limitations and
+next steps, read `docs/agent-handoffs/strata-virtual-geometry.md`
+Stage 17.1 and Stage 17.2. Do NOT merge to main without
+the user's final combined native validation run.
+
+- `StrataSeamTopology.h/.cpp`: immutable CPU-only oriented-edge
+  contour verifier for a single source material. Coarse parent
+  triangles MUST preserve the EXACT welded global-ID border of
+  the combined children, even when adjacent groups render at
+  different depths. Nonmanifold/degenerate/altered contours
+  reject the parent and preserve the original fine children.
+  `StrataBuilder` independently audits all final parent links
+  and marks `Asset::seamCertified` only after success.
+- `StrataSourceSeams.h/.cpp`: source-wide UV/material/mesh physical
+  seam preflight. Handles duplicated vertex IDs at equal original
+  coordinates and different rigid `Model::bindWorld` transforms.
+  Uses a bounded BVH to reject an original cross-material T-junction
+  or near-identical but different source seam endpoints. Source
+  input is NEVER repaired or welded silently; unsafe sources
+  stay on the original Renderer3D Legacy path.
+- `StrataModelAdapter::buildModelAsset` now requires the second
+  positional audit before assigning
+  `ModelAsset::sourceSeamsCertified`. `SceneStaging` and
+  `GeometryScene` check per-partition AND whole-source
+  certification before portable Metal/Vulkan/GLES and GPU indirect
+  use. Both checks occur on CPU import/load, not in the render loop.
+- Tests `strata_seams` and `strata_source_seams` added to CMake:
+  authored but **NEVER EXECUTED**. Verify with `strata_builder`,
+  `strata_model_adapter`, `strata_view`, streaming/GPU route
+  tests and actual Metal/Vulkan/GLES3 mixed-LOD pixel/depth QA
+  during the user's final combined validation. Don't claim that
+  authored assertions prove GPU success.
+- **Limits:** no source geometry T-junction repair, no cross-Model,
+  cross-world or separate terrain chunk seam stitching, no
+  morph/skin vertex changes, no geometric geomorph or frame-stable
+  hysteresis, no guarantee of exact lossy-LOD interior shading.
+  Imported open surfaces are allowed; suspicious near-overlap
+  declines STRATA. Next Stage17.3: temporal LOD stability,
+  then Stage18 performance profiling and final Stage19 acceptance.
+
+All work stays genre-independent. Renderer3D remains the only draw
+authority; Metal/Vulkan/GLES and Legacy fallbacks must keep working.
+
+
+**Stage17.2 intra-material UV island note:** use
+`StrataSourceSeams` edge-connected triangle components, not just
+material IDs, when auditing spatial seams. Different UV islands
+inside the SAME primitive may have duplicated IDs and physically
+matching or mismatched boundary segments. See latest Stage17.2
+follow-up in the STRATA handoff; corresponding CTest source was
+written but not executed. Preserve Legacy on ambiguous source.
+
+
+## STRATA Stage17.3 — CPU/portable temporal LOD hysteresis (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.3, before changing projected LOD error, per-pass view
+selection or scene-resident index page demand. Current branch is
+`feature/strata-virtual-geometry`, NOT merged to main.
+
+- `StrataGeometry.h` and `StrataView`: opt-in validated
+  `hysteresisFraction` (0..0.45), prior per-node refined-state
+  mask and successful view's actual refined-state vector. A
+  previously coarse node needs error > threshold*(1+h) to refine,
+  a previously refined node stays fine until below
+  threshold*(1-h). Cold start and default h=0 retain the
+  original immediate threshold. Missing resident children,
+  malformed input, max-selected-node budgets and prior Stages17.1
+  and 17.2 seam admission always override hysteresis safely.
+- `PortableLodHistory`: a value history keyed by original
+  source+revision, instance, primitive, original source node and
+  camera/pass slot. It is only published after the complete
+  indexed source alias has been successfully prepared by
+  `PortableSource::prepareModel`; a failed GPU upload never
+  changes it. Force-finest late planar reflection resets the
+  history after successful preparation. Changing the scene
+  hysteresis policy also cold-resets all instance histories.
+- `PortableSource::collectResidencyDemands` must use the SAME
+  history/fraction as `prepareModel`. Otherwise Stage15 GPU
+  residency might evict child pages that a warmed LOD frontier
+  still requires. GeometryScene owns temporal state; no extra
+  Renderer3D submission path or duplicate vertex allocator.
+- All Stage17.3 new tests were AUTHORED, NOT RUN:
+  `strata_view` (cold/warm thresholds, invalid masks,
+  missing-residency and budget fallback) and
+  `strata_portable` (Metal/Vulkan/GLES3 recording backend,
+  isolated instance/camera histories, GPU-error transactional
+  safety, streamed demand alignment).
+- This is CPU-selected portable raster stability, **NOT**
+  Vulkan/Metal GPU-compute temporal history, continuous
+  geomorph or guaranteed invisible lossless shading.
+  Next Stage17.4 is GPU-compute per-pass history with actual
+  CPU/GPU temporal parity, then Stage18 benchmarks, Stage19
+  final build/CTest and hardware validation. Parity gates stay
+  OFF until an exact source SHA has real GPU evidence.
+
+
+## STRATA Stage17.4 — Metal/Vulkan GPU temporal LOD history handoff (2026-11-20)
+
+Current feature branch `feature/strata-virtual-geometry`, NOT
+merged to main. Read `docs/agent-handoffs/strata-virtual-geometry.md`,
+Stage17.4, before editing GPU cluster culling, `GeometryScene`,
+`Renderer3DModels`, temporal mask lifetimes or Vulkan/Metal shaders.
+
+- `GpuPassConfig` adds `hysteresisFraction` (0..0.45),
+  `temporalPassId` (main=1, sun=2, spot=3, reflection=4),
+  `temporalNodeCount` and `temporalRevision`. Requires one
+  enabled GPU scene instance per temporal dispatch; h=0 is the
+  existing stateless selector, unchanged by default.
+- `GpuClusterCulling` owns bounded GPU-only per-source/
+  instance/primitive/pass histories: 3 frame-serial slots,
+  never overwrites a previous still-in-flight mask; no
+  synchronous CPU readback. Reset every next mask, select using
+  previous mask's coarse/fine hysteresis band, then GPU-safety
+  rollback on invalid metadata/overflow. Distinct Metal/Vulkan
+  shader kernels share 112-byte uniform layout and GPU metadata
+  node indexing. Caps: 262144 nodes/key, 256 histories,
+  32 MiB total logical Storage masks/selector owner. Expire
+  inactive histories after GPU completion; GPU allocation or
+  fence pressure declines to portable CPU/Legacy safely.
+- `GeometryScene::setStrataLodHysteresisFraction()` controls
+  the CPU (Stage17.3) AND GPU (17.4) band; source/material/
+  policy revision, camera slot and pass viewport identity
+  reset warm history. NEW
+  `setStrataGpuTemporalParityVerified(bool)` remains FALSE
+  until real GPU warm-state selection/raster A/B passes.
+  Old stateless GPU parity acceptance flags do not imply
+  temporal parity. Never enable this gate from source review
+  or mock tests alone.
+- Stage17.4 tests AUTHORED, NOT EXECUTED: recording RHI
+  `strata_gpu_culling` tests frame fences, independent cameras,
+  revisions, 32 MiB memory caps and cold/warm uniforms.
+  Real `strata_vulkan_kernel` offscreen GPU test queues
+  four consecutive frames and asynchronously compares
+  selected ranges AND refined mask with CPU temporal oracle.
+  New native `aiverse_strata_metal_temporal` is opt-in on
+  macOS under `AIVERSE_STRATA_METAL_GPU_TESTS=ON`, with
+  three consecutive frames. Both await the owner's combined
+  final native build and real device validation.
+- Never claim full physical VRAM accounting, smooth geomorphing,
+  zero flicker, CPU/GPU pixel parity or measured GPU time
+  from this stage. Cross-model/terrain seams and shading
+  continuity remain outside the static Stage17 proof.
+  Renderer3D still owns every actual graphics draw.
+- Next: Stage18 profiling and GPU workload optimization,
+  then Stage19 clean worktree and full CMake/CTest, actual
+  Metal/Vulkan/GLES3 raster/depth/RTT parity, reconciling
+  concurrent main without force merge. Every stage needs a
+  handoff with exact changed files, real tests and commit SHA.
+
 ### Animation/View Stage 115 — main integration and GPU program lifetime
 
 - Merge `01538817a68ac869b1e9ca12bc48ef9d9f4d56c7`
@@ -4076,3 +5480,108 @@ per-rock mesh generation in the render loop, or implied collision authority.
 Offline tool `aiverse_terraweave_rocks` exports the same model with shared PBR maps.
 The current API is opt-in, not automatically installed in WorldScene/Studio.
 Keep separate per-stage handoffs and distinguish visual geometry from physics.
+
+
+## LENS captured-frame integration (2026-11-20)
+
+Read `docs/camera-system.md` and the latest entries of
+`docs/agent-handoffs/lens-native-validation-2026-11-20.md` before editing LENS.
+Secondary cameras consume the published visual epoch and owned Mesh metadata;
+never call stateful `RtsView::draw` or MotionWeave update a second time.
+Captured primary frames defer the surface cohort publication until animation,
+Sprite/tile uploads, lighting and Overlay preparation have succeeded. Candidate
+height/road queries are scoped to that preparation and must restore on failure.
+Keep immutable GPU packets and host-boundary completion-token retirement;
+preparation atomicity does not roll back GPU execution or the separate legacy
+paint/field providers. `lens_metal_frame` requires explicit
+`AIVERSE_LENS_METAL_VALIDATE=1`; a skipped test is not GPU validation.
+Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
+fixtures, and record actual platform coverage in the handoff. Build/cache/log
+paths for this integration are on KINGSTON, per the user's instruction.
+
+
+## LENS authoring tools and engine skills
+
+Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and
+`skills/visuals/aiverse-lens-native/SKILL.md` for native presentation integration.
+`apps/editor/core/LensOps.cpp` registers five CPU-only lens_scene_* / lens_camera_*
+operations through Workspace for both editor and standalone MCP. Writes require
+the exact expectedScene from the last read, validate in a scratch World and
+stage replacement without deleting last-good data on failure. They save immediately
+without undo: Reload the LENS window before further UI edits; restart the client.
+Do not equate loader validation/clientCompatible with GPU capture acceptance.
+Keep lens_ops regression tests and the separate LENS stage handoff.
+
+## STRATA engine skill and MCP authoring (2026-11-20)
+
+Use `skills/visuals/aiverse-strata/SKILL.md` for STRATA asset authoring,
+MCP analysis and native verification. It is registered in the engine skill
+catalog. The shared editor/MCP operations `strata_capabilities` and
+`strata_model_analyze` provide read-only compiled-support and CPU import results;
+they never enable GPU parity gates or certify measured rendering performance.
+See `docs/strata.md` and the Stage 23 tools handoff for limits and verification.
+## PHYSIS agent map authoring
+
+Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,
+`physis_validate`, `physis_set` in the shared editor/MCP Workspace. These
+are revision-checked document edits with Undo/Redo, never live ECS writes.
+For physical sky and local fog/reveal use the atmosphere reference linked
+from `skills/visuals/aiverse-prisma/SKILL.md`; rendering remains PRISMA-owned.
+
+## Lighting integration checkpoint (2026-11-20)
+
+Use shared `engine/render/RenderLightingRuntime.h`, `DynamicGiHost.h`,
+`LumaHost.h` and `GiModelGeometry.h` for native presentation ownership; do not
+fork separate RTS/FPS GI or direct-light engines. Renderbench headers are
+compatibility aliases. Animated opaque snapshots retain CPU geometry and use
+actual GPU fences for replacement/retirement, not elapsed frame counts.
+
+The optional map `renderLighting` v1 block is normalized by
+`RenderLightingSettings.h`. Studio's typed native methods validate before
+mutation and support Save/Undo/Redo for RTS and FPS. Studio Metal uses PBR
+versions of its existing terrain/document proxies; this is **not full game-asset
+preview parity**. It reports actual backend/convergence/fallback. Keep new UI in
+Studio UI v1. Do not treat legacy LightSystem's 1024-source limit as Luma's
+4096-source capacity or silently truncate the GI geometry to GPU limits.
+
+Dynamic GI uses texture13 and U6/buffer7. Graph textures relocate to14+.
+Experimental Metal ICB binds atlas13 at argument26 and snapshots U6; both CPU
+and GPU GI providers have actual-command and pixel acceptance tests. ICB flags
+remain OFF by default; those tests do not establish whole-engine performance.
+See `docs/agent-handoffs/lighting-main-stage27-viewport-2026-11-20.md` and
+`docs/agent-handoffs/lighting-main-stage28-icb-2026-11-20.md`. Vulkan/mobile
+hardware acceptance and native HTML visual QA must be reported separately from
+Metal/desktop GL tests, source contracts or successful builds.
+
+## Lighting/main resource integration (2026-11-20)
+
+Keep canonical Vulkan TextureResources compute for probe GI (buffers12..15,
+image0, UBO16); do not restore the former parallel GI-only backend. Model GI
+uses U7 and a texture after the page table when VT is active, preserving VT U6.
+Plain PBR keeps GI tex13/U6. Graph/VT + GI fall back from experimental ICB to
+ordinary GPU shading. Preserve LENS staged terrain publication and immutable
+captured bindings; GI variants occupy terrain slots6..12. Read the Stage36
+lighting handoff and docs/dynamic-gi.md before changing these shared contracts.
+
+**Structured fog:** `FogVolume::structure` is opt-in cosmetic 3D noise/height/wind.
+Preserve `amount=0,heightFalloff=0` uniform compatibility and CPU `densityAt(p,t)`
+semantics. World-Y height does not imply terrain following. Noise is a periodic
+256-cell integer lattice; time wrap must preserve its phase. Reveals apply after
+structure; validate new fields transactionally. `Prisma::setLocalFogTime` controls
+presentation only. Structured 48/96-step budgets are separate from uniform 32/64.
+
+## Build storage — user instruction 2026-11-20
+
+All further build outputs, compiler/module caches, shader binaries and temporary
+compiler files must reside on `/Volumes/KINGSTON`. This feature uses
+`/Volumes/KINGSTON/AIVERSE-builds/physical-sky-clouds/sky` and sibling `tmp` /
+`modules` directories. Set TMPDIR and CLANG_MODULE_CACHE_PATH there. Keep source
+worktrees intact; do not silently fall back to the internal drive if unmounted.
+
+**Local fog billows/self-shadowing:** `FogStructure::{heightVariation,warp,edgeErosion}`
+shape density in world space and preserve CPU/GPU query semantics. New values
+must be validated transactionally. `LocalFogSettings::selfShadow` defaults to 0;
+when enabled, integrate all volumes AND reveal holes toward the sun with bounded
+4/6 light samples and `shadowDistance`. Do not substitute a 2D darkening overlay.
+Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping,
+8+8 volume caps and separate handoffs; no multiple-scattering or perf claim.

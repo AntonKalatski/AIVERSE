@@ -60,4 +60,3 @@ jobs:
             build/physis-journal-standalone/build.log
             build/physis-journal-standalone/Testing/
           if-no-files-found: ignore
-

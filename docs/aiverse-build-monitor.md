@@ -202,4 +202,3 @@ the 5ms performance gate.
   dashboard draw behavior was tested using a mocked terminal.
 - See the mandatory handoff:
   `docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.
-
