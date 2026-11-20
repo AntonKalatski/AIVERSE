@@ -1,5 +1,26 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 120 — merged main + SpectraFX full native acceptance PASS (M3 Ultra)
+
+**Validated merged code SHA:**
+`70c9aa666f0bdaafc1f8169636b68fb7e4e437ba`
+in a **clean dedicated Mac Studio worktree**. Full build and
+full CTest stage exit 0; focused SpectraFX **15/15 PASS**,
+real MetalGPU **4/4 PASS** with no skipped/missing cases,
+seven-frame visual **5/5 PASS**; **all 10/10 stages exit 0**,
+failed stages 0, skipped stages 0.
+The user excerpt does **not** provide the total full CTest count,
+so do not reuse old `128/128` from pre-merge.
+RHI 512×256 stress PASS, `retire_remaining=0`,
+p50=0.1006ms/p95=0.8632ms (whole small test GPU frame);
+device-wide Metal allocation 1472/1728/1664 KiB.
+
+The Stage 119 local CMake conflict was eliminated by checking out
+the actual clean remote SHA; no engine source hotfix was needed.
+Documentation handoff:
+`docs/agent-handoffs/spectrafx-stage120-main-integration-native-pass-2026-11-20.md`.
+
+
 ## Stage 119 — local Mac CMake conflict is absent from remote integration (QA pending)
 
 Mac reports `CMakeLists.txt:623 <<<<<<<` and whitespace

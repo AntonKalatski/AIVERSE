@@ -117,3 +117,14 @@ shows CMake conflict markers, obtain the local `git status --short`,
 CMakeLists.txt`, and `git show HEAD:CMakeLists.txt` around
 line 623 before changing GitHub source. Do not merge to main until
 real merged-source acceptance passes.
+
+## Follow-up: clean integrated worktree native acceptance PASS
+
+The user ran strict one-pass acceptance on Mac Studio in
+`AIVERSE-spectrafx-final-clean-20261120` at exactly
+`70c9aa666f0bdaafc1f8169636b68fb7e4e437ba`.
+Full build and full CTest stage PASS; focused SpectraFX
+**15/15**, real MetalGPU **4/4**, objective visuals **5/5**,
+all ten stages exit 0. The failed local CMake conflict was not
+present in the clean checkout. See Stage 120 for GPU timing,
+memory counters, limits and final promotion gate.
