@@ -4,6 +4,7 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/VividPresentationSettings.h"
+#include "engine/character/vivid/VividRendererQuality.h"
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/MorphLodMapping.h"
@@ -150,6 +151,7 @@ struct CreatorApp {
         device=&dev;
         if(!renderer.init(dev))throw std::runtime_error("VIVID Creator: renderer init failed");
         rendererReady=true;
+        applyVividMaterialQuality(renderer,presentation);
         if(!ui.init(dev,AIVERSE_SOURCE_DIR "/engine/assets/fonts/ui.ttf",16.0f))
             throw std::runtime_error("VIVID Creator: ImGui init failed");
         uiReady=true;
@@ -1625,6 +1627,12 @@ struct CreatorApp {
     void frame(gfx::Device& dev,double dt) {
         ui.newFrame(dt);
         guiControls();
+        // A material tier is also a Renderer3D pipeline setting. Apply at
+        // the owner-thread frame boundary; setMaterialQuality retires old
+        // programs, while regenerate publishes a new character candidate.
+        if(rendererReady && renderer.materialQuality()!=
+           rendererMaterialQuality(presentation.materialQuality))
+            applyVividMaterialQuality(renderer,presentation);
         if(pendingRebuild)regenerate();
         if(!human.head||(!actor&&!cpuActor)||!world||
            (actor&&!actor->ready())||
