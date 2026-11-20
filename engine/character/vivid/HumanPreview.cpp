@@ -1,4 +1,5 @@
 #include "HumanPreview.h"
+#include "VividPresentationSettings.h"
 #include "engine/render/Renderer3D.h"
 #include <algorithm>
 #include <cmath>
@@ -198,5 +199,11 @@ HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality,
 HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
                                        GroomQuality quality) {
     return generateHumanPreview(dna,quality,HumanMaterialQuality::High);
+}
+HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
+                                       const VividPresentationSettings& settings) {
+    if(!settings.valid())
+        throw std::invalid_argument("VIVID invalid project presentation settings");
+    return generateHumanPreview(dna,settings.groomQuality,settings.materialQuality);
 }
 } // namespace aiverse::vivid
