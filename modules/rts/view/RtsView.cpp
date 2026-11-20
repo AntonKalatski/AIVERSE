@@ -55,11 +55,18 @@ void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
-    if(gpuDeviceLease_.device()) {
-        if(!gpuDeviceLease_.validFor(dev))
-            throw std::logic_error("RTS view stale GPU device generation");
+    if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+        throw std::logic_error("RTS view stale GPU device generation");
+    // Establish completion before modifying *any* reload-owned presentation
+    // state. On failure, leave the previous loaded view usable and untouched.
+    if (twoD_) {
+        if (!twoD_->shutdownAfterGpuIdle(dev))
+            throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
+        twoD_.reset();
+    }
+    if(gpuDeviceLease_.device())
         resources_.bindResourceDevice(dev,gpuDeviceLease_);
-    } else resources_.bindResourceDevice(dev);
+    else resources_.bindResourceDevice(dev);
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
@@ -85,13 +92,6 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         shores_->init(dev, rj["shoreTypes"], read_);   // water shores (docs/water.md)
     }
     if (!resources_.models().count("shape:generic")) buildShapes(dev);
-    if (twoD_) {
-        // Reload can happen while earlier cameras still reference sprite GPU
-        // buffers and textures. Preserve ownership if the idle proof fails.
-        if (!twoD_->shutdownAfterGpuIdle(dev))
-            throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
-        twoD_.reset();
-    }
     looks_.clear();
     warnings_.clear();
     // A live rules/project reload must not stall the whole GPU or destroy
