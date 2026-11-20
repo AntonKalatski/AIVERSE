@@ -25,6 +25,7 @@ export type StudioAssetConflictAction =
   'import' | 'skip' | 'keep-both' | 'replace' | 'new-guid';
 export interface StudioAssetTransferResult {
   files: string[]; issues: Array<{name: string; message: string}>;
+  repairedMaterialReferences?: number;
 }
 export interface StudioAssetDetail extends StudioAsset {
   importer: string; guid: string; directory: boolean; settings: Record<string,unknown>;
