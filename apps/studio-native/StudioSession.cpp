@@ -328,12 +328,34 @@ Json StudioSession::dispatch(const Json& request) {
                 if (!validStudioMaterialName(name))
                     throw std::runtime_error("Invalid material name");
                 const Json& patch=params["patch"];
-                if (!patch.isObject() || patch.size()==0 || patch.size()>15)
-                    throw std::runtime_error("Material patch requires 1..15 safe fields");
+                if (!patch.isObject() || patch.size()==0 || patch.size()>24)
+                    throw std::runtime_error("Material patch requires 1..24 safe fields");
                 const Json library=editor::loadMaterialLibrary(ws_);
                 if (!library[name].isObject())
                     throw std::runtime_error("Only existing library materials can be edited");
+                Json validatedPatch = Json::object();
+                // Runtime materials.json stores project-relative texture paths.
+                // The HTML5 picker sends immutable GUIDs; resolve/validate them
+                // at the native trust boundary, never accept an arbitrary path.
                 for(const auto& [key,value]:patch.members()) {
+                    if (studioMaterialTextureKey(key)) {
+                        if (!value.isString())
+                            throw std::runtime_error("Texture reference must be an asset GUID");
+                        if (value.str().empty()) {
+                            validatedPatch.set(key, str(""));
+                            continue;
+                        }
+                        if (!studioValidGuid(value.str()))
+                            throw std::runtime_error("Texture reference requires a valid asset GUID");
+                        StudioAssetCatalog catalog(ws_.project.dir);
+                        catalog.rebuild();
+                        const auto asset = catalog.byGuid(value.str());
+                        if (!asset || asset->directory || asset->importer != "texture")
+                            throw std::runtime_error("Texture GUID not found or is not a texture");
+                        validatedPatch.set(key, str("content/" + asset->path));
+                        continue;
+                    }
+                    validatedPatch.set(key, value);
                     if (value.isNumber()) {
                         if (!validStudioMaterialNumber(key,value.toDouble()))
                             throw std::runtime_error("Unsupported material number: "+key);
@@ -347,7 +369,7 @@ Json StudioSession::dispatch(const Json& request) {
                 }
                 Json request=Json::object();
                 request.set("name",str(name));
-                request.set("material",patch);
+                request.set("material",std::move(validatedPatch));
                 request.set("merge",Json::fromBool(true));
                 // material_set validates keys/base and writes materials.json atomically.
                 // Unlike MapDoc edits this is immediate disk save without Undo:
