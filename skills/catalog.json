@@ -5455,6 +5455,20 @@
       "requiresOwner": null,
       "source": "modules/rts/RtsModule.h",
       "keywords": []
+    },
+    {
+      "id": "studio-ui",
+      "package": null,
+      "path": "skills/editor/studio-ui/SKILL.md",
+      "domain": "workflow",
+      "summary": "HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/studio-design-system.md",
+      "keywords": []
     }
   ]
 }

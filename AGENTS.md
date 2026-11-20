@@ -4067,3 +4067,28 @@ After **every** further MotionWeave / universal animation implementation stage, 
 
 
 **Stage 157 final correction:** `aa3f2300843610374fd3a393ded02f8d82d28624` activates provider-backed ModelView reload on `--watch-model-files` even without authored child attachments. The same staged provider+Animator swap works for an empty compiled socket layout. Source readback only, not a passing native test.
+
+## Lighting integration checkpoint (2026-11-20)
+
+Use shared `engine/render/RenderLightingRuntime.h`, `DynamicGiHost.h`,
+`LumaHost.h` and `GiModelGeometry.h` for native presentation ownership; do not
+fork separate RTS/FPS GI or direct-light engines. Renderbench headers are
+compatibility aliases. Animated opaque snapshots retain CPU geometry and use
+actual GPU fences for replacement/retirement, not elapsed frame counts.
+
+The optional map `renderLighting` v1 block is normalized by
+`RenderLightingSettings.h`. Studio's typed native methods validate before
+mutation and support Save/Undo/Redo for RTS and FPS. Studio Metal uses PBR
+versions of its existing terrain/document proxies; this is **not full game-asset
+preview parity**. It reports actual backend/convergence/fallback. Keep new UI in
+Studio UI v1. Do not treat legacy LightSystem's 1024-source limit as Luma's
+4096-source capacity or silently truncate the GI geometry to GPU limits.
+
+Dynamic GI uses texture13 and U6/buffer7. Graph textures relocate to14+.
+Experimental Metal ICB binds atlas13 at argument26 and snapshots U6; both CPU
+and GPU GI providers have actual-command and pixel acceptance tests. ICB flags
+remain OFF by default; those tests do not establish whole-engine performance.
+See `docs/agent-handoffs/lighting-main-stage27-viewport-2026-11-20.md` and
+`docs/agent-handoffs/lighting-main-stage28-icb-2026-11-20.md`. Vulkan/mobile
+hardware acceptance and native HTML visual QA must be reported separately from
+Metal/desktop GL tests, source contracts or successful builds.

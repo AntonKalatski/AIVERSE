@@ -131,3 +131,17 @@ Studio Lighting controls support native save/undo/redo. RenderLightingRuntime us
 the shared DynamicGiHost and LumaHost owners; the viewport renders its existing
 terrain/document proxies as PBR geometry. This is not full game-asset preview
 parity. The panel reports actual backend, convergence and fallback.
+
+## Experimental Metal ICB
+Dynamic GI texture13 is part of the Metal ICB fragment argument buffer; U6 is
+snapshotted with the other per-submission uniforms. Both CPU and GPU GI providers
+pass analytic pixel tests with actual GPU-encoded command submissions. This does
+not enable experimental ICB by default or imply whole-engine ICB performance.
+
+## Reproducible Release timing
+`tools/renderbench/lighting_release_acceptance.py --binary <arm64-renderbench>
+--scene <GI-scene.json> --output <KINGSTON-artifact-directory>` records an
+OFF/ON/OFF sequence with 30 warmup and 120 measured frames, fixed camera/pose.
+CPU encode, CPU frame and GPU execution are reported separately from loading and
+GI convergence. It rejects non-Release/non-arm64/incomplete reports; window
+pacing must not be presented as FPS. Use --feature luma for direct lighting.

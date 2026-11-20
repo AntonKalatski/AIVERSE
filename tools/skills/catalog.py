@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT/'skills/catalog.json'
 # Category folders: skills/<category>/<skill>/SKILL.md (AGENTS.md 'Adding and updating repository skills').
-CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow')
+CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow','editor')
 
 def load_meta():
     spec = importlib.util.spec_from_file_location('meta_catalog', ROOT/'tools/meta/catalog.py')
@@ -87,6 +87,7 @@ ALIASES = {
 
 # MCP and repository workflows (no runtime library): id, summary, source of truth.
 WORKFLOWS=[
+ ('studio-ui','HTML5 Studio editor windows with shared UI v1 components, typed native bridge and visual QA','docs/studio-design-system.md'),
  ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
  ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
  ('aiverse-bots-debug','Diagnose bots that do not play and teach RtsAI a new mechanic','modules/rts/RtsMechAI.cpp'),

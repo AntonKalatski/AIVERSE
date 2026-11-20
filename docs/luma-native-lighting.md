@@ -59,7 +59,10 @@ it never waits for an uncommitted current frame. Each requested view must actual
 compose, otherwise the report is incomplete with an error. This removes missing
 contributions during camera movement at the cost of synchronization; it is not a
 measured performance optimization. Reports expose lumaBackend, lumaFallback,
-lumaSources and lumaComposedFrames. No editor integration is implied yet.
+lumaSources and lumaComposedFrames. Studio uses the same engine/render/LumaHost
+through RenderLightingRuntime; its Lighting panel persists optional renderLighting
+settings and reports the actual backend. The native viewport uses its existing
+terrain/document proxy geometry as PBR receivers, not full game assets.
 
 `lighting_luma_host` / `_gl` load a real glTF and verify report completion,
 on/off pixels, moving-camera continuity, ownership rejection and GL fallback.
