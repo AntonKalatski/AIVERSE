@@ -47,8 +47,8 @@ const {createRequire} = require('node:module');
     }
   }
   const nodes = root.listNodes();
-  const faceNode = nodes.find(n => n.getMesh()?.getName().includes('Ada_FaceMesh'));
-  if (!faceNode?.getSkin()) throw Error('Expected a skinned Ada companion export');
+  const faceNode = nodes.find(n => n.getMesh()?.getName().match(/(?:^|_)FaceMesh|_FaceMesh/i));
+  if (!faceNode?.getSkin()) throw Error('Expected a skinned companion face mesh');
   // Companion exports can carry inverted blink-normal deltas on the lids.
   // Repair only this known smooth face surface and the two blink channels.
   const blinkNormals = require('./repair_morph_normals.cjs').repairMorphNormals(
@@ -90,16 +90,16 @@ const {createRequire} = require('node:module');
   const turn = doc.createNode('vivid_full_view').setRotation([0,Math.sin(yaw/2),0,Math.cos(yaw/2)]).addChild(frame);
   scene.addChild(turn);
   const groomBindings=[];
-  for(const node of nodes)if(node.getMesh()&&!node.getSkin()&&/Hair_|Eyebrows_/i.test(node.getMesh().getName()))
+  for(const node of nodes)if(node.getMesh()&&!node.getSkin()&&/Hair_|Eyebrows_|Beard_|Mustache_/i.test(node.getMesh().getName()))
     groomBindings.push(require('./attach_grooms.cjs').attachRigidGroom(doc,node,head));
   fs.mkdirSync(destination,{recursive:true});
   await io.write(path.join(destination,'model.gltf'),doc);
-  const hair = root.listMaterials().filter(m => /hair_s_coil|eyebrows_m_thin/.test(m.getName()));
+  const hair = root.listMaterials().filter(m => /hair_|eyebrows_/i.test(m.getName()));
   if (!hair.length) throw Error('Missing authored groom materials');
   const manifest = {version:1,model:'model.gltf',dna:'vivid-dna.json',
     appearance:sourceMaps?'appearance.json':undefined,
     materials:Object.fromEntries(hair.map(m=>[m.getName(),'hair']))};
-  const dna={version:1,id:'ada-full-companion-export',displayName:'Ada — full character export',
+  const dna={version:1,id:path.basename(source,'.glb')+'-full-companion-export',displayName:path.basename(source,'.glb')+' — full character export',
     groom:{color:[0.03676008,0.02233289,0.01274758],roughness:0.55},
     rig:{rootBone:'vivid_full_root',headBone:'vivid_face_head',jawBone:'unused_jaw',leftEyeBone:'unused_eye_l',rightEyeBone:'unused_eye_r'}};
   if(sourceMaps) {

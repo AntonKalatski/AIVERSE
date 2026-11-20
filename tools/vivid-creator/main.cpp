@@ -101,7 +101,7 @@ struct CreatorApp {
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
     bool automaticLod=true;
     render::PostFx antialiasing;bool antialiasingReady=false,aaEnabled=true;
-    bool previewHeadSweep=false;
+    bool previewHeadSweep=false,previewFixedPose=false;
     float captureCameraDistance=0;
     ShadowQuality captureShadowQuality=ShadowQuality::High;
     render::AdaptiveShadowResolution shadowResolution;
@@ -631,23 +631,10 @@ struct CreatorApp {
                 // Import source and previously visible model stay immutable.
                 (void)BindPoseRebind::apply(*proposed.head,rigCorrections);
             }
-            AnimClip idle;
+            // Default preview uses the same body/face idle as Studio; no separate
+            // head-only bob clip that makes a full character appear static.
+            AnimClip idle=humanPreviewClip(*proposed.head,previewPose,true);
             idle.name="vivid_idle";
-            idle.duration=2.0f;
-            AnimChannel headMove;
-            headMove.node=proposed.head->findNode(session.dna().rig.headBone);
-            if(headMove.node<0)
-                throw std::runtime_error("VIVID Creator: imported head joint missing");
-            headMove.path=AnimChannel::Translation;
-            headMove.times={0,1,2};
-            // Clip translation is absolute local TRS: retain the imported
-            // head bind offset, otherwise skinned heads collapse toward neck.
-            const auto bind=proposed.head->nodes[std::size_t(headMove.node)].t;
-            headMove.values={bind.x,bind.y,bind.z,
-                             bind.x,bind.y+0.055f,bind.z,
-                             bind.x,bind.y,bind.z};
-            idle.channels.push_back(std::move(headMove));
-            if(previewMotion){idle=humanPreviewClip(*proposed.head,previewPose,true);idle.name="vivid_idle";}
             proposed.head->clips.push_back(std::move(idle));
             if(sequenceFrames)sequenceBase=appendHumanPreviewClips(*proposed.head);
             proposed.head->uploadPrepared=true;
@@ -1822,7 +1809,7 @@ struct CreatorApp {
                 // 3s relaxed, A, T, portrait, then relaxed. Face close-up stays
                 // portrait to show uninterrupted blink/gaze and loop continuity.
                 const int poses[]={0,1,2,3,0};
-                const int index=portraitCapture?3:poses[std::min(sequenceFrame/72,4)];
+                const int index=previewFixedPose?previewPose:(portraitCapture?3:poses[std::min(sequenceFrame/72,4)]);
                 const int clip=sequenceBase+index*2+1;
                 if(sequenceAnimator.clip(0)!=clip)playHumanPreview(sequenceAnimator,clip,true);
                 if(sequenceSampled>=0)sequenceAnimator.update(1.f/24);
@@ -2391,6 +2378,8 @@ int aiverseMain(int argc,char** argv) {
             const std::string mode=argv[++i];
             if(mode!="auto" && mode!="highest")return 2;
             application->automaticLod=mode=="auto";
+        }else if(std::strcmp(argv[i],"--preview-fixed-pose")==0) {
+            application->previewFixedPose=true;
         }else if(std::strcmp(argv[i],"--no-aa")==0) {
             application->aaEnabled=false;
         }else if(std::strcmp(argv[i],"--camera-distance")==0 && i+1<argc) {

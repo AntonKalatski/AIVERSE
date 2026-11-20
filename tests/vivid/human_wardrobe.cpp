@@ -1,12 +1,28 @@
 #include "engine/character/vivid/HumanWardrobe.h"
 #include "tools/modeling/Modeling.h"
 #include "engine/render/Animation.h"
+#include "engine/character/vivid/HumanPreviewAnimation.h"
 #include "tools/branding/BrandImage.h"
 #include <iostream>
 using namespace aiverse;
 using namespace aiverse::render;
 void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 int main(){try{
+ Model idleRig;for(const auto* name:{"root","spine_01","clavicle_l","lowerarm_l","hand_l","foot_l"}){Node n;n.name=name;idleRig.nodes.push_back(n);}idleRig.finalize();
+ const auto idle=vivid::humanPreviewClip(idleRig,0,true);bool movingTorso=false,movingHand=false;
+ for(const auto& channel:idle.channels){check(idleRig.nodes[size_t(channel.node)].name!="foot_l","idle moved planted foot");
+  if(channel.path!=AnimChannel::Rotation)continue;
+  float motion=0;for(size_t i=0;i<channel.values.size();++i)motion=std::max(motion,std::abs(channel.values[i]-channel.values[i%4]));
+  if(idleRig.nodes[size_t(channel.node)].name=="spine_01")movingTorso=motion>.005f;
+  if(idleRig.nodes[size_t(channel.node)].name=="hand_l")movingHand=motion>.005f;
+  for(int i=0;i<4;++i)check(std::abs(channel.values[size_t(i)]-channel.values[channel.values.size()-4+size_t(i)])<1e-5f,"body idle loop discontinuity");
+ }check(movingTorso&&movingHand,"body idle channels are static");
+ check(vivid::humanBoneSemantic("wardrobe/LeftForeArm_12")=="lowerarm_l","common body rig alias missing");
+
+ Model standing;Node pelvis;pelvis.name="pelvis";standing.nodes.push_back(pelvis);
+ for(int side=0;side<2;++side){const std::string suffix=side?"r":"l";const int thigh=int(standing.nodes.size());Node a;a.name="thigh_"+suffix;a.parent=0;a.t={side?-.1f:.1f,-.1f,0};standing.nodes.push_back(a);Node b;b.name="calf_"+suffix;b.parent=thigh;b.t={0,-.5f,.05f};standing.nodes.push_back(b);Node c;c.name="foot_"+suffix;c.parent=thigh+1;c.t={0,-.5f,-.05f};standing.nodes.push_back(c);}standing.finalize();standing.boundsMin={-.2f,-1.1f,-.1f};standing.boundsMax={.2f,.8f,.1f};
+ const auto planted=vivid::humanPreviewClip(standing,0,false);bool pelvisMoves=false;
+ for(int frame:{0,30,60,90,120}){Pose sample;bindPose(standing,sample);for(const auto& c:planted.channels){const size_t k=size_t(frame)*c.comps;if(c.path==AnimChannel::Translation){sample[size_t(c.node)].t={c.values[k],c.values[k+1],c.values[k+2]};if(c.node==0)pelvisMoves|=std::abs(c.values[k])>.001f;}else if(c.path==AnimChannel::Rotation)sample[size_t(c.node)].r={c.values[k],c.values[k+1],c.values[k+2],c.values[k+3]};}std::vector<mat4> world;worldMatrices(standing,sample,world);for(int foot:{3,6})check(length(world[size_t(foot)].transformPoint({})-standing.bindWorld[size_t(foot)].transformPoint({}))<.001f,"weight shift moved planted ankle");}check(pelvisMoves,"weight shift omitted complete leg chains");
  auto doc=modeling::emptyDocument();doc.set("nodes",Json::parse(R"([{"id":"root"},{"id":"body","geometry":{"kind":"box"},"skin":"skin","bindJoint":"root"},{"id":"shirt","geometry":{"kind":"box"}}])"));doc.set("skins",Json::parse(R"([{"id":"skin","joints":["root"]}])"));
  auto built=modeling::build(doc);built.model->materials[0].name="Skin";auto& mesh=built.model->meshes[0];mesh.morphTargetNames={"jawOpen"};for(auto& p:mesh.primitives){p.morphTargets=1;p.morphDeltas.resize(size_t(p.vertexCount)*6,.01f);}
  // Authored alternatives have no scene owner; assembly must retain/remap them.

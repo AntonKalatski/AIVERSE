@@ -16,7 +16,10 @@ struct HumanPreviewAnimation {
  Json toJson()const{auto j=Json::object();j.set("automaticLod",Json::fromBool(automaticLod));j.set("pose",Json::string(pose));j.set("playing",Json::fromBool(playing));j.set("faceIdle",Json::fromBool(faceIdle));j.set("speed",Json::number(double(speed)));return j;}
  static HumanPreviewAnimation fromJson(const Json& j){if(!j.isObject())throw std::invalid_argument("Invalid preview animation");for(const auto& [k,v]:j.members())if(k!="pose"&&k!="playing"&&k!="faceIdle"&&k!="speed"&&k!="automaticLod")throw std::invalid_argument("Unknown animation field");HumanPreviewAnimation s;if(j.has("automaticLod")){if(j["automaticLod"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid LOD toggle");s.automaticLod=j.getBool("automaticLod");}s.pose=j.getStr("pose");(void)s.poseIndex();if(j["playing"].type()!=Json::Type::Bool||j["faceIdle"].type()!=Json::Type::Bool)throw std::invalid_argument("Invalid animation toggle");s.playing=j.getBool("playing");s.faceIdle=j.getBool("faceIdle");if(!j["speed"].isNumber()||!std::isfinite(j["speed"].toDouble())||j["speed"].toDouble()<.25||j["speed"].toDouble()>2)throw std::invalid_argument("Invalid animation speed");s.speed=float(j["speed"].toDouble());return s;}
 };
-inline std::string humanBoneSemantic(std::string name){const auto slash=name.rfind('/');if(slash!=std::string::npos)name=name.substr(slash+1);const auto pos=name.rfind('_');if(pos!=std::string::npos&&pos+1<name.size()&&std::all_of(name.begin()+pos+1,name.end(),[](unsigned char c){return std::isdigit(c);}))name.resize(pos);return name;}
+inline std::string humanBoneSemantic(std::string name){const auto slash=name.rfind('/');if(slash!=std::string::npos)name=name.substr(slash+1);if(name=="spine_01"||name=="spine_02"||name=="spine_03"||name=="neck_01")return name;const auto pos=name.rfind('_');if(pos!=std::string::npos&&pos+1<name.size()&&std::all_of(name.begin()+pos+1,name.end(),[](unsigned char c){return std::isdigit(c);}))name.resize(pos);// Common MakeHuman/Mixamo spellings use the same presentation semantics.
+ const std::array<std::pair<const char*,const char*>,12> aliases={{{"Spine","spine_01"},{"Spine1","spine_02"},{"Spine2","spine_03"},{"Neck","neck_01"},{"LeftArm","upperarm_l"},{"RightArm","upperarm_r"},{"LeftForeArm","lowerarm_l"},{"RightForeArm","lowerarm_r"},{"LeftShoulder","clavicle_l"},{"RightShoulder","clavicle_r"},{"LeftHand","hand_l"},{"RightHand","hand_r"}}};
+ for(const auto& [source,target]:aliases)if(name==source)return target;
+ return name;}
 // Smooth closure is faster than reopening; every event has zero endpoint velocity.
 inline float humanIdleBlink(float time){
  if(!std::isfinite(time))return 0;
@@ -64,20 +67,23 @@ inline render::AnimClip humanPreviewClip(const render::Model& model,int poseInde
   if(found&&!ambiguous)armDirections[i]=direction;
  }
  for(size_t i=0;i<model.nodes.size();++i){const auto& node=model.nodes[i];const auto& name=names[i];
-  bool arm=name=="upperarm_l"||name=="upperarm_r",neck=name=="neck_01",spine=name=="spine_01"||name=="spine_02"||name=="spine_03";quat armDelta;
+  bool arm=name=="upperarm_l"||name=="upperarm_r",neck=name=="neck_01",spine=name=="spine_01"||name=="spine_02"||name=="spine_03",shoulder=name=="clavicle_l"||name=="clavicle_r",elbow=name=="lowerarm_l"||name=="lowerarm_r",hand=name=="hand_l"||name=="hand_r";quat armDelta;
   if(arm){const auto from=armDirections[i];if(length(from)<.5f)arm=false;
    else{float sign=from.x<0?-1.f:1.f;auto to=normalize(poseIndex==2?float3{sign,0,0}:poseIndex==1?float3{sign*.7f,-.7f,0}:float3{sign*.18f,-1,0});auto axis=cross(from,to);if(length(axis)>1e-5f)armDelta=quat::axisAngle(axis,std::acos(std::clamp(dot(from,to),-1.f,1.f)));}
   }
 
-  if(arm||neck||spine){AnimChannel c;c.node=int(i);c.path=AnimChannel::Rotation;c.comps=4;const auto parent=node.parent<0?quat{}:rotationOf(model.bindWorld[size_t(node.parent)]);const quat inv{-parent.x,-parent.y,-parent.z,parent.w};
+  if(arm||neck||spine||shoulder||elbow||hand){AnimChannel c;c.node=int(i);c.path=AnimChannel::Rotation;c.comps=4;const auto parent=node.parent<0?quat{}:rotationOf(model.bindWorld[size_t(node.parent)]);const quat inv{-parent.x,-parent.y,-parent.z,parent.w};
    for(int frame=0;frame<=120;++frame){const float t=frame*.05f,wave=std::sin(t*6.28318530718f/6);const bool resting=poseIndex==0||poseIndex==3;
     // Upper-body breathing and small delayed arm settling. Root/legs stay in
     // bind so feet do not slide; this does not pretend to solve weight-shift IK.
     const float breath=std::sin(t*6.28318530718f/3);
     quat world;
-    if(arm)world=quat::axisAngle({0,0,1},resting?.006f*wave:0)*quat::axisAngle({1,0,0},resting?.008f*breath:0)*armDelta;
+    if(arm)world=quat::axisAngle({0,0,1},resting?.025f*wave:0)*quat::axisAngle({1,0,0},resting?.035f*std::sin(t*6.28318530718f/6+.4f):0)*armDelta;
     else if(neck)world=quat::axisAngle({0,1,0},(poseIndex==3?.14f:0)+.025f*wave)*quat::axisAngle({1,0,0},.012f*breath);
-    else world=quat::axisAngle({1,0,0},.004f*breath)*quat::axisAngle({0,0,1},.0025f*wave);
+    else if(shoulder)world=quat::axisAngle({0,0,1},resting?.012f*breath:0);
+    else if(elbow)world=quat::axisAngle({0,1,0},resting?.025f*std::sin(t*6.28318530718f/6+.8f):0);
+    else if(hand)world=quat::axisAngle({1,0,0},resting?.018f*std::sin(t*6.28318530718f/6+1.2f):0);
+    else world=quat::axisAngle({1,0,0},(resting?.012f:.004f)*breath)*quat::axisAngle({0,0,1},resting?.008f*wave:0)*quat::axisAngle({0,1,0},resting?.009f*std::sin(t*6.28318530718f/6+.3f):0);
     const auto q=qnormalize(inv*world*parent*node.r);c.times.push_back(t);for(float v:{q.x,q.y,q.z,q.w})c.values.push_back(v);}clip.channels.push_back(std::move(c));}
   if(node.mesh>=0){const auto& mesh=model.meshes.at(size_t(node.mesh));const auto count=std::min(mesh.morphTargetNames.size(),size_t(kMaxMorphTargets));if(!count)continue;AnimChannel c;c.node=int(i);c.path=AnimChannel::Weights;c.comps=uint8_t(count);
    for(int frame=0;frame<=120;++frame){float t=frame*.05f;c.times.push_back(t);for(size_t k=0;k<count;++k){const auto& key=mesh.morphTargetNames[k];float v=node.weights[k];
@@ -86,6 +92,35 @@ inline render::AnimClip humanPreviewClip(const render::Model& model,int poseInde
      else if(key=="eyeLookOutLeft"||key=="eyeLookInRight")v=.12f*std::pow(std::max(0.f,-std::sin(t*6.28318530718f/6)),2.f);
      else if(key=="eyeLookUpLeft"||key=="eyeLookUpRight")v=.035f*(1-std::cos(t*6.28318530718f/3));}c.values.push_back(v);}}
    clip.channels.push_back(std::move(c));}
+ }
+ // Bake a small lateral weight shift with the shared two-bone solver.
+ // Only complete direct hip/knee/ankle chains opt in. Feet retain bind targets.
+ if(poseIndex==0||poseIndex==3){
+  const float height=std::max(.1f,model.boundsMax.y-model.boundsMin.y);
+  for(size_t hip=0;hip<names.size();++hip)if(names[hip]=="pelvis"){
+   struct Leg{int thigh,knee,foot;};std::vector<Leg> legs;
+   for(const auto* side:{"l","r"}){int a=-1,b=-1,c=-1;for(size_t k=0;k<names.size();++k)if(names[k]==std::string("thigh_")+side&&model.nodes[k].parent==int(hip))a=int(k);
+    if(a>=0)for(size_t k=0;k<names.size();++k)if(names[k]==std::string("calf_")+side&&model.nodes[k].parent==a)b=int(k);
+    if(b>=0)for(size_t k=0;k<names.size();++k)if(names[k]==std::string("foot_")+side&&model.nodes[k].parent==b)c=int(k);
+    if(c>=0)legs.push_back({a,b,c});
+   }
+   if(legs.size()!=2)continue;
+   AnimChannel move;move.node=int(hip);move.path=AnimChannel::Translation;
+   std::vector<AnimChannel> rotations;
+   for(const auto& leg:legs)for(int node:{leg.thigh,leg.knee,leg.foot}){AnimChannel c;c.node=node;c.path=AnimChannel::Rotation;c.comps=4;rotations.push_back(c);}
+   for(int frame=0;frame<=120;++frame){float t=frame*.05f,phase=t*6.28318530718f/6;Pose sample;bindPose(model,sample);std::vector<mat4> world;
+    const int parent=model.nodes[hip].parent;const auto parentWorld=parent<0?mat4{}:model.bindWorld[size_t(parent)];
+    const auto shift=parentWorld.inverse().transformDir({height*.006f*std::sin(phase),-height*.002f*(1-std::cos(phase*2)),0});sample[hip].t+=shift;
+    worldMatrices(model,sample,world);
+    for(const auto& leg:legs){const auto target=model.bindWorld[size_t(leg.foot)].transformPoint({});const auto pole=model.bindWorld[size_t(leg.knee)].transformPoint({})+float3{0,0,height};
+     solveTwoBoneIK(model,sample,world,leg.thigh,leg.knee,leg.foot,target,pole);
+     const auto parentRotation=rotationOf(world[size_t(leg.knee)]);const quat inverse{-parentRotation.x,-parentRotation.y,-parentRotation.z,parentRotation.w};sample[size_t(leg.foot)].r=qnormalize(inverse*rotationOf(model.bindWorld[size_t(leg.foot)]));worldMatrices(model,sample,world);
+    }
+    move.times.push_back(t);for(float v:{sample[hip].t.x,sample[hip].t.y,sample[hip].t.z})move.values.push_back(v);
+    for(auto& c:rotations){c.times.push_back(t);const auto q=sample[size_t(c.node)].r;for(float v:{q.x,q.y,q.z,q.w})c.values.push_back(v);}
+   }
+   clip.channels.push_back(std::move(move));for(auto& c:rotations)clip.channels.push_back(std::move(c));
+  }
  }
  return clip;
 }
