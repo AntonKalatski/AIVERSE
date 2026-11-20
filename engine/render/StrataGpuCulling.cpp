@@ -261,7 +261,6 @@ kernel void cs_main(device const atomic_uint* counters [[buffer(0)]],
                     constant Params& p [[buffer(8)]],
                     uint id [[thread_position_in_grid]]) {
     if(id>=p.count)return;
-    const uint produced=atomic_load_explicit(counters,memory_order_relaxed);
     const uint overflow=atomic_load_explicit(counters+1,memory_order_relaxed);
     const uint invalid=atomic_load_explicit(counters+3,memory_order_relaxed);
     if(overflow!=0u || invalid!=0u)
