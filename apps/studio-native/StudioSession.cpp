@@ -1,4 +1,5 @@
 #include "StudioSession.h"
+#include "apps/editor/EditorSceneNodes.h"
 #include <cctype>
 #include <limits>
 #include <stdexcept>
@@ -8,11 +9,20 @@ namespace aiverse::studio {
 namespace {
 Json str(const std::string& s) { return Json::string(s); }
 Json num(int64_t n) { return Json::number(n); }
-Json prop(const char* key, const char* label, const char* type, Json value) {
+Json prop(const char* key, const char* label, const char* type, Json value, bool editable = true) {
     Json r = Json::object();
     r.set("key", str(key)); r.set("label", str(label));
     r.set("type", str(type)); r.set("value", std::move(value));
+    r.set("editable", Json::fromBool(editable));
     return r;
+}
+std::string nodeId(const editor::DocumentEntityRef& ref) {
+    switch (ref.source) {
+        case editor::DocumentEntityRef::Source::MapEntity: return "entity:" + std::to_string(ref.index);
+        case editor::DocumentEntityRef::Source::FpsCollider: return "collider:" + std::to_string(ref.index);
+        case editor::DocumentEntityRef::Source::FpsSpawn: return "spawn:" + std::to_string(ref.index);
+    }
+    return {};
 }
 }
 StudioSession::StudioSession(const std::string& engineRoot, const std::string& project) {
@@ -46,12 +56,15 @@ Json StudioSession::snapshot() const {
     Json scene = Json::object();
     scene.set("name", str(ws_.map.data.name));
     Json rows = Json::array();
-    for (size_t i = 0; i < ws_.map.data.entities.size(); ++i) {
-        const auto& e = ws_.map.data.entities[i];
+    const auto nodes = editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps());
+    for (const auto& node : nodes) {
         Json row = Json::object();
-        row.set("id", str("entity:" + std::to_string(i)));
-        row.set("name", str(e.type + " #" + std::to_string(i + 1)));
-        row.set("kind", str(e.type));
+        row.set("id", str(nodeId(node.ref)));
+        row.set("name", str(node.label));
+        // UI receives only generic display kind; document source names remain native.
+        row.set("kind", str(node.ref.source == editor::DocumentEntityRef::Source::MapEntity
+            ? (node.ref.index < ws_.map.data.entities.size() ? ws_.map.data.entities[node.ref.index].type : "Entity")
+            : node.ref.source == editor::DocumentEntityRef::Source::FpsCollider ? "Collider" : "Spawn"));
         row.set("visible", Json::fromBool(true));
         rows.push(std::move(row));
     }
@@ -60,14 +73,24 @@ Json StudioSession::snapshot() const {
     Json fields = Json::array();
     bool valid = false;
     if (!selected_.empty()) {
-        try {
-            const auto& e = ws_.map.data.entities.at(size_t(indexFor(selected_)));
+        for (const auto& node : nodes) {
+            if (nodeId(node.ref) != selected_) continue;
             valid = true;
-            fields.push(prop("type", "Type", "text", str(e.type)));
-            fields.push(prop("x", "Position X", "number", Json::number(double(e.x), 4)));
-            fields.push(prop("z", "Position Z", "number", Json::number(double(e.z), 4)));
-            fields.push(prop("owner", "Owner", "number", num(int64_t(e.owner))));
-        } catch (const std::exception&) {}
+            if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
+                const auto& e = ws_.map.data.entities.at(node.ref.index);
+                fields.push(prop("type", "Type", "text", str(e.type)));
+                fields.push(prop("x", "Position X", "number", Json::number(double(e.x), 4)));
+                fields.push(prop("z", "Position Z", "number", Json::number(double(e.z), 4)));
+                fields.push(prop("owner", "Owner", "number", num(int64_t(e.owner))));
+            } else if (node.hasPosition) {
+                // Show authoritative collider/spawn coordinates, but don't pretend
+                // unsupported authoring operations are writable yet.
+                fields.push(prop("x", "Position X", "number", Json::number(node.position.x, 4), false));
+                fields.push(prop("y", "Position Y", "number", Json::number(node.position.y, 4), false));
+                fields.push(prop("z", "Position Z", "number", Json::number(node.position.z, 4), false));
+            }
+            break;
+        }
     }
     result.set("selectedId", valid ? str(selected_) : Json());
     result.set("properties", std::move(fields));
@@ -114,7 +137,13 @@ Json StudioSession::dispatch(const Json& request) {
             const Json& id = params["id"];
             if (!id.isNull() && !id.isString()) throw std::runtime_error("Invalid selection");
             const std::string next = id.isNull() ? "" : id.str();
-            if (!next.empty()) indexFor(next);
+            if (!next.empty()) {
+                bool found = false;
+                for (const auto& node : editor::enumerateDocumentSceneNodes(ws_.map, ws_.project.isFps())) {
+                    if (nodeId(node.ref) == next) { found = true; break; }
+                }
+                if (!found) throw std::runtime_error("Selection refers to an unknown document entity");
+            }
             selected_ = next;
             reply.set("result", snapshot());
         } else if (method == "studio.save") {
@@ -132,6 +161,8 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.setProperty") {
             const std::string entityId = params.getStr("entityId");
             if (selected_.empty() || selected_ != entityId) throw std::runtime_error("Selection changed while editing");
+            // Only MapDoc entity authoring is currently connected to Workspace::entity_update.
+            // Collider/spawn objects are explicitly read-only until native commands are added.
             const int index = indexFor(entityId);
             const std::string key = params.getStr("key");
             const Json& value = params["value"];
