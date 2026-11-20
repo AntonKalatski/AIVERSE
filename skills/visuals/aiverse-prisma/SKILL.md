@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-98-unified-all-backend-acceptance-20261120.md` (current combined full validation plan), `docs/handoffs/prisma-stage-97-full-native-metal-gl33-acceptance-pass-20261120.md` (latest complete hardware acceptance), `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md` (latest actual Editor compile blocker), `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-98-latest-main-reconciled-all-in-one-20261120.md` (latest-main integrated one-pass gate), `docs/handoffs/prisma-stage-98-unified-all-backend-acceptance-20261120.md` (current combined full validation plan), `docs/handoffs/prisma-stage-97-full-native-metal-gl33-acceptance-pass-20261120.md` (latest complete hardware acceptance), `docs/handoffs/prisma-stage-97-spectrafx-preview-viewport-owner-fix-20261120.md` (latest actual Editor compile blocker), `docs/handoffs/prisma-stage-97-gl33-multiview-hardware-pass-20261120.md` (latest confirmed GL33+Metal smoke), `docs/handoffs/prisma-stage-97-metal-multiview-hardware-pass-20261120.md` (latest user-run Metal GPU evidence), `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,7 +1350,7 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-98-unified-all-backend-acceptance-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-98-latest-main-reconciled-all-in-one-20261120.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
 
 ## Stage 96 — integrated main native acceptance
 
@@ -1497,3 +1497,23 @@ Do not equate zero known pending bytes with physical VRAM use.
 Vulkan is not built by default on macOS and GLES/WebGL need different
 devices/runners; report those as backend SKIP, not PASS.
 Exact source handoff: `docs/handoffs/prisma-stage-98-unified-all-backend-acceptance-20261120.md`.
+
+## Stage98 latest-main merge before ONE final build
+
+Before the new expensive native run, the PRISMA Stage98 feature branch was
+merged non-forced, with true two-parent merge
+`097bdf846f8531c743f70b29afd100358ad5367c`, incorporating main
+`5aba82c35db0a8d998fb2b951914db11f3cfae0d`. The merged
+`tests/render/HdrScene.h` preserves new Physical Sky/PHYSIS, Local Fog
+and the old Stage97 + new Stage98 multiview/stress/moving-pixel modes.
+The canonical `Prisma.{h,cpp}` and CMake now include latest-main sky/fog
+work, not older feature copies. GitHub main comparison immediately after
+source merge: ahead=35, behind=0, no removed paths. This merged source
+is **not yet native-compiled/CTest/GPU-tested**; Stage97's earlier PASS
+on `9da0dcdbbbb5179f890a2ad740e7cb27eeb1ab8d` applies to its
+older code only. Do NOT request individual backend/test runs.
+After ensuring an idle clean worktree, execute the single
+`bash tools/prisma/acceptance.sh build/prisma-stage97` script for the
+entire updated engine and all available Mac GPU fixtures. Keep
+Vulkan/GLES/WebGL unsupported-platform statuses separate. Exact
+handoff: `docs/handoffs/prisma-stage-98-latest-main-reconciled-all-in-one-20261120.md`.
