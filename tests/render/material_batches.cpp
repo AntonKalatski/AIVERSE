@@ -252,7 +252,7 @@ int aiverseMain(int argc, char** argv) {
             if (fixture->meshes.size() != 16 || fixture->nodes.size() != 16 ||
                 fixture->vertices.size() != size_t(16u * verticesPerPrimitive) ||
                 fixture->indices.size() != size_t(16u * verticesPerPrimitive)) {
-                std::fprintf(stderr, "mesh subdivision CPU topology FAILED N=%u\\n",
+                std::fprintf(stderr, "mesh subdivision CPU topology FAILED N=%u\n",
                              unsigned(subdivisions));
                 return 1;
             }
@@ -260,12 +260,12 @@ int aiverseMain(int argc, char** argv) {
                 if (mesh.primitives.size() != 1 ||
                     mesh.primitives[0].indexCount != verticesPerPrimitive ||
                     mesh.primitives[0].vertexCount != verticesPerPrimitive) {
-                    std::fprintf(stderr, "mesh subdivision primitive FAILED N=%u\\n",
+                    std::fprintf(stderr, "mesh subdivision primitive FAILED N=%u\n",
                                  unsigned(subdivisions));
                     return 1;
                 }
         }
-        std::printf("mesh subdivision CPU checks=passed\\n");
+        std::printf("mesh subdivision CPU checks=passed\n");
         return 0;
     }
     if (argc != 3) { std::fprintf(stderr, "usage: material_batches MODEL OUTPUT_PREFIX\n"); return 2; }
