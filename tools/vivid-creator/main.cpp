@@ -502,7 +502,7 @@ struct CreatorApp {
                 // with their original strand/UV/alpha maps preserved by
                 // humanMaterialFromSource. Never overlay a second wig.
             } else {
-                proposed=generateHumanPreview(session.dna(),presentation.groomQuality,presentation.materialQuality);
+                proposed=generateHumanPreview(session.dna(),presentation);
             }
             SkinSeamSplit::Result seamSplit;
             if(!skinWeightEdits.edits().empty()) {
