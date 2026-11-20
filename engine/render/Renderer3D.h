@@ -27,7 +27,11 @@
 #include <unordered_map>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class GpuMetadataScene; }
+namespace strata {
+    struct ModelAsset;
+    class GpuMetadataScene;
+    class GpuClusterCulling;
+}
 
 struct Mesh {
     gfx::BufferHandle vb, ib;
@@ -152,7 +156,7 @@ struct StaticModelCache {
 // sources, and keeps the buffer/metadata alive through the render epoch.
 // Failure to consume this packet falls back to the same Legacy ModelDraw.
 enum class GpuIndexedPass : uint8_t {
-    MainOpaque=0, SunShadow=1, PlanarReflection=2
+    MainOpaque=0, SunShadow=1, PlanarReflection=2, SpotShadow=3
 };
 struct GpuIndexedSelectionPacket {
     gfx::BufferHandle commands{};
@@ -168,6 +172,14 @@ struct GpuIndexedSelectionPacket {
     // Source-local primitive identity, NOT GPU atomic output order.
     uint32_t sourceMesh=0, sourcePrimitive=0, expectedMaterial=0;
     int32_t sourceBaseVertex=0;
+    // Borrowed index metadata/selector for JUST-IN-TIME spot/reflection
+    // dispatch before those camera-specific graphics encoders begin.
+    // GeometryScene must outlive Renderer3D::render() as for source Model.
+    gfx::BufferHandle metadata{};
+    strata::GpuClusterCulling* selector=nullptr;
+    uint32_t instanceToken=0;
+    float errorThresholdPixels=2.f;
+    bool allowSpotShadow=false, allowReflection=false;
     bool exclusive=false;
     bool valid() const {
         return exclusive && commands.valid() && vertex.valid() &&
@@ -877,6 +889,8 @@ private:
         // renderer-owned item. Never stores a pointer to GeometryScene.
         GpuIndexedSelectionPacket gpuIndexed{};
         GpuIndexedSelectionPacket gpuShadowIndexed{};
+        GpuIndexedSelectionPacket gpuSpotShadowIndexed{};
+        GpuIndexedSelectionPacket gpuReflectionIndexed{};
         size_t geometryPrimitive = 0;
         uint32_t firstIndex = 0, indexCount = 0;
         // Optional two-level, single-primitive GPU LOD choice. Always preserve
@@ -915,6 +929,11 @@ private:
                                 bool instancePalette = false);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
+    // Stage16.4c: compute for auxiliary cameras ONLY outside the active
+    // render pass; no duplicate graphics submission or CPU GPU wait.
+    void prepareStrataAuxiliaryGpuPackets(GpuIndexedPass pass,
+                                          const mat4& projection,
+                                          int width,int height);
     bool initSelectionOutline();
     void renderSelectionOutline(const gfx::PassDesc& scenePass, int width, int height);
 
