@@ -6,10 +6,12 @@
 #endif
 #include "engine/render/StrataGpuCulling.h"
 #include "engine/render/StrataVulkanCullingShaders.h"
+#include "engine/render/Geometry.h"
 #include "engine/gfx/vulkan/VkShaderCompiler.h"
 #include "engine/gfx/vulkan/Vulkan.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -34,6 +36,130 @@ static ModelAsset sample() {
     p.geometry.bounds.push_back({{-0.2f,-0.2f,0.2f},{0.2f,0.2f,0.8f}});
     out.primitives.push_back(std::move(p));
     return out;
+}
+
+static ModelAsset temporalFixture() {
+    ModelAsset source;
+    ModelPrimitiveAsset primitive{};
+    primitive.mesh=0;primitive.primitive=0;primitive.material=3;
+    auto& g=primitive.geometry;
+    g.indices={0,1,2,1,3,2,0,1,2,1,3,2};
+    g.roots={0};
+    g.nodes.resize(3);
+    g.bounds.resize(3);
+    g.nodes[0].firstChild=1;
+    g.nodes[0].childCount=2;
+    g.nodes[0].firstIndex=0;
+    g.nodes[0].indexCount=6;
+    g.nodes[0].geometricError=.25f;
+    g.nodes[1].firstIndex=6;g.nodes[1].indexCount=3;
+    g.nodes[2].firstIndex=9;g.nodes[2].indexCount=3;
+    for(auto& node:g.nodes){node.resident=true;node.materialGroup=3;}
+    for(auto& bounds:g.bounds)
+        bounds={{-.5f,-.5f,.2f},{.5f,.5f,.8f}};
+    source.primitives.push_back(std::move(primitive));
+    return source;
+}
+
+// This tests ACTUAL GPU-computed refinement history, not a recording-RHI
+// simulation. All reads are asynchronous diagnostic-only and are never
+// involved in normal Renderer3D raster command submission.
+static void testVulkanTemporalParity(gfx::Device& device) {
+    const ModelAsset model=temporalFixture();
+    std::string error;
+    std::vector<uint8_t> bytes;
+    assert(packGpuMetadata(model,bytes,&error));
+    GpuMetadataHeader header{};
+    std::memcpy(&header,bytes.data(),sizeof(header));
+    header.version=2;
+    std::memcpy(bytes.data(),&header,sizeof(header));
+    GpuPrimitive gpuPrimitive{};
+    std::memcpy(&gpuPrimitive,
+        bytes.data()+header.primitivesByteOffset,sizeof(gpuPrimitive));
+    gpuPrimitive.gpuFirstIndex=400;
+    std::memcpy(bytes.data()+header.primitivesByteOffset,
+        &gpuPrimitive,sizeof(gpuPrimitive));
+    gfx::BufferDesc description{};
+    description.type=gfx::BufferType::Storage;
+    description.usage=gfx::Usage::Immutable;
+    description.size=bytes.size();
+    description.data=bytes.data();
+    const auto metadata=device.createBuffer(description);
+    assert(metadata.valid());
+
+    const auto instance=makeGpuSceneInstance(mat4::identity(),0,919);
+    GpuPassConfig pass{};
+    pass.viewProjection=mat4::identity();
+    pass.width=800;pass.height=600;
+    pass.maxOutputClusters=16;
+    pass.hysteresisFraction=.2f;
+    pass.temporalNodeCount=3;
+    pass.temporalPassId=1; // main camera
+    pass.temporalRevision=77;
+    pass.frustumCull=false;
+    const auto& bounds=model.primitives[0].geometry.bounds[0];
+    const float errorPixels=geometryErrorPixels(pass.viewProjection,
+        {bounds.min[0],bounds.min[1],bounds.min[2]},
+        {bounds.max[0],bounds.max[1],bounds.max[2]},
+        model.primitives[0].geometry.nodes[0].geometricError,
+        pass.width,pass.height,pass.clipDepthZeroToOne);
+    assert(std::isfinite(errorPixels) && errorPixels>0.f);
+
+    GpuClusterCulling culling;
+    std::vector<uint8_t> previous;
+    const float factors[]{.95f,1.08f,1.30f,.70f};
+    const uint32_t expectedRanges[]{2,2,1,2};
+    for(size_t sampleIndex=0;sampleIndex<4;++sampleIndex){
+        pass.errorThresholdPixels=errorPixels*factors[sampleIndex];
+        bool clustersReady=false,historyReady=false;
+        GpuSelectionReadback gpu{};
+        std::vector<uint8_t> stateBytes;
+        device.beginFrame(64,64);
+        GpuSelectionSubmission selection{};
+        assert(culling.dispatch(device,metadata,{instance},pass,
+                               device.frameSerial(),selection));
+        assert(selection.temporalApplied && selection.temporalState.valid());
+        assert(culling.requestReadback(device,selection,
+            [&](GpuSelectionReadback read) {
+                gpu=std::move(read);
+                clustersReady=true;
+            }));
+        assert(device.readBufferAsync(selection.temporalState,
+            3*sizeof(uint32_t),
+            [&](std::vector<uint8_t> data) {
+                stateBytes=std::move(data);
+                historyReady=true;
+            }));
+        assert(!clustersReady && !historyReady);
+        device.endFrame();
+        for(int n=0;n<3 && (!clustersReady || !historyReady);++n){
+            device.beginFrame(64,64);
+            device.endFrame();
+        }
+        assert(clustersReady && gpu.valid());
+        assert(historyReady && stateBytes.size()==3*sizeof(uint32_t));
+        assert(gpu.ranges.size()==expectedRanges[sampleIndex]);
+        assert(compareGpuSelection(model,{instance},pass,400,gpu,&error,
+            previous.empty()?nullptr:&previous));
+
+        ViewConfig cpuView=cpuReferenceView(pass,instance);
+        if(!previous.empty())cpuView.previousRefined=&previous;
+        ViewPlan expected{};
+        assert(planView(model.primitives[0].geometry,cpuView,expected,&error));
+        assert(expected.refinedNodes.size()==3);
+        std::vector<uint8_t> observed(3,0);
+        for(size_t node=0;node<3;++node){
+            uint32_t flag=0;
+            std::memcpy(&flag,stateBytes.data()+node*sizeof(flag),
+                        sizeof(flag));
+            assert(flag<=1);
+            observed[node]=uint8_t(flag);
+        }
+        assert(observed==expected.refinedNodes);
+        previous=std::move(observed);
+    }
+    culling.shutdown(device);
+    device.destroyBuffer(metadata);
 }
 
 int main() {
@@ -234,6 +360,7 @@ int main() {
 
     culling.shutdown(*device);
     device->destroyBuffer(gpuMetadata);
+    testVulkanTemporalParity(*device);
     std::cout<<"[strata-vulkan] compute GPU selection parity PASS\n";
     return 0;
 }
