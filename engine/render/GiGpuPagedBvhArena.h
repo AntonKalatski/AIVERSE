@@ -69,6 +69,16 @@ public:
         State next;
     };
 
+    // Optional tighter physical address limits permit deterministic small
+    // compaction tests without allocating thousands of triangles.
+    explicit GiGpuPagedBvhArena(uint32_t triangleLimit=kTriangleLimit,
+                                uint32_t nodeLimit=kNodeLimit)
+      : triangleLimit_(triangleLimit),nodeLimit_(nodeLimit) {
+        if(!triangleLimit_ || triangleLimit_>kTriangleLimit ||
+           nodeLimit_<=kTlasCapacity || nodeLimit_>kNodeLimit)
+            throw std::invalid_argument("invalid GI paged BLAS address budget");
+    }
+
     void clear() { state_=State{}; }
     size_t pageCount() const { return state_.pages.size(); }
     const Page* findPage(uint64_t id) const {
@@ -98,7 +108,7 @@ private:
     Plan planOnce(const GiChunkedGeometrySnapshot& snapshot,
                   const GiGpuChunkBvhCache& blasCache,
                   bool compact) const {
-        if(snapshot.triangleCount()>kTriangleLimit ||
+        if(snapshot.triangleCount()>triangleLimit_ ||
            snapshot.chunkCount()>kMaxChunks)
             throw std::invalid_argument("GI GPU paged source limit exceeded");
         Plan publication;
@@ -156,13 +166,13 @@ private:
             const bool relocateNodes=nodeCount>page.nodes.capacity;
             if(relocateTriangles) {
                 const Span allocated=acquire(next.freeTriangles,next.triangleEnd,
-                                             kTriangleLimit,triCount);
+                                             triangleLimit_,triCount);
                 release(next.freeTriangles,page.triangles);
                 page.triangles=allocated;
             }
             if(relocateNodes) {
                 const Span allocated=acquire(next.freeNodes,next.nodeEnd,
-                                             kNodeLimit,nodeCount);
+                                             nodeLimit_,nodeCount);
                 release(next.freeNodes,page.nodes);
                 page.nodes=allocated;
             }
@@ -293,6 +303,8 @@ private:
     }
 
     State state_;
+    uint32_t triangleLimit_=kTriangleLimit;
+    uint32_t nodeLimit_=kNodeLimit;
 };
 
 } // namespace aiverse::render
