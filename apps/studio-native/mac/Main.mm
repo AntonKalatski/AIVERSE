@@ -744,6 +744,25 @@
             return;
         }
         const auto gameMethod=req.getStr("method");
+        if((gameMethod=="studio.gameEntities" || gameMethod=="studio.gameInspect") && req["id"].isNumber()) {
+            auto reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try {
+                const auto& args=req["params"];
+                if(gameMethod=="studio.gameEntities") {
+                    if(!args["offset"].isNumber() || !args["limit"].isNumber() || !args["query"].isString() ||
+                       args["offset"].toDouble()<0 || args["offset"].toDouble()>10000000 ||
+                       args["limit"].toDouble()<1 || args["limit"].toDouble()>100)
+                        throw std::runtime_error("Invalid runtime page");
+                    const auto offset=int(args["offset"].integer()),limit=int(args["limit"].integer());
+                    if(game_)reply.set("result",game_->entities(offset,limit,args.getStr("query")));
+                    else {aiverse::studio::StudioRuntimeInspect empty;reply.set("result",empty.entities(nullptr,"0",offset,limit,args.getStr("query")));}
+                }else {
+                    if(!game_)throw std::runtime_error("No game is running");
+                    reply.set("result",game_->inspect(args.getStr("epoch"),args.getStr("ref")));
+                }
+            }catch(const std::exception& e){reply.set("error",aiverse::Json::string(e.what()));}
+            [self sendStudioReply:reply];return;
+        }
         if(gameMethod=="studio.gameDevices" && req["id"].isNumber()) {
             auto reply=aiverse::Json::object();reply.set("id",req["id"]);
             reply.set("result",aiverse::studio::studioGameDevices());[self sendStudioReply:reply];return;

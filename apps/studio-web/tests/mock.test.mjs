@@ -44,6 +44,8 @@ test('document mutation requires a native project', async () => {
 });
 
 test('browser demo never simulates native gameplay', async () => {
+  assert.equal((await mockInvoke('studio.gameEntities',{offset:0,limit:50,query:''})).active,false);
+  await assert.rejects(mockInvoke('studio.gameInspect',{epoch:'0',ref:'1'}),/native gameplay/);
   assert.equal((await mockInvoke('studio.gameState',{})).active,false);
   assert.equal((await mockInvoke('studio.gameState',{})).canStep,false);
   await assert.rejects(mockInvoke('studio.gameControl',{action:'step'}),/native AIVERSE/);

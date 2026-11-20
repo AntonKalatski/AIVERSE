@@ -15,10 +15,10 @@ StudioGameSurface::~StudioGameSurface() {
     lifetime_->retire();
 }
 void StudioGameSurface::start(const StudioGameLaunch& plan,const std::string& assets) {
-    error_.clear();launch_=plan;assets_=assets;
+    error_.clear();launch_=plan;assets_=assets;matchObserved_=false;++runtimeEpoch_;
     host_->start(*device_,plan.project,assets,lifetime_->lease(),plan.map);
 }
-void StudioGameSurface::stop() { host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
+void StudioGameSurface::stop() { matchObserved_=false;++runtimeEpoch_; host_->suspendInput();host_->stop();host_->collectGpuRetirements(); }
 void StudioGameSurface::setDevice(const StudioGameDevice& profile) {
     (void)profile.profile();host_->suspendInput();profile_=profile;
 }
@@ -51,11 +51,20 @@ void StudioGameSurface::frame(int w,int h,float pw,float ph,double dt,bool focus
         gfx::PassDesc clear;device_->beginPass(clear);device_->endPass();
         host_->frame(std::clamp(dt,0.0,0.1),{}, {},w,h,logical.first,logical.second,profile_.profile().touch,profile_.insets());
         device_->endFrame();
+        const bool match=host_->inMatch();
+        if(match && !matchObserved_)++runtimeEpoch_;
+        matchObserved_=match;
         if (host_->quitRequested()) stop();
         if (!host_->errorText().empty()) error_=host_->errorText();
     } catch (const std::exception& e) {
         device_->endPass();device_->endFrame();error_=e.what();stop();
     }
+}
+Json StudioGameSurface::entities(int offset,int limit,const std::string& query) {
+    return inspector_.entities(host_->inMatch()?host_->simulation():nullptr,std::to_string(runtimeEpoch_),offset,limit,query);
+}
+Json StudioGameSurface::inspect(const std::string& epoch,const std::string& ref) {
+    return inspector_.inspect(host_->inMatch()?host_->simulation():nullptr,std::to_string(runtimeEpoch_),epoch,ref);
 }
 Json StudioGameSurface::state() const {
     Json out=Json::object();out.set("device",profile_.json());

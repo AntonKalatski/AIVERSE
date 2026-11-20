@@ -57,15 +57,20 @@ export interface StudioSnapshot {
 }
 export interface StudioEntityCatalog { types: Array<{id: string; name: string}>; mapEntities: boolean }
 export interface StudioProjectState { maps: Array<{file: string; title: string}>; currentMap: string; canCreateMap: boolean; maxMapSize: number }
+export interface StudioRuntimeRow {ref:string; name:string; kind:string; owner:number; parent:string; health:number; components:string[]}
+export interface StudioRuntimePage {active:boolean; epoch:string; tick:number; rows:StudioRuntimeRow[]; total:number}
+export interface StudioRuntimeEntity {ref:string; epoch:string; tick:number; components:Record<string,unknown>; stats?:Record<string,unknown>}
 export interface StudioGameDevice { id:string; landscape:boolean; safeArea:boolean; width:number; height:number; touch:boolean }
 export interface StudioGameDeviceOption { id:string; name:string; group:string }
 export interface StudioGameState { device:StudioGameDevice; paused: boolean; canControl: boolean; canStep: boolean; active: boolean; loading: boolean; progress: number; inMatch: boolean; tick: number; error: string }
-export type StudioMethod = 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
+export type StudioMethod = 'studio.gameEntities' | 'studio.gameInspect' | 'studio.gameDevices' | 'studio.gameDevice' | 'studio.gameControl' | 'studio.gameStart' | 'studio.gameStop' | 'studio.gameState' | 'studio.project' | 'studio.newMap' | 'studio.openMap' | 'studio.saveAs' | 'studio.entityCatalog' | 'studio.entityCreate' | 'studio.entityDelete' | 'studio.entityDuplicate' | 'studio.snapshot' | 'studio.propertiesFor' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.assetByGuid' | 'studio.assetReferences' | 'studio.assetMetaPatch' | 'studio.assetFolderCreate' |
   'studio.assetMovePreview' | 'studio.assetImportPreview' | 'studio.assetTransferCommit' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave' | 'studio.shaderGraphCatalog' | 'studio.facialRigList' | 'studio.facialRigGet' | 'studio.facialRigValidate' | 'studio.facialRigSave';
 export interface StudioParams {
   'studio.gameStart': {entry: 'map' | 'menu'};
   'studio.gameStop': Record<string,never>;
   'studio.gameState': Record<string,never>;
+  'studio.gameEntities': {offset:number;limit:number;query:string};
+  'studio.gameInspect': {epoch:string;ref:string};
   'studio.gameDevices': Record<string,never>;
   'studio.gameDevice': Pick<StudioGameDevice,'id'|'landscape'|'safeArea'>;
   'studio.gameControl': {action:'pause'|'resume'|'step'|'restart'};
@@ -118,6 +123,8 @@ export interface StudioResult {
   'studio.gameStart': StudioGameState;
   'studio.gameStop': StudioGameState;
   'studio.gameState': StudioGameState;
+  'studio.gameEntities': StudioRuntimePage;
+  'studio.gameInspect': StudioRuntimeEntity;
   'studio.gameDevices': StudioGameDeviceOption[];
   'studio.gameDevice': StudioGameState;
   'studio.gameControl': StudioGameState;

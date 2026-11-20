@@ -3,6 +3,7 @@
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "apps/studio-native/StudioGameInput.h"
 #include "apps/studio-native/StudioGameDevice.h"
+#include "apps/studio-native/StudioRuntimeInspect.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
 #include <filesystem>
@@ -66,6 +67,21 @@ void entityWorkflow() {
             request.set("method",Json::string(method));request.set("params",std::move(params));
             return session.dispatch(request);
         };
+        {
+            Simulation live({1,20,0},std::make_unique<game::RtsModule>());
+            live.setup(session.workspace().project.rulesJson,session.workspace().map.toJson());
+            studio::StudioRuntimeInspect inspector;
+            const auto before=live.checksum();
+            auto page=inspector.entities(&live,"run-1",0,1,"");
+            AIVERSE_TEST_CHECK(page["active"].boolean() && page["rows"].size()==1 && page["total"].integer()>=2);
+            const auto ref=page["rows"][0].getStr("ref");
+            const auto detail=inspector.inspect(&live,"run-1","run-1",ref);
+            AIVERSE_TEST_CHECK(detail["components"].has("Transform"));
+            AIVERSE_TEST_CHECK(live.checksum()==before);
+            bool stale=false;try {inspector.inspect(&live,"run-2","run-1",ref);}catch(...){stale=true;}
+            AIVERSE_TEST_CHECK(stale);
+            AIVERSE_TEST_CHECK(inspector.entities(nullptr,"run-2",0,100,"")["rows"].size()==0);
+        }
         const auto plan=studio::studioGameLaunch(session.workspace(),true);
         AIVERSE_TEST_CHECK(plan.map && *plan.map==0);
         AIVERSE_TEST_CHECK(plan.project==session.workspace().project.dir);

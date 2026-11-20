@@ -23,6 +23,8 @@ import GamePanel from './GamePanel';
 
 import ProjectPanel from './generated/ProjectPanel';
 
+import RuntimePanel from './generated/RuntimePanel';
+
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
@@ -122,6 +124,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
       case 'project': return <ProjectPanel {...ctx}/>;
       case 'facial_rig':
         return <FacialRigPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'runtime': return <RuntimePanel snapshot={snapshot}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game': return <GamePanel {...ctx}/>;
       case 'animation':

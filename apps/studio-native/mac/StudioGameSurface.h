@@ -3,6 +3,7 @@
 #include "apps/studio-native/StudioGameLaunch.h"
 #include "engine/data/Json.h"
 #include "apps/studio-native/StudioGameDevice.h"
+#include "apps/studio-native/StudioRuntimeInspect.h"
 
 namespace aiverse::studio {
 // Independent native surface; the authoring Scene keeps its own device/epoch.
@@ -18,6 +19,8 @@ public:
     void suspend();
     void event(const platform::Event& event);
     Json state() const;
+    Json entities(int offset,int limit,const std::string& query);
+    Json inspect(const std::string& epoch,const std::string& ref);
 private:
     std::unique_ptr<gfx::Device> device_;
     std::unique_ptr<render::RenderDeviceLifetime> lifetime_;
@@ -26,5 +29,8 @@ private:
     StudioGameLaunch launch_;
     StudioGameDevice profile_;
     float inputScale_=1;
+    StudioRuntimeInspect inspector_;
+    uint64_t runtimeEpoch_=0;
+    bool matchObserved_=false;
 };
 }
