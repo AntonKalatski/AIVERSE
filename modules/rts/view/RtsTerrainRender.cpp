@@ -4,13 +4,13 @@
 #include "engine/view/GridGeometry.h"
 #include "../../../engine/data/JsonCompose.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <stdexcept>
 #include <stdexcept>
 #include <utility>
 #include "../../../engine/platform/Platform.h"
@@ -1232,7 +1232,7 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     // Shared, unnormalized four side-plane AABB test (clip-depth independent).
     const auto frustum=::aiverse::view::SideFrustum::fromViewProjection(r.viewProj());
     const float3 eye = r.camera().eye();
-    struct Item { const Lod* lod; float morphStart, morphEnd; };
+    struct Item { Lod lod; float morphStart, morphEnd; };
     auto items = std::make_shared<std::vector<Item>>();
     if(!preparedOnly) {
         stats_.drawn = 0;
@@ -1262,7 +1262,7 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         }
         const Lod& l = c.lods[size_t(k)];
         if (!l.indexCount) continue;
-        items->push_back({&l, start, end});
+        items->push_back({l, start, end});
         if(!preparedOnly) {
             ++stats_.drawn;
             stats_.triangles += l.indexCount / 3;
@@ -1327,26 +1327,53 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         if (!cliffTex) { u.cliff[2] = look_.slopeStart; u.cliff[3] = look_.slopeEnd; }
         u.blend[0] = look_.blendSharpness; u.blend[1] = look_.macro; u.blend[2] = 1.0f;
     }
-    const Lod* apron = apron_.indexCount ? &apron_ : nullptr;
+    // Capture the per-camera GPU bindings by value. A subsequent terrain
+    // rebuild can replace the live maps while this draw command is queued.
+    struct GpuBindings {
+        gfx::TextureHandle cell,dynamic,splat,vision,detailNormal,detailSplat;
+        gfx::TextureHandle cliff,cliffNormal;
+        std::array<gfx::TextureHandle,4> layer{},layerNormal{};
+        bool detail=false;
+    };
+    GpuBindings bindings{};
+    bindings.cell=cellTex_;
+    bindings.dynamic=dynTex_;
+    bindings.splat=splatTex_;
+    bindings.vision=visionTex_;
+    bindings.detailNormal=detailNrmTex_;
+    bindings.detailSplat=detailSplatTex_;
+    bindings.cliff=cliffTex_.valid()?cliffTex_.tex:gray_;
+    bindings.cliffNormal=cliffNrm_.valid()?cliffNrm_.tex:flatN_;
+    bindings.detail=detailOn_;
+    for(int i=0;i<4;++i) {
+        bindings.layer[size_t(i)]=layerTex_[i].valid()?layerTex_[i].tex:white_;
+        bindings.layerNormal[size_t(i)]=layerNrm_[i].valid()?layerNrm_[i].tex:flatN_;
+    }
+    const Lod apron=apron_;
     // traced terrain shadows (Renderer3D trace tier): the height map of the drawn surface
     if (r.traceActive()) {
         if (!preparedOnly && heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, pipe, apron](gfx::Device& d) {
+    r.drawCustomOpaque([&r, items, u, pipe, apron, bindings](gfx::Device& d) {
         d.setPipeline(pipe);
         r.bindLitFrame();
         r.bindTrace(18);
         r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
-        d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
+        d.setTexture(2, bindings.cell);
+        d.setTexture(3, bindings.dynamic);
+        d.setTexture(4, bindings.splat);
         for (int i = 0; i < 4; ++i) {
-            d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);
-            d.setTexture(9 + i, layerNrm_[i].valid() ? layerNrm_[i].tex : flatN_);
+            d.setTexture(5 + i, bindings.layer[size_t(i)]);
+            d.setTexture(9 + i, bindings.layerNormal[size_t(i)]);
         }
-        d.setTexture(13, cliffTex_.valid() ? cliffTex_.tex : gray_);
-        d.setTexture(14, cliffNrm_.valid() ? cliffNrm_.tex : flatN_);
-        d.setTexture(15, visionTex_);
-        if (detailOn_) { d.setTexture(16, detailNrmTex_); d.setTexture(17, detailSplatTex_); }
+        d.setTexture(13, bindings.cliff);
+        d.setTexture(14, bindings.cliffNormal);
+        d.setTexture(15, bindings.vision);
+        if (bindings.detail) {
+            d.setTexture(16, bindings.detailNormal);
+            d.setTexture(17, bindings.detailSplat);
+        }
         TU0 uu = u;
         auto drawLod = [&](const Lod& l, float s, float e) {
             uu.lod[0] = s; uu.lod[1] = e;
@@ -1355,8 +1382,8 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
             d.setIndexBuffer(l.ib);
             d.drawIndexed(l.indexCount);
         };
-        if (apron) drawLod(*apron, 1e9f, 2e9f);
-        for (auto& it : *items) drawLod(*it.lod, it.morphStart, it.morphEnd);
+        if (apron.indexCount) drawLod(apron, 1e9f, 2e9f);
+        for (const auto& it : *items) drawLod(it.lod, it.morphStart, it.morphEnd);
     });
     // Water was already captured as a model/mesh packet in the primary
     // view; avoid duplicating it when the secondary terrain path runs.
