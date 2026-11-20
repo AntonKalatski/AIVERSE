@@ -1059,11 +1059,16 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
         }
     }
 #endif
-    if(d.model!=i.model || strataLodHysteresisFraction_==0.f)
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // The portable alias is NOT a new identity; preserve its history.
+    // GPU route and an HLOD/surface substitute have no CPU LOD frontier
+    // to reuse. Failure to prepare an alias does NOT modify history.
+    if(strataLodHysteresisFraction_==0.f || gpuStrataPrepared ||
+       (i.surfaceProxy && d.model==i.surfaceProxy))
         strataPortableLodHistories_.erase(&i);
-    if(strataLodHysteresisFraction_>0.f)
-        stats_.strataLodHysteresisHistories=
-            uint32_t(strataPortableLodHistories_.size());
+    stats_.strataLodHysteresisHistories=
+        uint32_t(strataPortableLodHistories_.size());
+#endif
     r.drawModel(d);++stats_.submitted;
 }
 
