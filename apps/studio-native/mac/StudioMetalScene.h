@@ -8,8 +8,10 @@
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "apps/studio-native/StudioFacialPreviewState.h"
 
 namespace aiverse::studio {
+class StudioFacialGpuPreview;
 class StudioMetalScene final {
 public:
     explicit StudioMetalScene(void* metalLayer);
@@ -19,7 +21,10 @@ public:
     void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
-               uint64_t previewRevision, float levelHeight = 1.5f);
+               uint64_t previewRevision,
+               const StudioFacialPreviewState& facialPreview,
+               float levelHeight = 1.5f);
+    uint64_t renderedFacialGeneration() const noexcept;
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -33,6 +38,8 @@ private:
     std::unique_ptr<render::Model> materialSphere_;
     uint64_t materialRevision_ = std::numeric_limits<uint64_t>::max();
     bool materialMode_ = false;
+    bool facialMode_ = false;
+    std::unique_ptr<StudioFacialGpuPreview> facialGpu_;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();
     float terrainLevelHeight_ = 1.5f;
     render::RTSCamera camera_;
