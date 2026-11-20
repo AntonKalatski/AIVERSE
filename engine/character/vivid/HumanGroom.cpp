@@ -613,7 +613,7 @@ bool HumanGroomRuntime::updateCardVertices(
     return true;
 }
 std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
-        const HumanDNA& dna) const {
+        const HumanDNA& dna,HumanMaterialQuality quality) const {
     using namespace render;
     dna.validate();
     if(guides_.empty()||segments_==0)return {};
@@ -631,7 +631,7 @@ std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
                              {at,at+1,at+2,at+1,at+3,at+2});
         }
     }
-    m->materials.push_back(humanMaterial(HumanSurface::Hair,dna));
+    m->materials.push_back(humanMaterial(HumanSurface::Hair,dna,quality));
     MeshDef hair;
     hair.name="vivid_groom_cards";
     hair.deformable=true; // never merge/put dynamic groom in static pool
@@ -658,5 +658,9 @@ std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
     // vertex IDs; the editor updates exactly this dynamic buffer per frame.
     m->uploadPrepared=true;
     return m;
+}
+std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
+        const HumanDNA& dna) const {
+    return makeCardModel(dna,HumanMaterialQuality::High);
 }
 } // namespace aiverse::vivid
