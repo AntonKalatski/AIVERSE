@@ -308,6 +308,12 @@ int aiverseMain(int argc, char** argv) {
     std::vector<gfx::Device::GpuTiming> gpuTimelineSamples;
     bool gpuTimingUnsupported = false;
     if (gpuTimeline) gpuTimelineSamples.reserve(96);
+    const bool modelGpuCounters = stress &&
+        std::getenv("AIVERSE_BATCH_MODEL_GPU_COUNTERS") &&
+        std::string(std::getenv("AIVERSE_BATCH_MODEL_GPU_COUNTERS")) == "1";
+    std::vector<gfx::Device::ModelGpuCounter> modelGpuSamples;
+    uint64_t firstModelGpuSerial = 0;
+    if (modelGpuCounters) modelGpuSamples.reserve(220);
     // Stage 76: do not conflate AUTO exploration frames with its learned
     // Direct frames. Retain CPU samples for *actual* successful MDI frames.
     std::vector<double> stressDirectFallbackMs, stressSuccessfulMdiMs;
@@ -363,6 +369,11 @@ int aiverseMain(int argc, char** argv) {
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& d) {
         device=&d; if (!renderer.init(d) || !render::uploadModel(d,*model)) { failed=true; return; }
+        if (modelGpuCounters && !d.enableModelGpuCounters(true)) {
+            std::fprintf(stderr, "GPU model-pass counters UNSUPPORTED by this device\n");
+            failed = true;
+            return;
+        }
         if (scenario == "indirect") {
             secondModel = indirectFixture();
             if (!render::uploadModel(d, *secondModel)) { failed=true; return; }
@@ -398,6 +409,12 @@ int aiverseMain(int argc, char** argv) {
         for (const auto& mesh:model->meshes) batches.push_back(mesh.materialBatches);
     };
     cb.frame=[&](gfx::Device& d,double) {
+        if (modelGpuCounters) {
+            if (!firstModelGpuSerial) firstModelGpuSerial = d.frameSerial();
+            auto completed = d.takeModelGpuCounters();
+            modelGpuSamples.insert(modelGpuSamples.end(),
+                                   completed.begin(), completed.end());
+        }
         if (gpuTimeline) {
             auto completed = d.takeGpuTimings();
             gpuTimelineSamples.insert(gpuTimelineSamples.end(),
@@ -965,6 +982,43 @@ int aiverseMain(int argc, char** argv) {
         failed|=!renderer.modelError().empty();d.endPass();++frame;
     };
     cb.shutdown=[&]{
+        if (modelGpuCounters) {
+            auto completed = device->takeModelGpuCounters();
+            modelGpuSamples.insert(modelGpuSamples.end(),
+                                   completed.begin(), completed.end());
+            std::sort(modelGpuSamples.begin(), modelGpuSamples.end(),
+                      [](const auto& a, const auto& b) { return a.frame < b.frame; });
+            std::ofstream out(prefix + "-model-gpu-counters.csv");
+            out << "frame,shadow_gpu_ticks,opaque_gpu_ticks,valid\n";
+            size_t validCount = 0;
+            uint64_t lastFrame = 0;
+            for (const auto& entry : modelGpuSamples) {
+                if (!firstModelGpuSerial || entry.frame < firstModelGpuSerial)
+                    continue;
+                const uint64_t logicalFrame = entry.frame - firstModelGpuSerial;
+                if (logicalFrame < 115 || logicalFrame > 180) continue;
+                if (lastFrame && logicalFrame <= lastFrame) {
+                    failed = true;
+                    continue;
+                }
+                lastFrame = logicalFrame;
+                if (entry.valid && entry.shadowTicks > 0 && entry.opaqueTicks > 0)
+                    ++validCount;
+                else failed = true;
+                out << logicalFrame << ',' << entry.shadowTicks << ','
+                    << entry.opaqueTicks << ',' << (entry.valid ? 1 : 0) << '\n';
+            }
+            out.close();
+            if (!out || validCount != 66) {
+                std::fprintf(stderr,
+                    "GPU model counter timeline INVALID: valid=%zu expected=66\n",
+                    validCount);
+                failed = true;
+            } else {
+                std::printf("GPU model counter timeline samples=%zu path=%s\n",
+                            validCount, (prefix + "-model-gpu-counters.csv").c_str());
+            }
+        }
         if (gpuTimeline) {
             auto completed = device->takeGpuTimings();
             gpuTimelineSamples.insert(gpuTimelineSamples.end(),
