@@ -266,7 +266,8 @@ inline TerrainPatch bakeSparseTerrainVisual(
         for(uint32_t i=1;i+1<n;++i) {
             if(i%step==0)continue;
             const uint32_t lo=i/step*step,hi=lo+step;
-            const auto [xa,za]=coord(lo),[xb,zb]=coord(hi);
+            const auto [xa,za]=coord(lo);
+            const auto [xb,zb]=coord(hi);
             const auto [x,z]=coord(i);
             const int64_t a=patch.heightsCm[size_t(za)*n+xa];
             const int64_t b=patch.heightsCm[size_t(zb)*n+xb];
