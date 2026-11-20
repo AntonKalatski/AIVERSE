@@ -1818,3 +1818,12 @@ cornea, GPU ICB/MDI, conditional LOD and late compositing
 still fail closed or retain conservative CPU depth fallbacks.
 Vulkan and GLES3 still lack true 60B GPU-source expansion.
 See dedicated `docs/agent-handoffs/vivid-7BA-multi-gpu-mask-2026-11-20.md`.
+
+## Character wardrobe assembly (native CPU, 2026-11-20)
+
+`HumanWardrobe.h` provides versioned wardrobe validation, model inspection and
+assembly. Clothes and accessories share one item contract; imported visibility
+masks multiply body alpha. `bakeHumanAppearance` converts the existing appearance
+DAG into ordinary PBR textures/factors. Body bind deformation and facial morphs
+are retained in the output; garment fitting is not automatic. Studio integration
+and real full-character acceptance follow in the next stage.

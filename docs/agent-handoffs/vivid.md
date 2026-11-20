@@ -2139,3 +2139,34 @@ roundtrip. All builds/logs on KINGSTON: motionweave-vivid/full-character/
 {build,test}-wardrobe-export.log; report native/test-reports/20261120-155942-27803.
 git diff --check PASS. Full regression/UI/other platforms NOT RUN. No CI/push.
 Next: native wardrobe recipe, masking and bake pipeline, then typed Studio UI.
+
+## Wardrobe CPU assembly and bake — 2026-11-20
+
+Code `3bad4c000730c7bbc51aedbe2664462c6132a639`, branch integration/motionweave-studio-facial-stage184.
+HumanWardrobe v1 composes imported CPU models: selectable source meshes, one
+enabled item per slot, rigid bone sockets/TRS, skinned clothes with exact bone-name
+and bind-world checks. Per-item UV0 red-channel visibility masks multiply base
+alpha; black hides. Masks remain texture cutouts (no unsafe triangle deletion).
+Optional cloth finish uses existing appearance controls; source finish preserves
+jewelry PBR. Body deformation is baked in bind-space vertices/morph vectors with
+translated joint pivots/inverse binds and offset translation animation keys. It is
+an approximation for upright characters, not pose-wide anatomical retargeting.
+HumanAppearanceBake executes the same private DAG, bakes linear colour/alpha to
+sRGB textures (16..4096 max edge), stores roughness/normal/AO factors, removes live
+graphs. CPU/GPU procedural-noise floating-point differences possible. Export also
+preserves COLOR_0 and base KHR_texture_transform. Final package removes unused
+meshes/materials/images, keeps separate skin/material primitives in one asset.
+No automatic clothing fitting or physics; external skinned clothes must match rig.
+No UI/button or filesystem publication yet. Next stage: safe native async build,
+Studio garment/mask controls, actual Ada package roundtrip and native captures.
+
+Verification: KINGSTON full-character/build-wardrobe-core-final.log and
+test-wardrobe-core.log: modeling_authoring + vivid_human_wardrobe +
+vivid_human_appearance 3/3 PASS (report 20261120-160550-42160). Final core changes
+(baseline body bounds, idempotent hides, optional cloth finish) rebuilt and
+vivid_human_wardrobe 1/1 PASS, build/test-wardrobe-core-last.log, report
+20261120-160628-42693. New fixture covers mask alpha, socket attachment, hidden
+mesh removal, facial/skinning export/reimport, duplicate IDs/missing socket,
+cloth roughness/alpha. Initial make invocation could not select newly generated
+target in same command after CMake regeneration; next invocation passed.
+Full suite/multi-pose body and actual Ada/UI NOT RUN yet. No CI/push.
