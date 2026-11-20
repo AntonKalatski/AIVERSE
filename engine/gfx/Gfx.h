@@ -339,6 +339,10 @@ public:
     // Commands (only valid between beginPass/endPass)
     virtual void beginPass(const PassDesc& d) = 0;
     virtual void endPass() = 0;
+    // Diagnostic GPU frame-capture grouping. Other backends are harmless
+    // no-ops; Metal emits labels only while an explicit trace is active.
+    virtual void pushGpuDebugGroup(const char* label) { (void)label; }
+    virtual void popGpuDebugGroup() {}
     virtual void setViewport(const Rect& r) = 0;
     virtual void setScissor(const Rect& r) = 0;   // w==0 disables
     virtual void setPipeline(PipelineHandle p) = 0;
