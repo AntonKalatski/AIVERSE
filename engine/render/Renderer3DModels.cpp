@@ -1014,6 +1014,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             ModelItem it;
             it.sourceNode = n;
             it.geometry = d.geometry;
+            // Production packet is borrowed only for this frame and only
+            // for the original single unbatched source primitive. The draw
+            // route still validates ALL material/transform/live RHI state.
+            if(shadowRole==0 && materialRole==0 && part==0)
+                it.gpuIndexed=d.gpuIndexed;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             // Restrict GPU LOD to a single compatible rigid primitive in each
@@ -2640,6 +2645,69 @@ void Renderer3D::renderModels(int phase) {
     for (size_t i = 0; i < order_.size();) {
         if (phase == 1 && !gpuEncodedCovered_.empty() &&
             gpuEncodedCovered_[order_[i]]) { ++i; continue; }
+        // STRATA Stage 16.3: the ONLY production source of Vulkan GPU
+        // indexed cluster draws is Renderer3D, after its own model pipeline,
+        // textures, lighting and single-world instance U0 are bound. A
+        // successful indirect submission REPLACES (does not duplicate)
+        // this exact original draw. No other pass is eligible.
+        const ModelItem& strataItem=modelItems_[order_[i]];
+        const auto& packet=strataItem.gpuIndexed;
+        if(packet.valid()){
+            ++modelStats_.strataGpuCandidates;
+            const bool eligible=phase==1 && geometryMainView_ &&
+                !auxiliaryModelPass_ && !drawCallDebug_ &&
+                dev_->info().backend==gfx::Backend::Vulkan &&
+                dev_->supportsMultiDrawIndirect() && dev_->gpuHealthy() &&
+                dev_->frameSerial()==packet.frameSerial &&
+                !gpuModelCommandsReady_ &&
+                packet.sourceIndexCount>0 &&
+                strataItem.model && strataItem.prim && strataItem.mat &&
+                strataItem.model->vb==packet.vertex &&
+                strataItem.model->ib==packet.index &&
+                strataItem.model->geometryRevision==packet.geometryRevision &&
+                strataItem.model->materialRevision==packet.materialRevision &&
+                strataItem.model->gpuBaseVertex==uint32_t(packet.sourceBaseVertex) &&
+                strataItem.firstIndex==packet.sourceFirstIndex &&
+                strataItem.indexCount==packet.sourceIndexCount &&
+                strataItem.model->geometryPoolPage &&
+                strataItem.rigid && strataItem.joints<0 &&
+                strataItem.morph<0 && !strataItem.baked &&
+                !strataItem.mat->shaderGraph &&
+                strataItem.mat->alpha==AlphaMode::Opaque &&
+                !strataItem.mat->transparent &&
+                strataItem.gi==0 && !strataItem.materialRole &&
+                !strataItem.shadowRole && !strataItem.paletteMaterials &&
+                strataItem.lodThreshold>=1.f && !strataItem.lodInvert &&
+                strataItem.tint.w>=.99f &&
+                strataItem.dissolve<=0.f &&
+                (strataItem.flags&kDrawStatic)!=0 &&
+                !transparentItem(strataItem.flags) &&
+                strataItem.outline.w==0.f &&
+                quality_==ShadowQuality::Off &&
+                !lights.reflectionsWanted() &&
+                std::memcmp(strataItem.world.m,
+                            packet.selectedWorld.m,
+                            sizeof(packet.selectedWorld.m))==0;
+            if(eligible && drawModelBatch(&order_[i],1,phase,false)){
+                if(dev_->drawIndexedIndirect(packet.commands,0,
+                        packet.commandCapacity,
+                        sizeof(gfx::DrawIndexedIndirectCommand))){
+                    lastItem_=&strataItem;
+                    ++modelStats_.strataGpuSubmitted;
+                    ++drawCalls_;
+                    ++profile_.draws[size_t(phase)];
+                    ++profile_.instances[size_t(phase)];
+                    // GPU culling has an unknown number of triangles until
+                    // completion. Do not claim a CPU triangle count here.
+                    ++i;
+                    continue; // exclusive: original Legacy draw skipped
+                }
+            }
+            ++modelStats_.strataGpuRejected;
+            ++modelStats_.strataGpuFallbackDraws;
+            // The original source item is still in order_ and reaches the
+            // ordinary Renderer3D path below, with identical material state.
+        }
         // Keep one-draw-per-primitive GPU-authoring limited to the legacy
         // static path. Dynamic rigid models only use GPU ICB in batches of 2+;
         // otherwise conventional instancing remains cheaper and preserves
