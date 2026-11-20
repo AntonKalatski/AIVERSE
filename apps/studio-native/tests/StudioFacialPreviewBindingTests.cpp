@@ -32,7 +32,8 @@ int main() {
         const Json rig=Json::parse(R"({"version":1,"morphs":[
             {"parameter":"jawOpen","node":"Face","target":"jawOpen"},
             {"parameter":"eyeBlinkLeft","node":"Face","target":"eyeBlinkLeft"}
-            ],"rig":[]})");
+            ],"rig":[{"bone":"Eye.L","op":"aim","target":"lookAt",
+              "axis":[0,0,1],"weightParameter":"gazeWeight"}]})");
         const Json info=preview.bind(assets,model->guid,rig);
         AIVERSE_TEST_CHECK(info["bound"].boolean());
         AIVERSE_TEST_CHECK(info["guid"].str()==model->guid);
@@ -42,10 +43,10 @@ int main() {
         AIVERSE_TEST_CHECK(info["rendererChannelCapacity"].integer()==8);
         const auto generation=uint64_t(info["revision"].integer());
         AIVERSE_TEST_CHECK(preview.controls(generation,Json::parse(
-            R"({"jawOpen":0.8})"),Json::object())["values"]["jawOpen"].toDouble()>0.79);
+            R"({"jawOpen":0.8})")),Json::object())["values"]["jawOpen"].toDouble()>0.79);
         bool rejected=false;
         try {preview.controls(generation,Json::parse(
-            R"({"jawOpen":2})"),Json::object());}catch(const std::exception&){rejected=true;}
+            R"({"jawOpen":2})")),Json::object());}catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         AIVERSE_TEST_CHECK(preview.describe()["values"]["jawOpen"].toDouble()>0.79);
         AIVERSE_TEST_CHECK(preview.describe()["vectors"]["lookAt"].isArray());
@@ -53,21 +54,21 @@ int main() {
             Json::parse(R"({"lookAt":[2,1,3]})"));
         AIVERSE_TEST_CHECK(changed["vectors"]["lookAt"][size_t(0)].toDouble()>1.9);
         rejected=false;
-        try {preview.controls(generation,Json::parse(R"({"jawOpen":0.1})"),
+        try {preview.controls(generation,Json::parse(R"({"jawOpen":0.1})")),
             Json::parse(R"({"lookAt":[0,1000001,2]})"));}catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         AIVERSE_TEST_CHECK(preview.describe()["values"]["jawOpen"].toDouble()>0.79);
         AIVERSE_TEST_CHECK(preview.describe()["vectors"]["lookAt"][size_t(0)].toDouble()>1.9);
         rejected=false;
         try {preview.controls(generation,Json::parse(
-            R"({"unknown":0.2})"),Json::object());}catch(const std::exception&){rejected=true;}
+            R"({"unknown":0.2})")),Json::object());}catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         rejected=false;
         try {preview.bind(assets,image->guid,rig);}catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected && preview.describe()["guid"].str()==model->guid);
         rejected=false;
         try {preview.controls(generation+1,Json::parse(
-            R"({"jawOpen":0})"),Json::object());}catch(const std::exception&){rejected=true;}
+            R"({"jawOpen":0})")),Json::object());}catch(const std::exception&){rejected=true;}
         AIVERSE_TEST_CHECK(rejected);
         preview.reset();
         AIVERSE_TEST_CHECK(!preview.describe()["bound"].boolean());
