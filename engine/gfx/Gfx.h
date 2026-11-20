@@ -339,6 +339,20 @@ public:
     virtual bool beginGpuScope(uint64_t tag) { (void)tag; return false; }
     virtual void endGpuScope() {}
     virtual std::vector<GpuTiming> takeGpuScopeTimings() { return {}; }
+    // Diagnostic, opt-in: GPU hardware counter timestamp deltas across
+    // renderModels shadow/opaque spans. Deltas are raw GPU counter ticks,
+    // NOT milliseconds without a validated device clock calibration.
+    // No counter availability is represented by false/empty, never fake zero.
+    struct ModelGpuCounter {
+        uint64_t frame = 0;
+        uint64_t shadowTicks = 0, opaqueTicks = 0;
+        bool valid = false;
+    };
+    virtual bool enableModelGpuCounters(bool enabled) { (void)enabled; return false; }
+    virtual bool sampleModelGpuCounter(int phase, bool start) {
+        (void)phase; (void)start; return false;
+    }
+    virtual std::vector<ModelGpuCounter> takeModelGpuCounters() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
@@ -455,6 +469,10 @@ public:
     // Commands (only valid between beginPass/endPass)
     virtual void beginPass(const PassDesc& d) = 0;
     virtual void endPass() = 0;
+    // Diagnostic GPU frame-capture grouping. Other backends are harmless
+    // no-ops; Metal emits labels only while an explicit trace is active.
+    virtual void pushGpuDebugGroup(const char* label) { (void)label; }
+    virtual void popGpuDebugGroup() {}
     virtual void setViewport(const Rect& r) = 0;
     virtual void setScissor(const Rect& r) = 0;   // w==0 disables
     virtual void setPipeline(PipelineHandle p) = 0;

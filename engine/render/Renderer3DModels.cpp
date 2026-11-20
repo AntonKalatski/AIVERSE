@@ -2374,6 +2374,26 @@ void Renderer3D::prepareStrataAuxiliaryGpuPackets(
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Explicit test-only isolation. Leave Metal pass begin/end and all
+    // non-model draws unchanged; never change production rendering by default.
+    if ((phase == 0 && !(diagnosticModelPassMask_ & 1u)) ||
+        (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+         !(diagnosticModelPassMask_ & 2u))) return;
+    // Unsupported backends and unarmed Metal counters ignore this marker.
+    // Marks bracket GPU commands emitted by renderModels (shadow/main only).
+    const bool sampleModelGpu = !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, true);
+    // Capture labels have no runtime effect without explicit Metal trace.
+    // Scope the pop so an early return cannot leave the render encoder
+    // with an unbalanced debug group.
+    if (sampleModelGpu)
+        dev_->pushGpuDebugGroup(phase == 0 ? "AIVERSE Shadow Models"
+                                           : "AIVERSE Opaque Models");
+    struct ScopedModelGpuGroup {
+        gfx::Device* device = nullptr;
+        ~ScopedModelGpuGroup() { if (device) device->popGpuDebugGroup(); }
+    } gpuGroup{sampleModelGpu ? dev_ : nullptr};
     // Read the same dynamic indirect-buffer handle at both boundaries.
     // Reflection and other auxiliary view replays are intentionally excluded
     // from the main-camera opaque metric; phases 2..4 are not shadow/opaque.
@@ -3159,7 +3179,12 @@ void Renderer3D::renderModels(int phase) {
                 (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
                                 !transparentItem(first.flags)))) {
                 size_t end = i + 1;
-                while (end < order_.size() && end - i < size_t(instanceLimit_)) {
+                // Test-only cap changes CPU MDI submission count without
+                // recompiling shaders or changing uniform instance capacity.
+                const size_t groupLimit = diagnosticCpuMdiGroupCap_
+                    ? std::min(size_t(instanceLimit_), size_t(diagnosticCpuMdiGroupCap_))
+                    : size_t(instanceLimit_);
+                while (end < order_.size() && end - i < groupLimit) {
                     const uint32_t candidate = order_[end];
                     if (!compatible(candidate)) {
                         const auto& y = modelItems_[candidate];
@@ -3293,6 +3318,32 @@ void Renderer3D::renderModels(int phase) {
                 std::chrono::steady_clock::now() - passBegin).count();
             autoCpuBatch_.observe(size_t(phase), order_.size(),
                                   autoCpuPermit, cpuMs);
+            // Explicitly opt-in cost audit: record comparable wall boundaries
+            // for CPU AUTO decisions, not GPU time or FPS. Existing stage
+            // profiling already accounts for the same passBegin boundary.
+            static const bool traceAutoCosts = [] {
+                const char* flag = std::getenv("AIVERSE_BATCH_AUTO_COST_TRACE");
+                return flag && std::strcmp(flag, "1") == 0;
+            }();
+            if (traceAutoCosts) {
+                static uint32_t printed[2][2]{};
+                const size_t lane = size_t(phase);
+                const size_t mode = mdiSubmitted ? 1u : 0u;
+                if (lane < 2 && printed[lane][mode]++ < 24) {
+                    const auto& learned =
+                        autoCpuBatch_.lanes[lane][AutoCpuBatchPolicy::bucket(order_.size())];
+                    std::fprintf(stderr,
+                        "[auto-cpu-cost] phase=%zu mode=%s items=%zu "
+                        "wall_ms=%.5f "
+                        "submissions=%llu direct_ewma_ms=%.5f mdi_ewma_ms=%.5f "
+                        "direct_samples=%u mdi_samples=%u opportunities=%u\n",
+                        lane, mdiSubmitted ? "mdi" : "direct", order_.size(),
+                        cpuMs,
+                        (unsigned long long)(modelStats_.multiDrawSubmissions-cpuMdiBefore),
+                        learned.directMs, learned.mdiMs,
+                        learned.directSamples, learned.mdiSamples, learned.opportunities);
+                }
+            }
         }
     }
     if (cpuStages) {
@@ -3369,6 +3420,7 @@ void Renderer3D::renderModels(int phase) {
             t = {};
         }
     }
+    if (sampleModelGpu) (void)dev_->sampleModelGpuCounter(phase, false);
 }
 
 void Renderer3D::prepareOcclusion() {
