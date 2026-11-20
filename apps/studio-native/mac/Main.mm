@@ -347,7 +347,8 @@
             (method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
              method=="studio.lightingSet" || method=="studio.lightAdd" ||
-             method=="studio.lightUpdate" || method=="studio.lightDelete")) {
+             method=="studio.lightUpdate" || method=="studio.lightDelete" ||
+             method=="studio.materialPatch")) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

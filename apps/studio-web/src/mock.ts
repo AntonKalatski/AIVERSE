@@ -29,6 +29,12 @@ const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
 
 export async function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
+  if (method === 'studio.materials') {
+    return { library: {} } as StudioResult[M];
+  }
+  if (method === 'studio.materialPatch') {
+    throw Error('Editing materials requires the native AIVERSE host');
+  }
   if (method === 'studio.lighting') {
     return { lighting: null, lights: [] } as StudioResult[M];
   }

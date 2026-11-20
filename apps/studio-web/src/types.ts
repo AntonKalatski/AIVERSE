@@ -5,6 +5,7 @@ export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; 
 export interface StudioAsset { path: string; bytes: number }
 export interface StudioAssetList { files: StudioAsset[] }
 export type StudioLightingState = import('./panels/lightingSchema').LightingState;
+export type StudioMaterialLibrary = import('./panels/materialSchema').MaterialLibrary;
 export interface StudioSnapshot {
   project: { name: string; path: string; dirty: boolean };
   scene: { name: string; entities: StudioEntity[] };
@@ -14,7 +15,7 @@ export interface StudioSnapshot {
   mode: 'edit' | 'play';
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -22,6 +23,8 @@ export interface StudioParams {
   'studio.redo': Record<string, never>;
   'studio.openProject': Record<string, never>;
   'studio.assets': Record<string, never>;
+  'studio.materials': Record<string, never>;
+  'studio.materialPatch': { name: string; patch: import('./panels/materialSchema').MaterialPatch };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
   'studio.lightAdd': Record<string, never>;
@@ -39,6 +42,8 @@ export interface StudioResult {
   'studio.redo': StudioSnapshot;
   'studio.openProject': { cancelled: boolean; snapshot: StudioSnapshot | null };
   'studio.assets': StudioAssetList;
+  'studio.materials': StudioMaterialLibrary;
+  'studio.materialPatch': StudioMaterialLibrary;
   'studio.lighting': StudioLightingState;
   'studio.lightingSet': StudioLightingState;
   'studio.lightAdd': StudioLightingState;

@@ -13,6 +13,7 @@ import PropertyField from '../components/PropertyField';
 import ViewportPlaceholder from '../components/ViewportPlaceholder';
 import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
+import MaterialsPanel from './MaterialsPanel';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
@@ -100,9 +101,10 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         </div>;
       case 'lighting':
         return <LightingPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'materials':
+        return <MaterialsPanel projectPath={snapshot?.project.path ?? ''}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
-      case 'materials':
       case 'animation':
         return <div className="dock-unported" role="status">
           <Box size={28}/>
