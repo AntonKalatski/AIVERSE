@@ -603,6 +603,8 @@ bool GpuClusterCulling::prepareTemporal(
             return false;
         }
         temporalStats_.retainedBytes+=bytes;
+        temporalStats_.peakRetainedBytes=std::max(
+            temporalStats_.peakRetainedBytes,temporalStats_.retainedBytes);
     }
     next=record.state[slot];
     if(!warm)previous=next; // shader does not read previous on cold start
@@ -612,6 +614,8 @@ bool GpuClusterCulling::prepareTemporal(
     record.frame[slot]=frame;
     record.lastAttemptFrame=frame;
     temporalStats_.histories=temporal_.size();
+    temporalStats_.peakHistories=std::max(
+        temporalStats_.peakHistories,temporalStats_.histories);
     return true;
 }
 
@@ -877,6 +881,9 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         if(!warmTemporal)++temporalStats_.coldStarts;
     }
     ++cursors_[index];
+    ++temporalStats_.successfulDispatches;
+    temporalStats_.peakSubmissionsPerFrameSlot=std::max(
+        temporalStats_.peakSubmissionsPerFrameSlot,cursors_[index]);
     out = ready;
     return true;
 }
