@@ -1,5 +1,6 @@
 #include "apps/studio-native/StudioAssetTransfers.h"
 #include "apps/studio-native/StudioContentDirectory.h"
+#include "apps/studio-native/StudioMoveJournal.h"
 #include <algorithm>
 #include <fstream>
 #include <exception>
@@ -283,31 +284,32 @@ Json StudioTransferPlan::apply(const std::string& token,
                 if (a.rfind(b+"/",0)==0 || b.rfind(a+"/",0)==0)
                     throw std::runtime_error("Move selection contains a directory and its descendant");
             }
-        std::vector<Operation> done;
+        StudioMoveJournal journal(project_);
+        std::vector<StudioMoveJournalOperation> journalOps;
+        journalOps.reserve(operations.size());
+        for (const auto& operation:operations)
+            journalOps.push_back({
+                operation.source.lexically_relative(root).generic_string(),
+                operation.destination.lexically_relative(root).generic_string()
+            });
+        // Publish the recovery plan before the first mutation. This journal is
+        // outside content/ and persists until a committed marker is published.
+        journal.begin(journalOps);
         try {
-            for (const auto& operation:operations) {
+            for (const auto& operation:operations)
                 fs::rename(operation.source,operation.destination);
-                done.push_back(operation);
-            }
-            // Keep catalog identity and index consistent before resolving
-            // dependent material references.
             StudioAssetCatalog catalog(project_); catalog.rebuild();
             if (beforeCommit) beforeCommit();
+            journal.commit();
         } catch (...) {
             const std::exception_ptr failure=std::current_exception();
-            std::string rollbackFailure;
-            for (auto it=done.rbegin();it!=done.rend();++it) {
-                try { fs::rename(it->destination,it->source); }
-                catch (const std::exception& ex) {
-                    rollbackFailure+=std::string("; ")+ex.what();
-                }
+            try {
+                journal.restoreOrCleanup();
+                StudioAssetCatalog catalog(project_); catalog.rebuild();
+            } catch (const std::exception& ex) {
+                throw std::runtime_error(std::string(
+                    "Asset transfer failed and durable recovery is incomplete: ")+ex.what());
             }
-            try { StudioAssetCatalog catalog(project_); catalog.rebuild(); }
-            catch (const std::exception& ex) {
-                rollbackFailure+=std::string("; catalog: ")+ex.what();
-            }
-            if (!rollbackFailure.empty())
-                throw std::runtime_error("Asset move failed and rollback is incomplete"+rollbackFailure);
             std::rethrow_exception(failure);
         }
         Json completed=Json::array();
