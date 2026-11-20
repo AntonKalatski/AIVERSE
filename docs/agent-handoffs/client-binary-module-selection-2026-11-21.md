@@ -102,3 +102,36 @@ Next: isolate other optional GameClient features behind explicit build
 boundaries and content validation, one subsystem at a time. Then run real
 WebAssembly Release size and startup comparisons when Emscripten is available.
 Do not describe the remaining monolithic client as fully pruned.
+
+## 2026-11-21 continuation: selectable gamepad client module
+
+Branch `feature/studio-html5`; implementation commit `1c231b05b`.
+Affected paths: `CMakeLists.txt`, `apps/client/ClientGamepadHost.cpp`,
+`ClientGameActionsLua.cpp`, `ClientGamepadDisabled.cpp`,
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. `gamepad` is a fifth
+explicit `packaging.engineModules` name. No explicit list retains historical
+gamepad support. An explicit list omitting it compiles a no-input client
+adapter instead of `ClientGamepad.cpp` and `ClientGamepadHost.cpp`; declared
+`game.json.gamepad` settings without the module fail packaging. The common
+`game.sendPercent` and `game.useAbility` Lua APIs were moved intact into
+`ClientGameActionsLua.cpp`, so they remain present without a gamepad. The
+editor's hosted client always retains the full gamepad implementation. No
+save format or gameplay command schema changed.
+
+Actual checks: CMake configure with `-DAIVERSE_CLIENT_WITH_GAMEPAD=OFF`
+PASS. Initial OFF link failed due to `openPadLua` sharing the gamepad file;
+the common Lua methods were split out and the same build then PASS.
+`cmake --build /private/tmp/aiverse-client-modules-check --target aiverse_client
+-j 6` PASS with gamepad OFF and ON. In the diagnostic macOS build with Spine
+ON, gamepad ON executable was 80,871,680 bytes; gamepad OFF was 80,778,280
+bytes, saving 93,400 bytes. `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. `--check-engine-modules` rejects a fixture declaring
+gamepad settings while omitting the module (exit 1, intended error).
+`git diff --check` PASS (line-ending warnings only). Android/iOS/Windows/Linux,
+WebAssembly, runtime controller/UI behaviour, browser startup and CI NOT RUN;
+no CI URL for this stage. Emscripten is still absent.
+
+Next: isolate other genuinely optional client features with explicit fallback
+contracts, then validate WebAssembly Release output and representative game
+startup. The general `GameClient` remains mostly monolithic; do not infer that
+all unused engine code has been eliminated.
