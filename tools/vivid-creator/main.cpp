@@ -2020,9 +2020,12 @@ struct CreatorApp {
             // mesh referenced by a visible node, for the actual floor, and
             // for the current procedurally simulated groom. All pieces are
             // from the same current morph/skin pose as the selected surface.
-            // Masked/blended materials conservatively block by polygon
-            // silhouette; they cannot produce a falsely selectable ID.
+            // Standard masked material primitives with live GPU base
+            // textures use the same alpha texture/cutoff as Renderer3D.
+            // Unsupported ShaderGraph/Blend/hair cases still block by whole
+            // polygon with zero ID; no false selectable IDs are created.
             std::vector<SculptGpuIdVertex> occluders;
+            std::vector<SculptGpuMaskBatch> maskedOccluders;
             bool complete=true;
             std::vector<std::uint8_t> visited(human.head->meshes.size(),0);
             SkinnedWeightSurface otherSurface;
@@ -2036,8 +2039,9 @@ struct CreatorApp {
                 if(!prepareSkinnedWeightSurface(
                        *human.head,meshId,facePose,otherSurface,
                        sculptPicker.morphedBindPositions()) ||
-                   !appendSculptGpuMeshOccluder(*human.head,otherSurface,
-                                                occluders)) {
+                   !appendSculptGpuMaterialGeometry(
+                        *human.head,otherSurface,0,{},false,
+                        occluders,maskedOccluders)) {
                     complete=false;break;
                 }
             }
@@ -2053,7 +2057,8 @@ struct CreatorApp {
             const bool submitted=complete && gpuSculptPass.record(
                 *human.head,sculptPicker.worldSurface(),
                 morphSourceVertices,sculptSourceIds,
-                renderer.viewProj(),gpuSculptToRecord,occluders);
+                renderer.viewProj(),gpuSculptToRecord,
+                occluders,maskedOccluders);
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
