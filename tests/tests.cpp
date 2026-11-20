@@ -13594,6 +13594,31 @@ TEST(shoreline_staged_rebuild_preserves_published_banks_on_gpu_failure) {
     CHECK(shore.pendingGpuRetirements()==0);
 }
 
+TEST(visibility_field_rejects_stale_prepared_generation_and_skips_noop_upload) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    fog.build(dev,3,2,[](float,float){return 0.0f;});
+    const std::vector<uint8_t> visible(6,2);
+    auto stale=fog.prepareUpdate(visible,3,2,1.0);
+    CHECK(stale && stale->changed());
+    CHECK(fog.update(visible,3,2,1.0));
+    const auto published=fog.texture();
+    const auto beforeRetirement=fog.pendingGpuRetirements();
+    const auto beforeAllocations=dev.textureAttempts;
+    const auto beforeUploads=dev.textureUpdates;
+    bool rejected=false;
+    try {(void)fog.commitPreparedUpdate(std::move(stale));}
+    catch(const std::logic_error&){rejected=true;}
+    CHECK(rejected);
+    CHECK(fog.texture().id==published.id);
+    CHECK(fog.pendingGpuRetirements()==beforeRetirement);
+    CHECK(!fog.update(visible,3,2,1.1));
+    CHECK(dev.textureAttempts==beforeAllocations);
+    CHECK(dev.textureUpdates==beforeUploads);
+    fog.shutdown();
+}
+
 TEST(visibility_field_gpu_init_failure_is_retryable) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;
