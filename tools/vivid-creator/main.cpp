@@ -13,6 +13,7 @@
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
+#include "engine/character/vivid/SculptGpuIdPass.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
 #include "engine/character/vivid/SkinLodSeamRemap.h"
@@ -105,6 +106,12 @@ struct CreatorApp {
     std::vector<MorphVec3> morphSourcePositions;
     std::vector<std::uint32_t> sculptSourceIds; // candidate-published source IDs
     DeformedSculptWorkspace sculptPicker; // persistent per-creator CPU scratch/BVH
+    SculptGpuIdPass gpuSculptPass; // Metal-only experimental offscreen checker
+    SculptGpuPickProtocol gpuSculptToken;
+    SculptGpuPickRequest gpuSculptToRecord{};
+    float3 gpuSculptRayOrigin{},gpuSculptRayDirection{};
+    std::uint64_t gpuSculptPublication=1;
+    bool gpuSculptEnabled=false;
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
     int sculptMeshIndex=-1;
@@ -713,6 +720,9 @@ struct CreatorApp {
             }
             human=std::move(proposed);
             sculptSourceIds=std::move(proposedSculptSourceIds);
+            gpuSculptToken.cancel();
+            gpuSculptToRecord={};
+            if(++gpuSculptPublication==0)gpuSculptPublication=1;
             sculptPicker.reset(); // published Model owns new mesh topology
             sculptPickMarkerValid=false;
             actor=std::move(nextActor);
@@ -1212,6 +1222,15 @@ struct CreatorApp {
                     if(ImGui::Button(sculptPickArmed
                         ?"Cancel viewport picking":"Pick vertex in 3D viewport"))
                         sculptPickArmed=!sculptPickArmed;
+                    if(ImGui::Checkbox("Experimental Metal GPU ID check",
+                                       &gpuSculptEnabled)) {
+                        gpuSculptToken.cancel();
+                        gpuSculptToRecord={};
+                    }
+                    ImGui::TextWrapped(
+                        "GPU check is Metal-only and limited to selected mesh; "
+                        "CPU BVH remains fallback. Other mesh/hair occluders "
+                        "are not included in this experimental ID pass.");
                     ImGui::TextWrapped("Select the source face mesh, click Pick, "
                         "then click its visible triangles outside inspector.");
                 }
@@ -1656,6 +1675,40 @@ struct CreatorApp {
         // a stale sampled world-space marker across animation frames.
         if(animate)sculptPickMarkerValid=false;
         ui.newFrame(dt);
+        SculptGpuIdPass::Completed gpuReply;
+        if(gpuSculptPass.takeCompleted(gpuReply)) {
+            SculptGpuPickPixel pixel{};
+            if(gpuReply.rgba.size()==4) {
+                for(std::size_t i=0;i<4;++i)
+                    pixel.idRgba[i]=gpuReply.rgba[i];
+            }
+            std::uint32_t selectedTriangle=0;
+            const bool valid=gpuSculptToken.consume(
+                gpuReply.request,pixel,gpuSculptPublication,
+                dev.frameSerial(),std::uint32_t(dev.framebufferWidth()),
+                std::uint32_t(dev.framebufferHeight()),selectedTriangle);
+            if(valid && human.head &&
+               gpuReply.request.meshId<human.head->meshes.size()) {
+                const auto verified=sculptPicker.resolveGpuTriangle(
+                    *human.head,gpuReply.request.meshId,selectedTriangle,
+                    gpuSculptRayOrigin,gpuSculptRayDirection,
+                    morphSourceVertices,sculptSourceIds,
+                    gpuReply.request.frameSerial,
+                    gpuReply.request.modelRevision);
+                if(verified.hit) {
+                    morphVertexIndex=int(verified.vertex);
+                    sculptPickMarkerVertex=morphVertexIndex;
+                    sculptPickMarkerMesh=int(gpuReply.request.meshId);
+                    sculptPickMarkerWorld=verified.worldPosition;
+                    sculptPickMarkerValid=!animate;
+                    status="Metal GPU triangle confirmed: source vertex "+
+                        std::to_string(morphVertexIndex);
+                }else status="Metal GPU ID/ray mismatch; CPU BVH retained";
+            }else if(gpuReply.rgba.empty()) {
+                gpuSculptToken.cancel();
+                status="Metal GPU ID readback failed; CPU BVH retained";
+            }
+        }
         guiControls();
         // A material tier is also a Renderer3D pipeline setting. Apply at
         // the owner-thread frame boundary; setMaterialQuality retires old
@@ -1816,11 +1869,20 @@ struct CreatorApp {
             float3 origin{},direction{};
             if(camera.screenRay(mouse.x,mouse.y,width,height,origin,direction)) {
                 const auto beforePick=std::chrono::steady_clock::now();
+                bool hardwareCandidate=false;
+                if(gpuSculptEnabled && !gpuSculptPass.pending() &&
+                   dev.info().backend==gfx::Backend::Metal &&
+                   dev.frameSerial()) {
+                    hardwareCandidate=gpuSculptPass.supported() ||
+                                      gpuSculptPass.initialize(dev);
+                }
                 const auto pick=sculptPicker.pick(
                     *human.head,std::size_t(sculptMeshIndex),facePose,
                     human.facialShapes,human.facialBinding,
                     controller.frame(),origin,direction,morphSourceVertices,
-                    sculptSourceIds);
+                    sculptSourceIds,
+                    hardwareCandidate?dev.frameSerial():0,
+                    hardwareCandidate?gpuSculptPublication:0);
                 const auto pickMs=std::chrono::duration<double,std::milli>(
                     std::chrono::steady_clock::now()-beforePick).count();
                 if(pick.hit) {
@@ -1836,6 +1898,22 @@ struct CreatorApp {
                         std::to_string(sculptPicker.stats().testedTriangles)+
                         "/"+std::to_string(sculptPicker.stats().triangles)+
                         " / CPU "+std::to_string(pickMs)+" ms";
+                    if(hardwareCandidate) {
+                        const auto pixelX=int(mouse.x),pixelY=int(mouse.y);
+                        const auto req=gpuSculptToken.begin(
+                            gpuSculptPublication,dev.frameSerial(),
+                            std::size_t(sculptMeshIndex),
+                            std::uint32_t(dev.framebufferWidth()),
+                            std::uint32_t(dev.framebufferHeight()),
+                            pixelX>=0?std::uint32_t(pixelX):UINT32_MAX,
+                            pixelY>=0?std::uint32_t(pixelY):UINT32_MAX);
+                        if(req.valid()) {
+                            gpuSculptToRecord=req;
+                            gpuSculptRayOrigin=origin;
+                            gpuSculptRayDirection=direction;
+                            status+=" / GPU Metal ID pending";
+                        }
+                    }
                 }else {
                     sculptPickMarkerValid=false;
                     status="No valid deformed source triangle under cursor";
@@ -1911,6 +1989,20 @@ struct CreatorApp {
                              human.hair->vertices.size()*sizeof(ModelVertex));
         }
         renderer.beginScene(camera,dev.framebufferWidth(),dev.framebufferHeight());
+        if(gpuSculptToRecord.valid()) {
+            // The currently prepared CPU surface belongs to exactly this
+            // pose/publication. Render the isolated selected-mesh ID pass
+            // before the main Renderer3D colour pass starts.
+            const bool submitted=gpuSculptPass.record(
+                *human.head,sculptPicker.worldSurface(),
+                morphSourceVertices,sculptSourceIds,
+                renderer.viewProj(),gpuSculptToRecord);
+            gpuSculptToRecord={};
+            if(!submitted) {
+                gpuSculptToken.cancel();
+                status="GPU ID unavailable; CPU BVH selection retained";
+            }
+        }
         renderer.drawMesh(floor,{}, {0.25f,0.26f,0.3f,1});
         ModelDraw draw;
         draw.model=human.head.get();
@@ -1965,6 +2057,10 @@ struct CreatorApp {
     }
     void shutdown() {
         if(!device)return;
+        gpuSculptToken.cancel();
+        if(!gpuSculptPass.shutdownAfterIdle())
+            std::fprintf(stderr,
+                "VIVID Creator: GPU ID readback resources still in flight\n");
         if(!releaseHuman())std::fprintf(stderr,
             "VIVID Creator: active GPU resource drain failed at shutdown\n");
         if(retiredHumans && !retiredHumans->drain())
