@@ -149,9 +149,16 @@ if [[ "$GUI" -eq 1 ]]; then
     for material_tier in low medium; do
         material_ppm="$LOGDIR/vivid-material-$material_tier.ppm"
         rm -f "$material_ppm"
-        run_logged "creator-material-$material_tier" env \
-            AIVERSE_VIVID_CREATOR_CAPTURE="$material_ppm" \
-            "$CREATOR" --smoke --material-quality "$material_tier"
+        if [[ "$material_tier" == low ]]; then
+            run_logged "creator-material-$material_tier" env \
+                AIVERSE_VIVID_CREATOR_CAPTURE="$material_ppm" \
+                "$CREATOR" --smoke --presentation-config \
+                "$ROOT/tools/vivid-creator/vivid-presentation.mobile.json"
+        else
+            run_logged "creator-material-$material_tier" env \
+                AIVERSE_VIVID_CREATOR_CAPTURE="$material_ppm" \
+                "$CREATOR" --smoke --material-quality "$material_tier"
+        fi
         if [[ ! -s "$material_ppm" ]] || \
            ! grep -q 'pass=1' "$LOGDIR/creator-material-$material_tier.log"; then
             printf 'VIVID material quality capture failed: %s\n' "$material_tier" >&2
