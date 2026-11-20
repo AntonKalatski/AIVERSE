@@ -123,6 +123,14 @@ public:
     // topology cohort as Roads/Shores/Fog.
     std::shared_ptr<PreparedFrame> prepareMapReset(
         const MapGrid& grid,bool forceSameSize=false);
+    // Scene-aware topology preparation: fill the PRIVATE map-reset clone
+    // directly, before publishing Terrain/Roads/Shore/Fog. All visible
+    // GroundFX chunks use the caller's scoped unpublished surface policy.
+    // The camera is already configured with Renderer3D::beginScene().
+    std::shared_ptr<PreparedFrame> prepareMapSceneFrame(
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        const RtsView& view,bool forceSameSize=false);
     bool mapMatches(int w,int h) const noexcept {
         return gridW_==w && gridH_==h && !invalid_;
     }
@@ -155,6 +163,11 @@ private:
                          const render::FileReader& read,const std::string& base);
     void parseLook(const Json& terrain);
     void resetGrid(const MapGrid& g);
+    std::shared_ptr<PreparedFrame> prepareSceneIntoCandidate(
+        std::shared_ptr<PreparedFrame> candidate,
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        const RtsView& view);
     void scan(const MapGrid& g, const std::vector<uint8_t>* vision, uint8_t viewer);
     void dirty(int x, int y, bool neighbours, int what);
     void buildTerritory(Chunk& c, int cx, int cy, const MapGrid& g, const RtsView& v);

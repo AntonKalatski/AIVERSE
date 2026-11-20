@@ -14029,6 +14029,92 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
+    struct InspectingDevice final : fogfaulttest::Device {
+        bool inspecting=false,failGround=false,sawGround=false;
+        gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
+            if(inspecting && desc.type==gfx::BufferType::Vertex &&
+               desc.data && desc.size>=3*sizeof(render::MeshVertex) &&
+               desc.size%sizeof(render::MeshVertex)==0) {
+                const auto* raw=static_cast<const uint8_t*>(desc.data);
+                for(size_t off=0;off<desc.size;off+=sizeof(render::MeshVertex)) {
+                    render::MeshVertex vertex{};
+                    std::memcpy(&vertex,raw+off,sizeof vertex);
+                    if(std::isfinite(vertex.pos.x) &&
+                       std::isfinite(vertex.pos.y) &&
+                       std::isfinite(vertex.pos.z) &&
+                       vertex.pos.x>0.0f && vertex.pos.x<8.0f &&
+                       vertex.pos.z>0.0f && vertex.pos.z<6.0f &&
+                       vertex.pos.y>1.9f && vertex.pos.y<2.3f) {
+                        sawGround=true;
+                        if(failGround)return {};
+                        break;
+                    }
+                }
+            }
+            return fogfaulttest::Device::createBuffer(desc);
+        }
+    };
+    InspectingDevice dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(8,6);
+    for(auto& flag:grid.flags)
+        flag=game::kCellGround|game::kCellRoad;
+    view.buildTerrain(dev,grid);
+    game::RtsScene scene;
+    const std::vector<uint8_t> visible(size_t(grid.w)*size_t(grid.h),2);
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&visible,grid);
+    renderer.render(gfx::PassDesc{});
+    const float beforeHeight=view.heightAt(grid,4.5f,3.5f);
+    const auto oldRoads=view.roads().surfaceGeneration();
+    const auto oldRetirements=view.pendingModelRetirements();
+    CHECK(std::fabs(beforeHeight)<1e-4f);
+
+    // The live GPU Terrain still represents height zero. GroundFX can
+    // only generate vertices near Y=2 from the PRIVATE staged terrain.
+    grid.corner.assign(size_t(grid.w+1)*size_t(grid.h+1),32);
+    renderer.beginScene(camera,640,480);
+    dev.inspecting=true;
+    dev.failGround=true;
+    bool rejected=false;
+    try {
+        view.buildTerrainAtomicScene(dev,grid,renderer,scene,2.0,&visible);
+    }catch(const std::runtime_error&){rejected=true;}
+    dev.inspecting=false;
+    CHECK(dev.sawGround && rejected);
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-
+                    beforeHeight)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoads);
+    CHECK(view.pendingModelRetirements()==oldRetirements);
+
+    dev.sawGround=false;dev.failGround=false;dev.inspecting=true;
+    dev.idleAllowed=false;
+    view.buildTerrainAtomicScene(dev,grid,renderer,scene,2.0,&visible);
+    dev.inspecting=false;
+    CHECK(dev.sawGround);
+    CHECK(view.surfacePresentationMapReady(grid));
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-2.0f)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoads+1);
+    CHECK(!view.publishedVisualFrame().ready());
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&visible,grid);
+    CHECK(view.visualFrameReadyFor(grid,2.0));
+    renderer.render(gfx::PassDesc{});
+    dev.idleAllowed=true;
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48b3b0_topology_discards_mid_prepare_editor_mutation) {
     // Simulate a same-pointer editor brush edit from an RHI callback while
     // the first unpublished Terrain buffer is being prepared.

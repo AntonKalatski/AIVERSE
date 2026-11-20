@@ -1024,6 +1024,8 @@ std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareMapReset(
     next.useR_=useR_;
     next.useC_=useC_;
     next.hi_=hi_;
+    next.terr_=terr_;next.dig_=dig_;
+    next.lane_=lane_;next.road_=road_;next.conc_=conc_;
     next.viewer_=viewer_;
     // This clone owns no mesh, material kit, or texture. resetGrid only
     // prepares CPU cells/chunks, so an aborted candidate cannot retire or
@@ -1084,9 +1086,37 @@ std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareFrame(
     next.lanes_=lanes_;next.time_=time_;
     next.territoryBlend_=territoryBlend_;
     next.territoryTime_=territoryTime_;
+    return prepareSceneIntoCandidate(
+        std::move(prepared),r,s,time,vision,g,v);
+}
+
+std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareMapSceneFrame(
+        Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& g,
+        const RtsView& v,bool forceSameSize) {
+    // Map preparation returns a private geometry-free clone. Fill THIS
+    // candidate in place, instead of committing/resetting then rebuilding.
+    auto candidate=prepareMapReset(g,forceSameSize);
+    if(!candidate)return {};
+    return prepareSceneIntoCandidate(
+        std::move(candidate),r,s,time,vision,g,v);
+}
+
+std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareSceneIntoCandidate(
+        std::shared_ptr<PreparedFrame> prepared,
+        Renderer3D& r,const RtsScene& s,double time,
+        const std::vector<uint8_t>* vision,const MapGrid& g,
+        const RtsView& v) {
+    if(!prepared || prepared->owner_!=this ||
+       prepared->device_!=dev_ ||
+       prepared->revision_!=publicationRevision_ ||
+       !prepared->staged_)
+        throw std::logic_error("RtsGroundFx: stale scene-map candidate");
+    RtsGroundFx& next=*prepared->staged_;
     next.stagingJournal_=&prepared->journal_;
-    prepared->fullReset_=invalid_ || g.w!=gridW_ ||
-                         g.h!=gridH_ || s.viewer!=viewer_;
+    prepared->fullReset_=prepared->fullReset_ ||
+        next.invalid_ || g.w!=next.gridW_ ||
+        g.h!=next.gridH_ || s.viewer!=next.viewer_;
     next.time_=float(std::fmod(time,1000.0));
     bool highQuality=r.materialQuality()!=MaterialQuality::Low;
     if(const char* q=std::getenv("AIVERSE_GROUNDFX"))
@@ -1172,9 +1202,12 @@ std::shared_ptr<RtsGroundFx::PreparedFrame> RtsGroundFx::prepareFrame(
         throw;
     }
 
-    prepared->changedLane_=std::find(prepared->journal_.begin(),
-                                    prepared->journal_.end(),&next.lanes_)!=
-                           prepared->journal_.end();
+    // Map reset must retire the previous lane mesh even when the new
+    // scene contains no lanes. Never discard the map candidate's flag.
+    prepared->changedLane_=prepared->changedLane_ ||
+        std::find(prepared->journal_.begin(),
+                  prepared->journal_.end(),&next.lanes_)!=
+            prepared->journal_.end();
     // Build a compact no-allocation-at-commit slot journal; dense map chunks
     // not touched by this frame keep the same stable RHI handles.
     for(size_t i=0;i<next.chunks_.size();++i) {

@@ -378,6 +378,14 @@ public:
     // survives same-size edits. Higher temporary GPU memory; use only for
     // explicit transactional edits, not every brush sample.
     void buildTerrainAtomic(gfx::Device& dev,const MapGrid& grid);
+    // Opt-in scene-aware map transaction. Requires a configured primary
+    // Renderer3D camera/scene and a previously primed Terrain GPU kit.
+    // Builds the visible GroundFX chunks against the UNPUBLISHED Terrain,
+    // bounded by the existing 16-chunk/128 MiB GPU preparation budget.
+    // Does not publish a camera FramePublicationEpoch; the next draw does.
+    void buildTerrainAtomicScene(gfx::Device& dev,const MapGrid& grid,
+        render::Renderer3D& renderer,const RtsScene& scene,double time,
+        const std::vector<uint8_t>* vision);
     // Optional painted material layer per cell (map key "terrainMaterial": rows of digits 0..3, '.' =
     // by cell kind; see docs/game-format.md). Takes effect at the next buildTerrain().
     void setTerrainMaterial(const Json& rows, int w, int h) {
@@ -878,7 +886,9 @@ private:
         return age + dt;
     }
     void buildTerrainImpl(gfx::Device& dev,const MapGrid& grid,
-                          bool forceAtomic);
+                          bool forceAtomic,render::Renderer3D* renderer=nullptr,
+                          const RtsScene* scene=nullptr,double time=0,
+                          const std::vector<uint8_t>* vision=nullptr);
     // Same conservative fingerprint as the scene prewarm lease, shared
     // across C++ translation units to reject mid-staging editor changes.
     static uint64_t mapSourceFingerprint(const MapGrid& grid) noexcept;
@@ -910,6 +920,10 @@ private:
     const std::vector<GridFieldDef>* fieldDefsSeen_ = nullptr;
     size_t fieldDefsCount_ = 0;
     bool fogMeshDirty_ = false;
+    // Strictly transient scope for scene mesh staging; never survives an
+    // RtsGroundFx::prepareMapSceneFrame call, including its throw path.
+    const MapGrid* stagedHeightGrid_ = nullptr;
+    const std::function<float(float,float)>* stagedHeightFn_ = nullptr;
     render::mat4 viewProj_;
     render::float3 camPos_;
     // planets

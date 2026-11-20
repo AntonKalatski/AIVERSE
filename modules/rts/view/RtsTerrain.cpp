@@ -23,6 +23,10 @@ using namespace render;
 // mesh: heightfield corners (two triangles per cell) when the map has them, otherwise levels + fine
 // heights + ramps.
 float RtsView::heightAt(const MapGrid& g,float x,float z) const {
+    // Scoped source substitution is legal only during synchronous private
+    // GroundFX staging. Runtime clients never see unpublished geometry.
+    if(stagedHeightGrid_==&g && stagedHeightFn_)
+        return (*stagedHeightFn_)(x,z);
     // No flat-map mesh has been published before the first build, and
     // planet/cube-sphere maps use their own surface policy. In both cases
     // retain the original Rules-derived visual height calculation.
@@ -67,8 +71,15 @@ void RtsView::buildTerrain(gfx::Device& dev,const MapGrid& g) {
 void RtsView::buildTerrainAtomic(gfx::Device& dev,const MapGrid& g) {
     buildTerrainImpl(dev,g,true);
 }
+void RtsView::buildTerrainAtomicScene(
+        gfx::Device& dev,const MapGrid& g,Renderer3D& renderer,
+        const RtsScene& scene,double time,const std::vector<uint8_t>* vision) {
+    buildTerrainImpl(dev,g,true,&renderer,&scene,time,vision);
+}
 void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
-                               bool forceAtomic) {
+                               bool forceAtomic,Renderer3D* renderer,
+                               const RtsScene* scene,double time,
+                               const std::vector<uint8_t>* vision) {
     discardPendingSurfaceLease();
     // Any map rebuild invalidates the previous primary-frame publication.
     framePublication_.invalidate();
@@ -105,6 +116,7 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
     const bool topologyChange=terrain_.canPrepareMap() &&
         (!sameDimensions || forceAtomic);
     bool changed=false;
+    bool sceneGroundPrepared=false;
     if(topologyChange) {
         std::shared_ptr<TerrainRenderer::PreparedMap> stagedTerrain;
         std::shared_ptr<RtsRoadView::PreparedRebuild> stagedRoad;
@@ -154,10 +166,36 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
             [&] {stagedShore.reset();});
         Part groundFxPart(
             [&] {
-                // No camera is needed to atomically replace the cell grid.
-                // Meshes will be built by the first scene-aware primary frame.
-                stagedGroundFx=groundFx_.prepareMapReset(
-                    g,sculptTransaction);
+                if(renderer && scene) {
+                    // Do not expose a pending Terrain to ordinary heightAt
+                    // callers. Only the private GroundFX candidate sees the
+                    // unpublished height source while its mesh is generated.
+                    if(stagedHeightFn_ || stagedHeightGrid_)
+                        throw std::logic_error(
+                            "RtsView: nested scene height staging");
+                    stagedHeightFn_=&newHeight;
+                    stagedHeightGrid_=&g;
+                    try {
+                        stagedGroundFx=groundFx_.prepareMapSceneFrame(
+                            *renderer,*scene,time,vision,g,*this,
+                            sculptTransaction);
+                    }catch(...) {
+                        stagedHeightFn_=nullptr;
+                        stagedHeightGrid_=nullptr;
+                        throw;
+                    }
+                    stagedHeightFn_=nullptr;
+                    stagedHeightGrid_=nullptr;
+                    if(!stagedGroundFx)
+                        throw std::runtime_error(
+                            "RtsView: empty scene GroundFX candidate");
+                    sceneGroundPrepared=true;
+                }else{
+                    // Legacy synchronous builds have no scene/camera and
+                    // still stage a CPU-only GroundFX reset.
+                    stagedGroundFx=groundFx_.prepareMapReset(
+                        g,sculptTransaction);
+                }
             },
             [&] {groundFx_.commitFrame(std::move(stagedGroundFx));},
             [&] {stagedGroundFx.reset();});
@@ -238,7 +276,11 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
     // Paint, GroundFX, field overlays and Fog will rebuild only after the
     // terrain/road/shore topology has been successfully published.
     paintLayers_.shutdown();
-    if(changed || !hasTerrain_)groundFx_.invalidate();
+    // A scene candidate has ALREADY published camera-visible chunks against
+    // the staged heights. Re-invalidating it would force duplicate uploads
+    // on the next draw; remaining off-camera dirty chunks stay lazy.
+    if((changed || !hasTerrain_) && !sceneGroundPrepared)
+        groundFx_.invalidate();
     hasTerrain_ = true;
     // Both full-size map transitions and explicit same-size sculpt cohorts
     // already published the correctly draped Fog Sheet. Only the sparse
