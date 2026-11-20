@@ -4348,3 +4348,76 @@ If real GPU timings are needed, first design optional RHI timestamp
 queries with backend-specific asynchronous safe readback and strict
 frame/fence lifetime (do not emulate them using CPU wall time).
 Continue to append a distinct stage handoff and list exact commits.
+
+
+---
+
+## Stage 18.4 — deterministic CPU LOD trace comparator (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`; PR #35 remains draft.
+**Actual validation:** Source authored and committed, **NOT built, CTest'd or
+executed on native GPU**. Do not claim performance gain from this stage.
+
+### Implementation and exact commits
+- `cb194a0434e4c7b71ced1003cbbbc6e9d39a02c6`:
+  `tests/render/strata_lod_benchmark.cpp`: standalone deterministic
+  240-frame CPU selector test using the existing
+  `StrataGeometry.h` header API. Compares
+  fixed `legacy_root`, original stateless `strata_h0`, and
+  temporal `strata_h02` (hysteresis fraction 0.2).
+  Fixed sequence: 40 frames low projected error, 40 frames high,
+  120 alternating around the LOD threshold, 40 low.
+  Emits CSV `mode,frames,transitions,triangles,checksum,cpu_wall_ns`.
+  Asserts stateless LOD switches more often than temporal, legacy
+  does not switch, triangle counts are valid, and temporal
+  checksum is exactly reproducible.
+- `f78ae65a87631d7534bde104de6969d0e5bc1e10`:
+  `CMakeLists.txt` registers
+  `aiverse_strata_lod_benchmark` and `strata_lod_benchmark`
+  only under existing Strata test configuration.
+- `506fcd371e68cfa2ff5a146a27cd8413cd7fc70c`:
+  adds explicit C++ `<utility>` include and fixes CSV newline encoding.
+
+### Data interpretation
+This is a synthetic, deterministic *projected-error* trace: it is
+not yet a recorded camera transform replay through `planView`, GPU
+raster or an instance-heavy production scene. Triangle counts sum
+selected cluster triangles over frames, not triangles actually
+drawn after frustum/occlusion. CSV CPU wall nanoseconds measure
+only the isolated selector call on the executing machine;
+they are NOT GPU timestamps, render frame times or FPS.
+The fixed legacy root baseline is not identical to the full
+existing legacy renderer or its material passes.
+Only the checksums/selection counts are intended to be stable
+across runs; measured CPU timings must not be used as acceptance
+thresholds. No shipping Strata routing, memory policy, ECS,
+streaming, Vulkan/Metal/GLES shader or visual parity gate changed.
+
+### Next verification on the owner's Mac
+```sh
+cmake -S . -B build/strata-final -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+cmake --build build/strata-final --target aiverse_strata_lod_benchmark --parallel 4
+ctest --test-dir build/strata-final -R '^strata_lod_benchmark$' --output-on-failure
+./build/strata-final/aiverse_strata_lod_benchmark > /tmp/strata-lod-trace.csv
+```
+Verify target placement against the active build options. No above
+command was run in this implementation session.
+
+### Stage 18.4 completion
+| Area | Code | Native acceptance |
+| --- | --- | --- |
+| Deterministic 240-frame reference trace | WRITTEN | NOT RUN |
+| Three fixed CPU selection policies | WRITTEN | NOT RUN |
+| CSV counters/checksums and optional wall time | WRITTEN | NOT RUN |
+| Stateless versus temporal selector regression | WRITTEN | NOT RUN |
+| Real moving-camera/scene replay | NOT IMPLEMENTED | N/A |
+| Metal/Vulkan GPU timing | NOT IMPLEMENTED | N/A |
+| Real image-based popping/seam quality | NOT VERIFIED | N/A |
+| GPU frame-time/FPS optimization claims | NO CLAIM | N/A |
+
+**Next bounded stage:** Stage 18.5 build a lossless/lossy multi-material
+LOD visual validation matrix (main, shadow, reflection, Metal/Vulkan/GLES);
+add camera/asset captures with strict image-diff quality budgets.
+Then Stage19 merge latest main into isolated integration worktree and
+perform one complete native CMake/CTest/real-device acceptance pass.
+No automatic switch of unverified parity flags.
