@@ -1,5 +1,15 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 SpectraFX preview/editor compile fix (2026-11-20):**
+> User's full Mac build reached 95% but FAILED on two outdated
+> `Viewport::ensure` call sites in SpectraFX GPU Assets and Graph windows.
+> Source commits `0eabbfec` and `95ed023d` bind the Editor GPU lease
+> and `ViewportGpuRetirement` owner for both previews without modifying
+> shared `Viewport` lifetime semantics.
+> [Source, exact failure, QA and retry](qa-2026-11-20-stage70-spectrafx-viewport-retirement-fix-handoff.md).
+> **Post-fix native compile and CTest NOT RUN**. Draft PR #53 stays blocked.
+>
+>
 > **Stage70 Mac Metal compile blocker repaired in source (2026-11-20):**
 > Actual AppleClang full-build **FAIL** at ~29–30% on
 > `aiverse_spectrafx_metal_rhi_test`: `MetalDevice` methods were
