@@ -601,14 +601,26 @@ private:
                 }
             }
             if(channels.empty())continue;
-            if(channels.size()>size_t(kMaxMorphTargets) ||
-               mi>=model_->meshes.size() ||
-               model_->meshes[mi].morphTargetNames.size()!=channels.size())
-                fail("FBX animated blendshape channel layout mismatch");
-            for(size_t ci=0;ci<channels.size();++ci)
-                if(str(channels[ci]->name)!=
-                   model_->meshes[mi].morphTargetNames[ci])
-                    fail("FBX animated blendshape channel names changed");
+            size_t slot=0;
+            if(mi>=model_->meshes.size())
+                fail("FBX animated blendshape mesh missing");
+            const auto& names=model_->meshes[mi].morphTargetNames;
+            for(const auto* channel:channels) {
+                for(size_t key=0;key<channel->keyframes.count;++key) {
+                    if(slot>=names.size() ||
+                       slot>=size_t(kMaxMorphTargets))
+                        fail("FBX animated blendshape slot limit exceeded");
+                    std::string semantic=str(channel->name);
+                    if(channel->keyframes.count>1)
+                        semantic+="::"+str(
+                            channel->keyframes.data[key].shape->name);
+                    if(names[slot]!=semantic)
+                        fail("FBX animated morph target ordering changed");
+                    ++slot;
+                }
+            }
+            if(slot!=names.size())
+                fail("FBX animated morph target count mismatch");
         }
         if(handledProperties.empty())return handledProperties;
         if(sampleTimes.size()>65536)
@@ -625,19 +637,21 @@ private:
                     channels.push_back(
                         mesh->blend_deformers.data[di]->channels.data[ci]);
             if(channels.empty())continue;
+            size_t slotCount=0;
+            for(const auto* channel:channels)
+                slotCount+=channel->keyframes.count;
+            if(slotCount==0 || slotCount>size_t(kMaxMorphTargets))
+                fail("FBX morph animation exceeds GPU slots");
             std::vector<float> values;
-            values.reserve(sampleTimes.size()*channels.size());
+            values.reserve(sampleTimes.size()*slotCount);
             for(float t:sampleTimes) {
                 const double nativeTime=stack.time_begin+double(t);
-                for(const auto* ch:channels) {
-                    const double target=ch->keyframes.data[0].target_weight;
+                for(const auto* channel:channels) {
                     const double evaluated=ufbx_evaluate_blend_weight(
-                        stack.anim,ch,nativeTime);
-                    if(!std::isfinite(evaluated) ||
-                       !std::isfinite(target) || target<=0.0)
+                        stack.anim,channel,nativeTime);
+                    if(!std::isfinite(evaluated))
                         fail("FBX animated blendshape produced invalid weight");
-                    values.push_back(float(std::clamp(
-                        evaluated/target,0.0,1.0)));
+                    appendFbxShapeBasis(*channel,evaluated,values);
                 }
             }
             for(size_t ni=0;ni<mesh->instances.count;++ni) {
@@ -649,8 +663,8 @@ private:
                 const auto& defaults=model_->nodes[size_t(index)];
                 bool changed=false;
                 for(size_t i=0;i<sampleTimes.size() && !changed;++i)
-                    for(size_t k=0;k<channels.size();++k)
-                        if(std::fabs(values[i*channels.size()+k]-
+                    for(size_t k=0;k<slotCount;++k)
+                        if(std::fabs(values[i*slotCount+k]-
                                      defaults.weights[k])>1e-5f) {
                             changed=true;break;
                         }
@@ -659,7 +673,7 @@ private:
                 weight.node=index;
                 weight.path=AnimChannel::Weights;
                 weight.interp=AnimChannel::Linear;
-                weight.comps=uint8_t(channels.size());
+                weight.comps=uint8_t(slotCount);
                 weight.times.assign(sampleTimes.begin(),sampleTimes.end());
                 weight.values=values;
                 if(!weight.times.empty())
