@@ -291,15 +291,20 @@ void RtsGroundFx::parseLook(const Json& t) {
 }
 
 void RtsGroundFx::freeMesh(Mesh& m) {
-    if (!dev_) return;
-    if (m.vb.valid()) dev_->destroyBuffer(m.vb);
-    if (m.ib.valid()) dev_->destroyBuffer(m.ib);
-    m = Mesh{};
+    if(!dev_)return;
+    retiredMeshes_.retireBuffer(*dev_,m.vb);
+    retiredMeshes_.retireBuffer(*dev_,m.ib);
+    m=Mesh{};
 }
 
 void RtsGroundFx::setMesh(Mesh& m, const MeshBuilder& b) {
+    if(!dev_)throw std::logic_error("RtsGroundFx mesh: unbound GPU device");
+    // Keep the prior submitted mesh intact if either new buffer fails.
+    // MeshBuilder::upload cleans its private, unpublished handles on failure.
+    Mesh replacement{};
+    if(!b.empty())replacement=b.upload(*dev_);
     freeMesh(m);
-    if (!b.empty()) m = b.upload(*dev_);
+    m=replacement;
 }
 
 bool RtsGroundFx::shutdownAfterGpuIdle(gfx::Device& dev) {
@@ -321,6 +326,11 @@ void RtsGroundFx::shutdown(gfx::Device& dev) {
         for (Mesh* m : {&c.fill, &c.border, &c.rock, &c.veins, &c.gems, &c.marks, &c.road, &c.concrete}) freeMesh(*m);
     chunks_.clear();
     freeMesh(lanes_);
+    // Mesh retirement is ordered by actual RHI completion tokens, not frame
+    // age. Shutdown requires explicit full-device completion proof before
+    // destruction of any GPU pipeline, shader or texture.
+    if(!retiredMeshes_.completeForShutdown(dev))
+        throw std::runtime_error("RtsGroundFx shutdown: GPU mesh retirement could not reach idle");
     if (pipe_.valid()) dev.destroyPipeline(pipe_);
     if (shader_.valid()) dev.destroyShader(shader_);
     if (white_.valid()) dev.destroyTexture(white_);
