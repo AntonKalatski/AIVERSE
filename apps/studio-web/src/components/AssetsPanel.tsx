@@ -207,6 +207,8 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       const response=await invoke('studio.assetTransferCommit',{token:plan.token,decisions});
       setPlan(null);setSelected(null);
       setMessage(response.files.length+' asset(s) processed'+
+        (response.repairedMaterialReferences
+          ? ' · '+response.repairedMaterialReferences+' material reference(s) repaired' : '')+
         (response.issues.length?' · '+response.issues.length+' issue(s)':''));
       if(response.issues.length)setError(response.issues.map(x=>x.name+': '+x.message).join('; '));
       reload();
