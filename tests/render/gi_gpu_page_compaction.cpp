@@ -99,10 +99,10 @@ int main() {
     AIVERSE_TEST_CHECK(!growth.stats.compacted);
     multi.commit(std::move(growth));
     AIVERSE_TEST_CHECK(multi.findPage(3)->triangles.first==originalThird);
-    replace(3,2,20);
-    auto compact=publish(); // old end=15; new 2-slot page exceeds 16
+    replace(3,3,20);
+    auto compact=publish(); // old end=15; new 4-slot page exceeds 16
     AIVERSE_TEST_CHECK(compact.stats.compacted);
-    AIVERSE_TEST_CHECK(compact.stats.relevantTriangles==10);
+    AIVERSE_TEST_CHECK(compact.stats.relevantTriangles==11);
     AIVERSE_TEST_CHECK(multi.findPage(3)->triangles.first==originalThird);
     for(float x:{0.f,10.f,20.f})
         AIVERSE_TEST_CHECK(std::abs(compact.packet.trace(
