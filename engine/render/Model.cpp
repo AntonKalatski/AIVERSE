@@ -820,7 +820,7 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
     if(const char* budget=std::getenv("AIVERSE_MORPH_TEXTURE_MIB")) {
         char* end=nullptr;
         const unsigned long mib=std::strtoul(budget,&end,10);
-        if(end==budget || *end!='\\0' || mib<1 || mib>256)return false;
+        if(end==budget || *end!='\0' || mib<1 || mib>256)return false;
         morphBudgetTexels=std::min(
             morphBudgetTexels,size_t(mib)*(1u<<20)/16u);
     }
@@ -829,7 +829,7 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         for(const auto& primitive:mesh.primitives)
             if(primitive.morphTargets>0 && !primitive.morphDeltas.empty()) {
                 const size_t added=primitive.morphDeltas.size()/3u;
-                if(added>kMaxMorphTexels-texels)return false;
+                if(added>morphBudgetTexels-texels)return false;
                 texels+=added;
             }
     if (texels > 0 && !m.morphTex.valid()) {
