@@ -167,6 +167,46 @@ void test() {
                guides[1].position[0].x==0.001f,
                "groom contact correction moved roots or failed separation");
     }
+    // The owner-held scratch must retain its capacity while frames reuse
+    // the same model. Equal snapshots must yield identical ordered contacts.
+    {
+        std::array<GroomGuide,2> originals{};
+        originals[0].root={-0.04f,0,0};
+        originals[1].root={0,-0.04f,0.004f};
+        originals[0].rest=originals[0].position={
+            {-0.04f,0,0},{0.04f,0,0}};
+        originals[1].rest=originals[1].position={
+            {0,-0.04f,0.004f},{0,0.04f,0.004f}};
+        for(auto& guide:originals)guide.previous=guide.position;
+        GroomSelfCollisionConfig settings;
+        settings.enabled=true;
+        settings.segmentEnabled=true;
+        settings.separation=0.02f;
+        settings.response=1.f;
+        GroomSegmentWorkspace scratch;
+        auto first=originals;
+        GroomSelfCollisionStats firstStats;
+        expect(GroomSegmentCollision::resolve(first,settings,
+            firstStats,scratch) && firstStats.contacts==1,
+            "reusable strand workspace failed initial contact");
+        const auto originalCapacity=scratch.cells.capacity();
+        const auto pairCapacity=scratch.pairs.capacity();
+        auto second=originals;
+        GroomSelfCollisionStats secondStats;
+        expect(GroomSegmentCollision::resolve(second,settings,
+            secondStats,scratch) &&
+            scratch.cells.capacity()==originalCapacity &&
+            scratch.pairs.capacity()==pairCapacity &&
+            firstStats.contacts==secondStats.contacts &&
+            firstStats.pairChecks==secondStats.pairChecks &&
+            render::length(first[0].position[1]-second[0].position[1])<1.e-6f,
+            "scratch capacity changed or reusable collision lost determinism");
+        // Reset scratch and keep capacity; roots remain immutable.
+        scratch.reset();
+        expect(scratch.cells.empty() && scratch.pairs.empty() &&
+            scratch.cells.capacity()==originalCapacity,
+            "workspace reset unexpectedly freed reusable broadphase storage");
+    }
     // Crossed line segments must repel even when their endpoint particles
     // are farther apart than the contact radius. This tests the continuous
     // segment narrowphase rather than the particle-particle approximation.
