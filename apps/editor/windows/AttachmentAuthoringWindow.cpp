@@ -300,15 +300,47 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             std::map<std::string,Registry::Snapshot> imported;
             view::AttachmentLayout document;
             document.parent=sourcePath_;
-            for(const auto& child:authored_) {
+            for(const auto& child:authored_)
                 document.attachments.push_back({
                     child.model,child.socket,child.enabled,
                     child.local,child.childWorld,child.id,
-                child.animated,child.animationGraph});
+                    child.animated,child.animationGraph});
+            // Validate EVERY entry (including disabled child identities)
+            // before importing GPU resources into this staging provider.
+            const Json authored=view::AttachmentLayoutCodec::write(document);
+            size_t authoredIndex=0;
+            for(const auto& child:authored_) {
+                ++authoredIndex;
                 if(!child.enabled)continue;
-                if(child.socket.empty())
-                    throw std::invalid_argument("Child socket name must not be empty");
                 const auto source=withinProject(child.model);
+                if(child.animated) {
+                    if(child.id.empty() || child.animationGraph.empty())
+                        throw std::invalid_argument(
+                            "animated child needs stable id and Graph file");
+                    auto* model=staged->provider->load(ed.device(),source);
+                    if(!model)
+                        throw std::runtime_error(
+                            "animated child source Model import failed");
+                    Registry::Request request;
+                    request.model=model;
+                    request.sources.push_back(source);
+                    request.animationGraph=Json::string(
+                        withinProject(child.animationGraph));
+                    request.graphReader=readAsset;
+                    request.sourceId=uint64_t(authoredIndex);
+                    const auto key="studio/attachments/animated/"+child.id;
+                    if(!staged->registry->publish(
+                           key,request,{}, {},&error))
+                        throw std::runtime_error(
+                            "animated child Graph compilation: "+error);
+                    auto appearance=staged->registry->find(key);
+                    if(!appearance || !appearance->graph)
+                        throw std::runtime_error(
+                            "animated child published without Graph");
+                    staged->animatedChildren.emplace(
+                        child.id,std::move(appearance));
+                    continue;
+                }
                 auto it=imported.find(source);
                 if(it==imported.end()) {
                     Registry::Snapshot appearance;
@@ -331,7 +363,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             };
             if(!staged->attachmentHost->activate(
                    {1,"preview"},staged->parentEntity,
-                   view::AttachmentLayoutCodec::write(document),
+                   authored,
                    staged->source,staged->provider->resources(),
                    resolver,&error))
                 throw std::runtime_error("Scene attachment activate: "+error);
@@ -339,6 +371,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             // Make publication immediately visible and defer the previous
             // provider's destruction; no full-idle wait on common reimport.
             // It remains alive so old in-flight GPU work cannot outlive it.
+            // Old child GraphInstances must be detached while the old
+            // provider and published CPU Model remain alive.
+            animatedSources_.clear();
             auto old=std::move(session_);
             session_=std::move(staged);
             deferSession(old);
