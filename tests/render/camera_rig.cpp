@@ -36,7 +36,7 @@ int main() {
     auto frame=director.evaluate(candidates,.016f);
     check(frame.valid && frame.source==other && frame.cut,"highest priority screen camera");
     world.get<CameraComponent>(other).priority=-1;
-    second.priority=-1;
+    candidates[1].priority=-1; // director consumes these copied snapshots
     frame=director.evaluate(candidates,.016f);
     check(frame.valid && frame.source==view && frame.blendWeight<1.f,"blend on camera switch");
     director.cut();
