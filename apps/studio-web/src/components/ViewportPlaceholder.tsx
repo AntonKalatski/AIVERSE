@@ -5,7 +5,7 @@ import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 /** Layout source of truth for a real native GPU surface. Never streams raster frames to JS. */
 export default function ViewportPlaceholder({ title, active }: { title: string; active: boolean }) {
   const element = useRef<HTMLElement>(null);
-  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; mode: 'orbit' | 'pan'; button: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number; moved: boolean; mode: 'orbit' | 'pan' | 'look'; button: number } | null>(null);
   const orbitDelta = useRef({ x: 0, y: 0, raf: 0 });
   const native = nativeConnected();
   const [gpuReady, setGpuReady] = useState(false);
@@ -97,7 +97,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     return ()=>window.removeEventListener('keydown',down);
   },[active,native,gpuReady]);
   const composite = () => native && document.documentElement.classList.contains('native-composite');
-  const sendOrbit = (dx: number, dy: number, mode: 'orbit' | 'pan' = 'orbit') => {
+  const sendOrbit = (dx: number, dy: number, mode: 'orbit' | 'pan' | 'look' = 'orbit') => {
     const state = orbitDelta.current;
     state.x += dx;
     state.y += dy;
@@ -118,7 +118,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       event.currentTarget.focus();
       if (event.button!==0 && event.button!==1 && event.button!==2) return;
       drag.current = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
-        moved: false, mode: event.button===1 || (event.button===0 && event.shiftKey)?'pan':'orbit',
+        moved: false, mode: event.button===1 || (event.button===0 && event.shiftKey)?'pan':event.button===2?'look':'orbit',
         button:event.button };
       setNavigationActive(true);
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -148,7 +148,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       void invoke('studio.viewportInput',{kind:'zoom',amount:-event.deltaY * 0.12}).catch(console.warn);
     }}>
     {native && gpuReady && <div className="studio-scene-nav-help" aria-hidden="true">
-      {navigationActive?'Navigating Scene':'LMB orbit · MMB / Shift+LMB pan · Wheel zoom · WASD/QE move · F focus · Home reset'}
+      {navigationActive?'Navigating Scene':'LMB orbit · RMB free look · MMB / Shift+LMB pan · Wheel zoom · WASD/QE move · F focus · Home reset'}
     </div>}
     <div className="viewport-grid"/>
     <div className="viewport-placeholder">
