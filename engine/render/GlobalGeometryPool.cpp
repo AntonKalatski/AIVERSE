@@ -129,6 +129,9 @@ const char* geometryPoolAdmissionName(GeometryPoolAdmissionReason reason) {
 
 GeometryPoolAdmission geometryPoolAdmission(gfx::Device& dev, const Model& model) {
     if (disabled()) return {GeometryPoolAdmissionReason::Disabled};
+    // PHYSIS/Geometry: dynamic CPU-authored vertices require dedicated GPU buffers.
+    if (!model.batching.allowGeometryPool)
+        return {GeometryPoolAdmissionReason::DedicatedAsset};
     if (!dev.supportsMultiDrawIndirect() || !dev.canUpdateSharedBuffers())
         return {GeometryPoolAdmissionReason::UnsupportedBackend};
     if (model.vertices.empty() || model.indices.empty())

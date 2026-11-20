@@ -26,6 +26,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include "engine/gfx/GpuTimingRouter.h"
 
 namespace aiverse::gfx {
 
@@ -228,6 +229,11 @@ struct Rect { int x = 0, y = 0, w = 0, h = 0; };
 class Device {
 public:
     virtual ~Device() = default;
+    // One shared timing collection owner per graphics Device. Components
+    // subscribe instead of independently draining takeGpuTimings().
+    // All router calls remain on this Device's render owner thread.
+    GpuTimingRouter& gpuTimingRouter() {return gpuTimingRouter_;}
+    const GpuTimingRouter& gpuTimingRouter() const {return gpuTimingRouter_;}
     virtual const DeviceInfo& info() const = 0;
 
     // Resources
@@ -274,6 +280,13 @@ public:
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.
     virtual bool copyColor(TextureHandle from, TextureHandle to) { (void)from; (void)to; return false; }
+    // Optional diagnostics only: synchronously read a completed RGBA8 render
+    // target into top-down RGBA bytes. Must be called BETWEEN frames (never
+    // during gameplay rendering); unsupported backends return false.
+    // No CPU readback is involved in normal SpectraFX GPU rendering.
+    virtual bool readColorRGBA8(TextureHandle target, std::vector<uint8_t>& rgba) {
+        (void)target; rgba.clear(); return false;
+    }
     // The screen may be a copyColor source (Metal: drawables stop being framebuffer-only from the next frame).
     virtual void setScreenReadable(bool readable) { (void)readable; }
 
@@ -417,6 +430,8 @@ public:
 
 protected:
     int fbW_ = 0, fbH_ = 0;
+private:
+    GpuTimingRouter gpuTimingRouter_{};
 };
 
 // Backend factories. `nativeSurface` is backend specific:

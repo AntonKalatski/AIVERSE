@@ -18,7 +18,8 @@ inline bool staticModelCacheDrawCandidate(const ModelDraw& d,
                                           ModelStaticEligibility model) {
     return model.transforms && d.model && d.persistentId &&
         (d.flags & kDrawStatic) && !activeDisplacement &&
-        !d.nodeWorld && !d.pose && !d.baked;
+        !d.nodeWorld && !d.pose && !d.baked &&
+        !d.useVertexParameters && d.primitiveMaterialFilter < 0;
 }
 
 // Public pure function for standalone callers. Renderer3D uses the identical
@@ -37,6 +38,7 @@ inline bool staticModelCacheGeometryCompatible(const StaticModelCache& cache,
                                                 bool activeDisplacement) {
     const Model* m = d.model;
     return m && cache.model == m && !activeDisplacement &&
+        !d.useVertexParameters && d.primitiveMaterialFilter < 0 &&
         !d.nodeWorld && !d.pose && !d.baked && m->skins.empty() &&
         m->bindWorld.size() == m->nodes.size() &&
         cache.transforms.size() == m->nodes.size() &&

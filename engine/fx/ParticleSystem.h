@@ -23,6 +23,7 @@
 #include <vector>
 #include "../gfx/Gfx.h"
 #include "FxEffect.h"
+#include "SpectraFxView.h"
 
 namespace aiverse::fx {
 
@@ -139,7 +140,14 @@ public:
     void emitManual(FxHandle h);                       // fires the "manual" sub-emitters of its live particles
     void clear();                                      // everything (new match)
 
-    void setView(const render::RTSCamera& cam, const render::mat4& viewProj, int fbW, int fbH);
+    // Generic camera/view packet: no dependency on an RTS or FPS camera.
+    void setView(const SpectraFxView& view);
+    // Source-compatible legacy path for cameras with eye/view/proj methods.
+    template<class Camera>
+    void setView(const Camera& camera,const render::mat4& viewProj,
+                 int fbW,int fbH) {
+        setView(SpectraFxView::fromCamera(camera,viewProj,fbW,fbH));
+    }
     void update(float dt);
     void render(const FxFog& fog);
     // Lights of emitters with a "light" module (after update): appended to `out`, at most `maxLights`

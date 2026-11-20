@@ -250,6 +250,13 @@ struct ModelDraw {
     // water reflections retain CPU/Legacy until their own view epochs
     // can be selected before render passes.
     std::vector<GpuIndexedSelectionPacket> gpuShadowPrimitives;
+    // Main branch ShaderGraph/source material selector; append to keep
+    // all prior positional ModelDraw initializers backward-compatible.
+    int primitiveMaterialFilter = -1;
+    bool useVertexParameters = false;
+    float4 vertexParameters{0, 0, 0, 0};
+    // Bounded vertexOffset (metres), zero means unknown displacement.
+    float maxVertexOffsetMetres = 0;
 };
 
 enum DrawFlags : uint32_t {

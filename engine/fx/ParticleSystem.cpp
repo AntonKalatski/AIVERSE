@@ -939,16 +939,19 @@ void ParticleSystem::clear() {
     for (size_t i = 0; i < I.instances.size(); ++i) { I.instances[i].used = false; I.freeInstances.push_back(int(i)); }
 }
 
-void ParticleSystem::setView(const RTSCamera& cam, const mat4& viewProj, int fbW, int fbH) {
+void ParticleSystem::setView(const SpectraFxView& view) {
+    if(!view.valid()) return;
     auto& I = *impl_;
     I.haveView = true;
-    I.viewProj = viewProj;
-    I.eye = cam.eye();
-    float3 f = render::normalize(cam.target - I.eye);
-    float3 worldUp{0, 1, 0};
+    I.viewProj = view.viewProj;
+    I.eye = view.eye;
+    float3 f = render::normalize(view.forward);
+    // Take camera up from the supplied view. A world-Y assumption breaks
+    // rolled/cinematic cameras and degenerates at a straight-down view.
+    float3 worldUp = view.up;
     if (I.haveSpace) { // particles live in their own space: the camera into it, the projection from it
         const mat4 inv = I.space.inverse();
-        I.viewProj = viewProj * I.space;
+        I.viewProj = view.viewProj * I.space;
         I.eye = inv.transformPoint(I.eye);
         f = render::normalize(inv.transformDir(f));
         worldUp = render::normalize(inv.transformDir(worldUp));
@@ -956,9 +959,9 @@ void ParticleSystem::setView(const RTSCamera& cam, const mat4& viewProj, int fbW
     I.right = render::normalize(render::cross(f, worldUp));
     I.up = render::cross(I.right, f);
     // Screen-size budgets and culling use clip-space scale, including ortho zoom.
-    I.p11 = std::abs(cam.proj(1.0f, false).m[5]);
-    I.fbW = std::max(1, fbW);
-    I.fbH = std::max(1, fbH);
+    I.p11 = view.projectionYScale;
+    I.fbW = std::max(1, view.width);
+    I.fbH = std::max(1, view.height);
     I.aspect = float(I.fbW) / float(I.fbH);
 }
 
