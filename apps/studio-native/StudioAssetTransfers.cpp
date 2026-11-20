@@ -2,6 +2,8 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include <algorithm>
 #include <fstream>
+#include <exception>
+#include <map>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -224,9 +226,99 @@ Json StudioTransferPlan::describe() const {
     return response;
 }
 Json StudioTransferPlan::apply(const std::string& token,
-                         const std::vector<StudioTransferDecision>& decisions){
+                         const std::vector<StudioTransferDecision>& decisions,
+                         const std::function<void()>& beforeCommit){
     if(token!=token_)throw std::runtime_error("Transfer preview expired or changed");
     Json result=Json::object(),copied=Json::array(),errors=Json::array();
+    if (type_==StudioTransferType::Move) {
+        // Internal moves must not produce partial success. Replacement can
+        // destroy target identity and is explicitly refused until backed by a
+        // recovery-capable backup protocol. Keep-both is safe if the final
+        // destination is resolved before the first rename.
+        struct Operation { fs::path source, destination; bool meta = false; };
+        std::vector<Operation> operations;
+        std::set<int> knownIds;
+        for (const auto& e:entries_) knownIds.insert(e.id);
+        std::map<int,std::string> actions;
+        for (const auto& d:decisions) {
+            if (!knownIds.count(d.id) || !actions.emplace(d.id,d.action).second)
+                throw std::runtime_error("Duplicate or unknown asset transfer decision");
+        }
+        std::vector<std::pair<fs::path,fs::path>> planned;
+        std::set<fs::path> reserved;
+        const fs::path root=studioContentRoot(project_);
+        for (const auto& e:entries_) {
+            const std::string action=actions.count(e.id) ? actions.at(e.id) :
+                (e.conflict.empty() ? "import" : "skip");
+            if (action=="skip") continue;
+            if (action!="import" && action!="keep-both")
+                throw std::runtime_error("Internal move only supports import, keep-both or skip; replace requires an explicit recovery transaction");
+            if (!e.conflict.empty() && action=="import")
+                throw std::runtime_error("Conflicting asset requires an explicit decision");
+            const fs::path source=checkedSource(project_,e.relativeSource);
+            const auto parent=e.destination.parent_path().lexically_relative(root).generic_string();
+            (void)checkedFolder(project_,parent=="."?"":parent);
+            fs::path destination=e.destination;
+            if (action=="keep-both") destination=keepBothName(destination,e.directory);
+            if (source==destination || existsOrSymlink(destination) ||
+                existsOrSymlink(studioMetaPath(destination)) ||
+                !reserved.insert(destination).second)
+                throw std::runtime_error("Move destination changed or collides with another selected asset");
+            const fs::path sourceMeta=studioMetaPath(source);
+            const bool hasMeta=existsOrSymlink(sourceMeta);
+            if (hasMeta && !fs::is_regular_file(fs::symlink_status(sourceMeta)))
+                throw std::runtime_error("Invalid source metadata sidecar");
+            if (hasMeta && !reserved.insert(studioMetaPath(destination)).second)
+                throw std::runtime_error("Metadata destination collision");
+            planned.emplace_back(source,destination);
+            operations.push_back({source,destination,false});
+            if (hasMeta) operations.push_back({sourceMeta,studioMetaPath(destination),true});
+        }
+        // A directory move and its child cannot be separate operations; moving
+        // the parent first would invalidate the child's preflight source.
+        for (std::size_t i=0;i<planned.size();++i)
+            for (std::size_t j=i+1;j<planned.size();++j) {
+                const auto a=planned[i].first.generic_string();
+                const auto b=planned[j].first.generic_string();
+                if (a.rfind(b+"/",0)==0 || b.rfind(a+"/",0)==0)
+                    throw std::runtime_error("Move selection contains a directory and its descendant");
+            }
+        std::vector<Operation> done;
+        try {
+            for (const auto& operation:operations) {
+                fs::rename(operation.source,operation.destination);
+                done.push_back(operation);
+            }
+            // Keep catalog identity and index consistent before resolving
+            // dependent material references.
+            StudioAssetCatalog catalog(project_); catalog.rebuild();
+            if (beforeCommit) beforeCommit();
+        } catch (...) {
+            const std::exception_ptr failure=std::current_exception();
+            std::string rollbackFailure;
+            for (auto it=done.rbegin();it!=done.rend();++it) {
+                try { fs::rename(it->destination,it->source); }
+                catch (const std::exception& ex) {
+                    rollbackFailure+=std::string("; ")+ex.what();
+                }
+            }
+            try { StudioAssetCatalog catalog(project_); catalog.rebuild(); }
+            catch (const std::exception& ex) {
+                rollbackFailure+=std::string("; catalog: ")+ex.what();
+            }
+            if (!rollbackFailure.empty())
+                throw std::runtime_error("Asset move failed and rollback is incomplete"+rollbackFailure);
+            std::rethrow_exception(failure);
+        }
+        Json completed=Json::array();
+        for (const auto& entry:planned)
+            completed.push(Json::string(entry.second.lexically_relative(root).generic_string()));
+        Json result=Json::object();
+        result.set("files",std::move(completed));
+        result.set("issues",Json::array());
+        return result;
+    }
+
     std::set<int> used;
     for(const auto& e:entries_){
         std::string action=e.conflict.empty()?"import":"skip";
