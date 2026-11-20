@@ -12428,7 +12428,7 @@ bool readContentFile(const std::string&, std::string&) { return false; }
 } // namespace aiverse::platform
 namespace entityfxtest {
 // Records what the renderer submits: per draw the pipeline's blend / depth write and the per-instance block.
-class RecordingDevice final : public aiverse::gfx::Device {
+class RecordingDevice : public aiverse::gfx::Device {
 public:
     struct Draw { bool blend = false, depthWrite = true; std::vector<float> inst; uint32_t instances = 1; bool colorWrite = true; };
     size_t uniformLimit=4096;
