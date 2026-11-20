@@ -14029,6 +14029,24 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3a1_unbuilt_terrain_uses_rules_level_height) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    rules.levelHeight=Fixed::fromInt(4);
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid grid;grid.init(3,3);
+    for(auto& flag:grid.flags)flag=game::kCellGround;
+    grid.level[size_t(grid.index(1,1))]=1;
+    // Before TerrainRenderer's first build there is no immutable mesh
+    // source snapshot. The public height query still follows Rules.
+    CHECK(std::fabs(view.heightAt(grid,1.5f,1.5f)-4.0f)<1e-4f);
+    view.shutdown(dev);
+}
+
 TEST(lens_stage48b3a_same_size_fog_sheet_keeps_explored_r8_history) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;

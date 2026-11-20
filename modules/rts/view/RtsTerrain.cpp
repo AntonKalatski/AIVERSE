@@ -22,8 +22,15 @@ using namespace render;
 // mesh: heightfield corners (two triangles per cell) when the map has them, otherwise levels + fine
 // heights + ramps.
 float RtsView::heightAt(const MapGrid& g,float x,float z) const {
-    // Always sample the last published Terrain surface, not in-place editor
-    // source mutations that have not committed across all GPU owners.
+    // No flat-map mesh has been published before the first build, and
+    // planet/cube-sphere maps use their own surface policy. In both cases
+    // retain the original Rules-derived visual height calculation.
+    if(planets_.active() || !terrain_.built())
+        return terrain::heightAt(
+            g,rules_?float(rules_->levelHeight.toDouble()):1.5f,x,z);
+    // The editor can change MapGrid corner/level data IN PLACE long before
+    // the replacement GPU owner cohort publishes. Only the snapshot of the
+    // actually published Terrain is visible to scene clients and cameras.
     return terrain_.surfaceAt(g,x,z);
 }
 
