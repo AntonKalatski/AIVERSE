@@ -206,3 +206,92 @@ then exercise live pause/load/rollback and map transitions. Do not introduce
 renderer dependencies into PHYSIS core or force climate on legacy games. For
 spatial clouds, design a bounded read-only weather texture separately; preserve
 this stage's deterministic simulation and transient-render ownership boundary.
+
+## Stage 3 — local sphere/OBB volumetric fog and runtime reveal (2026-11-20)
+
+Implementation commit: `ed9d9a6b0a7d6fc4458a41e3bae01400851f36cf`.
+Branch: `feature/physical-sky-clouds`; isolated worktree
+`/Users/aleksandrfeer/Projects/AIVERSE/.worktrees/physical-sky-clouds`.
+User requested volumetric fog authored by radius or OBB and revealed at runtime.
+
+### Changes and contracts
+
+- `engine/render/LocalFog.{h,cpp}`: bounded per-view cosmetic scene, 8 fog + 8
+  reveal regions; nonzero IDs, transactional validated upsert and removal.
+  Spheres, normalized quaternion OBBs, inward feather, linear albedo and
+  extinction in inverse world units. Overlaps add density; reveal uses maximum
+  weighted strength (duplicate regions do not compound). CPU `densityAt` query
+  shares shape/feather semantics. Moving/removing reveal restores local fog.
+- `engine/render/LocalFogShaders.h`: common GLSL/MSL full-resolution HDR
+  raymarch. Analytic sphere/OBB ray intersections, sorted/merged disjoint
+  intervals, opaque-depth clipping, Beer-Lambert attenuation, ambient and
+  anisotropic sun scattering using the existing sun shadow map. Medium/High
+  use 32/64 samples per interval. No sampled/writable depth texture aliasing.
+- `engine/render/PostFx.{h,cpp}`: native `setLocalFog`/`localFog` API, pass after
+  sky and before bloom/tonemap, independent of sky enable. Configure/shutdown
+  clear settings and regions; disabled by default, HDR Medium/High only.
+- `tests/render/local_fog.cpp`: always-on checks for sphere/rotated OBB edges,
+  partial/full/duplicate reveal, runtime move/remove, capacity/rejected updates,
+  NaN/zero quaternion input, pipeline reuse/failure/reset and shader extraction.
+  `tests/render/HdrScene.h`: opt-in real Metal/OpenGL fixtures, including actual
+  reveal movement on frame 3 and capture on frame 5, hidden volume and inside view.
+- `CMakeLists.txt`: both runtime source lists and default-built CTest target
+  `aiverse_local_fog_tests` / `local_fog`. `docs/local-volumetric-fog.md`: API,
+  usage, units, bounds and limitations. Updated sky docs, all 9 README capability
+  lines and root AGENTS contract.
+
+Public change is additive native rendering API. No map/game JSON schema, save,
+network, PHYSIS simulation, TerraWeave, gameplay visibility/FoW or deterministic
+ECS changes. Hosts must author/recreate transient regions after configure/load.
+No Studio authoring window or automatic game/editor installation. Existing
+physical sky APIs/shaders and PHYSIS bridge remain unchanged.
+
+### Executed validation
+
+- PASS `cmake -S . -B build/sky`, existing isolated Debug cache.
+- PASS `cmake --build build/sky --target aiverse_local_fog_tests
+  aiverse_hdr_scene aiverse_hdr_gl -j 8`, including final fixture changes.
+  Log `/tmp/aiverse-fog-build-final.log`, copied into `build/sky/verification/`.
+- PASS strict compile: `c++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I.
+  engine/render/LocalFog.cpp tests/render/local_fog.cpp`.
+- PASS committed-source `./run-tests.sh --no-build --build-dir build/sky
+  --filter '^(local_fog|physical_sky|physis_sky|physis_presentation)$'`: 4/4.
+  Exact code SHA above; report `build/sky/test-reports/20261120-132204-92297/`.
+- PASS `./build/sky/aiverse_local_fog_tests /tmp/aiverse-local-fog`,
+  `/opt/homebrew/bin/glslangValidator /tmp/aiverse-local-fog.vert
+  /tmp/aiverse-local-fog.frag`, and `xcrun -sdk macosx metal
+  -fmodules-cache-path=/tmp/aiverse-sky-metal-cache -c
+  /tmp/aiverse-local-fog.metal -o /tmp/aiverse-local-fog.air`.
+  Metal emits only the existing shared sun-filter unused `sunDepth` warning.
+- PASS real Metal Apple M3 Ultra: `AIVERSE_LOCAL_FOG_TEST=CASE
+  AIVERSE_HDR_CAPTURE=/tmp/aiverse-fog-CASE.ppm AIVERSE_AUDIO=off
+  ./build/sky/aiverse_hdr_scene` for `off`, `sphere`, `reveal`, `move`, `obb`,
+  `obb-reveal`, `medium`, `ortho`, `combined`, `behind`, `inside`.
+- PASS real OpenGL 4.1/GL33 Apple M3 Ultra, same command with `CASE=obb`,
+  binary `aiverse_hdr_gl`, capture `/tmp/aiverse-fog-gl.ppm`.
+  All runs exited successfully. Logs under `build/sky/verification/fog-*.log`;
+  `sips` converted captures to `build/sky/captures/fog-*.png`. Inspected sphere,
+  OBB, reveal, combined sky/fog, orthographic and camera-inside PNGs visually.
+- Pixel comparisons on raw P6 RGB payloads (Python bytes split after third
+  newline, absolute per-channel differences): `reveal` vs `off`, `obb-reveal`
+  vs `off`, `move` vs `sphere`, `behind` vs `off` all **exactly identical**
+  (mean/max delta 0). Sphere vs off mean delta 66.59576/255 confirms visible
+  fog. GL vs Metal OBB mean delta 0.32459/255, max 25 (not exact backend parity).
+- PASS `python3 tools/readme/check.py`: 9 files, zero problems.
+- PASS `git diff --cached --check`. No failed builds/tests in this stage;
+  expected Git LF/CRLF notices and Metal helper warning only.
+
+CI/full repository suite, Vulkan/mobile, real game/editor attachment and GPU
+performance measurements **NOT RUN**; no CI URL/status to report. Existing
+transparent geometry without depth writes is composited at opaque depth, not
+individually integrated. No fog self-shadowing, multiple scattering, local light
+integration, reflection/IBL fog or temporal upsampling. Overlapping scales/thin
+edges may undersample; sky/cloud/fog ordering is compositing, not unified media.
+Full-resolution worst-case 8 disjoint ranges is bounded but potentially costly.
+
+Next actionable step: select a native host/map asset owner, persist region
+configuration there and recreate IDs after its configure/load barrier; feed
+read-only presentation positions into reveal updates. Add Studio controls only
+under the shared Studio UI contract on its required branch. Before raising
+limits or shipping Low/mobile, profile real target scenes and verify Vulkan
+shader/depth parity. Do not make fog a gameplay authority or force PHYSIS on.
