@@ -179,6 +179,12 @@ struct GpuIndexedSelectionPacket {
     strata::GpuClusterCulling* selector=nullptr;
     uint32_t instanceToken=0;
     float errorThresholdPixels=2.f;
+    // Scene-staged GPU temporal history identity; the source Culling owner
+    // holds per-instance/pass triple-buffer masks. Auxiliary cameras use
+    // the same source revision but DIFFERENT pass IDs (3/4).
+    float lodHysteresisFraction=0.f;
+    uint32_t temporalNodeCount=0;
+    uint64_t temporalRevision=0;
     bool allowSpotShadow=false, allowReflection=false;
     bool exclusive=false;
     bool valid() const {
