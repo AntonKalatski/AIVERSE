@@ -1214,8 +1214,14 @@ struct CreatorApp {
                     if(ImGui::BeginCombo("3D pick mesh",current)) {
                         for(std::size_t mesh=0;mesh<human.head->meshes.size();++mesh) {
                             if(ImGui::Selectable(human.head->meshes[mesh].name.c_str(),
-                                sculptMeshIndex==int(mesh)))
+                                sculptMeshIndex==int(mesh)) &&
+                               sculptMeshIndex!=int(mesh)) {
                                 sculptMeshIndex=int(mesh);
+                                sculptPicker.reset();
+                                sculptPickMarkerValid=false;
+                                gpuSculptToken.cancel();
+                                gpuSculptToRecord={};
+                            }
                         }
                         ImGui::EndCombo();
                     }
