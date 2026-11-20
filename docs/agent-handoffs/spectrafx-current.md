@@ -1,5 +1,17 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 115 — focused Editor/FPS/RTS native rebuild PASS (reported)
+
+User reports successful Mac Studio focused build of
+`aiverse_editor`, `aiverse_fps_client` and `aiverse_client`
+after the `dt` scope fix `fc08834e1744a0a50d272043167515a635b70565`.
+The complete compile log/SHA was not pasted.
+**Full build and full CTest on the fixed source are still pending**;
+last earlier full acceptance on the broken SHA failed.
+Next: full strict `tools/spectrafx/acceptance.sh` with Metal
+and capture enabled. See Stage 115 handoff.
+
+
 ## Stage 115 — Stage 114 Editor build regression: C++ dt scope fixed (NOT RETESTED)
 
 User tested SHA `c5dd5914edac64f8071f4bd6a5ffd8eb5e6353e3`:

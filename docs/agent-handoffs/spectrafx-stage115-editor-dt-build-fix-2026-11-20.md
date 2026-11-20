@@ -83,3 +83,24 @@ AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene \
 If the focused host build still fails, use the **first actual error** from `/tmp/spectrafx-editor-rebuild.log` or `build/spectrafx-validation/spectrafx-acceptance/host_integration_build.log`; do not guess a second cause. Then patch code on feature branch, add the next handoff and rerun.
 
 Remaining Editor GUI acceptance (Pause/Step, camera orbit/Reset view, JSON invalid/retry, hot reload, close/reopen) requires interactive on-device QA after native builds pass. Avoid blind merge of highly divergent `main`.
+
+## Follow-up: focused native host build PASSED (user report)
+
+After fetching `origin/feature/spectrafx-generic-cue-queue`, the user
+reported success for the focused native Mac Studio build of:
+`aiverse_editor`, `aiverse_fps_client`, `aiverse_client` via
+`cmake --build build/spectrafx-validation --config Debug --parallel 4
+--target aiverse_editor aiverse_fps_client aiverse_client`.
+
+This confirms that the previously failing target set now builds
+successfully **according to the user's report**. The exact console log,
+timings and source SHA printed by the compiler were not supplied; the
+command was requested after the source fix
+`fc08834e1744a0a50d272043167515a635b70565`.
+The documentation branch head at this report was
+`3f48c0db29d9f9dc0a99fef5684802dd7acdb326`.
+
+**NOT YET VERIFIED on current fixed source:** full build,
+full `ctest_full`, strict 4/4 MetalGPU evidence and 5/5 screenshot
+review. Run the full strict `tools/spectrafx/acceptance.sh` next,
+then record its exact compiled SHA and all exit statuses.
