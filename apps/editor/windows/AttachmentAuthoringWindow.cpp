@@ -202,17 +202,55 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         cam.yaw=previewYaw_;
         cam.pitch=previewPitch_;
         renderer_.beginScene(cam,viewport_.w,viewport_.h);
+        presentationView_.beginPreparedFrame();
+        animatedPreviewView_.beginPreparedFrame();
         Imported::Prepared packet;
         std::string error;
         const bool ready=session_->attachmentHost &&
             session_->attachmentHost->prepare(
                 1,"preview",session_->provider->resources(),
                 render::mat4{},packet,&error);
+        // Animated children are never included in the parent static
+        // socket draws. One separate MotionWeave presentation World owns
+        // ALL child Graph clocks and evaluates them ONCE per preview frame.
+        std::vector<view::AnimatedSceneAttachmentSources::Input> graphInputs;
+        graphInputs.reserve(session_->animatedChildren.size());
+        for(const auto& [childId,appearance]:session_->animatedChildren)
+            graphInputs.push_back({
+                {1,"preview",childId},appearance,appearance->parameters});
+        view::AnimatedSceneAttachmentSources::Statistics graphStats;
+        std::string graphError;
+        const bool graphSynced=ready &&
+            animatedSources_.sync(
+                *session_->attachmentHost,session_->provider->resources(),
+                graphInputs,previewPlaying_?1.f/60.f:0.f,
+                graphStats,&graphError);
+        std::vector<view::AnimatedSceneAttachmentSources::Prepared>
+            animatedPackets;
         if(ready) {
             packet.object.id=1; // isolated preview source identity
             packet.object.draw.pose=&previewPose_;
             packet.object.draw.nodeWorld=&previewMatrices_;
             presentationView_.submitOne(renderer_,packet.object);
+            if(graphSynced) {
+                animatedPackets.reserve(graphInputs.size());
+                for(const auto& input:graphInputs) {
+                    view::AnimatedSceneAttachmentSources::Prepared child;
+                    std::string childError;
+                    if(animatedSources_.prepare(
+                           *session_->attachmentHost,
+                           session_->provider->resources(),
+                           input.key,packet.object.draw,
+                           std::span<const render::mat4>(
+                               previewMatrices_.data(),previewMatrices_.size()),
+                           child,&childError)) {
+                        // A different graphless View renders this fully
+                        // prepared child. No second Graph evaluation.
+                        animatedPreviewView_.submitOne(renderer_,child.object);
+                        animatedPackets.push_back(std::move(child));
+                    } else message_="Animated child preview: "+childError;
+                }
+            } else message_="Animated Graph sync: "+graphError;
         } else message_="Preview packet rejected: "+error;
         gfx::PassDesc pass;
         pass.colorTarget=viewport_.color;
@@ -392,6 +430,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
 
 public:
     ~AttachmentAuthoringWindow() override {
+        // Release independent child GraphInstances while all borrowed
+        // Model/Graph publications are still owned by this window.
+        animatedSources_.clear();
         // Editor::shutdown has already proven GPU idle before destroying
         // its windows. Do not discard owner-side attachments without proof.
         if(device_) {
@@ -433,6 +474,7 @@ public:
         }
         // Old GPU Models remain owned by the deferred provider even after
         // the project changes, until GPU idle can be proven on this device.
+        animatedSources_.clear();
         deferSession(session_);
         project_=current;
         pendingReimport_=false;
