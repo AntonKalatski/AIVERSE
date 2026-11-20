@@ -213,7 +213,7 @@ public:
         }
         plan.jobs.erase(std::remove_if(plan.jobs.begin(),plan.jobs.end(),[&](const auto& view) {
             for (size_t i=0;i<n;++i)
-                if (cameras[i].entity==view.entity) return blocked[i];
+                if (cameras[i].entity==view.entity) return bool(blocked[i]);
             return true;
         }),plan.jobs.end());
         return plan;
