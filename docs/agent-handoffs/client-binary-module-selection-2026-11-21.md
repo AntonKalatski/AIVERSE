@@ -291,3 +291,32 @@ is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
 Windows, runtime BLP smoke and CI were NOT RUN (no CI URL). Next: focus on
 larger linked client components and project-data-driven selection rather than
 additional tiny decoder switches; measure optimized Web once available.
+
+## 2026-11-21 continuation: optional persistent city client
+
+Branch `feature/studio-html5`; implementation commit `580c92cd0`, documentation
+correction `c9842e0e1`.
+Affected paths: `CMakeLists.txt`, `apps/client/ClientCityStub.cpp`,
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. The new `city-client`
+name passes `AIVERSE_CLIENT_WITH_CITY` to packaged clients. OFF replaces the
+city connection translation unit with a small adapter and omits the
+`aiverse_net_city` link. Setting `AIVERSE_CITY` in such a build raises a clear
+error when a match starts. An omitted module list retains the ON default. Hosted editor
+play, city server, local gameplay, public APIs and save formats are unchanged.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. Fixture `--check-engine-modules` for web PASS with
+`["city-client"]` (ON) and `[]` (OFF). macOS configure and `cmake --build
+/private/tmp/aiverse-client-modules-check --target aiverse_client -j 6`
+PASS with OFF and ON. OFF link command contained `ClientCityStub.cpp.o` and
+no `libaiverse_net_city.a`; ON contained `ClientCity.cpp.o` and the library.
+OFF executable measured 80,636,816 bytes; ON measured 80,898,328 bytes, a
+261,512-byte diagnostic reduction. `git diff --check` PASS on stage paths
+(line-ending warnings only).
+
+The shared worktree contained unrelated changes; none was staged. The
+`AIVERSE_CITY` error branch was compiled but not runtime exercised. Emscripten
+is unavailable, so Web compilation, wasm size/startup, Android, iOS, Linux,
+Windows and CI were NOT RUN (no CI URL). Next: inspect the largest remaining
+client dependencies, particularly UI/render support that can be cleanly
+selected by game capabilities, and measure optimized Web once available.
