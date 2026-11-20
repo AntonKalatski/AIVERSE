@@ -46,6 +46,18 @@ struct TextureRef {
 class TextureCache {
 public:
     void init(gfx::Device& dev) { dev_ = &dev; }
+    // Atomic owner handoff for staged GPU icon caches. AtlasSprite addresses
+    // remain valid because their heap objects stay inside unique_ptr nodes.
+    void swap(TextureCache& other) noexcept {
+        using std::swap;
+        swap(atlas_,other.atlas_);
+        atlasBase_.swap(other.atlasBase_);
+        atlasPages_.swap(other.atlasPages_);
+        sprites_.swap(other.sprites_);
+        cache_.swap(other.cache_);
+        error_.swap(other.error_);
+        swap(dev_,other.dev_);
+    }
     void shutdown();
     // `base` is prefixed to the path when reading (editor: "<project dir>/", game: "").
     // `tiling`: a repeating world-space texture (terrain splat layers): never taken from an atlas
