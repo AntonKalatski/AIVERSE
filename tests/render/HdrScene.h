@@ -26,6 +26,7 @@ struct HdrScene {
     bool verify = false;
     std::unique_ptr<Model> probeBg, probeFg;
     bool captured = false, failed = false, temporalVerify = false;
+    bool prismaMultiViewVerify = false; // opt-in Stage 97 real-GPU camera lifetime probe
     float temporalMinX=1e9f,temporalMaxX=-1e9f,temporalMinY=1e9f,temporalMaxY=-1e9f;
     std::string path;
     gfx::PassDesc output;
@@ -34,7 +35,31 @@ struct HdrScene {
         std::printf("GPU: %s; RGBA16F=%d\n", d.info().name.c_str(), d.supports(gfx::PixelFormat::RGBA16F));
         if (!renderer.init(d) || !post.init(d)) { failed = true; return; }
         temporalVerify=std::getenv("AIVERSE_TAA_VERIFY")!=nullptr;
+        prismaMultiViewVerify=std::getenv("AIVERSE_PRISMA_MULTIVIEW_VERIFY")!=nullptr;
         advanced = temporalVerify || std::getenv("AIVERSE_SCREEN_LIGHTING") != nullptr;
+        if (prismaMultiViewVerify && (temporalVerify ||
+            std::getenv("AIVERSE_HDR_VERIFY") ||
+            std::getenv("AIVERSE_SCREEN_LIGHTING"))) {
+            std::fprintf(stderr, "PRISMA multiview: conflicting GPU fixture mode\n");
+            failed = true;
+            return;
+        }
+        if (prismaMultiViewVerify) {
+            // A test must explicitly turn on canonical temporal; the legacy
+            // ScreenLighting TAA would test a different history owner.
+            const auto enabled=[](const char* key) {
+                const char* value=std::getenv(key);
+                return value && std::strcmp(value,"1")==0;
+            };
+            if (!enabled("AIVERSE_PRISMA_TEMPORAL") ||
+                !enabled("AIVERSE_PRISMA_JITTER")) {
+                std::fprintf(stderr, "PRISMA multiview: TEMPORAL and JITTER must be 1\n");
+                failed=true;
+                return;
+            }
+            post.setSettings(parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"temporalResolve","historyWeight":0.86,"jitterPixels":0.5,"minQuality":"high"}]})"),Json()));
+            post.setQuality(PrismaQuality::High);
+        }
         if (advanced && !screen.init(d,post)) { failed=true; return; }
         screen.setEnabled(advanced);renderer.setModelReflectionsEnabled(advanced);
         renderer.setShadowQuality(ShadowQuality::High);
@@ -94,6 +119,7 @@ struct HdrScene {
     }
     void draw(gfx::Device& d, int w, int h) {
         if (failed) return;
+        if (prismaMultiViewVerify) { drawPrismaMultiView(d,w,h); return; }
         if (temporalVerify) { drawTemporal(d,w,h); return; }
         if (verify) { drawProbe(d,w,h); return; }
         if(ownsFrame)d.beginFrame(w,h);
@@ -131,6 +157,125 @@ struct HdrScene {
             std::fprintf(stderr,"renderer: %s; post: %s\n",renderer.modelError().c_str(),post.lastError().c_str()); failed=true;
         }
     }
+    // Stage 97: exercise real Renderer3D + canonical PRISMA GPU passes for two
+    // stable camera IDs, equal-sized shared cache, cut, resize, and GPU-fenced
+    // retirement. Checks describe encoded passes and CPU-visible RHI metadata;
+    // they are NOT a per-pixel moving-object/ghosting or fence-completion proof.
+    void drawPrismaMultiView(gfx::Device& d,int w,int h) {
+        constexpr uint64_t a=1001,b=2002;
+        const int step=frame;
+        auto fail=[this](const char* msg) {
+            std::fprintf(stderr,"PRISMA multiview FAIL step=%d: %s\n",frame,msg);
+            failed=true;
+        };
+        auto ownsHistory=[this](uint64_t id,int width,int height) {
+            const auto memory=post.memoryStats();
+            for(const auto& view:memory.views)
+                if(view.viewId==id)
+                    return view.width==width && view.height==height &&
+                        view.ownedTemporalTextures==2;
+            return false;
+        };
+        auto encoded=[this](uint64_t id,int width,int height,uint64_t sequence) {
+            const auto* report=post.effectReport(id);
+            if(!report || report->viewId!=id || report->sequence!=sequence ||
+               report->width!=width || report->height!=height ||
+               !report->sceneReady || !report->hdr)
+                return false;
+            for(const auto& effect:report->effects)
+                if(effect.type==PrismaType::TemporalResolve)
+                    return effect.requested && effect.pipelinePrepared &&
+                        effect.encoded;
+            return false;
+        };
+        const uint64_t epochA=post.objectMotionEpoch(a);
+        const uint64_t epochB=post.objectMotionEpoch(b);
+        if(step==3) {
+            // Both renderer deformation and PRISMA camera history see the cut.
+            post.resetMotionHistory(a);
+            renderer.resetObjectMotionHistory(a);
+            if(post.objectMotionEpoch(a)<=epochA ||
+               post.objectMotionEpoch(b)!=epochB)
+                fail("cut did not invalidate only camera A");
+        }
+        auto renderView=[&](uint64_t id,int width,int height,float x) {
+            if(failed)return;
+            post.setViewId(id);
+            const auto size=post.renderSizeForOutput(width,height);
+            if(size.first!=width || size.second!=height) {
+                fail("unexpected temporal render-size fallback");return;
+            }
+            auto cam=camera;
+            cam.yaw+=x;
+            auto renderCam=post.jitteredCamera(cam,size.first,size.second);
+            renderer.beginScene(renderCam,size.first,size.second);
+            renderer.drawMesh(cube,mat4::translate({x,0,0}),
+                              {0.7f,0.32f,0.16f,1},kDrawUnlit);
+            auto pass=output;
+            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
+            renderer.render(pass,&post);
+            renderer.resolvePrisma();
+            d.endPass(); // resolve leaves the presentation pass open
+            if(!post.stats().temporalResolved ||
+               !post.lastError().empty() || !renderer.modelError().empty()) {
+                std::fprintf(stderr,"PRISMA multiview render error: %s; model: %s\n",
+                             post.lastError().c_str(),renderer.modelError().c_str());
+                fail("real temporal GPU pass not encoded");
+            }
+        };
+        if(step<=4) {
+            renderView(a,640,480,0.f);
+            renderView(b,step>=4?512:640,step>=4?384:480,0.1f);
+            if(!failed && (!encoded(a,640,480,static_cast<uint64_t>(step+1)) ||
+                !encoded(b,step>=4?512:640,step>=4?384:480,
+                         static_cast<uint64_t>(step+1))))
+                fail("per-view temporal effect reports not isolated");
+            if(!failed && (!ownsHistory(a,640,480) ||
+                !ownsHistory(b,step>=4?512:640,step>=4?384:480)))
+                fail("private camera temporal history missing/incorrect dimensions");
+            const auto retire=post.retirementStats();
+            if(!failed && (retire.temporalViews!=2 || retire.activeSizes<(step>=4?2u:1u)))
+                fail("two camera histories or size caches not tracked");
+            if(step==3 && !failed && post.objectMotionEpoch(b)!=epochB)
+                fail("camera A cut changed B's object-motion epoch");
+            if(step==4 && !failed)
+                std::printf("PRISMA multiview: resize B 640x480 -> 512x384; "
+                            "fenced=%zu quarantined=%zu\n",
+                            retire.fencedTextures,retire.unfencedTextures);
+        } else if(step==5) {
+            renderView(a,640,480,0.f);
+            const size_t retired=post.retireUnregisteredViews({a});
+            const size_t sizes=post.retireUnreferencedSizeCaches();
+            const auto stats=post.retirementStats();
+            if(retired<1 || sizes<1 || stats.temporalViews!=1 ||
+               post.effectReport(b)!=nullptr || !ownsHistory(a,640,480))
+                fail("closing B affected A or failed to retire its unique size");
+            std::printf("PRISMA multiview: retire B=%zu sizes=%zu; "
+                        "fenced=%zu quarantined=%zu (not GPU-completed proof)\n",
+                        retired,sizes,stats.fencedTextures,stats.unfencedTextures);
+        } else if(step==6) {
+            post.retireUnregisteredViews({});
+            post.retireUnreferencedSizeCaches();
+            post.collectGpuRetirements(); // query real completed fence, nonblocking
+            const auto stats=post.retirementStats();
+            if(stats.temporalViews!=0 || stats.activeSizes!=0 ||
+               post.effectReport(a)!=nullptr || !post.memoryStats().views.empty())
+                fail("all cameras closed but active history/cache remained");
+            if(!failed) {
+                std::printf("PRISMA multiview: PASS cameras=2 cut=1 resize=1 "
+                            "lifecycle=2 fenced=%zu quarantined=%zu "
+                            "completedFence=%llu\n",
+                            stats.fencedTextures,stats.unfencedTextures,
+                            static_cast<unsigned long long>(stats.lastGpuCompletedFence));
+                captured=true;
+            }
+        } else {
+            fail("unexpected frame beyond test completion");
+        }
+        ++frame;
+        (void)d;(void)w;(void)h;
+    }
+
     void drawTemporal(gfx::Device& d,int w,int h) {
         PrismaSettings settings;settings.hdr=HdrMode::On;post.setSettings(settings);post.setQuality(PrismaQuality::High);
         screen.setDiffuseBounceEnabled(false);renderer.lighting.tonemap=false;
