@@ -302,9 +302,21 @@ void RtsGroundFx::setMesh(Mesh& m, const MeshBuilder& b) {
     if (!b.empty()) m = b.upload(*dev_);
 }
 
+bool RtsGroundFx::shutdownAfterGpuIdle(gfx::Device& dev) {
+    checkGpuDevice(dev);
+    if(!dev_)return true;
+    if(dev_!=&dev)
+        throw std::logic_error("RtsGroundFx shutdown: GPU device owner mismatch");
+    if(!dev.waitForResourceIdle())return false;
+    shutdown(dev);
+    return true;
+}
+
 void RtsGroundFx::shutdown(gfx::Device& dev) {
     checkGpuDevice(dev);
-    dev_ = &dev;
+    if(!dev_)return;
+    if(dev_!=&dev)
+        throw std::logic_error("RtsGroundFx shutdown: GPU device owner mismatch");
     for (Chunk& c : chunks_)
         for (Mesh* m : {&c.fill, &c.border, &c.rock, &c.veins, &c.gems, &c.marks, &c.road, &c.concrete}) freeMesh(*m);
     chunks_.clear();
