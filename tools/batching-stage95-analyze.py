@@ -13,6 +13,7 @@ import sys
 REQUIRED = ("frame", "render_cpu_ms", "mdi_submissions", "mdi_commands",
             "shadow_backend_ms", "opaque_backend_ms", "render_thread_cpu_ms",
             "render_offcpu_ms")
+OPTIONAL_CLOCKS = ("render_process_cpu_ms", "render_mach_thread_cpu_ms")
 
 
 def percentile(values, percent):
@@ -25,7 +26,9 @@ def analyze(path, threshold=1.2):
         reader = csv.DictReader(stream)
         if not all(field in (reader.fieldnames or []) for field in REQUIRED):
             raise ValueError(f"{path}: missing columns: {set(REQUIRED) - set(reader.fieldnames or [])}")
-        records = [{key: float(row[key]) for key in REQUIRED} for row in reader]
+        available = [key for key in OPTIONAL_CLOCKS if key in (reader.fieldnames or [])]
+        records = [{key: float(row[key]) for key in REQUIRED + tuple(available)}
+                   for row in reader]
     if [int(x["frame"]) for x in records] != list(range(90, 196)):
         raise ValueError(f"{path}: expected unique ordered frames 90..195")
     for r in records:
@@ -33,6 +36,8 @@ def analyze(path, threshold=1.2):
             raise ValueError(f"{path}: invalid/unsupported thread CPU sample, frame={r['frame']}")
         if r["render_thread_cpu_ms"] > r["render_cpu_ms"] + 0.15:
             raise ValueError(f"{path}: thread time unexpectedly exceeds wall time, frame={r['frame']}")
+        if "render_process_cpu_ms" in r and r["render_process_cpu_ms"] < r["render_thread_cpu_ms"] - 0.15:
+            raise ValueError(f"{path}: process CPU unexpectedly below thread CPU, frame={r['frame']}")
     measured = [r for r in records if 115 <= r["frame"] <= 195 and r["mdi_submissions"] > 0]
     if len(measured) < 40:
         raise ValueError(f"{path}: need at least 40 MDI measured frames")
@@ -54,6 +59,10 @@ def analyze(path, threshold=1.2):
             "offcpu_fraction_median": med(items, lambda r:
                 r["render_offcpu_ms"] / r["render_cpu_ms"]
                 if r["render_cpu_ms"] else 0.0),
+            "process_cpu_median_ms": med(items, lambda r:
+                r.get("render_process_cpu_ms", float("nan"))),
+            "mach_thread_cpu_median_ms": med(items, lambda r:
+                r.get("render_mach_thread_cpu_ms", float("nan"))),
         }
     return [group("all_mdi", measured), group("fast_mdi", fast),
             group("slow_mdi", slow)]
@@ -72,12 +81,15 @@ def main():
         writer.writerows(results)
     print("Stage 95 CPU wall vs render-calling-thread time (no GPU timestamps)")
     print(f"{'Run':28} {'Group':9} {'n':>4} {'wall':>8} {'thread':>8} "
-          f"{'offcpu':>8} {'offcpu p95':>10} {'backend wall':>13}")
+          f"{'offcpu':>8} {'offcpu p95':>10} {'backend wall':>13}"
+          f" {'procCPU':>8} {'machThr':>8}")
     for r in results:
         print(f"{r['file'][:28]:28} {r['group']:9} {r['frames']:4d} "
               f"{r['wall_median_ms']:8.4f} {r['thread_median_ms']:8.4f} "
               f"{r['offcpu_median_ms']:8.4f} {r['offcpu_p95_ms']:10.4f} "
-              f"{r['backend_wall_median_ms']:13.4f}")
+              f"{r['backend_wall_median_ms']:13.4f} "
+              f"{r['process_cpu_median_ms']:8.4f} "
+              f"{r['mach_thread_cpu_median_ms']:8.4f}")
     print(f"Saved: {summary}")
     print("NOTE: offcpu can be waits or descheduling; it is not GPU execution time.")
 
