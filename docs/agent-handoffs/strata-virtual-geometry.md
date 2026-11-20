@@ -3089,3 +3089,98 @@ entry point in `AGENTS.md` commit
 **No Stage 16.3 test was executed.** Work remains default OFF with
 manual parity gates both false; an indirect argument packet is not a
 hardware image parity result.
+
+
+---
+
+## Stage 16.4a — independent per-material/per-instance Vulkan GPU indirect packets (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`. Source changes and
+recording-test assertions authored/committed; **NO native compilation,
+CTest, real Vulkan GPU render, framebuffer pixel parity or Metal/GLES
+acceptance has occurred**. Stage 16.3 parity switches default to OFF.
+
+### Implemented
+
+- `StrataVulkanIndirectContract.h/.cpp` introduces
+  `prepareVulkanIndirectPrimitiveContract(device,source,staged,binding,
+  primitiveOrdinal,view,hasShadowOrReflection,out,guarded,error)`.
+  Allows one immutable pooled mesh/node with **up to 16 original opaque
+  primitives/materials**; verifies *all* source/staged primitive
+  identities and original/staged index spans, validates the per-item
+  material, and returns a separately guarded **full original primitive**
+  fallback command. Unsafe alpha/shader-graph/morph/skin/authored LOD
+  sources are rejected entirely. The old
+  `prepareVulkanIndirectContract` remains intentionally strict for
+  exactly one primitive (source compatibility).
+- `Renderer3D.h` appends
+  `ModelDraw::gpuIndexedPrimitives` as a vector of small POD packets
+  without changing existing aggregate initializer positions. Each
+  `GpuIndexedSelectionPacket` carries source mesh/primitive/material
+  identity and a per-instance world transform in addition to its
+  original Stage16.3 RHI handles/revisions.
+- `Renderer3DModels.cpp` copies only the exact matching primitive
+  packet by value into its original `ModelItem`; its opaque pass
+  still invokes `drawModelBatch(...,submit=false)` for EACH original
+  material and U0 world transform before consuming that primitive's
+  GPU command array. Explicit CPU material/shadow proxy batching is
+  suppressed for packet-bearing ModelDraws, preventing one combined
+  palette/material ModelItem from silently replacing separate GPU
+  materials. A rejected GPU command falls through to an original
+  primitive draw with the same material, avoiding duplicated geometry.
+  Source mesh/primitive pointer/material identity and revisions are
+  rechecked immediately before the RHI draw.
+- `GeometryScene.cpp::tryStrataVulkanGpuDraw` now preflights the
+  complete source (all 1–16 primitives) before any GPU dispatch;
+  dispatches **one independent selection per primitive and source
+  instance** (up to 16 instances/source); and only commits the
+  per-ModelDraw packet vector when every primitive GPU selection and
+  submission contract succeeds. GPU Culling's existing 64
+  submissions/frame bound remains authoritative; if a scene exceeds
+  it, source instances automatically fall back to portable/Legacy.
+  Each dispatch uses its own objectToWorld, stable instance token,
+  material-specific original fallback and GPU command slot.
+  No GPU atomic output ordering is used for material state ownership.
+  This path is still main-camera opaque ONLY and behind BOTH explicit
+  user-held parity switches (OFF by default).
+- `tests/render/strata_render_routing.cpp` includes a new
+  recording-RHI two-material, one-mesh Vulkan source with independently
+  admitted primitive ordinal 0/1, separate GPU packet ownership,
+  world transform isolation across instance ModelDraw copies, alpha
+  rejection, original-index offsets, model material revision
+  invalidation, and old single-primitive API compatibility.
+  All assertions are **authored, not executed**.
+
+### Changed files / commits
+
+- `engine/render/StrataVulkanIndirectContract.h`:
+  `5cf987f275b9be2c5b16f7132e7bba4d6615724c`.
+- `engine/render/StrataVulkanIndirectContract.cpp`:
+  `db23cfda1e0699bb4a8dfa3961563948bfb8a86c`.
+- `engine/render/Renderer3D.h`:
+  `4209f5e370c293bb70f83f2b6f97ddcd8d639a8d`.
+- `engine/render/Renderer3DModels.cpp`:
+  `e3b70012fa1909b36d981bd0c64d4cdab9924a17`.
+- `engine/render/GeometryScene.cpp`:
+  `6a92ac87e1fbd17a51f0c1b4d7d0eca18cec0da1`.
+- `tests/render/strata_render_routing.cpp`:
+  `46bb3fed59506887e78b73eee161960176e37b46`.
+
+### Progress at end of substage 16.4a
+
+| Function | Code | Test evidence |
+| --- | --- | --- |
+| Multiple independent opaque material GPU packets | Implemented | NOT RUN |
+| Up to 16 source instance transforms | Implemented | NOT RUN |
+| CPU material/shadow proxy suppression for GPU item | Implemented | NOT RUN |
+| GPU command limit and partial source fallback | Implemented | NOT RUN |
+| Renderer3D original PBR state per primitive | Reused, code connected | NOT RUN |
+| Sun-shadow GPU pass | NOT YET | N/A |
+| Planar reflection GPU pass | NOT YET | N/A |
+| Full Vulkan pixel parity / performance | NOT VERIFIED | N/A |
+
+**Next:** Stage 16.4b: per-pass GPU shadow selection with
+camera-specific commands, then reflections. Must never use main
+view's selection for a sun/spot/reflection camera. Preserve all
+Metal/GLES3/Legacy ownership. Build/test only at the owner's
+requested final acceptance.
