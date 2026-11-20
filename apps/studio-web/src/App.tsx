@@ -9,7 +9,7 @@ import {
   closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
 } from './nestedDock';
 import type { StudioPanel } from './nestedDock';
-import type { StudioEntity, StudioSnapshot } from './types';
+import type { StudioEntity, StudioProperty, StudioSnapshot } from './types';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 
@@ -26,6 +26,21 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [dock, setDock] = useState(readNestedDock);
   const [connected] = useState(nativeConnected);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uiScale, setUiScale] = useState<number>(() => {
+    const stored = Number(window.localStorage.getItem('aiverse.studio.uiScale'));
+    return Number.isFinite(stored) && stored >= 0.75 && stored <= 2 ? stored : 1;
+  });
+  const [inspectorPin, setInspectorPin] = useState<{
+    entity: StudioEntity; properties: StudioProperty[];
+  } | null>(null);
+  useEffect(() => {
+    // CSS zoom scales the entire web layout, including dialogs and dock tabs.
+    // The native viewport continues using getBoundingClientRect() screen pixels.
+    document.documentElement.style.zoom = String(uiScale);
+    window.localStorage.setItem('aiverse.studio.uiScale', String(uiScale));
+    return () => { document.documentElement.style.zoom = ''; };
+  }, [uiScale]);
 
   // Store browser-only layout (not engine state) with bounded write frequency.
   useEffect(() => {
@@ -101,21 +116,29 @@ export default function App() {
     finally { setBusy(false); }
   };
   const changeProperty = async (key: string, value: string | number | boolean) => {
-    if (!snapshot?.selectedId) return;
+    const entityId = inspectorPin?.entity.id ?? snapshot?.selectedId;
+    if (!entityId) return;
     setBusy(true);
     try {
-      setSnapshot(await invoke('studio.setProperty', {
-        entityId: snapshot.selectedId, key, value
-      }));
+      const result = await invoke('studio.setProperty', { entityId, key, value });
+      setSnapshot(result);
+      if (inspectorPin) setInspectorPin(current => current && current.entity.id === entityId
+        ? { ...current, properties: current.properties.map(property =>
+            property.key === key ? {...property, value} : property) } : current);
       setError('');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
   const rows = useMemo(() => hierarchyRows(snapshot?.scene.entities ?? []), [snapshot]);
-  const selected = snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
+  const selected = inspectorPin?.entity ??
+    snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
+  const inspectorProperties = inspectorPin?.properties ?? snapshot?.properties ?? [];
+  const toggleInspectorPin = () => setInspectorPin(current => current ? null :
+    selected ? {entity: {...selected}, properties: (snapshot?.properties ?? []).map(p => ({...p}))} : null);
   const consoleOpen = panelStack(dock, 'console') !== null;
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
     snapshot, busy, connected, search, setSearch, rows, selected,
+    inspectorProperties, inspectorPinned: !!inspectorPin, toggleInspectorPin,
     select, changeProperty, openProject
   });
 
@@ -137,10 +160,19 @@ export default function App() {
         </span>
         <button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}>
           <RefreshCw size={15}/></button>
-        <button className="icon-button" aria-label="Reset Studio layout" title="Reset panel layout"
-          onClick={() => setDock(defaultDockTree())}><Settings2 size={17}/></button>
+        <button className="icon-button" aria-label="Editor settings" title="Editor settings"
+          aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
       </div>
     </header>
+    {settingsOpen && <section className="studio-editor-settings" aria-label="Editor settings">
+      <strong>Editor settings</strong>
+      <label>UI scale <output>{Math.round(uiScale * 100)}%</output>
+        <input type="range" min="75" max="200" step="5" value={Math.round(uiScale * 100)}
+          onChange={e => setUiScale(Number(e.target.value) / 100)}/>
+      </label>
+      <button type="button" onClick={() => setUiScale(1)}>Reset scale to 100%</button>
+      <button type="button" onClick={() => setDock(defaultDockTree())}>Reset panel layout</button>
+    </section>}
     <div className="toolbar">
       <div className="toolbar-left"><span className="toolbar-label"><Box size={16}/> Workspace</span>
         <span className="toolbar-divider"/>
