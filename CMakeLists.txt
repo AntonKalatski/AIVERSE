@@ -558,6 +558,16 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
 endif()
+# Stage 180: semantic facial Control Rig + existing native IK/ECS.
+# Deferred until the coordinated Mac CMake/CTest/RHI acceptance campaign.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_facial_control_rig_tests
+        tests/animation/facial_control_rig.cpp)
+    target_link_libraries(aiverse_animation_facial_control_rig_tests
+        PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME animation_facial_control_rig
+        COMMAND aiverse_animation_facial_control_rig_tests)
+endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_humanoid_retarget_tests tests/animation/humanoid_retarget.cpp)
     target_link_libraries(aiverse_humanoid_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
