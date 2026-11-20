@@ -3564,3 +3564,167 @@ Only then perform real Metal/Vulkan/GLES3 GPU mixed-level visual
 acceptance and Stage18 profiling. Maintain original Renderer3D
 submission ownership and conservative fallback on every unsupported
 case.
+
+
+---
+
+## Stage 17.2 — cross-material and source-mesh positional seam certification (2026-11-20)
+
+**Repository/branch:** `chromealex/AIVERSE`,
+`feature/strata-virtual-geometry`; do not merge directly to
+concurrently-changing `main`. **NO native compile/CTest, real
+Metal/Vulkan/GLES device run, raster screenshot, sun-depth capture or
+planar RTT acceptance was executed in this stage.** Code and regression
+fixtures have been authored and committed only.
+
+### Why 17.1 was insufficient
+
+`auditSeamHierarchy` compares exact original **global vertex IDs**
+inside one STRATA `Asset` (one material partition). UV/normal/lightmap
+seams often duplicate spatial vertices with *different* source IDs
+across material partitions or even between distinct Model meshes
+bound to different rigid nodes. A source could therefore already
+contain an unmatched split edge or a tiny positional gap across
+partitions, even if each hierarchy parent preserves its own original
+vertex-index boundary. Naively claiming all mixed-depth sources
+crack-free in that case would be wrong.
+
+### Implemented CPU-only source-level proof
+
+- **New `engine/render/StrataSourceSeams.h/.cpp`** exports
+  `auditModelSourceSeams(model,modelAsset,report,error)`.
+  It requires complete original `Model::vertices` and
+  `Model::indices` plus each eligible primitive's successful
+  Stage17.1 `geometry.seamCertified`. It extracts exact
+  *source primitive* boundary edge segments using opposite-direction
+  triangle incidence and rejects degenerate/nonmanifold geometry
+  before attempting any GPU path. This also checks cases where the
+  source Model contains original UV seams and model-local duplicated
+  geometric positions.
+- Each staged mesh/primitive is evaluated with the
+  `Model::bindWorld` of EVERY rigid source node using that mesh.
+  No nodes in an offline-procedural source means one identity
+  transform per mesh. Missing/mismatched transform metadata,
+  invalid primitive references and non-finite transformed edge
+  positions are rejected rather than assumed safe.
+- Edge geometry is compared by **exact transformed endpoint
+  coordinates**, so different per-material vertex IDs may share
+  the same physical source seam. A geometric edge reused by
+  more than two distinct partitions is conservatively declined.
+  Matched duplicate-ID UV seams are explicitly accepted.
+- A bounded 3-D spatial AABB BVH indexes all source boundary
+  segments (max **250,000**, otherwise Legacy fallback).
+  For each endpoint it tests other partitions' nearby segments:
+  an endpoint falling **inside** a segment of another material
+  identifies a source T-junction; a near-but-not-identical
+  endpoint identifies a potential existing physical crack.
+  The near-neighbor filter uses a conservative source-diagonal
+  relative epsilon clamped between 1e-6 and 1e-3 world units.
+  **This epsilon is used to DECLINE suspicious sources, not to
+  silently weld them.** Exact geometry is still required to
+  consider an endpoint matched.
+  Average BVH query complexity is O(E log E) instead of
+  naive O(E²); memory and work are bounded by staged model limits.
+- The report `SourceSeamAudit`
+  (`examinedPartitions`, `boundarySegments`,
+  `matchedSegments`, `rejectedNearJunctions`) is **transactional**
+  on failure, like the Stage17.1 whole hierarchy proof.
+- `StrataModelAdapter.cpp::buildModelAsset` now calls this source
+  audit AFTER building all eligible material partitions, BEFORE
+  publishing the `ModelAsset`. On rejection it leaves the previous
+  output unchanged and surfaces the seam failure to SceneStaging;
+  the source remains drawable through ordinary Legacy.
+  `ModelAsset::sourceSeamsCertified` is set true only after a
+  complete successful source audit, with
+  `sharedGeometricBoundarySegments` diagnostics.
+- `SceneStaging::stage` refuses missing source seam certification
+  and tracks `crossMaterialCertifiedSources` and
+  `crossMaterialMatchedSeams`. `GeometryScene` reports these
+  metrics and now requires **both** the per-primitive Stage17.1
+  seal and source-wide Stage17.2 seal at portable, Metal/Vulkan
+  GPU metadata, and Vulkan Renderer3D production entry points.
+  No GPU pipeline, draw batching owner, model vertex buffer or
+  legacy render pass is duplicated or changed by this validator.
+- Existing `SourceSeamAudit` and builder algorithms are neutral to
+  RTS/FPS/genre, Metal/Vulkan/GLES/GL33. They execute only during
+  asset import/load, not on each camera frame.
+
+### Exact changed paths and commits
+
+- New `engine/render/StrataSourceSeams.h`:
+  `82a9ca6908747f56530c4e27cf402d72f9649345`.
+- New `engine/render/StrataSourceSeams.cpp`:
+  `c9ddce517b94869e0c2721a6b4d31a5c5885ea40`.
+- `engine/render/StrataModelAdapter.h`:
+  `dfec0fdc5e1d3d9e9dc2e9562809c445138faff3`
+  (ModelAsset source certificate, staging stats).
+- `engine/render/StrataModelAdapter.cpp`:
+  `287ddbbf8e23080ef6e2c53ff15ac062c59d6d24`
+  (build-time source audit and transactional Legacy fallback).
+- `engine/render/GeometryScene.h`:
+  `0efbef067ac8cde68be3f4c3932cc0ed07224a39`
+  (cross-material audit stats).
+- `engine/render/GeometryScene.cpp`:
+  `54257ef2e88748f780ec55c9f50c0b8a78164a6d`
+  (require both certificates before portable/GPU production).
+- `CMakeLists.txt`:
+  `961e6d3085130678c4002407eba7a2a3841d05c3`
+  links the source checker; `c059e4d5ed7d1f2864647337c616b8f06197c735`
+  registers `strata_source_seams` CTest.
+- New `tests/render/strata_source_seams.cpp`:
+  `cac6a8f753912907d131738b1f2003a61b671616`
+  (two opaque materials, duplicated UV seam IDs, split border
+  vertex T-junction, small positional gap, separate meshes bound
+  by distinct source-node transforms and transform revision).
+
+### Authored tests (none executed)
+
+`aiverse_strata_source_seams_tests` includes exact spatial seam
+acceptance across independent material vertices and independent
+mesh Node transforms, matched-edge accounting, T-junction induced
+by one material splitting a shared border vertex, epsilon-close
+but non-identical material border offset, invalid source rejection
+and transactionally preserved previously built assets. Add
+`strata_source_seams` to final native CTest selection with the
+existing `strata_seams`, builder, model adapter, view,
+Metal/Vulkan/GLES portable, GPU compute/indirect and overall engine
+tests. The stage has no real screen-space crack or shadow-depth
+A/B evidence yet.
+
+### Stage 17 completion table
+
+| Subsystem | Source status | Verification |
+| --- | --- | --- |
+| Parent/child same-ID topological seam proof | IMPLEMENTED 17.1 | NOT RUN |
+| Safe reject on coarse boundary collapse | IMPLEMENTED 17.1 | NOT RUN |
+| UV/material duplicate-position seam matching | IMPLEMENTED 17.2 | NOT RUN |
+| Separate rigid meshes / bind transforms | IMPLEMENTED 17.2 | NOT RUN |
+| Cross-partition T-junction / near-gap refusal | IMPLEMENTED 17.2 | NOT RUN |
+| Production render seam certification and Legacy fallback | IMPLEMENTED | NOT RUN |
+| Across different Model sources / ECS worlds | NOT GUARANTEED | N/A |
+| Pre-existing cracks fixed automatically | NOT IMPLEMENTED | N/A |
+| Lossy LOD geometric morph/popping and shading continuity | NOT IMPLEMENTED | N/A |
+| Real mixed-depth GPU pixel/depth crack parity | NOT VERIFIED | N/A |
+
+### Important limitations and next stage
+
+This is conservative **asset admission**, not topology repair.
+Open original exterior boundaries are allowed. Potential false
+positives for separate nearby surfaces cause Legacy fallback
+instead of risking a missing seam. No cross-Model/world
+coordinate stitching, no independent terrain chunk seam negotiation,
+no promised crack-free source when original geometry has
+unrelated intersecting faces, no fluid/morph/animated topology
+and no guarantee of visually smooth transitions between lossy
+interior LODs. The source material shading/UV coordinates are
+unchanged; geometry continuity does NOT imply normal/lighting
+pixel equality. BVH construction can use substantial temporary
+CPU memory for large meshes but is bounded to 250,000 boundary
+segments and import-only execution.
+
+**Next:** Stage 17.3 optional LOD temporal hysteresis and
+screen-space popping reduction (without compromising the current
+exact contour proof), then Stage18 optimization/performance,
+then the owner's requested single native build+CTest+GPU acceptance.
+Never claim performance or GPU correctness before actual logs
+identify the tested commit SHA.
