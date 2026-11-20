@@ -3,7 +3,7 @@
 # The sidecar metadata files are authoritative. This SQLite database is a
 # regenerable local GUID index; no data is migrated into the game runtime.
 find_package(SQLite3 REQUIRED)
-add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp StudioSession.cpp StudioAssetCatalog.cpp)
+add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_studio PRIVATE SQLite::SQLite3 aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
 target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
@@ -30,7 +30,7 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_studio_asset_catalog_tests PRIVATE SQLite::SQLite3 aiverse_editor_core)
     add_test(NAME studio_asset_catalog COMMAND aiverse_studio_asset_catalog_tests)
     set_tests_properties(studio_asset_catalog PROPERTIES LABELS "EDITOR")
-    add_executable(aiverse_studio_session_tests tests/StudioSessionTests.cpp StudioSession.cpp StudioAssetCatalog.cpp)
+    add_executable(aiverse_studio_session_tests tests/StudioSessionTests.cpp StudioSession.cpp StudioAssetCatalog.cpp StudioAssetTransfers.cpp)
     target_include_directories(aiverse_studio_session_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_session_tests PRIVATE aiverse_editor_core SQLite::SQLite3)
     add_executable(aiverse_studio_fps_lighting_contract_tests tests/StudioFpsLightingContractTests.cpp)

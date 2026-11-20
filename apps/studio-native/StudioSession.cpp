@@ -151,10 +151,17 @@ Json StudioSession::openProject(const std::string& path) {
     if (!ws_.openGame(path, &error))
         throw std::runtime_error(error.empty() ? "Unable to open project" : error);
     (void)studioContentRoot(ws_.project.dir);
+    pendingAssetTransfer_.reset();
     selected_.clear();
     previewMaterialName_.clear();
     refreshMaterialPreview();
     return snapshot();
+}
+Json StudioSession::previewExternalAssets(const std::vector<std::filesystem::path>& files,
+                                          const std::string& destination) {
+    if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+    pendingAssetTransfer_=StudioTransferPlan::external(ws_.project.dir,destination,files);
+    return pendingAssetTransfer_->describe();
 }
 int StudioSession::selectedEntityIndex() const {
     if (selected_.empty()) return -1;
@@ -450,6 +457,39 @@ Json StudioSession::dispatch(const Json& request) {
             r.set("files",std::move(entries));
             r.set("folders",std::move(folders));
             reply.set("result", std::move(r));
+        } else if (method == "studio.assetFolderCreate") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string path=studioCreateContentFolder(ws_.project.dir,
+                params.getStr("parent"),params.getStr("name"));
+            Json r=Json::object();
+            r.set("path",str(path));reply.set("result",std::move(r));
+        } else if (method == "studio.assetMovePreview") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const Json& paths=params["paths"];
+            if(!paths.isArray()||paths.size()<1||paths.size()>64)
+                throw std::runtime_error("Select between 1 and 64 assets");
+            std::vector<std::string> sources;
+            for(const Json& path:paths.items()){
+                if(!path.isString())throw std::runtime_error("Invalid source path");
+                sources.push_back(path.str());
+            }
+            pendingAssetTransfer_=StudioTransferPlan::internal(ws_.project.dir,
+                params.getStr("destination"),sources);
+            reply.set("result",pendingAssetTransfer_->describe());
+        } else if (method == "studio.assetTransferCommit") {
+            if(!pendingAssetTransfer_)throw std::runtime_error("No active asset transfer preview");
+            const auto token=params.getStr("token");
+            const Json& raw=params["decisions"];
+            if(!raw.isArray()||raw.size()>64)throw std::runtime_error("Invalid conflict decisions");
+            std::vector<StudioTransferDecision> decisions;
+            for(const Json& d:raw.items()){
+                if(!d.isObject()||!d["id"].isNumber()||!d["action"].isString())
+                    throw std::runtime_error("Invalid conflict decision");
+                decisions.push_back({int(d["id"].integer()),d.getStr("action")});
+            }
+            const Json result=pendingAssetTransfer_->apply(token,decisions);
+            pendingAssetTransfer_.reset();
+            reply.set("result",result);
         } else if (method == "studio.assetByGuid") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             const std::string guid=params.getStr("guid");
