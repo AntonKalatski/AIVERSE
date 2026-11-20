@@ -109,6 +109,58 @@ void Model::finalize() {
                 p.boundsMin = min3(p.boundsMin, v); p.boundsMax = max3(p.boundsMax, v);
             }
             if (p.indexCount == 0) p.boundsMin = p.boundsMax = {0, 0, 0};
+            // Index-only coarse LOD uses the SAME original morph vertices.
+            // It must not shrink culling bounds when the simplifier drops
+            // a face corner that can move far under facial expressions.
+            if(p.morphAliasMesh>=0) {
+                if(p.morphAliasPrimitive<0 ||
+                   size_t(p.morphAliasMesh)>=meshes.size() ||
+                   size_t(p.morphAliasPrimitive)>=
+                       meshes[size_t(p.morphAliasMesh)].primitives.size())
+                    throw std::runtime_error("invalid generated morph LOD alias");
+                const Primitive& source=meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 ||
+                   source.morphTargets!=p.morphTargets ||
+                   source.firstVertex!=p.firstVertex ||
+                   source.vertexCount!=p.vertexCount)
+                    throw std::runtime_error("incompatible generated morph LOD alias");
+                p.boundsMin=min3(p.boundsMin,source.boundsMin);
+                p.boundsMax=max3(p.boundsMax,source.boundsMax);
+            }
+            // Conservative morph envelope for independent [0,1] channel
+            // weights. Original vertices and target count remain unchanged.
+            if(p.morphTargets>0 && !p.morphDeltas.empty()) {
+                const size_t first=p.firstVertex,count=p.vertexCount;
+                const size_t channels=size_t(p.morphTargets);
+                if(channels>size_t(kMaxMorphTargets) || count==0 ||
+                   first>vertices.size() || count>vertices.size()-first ||
+                   channels>std::numeric_limits<size_t>::max()/count/6u ||
+                   p.morphDeltas.size()!=channels*count*6u)
+                    throw std::runtime_error("invalid morph envelope dimensions");
+                for(size_t v=0;v<count;++v) {
+                    float3 low=vertices[first+v].pos;
+                    float3 high=low;
+                    for(size_t ch=0;ch<channels;++ch) {
+                        const size_t index=(ch*count+v)*6u;
+                        const float x=p.morphDeltas[index];
+                        const float y=p.morphDeltas[index+1u];
+                        const float z=p.morphDeltas[index+2u];
+                        if(!std::isfinite(x) || !std::isfinite(y) ||
+                           !std::isfinite(z))
+                            throw std::runtime_error("nonfinite morph displacement");
+                        low.x+=std::min(0.f,x);high.x+=std::max(0.f,x);
+                        low.y+=std::min(0.f,y);high.y+=std::max(0.f,y);
+                        low.z+=std::min(0.f,z);high.z+=std::max(0.f,z);
+                    }
+                    if(!std::isfinite(low.x) || !std::isfinite(low.y) ||
+                       !std::isfinite(low.z) || !std::isfinite(high.x) ||
+                       !std::isfinite(high.y) || !std::isfinite(high.z))
+                        throw std::runtime_error("morph envelope overflow");
+                    p.boundsMin=min3(p.boundsMin,low);
+                    p.boundsMax=max3(p.boundsMax,high);
+                }
+            }
             mesh.boundsMin = min3(mesh.boundsMin, p.boundsMin); mesh.boundsMax = max3(mesh.boundsMax, p.boundsMax);
             mesh.deformable |= !p.jointPalette.empty() || p.morphTargets > 0;
         }
@@ -571,6 +623,8 @@ void prepareModelUpload(Model& m) {
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
+    // CPU AutoLOD can append morph aliases: finish this before preflight.
+    if(!m.vertices.empty() && !m.vb.valid())prepareModelUpload(m);
     // Validate the COMPLETE 64-channel morph payload and hard texture budget
     // BEFORE creating GPU buffers or textures. Never upload a partially
     // truncated facial rig or allow float-inexact texel offsets in U4.
@@ -585,6 +639,24 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     size_t requiredTexels=0;
     for(const auto& mesh:m.meshes)
         for(const auto& p:mesh.primitives) {
+            if(p.morphAliasMesh>=0) {
+                const size_t index=size_t(p.morphAliasMesh);
+                if(p.morphAliasPrimitive<0 || index>=m.meshes.size() ||
+                   size_t(p.morphAliasPrimitive)>=m.meshes[index].primitives.size() ||
+                   !p.morphDeltas.empty() ||
+                   mesh.morphTargetNames!=m.meshes[index].morphTargetNames)
+                    return false;
+                const auto& source=m.meshes[index].primitives[
+                    size_t(p.morphAliasPrimitive)];
+                if(source.morphAliasMesh>=0 || source.morphTargets<=0 ||
+                   source.morphTargets!=p.morphTargets ||
+                   source.firstVertex!=p.firstVertex ||
+                   source.vertexCount!=p.vertexCount ||
+                   (source.morphDeltas.empty() && !m.morphTex.valid()))
+                    return false;
+                continue;
+            }
+            if(p.morphAliasPrimitive>=0)return false;
             if(p.morphTargets<0 || p.morphTargets>kMaxMorphTargets)
                 return false;
             if(p.morphTargets==0) {
@@ -620,7 +692,6 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         m.vb = {}; m.ib = {};
     }
     if (hasCpuVertices && !m.vb.valid()) {
-        prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
             const gfx::BufferHandle newVb = dev.createBuffer(vb);
@@ -668,6 +739,13 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         m.morphTex=texture;
         m.morphTexWidth=int(width);
     }
+    // Only source primitives consume texels; generated LOD indices reference
+    // their source span and must sample the source's exact same GPU texture.
+    for(auto& mesh:m.meshes)
+        for(auto& p:mesh.primitives)
+            if(p.morphAliasMesh>=0)
+                p.morphTexel=m.meshes[size_t(p.morphAliasMesh)]
+                    .primitives[size_t(p.morphAliasPrimitive)].morphTexel;
     if(!keepCpu && m.morphTex.valid())
         for(auto& mesh:m.meshes)
             for(auto& p:mesh.primitives)
