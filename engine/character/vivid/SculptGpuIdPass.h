@@ -5,6 +5,7 @@
 // This does not replace the CPU BVH picker, GPU actor pose, or ECS.
 #pragma once
 #include "SculptGpuPickShaders.h"
+#include "SculptGpuAlphaMask.h"
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -26,12 +27,15 @@ public:
 private:
     struct Pending {
         gfx::BufferHandle vertex;
+        std::vector<gfx::BufferHandle> masked;
         std::shared_ptr<Reply> reply;
         SculptGpuPickRequest request{};
     };
     gfx::Device* device_=nullptr; // render-owner thread, borrowed
     gfx::ShaderHandle shader_{};
     gfx::PipelineHandle pipeline_{};
+    gfx::ShaderHandle maskShader_{};
+    gfx::PipelineHandle maskPipeline_{};
     gfx::TextureHandle color_,depth_;
     int width_=0,height_=0;
     std::vector<Pending> pending_;
@@ -53,9 +57,25 @@ public:
             device.destroyShader(shader);
             return false;
         }
+        const auto maskShader=device.createShader(sculptGpuMaskShaderDesc());
+        if(!maskShader.valid()) {
+            device.destroyPipeline(pipeline);
+            device.destroyShader(shader);
+            return false;
+        }
+        const auto maskPipeline=device.createPipeline(
+            sculptGpuMaskPipelineDesc(maskShader));
+        if(!maskPipeline.valid()) {
+            device.destroyShader(maskShader);
+            device.destroyPipeline(pipeline);
+            device.destroyShader(shader);
+            return false;
+        }
         device_=&device;
         shader_=shader;
         pipeline_=pipeline;
+        maskShader_=maskShader;
+        maskPipeline_=maskPipeline;
         supported_=true;
         return true;
     }
@@ -73,6 +93,7 @@ public:
         // The completed callback proves the corresponding command buffer
         // finished, so its immutable vertex allocation can be released.
         if(p.vertex.valid())device_->destroyBuffer(p.vertex);
+        for(auto handle:p.masked)device_->destroyBuffer(handle);
         out.request=p.request;
         out.rgba=std::move(p.reply->rgba);
         return true;
@@ -81,24 +102,26 @@ public:
     // Recording occurs only on the owner thread during a frame, outside any
     // other render/compute pass. x/y use top-left frame coordinates. Callback
     // will be delivered on a later beginFrame and consumed on an owner frame.
-    // The selected mesh draws encoded IDs; supplied world-space occluder
-    // triangles are appended and draw zero-ID depth in the same pass.
-    // Alpha-masked/transparent geometry is conservatively treated as
-    // solid occlusion here: it may suppress confirmation, never give an
-    // otherwise hidden source vertex a false GPU-visible ID.
-    // Renderer3D GPU vertex-override/true alpha pixels are still separate.
+    // Opaque triangles and zero-ID scene occluders are drawn first.
+    // Eligible standard alpha-masked materials use their original GPU
+    // base texture and alphaCutoff in a second depth-tested shader,
+    // discarding transparent pixels. Unsupported/custom/Blend paths
+    // continue as conservative zero-ID depth blockers. Renderer3D's
+    // actual vertex override, LOD and arbitrary external scene inputs
+    // remain separate acceptance gates.
     bool record(const render::Model& model,
                 const SkinnedWeightSurface& surface,
                 std::size_t authorCount,
                 std::span<const std::uint32_t> authorIds,
                 const render::mat4& viewProj,
                 const SculptGpuPickRequest& request,
-                std::span<const SculptGpuIdVertex> occluders={}) {
+                std::span<const SculptGpuIdVertex> occluders={},
+                std::span<const SculptGpuMaskBatch> maskedOccluders={}) {
         if(!device_||!supported_||!request.valid()||
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
            request.meshId!=surface.mesh ||
-           !pending_.empty() || retiredWithoutCallback_.size()>=8u ||
+           !pending_.empty() || retiredWithoutCallback_.size()>=512u ||
            request.width>4096u || request.height>4096u ||
            !device_->gpuHealthy() ||
            !buildSculptGpuIdVertices(model,surface,authorCount,
