@@ -2221,3 +2221,61 @@ island, and existing sub-edge T-junctions/nearby gaps cause Legacy
 fallback. Two components touching at one vertex are not incorrectly
 treated as fully edge-connected. This refinement and its regression
 fixture are committed but still **not compiled or executed**.
+
+
+## Stage 17.3 — temporal LOD stability (portable CPU selector)
+
+AIVERSE STRATA now has **opt-in per-instance, per-camera temporal
+LOD hysteresis** for the common portable indexed renderer on
+Metal, Vulkan, GLES3/WebGL2 and desktop GL. This stabilizes
+otherwise rapid parent/child switching when the projected
+geometric error oscillates around a single threshold.
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataPortableRenderingEnabled(true);
+const bool ok=scene.setStrataLodHysteresisFraction(0.20f);
+scene.load(device, sceneJson, readFile);
+```
+
+The value is validated in **0..0.45**; zero is the default and
+preserves all prior reference thresholds and memory behavior.
+A previously refined node can remain fine until its projected
+error drops below `threshold * (1-h)`, while a previously
+coarse node is refined only once error exceeds
+`threshold * (1+h)`. The first observation has **no special
+bias**: it uses the original threshold.
+
+The history belongs to the scene instance rather than its
+shared ModelAsset. Separate source-node, primitive and camera
+slots are tracked independently (main camera, sun shadow, etc.).
+Every update is committed only after a complete successful
+`PortableSource::prepareModel`; any GPU allocation failure,
+missing child residency or malformed source keeps the previous
+history and uses the existing parent/Legacy fallback. Changing
+the policy, unloading the source or temporarily using an
+unrelated proxy resets its history. Unknown late-selected
+planar reflections still use the **finest resident frontier**
+and reset temporal state to avoid missing reflected geometry.
+
+The Stage15 page-demand planner also reads the SAME previous
+refinement state: a fine frontier held by hysteresis continues
+to request its child pages even if unmodified instantaneous
+CPU selection would prefer a parent. This prevents needless
+GPU page eviction/reload thrash. None of these mechanisms
+introduce a separate draw owner or change the exact static
+source-border seam certificates from Stage17.1–17.2.
+`GeometryScene::Stats` exposes retained temporal histories
+and successful refinement-state flips.
+
+**Known limits:** this is temporal selection stabilization, not
+vertex geomorphing, fading, cross-source terrain stitching or
+smooth shading between different lossy interiors. Stage16
+Vulkan/Metal GPU-compute selection still uses its original
+stateless policy; true GPU temporal buffers and CPU/GPU
+cold/warm parity are future Stage17.4 tasks. No native CMake,
+CTest, Metal/Vulkan/GLES3 hardware run or LOD frame-time
+benchmark was conducted on this code. Extended existing
+`strata_view` and `strata_portable` test fixtures are
+**authored but unexecuted**. See the Stage17.3 handoff in
+`docs/agent-handoffs/strata-virtual-geometry.md`.
