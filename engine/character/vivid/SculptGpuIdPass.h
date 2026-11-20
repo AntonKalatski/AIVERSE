@@ -317,6 +317,14 @@ public:
         }
         if(maskedOccluders.size()+grouped.size()>256u)return false;
         std::size_t total=vertices_.size()+occluders.size();
+        // Homogeneous selected GPU Mask geometry was intentionally
+        // removed from grouped[] (CPU positions). Its true GPU-expanded
+        // triangles still count toward the scene budget, and a selected
+        // Mask with no unrelated occluders is NOT an empty scene.
+        if(actualGpuSource && actualGpuSource->maskedSelection) {
+            if(actualGpuSource->params.count>3000000u-total)return false;
+            total+=actualGpuSource->params.count;
+        }
         if(total>3000000u)return false;
         for(const auto& batch:grouped) {
             if(batch.vertices.size()>3000000u-total)return false;
