@@ -118,7 +118,11 @@ public:
         std::sort(next.begin(),next.end(),
                   [](const GiMovingLight& a,const GiMovingLight& b){return a.key<b.key;});
         auto same=[](const GiMovingLight& a,const GiMovingLight& b) {
-            return a.position.x==b.position.x && a.position.y==b.position.y &&
+            // Source identity is part of the GI revision contract. A newly
+            // created ECS emitter can reuse identical transform/energy but
+            // MUST NOT silently inherit the previous stable-key light entry.
+            return a.key==b.key &&
+                   a.position.x==b.position.x && a.position.y==b.position.y &&
                    a.position.z==b.position.z && a.radius==b.radius &&
                    a.color.x==b.color.x && a.color.y==b.color.y &&
                    a.color.z==b.color.z && a.intensity==b.intensity &&
