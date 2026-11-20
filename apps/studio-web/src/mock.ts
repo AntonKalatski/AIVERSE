@@ -61,7 +61,8 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
     throw Error('Editing map lights requires the native AIVERSE host');
   }
-  if (method === 'studio.assetByGuid' || method === 'studio.assetFolderCreate' ||
+  if (method === 'studio.assetByGuid' || method === 'studio.assetMetaPatch' ||
+      method === 'studio.assetFolderCreate' ||
       method === 'studio.assetMovePreview' || method === 'studio.assetImportPreview' ||
       method === 'studio.assetTransferCommit') {
     throw Error('Project asset operations require the native AIVERSE host');

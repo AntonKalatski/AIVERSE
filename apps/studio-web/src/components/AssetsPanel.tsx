@@ -13,6 +13,7 @@ import { assetKind, assetFolders, assetFileName, assetBreadcrumbs,
   childFolders, visibleAssetFiles, safeAssetPath } from '../assetTree';
 import type { AssetFolder, AssetKind } from '../assetTree';
 import './AssetsPanel.css';
+import AssetImportSettings from './AssetImportSettings';
 
 const ASSET_DRAG_MIME='application/x-aiverse-content-path';
 const EMPTY:StudioAssetList={root:'content',files:[],folders:[]};
@@ -159,6 +160,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const shownFolders=useMemo(()=>search.trim()?[]:childFolders(folders,folder),[folders,folder,search]);
   const shownFiles=useMemo(()=>visibleAssetFiles(catalog.files,folder,search),[catalog.files,folder,search]);
   const crumbs=useMemo(()=>assetBreadcrumbs(folder),[folder]);
+  const selectedAsset=useMemo(()=>catalog.files.find(a=>a.path===selected),[catalog,selected]);
 
   const goTo=(path:string)=>{setFolder(path);setSearch('');setSelected(null)};
   const createFolder=async()=>{
@@ -319,6 +321,9 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
               })}
             </div>}
       </div>
+      {selectedAsset&&native&&<AssetImportSettings key={selectedAsset.guid||selectedAsset.path}
+        asset={selectedAsset} onClose={()=>setSelected(null)}
+        onSaved={reload} onError={setError}/>}
     </div>
     <footer className="studio-assets-footer">
       <span>{catalog.files.length} assets in content/ · metadata indexed by GUID</span>

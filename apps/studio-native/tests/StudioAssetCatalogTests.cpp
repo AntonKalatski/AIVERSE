@@ -30,6 +30,18 @@ int main(){
         assert(texture && texture->importer=="texture");
         assert(texture->settings.getStr("compression")=="auto");
         assert(fs::exists(dir/"content"/"Steel.png.meta"));
+        const auto retainedGuid=texture->guid;
+        const auto updated=db.patchSettings(retainedGuid,"compression",aiverse::Json::string("high"));
+        assert(updated.guid==retainedGuid);
+        assert(updated.settings.getStr("compression")=="high");
+        assert(db.byGuid(retainedGuid)->settings.getStr("compression")=="high");
+        bool settingRejected=false;
+        try{(void)db.patchSettings(retainedGuid,"maxSize",aiverse::Json::number(int64_t(123)));}
+        catch(const std::runtime_error&){settingRejected=true;}
+        assert(settingRejected);
+        assert(db.byGuid(retainedGuid)->settings.getStr("compression")=="high");
+        const auto platform=db.patchSettings(retainedGuid,"glesFormat",aiverse::Json::string("etc2"));
+        assert(platform.settings["platformFormats"].getStr("gles")=="etc2");
         assert(fs::exists(dir/"content"/"Models.meta"));
         // Moving a file and its sidecar preserves GUID; only SQLite path changes.
         fs::rename(dir/"content"/"Models"/"Ship.glb",dir/"content"/"Moved.glb");

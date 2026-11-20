@@ -457,6 +457,22 @@ Json StudioSession::dispatch(const Json& request) {
             r.set("files",std::move(entries));
             r.set("folders",std::move(folders));
             reply.set("result", std::move(r));
+        } else if (method == "studio.assetMetaPatch") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            const std::string guid=params.getStr("guid");
+            const std::string key=params.getStr("key");
+            if(!studioValidGuid(guid)||key.size()>40||!params.has("value"))
+                throw std::runtime_error("Invalid asset import setting request");
+            StudioAssetCatalog catalog(ws_.project.dir);
+            const auto updated=catalog.patchSettings(guid,key,params["value"]);
+            Json detail=Json::object();
+            detail.set("guid",str(updated.guid));
+            detail.set("path",str(updated.path));
+            detail.set("importer",str(updated.importer));
+            detail.set("directory",Json::fromBool(updated.directory));
+            detail.set("bytes",Json::number(updated.bytes));
+            detail.set("settings",updated.settings);
+            reply.set("result",std::move(detail));
         } else if (method == "studio.assetFolderCreate") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             const std::string path=studioCreateContentFolder(ws_.project.dir,

@@ -133,3 +133,29 @@
   border-color:var(--au-accent);background:var(--au-accent-strong);color:var(--au-accent-ink)}
 @media(max-width:650px){.studio-asset-conflict{grid-template-columns:minmax(0,1fr)}
   .studio-assets-create-folder>span{display:none}}
+
+.studio-asset-import-settings{display:flex;flex:none;flex-direction:column;min-height:0;
+  width:260px;max-width:39%;border-left:1px solid var(--au-line);
+  background:var(--au-panel-raised);color:var(--au-text)}
+.studio-asset-import-settings header{display:flex;align-items:center;gap:8px;
+  min-height:39px;padding:8px 12px;border-bottom:1px solid var(--au-line)}
+.studio-asset-import-settings header strong{flex:1;font-size:var(--au-font-md)}
+.studio-asset-import-settings header button{background:transparent;border:none;color:var(--au-text-muted)}
+.studio-asset-settings-body{min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.studio-asset-setting-path{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-asset-setting-kind{color:var(--au-text-muted);font-size:var(--au-font-sm)}
+.studio-asset-guid{display:flex;align-items:center;gap:6px;color:var(--au-text-muted);min-width:0}
+.studio-asset-guid code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  font-size:10px;color:var(--au-accent)}
+.studio-asset-guid button{flex:none;background:none;border:none;color:var(--au-text-muted)}
+.studio-asset-setting{display:flex;flex-direction:column;gap:5px;
+  font-size:var(--au-font-sm);color:var(--au-text-muted)}
+.studio-asset-setting select{width:100%;background:var(--au-field);
+  border:1px solid var(--au-line-strong);border-radius:var(--au-radius-sm);
+  color:var(--au-text);padding:7px}
+.studio-asset-setting input[type=checkbox]{align-self:flex-start;accent-color:var(--au-accent)}
+.studio-asset-setting-section{border-top:1px solid var(--au-line);
+  padding-top:10px;font-size:var(--au-font-sm);color:var(--au-text-soft)}
+.studio-asset-settings-note{font-size:var(--au-font-sm);color:var(--au-text-faint);
+  line-height:1.5;margin:3px 0}
+@media(max-width:760px){.studio-asset-import-settings{width:205px;max-width:45%}}

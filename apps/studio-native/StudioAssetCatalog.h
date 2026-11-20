@@ -32,6 +32,8 @@ public:
     std::vector<StudioAssetEntry> all() const;
     std::optional<StudioAssetEntry> byGuid(const std::string& guid) const;
     std::optional<StudioAssetEntry> byPath(const std::string& path) const;
+    StudioAssetEntry patchSettings(const std::string& guid,
+                                   const std::string& key,const Json& value);
     const std::filesystem::path& project() const { return project_; }
 private:
     void exec(const char* sql) const;

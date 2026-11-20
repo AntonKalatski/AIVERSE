@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdint>
 #include <climits>
+#include <cmath>
 #include <fstream>
 #include <random>
 #include <regex>
@@ -245,5 +246,95 @@ std::optional<StudioAssetEntry> StudioAssetCatalog::byPath(const std::string& pa
     if(rc==SQLITE_ROW)return row(query.stmt);
     if(rc!=SQLITE_DONE)sqlCheck(rc,db_,"Asset path lookup");
     return std::nullopt;
+}
+} // namespace aiverse::studio
+
+namespace aiverse::studio {
+namespace {
+bool option(const std::string& candidate,std::initializer_list<const char*> valid) {
+    for(const char* allowed:valid)if(candidate==allowed)return true;
+    return false;
+}
+void validateMetaSetting(const std::string& importer,
+                         const std::string& key,const Json& value){
+    auto text=[&](std::initializer_list<const char*> allowed){
+        if(!value.isString()||!option(value.str(),allowed))
+            throw std::runtime_error("Unsupported importer option value: "+key);
+    };
+    auto boolean=[&]{
+        if(!value.isBool())throw std::runtime_error("Expected boolean importer setting: "+key);
+    };
+    if(importer=="texture"){
+        if(key=="compression")text({"auto","none","fast","high","lossless"});
+        else if(key=="mipmaps"||key=="sRGB")boolean();
+        else if(key=="maxSize"){
+            if(!value.isNumber()||value.toDouble()<64||value.toDouble()>16384||
+               std::floor(value.toDouble())!=value.toDouble())
+                throw std::runtime_error("maxSize must be an integer from 64 to 16384");
+            const auto n=std::uint64_t(value.toDouble());
+            if((n&(n-1))!=0)throw std::runtime_error("maxSize must be a power of two");
+        }else if(key=="metalFormat")text({"auto","astc","rgba8"});
+        else if(key=="vulkanFormat")text({"auto","astc","bc7","etc2","rgba8"});
+        else if(key=="glesFormat")text({"auto","etc2","rgba8"});
+        else throw std::runtime_error("Unknown texture importer setting: "+key);
+    }else if(importer=="model"){
+        if(key=="meshCompression")text({"off","low","medium","high"});
+        else if(key=="generateLODs")boolean();
+        else throw std::runtime_error("Unknown model importer setting: "+key);
+    }else if(importer=="audio"){
+        if(key=="compression")text({"auto","lossless","vorbis","aac"});
+        else if(key=="quality"){
+            if(!value.isNumber()||!std::isfinite(value.toDouble())||
+               value.toDouble()<0||value.toDouble()>1)
+                throw std::runtime_error("Audio quality must be between 0 and 1");
+        }else throw std::runtime_error("Unknown audio importer setting: "+key);
+    }else throw std::runtime_error("This asset type has no editable import settings");
+}
+}
+StudioAssetEntry StudioAssetCatalog::patchSettings(const std::string& guid,
+              const std::string& key,const Json& value){
+    if(!studioValidGuid(guid))throw std::runtime_error("Invalid GUID");
+    const auto existing=byGuid(guid);
+    if(!existing)throw std::runtime_error("Asset was not found; refresh Assets");
+    validateMetaSetting(existing->importer,key,value);
+    const fs::path physical=studioContentRoot(project_)/fs::path(existing->path);
+    // Guard against the asset or its parents changing to symlinks since indexing.
+    fs::path current=studioContentRoot(project_);
+    for(const auto& part:fs::path(existing->path)){
+        current/=part;
+        const auto status=fs::symlink_status(current);
+        if(fs::is_symlink(status))throw std::runtime_error("Asset path has a symlink");
+    }
+    const auto meta=studioMetaPath(physical);
+    const auto status=fs::symlink_status(meta);
+    if(!fs::is_regular_file(status)||fs::is_symlink(status))
+        throw std::runtime_error("Refusing to edit invalid asset .meta");
+    Json document=Json::parseFile(meta.string());
+    if(document.getStr("guid")!=guid||document.getStr("importer")!=existing->importer)
+        throw std::runtime_error("Asset metadata changed since the last index refresh");
+    Json settings=document["settings"];
+    if(!settings.isObject())throw std::runtime_error("Invalid importer settings");
+    if(key=="metalFormat"||key=="vulkanFormat"||key=="glesFormat"){
+        Json platforms=settings["platformFormats"];
+        if(!platforms.isObject())platforms=Json::object();
+        const char* name=key=="metalFormat"?"metal":key=="vulkanFormat"?"vulkan":"gles";
+        platforms.set(name,value);
+        settings.set("platformFormats",std::move(platforms));
+    }else settings.set(key,value);
+    document.set("settings",std::move(settings));
+    const auto tmp=fs::path(meta.string()+".aiverse-meta-update");
+    {
+        std::ofstream stream(tmp,std::ios::binary|std::ios::trunc);
+        if(!stream)throw std::runtime_error("Cannot write new metadata");
+        stream<<document.dump(2)<<"\n";
+        if(!stream){fs::remove(tmp);throw std::runtime_error("Cannot complete metadata write");}
+    }
+    std::error_code ec;
+    fs::rename(tmp,meta,ec); // atomic replacement on supported host filesystems
+    if(ec){fs::remove(tmp);throw std::runtime_error("Cannot update .meta: "+ec.message());}
+    rebuild();
+    const auto updated=byGuid(guid);
+    if(!updated)throw std::runtime_error("Metadata saved but asset index is stale");
+    return *updated;
 }
 } // namespace aiverse::studio
