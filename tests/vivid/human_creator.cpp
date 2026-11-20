@@ -8,6 +8,7 @@
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
 #include "engine/character/vivid/SculptGpuAlphaMask.h"
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
+#include "engine/character/vivid/SculptGpuRendererView.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -501,6 +502,99 @@ void test() {
             opaque.size()==3 && masks.empty() &&
             opaque[0].rgba[0]==0,
             "unknown custom ShaderGraph alpha must remain conservative");
+    }
+    // 7AS: confirm that an *actual Renderer3D-selected* ModelItem view
+    // is required before our independent CPU-fed GPU ID pass can run.
+    // This is a pure snapshot-fixture; the native renderer path still
+    // needs compilation and real GPU visual acceptance.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.meshes.resize(2);
+        Primitive source;
+        source.firstIndex=0;source.indexCount=3;
+        model.meshes[0].primitives={source};
+        source.firstIndex=3;
+        model.meshes[1].primitives={source};
+        model.nodes.resize(2);
+        model.nodes[0].mesh=0;
+        model.nodes[1].mesh=1;
+        Renderer3D::ModelViewProvenance view;
+        view.frameSerial=77;
+        view.hasModel=true;
+        view.complete=true;
+        Renderer3D::ModelViewPrimitive selected;
+        selected.model=&model;
+        selected.nodeIndex=0;
+        selected.meshIndex=0;
+        selected.primitiveIndex=0;
+        selected.firstIndex=0;
+        selected.indexCount=3;
+        selected.visible=true;
+        selected.colourCandidate=true;
+        Renderer3D::ModelViewPrimitive other=selected;
+        other.nodeIndex=1;
+        other.meshIndex=1;
+        other.firstIndex=3;
+        view.primitives={selected,other};
+        auto check=validateSculptGpuRendererView(view,model,0,77);
+        req(check.canRenderDiagnostic &&
+            check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot &&
+            check.selectedNode==0 &&
+            check.otherVisibleMeshes==std::vector<std::uint32_t>{1} &&
+            !check.gpuVertexOverridePresent,
+            "renderer-derived visible meshes/primitive ranges lost");
+        view.primitives[0].customGpuStream=true;
+        view.primitives[0].vertexOverride={71};
+        view.primitives[0].vertexOverrideCount=6;
+        check=validateSculptGpuRendererView(view,model,0,77);
+        req(check.canRenderDiagnostic && check.gpuVertexOverridePresent,
+            "renderer vertex-override provenance must remain explicit");
+        view.primitives[0].customGpuStream=false;
+        view.primitives[0].vertexOverride={};
+        view.primitives[0].vertexOverrideCount=0;
+        req(!validateSculptGpuRendererView(view,model,0,78)
+                .canRenderDiagnostic,
+            "stale Renderer3D frame was accepted for GPU ID");
+        view.primitives[0].firstIndex=99;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::PrimitiveIndexMismatch,
+            "Renderer3D different index-range source was accepted");
+        view.primitives[0].firstIndex=0;
+        view.primitives[0].lodFade=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "Renderer3D LOD-fade triangle was accepted");
+        view.primitives[0].lodFade=false;
+        view.primitives[0].batched=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "renderer material-batched primitive was accepted");
+        view.primitives[0].batched=false;
+        view.primitives[0].shaderVertexOffset=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "shader-deformed vertex geometry cannot be reconstructed");
+        view.primitives[0].shaderVertexOffset=false;
+        view.primitives[0].gpuLodConditional=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "GPU-selected indirect LOD cannot be guessed in VIVID");
+        view.primitives[0].gpuLodConditional=false;
+        view.primitives[1].nodeIndex=0;
+        req(validateSculptGpuRendererView(view,model,0,77)
+            .canRenderDiagnostic,
+            "different meshes under same node should still be distinguishable");
+        view.primitives[1].nodeIndex=1;
+        view.primitives.push_back(view.primitives[0]);
+        view.primitives.back().nodeIndex=1;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::MultipleMeshOwners,
+            "multiple node owners of same mesh must fail closed");
+        view.primitives.pop_back();
+        view.primitives.pop_back();
+        req(check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot,
+            "original valid renderer source snapshot was mutated");
     }
     // 7AQ: no false claim of hardware pixel parity when the normal
     // Renderer3D may draw an alternate authored LOD or an ambiguously
