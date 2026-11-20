@@ -557,3 +557,12 @@ so both the injected allocation and old fog-sheet assertions are meaningful.
 a passing report. Build-5 still finishing; corrected fixture NOT RUN yet.
 No save/API changes; git diff --check PASS. Next rebuild core and run corrected
 fault/retry + native Metal fixture, then consolidated CTest on KINGSTON.
+
+
+### Primary water packet preservation — 2026-11-20
+Code `54de2b7acad15a0955e26c2d0ccdf84050ea24a5`, codex/lens-completion. Candidate Terrain assembly now explicitly
+queues water once: drawPrepared intentionally omits water for secondary replay,
+so primary candidate assembly must add it to the copied mesh snapshot. No
+secondary duplication or save/API change. git diff --check PASS. Build-5
+finishing; corrected path NOT RUN yet. Next rebuild all pending fixes and GPU
+fixture, then full CTest.
