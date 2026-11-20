@@ -185,3 +185,17 @@ AnimationOps, sprite fixture entrypoint, CMake linkage. No tests yet for these
 three fixes. The full build already started at 6b211f13a (report
 20261120-144953-27551); source changed during it, so treat it as a mixed-source
 diagnostic build only. Next: rerun from this fixed HEAD for reproducible results.
+
+## Pass 13 — native editor owner integration
+
+Mixed-source diagnostic build report `20261120-144953-27551` on KINGSTON:
+configure PASS, build FAIL, CTest NOT RUN. It compiled the terrain implementation,
+but core tests lacked Road/Shore includes and used heterogeneous auto; editor
+mutated a const model-cache accessor; camera window used absent completedFrameSerial.
+Sprite link failure used the old generated CMake graph; regenerate next run.
+Commit `065fa9c87f52850b4391224e485a25b1efc91940` adds narrow RtsView model-diagnostic setter, switches Editor
+callers, fixes core fixture declarations and replaces camera-window serial queue
+with existing Editor offscreen target owner/lease (collected before submissions).
+Affected: RtsView.h, Editor.cpp, StudioCamerasWindow.cpp, tests/tests.cpp.
+No save-format change; public API adds setter only. Branch codex/lens-completion.
+CI/GPU screenshots NOT RUN. Next: reproducible full quick runner from this HEAD.
