@@ -203,6 +203,8 @@ const char* kInstructions =
     "custom materials: texture_generate (bricks, metal panels, wood, camo, scales, ... + normal maps, team masks) -> material_set "
     "(shared library materials.json) -> material_apply {type, material, target | node} -> material_preview + view_screenshot; "
     "lighting: lighting_set (sun, sky, day/night, presets), light_add / light_update (point lights on the map); "
+    "PHYSIS map authoring: physis_get -> physis_validate -> physis_set with expectedRevision from physis_get; "
+    "these edit map configuration only, not live simulation or visual fog. "
     "fog of war: rules_merge {path: \"fogOfWar\"} (mode, colour, style, softness, grid, lineOfSight for 3D visibility by heights, "
     "vision.blocks on wall types, delivery.blocksVision on smoke skills); "
     "post effects (bloom, colour grading, LUT, vignette, tilt-shift, ...): postfx_catalog -> postfx_preset / postfx_add; their answers carry "

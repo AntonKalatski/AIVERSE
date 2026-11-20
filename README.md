@@ -218,7 +218,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 
 **Tools**
 - Unity-style docking editor: scene, inspector, terrain, effects, lighting, UI, play test and device simulator
-- `aiversemcp` — MCP server for agents
+- `aiversemcp` — MCP server for agents — PHYSIS map configuration, validation and Undo/Redo
 - **Make a game** wizard
 - 200 skills for agents and genre kits with acceptance checklists
 - Importers for assets of classic games from your own copy

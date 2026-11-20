@@ -221,7 +221,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 
 **Outils**
 - Éditeur à fenêtres ancrables façon Unity : scène, inspecteur, terrain, effets, éclairage, UI, partie de test et simulateur d’appareils
-- `aiversemcp` — serveur MCP pour les agents
+- `aiversemcp` — serveur MCP pour les agents — configuration PHYSIS des cartes, validation et Undo/Redo
 - Assistant **Créer un jeu**
 - 200 compétences pour les agents et kits de genre avec listes de recette
 - Importateurs de ressources de jeux classiques depuis votre propre copie

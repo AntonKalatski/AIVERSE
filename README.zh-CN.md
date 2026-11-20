@@ -213,7 +213,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **工具**
 - Unity 风格的可停靠编辑器：场景、检视器、地形、特效、光照、UI、试玩和设备模拟器
-- `aiversemcp`——面向智能体的 MCP 服务器
+- `aiversemcp`——面向智能体的 MCP 服务器——地图 PHYSIS 配置、验证与 Undo/Redo
 - **“制作游戏”**向导
 - 200 个智能体技能和带验收清单的类型套件
 - 从你自己的正版副本导入经典游戏资源

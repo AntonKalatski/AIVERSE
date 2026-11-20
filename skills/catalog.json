@@ -2816,6 +2816,33 @@
       ]
     },
     {
+      "id": "aiverse-physis-authoring",
+      "package": null,
+      "path": "skills/world/aiverse-physis-authoring/SKILL.md",
+      "domain": "workflow",
+      "summary": "PHYSIS map configuration through revision-checked MCP operations and Undo/Redo",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "apps/editor/core/PhysisOps.cpp",
+      "keywords": [
+        "physis",
+        "authoring",
+        "mcp",
+        "map",
+        "config",
+        "validate",
+        "weather",
+        "wind",
+        "gravity",
+        "настройка",
+        "погода",
+        "карта"
+      ]
+    },
+    {
       "id": "aiverse-place-server",
       "package": null,
       "path": "skills/network/aiverse-place-server/SKILL.md",

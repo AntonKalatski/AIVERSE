@@ -1793,7 +1793,7 @@ if(AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS)
     endforeach()
 endif()
 if(TARGET aiverse_editor_core) # lighting agent: light_* / lighting_set operations
-    target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightOps.cpp apps/editor/core/PhysisOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PlanetOps.cpp apps/editor/core/PlanetDetailOps.cpp)   # planet-render agent: planet sculpt / paint
 endif()
 if(TARGET aiverse_tests) # lighting agent: GPU-free lighting logic under test
@@ -3831,6 +3831,12 @@ if(AIVERSE_BUILD_TESTS)
         target_link_libraries(aiverse_physis_authoring_test PRIVATE aiverse_editor_core)
         add_test(NAME physis_authoring COMMAND aiverse_physis_authoring_test)
         set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+        if(TARGET aiversemcp AND Python3_Interpreter_FOUND)
+            add_test(NAME physis_mcp COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physis_mcp_smoke.py
+                $<TARGET_FILE:aiversemcp> ${CMAKE_CURRENT_SOURCE_DIR})
+            set_tests_properties(physis_mcp PROPERTIES LABELS "PHYSIS;EDITOR;MCP" TIMEOUT 30)
+        endif()
     endif()
 endif()
 

@@ -4692,3 +4692,11 @@ paint/field providers. `lens_metal_frame` requires explicit
 Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
 fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
+
+## PHYSIS agent map authoring
+
+Use `skills/world/aiverse-physis-authoring/SKILL.md` for `physis_get`,
+`physis_validate`, `physis_set` in the shared editor/MCP Workspace. These
+are revision-checked document edits with Undo/Redo, never live ECS writes.
+For physical sky and local fog/reveal use the atmosphere reference linked
+from `skills/visuals/aiverse-prisma/SKILL.md`; rendering remains PRISMA-owned.

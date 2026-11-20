@@ -220,7 +220,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 
 **Ferramentas**
 - Editor com janelas encaixáveis no estilo Unity: cena, inspetor, terreno, efeitos, iluminação, UI, teste de jogo e simulador de dispositivos
-- `aiversemcp` — servidor MCP para agentes
+- `aiversemcp` — servidor MCP para agentes — configuração PHYSIS de mapas, validação e Undo/Redo
 - Assistente **Criar um jogo**
 - 200 skills para agentes e kits de gênero com checklists de aceitação
 - Importadores de assets de jogos clássicos a partir da sua própria cópia
