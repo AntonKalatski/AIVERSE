@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 
 namespace aiverse::game {
 
