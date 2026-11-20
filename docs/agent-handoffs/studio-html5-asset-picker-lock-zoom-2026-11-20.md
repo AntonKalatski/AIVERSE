@@ -181,3 +181,28 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 1. Run `cd apps/studio-web && npm ci && npm run typecheck && npm run test:web && npm run build`; `python3 -m unittest discover -s tools/studio -p 'test_*.py'`; native macOS Studio CMake build/CTest.
 2. Add native integration tests for selected vs skipped impacted moves, folder children, same-prefix nonmatches, stale catalog, and failed material repair.
 3. Implement a durable preflight + staged journal that covers assets/.meta plus material/rules source documents with restoration semantics and crash recovery. Extend rules source-aware edits only after testing composed-file provenance and rollback.
+
+## Stage 9 — reversible internal transfers and material commit hook (2026-11-20)
+
+### Changes
+- `apps/studio-native/StudioAssetTransfers.h/.cpp`: internal moves now use a preflighted in-memory reversal journal of file and sidecar renames. Validate source, destination, parent containment, collision, metadata safety, duplicate IDs and ancestor/descendant selection *before any mutation*. On move, catalog rebuild or dependent-document callback failure, reverse all completed renames and rebuild the catalog. Throw instead of reporting partially completed internal moves. External imports retain their previous best-effort semantics.
+- Internal `replace` and `new-guid` are explicitly rejected; only `import`, `keep-both`, `skip` are allowed. The HTML5 conflict selector no longer offers destructive internal replacement. This is deliberate until replace carries a reliable backup/restore protocol.
+- `apps/studio-native/StudioSession.cpp`: material JSON is parsed before moving. The callback remaps texture paths by old/new GUID catalog snapshots, then saves materials before transfer completion. Exceptions from this callback propagate to the internal move journal, which attempts reverse renames. Read-only rules dependencies remain blocked.
+- `tools/studio/test_reference_pin_zoom.py`: removed obsolete partial-failure assumption and added source-contract checks for reversible operations and safe UI decisions.
+
+### Commits
+- `7fc6fca8f2b996cdf2f8c46928c6446aee6c077e`: callback API.
+- `54a9f4e5d5efa29ca624e9b485e6b9abac3e6e5d`: reversible internal transfer.
+- `36ead825c79863a10693c4653234bf3a215f53ef`, `25e471f2738c3ece33855d6e4b91148db5cf06c4`: native material save within callback.
+- `ad02ff43972a1611f9098984faf5a6625c2a94a9`: disable internal replace in UI.
+- `aaa8f9db7097f14206452c5a7f9d075ece01c4dc`: static source-contract tests.
+
+### What this is NOT
+- **Not crash-safe**: the reversal journal exists in process memory; SIGKILL, power loss, or OS crash between file renames can still leave incomplete state. There is no persisted operation journal, startup replay/recovery, fsync protocol, or atomic multi-file transaction.
+- **Not guaranteed rollback**: reverse filesystem rename may itself fail, in which case native throws a conspicuous `rollback is incomplete` error; manual recovery required.
+- `material_set` is outside this path; existing engine material writer is used. The callback expects its material write to either succeed or throw before installing final state. External import still follows old per-item best effort.
+- `rules.json` includes/origins are not rewritten; model-referenced internal moves are blocked.
+- No test execution / C++ compilation was performed. Source was inspected and GitHub commits were applied. Local repository is unavailable and terminal git access fails DNS. This is *not* a green-build claim.
+
+### Mandatory next step
+Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python source tests and CTest. Add runtime fault injection for second file rename, sidecar rename, catalog rebuild, and failed materials save; verify source+meta+material byte equivalence after rollback and look for unexpected leftover files. Then implement durable journal with startup recovery for crashes and an atomic rules origin edit flow, including external imports and backed-up replace semantics.
