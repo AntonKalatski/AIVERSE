@@ -73,6 +73,18 @@ if(AIVERSE_BUILD_TESTS)
         COMMAND aiverse_studio_facial_preview_binding_tests)
     set_tests_properties(studio_facial_preview_binding PROPERTIES LABELS "EDITOR")
 
+    # Stage 185: compiler/CPU proof of the real imported-model semantic
+    # MotionWeave facial layer, including 52 channels and existing eye IK.
+    add_executable(aiverse_studio_facial_runtime_tests
+        tests/StudioFacialRuntimeTests.cpp)
+    target_include_directories(aiverse_studio_facial_runtime_tests
+        PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_runtime_tests
+        PRIVATE aiverse_models aiverse_zstd_dec AIVERSE::libraries)
+    add_test(NAME studio_facial_runtime
+        COMMAND aiverse_studio_facial_runtime_tests)
+    set_tests_properties(studio_facial_runtime PROPERTIES LABELS "EDITOR")
+
     # Facial Control Rig authoring is project-local, native validated and
     # independent of the unmerged MotionWeave runtime branch.
     add_executable(aiverse_studio_facial_rig_tests tests/StudioFacialRigDocumentTests.cpp)
