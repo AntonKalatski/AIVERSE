@@ -1639,3 +1639,18 @@ Metal/Vulkan GPU GI tickets; no silent occluder clipping. If even compaction
 does not fit, return an explicit failure, keep world edits pending and block
 outdated GI. Stage57 CTest source `gi_gpu_page_compaction` is registered but
 native compilation, CTest and GPU device tests are NOT RUN.
+
+
+## GI Stage 58 — stable ECS light keys and monotonic GPU geometry (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage58-stable-light-identity-and-revisions-2026-11-20.md`.
+The GPU runtime's idempotent light snapshot test MUST compare stable
+`GiMovingLight::key` as well as transform, intensity, radius and spot
+cone. Replacing an ECS light entity at the same coordinates with a
+different stable key is a REAL source revision: invalidate/retrace.
+Lower-level `GiGpuDynamicRuntime::setGeometry/setGeometryRegion` now
+reject older and duplicate geometry revisions, matching the public
+GiLightingController monotonic publication contract. Preserve completed
+Metal/Vulkan GPU ticket fences and transactional Stage56/57 page maps.
+Regression assertions added to the existing `gi_gpu_dynamic_runtime`
+CTest source, but NATIVE/GPU TESTS ARE NOT EXECUTED.
