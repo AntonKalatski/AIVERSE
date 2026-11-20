@@ -1,9 +1,13 @@
 #include "engine/render/ModelShaders.h"
 #include "engine/render/GiDynamicShaders.h"
+#include "engine/render/Renderer3D.h"
 #include "engine/render/GiTextureBudget.h"
 #include "tests/AlwaysCheck.h"
 #include <string>
+#include <type_traits>
 using namespace aiverse::render;
+static_assert(std::is_same_v<decltype(&Renderer3D::bindDynamicGiForCustom),
+                             bool (Renderer3D::*)()>);
 int main() {
     const std::string glsl=shaders::kModelFS;
     const std::string metal=shaders::kModelMSL;
