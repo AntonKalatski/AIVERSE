@@ -9,6 +9,10 @@
 #include "engine/render/ModelVertexStreamOverride.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/SculptGpuSubmittedView.h"
+#include "engine/character/vivid/SculptGpuIdPass.h"
+#include "engine/character/vivid/SculptGpuVertexSource.h"
+#include "engine/character/vivid/SkinnedWeightPick.h"
+#include <array>
 #include "engine/character/vivid/GpuActorRetirement.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/character/vivid/FaceShapeBinding.h"
@@ -104,6 +108,19 @@ struct Preview {
     int readyFrames = 0;
     int motionFrames = 0;
     bool capturePending = false;
+    // Stage 7AX: the independent ID target and a real *presented*
+    // Renderer3D colour screenshot must both describe one identical GPU
+    // frame. Callbacks can arrive in either order; never compare them with
+    // a later MotionWeave pose.
+    vivid::SculptGpuIdPass pixelIdPass;
+    bool pixelIdReady=false, imageDiffPassed=false;
+    struct PixelProbe {
+        bool requested=false, colourReady=false, idReady=false, checked=false;
+        uint64_t frameSerial=0;
+        uint32_t x=0,y=0;
+        std::array<uint8_t,4> colour{},id{};
+    };
+    std::array<PixelProbe,3> pixelProbes{};
 
     void initialize(gfx::Device& dev) {
         device = &dev;
@@ -152,6 +169,11 @@ struct Preview {
         if(const char* value=std::getenv("AIVERSE_VIVID_PREVIEW_ACTORS")) {
             const int requested=std::atoi(value);
             actorCount=std::clamp(requested,1,32);
+        }
+        if(actorCount==1) {
+            pixelIdReady=pixelIdPass.initialize(dev);
+            require(pixelIdReady && pixelIdPass.supportsActualGpuVertexStream(),
+                    "VIVID Stage 7AX requires native Metal GPU-source ID shader");
         }
         require(render::uploadModel(dev,*model,true), "model GPU upload failed");
         require(!model->geometryPoolPage && !model->gpuBaseVertex &&
@@ -214,6 +236,15 @@ struct Preview {
                 std::fprintf(stderr,"VIVID preview capture: %s\n",e.what());
                 return;
             }
+            if(actorCount==1 && number>0) {
+                auto& probe=pixelProbes[std::size_t(number)];
+                require(probe.requested && !probe.colourReady &&
+                        probe.x<uint32_t(w) && probe.y<uint32_t(h),
+                        "VIVID colour capture did not match GPU ID request");
+                const auto offset=(size_t(probe.y)*size_t(w)+probe.x)*4u;
+                for(int c=0;c<4;++c)probe.colour[std::size_t(c)]=pixels[offset+size_t(c)];
+                probe.colourReady=true;
+            }
             captures.push_back({number,std::move(pixels)});
             std::printf("VIVID preview captured %s\n",capturePath(suffix.c_str()).c_str());
             // Keep a capture's visual state until the asynchronous callback:
@@ -242,17 +273,60 @@ struct Preview {
                 };
                 const auto morphed=changed(captures[0],captures[1]);
                 const auto moved=changed(captures[1],captures[2]);
-                // Strictly require actual pixels, not just successful GPU draws.
-                complete = morphed > 200 && moved > 100 && animated;
-                failed = failed || !complete;
-                std::printf("VIVID Renderer3D visible morph pixels=%zu, MotionWeave moved pixels=%zu, pass=%d\n",
-                            morphed,moved,int(complete));
-                platform::requestQuit();
+                // Captures and ID readbacks may finish on different
+                // beginFrame callbacks. Check scene-pixel parity only once
+                // BOTH same-frame results have been delivered.
+                imageDiffPassed=morphed>200 && moved>100 && animated;
+                std::printf("VIVID Renderer3D visible morph pixels=%zu, MotionWeave moved pixels=%zu, capture-pass=%d\n",
+                            morphed,moved,int(imageDiffPassed));
             }
         });
     }
 
     void frameStep(gfx::Device& dev) {
+        if(actorCount==1 && pixelIdReady) {
+            vivid::SculptGpuIdPass::Completed completedId;
+            if(pixelIdPass.takeCompleted(completedId)) {
+                const auto& request=completedId.request;
+                require(request.generation>=2 && request.generation<=3,
+                        "VIVID parity readback had unexpected request generation");
+                auto& probe=pixelProbes[std::size_t(request.generation-1u)];
+                require(probe.requested && !probe.idReady &&
+                        probe.frameSerial==request.frameSerial &&
+                        probe.x==request.x && probe.y==request.y &&
+                        completedId.actualOverride &&
+                        completedId.rgba.size()==4,
+                        "VIVID parity ID readback was stale or not GPU-sourced");
+                for(size_t c=0;c<4;++c)probe.id[c]=completedId.rgba[c];
+                probe.idReady=true;
+            }
+            for(int stageIndex=1;stageIndex<=2;++stageIndex) {
+                auto& probe=pixelProbes[std::size_t(stageIndex)];
+                if(!probe.requested || !probe.colourReady ||
+                   !probe.idReady || probe.checked)continue;
+                const bool hit=probe.id[0]||probe.id[1]||
+                               probe.id[2]||probe.id[3];
+                const int delta=std::abs(int(probe.colour[0])-20)+
+                                std::abs(int(probe.colour[1])-26)+
+                                std::abs(int(probe.colour[2])-33);
+                require(hit && delta>36,
+                    "VIVID final Renderer3D colour and actual GPU actor ID do not cover the same pixel");
+                probe.checked=true;
+                std::printf("VIVID same-frame GPU colour/ID pixel parity stage=%d frame=%llu xy=%u,%u delta=%d id=%u,%u,%u,%u PASS\n",
+                    stageIndex,static_cast<unsigned long long>(probe.frameSerial),
+                    probe.x,probe.y,delta,
+                    unsigned(probe.id[0]),unsigned(probe.id[1]),
+                    unsigned(probe.id[2]),unsigned(probe.id[3]));
+            }
+        }
+        if(stage>=3 && captures.size()==3 &&
+           (actorCount!=1 || (pixelProbes[1].checked &&
+                               pixelProbes[2].checked))) {
+            complete=imageDiffPassed && animated;
+            failed=failed || !complete;
+            platform::requestQuit();
+            return;
+        }
         if(failed || complete || frame>400) {
             if(frame>400 && !complete) {
                 std::fprintf(stderr,
@@ -391,8 +465,10 @@ struct Preview {
             failed=true;
         }
         const bool motionReady = stage != 2 || (motionFrames >= 18 && animated);
+        bool recordParityPixel=false;
         if (!capturePending && stage < 3 && readyFrames >= 4 && motionReady) {
             capturePending = true;
+            recordParityPixel=actorCount==1 && stage>0;
             const char* suffix = stage == 0 ? "-baseline" :
                                  stage == 1 ? "-morph" : "-motionweave";
             std::printf("VIVID preview render ready for capture: stage=%d frame=%d shadow=%u colour=%u\n",
@@ -400,10 +476,82 @@ struct Preview {
             capture(dev,suffix,stage);
         }
         dev.endPass();
+        if(recordParityPixel) {
+            require(pixelIdReady && stage>0 && stage<3,
+                    "VIVID Metal pixel parity was not initialized");
+            const auto staged=renderer.modelViewProvenance(*model);
+            const auto submitted=renderer.modelSubmissionProvenance(*model);
+            const auto accepted=vivid::validateSculptGpuSubmittedView(
+                staged,submitted,*model,0,dev.frameSerial());
+            require(accepted.accepted,
+                "VIVID parity colour model was not a matching encoded draw");
+            const render::Renderer3D::ModelViewPrimitive* selected=nullptr;
+            for(const auto& primitive:staged.primitives) {
+                if(primitive.meshIndex==0u) {
+                    if(selected && (selected->world.m[12]!=primitive.world.m[12] ||
+                                    selected->vertexOverride!=primitive.vertexOverride))
+                        throw std::runtime_error("ambiguous GPU actor world");
+                    selected=&primitive;
+                }
+            }
+            require(selected && selected->customGpuStream &&
+                    selected->vertexOverride.valid(),
+                    "VIVID parity lost original 60B GPU actor source");
+            vivid::SkinnedWeightSurface reference;
+            require(vivid::prepareSkinnedWeightSurface(
+                        *model,0,pose.matrices,reference),
+                    "VIVID parity CPU source map could not be prepared");
+            vivid::SculptGpuVertexSource realGpu;
+            require(vivid::prepareSculptGpuVertexSource(
+                        *model,0,pose.matrices,selected->world,
+                        selected->vertexOverride,
+                        selected->vertexOverrideCount,
+                        {},model->vertices.size(),realGpu),
+                    "VIVID parity real GPU actor source could not be prepared");
+            // Project the head's world centre, well inside the visible
+            // procedural sphere. Both RHI and screenshot use top-left pixels.
+            const render::float4 clip=renderer.viewProj()*
+                render::float4{0.f,1.15f,0.f,1.f};
+            require(std::isfinite(clip.w) && clip.w>0.f,
+                    "VIVID parity projected head behind the camera");
+            const float ndcX=clip.x/clip.w,ndcY=clip.y/clip.w;
+            require(std::isfinite(ndcX) && std::isfinite(ndcY) &&
+                    std::abs(ndcX)<0.95f && std::abs(ndcY)<0.95f,
+                    "VIVID parity head centre is outside the viewport");
+            auto& probe=pixelProbes[std::size_t(stage)];
+            require(!probe.requested,
+                    "VIVID parity stage was recorded more than once");
+            probe.x=uint32_t(std::clamp(
+                int((ndcX*0.5f+0.5f)*float(kWidth)),0,kWidth-1));
+            probe.y=uint32_t(std::clamp(
+                int((0.5f-ndcY*0.5f)*float(kHeight)),0,kHeight-1));
+            vivid::SculptGpuPickRequest request;
+            request.generation=uint64_t(stage+1);
+            request.modelRevision=1;
+            request.frameSerial=dev.frameSerial();
+            request.meshId=0;
+            request.width=kWidth;request.height=kHeight;
+            request.x=probe.x;request.y=probe.y;
+            require(pixelIdPass.record(
+                        *model,reference,model->vertices.size(),{},
+                        renderer.viewProj(),request,{}, {},&realGpu),
+                    "VIVID real-actor colour/ID pixel parity pass not encoded");
+            probe.frameSerial=request.frameSerial;
+            probe.requested=true;
+            // No main-pass resume needed: preview ends the frame here.
+        }
         ++frame;
     }
     void shutdown() {
         if(!device)return;
+        // GPU ID targets and its async scratch are retained until a
+        // verified idle barrier, independently of actor resource ownership.
+        if(pixelIdReady && !pixelIdPass.shutdownAfterIdle()) {
+            std::fprintf(stderr,"VIVID parity: ID pass GPU idle retirement failed\n");
+            failed=true;
+            return;
+        }
+        pixelIdReady=false;
         // Frame-retirement correctness is more important than teardown speed:
         // all compute outputs may still be referenced by shadow/colour draws.
         if(actorRetirement) {
