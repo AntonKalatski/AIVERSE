@@ -99,6 +99,8 @@ inline SculptGpuRendererViewCheck validateSculptGpuRendererView(
         }
         if(!p.colourCandidate || !p.visible || !p.indexCount ||
            p.batched || p.gpuLodConditional || p.lodFade ||
+           p.alternativeMeshLod ||
+           source.nodes[p.nodeIndex].mesh!=int(p.meshIndex) ||
            p.shaderVertexOffset || p.baked) {
             result.reason=SculptGpuRendererViewReason::RendererUnsupportedView;
             return result;
