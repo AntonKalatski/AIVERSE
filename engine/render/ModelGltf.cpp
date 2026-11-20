@@ -792,6 +792,8 @@ private:
                 int want = c.path == AnimChannel::Rotation ? 4 : 3;
                 if (c.path == AnimChannel::Weights) { // scalar output: targets values per key
                     want = nt ? int(nv / (nt * perKey)) : 0;
+                    if(want>kMaxMorphTargets)
+                        fail("animation '"+clip.name+"': morph weights exceed 64-channel limit");
                     if (comps != 1 || want <= 0) { warn("animation '" + clip.name + "': malformed weights channel skipped"); continue; }
                     comps = want;
                     nv /= size_t(want);

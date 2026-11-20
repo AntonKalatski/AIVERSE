@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 // stb_image with static linkage: the UI layer has its own copy, both may end up in one binary.
@@ -570,6 +571,42 @@ void prepareModelUpload(Model& m) {
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
+    // Validate the COMPLETE 64-channel morph payload and hard texture budget
+    // BEFORE creating GPU buffers or textures. Never upload a partially
+    // truncated facial rig or allow float-inexact texel offsets in U4.
+    constexpr size_t maxExactTexels = size_t(1) << 24;
+    size_t allowedTexels=maxExactTexels;
+    if(const char* limit=std::getenv("AIVERSE_MORPH_TEXTURE_MIB")) {
+        char* end=nullptr;
+        const unsigned long value=std::strtoul(limit,&end,10);
+        if(end==limit || *end!='\0' || value<1 || value>256)return false;
+        allowedTexels=std::min(allowedTexels,size_t(value)*size_t(65536));
+    }
+    size_t requiredTexels=0;
+    for(const auto& mesh:m.meshes)
+        for(const auto& p:mesh.primitives) {
+            if(p.morphTargets<0 || p.morphTargets>kMaxMorphTargets)
+                return false;
+            if(p.morphTargets==0) {
+                if(!p.morphDeltas.empty())return false;
+                continue;
+            }
+            if(p.vertexCount==0)return false;
+            if(p.morphDeltas.empty()) {
+                if(!m.morphTex.valid())return false;
+                continue;
+            }
+            const size_t count=size_t(p.vertexCount);
+            const size_t channels=size_t(p.morphTargets);
+            if(channels>std::numeric_limits<size_t>::max()/count/6u ||
+               p.morphDeltas.size()!=channels*count*6u)
+                return false;
+            for(float delta:p.morphDeltas)
+                if(!std::isfinite(delta))return false;
+            const size_t texels=p.morphDeltas.size()/3u;
+            if(texels>allowedTexels-requiredTexels)return false;
+            requiredTexels+=texels;
+        }
     const bool hasCpuVertices = !m.vertices.empty();
     const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
         m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
@@ -606,31 +643,35 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
             m.markMaterialChanged(); // texture binding changed during upload
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
-    // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
-    size_t texels = 0;
-    for (auto& mesh : m.meshes)
-        for (auto& p : mesh.primitives) if (p.morphTargets > 0 && !p.morphDeltas.empty()) texels += p.morphDeltas.size() / 3;
-    if (texels > 0 && !m.morphTex.valid()) {
-        const int width = 2048, height = int((texels + width - 1) / width);
-        std::vector<float> data(size_t(width) * size_t(height) * 4, 0.0f);
-        size_t at = 0;
-        for (auto& mesh : m.meshes)
-            for (auto& p : mesh.primitives) {
-                if (p.morphTargets <= 0 || p.morphDeltas.empty()) continue;
-                p.morphTexel = uint32_t(at);
-                for (size_t i = 0; i + 2 < p.morphDeltas.size(); i += 3, ++at)
-                    for (int k = 0; k < 3; ++k) data[at * 4 + size_t(k)] = p.morphDeltas[i + size_t(k)];
-                if (!keepCpu) { p.morphDeltas.clear(); p.morphDeltas.shrink_to_fit(); }
+    // Two RGBA32F texels per source vertex/channel. Native U4 stores base
+    // texel offsets as floats; 2^24 texels is the exact-index ceiling.
+    if (requiredTexels > 0 && !m.morphTex.valid()) {
+        const size_t width=2048u,rows=(requiredTexels+width-1u)/width;
+        std::vector<float> data(width*rows*4u,0.f);
+        size_t at=0;
+        for(auto& mesh:m.meshes)
+            for(auto& p:mesh.primitives) {
+                if(p.morphTargets<=0 || p.morphDeltas.empty())continue;
+                p.morphTexel=uint32_t(at);
+                for(size_t i=0;i+2<p.morphDeltas.size();i+=3,++at)
+                    for(int k=0;k<3;++k)
+                        data[at*4u+size_t(k)]=p.morphDeltas[i+size_t(k)];
             }
-        gfx::TextureDesc td;
-        td.width = width; td.height = height;
-        td.format = gfx::PixelFormat::RGBA32F;
-        td.filter = gfx::Filter::Nearest;
-        td.data = data.data();
-        td.label = "morph targets";
-        m.morphTex = dev.createTexture(td);
-        m.morphTexWidth = width;
+        gfx::TextureDesc desc;
+        desc.width=int(width);desc.height=int(rows);
+        desc.format=gfx::PixelFormat::RGBA32F;
+        desc.filter=gfx::Filter::Nearest;
+        desc.data=data.data();
+        desc.label="morph targets";
+        const auto texture=dev.createTexture(desc);
+        if(!texture.valid())return false;
+        m.morphTex=texture;
+        m.morphTexWidth=int(width);
     }
+    if(!keepCpu && m.morphTex.valid())
+        for(auto& mesh:m.meshes)
+            for(auto& p:mesh.primitives)
+                if(p.morphTargets>0)std::vector<float>{}.swap(p.morphDeltas);
     if (!keepCpu) {
         m.vertices.clear(); m.vertices.shrink_to_fit();
         m.indices.clear(); m.indices.shrink_to_fit();
