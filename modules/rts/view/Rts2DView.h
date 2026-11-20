@@ -51,6 +51,16 @@ struct SpriteLook {
 
 class Rts2DView {
 public:
+    class PreparedFrame;
+    std::shared_ptr<PreparedFrame> beginFramePreparation();
+    void commitFramePreparation(const std::shared_ptr<PreparedFrame>&) noexcept;
+    bool collectRetiredFrames(gfx::Device& dev) {
+        const bool primary=batch_.collectRetired(dev);
+        const bool secondary=secondaryBatch_.collectRetired(dev);
+        const bool tiles=tileRetirement_.collect(dev);
+        return primary && secondary && tiles;
+    }
+
     // `defaults`: rules/game.json "sprites" block (shadow mode, lit)
     bool init(gfx::Device& dev, const Rules& rules, const std::string& contentBase, const SpriteDefaults& defaults = {}, bool deferTypes = false);
     void loadType(uint16_t type);
@@ -128,6 +138,8 @@ private:
     void decalShape(const render::TextureRef& tex, render::float4 uv, render::float3 origin, render::float3 aU, float lenU, render::float3 aV, float lenV,
                uint32_t color, uint32_t team, int layer, float key, uint32_t flags);
 
+    bool preparingFrame_=false, frameTilesReplaced_=false, preparedGpuFrame_=false;
+    render::NativePresentationRetirement tileRetirement_;
     std::string base_;
     render::TextureCache textures_;
     render::SpriteBatch batch_;

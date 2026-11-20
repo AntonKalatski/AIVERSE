@@ -127,6 +127,89 @@ void Rts2DView::loadType(uint16_t type) {
     loadedTypes_[type] = true;
 }
 
+class Rts2DView::PreparedFrame final {
+    friend class Rts2DView;
+    Rts2DView* owner=nullptr;
+    render::SpriteMesh previousTiles;
+    std::shared_ptr<render::SpriteBatch::PreparedFrame> batch;
+    std::function<void()> restore;
+    bool committed=false;
+public:
+    ~PreparedFrame() noexcept {
+        if(committed || !owner)return;
+        if(owner->tileMesh_.vb!=previousTiles.vb && owner->tileMesh_.vb.valid())
+            try {owner->resourceDevice_->destroyBuffer(owner->tileMesh_.vb);}catch(...) {}
+        owner->tileMesh_=previousTiles;
+        restore();owner->preparingFrame_=owner->frameTilesReplaced_=false;
+    }
+};
+std::shared_ptr<Rts2DView::PreparedFrame> Rts2DView::beginFramePreparation() {
+    if(preparingFrame_)throw std::logic_error("nested sprite view frame preparation");
+    auto frame=std::make_shared<PreparedFrame>();
+    frame->restore=[this,
+        preparedSprites=preparedSprites_,
+        replayingPrepared=replayingPrepared_,
+        secondaryGeometryValid=secondaryGeometryValid_,
+        emittingBatch=emittingBatch_,
+        cam=cam_,
+        camRight=camRight_,
+        camUp=camUp_,
+        camFwd=camFwd_,
+        groundRight=groundRight_,
+        groundFront=groundFront_,
+        time=time_,
+        frame=frame_,
+        quality=quality_,
+        casterRight=casterRight_,
+        surface=surface_,
+        surfTris=surfTris_,
+        cpuMs=cpuMs_,
+        seen=seen_,
+        corpses=corpses_,
+        layer=layer_,
+        atlas=atlas_,
+        fieldCells=fieldCells_,
+        fieldState=fieldState_,
+        preparedGpuFrame=preparedGpuFrame_]() mutable noexcept {
+        using std::swap;
+        swap(preparedSprites_,preparedSprites);
+        swap(replayingPrepared_,replayingPrepared);
+        swap(secondaryGeometryValid_,secondaryGeometryValid);
+        swap(emittingBatch_,emittingBatch);
+        swap(cam_,cam);
+        swap(camRight_,camRight);
+        swap(camUp_,camUp);
+        swap(camFwd_,camFwd);
+        swap(groundRight_,groundRight);
+        swap(groundFront_,groundFront);
+        swap(time_,time);
+        swap(frame_,frame);
+        swap(quality_,quality);
+        swap(casterRight_,casterRight);
+        swap(surface_,surface);
+        swap(surfTris_,surfTris);
+        swap(cpuMs_,cpuMs);
+        swap(seen_,seen);
+        swap(corpses_,corpses);
+        swap(layer_,layer);
+        swap(atlas_,atlas);
+        swap(fieldCells_,fieldCells);
+        swap(fieldState_,fieldState);
+        swap(preparedGpuFrame_,preparedGpuFrame);
+    };
+    frame->batch=batch_.beginFramePreparation();
+    frame->owner=this;frame->previousTiles=tileMesh_;
+    preparingFrame_=true;frameTilesReplaced_=false;
+    return frame;
+}
+void Rts2DView::commitFramePreparation(const std::shared_ptr<PreparedFrame>& frame) noexcept {
+    if(!frame || frame->owner!=this || frame->committed)return;
+    batch_.commitFramePreparation(frame->batch);
+    if(tileMesh_.vb!=frame->previousTiles.vb)
+        tileRetirement_.retireBuffer(*resourceDevice_,frame->previousTiles.vb);
+    frame->committed=true;preparingFrame_=frameTilesReplaced_=false;
+}
+
 bool Rts2DView::shutdownAfterGpuIdle(gfx::Device& dev) {
     if (resourceDevice_ && resourceDevice_ != &dev)
         throw std::logic_error("Rts2DView shutdown: wrong GPU device");
@@ -140,6 +223,8 @@ void Rts2DView::shutdown(gfx::Device& dev) {
     if (resourceDevice_ && resourceDevice_ != &dev)
         throw std::logic_error("Rts2DView shutdown: wrong GPU device");
     if (!resourceDevice_) return;
+    if(!tileRetirement_.completeForShutdown(dev))
+        throw std::runtime_error("sprite tile retirement requires GPU idle");
     // Also clean partially initialized resources after an init failure.
     batch_.destroyMesh(dev, tileMesh_);
     batch_.shutdown();
@@ -232,6 +317,7 @@ void Rts2DView::beginFrame(const RTSCamera& cam, double time, const Renderer3D& 
     time_ = time;
     ++frame_;
     batch_.begin();
+    preparedGpuFrame_=false;
     preparedSprites_.clear();
     secondaryGeometryValid_ = false;
     emittingBatch_ = &batch_;
@@ -508,6 +594,12 @@ static float3 referenceLight() {
 
 void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
     if (!ready_) return;
+    if(preparingFrame_) {
+        refreshTiles(*resourceDevice_,grid,lh);
+        batch_.prepareFrameUploads(*resourceDevice_);
+        preparedGpuFrame_=true;
+    }
+    const bool prepared=preparedGpuFrame_;
     // AIVERSE_SPRITE_STATS=1: quads / shadow casters / CPU time of the sprite queueing, every 60 frames
     static const bool printStats = std::getenv("AIVERSE_SPRITE_STATS") != nullptr;
     if (printStats && frame_ % 60 == 0) {
@@ -517,8 +609,8 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
     if (batch_.casterCount() > 0 && r.shadowQuality() != ShadowQuality::Off)
         r.drawCustomShadow([this, &r](gfx::Device& dev) { batch_.flushCasters(dev, r.lightViewProj()); });
     // Kingston tile ground precedes open water.
-    r.drawCustomOpaque([this, &r, &grid, lh](gfx::Device& dev) {
-        refreshTiles(dev, grid, lh);
+    r.drawCustomOpaque([this, &r, &grid, lh, prepared](gfx::Device& dev) {
+        if(!prepared)refreshTiles(dev, grid, lh);
         r.lights.bind(2,1);
         SpriteLighting lighting;
         lighting.bind=[&r]{ r.bindLitFrame(); };
@@ -526,8 +618,8 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
         lighting.receiveShadows=r.shadowQuality()>=ShadowQuality::Medium;
         if (tileMesh_.vb.valid() && atlas_.valid()) batch_.drawMesh(dev, tileMesh_, atlas_.tex, r.viewProj(), defaults_.lit ? &lighting : nullptr);
     });
-    r.drawCustom([this, &r, &grid, lh](gfx::Device& dev) {
-        refreshTiles(dev, grid, lh);
+    r.drawCustom([this, &r, &grid, lh, prepared](gfx::Device& dev) {
+        if(!prepared)refreshTiles(dev, grid, lh);
         r.lights.bind(2, 1);   // unlit sprites: day/night tint + light map (lighting agent); the lit path rebinds its frame
         SpriteLighting lighting;
         lighting.bind = [&r] { r.bindLitFrame(); };

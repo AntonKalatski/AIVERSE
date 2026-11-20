@@ -717,7 +717,7 @@ void RtsOverlays::flush(Renderer3D& r) {
     upload_.clear();
     for (auto& b : buckets_) upload_.insert(upload_.end(), b.verts.begin(), b.verts.end());
     const size_t bytes = upload_.size() * sizeof(BatchVertex);
-    if (!vb_.valid() || bytes > vbBytes_) {
+    if (preparingFrame_ || !vb_.valid() || bytes > vbBytes_) {
         if(preparingFrame_ && frameReplacedBuffer_)
             throw std::logic_error("overlay frame prepared more than once");
         if(bytes>SIZE_MAX/2)
@@ -761,8 +761,10 @@ void RtsOverlays::flush(Renderer3D& r) {
     const auto snapshot=std::make_shared<const std::vector<BatchVertex>>(upload_);
     const mat4 vp=r.viewProj();
     const gfx::BufferHandle buffer=vb_;
-    r.drawCustom([snapshot,commands=std::move(commands),vp,buffer,bytes](gfx::Device& dev) {
-        dev.updateBuffer(buffer,snapshot->data(),bytes);
+    const bool prepared=preparingFrame_;
+    if(prepared)dev_->updateBuffer(buffer,snapshot->data(),bytes);
+    r.drawCustom([snapshot,commands=std::move(commands),vp,buffer,bytes,prepared](gfx::Device& dev) {
+        if(!prepared)dev.updateBuffer(buffer,snapshot->data(),bytes);
         for(const auto& cmd:commands) {
             dev.setPipeline(cmd.pipe);
             dev.setUniforms(0,vp.m,sizeof vp.m);

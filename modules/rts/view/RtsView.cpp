@@ -264,8 +264,9 @@ bool RtsView::collectRetiredModels() {
     const bool terrain=terrain_.collectRetiredMeshBuffers(*dev_);
     const bool ground=groundFx_.collectRetiredMeshBuffers(*dev_);
     const bool visibility=fog_.collectRetired(*dev_);
+    const bool sprites=!twoD_ || twoD_->collectRetiredFrames(*dev_);
     return models && images && roads && shores && geometry && overlays &&
-           terrain && ground && visibility;
+           terrain && ground && visibility && sprites;
 }
 void RtsView::setRoadMap(const Json& map) {
     pendingSurfaceLease_.reset();
@@ -1024,6 +1025,7 @@ public:
             animations.emplace(id,state.cloneForPreparation());
         // Every fallible copy above finishes before any published owner moves.
         overlays=v.overlays_.beginFramePreparation();
+        if(v.twoD_)sprites=v.twoD_->beginFramePreparation();
         swapOwners();
     }
     ~PreparedAnimationLease() noexcept {
@@ -1037,7 +1039,11 @@ public:
         v.lastTime_=lastTime;v.lastTick_=lastTick;v.frame_=frame;
         v.viewProj_=viewProj;v.camPos_=camPos;v.fx_=fx;
     }
-    void commit() noexcept {v.overlays_.commitFramePreparation(overlays);committed=true;}
+    void commit() noexcept {
+        v.overlays_.commitFramePreparation(overlays);
+        if(v.twoD_)v.twoD_->commitFramePreparation(sprites);
+        committed=true;
+    }
 private:
     void swapOwners() noexcept {
         v.anims_.swap(animations);v.genericView_.swap(generic);
@@ -1058,6 +1064,7 @@ private:
     decltype(RtsView::shadowDraws_) shadows,ground;
     RtsLights lights;
     std::shared_ptr<RtsOverlays::PreparedFrame> overlays;
+    std::shared_ptr<Rts2DView::PreparedFrame> sprites;
     render::LightSystem::PreparedFrame rendererLights;
     render::Lighting lighting;
     double lastTime;uint32_t lastTick;uint64_t frame;
