@@ -10,6 +10,8 @@
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
+#include "GiMainCpuBridge.h"
+#include "GiTextureBudget.h"
 
 #include <algorithm>
 #include <array>
@@ -31,6 +33,7 @@ constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
 constexpr uint32_t kKeyDrawCallView = 32768;
+constexpr uint32_t kKeyDynamicGi = 1u << 25; // isolated opt-in model shader variant
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
@@ -57,6 +60,26 @@ std::array<double, 8> cpuMdiStageValues(
 }
 
 } // namespace
+
+bool Renderer3D::setDynamicGiOverlay(const GiMainCpuBridge& bridge) {
+    dynamicGiAtlas_={};
+    if (!dev_ || bridge.atlas().device()!=dev_ ||
+        !giFragmentTextureBudgetAllows(16,false,false,false))
+        return false;
+    const auto atlas=bridge.borrowedAtlas();
+    if (!atlas.valid()) return false;
+    const auto& config=bridge.config();
+    if (!std::isfinite(config.spacing) || config.spacing<=0 ||
+        config.nx<1 || config.ny<1 || config.nz<1)
+        return false;
+    dynamicGiUniforms_={
+        config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
+        float(config.nx),float(config.ny),float(config.nz),0.0f,
+        0.0f,0.0f,0.0f,0.0f
+    };
+    dynamicGiAtlas_=atlas;
+    return true;
+}
 
 void Renderer3D::recordCpuMdiStageSample(
     size_t phase, const ModelRenderStats::CpuMdiStageProfile& before) {
@@ -320,6 +343,10 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
+    // tex13 is Shader Graph's first sampler; opt-in GI and graph materials
+    // cannot occupy the same slot. GPU-driven ICB uses a separate ABI.
+    const bool dynamicGi = giPhase && !gpuInstances && !it.mat->shaderGraph &&
+                           dynamicGiAtlas_.valid();
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
@@ -328,7 +355,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
                                ((drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2)) ? kKeyDrawCallView : 0u) |
-                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
+                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u) | (dynamicGi ? kKeyDynamicGi : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
         (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
@@ -372,6 +399,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (studioShaderBits) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
+        if (dynamicGi) defs += "#define DYNAMIC_GI 1\n";
         if (lightmap || probes) defs += "#define AIVERSE_GIQ " + std::to_string(bakedQuality_ == BakedQuality::Low ? 1 : 2) + "\n";
         defs += "#define AIVERSE_Q " + std::to_string(int(matQuality_)) + "\n";
         std::string vs = defs + (shadow ? shaders::kModelShadowVS : shaders::kModelVS);
@@ -445,7 +473,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+        sd.uniformSlots = dynamicGi ? 7 : shadow ? 5 : 6; sd.textureSlots = dynamicGi ? 14 : graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
@@ -1385,7 +1413,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (!ph.valid()) return false;
     if (!(ph == currentPipe_)) {
         dev_->setPipeline(ph); currentPipe_ = ph;
-        if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
+        if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }
+    }
+    // Even if the model pipeline is already bound, another pass may have
+    // changed the texture/uniform state. Always refresh this opt-in borrow.
+    if ((phase==1 || phase==2) && dynamicGiAtlas_.valid() && !gpuInstances &&
+        !it.mat->shaderGraph) {
+        dev_->setUniforms(6,dynamicGiUniforms_.data(),
+                          dynamicGiUniforms_.size()*sizeof(float));
+        dev_->setTexture(13,dynamicGiAtlas_);
+    }
+    if (false) {   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
     }
     const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
@@ -1866,6 +1904,9 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
+    // GPU ICB has a distinct material/sampler ABI. While this view opts in
+    // to CPU GI, use normal CPU-authored model draws for correct tex13/U6.
+    if (dynamicGiAtlas_.valid()) return;
 
     // Feedback from the previous completed pass, sampled before counters reset.
     // This is CPU submission feedback, not measured GPU busy-time.

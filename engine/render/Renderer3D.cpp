@@ -361,6 +361,8 @@ void Renderer3D::invalidateModelCachesFor(const Model* model) {
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     if(dev_)checkGpuDevice(*dev_);
+    // Atlas identity is per VIEW, never inherited by a different camera.
+    dynamicGiAtlas_={};
     // Query backend-confirmed GPU completion before allocating new targets;
     // this is nonblocking and never guesses an N-frame CPU delay.
     if (dev_) collectCompletedObjectMotion(dev_->gpuCompletedFence());

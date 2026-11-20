@@ -36,6 +36,8 @@
 
 namespace aiverse::render {
 
+class GiMainCpuBridge; // optional per-scene CPU-bounced-light producer
+
 struct Mesh {
     gfx::BufferHandle vb, ib;
     uint32_t indexCount = 0;
@@ -398,6 +400,13 @@ public:
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     void beginScene(const Camera3D& cam, int fbW, int fbH);
+    // Explicit per-view opt-in for CPU dynamic GI on ordinary PBR ModelDraws.
+    // Call AFTER beginScene and BEFORE render. Shader Graph and GPU ICB paths
+    // remain excluded; runtime never enables this for a view automatically.
+    // The host retains the GI owner and its atlas until GPU completion.
+    bool setDynamicGiOverlay(const GiMainCpuBridge& bridge);
+    void clearDynamicGiOverlay() noexcept { dynamicGiAtlas_={}; }
+    bool dynamicGiOverlayEnabled() const noexcept { return dynamicGiAtlas_.valid(); }
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Opt-in per-surface ripple normals. Positions are render-origin-relative
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
@@ -1476,6 +1485,10 @@ private:
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
+    // One-view borrowed atlas; beginScene drops it before the next view.
+    // U6 (three float4): origin+inverseSpacing, dimensions, ring offset=0.
+    gfx::TextureHandle dynamicGiAtlas_{};
+    std::array<float,12> dynamicGiUniforms_{};
     gfx::PipelineHandle currentPipe_;
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)

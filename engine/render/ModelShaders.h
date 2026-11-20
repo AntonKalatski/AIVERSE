@@ -37,6 +37,7 @@
 #pragma once
 #include "Shaders.h"
 #include "BakedShaders.h"
+#include "GiDynamicShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -191,7 +192,7 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI
     R"(
 uniform mediump sampler2D tex1;
 uniform mediump sampler2D tex2;
@@ -408,6 +409,10 @@ void main() {
 #endif
     ambSpec *= giOcc;
     vec3 col = diff * (amb * ao + direct) + sun * spec * sh + ambSpec * ao;
+#if defined(DYNAMIC_GI)
+    // Add INDIRECT diffuse only: no extra sun, specular or baked base.
+    col += diff * dynamicGiAt(v_wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (u_trace2.w > 1.5 && m_uv1.y < 0.5 && rough < 0.8) {
         float hit; vec3 reflected = ssrWater(v_wpos + n * 0.02, n, V, hit);
@@ -568,7 +573,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX AIVERSE_MSL_DYNAMIC_GI
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -680,6 +685,10 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
+#endif
+#if defined(DYNAMIC_GI)
+                        , constant GiDynamicU& dgi [[buffer(7)]],
+                        texture2d<float> tex13 [[texture(13)]]
 #endif
                         GI_FARGS) {
 #if defined(AIVERSE_ICB_PBR)
@@ -876,6 +885,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
     ambSpec *= giOcc;
     float3 col = diff * (amb * ao + direct) + sun * spec * sh + ambSpec * ao;
+#if defined(DYNAMIC_GI)
+    col += diff * dynamicGiAt(tex13,dgi,in.wpos,n) * ao;
+#endif
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (f.trace2.w > 1.5 && m.uv1.y < 0.5 && rough < 0.8) {
         float hit; float3 reflected = ssrWater(f, tex11, s11, tex12, s12, in.wpos + n * 0.02, n, V, hit);
