@@ -12768,6 +12768,55 @@ TEST(terrain_chunk_rebuild_preserves_old_gpu_mesh_on_index_failure) {
     CHECK(terrain.pendingMeshGpuRetirements()==0);
 }
 
+TEST(terrain_full_map_stages_all_chunks_apron_and_water_before_publish) {
+    fogfaulttest::Device dev;
+    game::Rules rules=skirmishRules();
+    game::TerrainRenderer terrain;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    terrain.init(dev,rules,missing,"");
+    game::MapGrid previous;
+    previous.init(4,4);
+    for(auto& flag:previous.flags)flag=game::kCellGround;
+    CHECK(terrain.build(dev,previous,false));
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+
+    game::MapGrid replacement;
+    replacement.init(65,4); // three chunks; the second can fail late
+    for(auto& flag:replacement.flags)flag=game::kCellGround;
+    replacement.flags[0]=game::kCellWater; // sheet is uploaded after the apron
+    auto beforeDestroyed=dev.destroyedBuffers;
+    dev.failBuffer=dev.bufferAttempts+4; // second chunk index buffer
+    bool failed=false;
+    try {(void)terrain.build(dev,replacement,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built());
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedBuffers==beforeDestroyed+3); // staged first pair + partial second
+    dev.failBuffer=0;
+    CHECK(!terrain.build(dev,previous,false)); // original map/hash still active
+
+    beforeDestroyed=dev.destroyedBuffers;
+    dev.failBuffer=dev.bufferAttempts+10; // all 3 chunk pairs, apron pair, water IB
+    failed=false;
+    try {(void)terrain.build(dev,replacement,false);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(terrain.built());
+    CHECK(terrain.stats().chunks==1);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+    CHECK(dev.destroyedBuffers==beforeDestroyed+9);
+    dev.failBuffer=0;
+
+    CHECK(terrain.build(dev,replacement,false));
+    CHECK(terrain.stats().chunks==3);
+    CHECK(terrain.pendingMeshGpuRetirements()>=4); // old chunk and apron held until GPU completion
+    terrain.shutdown(dev);
+    CHECK(terrain.pendingMeshGpuRetirements()==0);
+}
+
 TEST(terrain_gpu_kit_staging_recovers_from_allocation_and_idle_failure) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
