@@ -47,7 +47,9 @@ public:
     SculptGpuIdPass& operator=(const SculptGpuIdPass&)=delete;
 
     bool initialize(gfx::Device& device) {
-        if(device_ || !device.frameSerial())return false;
+        if(device_)return false;
+        // Pipeline compilation may precede beginFrame. The frame serial is
+        // mandatory only when recording a click and correlating its readback.
         const auto backend=device.info().backend;
         if(backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan &&
            backend!=gfx::Backend::GLES3 && backend!=gfx::Backend::GL33)
