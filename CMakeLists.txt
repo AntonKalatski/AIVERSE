@@ -1086,7 +1086,8 @@ if(AIVERSE_BUILD_TESTS)
             lumaweave_vulkan_reactive_contract
             lumaweave_backend_policy
             lumaweave_gi_frame_contract
-            lumaweave_native_compile)
+            lumaweave_native_compile
+            lumaweave_stage22_main_prisma_contract)
         add_executable(aiverse_${test_name}_test tests/render/${test_name}.cpp)
         target_include_directories(aiverse_${test_name}_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR})
