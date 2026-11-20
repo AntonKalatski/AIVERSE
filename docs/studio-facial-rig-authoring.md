@@ -70,3 +70,21 @@ ctest --test-dir build/<your-config> --output-on-failure -R '^studio_facial_rig_
 2. Conflict-aware merge of `feature/universal-ecs-animation-pipeline` with Studio; do not replace either branch's native renderer or animation runtime.
 3. Add actual model selection and a live GPU facial preview via MotionWeave's existing `ModelAssetProvider`, `AnimationGraph/Animator`, `FacialControlRig` and one pose owner.
 4. Complete facial artist authoring controls (presets, channel alias discovery, jaw/gaze sliders, morph diagnostics), automatic morph-preserving LOD geometry, and final one-pass Mac acceptance. Keep both features unmerged to main until verified.
+
+## Integration Stage 182 — native MotionWeave preview (source-only)
+
+On the separate `integration/motionweave-studio-face-20261120` branch,
+the Stage 181 authoring panel now contains `FacialLivePreview.tsx` and
+a C++ `StudioFacialGpuPreview` implementation. The native host accepts
+a real, project-relative GLB/glTF/FBX key and an existing saved rig,
+compiles the actual 64-channel MotionWeave FacialControlRig against
+the imported Model and submits one Animator-driven pose to the real
+Metal Renderer3D Scene layer. The HTML5 panel can send per-expression
+0–1 values and named IK targets, and receives separate native request,
+frame-submitted and error events. Source: [full integration guide](studio-motionweave-facial-live-preview.md).
+
+**This supersedes only the earlier Stage 181 implementation status
+within this integration branch.** The original `feature/studio-html5`
+alone still lacks this runtime. No native Mac CMake/CTest, WebKit
+live-preview or GPU pixel validation has run yet. Do not claim that
+a supplied face asset renders correctly until acceptance confirms it.
