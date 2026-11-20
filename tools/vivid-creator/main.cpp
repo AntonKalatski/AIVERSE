@@ -1739,6 +1739,9 @@ struct CreatorApp {
                 // or another scene mesh covering the selected triangle.
                 // Preserve the CPU selection, but do not claim GPU success.
                 status="GPU scene blocker/zero ID; CPU BVH retained";
+            }else if(replyForActive && !valid) {
+                gpuSculptToken.cancel();
+                status="GPU ID frame/viewport/pose changed; CPU BVH retained";
             }
         }
         guiControls();
