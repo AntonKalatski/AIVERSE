@@ -839,6 +839,9 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
         primitive.colourCandidate=candidate;
         primitive.gpuLodConditional=it.gpuLodAvailable;
         primitive.lodFade=it.lodThreshold<1.f || it.lodInvert;
+        primitive.alternativeMeshLod=
+            it.nodeIndex>=source.nodes.size() ||
+            source.nodes[it.nodeIndex].mesh!=int(it.meshIndex);
         primitive.batched=it.materialRole!=0 ||
                           it.primitiveIndex==UINT32_MAX;
         primitive.skinning=it.joints>=0;
@@ -847,8 +850,9 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
         primitive.customGpuStream=it.vertexOverride.valid();
         primitive.world=it.world;
         if(primitive.gpuLodConditional || primitive.lodFade ||
-           primitive.batched || primitive.shaderVertexOffset ||
-           primitive.baked) snapshot.complete=false;
+           primitive.alternativeMeshLod || primitive.batched ||
+           primitive.shaderVertexOffset || primitive.baked)
+            snapshot.complete=false;
         snapshot.primitives.push_back(primitive);
     }
     if(snapshot.primitives.empty())snapshot.complete=false;
