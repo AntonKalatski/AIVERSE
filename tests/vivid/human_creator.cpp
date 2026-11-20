@@ -204,6 +204,90 @@ void test() {
             scratch.size()==1 && scratch[0].x==9,
             "invalid morph source changed last-good picking scratch");
     }
+    // 7AK: after palette seam splitting the *visible* triangle can use
+    // cloned global indices, but sculpting must still edit the author's
+    // original source vertex. Generated LOD IDs stay unselectable.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(5);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.vertices[3]=model.vertices[0]; // seam clone of vertex zero
+        model.vertices[4]=model.vertices[0]; // generated LOD, not authorable
+        for(auto& v:model.vertices){v.joints[0]=0;v.weights[0]=255;}
+        model.indices={3,1,2};
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=3;
+        primitive.jointPalette={0};
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(std::move(mesh));
+        model.nodes.resize(2);
+        model.nodes[0].mesh=0;
+        model.nodes[0].skin=0;
+        model.skins.resize(1);
+        model.skins[0].joints={1};
+        model.skins[0].inverseBind={mat4{}};
+        const std::array<mat4,2> pose{{mat4{},mat4::translate({0,0,2})}};
+        MorphTargetInput shape;
+        shape.name="lift";
+        for(std::uint32_t vertex:{0u,3u}) {
+            MorphDelta delta;
+            delta.vertex=vertex;
+            delta.position={0.4f,0,0};
+            shape.deltas.push_back(delta);
+        }
+        const auto library=SparseMorphLibrary::compile(5,{shape});
+        const std::array<ShapeRoute,1> routes{{
+            {Channel::JawOpen,"lift",1.0f}
+        }};
+        const auto binding=FaceShapeBinding::compile(library,routes);
+        FaceFrame face;
+        face.values[std::size_t(Channel::JawOpen)]=1.0f;
+        std::vector<std::uint32_t> authorIds;
+        const std::array<SkinSeamSplit::Clone,1> clones{{
+            {0,3,0,0}
+        }};
+        req(buildSculptSourceVertexMap(5,3,clones,authorIds) &&
+            authorIds.size()==5 && authorIds[0]==0 &&
+            authorIds[3]==0 &&
+            authorIds[4]==std::numeric_limits<std::uint32_t>::max(),
+            "seam mapping must preserve source IDs and exclude generated LODs");
+        const auto hit=pickDeformedSculptVertex(
+            model,0,pose,library,binding,face,
+            {0.42f,0.05f,4.f},{0,0,-1},3,authorIds);
+        req(hit.hit && hit.vertex==0 &&
+            std::fabs(hit.worldPosition.x-0.4f)<1.e-5f &&
+            std::fabs(hit.worldPosition.z-2.0f)<1.e-5f,
+            "seam clone did not resolve to original source vertex");
+        model.indices[0]=4; // same triangle geometry, only LOD index changes
+        req(!pickDeformedSculptVertex(
+            model,0,pose,library,binding,face,
+            {0.05f,0.05f,4.f},{0,0,-1},3,authorIds).hit,
+            "generated LOD triangle leaked into original sculpt vertex selection");
+        const auto lastGood=authorIds;
+        const std::array<SkinSeamSplit::Clone,2> duplicated{{
+            {0,3,0,0},{1,3,0,0}
+        }};
+        req(!buildSculptSourceVertexMap(5,3,duplicated,authorIds) &&
+            authorIds==lastGood,
+            "duplicate clone mapping must fail without overwriting last-good map");
+        const std::array<SkinSeamSplit::Clone,1> invalid{{
+            {8,3,0,0}
+        }};
+        req(!buildSculptSourceVertexMap(5,3,invalid,authorIds) &&
+            authorIds==lastGood,
+            "invalid clone source ID must preserve last-good map");
+        const std::array<std::uint32_t,1> shortMapping{{0}};
+        model.indices[0]=3;
+        req(!pickDeformedSculptVertex(
+            model,0,pose,library,binding,face,
+            {0.42f,0.05f,4.f},{0,0,-1},3,shortMapping).hit,
+            "truncated published vertex mapping must reject picking");
+    }
     {
         auto target=MorphTargetInput{};
         target.name="symmetric";
