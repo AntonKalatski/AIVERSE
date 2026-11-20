@@ -27,6 +27,7 @@
 #include "imgui.h"
 #include "Gallery.h"
 #include "NativeScenePreview.h"
+#include "NativeFacialPreview.h"
 
 #include <algorithm>
 #include <cctype>
@@ -63,6 +64,7 @@ struct Instance {
     std::string path;
     Animator anim;
     Pose pose;
+    modelview::NativeFacialPreview facial;
     std::vector<mat4> world;
     int clip = -1, variant = -1;
     mat4 fix;
@@ -124,6 +126,15 @@ struct Viewer {
     std::unique_ptr<render::RenderDeviceLifetime> sceneLifetime;
     std::unique_ptr<modelview::NativeScenePreview> scenePreview;
     bool restoreSceneSnapshotRequested=false;
+    // A Studio-owned project/facial-rigs/<name>.json is read-only here.
+    // No browser filesystem access or new editor UI is involved.
+    std::string facialRigFile;
+    modelview::NativeFacialPreview::Scalars facialScalars;
+    modelview::NativeFacialPreview::Vectors facialVectors;
+    std::filesystem::file_time_type facialStamp{};
+    bool facialStampValid=false;
+    double facialPollElapsed=0.;
+    std::string lastFacialError;
 
     gfx::Device* dev = nullptr;
     Renderer3D r3d;
@@ -189,6 +200,14 @@ struct Viewer {
         gb.color(rgba(120, 132, 110)).box({0, -0.05f, 0}, {60, 0.1f, 60});
         ground = gb.upload(d);
         time = start;
+        if(!facialRigFile.empty()) {
+            if(!sceneRoot.empty() || !gameDir.empty() ||
+               attachmentPreview || baked)
+                throw std::invalid_argument(
+                    "--facial-rig requires normal ModelView models, not scenes, gallery, attachments or baked clips");
+            // Keep imported node/mesh morph semantic names untouched.
+            merge=false;
+        }
         if (!sceneRoot.empty()) {
             if(!gameDir.empty() || !files.empty() || attachmentPreview)
                 throw std::invalid_argument(
@@ -315,6 +334,14 @@ struct Viewer {
             }
             inst.push_back(std::move(in));
             x += spacing;
+        }
+        if(!facialRigFile.empty()) {
+            std::string error;
+            if(!reloadFacialRig(error))
+                throw std::runtime_error("facial rig preview unavailable: "+error);
+            std::error_code ec;
+            facialStamp=std::filesystem::last_write_time(facialRigFile,ec);
+            facialStampValid=!ec;
         }
         if(attachmentPreview)rebuildAttachments();
         for (auto& l : log) std::printf("%s\n", l.c_str());
@@ -761,6 +788,70 @@ struct Viewer {
         if(changed)reimportRequested=true;
     }
 
+
+    // Studio's existing native document writer owns the file; this is a
+    // bounded read-only consumer of exactly the same v1 JSON. Compile every
+    // visible instance before committing any one of them.
+    bool reloadFacialRig(std::string& error) {
+        error.clear();
+        if(facialRigFile.empty())return true;
+        try {
+            std::string bytes;
+            if(!readFile(facialRigFile,bytes) ||
+               bytes.size()>128u*1024u)
+                throw std::runtime_error("facial rig JSON missing or exceeds 128 KiB");
+            const Json document=Json::parse(bytes);
+            std::vector<modelview::NativeFacialPreview> candidates;
+            candidates.reserve(inst.size());
+            std::size_t count=0;
+            for(const auto& actor:inst) {
+                modelview::NativeFacialPreview next;
+                if(actor.model) {
+                    std::string reason;
+                    if(!next.configure(*actor.model,document,
+                                       facialScalars,facialVectors,reason))
+                        throw std::runtime_error(
+                            actor.path+": "+reason);
+                    ++count;
+                }
+                candidates.push_back(std::move(next));
+            }
+            if(count==0)throw std::runtime_error(
+                "facial rig preview has no imported Model");
+            for(std::size_t i=0;i<inst.size();++i)
+                inst[i].facial=std::move(candidates[i]);
+            lastFacialError.clear();
+            return true;
+        }catch(const std::exception& ex) {
+            error=ex.what(); // last-good program and state are unchanged
+            return false;
+        }
+    }
+    // Poll only at the device owner frame boundary. A failed Studio save
+    // never destroys the valid last-good facial rig currently rendered.
+    void pollFacialRig(double seconds) {
+        if(facialRigFile.empty() || inst.empty())return;
+        facialPollElapsed+=std::max(0.,seconds);
+        if(facialPollElapsed<0.5)return;
+        facialPollElapsed=0.;
+        std::error_code ec;
+        const auto stamp=std::filesystem::last_write_time(facialRigFile,ec);
+        if(ec) {
+            const std::string message="facial rig file is not accessible";
+            if(lastFacialError!=message)log.push_back(message);
+            lastFacialError=message;
+            return;
+        }
+        if(facialStampValid && stamp==facialStamp)return;
+        facialStampValid=true;
+        facialStamp=stamp;
+        std::string error;
+        if(!reloadFacialRig(error) && error!=lastFacialError) {
+            lastFacialError=error;
+            log.push_back("facial rig hot reload rejected: "+error);
+        }
+    }
+
     void play(Instance& in) {
         if (!in.model || in.clip < 0) return;
         Animator::Play p;
@@ -791,6 +882,7 @@ struct Viewer {
            nativeModels->pendingRolledBackImages()!=0)
             nativeModels->collectRetired(d);
         pollModelSourceChanges(dt);
+        pollFacialRig(dt);
         // All staged on-disk imports and old-provider cleanup happen on
         // this owner boundary, before d.beginFrame or any model draw.
         if(reimportRequested) {
@@ -821,7 +913,18 @@ struct Viewer {
         for(auto& actor:inst) {
             if(!actor.model)continue;
             if(!paused && seek<0)actor.anim.update(float(dt));
-            actor.anim.evaluate(actor.pose);
+            actor.anim.evaluate(actor.pose); // ONE native Animator
+            if(actor.facial.ready()) {
+                std::string error;
+                const float facialDt=(paused || seek>=0)
+                    ?0.f:float(std::max(0.,dt));
+                if(!actor.facial.apply(*actor.model,actor.pose,
+                                       facialDt,error) &&
+                   error!=lastFacialError) {
+                    lastFacialError=error;
+                    log.push_back(actor.path+": facial preview: "+error);
+                }
+            }
             worldMatrices(*actor.model,actor.pose,actor.world);
         }
         bool childReady=false;
@@ -951,6 +1054,12 @@ struct Viewer {
                 auto mi = mergeInfo.find(in.path);
                 if (mi != mergeInfo.end()) ImGui::Text("  %s", mi->second.c_str());
             }
+        if(!facialRigFile.empty()) {
+            ImGui::Text("Facial Control Rig: %s",facialRigFile.c_str());
+            ImGui::TextUnformatted("Saved Studio JSON | Native Animator + FacialControlRig");
+            if(!lastFacialError.empty())
+                ImGui::TextWrapped("Facial: %s",lastFacialError.c_str());
+        }
         if(scenePreview) {
             ImGui::Separator();
             ImGui::Text("MotionWeave native scenes: %zu; ready draws: %zu",
@@ -1220,6 +1329,49 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--game") v.gameDir = next();
         else if (a == "--scene-preview") v.sceneRoot = next();
         else if (a == "--scene-start") v.sceneStart = next();
+        else if (a == "--facial-rig") {
+            v.facialRigFile=next();
+            if(v.facialRigFile.empty()) {
+                std::fprintf(stderr,"--facial-rig needs project/facial-rigs/name.json\n");
+                return 2;
+            }
+        }
+        else if (a == "--face") {
+            const std::string assignment=next();
+            const auto pos=assignment.find('=');
+            if(pos==std::string::npos || pos==0 ||
+               pos+1>=assignment.size()) {
+                std::fprintf(stderr,"--face needs parameter=weight (0..1)\n");
+                return 2;
+            }
+            try {
+                const std::string valueText=assignment.substr(pos+1);
+                size_t read=0;
+                const float value=std::stof(valueText,&read);
+                if(read!=valueText.size() || !std::isfinite(value) ||
+                   value<0.f || value>1.f)
+                    throw std::invalid_argument("invalid facial weight");
+                v.facialScalars[assignment.substr(0,pos)]=value;
+            }catch(const std::exception&) {
+                std::fprintf(stderr,"invalid --face weight (0..1)\n");
+                return 2;
+            }
+        }
+        else if (a == "--face-vector") {
+            const std::string assignment=next();
+            const auto pos=assignment.find('=');
+            render::float3 value{};
+            char extra=0;
+            if(pos==std::string::npos || pos==0 ||
+               std::sscanf(assignment.c_str()+pos+1,"%f,%f,%f%c",
+                    &value.x,&value.y,&value.z,&extra)!=3 ||
+               !std::isfinite(value.x) || !std::isfinite(value.y) ||
+               !std::isfinite(value.z)) {
+                std::fprintf(stderr,"--face-vector needs parameter=x,y,z\n");
+                return 2;
+            }
+            v.facialVectors[assignment.substr(0,pos)]=value;
+        }
         else if (a == "--types") {
             std::stringstream ss(next());
             for (std::string t; std::getline(ss, t, ',');) v.types.push_back(t);
@@ -1272,6 +1424,15 @@ int aiverseMain(int argc, char** argv) {
             v.files.push_back({a.substr(0, at), at == std::string::npos ? std::string() : a.substr(at + 1)});
         }
     }
+    if(v.facialRigFile.empty() &&
+       (!v.facialScalars.empty() || !v.facialVectors.empty())) {
+        std::fprintf(stderr,"--face/--face-vector require --facial-rig\n");
+        return 2;
+    }
+    if(!v.facialRigFile.empty() && v.baked) {
+        std::fprintf(stderr,"facial preview requires CPU pose, not --baked\n");
+        return 2;
+    }
     // A serialized generic scene/prefab attachment layout can be opened
     // directly without separately spelling its parent Model on the CLI.
     // init() will read the complete document once after the Device exists.
@@ -1299,7 +1460,8 @@ int aiverseMain(int argc, char** argv) {
         std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
                     "       aiverse_modelview parent.glb@Walk --attach child.glb@Hand.R [--attachments-file file.json]\n"
                     "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n"
-                    "       aiverse_modelview --scene-preview templates/showcase [--scene-start scenes/motionweave-global]\n");
+                    "       aiverse_modelview --scene-preview templates/showcase [--scene-start scenes/motionweave-global]\n"
+                    "       aiverse_modelview face.glb --facial-rig project/facial-rigs/face.json [--face jawOpen=0.8] [--face-vector lookAt=1,2,3]\n");
         return 1;
     }
     platform::AppConfig cfg;

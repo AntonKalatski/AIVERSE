@@ -1,6 +1,7 @@
 // MotionWeave Stage 180 — native semantic facial control + existing IK.
 // All checks execute in Release (NDEBUG) via AlwaysCheck.
 #include <aiverselib/animation/FacialControlRig.h>
+#include "apps/modelview/NativeFacialPreview.h"
 #include <aiverselib/animation/EcsAnimationSystems.h>
 #include <aiverselib/animation/MotionWeaveScheduler.h>
 #include "tests/AlwaysCheck.h"
@@ -151,6 +152,44 @@ void testManyChannels() {
     for(int i=0;i<52;++i)
         AIVERSE_TEST_CHECK(near(pose[0].w[i],(i%2)?0.f:1.f));
 }
+
+void testStudioFacialNativePreview() {
+    auto model=modelWithFace();
+    modelview::NativeFacialPreview preview;
+    modelview::NativeFacialPreview::Scalars scalars{
+        {"jawOpen",0.65f},{"blinkLeft",0.4f},{"gazeWeight",1.f}};
+    modelview::NativeFacialPreview::Vectors vectors{
+        {"lookAt",{2.f,1.f,3.f}}};
+    std::string error;
+    AIVERSE_TEST_CHECK(preview.configure(model,authored(),
+                                         scalars,vectors,error));
+    AIVERSE_TEST_CHECK(preview.ready());
+    render::Animator animator;
+    animator.setModel(&model);
+    render::Pose pose;
+    animator.evaluate(pose);
+    AIVERSE_TEST_CHECK(preview.apply(model,pose,.016f,error));
+    AIVERSE_TEST_CHECK(near(pose[0].w[0],.65f));
+    AIVERSE_TEST_CHECK(near(pose[0].w[1],.4f));
+    AIVERSE_TEST_CHECK(pose[1].r.w<.999f);
+    AIVERSE_TEST_CHECK(!preview.scalar("unknown",.5f));
+    AIVERSE_TEST_CHECK(!preview.scalar("jawOpen",2.f));
+    AIVERSE_TEST_CHECK(preview.scalar("jawOpen",.9f));
+    // A failed Studio edit must not replace the current validated rig.
+    Json bad=authored();
+    bad["morphs"][size_t(0)].set("target",Json::string("missing"));
+    AIVERSE_TEST_CHECK(!preview.configure(model,bad,scalars,vectors,error));
+    AIVERSE_TEST_CHECK(preview.ready());
+    animator.evaluate(pose);
+    AIVERSE_TEST_CHECK(preview.apply(model,pose,.25f,error));
+    AIVERSE_TEST_CHECK(pose[0].w[0]>.65f);
+    // True model reimport invalidates the borrowed compiled rig.
+    model.meshes[0].morphTargetNames[0]="renamed";
+    animator.evaluate(pose);
+    AIVERSE_TEST_CHECK(!preview.apply(model,pose,.016f,error));
+    AIVERSE_TEST_CHECK(!error.empty());
+}
+
 void testEcsComposition() {
     auto model=modelWithFace();
     auto faceParams=controls();
@@ -200,5 +239,6 @@ int main() {
     testCompiledRig();
     testBadDefinitions();
     testManyChannels();
+    testStudioFacialNativePreview();
     testEcsComposition();
 }
