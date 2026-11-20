@@ -104,7 +104,7 @@ bool NativeScenePreview::registerVisuals(const std::string& text,
                 throw std::invalid_argument("visual prefab clip must be text");
             const std::string modelPath=entry["model"].str();
             const std::string clipName=entry.getStr("clip");
-            const auto fresh=[this,key,modelPath](
+            const auto fresh=[this,key,modelPath,clipName](
                 const scene::SceneObjectAsset&,
                 render::ModelAssetProvider& provider,gfx::Device& device,
                 std::optional<view::MotionWeaveSceneGameHost::Object>& out,
@@ -113,6 +113,18 @@ bool NativeScenePreview::registerVisuals(const std::string& text,
                 if(!model) {
                     reason="native Model load failed: "+modelPath;
                     return false;
+                }
+                if(!clipName.empty()) {
+                    const bool found=std::any_of(
+                        model->clips.begin(),model->clips.end(),
+                        [&clipName](const auto& clip) {
+                            return clip.name==clipName;
+                        });
+                    if(!found) {
+                        reason="authored clip '"+clipName+
+                               "' not found in native model "+modelPath;
+                        return false;
+                    }
                 }
                 // A newly created provider may reuse a retired Model*
                 // address. Invalidate any stale publication before the
