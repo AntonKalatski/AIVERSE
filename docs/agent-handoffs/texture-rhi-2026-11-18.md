@@ -12745,3 +12745,11 @@ plus 136 preserved bilinear probes PASS (7.28 s) through the unified runner,
 Debug build entirely on KINGSTON. Runtime/API/save formats unchanged.
 [Exact commands, limitations and next step](texture-rhi-indexed-metal-2026-11-20.md).
 Prior focused Linux/GLES/Vulkan CI remains queued; no CI PASS claimed.
+
+## 2026-11-20 — final GPU gates exposed indexed ICB admission defect
+
+Code `a6d32f7b8eb02302eb0242ba656c1c7b52defe8b`: 1330 low-level GPU
+color probes and six shader/packer tests pass. New indexed Renderer3D
+fixture fails because unsupported ICB submission is attempted every frame;
+pixels still match direct rendering. Full build is in progress on KINGSTON.
+[Failure evidence and exact next action](texture-rhi-final-gates-2026-11-20.md).
