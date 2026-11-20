@@ -68,4 +68,24 @@ int main() {
     AIVERSE_TEST_CHECK(stale);
     clusters.rebuild(registry,cfg);
     AIVERSE_TEST_CHECK(packLumaSources(registry,clusters).sourceRevision==registry.revision());
+
+    // Camera-following cluster scroll must publish a NEW CSR generation even
+    // when the authored stable light registry is unchanged. Otherwise the
+    // Metal compute pass could sample stale candidate lists or miss lights.
+    const auto beforeCameraMove=packLumaSources(registry,clusters);
+    const auto sourceRevision=registry.revision();
+    const auto clusterGeneration=clusters.buildGeneration();
+    AIVERSE_TEST_CHECK(beforeCameraMove.clusterGeneration==clusterGeneration);
+    AIVERSE_TEST_CHECK(!beforeCameraMove.candidateIndices.empty());
+    cfg.origin={100,0,0}; // the same sources no longer intersect this view
+    clusters.rebuild(registry,cfg);
+    const auto afterCameraMove=packLumaSources(registry,clusters);
+    AIVERSE_TEST_CHECK(registry.revision()==sourceRevision);
+    AIVERSE_TEST_CHECK(afterCameraMove.sourceRevision==sourceRevision);
+    AIVERSE_TEST_CHECK(afterCameraMove.clusterGeneration==clusterGeneration+1);
+    AIVERSE_TEST_CHECK(afterCameraMove.uniforms.origin.x==100.0f);
+    AIVERSE_TEST_CHECK(afterCameraMove.candidateIndices.empty());
+    AIVERSE_TEST_CHECK(afterCameraMove.cells.size()==1);
+    AIVERSE_TEST_CHECK(afterCameraMove.cells[0].count==0);
+    AIVERSE_TEST_CHECK(afterCameraMove.cells[0].total==0);
 }
