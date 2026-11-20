@@ -785,9 +785,12 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     if(!instanceToken || !sourceInstances || sourceInstances>16)return false;
     // Pass-specific GPU selection cannot be reused for shadows or
     // reflection cameras. Preserve all existing Legacy/portable passes.
-    if(renderer.lights.reflectionsWanted())return false;
+    if(renderer.lights.reflectionsWanted() &&
+       !strataVulkanGpuReflectionParityVerified_)return false;
     const bool sunShadow=renderer.shadowQuality()!=ShadowQuality::Off &&
                          renderer.shadowMapSize()>0;
+    if(sunShadow && !strataVulkanGpuSunShadowParityVerified_)
+        return false;
 
     for(const auto& [key,model]:models_){
         if(model.get()!=instance.model)continue;
@@ -899,6 +902,14 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             packet.sourceMesh=stagedPrimitive.mesh;
             packet.sourcePrimitive=stagedPrimitive.primitive;
             packet.expectedMaterial=entry.contract.expectedMaterial;
+            packet.metadata=metadata;
+            packet.selector=strataGpuCulling_.get();
+            packet.instanceToken=instanceToken;
+            packet.errorThresholdPixels=entry.view.errorThresholdPixels;
+            packet.allowSpotShadow=
+                strataVulkanGpuSpotShadowParityVerified_;
+            packet.allowReflection=
+                strataVulkanGpuReflectionParityVerified_;
             packet.exclusive=true;
             if(entry.pass==GpuIndexedPass::SunShadow)
                 shadowPackets.push_back(packet);
