@@ -103,7 +103,10 @@ private:
 class AnimationGraphInstance {
 public:
     AnimationGraphInstance() = default;
-    AnimationGraphInstance(const AnimationGraphInstance&) = delete;
+    // Independent mutable playback state for owner-thread frame preparation.
+    // Shares immutable graph/model/environment assets; never a hot-reload API.
+    // Host callbacks must remain read-only outside their supplied state spans.
+    std::unique_ptr<AnimationGraphInstance> cloneForPreparation() const;
     AnimationGraphInstance& operator=(const AnimationGraphInstance&) = delete;
     AnimationGraphInstance(AnimationGraphInstance&&) = default;
     AnimationGraphInstance& operator=(AnimationGraphInstance&&) = default;
@@ -171,6 +174,7 @@ public:
     bool healthy() const { return healthy_; }
     const std::string& error() const { return error_; }
 private:
+    AnimationGraphInstance(const AnimationGraphInstance&) = default;
     void evaluateCurrent(Pose& result);
     std::shared_ptr<const AnimationGraph> graph_;
     AnimationParameters parameters_;
