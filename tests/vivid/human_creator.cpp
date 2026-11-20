@@ -4,6 +4,8 @@
 #include "engine/character/vivid/DeformedSculptPick.h"
 #include "engine/character/vivid/DeformedSculptWorkspace.h"
 #include "engine/character/vivid/SculptGpuPickContract.h"
+#include "engine/character/vivid/SculptGpuPickShaders.h"
+#include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
@@ -226,6 +228,70 @@ void test() {
         req(!resolveSculptGpuTriangle(
             model,surface,0u,{0.42f,0.05f,4.f},{0,0,-1},3,uneditable).hit,
             "GPU ID lookup returned a generated LOD vertex as authorable");
+    }
+    // 7AN raster preparation: each triangle receives one flat GPU ID,
+    // while an uneditable LOD triangle still writes depth with ZERO ID.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(5);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.vertices[3]=model.vertices[0]; // seam clone of original 0
+        model.vertices[4]=model.vertices[0]; // generated LOD, no author ID
+        model.indices={3,1,2,4,1,2};
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;primitive.indexCount=6;
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(std::move(mesh));
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        const std::array<mat4,1> nodeWorld{{mat4::translate({0,0,2})}};
+        SkinnedWeightSurface surface;
+        req(prepareSkinnedWeightSurface(model,0,nodeWorld,surface),
+            "GPU ID fixture failed to prepare visible mesh surface");
+        const std::array<std::uint32_t,5> authorMap{{
+            0u,1u,2u,0u,std::numeric_limits<std::uint32_t>::max()
+        }};
+        std::vector<SculptGpuIdVertex> expanded;
+        req(buildSculptGpuIdVertices(
+                model,surface,3u,authorMap,expanded) &&
+            expanded.size()==6u &&
+            std::fabs(expanded[0].world.z-2.f)<1.e-5f,
+            "GPU ID triangle stream did not preserve deformed world positions");
+        for(int i=0;i<3;++i) {
+            std::array<std::uint8_t,4> id{};
+            for(int k=0;k<4;++k)
+                id[std::size_t(k)]=expanded[std::size_t(i)].rgba[k];
+            std::uint32_t ordinal=999u;
+            req(unpackSculptTriangleId(id,ordinal) && ordinal==0u,
+                "first GPU triangle must have one constant flat ID");
+        }
+        for(int i=3;i<6;++i)
+            req(expanded[std::size_t(i)].rgba[0]==0 &&
+                expanded[std::size_t(i)].rgba[1]==0 &&
+                expanded[std::size_t(i)].rgba[2]==0 &&
+                expanded[std::size_t(i)].rgba[3]==0,
+                "generated LOD triangle must occlude without selectable ID");
+        const auto original=expanded;
+        auto bad=model;
+        bad.indices[0]=999u;
+        req(!buildSculptGpuIdVertices(
+                bad,surface,3u,authorMap,expanded) &&
+            expanded.size()==original.size() &&
+            expanded[0].rgba[0]==original[0].rgba[0],
+            "invalid GPU ID triangle source replaced last-good stream");
+        const auto has=[](const char* src,std::string_view term) {
+            return std::string_view(src).find(term)!=std::string_view::npos;
+        };
+        req(sizeof(SculptGpuIdVertex)==16u &&
+            has(kSculptGpuIdVS,"flat out vec4 v_id") &&
+            has(kSculptGpuIdFS,"outColor=v_id") &&
+            has(kSculptGpuIdMSL,"identifier [[flat]]") &&
+            has(kSculptGpuIdMSL,"return input.identifier"),
+            "GPU ID GLSL/MSL shader ABI/source parity contract missing");
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
