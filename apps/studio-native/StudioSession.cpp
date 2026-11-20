@@ -6,6 +6,7 @@
 #include "apps/studio-native/StudioMaterialValidation.h"
 #include "apps/studio-native/StudioShaderGraphValidation.h"
 #include "apps/studio-native/StudioShaderGraphDraft.h"
+#include "apps/studio-native/StudioFacialRigDocument.h"
 #include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
@@ -163,6 +164,39 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.facialRigList" ||
+                   method == "studio.facialRigGet" ||
+                   method == "studio.facialRigValidate" ||
+                   method == "studio.facialRigSave") {
+            // Project-bound authoring only. Native side is the sole owner of
+            // filesystem access; browser controls pass a bounded simple name,
+            // never arbitrary source/destination paths.
+            if(method!="studio.facialRigValidate" && ws_.project.dir.empty())
+                throw std::runtime_error("Open a project first");
+            if(method=="studio.facialRigList") {
+                reply.set("result",listStudioFacialRigs(ws_.project.dir));
+            } else if(method=="studio.facialRigGet") {
+                const std::string name=params.getStr("name");
+                reply.set("result",readStudioFacialRig(ws_.project.dir,name));
+            } else {
+                const Json& doc=params["rig"];
+                std::string reason;
+                if(!validStudioFacialRigDraft(doc,&reason))
+                    throw std::runtime_error(reason);
+                if(method=="studio.facialRigValidate") {
+                    Json validated=Json::object();
+                    validated.set("valid",Json::fromBool(true));
+                    validated.set("morphs",Json::number(int64_t(doc["morphs"].size())));
+                    validated.set("ikUnits",Json::number(int64_t(doc["rig"].size())));
+                    // This is schema validation only, not model channel or
+                    // native MotionWeave compiler verification.
+                    validated.set("runtimeVerified",Json::fromBool(false));
+                    reply.set("result",std::move(validated));
+                } else {
+                    const std::string name=params.getStr("name");
+                    reply.set("result",saveStudioFacialRig(ws_.project.dir,name,doc));
+                }
+            }
         } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet" ||
                    method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave" ||
                    method == "studio.shaderGraphCatalog") {
