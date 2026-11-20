@@ -807,6 +807,7 @@ void RtsShoreView::buildUnpublished(gfx::Device& dev, const std::function<float(
 struct RtsShoreView::PreparedRebuild {
     gfx::Device* device=nullptr;
     std::unique_ptr<RtsShoreView> staged;
+    bool committed=false;
     ~PreparedRebuild() noexcept {
         if(!device || !staged)return;
         // These replacements never reached a submitted camera. The borrowed
@@ -843,7 +844,8 @@ std::shared_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
 }
 
 void RtsShoreView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
-    if(!candidate)return;
+    if(!candidate || candidate->committed)return;
+    candidate->committed=true;
     RtsShoreView& staged=*candidate->staged;
     release(*dev_);
     for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
