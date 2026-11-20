@@ -40,3 +40,21 @@ Executed validation on the final source tree (commit performed after testing):
 
 Risk: non-temporal Medium/High filtering grows from 12/24 to 32/64 bilinear comparisons; thin alpha foliage and extreme softness may still alias. Low cost is unchanged. The user editor binary has NOT been rebuilt/replaced.
 Next: rebuild the user's editor on this branch, compare the original tree scene stationary and moving with HDR/TAA off/on, measure target GPU cost; address the separate 17-sampler terrain TAA fixture blocker before claiming temporal end-to-end coverage.
+
+## Stage 3: softer importance-sampled filter (2026-11-20)
+
+Code: 4450a3d41005cd755f20a9e5873f7c1f5eb923a0 on feature/studio-html5. Paths: engine/render/Shaders.h, tests/render/temporal-pcss.md.
+
+User still saw bands in Stage 2. Replace its uniformly distributed disk with importance sampling of density proportional to 1-r², 128/64 equal-contribution taps High/Medium. Table generation is documented in temporal-pcss.md; no per-pixel randomization. This reduces the maximum High tap contribution from roughly 3/64 to 1/128, and broadens the effective kernel relative to the old squared taper. Original PCSS radius, blocker search, receiver correction, Low and temporal paths are retained. Public API, GPU uniform layout and saves unchanged.
+
+Validation on final code tree before commit:
+- python3 tests/render/check_model_lod_shaders.py: PASS 32 linked GLSL/GLES variants.
+- cmake --build /private/tmp/aiverse-shadow-noise-20261120 --target aiverse_hdr_scene aiverse_hdr_gl -j 6: PASS; importance-build.log, no compiler warning/error matches.
+- Six Metal/GL contact capture runs exit 0, files importance-captures/contact-*.ppm and importance-*.log in that build directory.
+- python3 tests/render/verify_contact_shadows.py /private/tmp/aiverse-shadow-noise-20261120/importance-captures: PASS. Metal near/middle/far 3/7/14 (Stage 2: 3/6/12), GL 3/8/14, Medium 3/7/13, fixed 21/20/19.
+- Visually inspected importance-captures/shadow-edge-zoom.png at the same crop and scale as Stage 2: pronounced sample steps no longer visible, smoother/wider edge. This is a synthetic wall fixture, not original foliage.
+- ./run-tests.sh --no-build --build-dir /private/tmp/aiverse-shadow-noise-20261120 --filter hdr_policy: PASS 1/1; report test-reports/20261120-135151-11112/summary.txt (actual regex was ^hdr_policy$).
+- Direct byte comparison: Low capture identical to Stage 2. GLSL/MSL 128-point table values identical. git diff --check PASS.
+
+Limits: 2x non-temporal filter lookups versus Stage 2, up to 128/64 instead of 64/32, no GPU performance claim. 8-bit output and finite sampling can still band at extreme contrast/zoom; no universal artifact-free claim. Original foliage, full editor, full test suite, Vulkan/Android/WebGL GPU NOT RUN. Earlier independent 17-sampler TAA terrain compile blocker remains. No push/CI dispatched; CI URL/status N/A.
+Next: rebuild editor and inspect original foliage at native display scale with camera motion, compare GPU cost on target hardware; if cost or extreme penumbrae remain unacceptable, implement a separate filtered shadow-mask/history path rather than continuing to multiply per-fragment PCF taps.
