@@ -42,7 +42,9 @@ size_t RtsView::pendingModelRetirements() const {
            (pendingRoadRecovery_ ? pendingRoadRecovery_->pendingGpuRetirements() : 0)+
            (pendingShoreRecovery_ ? pendingShoreRecovery_->pendingGpuRetirements() : 0)+
            geometryScene_.pendingGpuRetirements()+
-           overlays_.pendingGpuRetirements();
+           overlays_.pendingGpuRetirements()+
+           terrain_.pendingMeshGpuRetirements()+
+           groundFx_.pendingMeshGpuRetirements();
 }
 bool RtsView::collectRetiredModels() {
     if(!dev_)return false;
@@ -56,7 +58,10 @@ bool RtsView::collectRetiredModels() {
     if(pendingShoreRecovery_)pendingShoreRecovery_->collectRetired(*dev_);
     const bool geometry=geometryScene_.collectRetired(*dev_);
     const bool overlays=overlays_.collectRetiredGpuResources(*dev_);
-    return models && images && roads && shores && geometry && overlays;
+    const bool terrain=terrain_.collectRetiredMeshBuffers(*dev_);
+    const bool ground=groundFx_.collectRetiredMeshBuffers(*dev_);
+    return models && images && roads && shores && geometry && overlays &&
+           terrain && ground;
 }
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
