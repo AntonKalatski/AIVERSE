@@ -13,6 +13,8 @@
 // (built-in overlays are never capped, so games without the block look exactly as before).
 #pragma once
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -56,6 +58,11 @@ enum class OverlayQuality : uint8_t { Low, Medium, High };
 
 class RtsOverlays {
 public:
+    class PreparedFrame;
+    // Capture before drawWorld; discard pending renderer queues before rollback.
+    // Candidate CPU state and a replacement VB publish only at commit.
+    std::shared_ptr<PreparedFrame> beginFramePreparation();
+    void commitFramePreparation(const std::shared_ptr<PreparedFrame>&) noexcept;
     // Definitions (no GPU: tests and tools evaluate overlays without a device).
     void init(const Rules& rules, const Json& rulesOverlays, const Json& gameOverlays, const std::string& contentBase);
     // Publish a CPU-prepared overlay definition snapshot without reparsing it
@@ -191,6 +198,8 @@ private:
     OverlayContext ctx_;
     OverlayQuality quality_ = OverlayQuality::High;
     bool qualityForced_ = false;
+
+    bool preparingFrame_ = false, frameReplacedBuffer_ = false;
 
     // frame state (prepare)
     const RtsScene* scene_ = nullptr;

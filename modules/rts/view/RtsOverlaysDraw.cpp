@@ -29,6 +29,97 @@ RtsModule* moduleOf(Simulation* sim) { return sim ? dynamic_cast<RtsModule*>(&si
 ImU32 imCol(float4 c) { return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w)); }
 } // namespace
 
+class RtsOverlays::PreparedFrame final {
+    friend class RtsOverlays;
+    RtsOverlays* owner=nullptr;
+    gfx::BufferHandle previousBuffer;
+    size_t previousCapacity=0;
+    std::function<void()> restore;
+    bool committed=false;
+public:
+    ~PreparedFrame() noexcept {
+        if(committed || !owner)return;
+        // Only private handles: no renderer submission may have occurred yet.
+        if(owner->vb_!=previousBuffer && owner->vb_.valid()) {
+            try {owner->dev_->destroyBuffer(owner->vb_);}catch(...) {}
+        }
+        owner->vb_=previousBuffer;owner->vbBytes_=previousCapacity;
+        restore();owner->preparingFrame_=false;
+    }
+};
+std::shared_ptr<RtsOverlays::PreparedFrame> RtsOverlays::beginFramePreparation() {
+    if(preparingFrame_)throw std::logic_error("nested overlay frame preparation");
+    auto frame=std::make_shared<PreparedFrame>();
+    frame->restore=[this,
+        state=state_,
+        quality=quality_,
+        scene=scene_,
+        grid=grid_,
+        vision=vision_,
+        view=view_,
+        r=r_,
+        time=time_,
+        lastPreview=lastPreview_,
+        zoom=zoom_,
+        lift=lift_,
+        camTarget=camTarget_,
+        camRight=camRight_,
+        camUp=camUp_,
+        selected=selected_,
+        hovered=hovered_,
+        bases=bases_,
+        lastTick=lastTick_,
+        popups=popups_,
+        carry=carry_,
+        insts=insts_,
+        pathPts=pathPts_,
+        tmpPts=tmpPts_,
+        text=text_,
+        canvasWarned=canvasWarned_,
+        marks=marks_,
+        buckets=buckets_,
+        upload=upload_]() mutable noexcept {
+        using std::swap;
+        swap(state_,state);
+        swap(quality_,quality);
+        swap(scene_,scene);
+        swap(grid_,grid);
+        swap(vision_,vision);
+        swap(view_,view);
+        swap(r_,r);
+        swap(time_,time);
+        swap(lastPreview_,lastPreview);
+        swap(zoom_,zoom);
+        swap(lift_,lift);
+        swap(camTarget_,camTarget);
+        swap(camRight_,camRight);
+        swap(camUp_,camUp);
+        swap(selected_,selected);
+        swap(hovered_,hovered);
+        swap(bases_,bases);
+        swap(lastTick_,lastTick);
+        swap(popups_,popups);
+        swap(carry_,carry);
+        swap(insts_,insts);
+        swap(pathPts_,pathPts);
+        swap(tmpPts_,tmpPts);
+        swap(text_,text);
+        swap(canvasWarned_,canvasWarned);
+        swap(marks_,marks);
+        swap(buckets_,buckets);
+        swap(upload_,upload);
+    };
+    frame->owner=this;frame->previousBuffer=vb_;frame->previousCapacity=vbBytes_;
+    preparingFrame_=true;frameReplacedBuffer_=false;
+    return frame;
+}
+void RtsOverlays::commitFramePreparation(const std::shared_ptr<PreparedFrame>& frame) noexcept {
+    if(!frame || frame->owner!=this || frame->committed)return;
+    if(vb_!=frame->previousBuffer)
+        retiredBuffers_.retireBuffer(*dev_,frame->previousBuffer);
+    frame->committed=true;preparingFrame_=false;
+}
+
 float RtsOverlays::radiusFor(const OverlayDef& d, const Inst& in) const {
     const UnitType* t = in.type < rules_->types.size() ? &rules_->types[in.type] : nullptr;
     Entity e = in.obj >= 0 && scene_ ? scene_->objects[size_t(in.obj)].entity : kNullEntity;
@@ -627,6 +718,8 @@ void RtsOverlays::flush(Renderer3D& r) {
     for (auto& b : buckets_) upload_.insert(upload_.end(), b.verts.begin(), b.verts.end());
     const size_t bytes = upload_.size() * sizeof(BatchVertex);
     if (!vb_.valid() || bytes > vbBytes_) {
+        if(preparingFrame_ && frameReplacedBuffer_)
+            throw std::logic_error("overlay frame prepared more than once");
         if(bytes>SIZE_MAX/2)
             throw std::overflow_error("RtsOverlays: vertex upload size overflow");
         const size_t capacity=std::max<size_t>(bytes*2,64*1024);
@@ -641,8 +734,9 @@ void RtsOverlays::flush(Renderer3D& r) {
             throw std::runtime_error("RtsOverlays: vertex buffer allocation failed");
         // Safe inside a frame: ownership is deferred to a frame-boundary GPU
         // token rather than destroying memory referenced by prior cameras.
-        retiredBuffers_.retireBuffer(*dev_,vb_);
+        if(!preparingFrame_)retiredBuffers_.retireBuffer(*dev_,vb_);
         vb_=replacement;
+        if(preparingFrame_)frameReplacedBuffer_=true;
         vbBytes_=capacity;
     }
     // Capture each submitted camera's data and RHI handles. A queued

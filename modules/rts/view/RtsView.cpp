@@ -1023,6 +1023,7 @@ public:
         for(const auto& [id,state]:view.anims_)
             animations.emplace(id,state.cloneForPreparation());
         // Every fallible copy above finishes before any published owner moves.
+        overlays=v.overlays_.beginFramePreparation();
         swapOwners();
     }
     ~PreparedAnimationLease() noexcept {
@@ -1036,7 +1037,7 @@ public:
         v.lastTime_=lastTime;v.lastTick_=lastTick;v.frame_=frame;
         v.viewProj_=viewProj;v.camPos_=camPos;v.fx_=fx;
     }
-    void commit() noexcept {committed=true;}
+    void commit() noexcept {v.overlays_.commitFramePreparation(overlays);committed=true;}
 private:
     void swapOwners() noexcept {
         v.anims_.swap(animations);v.genericView_.swap(generic);
@@ -1056,6 +1057,7 @@ private:
     decltype(RtsView::bars_) bars;
     decltype(RtsView::shadowDraws_) shadows,ground;
     RtsLights lights;
+    std::shared_ptr<RtsOverlays::PreparedFrame> overlays;
     render::LightSystem::PreparedFrame rendererLights;
     render::Lighting lighting;
     double lastTime;uint32_t lastTick;uint64_t frame;

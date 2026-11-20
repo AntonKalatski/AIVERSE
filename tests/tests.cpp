@@ -5724,8 +5724,17 @@ TEST(overlay_conditions_on_sim_state) {
     // events become popups: a hit on the own unit, filtered by the owner of the entity hit
     scene.events.push_back({uint16_t(game::kEvHit), 2, o.entity, en.entity, Fixed::fromInt(7).raw, sim->world().get<Transform>(o.entity).pos});
     scene.tick += 1;
+    {
+        auto candidate=ov.beginFramePreparation();
+        ov.prepare(scene, 1.1, &gs.vision[1], gs.grid, 30);
+        CHECK(ov.popupCount() == 1);
+    }
+    CHECK(ov.popupCount() == 0); // late-owner failure restored event cursor too
+    auto candidate=ov.beginFramePreparation();
     ov.prepare(scene, 1.1, &gs.vision[1], gs.grid, 30);
     CHECK(ov.popupCount() == 1);
+    ov.commitFramePreparation(candidate);
+    candidate.reset();
     ov.prepare(scene, 1.2, &gs.vision[1], gs.grid, 30);   // same tick: not spawned twice
     CHECK(ov.popupCount() == 1);
     ov.prepare(scene, 5.0, &gs.vision[1], gs.grid, 30);   // expired after its lifetime
