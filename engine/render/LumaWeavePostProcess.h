@@ -300,14 +300,18 @@ public:
         // Metal compositor must NEVER sample the source depth texture while
         // it is simultaneously attached as a depth target. Use a separate,
         // throwaway depth attachment with compatible dimensions.
-        const bool depthReady=(composeDepth_.valid() &&
-            depthWidth_==w && depthHeight_==h) ||
-            makeComposeDepth(w,h);
-        frame_.eligible=depthReady && enabled_ && quality_!=LumaWeaveQuality::Off &&
-                        ready() && downstream_.linearScene() &&
-                        scene_.colorTarget.valid() && scene_.depthTarget.valid() &&
-                        w>0 && h>0 && uint32_t(w)<=16384 && uint32_t(h)<=16384 &&
-                        sourcesPublished_ && geometryPublished_;
+        // Do not allocate an HDR compositor depth attachment for a disabled,
+        // unsupported or source-incomplete view. In particular a GLES/mobile
+        // fallback may call scenePass every frame while Metal Luma is off.
+        const bool eligibleInputs=enabled_ && quality_!=LumaWeaveQuality::Off &&
+                                  ready() && downstream_.linearScene() &&
+                                  scene_.colorTarget.valid() && scene_.depthTarget.valid() &&
+                                  w>0 && h>0 && uint32_t(w)<=16384 && uint32_t(h)<=16384 &&
+                                  sourcesPublished_ && geometryPublished_;
+        const bool depthReady=eligibleInputs &&
+            ((composeDepth_.valid() && depthWidth_==w && depthHeight_==h) ||
+             makeComposeDepth(w,h));
+        frame_.eligible=depthReady;
         return scene_;
     }
 
