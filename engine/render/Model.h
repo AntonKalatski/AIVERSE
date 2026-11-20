@@ -130,7 +130,7 @@ struct ModelLod {
     // Authored visual LOD mesh-local morph slot -> source node morph slot.
     // Compiled by an importer from exact semantic channel names; empty only
     // for morph-free LODs. Never infer channel equivalence by index.
-    std::vector<int> morphSourceForTarget;
+    std::vector<int> morphSourceForTarget{};
 };
 
 struct MeshDef {
