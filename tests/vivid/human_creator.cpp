@@ -529,6 +529,7 @@ void test() {
         Renderer3D::ModelViewPrimitive selected;
         selected.model=&model;
         selected.nodeIndex=0;
+        selected.drawInvocation=1;
         selected.meshIndex=0;
         selected.primitiveIndex=0;
         selected.firstIndex=0;
@@ -611,6 +612,15 @@ void test() {
             "multiple node owners of same mesh must fail closed");
         model.nodes[1].mesh=1;
         view.primitives.pop_back();
+        view.primitives.pop_back();
+        // Renderer3D can draw the same Model twice with identical internal
+        // node indices but a different world transform. Such instances must
+        // not reuse a single morphed/skinned CPU source surface.
+        view.primitives.push_back(view.primitives[0]);
+        view.primitives.back().drawInvocation=2;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::MultipleMeshOwners,
+            "same-mesh separate renderer draw submissions were conflated");
         view.primitives.pop_back();
         req(check.reason==SculptGpuRendererViewReason::EligibleCpuSnapshot,
             "original valid renderer source snapshot was mutated");
