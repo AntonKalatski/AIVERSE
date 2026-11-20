@@ -1,10 +1,12 @@
 #include "RtsGroundFx.h"
+#include "../../../engine/render/NativeMeshBatch.h"
 #include "../../../engine/data/JsonCompose.h"
 #include "RtsGroundFxShaders.h"
 #include "RtsView.h"
 #include "../RtsModule.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -299,8 +301,13 @@ void RtsGroundFx::freeMesh(Mesh& m) {
 
 void RtsGroundFx::setMesh(Mesh& m, const MeshBuilder& b) {
     if(!dev_)throw std::logic_error("RtsGroundFx mesh: unbound GPU device");
-    // Keep the prior submitted mesh intact if either new buffer fails.
-    // MeshBuilder::upload cleans its private, unpublished handles on failure.
+    // A multi-layer/chunk draw transaction prepares every replacement before
+    // publishing any of them. Outside a batch retain the legacy single-mesh
+    // transactional path for compatibility with other GroundFX owners.
+    if(activeMeshBatch_) {
+        activeMeshBatch_->stage(m,b);
+        return;
+    }
     Mesh replacement{};
     if(!b.empty())replacement=b.upload(*dev_);
     freeMesh(m);
