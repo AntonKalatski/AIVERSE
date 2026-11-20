@@ -18,6 +18,16 @@ Json prop(const char* key, const char* label, const char* type, Json value, bool
     r.set("editable", Json::fromBool(editable));
     return r;
 }
+Json numericProp(const char* key, const char* label, Json value, bool integer = false) {
+    Json r = prop(key, label, "number", std::move(value));
+    const bool owner = std::string(key) == "owner";
+    r.set("min", Json::number(owner ? int64_t(-1) : int64_t(-1000000)));
+    r.set("max", Json::number(owner ? int64_t(10000) : int64_t(1000000)));
+    r.set("step", Json::number(owner ? int64_t(1) : int64_t(0))); // overwritten below for floating fields
+    if (!owner) r.set("step", Json::number(0.1, 3));
+    if (integer) r.set("integer", Json::fromBool(true));
+    return r;
+}
 std::string nodeId(const editor::DocumentEntityRef& ref) { return studioDocumentId(ref); }
 }
 StudioSession::StudioSession(const std::string& engineRoot, const std::string& project) {
@@ -74,15 +84,15 @@ Json StudioSession::snapshot() const {
             if (node.ref.source == editor::DocumentEntityRef::Source::MapEntity) {
                 const auto& e = ws_.map.data.entities.at(node.ref.index);
                 fields.push(prop("type", "Type", "text", str(e.type)));
-                fields.push(prop("x", "Position X", "number", Json::number(double(e.x), 4)));
-                fields.push(prop("z", "Position Z", "number", Json::number(double(e.z), 4)));
-                fields.push(prop("owner", "Owner", "number", num(int64_t(e.owner))));
+                fields.push(numericProp("x", "Position X", Json::number(double(e.x), 4)));
+                fields.push(numericProp("z", "Position Z", Json::number(double(e.z), 4)));
+                fields.push(numericProp("owner", "Owner", num(int64_t(e.owner)), true));
             } else if (node.hasPosition) {
                 // Show authoritative collider/spawn coordinates, but don't pretend
                 // unsupported authoring operations are writable yet.
-                fields.push(prop("x", "Position X", "number", Json::number(node.position.x, 3)));
-                fields.push(prop("y", "Position Y", "number", Json::number(node.position.y, 3)));
-                fields.push(prop("z", "Position Z", "number", Json::number(node.position.z, 3)));
+                fields.push(numericProp("x", "Position X", Json::number(node.position.x, 3)));
+                fields.push(numericProp("y", "Position Y", Json::number(node.position.y, 3)));
+                fields.push(numericProp("z", "Position Z", Json::number(node.position.z, 3)));
             }
             break;
         }

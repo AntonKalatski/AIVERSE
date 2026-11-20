@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1",
-    "test:dock": "node --experimental-strip-types --test tests/dock-layout.mjs tests/nested-dock.mjs"
+    "test:dock": "node --experimental-strip-types --test tests/dock-layout.mjs tests/nested-dock.mjs",
+    "test:fields": "node --experimental-strip-types --test tests/propertyLogic.test.mjs",
+    "test:web": "npm run test:dock && npm run test:fields"
   },
   "dependencies": {
     "react": "^19.2.0",

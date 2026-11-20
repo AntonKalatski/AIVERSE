@@ -1,5 +1,5 @@
-export type PropertyType = 'text' | 'number' | 'boolean';
-export interface StudioProperty { key: string; label: string; value: string | number | boolean; type: PropertyType; editable?: boolean }
+export type { PropertyType } from './propertyLogic';
+export type StudioProperty = import('./propertyLogic').FieldDescriptor;
 export interface StudioEntity { id: string; name: string; kind: string; parentId?: string; visible?: boolean }
 export interface StudioLog { level: 'info' | 'warning' | 'error'; text: string; time: string }
 export interface StudioAsset { path: string; bytes: number }
