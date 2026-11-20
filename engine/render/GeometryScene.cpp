@@ -809,8 +809,10 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     gate.rendererOwnsSubmission=true;
     gate.sourceResident=true;
     gate.sourceAndMaterialSafe=true;
-    if(strata::chooseExclusiveRenderRoute(gate)!=strata::RenderRoute::Strata)
-        return false;
+    if(strata::chooseExclusiveRenderRoute(gate)!=strata::RenderRoute::Strata ||
+       (strataLodHysteresisFraction_>0.f &&
+        !strataGpuTemporalParityVerified_))
+        return false; // CPU/portable retains uncertified warm LOD cases
     // One GPU dispatch per primitive AND scene instance. These independent
     // packets share source materials/VB/IB but never share a U0 transform.
     // This is a bounded first production tier: too many concurrent source
