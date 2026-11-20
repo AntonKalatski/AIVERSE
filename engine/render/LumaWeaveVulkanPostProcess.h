@@ -110,7 +110,8 @@ public:
         // That is a *continuation*, not a world/view change, only when the
         // driver checked the same source, geometry, view identity and epoch.
         // On a real cut/route disable the second argument must remain false.
-        if(enabled_ && !value && !preservePendingHistory)
+        if(!value && !preservePendingHistory &&
+           (enabled_ || owner_.busy() || owner_.historyValid()))
             owner_.invalidateHistory();
         enabled_=value;
     }
