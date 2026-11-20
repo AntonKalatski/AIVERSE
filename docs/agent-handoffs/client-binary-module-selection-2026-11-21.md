@@ -205,3 +205,35 @@ Next: identify the next independent runtime import or presentation component
 with a measurable client link cost, keep legacy defaults, and verify module-off
 behavior. When Emscripten is available, measure optimized `index.wasm` and
 startup for a representative game with and without selected modules.
+
+## 2026-11-21 continuation: optional legacy model loaders
+
+Branch `feature/studio-html5`; implementation commit
+`eb0fdd672`. Affected paths: `CMakeLists.txt`, `engine/render/Model.cpp`,
+`tools/aiversebuild/main.cpp`, `docs/overview.md`. The new `legacy-models`
+selection passes `AIVERSE_LEGACY_MODELS` to packaged client builds. When OFF,
+the client excludes VOX/VXL, PLY/STL, 3DS, DAE, MDX/MDL, 3DO and W3D loader
+translation units and their dispatch entries. GLTF/GLB, OBJ, FBX (when its
+separate module is enabled), texture decoding, host conversion tools and save
+formats remain unchanged. An omitted module list keeps the historical ON
+default; a listed legacy model without a `.glb` sidecar gets an explicit
+runtime error directing conversion.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. The fixture's `--check-engine-modules` for web PASS
+with `[]` (`AIVERSE_LEGACY_MODELS=OFF`) and `["legacy-models"]` (ON). macOS
+client configure and `cmake --build /private/tmp/aiverse-client-modules-check
+--target aiverse_client -j 6` PASS with OFF and ON. The OFF executable measured
+78,663,544 bytes and had no matching `loadVox/loadPly/load3ds/loadDae/loadMdx/
+loadMdl/load3do/loadW3d` symbols; ON measured 80,898,328 bytes and included
+those symbols. The diagnostic reduction is 2,234,784 bytes. `git diff --check`
+PASS on stage paths (line-ending warnings only).
+
+The shared worktree had concurrent unrelated editor, renderer and asset-tool
+work; none was staged for this commit. This was a macOS diagnostic build, not
+an HTML5 Release measurement. Emscripten remains unavailable; Web compilation,
+wasm size/startup, Android, iOS, Windows, Linux, runtime asset smoke, and CI
+were NOT RUN (no CI URL). Next: assess other core client components for safe
+optional linkage, especially imports whose usage can be determined from
+project data; validate representative games and optimized Web size once the
+toolchain is available.
