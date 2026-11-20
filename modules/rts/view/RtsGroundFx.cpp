@@ -1036,40 +1036,81 @@ void RtsGroundFx::draw(Renderer3D& r, const RtsScene& s, double time, const std:
     if (useD_ && dig_.on) drawProgress(r, g, v, vision);
 
     if (!pipe_.valid()) return;
-    r.drawCustom([this, &r](gfx::Device& dev) {
-        dev.setPipeline(pipe_);
-        r.bindLitFrame();
-        auto drawM = [&](const Mesh& m, const Tex* tex, TextureRef builtin, float emissive, float pulse, float spec) {
-            if (!m.indexCount) return;
-            GU0 u{};
-            u.color[0] = u.color[1] = u.color[2] = u.color[3] = 1;
-            TextureRef t = tex && tex->ref.valid() ? tex->ref : builtin;
-            const bool textured = t.valid();
-            u.params[0] = textured ? 1.0f : 0.0f;
-            u.params[1] = tex ? tex->scale : 2.0f;
-            u.params[2] = time_;
-            u.params[3] = pulse;
-            u.params2[0] = emissive; u.params2[1] = spec; u.params2[2] = tex ? tex->strength : 1.0f; u.params2[3] = 1;
-            if (textured) { u.rect[0] = t.u0; u.rect[1] = t.v0; u.rect[2] = t.u1 - t.u0; u.rect[3] = t.v1 - t.v0; }
-            else { u.rect[2] = u.rect[3] = 1; }
-            if (textured && tex && !tex->ref.valid()) { u.params[1] = 1.6f; u.params2[2] = 0.55f; } // built-in noise: subtle
-            dev.setTexture(2, textured ? t.tex : white_);
-            dev.setUniforms(0, &u, sizeof u);
-            dev.setVertexBuffer(m.vb);
-            dev.setIndexBuffer(m.ib);
-            dev.drawIndexed(m.indexCount);
-        };
-        const TextureRef cobble = hi_ && road_.cobbles ? textures_.addGenerated("builtin:groundfx-cobble", 64, 64, makeNoise(64, true), false) : TextureRef{};
-        const TextureRef dirt = hi_ ? textures_.addGenerated("builtin:groundfx-dirt", 32, 32, makeNoise(32, false), false) : TextureRef{};
-        const float pulse = hi_ && terr_.pulse ? 0.35f : 0.0f;
-        for (int ci : visible_) {
-            const Chunk& c = chunks_[size_t(ci)];
-            if (useT_ && terr_.on) { drawM(c.fill, &terr_.tex, {}, 0.05f, 0, 0.05f); drawM(c.border, nullptr, {}, terr_.glow, pulse, 0.1f); }
+    // Frame-local immutable presentation packet: no callback can traverse
+    // chunks_, visible_, look settings or the TextureCache after submission.
+    // Mesh GPU handles are kept alive by NativePresentationRetirement.
+    struct Packet {
+        Mesh mesh;
+        gfx::TextureHandle texture;
+        GU0 uniforms;
+    };
+    const TextureRef cobble=hi_ && road_.cobbles ?
+        textures_.addGenerated("builtin:groundfx-cobble",64,64,makeNoise(64,true),false) : TextureRef{};
+    const TextureRef dirt=hi_ ?
+        textures_.addGenerated("builtin:groundfx-dirt",32,32,makeNoise(32,false),false) : TextureRef{};
+    const float pulse=hi_ && terr_.pulse ? 0.35f : 0.0f;
+    std::vector<Packet> packets;
+    packets.reserve(visible_.size()*6+1);
+    const auto append=[&](const Mesh& mesh,const Tex* tex,TextureRef builtin,
+                          float emissive,float wave,float spec) {
+        if(!mesh.indexCount)return;
+        Packet p{};
+        p.mesh=mesh;
+        const TextureRef t=tex && tex->ref.valid()?tex->ref:builtin;
+        const bool textured=t.valid();
+        GU0& u=p.uniforms;
+        u.color[0]=u.color[1]=u.color[2]=u.color[3]=1;
+        u.params[0]=textured?1.0f:0.0f;
+        u.params[1]=tex?tex->scale:2.0f;
+        u.params[2]=time_;
+        u.params[3]=wave;
+        u.params2[0]=emissive;
+        u.params2[1]=spec;
+        u.params2[2]=tex?tex->strength:1.0f;
+        u.params2[3]=1;
+        if(textured) {
+            u.rect[0]=t.u0;u.rect[1]=t.v0;
+            u.rect[2]=t.u1-t.u0;u.rect[3]=t.v1-t.v0;
+        } else {
+            u.rect[2]=u.rect[3]=1;
         }
-        for (int ci : visible_) if (useC_ && conc_.on) drawM(chunks_[size_t(ci)].concrete, &conc_.tex, dirt, 0.0f, 0, 0.12f);
-        for (int ci : visible_) if (useR_ && road_.on) drawM(chunks_[size_t(ci)].road, &road_.tex, cobble, 0.0f, 0, 0.08f);
-        if (lane_.on) drawM(lanes_, &lane_.tex, dirt, 0.0f, 0, 0.05f);
-        for (int ci : visible_) if (useD_ && dig_.on) drawM(chunks_[size_t(ci)].marks, nullptr, {}, 0.6f, hi_ ? 0.4f : 0.0f, 0.1f);
+        if(textured && tex && !tex->ref.valid()) {
+            u.params[1]=1.6f;
+            u.params2[2]=0.55f;
+        }
+        p.texture=textured?t.tex:white_;
+        packets.push_back(p);
+    };
+    // Preserve the old transparent layer order across all cameras.
+    for(int ci:visible_) {
+        const Chunk& c=chunks_[size_t(ci)];
+        if(useT_ && terr_.on) {
+            append(c.fill,&terr_.tex,{},0.05f,0,0.05f);
+            append(c.border,nullptr,{},terr_.glow,pulse,0.1f);
+        }
+    }
+    for(int ci:visible_)
+        if(useC_ && conc_.on)
+            append(chunks_[size_t(ci)].concrete,&conc_.tex,dirt,0.0f,0,0.12f);
+    for(int ci:visible_)
+        if(useR_ && road_.on)
+            append(chunks_[size_t(ci)].road,&road_.tex,cobble,0.0f,0,0.08f);
+    if(lane_.on)append(lanes_,&lane_.tex,dirt,0.0f,0,0.05f);
+    for(int ci:visible_)
+        if(useD_ && dig_.on)
+            append(chunks_[size_t(ci)].marks,nullptr,{},0.6f,
+                   hi_?0.4f:0.0f,0.1f);
+    const gfx::PipelineHandle pipeline=pipe_;
+    r.drawCustom([&r,pipeline,packets=std::move(packets)](gfx::Device& dev) {
+        dev.setPipeline(pipeline);
+        r.bindLitFrame();
+        for(const Packet& packet:packets) {
+            dev.setTexture(2,packet.texture);
+            dev.setUniforms(0,&packet.uniforms,sizeof packet.uniforms);
+            dev.setVertexBuffer(packet.mesh.vb);
+            dev.setIndexBuffer(packet.mesh.ib);
+            dev.drawIndexed(packet.mesh.indexCount);
+        }
     });
 }
 
