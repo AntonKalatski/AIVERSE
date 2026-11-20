@@ -153,6 +153,90 @@ public:
         return false;
     }
 
+    // Shared GPU residency mode. The builder gets a READ-ONLY already
+    // resident provider (or nullptr on first publication), and returns a
+    // freshly prepared candidate Owner ONLY for first publication.
+    // bool(const SceneAsset&,const ModelAssetProvider* resident,
+    //      Owner& newProvider,std::vector<Object>&,std::string&).
+    // A reused provider may be inspected but MUST NOT be invalidated,
+    // imported into or modified during another live scene's draw lifetime.
+    template<class Coordinator,class Ticket,class Build,class ActiveIds>
+    bool commitReadyShared(Coordinator& coordinator,const Ticket& ticket,
+                           const std::string& providerKey,
+                           Build&& build,ActiveIds&& activeIds,
+                           Statistics& stats,std::string* error=nullptr) {
+        if(error)error->clear();
+        Owner incoming;
+        bool staged=false;
+        bool committed=false;
+        try {
+            if(!ticket.valid() || providerKey.empty())
+                throw std::invalid_argument(
+                    "shared scene ticket or provider key invalid");
+            const auto* manifest=coordinator.prepared(ticket);
+            if(!manifest) {
+                if(error)*error="scene coordinator ticket is not Ready";
+                return false;
+            }
+            const auto* resident=host_.sharedProvider(providerKey);
+            std::vector<Object> objects;
+            std::string reason;
+            bool built=false;
+            try {
+                built=build(*manifest,resident,incoming,objects,reason);
+            }catch(const std::exception& e) {
+                reason=e.what();
+            }catch(...) {
+                reason="unknown shared scene builder exception";
+            }
+            // New key MUST return a real owner; reuse MUST NOT return
+            // another owner under the same key (would leak ownership).
+            if(!built || bool(incoming)==bool(resident)) {
+                host_.retireUnstaged(device_,incoming);
+                if(reason.empty())
+                    reason=resident
+                        ? "shared builder returned duplicate provider"
+                        : "shared builder returned no new provider";
+                if(error)*error=reason;
+                (void)coordinator.cancel(ticket);
+                return false;
+            }
+            if(!host_.stageShared(
+                    device_,ticket.scene.value,providerKey,objects,
+                    std::move(incoming),stats,&reason)) {
+                if(error)*error=reason;
+                (void)coordinator.cancel(ticket);
+                return false;
+            }
+            staged=true;
+            if(!coordinator.commit(ticket)) {
+                host_.discard(device_,ticket.scene.value);
+                const std::string reason=coordinator.error(ticket);
+                try {(void)coordinator.cancel(ticket);}catch(...) {}
+                if(error)*error=reason.empty()
+                    ? "authoritative shared scene commit rejected":reason;
+                return false;
+            }
+            committed=true;
+            if(!host_.commit(device_,ticket.scene.value))
+                throw std::runtime_error(
+                    "authoritative scene activated but shared visual commit failed");
+            auto ids=activeIds();
+            host_.unloadAbsent(
+                device_,std::span<const uint64_t>(ids.data(),ids.size()));
+            return true;
+        }catch(const std::exception& e) {
+            if(error)*error=e.what();
+        }catch(...) {
+            if(error)*error="unknown shared scene coordinator failure";
+        }
+        if(!committed) {
+            host_.retireUnstaged(device_,incoming);
+            if(staged)host_.discard(device_,ticket.scene.value);
+        }
+        return false;
+    }
+
     // Cancel a ready/preparing ticket on the authoritative owner barrier,
     // and detach only the matching staged visual provider afterward.
     template<class Coordinator,class Ticket>
