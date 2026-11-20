@@ -2753,7 +2753,12 @@ void Renderer3D::renderModels(int phase) {
                 (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
                                 !transparentItem(first.flags)))) {
                 size_t end = i + 1;
-                while (end < order_.size() && end - i < size_t(instanceLimit_)) {
+                // Test-only cap changes CPU MDI submission count without
+                // recompiling shaders or changing uniform instance capacity.
+                const size_t groupLimit = diagnosticCpuMdiGroupCap_
+                    ? std::min(size_t(instanceLimit_), size_t(diagnosticCpuMdiGroupCap_))
+                    : size_t(instanceLimit_);
+                while (end < order_.size() && end - i < groupLimit) {
                     const uint32_t candidate = order_[end];
                     if (!compatible(candidate)) {
                         const auto& y = modelItems_[candidate];
