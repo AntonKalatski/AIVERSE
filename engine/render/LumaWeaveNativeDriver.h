@@ -47,7 +47,15 @@ public:
         // LightSystem/lighting path remains fully available.
         return post_.initialize(device_);
     }
+    // Ordinary shutdown fails closed while a compositor graphics pass may
+    // still be using active targets. The host must poll previous Metal GPU
+    // completion callbacks and prove the entire graphics device/queue idle
+    // BEFORE calling shutdownAfterGpuIdle (outside any active render pass).
     bool shutdown(){return post_.shutdown();}
+    bool shutdownAfterGpuIdle() {
+        if(!post_.drainRetiredAfterGpuIdle())return false;
+        return post_.shutdown();
+    }
     LumaWeavePostProcess& gpuPost(){return post_;}
     LumaWeaveNativeCoordinator& coordinator(){return coordinator_;}
 
