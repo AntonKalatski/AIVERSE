@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, Search, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
+import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import {
   StudioPanel, StudioSection, StudioButton, StudioIconButton,
@@ -201,7 +201,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
 
       {draft?<StudioSection title="Expression and IK controls"
         actions={<StudioBadge>{draft.morphs.length} morphs · {draft.rig?.length??0} IK</StudioBadge>}>
-        <StudioTabs label="Facial tools" items={[
+        <StudioTabs<Tab> label="Facial tools" items={[
           {id:'morphs',label:'Morph channels'}, {id:'ik',label:'Bone / gaze IK'}
         ]} selected={tab} onChange={setTab}/>
         {tab==='morphs'?<>
