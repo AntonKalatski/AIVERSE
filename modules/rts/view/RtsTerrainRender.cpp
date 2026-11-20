@@ -1409,8 +1409,8 @@ void TerrainRenderer::updateHeightField(gfx::Device& dev, const MapGrid& g) {
     using clock = std::chrono::steady_clock;
     const double now = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
     if (heightField_.tex.valid() && now - heightBuiltAt_ < 0.3) return;   // sculpting: at most ~3 rebuilds per second
-    heightBuiltAt_ = now;
-    heightDirty_ = false;
+    // Only mark the traced surface clean after the replacement GPU image
+    // has been allocated and published successfully.
     // two samples per cell, at most 1024 per side (2048-cell maps: one sample per two cells - the
     // long shadows this map serves are a coarse feature anyway); 16-bit heights in R (high) and G (low)
     const int tw = std::max(2, std::min(1024, g.w * 2)), th = std::max(2, std::min(1024, g.h * 2));
@@ -1431,12 +1431,19 @@ void TerrainRenderer::updateHeightField(gfx::Device& dev, const MapGrid& g) {
         const int q = std::clamp(int((h[n] - mn) / range * 65535.0f + 0.5f), 0, 65535);
         px[n * 4 + 0] = uint8_t(q >> 8); px[n * 4 + 1] = uint8_t(q & 255); px[n * 4 + 2] = 0; px[n * 4 + 3] = 255;
     }
-    if (heightField_.tex.valid() && (heightW_ != tw || heightH_ != th)) { dev.destroyTexture(heightField_.tex); heightField_.tex = {}; }
-    if (!heightField_.tex.valid()) {
-        gfx::TextureDesc td; td.width = tw; td.height = th; td.filter = gfx::Filter::Linear; td.data = px.data(); td.label = "terrain height field";
-        heightField_.tex = dev.createTexture(td);
-        heightW_ = tw; heightH_ = th;
-    } else dev.updateTexture(heightField_.tex, 0, 0, tw, th, px.data(), tw * 4);
+    // A queued multi-camera trace may still sample the previous image.
+    // Never mutate or destroy it in place while its frame can be in flight.
+    gfx::TextureDesc td;
+    td.width=tw; td.height=th; td.filter=gfx::Filter::Linear;
+    td.data=px.data(); td.label="terrain height field";
+    const gfx::TextureHandle newHeight=dev.createTexture(td);
+    if (!newHeight.valid())
+        throw std::runtime_error("TerrainRenderer: trace height texture upload failed");
+    retiredMeshes_.retireTexture(dev,heightField_.tex);
+    heightField_.tex=newHeight;
+    heightW_=tw; heightH_=th;
+    heightBuiltAt_=now;
+    heightDirty_=false;
     heightField_.originX = 0; heightField_.originZ = 0;
     heightField_.extentX = float(g.w); heightField_.extentZ = float(g.h);
     heightField_.heightMin = mn; heightField_.heightRange = mx - mn > 1e-3f ? mx - mn : 0.0f;   // flat map: nothing to shadow
