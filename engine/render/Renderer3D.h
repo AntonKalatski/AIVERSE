@@ -348,7 +348,7 @@ public:
     // indexed commands, not an extrapolation from staged ModelItems.
     // Only one queried model is tracked, avoiding a per-world audit cost.
     enum class ModelSubmissionKind : uint8_t {
-        Direct, IndexedIndirect, GpuIndirect, GpuIcb
+        Direct, DirectInstanced, IndexedIndirect, GpuIndirect, GpuIcb
     };
     struct ModelSubmittedPrimitive {
         ModelViewPrimitive source{};
