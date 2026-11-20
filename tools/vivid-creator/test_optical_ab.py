@@ -34,6 +34,24 @@ class OpticalAbTests(unittest.TestCase):
             self.assertEqual(result["changed_pixels"], 2000)
             self.assertEqual(result["changed_per_channel"], [2000, 2000, 2000])
 
+    def test_named_region_restricts_comparison(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a, b = Path(temp) / "a.ppm", Path(temp) / "b.ppm"
+            self.make_image(a, (0, 0, 0))
+            self.make_image(b, (64, 32, 16))
+            roi = optical.parse_roi("0.15,0.2,0.38,0.6")
+            result = optical.compare(a, b, 24, roi)
+            self.assertEqual(result["viewport_crop"], [443, 110, 479, 230])
+            self.assertEqual(result["samples"], 36 * 120)
+            self.assertEqual(result["changed_pixels"], 20 * 90)
+            self.assertEqual(result["roi_normalized"], [0.15, 0.2, 0.38, 0.6])
+
+    def test_invalid_region_fails_closed(self):
+        for value in ("0,0,0,1", "0.4,0.2,0.1,0.5", "nan,0,1,1",
+                      "-0.1,0,1,1", "0,0,2,1", "0,0,1"):
+            with self.assertRaises(ValueError):
+                optical.parse_roi(value)
+
     def test_equal_images_have_no_changes(self):
         with tempfile.TemporaryDirectory() as temp:
             a = Path(temp) / "a.ppm"
