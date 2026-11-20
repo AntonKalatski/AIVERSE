@@ -80,6 +80,9 @@ public:
             out.nodeNames_.push_back(node.name);
             out.nodeParents_.push_back(node.parent);
             out.nodeMeshes_.push_back(node.mesh);
+            out.bindTranslations_.push_back(node.t);
+            out.bindRotations_.push_back(node.r);
+            out.bindScales_.push_back(node.s);
             if(!node.name.empty()) {
                 const auto [it,inserted]=uniqueNodes.emplace(node.name,int(i));
                 // Duplicate names are allowed in a general Model, but
@@ -102,6 +105,7 @@ public:
                 channelCount[i]=std::max(channelCount[i],prim.morphTargets);
             }
         }
+        out.channelCounts_=channelCount;
         std::set<std::pair<int,int>> used;
         if(authored["morphs"].isArray())
             for(const auto& field:authored["morphs"].items()) {
@@ -114,7 +118,8 @@ public:
                 b.morphName=field["target"].str();
                 if(b.parameter.empty() || b.nodeName.empty() ||
                    b.morphName.empty() ||
-                   !defaults.values.contains(b.parameter))
+                   !defaults.values.contains(b.parameter) ||
+                   !std::isfinite(defaults.values.at(b.parameter)))
                     throw std::invalid_argument("facial morph parameter missing or undeclared");
                 const auto nodeIt=uniqueNodes.find(b.nodeName);
                 if(nodeIt==uniqueNodes.end() || nodeIt->second<0)
@@ -149,6 +154,8 @@ public:
                    b.bias< -1.f || b.bias>1.f ||
                    b.halfLife<0.f || b.halfLife>10.f)
                     throw std::invalid_argument("facial morph controls out of range");
+                if(field.has("blend") && !field["blend"].isString())
+                    throw std::invalid_argument("facial blend mode must be text");
                 const std::string mode=field.getStr("blend","override");
                 if(mode=="override")b.blend=Blend::Override;
                 else if(mode=="additive")b.blend=Blend::Additive;
@@ -171,10 +178,32 @@ public:
         // reorder bones/mesh assignments or rename/reorder morph channels.
         const auto now=view::importedModelMorphChannelNames(model);
         if(now!=names_)return false;
-        for(std::size_t i=0;i<model.nodes.size();++i)
-            if(model.nodes[i].name!=nodeNames_[i] ||
-               model.nodes[i].parent!=nodeParents_[i] ||
-               model.nodes[i].mesh!=nodeMeshes_[i])return false;
+        for(std::size_t i=0;i<model.nodes.size();++i) {
+            const auto& bone=model.nodes[i];
+            if(bone.name!=nodeNames_[i] ||
+               bone.parent!=nodeParents_[i] ||
+               bone.mesh!=nodeMeshes_[i] ||
+               bone.t.x!=bindTranslations_[i].x ||
+               bone.t.y!=bindTranslations_[i].y ||
+               bone.t.z!=bindTranslations_[i].z ||
+               bone.r.x!=bindRotations_[i].x ||
+               bone.r.y!=bindRotations_[i].y ||
+               bone.r.z!=bindRotations_[i].z ||
+               bone.r.w!=bindRotations_[i].w ||
+               bone.s.x!=bindScales_[i].x ||
+               bone.s.y!=bindScales_[i].y ||
+               bone.s.z!=bindScales_[i].z)
+                return false;
+            int count=0;
+            if(bone.mesh>=0) {
+                if(std::size_t(bone.mesh)>=model.meshes.size())
+                    return false;
+                for(const auto& prim:
+                    model.meshes[std::size_t(bone.mesh)].primitives)
+                    count=std::max(count,prim.morphTargets);
+            }
+            if(count!=channelCounts_[i])return false;
+        }
         return true;
     }
 
@@ -255,7 +284,9 @@ private:
     const render::Model* model_=nullptr; // borrowed until host releases GPU owner
     view::ModelMorphChannelNames names_;
     std::vector<std::string> nodeNames_;
-    std::vector<int> nodeParents_,nodeMeshes_;
+    std::vector<int> nodeParents_,nodeMeshes_,channelCounts_;
+    std::vector<render::float3> bindTranslations_,bindScales_;
+    std::vector<render::quat> bindRotations_;
     std::vector<Binding> bindings_;
     std::shared_ptr<const render::AnimationRig> ik_;
 };
