@@ -30,6 +30,8 @@ Stage 174 implements a dedicated, genre-neutral native scene owner pairing **eac
 7. `22011208866c21705681976998a390ee00810e1d` — `MotionWeaveSceneOwnedHost.h`: on staging, bind the *same* `RenderDeviceLifetime::Lease` to the candidate `ModelAssetProvider` and its `ModelResourceCache`. This prevents accepting a pre-imported model provider from a stale device generation even if its gfx Device address was reused.
 8. `0f32f40b3ff935bb84a211e3b60263063b975e9d` — NEW `docs/motionweave-scene-gpu-owners.md`: host API, transaction ordering, GPU token semantics, requirements and failure cases.
 
+9. `d2e31ef8769607528de188b340372f8eff208058` — `MotionWeaveSceneOwnedHost.h`: expose `cpuLoaderShutdownFailures()`, `providerEnqueueFailures()`, `providerPollFailures()` alongside orphan/pending/shutdown diagnostics. An agent can now report native scene provider GPU/CPU failure status without inspecting queue internals.
+
 ## Implementation/API
 
 ```cpp
