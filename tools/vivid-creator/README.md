@@ -368,3 +368,55 @@ GLES pixel-perfect ID/depth pass, inter-mesh occlusion, cloth-aware picking,
 GPU readbacks and acceleration for million-triangle meshes remain unbuilt.
 **Actual native C++ build, CTest, Creator GPU capture and performance tests
 have NOT RUN for Stage 7AK.** See the chronological agent handoff.
+
+
+## Reusable BVH sculpt selection (Stage 7AL)
+
+The import sculpt picker now owns a persistent
+`DeformedSculptWorkspace` (`engine/character/vivid/DeformedSculptWorkspace.h`).
+It keeps reusable weights, morphed bind positions, a scratch CPU-skinned
+world surface and a per-selected-mesh topology BVH. Unlike the original
+brute-force `pickDeformedSculptVertex` reference, it:
+
+- Builds a deterministic median-partitioned triangle BVH on the **first**
+  click for an imported model/mesh. It does not build one each render frame.
+- Refits all leaf/internal boxes to the **current** morph-first, skin-second
+  world-space positions for every click; model topology stays immutable.
+- Intersects only candidate triangles that survive ray/AABB pruning,
+  retaining original primitive-triangle order as a tie-breaker.
+- Keeps Stage 7AK author ID mapping: seam clones resolve to the source
+  vertex ID, while LOD/generated vertices stay nonauthorable.
+- Reuses buffers after warm-up. `SkinnedWeightScratch` also keeps a
+  first-primitive index per model vertex instead of allocating a separate
+  palette vector for each vertex.
+- Stages morph and skin outputs transactionally: on an invalid weight,
+  palette or pose, existing last-good buffers are untouched.
+- Emits candidate/tested triangle counters in the Creator's pick status,
+  which are diagnostics **not** equivalent to CPU/GPU timing benchmarks.
+
+For a standalone tool:
+
+```cpp
+#include "engine/character/vivid/DeformedSculptWorkspace.h"
+aiverse::vivid::DeformedSculptWorkspace picker;
+auto result = picker.pick(model,meshId,nodeWorld,publishedMorphs,
+                          faceBinding,faceFrame,rayOrigin,rayDirection,
+                          originalVertexCount,authorIds);
+const auto stats = picker.stats(); // total and narrowphase triangle counts
+// On new model publication or any in-place mesh topology edit:
+picker.reset();
+```
+
+The full CPU morph and skin reconstruction and BVH box refit remain
+**O(model vertices + mesh triangles) per click**; only ray narrowphase
+is accelerated. BVH build is amortized across repeated clicks, not
+eliminated. The CPU editor budget remains 1,000,000 vertices and
+1,000,000 selected-mesh triangles. Visible-surface correspondence can
+still differ from actual GPU depth due to inter-mesh occlusion, cloth,
+GPU floating-point differences or unsupported deformers. We have **not**
+implemented GPU ID/depth rendering here.
+
+**Actual full C++ build / native CTest / Creator GPU screenshots /
+Metal / Vulkan / GLES tests / performance benchmarks are NOT RUN on
+this stage's new source.** The final macOS one-pass acceptance remains
+`bash tools/vivid-validate.sh --full` after the remaining functions.
