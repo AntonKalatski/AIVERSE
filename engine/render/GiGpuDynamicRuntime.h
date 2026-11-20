@@ -91,7 +91,8 @@ public:
     // Do not publish a new revision until all previous frame fences have arrived.
     bool setGeometry(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
                      uint64_t revision) {
-        if(!ready() || !scene || revision==0 || busy())return false;
+        if(!ready() || !scene || revision==0 ||
+           revision<=gpu_.geometryRevision() || busy())return false;
         if(!publishPackedGeometry(*scene,revision))return false;
         scene_=std::move(scene);
         scheduler_.invalidateAll(GiDirtyReason::Geometry);
@@ -100,7 +101,8 @@ public:
 
     bool setGeometryRegion(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
                            uint64_t revision,GiBounds changed,float extraRadius=0) {
-        if(!ready() || !scene_ || !scene || revision==0 || busy() ||
+        if(!ready() || !scene_ || !scene || revision==0 ||
+           revision<=gpu_.geometryRevision() || busy() ||
            !valid(changed) || !std::isfinite(extraRadius) || extraRadius<0)
             return false;
         if(!publishPackedGeometry(*scene,revision))return false;
