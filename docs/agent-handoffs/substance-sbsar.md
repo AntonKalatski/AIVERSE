@@ -84,3 +84,27 @@ with an uncooperating writer. Crash may leave stale lock or unused immutable
 texture folder. No overwrite/reimport UI or asset garbage collection yet.
 Next: real fixture end-to-end bake/pack/import plus Studio visual acceptance,
 then existing build texture compression and native background import integration.
+
+## 2026-11-21 — stage 4: existing ASTC packaging integration
+
+Branch feature/studio-html5, starting HEAD 8dac0a25645bef3f543807d5d503c6f4e7697efc;
+code bab62eb53. Paths tools/substance/{packaging.py,test_packaging.py,README.md}.
+Inspected existing FileRules/TextureCompress contracts; reused their target-specific
+ASTC4x4/KTX2 path through emitted game.json fragments, no duplicate encoder.
+Explicit path rules set sRGB colors/emission, linear normals/ORM, normal flag,
+full mips and alpha preservation. Shared ORM rule deduplicated. No automatic
+game.json writes, native API/save/ECS changes, or Studio UI integration.
+
+Executed PYTHONDONTWRITEBYTECODE=1 /tmp/aiverse-substance-venv/bin/python -m unittest discover -s tools/substance -p 'test_*.py':
+PASS 6 tests, including semantics, ORM deduplication, wildcard/conflict refusal.
+Executed command -v astcenc: not found (exit 1). Native compression, actual KTX2,
+GPU sampling/quality/memory/performance and SAT bake NOT RUN; tools unavailable.
+CI not run; no URL. Existing unrelated dirty changes preserved.
+
+Compatibility: existing game.json packaging contract; first matching target rules
+win, so emitted exact rules must precede broad rules. ASTC targets require actual
+device support (macos does not imply all Intel Macs). No desktop BC output yet.
+Risks: existing encoder mip quality is inherited, not certified by Python tests;
+missing encoder can leave packaging warnings, not proof of compressed output.
+Next: install/provide SAT and astcenc with licensed SBSAR fixture, execute real
+bake/pack/import/build and GPU checks, then native background Studio integration.
