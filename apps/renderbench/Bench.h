@@ -280,6 +280,7 @@ struct Bench {
                     throw std::runtime_error("volumetricLight: density 0..1, anisotropy -.95...95, maxDistance 0..1000, steps 4..32, tint >= 0");
                 screen.setVolumetricLight(light);
             }
+            post.setPhysicalSky(parsePhysicalSky(config["postfx"],Json()));
             post.setSettings(s);post.setQuality(options.profile=="low"?PrismaQuality::Low:PrismaQuality::High);
             report.set("schema",Json::number(int64_t(1)));report.set("engine",Json::string("AIVERSE"));
 #if defined(__aarch64__) || defined(__arm64__)
@@ -342,6 +343,7 @@ struct Bench {
             pose.zNear=camera.zNear;pose.zFar=camera.zFar;camera=pose;
             if(shot!=tourShot){screen.reset();additions.selectLights(camera.eye());tourShot=shot;}
         }
+        post.setPhysicalSkyTime(options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?previewTime+options.tourStart:double(frame)/60.0);
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
         additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
@@ -349,6 +351,7 @@ struct Bench {
         renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
+            settings.set("physicalSkyRequested",Json::fromBool(post.physicalSky().enabled));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
             settings.set("shadowResolution",Json::number(int64_t(renderer.shadowMapSize())));
             settings.set("shadowPcfSamples",Json::number(int64_t(options.profile=="low"?4:16)));
