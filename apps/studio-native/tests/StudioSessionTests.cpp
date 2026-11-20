@@ -24,6 +24,11 @@ int main() {
     assert(call(R"({"id":24,"method":"studio.materialPreview","params":{"name":"steel"}})").has("error"));
     assert(call(R"({"id":25,"method":"studio.shaderGraphs","params":{}})").has("error"));
     assert(call(R"({"id":26,"method":"studio.shaderGraphGet","params":{"name":"../escape"}})").has("error"));
+    assert(call(R"({"id":31,"method":"studio.facialPreviewStart","params":{"name":"hero","model":"models/hero.glb"}})").has("error"));
+    assert(call(R"({"id":32,"method":"studio.facialPreviewScalar","params":{"parameter":"jawOpen","value":1}})").has("error"));
+    assert(call(R"({"id":33,"method":"studio.facialPreviewVector","params":{"parameter":"lookAt","x":0,"y":1,"z":3}})").has("error"));
+    assert(call(R"({"id":34,"method":"studio.facialPreviewState","params":{}})").has("error"));
+    assert(!session.facialPreview().active);
     assert(session.previewMaterialName().empty());
     assert(call(R"({"id":29,"method":"studio.shaderGraphCatalog","params":{}})").has("error"));
     assert(call(R"({"id":27,"method":"studio.shaderGraphValidate","params":{"graph":{"domain":"material","nodes":[]}}})").has("error"));
