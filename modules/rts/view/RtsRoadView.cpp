@@ -2525,9 +2525,12 @@ void RtsRoadView::rebuild(gfx::Device& dev,
 }
 
 void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
-    ghostDirty_ = false;
-    retirement_.retireModel(dev,ghostModel_);
-    if (!ghost_.on || ghost_.net.empty()) return;
+    if (!ghost_.on || ghost_.net.empty()) {
+        ghostDirty_=false;
+        retirement_.retireModel(dev,ghostModel_);
+        return;
+    }
+    std::unique_ptr<Model> next;
     try {
         const float cm = cellMeters_;
         const RoadGround ground = [&](Vec2 p) { return Fixed::fromRaw(int64_t(std::llround(double(heightAt(f(p.x), f(p.y)) * cm) * 65536.0))); };
@@ -2537,15 +2540,20 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
         std::map<std::string, std::vector<roadkit::Tri>> shapes;
         for (auto& p : mesh.props) if (p.model.empty()) addShapes(mesh.chunks[0], p.shape, p.xf, 1.0f / cm, shapes);
         if (mesh.chunks.empty()) return;
-        ghostModel_ = toModel("road-ghost", mesh.chunks[0], images_, materials_);
-        if (ghostModel_ && !uploadModel(dev,*ghostModel_))
+        next = toModel("road-ghost", mesh.chunks[0], images_, materials_);
+        if (next && !uploadModel(dev,*next))
             throw std::runtime_error("road ghost GPU upload returned false");
     } catch (const std::exception& e) {
-        const auto status=abortFailedModelUpload(dev,ghostModel_);
+        const auto status=abortFailedModelUpload(dev,next);
         if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
             warnings_.push_back("road ghost: GPU completion unavailable; partial Model quarantined");
         warnings_.push_back(std::string("road ghost: ")+e.what());
+        if(strictStaging_)throw;
+        return;
     }
+    retirement_.retireModel(dev,ghostModel_);
+    ghostModel_=std::move(next);
+    ghostDirty_=false;
 }
 
 void RtsRoadView::setWeather(float wet, float puddles) {
