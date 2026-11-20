@@ -3321,3 +3321,22 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME vfx_graph_runtime COMMAND aiverse_vfx_graph_runtime_tests)
     set_tests_properties(vfx_graph_runtime PROPERTIES LABELS "SpectraFX")
 endif()
+
+
+# Lighting main integration: CPU-only source/cluster/indirect composition and
+# backend admission contracts. No rendering feature is activated by this.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    foreach(lighting_fixture IN ITEMS
+            lumaweave_clusters
+            lumaweave_gpu_packet
+            gi_lighting_composition
+            lighting_gles_admission)
+        add_executable(aiverse_lighting_${lighting_fixture}_test
+                       tests/render/${lighting_fixture}.cpp)
+        target_include_directories(aiverse_lighting_${lighting_fixture}_test
+                                   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME lighting_${lighting_fixture}
+                 COMMAND aiverse_lighting_${lighting_fixture}_test)
+        set_tests_properties(lighting_${lighting_fixture} PROPERTIES LABELS "Lighting")
+    endforeach()
+endif()
