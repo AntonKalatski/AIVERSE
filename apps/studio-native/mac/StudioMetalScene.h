@@ -5,6 +5,11 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <map>
+#include <vector>
+#include <filesystem>
+#include "apps/studio-native/StudioModelPicking.h"
+#include "apps/studio-native/StudioDocumentVisuals.h"
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
@@ -19,7 +24,8 @@ public:
     void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                bool fpsProject, const std::string& selectedId,
                const std::string& previewName, const Json& previewFactors,
-               uint64_t previewRevision, float levelHeight = 1.5f);
+               uint64_t previewRevision, float levelHeight,
+               const std::string& projectPath, const Json& rules);
     std::string pick(float x, float y, float width, float height,
                      const editor::MapDoc& map, bool fpsProject) const;
     void orbit(float dx, float dy);
@@ -29,7 +35,7 @@ public:
     void move(float right, float up, float forward);
     void focusSelected(const editor::MapDoc& map, bool fpsProject, const std::string& selectedId);
     void resetView();
-    void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); }
+    void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;
@@ -40,6 +46,13 @@ private:
     bool materialMode_ = false;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();
     float terrainLevelHeight_ = 1.5f;
+    // Each model is owned by the native Scene; upload keeps CPU vertices for
+    // triangle picking. The draw list and hit list share the exact instances.
+    std::map<std::string,std::unique_ptr<render::Model>> documentModels_;
+    std::vector<StudioModelPickInstance> modelInstances_;
+    void clearDocumentModels();
+    void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
+                            const Json& rules, const std::vector<StudioDocumentProxy>& proxies);
     render::RTSCamera camera_;
     bool cameraInitialized_ = false;
     int lastMapWidth_ = 0;
