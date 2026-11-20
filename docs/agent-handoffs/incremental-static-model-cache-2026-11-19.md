@@ -2781,3 +2781,34 @@ bash tools/batching-stage80-ab.sh 1024 build/batching-gpu-verify/stage81-1k
 ```
 
 Require all 6 run exits 0, `material palette CPU checks=38 result=passed`, pixel parity `changed_channels=0`, actual-MDI-frame parity for both forced MDI modes, and inspect AUTO final mode plus `AUTO CPU learning` EWMA and 81-frame `measured_mdi_frames`. If calibration remains biased toward Direct despite 32+ successfully completed MDI observations, isolate per-pass timing boundaries and training-stage CPU costs *before* further policy changes. GPU timings, 10k and 100k tests remain pending. Document every measured outcome in the next handoff. PR #34 stays Draft and AUTO/Metal ICB defaults OFF.
+
+
+## 2026-11-20 - remaining perf history integration
+
+User requested both perf/incremental-static-model-cache and Inspector integration.
+Branch: feature/aiv20261120_perf_inspector_integration. Base main:
+552bd0751a0bafb571d1b791d809eec2cdd16712. Perf head:
+26ff00a9a7a6b270e732269369d24cb4a90afe2e. Merge:
+e86131611234ab790c8628962d86ec5e3dad8e55. PR #34 already merged at
+58e29ab052458fffcdebebffe27022b53adb9367. Remaining 29 commits mostly
+duplicate separately integrated shared/static ECS work.
+
+Reviewed seven conflicts: preserve main CMake targets, newer canBindWorld API,
+scene integration docs/skill and recorded test results. Stage1/2 handoffs differ
+only in line endings. Keep existing Release-safe TestCheck includes instead of
+adding redundant AlwaysCheck and duplicate TestCheck. Only resulting change
+is the missing Vulkan OOM safety note in AGENTS.md (13 lines).
+
+Actual checks: git fetch origin --prune; PR metadata; full conflicting file
+comparisons with --ignore-space-at-eol; git diff --cached --check PASS;
+git diff HEAD^ HEAD --name-only reports ONLY AGENTS.md. No runtime/test/build/API/
+save/default change. Native build/CTest/GPU/CI NOT RUN: code tree unchanged.
+Git 2.33 lacks merge-tree --write-tree; used isolated worktree actual merge.
+An initial handoff-writing Python bytes literal failed on a non-ASCII dash;
+no file changed. Corrected here before further implementation.
+
+Inspector trial: ten conflicts and ~16726 added lines; requires separate
+SpectraFX architecture/ownership review, not a trivial history reconciliation.
+Trial aborted cleanly to commit this handoff first. Next: review Inspector
+changes, preserve current main, publish only validated integrations without
+force push. Original dirty Studio checkout remains untouched.
