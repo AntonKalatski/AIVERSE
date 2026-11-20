@@ -16417,6 +16417,78 @@ TEST(lens_topology_prepared_trace_transfers_without_reupload) {
     renderer.shutdown();
 }
 
+TEST(lens_preparation_budget_shared_leases_and_overflow) {
+    render::PreparationAllocationBudget budget(100);
+    auto first=budget.acquire(),second=budget.acquire();
+    first->reserve(6,10);second->reserve(4,10);
+    CHECK(budget.used()==100);
+    bool rejected=false;
+    try {second->reserve(1);}catch(const std::length_error&){rejected=true;}
+    CHECK(rejected && budget.used()==100);
+    first.reset();CHECK(budget.used()==40);
+    rejected=false;
+    try {budget.setLimit(39);}catch(const std::logic_error&){rejected=true;}
+    CHECK(rejected && budget.limit()==100);
+    rejected=false;
+    try {second->reserve(size_t(-1),2);}catch(const std::length_error&){rejected=true;}
+    CHECK(rejected && budget.used()==40);
+    second.reset();CHECK(budget.used()==0);
+}
+
+TEST(lens_topology_preparation_budget_rejects_before_gpu_and_recovers) {
+    for(bool smooth:{false,true}) {
+        fogfaulttest::Device dev;
+        render::Renderer3D renderer;CHECK(renderer.init(dev));
+        game::TerrainRenderer terrain;
+        auto rules=skirmishRules();
+        const render::FileReader reader=[smooth](const std::string& path,std::string& out) {
+            if(path!="rules.json")return false;
+            out=smooth?R"({"terrain":{"smooth":true}})":R"({"terrain":{"smooth":false}})";
+            return true;
+        };
+        terrain.init(dev,rules,reader,"");
+        game::MapGrid grid;grid.init(4,4);
+        for(auto& flags:grid.flags)flags=game::kCellGround;
+        grid.corner.assign(25,0);
+        grid.flags[0]=game::kCellWater;
+        CHECK(terrain.build(dev,grid,false));
+        const auto revision=terrain.stateRevision();
+        terrain.setTopologyPreparationBudgetBytes(0);
+        const auto buffers=dev.bufferAttempts,textures=dev.textureAttempts;
+        bool rejected=false;
+        try {(void)terrain.prepareMap(dev,grid,false);}
+        catch(const std::length_error&){rejected=true;}
+        CHECK(rejected && terrain.topologyPreparationBytes()==0);
+        CHECK(dev.bufferAttempts==buffers && dev.textureAttempts==textures);
+        CHECK(terrain.stateRevision()==revision);
+        terrain.setTopologyPreparationBudgetBytes(128u*1024u*1024u);
+        auto candidate=terrain.prepareMap(dev,grid,false);
+        const size_t bytes=terrain.topologyPreparationBytes();
+        CHECK(bytes>0);
+        terrain.setTopologyPreparationBudgetBytes(bytes);
+        rejected=false;
+        try {(void)terrain.prepareMap(dev,grid,false);}
+        catch(const std::length_error&){rejected=true;}
+        CHECK(rejected && terrain.topologyPreparationBytes()==bytes);
+        render::RTSCamera camera;camera.target={2,0,2};camera.distance=20;
+        renderer.beginScene(camera,320,240);
+        std::vector<uint8_t> vision(16,255);
+        rejected=false;
+        try {terrain.prepareMapVisible(candidate,renderer,grid,&vision);}
+        catch(const std::length_error&){rejected=true;}
+        CHECK(rejected && terrain.stateRevision()==revision);
+        candidate.reset();CHECK(terrain.topologyPreparationBytes()==0);
+        terrain.setTopologyPreparationBudgetBytes(128u*1024u*1024u);
+        candidate=terrain.prepareMap(dev,grid,false);
+        terrain.prepareMapVisible(candidate,renderer,grid,&vision);
+        CHECK(terrain.commitMap(candidate));
+        CHECK(terrain.topologyPreparationBytes()==0);
+        candidate.reset();
+        renderer.render(gfx::PassDesc{});
+        terrain.shutdown(dev);renderer.shutdown();
+    }
+}
+
 int main(int argc, char** argv) {
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]

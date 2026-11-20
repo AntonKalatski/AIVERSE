@@ -18,6 +18,7 @@
 // Low retains the classic vertex colours (docs/terrain-textures.md).
 #pragma once
 #include "RtsFog.h"
+#include "engine/render/PreparationAllocationBudget.h"
 #include <cstdint>
 #include <memory>
 #include <memory>
@@ -103,6 +104,11 @@ public:
     // Only private CPU data and new GPU handles are built during prepare.
     // All live terrain ownership remains unchanged until commitMap, which
     // is no-throw and can participate in a multi-owner publication cohort.
+    // Shared admission cap across all outstanding topology candidates. Includes
+    // geometry, RGBA8 mip payload and camera COW fields; excludes published/
+    // retired resources, shader driver storage and physical allocation overhead.
+    void setTopologyPreparationBudgetBytes(size_t bytes) {topologyBudget_.setLimit(bytes);}
+    size_t topologyPreparationBytes() const noexcept {return topologyBudget_.used();}
     class PreparedMap;
     std::shared_ptr<PreparedMap> prepareMap(
         gfx::Device& dev,const MapGrid& grid,bool flatDig);
@@ -216,6 +222,12 @@ private:
             throw std::logic_error("TerrainRenderer GPU device generation expired");
     }
     render::RenderDeviceLifetime::Lease gpuDeviceLease_;
+    render::PreparationAllocationBudget topologyBudget_{128u*1024u*1024u};
+    std::shared_ptr<render::PreparationAllocationBudget::Lease> preparationAllocation_;
+    void reservePreparationBytes(size_t count,size_t stride=1) {
+        if(preparationAllocation_)preparationAllocation_->reserve(count,stride);
+    }
+    gfx::TextureHandle createTerrainTexture(gfx::Device&,const gfx::TextureDesc&);
     gfx::Device* dev_ = nullptr;
     render::NativePresentationRetirement retiredMeshes_;
     const Rules* rules_ = nullptr;

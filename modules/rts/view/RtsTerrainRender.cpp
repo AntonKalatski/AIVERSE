@@ -12,6 +12,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include "../../../engine/platform/Platform.h"
@@ -95,7 +96,7 @@ void TerrainRenderer::init(gfx::Device& dev, const Rules& rules, const FileReade
         td.data=&px;
         td.repeat=true;
         td.label=label;
-        return dev.createTexture(td);
+        return createTerrainTexture(dev,td);
     };
     try {
         nextWhite=tex1(0xffffffffu,"terrain white");
@@ -281,6 +282,7 @@ void TerrainRenderer::upload(gfx::Device& dev, const std::vector<TV>& v,
             vb.type=gfx::BufferType::Vertex;
             vb.size=v.size()*sizeof(TV);
             vb.data=v.data(); vb.label="terrain";
+            reservePreparationBytes(v.size(),sizeof(TV));
             next.vb=dev.createBuffer(vb);
             if(!next.vb.valid())
                 throw std::runtime_error("TerrainRenderer: vertex upload failed");
@@ -288,6 +290,7 @@ void TerrainRenderer::upload(gfx::Device& dev, const std::vector<TV>& v,
             ib.type=gfx::BufferType::Index;
             ib.size=idx.size()*sizeof(uint32_t);
             ib.data=idx.data(); ib.label="terrain";
+            reservePreparationBytes(idx.size(),sizeof(uint32_t));
             next.ib=dev.createBuffer(ib);
             if(!next.ib.valid())
                 throw std::runtime_error("TerrainRenderer: index upload failed");
@@ -405,6 +408,25 @@ private:
     std::shared_ptr<PreparedFrame> frame_;
 };
 
+gfx::TextureHandle TerrainRenderer::createTerrainTexture(
+        gfx::Device& dev,const gfx::TextureDesc& desc) {
+    if(preparationAllocation_) {
+        // All Terrain-owned images currently use uncompressed RGBA8.
+        if(desc.format!=gfx::PixelFormat::RGBA8 || desc.levelCount!=0 ||
+           desc.width<=0 || desc.height<=0)
+            throw std::logic_error("unsupported Terrain preparation texture layout");
+        size_t w=size_t(desc.width),h=size_t(desc.height);
+        for(;;) {
+            if(w>std::numeric_limits<size_t>::max()/h)
+                throw std::length_error("Terrain texture payload overflow");
+            reservePreparationBytes(w*h,4);
+            if(!desc.mipmaps || (w==1 && h==1))break;
+            w=std::max<size_t>(1,w/2);h=std::max<size_t>(1,h/2);
+        }
+    }
+    return dev.createTexture(desc);
+}
+
 std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
         gfx::Device& dev,const MapGrid& grid,bool flatDig) {
     checkGpuDevice(dev);
@@ -419,6 +441,7 @@ std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
     candidate->revision_=publicationRevision_;
     candidate->staged_=std::make_unique<TerrainRenderer>();
     TerrainRenderer& staged=*candidate->staged_;
+    staged.preparationAllocation_=topologyBudget_.acquire();
     staged.dev_=&dev;
     staged.gpuDeviceLease_=gpuDeviceLease_;
     staged.rules_=rules_;
@@ -517,6 +540,7 @@ bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept
     candidate->committed_=true;
     ++publicationRevision_;
     commitMapVisible(*candidate);
+    next.preparationAllocation_.reset(); // resources now belong to published/retired owners
     return true;
 }
 
@@ -600,6 +624,7 @@ bool TerrainRenderer::buildInternal(gfx::Device& dev,
 
         TerrainRenderer staged;
         staged.dev_=&dev;
+        staged.preparationAllocation_=preparationAllocation_;
         staged.gpuDeviceLease_=gpuDeviceLease_;
         try {
             staged.rules_=rules_;
@@ -726,6 +751,7 @@ bool TerrainRenderer::buildInternal(gfx::Device& dev,
     if (all && !detail) {
         TerrainRenderer staged;
         staged.dev_=&dev;
+        staged.preparationAllocation_=preparationAllocation_;
         staged.gpuDeviceLease_=gpuDeviceLease_;
         try {
             staged.rules_=rules_;
@@ -1161,13 +1187,19 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
     for (auto f : g.flags) if ((f & kCellWater) && !(f & kCellGround)) { nextHasWater = true; break; }
     const bool nextWaterSheet=look_.water==TerrainLook::Water::Sheet ||
         (look_.water==TerrainLook::Water::Auto && !heightfield_);
+    const auto uploadWater=[&](const MeshBuilder& builder) {
+        reservePreparationBytes(builder.vertices().size(),sizeof(MeshVertex));
+        // Conservative upper bound: MeshBuilder may choose 16-bit indices.
+        reservePreparationBytes(builder.indices().size(),sizeof(uint32_t));
+        return builder.upload(dev);
+    };
     MeshBuilder wb;
     wb.color(rgba(255, 255, 255));
     if (nextWaterSheet) {
         if (!nextHasWater) { publish({},false,nextWaterSheet); return; }
         const float a = float(kApron), y = look_.waterOffset;
         wb.quad({-a, y, -a}, {-a, y, float(H) + a}, {float(W) + a, y, float(H) + a}, {float(W) + a, y, -a});
-        publish(wb.upload(dev),true,nextWaterSheet);
+        publish(uploadWater(wb),true,nextWaterSheet);
         return;
     }
     std::vector<int> body(size_t(W * H), -1);
@@ -1240,7 +1272,7 @@ void TerrainRenderer::buildWater(gfx::Device& dev, const MapGrid& g, bool flatDi
             }
         }
     nextHasWater = !wb.empty();
-    if(nextHasWater)publish(wb.upload(dev),true,nextWaterSheet);
+    if(nextHasWater)publish(uploadWater(wb),true,nextWaterSheet);
     else publish({},false,nextWaterSheet);
 }
 
@@ -1260,18 +1292,18 @@ void TerrainRenderer::updateCellTextures(gfx::Device& dev, const MapGrid& g, boo
             gfx::TextureDesc td;
             td.width=W; td.height=H; td.filter=gfx::Filter::Nearest;
             td.data=nextCell.data(); td.label="terrain cells";
-            nextCellTex=dev.createTexture(td);
+            nextCellTex=createTerrainTexture(dev,td);
             if(!nextCellTex.valid())throw std::runtime_error("terrain cell texture allocation failed");
             td.data=nextDyn.data(); td.label="terrain dynamic";
-            nextDynTex=dev.createTexture(td);
+            nextDynTex=createTerrainTexture(dev,td);
             if(!nextDynTex.valid())throw std::runtime_error("terrain dynamic texture allocation failed");
             td.filter=gfx::Filter::Linear;
             td.data=nextSplat.data(); td.label="terrain splat";
-            nextSplatTex=dev.createTexture(td);
+            nextSplatTex=createTerrainTexture(dev,td);
             if(!nextSplatTex.valid())throw std::runtime_error("terrain splat texture allocation failed");
             td.format=gfx::PixelFormat::R8;
             td.data=nextVision.data(); td.label="terrain vision";
-            nextVisionTex=dev.createTexture(td);
+            nextVisionTex=createTerrainTexture(dev,td);
             if(!nextVisionTex.valid())throw std::runtime_error("terrain vision texture allocation failed");
         }catch(...) {
             if(nextCellTex.valid())dev.destroyTexture(nextCellTex);
@@ -1503,7 +1535,7 @@ std::shared_ptr<TerrainRenderer::PreparedFrame> TerrainRenderer::prepareFrame(
         td.width=W;td.height=H;td.filter=gfx::Filter::Nearest;
         td.data=next->dynamicPx_.data();
         td.label="terrain dynamic COW";
-        next->dynamic_=dev_->createTexture(td);
+        next->dynamic_=createTerrainTexture(*dev_,td);
         if(!next->dynamic_.valid())
             throw std::runtime_error("TerrainRenderer: private dynamic texture allocation failed");
     }
@@ -1530,7 +1562,7 @@ std::shared_ptr<TerrainRenderer::PreparedFrame> TerrainRenderer::prepareFrame(
             td.format=gfx::PixelFormat::R8;
             td.data=next->visionPx_.data();
             td.label="terrain visibility COW";
-            next->vision_=dev_->createTexture(td);
+            next->vision_=createTerrainTexture(*dev_,td);
             if(!next->vision_.valid())
                 throw std::runtime_error("TerrainRenderer: private visibility texture allocation failed");
         }
@@ -1675,7 +1707,7 @@ TerrainRenderer::prepareFrameVisible(
             desc.filter=gfx::Filter::Linear;
             desc.data=pixels.data();
             desc.label="terrain trace height staged";
-            pending->traceHeight_.tex=dev_->createTexture(desc);
+            pending->traceHeight_.tex=createTerrainTexture(*dev_,desc);
             if(!pending->traceHeight_.tex.valid())
                 throw std::runtime_error(
                     "TerrainRenderer: private trace height upload failed");
@@ -2018,7 +2050,7 @@ void TerrainRenderer::updateHeightField(gfx::Device& dev, const MapGrid& g) {
     gfx::TextureDesc td;
     td.width=tw; td.height=th; td.filter=gfx::Filter::Linear;
     td.data=px.data(); td.label="terrain height field";
-    const gfx::TextureHandle newHeight=dev.createTexture(td);
+    const gfx::TextureHandle newHeight=createTerrainTexture(dev,td);
     if (!newHeight.valid())
         throw std::runtime_error("TerrainRenderer: trace height texture upload failed");
     retiredMeshes_.retireTexture(dev,heightField_.tex);
