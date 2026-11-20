@@ -760,8 +760,8 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
        !instance.model || !instance.model->vb.valid() ||
        renderer.sceneWidth()<=0 || renderer.sceneHeight()<=0)
         return false;
-    // Explicit acceptance is required for the current source build.
-    // Stage 16.3 code alone is NOT evidence of actual Vulkan pixel parity.
+    // Acceptance switches must stay OFF until native source-revision-matched
+    // GPU selection AND Renderer3D raster A/B parity have both passed.
     strata::RenderRouteGate gate{};
     gate.requested=true;
     gate.cpuGpuSelectionParityVerified=
@@ -772,18 +772,27 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     gate.sourceAndMaterialSafe=true;
     if(strata::chooseExclusiveRenderRoute(gate)!=strata::RenderRoute::Strata)
         return false;
-    // Only one scene instance of this source: GPU emits firstInstance=0
-    // and Renderer3D binds the exact same single U0 transform.
-    if(std::count_if(instances_.begin(),instances_.end(),
-         [&](const Instance& other){return other.model==instance.model;})!=1)
-        return false;
-    const bool otherViews=renderer.shadowQuality()!=ShadowQuality::Off ||
-                          renderer.lights.reflectionsWanted();
-    if(otherViews)return false;
+    // One GPU dispatch per primitive AND scene instance. These independent
+    // packets share source materials/VB/IB but never share a U0 transform.
+    // This is a bounded first production tier: too many concurrent source
+    // instances stay on CPU/Legacy without using stale GPU command slots.
+    size_t sourceInstances=0;
+    uint32_t instanceToken=0;
+    for(size_t index=0;index<instances_.size();++index) {
+        if(instances_[index].model==instance.model)++sourceInstances;
+        if(&instances_[index]==&instance)instanceToken=uint32_t(index+1);
+    }
+    if(!instanceToken || !sourceInstances || sourceInstances>16)return false;
+    // Pass-specific GPU selection cannot be reused for shadows or
+    // reflection cameras. Preserve all existing Legacy/portable passes.
+    if(renderer.shadowQuality()!=ShadowQuality::Off ||
+       renderer.lights.reflectionsWanted())return false;
+
     for(const auto& [key,model]:models_){
         if(model.get()!=instance.model)continue;
         const auto* staged=strataStaging_->find(key);
-        if(!staged || staged->primitives.size()!=1 ||
+        if(!staged || staged->primitives.empty() ||
+           staged->primitives.size()>16 ||
            instance.model->bindWorld.size()!=1 ||
            instance.model->nodes.size()!=1)break;
         strata::GpuMetadataScene::IndexBinding binding{};
@@ -791,55 +800,92 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
             break;
         const auto metadata=strataGpuMetadata_->find(key,*instance.model);
         if(!metadata.valid())break;
-        const auto selectedWorld=instance.world*instance.model->bindWorld[0];
-        strata::GpuPassConfig view{};
-        view.viewProjection=renderer.viewProj();
-        view.width=renderer.sceneWidth();
-        view.height=renderer.sceneHeight();
-        view.clipDepthZeroToOne=renderer.clipDepthZeroToOne();
-        view.frustumCull=true;
-        view.errorThresholdPixels=errorPixels_;
-        view.maxOutputClusters=uint32_t(std::min<size_t>(2048,
-            std::max<size_t>(16,staged->primitives[0].geometry.nodes.size())));
-        strata::VulkanIndirectContract contract{};
-        strata::GpuPassConfig guarded{};
+        const mat4 selectedWorld=
+            instance.world*instance.model->bindWorld[0];
+
+        struct Planned {
+            strata::GpuPassConfig view{};
+            strata::VulkanIndirectContract contract{};
+            uint32_t ordinal=0;
+        };
+        std::vector<Planned> plan;
+        plan.reserve(staged->primitives.size());
         std::string reason;
-        if(!strata::prepareVulkanIndirectContract(*strataGpuDevice_,
-             *instance.model,*staged,binding,view,false,
-             contract,guarded,&reason))
-            break;
+        bool accepted=true;
+        // Preflight ALL material/primitive identities before the first GPU
+        // job so a partially unsafe model never switches just one material.
+        for(size_t i=0;i<staged->primitives.size();++i){
+            const auto& primitive=staged->primitives[i];
+            strata::GpuPassConfig view{};
+            view.viewProjection=renderer.viewProj();
+            view.width=renderer.sceneWidth();
+            view.height=renderer.sceneHeight();
+            view.clipDepthZeroToOne=renderer.clipDepthZeroToOne();
+            view.frustumCull=true;
+            view.errorThresholdPixels=errorPixels_;
+            view.maxOutputClusters=uint32_t(std::min<size_t>(2048,
+                std::max<size_t>(16,primitive.geometry.nodes.size())));
+            Planned entry{};
+            entry.ordinal=uint32_t(i);
+            if(!strata::prepareVulkanIndirectPrimitiveContract(
+                 *strataGpuDevice_,*instance.model,*staged,binding,
+                 entry.ordinal,view,false,entry.contract,entry.view,&reason)){
+                accepted=false;
+                break;
+            }
+            plan.push_back(entry);
+        }
+        if(!accepted)break;
         if(!strataGpuCulling_)
-            strataGpuCulling_=std::make_shared<strata::GpuClusterCulling>();
-        const auto gpuInstance=strata::makeGpuSceneInstance(
-            selectedWorld,0,1,true);
-        strata::GpuSelectionSubmission submitted{};
-        ++stats_.strataVulkanGpuCandidates;
-        if(!strataGpuCulling_->dispatch(*strataGpuDevice_,metadata,
-            {gpuInstance},guarded,strataGpuDevice_->frameSerial(),submitted))
-            break;
-        if(!strata::validateVulkanIndirectSubmission(
-             *strataGpuDevice_,*instance.model,contract,submitted,&reason))
-            break;
-        draw.gpuIndexed.commands=submitted.indirect;
-        draw.gpuIndexed.vertex=contract.vertex;
-        draw.gpuIndexed.index=contract.index;
-        draw.gpuIndexed.selectedWorld=selectedWorld;
-        draw.gpuIndexed.frameSerial=contract.expectedFrameSerial;
-        draw.gpuIndexed.geometryRevision=contract.geometryRevision;
-        draw.gpuIndexed.materialRevision=contract.materialRevision;
-        draw.gpuIndexed.commandCapacity=submitted.capacity;
-        // The original primitive's local index offset is already proven
-        // by the strict contract; do not re-index a possibly changed mesh.
-        draw.gpuIndexed.sourceFirstIndex=
-            contract.originalFirstIndex-instance.model->gpuFirstIndex;
-        draw.gpuIndexed.sourceIndexCount=contract.originalIndexCount;
-        draw.gpuIndexed.sourceBaseVertex=contract.pooledBaseVertex;
-        draw.gpuIndexed.exclusive=true;
+            strataGpuCulling_ = std::make_shared<strata::GpuClusterCulling>();
+
+        std::vector<GpuIndexedSelectionPacket> packets;
+        packets.reserve(plan.size());
+        for(const auto& entry:plan){
+            const auto gpuInstance=strata::makeGpuSceneInstance(
+                selectedWorld,entry.ordinal,instanceToken,true);
+            strata::GpuSelectionSubmission submission{};
+            ++stats_.strataVulkanGpuCandidates;
+            if(!strataGpuCulling_->dispatch(*strataGpuDevice_,metadata,
+                {gpuInstance},entry.view,strataGpuDevice_->frameSerial(),
+                submission) ||
+               !strata::validateVulkanIndirectSubmission(
+                *strataGpuDevice_,*instance.model,
+                entry.contract,submission,&reason)){
+                accepted=false;
+                break;
+            }
+            GpuIndexedSelectionPacket packet{};
+            packet.commands=submission.indirect;
+            packet.vertex=entry.contract.vertex;
+            packet.index=entry.contract.index;
+            packet.selectedWorld=selectedWorld;
+            packet.frameSerial=entry.contract.expectedFrameSerial;
+            packet.geometryRevision=entry.contract.geometryRevision;
+            packet.materialRevision=entry.contract.materialRevision;
+            packet.commandCapacity=submission.capacity;
+            packet.sourceFirstIndex=
+                entry.contract.originalFirstIndex-
+                instance.model->gpuFirstIndex;
+            packet.sourceIndexCount=entry.contract.originalIndexCount;
+            packet.sourceBaseVertex=entry.contract.pooledBaseVertex;
+            const auto& stagedPrimitive=staged->primitives[entry.ordinal];
+            packet.sourceMesh=stagedPrimitive.mesh;
+            packet.sourcePrimitive=stagedPrimitive.primitive;
+            packet.expectedMaterial=entry.contract.expectedMaterial;
+            packet.exclusive=true;
+            packets.push_back(packet);
+        }
+        if(!accepted || packets.size()!=plan.size())break;
+        // No second geometry owner: the same ModelDraw and Renderer3D
+        // ModelItems still bind each original material and world transform.
+        draw.gpuIndexed={};
+        draw.gpuIndexedPrimitives=std::move(packets);
         draw.flags|=kDrawStatic;
-        draw.geometry={}; // GPU selection owns the only cluster LOD
+        draw.geometry={};
         draw.staticCache=nullptr;
-        draw.persistentId=0; // do not reuse stale render packet state
-        ++stats_.strataVulkanGpuPrepared;
+        draw.persistentId=0;
+        stats_.strataVulkanGpuPrepared+=draw.gpuIndexedPrimitives.size();
         return true;
     }
     ++stats_.strataVulkanGpuDeclined;
