@@ -1,7 +1,7 @@
 // Stage 115 deferred: material quality/instance-limit invalidation must
 // never destroy GPU programs while their submission token is Pending/Failed.
 #include "engine/render/GpuProgramRetirement.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -33,12 +33,12 @@ struct Device final : gfx::Device {
     void destroyTexture(gfx::TextureHandle) override{}
     gfx::ShaderHandle createShader(const gfx::ShaderDesc&) override{return {next++};}
     void destroyShader(gfx::ShaderHandle h) override {
-        assert(h.valid());
+        AIVERSE_TEST_CHECK(h.valid());
         destroyed.push_back('S');
     }
     gfx::PipelineHandle createPipeline(const gfx::PipelineDesc&) override{return {next++};}
     void destroyPipeline(gfx::PipelineHandle h) override {
-        assert(h.valid());
+        AIVERSE_TEST_CHECK(h.valid());
         destroyed.push_back('P');
     }
     void beginFrame(int,int) override{}
@@ -68,36 +68,36 @@ int main() {
     render::GpuProgramRetirement owner(device,epoch.lease());
 
     owner.retire(makeBatch(device));
-    assert(owner.pendingBatches()==1);
-    assert(device.destroyed.empty());
-    assert(!owner.collect()); // submits its own marker
-    assert(!owner.collect()); // still Pending
-    assert(device.destroyed.empty());
+    AIVERSE_TEST_CHECK(owner.pendingBatches()==1);
+    AIVERSE_TEST_CHECK(device.destroyed.empty());
+    AIVERSE_TEST_CHECK(!owner.collect()); // submits its own marker
+    AIVERSE_TEST_CHECK(!owner.collect()); // still Pending
+    AIVERSE_TEST_CHECK(device.destroyed.empty());
     device.failed=true;
-    assert(!owner.collect()); // Failed marker != completed work
-    assert(!owner.drain()); // waitForResourceIdle cannot prove completion
-    assert(device.destroyed.empty());
+    AIVERSE_TEST_CHECK(!owner.collect()); // Failed marker != completed work
+    AIVERSE_TEST_CHECK(!owner.drain()); // waitForResourceIdle cannot prove completion
+    AIVERSE_TEST_CHECK(device.destroyed.empty());
     device.idle=true;
-    assert(owner.drain());
-    assert(owner.pendingBatches()==0);
-    assert(device.destroyed==std::vector<char>({'P','S'}));
+    AIVERSE_TEST_CHECK(owner.drain());
+    AIVERSE_TEST_CHECK(owner.pendingBatches()==0);
+    AIVERSE_TEST_CHECK(device.destroyed==std::vector<char>({'P','S'}));
 
     // A backend without a retirement token must explicitly wait for idle.
     device.failed=false;
     device.idle=false;
     device.token=0;
     owner.retire(makeBatch(device));
-    assert(!owner.collect());
-    assert(device.destroyed.size()==2);
+    AIVERSE_TEST_CHECK(!owner.collect());
+    AIVERSE_TEST_CHECK(device.destroyed.size()==2);
     device.idle=true;
-    assert(owner.collect());
-    assert(device.destroyed==std::vector<char>({'P','S','P','S'}));
-    assert(owner.enqueueFailures()==0 && owner.orphanBatches()==0);
+    AIVERSE_TEST_CHECK(owner.collect());
+    AIVERSE_TEST_CHECK(device.destroyed==std::vector<char>({'P','S','P','S'}));
+    AIVERSE_TEST_CHECK(owner.enqueueFailures()==0 && owner.orphanBatches()==0);
 
     epoch.retire();
     bool rejected=false;
     try {
         render::GpuProgramRetirement stale(device,epoch.lease());
     }catch(const std::logic_error&){rejected=true;}
-    assert(rejected);
+    AIVERSE_TEST_CHECK(rejected);
 }

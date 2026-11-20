@@ -3,7 +3,7 @@
 // Do NOT run until the animation feature phase finishes.
 #include "engine/render/AsyncModelCpuQueue.h"
 #include <atomic>
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -30,10 +30,10 @@ int main() {
         return false;
     };
 
-    assert(tasks.request("a.glb",missing,textures,ModelLoadPriority::Interactive));
-    assert(tasks.request("b.glb",missing,textures,ModelLoadPriority::Interactive));
-    assert(tasks.request("c.glb",missing,textures,ModelLoadPriority::Background));
-    assert(tasks.request("d.glb",missing,textures,ModelLoadPriority::Visible));
+    AIVERSE_TEST_CHECK(tasks.request("a.glb",missing,textures,ModelLoadPriority::Interactive));
+    AIVERSE_TEST_CHECK(tasks.request("b.glb",missing,textures,ModelLoadPriority::Interactive));
+    AIVERSE_TEST_CHECK(tasks.request("c.glb",missing,textures,ModelLoadPriority::Background));
+    AIVERSE_TEST_CHECK(tasks.request("d.glb",missing,textures,ModelLoadPriority::Visible));
 
     std::vector<std::string> results;
     const auto deadline=std::chrono::steady_clock::now()+
@@ -43,30 +43,30 @@ int main() {
         if(tasks.pollReady(ready))results.push_back(ready.source);
         else std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(results.size()==4);
-    assert(tasks.stats().finished==4);
-    assert(tasks.stats().liveThreads==2); // persistent workers remain idle
-    assert(tasks.stats().ready==0);
-    assert(peak.load()>=1 && peak.load()<=2);
+    AIVERSE_TEST_CHECK(results.size()==4);
+    AIVERSE_TEST_CHECK(tasks.stats().finished==4);
+    AIVERSE_TEST_CHECK(tasks.stats().liveThreads==2); // persistent workers remain idle
+    AIVERSE_TEST_CHECK(tasks.stats().ready==0);
+    AIVERSE_TEST_CHECK(peak.load()>=1 && peak.load()<=2);
 
     // Pool reconfiguration joins only active CPU work, preserving queued
     // valid results. A new project reader can safely be installed after
     // all earlier tasks have joined.
     tasks.setWorkerCount(1);
-    assert(tasks.workerCount()==1);
-    assert(tasks.request("again.glb",missing,textures));
+    AIVERSE_TEST_CHECK(tasks.workerCount()==1);
+    AIVERSE_TEST_CHECK(tasks.request("again.glb",missing,textures));
     bool received=false;
     while(!received && std::chrono::steady_clock::now()<deadline) {
         AsyncModelCpuQueue::Prepared ready;
         if(tasks.pollReady(ready)) {
-            assert(ready.source=="again.glb");
+            AIVERSE_TEST_CHECK(ready.source=="again.glb");
             received=true;
         } else std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(received);
-    assert(tasks.stats().liveThreads==1);
+    AIVERSE_TEST_CHECK(received);
+    AIVERSE_TEST_CHECK(tasks.stats().liveThreads==1);
     tasks.shutdown();
-    assert(tasks.stats().liveThreads==0);
-    assert(tasks.stats().activeWorkers==0);
-    assert(tasks.stats().queued==0);
+    AIVERSE_TEST_CHECK(tasks.stats().liveThreads==0);
+    AIVERSE_TEST_CHECK(tasks.stats().activeWorkers==0);
+    AIVERSE_TEST_CHECK(tasks.stats().queued==0);
 }
