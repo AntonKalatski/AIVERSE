@@ -1149,6 +1149,12 @@ if(AIVERSE_MOCK_PLUGINS)
 endif()
 
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
+# Packaged clients link an archive of the runtime objects. The linker extracts
+# only translation units needed by the client, while editor and test targets
+# keep the existing complete OBJECT runtime contract.
+add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
+target_link_libraries(aiverse_client_runtime PUBLIC
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
@@ -1343,19 +1349,25 @@ endfunction()
 
 if(AIVERSE_BUILD_CLIENT)
     if(AIVERSE_PLATFORM STREQUAL "android")
-        add_library(main SHARED apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_library(main SHARED apps/client/main.cpp)
+        target_link_libraries(main PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(main PRIVATE aiverse_game_audio)
         # Keep ANativeActivity_onCreate from the glue library.
         set_target_properties(main PROPERTIES LINK_FLAGS "-u ANativeActivity_onCreate")
         aiverse_package_notices(main)
         set(AIVERSE_CLIENT_TARGET main)
     else()
-        add_executable(aiverse_client apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_executable(aiverse_client apps/client/main.cpp)
+        target_link_libraries(aiverse_client PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(aiverse_client PRIVATE aiverse_game_audio)
         aiverse_package_app(aiverse_client)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
+    endif()
+    # Mach-O keeps otherwise unused functions from directly linked client
+    # objects unless dead stripping is requested explicitly. Static archives
+    # above select translation units; this also removes unreachable sections.
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        target_link_options(aiverse_client PRIVATE "LINKER:-dead_strip")
     endif()
     # Native plugins (platforms agent): C++ / Objective-C++ sources compiled into the game itself,
     # so AIVERSE_PLUGIN(...) static registration is never dropped by the linker.
