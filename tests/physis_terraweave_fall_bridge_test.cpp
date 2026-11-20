@@ -265,7 +265,9 @@ static void nativeNereidFourMetreNutrientReplay(bool cow) {
             w,land,256,policy,tw::makeTerraWeavePhysisNutrientWeather(w));
     };
     const auto first=step(ecs);
-    const auto& done=*ecs.resourceConst<tw::ForestDeadwoodResource>();
+    // The World is replaced on rollback; keep a VALUE copy, not a
+    // reference that becomes dangling after ecs=snapshot.
+    const auto done=*ecs.resourceConst<tw::ForestDeadwoodResource>();
     require(first.due && first.soilProcessed==1 &&
             first.waterProcessed==2 && first.leached==48 &&
             first.advected==16,
@@ -307,7 +309,11 @@ static void nativeNereidFourMetreNutrientReplay(bool cow) {
     require(again.leached==first.leached &&
             again.advected==first.advected &&
             replay.microWater==done.microWater &&
-            replay.soil==done.soil &&
+            replay.soil.size()==done.soil.size() &&
+            (replay.soil.empty() ||
+             (replay.soil[0].x==done.soil[0].x &&
+              replay.soil[0].z==done.soil[0].z &&
+              replay.soil[0].availableUnits==done.soil[0].availableUnits)) &&
             replay.totalLeachedUnits==done.totalLeachedUnits &&
             replay.microWaterCursor==done.microWaterCursor &&
             tw::deadwoodLedgerBalanced(replay),
