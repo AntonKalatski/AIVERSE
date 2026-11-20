@@ -41,6 +41,11 @@ int main() {
         AIVERSE_TEST_CHECK(!info["runtimeReady"].boolean() &&
                            !info["runtimeVerified"].boolean());
         AIVERSE_TEST_CHECK(info["rendererChannelCapacity"].integer()==64);
+        preview.setGpuStatus(true,{});
+        AIVERSE_TEST_CHECK(preview.describe()["runtimeReady"].boolean());
+        AIVERSE_TEST_CHECK(!preview.describe()["runtimeVerified"].boolean());
+        preview.setGpuStatus(false,"Native viewport hidden");
+        AIVERSE_TEST_CHECK(!preview.describe()["runtimeReady"].boolean());
         const auto generation=uint64_t(info["revision"].integer());
         Json scalar=Json::object();
         scalar.set("jawOpen",Json::number(0.8,3));

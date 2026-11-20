@@ -46,6 +46,9 @@ bool StudioFacialGpuPreview::clear(gfx::Device& device) noexcept {
             if(!device.waitForResourceIdle()) {
                 (void)model_.release(); // quarantine GPU resources on failed fence
                 facial_.clear();
+                animator_.setModel(nullptr);
+                pose_.clear();
+                nodeWorld_.clear();
                 return false;
             }
             render::releaseModel(device,*model_);
@@ -53,6 +56,9 @@ bool StudioFacialGpuPreview::clear(gfx::Device& device) noexcept {
         }catch(...) {
             (void)model_.release();
             facial_.clear();
+            animator_.setModel(nullptr);
+            pose_.clear();
+            nodeWorld_.clear();
             return false;
         }
     }
