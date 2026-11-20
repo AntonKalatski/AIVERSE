@@ -565,6 +565,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         (dev_->info().backend != gfx::Backend::Metal ||
          (d.flags & kDrawStatic) || !m->ib.valid() || d.baked))
         return;
+    const uint64_t drawInvocation=++modelDrawInvocation_;
     if (customVertexStream && d.persistentId) {
         // A character that switched from a static source VB to a dynamic
         // override must not keep its previous persistent GPU draw record.
@@ -705,6 +706,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             ModelItem it;
             it.nodeIndex=uint32_t(n);
             it.meshIndex=uint32_t(meshIndex);
+            it.drawInvocation=drawInvocation;
             it.primitiveIndex=originalPrimitive;
             it.vertexOverrideCount=customVertexStream?
                 d.vertexOverrideCount:0;
@@ -830,6 +832,7 @@ Renderer3D::ModelViewProvenance Renderer3D::modelViewProvenance(
         primitive.model=&source;
         primitive.nodeIndex=it.nodeIndex;
         primitive.meshIndex=it.meshIndex;
+        primitive.drawInvocation=it.drawInvocation;
         primitive.primitiveIndex=it.primitiveIndex;
         primitive.firstIndex=it.firstIndex;
         primitive.indexCount=it.indexCount;
