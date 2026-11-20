@@ -74,6 +74,13 @@ public:
                 segments.push_back({g,j-1,a,b});
             }
         }
+        // A dense groom may contain far more segments than this CPU
+        // reference can hash economically. Skip *this optional pass*
+        // rather than failing the parent Verlet step or exhausting RAM.
+        if(segments.size()>16384) {
+            stats.budgetHit=true;
+            return true;
+        }
         const float cellSize=cfg.separation;
         std::map<Cell,std::vector<std::size_t>> grid;
         std::size_t entries=0;
@@ -99,7 +106,10 @@ public:
                !gridCoord(hi.y,b.y)||!gridCoord(hi.z,b.z))return false;
             const auto x=std::uint64_t(b.x-a.x+1),y=std::uint64_t(b.y-a.y+1),
                 z=std::uint64_t(b.z-a.z+1);
-            if(x*y*z>maxEntries-entries)return false;
+            if(x*y*z>maxEntries-entries) {
+                stats.budgetHit=true;
+                return true; // no positions changed; optional pass skipped
+            }
             for(int ix=a.x;ix<=b.x;++ix)
                 for(int iy=a.y;iy<=b.y;++iy)
                     for(int iz=a.z;iz<=b.z;++iz) {
