@@ -804,3 +804,37 @@ This is bounded current-frame capsule collision, not swept continuous time-of-im
 The VIVID hair segment-collision solver now uses a reusable contiguous broadphase rather than allocating a per-cell tree map and per-pair ordered set on every substep. Cell entries are sorted once and unordered segment pairs are deterministically deduplicated before distance evaluation. Each `HumanGroomRuntime` owns a `GroomSegmentWorkspace` retaining capacity for the next substep/frame; the old standalone `GroomSegmentCollision::resolve(guides,config,stats)` API remains available via temporary scratch for tests/tools.
 
 The broadphase is bounded by 16,384 guide segments, 524,288 cell memberships and a provisional 1,000,000 raw-pair safety guard before sorting. When this optional pass would exceed the memory budget, it skips without writing any positions, reports `budgetHit` and allows the base Verlet/point/scalp collision path to proceed. This is a performance/allocations-oriented source change, **not an observed speedup**: no native compiler, CTest, GPU preview, hardware benchmark or profiler run has been executed. Regression source checks reuse/capacity, deterministic results and preserved pinned roots. Exact commits and handoff are in `docs/agent-handoffs/vivid.md` Stage 7X.
+
+
+## Stage 7AJ — deformed source-vertex sculpt picking (2026-11-20)
+
+VIVID Creator's imported morph sculpt selection now uses the currently
+published sparse morph targets **before** applying the current MotionWeave
+skin pose. The portable `DeformedSculptPick.h` builds a CPU reference
+for the selected mesh's morphed bind-space vertex positions from the same
+vertex-major sparse CSR offsets/links and active `FaceShapeBinding`
+weights as the GPU actor. `prepareSkinnedWeightSurface` accepts those
+optional positions and applies existing bone palettes and inverse binds;
+the resulting triangle raycast still returns the **original source ID**,
+rejecting generated/LOD vertices. No gameplay ECS, texture/RHI handles,
+model vertex buffers, DNA or skeleton runtime are mutated. The standalone
+three-/four-argument skin-weight picker path is preserved for existing
+weight painting and heatmap features.
+
+A viewport click is reconstructed only on user input, not continuously
+in the render loop. The selected world-space sample marker is drawn in
+that click frame for animated previews; paused previews can retain it.
+If skin palettes, morph weights or node matrices are inconsistent, no
+fallback to the misleading undeformed source mesh is attempted. A
+`human_creator` regression-source fixture checks one 100%-weighted
+joint, a 0.4 m morph displacement, source IDs, neutral weights and
+invalid geometry/palette/pose rollback.
+
+**Still incomplete:** matching the exact rasterizer's occlusion and
+per-pixel visibility, GPU compute precision, cloth deformation,
+topology-aware sculpt/brush falloff and real imported scan validation.
+The CPU reference is bounded to 1M model vertices per click. It is a
+correctly ordered presentation approximation, not proven Metal/Vulkan/
+GLES pixel parity. **Native compilation, CTest, GPU/GUI screenshots and
+performance benchmarks for this stage are NOT RUN.** See
+`docs/agent-handoffs/vivid.md` Stage 7AJ for exact SHAs and next steps.
