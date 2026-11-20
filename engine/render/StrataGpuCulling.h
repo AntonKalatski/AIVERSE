@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -53,6 +55,13 @@ struct GpuPassConfig {
     bool gpuFallbackEnabled = false;
     uint32_t gpuFallbackFirstIndex = 0, gpuFallbackIndexCount = 0;
     int32_t gpuFallbackBaseVertex = 0;
+    // Stage17.4 GPU-only temporal LOD history. All fields below must be
+    // provided together when hysteresisFraction>0. Zero (default) leaves
+    // Metal/Vulkan GPU selection stateless and backward-compatible.
+    float hysteresisFraction = 0.f; // 0..0.45; matches CPU StrataView
+    uint32_t temporalPassId = 0; // main=1, sun=2, spot=3, reflection=4
+    uint32_t temporalNodeCount = 0; // GLOBAL GPU metadata node count
+    uint64_t temporalRevision = 0; // source revision + policy epoch
 };
 ViewConfig cpuReferenceView(const GpuPassConfig& pass,
                             const GpuSceneInstance& instance);
@@ -90,8 +99,12 @@ struct alignas(16) GpuSelectionUniforms {
     uint32_t clipDepthZeroToOne = 1;
     uint32_t frustumCull = 1;
     uint32_t reserved = 0;
+    uint32_t temporalNodeCount = 0;
+    uint32_t temporalHasPrevious = 0;
+    float hysteresisFraction = 0.f;
+    uint32_t temporalReserved = 0;
 };
-static_assert(sizeof(GpuSelectionUniforms) == 96);
+static_assert(sizeof(GpuSelectionUniforms) == 112);
 
 struct GpuSelectionSubmission {
     gfx::BufferHandle ranges;
@@ -104,6 +117,10 @@ struct GpuSelectionSubmission {
     uint32_t submittedInstances = 0;
     uint64_t frameSerial = 0;
     size_t submission = 0;
+    bool temporalApplied = false;
+    // GPU-written temporal mask for this submission; diagnostics only.
+    // Only readable asynchronously AFTER a completed GPU frame.
+    gfx::BufferHandle temporalState;
     bool valid() const {
         return ranges.valid() && counters.valid() && capacity != 0 &&
                frameSerial != 0;
@@ -139,6 +156,11 @@ bool compareGpuSelection(const ModelAsset& source,
                          const GpuSelectionReadback& gpu,
                          std::string* error = nullptr);
 
+struct GpuTemporalStats {
+    size_t retainedBytes=0, histories=0;
+    uint64_t submitted=0, coldStarts=0, expired=0, refused=0;
+};
+
 // One diagnostic selection dispatch per source and view; caller must retain
 // the source's staged metadata+pooled index leases until GPU completion.
 // No indirect command buffer is produced or consumed here.
@@ -159,7 +181,41 @@ public:
                          const GpuSelectionSubmission& submission,
                          GpuSelectionReadbackFn callback);
     void shutdown(gfx::Device& dev);
+    GpuTemporalStats temporalStats() const { return temporalStats_; }
 private:
+    struct TemporalKey {
+        uint32_t metadata=0, instanceToken=0, primitive=0, pass=0;
+        uint64_t revision=0;
+        bool operator<(const TemporalKey& b) const {
+            return std::tie(metadata,instanceToken,primitive,pass,revision) <
+                   std::tie(b.metadata,b.instanceToken,b.primitive,b.pass,b.revision);
+        }
+    };
+    struct TemporalRecord {
+        std::array<gfx::BufferHandle,3> state{};
+        std::array<uint64_t,3> frame{};
+        uint64_t lastFrame=0;
+        uint32_t nodes=0,width=0,height=0;
+        bool clipDepthZeroToOne=true;
+        float fraction=0;
+    };
+    static constexpr size_t kMaxTemporalBytes=32u*1024u*1024u;
+    static constexpr size_t kMaxTemporalHistories=256;
+    std::map<TemporalKey,TemporalRecord> temporal_;
+    GpuTemporalStats temporalStats_{};
+    gfx::ComputeHandle temporalResetPipeline_{};
+    gfx::ComputeHandle temporalSafetyPipeline_{};
+    // GPU temporal state is a per-source-instance-pass mask, NEVER
+    // a property of shared ModelAsset or a synchronous CPU readback.
+    bool prepareTemporal(gfx::Device& dev,gfx::BufferHandle metadata,
+                         const GpuSceneInstance& instance,
+                         const GpuPassConfig& config,uint64_t frame,
+                         gfx::BufferHandle& previous,
+                         gfx::BufferHandle& next,bool& warm,
+                         TemporalKey& key);
+    void expireTemporal(gfx::Device& dev,uint64_t frame);
+    void releaseTemporal(gfx::Device& dev);
+
     struct Buffers {
         gfx::BufferHandle instances, ranges, counters, indirect;
         size_t instancesBytes = 0, rangesBytes = 0, indirectBytes = 0;
