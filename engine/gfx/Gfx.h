@@ -283,6 +283,20 @@ public:
     struct GpuTiming { uint64_t tag = 0; double milliseconds = 0; bool valid = false; };
     virtual bool timeGpuFrame(uint64_t tag) { (void)tag; return false; }
     virtual std::vector<GpuTiming> takeGpuTimings() { return {}; }
+    // Diagnostic, opt-in: GPU hardware counter timestamp deltas across
+    // renderModels shadow/opaque spans. Deltas are raw GPU counter ticks,
+    // NOT milliseconds without a validated device clock calibration.
+    // No counter availability is represented by false/empty, never fake zero.
+    struct ModelGpuCounter {
+        uint64_t frame = 0;
+        uint64_t shadowTicks = 0, opaqueTicks = 0;
+        bool valid = false;
+    };
+    virtual bool enableModelGpuCounters(bool enabled) { (void)enabled; return false; }
+    virtual bool sampleModelGpuCounter(int phase, bool start) {
+        (void)phase; (void)start; return false;
+    }
+    virtual std::vector<ModelGpuCounter> takeModelGpuCounters() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
