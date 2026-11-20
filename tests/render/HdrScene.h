@@ -6,6 +6,7 @@
 #include "engine/render/graph/ShaderGraph.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 
 namespace aiverse::test {
@@ -57,8 +58,6 @@ struct HdrScene {
                 failed=true;
                 return;
             }
-            post.setSettings(parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"temporalResolve","historyWeight":0.86,"jitterPixels":0.5,"minQuality":"high"}]})"),Json()));
-            post.setQuality(PrismaQuality::High);
         }
         if (advanced && !screen.init(d,post)) { failed=true; return; }
         screen.setEnabled(advanced);renderer.setModelReflectionsEnabled(advanced);
@@ -92,6 +91,10 @@ struct HdrScene {
         spheres=modelFromParts("hdr material chart",parts); uploadModel(d,*spheres);
         post.configure(Json::parse(R"({"hdr":"auto","effects":[{"type":"bloom","threshold":0.9,"intensity":0.35},{"type":"fxaa"},{"type":"colorGrade","exposure":-1}]})"),Json());
         post.setQuality(Prisma::defaultQualityFor(d,false));
+        if (prismaMultiViewVerify) {
+            post.setSettings(parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"temporalResolve","historyWeight":0.86,"jitterPixels":0.5,"minQuality":"high"}]})"),Json()));
+            post.setQuality(PrismaQuality::High);
+        }
         verify = std::getenv("AIVERSE_HDR_VERIFY") != nullptr;
         if (verify || temporalVerify) {
             if (!checkHdrShaders(d)) { failed=true; return; }
