@@ -4,6 +4,7 @@
 #include "DeformedSculptPick.h"
 #include "SculptPickBvh.h"
 #include "SculptSkinningPlan.h"
+#include "SculptGpuPickContract.h"
 
 namespace aiverse::vivid {
 
@@ -35,6 +36,24 @@ public:
     std::size_t vertexCapacity() const noexcept {
         return morphBind_.capacity()+morphScratch_.capacity()+
                surface_.world.capacity()+skinScratch_.staging.world.capacity();
+    }
+    // Called only after SculptGpuPickProtocol has validated its exact
+    // request token/actor revision/frame/viewport and decoded the triangle
+    // ID. The CPU surface must belong to the very same captured pose.
+    // This does NOT perform GPU readback or re-run the GPU depth test.
+    SculptPick resolveGpuTriangle(const render::Model& model,
+                                  std::size_t meshId,
+                                  std::uint32_t triangleOrdinal,
+                                  render::float3 origin,
+                                  render::float3 direction,
+                                  std::size_t sourceVertexCount,
+                                  std::span<const std::uint32_t> authorIds={}) const noexcept {
+        if(model_!=&model || !skinPlan_.ready() || !surface_.ready ||
+           surface_.mesh!=meshId || bvh_.mesh()!=meshId)
+            return {};
+        return resolveSculptGpuTriangle(model,surface_,triangleOrdinal,
+                                       origin,direction,sourceVertexCount,
+                                       authorIds);
     }
     SculptPick pick(const render::Model& model,
                     std::size_t meshId,
