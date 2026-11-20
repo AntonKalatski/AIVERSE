@@ -1268,3 +1268,47 @@ displacement, depth-after transparency, GPU command culling,
 postfx and material selection. A complete cross-platform
 runtime selection pass and polished topology-aware editor
 tools remain subsequent work. See the dedicated 7AT handoff.
+
+
+## Stage 7AU — Metal GPU-source alpha-tested selected faces (2026-11-20)
+
+The opt-in GPU ID diagnostic now supports **homogeneous standard sampled
+`AlphaMode::Mask` selected meshes** when Renderer3D's current-frame source
+provenance points at the real VIVID GPU actor `ModelDraw::vertexOverride`.
+Previously the sampled alpha fragment shader only received CPU-reconstructed
+selected triangle positions. The masked variant now gathers already-morphed
+60B `ModelVertex` positions from that exact borrowed GPU buffer, applies the
+same Stage 7AT MotionWeave joint matrices, and writes a 32B selected ID vertex
+(`packed_float3 world`, RGBA8 ID, `float4` UV/vertex alpha). The existing
+Metal mask shader samples the actual model base texture using its validated
+UV scale/rotation/offset, base alpha and cutoff and discards invisible
+fragments with native GPU depth testing.
+
+`prepareSculptGpuVertexSource` exposes `maskedSelection`,
+`maskBaseTexture`, `maskUniform` and `maskInputs` (16B per original
+vertex, not positions). Only a live ordinary base texture with a supported
+Mask material is accepted. Mixed opaque+Mask, different Mask materials,
+transparent/Blend, custom ShaderGraph, unsupported occlusion and malformed
+source UV/vertex count/palette fail closed. Both opaque and masked
+GPU-source paths preserve the original source triangle/author-ID mapping
+and existing async GPU completion/retirement contract. Other occluders
+continue using the conservative CPU-fed opaque/Mask geometry. VIVID
+Creator's CPU BVH selection remains the sole authoring authority.
+
+**Status:** source modifications and C++/Objective-C++ regression fixtures
+were committed. Connector-side code/ABI inspections were performed.
+**CMake, native C++ build, CTest, MSL shader compilation, real Metal GPU
+pixels, Vulkan/GLES driver tests and full acceptance: NOT RUN.** The native
+Metal fixture is intended to distinguish a moved actual GPU actor source
+from unchanged CPU reference geometry under sampled Mask, and transparent
+versus opaque texture texels; those expectations are not measured results.
+
+This is NOT alpha parity for material-graph displacement, blended
+cornea/depth-after passes, GPU-culling/ICB/MDI, selected alternative
+LOD, nonselected GPU-deformed occluders or exact Renderer3D colour depth.
+Metal is the only native backend with this GPU stream expansion;
+Vulkan/GLES3 still have CPU-fed diagnostic selection. The broader human
+skin/eyes/groom fidelity and topology-aware sculpt remain open. Do not
+merge overlapping Renderer3D/Texture RHI work to main without an isolated
+semantic integration and real hardware tests. See
+`docs/agent-handoffs/vivid-7AU-gpu-mask-2026-11-20.md`.
