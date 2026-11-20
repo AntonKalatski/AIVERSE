@@ -1,7 +1,7 @@
 # PHYSIS Stage 107 — QA defects fixed
 
 Date: 2026-11-20. Branch: `codex/physis-qa-fixes`.
-Base: `d19180bc6c9ef9d79dce646d7c006854ee928663` (updated main).
+Base: `ebdb1f036a48506653b4d5fa37472a54583a8a0d` (actual implementation parent and tested base).
 Implementation: `07b930463f1d2c8c4a497a472d5b229f02e4a735`.
 Previous: [Stage106 QA](physis-stage106-system-qa-2026-11-20.md).
 User authorized fixes and publication to main.
@@ -61,3 +61,7 @@ Publish implementation plus this separate handoff with ordinary fast-forward
 push to main; preserve concurrent main changes and never force-push. After
 publication, remote CI can independently verify macOS/Linux workflow execution.
 Resume the remaining interactive GUI scenarios when the Mac is unlocked.
+
+## Publication integration checkpoint
+
+Initial push was rejected non-fast-forward because main advanced to `cdb79a7210b3e30e8e14273381d769555218af2a`. Merged it without conflicts in `754cb231c9d105180a2cffc6674e928eb58bc05e`. Relative to the actual tested base `ebdb1f036a48506653b4d5fa37472a54583a8a0d`, the incoming tree change is only eight documentation lines in the STRATA handoff. Product/test sources are unchanged from the validated implementation, so no redundant native rebuild was run. The base SHA above is corrected using the implementation commit parent and runner log; an earlier observed remote ref advanced before the initial fast-forward. No force-push or removal of concurrent changes.
