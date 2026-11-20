@@ -93,8 +93,8 @@ if [[ "$RUN_GPU" != 0 && "$RUN_GPU" != 1 ]]; then
 fi
 if [[ "$OS" != Darwin || "$RUN_GPU" == 0 ]]; then
     mark_missing metal_hdr "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"
-    mark_missing metal_taa "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"
-    mark_missing gl33_hdr "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"
+    mark_missing metal_taa "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"\n    mark_missing metal_capture "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"
+    mark_missing gl33_hdr "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"\n    mark_missing gl33_capture "not executed (requires macOS and AIVERSE_PRISMA_RUN_GPU=1)"
 else
     # The HDR scene binary uses the real Metal backend on macOS; hdr_gl is
     # a SEPARATE OpenGL backend, not evidence of Metal rendering.
@@ -102,15 +102,127 @@ else
     gl="$BUILD/aiverse_hdr_gl"
     if [[ -x "$metal" ]]; then
         capture="$LOG/metal-hdr.ppm"
-        if stage metal_hdr env AIVERSE_HDR_VERIFY=1 AIVERSE_HDR_CAPTURE="$capture" "$metal"; then
-            probe_count="$(grep -Ec '^HDR GPU probe [0-9]+:.* PASS$' "$LOG/metal_hdr.log" || true)"
+        # Verify mode renders probe pixels, not the regular scene. It does NOT
+        # write AIVERSE_HDR_CAPTURE. Run the ordinary capture separately.
+        if stage metal_hdr env AIVERSE_HDR_VERIFY=1 "$metal"; then
+            probe_count="$(grep -Ec '^HDR GPU probe [0-9]+:.* PASS
+        if stage metal_taa env AIVERSE_TAA_VERIFY=1 "$metal"; then
+            if grep -q '^GPU: Metal ' "$LOG/metal_taa.log" \
+                && grep -Eq '^TAA stationary centroid drift:.*PASS' "$LOG/metal_taa.log"; then
+                record metal_taa_evidence PASS "Metal stationary temporal probe"
+            else
+                record metal_taa_evidence FAIL "missing backend marker or TAA PASS"
+            fi
+        fi
+    else
+        mark_missing metal_hdr "aiverse_hdr_scene executable missing"
+        mark_missing metal_taa "aiverse_hdr_scene executable missing"\n        mark_missing metal_capture "aiverse_hdr_scene executable missing"
+    fi
+    if [[ -x "$gl" ]]; then
+        capture="$LOG/gl33-hdr.ppm"
+        if stage gl33_hdr env AIVERSE_HDR_VERIFY=1 "$gl"; then
+            probe_count="$(grep -Ec '^HDR GPU probe [0-9]+:.* PASS
+    else
+        mark_missing gl33_hdr "aiverse_hdr_gl executable missing"\n        mark_missing gl33_capture "aiverse_hdr_gl executable missing"
+    fi
+fi
+printf '\n**Failures:** %d  \n**Skipped:** %d\n\n' "$ERRORS" "$SKIPPED" >> "$SUMMARY"
+printf 'Vulkan/GLES/WebGL GPU runtime parity: **NOT VERIFIED by this script**.\n' >> "$SUMMARY"
+cat "$SUMMARY"
+echo "[prisma] logs and PPM captures: $LOG"
+if (( ERRORS != 0 )); then exit 1; fi
+ "$LOG/metal_hdr.log" || true)"
             if grep -q '^GPU: Metal ' "$LOG/metal_hdr.log" \
                 && grep -Eq '^Scene shaders:.*PASS' "$LOG/metal_hdr.log" \
+                && (( probe_count >= 54 )); then
+                record metal_hdr_evidence PASS "Metal, ${probe_count}/54+ HDR probes"
+            else
+                record metal_hdr_evidence FAIL "backend, shaders or probes incomplete"
+            fi
+        fi
+        if stage metal_capture env AIVERSE_HDR_CAPTURE="$capture" "$metal"; then
+            if grep -q '^GPU: Metal ' "$LOG/metal_capture.log" \
+                && [[ -s "$capture" ]] && [[ "$(head -c 2 "$capture")" == P6 ]]; then
+                record metal_capture_evidence PASS "real Metal P6 screenshot"
+            else
+                record metal_capture_evidence FAIL "missing Metal backend or P6 screenshot"
+            fi
+        fi
+        if stage metal_taa env AIVERSE_TAA_VERIFY=1 "$metal"; then
+            if grep -q '^GPU: Metal ' "$LOG/metal_taa.log" \
+                && grep -Eq '^TAA stationary centroid drift:.*PASS' "$LOG/metal_taa.log"; then
+                record metal_taa_evidence PASS "Metal stationary temporal probe"
+            else
+                record metal_taa_evidence FAIL "missing backend marker or TAA PASS"
+            fi
+        fi
+    else
+        mark_missing metal_hdr "aiverse_hdr_scene executable missing"
+        mark_missing metal_taa "aiverse_hdr_scene executable missing"
+    fi
+    if [[ -x "$gl" ]]; then
+        capture="$LOG/gl33-hdr.ppm"
+        if stage gl33_hdr env AIVERSE_HDR_VERIFY=1 AIVERSE_HDR_CAPTURE="$capture" "$gl"; then
+            probe_count="$(grep -Ec '^HDR GPU probe [0-9]+:.* PASS$' "$LOG/gl33_hdr.log" || true)"
+            if grep -q '^GPU: GL33 ' "$LOG/gl33_hdr.log" \
+                && grep -Eq '^Scene shaders:.*PASS' "$LOG/gl33_hdr.log" \
                 && (( probe_count >= 54 )) && [[ -s "$capture" ]] \
                 && [[ "$(head -c 2 "$capture")" == P6 ]]; then
-                record metal_hdr_evidence PASS "Metal, ${probe_count}/54+ probes, P6 capture"
+                record gl33_hdr_evidence PASS "GL33, ${probe_count}/54+ probes, P6 capture"
             else
-                record metal_hdr_evidence FAIL "backend, shaders, probes or capture incomplete"
+                record gl33_hdr_evidence FAIL "backend, shaders, probes or capture incomplete"
+            fi
+        fi
+    else
+        mark_missing gl33_hdr "aiverse_hdr_gl executable missing"
+    fi
+fi
+printf '\n**Failures:** %d  \n**Skipped:** %d\n\n' "$ERRORS" "$SKIPPED" >> "$SUMMARY"
+printf 'Vulkan/GLES/WebGL GPU runtime parity: **NOT VERIFIED by this script**.\n' >> "$SUMMARY"
+cat "$SUMMARY"
+echo "[prisma] logs and PPM captures: $LOG"
+if (( ERRORS != 0 )); then exit 1; fi
+ "$LOG/gl33_hdr.log" || true)"
+            if grep -q '^GPU: GL33 ' "$LOG/gl33_hdr.log" \
+                && grep -Eq '^Scene shaders:.*PASS' "$LOG/gl33_hdr.log" \
+                && (( probe_count >= 54 )); then
+                record gl33_hdr_evidence PASS "GL33, ${probe_count}/54+ HDR probes"
+            else
+                record gl33_hdr_evidence FAIL "backend, shaders or probes incomplete"
+            fi
+        fi
+        if stage gl33_capture env AIVERSE_HDR_CAPTURE="$capture" "$gl"; then
+            if grep -q '^GPU: GL33 ' "$LOG/gl33_capture.log" \
+                && [[ -s "$capture" ]] && [[ "$(head -c 2 "$capture")" == P6 ]]; then
+                record gl33_capture_evidence PASS "real GL33 P6 screenshot"
+            else
+                record gl33_capture_evidence FAIL "missing GL33 backend or P6 screenshot"
+            fi
+        fi
+    else
+        mark_missing gl33_hdr "aiverse_hdr_gl executable missing"
+    fi
+fi
+printf '\n**Failures:** %d  \n**Skipped:** %d\n\n' "$ERRORS" "$SKIPPED" >> "$SUMMARY"
+printf 'Vulkan/GLES/WebGL GPU runtime parity: **NOT VERIFIED by this script**.\n' >> "$SUMMARY"
+cat "$SUMMARY"
+echo "[prisma] logs and PPM captures: $LOG"
+if (( ERRORS != 0 )); then exit 1; fi
+ "$LOG/metal_hdr.log" || true)"
+            if grep -q '^GPU: Metal ' "$LOG/metal_hdr.log" \
+                && grep -Eq '^Scene shaders:.*PASS' "$LOG/metal_hdr.log" \
+                && (( probe_count >= 54 )); then
+                record metal_hdr_evidence PASS "Metal, ${probe_count}/54+ HDR probes"
+            else
+                record metal_hdr_evidence FAIL "backend, shaders or probes incomplete"
+            fi
+        fi
+        if stage metal_capture env AIVERSE_HDR_CAPTURE="$capture" "$metal"; then
+            if grep -q '^GPU: Metal ' "$LOG/metal_capture.log" \
+                && [[ -s "$capture" ]] && [[ "$(head -c 2 "$capture")" == P6 ]]; then
+                record metal_capture_evidence PASS "real Metal P6 screenshot"
+            else
+                record metal_capture_evidence FAIL "missing Metal backend or P6 screenshot"
             fi
         fi
         if stage metal_taa env AIVERSE_TAA_VERIFY=1 "$metal"; then
