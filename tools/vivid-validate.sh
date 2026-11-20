@@ -105,6 +105,18 @@ if [[ "$GUI" -eq 1 ]]; then
         printf 'Renderer3D/MotionWeave preview did not report pass=1.\n' >&2
         exit 1
     fi
+    # 7AX: one-actor Metal smoke must report both asynchronous
+    # *same-frame* colour screenshot / 60B GPU actor ID pixel probes.
+    # The 12-actor crowd mode intentionally does not run these single-
+    # actor provenance probes.
+    for parity_stage in 1 2; do
+        if ! grep -q "GPU colour/ID coverage stage=${parity_stage} .* PASS" \
+            "$LOGDIR/renderer-preview.log"; then
+            printf 'VIVID Metal colour/ID parity stage %s is missing.\n' \
+                "$parity_stage" >&2
+            exit 1
+        fi
+    done
 
     # A second REAL scene validates 12 GPU actors sharing the same immutable
     # morph data and shader pipelines while producing distinct face streams.
