@@ -170,6 +170,7 @@ public:
     bool historyValid() const{return historyValid_;}
     void invalidateHistory() {
         historyValid_=false;
+        historySlot_=-1; // may still have GPU readers; readerUntil protects it
         ++historyGeneration_;
     }
     uint32_t screenWidth() const {return screenWidth_;}
@@ -369,7 +370,7 @@ public:
         denoiseStatus_={};
         denoiseStatus_.requested=denoise && denoise->settings.enabled;
         if(!screenAvailable() || !inputs.complete() || !sourcesReady_ ||
-           !geometryReady_ || busy() || !dev_->gpuHealthy() ||
+           !geometryReady_ || !canSubmitScreen() || !dev_->gpuHealthy() ||
            !dev_->canUpdateSharedBuffers() || !width || !height ||
            width>4096 || height>4096 || samples<1 || samples>kMaxSamples)
             return out;
@@ -385,19 +386,16 @@ public:
            !std::isfinite(view.options.x) || view.options.x<=0 ||
            view.options.x>0.02f)
             return out;
-        if(screenWidth_!=width || screenHeight_!=height ||
-           !screenOutput_.valid()) {
-            gfx::TextureDesc td;
-            td.width=int(width);td.height=int(height);
-            td.format=gfx::PixelFormat::RGBA16F;
-            td.filter=gfx::Filter::Nearest;td.storage=true;
-            td.label="LumaWeave Vulkan screen-space BRDF direct";
-            const auto next=dev_->createTexture(td);
-            if(!next.valid())return out;
-            if(screenOutput_.valid())dev_->destroyTexture(screenOutput_);
-            screenOutput_=next;screenWidth_=width;screenHeight_=height;
-            invalidateHistory(); // a different render resolution has new history
+        const int slotIndex=freeScreenSlot();
+        if(slotIndex<0)return out;
+        if(screenWidth_!=width || screenHeight_!=height) {
+            // Old in-flight resources at another resolution remain live.
+            // Their eventual completion cannot promote old-sized history.
+            invalidateHistory();
+            screenWidth_=width;screenHeight_=height;
         }
+        if(!ensureScreenTextures(slotIndex,width,height))return out;
+        auto& slot=screenSlots_[size_t(slotIndex)];
         if(!dev_->updateSharedBufferChecked(receiverBuffer_,&view,sizeof(view)))
             return out;
         if(!dev_->beginCompute(screenShader_))return out;
@@ -407,7 +405,7 @@ public:
         dev_->setComputeBuffer(1,receiverBuffer_); // ScreenView, not receiver points
         dev_->setComputeBuffer(2,triangleBuffer_);
         dev_->setComputeBuffer(3,nodeBuffer_);
-        dev_->setComputeTexture(0,screenOutput_);
+        dev_->setComputeTexture(0,slot.raw);
         dev_->setComputeSampledTexture(0,inputs.sceneDepth);
         dev_->setComputeSampledTexture(1,inputs.material);
         dev_->setComputeSampledTexture(2,inputs.materialDepth);
@@ -426,15 +424,17 @@ public:
         // Failure to encode the filter falls back to current raw direct,
         // never to stale previous-frame pixels.
         gfx::TextureHandle filtered{};
-        pendingFilterSlot_=-1;
-        if(denoise && denoise->settings.enabled && denoiseAvailable()) {
-            filtered=encodeDenoise(inputs,view,width,height,frame,*denoise);
-        }
+        if(denoise && denoise->settings.enabled && denoiseAvailable())
+            filtered=encodeDenoise(inputs,view,width,height,frame,*denoise,
+                                   slotIndex);
         if(!filtered.valid())invalidateHistory();
-        pendingFrame_=frame;
-        activeOutput_=filtered.valid()?filtered:screenOutput_;
+        slot.submitted=frame;
+        slot.receivers=uint32_t(pixels);
+        slot.submissionOrdinal=++submissionOrdinal_;
+        activeOutput_=filtered.valid()?filtered:slot.raw;
+        activeScreenSlot_=slotIndex;
+        lastEncodedFrame_=frame;
         outputValid_=false;
-        pendingReceivers_=uint32_t(pixels);
         out={true,frame,sourceRevision_,geometryRevision_,
              uint32_t(pixels),samples,pixels*samples,checks};
         return out;
