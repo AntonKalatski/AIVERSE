@@ -1,4 +1,5 @@
 #include "StudioMetalScene.h"
+#include "StudioFacialGpuPreview.h"
 #include "apps/editor/SceneRenderable.h"
 #include "apps/studio-native/StudioTerrainGeometry.h"
 #include "apps/studio-native/StudioDocumentVisuals.h"
@@ -25,6 +26,20 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
 }
 StudioMetalScene::~StudioMetalScene() {
     if (device_) {
+        if (facialGpu_) {
+            try {facialGpu_->shutdown(*device_);facialGpu_.reset();}
+            catch(...) {
+                // An unproven GPU barrier forbids owner destruction.
+                (void)facialGpu_.release();
+                (void)device_.release();
+                return;
+            }
+        }
+        if(!device_->waitForResourceIdle()) {
+            (void)materialSphere_.release();
+            (void)device_.release();
+            return;
+        }
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
@@ -39,7 +54,7 @@ StudioMetalScene::~StudioMetalScene() {
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
-    if (materialMode_ || !cameraInitialized_ ||
+    if (materialMode_ || facialMode_ || !cameraInitialized_ ||
         !camera_.screenRay(x,y,width,height,origin,direction)) return {};
     const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
     std::vector<editor::SceneRenderable> candidates;
@@ -62,11 +77,32 @@ void StudioMetalScene::orbit(float dx, float dy) {
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
+uint64_t StudioMetalScene::renderedFacialGeneration() const noexcept {
+    return facialGpu_?facialGpu_->renderedGeneration():0;
+}
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
                              const std::string& previewName, const Json& previewFactors,
-                             uint64_t previewRevision, float levelHeight) {
+                             uint64_t previewRevision,
+                             const StudioFacialPreviewState& facialRequest,
+                             float levelHeight) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
+    if(facialRequest.active) {
+        if(!facialGpu_) {
+            facialGpu_=std::make_unique<StudioFacialGpuPreview>(*device_);
+            cameraInitialized_=false;
+        }
+        facialMode_=true;
+        facialGpu_->frame(*device_,renderer_,camera_,
+                          framebufferWidth,framebufferHeight,facialRequest);
+        return;
+    }
+    if(facialGpu_) {
+        facialGpu_->shutdown(*device_);
+        facialGpu_.reset();
+        cameraInitialized_=false;
+    }
+    facialMode_=false;
     const bool materialRequested = !previewName.empty() && previewFactors.isObject();
     if (materialRevision_ != previewRevision) {
         materialRevision_ = previewRevision;
