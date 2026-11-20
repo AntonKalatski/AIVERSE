@@ -13546,6 +13546,54 @@ TEST(visibility_field_late_coordinator_failure_discards_private_gpu_texture) {
     CHECK(fog.shutdownAfterGpuIdle());
 }
 
+TEST(shoreline_staged_rebuild_preserves_published_banks_on_gpu_failure) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::RtsShoreView shore;
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    shore.init(dev,Json(),missing);
+    const Json map=Json::parse(R"JSON({
+      "waterNetwork":{"bodies":[{
+        "id":1,"kind":"sea","side":"south",
+        "shore":[[4,12],[92,12]],
+        "shores":[{"side":1,"from":0,"to":1000,"type":"embankment"}]
+      }]}
+    })JSON");
+    shore.setMap(map);
+    CHECK(shore.active());
+    render::RTSCamera camera;
+    camera.target={48,0,12};camera.distance=150;camera.pitch=1.0f;
+    auto ground=[](float,float){return 0.0f;};
+    renderer.beginScene(camera,1024,720);
+    const auto beforeInitial=dev.bufferAttempts;
+    shore.draw(renderer,ground,0.0f,100,48);
+    CHECK(dev.bufferAttempts>beforeInitial);
+    renderer.render(gfx::PassDesc{});
+    CHECK(shore.pendingGpuRetirements()==0);
+    const auto deletedBefore=dev.destroyedBuffers;
+
+    shore.invalidateGround();
+    dev.failBuffer=dev.bufferAttempts+2; // candidate index buffer
+    bool failed=false;
+    renderer.beginScene(camera,1024,720);
+    try {shore.draw(renderer,ground,0.0f,100,48);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(shore.active());
+    CHECK(shore.pendingGpuRetirements()==0);
+    CHECK(dev.destroyedBuffers>deletedBefore);
+    dev.failBuffer=0;
+
+    renderer.beginScene(camera,1024,720);
+    shore.draw(renderer,ground,0.0f,100,48);
+    CHECK(shore.pendingGpuRetirements()>0); // old bank models retired only after success
+    renderer.render(gfx::PassDesc{});
+    shore.shutdown(dev);
+    renderer.shutdown();
+    CHECK(shore.pendingGpuRetirements()==0);
+}
+
 TEST(visibility_field_gpu_init_failure_is_retryable) {
     fogfaulttest::Device dev;
     view::VisibilityField fog;
