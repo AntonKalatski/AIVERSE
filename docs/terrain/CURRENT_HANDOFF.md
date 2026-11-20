@@ -1,5 +1,19 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 real Metal forest GPU acceptance PASS (2026-11-20):**
+> Mac Studio tested **exact SHA**
+> `0133eb21b211af62d205952db77c50589ae55a13`.
+> `terraweave_metal_forest`: **1/1 PASS, 0 errors, 2.43s**,
+> real BranchLOD/impostor/resized RT readback, different azimuth
+> slices, explicit GPU-idle retirement. Six PPM frames captured;
+> pixel differences near=6480, far=3891, holes=7729,
+> resized=1502 and 0 pipeline failures.
+> [Exact executed-result handoff](qa-2026-11-20-stage70-metal-forest-hardware-pass-handoff.md).
+> **Hardware render checked; subjective screenshot quality,
+> Studio viewport lifecycle, Vulkan/GLES and extended real
+> four-owner simulation still unverified.** PR #53 stays Draft.
+>
+>
 > **Stage70 real TerraWeave forest Metal GPU fixture committed (2026-11-20):**
 > Source commits `510d1390`, `d7439549`, `f872f5f2`,
 > `03cefb9f`, `47e9d4a1` add the hardware
