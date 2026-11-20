@@ -81,16 +81,19 @@ public:
     // Recording occurs only on the owner thread during a frame, outside any
     // other render/compute pass. x/y use top-left frame coordinates. Callback
     // will be delivered on a later beginFrame and consumed on an owner frame.
-    // Submits only the selected mesh: other scene occluders are NOT drawn yet.
-    // Because of this limitation, results are experimental diagnostics and
-    // must be checked against CPU BVH selection, not treated as full-scene
-    // authoritative visibility.
+    // The selected mesh draws encoded IDs; supplied world-space occluder
+    // triangles are appended and draw zero-ID depth in the same pass.
+    // Alpha-masked/transparent geometry is conservatively treated as
+    // solid occlusion here: it may suppress confirmation, never give an
+    // otherwise hidden source vertex a false GPU-visible ID.
+    // Renderer3D GPU vertex-override/true alpha pixels are still separate.
     bool record(const render::Model& model,
                 const SkinnedWeightSurface& surface,
                 std::size_t authorCount,
                 std::span<const std::uint32_t> authorIds,
                 const render::mat4& viewProj,
-                const SculptGpuPickRequest& request) {
+                const SculptGpuPickRequest& request,
+                std::span<const SculptGpuIdVertex> occluders={}) {
         if(!device_||!supported_||!request.valid()||
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
@@ -100,8 +103,20 @@ public:
            !device_->gpuHealthy() ||
            !buildSculptGpuIdVertices(model,surface,authorCount,
                                       authorIds,vertices_) ||
-           vertices_.empty() || vertices_.size()>3000000u)
+           vertices_.empty() || vertices_.size()>3000000u ||
+           occluders.size()>3000000u-vertices_.size())
             return false;
+        // Explicit scene occluders must never carry a selectable ID.
+        // Reject mismatched data instead of accidentally returning the
+        // ordinal of a hair/floor/background triangle.
+        for(const auto& vertex:occluders) {
+            if(vertex.rgba[0]||vertex.rgba[1]||
+               vertex.rgba[2]||vertex.rgba[3]||
+               !std::isfinite(vertex.world.x)||
+               !std::isfinite(vertex.world.y)||
+               !std::isfinite(vertex.world.z))return false;
+        }
+        vertices_.insert(vertices_.end(),occluders.begin(),occluders.end());
         for(float v:viewProj.m)if(!std::isfinite(v))return false;
         const int w=int(request.width),h=int(request.height);
         if((!color_.valid()||!depth_.valid()) || w!=width_ || h!=height_) {
