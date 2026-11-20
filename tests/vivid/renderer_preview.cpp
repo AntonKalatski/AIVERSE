@@ -325,13 +325,9 @@ struct Preview {
                 require(comparison.verdict==
                             vivid::SculptGpuColorPixelResult::Verdict::Covered,
                     "VIVID same-frame Metal Renderer3D colour and GPU actor ID pixel coverage differ");
-                constexpr float kMaxDepthDifference=0.003f;
-                const float depthDelta=std::fabs(
-                    probe.sceneDepth-probe.idDepth);
-                require(std::isfinite(depthDelta) &&
-                        probe.sceneDepth>=0.f && probe.sceneDepth<1.f &&
-                        probe.idDepth>=0.f && probe.idDepth<1.f &&
-                        depthDelta<=kMaxDepthDifference,
+                const auto depthMatch=vivid::compareSculptGpuDepthPixels(
+                    probe.sceneDepth,probe.idDepth,0.003f);
+                require(depthMatch.samplesValid && depthMatch.matching,
                     "VIVID real Metal Renderer3D screen vs GPU ID depth mismatch");
                 probe.checked=true;
                 std::printf("VIVID same-frame GPU colour/ID coverage stage=%d frame=%llu xy=%u,%u distance=%d id=%u,%u,%u,%u depth_scene=%f depth_id=%f delta=%f PASS\n",
@@ -340,7 +336,7 @@ struct Preview {
                     unsigned(probe.id[0]),unsigned(probe.id[1]),
                     unsigned(probe.id[2]),unsigned(probe.id[3]),
                     double(probe.sceneDepth),double(probe.idDepth),
-                    double(depthDelta));
+                    double(depthMatch.absoluteDifference));
             }
         }
         if(stage>=3 && captures.size()==3 &&
