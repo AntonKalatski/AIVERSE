@@ -13,7 +13,7 @@ mkdir -p "$BASE"
 OUT="$BASE/capture-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir "$OUT"
 {
- echo "stage=139"
+ echo "stage=141"
  echo "utc_start=$(date -u +%Y%m%dT%H%M%SZ)"
  echo "git_head=$(git rev-parse HEAD)"
  echo "binary=$BIN"
@@ -43,7 +43,7 @@ if [[ -n "${AIVERSE_BATCH_NATIVE_PROVENANCE_FILE:-}" ]]; then
   grep -Fqx "repo_head=$(git rev-parse HEAD)" "$source_file" || {
     echo "Native provenance HEAD mismatch" >&2; exit 2;
   }
-  grep -Fqx 'stage=139' "$source_file" || {
+  grep -Fqx 'stage=141' "$source_file" || {
     echo "Native provenance stage mismatch" >&2; exit 2;
   }
   grep -Eq '^binary_sha256=[0-9a-f]{64}$' "$source_file" || {
