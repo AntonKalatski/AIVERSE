@@ -110,7 +110,7 @@ if [[ "$GUI" -eq 1 ]]; then
     # The 12-actor crowd mode intentionally does not run these single-
     # actor provenance probes.
     for parity_stage in 1 2; do
-        if ! grep -q "GPU colour/ID coverage stage=${parity_stage} .* PASS" \
+        if ! grep -q "GPU colour/ID coverage stage=${parity_stage} .*depth_scene=.*depth_id=.*delta=.* PASS" \
             "$LOGDIR/renderer-preview.log"; then
             printf 'VIVID Metal colour/ID parity stage %s is missing.\n' \
                 "$parity_stage" >&2
