@@ -344,13 +344,15 @@ std::unique_ptr<Model> modelFromParts(const std::string& name, const std::vector
 void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& idx, uint32_t first, uint32_t count);
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
+// Authoring keepPickingGeometry retains vertices/indices/morph data and only
+// cutout/blended base-alpha image pixels; other texture CPU copies still release.
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
 // A speculative model import may borrow already resident shared textures,
 // but must not create new entries in the live shared GPU texture cache.
 // Pass publishSharedTextures=false only when an external host owns a staged
 // Model and can retire the entire Model on abort after a real GPU barrier.
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false,
-                 bool publishSharedTextures = true);
+                 bool publishSharedTextures = true, bool keepPickingGeometry = false);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
 // Upload one host-staged image without touching any live Model::images vector.
 // Returns false if the GPU did not create a valid texture handle.

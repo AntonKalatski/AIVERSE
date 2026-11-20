@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <utility>
 #include <string>
 #include <vector>
 #include <deque>
@@ -1460,6 +1461,7 @@ public:
     // Copy borrowed pointers before drawModel returns; not light-baker capture.
     using ModelPacketTap = std::function<void(const ModelDraw&)>;
     void setModelPacketTap(ModelPacketTap tap) { modelPacketTap_=std::move(tap); }
+    ModelPacketTap exchangeModelPacketTap(ModelPacketTap tap){return std::exchange(modelPacketTap_,std::move(tap));}
     // Optional synchronous capture of mesh/line/triangle commands.
     // No callbacks retained by the renderer across frames; client removes it.
     using GeometryPacketTap=std::function<void(const CameraGeometryCommand&)>;

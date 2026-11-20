@@ -176,6 +176,19 @@ void Editor::registerGuiOps() {
         r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
         const auto& model=r3d_.modelStats();auto levels=Json::array();for(auto count:model.cameraLodNodes)levels.push(Json::number(int64_t(count)));r.set("cameraLodNodes",levels);r.set("lodChains",Json::number(int64_t(model.cameraLodChains)));r.set("lodBlocked",Json::number(int64_t(model.cameraLodBlocked)));r.set("shadowLimitedLod",Json::number(int64_t(model.cameraShadowLimitedLod)));return r;
     });
+    add("view_pick","Read-only visual mesh hit at normalized Scene coordinates u,v; uses the same picking path as mouse selection.",
+        R"({"properties":{"u":{"type":"number"},"v":{"type":"number"}},"required":["u","v"]})",[this](const Json& p){
+            if(!sceneViewport||!sceneViewport->color.valid())throw std::runtime_error("Scene viewport unavailable");
+            if(!p["u"].isNumber()||!p["v"].isNumber())throw std::runtime_error("u,v required");
+            const double u=p["u"].toDouble(),v=p["v"].toDouble();
+            if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)throw std::runtime_error("u,v outside0..1");
+            const auto& viewport=*sceneViewport;
+            const auto selection=pickObject(viewport,sceneCam,viewport.originX+float(u)*viewport.pointsW,viewport.originY+float(v)*viewport.pointsH);
+            const int index=selection.kind==Selection::Entity?selection.index:-1;
+            Json result=Json::object();result.set("hit",Json::fromBool(index>=0));result.set("index",Json::number(int64_t(index)));
+            if(index>=0&&size_t(index)<doc().data.entities.size())result.set("entityId",Json::string(doc().data.entities[size_t(index)].id));
+            return result;
+        });
     add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first; x, z, distance, pitch, yaw (degrees) place the Scene camera. Returns a PNG image.",
         R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });

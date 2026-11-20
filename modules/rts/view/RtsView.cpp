@@ -1617,7 +1617,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     viewProviders.add("world indicators",[&](auto& q,const auto&){
         q.append("world indicators",LayerPhase::Overlay,[&]{
-            overlays_.drawWorld(r,s,time,vision,grid,*this);
+            if(s.gameplayOverlays)overlays_.drawWorld(r,s,time,vision,grid,*this);
             publication.mark(Epoch::Overlays);
         });
     });
@@ -1703,7 +1703,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
 
 void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
     // bars, garrison counts, labels, damage numbers: RtsOverlays (built-in overlays reproduce the old look)
-    overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
+    if(s.gameplayOverlays)overlays_.drawScreen(cam, s, w, h, ox, oy, drawList, *this);
 }
 
 bool RtsView::overlayTop(const RTSCamera& cam, const SceneObject& o, size_t oi, float w, float h, float2& sp) const {

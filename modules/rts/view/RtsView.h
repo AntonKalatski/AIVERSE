@@ -135,6 +135,7 @@ struct RtsScene {
     const std::vector<GridFieldDef>* fieldDefs = nullptr;
     std::vector<FieldSceneLayer> fields;
     // drag-to-send arrows (Mushroom-Wars input) and box selection are drawn by the client
+    bool gameplayOverlays=true; // authoring Scene opts out; native game hosts retain module HUD
 };
 
 // Things the view noticed this frame, for sound and particles: clip events ("step", "hit"),
@@ -528,6 +529,7 @@ public:
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
     void setSelectionOutline(bool on) { outline_ = on; }
+    void setRetainPickingGeometry(bool on){resources_.setRetainPickingGeometry(on);}
     // Register immutable native pose operations before init().
     void setAnimationOperations(render::AnimationOperations operations) { animationOperations_ = std::move(operations); }
     // Optional host physics queries override the default terrain / visible AABB adapter.

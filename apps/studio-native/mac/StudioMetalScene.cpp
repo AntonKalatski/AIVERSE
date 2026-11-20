@@ -472,6 +472,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     nereid_.updateUnderwater(post_,underwaterFrameTime_>0?float(opticalNow-underwaterFrameTime_):1.f/60.f);
     underwaterFrameTime_=opticalNow;
     renderer_.beginScene(camera_, framebufferWidth, framebufferHeight);
+    renderer_.setSceneSelectionOutline(true);
     renderer_.lighting=environment;
     if (lightingSource.isObject()) {
         renderer_.lights.setNightGlow(day.night*1.5f);
@@ -513,19 +514,12 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         bool hasModel=false;
         for(const auto& instance:modelInstances_) if(instance.id==entity.id) {hasModel=true;break;}
         if (hasModel) continue;
-        if(!lightingModel_ && !entity.light)renderer_.drawMesh(cube_,
-            mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*
-            mat4::scale(entity.half*2.0f), entity.color, kDrawNoCastShadow);
-        if(entity.id==selectedId) {
-            const auto lo=entity.boundsMin,hi=entity.boundsMax;
-            const float3 p[8]={{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},
-                {hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,lo.z},
-                {hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}};
-            constexpr int edges[12][2]={{0,1},{1,2},{2,3},{3,0},
-                {4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-            for(const auto& edge:edges)
-                renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
+        if(!lightingModel_&&!entity.light){
+            const auto transform=mat4::translate(entity.center)*mat4::rotateY(entity.yaw)*mat4::scale(entity.half*2.0f);
+            if(entity.id==selectedId)renderer_.drawSelectionMesh(cube_,transform,entity.color,{.25f,.62f,1.f,1.f});
+            else renderer_.drawMesh(cube_,transform,entity.color,kDrawNoCastShadow);
         }
+
     }
     for(const auto& instance:modelInstances_) {
         render::ModelDraw draw;

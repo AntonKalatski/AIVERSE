@@ -1,6 +1,7 @@
 // Editor: lifecycle, docking layout, menus, documents, play-test and viewport rendering.
 // Window contents live in apps/editor/windows/*.cpp; the agent link in EditorAgent.cpp.
 #include "Editor.h"
+#include "engine/render/ModelSurfacePicking.h"
 #include "apps/editor/AuthoringComponents.h"
 #include "apps/editor/AuthoringWater.h"
 #include "windows/StudioContextMenus.h"
@@ -207,6 +208,7 @@ void Editor::init(gfx::Device& dev) {
     const char* eagerAssets = std::getenv("AIVERSE_EDITOR_EAGER_MODELS");
     lazyEditorAssets_ = !(eagerAssets && std::strcmp(eagerAssets, "1") == 0);
     modelDemand_.resize(rules().types.size());
+    view_.setRetainPickingGeometry(true);
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -397,6 +399,7 @@ void Editor::reloadRules() {
     modelDemand_.resize(rules().types.size());
     modelDemand_.markSweep(time_);
     visualAssets_.reset();
+    view_.setRetainPickingGeometry(true);
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -420,6 +423,7 @@ void Editor::reloadVisualAssets() {
     editSceneCache_.clear();
     view_.shutdown(*dev_);
     modelDemand_.invalidate(); // discard requests for the old resource generation
+    view_.setRetainPickingGeometry(true);
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false);
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -757,109 +761,29 @@ float Editor::snapCoord(float v, int typeIdx) const {
     return std::round(v * 4) / 4;
 }
 
-int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
-    if (view_.planetMode()) { // nearest entity on the picked body, 3D distance
-        int body; float3 local;
-        if (!planetAt(vp, sx, sy, body, local)) return -1;
-        int best = -1;
-        float bestD = 1e9f;
-        const auto& d = ws_.map.data;
-        for (size_t i = 0; i < d.entities.size(); ++i) {
-            int eb; float3 el;
-            if (!planetLocal(d.entities[i].at, eb, el) || eb != body) continue;
-            if (objectHidden(d.entities[i].owner, d.entities[i].type) || objectLocked(d.entities[i].owner, d.entities[i].type)) continue;
-            const int t = rules().findType(d.entities[i].type);
-            const float r = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
-            const float dd = length(el - local);
-            if (dd < r && dd < bestD) { best = int(i); bestD = dd; }
+int Editor::pickEntity(const Viewport& vp,const RTSCamera& cam,float sx,float sy) const {
+    float3 origin{},direction{};
+    const auto& pickCamera=view_.planetMode()?view_.planetCamera().camera():cam;
+    if(!pickCamera.screenRay(sx-vp.originX,sy-vp.originY,vp.pointsW,vp.pointsH,origin,direction))return -1;
+    const auto& owner=view_.modelResources();
+    if(owner.generation()!=visualPickCacheGeneration_)return -1;
+    int nearest=-1;float distance=std::numeric_limits<float>::infinity();
+    for(size_t i=0;i<visualPickModelCount_;++i){
+        const auto& packet=visualPickModels_[i];size_t index=packet.documentIndex;
+        if(!packet.entityId.empty()&&(index>=doc().data.entities.size()||doc().data.entities[index].id!=packet.entityId)){
+            index=0;while(index<doc().data.entities.size()&&doc().data.entities[index].id!=packet.entityId)++index;
         }
-        return best;
+        if(index>=doc().data.entities.size())continue;
+        const auto& entity=doc().data.entities[index];
+        if(objectHidden(entity.owner,entity.type)||objectLocked(entity.owner,entity.type))continue;
+        const auto lease=owner.acquireModelRead(packet.model);
+        if(!lease)continue; // never dereference a retired or foreign Model
+        const auto hit=render::pickModelSurface(*lease.get(),packet.world,origin,direction,1000000,
+            packet.nodes.empty()?nullptr:&packet.nodes,packet.materials.empty()?nullptr:&packet.materials,
+            packet.nodeMaterials.empty()?nullptr:&packet.nodeMaterials);
+        if(hit&&hit.distance<distance){distance=hit.distance;nearest=int(index);}
     }
-    // RTS map entities and FPS scene objects now use the same ray/AABB hit
-    // tester. Genre adapters only provide their spatial bounds and identities.
-    float3 rayOrigin{}, rayDirection{};
-    if (cam.screenRay(sx - vp.originX, sy - vp.originY,
-                      vp.pointsW, vp.pointsH, rayOrigin, rayDirection)) {
-        const auto& candidates = ws_.map.data.entities;
-        std::vector<SceneRenderable> proxies;
-        proxies.reserve(candidates.size());
-        for (size_t i = 0; i < candidates.size(); ++i) {
-            const auto& entity = candidates[i];
-            if (objectHidden(entity.owner, entity.type) ||
-                objectLocked(entity.owner, entity.type)) continue;
-            const int ti = rules().findType(entity.type);
-            const auto& allTypes = rules().types;
-            const bool structure = ti >= 0 && allTypes[size_t(ti)].structure;
-            const float radius = ti >= 0
-                ? game::view_adapter::selectionRadius(rules(),uint16_t(ti))
-                : 0.6f;
-            const float halfX = structure
-                ? std::max(.5f, float(allTypes[size_t(ti)].footprintW) * .5f)
-                : std::max(.35f, radius);
-            const float halfZ = structure
-                ? std::max(.5f, float(allTypes[size_t(ti)].footprintH) * .5f)
-                : std::max(.35f, radius);
-            const float baseY = const_cast<game::RtsView&>(view_)
-                .heightAt(editGrid(), entity.x, entity.z);
-            const float topY = baseY + (structure
-                ? std::max(2.f, radius * 2.f)
-                : std::max(.9f, radius * 2.f));
-            SceneRenderable proxy;
-            proxy.entity = uint64_t(i) + 1;
-            proxy.pickable = true;
-            proxy.boundsMin = {entity.x - halfX, baseY, entity.z - halfZ};
-            proxy.boundsMax = {entity.x + halfX, topY, entity.z + halfZ};
-            proxies.push_back(proxy);
-        }
-        const int nearest = pickSceneRenderable(proxies, rayOrigin, rayDirection);
-        if (nearest >= 0) return int(proxies[size_t(nearest)].entity - 1);
-    }
-
-    // Use visual, screen-space picking before the legacy ground hit-test. A ground
-    // ray can land behind a roof on angled cameras and select a neighbouring unit.
-    // Pixel-sized hit areas remain usable when zoomed out, while footprints scale
-    // with the viewport. Only real map entities participate here.
-    const auto& d = ws_.map.data;
-    const float px = sx - vp.originX, py = sy - vp.originY;
-    int nearestScreen = -1;
-    float bestScore = 1e9f;
-    for (size_t i = 0; i < d.entities.size(); ++i) {
-        const auto& e = d.entities[i];
-        if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
-        const int t = rules().findType(e.type);
-        const float radius = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
-        const float groundY = const_cast<game::RtsView&>(view_).heightAt(editGrid(), e.x, e.z);
-        float2 at, edge, top;
-        if (!cam.worldToScreen({e.x, groundY, e.z}, vp.pointsW, vp.pointsH, at)) continue;
-        if (!cam.worldToScreen({e.x + radius, groundY, e.z}, vp.pointsW, vp.pointsH, edge)) continue;
-        const float height = (t >= 0 && rules().types[size_t(t)].structure) ? 2.0f : 0.8f;
-        const bool hasTop = cam.worldToScreen({e.x, groundY + height, e.z}, vp.pointsW, vp.pointsH, top);
-        const float hitRadius = std::clamp(std::hypot(edge.x - at.x, edge.y - at.y), 9.0f, 110.0f);
-        // Test from base to approximate roof/upper silhouette, not just ground position.
-        const float dx = px - at.x, dy = py - at.y;
-        const float tx = hasTop ? top.x - at.x : 0.0f;
-        const float ty = hasTop ? top.y - at.y : 0.0f;
-        const float len2 = tx * tx + ty * ty;
-        const float along = len2 > 0.01f ? std::clamp((dx * tx + dy * ty) / len2, 0.0f, 1.0f) : 0.0f;
-        const float dist = std::hypot(dx - along * tx, dy - along * ty);
-        const float score = dist / hitRadius;
-        if (score <= 1.0f && score < bestScore) { bestScore = score; nearestScreen = int(i); }
-    }
-    if (nearestScreen >= 0) return nearestScreen;
-    // Fallback for low-angle/special rendering modes where projection can fail.
-    float x, z;
-    if (!groundAt(vp, cam, sx, sy, x, z)) return -1;
-    int best = -1;
-    float bestD = 1e9f;
-    for (size_t i = 0; i < d.entities.size(); ++i) {
-        const auto& e = d.entities[i];
-        if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
-        const int t = rules().findType(e.type);
-        const float r = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
-        const float dd = std::hypot(x - e.x, z - e.z);
-        if (dd < r && dd < bestD) { best = int(i); bestD = dd; }
-    }
-    return best;
+    return nearest;
 }
 
 int Editor::pickRoad(const Viewport& vp, const RTSCamera& cam, float sx, float sy) const {
@@ -1723,6 +1647,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto stageStart = std::chrono::steady_clock::now();
     if (!ws_.project.isFps()) {
         buildEditScene(scene_);
+        scene_.gameplayOverlays=false;
         if (lazyEditorAssets_) {
             // Preserve generated preview types without loading the entire catalog.
             for (const auto& o : scene_.objects)
@@ -1778,6 +1703,24 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     } catch(const std::exception& e) {
         std::fprintf(stderr,"[nereid-preview] %s\n",e.what());
     }
+    visualPickModelCount_=0;
+    struct RestorePickTap {
+        Renderer3D& renderer;Renderer3D::ModelPacketTap previous;
+        ~RestorePickTap(){renderer.setModelPacketTap(std::move(previous));}
+    } pickTap{r3d_,r3d_.exchangeModelPacketTap({})};
+    r3d_.setModelPacketTap([this,&pickTap](const ModelDraw& draw){
+        if(pickTap.previous)pickTap.previous(draw);
+        if(!draw.model||(draw.persistentId>>56)!=0xED||visualPickModelCount_>=4096)return;
+        const uint64_t encoded=draw.persistentId&0x00ffffffffffffffULL;
+        if(encoded==0||encoded>doc().data.entities.size())return;
+        if(visualPickModelCount_==visualPickModels_.size())visualPickModels_.emplace_back();
+        auto& out=visualPickModels_[visualPickModelCount_++];
+        out.model=draw.model;out.documentIndex=size_t(encoded-1);out.entityId=doc().data.entities[out.documentIndex].id;out.world=draw.world;
+        if(draw.nodeWorld)out.nodes=*draw.nodeWorld;else out.nodes.clear();
+        out.materials=draw.materials?*draw.materials:draw.model->materials;
+        for(auto& material:out.materials)material.baseColor.w*=draw.tint.w;
+        if(draw.nodeMaterial)out.nodeMaterials=*draw.nodeMaterial;else out.nodeMaterials.clear();
+    });
     r3d_.beginScene(renderCam,renderW,renderH);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
@@ -1793,6 +1736,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         view_.setSelectionOutline(false);
     }
     nereidPreview_.draw(r3d_);
+    visualPickCacheGeneration_=view_.modelResources().generation();
     const auto afterView = std::chrono::steady_clock::now();
     if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
@@ -1860,7 +1804,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         spectraPreviewGpu_->endPresentationFrame();
         spectraPreviewFrameOpen_=false;
     }
-    if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
+    // Scene authoring has no gameplay health/build HUD.
     if (traceSceneStages) {
         static unsigned samples = 0;
         static double sums[6] = {};
@@ -1898,7 +1842,8 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     game::sceneFromSim(*sim_, sc, float(sim_->alpha()), uint8_t(human_));
     sc.paintLayers = paintLayers;
     sc.entityFx = entityFx;
-    const bool sceneView = &vp == sceneViewport;   // the Scene shows the editor's selection / hover of the world tree
+    const bool sceneView = &vp == sceneViewport;
+    sc.gameplayOverlays=!sceneView;   // the Scene shows the editor's selection / hover of the world tree
     for (auto& o : sc.objects) {
         o.selected = std::find(gameSelection.begin(), gameSelection.end(), o.entity) != gameSelection.end();
         if (sceneView && o.entity.valid()) {
@@ -1939,6 +1884,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         std::fprintf(stderr,"[nereid-game-preview] %s\n",e.what());
     }
     r3d_.beginScene(renderCam,renderW,renderH);
+    r3d_.setSceneSelectionOutline(sceneView);
     setOverlayContext(vp, cam, true);
     view_.draw(r3d_, sc, time_, human_ ? &gs.vision[size_t(human_)] : nullptr, gs.grid);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
@@ -1967,6 +1913,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         });
     drawSpectraGpuPreview();
     r3d_.resolvePrisma();
+    r3d_.setSceneSelectionOutline(false);
     prisma_.clearCameraVolumes();
     dev_->endPass();
     if (gameGpuScope) dev_->endGpuScope();
@@ -1974,7 +1921,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         spectraPreviewGpu_->endPresentationFrame();
         spectraPreviewFrameOpen_=false;
     }
-    view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
+    if(!sceneView)view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 
 // Overlays get what the player does in this view: cursor, held keys, the structure being placed

@@ -505,6 +505,19 @@ private:
     render::Renderer3D r3d_;
     TerraWeaveForestPreview terraWeaveForestPreview_;
     world::NereidManifestHost nereidPreview_;
+    struct VisualPickModel {
+        const render::Model* model=nullptr; // identity only until cache read lease acquired
+        std::string entityId;
+        size_t documentIndex=0;
+        render::mat4 world;
+        std::vector<render::mat4> nodes;
+        std::vector<render::Material> materials;
+        std::vector<int> nodeMaterials;
+    };
+    std::vector<VisualPickModel> visualPickModels_;
+    size_t visualPickModelCount_=0;
+    uint64_t visualPickCacheGeneration_=0;
+
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;

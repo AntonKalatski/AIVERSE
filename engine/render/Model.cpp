@@ -807,7 +807,7 @@ void prepareModelUpload(Model& m) {
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
-                 bool publishSharedTextures) {
+                 bool publishSharedTextures, bool keepPickingGeometry) {
     const bool hasCpuVertices = !m.vertices.empty();
     const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
         m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
@@ -839,6 +839,10 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
     if(hasCpuVertices && !m.geometryPoolPage &&
        (!m.vb.valid() || !m.ib.valid()))
         return false;
+    std::vector<bool> pickAlpha(m.images.size(),false);
+    if(keepPickingGeometry)for(const auto& material:m.materials)
+        if(material.alpha!=AlphaMode::Opaque&&material.baseTex>=0&&size_t(material.baseTex)<pickAlpha.size())pickAlpha[size_t(material.baseTex)]=true;
+    size_t imageIndex=0;
     for (auto& img : m.images) {
         const auto previousTexture = img.tex;
         // Reduced VT fallbacks are per-Image resources and must not borrow
@@ -862,13 +866,14 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if ((img.virtualFallbackMaxDimension > 0 ||
              (img.width > 0 && img.height > 0)) && !img.tex.valid())
             return false;
-        if (!keepCpu) {
+        if (!keepCpu && !pickAlpha[imageIndex]) {
             // Release CPU pixels only after successful upload. swap cannot
             // throw like shrink_to_fit, keeping rollback deterministic.
             std::vector<uint8_t>{}.swap(img.rgba);
             img.compressed.reset();
             img.sharedRgba.reset();
         }
+        ++imageIndex;
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
     size_t texels = 0;
@@ -895,7 +900,7 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
-    if (!keepCpu) {
+    if (!keepCpu && !keepPickingGeometry) {
         // Never discard morph deltas before a successful GPU morph texture
         // allocation. Failed uploads retain their CPU source for diagnostics
         // and safe retry/rollback by the host.

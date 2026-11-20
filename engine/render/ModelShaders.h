@@ -165,7 +165,7 @@ void main() {
     float sgn = dot(c0, cross(c1, c2)) < 0.0 ? -1.0 : 1.0;
     vec4 wp = I.model * p;
     v_nrm = cof * n * sgn;
-#if defined(OUTLINE)
+#if defined(OUTLINE) && !defined(SELECTION_MASK)
     wp.xyz += normalize(v_nrm) * I.draw.z;
 #endif
     v_wpos = wp.xyz;
@@ -635,7 +635,7 @@ vertex VOut vs_main(VERTEX_ARGS) {
     float4 wp = I.model * d.p;
     o.opos = d.p.xyz;
     o.nrm = cof * d.n * sgn;
-#if defined(OUTLINE)
+#if defined(OUTLINE) && !defined(SELECTION_MASK)
     wp.xyz += normalize(o.nrm) * I.draw.z;
 #endif
     o.wpos = wp.xyz;

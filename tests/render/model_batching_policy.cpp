@@ -280,6 +280,17 @@ static void verifyGeometryPoolRetirementAndUploadRecovery() {
         releaseModel(dev, model);
         CHECK(dev.buffers.empty());
     }
+    {
+        MockDevice dev;auto model=pooledFixture(31);
+        model.images.resize(2);
+        for(auto& image:model.images){image.width=image.height=2;image.rgba.assign(16,255);}
+        model.materials[0].alpha=AlphaMode::Mask;model.materials[0].baseTex=0;model.materials[0].mrTex=1;
+        CHECK(uploadModel(dev,model,false,true,true));
+        CHECK(!model.vertices.empty()&&!model.indices.empty());
+        CHECK(!model.images[0].rgba.empty()&&model.images[1].rgba.empty());
+        releaseModel(dev,model);CHECK(dev.buffers.empty());
+    }
+
 }
 
 static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
