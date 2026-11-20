@@ -919,3 +919,42 @@ observed speedups. Correctness across actual imported scanned heads,
 nonlinear/cloth deformation, renderer visibility and high-density
 morphs remains to be validated. See the Stage 7AM handoff in
 `docs/agent-handoffs/vivid.md`.
+
+
+## Stage 7AN — GPU ID/depth source contract (2026-11-20)
+
+The current render RHI supplies ordinary offscreen color/depth targets,
+a screen capture and asynchronous **buffer** readback, but the VIVID
+branch does **not** expose the stable, cross-platform asynchronous
+offscreen **pixel** readback required to ship GPU depth-tested
+selection. Implementing an RHI/Renderer3D fork inside VIVID would
+duplicate functionality under construction in Texture RHI.
+
+Instead the VIVID-facing ID/depth pass ABI has been implemented in
+`SculptGpuPickContract.h` and `SculptGpuPickShaders.h`. It includes
+reversible linear RGBA8 triangle-index packing (zero reserved for
+background/nonauthorable occluders), a fixed 16-byte expanded triangle
+vertex layout, GLSL ES300/MSL shaders and RHI shader/pipeline descriptor
+helpers, and a versioned one-outstanding-request token gate which
+rejects responses after model publication, viewport/frame changes,
+or newer user clicks. CPU reconciliation uses the original
+morphed-before-skinned source-ID resolver and intersects only the
+GPU-selected triangle, including seam-clone mapping.
+
+The existing `DeformedSculptWorkspace` can resolve an externally
+verified GPU triangle ID only if its CPU surface is explicitly stamped
+with **exact** captured `frameSerial` and `publicationSerial`.
+An unstamped CPU click cannot be treated as a GPU-pose oracle.
+All bounds, finite positions, invalid IDs, depth range and revision
+checks fail closed. The Creator continues to use the tested-in-source
+CPU BVH path; nothing in this stage allocates GPU ID targets or changes
+Renderer3D's normal rendering.
+
+**NOT IMPLEMENTED / NOT VERIFIED**: recording a true GPU ID/depth
+draw pass, correct alpha/occluder submission and renderer-owned GPU
+deformation, asynchronous offscreen color/depth pixel readback,
+Metal/Vulkan/GLES shader compilation, actual camera/raster depth
+parity or hardware tests. Source regression checks in
+`vivid_human_creator` were added but NOT RUN. Do not advertise the
+feature as full GPU picking until these gates pass. See Stage 7AN
+handoff and `tools/vivid-creator/README.md` for exact API contract.
