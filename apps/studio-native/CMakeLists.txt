@@ -52,6 +52,15 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_studio_facial_rig_tests PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(aiverse_studio_facial_rig_tests PRIVATE aiverse_editor_core)
     add_test(NAME studio_facial_rig_document COMMAND aiverse_studio_facial_rig_tests)
+    add_executable(aiverse_studio_facial_preview_contract_tests
+        tests/StudioFacialPreviewContractTests.cpp)
+    target_include_directories(aiverse_studio_facial_preview_contract_tests
+        PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(aiverse_studio_facial_preview_contract_tests
+        PRIVATE aiverse_engine)
+    add_test(NAME studio_facial_preview_contract
+        COMMAND aiverse_studio_facial_preview_contract_tests)
+    set_tests_properties(studio_facial_preview_contract PROPERTIES LABELS "EDITOR")
     set_tests_properties(studio_facial_rig_document PROPERTIES LABELS "EDITOR")
     add_executable(aiverse_studio_shader_graph_draft_tests tests/StudioShaderGraphDraftTests.cpp)
     target_include_directories(aiverse_studio_shader_graph_draft_tests PRIVATE "${PROJECT_SOURCE_DIR}")
