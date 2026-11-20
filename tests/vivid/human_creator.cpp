@@ -762,6 +762,11 @@ void test() {
         maskPrim.firstIndex=0;maskPrim.indexCount=3;
         maskPrim.visible=maskPrim.colourCandidate=true;
         maskPrim.customGpuStream=true;
+        maskPrim.maskedMaterial=true;
+        maskPrim.maskBaseTexture=model.images[0].tex;
+        maskPrim.maskAlpha=material.baseColor.w;
+        maskPrim.maskCutoff=material.alphaCutoff;
+        maskPrim.maskVertexColors=material.vertexColors;
         maskPrim.vertexOverride={71};
         maskPrim.vertexOverrideCount=3;
         maskPrim.world=mat4::identity();
@@ -783,6 +788,12 @@ void test() {
             preparedOccluder.actualVertexOverride==gfx::BufferHandle{71},
             "accepted Renderer3D Mask source was rejected by GPU collector");
         const auto publishedCount=preparedOccluder.indices.size();
+        maskSubmitted.commands[0].source.maskCutoff=.6f;
+        req(!prepareSculptGpuRendererMaskOccluder(
+                maskView,maskSubmitted,candidate,79,{70},preparedOccluder) &&
+            preparedOccluder.indices.size()==publishedCount,
+            "changed actual Renderer3D Mask cutoff bypassed source validation");
+        maskSubmitted.commands[0].source.maskCutoff=material.alphaCutoff;
         req(!prepareSculptGpuRendererMaskOccluder(
                 maskView,maskSubmitted,candidate,80,{70},preparedOccluder) &&
             preparedOccluder.indices.size()==publishedCount,
