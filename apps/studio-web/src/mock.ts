@@ -28,12 +28,16 @@ const undoStack: StudioSnapshot[] = [];
 const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
 
-export async function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
+// Public overload preserves method -> parameter -> result correlation.
+// Implementation uses the union of valid method results, since TypeScript
+ // cannot narrow generic M through a runtime method comparison.
+export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
+export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
   if (method === 'studio.materials') {
-    return { library: {} } as StudioResult[M];
+    return { library: {} };
   }
-  if (method === 'studio.shaderGraphCatalog') return {nodes:[]} as StudioResult[M];
-  if (method === 'studio.shaderGraphs') return {graphs:[]} as StudioResult[M];
+  if (method === 'studio.shaderGraphCatalog') return {nodes:[]};
+  if (method === 'studio.shaderGraphs') return {graphs:[]};
   if (method === 'studio.shaderGraphGet' || method === 'studio.shaderGraphValidate' ||
       method === 'studio.shaderGraphSave')
     throw Error('Shader Graph documents require a native project');
@@ -44,7 +48,7 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
     throw Error('Editing materials requires the native AIVERSE host');
   }
   if (method === 'studio.lighting') {
-    return { lighting: null, lights: [] } as StudioResult[M];
+    return { lighting: null, lights: [] };
   }
   if (method === 'studio.lightingSet' || method === 'studio.lightAdd' ||
       method === 'studio.lightUpdate' || method === 'studio.lightDelete') {
@@ -52,10 +56,10 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
   }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
-    return { files: [] } as StudioResult[M];
+    return { files: [] };
   }
   if (method === 'studio.viewportRect' || method === 'studio.viewportInput') {
-    return { ok: true } as StudioResult[M]; // Browser preview has no native surface.
+    return { ok: true }; // Browser preview has no native surface.
   }
   if (method === 'studio.select') {
     const id = (params as StudioParams['studio.select']).id;
@@ -99,5 +103,5 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
   } else if (method !== 'studio.snapshot') {
     throw Error('Unsupported operation');
   }
-  return clone() as StudioResult[M];
+  return clone();
 }
