@@ -121,3 +121,53 @@ shadows.
   stage must still pass actual Apple Metal compilation and visual testing.
 - High-count human skin/hair benchmarks, Vulkan GPU parity and the full engine
   regression are separate release gates.
+
+
+## Controlled optical A/B capture cases (Stage 7AE, source only)
+
+The Creator has an opt-in `--optical-case` capture mode. Each case starts
+from exactly the same `HumanDNA::preset("neutral")`, uses the existing
+static start camera/sun settings, and disables MotionWeave animation,
+groom simulation and wind for the capture. Optical capture *requires*
+`--smoke` and cannot be mixed with `--preset` or `--asset`.
+Normal editing and existing Creator smoke captures are unchanged.
+
+Available cases:
+
+| Case | Only changed DNA scalar |
+|---|---|
+| `reference` | None |
+| `skin-scatter-low` / `skin-scatter-high` | `skin.scatteringMm = 0.10 / 4.0` |
+| `eye-ior-low` / `eye-ior-high` | `eyes.corneaIor = 1.25 / 1.45` |
+| `hair-rough-low` / `hair-rough-high` | `groom.roughness = 0.08 / 0.90` |
+
+Example (after building on a Mac with a working graphics session):
+
+```bash
+AIVERSE_VIVID_CREATOR_CAPTURE=/tmp/skin-low.ppm \
+  build/vivid-onepass/aiverse_vivid_creator --smoke \
+  --optical-case skin-scatter-low
+```
+
+The final `bash tools/vivid-validate.sh --full` also runs the seven
+fixed-camera captures and emits:
+
+- `optical-skin-scattering.json`
+- `optical-cornea-ior.json`
+- `optical-hair-roughness.json`
+
+under `build/vivid-onepass/vivid-validation/`. The RGB comparator
+`tools/vivid-creator/optical_ab.py` accepts `--roi` as normalized
+`left,top,right,bottom` **within the existing viewport-only crop**, plus
+`--label`, `--parameter`, `--reference-value` and
+`--candidate-value` metadata. Each case has a **provisional broad region**
+that must be calibrated against native Creator screenshots; these are not
+object-ID masks or rigorously isolated surface pixels. A difference above
+the minimal threshold is a smoke diagnostic, not evidence of physically
+accurate scattering/refraction/fiber optics. Verify real screenshot placement
+and shader compiler/runtime parity before tightening thresholds.
+
+**Actual verification has NOT RUN** for this stage (C++, Python fixtures,
+CTest, Metal, Vulkan, GLES and screenshot pixel comparison). An agent should
+check `docs/agent-handoffs/vivid.md` Stage 7AE, then run the deferred
+single consolidated acceptance sweep and fix observed issues.
