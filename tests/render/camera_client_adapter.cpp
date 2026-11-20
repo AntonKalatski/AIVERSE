@@ -4,7 +4,7 @@
 #include <stdexcept>
 using namespace aiverse;
 static void check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
-int main() {
+int aiverseMain(int, char**) {
     World source;SceneHierarchy hierarchy;
     Entity e=source.create();
     check(hierarchy.attach(source,e,LocalTransform{}),"attach");
@@ -26,4 +26,5 @@ int main() {
     render::CameraClientAdapter invalid;
     check(!invalid.loadOffscreenAsset(cameraSceneToJson(source).dump(),&error),"reject screen output");
     check(!invalid.loaded(),"failed transaction");
+    return 0;
 }
