@@ -12550,6 +12550,24 @@ struct Device : entityfxtest::RecordingDevice {
 };
 }
 
+TEST(texture_cache_swap_transfers_gpu_owner_without_invalidating_handles) {
+    fogfaulttest::Device dev;
+    render::TextureCache first,second;
+    first.init(dev);
+    second.init(dev);
+    const std::vector<uint32_t> pixels(4,0xffffffffu);
+    const auto one=first.addGenerated("first-generated",2,2,pixels,false);
+    const auto two=second.addGenerated("second-generated",2,2,pixels,false);
+    CHECK(one.valid() && two.valid() && one.tex.id!=two.tex.id);
+    first.swap(second);
+    CHECK(first.addGenerated("second-generated",2,2,pixels,false).tex.id==two.tex.id);
+    CHECK(second.addGenerated("first-generated",2,2,pixels,false).tex.id==one.tex.id);
+    CHECK(dev.destroyedTextures==0);
+    first.shutdown();
+    second.shutdown();
+    CHECK(dev.destroyedTextures==2);
+}
+
 TEST(overlays_gpu_init_is_atomic_and_retryable) {
     fogfaulttest::Device dev;
     game::Rules rules=skirmishRules();
