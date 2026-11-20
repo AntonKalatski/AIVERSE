@@ -6,6 +6,7 @@
 #include "engine/character/vivid/SculptGpuPickContract.h"
 #include "engine/character/vivid/SculptGpuPickShaders.h"
 #include "engine/character/vivid/SculptGpuSceneOccluders.h"
+#include "engine/character/vivid/SculptGpuAlphaMask.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -414,6 +415,91 @@ void test() {
                 hair,invalidIndices,mat4::identity(),hairData) &&
             hairData.size()>=before,
             "bad procedural occluder must be rejected");
+    }
+    // 7AQ: standard alpha-mask GPU geometry must sample the original
+    // base texture and UV transform per fragment, preserving the source
+    // triangle ID only if the pixel survives the alpha cutoff.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(3);
+        model.vertices[0].pos={0,0,0};model.vertices[0].uv={0,0};
+        model.vertices[1].pos={1,0,0};model.vertices[1].uv={1,0};
+        model.vertices[2].pos={0,1,0};model.vertices[2].uv={0,1};
+        model.indices={0,1,2};
+        MeshDef mesh;
+        Primitive prim;
+        prim.firstIndex=0;prim.indexCount=3;prim.material=0;
+        mesh.primitives.push_back(prim);
+        model.meshes.push_back(mesh);
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        model.materials.resize(1);
+        auto& material=model.materials[0];
+        material.alpha=AlphaMode::Mask;
+        material.alphaCutoff=0.55f;
+        material.baseColor.w=0.9f;
+        material.baseTex=0;
+        material.uvOffset={0.2f,0.3f};
+        material.uvScale={0.7f,0.8f};
+        material.uvRotation=0.25f;
+        model.images.resize(1);
+        model.images[0].tex=aiverse::gfx::TextureHandle{17u};
+        const std::array<mat4,1> pose{{mat4{}}};
+        SkinnedWeightSurface surface;
+        req(prepareSkinnedWeightSurface(model,0,pose,surface),
+            "alpha-mask sculpt geometry reference pose missing");
+        std::vector<SculptGpuIdVertex> opaque;
+        std::vector<SculptGpuMaskBatch> masks;
+        req(appendSculptGpuMaterialGeometry(
+                model,surface,3,{},true,opaque,masks) &&
+            opaque.empty() && masks.size()==1 &&
+            masks[0].vertices.size()==3 &&
+            masks[0].baseTexture==model.images[0].tex &&
+            masks[0].vertices[0].rgba[0]==1 &&
+            std::fabs(masks[0].uniform.alpha[0]-0.9f)<1.e-6f &&
+            std::fabs(masks[0].uniform.alpha[1]-0.55f)<1.e-6f &&
+            std::fabs(masks[0].uniform.uv0[0]-0.2f)<1.e-6f &&
+            std::fabs(masks[0].uniform.uv1[0]-0.25f)<1.e-6f,
+            "GPU mask did not bind source texture or material alpha/UV");
+        std::vector<SculptGpuIdVertex> occluded;
+        std::vector<SculptGpuMaskBatch> occlusionMasks;
+        req(appendSculptGpuMaterialGeometry(
+                model,surface,0,{},false,occluded,occlusionMasks) &&
+            occluded.empty() && occlusionMasks.size()==1 &&
+            occlusionMasks[0].vertices[0].rgba[0]==0,
+            "other mesh alpha mask must sample texture while writing zero ID");
+        const auto shader=sculptGpuMaskShaderDesc();
+        const auto pipeline=sculptGpuMaskPipelineDesc(
+            aiverse::gfx::ShaderHandle{5});
+        req(shader.textureSlots==1 && shader.uniformSlots==2 &&
+            pipeline.stride==32 && pipeline.attrCount==3 &&
+            pipeline.attrs[2].format==aiverse::gfx::VertexFormat::Float4 &&
+            pipeline.attrs[2].offset==16 &&
+            pipeline.depthTest && pipeline.depthWrite &&
+            pipeline.blend==aiverse::gfx::BlendMode::Opaque,
+            "alpha-tested GPU pass lost uniform/vertex/depth contract");
+        req(std::string_view(kSculptGpuMaskFS).find(
+                "texture(tex0,v_uv).a")!=std::string_view::npos &&
+            std::string_view(kSculptGpuMaskMSL).find(
+                "discard_fragment()")!=std::string_view::npos,
+            "GLSL/Metal alpha-tested fragment source missing");
+        model.images[0].tex={};
+        opaque.clear();masks.clear();
+        req(appendSculptGpuMaterialGeometry(
+                model,surface,3,{},true,opaque,masks) &&
+            opaque.size()==3 && masks.empty() &&
+            opaque[0].rgba[0]==0,
+            "unavailable GPU mask texture must fail closed to zero-ID depth");
+        model.images[0].tex=aiverse::gfx::TextureHandle{17u};
+        material.shaderGraph=std::make_shared<
+            const aiverse::render::graph::Program>();
+        opaque.clear();masks.clear();
+        req(appendSculptGpuMaterialGeometry(
+                model,surface,3,{},true,opaque,masks) &&
+            opaque.size()==3 && masks.empty() &&
+            opaque[0].rgba[0]==0,
+            "unknown custom ShaderGraph alpha must remain conservative");
     }
     // 7AM: a cached palette plan must match the original reference
     // under animated joint updates and non-unit integer-weight totals.
