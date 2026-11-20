@@ -33,7 +33,7 @@
 @property(nonatomic, assign) StudioHost* host;
 @end
 
-@interface StudioHost : NSObject <NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
+@interface StudioHost : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate> {
     NSWindow* window_;
     WKWebView* web_;
     StudioMetalView* viewport_;
@@ -46,6 +46,7 @@
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
+    BOOL closeApproved_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -56,6 +57,8 @@
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
 - (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
 - (void)sendProjectCancelledReply:(int64_t)requestId;
+- (BOOL)confirmDiscardChanges;
+- (void)saveMapSheetForRequestId:(int64_t)requestId;
 @end
 
 @implementation StudioMetalView
@@ -120,6 +123,7 @@
         styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable)
         backing:NSBackingStoreBuffered defer:NO];
     window_.title=@"AIVERSE Studio HTML5";
+    window_.delegate=self;
     [window_ center];
 
     WKWebViewConfiguration* cfg=[[WKWebViewConfiguration alloc] init];
@@ -208,6 +212,52 @@
     request.set("params",std::move(params));
     const aiverse::Json outcome=session_->dispatch(request);
     if (!outcome.has("error")) [self sendStudioEvent:"selection.changed" message:""];
+}
+- (BOOL)confirmDiscardChanges {
+    const auto& ws=session_->workspace();
+    if (!ws.map.dirty && !ws.project.rulesDirty && !ws.project.manifestDirty) return YES;
+    if (window_.attachedSheet) return NO;
+    NSAlert* alert=[[NSAlert alloc] init];
+    alert.messageText=@"Discard unsaved changes?";
+    alert.informativeText=@"Save the current document first to keep your changes.";
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:@"Discard Changes"];
+    return [alert runModal]==NSAlertSecondButtonReturn;
+}
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+    (void)sender;
+    if (window_.attachedSheet || ![self confirmDiscardChanges]) return NO;
+    closeApproved_=YES;
+    return YES;
+}
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
+    (void)sender;
+    if (closeApproved_) return NSTerminateNow;
+    if (window_.attachedSheet) return NSTerminateCancel;
+    return [self confirmDiscardChanges] ? NSTerminateNow : NSTerminateCancel;
+}
+- (void)saveMapSheetForRequestId:(int64_t)requestId {
+    NSSavePanel* panel=[NSSavePanel savePanel];
+    panel.canCreateDirectories=YES;
+    panel.nameFieldStringValue=@"scene.json";
+    const std::string directory=session_->workspace().project.dir+"/maps";
+    panel.directoryURL=[NSURL fileURLWithPath:[NSString stringWithUTF8String:directory.c_str()]];
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse result) {
+        aiverse::Json request=aiverse::Json::object();
+        request.set("id",aiverse::Json::number(requestId));
+        request.set("method",aiverse::Json::string("studio.snapshot"));
+        aiverse::Json reply=session_->dispatch(request);
+        if (result==NSModalResponseOK && panel.URL.path.length) {
+            try {
+                reply.set("result",session_->saveMapAs(panel.URL.path.UTF8String));
+                [self sendStudioEvent:"document.changed" message:""];
+            } catch (const std::exception& error) {
+                reply=aiverse::Json::object();reply.set("id",aiverse::Json::number(requestId));
+                reply.set("error",aiverse::Json::string(error.what()));
+            }
+        }
+        [self sendStudioReply:reply];
+    }];
 }
 - (void)sendStudioReply:(const aiverse::Json&)reply {
     const std::string output=reply.dump(-1);
@@ -369,6 +419,17 @@
             [self openProjectSheetForRequestId:req["id"].integer()];
             return;
         }
+        const std::string documentMethod=req.getStr("method");
+        if (req["id"].isNumber() && !session_->workspace().project.dir.empty()) {
+            if (documentMethod=="studio.saveAs" ||
+                (documentMethod=="studio.save" && session_->workspace().map.path.empty())) {
+                [self saveMapSheetForRequestId:req["id"].integer()];return;
+            }
+            if ((documentMethod=="studio.openMap" || documentMethod=="studio.newMap") && ![self confirmDiscardChanges]) {
+                auto cancelled=req;cancelled.set("method",aiverse::Json::string("studio.snapshot"));
+                [self sendStudioReply:session_->dispatch(cancelled)];return;
+            }
+        }
         aiverse::Json reply;
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
@@ -382,11 +443,14 @@
         }
         [self sendStudioReply:reply];
         const std::string method=req.getStr("method");
+        if (!reply.has("error") && preview_ && (method=="studio.openMap" || method=="studio.newMap"))
+            preview_->resetCamera();
         if (!reply.has("error") && method=="studio.materialPreview") {
             [self sendStudioEvent:"material.preview" message:req["params"].getStr("name").c_str()];
         }
         if (!reply.has("error") &&
-            (method=="studio.entityCreate" || method=="studio.entityDelete" ||
+            (method=="studio.openMap" || method=="studio.newMap" ||
+             method=="studio.entityCreate" || method=="studio.entityDelete" ||
              method=="studio.entityDuplicate" || method=="studio.setProperty" || method=="studio.save" ||
              method=="studio.undo" || method=="studio.redo" ||
              method=="studio.lightingSet" || method=="studio.lightAdd" ||

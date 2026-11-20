@@ -33,6 +33,9 @@ const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { 
  // cannot narrow generic M through a runtime method comparison.
 export function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]>;
 export async function mockInvoke(method: StudioMethod, params: StudioParams[StudioMethod]): Promise<StudioResult[StudioMethod]> {
+  if (method === 'studio.project') return {maps: [], currentMap: '', canCreateMap: false, maxMapSize: 0};
+  if (method === 'studio.newMap' || method === 'studio.openMap' || method === 'studio.saveAs')
+    throw Error('Document operations require a native project');
   if (method === 'studio.entityCatalog') return {types: [], mapEntities: false};
   if (method === 'studio.entityCreate' || method === 'studio.entityDelete' || method === 'studio.entityDuplicate')
     throw Error('Entity authoring requires a native project');

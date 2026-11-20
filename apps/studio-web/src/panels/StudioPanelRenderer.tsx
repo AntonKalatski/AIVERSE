@@ -17,6 +17,8 @@ import ShaderGraphPanel from './ShaderGraphPanel';
 import { studioSceneMode } from './sceneState';
 import HierarchyPanel from './HierarchyPanel';
 
+import ProjectPanel from './generated/ProjectPanel';
+
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
@@ -99,6 +101,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
           previewMaterial={snapshot?.previewMaterial}/>;
       case 'shader_graph':
         return <ShaderGraphPanel projectPath={snapshot?.project.path ?? ''}/>;
+      case 'project': return <ProjectPanel {...ctx}/>;
       // AI_PANEL_CASES: add new panel renderers above this line.
       case 'game':
       case 'animation':

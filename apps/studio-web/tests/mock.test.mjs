@@ -35,3 +35,10 @@ test('entity authoring never writes through the browser demo', async () => {
   await assert.rejects(mockInvoke('studio.entityDelete', {entityId:'entity:0'}), /native project/);
   await assert.rejects(mockInvoke('studio.entityDuplicate', {entityId:'entity:0'}), /native project/);
 });
+
+test('document mutation requires a native project', async () => {
+  assert.equal((await mockInvoke('studio.project', {})).canCreateMap, false);
+  await assert.rejects(mockInvoke('studio.newMap', {name:'Map',width:32,height:24}), /native project/);
+  await assert.rejects(mockInvoke('studio.openMap', {file:'maps/map.json'}), /native project/);
+  await assert.rejects(mockInvoke('studio.saveAs', {}), /native project/);
+});

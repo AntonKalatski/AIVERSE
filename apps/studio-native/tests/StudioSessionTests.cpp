@@ -62,6 +62,30 @@ void entityWorkflow() {
         AIVERSE_TEST_CHECK(session.workspace().map.data.roads.empty());
         AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
         AIVERSE_TEST_CHECK(session.workspace().map.data.roads.size()==1);
+        const auto projectState=call("studio.project")["result"];
+        AIVERSE_TEST_CHECK(projectState["maps"].size()==1 && projectState.getStr("currentMap")=="maps/scene.json");
+        const auto prior=session.workspace().map.toJson();
+        AIVERSE_TEST_CHECK(call("studio.newMap",Json::parse(R"({"name":"new","width":0,"height":32})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.toJson()==prior);
+        AIVERSE_TEST_CHECK(call("studio.openMap",Json::parse(R"({"file":"../rules.json"})")).has("error"));
+        const auto revision=session.workspace().map.revision;
+        AIVERSE_TEST_CHECK(!call("studio.newMap",Json::parse(R"({"name":"New document","width":32,"height":24})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.w==32 && session.workspace().map.dirty);
+        AIVERSE_TEST_CHECK(session.workspace().map.path.empty());
+        AIVERSE_TEST_CHECK(session.workspace().map.revision>revision);
+        bool rejected=false;
+        try { session.saveMapAs((project/"game.json").string()); } catch(const std::exception&) { rejected=true; }
+        AIVERSE_TEST_CHECK(rejected);
+        session.saveMapAs((project/"maps"/"new.json").string());
+        AIVERSE_TEST_CHECK(fs::exists(project/"maps"/"new.json") && !session.workspace().map.dirty);
+        AIVERSE_TEST_CHECK(call("studio.project")["result"]["maps"].size()==2);
+        AIVERSE_TEST_CHECK(!call("studio.openMap",Json::parse(R"({"file":"maps/scene.json"})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==3);
+        const auto restored=session.workspace().map.toJson();
+        std::ofstream(project/"maps"/"new.json") << "invalid map JSON";
+        AIVERSE_TEST_CHECK(call("studio.openMap",Json::parse(R"({"file":"maps/new.json"})")).has("error"));
+        AIVERSE_TEST_CHECK(session.workspace().map.toJson()==restored);
+
     }
     fs::remove_all(root);
 }

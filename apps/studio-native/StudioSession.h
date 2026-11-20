@@ -13,6 +13,7 @@ public:
     const std::string& previewMaterialName() const { return previewMaterialName_; }
     const Json& previewMaterialFactors() const { return previewMaterialFactors_; }
     uint64_t previewMaterialRevision() const { return previewMaterialRevision_; }
+    Json saveMapAs(const std::string& path); // trusted native Save panel only
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
 private:
     Json snapshot() const;

@@ -1,4 +1,5 @@
 #include "StudioSession.h"
+#include "modules/rts/RtsMap.h"
 #include "apps/editor/EditorWorldEdit.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 
@@ -139,6 +141,22 @@ void StudioSession::refreshMaterialPreview() {
     if(!resolved.isObject()) throw std::runtime_error("Resolved PBR preview material missing");
     previewMaterialFactors_=resolved;
     ++previewMaterialRevision_;
+}
+Json StudioSession::saveMapAs(const std::string& path) {
+    if (ws_.project.dir.empty() || path.empty()) throw std::runtime_error("Open a project and choose a map file");
+    namespace fs=std::filesystem;
+    const auto root=fs::weakly_canonical(ws_.project.dir);
+    const auto target=fs::weakly_canonical(path);
+    const auto relative=target.lexically_relative(root);
+    if (relative.empty() || relative.is_absolute() || *relative.begin()!="maps" || target.extension()!=".json")
+        throw std::runtime_error("Choose a .json map inside the current project maps folder");
+    Json args=Json::object();args.set("file",str(target.string()));args.set("addToGame",Json::fromBool(true));
+    const auto result=ws_.call("map_save",args,"studio");
+    if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+    std::string error;
+    if (ws_.project.rulesDirty && !ws_.project.saveRules(&error)) throw std::runtime_error(error);
+    if (ws_.project.manifestDirty && !ws_.project.saveManifest(&error)) throw std::runtime_error(error);
+    return snapshot();
 }
 Json StudioSession::openProject(const std::string& path) {
     if (path.empty()) throw std::runtime_error("Project path is empty");
@@ -409,6 +427,50 @@ Json StudioSession::dispatch(const Json& request) {
             }
             selected_ = next;
             reply.set("result", snapshot());
+        } else if (method == "studio.project") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            Json state=Json::object(),maps=Json::array();
+            for (const auto& item:ws_.project.manifest["maps"].items()) {
+                Json row=Json::object();row.set("file",str(item.getStr("file")));
+                row.set("title",str(item.getStr("title",item.getStr("file"))));maps.push(std::move(row));
+            }
+            state.set("maps",std::move(maps));state.set("currentMap",str(ws_.map.path.empty()?"":ws_.relative(ws_.map.path)));
+            state.set("canCreateMap",Json::fromBool(!ws_.project.isFps()));
+            state.set("maxMapSize",num(game::kMaxMapSize));reply.set("result",std::move(state));
+        } else if (method == "studio.openMap" || method == "studio.newMap") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.openMap") {
+                const auto file=params.getStr("file");bool listed=false;
+                for (const auto& item:ws_.project.manifest["maps"].items()) listed|=item.getStr("file")==file;
+                if (file.empty() || !listed) throw std::runtime_error("Choose a map from the current project");
+                namespace fs=std::filesystem;
+                const auto root=fs::weakly_canonical(ws_.project.dir);
+                const auto path=fs::weakly_canonical(root/file);
+                const auto relative=path.lexically_relative(root);
+                if (relative.empty() || relative.is_absolute() || *relative.begin()=="..")
+                    throw std::runtime_error("Map path escapes the project");
+                editor::MapDoc draft;std::string error;
+                if (!draft.load(path.string(),&error)) throw std::runtime_error(error);
+                if (ws_.project.isFps()!=draft.data.fps.isObject()) throw std::runtime_error("Map format does not match the project");
+                draft.revision=ws_.map.revision+1;
+                ws_.map=std::move(draft);
+                ws_.note({editor::Change::Map,0,0,-1,-1,-1,"Opened map"});
+            } else {
+                if (ws_.project.isFps()) throw std::runtime_error("FPS map creation requires an FPS document template");
+                for (const char* key:{"width","height"}) {
+                    const double value=params[key].toDouble();
+                    if (!params[key].isNumber() || !std::isfinite(value) || value!=std::floor(value) || value<8 || value>game::kMaxMapSize)
+                        throw std::runtime_error("Invalid map dimensions");
+                }
+                const auto name=params.getStr("name");
+                if (name.empty() || name.size()>256) throw std::runtime_error("Map name is required (maximum 256 bytes)");
+                Json args=Json::object();for (const char* key:{"width","height","name"})args.set(key,params[key]);
+                const auto result=ws_.call("map_new",args,"studio");
+                if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+                ws_.map.touched();
+            }
+            selected_.clear();previewMaterialName_.clear();refreshMaterialPreview();
+            reply.set("result",snapshot());
         } else if (method == "studio.entityCatalog") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             Json catalog=Json::object(), types=Json::array();
@@ -459,6 +521,9 @@ Json StudioSession::dispatch(const Json& request) {
         } else if (method == "studio.save") {
             const Json r = ws_.call("map_save", Json::object(), "studio");
             if (r.has("error")) throw std::runtime_error(r.getStr("error"));
+            std::string error;
+            if (ws_.project.rulesDirty && !ws_.project.saveRules(&error)) throw std::runtime_error(error);
+            if (ws_.project.manifestDirty && !ws_.project.saveManifest(&error)) throw std::runtime_error(error);
             reply.set("result", snapshot());
         } else if (method == "studio.undo") {
             if (!ws_.map.canUndo()) throw std::runtime_error("Nothing to undo");

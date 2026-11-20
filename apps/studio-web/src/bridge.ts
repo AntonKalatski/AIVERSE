@@ -43,8 +43,9 @@ export async function invoke<M extends StudioMethod>(method: M, params: StudioPa
   if (!native) return mockInvoke(method, params);
   return new Promise<StudioResult[M]>((resolve, reject) => {
     const id = nextId++;
-    // Native project selection waits for a person; only its reply/cancel ends it.
-    const timer = method === 'studio.openProject' ? null : setTimeout(() => {
+    // Interactive native sheets wait for a person, including dirty-document prompts.
+    const interactive = ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save'].includes(method);
+    const timer = interactive ? null : setTimeout(() => {
       pending.delete(id);
       reject(new Error('Native bridge timeout: ' + method));
     }, 8000);

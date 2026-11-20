@@ -21,13 +21,15 @@ function bridge() {
   return { ...context, sent, timers };
 }
 
-test('project picker waits for native completion without an RPC timeout', async () => {
-  const b = bridge();
-  const result = b.invoke('studio.openProject', {});
-  assert.equal(b.timers.size, 0);
-  b.window.__aiverseReceive({ id: b.sent[0].id, result: { cancelled: true } });
-  assert.equal((await result).cancelled, true);
-});
+for (const method of ['studio.openProject','studio.openMap','studio.newMap','studio.saveAs','studio.save']) {
+  test(`${method} waits for native interaction without an RPC timeout`, async () => {
+    const b = bridge();
+    const result = b.invoke(method, {});
+    assert.equal(b.timers.size, 0);
+    b.window.__aiverseReceive({ id: b.sent[0].id, result: { cancelled: true } });
+    assert.equal((await result).cancelled, true);
+  });
+}
 
 test('ordinary native calls still time out and ignore late replies', async () => {
   const b = bridge();
