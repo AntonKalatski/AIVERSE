@@ -57,6 +57,9 @@ class RtsOverlays {
 public:
     // Definitions (no GPU: tests and tools evaluate overlays without a device).
     void init(const Rules& rules, const Json& rulesOverlays, const Json& gameOverlays, const std::string& contentBase);
+    // Publish a CPU-prepared overlay definition snapshot without reparsing it
+    // after the view has begun replacing live GPU presentation resources.
+    void initPrepared(const Rules& rules, OverlaySet prepared, const std::string& contentBase);
     void initGpu(gfx::Device& dev);   // after init: icon textures, batch shader (RtsOverlaysDraw.cpp)
     void shutdown(gfx::Device& dev);
     void setContext(const OverlayContext& c) { ctx_ = c; }
