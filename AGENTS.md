@@ -9,7 +9,9 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 Reuse `engine/render/GiMainCpuBridge.h` / `GiMainGpuBridge.h` and
 `Renderer3D::setDynamicGiOverlay`; do not create genre-specific GI engines.
 Native host: `apps/renderbench/DynamicGiHost.h`; contracts: `docs/dynamic-gi.md`.
-Read `docs/agent-handoffs/lighting-main-stage19-native-host-2026-11-20.md`.
+Read the latest `docs/agent-handoffs/lighting-main-stage*-2026-11-20.md`;
+Stage 24 adds automatic native animated snapshots. Shared pose extraction:
+`GiModelGeometry.h`; Luma HDR contract: `docs/luma-native-lighting.md`.
 Compute is bounded and fence-backed; larger scenes use explicit CPU fallback.
 Metal/desktop GL pixels and native glTF host are checked. Vulkan SPIR-V compiles;
 Vulkan/mobile GPU acceptance and production performance remain separate gates.
@@ -33,6 +35,20 @@ All builds for this task must stay on KINGSTON, as required by the owner.
 **Compatibility is intentional:** `PostFx*.h`/editor `PostFxOps.h` are forwarding legacy includes and `PostFx*.cpp` are empty shims. Keep the external `"postfx"` JSON key, `postfx_*` MCP operation names, `view_postfx` and editor saved ID `"postfx"` until a separately approved versioned data migration. Do not create a second implementation or double-register the old editor window. Legacy `PostFx` types remain source aliases to PRISMA. Old source filenames must never be linked instead of the new canonical PRISMA .cpp files. The optional `aiverse_postfx_data` CMake target remains as compatibility link name.
 
 **Agent handoff:** Every PRISMA implementation stage MUST have a **separate, committed** `docs/handoffs/prisma-stage-XX.md` on its working branch, naming code changes, public APIs, real test commands/results, untested paths, current SHA and precise next step. Never mark unrun tests PASS. SpectraFX has a separate living handoff `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`; do not overwrite it with PRISMA changes. Any shared-render integration must be documented in both systems' design docs and note the exact common interface.
+
+## HTML5 Studio UI design system (all future editor windows)
+For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
+**Studio UI v1** style library, not a panel-specific visual language:
+- Handbook: \`docs/studio-design-system.md\`; implementation: \`apps/studio-web/src/ui/\`.
+- Colors, spacing, typography, control states: \`apps/studio-web/src/theme/tokens.css\` (\`--au-*\` tokens).
+- React components: \`StudioPanel\`, \`StudioSection\`, \`StudioButton\`, \`StudioIconButton\`,
+  \`StudioField\`, \`StudioInput\`, \`StudioSelect\`, \`StudioBadge\`, \`StudioAlert\`,
+  \`StudioEmptyState\`, \`StudioTabs\`, \`StudioListRow\`, etc. Import from \`src/ui\`.
+- Generate new panels via \`python3 tools/studio/new_panel.py --id world_stats --title "World Statistics" --area right\`; generated windows already use the UI library.
+- Agent skill: \`skills/editor/studio-ui/SKILL.md\`. Every change needs a new stage handoff under \`docs/handoff/studio-html5/\`.
+- No raw hard-coded palette/button/input styles in new panels, no ImGui additions and no browser-side project file writes. Preserve the native Renderer3D Metal viewport and \`src/bridge.ts\` allowlist.
+- Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
+
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
@@ -969,17 +985,21 @@ couldn't be compiled are listed in the commit message as unverified.
 
 ### Where build output goes (all agents)
 
-**Never create builds in the shared engine checkout's `build/` folder** (the user's main
-checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
-integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+**Owner instruction (2026-11-20): all builds must run on KINGSTON.**
+This overrides earlier local/worktree build examples and release paths in this file.
 
-- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
-  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
-- Game / project work (packaging, native modules, test runs of a game): the project's own
-  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
-  and `aiversebuild` already use this layout).
-- Logs, bundles, patches and scratch archives belong with the build that produced them,
-  not loose in `build/` or `build/.temp/`. Delete your build trees when the task is merged.
+- Use `/Volumes/KINGSTON/AIVERSE-builds/<worktree-or-task>/<configuration>` for
+  CMake build trees, compiler intermediates, test reports, logs, packages and archives.
+  Give concurrent tasks separate directories; never share a CMake cache between sources.
+- Pass an explicit external `-B` directory to CMake and `--build-dir` to test runners.
+  For frontend/package builds, also redirect generated output and build caches to KINGSTON.
+  Keep build temporary files on KINGSTON using a task-specific temporary directory.
+- Game/native-module builds and release packaging must also use KINGSTON-backed output.
+  If a tool hard-codes a local output path, configure or adapt it before running it.
+- Check that `/Volumes/KINGSTON` is mounted and writable before starting. If unavailable,
+  stop the build and report it; never silently fall back to the internal disk or `/tmp`.
+- Source repositories may stay in their existing locations. Existing build trees are not
+  automatically relocated or deleted by this instruction; do not disrupt running builds.
 
 ## 5. Working in parallel
 

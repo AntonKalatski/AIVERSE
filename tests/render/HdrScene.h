@@ -39,6 +39,7 @@ struct HdrScene {
     RTSCamera camera;
     Mesh floor, cube, water;
     std::unique_ptr<Model> spheres;
+    std::unique_ptr<Model> shadowReceiver;
     int frame = 0, probeIndex = 0, gridProbe = -1;
     bool verify = false;
     std::unique_ptr<Model> probeBg, probeFg;
@@ -110,7 +111,17 @@ struct HdrScene {
             renderer.setShadowQuality(ShadowQuality::Off);renderer.lights.setQuality(LightQuality::Off);
             camera.target={0,0,0};camera.pitch=0;camera.yaw=0;camera.distance=10;
         }
-        if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) initContactShadowScene(*this);
+        if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) {
+            initContactShadowScene(*this);
+            if (const char* diffusion=std::getenv("AIVERSE_SHADOW_DIFFUSION_TEST")) {
+                MeshBuilder receiverMesh; receiverMesh.box({0,-0.16f,0},{18,0.2f,14});
+                Material receiver; receiver.baseColor={.34f,.36f,.4f,1};
+                receiver.shadowDiffusion=std::clamp(std::strtof(diffusion,nullptr),0.0f,1.0f);
+                std::vector<ModelPart> receiverParts={{"receiver",&receiverMesh,receiver,{}}};
+                shadowReceiver=modelFromParts("material shadow diffusion",receiverParts);
+                if (!uploadModel(d,*shadowReceiver)) { failed=true; return; }
+            }
+        }
         const char* p=std::getenv("AIVERSE_HDR_CAPTURE"); path=p?p:"/tmp/hdr-scene.ppm";
     }
     void draw(gfx::Device& d, int w, int h) {
@@ -121,7 +132,8 @@ struct HdrScene {
         if (verify) { drawProbe(d,w,h); return; }
         if(ownsFrame)d.beginFrame(w,h);
         renderer.beginScene(advanced?screen.jittered(camera,w,h):camera,w,h);
-        renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
+        if (shadowReceiver) { ModelDraw receiver; receiver.model=shadowReceiver.get(); renderer.drawModel(receiver); }
+        else renderer.drawMesh(floor,{}, {0.34f,0.36f,0.4f,1});
         if(std::getenv("AIVERSE_CONTACT_SHADOW_TEST")) drawContactShadowScene(*this); else {
         ModelDraw md; md.model=spheres.get(); renderer.drawModel(md);
         if(!materialGallery){
@@ -360,6 +372,7 @@ struct HdrScene {
         }
         if(probeBg)releaseModel(d,*probeBg);
         if(probeFg)releaseModel(d,*probeFg);
+        if(shadowReceiver) releaseModel(d,*shadowReceiver);
         if(spheres) releaseModel(d,*spheres);
         for(auto* m:{&floor,&cube,&water}) {d.destroyBuffer(m->vb);d.destroyBuffer(m->ib);}
         screen.shutdown();post.shutdown(); renderer.shutdown();

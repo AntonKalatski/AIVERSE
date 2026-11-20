@@ -176,6 +176,7 @@ Imported materials keep their PBR values. Overrides per material name, `"*"` for
 |---|---|
 | `color` | base colour factor `[r,g,b(,a)]` (linear) |
 | `metallic`, `roughness` | factors (multiplied with the metallic-roughness texture) |
+| `shadowDiffusion` | Extra received sun-shadow blur radius, 0..1 world units; default 0. Medium/High shadow tiers only; independent of roughness. |
 | `emissive`, `emissiveStrength` | glow (linear colour × strength) |
 | `alpha` | `opaque`, `mask` (alpha test, `cutoff`), `blend` (sorted, no shadow) |
 | `doubleSided`, `unlit`, `castShadow`, `receiveShadow`, `vertexColors` | switches |
@@ -211,6 +212,22 @@ Quality tiers (`MaterialQuality`, chosen per GPU like shadows, `AIVERSE_MATERIAL
 **medium** — GGX, metallic-roughness, normal and emissive maps; **high** — plus occlusion maps.
 
 ### Material library (`materials.json`)
+
+`shadowDiffusion` adds receiver-side sun-shadow smoothing to a model material.
+Set it through the library, `material_set`, Studio's **Shadow diffusion (world units)**
+field, or native `render::Material::shadowDiffusion`. Zero preserves the old lookup.
+The supported range is 0..1 world units; with metre-scale content, start around
+0.005–0.03 for subtle fabric effects. These are artistic suggestions, not measured
+physical material properties. The renderer combines the ordinary penumbra and
+receiver radius in quadrature, independently of `roughness`.
+
+This approximation changes received sun shadows only, not caster geometry or
+neighbouring materials. It applies at Medium/High shadow quality. Low/Off,
+unlit/nonreceiving surfaces, point-light shadows, baked lighting and terrain
+heightfield shadows are unchanged. Terrain splat materials do not currently expose
+this model-material property. No extra filter taps are added, but a nonzero radius
+requires filtering even when the blocker search found none. Native versioned
+material owners must still advance their revisions after in-place edits.
 
 Materials shared by many types live in `materials.json` next to `rules.json`; a view refers to them
 by name wherever a material override goes, and can give a node its own material:
