@@ -79,7 +79,7 @@ public:
     // replace this with per-brick valid masks instead of hiding the whole volume.
     template<class Scheduler>
     bool safeToSample(const Scheduler& scheduler) const {
-        return ready() && pending_.empty() &&
+        return ready() && dev_->gpuHealthy() && pending_.empty() &&
                scheduler.pending()==0 && scheduler.inFlight()==0;
     }
 
@@ -103,7 +103,8 @@ public:
                       size_t probeBudget,float3 focus,uint32_t samples,
                       float traceDistance) {
         Submission result;
-        if (!ready() || !backend.ready() || !probeBudget || !pending_.empty() ||
+        if (!ready() || !dev_->gpuHealthy() || !backend.ready() ||
+            !probeBudget || !pending_.empty() ||
             backend.atlas().device()!=dev_)
             return result;
         const auto tickets=scheduler.claim(std::min(probeBudget,GiGpuSmallScene::kMaxJobs),
