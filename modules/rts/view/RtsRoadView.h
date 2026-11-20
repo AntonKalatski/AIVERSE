@@ -26,6 +26,10 @@ class RtsRoadView {
 public:
     // rules "roadTypes" (composed rules.json); reader for the game's textures / models
     void init(gfx::Device& dev, const Json& roadTypes, render::FileReader reader);
+    // CPU runtime configuration carried to a staged replacement before GPU
+    // initialization. Meshes and RHI resources are deliberately not copied.
+    void inheritRuntimeStateForReload(const RtsRoadView& old);
+    bool ownsGpuResources() const noexcept {return dev_!=nullptr;}
     void shutdown(gfx::Device& dev);
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
@@ -114,6 +118,9 @@ private:
     std::map<std::pair<int, int>, int> painted_;
 
     gfx::Device* dev_ = nullptr;
+    // GPU kit uploads may throw before images_ receives ownership. Preserve
+    // this unpublished kit for an idle-gated shutdown or recovery retry.
+    std::unique_ptr<render::Model> buildingKit_;
     render::FileReader read_;
     std::vector<RoadTypeDef> types_;
     float cellMeters_ = 4;
