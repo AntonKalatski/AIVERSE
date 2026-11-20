@@ -145,6 +145,14 @@ public:
     bool strataVulkanGpuIndirectEnabled() const {
         return strataVulkanGpuIndirectEnabled_;
     }
+    // Stage17.4 adds independent acceptance for GPU temporal LOD masks.
+    // Earlier stateless GPU pixel/selection parity is NOT sufficient to
+    // certify cold/warm temporal transitions. Default false: nonzero
+    // hysteresis routes through portable CPU/Legacy until a native
+    // temporal CPU/GPU A/B pass has been verified for the exact shader.
+    void setStrataGpuTemporalParityVerified(bool verified) {
+        strataGpuTemporalParityVerified_=verified;
+    }
     // Independent acceptance of real native per-pass pixel/depth parity.
     // All three default false; main-view parity alone cannot certify
     // sun/spot/reflection selections and their different cameras.
@@ -326,6 +334,7 @@ private:
     bool strataVulkanGpuIndirectEnabled_=false;
     bool strataVulkanGpuSelectionParityVerified_=false;
     bool strataVulkanGpuRasterParityVerified_=false;
+    bool strataGpuTemporalParityVerified_=false;
     bool strataVulkanGpuSunShadowParityVerified_=false;
     bool strataVulkanGpuSpotShadowParityVerified_=false;
     bool strataVulkanGpuReflectionParityVerified_=false;
