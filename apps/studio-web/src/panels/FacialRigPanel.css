@@ -34,3 +34,12 @@
 .facial-morph-row .facial-morph-item {flex:1;min-width:0;}
 .facial-morph-row .facial-gain-slider {width:60px;min-width:48px;flex:none;margin:0 var(--au-space-2);accent-color:var(--au-accent);padding:0;}
 .facial-morph-row .facial-morph-item+.facial-morph-item {border-top:0;}
+
+/* Studio native face preview controls reuse the shared UI palette. */
+.facial-live{min-width:0;gap:var(--au-space-3);}
+.facial-live-channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:var(--au-space-2);max-height:300px;overflow:auto;padding:var(--au-space-2);}
+.facial-live-channels .au-field{min-width:0;}
+.facial-live-channels input[type="range"]{width:100%;accent-color:var(--au-accent);}
+.facial-live-vectors{display:flex;flex-direction:column;gap:var(--au-space-2);}
+.facial-live-vectors .au-card{display:flex;flex-direction:column;gap:var(--au-space-2);}
+.facial-live-vectors .au-field{flex:1 1 65px;min-width:0;}
