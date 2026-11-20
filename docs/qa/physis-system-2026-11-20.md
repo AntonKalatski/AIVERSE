@@ -139,3 +139,8 @@ Next actionable fixes: reject provided non-string floodMode values before instal
 No unlock response arrived during completion of independent QA work. The QA-only editor PID was verified by its exact executable path and terminated with SIGTERM (session exit 143); this is a deliberate cleanup, not a reported application crash. No screenshot was produced and no GUI interaction was performed. Personal editor layout and project registry were restored from the approved local backup, then the task-owned backup was removed. The disposable GUI project and all build/test evidence remain on KINGSTON. Product source, tests, API, save formats and main branch are unchanged by this QA stage.
 
 Prior applicable handoff reviewed: `docs/agent-handoffs/physis-stage105-main-merge-2026-11-20.md`; its historical 178/178 acceptance is separate from this current 32/32 PHYSIS run.
+
+
+## 2026-11-20 resolution of the two QA findings
+
+Both code findings are fixed in `07b930463f1d2c8c4a497a472d5b229f02e4a735` on `codex/physis-qa-fixes`: strict floodMode type validation with compatibility regressions, and all six missing native/CI build targets. Actual KINGSTON validation: 30/30 headless plus 2/2 editor-authoring tests PASS in separate runs; CI targets exactly match the 30 configured headless executables. GUI remains unverified as recorded above. See `docs/agent-handoffs/physis-stage107-qa-fixes-2026-11-20.md` for exact commands, source and logs.

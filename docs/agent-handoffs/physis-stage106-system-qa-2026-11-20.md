@@ -76,3 +76,8 @@ NOT RUN: actual production game adoption, visual sky/fog parity, native arm64,
 Linux/Windows, deployed TLS/admin security, long soak/performance and full
 repository-wide current CTest. Opt-in library tests are not automatic FPS/RTS
 integration. No production-readiness or cross-platform determinism claim.
+
+
+## 2026-11-20 continuation — fixes
+
+User-authorized implementation `07b930463f1d2c8c4a497a472d5b229f02e4a735` resolves both findings. Validation: 30/30 headless + 2/2 authoring PASS on KINGSTON; CI target set matches the headless CTest graph. See [Stage107](physis-stage107-qa-fixes-2026-11-20.md). Historical GUI blockage remains unverified.
