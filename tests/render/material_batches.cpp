@@ -258,6 +258,21 @@ int aiverseMain(int argc, char** argv) {
     }
     const uint8_t modelPassMask = diagnosticPass == "shadow" ? 1u
         : diagnosticPass == "opaque" ? 2u : 3u;
+    // Explicit per-fixture cap tests ICB submission size without touching the
+    // instance uniform capacity or the native shader specialization.
+    uint32_t diagnosticMdiGroupCap = 0;
+    if (stress && std::getenv("AIVERSE_BATCH_DIAGNOSTIC_MDI_GROUP_CAP")) {
+        const char* raw = std::getenv("AIVERSE_BATCH_DIAGNOSTIC_MDI_GROUP_CAP");
+        char* end = nullptr;
+        const unsigned long n = std::strtoul(raw, &end, 10);
+        if (end == raw || *end != '\0' ||
+            (n != 0 && (n < 16 || n > 256))) {
+            std::fprintf(stderr,
+                "AIVERSE_BATCH_DIAGNOSTIC_MDI_GROUP_CAP must be 0 or 16..256\n");
+            return 2;
+        }
+        diagnosticMdiGroupCap = uint32_t(n);
+    }
     size_t stressItems = 0;
     if (stress) {
         const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
@@ -409,6 +424,9 @@ int aiverseMain(int argc, char** argv) {
             return;
         }
         renderer.setDiagnosticModelPassMask(modelPassMask);
+        renderer.setDiagnosticCpuMdiGroupCap(diagnosticMdiGroupCap);
+        if (stress) std::printf("stress diagnostic CPU MDI group cap=%u\n",
+                                unsigned(diagnosticMdiGroupCap));
         if (stress) std::printf("stress diagnostic model pass=%s mask=%u\n",
                                 diagnosticPass.c_str(), unsigned(modelPassMask));
         renderer.setProfiling(true); renderer.setShadowQuality(render::ShadowQuality::High);
