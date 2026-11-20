@@ -40,6 +40,36 @@ The sections below retain the original design and staged implementation
 history. Their older “planned / NOT RUN” labels describe those checkpoints;
 use the dated validation handoff for the current tested status.
 
+## Engine skills and MCP authoring
+
+Use [LENS authoring](../skills/visuals/aiverse-lens/SKILL.md) for project data and
+[native LENS integration](../skills/visuals/aiverse-lens-native/SKILL.md) for
+presentation scheduling, replay and capture ownership. Both are engine repository
+skills registered in the generated skill catalog, with no separate runtime library.
+
+The existing aiversemcp server and native editor share these Workspace operations:
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `lens_scene_get` | none; project must be open | scene, exists, validation, normalizedScene, clientEnabled |
+| `lens_scene_validate` | scene | native loader validation, normalizedScene, count, clientCompatible |
+| `lens_scene_set` | scene, expectedScene | validated complete asset replacement |
+| `lens_camera_set` | camera, expectedScene | create/replace one complete record by stable id |
+| `lens_camera_delete` | id, expectedScene | remove one existing record |
+
+Call open_game first. Pass the last get response's **scene**, not normalizedScene,
+as expectedScene. Stale edits fail; re-read and reconcile before retrying. Writes
+save cameras.json immediately with staged replacement; they do not enter editor
+undo. Reload the native LENS window before saving its in-memory state, and restart
+the client. No live camera/GPU resource is destroyed by these tools, and game.json
+lens.enabled is not changed. Files are bounded to 1 MiB and symlinks are refused.
+
+Validation reuses CameraSceneAsset: defaults and clamping appear in normalizedScene;
+unknown fields are retained in the saved source, not interpreted by the loader.
+clientCompatible reports texture-only outputs, not scheduling or GPU validation.
+There is no new headless capture endpoint: use the native window's Capture PNG or
+CameraFrameRecorder from a native host and inspect the real output.
+
 ## Stage 4–5 implementation (2026-11-19)
 
 The reusable core has now been committed in the feature branch (NOT hardware-validated):

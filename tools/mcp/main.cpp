@@ -198,6 +198,8 @@ const char* kInstructions =
     "Visual effects: fx_templates (explosion, fire, smoke, magic, weather, ...) or fx_import_unity {source: a Unity .prefab / folder} "
     "to make the same effect as a Unity one, tune with fx_get / fx_set, look with fx_preview {effect, advance, freeze} + view_screenshot, "
     "attach to events with fx_bind (died, hit, attack, ability, spawned per type / weapon / ability). "
+    "LENS cameras: lens_scene_get -> lens_scene_validate -> lens_camera_set / lens_scene_set / lens_camera_delete. "
+    "Writes require expectedScene from the last read and save immediately without undo; Reload the native LENS window afterward. "
     "Look of the game: own meshes / textures via asset_import, then the type's \"view\" block with rules_merge "
     "(model, materials overrides per material name, team colour, clips: docs/models.md; model_info lists nodes, clips, materials); "
     "custom materials: texture_generate (bricks, metal panels, wood, camo, scales, ... + normal maps, team masks) -> material_set "
@@ -209,7 +211,7 @@ const char* kInstructions =
     "'warnings' with ms per frame for heavy effects (bloom, fxaa, sunShafts) - pass them on to the user; view_postfx {quality: low} + view_screenshot "
     "shows what weak phones get; "
     "game UI: ui_contract (documents, data bindings, events) -> game_file_write ui/hud.rml, ui/skin.rcss ... (the game's ui/ overrides the engine's). "
-    "Everything you do shows up live in the user's editor window and can be undone there. "
+    "Map edits appear live in the editor with undo. Project-file tools describe their own save and reload behavior. "
     "You can only change game projects, never the engine.";
 
 } // namespace

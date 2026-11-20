@@ -1874,6 +1874,55 @@
       "keywords": []
     },
     {
+      "id": "aiverse-lens",
+      "package": null,
+      "path": "skills/visuals/aiverse-lens/SKILL.md",
+      "domain": "workflow",
+      "summary": "LENS camera scene authoring, MCP validation and native Studio PNG capture",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "apps/editor/core/LensOps.cpp",
+      "keywords": [
+        "lens",
+        "camera",
+        "cameras",
+        "capture",
+        "offscreen",
+        "minimap",
+        "камер",
+        "захват",
+        "линз"
+      ]
+    },
+    {
+      "id": "aiverse-lens-native",
+      "package": null,
+      "path": "skills/visuals/aiverse-lens-native/SKILL.md",
+      "domain": "workflow",
+      "summary": "LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/camera-system.md",
+      "keywords": [
+        "lens",
+        "native",
+        "camera",
+        "replay",
+        "snapshot",
+        "gpu",
+        "capture",
+        "натив",
+        "камер",
+        "захват"
+      ]
+    },
+    {
       "id": "aiverse-library-showcase",
       "package": "library-showcase",
       "path": "skills/workflow/aiverse-library-showcase/SKILL.md",

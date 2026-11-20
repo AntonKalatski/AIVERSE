@@ -87,6 +87,8 @@ ALIASES = {
 
 # MCP and repository workflows (no runtime library): id, summary, source of truth.
 WORKFLOWS=[
+ ('aiverse-lens','LENS camera scene authoring, MCP validation and native Studio PNG capture','apps/editor/core/LensOps.cpp'),
+ ('aiverse-lens-native','LENS native multi-camera scheduling, prepared-frame replay and GPU capture ownership','docs/camera-system.md'),
  ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
  ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
  ('aiverse-bots-debug','Diagnose bots that do not play and teach RtsAI a new mechanic','modules/rts/RtsMechAI.cpp'),
@@ -151,6 +153,8 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-lens':'lens camera cameras capture offscreen minimap камер захват линз',
+ 'aiverse-lens-native':'lens native camera replay snapshot gpu capture натив камер захват',
  'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',

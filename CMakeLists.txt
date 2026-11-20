@@ -3987,3 +3987,20 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_local_fog_tests PRIVATE aiverse_engine)
     add_test(NAME local_fog COMMAND aiverse_local_fog_tests)
 endif()
+
+# LENS CPU-only project authoring shared with MCP.
+if(TARGET aiverse_editor_core)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/LensOps.cpp)
+    if(AIVERSE_BUILD_TESTS)
+        add_executable(aiverse_lens_ops_tests tests/lens_ops_test.cpp)
+        target_link_libraries(aiverse_lens_ops_tests PRIVATE aiverse_editor_core)
+        add_test(NAME lens_ops COMMAND aiverse_lens_ops_tests)
+    endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiversemcp AND Python3_EXECUTABLE)
+    add_test(NAME lens_mcp_stdio COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/lens_mcp_test.py
+        $<TARGET_FILE:aiversemcp> ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(lens_mcp_stdio PROPERTIES TIMEOUT 60)
+endif()

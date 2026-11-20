@@ -4692,3 +4692,16 @@ paint/field providers. `lens_metal_frame` requires explicit
 Preserve the native failure/retry, temporary Mesh lifetime and pixel parity
 fixtures, and record actual platform coverage in the handoff. Build/cache/log
 paths for this integration are on KINGSTON, per the user's instruction.
+
+
+## LENS authoring tools and engine skills
+
+Use `skills/visuals/aiverse-lens/SKILL.md` for project camera authoring and
+`skills/visuals/aiverse-lens-native/SKILL.md` for native presentation integration.
+`apps/editor/core/LensOps.cpp` registers five CPU-only lens_scene_* / lens_camera_*
+operations through Workspace for both editor and standalone MCP. Writes require
+the exact expectedScene from the last read, validate in a scratch World and
+stage replacement without deleting last-good data on failure. They save immediately
+without undo: Reload the LENS window before further UI edits; restart the client.
+Do not equate loader validation/clientCompatible with GPU capture acceptance.
+Keep lens_ops regression tests and the separate LENS stage handoff.
