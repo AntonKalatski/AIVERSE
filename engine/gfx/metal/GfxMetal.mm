@@ -12,6 +12,7 @@
 #include <chrono>
 #include <iterator>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <map>
 #include <cstring>
@@ -1675,7 +1676,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             return EmptyTailExperiment{}; // invalid controls never enable padding
         }();
         const uint32_t resetTail = emptyTail.active ? 128u : 0u;
-        if (drawCount > UINT32_MAX - resetTail) return false;
+        if (drawCount > std::numeric_limits<uint32_t>::max() - resetTail) return false;
         const uint32_t allocatedCount = drawCount + resetTail;
         const uint32_t executeCount = drawCount + emptyTail.executedTail;
         MTLIndirectCommandBufferDescriptor* descriptor = modelIcbDescriptor_;
