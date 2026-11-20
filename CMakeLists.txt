@@ -1086,7 +1086,8 @@ if(AIVERSE_BUILD_TESTS)
             lumaweave_vulkan_reactive_contract
             lumaweave_backend_policy
             lumaweave_gi_frame_contract
-            lumaweave_stage22_main_prisma_contract)
+            lumaweave_stage22_main_prisma_contract
+            gi_main_renderer_contract)
         add_executable(aiverse_${test_name}_test tests/render/${test_name}.cpp)
         target_include_directories(aiverse_${test_name}_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR})
@@ -1139,6 +1140,14 @@ if(AIVERSE_VULKAN)
             aiverse_gfx_vulkan)
         add_test(NAME gi_vulkan_glsl_contract
             COMMAND aiverse_gi_vulkan_glsl_contract_test)
+        add_executable(aiverse_gi_main_renderer_spirv_test
+            tests/render/gi_main_renderer_spirv.cpp)
+        target_include_directories(aiverse_gi_main_renderer_spirv_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(aiverse_gi_main_renderer_spirv_test PRIVATE
+            aiverse_gfx_vulkan)
+        add_test(NAME gi_main_renderer_spirv
+            COMMAND aiverse_gi_main_renderer_spirv_test)
     endif()
 endif()
 
