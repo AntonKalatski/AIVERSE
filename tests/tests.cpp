@@ -9,6 +9,7 @@ extern "C" {
 }
 #include <filesystem>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -12447,6 +12448,9 @@ public:
     aiverse::gfx::PipelineHandle createPipeline(const aiverse::gfx::PipelineDesc& d) override { pipes.push_back(d); return {uint32_t(pipes.size())}; }
     void destroyPipeline(aiverse::gfx::PipelineHandle) override {}
     const std::string& lastError() const override { return err_; }
+    // Recording-only RHI; draw calls capture CPU state with no submitted GPU
+    // work. Explicitly confirm the idle barrier required by Renderer3D.
+    bool waitForResourceIdle() override { return true; }
     void beginFrame(int, int) override {}
     void endFrame() override {}
     void beginPass(const aiverse::gfx::PassDesc&) override {}
@@ -13198,8 +13202,15 @@ TEST(model_shadow_batches_material_overrides) {
 }
 
 int main(int argc, char** argv) {
+    // Opt-in crash localization: the last RUN line identifies the test
+    // even if a native abort bypasses the normal buffered OK/FAIL output.
+    const bool traceTests=std::getenv("AIVERSE_TEST_TRACE")!=nullptr;
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue;   // aiverse_tests [name filter]
+        if (traceTests) {
+            std::fprintf(stderr,"[ RUN ] %s\n",name);
+            std::fflush(stderr);
+        }
         int before = g_failed;
         fn();
         std::printf("%s %s\n", g_failed == before ? "[ OK ]" : "[FAIL]", name);

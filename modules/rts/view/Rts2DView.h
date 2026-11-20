@@ -75,6 +75,19 @@ public:
     // ---- tiles (RtsTileView.cpp)
     void setTiles(const Json& tiles);             // map "tiles" block (null: no tile map)
     bool hasTiles() const { return tileset_ != nullptr; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats(const gfx::Device& dev) const {
+        render::GpuOwnedMemoryCounter c(dev);
+        c.buffer(tileMesh_.vb);
+        auto total=c.stats(),batch=batch_.ownedGpuMemoryStats(),cache=textures_.ownedGpuMemoryStats();
+        const auto add=[&](const render::GpuOwnedMemoryStats& v) {
+            total.textureKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.textureKnownBytes,v.textureKnownBytes);
+            total.bufferKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.bufferKnownBytes,v.bufferKnownBytes);
+            total.textures+=v.textures;total.buffers+=v.buffers;
+            total.unknownTextures+=v.unknownTextures;total.unknownBuffers+=v.unknownBuffers;
+            total.multiVersionBuffers+=v.multiVersionBuffers;
+        };
+        add(batch);add(cache);return total;
+    }
     void buildTiles(gfx::Device& dev, const MapGrid& grid, float levelHeight);
     void refreshTiles(gfx::Device& dev, const MapGrid& grid, float levelHeight); // depleted fields
 

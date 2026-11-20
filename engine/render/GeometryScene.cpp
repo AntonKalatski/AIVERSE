@@ -39,32 +39,6 @@ bool sameBoundMaterial(Material a,Material b,const std::vector<Image>& images){
 }
 float scaleBound(const mat4& m){float sum=0;for(int r=0;r<3;++r)for(int c=0;c<3;++c)sum+=m.at(r,c)*m.at(r,c);return std::sqrt(sum);}
 }
-void GeometryScene::shutdown(gfx::Device& dev){
-#if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    // Renderer3D has consumed the previous draw epoch before scene unload.
-    // Release alias borrowers BEFORE their index sidecars / source Models.
-    strataPortableDrawModels_.clear();
-    strataPortableLodHistories_.clear();
-    for (auto& [source, staged] : strataPortableSources_)
-        if (staged) staged->shutdown(dev);
-    strataPortableSources_.clear();
-    // The original RHI buffers are already released through their owner;
-    // only now return cross-world reservations to the device ledger.
-    for(const auto& [source,token]:strataGlobalIndexLeases_)
-        strata::releaseDeviceIndexBytes(dev,token);
-    strataGlobalIndexLeases_.clear();
-    strata::clearIdleDeviceIndexBudget(dev);
-    if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
-    if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
-#endif
-    strataGpuCulling_.reset();
-    strataGpuMetadata_.reset();
-    strataGpuDevice_ = nullptr;
-    strataPortableDevice_=nullptr;
-    strataStreamingFrameSerial_=UINT64_MAX;
-    strataStreamingFrameBudgetLeft_=0;
-    strataStreamingSourceCursor_=0;
-    strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
 bool GeometryScene::strataStagingSupported() const {
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
     return true;
@@ -239,10 +213,70 @@ bool GeometryScene::planStrataView(const std::string& sourceKey,
 #endif
 }
 
+void GeometryScene::retireResident(gfx::Device& dev) {
+    // STRATA index pages and temporal GPU masks have not joined the
+    // deferred native retirement queue. Avoid in-flight destruction.
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if ((!strataPortableSources_.empty() || strataGpuMetadata_ ||
+         strataGpuCulling_) && !dev.waitForResourceIdle())
+        throw std::runtime_error(
+            "geometry scene: STRATA GPU resources require idle before reload");
+#endif
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // Renderer3D has consumed the previous draw epoch before scene unload.
+    // Release alias borrowers BEFORE their index sidecars / source Models.
+    strataPortableDrawModels_.clear();
+    strataPortableLodHistories_.clear();
+    for (auto& [source, staged] : strataPortableSources_)
+        if (staged) staged->shutdown(dev);
+    strataPortableSources_.clear();
+    // The original RHI buffers are already released through their owner;
+    // only now return cross-world reservations to the device ledger.
+    for(const auto& [source,token]:strataGlobalIndexLeases_)
+        strata::releaseDeviceIndexBytes(dev,token);
+    strataGlobalIndexLeases_.clear();
+    strata::clearIdleDeviceIndexBudget(dev);
+    if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
+    if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
+#endif
+    strataGpuCulling_.reset();
+    strataGpuMetadata_.reset();
+    strataGpuDevice_ = nullptr;
+    strataPortableDevice_=nullptr;
+    strataStreamingFrameSerial_=UINT64_MAX;
+    strataStreamingFrameBudgetLeft_=0;
+    strataStreamingSourceCursor_=0;
+    strataStaging_.reset();
+    // Source pointers/StaticModelCache records must be detached before
+    // their Models can become eligible for GPU retirement.
+    instances_.clear();
+    for(auto& g:groups_)retirement_.retireModel(dev,g.proxy);
+    groups_.clear();
+    for(auto& [key,m]:models_) {
+        (void)key;
+        retirement_.retireModel(dev,m);
+    }
+    models_.clear();
+    warnings_.clear();
+    stats_={};
+    proxyVertices_=0;
+}
+void GeometryScene::shutdown(gfx::Device& dev) {
+    retireResident(dev);
+    // Unlike source reload, final teardown is allowed to block until all
+    // recorded GPU submissions and the retirement queue have completed.
+    if(!retirement_.completeForShutdown(dev))
+        throw std::runtime_error("geometry scene: GPU shutdown barrier failed");
+}
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
 void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader& read,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){
-    validate(json);shutdown(dev);strataPortableDevice_=&dev;models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
+    validate(json);
+    // A live HLOD/source refresh may happen while an older frame still
+    // references its old geometry. Do NOT call blocking shutdown here.
+    retireResident(dev);
+    strataPortableDevice_=&dev;
+    models_=std::move(models);geometryEnabled_=surfacesEnabled_=cacheEnabled_=true;
     hlod_=json["hlod"].getBool("enabled");errorPixels_=float(json["hlod"]["errorPixels"].toDouble(2));maxPixels_=float(json["hlod"]["maxPixels"].toDouble(256));
     try{
         size_t vertices=0;
@@ -568,7 +602,12 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         }
         for(auto& g:groups_)if(g.proxy)g.cache.prepare(*g.proxy,mat4{});
         stats_.instances=uint32_t(instances_.size());stats_.groups=uint32_t(groups_.size());
-    }catch(...){shutdown(dev);throw;}
+    }catch(...){
+        // A failed/partially uploaded new source or HLOD proxy is still a
+        // GPU lifetime owner; defer it behind a real completion marker.
+        retireResident(dev);
+        throw;
+    }
 }
 std::unique_ptr<Model> GeometryScene::makeProxy(const std::vector<size_t>& ids,float& error){
     // Explicit baked surfaces own their switch threshold. Do not bypass it with a parent proxy.

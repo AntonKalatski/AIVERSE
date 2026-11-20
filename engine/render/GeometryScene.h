@@ -1,6 +1,7 @@
 #pragma once
 #include "Geometry.h"
 #include "Renderer3D.h"
+#include "NativePresentationRetirement.h"
 #include <cmath>
 #include <map>
 #include <memory>
@@ -90,7 +91,14 @@ public:
     // Procedural/offline callers may supply immutable CPU models instead of files.
     // Borrowed image handles must outlive the scene. GPU geometry is owned by the scene.
     void loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget=2000000);
+    // Full Device idle proof is required at final teardown. Live reload
+    // instead moves old resident Models/HLOD proxies into the ordered queue.
     void shutdown(gfx::Device& dev);
+    // Discard the current static presentation scene without waiting idle:
+    // used on rules/project reload, not final Device teardown.
+    void clear(gfx::Device& dev) {retireResident(dev);}
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
+    bool collectRetired(gfx::Device& dev) {return retirement_.collect(dev);}
     void draw(Renderer3D& renderer);
     void setRuntimeOptions(bool hlod,bool geometry,bool surfaces,bool cache) { hlod_=hlod;geometryEnabled_=geometry;surfacesEnabled_=surfaces;cacheEnabled_=cache; }
     // Opt-in staging only: prepare auxiliary CPU Strata assets at load time,
@@ -301,6 +309,7 @@ public:
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
 private:
+    void retireResident(gfx::Device& dev);
     void loadImpl(gfx::Device& dev,const Json& json,const FileReader& reader,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget);
     struct Instance { Model* model=nullptr; mat4 world; GeometryPolicy policy; Model* surfaceProxy=nullptr; float proxyPixels=96; StaticModelCache cache,proxyCache; float3 min,max; };
     struct Group {
@@ -319,6 +328,7 @@ private:
                                 const Instance& instance,ModelDraw& draw);
     void updateStrataStreamingBeforeDraw(Renderer3D& renderer);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
+    NativePresentationRetirement retirement_;
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;
