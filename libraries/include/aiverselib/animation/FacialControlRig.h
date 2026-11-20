@@ -164,8 +164,17 @@ public:
             }
         // Execute all facial bone/eye/jaw IK using the existing battle-
         // tested AnimationRig, including its explicit parameter validation.
-        if(authored["rig"].isArray() && authored["rig"].size())
+        if(authored["rig"].isArray() && authored["rig"].size()) {
             out.ik_=render::AnimationRig::compile(model,authored["rig"],defaults);
+            for(const auto& unit:out.ik_->units()) {
+                for(const auto& name:{
+                    unit.target,unit.pole,unit.translation,
+                    unit.rotation,unit.scale})
+                    if(!name.empty())out.requiredVectors_.insert(name);
+                if(!unit.weightParameter.empty())
+                    out.requiredFloats_.insert(unit.weightParameter);
+            }
+        }
         if(out.bindings_.empty() && !out.ik_)
             throw std::invalid_argument("facial Control Rig has no work");
         return out;
@@ -237,6 +246,12 @@ public:
                    !std::isfinite(value.z))
                     throw std::invalid_argument("nonfinite facial/IK vector parameter");
             }
+            for(const auto& name:requiredVectors_)
+                if(!parameters.vectors.contains(name))
+                    throw std::invalid_argument("missing facial IK vector: "+name);
+            for(const auto& name:requiredFloats_)
+                if(!parameters.values.contains(name))
+                    throw std::invalid_argument("missing facial IK float: "+name);
             render::Pose candidate=pose;
             FacialControlState next=state;
             if(!next.initialized) {
@@ -302,6 +317,7 @@ private:
     std::vector<render::float3> bindTranslations_,bindScales_;
     std::vector<render::quat> bindRotations_;
     std::vector<Binding> bindings_;
+    std::set<std::string> requiredVectors_,requiredFloats_;
     std::shared_ptr<const render::AnimationRig> ik_;
 };
 
