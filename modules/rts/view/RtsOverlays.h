@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/TextureCache.h"
 #include "../../../engine/sim/Simulation.h"
 #include "../RtsMap.h"
@@ -64,6 +65,13 @@ public:
     // before publication. Failure leaves the previous GPU owner intact.
     void initGpu(gfx::Device& dev);
     bool shutdownAfterGpuIdle(gfx::Device& dev);
+    // Pre-render frame boundary only, after previous overlay draws submitted.
+    bool collectRetiredGpuResources(gfx::Device& dev) {
+        return retiredBuffers_.collect(dev);
+    }
+    size_t pendingGpuRetirements() const noexcept {
+        return retiredBuffers_.pending();
+    }
     // Caller has already established a full GPU idle barrier.
     void shutdown(gfx::Device& dev);
     bool gpuReady() const noexcept {
@@ -200,6 +208,7 @@ private:
     gfx::ShaderHandle shader_;
     gfx::PipelineHandle pipes_[4];             // bit 0: additive, bit 1: always on top
     gfx::BufferHandle vb_;
+    render::NativePresentationRetirement retiredBuffers_;
     size_t vbBytes_ = 0;
     gfx::TextureHandle white_;
 };
