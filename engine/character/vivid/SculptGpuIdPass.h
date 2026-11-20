@@ -374,7 +374,11 @@ public:
                 return handle;
             };
             const std::array<SculptGpuSkinInfluence,1> rigidSkin{};
-            const std::array<render::mat4,1> rigidMatrix{{render::mat4{}}};
+            const std::array<SculptGpuSkinRows,1> rigidRows{};
+            // Upload the same 3x4 row convention as native Renderer3D U3.
+            // Position source is still the borrowed real 60B GPU buffer.
+            const auto rendererRows=sculptGpuRendererSkinRows(
+                std::span<const render::mat4>(source.jointMatrices));
             const auto requestBuffer=makeInput(
                 source.indices.data(),
                 source.indices.size()*sizeof(SculptGpuSourceIndex),
@@ -385,9 +389,9 @@ public:
             const auto skinBuffer=makeInput(
                 skinInput.data(),skinInput.size_bytes(),
                 "VIVID GPU source vertex joint weights");
-            const auto jointInput=source.jointMatrices.empty()
-                ?std::span<const render::mat4>(rigidMatrix)
-                :std::span<const render::mat4>(source.jointMatrices);
+            const auto jointInput=rendererRows.empty()
+                ?std::span<const SculptGpuSkinRows>(rigidRows)
+                :std::span<const SculptGpuSkinRows>(rendererRows);
             const auto matrixBuffer=makeInput(
                 jointInput.data(),jointInput.size_bytes(),
                 "VIVID MotionWeave joint transform palette");
