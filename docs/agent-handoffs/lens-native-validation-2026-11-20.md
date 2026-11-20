@@ -32,3 +32,23 @@ lifetime validation. Current fix is not yet compiled. CI NOT RUN/no URL.
 Next: rerun the same command, repair subsequent compiler failures, then run
 CTest. Remaining LENS all-owner rollback and transient topology budget remain
 open as recorded in the Stage 48B.3B.3 handoff. No main merge or push.
+
+## Pass 2 — confirmed GPU completion API integration
+
+Tested `77ca1a7f6` using the same command: configure PASS, build FAIL, CTest
+NOT RUN. Logs: `/Volumes/KINGSTON/AIVERSE-builds/lens-completion/debug/test-reports/20261120-142039-60482/`.
+Scheduler now compiled. Restored pool revealed the original branch's absent
+`Device::completedFrameSerial` dependency. Fix `54c70331b6a5102d6e20f0ab1d36797acb230230` reuses the existing
+`OffscreenTargetRetirement` completion-token owner, rather than inventing
+serial completion. Pool shutdown refuses failed idle proof and retains handles;
+private allocation exceptions clean up only unpublished textures. Test stub
+now models tokens and failed-idle retry.
+
+`CameraRenderPipeline::collectRetiredTargets` polls both normal and screen
+target pools. CameraRuntimeHost/CameraClientAdapter forward it; GameClient
+calls it at its existing owner-frame retirement hook. Removed unsafe polling
+inside execute (which can be called multiple times in one GPU frame). Native
+hosts must invoke the new hook before submissions. Public target access and
+asset/save formats unchanged. Files: these four camera headers plus target
+pool, GameClient.cpp and camera_rt_pool.cpp. Actual fake-RHI/GPU tests still
+NOT RUN for the fix; CI NOT RUN/no URL. Next: repeat native build/CTest.
