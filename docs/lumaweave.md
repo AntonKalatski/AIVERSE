@@ -419,3 +419,40 @@ AIVERSE acceptance. This branch is draft and not merged into main.
 The next integration step is to use MAIN's already implemented
 rigid/skinned/reactive draw machinery without overwriting other
 renderer, animation, batching or texture development.
+
+## Stage 22 — Current MAIN PRISMA integration (2026-11-20)
+
+The isolated integration branch `integration/luma-prisma-stage22-main-20261120` is based on the current
+`main` renderer and selectively incorporates LumaWeave/GI sources without
+replacing newer renderer/camera/material/animation/batching code. Its exact
+code commits, merge ancestry and pending native acceptance are documented in
+`docs/agent-handoffs/gi-lumaweave-stage22-main-prisma-integration-2026-11-20.md`.
+
+The actual MAIN `Renderer3D::renderObjectMotionVectors` and its built-in
+rigid/instanced/skinned/morphed/baked object motion and reactive RGBA8 passes
+remain in the current renderer. LumaWeave's PostProcess adds independent
+opaque PBR material and world normal/roughness capture passes, and accepts
+the existing PRISMA typed motion/reactive callbacks after the completed
+HDR scene. Unlike the older Stage20 branch, MAIN does not need a manually
+installed `setObjectMotionProducer` callback. Imported Vulkan optional
+compute and RGBA16F storage/copy RHI are adapted onto MAIN's newer
+fence-backed buffers and retirement code.
+
+**Vulkan GPU DIRECT remains opt-in** and is not verified at runtime.
+**Portable CPU/Metal bounced-GI atlas overlay compatibility is intentionally
+disabled in this integration branch**: binding methods return false until
+their shader/resource/texture ABI is adapted to the current main renderer.
+This is a documented feature gap, not working GI parity. MAIN's baked and
+probe GI ownership is not replaced.
+
+The existing Vulkan backend test from MAIN was preserved; the older
+Stage21 897-line real-device pixel fixture was not copied over it.
+Separate Luma/GI source tests and a compile contract for the combined
+MAIN PRISMA + Luma PostProcess API are registered in CMake.
+
+**Verification status: source commits and static inspection only.
+NOT RUN:** native C++ configure/compile/link, CTest, GLSL→SPIR-V compiler,
+Metal or Vulkan real GPU captures, GLES3/WebGL2/Android checks,
+performance/memory measurements or full consolidated acceptance. Keep
+the integration PR as DRAFT and do not merge into MAIN until those checks
+are actually executed on a final conflict-reconciled commit.
