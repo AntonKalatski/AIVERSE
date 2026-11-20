@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 Mac Metal compile blocker repaired in source (2026-11-20):**
+> Actual AppleClang full-build **FAIL** at ~29–30% on
+> `aiverse_spectrafx_metal_rhi_test`: `MetalDevice` methods were
+> misparsed because `completedFrameSerial()` lacked its closing brace.
+> One-line shared Metal fix `0aa3321f37d1af16be442ff96c274205c9ad4e93`
+> is committed on the Terra integration branch; same original defect
+> remains on `main` pending upstream owner review.
+> [Failure, root cause, exact diff and targeted Mac retry](qa-2026-11-20-stage70-metal-device-missing-brace-handoff.md).
+> **Post-fix compile and CTest NOT RUN**. Draft PR #53 remains blocked.
+>
+>
 > **Stage70 native acceptance gate hardened (2026-11-20):**
 > Source `62d0566853d5a37a233fcf18d3325247ecc9d1fc` now refuses
 > dirty/stale/unexpected-HEAD checkouts and fails if any of the four
