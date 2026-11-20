@@ -88,3 +88,10 @@ The snippet is intentionally *host integration pseudocode*: it includes placehol
 - Full native Mac CMake/CTest/Metal/Vulkan/GLES/ASan/TSan, GPU fault and crowd tests have **not** been run in this chat.
 
 See `docs/agent-handoffs/animation-stage174-scene-provider-gpu-residency-2026-11-20.md` for exact source commit IDs and next steps.
+
+
+## Stage 175 — completed-token fast shutdown and canonical coordinator adapter
+
+The public `ModelAssetProvider::shutdown()` remains unchanged and requires true GPU idle. The scene retirement queue now has a **private** fast path that avoids another global idle call only when an ordered `gfx::Device` completion token has been confirmed and both nested Model and image-rollback retirement queues are empty. If either is pending, the old full-idle fallback is used. The outer token verification also requires `resourceRetirementStatus(token)==Complete`; pending/failed tokens do not authorize release. This matches the resource-retirement semantics in Metal's ordered command queue, GL/GLES sync fence and Vulkan's queue submission fence, but actual runtime proof and measurements remain pending.
+
+New cross-branch coordinator adapter: `engine/view/MotionWeaveSceneCoordinatorAdapter.h`; see [Stage 175 usage guide](motionweave-scene-coordinator-adapter.md) and [handoff](agent-handoffs/animation-stage175-scene-coordinator-gpu-token-fastpath-2026-11-20.md). It uses the real peer SceneLoadCoordinator methods with template binding when the native project has those headers. This Stage 175 implementation still does NOT include a game-specific call site or a merge of the peer scene branch. The host owns the complete scene visual asset builder and its canonical SceneState reader.
