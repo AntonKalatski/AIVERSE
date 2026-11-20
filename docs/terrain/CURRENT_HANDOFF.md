@@ -1,5 +1,17 @@
 # TerraWeave — current agent handoff entry point
 
+> **Native Mac QA: 180/181 PASS, FBX=OFF fix staged (2026-11-20).**
+> User provided a full CTest summary: 180/181 passed, all dedicated
+> TerraWeave, PHYSIS and Place tests passed; only monolithic
+> `aiverse_tests` aborted loading `cube.fbx` with `AIVERSE_FBX=OFF`.
+> Code commit `92758e07` aligns the test runner's compile flag with
+> the disabled runtime FBX loader, preserving full FBX-on tests and
+> asserting an actionable disabled-loader error in FBX-off builds.
+> See [standalone full native QA handoff](qa-2026-11-20-fbx-off-aiverse-tests-180-of-181-handoff.md).
+> **After-fix compile/CTest NOT RUN.** PR #53 stays Draft.
+>
+
+
 > **Stage70 native NEREID search bound — 2026-11-20:**
 > `4cd0ca4d` guards the public nearest-4m-cell helper against
 > excessive radius/invalid body ID/missing sampler. `1316a51c`
