@@ -1793,6 +1793,14 @@ struct CreatorApp {
         // Picking uses the actual camera ray and rendered node-world pose,
         // never a guessed nearest projected vertex behind the head.
         if(externalMode && sculptPickArmed && morphDraft && human.head &&
+           sculptSourceIds.empty() &&
+           ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+           !ImGui::GetIO().WantCaptureMouse) {
+            sculptPickArmed=false;
+            sculptPickMarkerValid=false;
+            status="VIVID sculpt: source mapping unavailable (oversized or invalid model)";
+        }
+        if(externalMode && sculptPickArmed && morphDraft && human.head &&
            ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
            !ImGui::GetIO().WantCaptureMouse &&
            sculptMeshIndex>=0 &&
