@@ -240,6 +240,15 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
         // mixture of topology generations from different input revisions.
         // The fingerprint also covers same-address, same-size brush edits.
         const uint64_t inputFingerprint=mapSourceFingerprint(g);
+        // The scene-aware path must validate everything that can change
+        // the GPU-visible candidate, not only the Terrain source. Reuse
+        // the same signatures as a one-shot LENS prewarm lease.
+        const uint64_t inputSceneSignature=scene?
+            sceneSourceFingerprint(*scene):0;
+        const uint64_t inputCameraSignature=renderer?
+            cameraSourceFingerprint(*renderer):0;
+        const uint64_t inputVisionSignature=(renderer && scene)?
+            visibilitySourceFingerprint(vision):0;
         const uint64_t originalGeneration=terrainGeneration_;
         const std::array<uint64_t,5> ownerRevisions={
             terrain_.stateRevision(),roads_->stateRevision(),
@@ -251,6 +260,10 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
             shores_->stateRevision(),groundFx_.stateRevision(),
             fog_.stateRevision()};
         if(inputFingerprint!=mapSourceFingerprint(g) ||
+           (scene && inputSceneSignature!=sceneSourceFingerprint(*scene)) ||
+           (renderer && inputCameraSignature!=cameraSourceFingerprint(*renderer)) ||
+           (renderer && scene &&
+            inputVisionSignature!=visibilitySourceFingerprint(vision)) ||
            originalGeneration!=terrainGeneration_ ||
            ownerRevisions!=finalRevisions || dev_!=&dev ||
            planets_.active()) {
@@ -258,7 +271,7 @@ void RtsView::buildTerrainImpl(gfx::Device& dev,const MapGrid& g,
             // owner or retired GPU queue is published by this attempt.
             tx.rollback();
             throw std::runtime_error(
-                "RtsView: map source changed during topology preparation");
+                "RtsView: map/scene source changed during topology preparation");
         }
         if(!tx.publish())
             throw std::logic_error("RtsView: topology cohort not published");

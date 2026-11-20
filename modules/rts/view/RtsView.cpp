@@ -113,6 +113,17 @@ uint64_t visibilityLeaseFingerprint(
 uint64_t RtsView::mapSourceFingerprint(const MapGrid& grid) noexcept {
     return mapLeaseFingerprint(grid);
 }
+uint64_t RtsView::sceneSourceFingerprint(const RtsScene& scene) noexcept {
+    return sceneLeaseFingerprint(scene);
+}
+uint64_t RtsView::cameraSourceFingerprint(
+        const render::Renderer3D& renderer) {
+    return cameraLeaseFingerprint(renderer);
+}
+uint64_t RtsView::visibilitySourceFingerprint(
+        const std::vector<uint8_t>* vision) noexcept {
+    return visibilityLeaseFingerprint(vision);
+}
 
 // Owner-specific candidates stay private until the primary frame validates
 // this one-shot lease and publishes the full OwnerPrepareCommit transaction.

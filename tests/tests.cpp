@@ -13,6 +13,7 @@ extern "C" {
 }
 #include <filesystem>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <vector>
@@ -14032,6 +14033,7 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
 TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     struct InspectingDevice final : fogfaulttest::Device {
         bool inspecting=false,failGround=false,sawGround=false;
+        game::RtsScene* mutateScene=nullptr;
         gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
             if(inspecting && desc.type==gfx::BufferType::Vertex &&
                desc.data && desc.size>=3*sizeof(render::MeshVertex) &&
@@ -14047,6 +14049,10 @@ TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
                        vertex.pos.z>0.0f && vertex.pos.z<6.0f &&
                        vertex.pos.y>1.9f && vertex.pos.y<2.3f) {
                         sawGround=true;
+                        if(mutateScene) {
+                            mutateScene->viewer=uint8_t(mutateScene->viewer+1);
+                            mutateScene=nullptr;
+                        }
                         if(failGround)return {};
                         break;
                     }
@@ -14097,6 +14103,22 @@ TEST(lens_stage48b3b1_scene_groundfx_uses_unpublished_terrain_and_rolls_back) {
     CHECK(view.roads().surfaceGeneration()==oldRoads);
     CHECK(view.pendingModelRetirements()==oldRetirements);
 
+    // Camera-visible scene input changed during private GPU staging:
+    // even a successful set of uploads is not publishable as one scene.
+    dev.sawGround=false;dev.failGround=false;dev.inspecting=true;
+    dev.mutateScene=&scene;
+    bool rejectedScene=false;
+    try {
+        view.buildTerrainAtomicScene(dev,grid,renderer,scene,2.0,&visible);
+    }catch(const std::runtime_error&){rejectedScene=true;}
+    dev.inspecting=false;
+    CHECK(dev.sawGround && rejectedScene);
+    CHECK(std::fabs(view.heightAt(grid,4.5f,3.5f)-
+                    beforeHeight)<1e-4f);
+    CHECK(view.roads().surfaceGeneration()==oldRoads);
+    CHECK(view.pendingModelRetirements()==oldRetirements);
+
+    // Retry on the updated, now-stable scene without a device-wide idle.
     dev.sawGround=false;dev.failGround=false;dev.inspecting=true;
     dev.idleAllowed=false;
     view.buildTerrainAtomicScene(dev,grid,renderer,scene,2.0,&visible);

@@ -892,6 +892,10 @@ private:
     // Same conservative fingerprint as the scene prewarm lease, shared
     // across C++ translation units to reject mid-staging editor changes.
     static uint64_t mapSourceFingerprint(const MapGrid& grid) noexcept;
+    static uint64_t sceneSourceFingerprint(const RtsScene& scene) noexcept;
+    static uint64_t cameraSourceFingerprint(const render::Renderer3D& renderer);
+    static uint64_t visibilitySourceFingerprint(
+        const std::vector<uint8_t>* vision) noexcept;
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;
