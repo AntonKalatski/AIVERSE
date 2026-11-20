@@ -3184,3 +3184,85 @@ camera-specific commands, then reflections. Must never use main
 view's selection for a sun/spot/reflection camera. Preserve all
 Metal/GLES3/Legacy ownership. Build/test only at the owner's
 requested final acceptance.
+
+
+---
+
+## Stage 16.4b — sun-shadow camera GPU packets (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`; changes below are source
+code and authored regression assertions only, **NOT COMPILED / NOT RUN**.
+Manual GPU-selection + raster parity gates are still OFF by default.
+Vulkan source/Renderer3D lifetimes and original Legacy fallback remain
+authoritative until actual native A/B tests pass.
+
+### Implemented code
+
+- `GpuIndexedSelectionPacket` now includes explicit
+  `GpuIndexedPass` (MainOpaque, SunShadow, PlanarReflection),
+  exact source view-projection matrix and render-target dimensions.
+  `matchesView(pass,viewProjection,width,height)` rejects any
+  cross-camera reuse even within the SAME RHI frame. ModelDraw
+  appends `gpuShadowPrimitives`; renderer-owned ModelItem stores one
+  `gpuShadowIndexed` alongside its independent main GPU command.
+  This also applies to per-material and per-instance packets.
+- `GeometryScene::tryStrataVulkanGpuDraw` now stages two distinct
+  GPU selections for every staged source primitive when the sun
+  shadow map is enabled: main `Renderer3D::viewProj()` and the
+  current sun `Renderer3D::lightViewProj()` at the actual shadow map
+  dimensions. The complete source only commits after all required
+  main/sun packets have been GPU-encoded and validated. Dispatch
+  quota overflows or any unsafe material/state cause atomic
+  portable/Legacy source fallback. Reflection scenes still use
+  their entire Legacy/portable route, not main-camera GPU commands.
+- `Renderer3D::renderModels(0)` is now allowed to use a prepared
+  **SunShadow** GPU indexed packet after verifying the current
+  sun projection, shadow-map size, original Model VB/IB/material,
+  source/world revisions, castShadow flags and non-auxiliary pass.
+  It binds original shadow material/state and submits via the
+  existing Vulkan indexed indirect RHI call, then *skips* the
+  original shadow primitive on success. Failure falls through to
+  the original model shadow draw, never duplicating it. Main opaque
+  pass independently uses only its matching main-view packet; when
+  shadows are active main GPU admission requires a valid sun
+  packet for the same ModelItem.
+- Spot shadow's `renderModels(0)` has
+  `auxiliaryModelPass_==true`, so it refuses the sun packet and
+  renders its correct original view through Legacy. A planar water
+  reflection has a different mirrored view and likewise refuses
+  main and sun packets. This is explicitly a conservative
+  single-sun-shadow production experiment, NOT a claim that all
+  shadow/reflection passes are GPU-driven.
+
+### Files and commits
+
+- `engine/render/Renderer3D.h`:
+  `f339b22eb6b6bfc3a0050e59f3617d382a644eb1`,
+  `31024abeda789c55d339061706dbe65ba3d2dcac`
+- `engine/render/Renderer3DModels.cpp`:
+  `f4dd3a49069bca997bd7e7d75263cd662521018a`,
+  `c93260997bbd01b7402ad0af4acc9437c5349f1a`
+- `engine/render/GeometryScene.cpp`:
+  `1c98bc8c3abbda2462bb9ce11f444da52178d0d8`
+- `tests/render/strata_render_routing.cpp`:
+  `1bc942497f9586d33e9cd2ad06d545efd6a8683a`,
+  `dc03d6b6e11c6765aa9a2fde72aa88e7c4b322fb`
+
+### Tracking table (no tests were executed)
+
+| Function | Source status | Verification |
+| --- | --- | --- |
+| Separate sun camera compute selection | Implemented | NOT RUN |
+| Per-primitive/per-material sun GPU argument slots | Implemented | NOT RUN |
+| Renderer3D exclusive sun shadow indirect | Implemented | NOT RUN |
+| Sun/spot/reflection camera mismatch guard | Implemented | NOT RUN |
+| Spot shadow GPU compute/indirect | NOT IMPLEMENTED | N/A |
+| Planar reflection GPU compute/indirect | NOT IMPLEMENTED | N/A |
+| Real sun-depth + main RGBA A/B | TEST NOT EXECUTED | N/A |
+
+**Next:** Stage 16.4c prepare spot-shadow and water-reflection
+selections at their actual view-specific frame boundaries, **before**
+starting those graphics render passes; never dispatch compute while
+inside an active graphics encoder. Keep production opt-in and require
+separate pass-specific parity acceptance before enabling the new
+routes. Finish original Vulkan/Metal/GLES3 acceptance in Stage 19.
