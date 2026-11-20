@@ -356,3 +356,24 @@ unavailable; Web build/wasm size/startup, other platform builds and CI were
 NOT RUN (no CI URL). The shared worktree had unrelated changes; none was
 staged. Next: test `auto` with a representative real project and compare
 optimized client builds, then assess further large features for safe pruning.
+
+## 2026-11-21 continuation: agent rule for client module pruning
+
+Branch `feature/studio-html5`; documentation commit
+`1ac8f8c6a`. Affected path: `AGENTS.md` only. Added a durable rule for
+future agents to distinguish executable size from content packs, use explicit
+or conservative `auto` module selection, keep legacy defaults, remove optional
+sources and libraries from client links, preserve hosted editor behaviour,
+and verify both feature states before claiming a size reduction. HTML5 savings
+require an actual optimized Web/wasm measurement. No public API, binary,
+packaging default or save format changed.
+
+Verification actually run: read `AGENTS.md` and the current feature handoff;
+`git diff --check -- AGENTS.md` PASS (line-ending warning only). Inspected the
+staged diff and commit summary to confirm the new commit contains only the
+agent-rule section. Builds and tests were NOT RUN because this is a
+documentation-only stage; CI was NOT RUN (no URL). The shared worktree had
+unrelated changes, including a separate uncommitted Entity rule in
+`AGENTS.md`; those changes remain in the worktree and were not included in
+the rule commit. Next: validate `auto` on a representative real game project
+and measure optimized Web builds when Emscripten is available.
