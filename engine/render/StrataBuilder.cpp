@@ -1,4 +1,5 @@
 #include "StrataBuilder.h"
+#include "StrataSeamTopology.h"
 #include "meshoptimizer.h"
 
 #include <algorithm>
@@ -283,6 +284,19 @@ bool build(const BuildInput& input, const BuildOptions& options,
                     next.push_back(frontier[j]);
                 continue;
             }
+            // The simplifier's border-lock flag is NOT a proof. Different
+            // neighboring groups may select different parent/child LODs in
+            // one camera, so certify that this candidate preserves the
+            // EXACT original union contour by vertex ID and orientation.
+            // A nonmanifold/degenerate candidate or a collapsed/split edge
+            // stays at its drawable original children, never a cracked LOD.
+            if (!sameSeamContour(source.data(),source.size(),
+                                 simplified.data(),count,nullptr)) {
+                ++asset.seamRejectedParents;
+                for (size_t j = begin; j < end; ++j)
+                    next.push_back(frontier[j]);
+                continue;
+            }
             if (asset.indices.size() + count > uint64_t(UINT32_MAX))
                 return fail(error, "Strata index buffer limit exceeded");
             ClusterNode node;
@@ -337,6 +351,14 @@ bool build(const BuildInput& input, const BuildOptions& options,
     for (Meshlet& m : asset.meshlets) m.node = remap[m.node];
     if (!validate(asset.nodes, asset.roots))
         return fail(error, "Strata hierarchy validation failed");
+    SeamAudit audit{};
+    // Full independent audit before exposing the asset: even if a future
+    // optimizer/builder path bypasses the per-parent gate, production
+    // cannot accept an unverified hierarchy. Unrepairable input stays on
+    // the original Legacy source, never a partial cracked STRATA draw.
+    if (!auditSeamHierarchy(asset,audit,error))
+        return false;
+    asset.seamCertified=true;
     out = std::move(asset);
     return true;
 }
