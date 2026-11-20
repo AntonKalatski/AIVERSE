@@ -20,13 +20,14 @@ struct TerrainPatch {
     uint32_t resolution=0; // samples per side; 2..129
     int32_t cellSizeMetres=0;
     uint64_t sourceRevision=0;
-    // Adaptive LOD patch is GPU presentation only. Never publish its
-    // morphed edges into the authoritative fixed-resolution collision.
-    bool presentationOnly=false;
     std::vector<int32_t> heightsCm;
     // One world-space collision triangle per matching visible triangle.
     // The winding/diagonal matches readChunkCollision: (a,c,b), (a,d,c).
     std::vector<world::Triangle> collision;
+    // Trailing to preserve positional initializers from older terrain tests.
+    // Adaptive LOD is GPU presentation only; never publish its morphed
+    // edge geometry to the authoritative collision owner.
+    bool presentationOnly=false;
     // Mesh vertices are local to the chunk; the owner can build the RHI
     // Model using the SAME heights and triangle ordering.
     size_t triangleCount() const {return collision.size();}
