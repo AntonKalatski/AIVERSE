@@ -227,16 +227,21 @@ void test() {
         DeformedSculptWorkspace workspace;
         const auto cpuPick=workspace.pick(
             model,0,pose,library,binding,face,
-            {0.42f,0.05f,4.f},{0,0,-1},3,map);
+            {0.42f,0.05f,4.f},{0,0,-1},3,map,42u,7u);
         const auto gpuResolved=workspace.resolveGpuTriangle(
-            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map);
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map,42u,7u);
         req(cpuPick.hit && gpuResolved.hit &&
             gpuResolved.vertex==cpuPick.vertex &&
             std::fabs(gpuResolved.rayDistance-cpuPick.rayDistance)<1.e-5f,
             "workspace GPU ID resolution diverges from CPU BVH pick");
+        req(!workspace.resolveGpuTriangle(
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map,43u,7u).hit &&
+            !workspace.resolveGpuTriangle(
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map,42u,8u).hit,
+            "GPU ID resolution accepted a different frame or model publication");
         workspace.reset();
         req(!workspace.resolveGpuTriangle(
-            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map).hit,
+            model,0,0u,{0.42f,0.05f,4.f},{0,0,-1},3,map,42u,7u).hit,
             "GPU ID resolver accepted a stale CPU surface after reset");
 
         req(!resolveSculptGpuTriangle(
