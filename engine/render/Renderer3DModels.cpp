@@ -586,9 +586,28 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // Facial morphing is a deformation even without bones. Permit
         // explicitly authored morph-aware LODs for such models; the current
         // draw packet still has the only parent/child pose writer.
-        const bool morphLod = node.skin<0 && !displaced &&
-            std::any_of(baseMesh.primitives.begin(),baseMesh.primitives.end(),
-                [](const Primitive& p){return p.morphTargets>0;});
+        const bool baseHasMorph=std::any_of(
+            baseMesh.primitives.begin(),baseMesh.primitives.end(),
+            [](const Primitive& p){return p.morphTargets>0;});
+        // The Model's import-time expanded bounds cover every independent
+        // channel at normalized weights in [0,1]. If an additive/authoring
+        // Graph sends negative or >1 weights, stay at LOD0 rather than
+        // choosing a coarse LOD with unbounded screen-size estimates.
+        bool morphWeightsBounded=true;
+        if(baseHasMorph) {
+            int maxChannels=0;
+            for(const auto& p:baseMesh.primitives)
+                maxChannels=std::max(maxChannels,p.morphTargets);
+            const float* weights=usePose
+                ? (*d.pose)[size_t(n)].w:node.weights;
+            for(int k=0;k<maxChannels;++k)
+                if(!std::isfinite(weights[k]) ||
+                   weights[k]<0.f || weights[k]>1.f) {
+                    morphWeightsBounded=false;break;
+                }
+        }
+        const bool morphLod=node.skin<0 && !displaced &&
+                            baseHasMorph && morphWeightsBounded;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -600,7 +619,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         ModelLodBlend lodBlend{node.mesh};
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
-        const bool skinLod = node.skin >= 0 && !displaced && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
+        const bool skinLod = node.skin >= 0 && !displaced && usePose &&
+            !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size() &&
+            (!baseHasMorph || morphWeightsBounded);
         const bool lodEligible = (rigid || skinLod || morphLod) &&
                                  !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
