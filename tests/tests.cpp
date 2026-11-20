@@ -1,4 +1,5 @@
 #include <chrono>
+#include "engine/view/VisibilityField.h"
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
 #include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
@@ -12505,6 +12506,130 @@ private:
     std::vector<float> u0_;
 };
 } // namespace entityfxtest
+
+namespace fogfaulttest {
+struct Device : entityfxtest::RecordingDevice {
+    size_t shaderAttempts=0,pipelineAttempts=0,bufferAttempts=0,textureAttempts=0;
+    size_t failShader=0,failPipeline=0,failBuffer=0,failTexture=0;
+    size_t destroyedShaders=0,destroyedPipelines=0,destroyedBuffers=0,destroyedTextures=0;
+    unsigned idleRequests=0;
+    bool idleAllowed=true;
+    gfx::ShaderHandle createShader(const gfx::ShaderDesc& desc) override {
+        if(++shaderAttempts==failShader)return {};
+        return entityfxtest::RecordingDevice::createShader(desc);
+    }
+    gfx::PipelineHandle createPipeline(const gfx::PipelineDesc& desc) override {
+        if(++pipelineAttempts==failPipeline)return {};
+        return entityfxtest::RecordingDevice::createPipeline(desc);
+    }
+    gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc) override {
+        if(++bufferAttempts==failBuffer)return {};
+        return entityfxtest::RecordingDevice::createBuffer(desc);
+    }
+    gfx::TextureHandle createTexture(const gfx::TextureDesc& desc) override {
+        if(++textureAttempts==failTexture)return {};
+        return entityfxtest::RecordingDevice::createTexture(desc);
+    }
+    void destroyShader(gfx::ShaderHandle h) override {
+        if(h.valid())++destroyedShaders;
+        entityfxtest::RecordingDevice::destroyShader(h);
+    }
+    void destroyPipeline(gfx::PipelineHandle h) override {
+        if(h.valid())++destroyedPipelines;
+        entityfxtest::RecordingDevice::destroyPipeline(h);
+    }
+    void destroyBuffer(gfx::BufferHandle h) override {
+        if(h.valid())++destroyedBuffers;
+        entityfxtest::RecordingDevice::destroyBuffer(h);
+    }
+    void destroyTexture(gfx::TextureHandle h) override {
+        if(h.valid())++destroyedTextures;
+        entityfxtest::RecordingDevice::destroyTexture(h);
+    }
+    bool waitForResourceIdle() override {++idleRequests;return idleAllowed;}
+};
+}
+
+TEST(visibility_field_gpu_init_failure_is_retryable) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    dev.failShader=1;
+    CHECK(!fog.init(dev));
+    CHECK(!fog.ready());
+    CHECK(dev.destroyedShaders==0);
+    dev.failShader=0;
+    dev.failPipeline=1;
+    CHECK(!fog.init(dev));
+    CHECK(!fog.ready());
+    CHECK(dev.destroyedShaders==1); // unpublished shader was cleaned
+    dev.failPipeline=0;
+    CHECK(fog.init(dev));
+    CHECK(fog.ready());
+    CHECK(fog.init(dev)); // idempotent on the same device
+    fogfaulttest::Device foreign;
+    bool wrongDevice=false;
+    try {(void)fog.init(foreign);}
+    catch(const std::logic_error&){wrongDevice=true;}
+    CHECK(wrongDevice);
+    CHECK(fog.shutdownAfterGpuIdle());
+    CHECK(!fog.ready());
+}
+
+TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
+    fogfaulttest::Device dev;
+    view::VisibilityField fog;
+    CHECK(fog.init(dev));
+    const auto height=[](float,float){return 0.0f;};
+    fog.build(dev,2,2,height);
+    const auto previousTexture=fog.texture();
+    CHECK(previousTexture.valid());
+    CHECK(fog.update(std::vector<uint8_t>{2,2,2,2},2,2,0.0));
+    const auto originalField=fog.field();
+
+    // A created VB must be destroyed when the following index allocation
+    // fails. Earlier published fog remains usable.
+    dev.failBuffer=dev.bufferAttempts+2;
+    bool failed=false;
+    try {fog.build(dev,3,3,height);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(fog.texture().id==previousTexture.id);
+    CHECK(fog.field()==originalField);
+    CHECK(fog.ready());
+    dev.failBuffer=0;
+
+    // A new texture allocation failure must not destroy the published VB/IB
+    // or change the visibility dimensions.
+    dev.failTexture=dev.textureAttempts+1;
+    failed=false;
+    try {fog.build(dev,3,3,height);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(fog.texture().id==previousTexture.id);
+    CHECK(fog.field()==originalField);
+    dev.failTexture=0;
+
+    // Old GPU draws may still own previously published buffers/texture.
+    // Rejected idle must leave all published handles untouched.
+    dev.idleAllowed=false;
+    failed=false;
+    try {fog.build(dev,3,3,height);}
+    catch(const std::runtime_error&){failed=true;}
+    CHECK(failed);
+    CHECK(dev.idleRequests>0);
+    CHECK(fog.texture().id==previousTexture.id);
+    CHECK(fog.field()==originalField);
+    CHECK(!fog.shutdownAfterGpuIdle());
+    CHECK(fog.ready());
+
+    dev.idleAllowed=true;
+    fog.build(dev,3,3,height);
+    CHECK(fog.texture().valid());
+    CHECK(fog.texture().id!=previousTexture.id);
+    CHECK(fog.field().size()==9);
+    CHECK(fog.shutdownAfterGpuIdle());
+    CHECK(!fog.ready());
+}
 
 TEST(view_reload_checks_gpu_idle_before_mutating_overlay_and_fog_state) {
     struct Device : entityfxtest::RecordingDevice {
