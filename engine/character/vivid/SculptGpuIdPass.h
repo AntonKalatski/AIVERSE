@@ -1,7 +1,7 @@
-// Opt-in VIVID hardware ID pass, currently Metal-only.
+// Opt-in VIVID hardware ID pass for Metal/Vulkan/native GLES3/GL33.
 // Uses the canonical gfx::Device and an ordinary offscreen RGBA8 + depth
-// pass, with one true asynchronous pixel readback. Non-Metal backends
-// deliberately fail closed until their RHI pixel readback is implemented.
+// pass, with one true asynchronous pixel readback. Unsupported RHI paths
+// fail closed and retain the existing CPU BVH result.
 // This does not replace the CPU BVH picker, GPU actor pose, or ECS.
 #pragma once
 #include "SculptGpuPickShaders.h"
@@ -47,7 +47,11 @@ public:
     SculptGpuIdPass& operator=(const SculptGpuIdPass&)=delete;
 
     bool initialize(gfx::Device& device) {
-        if(device_ || device.info().backend!=gfx::Backend::Metal)return false;
+        if(device_ || !device.frameSerial())return false;
+        const auto backend=device.info().backend;
+        if(backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan &&
+           backend!=gfx::Backend::GLES3 && backend!=gfx::Backend::GL33)
+            return false;
         const auto shaderDesc=sculptGpuIdShaderDesc();
         auto shader=device.createShader(shaderDesc);
         if(!shader.valid())return false;
@@ -121,7 +125,7 @@ public:
            !device_->frameSerial() ||
            device_->frameSerial()!=request.frameSerial ||
            request.meshId!=surface.mesh ||
-           !pending_.empty() || retiredWithoutCallback_.size()>=512u ||
+           !pending_.empty() || !retiredWithoutCallback_.empty() ||
            request.width>4096u || request.height>4096u ||
            !device_->gpuHealthy())return false;
         vertices_.clear();
@@ -273,6 +277,10 @@ public:
             if(vertex.valid())retiredWithoutCallback_.push_back(vertex);
             retiredWithoutCallback_.insert(retiredWithoutCallback_.end(),
                                            maskBuffers.begin(),maskBuffers.end());
+            // A readback failed AFTER GPU draw encoding. Disable further
+            // submissions until shutdown confirms an idle barrier; retrying
+            // could otherwise accumulate unbounded 1M-triangle buffers.
+            supported_=false;
             return false;
         }
         pending_.push_back({vertex,std::move(maskBuffers),
