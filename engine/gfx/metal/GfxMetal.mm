@@ -853,6 +853,10 @@ public:
         deliverBufferReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
+        // Programmatic .gputrace for one explicit frame. Capture must begin
+        // BEFORE commandBuffer creation; beginning in the fixture callback
+        // would be too late for the already-created command buffer.
+        maybeStartGpuTrace();
         if (modelCounterEnabled_) {
             std::fill(std::begin(modelCounterMarked_), std::end(modelCounterMarked_), false);
             modelCounterCurrent_ = nil;
@@ -1041,6 +1045,13 @@ public:
         }
         if (drawable_) [cmd_ presentDrawable:drawable_];
         [cmd_ commit];
+        if (gpuTraceActive_) {
+            [[MTLCaptureManager sharedCaptureManager] stopCapture];
+            gpuTraceActive_ = false;
+            std::fprintf(stderr, "[metal-gputrace] STOP frame=%llu path=%s\n",
+                         static_cast<unsigned long long>(frame_),
+                         gpuTracePath_.c_str());
+        }
         cmd_ = nil;
         drawable_ = nil;
     }
@@ -1823,6 +1834,61 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
     }
 
 private:
+    // The trace is strictly opt-in and separate from GPU timestamp counters,
+    // which may be unavailable on this device. No implicit capture in runtime.
+    bool gpuTraceConfigured_ = false;
+    bool gpuTraceAttempted_ = false;
+    bool gpuTraceActive_ = false;
+    uint64_t gpuTraceFrame_ = 0;
+    std::string gpuTracePath_;
+    void maybeStartGpuTrace() {
+#if !TARGET_OS_IPHONE
+        if (gpuTraceAttempted_) return;
+        if (!gpuTraceConfigured_) {
+            gpuTraceConfigured_ = true;
+            const char* rawFrame = std::getenv("AIVERSE_METAL_TRACE_FRAME");
+            const char* rawPath = std::getenv("AIVERSE_METAL_TRACE_PATH");
+            if (!rawFrame || !rawPath || !*rawPath) return;
+            char* end = nullptr;
+            const unsigned long long parsed = std::strtoull(rawFrame, &end, 10);
+            if (end == rawFrame || *end != '\0' || parsed < 1 || parsed > 1000000ull) {
+                std::fprintf(stderr, "[metal-gputrace] INVALID frame number\n");
+                gpuTraceAttempted_ = true;
+                return;
+            }
+            gpuTraceFrame_ = uint64_t(parsed);
+            gpuTracePath_ = rawPath;
+            if (gpuTracePath_.size() < 9 ||
+                gpuTracePath_.substr(gpuTracePath_.size() - 9) != ".gputrace") {
+                std::fprintf(stderr, "[metal-gputrace] INVALID path (need .gputrace)\n");
+                gpuTraceAttempted_ = true;
+                return;
+            }
+        }
+        if (gpuTraceFrame_ != frame_) return;
+        gpuTraceAttempted_ = true;
+        MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
+        if (![manager supportsDestination:MTLCaptureDestinationGPUTraceDocument]) {
+            std::fprintf(stderr, "[metal-gputrace] UNSUPPORTED: GPUTraceDocument destination\n");
+            return;
+        }
+        MTLCaptureDescriptor* descriptor = [MTLCaptureDescriptor new];
+        descriptor.captureObject = queue_;
+        descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+        NSString* filePath = [NSString stringWithUTF8String:gpuTracePath_.c_str()];
+        descriptor.outputURL = [NSURL fileURLWithPath:filePath];
+        NSError* error = nil;
+        if (![manager startCaptureWithDescriptor:descriptor error:&error]) {
+            const char* reason = error ? error.localizedDescription.UTF8String : "unknown";
+            std::fprintf(stderr, "[metal-gputrace] FAILED frame=%llu reason=%s\n",
+                         static_cast<unsigned long long>(frame_), reason);
+            return;
+        }
+        gpuTraceActive_ = true;
+        std::fprintf(stderr, "[metal-gputrace] START frame=%llu path=%s\n",
+                     static_cast<unsigned long long>(frame_), gpuTracePath_.c_str());
+#endif
+    }
     std::unique_ptr<MetalShaderAssets> shaderAssets_;
     CAMetalLayer* layer_;
     id<MTLDevice> device_;
