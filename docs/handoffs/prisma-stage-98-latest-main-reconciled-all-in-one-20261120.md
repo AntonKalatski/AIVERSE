@@ -124,3 +124,43 @@ GLES3 (Android/EGL), WebGL2 (Emscripten/Chromium); quality under
 moving skinned/transparent/disoccluded pixels, production memory
 residency and device loss/recovery. The test branch remains Draft,
 main unchanged and never silently merged.
+
+## Stage98 unified acceptance extension — complete latest-main sky/fog GPU variants
+
+After the source merge, the latest-main Physical Sky and Local Fog
+fixture variants must be included in the **same native command**, not
+manually tested one by one.
+
+Code commits:
+- `e49298a3ddb5083597a86c72001836e4a62f355b`:
+  `tools/prisma/acceptance.sh` adds a generic `scene_variant`
+  runner which launches the **real Metal and GL33 HDR executables**
+  with `AIVERSE_AUDIO=off`, one explicit sky or fog mode, a dedicated
+  P6 capture and a per-case stage log.
+- `c4b9ed1d15e5121d9306e672e51b7c57a144b492`:
+  remove any previous PPM for that variant and require the current
+  process to report exactly the expected capture path, plus backend
+  marker and valid nonempty P6 header. A stale prior PPM cannot
+  incorrectly make a failed/missing capture seem successful.
+
+**Sky modes on each backend (11):**
+`clouds`, `clear`, `medium`, `ortho`, `night`, `no-rays`,
+`sunset`, `inside`, `above`, `physis-dry`, `physis-storm`.
+
+**Fog modes on each backend (11):**
+`off`, `sphere`, `reveal`, `move`, `obb`, `obb-reveal`,
+`behind`, `inside`, `medium`, `ortho`, `combined`.
+
+Total **44 new variant subprocesses** are executed by ONE runner command,
+not by asking the owner to paste 44 commands. All outputs are kept
+under `build/prisma-stage97/prisma-acceptance`.
+This is real GPU fixture execution plus P6 capture validity,
+**not** automatic high-quality visual pixel-difference certification.
+
+These new sky/fog runner cases and Stage98 stress/ghost code have
+**NOT** been native-compiled or GPU-executed on the new merge SHA.
+Previous user-run Stage97 `9da0dcdb...` remains the only complete
+hardware acceptance PASS. Do not claim full Stage98 PASS yet.
+After fetching the latest branch, run exactly the previously documented
+one-command full acceptance. Vulkan/GLES/WebGL need separate
+native platform hardware/CI and remain explicit SKIP on macOS.
