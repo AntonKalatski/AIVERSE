@@ -1621,3 +1621,78 @@ Code `647b7bc2e07ab1f99ca567022ac94cfed0d80dec`: fixed reserved MSL tokens and p
 ## 2026-11-20 full palette and mask parity
 
 Code `1cd6b732a100b8a01c302f2749b1d0bce2b4ee5e`: all 52 semantic channels + last MotionWeave palette slot tested; real 1/2-mask scene/ID-depth probes, 12-actor scene and Creator smoke PASS on Metal. See [joint handoff](motionweave-vivid-integration-2026-11-20.md) for logs and limits.
+
+
+## Visual acceptance repairs — 2026-11-20
+
+Implementation: `a16fbb965ad88e6d120592f6c0db5840d12d675b` on
+`integration/motionweave-studio-facial-stage184`; starting HEAD
+`9340e8c7ffa79db9d47e6a550653f3925a76bc73`.
+
+**Correction of earlier status:** old Creator smoke PASS was insufficient visual
+acceptance. Inspection of its actual screenshot showed only hair: CPU actor
+borrowed a sparse library from a candidate subsequently moved into the live asset.
+Floor/hair draw counts let that failure pass. This entry supersedes earlier claims
+of visible Creator head acceptance, but not independent renderer parity fixtures.
+
+Changes: CpuActorStream owns an immutable sparse-library snapshot, bounded with
+its fixed vertex payload; source replacement is covered by the CPU actor test.
+Creator can select compute before frame 1; `--cpu-morph` explicitly exercises the
+fallback on Metal. Smoke requires head attachment AND actual tracked head commands,
+logs real draw counts. Procedural facial parenting preserves world TRS rather than
+applying head scale twice. Iris is ahead of sclera, inside cornea. High/compact iris
+graphs use XYZ length: UV W=1 previously made all pupil/iris masks empty. Camera,
+floor and a frontal authoring key reveal the bust and eye glints. Existing MSL
+source-contract tests now match vertexIndex/threadIndex from the earlier compiler
+fix. Validation script builds CPU actor tests and captures CPU fallback.
+
+Paths: engine/character/vivid/{CpuActorStream.h,HumanPreview.cpp,HumanMaterials.cpp},
+tests/vivid/{cpu_actor.cpp,human_appearance.cpp,human_creator.cpp},
+tools/vivid-creator/{main.cpp,README.md}, tools/vivid-validate.sh, docs/vivid.md.
+Public call signatures, DNA/save format, 52 semantic channels and 64 Model palette
+unchanged; CPU actor now owns its morph snapshot (initialization-only copy). No
+second scheduler, authoritative ECS edits, renderer shader changes or default
+experimental batching/ICB changes.
+
+Actually executed (all build/log/image artifacts under
+`/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid`):
+- CMake builds Creator, CPU actor, human appearance and human creator tests: PASS.
+  Final logs build-iris-radius.log, build-creator-contract.log, build-creator-light.log.
+- Rebuilt aiverse_vivid_renderer_preview and aiverse_studio: PASS,
+  build-visual-deliverables.log.
+- `TMPDIR=.../tmp bash run-tests.sh --no-build --build-dir .../native --filter
+  '^vivid_(cpu_actor|human_appearance|human_rig|human_creator|motionweave_bridge)$'
+  --ctest-jobs 1`: **5/5 PASS**, tests-visual-accepted.log,
+  native/test-reports/20261120-145600-39306. CPU lifetime test uses fake GLES device;
+  real fallback capture below runs on Metal, not native GLES hardware.
+- Final Creator `--smoke`: GPU, --cpu-morph, imported OBJ manifest, seven frozen
+  optical cases, mobile low config and medium materials: **12/12 PASS**.
+  Actual head command counts are 24 procedural / 1 imported. Files/logs in
+  visual-acceptance-final/. creator-gpu.png visually inspected: head, facial parts,
+  coloured iris and pupils, torso and shadow present; crude procedural test art.
+- optical_ab.py with original ROIs, threshold=4, min-changed=1: **3/3 PASS**.
+  Skin .10/4.0: 56233 changed pixels; eye IOR 1.25/1.45: 44; hair .08/.90: 2313.
+  JSON/logs in visual-acceptance-final/{skin-scatter,eye-ior,hair-rough}.*.
+  These prove parameter response in this scene, not physical accuracy.
+- Real Metal MotionWeave/VIVID preview: capture-pass=1; morph 81989 changed pixels,
+  MotionWeave 63241; both same-frame colour/ID/native depth probes PASS, delta=0.
+  visual-acceptance-final/motionweave.log and three PPM captures; animated PNG
+  inspected (deliberately simple geometry fixture, not a realistic head).
+- bash -n tools/vivid-validate.sh and git diff --check: PASS. Entire branch-fetching
+  vivid-validate.sh NOT RUN because it switches to the separate upstream branch.
+
+Recorded failed attempts: build-face-transforms.log initially lacked Animation.h
+in appearance test, then fixed. tests-visual-fixes.log and
+ tests-visual-fixes-final.log each failed human_creator's stale MSL string checks;
+all corrected and rerun above. Original top-lit eye IOR A/B failed (max RGB delta1,
+no pixels above threshold), including full viewport diagnostic; final frontal key
+passes WITHOUT lowering threshold. Older images remain under visual-acceptance/
+for provenance; use visual-acceptance-final/ for final lighting/material captures.
+
+CI NOT DISPATCHED (no URL); no push or main checkout edits. Full engine suite,
+Vulkan/GLES hardware, production artwork and Studio WKWebView interaction/screens
+NOT VERIFIED. Native Mac UI was locked; user was asked to unlock, no reply received.
+CLI framebuffer captures succeeded independently. No synthetic UI screenshot.
+Next action: after Mac unlock, inspect Studio Facial/animation windows via CUA,
+exercise controls and take UI screenshots; then cross-backend acceptance on real
+hosts and production character assets. Do not label the whole VIVID roadmap done.
