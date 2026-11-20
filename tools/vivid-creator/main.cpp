@@ -98,6 +98,7 @@ struct CreatorApp {
     bool previewMotion=false;int previewPose=0;float previewTime=-1;
     motionweave::AnimationPoseComponent previewCapturePose;
     int sequenceFrames=0,sequenceFrame=0,sequenceSampled=-1,sequenceBase=-1;
+    bool previewHeadSweep=false;
     render::Animator sequenceAnimator; // offline diagnostic only; no runtime clock
 
     bool studioLightingEnabled=false;
@@ -250,6 +251,7 @@ struct CreatorApp {
         rigPoseScratch.clear();
         if(human.hair)releaseModel(*device,*human.hair);
         if(human.head)releaseModel(*device,*human.head);
+        sequenceAnimator.setModel(nullptr);
         human={};
         scalpBindPositions.clear();
         scalpAnimatedPositions.clear();
@@ -748,6 +750,7 @@ struct CreatorApp {
                 }
                 throw;
             }
+            sequenceAnimator.setModel(nullptr); // never retain a retiring Model
             if(retired) {
                 // All transfers here are pointer/owned-state moves; the
                 // retirement queue already owns the slot on allocation.
@@ -758,6 +761,7 @@ struct CreatorApp {
                 retired->human=std::move(human);
             }
             human=std::move(proposed);
+            sequenceAnimator.setModel(human.head.get());sequenceSampled=-1;
             sculptSourceIds=std::move(proposedSculptSourceIds);
             gpuSculptToken.cancel();
             gpuSculptToRecord={};
@@ -1773,13 +1777,17 @@ struct CreatorApp {
                 status="GPU ID frame/viewport/pose changed; CPU BVH retained";
             }
         }
-        guiControls();
+        // Offline sequences record a fixed asset, not an interactive edit session.
+        // Keep the normal Creator UI unchanged outside diagnostic recording.
+        if(!sequenceFrames)guiControls();
         // A material tier is also a Renderer3D pipeline setting. Apply at
         // the owner-thread frame boundary; setMaterialQuality retires old
         // programs, while regenerate publishes a new character candidate.
         if(rendererReady && renderer.materialQuality()!=
            rendererMaterialQuality(presentation.materialQuality))
             applyVividMaterialQuality(renderer,presentation);
+        if(pendingRebuild&&sequenceFrames&&sequenceSampled>=0)
+            throw std::runtime_error("Character changed during offline recording; restart capture");
         if(pendingRebuild)regenerate();
         if(!human.head||(!actor&&!cpuActor)||!world||
            (actor&&!actor->ready())||
@@ -1806,6 +1814,17 @@ struct CreatorApp {
                 previewCapturePose=sourcePose;
                 sequenceAnimator.evaluate(previewCapturePose.local);
                 worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);
+                if(previewHeadSweep){
+                    const int head=human.head->findNode(session.dna().rig.headBone);
+                    if(head<0)throw std::runtime_error("Head sweep requires mapped head bone");
+                    const int parentIndex=human.head->nodes[size_t(head)].parent;
+                    const auto parent=parentIndex<0?quat{}:rotationOf(previewCapturePose.matrices[size_t(parentIndex)]);
+                    const quat inverse{-parent.x,-parent.y,-parent.z,parent.w};
+                    const float phase=float(sequenceFrame)*(6.28318530718f/(24.f*6.f));
+                    auto& local=previewCapturePose.local[size_t(head)];
+                    local.r=qnormalize(inverse*quat::axisAngle({0,1,0},.45f*std::sin(phase))*quat::axisAngle({1,0,0},.20f*std::sin(phase*2))*parent*local.r);
+                    worldMatrices(*human.head,previewCapturePose.local,previewCapturePose.matrices);
+                }
                 sequenceSampled=sequenceFrame;
             }
             poseSource=&previewCapturePose;
@@ -2339,6 +2358,8 @@ int aiverseMain(int argc,char** argv) {
             application->studioLighting.preset=argv[++i];(void)application->studioLighting.rig();application->studioLightingEnabled=true;
         }else if(std::strcmp(argv[i],"--preview-pose")==0 && i+1<argc) {
             HumanPreviewAnimation settings;settings.pose=argv[++i];try{application->previewPose=settings.poseIndex();application->previewMotion=true;}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 2;}
+        }else if(std::strcmp(argv[i],"--preview-head-sweep")==0) {
+            application->previewHeadSweep=true;
         }else if(std::strcmp(argv[i],"--preview-sequence")==0 && i+1<argc) {
             try{application->sequenceFrames=std::stoi(argv[++i]);if(application->sequenceFrames<1||application->sequenceFrames>720)return 2;}catch(...){return 2;}
         }else if(std::strcmp(argv[i],"--preview-time")==0 && i+1<argc) {
@@ -2397,6 +2418,7 @@ int aiverseMain(int argc,char** argv) {
             return 2;
         }
     }
+    if(application->previewHeadSweep&&!application->sequenceFrames){std::fprintf(stderr,"preview-head-sweep requires preview-sequence\n");return 2;}
     if(application->sequenceFrames){
         if(!application->smoke||!application->previewMotion||application->previewTime>=0){
             std::fprintf(stderr,"preview-sequence requires --smoke --preview-pose and no --preview-time\n");return 2;

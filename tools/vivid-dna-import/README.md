@@ -204,3 +204,23 @@ texels, which the former R default converted to an opaque rectangle. Regression
 fixtures cover both red-mask and white-RGB/alpha-mask exports. Existing packages
 must be rebaked or their affected texture replaced; changing code alone cannot
 repair already baked pixels.
+
+### Bind groom cards to the animated head — 2026-11-20
+
+The Ada companion has two unskinned card nodes (hair and eyebrows) initially
+parented to the character root. Their static placement is correct, but they do
+not follow head animation. Preparation now calls `attach_grooms.cjs` after framing:
+rigid Hair_/Eyebrows_ nodes attach to the mapped facial head. An exact inverse-TRS
+chain preserves their world bind frame, including nonuniform scale without shear
+loss. Meshes, materials, alpha, node weights and morph channels are not duplicated.
+Already-descendant nodes are unchanged; skinned meshes are rejected by this helper
+and must use a skeletal attachment path. `groomBindings` records provenance.
+
+The helper is an offline card attachment, not a UE strand-groom binding asset or
+scalp barycentric deformation. Brows retain their named face morphs (46 on Ada);
+lashes already belong to the skinned facial mesh. All use the existing animation
+pose; no copied animation or independent clock is introduced.
+
+Test: `node tools/vivid-dna-import/test_attach_grooms.cjs <KINGSTON tooling dir>`.
+Checks bind preservation, rotation/nonuniform scale following, morph ownership,
+idempotence, cycle/skinned rejection and GLB hierarchy roundtrip.

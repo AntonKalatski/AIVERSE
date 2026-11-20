@@ -83,3 +83,8 @@ Real Ada frame differences are ~5.7e-6 left and8.0e-5 right. No visibility masks
 geometry deletion were used. Native T-pose shoulder-sync/t-pose.png removes large
 exposed patches; minor collar-edge intersections remain. CPU fixture covers a
 coincident truncated joint and a distant same-name joint that must stay unchanged.
+
+Creator diagnostic `--preview-head-sweep` requires --preview-sequence. It applies
+additional world-space yaw±0.45rad and pitch±0.20rad to the mapped head joint on the
+diagnostic pose, recomputing world matrices before submission. This exaggerates
+motion enough to reveal unbound hair, brows and lashes; production idle is unchanged.

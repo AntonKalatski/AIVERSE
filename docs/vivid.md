@@ -6,6 +6,16 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Ada groom/head binding correction — 2026-11-20
+
+The two unskinned Ada card nodes (hair, eyebrows) now attach to the mapped facial
+head through bind-preserving transforms. The working KINGSTON source and separate
+Ada-Groom-Bound package are corrected; brows retain46 morph targets, lashes remain
+in the skinned face. Companion preparation now performs this binding too.
+[Focused QA](qa/vivid-head-binding-2026-11-20.md) records exaggerated turn/tilt and
+blink frames. This establishes following for this character's cards, not universal
+strand grooming, hair physics, arbitrary rig compatibility or UE visual parity.
+
 ## SKM attachment authoring — 2026-11-20
 
 The existing assembly panel now supports independent imported SKMs attached to

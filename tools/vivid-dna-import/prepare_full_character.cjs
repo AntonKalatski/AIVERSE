@@ -83,6 +83,9 @@ const {createRequire} = require('node:module');
   for (const child of children) {scene.removeChild(child);frame.addChild(child);}
   const turn = doc.createNode('vivid_full_view').setRotation([0,Math.sin(yaw/2),0,Math.cos(yaw/2)]).addChild(frame);
   scene.addChild(turn);
+  const groomBindings=[];
+  for(const node of nodes)if(node.getMesh()&&!node.getSkin()&&/Hair_|Eyebrows_/i.test(node.getMesh().getName()))
+    groomBindings.push(require('./attach_grooms.cjs').attachRigidGroom(doc,node,head));
   fs.mkdirSync(destination,{recursive:true});
   await io.write(path.join(destination,'model.gltf'),doc);
   const hair = root.listMaterials().filter(m => /hair_s_coil|eyebrows_m_thin/.test(m.getName()));
@@ -110,7 +113,7 @@ const {createRequire} = require('node:module');
     sourceKind:'published MetaHuman companion GLB; not body reconstructed from legacy Ada.dna',vertices,
     meshes:root.listMeshes().map(m=>m.getName()),sourceBounds:{min,max},previewScale:scale,previewYaw:yaw,
     skins:root.listSkins().length,images:root.listTextures().length,
-    uniformClothFallbacks:materialFallbacks,bakedMaterials,
+    uniformClothFallbacks:materialFallbacks,bakedMaterials,groomBindings,
     limitations:['No full RigLogic evaluation','Existing GLB textures/materials; no original UE shader parity claim']};
   for (const [name,value] of Object.entries({'manifest.json':manifest,'vivid-dna.json':dna,'provenance.json':provenance}))
     fs.writeFileSync(path.join(destination,name),JSON.stringify(value,null,2));
