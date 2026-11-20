@@ -124,7 +124,8 @@ public:
 
         if (!ed.planetMap()) {
             ui::section(ICON_TERRAIN, "TerraWeave · открытый мир / Sparse");
-            ui::checkbox("Кисть с автоматическим созданием чанков", &sparse_);
+            if(ui::checkbox("Кисть с автоматическим созданием чанков", &sparse_) &&
+               sparse_)setActive(ed,true);
             ui::hint("Можно нажимать за пределами старой карты. Созданные чанки и высоты сохраняются в map.terraweaveSparse, доступны агентам и Undo.");
             if(sparse_) {
                 static const char* sparseActions[] = {
