@@ -10,7 +10,7 @@
 // colour, roughness, metalness, normal, emission, opacity), external and embedded textures,
 // skin deformers (4 strongest influences per vertex, split into kMaxPaletteJoints palettes),
 // animation stacks baked to linear TRS and FBX blendshape weight channels,
-// including named in-between targets flattened to up to 16 morph GPU slots.
+// including named in-between targets flattened to up to 64 morph GPU slots.
 // Not supported: over-capacity facial rigs, per-control morph weights, vertex
 // caches, extra UV/colour sets, more than 4 influences, cameras, lights.
 #include "Model.h"
