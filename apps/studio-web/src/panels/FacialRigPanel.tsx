@@ -214,10 +214,16 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
           </div>
           <div className="facial-morphs">
             <div className="facial-morph-list" aria-label="Morph channel mappings">
-              {filtered.map(m=><button key={m.index} type="button" className={'facial-morph-item'+(active===m.index?' active':'')}
-                onClick={()=>setActive(m.index)} aria-pressed={active===m.index}>
-                <span>{m.parameter}</span><small>{m.node} / {m.target}</small>
-              </button>)}
+              {filtered.map(m=><div key={m.index} className="facial-morph-row">
+                <button type="button" className={'facial-morph-item'+(active===m.index?' active':'')}
+                  onClick={()=>setActive(m.index)} aria-pressed={active===m.index}>
+                  <span>{m.parameter}</span><small>{m.node} / {m.target}</small>
+                </button>
+                <StudioInput className="facial-gain-slider" type="range"
+                  aria-label={'Gain: '+m.parameter} min={0} max={4} step={0.05}
+                  value={m.gain??1} onChange={e=>
+                    changeMorph(m.index,{gain:Number(e.target.value)})}/>
+              </div>)}
               {!filtered.length&&<p>No matching morph channels.</p>}
             </div>
             <div className="facial-morph-detail">
