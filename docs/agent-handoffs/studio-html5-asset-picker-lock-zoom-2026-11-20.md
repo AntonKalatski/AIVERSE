@@ -286,3 +286,36 @@ Run full macOS native build, `npm run typecheck`, `npm run test:web`, Python sou
 - **Critically not integrated yet:** `studioPickModelInstances` is an isolated geometry adapter; HTML5 Studio does not yet draw imported models in Scene. Do NOT claim Scene object selection uses this adapter yet. `StudioMetalScene::pick` continues to use `studioPickVisibleProxy` for presently drawn cubes.
 - **Important limitations:** skinned/morphed geometry and GPU-only buffers cannot be picked via this bind-pose CPU helper. Real render parity needs identical LOD/visibility/material-alpha handling, CPU geometry retention or a GPU ID/depth pass, and depth-consistent mixed proxy/model selection.
 - **Next:** wire an actual Model scene rendering path with ownership, GPU upload/release, transforms and project-relative path validation; build model render submission list, and only then feed the exact same list to `studioPickModelInstances` or adopt GPU ID buffer. Run `cmake --build <build> --target aiverse_studio_model_picking_tests`, `ctest --test-dir <build> -R studio_model_picking --output-on-failure`, `npm run typecheck` and existing editor tests. Resolve test/build failures on the macOS host before merging.
+
+## Stage 14 — actual rigid Model rendering and triangle picking in HTML5 Scene (2026-11-20)
+
+### What was implemented
+- `apps/studio-native/mac/StudioMetalScene.h/.cpp`: added native project-scoped Model ownership/cache and a single `modelInstances_` list used both for `Renderer3D::drawModel` and ray selection. The map entity's `type` resolves `rules.types[type].view.model` (single string or first array item/string-object file). Only `content/...` models under the current project are allowed, and every path component is checked for symlinks. The loader uses the same content-root boundary for dependent file reads.
+- Native models are loaded via existing `render::loadModel`, `prepareModelUpload`, and `uploadModel(*device_, *model, true)` (keep CPU geometry). GPU ownership is explicitly released on project switch, removal from the active scene or renderer destruction.
+- Scene rendering uses the same authored entity location for the model `ModelDraw.world` and for `StudioModelPickInstance.world`. When a real model is drawn, its old box proxy is not drawn or considered for selection. Unsupported/missing models still display their normal box proxy.
+- `StudioModelPicking.h` now provides `studioPickSceneSurfaces` to choose the nearest hit between actual model triangles and remaining visible document proxies; it skips proxy geometry replaced by real drawn models. `StudioMetalScene::pick` uses this shared resolver.
+- Scope is deliberately conservative: opaque, rigid, no native LODs, no skinned/morph deformations, available CPU vertices/indices, and bounded geometry. The renderer checks for alpha-tested/blended materials and falls back to proxies instead of claiming invisible triangles are selectable. 32 cached unique models, 256 scene instances and 256 MiB per dependent file read guard prevent unbounded preview loads. Failed unsupported models are memoized to avoid reload attempts every frame.
+- Selected imported models use native `ModelDraw.outline`, and `F` focus uses their transformed model bounds (instead of only proxy dimensions).
+- `apps/studio-native/mac/Main.mm`: passes project directory and current composed rules to Scene `frame`.
+- `apps/studio-native/tests/StudioModelPickingTests.cpp`: extended mixed-scene checks for frontmost model/proxy, and ensuring hidden fallback proxy cannot steal click selection.
+- `tools/studio/test_reference_pin_zoom.py`: added source contracts that confirm the same model instance list is used for rendering and CPU picking.
+
+### Files and commits
+- `StudioMetalScene.h`: `a0199f881e123c91ba02d08f23f2b1a0b4520997`, `ee1a3d7c9760294985ba5a7d5b009a153fbe36a3`
+- `StudioMetalScene.cpp`: `583e05bb3a5a5c75143f8d5b7043d7ddf0392bc1`, `6959f525849a3ccaa12ec44caad942d240ce8067`, `fe5e21a22f33f0b631c55157b09908ba93e8a052`, `82eefcdb2197b51011620304339304e2df8499aa`, `62c3bb9d99491938c5c806fd82e848415e5660ce`, `79826609980f53633e4953e58441f1b1fcb443c0`
+- `Main.mm`: `12f5f66062f163e47e250e38a2d090c0e80e6eed`
+- `StudioModelPicking.h`: `9a95b7805fa5906bb9a71cf246d92bd1537e694b`
+- `StudioModelPickingTests.cpp`: `ce261c4797eb535ead1288cfb40f530101951caa`
+- `tools/studio/test_reference_pin_zoom.py`: `fa5ac645a382f92e83aa12c776abeba238f9f2cc`, `666473299c27db461476b4bdb43d429974496fcb`
+
+### Actual validation and limitations
+- Confirmed source API contracts through GitHub: `Model` retains CPU buffers when `uploadModel(...,true)`; `Model::bindWorld` gives bind transforms; `Renderer3D::ModelDraw` owns a `world` transform; current `MapDoc::DocEntity` carries type and x/z; `rulesJson` is available through `StudioSession::workspace().project.rulesJson`.
+- **Not executed:** native C++ compiler, CTest, HTML5 running on macOS, GLB source loading and render/pick acceptance. The implementation is source-level and may require build/behavior fixes.
+- Only first authored `view.model` array element is rendered; model metadata such as extra per-file offsets, variants, scale, animation, LOD and runtime game-specific orientation are not yet reproduced. The v1 draw transform anchors to the authored document location. Model changes with an unchanged path are not automatically hot-reloaded; project reset or asset removal resets cache. Unsupported models fall back to boxes.
+- Transparent and skinned/morphed models need GPU ID/depth picking or matching CPU deformed render state; terrain occlusion and thin alpha-masked regions also need a depth-aware pass. **Do not claim full visual parity for every asset or renderer backend**.
+- This is a macOS native Metal Studio preview implementation. Vulkan and GLES editor viewport equivalents remain separate work.
+
+### Next
+1. On Mac, build `aiverse_studio` and `aiverse_studio_model_picking_tests`, run CTest with `-R 'studio_(model_picking|visual_picking|move_journal|asset_transfers)'`, and run npm typecheck/test/build plus Python source contracts.
+2. Open a real project with `content/*.glb` or `content/*.obj` referenced by `rules.types.*.view.model`, verify native model render, focus and visual triangle selection. Verify empty triangles inside an AABB no longer select, and frontmost model/proxy order is stable.
+3. Implement complete view.model arrays/overrides and correct game-view transforms, safe hot reload and explicit visibility; then a GPU object ID/depth pass for skinned, morph, alpha masked and terrain-occluded cases. Recheck UI zoom and native-vs-composited input mapping. Do not merge to main until acceptance is green.
