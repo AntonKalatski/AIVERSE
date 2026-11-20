@@ -300,6 +300,7 @@ struct Preview {
         camera.pitch=0.25f;
         camera.yaw=0.18f;
         renderer.beginScene(camera,kWidth,kHeight);
+        if(actorCount==1)renderer.trackModelSubmissions(model.get());
         renderer.drawMesh(floor,{}, {0.32f,0.38f,0.45f,1});
         const int columns=std::min(actorCount,4);
         const int rows=(actorCount+columns-1)/columns;
@@ -344,6 +345,30 @@ struct Preview {
         gfx::PassDesc pass;
         pass.clearColor[0]=.08f;pass.clearColor[1]=.1f;pass.clearColor[2]=.13f;
         renderer.render(pass);
+        // 7AW: staging a GPU morph vertexOverride is NOT a submission.
+        // After the real colour pass, inspect the actual accepted renderer
+        // indexed command; never count pending pipeline-warm preflight.
+        if(actorCount==1 && !renderer.hasPendingModelPipelineJobs()) {
+            const auto submission=renderer.modelSubmissionProvenance(*model);
+            require(submission.frameSerial==device->frameSerial() &&
+                    submission.mainPassEncoded && !submission.truncated,
+                    "renderer accepted-command frame provenance missing");
+            const bool direct=std::any_of(
+                submission.commands.begin(),submission.commands.end(),
+                [&](const auto& command) {
+                    return command.phase==1u &&
+                        command.kind==
+                            render::Renderer3D::ModelSubmissionKind::Direct &&
+                        command.pipeline.valid() &&
+                        command.source.model==model.get() &&
+                        (!faceActive ||
+                         (command.source.vertexOverride.valid() &&
+                          command.source.vertexOverrideCount==
+                              actors[0]->vertexCount()));
+                });
+            require(direct,
+                "VIVID colour-pass command did not submit the GPU actor");
+        }
         const auto& profile=renderer.profile();
         // A newly compiled Metal model pipeline can be Pending for several
         // frames. No blank or partially warmed frame may enter the image
