@@ -89,3 +89,8 @@ void applyHumanAppearance(render::Model&,const HumanAppearance&);
 // skeletons receive the same world-space field. Does not mutate bind data/Animator.
 void applyHumanBody(const render::Model&,const HumanAppearance&,std::span<render::mat4>);
 } // namespace aiverse::vivid
+
+namespace aiverse::vivid {
+// Operates on an unpublished CPU candidate; caller discards it on failure.
+void bakeHumanAppearance(render::Model&,const HumanAppearance&,int maxTextureSize=1024);
+}

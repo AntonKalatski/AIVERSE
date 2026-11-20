@@ -1,0 +1,28 @@
+#include "engine/character/vivid/HumanWardrobe.h"
+#include "tools/modeling/Modeling.h"
+#include "tools/branding/BrandImage.h"
+#include <iostream>
+using namespace aiverse;
+using namespace aiverse::render;
+void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
+int main(){try{
+ auto doc=modeling::emptyDocument();doc.set("nodes",Json::parse(R"([{"id":"root"},{"id":"body","geometry":{"kind":"box"},"skin":"skin","bindJoint":"root"},{"id":"shirt","geometry":{"kind":"box"}}])"));doc.set("skins",Json::parse(R"([{"id":"skin","joints":["root"]}])"));
+ auto built=modeling::build(doc);built.model->materials[0].name="Skin";auto& mesh=built.model->meshes[0];mesh.morphTargetNames={"jawOpen"};for(auto& p:mesh.primitives){p.morphTargets=1;p.morphDeltas.resize(size_t(p.vertexCount)*6,.01f);}
+ const auto shirtName=built.model->meshes[size_t(built.model->nodes[size_t(built.model->findNode("shirt"))].mesh)].name;
+ auto accessory=modeling::build(modeling::robotDocument());accessory.model->clips.clear();
+ std::map<std::string,std::string> files;files["base.glb"]=modeling::exportGlb(*built.model);files["watch.glb"]=modeling::exportGlb(*accessory.model);
+ branding::Image mask;mask.width=2;mask.height=2;mask.rgba={0,0,0,255,255,255,255,255,0,0,0,255,255,255,255,255};files["mask.png"]=branding::encodePng(mask);
+ auto reader=[&](const std::string& key,std::string& bytes){auto i=files.find(key);if(i==files.end())return false;bytes=i->second;return true;};
+ auto recipe=Json::parse(R"({"version":1,"hiddenMeshes":[],"items":[{"id":"watch","asset":"watch.glb","slot":"wrist_left","enabled":true,"bone":"root","translation":[0,1,0],"scale":[0.1,0.1,0.1],"hideMeshes":[],"masks":[{"material":"Skin","texture":"mask.png"}]}]})");recipe.member("hiddenMeshes").push(Json::string(shirtName));
+ vivid::HumanAppearance look;look.materials["Skin"]="skin";look.values["body.height"]=1.2f;
+ auto result=vivid::assembleHumanCharacter("base.glb",reader,recipe,look,16);
+ check(result->findNode("wardrobe/watch")>=0,"accessory missing");check(result->nodes[size_t(result->findNode("wardrobe/watch"))].parent==result->findNode("root"),"accessory socket lost");
+ for(const auto& m:result->meshes)check(m.name!=shirtName,"hidden clothing retained");
+ const auto& material=result->materials[0];check(!material.shaderGraph&&material.baseTex>=0&&material.alpha==AlphaMode::Mask,"appearance or mask not baked");const auto& image=result->images[size_t(material.baseTex)];check(image.rgba[3]==0&&image.rgba[(image.width-1)*4+3]==255,"mask coverage incorrect");
+ auto bytes=modeling::exportGlb(*result);auto roundtrip=loadModel("result.glb",[&](const std::string&,std::string& out){out=bytes;return true;});check(roundtrip&&roundtrip->skins.size()==1,"assembled skin lost");check(roundtrip->meshes[0].morphTargetNames==mesh.morphTargetNames,"assembled facial names lost");
+ auto invalid=recipe;invalid.member("items").push(recipe["items"][0]);bool rejected=false;try{vivid::validateHumanWardrobe(invalid);}catch(...){rejected=true;}check(rejected,"duplicate ID accepted");
+ invalid=recipe;invalid.member("items").at(0).set("bone",Json::string("missing"));rejected=false;try{vivid::assembleHumanCharacter("base.glb",reader,invalid,look,16);}catch(...){rejected=true;}check(rejected,"missing socket silently ignored");
+ // A bake must match the source base alpha and roughness rather than opaque defaults.
+ Model p;p.materials.resize(1);p.materials[0].name="cloth";p.materials[0].baseColor={.2f,.3f,.4f,.25f};p.materials[0].alpha=AlphaMode::Blend;vivid::HumanAppearance fabric;fabric.materials["cloth"]="cloth";vivid::bakeHumanAppearance(p,fabric,16);check(p.images[0].rgba[3]==64&&p.materials[0].roughness>.8f&&!p.materials[0].shaderGraph,"fabric alpha/roughness bake");
+ std::cout<<"Wardrobe, socket, masks, appearance and facial roundtrip PASS\n";return 0;
+}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

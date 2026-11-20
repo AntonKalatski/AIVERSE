@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "HumanAppearanceBake.h"
+
 namespace aiverse::vivid {
 namespace {
 Json vector4(float a,float b,float c,float d=1.0f) {
@@ -378,7 +380,7 @@ HumanSurfaceMaterials humanMaterials(const HumanDNA& dna) {
     return humanMaterials(dna,HumanMaterialQuality::High);
 }
 
-void applyHumanAppearance(render::Model& model,const HumanAppearance& look) {
+static void appearanceImpl(render::Model& model,const HumanAppearance& look,int bakeSize) {
     // Validate the entire recipe and all mappings before modifying the candidate.
     (void)HumanAppearance::fromJson(look.toJson());
     for(const auto& [name,role]:look.materials)
@@ -462,9 +464,16 @@ void applyHumanAppearance(render::Model& model,const HumanAppearance& look) {
         }
         m.roughness=rough;
         m.shaderGraph=g.finish(g.binary("setAlpha",g.scalarOp("clamp",color),alpha),c(rough));
+        if(bakeSize)detail::bakeMaterial(model,m,g.graph,bakeSize);
     }
     model.materials=std::move(materials);
     model.markMaterialChanged();
+}
+
+void applyHumanAppearance(render::Model& model,const HumanAppearance& look) {appearanceImpl(model,look,0);}
+void bakeHumanAppearance(render::Model& model,const HumanAppearance& look,int size) {
+    if(size<16||size>4096)throw std::invalid_argument("Bake resolution must be 16..4096");
+    appearanceImpl(model,look,size);
 }
 
 void applyHumanBody(const render::Model& model,const HumanAppearance& look,

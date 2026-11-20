@@ -130,6 +130,10 @@ std::string exportGlb(const Model &m) {
         if(mt.normalTex>=0)j.member("normalTexture").set("scale",Json::number(double(mt.normalScale),8));
         if(mt.occlusionTex>=0)j.member("occlusionTexture").set("strength",Json::number(double(mt.occlusionStrength),8));
         if(mt.alpha==AlphaMode::Mask){j.set("alphaMode",Json::string("MASK"));j.set("alphaCutoff",Json::number(double(mt.alphaCutoff),8));}
+        if(mt.baseTex>=0 && (mt.uvOffset.x!=0||mt.uvOffset.y!=0||mt.uvScale.x!=1||mt.uvScale.y!=1||mt.uvRotation!=0)) {
+            auto transform=Json::object(),extensions=Json::object();transform.set("offset",floats({mt.uvOffset.x,mt.uvOffset.y}));transform.set("scale",floats({mt.uvScale.x,mt.uvScale.y}));transform.set("rotation",Json::number(double(mt.uvRotation),8));extensions.set("KHR_texture_transform",transform);pbr.member("baseColorTexture").set("extensions",extensions);
+            auto used=Json::array();used.push(Json::string("KHR_texture_transform"));w.root.set("extensionsUsed",used);
+        }
         j.set("pbrMetallicRoughness", pbr);
         j.set("emissiveFactor", floats({mt.emissive.x, mt.emissive.y, mt.emissive.z}));
         j.set("doubleSided", Json::fromBool(mt.doubleSided));
@@ -142,10 +146,11 @@ std::string exportGlb(const Model &m) {
         j.set("name", Json::string(mesh.name));
         for (auto &p : mesh.primitives) {
             auto pj = Json::object(), attrs = Json::object();
-            std::vector<float> pos, nrm, uv, tan, weights;
+            std::vector<float> pos, nrm, uv, tan, weights, colors;
             std::string joints;
             for (uint32_t i = 0; i < p.vertexCount; ++i) {
                 auto &v = m.vertices[p.firstVertex + i];
+                for(int k=0;k<4;++k)colors.push_back(float((v.color>>(k*8))&255)/255.f);
                 for (float f : {v.pos.x, v.pos.y, v.pos.z})
                     pos.push_back(f);
                 for (float f : {v.nrm.x, v.nrm.y, v.nrm.z})
@@ -167,6 +172,7 @@ std::string exportGlb(const Model &m) {
             attrs.set("NORMAL", num(w.accessor(nrm, 3, "VEC3")));
             attrs.set("TEXCOORD_0", num(w.accessor(uv, 2, "VEC2")));
             attrs.set("TANGENT", num(w.accessor(tan, 4, "VEC4")));
+            if(m.materials.at(size_t(p.material)).vertexColors)attrs.set("COLOR_0",num(w.accessor(colors,4,"VEC4")));
             if (!p.jointPalette.empty()) {
                 attrs.set("JOINTS_0", num(w.add(joints, 5123, int(p.vertexCount), "VEC4")));
                 attrs.set("WEIGHTS_0", num(w.accessor(weights, 4, "VEC4")));
