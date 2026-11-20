@@ -749,6 +749,53 @@ void test() {
         blocker.params.count=99;
         req(!sculptGpuMaskedOccluderInputsValid(blocker,{71}),
             "incorrect GPU mask occluder source count accepted");
+        // Renderer-derived Mask source is prepared only from one accepted
+        // direct main-colour draw, not a hand-waved GPU buffer handle.
+        Renderer3D::ModelViewProvenance maskView{};
+        maskView.frameSerial=79;
+        maskView.hasModel=maskView.complete=true;
+        Renderer3D::ModelViewPrimitive maskPrim{};
+        maskPrim.model=&model;
+        maskPrim.nodeIndex=0;maskPrim.meshIndex=0;
+        maskPrim.primitiveIndex=0;
+        maskPrim.drawInvocation=2;
+        maskPrim.firstIndex=0;maskPrim.indexCount=3;
+        maskPrim.visible=maskPrim.colourCandidate=true;
+        maskPrim.customGpuStream=true;
+        maskPrim.vertexOverride={71};
+        maskPrim.vertexOverrideCount=3;
+        maskPrim.world=mat4::identity();
+        maskView.primitives={maskPrim};
+        Renderer3D::ModelSubmissionProvenance maskSubmitted{};
+        maskSubmitted.frameSerial=79;
+        maskSubmitted.mainPassEncoded=true;
+        Renderer3D::ModelSubmittedPrimitive maskDraw{};
+        maskDraw.source=maskPrim;
+        maskDraw.kind=Renderer3D::ModelSubmissionKind::Direct;
+        maskDraw.phase=1;
+        maskDraw.pipeline={3};
+        maskSubmitted.commands={maskDraw};
+        const SculptGpuMaskSceneCandidate candidate{&model,0,pose};
+        SculptGpuVertexSource preparedOccluder;
+        req(prepareSculptGpuRendererMaskOccluder(
+                maskView,maskSubmitted,candidate,79,{70},preparedOccluder) &&
+            preparedOccluder.maskedSelection &&
+            preparedOccluder.actualVertexOverride==gfx::BufferHandle{71},
+            "accepted Renderer3D Mask source was rejected by GPU collector");
+        const auto publishedCount=preparedOccluder.indices.size();
+        req(!prepareSculptGpuRendererMaskOccluder(
+                maskView,maskSubmitted,candidate,80,{70},preparedOccluder) &&
+            preparedOccluder.indices.size()==publishedCount,
+            "stale masked renderer source modified last-good GPU collector");
+        maskSubmitted.commands[0].source.indexCount=6;
+        req(!prepareSculptGpuRendererMaskOccluder(
+                maskView,maskSubmitted,candidate,79,{70},preparedOccluder),
+            "changed source index range was accepted by renderer collector");
+        maskSubmitted.commands[0].source.indexCount=3;
+        maskSubmitted.commands.clear();
+        req(!prepareSculptGpuRendererMaskOccluder(
+                maskView,maskSubmitted,candidate,79,{70},preparedOccluder),
+            "missing submitted masked renderer source was accepted");
         material.shaderGraph=std::make_shared<
             const aiverse::render::graph::Program>();
         req(!prepareSculptGpuVertexSource(
