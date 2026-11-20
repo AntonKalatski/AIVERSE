@@ -70,3 +70,12 @@ ctest --test-dir build/<your-config> --output-on-failure -R '^studio_facial_rig_
 2. Conflict-aware merge of `feature/universal-ecs-animation-pipeline` with Studio; do not replace either branch's native renderer or animation runtime.
 3. Add actual model selection and a live GPU facial preview via MotionWeave's existing `ModelAssetProvider`, `AnimationGraph/Animator`, `FacialControlRig` and one pose owner.
 4. Complete facial artist authoring controls (presets, channel alias discovery, jaw/gaze sliders, morph diagnostics), automatic morph-preserving LOD geometry, and final one-pass Mac acceptance. Keep both features unmerged to main until verified.
+
+
+## Stage 184 — native GUID binding and staged input relay (source-only)
+
+An isolated integration branch `integration/motionweave-studio-facial-stage184` now connects the **existing shared** `AssetReferencePicker` to the Facial Rig panel. It supports Assets search, drag/drop, .meta GUID identity and a panel Lock/Unlock so unrelated selection will not overwrite a locked facial model reference. Every native bind resolves `studio.facialPreviewBind({guid,rig})` through `StudioAssetCatalog`, validates the current project/content path without symlinks, checks the v1 JSON authoring schema, and holds typed facial scalar input state. `studio.facialPreviewControls({revision,values})` atomically accepts only known 0..1 inputs and rejects stale revision and invalid data; `studio.facialPreviewInfo({})` reports the current binding. The UI has an explicit **Send native inputs** action and never claims an absent GPU render.
+
+**Important:** this Studio branch still has only `kMaxMorphTargets=8` in `Model.h`; it does not yet contain MotionWeave Stage 180/183's real 64-channel `FacialControlRig`/`FacialPreviewSession`. Therefore `runtimeReady=false` / `runtimeVerified=false` are intentional. The new binding is neither imported Model validation nor a GPU facial preview. Next step is conflict-aware true 64-channel renderer/Model provider integration on the isolated branch, then native Studio 3D facial viewport and the final Mac test campaign. See `docs/handoff/studio-html5/78-motionweave-stage184-facial-preview-binding-2026-11-20.md`.
+
+**NOT RUN:** npm typecheck/build, C++/CMake/CTest, macOS WKWebView, Metal/Vulkan/GLES, sanitizer/crowd/VRAM. Native test source `studio_facial_preview_binding` is committed but not executed.
