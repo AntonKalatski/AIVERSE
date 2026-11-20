@@ -433,6 +433,17 @@ std::shared_ptr<TerrainRenderer::PreparedMap> TerrainRenderer::prepareMap(
     return candidate;
 }
 
+float TerrainRenderer::preparedSurfaceAt(
+        const std::shared_ptr<PreparedMap>& candidate,
+        const MapGrid& grid,float x,float z) const {
+    if(!candidate || candidate->owner_!=this ||
+       candidate->device_!=dev_ || candidate->committed_ ||
+       candidate->revision_!=publicationRevision_ || !candidate->staged_ ||
+       !candidate->staged_->mapMatches(grid.w,grid.h))
+        throw std::logic_error("TerrainRenderer: stale prepared surface query");
+    return candidate->staged_->surfaceAt(grid,x,z);
+}
+
 bool TerrainRenderer::commitMap(std::shared_ptr<PreparedMap> candidate) noexcept {
     if(!candidate || candidate->committed_)return false;
     if(candidate->owner_!=this || candidate->device_!=dev_ ||

@@ -14029,6 +14029,136 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48a_topology_cohort_stages_new_height_and_rolls_back_late_failure) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::Rules rules=skirmishRules();
+    game::TerrainRenderer terrain;
+    game::RtsRoadView roads;
+    game::RtsShoreView shores;
+    terrain.init(dev,rules,missing,"");
+    roads.init(dev,Json(),missing);
+    shores.init(dev,Json(),missing);
+    game::MapGrid oldMap;oldMap.init(48,16);
+    for(auto& f:oldMap.flags)f=game::kCellGround;
+    CHECK(terrain.build(dev,oldMap,false));
+    game::RoadNetwork net;
+    game::RoadNode a,b;
+    a.id=1;b.id=2;
+    a.p={Fixed::fromInt(4),Fixed::fromInt(6)};
+    b.p={Fixed::fromInt(42),Fixed::fromInt(6)};
+    net.nodes={a,b};
+    game::RoadEdge edge;
+    edge.id=1;edge.a=1;edge.b=2;
+    int asphalt=0;
+    for(size_t i=0;i<roads.types().size();++i)
+        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+           roads.types()[i].drivable()){asphalt=int(i);break;}
+    edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
+    net.edges={edge};
+    roads.setNetwork(net);
+    const std::function<float(float,float)> level=[](float,float){return 0.0f;};
+    roads.commitRebuild(roads.prepareRebuild(dev,level));
+    const auto roadGeneration=roads.surfaceGeneration();
+    const auto wheelHeight=roads.surfaceAt(18,6,0.0f);
+    const auto terrainRetired=terrain.pendingMeshGpuRetirements();
+    const auto roadRetired=roads.pendingGpuRetirements();
+    const auto shoreRetired=shores.pendingGpuRetirements();
+
+    game::MapGrid next;next.init(72,20);
+    for(auto& f:next.flags)f=game::kCellGround;
+    next.corner.assign(size_t(next.w+1)*size_t(next.h+1),32);
+    std::shared_ptr<game::TerrainRenderer::PreparedMap> mapPending;
+    std::shared_ptr<game::RtsRoadView::PreparedRebuild> roadPending;
+    std::shared_ptr<game::RtsShoreView::PreparedRebuild> shorePending;
+    const std::function<float(float,float)> nextGround=
+        [&](float x,float z){return terrain.preparedSurfaceAt(mapPending,next,x,z);};
+    struct Part final:render::OwnerPrepareCommit::Participant {
+        std::function<void()> stage,accept,discard;
+        Part(std::function<void()> a,std::function<void()> b,
+             std::function<void()> c)
+            :stage(std::move(a)),accept(std::move(b)),discard(std::move(c)){}
+        void prepare() override {stage();}
+        void commit() noexcept override {accept();}
+        void rollback() noexcept override {discard();}
+    };
+    Part mapPart(
+        [&]{mapPending=terrain.prepareMap(dev,next,false);},
+        [&]{(void)terrain.commitMap(std::move(mapPending));},
+        [&]{mapPending.reset();});
+    Part roadPart(
+        [&]{roadPending=roads.prepareRebuild(dev,nextGround,true);},
+        [&]{roads.commitRebuild(std::move(roadPending));},
+        [&]{roadPending.reset();});
+    Part shorePart(
+        [&]{shorePending=shores.prepareRebuild(dev,nextGround,0.0f,72,20,true);},
+        [&]{shores.commitRebuild(std::move(shorePending));},
+        [&]{shorePending.reset();});
+    bool failLast=true;
+    Part last(
+        [&]{if(failLast)throw std::runtime_error("late owner rejected");},
+        []{},[]{});
+    bool refused=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(mapPart);tx.add(roadPart);tx.add(shorePart);tx.add(last);
+        try {tx.prepareAll();}catch(const std::runtime_error&){refused=true;}
+    }
+    CHECK(refused);
+    CHECK(!mapPending && !roadPending && !shorePending);
+    CHECK(terrain.mapMatches(48,16));
+    CHECK(roads.surfaceGeneration()==roadGeneration);
+    CHECK(roads.surfaceAt(18,6,0.0f)==wheelHeight);
+    CHECK(terrain.pendingMeshGpuRetirements()==terrainRetired);
+    CHECK(roads.pendingGpuRetirements()==roadRetired);
+    CHECK(shores.pendingGpuRetirements()==shoreRetired);
+    failLast=false;
+    dev.idleAllowed=false;
+    {
+        render::OwnerPrepareCommit tx;
+        tx.add(mapPart);tx.add(roadPart);tx.add(shorePart);tx.add(last);
+        tx.prepareAll();
+        CHECK(std::fabs(nextGround(18,6)-2.0f)<0.0001f);
+        CHECK(terrain.mapMatches(48,16));
+        CHECK(tx.publish());
+    }
+    CHECK(terrain.mapMatches(72,20));
+    CHECK(std::fabs(terrain.surfaceAt(next,18,6)-2.0f)<0.0001f);
+    CHECK(roads.surfaceGeneration()==roadGeneration+1);
+    CHECK(terrain.pendingMeshGpuRetirements()>terrainRetired);
+    CHECK(roads.pendingGpuRetirements()>roadRetired);
+    dev.idleAllowed=true;
+    shores.shutdown(dev);
+    roads.shutdown(dev);
+    terrain.shutdown(dev);
+    renderer.shutdown();
+}
+
+TEST(lens_stage48a_rts_view_build_terrain_publishes_new_topology_cohort) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){return false;};
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid previous;previous.init(8,6);
+    for(auto& f:previous.flags)f=game::kCellGround;
+    view.buildTerrain(dev,previous);
+    const auto oldGeneration=view.roads().surfaceGeneration();
+    game::MapGrid next;next.init(12,9);
+    for(auto& f:next.flags)f=game::kCellGround;
+    next.corner.assign(size_t(next.w+1)*size_t(next.h+1),16);
+    view.buildTerrain(dev,next);
+    CHECK(view.terrainRenderer().mapMatches(12,9));
+    CHECK(view.roads().surfaceGeneration()==oldGeneration+1);
+    CHECK(std::fabs(view.heightAt(next,2.0f,2.0f)-1.0f)<0.0001f);
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage47b3c_trace_height_failure_does_not_publish_or_retire) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

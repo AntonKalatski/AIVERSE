@@ -2465,17 +2465,22 @@ struct RtsRoadView::PreparedRebuild {
 };
 
 std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
-        gfx::Device& dev,const std::function<float(float,float)>& heightAt) {
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        bool forceGround) {
     if(dev_!=&dev)
         throw std::logic_error("RtsRoadView prepare: GPU owner mismatch");
-    if(!needsVisualPreparation())return {};
+    if(!needsVisualPreparation() && !forceGround)return {};
     auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
     candidate->priorImageCount=images_.size();
-    candidate->replaceGeometry=dirty_;
-    candidate->replaceFilm=dirty_ || int(std::lround(wet_*32.f))!=wetStep_;
-    candidate->replacePuddles=dirty_ || int(std::lround(puddles_*32.f))!=puddleStep_;
-    candidate->replaceGhost=dirty_ || ghostDirty_;
+    // Full map topology requires resampling the road and wheel surface
+    // even when the authored road network itself is unchanged.
+    candidate->replaceGeometry=dirty_ || forceGround;
+    candidate->replaceFilm=candidate->replaceGeometry ||
+        int(std::lround(wet_*32.f))!=wetStep_;
+    candidate->replacePuddles=candidate->replaceGeometry ||
+        int(std::lround(puddles_*32.f))!=puddleStep_;
+    candidate->replaceGhost=candidate->replaceGeometry || ghostDirty_;
     candidate->staged=std::make_unique<RtsRoadView>();
     RtsRoadView& staged=*candidate->staged;
     staged.dev_=&dev;

@@ -38,7 +38,7 @@ public:
     }
     std::shared_ptr<PreparedRebuild> prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt,
-        float waterY,int w,int h);
+        float waterY,int w,int h,bool forceGround=false);
     void commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept;
     bool active() const { return !net_.empty(); }
     const water::ShoreTypes& types() const { return types_; }

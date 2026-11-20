@@ -823,10 +823,10 @@ struct RtsShoreView::PreparedRebuild {
 
 std::shared_ptr<RtsShoreView::PreparedRebuild> RtsShoreView::prepareRebuild(
         gfx::Device& dev,const std::function<float(float,float)>& heightAt,
-        float waterY,int w,int h) {
+        float waterY,int w,int h,bool forceGround) {
     if(dev_!=&dev)
         throw std::logic_error("RtsShoreView prepare: GPU owner mismatch");
-    if(!needsVisualPreparation(waterY,w,h))return {};
+    if(!needsVisualPreparation(waterY,w,h) && !forceGround)return {};
     auto candidate=std::make_shared<PreparedRebuild>();
     candidate->device=&dev;
     candidate->staged=std::make_unique<RtsShoreView>();

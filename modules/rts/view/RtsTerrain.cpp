@@ -5,8 +5,14 @@
 #include "RtsView.h"
 #include "engine/view/Surface.h"
 #include "RtsRoadView.h"
+#include "RtsShoreView.h"
+#include "engine/render/OwnerPrepareCommit.h"
 #include <algorithm>
 #include <cstdio>
+#include <functional>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 
 namespace aiverse::game {
 
@@ -67,16 +73,72 @@ void RtsView::buildTerrain(gfx::Device& dev, const MapGrid& g) {
         return;
     }
     const bool flatDig = groundFx_.drawsDig() && g.dig.size() == g.flags.size(); // RtsGroundFx draws the rock blocks
-    // ground overlays follow the surface: rebuild them whenever terrain geometry changed
-    // Keep efficient same-map chunk and detail sculpting on its existing
-    // incremental path. A complete map-size transition uses the new private
-    // Terrain candidate and performs a no-upload/no-idle publication.
+    // The initial build and same-map brush edits keep their existing
+    // synchronous path. A topology change stages the NEW Terrain surface
+    // first, then uses that exact unpublished height for both road wheel
+    // samples and shore geometry before any owner commits.
     const bool topologyChange=terrain_.canPrepareMap() &&
         !terrain_.mapMatches(g.w,g.h);
-    const bool changed=topologyChange
-        ? terrain_.commitMap(terrain_.prepareMap(dev,g,flatDig))
-        : terrain_.build(dev,g,flatDig);
-    // Do not invalidate paint or GroundFX if a candidate upload failed.
+    bool changed=false;
+    if(topologyChange) {
+        std::shared_ptr<TerrainRenderer::PreparedMap> stagedTerrain;
+        std::shared_ptr<RtsRoadView::PreparedRebuild> stagedRoad;
+        std::shared_ptr<RtsShoreView::PreparedRebuild> stagedShore;
+        const std::function<float(float,float)> newHeight=
+            [&](float x,float z) {
+                return terrain_.preparedSurfaceAt(stagedTerrain,g,x,z);
+            };
+        // Generic coordinator remains independent of RTS and map policies.
+        // Every participant stores only a candidate until publish().
+        struct Part final:render::OwnerPrepareCommit::Participant {
+            std::function<void()> prepareFn,commitFn,rollbackFn;
+            Part(std::function<void()> p,std::function<void()> c,
+                 std::function<void()> r)
+                :prepareFn(std::move(p)),commitFn(std::move(c)),
+                 rollbackFn(std::move(r)){}
+            void prepare() override {prepareFn();}
+            void commit() noexcept override {commitFn();}
+            void rollback() noexcept override {rollbackFn();}
+        };
+        Part terrainPart(
+            [&] {
+                stagedTerrain=terrain_.prepareMap(dev,g,flatDig);
+                if(!stagedTerrain)
+                    throw std::runtime_error("RtsView: empty topology candidate");
+            },
+            [&] {(void)terrain_.commitMap(std::move(stagedTerrain));},
+            [&] {stagedTerrain.reset();});
+        Part roadPart(
+            [&] {stagedRoad=roads_->prepareRebuild(dev,newHeight,true);},
+            [&] {roads_->commitRebuild(std::move(stagedRoad));},
+            [&] {stagedRoad.reset();});
+        Part shorePart(
+            [&] {
+                stagedShore=shores_->prepareRebuild(
+                    dev,newHeight,terrain_.look().waterOffset,g.w,g.h,true);
+            },
+            [&] {shores_->commitRebuild(std::move(stagedShore));},
+            [&] {stagedShore.reset();});
+        render::OwnerPrepareCommit tx;
+        tx.add(terrainPart);
+        tx.add(roadPart);
+        tx.add(shorePart);
+        tx.prepareAll(); // a failed shore rolls back Terrain and Roads
+        if(!tx.publish())
+            throw std::logic_error("RtsView: topology cohort not published");
+        changed=true;
+    }else {
+        changed=terrain_.build(dev,g,flatDig);
+        // Same-size sculpting changes road heights even when no road-network
+        // JSON changed. Trigger the next primary-frame owner cohort to
+        // resample the geometry using the now-published terrain.
+        if(changed) {
+            roads_->invalidateGround();
+            shores_->invalidateGround();
+        }
+    }
+    // Paint, GroundFX, field overlays and Fog will rebuild only after the
+    // terrain/road/shore topology has been successfully published.
     paintLayers_.shutdown();
     if(changed || !hasTerrain_)groundFx_.invalidate();
     hasTerrain_ = true;

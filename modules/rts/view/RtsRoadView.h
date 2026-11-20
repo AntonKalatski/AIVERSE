@@ -54,7 +54,8 @@ public:
             int(std::lround(puddles_*32.f))!=puddleStep_;
     }
     std::shared_ptr<PreparedRebuild> prepareRebuild(
-        gfx::Device& dev,const std::function<float(float,float)>& heightAt);
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt,
+        bool forceGround=false);
     void commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept;
     // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
     // baked road surfaces): the view does not draw those while the network is shown

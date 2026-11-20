@@ -102,6 +102,10 @@ public:
     std::shared_ptr<PreparedMap> prepareMap(
         gfx::Device& dev,const MapGrid& grid,bool flatDig);
     bool commitMap(std::shared_ptr<PreparedMap> candidate) noexcept;
+    // Read-only height query against a private staged map. A Road/Shore
+    // transaction uses this exact ground before any owner publishes.
+    float preparedSurfaceAt(const std::shared_ptr<PreparedMap>& candidate,
+                            const MapGrid& grid,float x,float z) const;
     bool mapMatches(int w,int h) const noexcept {
         return built_ && mapW_==w && mapH_==h;
     }
