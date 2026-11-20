@@ -36,6 +36,11 @@
 
 namespace aiverse::render {
 
+// Stage22 fails closed for GI overlays pending shader integration with
+// current MAIN. Forward declarations avoid including a second GPU owner.
+class GiDynamicProbeTexture;
+class GiClipmapValidityTexture;
+
 struct Mesh {
     gfx::BufferHandle vb, ib;
     uint32_t indexCount = 0;
