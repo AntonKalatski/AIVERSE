@@ -963,7 +963,7 @@ Native compressed uploads bypass this CPU-specific budget. Failures occur
 before any CPU-fallback texture allocation, with a descriptive error.
 The earlier independent 512 MiB *per-mip* bound remains in place.
 
-The registered `texture_asset` CTest now includes cumulative-budget
+The registered CTest named **texture_asset** now includes cumulative-budget
 boundary cases; their C++ execution is **NOT RUN** in this environment.
 Do not infer native GPU decode safety or production readiness from source.
 
@@ -1053,7 +1053,7 @@ comparisons are reported.
 
 `tests/render/metal_texture_gpu.mm` now prints `TIMING` lines
 for `Metal device_and_layer_init_ms`, per-Texture3D/array/cube
-`create_and_upload_ms`, per-group `submit_ms`,
+**create_and_upload_ms**, per-group `submit_ms`,
 `callback_wait_ms`, `poll_frames`, `compare_ms`, optional
 `gpu_command_ms`, and fixture total. These are wall-clock
 timings unless `gpu_command_ms` is valid; the latter measures
