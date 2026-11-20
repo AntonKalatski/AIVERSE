@@ -3312,6 +3312,20 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_include_directories(aiverse_gpu_timing_router_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(aiverse_gpu_timing_router_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME gpu_timing_router COMMAND aiverse_gpu_timing_router_test)
+    # Sparse editor terrain is genre independent: click-to-create, shared
+    # height borders, camera-dependent visual LOD and flat 4-vertex quad.
+    # Colliders remain based on the normal fixed-resolution TerrainPatch.
+    add_executable(aiverse_terraweave_sparse_authoring_lod_test
+        tests/terraweave_sparse_authoring_lod_test.cpp)
+    target_link_libraries(aiverse_terraweave_sparse_authoring_lod_test PRIVATE
+        aiverse_engine aiverse_models aiverse_world aiverse_zstd_dec Threads::Threads)
+    target_compile_options(aiverse_terraweave_sparse_authoring_lod_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_sparse_authoring_lod
+        COMMAND aiverse_terraweave_sparse_authoring_lod_test)
+    set_tests_properties(terraweave_sparse_authoring_lod PROPERTIES
+        LABELS "TERRAWEAVE;EDITOR;Renderer3D")
+
     add_executable(aiverse_terraweave_test tests/terraweave_test.cpp)
     target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
