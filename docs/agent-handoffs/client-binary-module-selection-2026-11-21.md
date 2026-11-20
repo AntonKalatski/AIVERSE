@@ -172,3 +172,36 @@ Next: identify further optional client features and make their dependencies
 explicit without removing core gameplay. Install/provide Emscripten before
 claiming HTML5 size or startup gains. Keep hosted-editor FX and PRISMA
 composition contracts unchanged.
+# 2026-11-21 continuation: runtime FBX selection
+
+Branch: `feature/studio-html5`. Implementation commit: `02b7508df33b7f0d3716d6d190ea21d5f98014d3`.
+Affected paths: `tools/aiversebuild/main.cpp`, `docs/overview.md`. The optional
+`fbx` name in `packaging.engineModules` now passes the existing `AIVERSE_FBX`
+CMake switch through every packaged target, including Android. An omitted
+module list retains the historical FBX default. An explicit list without
+`fbx` excludes the runtime FBX loader and ufbx library. Host model conversion,
+public APIs and saved formats are unchanged. Runtime FBX input requires the
+module or a preconverted `.glb` sidecar.
+
+Verification actually run: `cmake --build build/studio-html5-verify --target
+aiversebuild -j 6` PASS. `aiversebuild --project
+/private/tmp/aiverse-fbx-module-fixture --target web --check-engine-modules`
+PASS with `["fx","fbx"]` (`-DAIVERSE_FBX=ON`) and with `[]` after removing
+the fixture's FX assets (`-DAIVERSE_FBX=OFF`). macOS client CMake configure and
+`cmake --build /private/tmp/aiverse-client-modules-check --target aiverse_client
+-j 6` PASS both with `AIVERSE_FBX=OFF` and ON. The OFF executable was 79,955,848
+bytes; the ON executable was 80,898,328 bytes, a 942,480-byte local reduction.
+`nm` found `loadFbx` and `ufbx_load_memory` in the ON executable and no match
+in the OFF executable. `git diff --check` PASS for the changed files (only
+line-ending warnings).
+
+The worktree contained unrelated in-progress renderer, editor and Substance
+changes throughout verification; none were staged. This size comparison is a
+diagnostic macOS build, not an HTML5 Release result. Emscripten is unavailable,
+so Web compilation, startup, and wasm size are NOT RUN. Android, iOS, Linux,
+Windows and runtime FBX smoke tests are NOT RUN; CI was NOT RUN (no URL).
+
+Next: identify the next independent runtime import or presentation component
+with a measurable client link cost, keep legacy defaults, and verify module-off
+behavior. When Emscripten is available, measure optimized `index.wasm` and
+startup for a representative game with and without selected modules.
