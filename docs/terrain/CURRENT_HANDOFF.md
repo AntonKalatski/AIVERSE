@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **Latest main-sync and native QA checkpoint (2026-11-20):**
+> Current `main` `e4129c5062a6` is already an ancestor
+> of TerraWeave; GitHub comparison showed `behind=0` — no merge.
+> User's local Mac full CTest reported **181/181 PASS in 886.46s**.
+> Dedicated PHYSIS, TerraWeave and Box3D tests are included.
+> Exact tested source SHA still requires `provenance.txt`.
+> Full details: [main ancestry / Mac 181 handoff](qa-2026-11-20-main-ancestor-mac181-acceptance-handoff.md).
+> GPU backend parity and live cross-owner sim are **NOT VERIFIED**.
+>
+
+
 > **Native Mac QA: 180/181 PASS, FBX=OFF fix staged (2026-11-20).**
 > User provided a full CTest summary: 180/181 passed, all dedicated
 > TerraWeave, PHYSIS and Place tests passed; only monolithic
