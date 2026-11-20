@@ -130,6 +130,22 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  // Refresh the pinned object from native by ID without changing global selection.
+  // This also reflects undo/redo and edits made from other panels.
+  useEffect(() => {
+    const entityId = inspectorPin?.entity.id;
+    if (!entityId || !snapshot?.project.path) return;
+    let active = true;
+    void invoke('studio.propertiesFor', {entityId}).then(properties => {
+      if (active) setInspectorPin(current => current?.entity.id === entityId
+        ? {...current, properties} : current);
+    }).catch(() => {
+      // The pinned object may have been removed by undo or another editor.
+      if (active) setInspectorPin(current => current?.entity.id === entityId ? null : current);
+    });
+    return () => { active = false; };
+  }, [inspectorPin?.entity.id, snapshot]);
+
   // Pins are project-local; never retain a target after switching projects.
   useEffect(() => { setInspectorPin(null); }, [snapshot?.project.path]);
   const rows = useMemo(() => hierarchyRows(snapshot?.scene.entities ?? []), [snapshot]);
