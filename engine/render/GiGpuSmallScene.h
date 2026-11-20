@@ -8,6 +8,7 @@
 #include "GiGpuSmallSceneShaders.h"
 #include "GiGpuVulkanShaders.h"
 #include "GiGpuBvh.h"
+#include "GiGpuBvhValidator.h"
 #include "GiGpuSparsePatch.h"
 #include "GiDynamicProbeTexture.h"
 #include <algorithm>
@@ -138,7 +139,7 @@ public:
     // Large worlds still need incremental GPU chunk uploads, not full flattening.
     bool setGeometry(const GiChunkedGeometrySnapshot& snapshot, uint64_t revision) {
         if (!ready()) return false;
-        if (revision == geometryRevision_) return true;
+        if (revision==0 || revision<=geometryRevision_) return false;
         if (snapshot.triangleCount()>kMaxTriangles || !dev_->canUpdateSharedBuffers())
             return false;
         return setPackedGeometry(GiGpuBvh::build(snapshot), revision);
@@ -148,9 +149,14 @@ public:
     // TLAS+BLAS packet. Must only run after the previous GPU fence completed.
     bool setPackedGeometry(const GiGpuBvh& bvh, uint64_t revision) {
         if (!ready() || !dev_->canUpdateSharedBuffers() ||
+            revision==0 || revision<=geometryRevision_ ||
             bvh.triangles.size()>kMaxTriangles || bvh.nodes.size()>2*kMaxTriangles+4096)
             return false;
-        if (revision==geometryRevision_) return true;
+        // The CPU paged allocator may contain unreachable holes and a TLAS
+        // reserved prefix. Validate only root-reachable BVH references, but
+        // do so BEFORE any sparse GPU writes, allocations or state changes.
+        // An invalid packet must never be published to MSL/SPIR-V compute.
+        if (!giValidateGpuBvh(bvh).valid) return false;
         GeometryUploadStats stats;
         // Keep storage-buffer handles resident across changing chunk counts
         // whenever the existing capacity suffices. Allocate new buffers
