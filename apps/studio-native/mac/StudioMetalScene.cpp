@@ -80,8 +80,10 @@ void StudioMetalScene::syncDocumentModels(
             if (ec || fs::is_symlink(status)) {allowed=false;break;}
         }
         if (!allowed || !fs::is_regular_file(current)) continue;
+        if (modelInstances_.size()>=256) break;
         active.insert(path);
         if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
+            if (documentModels_.size()>=32) continue;
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
             auto read=[root](const std::string& name,std::string& out)->bool {
@@ -97,6 +99,9 @@ void StudioMetalScene::syncDocumentModels(
                     if(ec || fs::is_symlink(st)) return false;
                 }
                 if (!fs::is_regular_file(file)) return false;
+                std::error_code sizeError;
+                const auto bytes=fs::file_size(file,sizeError);
+                if (sizeError || bytes>256ull*1024ull*1024ull) return false;
                 std::ifstream input(file,std::ios::binary);
                 if (!input) return false;
                 out.assign(std::istreambuf_iterator<char>(input),
