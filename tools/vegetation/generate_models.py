@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Offline authored vegetation prototypes, not a replacement for TerraWeave runtime.
 Curved hierarchical spines + a smooth implicit woody union; anchored foliage.
-EXPERIMENTAL: no runtime integration, LOD or production polygon budget yet.
-Requires numpy, scipy, scikit-image. Units: metres. Deterministic seed.
+EXPERIMENTAL: no native Forest integration or LOD export yet.
+Near budgets: 9000 bark triangles/oak, 1400/shrub, plus foliage.
+Requires numpy, scipy, scikit-image, fast-simplification, xatlas, Pillow. Units: metres. Deterministic seed.
 """
 from pathlib import Path
 import argparse,json,struct,math
 import numpy as np
 from skimage.measure import marching_cubes
+from fast_simplification import simplify
+from bake_bark_atlas import bake_bark_atlas
 
 def unit(v):
     v=np.asarray(v,float);return v/max(np.linalg.norm(v),1e-12)
@@ -59,12 +62,12 @@ class Plant:
                     start=curve(main,t);tan=unit(curve(main,t+.02)-curve(main,t-.02));side=unit(np.cross(tan,[0,1,0]))*(-1 if k%2 else 1);d=unit(tan*.4+side*.65+[0,.4,0]);e=start+d*rng.uniform(.25,.45)
                     sec=self.spine([start,start+tan*.09,e-d*.09,e],.013,.0025);self.sprigs(sec,.27,4)
                 self.sprigs(main,.32,5)
-    def wood(self,step):
+    def wood(self,step,budget=9000):
         pts=np.concatenate([p for p,r,_ in self.spines]);lo=pts.min(0)-.55;hi=pts.max(0)+.55;shape=np.ceil((hi-lo)/step).astype(int)+1
         if np.prod(shape)>60000000:raise ValueError('Voxel budget exceeded')
         field=np.full(tuple(shape),10,dtype=np.float32);segments=[]
-        for path,radii,root in self.spines:
-            along=0.
+        for spine_id,(path,radii,root) in enumerate(self.spines):
+            along=float(path[0,1]+.35)
             for a,b,ra,rb in zip(path[:-1],path[1:],radii[:-1],radii[1:]):
                 d=b-a;l=np.linalg.norm(d);k=min(.12,max(.008,ra*.55));pad=max(ra,rb)+k+step*2
                 low=np.maximum(np.floor((np.minimum(a,b)-pad-lo)/step).astype(int),0);high=np.minimum(np.ceil((np.maximum(a,b)+pad-lo)/step).astype(int)+1,shape)
@@ -72,31 +75,21 @@ class Plant:
                 t=np.clip(((x-a[0])*d[0]+(y-a[1])*d[1]+(z-a[2])*d[2])/(l*l),0,1)
                 dist=np.sqrt((x-a[0]-t*d[0])**2+(y-a[1]-t*d[1])**2+(z-a[2]-t*d[2])**2)-(ra+t*(rb-ra))
                 region=tuple(slice(low[i],high[i]) for i in range(3));old=field[region];h=np.maximum(k-np.abs(old-dist),0)/k;field[region]=np.minimum(old,dist)-h*h*k*.25
-                segments.append((a,b,ra,rb,along));along+=l
+                segments.append((a,b,ra,rb,along,spine_id));along+=l
         positions,faces,normals,_=marching_cubes(field,0,spacing=(step,step,step),allow_degenerate=False);positions+=lo
         # Surface normals from marching cubes point into an SDF; flip outward.
         normals=-normals
-        uv=np.empty((len(positions),2),np.float32);best=np.full(len(positions),np.inf)
-        for a,b,ra,rb,along in segments:
-            d=b-a;l=np.linalg.norm(d);v=d/l;t=np.clip((positions-a)@v/l,0,1);radial=positions-(a+t[:,None]*d)
-            score=np.linalg.norm(radial,axis=1)-(ra+t*(rb-ra));mask=score<best
-            if not mask.any():continue
-            u=unit(np.cross(v,[0,0,1]));w=np.cross(v,u)
-            uv[mask,0]=np.arctan2(radial[mask]@w,radial[mask]@u)/(2*math.pi)
-            # Project onto the unbounded local tangent for UV arclength.
-            # Clamping this projection to each capsule endpoint creates flat
-            # UV bands every spine segment when taper selects its thicker neighbour.
-            projected=(positions[mask]-a)@v
-            uv[mask,1]=(along+projected)/1.5;best[mask]=score[mask]
-        # Confirm outward winding against computed normals.
         cross=np.cross(positions[faces[:,1]]-positions[faces[:,0]],positions[faces[:,2]]-positions[faces[:,0]])
         flip=np.einsum('ij,ij->i',cross,normals[faces[:,0]])<0;faces[flip]=faces[flip][:,[0,2,1]]
-        # Split periodic UV seams per triangle: interpolating 0.99 -> 0.01 wraps
-        # across the whole bark tile, producing a visible stretched seam.
-        pf=positions[faces].reshape(-1,3);nf=normals[faces].reshape(-1,3);uf=uv[faces].copy()
-        wrapped=np.ptp(uf[:,:,0],axis=1)>.5
-        uf[wrapped,:,0]=np.where(uf[wrapped,:,0]<0,uf[wrapped,:,0]+1,uf[wrapped,:,0])
-        return pf,nf,uf.reshape(-1,2),np.arange(len(pf)).reshape(-1,3)
+        if len(faces)>budget:
+            positions,faces=simplify(positions,faces,target_count=budget,agg=7)
+        normals=np.zeros_like(positions)
+        cross=np.cross(positions[faces[:,1]]-positions[faces[:,0]],positions[faces[:,2]]-positions[faces[:,0]])
+        for corner in range(3):np.add.at(normals,faces[:,corner],cross)
+        normals/=np.maximum(np.linalg.norm(normals,axis=1,keepdims=True),1e-12)
+        # Bark projection is baked by bake_bark_atlas on a connected chart
+        # unwrap, so runtime UVs never interpolate unrelated branch charts.
+        return positions,normals,np.zeros((len(positions),2)),faces
     def foliage(self,kind):
         roots=[(.39,.94),(.03,.70),(.42,.95),(.04,.84)] if kind=='oak' else [(.44,.98),(.50,.95),(.47,.98),(.45,.99)]
         pos=[];norm=[];uv=[];faces=[]
@@ -117,12 +110,12 @@ def save_glb(path,parts,kind):
         doc['meshes'][0]['primitives'].append({'attributes':{'POSITION':accessor(p,5126,'VEC3',34962),'NORMAL':accessor(n,5126,'VEC3',34962),'TEXCOORD_0':accessor(uv,5126,'VEC2',34962)},'indices':accessor(f.flatten(),5125,'SCALAR',34963),'material':i})
         name='oak_bark' if i==0 else ('oak_leaves' if kind=='oak' else 'shrub_leaves')
         def tex(s):
-            j=len(doc['images']);doc['images'].append({'uri':'../textures/'+name+'_'+s+'.png'});doc['textures'].append({'source':j,'sampler':0});return {'index':j}
+            j=len(doc['images']);uri=(path.stem+'_bark_'+('orm' if s=='ao' else s)+'.png') if i==0 else '../textures/'+name+'_'+s+'.png';doc['images'].append({'uri':uri});doc['textures'].append({'source':j,'sampler':0});return {'index':j}
         doc['materials'].append({'name':name,'pbrMetallicRoughness':{'baseColorTexture':tex('basecolor'),'metallicRoughnessTexture':tex('orm'),'metallicFactor':0,'roughnessFactor':1},'normalTexture':tex('normal'),'occlusionTexture':tex('ao'),'doubleSided':i==1,'alphaMode':'MASK' if i else 'OPAQUE','alphaCutoff':.5})
     doc['buffers']=[{'byteLength':len(binary)}];js=json.dumps(doc,separators=(',',':')).encode();js+=b' '*((-len(js))%4);binary+=b'\0'*((-len(binary))%4)
     path.write_bytes(struct.pack('<4sII',b'glTF',2,28+len(js)+len(binary))+struct.pack('<I4s',len(js),b'JSON')+js+struct.pack('<I4s',len(binary),b'BIN\0')+binary)
 
 if __name__=='__main__':
     ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap.add_argument('--seed',type=int,default=414);ap.add_argument('--kind',choices=['oak','shrub'],default='oak');ap.add_argument('--step',type=float,default=.025);a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
-    plant=Plant(a.seed);plant.build(a.kind);wood=plant.wood(a.step);leaf=plant.foliage(a.kind);save_glb(a.out/(a.kind+'.glb'),[wood,leaf],a.kind)
+    plant=Plant(a.seed);plant.build(a.kind);wood=plant.wood(a.step,9000 if a.kind=='oak' else 1400);leaf=plant.foliage(a.kind);wood=bake_bark_atlas(wood,a.out,a.kind);save_glb(a.out/(a.kind+'.glb'),[wood,leaf],a.kind)
     print(json.dumps({'kind':a.kind,'seed':a.seed,'spines':len(plant.spines),'sprigs':len(plant.leaves),'woodTriangles':len(wood[3]),'leafTriangles':len(leaf[3])}))
