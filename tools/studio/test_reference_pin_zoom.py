@@ -157,6 +157,17 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("(event.clientX-current.x)/zoom", graph)
         self.assertIn("(event.clientY-current.y)/zoom", graph)
 
+    def test_native_move_recovery_integration_targets_exist(self):
+        cmake=(ROOT/"apps/studio-native/CMakeLists.txt").read_text(encoding="utf-8")
+        cases=(ROOT/"apps/studio-native/tests/StudioMoveJournalTests.cpp").read_text(encoding="utf-8")
+        transfer=(ROOT/"apps/studio-native/tests/StudioAssetTransferTests.cpp").read_text(encoding="utf-8")
+        self.assertIn("add_test(NAME studio_move_journal",cmake)
+        self.assertIn("StudioMoveJournal::recover(project)",cases)
+        self.assertIn("journal.commit()",cases)
+        self.assertIn("Studio recovery collision", (ROOT/"apps/studio-native/StudioMoveJournal.h").read_text(encoding="utf-8"))
+        self.assertIn("injected material write failure",transfer)
+        self.assertIn("assert(replaceRejected)",transfer)
+
     def test_scene_camera_navigation_is_editor_only(self):
         web=self.source("components/ViewportPlaceholder.tsx")
         types=self.source("types.ts")
@@ -172,6 +183,10 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("void StudioMetalScene::focusSelected(",renderer)
         self.assertIn("void StudioMetalScene::resetView()",renderer)
         self.assertIn("event.button===1",web)
+        self.assertIn("window.addEventListener('keyup',keyup)",web)
+        self.assertIn("window.addEventListener('blur',blur)",web)
+        self.assertIn("inFlight=true",web)
+        self.assertIn("requestAnimationFrame(tick)",web)
         self.assertIn("event.button===2?'look'",web)
         self.assertIn("['w','a','s','d','q','e']",web)
         self.assertIn("kind:'focus'",web)
