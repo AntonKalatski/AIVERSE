@@ -55,10 +55,11 @@ void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
-    // A sprite view created on one RHI device cannot be safely retired by a
-    // different device's idle barrier or destroyBuffer/destroyTexture calls.
-    if (twoD_ && dev_ && dev_ != &dev)
-        throw std::logic_error("RtsView reload: sprite resources belong to a different GPU device");
+    // Terrain, fog, roads, shores and overlays also own RHI handles when a
+    // sprite view is absent. Never rebind ANY live view owner to a foreign
+    // device; sprite recovery performs its own stricter owner check below.
+    if (dev_ && dev_ != &dev)
+        throw std::logic_error("RtsView reload: presentation resources belong to another GPU device");
     if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
         throw std::logic_error("RTS view stale GPU device generation");
     if (pendingSpriteRecovery_) {
@@ -68,10 +69,11 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     // Stage the replacement sprites before touching the live view. A failed
     // sprite pipeline/texture allocation must not delete its predecessor.
-    // The idle barrier is established first, so existing GPU resources may be
-    // retired only after the replacement has been prepared successfully.
-    if (twoD_ && !dev.waitForResourceIdle())
-        throw std::runtime_error("RtsView sprite reload: GPU idle barrier failed");
+    // The idle barrier is established for *all* existing RHI owners (not
+    // only the sprite view): fog, road/shore kits, terrain and overlays may
+    // remain resident even when sprite initialization had returned false.
+    if ((dev_ || twoD_) && !dev.waitForResourceIdle())
+        throw std::runtime_error("RtsView presentation reload: GPU idle barrier failed");
     const FileReader incomingRead = reader ? reader :
         FileReader([](const std::string& p,std::string& out) {
             return platform::readContentFile(p,out);
