@@ -932,6 +932,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (it.morph >= 0) {
         // U4: 16 morph weights + two vec4 metadata entries.
         // Keep exactly the GLSL std140 and MSL MU4 member order.
+        static_assert(kMaxMorphTargets==16,
+            "Update Metal and GLSL morph U4 layouts together with CPU capacity");
         float mo[kMaxMorphTargets + 8] = {};
         std::memcpy(mo,morphData_.data()+it.morph,
                     size_t(kMaxMorphTargets)*sizeof(float));
