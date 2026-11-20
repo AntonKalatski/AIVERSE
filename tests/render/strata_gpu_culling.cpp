@@ -92,8 +92,11 @@ public:
         bound[index] = h;
     }
     void setComputeUniforms(const void* data, size_t size) override {
-        assert(active && size == sizeof(GpuSelectionUniforms));
-        std::memcpy(&lastUniforms, data, size);
+        assert(active && data && size>0 && size<=128);
+        // Clear and safety kernels have their own 4/8/28-byte uniforms.
+        // Only selection fills GpuSelectionUniforms (112 bytes).
+        if(size==sizeof(GpuSelectionUniforms))
+            std::memcpy(&lastUniforms,data,size);
     }
     void dispatch(uint32_t threads, uint32_t = 1) override {
         assert(active && threads > 0);
