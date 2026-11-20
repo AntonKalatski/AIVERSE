@@ -1990,7 +1990,7 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     verge_ = paintTex_.addGenerated("builtin:road-verges", 256 * roadkit::kVergeSlots, 256, roadkit::vergeAtlas(256), false);
     if(!paint_.valid() || !verge_.valid())
         throw std::runtime_error("road View: GPU paint atlas allocation failed");
-    if (hasNet_) {   // new types: the network's type indices change
+    if (hasNet_ && netJson_.isObject()) {   // reparse serialized type IDs
         try { net_ = parseRoadNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
     }
@@ -2125,7 +2125,11 @@ void RtsRoadView::setMap(const Json& map) {
     hasNet_ = map["roadNetwork"].isObject();
     net_ = RoadNetwork{};
     dirty_ = true;
-    if (!hasNet_) return;
+    if(!hasNet_) {
+        netJson_=Json();
+        replaces_.clear();
+        return;
+    }
     netJson_ = map["roadNetwork"];
     replaces_.clear();
     for (auto& v : netJson_["replaces"].items()) if (v.isString()) replaces_.push_back(v.str());
