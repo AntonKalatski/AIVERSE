@@ -10,6 +10,7 @@
 #include "LumaWeaveVulkanHdrShader.h"
 #include "LumaWeaveQuality.h"
 #include "Renderer3D.h"
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 
@@ -74,13 +75,18 @@ public:
     }
 
     bool shutdown() {
-        // These receiver images may still be sampled by a submitted compute
-        // command: do not free before the owner observes the true VkFence.
+        // Each receiver capture can be borrowed by an independent queued
+        // Vulkan compute frame. Never destroy its images before its fence,
+        // even when the producer has already switched to a different view.
         if(owner_.busy())return false;
         if(dev_) {
-            for(auto t:{materialTarget_,materialDepth_,surfaceTarget_,
-                        surfaceDepth_,composeDepth_})
-                if(t.valid())dev_->destroyTexture(t);
+            const uint64_t completed=dev_->completedFrameSerial();
+            for(const auto& slot:receiverSlots_)
+                if(slot.retireSerial>completed)return false;
+            for(const auto& slot:receiverSlots_)
+                for(auto t:{slot.material,slot.materialDepth,slot.surface,
+                            slot.surfaceDepth,slot.composeDepth})
+                    if(t.valid())dev_->destroyTexture(t);
             if(vertex_.valid())dev_->destroyBuffer(vertex_);
             if(pipeline_.valid())dev_->destroyPipeline(pipeline_);
             if(shader_.valid())dev_->destroyShader(shader_);
@@ -88,6 +94,8 @@ public:
         dev_=nullptr;shader_={};pipeline_={};vertex_={};
         materialTarget_={};materialDepth_={};
         surfaceTarget_={};surfaceDepth_={};composeDepth_={};
+        receiverSlots_={};
+        activeReceiverSlot_=-1;
         width_=height_=materialW_=materialH_=surfaceW_=surfaceH_=0;
         composeWidth_=composeHeight_=0;
         readyMaterial_=readySurface_=eligible_=enabled_=false;
@@ -132,6 +140,15 @@ public:
     void setQuality(LumaWeaveQuality quality) {quality_=quality;}
     LumaWeaveQuality quality() const{return quality_;}
     const FrameStats& stats() const{return last_;}
+    // Conservative preflight, queried by the native driver BEFORE excluding
+    // legacy raster direct sources for this view. No GPU mutation.
+    bool canAcquireFrame() const {
+        if(!ready() || !owner_.canSubmitScreen())return false;
+        const auto completed=dev_->completedFrameSerial();
+        for(const auto& slot:receiverSlots_)
+            if(slot.retireSerial<=completed)return true;
+        return false;
+    }
 
     gfx::PassDesc scenePass(const gfx::PassDesc& out,int w,int h) override {
         scene_=downstream_.scenePass(out,w,h);
@@ -140,10 +157,15 @@ public:
         stats_={};
         const bool usable=w>0 && h>0 && w<=16384 && h<=16384 &&
             scene_.colorTarget.valid() && scene_.depthTarget.valid();
-        eligible_=enabled_ && ready() && downstream_.linearScene() &&
+        eligible_=enabled_ && canAcquireFrame() && downstream_.linearScene() &&
             usable && quality_!=LumaWeaveQuality::Off &&
-            !owner_.busy() && legacy_.count()==0 &&
-            !legacy_.staticPointLightsActive();
+            legacy_.count()==0 && !legacy_.staticPointLightsActive();
+        activeReceiverSlot_=-1;
+        materialTarget_={};materialDepth_={};
+        surfaceTarget_={};surfaceDepth_={};composeDepth_={};
+        materialW_=materialH_=surfaceW_=surfaceH_=0;
+        composeWidth_=composeHeight_=0;
+        if(eligible_)eligible_=acquireReceiverSlot(w,h);
         stats_.eligible=eligible_;
         stats_.legacyConflict=legacy_.count()!=0 ||
                                legacy_.staticPointLightsActive();
