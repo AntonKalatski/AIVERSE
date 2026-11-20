@@ -26,7 +26,12 @@ struct StudioFacialGpuPreview::Resident {
 StudioFacialGpuPreview::StudioFacialGpuPreview(gfx::Device& device)
     :deviceLifetime_(std::make_unique<RenderDeviceLifetime>(device)) {}
 
-StudioFacialGpuPreview::~StudioFacialGpuPreview()=default;
+StudioFacialGpuPreview::~StudioFacialGpuPreview() {
+    // If a native caller skipped explicit shutdown, never implicitly
+    // destroy a potentially GPU-visible Model provider. Diagnose this
+    // path through the owning StudioMetalScene shutdown error instead.
+    if(live_)(void)live_.release();
+}
 
 void StudioFacialGpuPreview::retireCurrent(gfx::Device& device) {
     if(!live_)return;
