@@ -34,7 +34,7 @@ int main() {
     })");
     ModelSourceDependencyIndex index;
     index.rebuild(types,materialLibrary);
-    for(const std::string& path:{
+    for(const char* path:{
         "models/hero.glb","models/hero-variant.glb",
         "models/hero-lod.glb","models/hero-damaged.glb",
         "models/sword.glb","models/coarse.glb","models/detail.glb"
