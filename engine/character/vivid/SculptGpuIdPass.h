@@ -203,6 +203,8 @@ public:
                     for(const auto& v:batch.vertices) {
                         if(n>=source.indices.size())return false;
                         const auto index=source.indices[n++];
+                        if(index.vertex>=source.maskInputs.size())
+                            return false;
                         for(int k=0;k<4;++k) {
                             if(v.rgba[k]!=std::uint8_t(
                                     index.triangleId>>(8u*k)))
