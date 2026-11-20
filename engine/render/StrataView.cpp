@@ -34,7 +34,12 @@ bool planView(const Asset& source, const ViewConfig& config,
     if (config.width <= 0 || config.height <= 0 ||
         config.width > 32768 || config.height > 32768 ||
         !std::isfinite(config.errorThresholdPixels) ||
-        config.errorThresholdPixels <= 0 || config.maxSelectedNodes == 0)
+        config.errorThresholdPixels <= 0 || config.maxSelectedNodes == 0 ||
+        !std::isfinite(config.hysteresisFraction) ||
+        config.hysteresisFraction < 0.f ||
+        config.hysteresisFraction > .45f ||
+        (config.previousRefined &&
+         config.previousRefined->size()!=source.nodes.size()))
         return fail(error, "invalid Strata view dimensions or LOD policy");
 
     for (float value : config.objectToClip.m)
@@ -87,6 +92,11 @@ bool planView(const Asset& source, const ViewConfig& config,
     input.errorCount = uint32_t(errors.size());
     input.thresholdPixels = config.errorThresholdPixels;
     input.maxVisibleNodes = config.maxSelectedNodes;
+    input.hysteresisFraction=config.hysteresisFraction;
+    if(config.previousRefined){
+        input.previousRefined=config.previousRefined->data();
+        input.previousRefinedCount=uint32_t(config.previousRefined->size());
+    }
     SelectionOutput selection;
     if (!select(selectionNodes, source.roots, input, selection))
         return fail(error, "Strata nodes not resident or selection budget exhausted");
@@ -95,6 +105,7 @@ bool planView(const Asset& source, const ViewConfig& config,
     planned.testedNodes = uint32_t(selection.nodes.size());
     planned.missingRefinements = selection.missingRefinements;
     planned.budgetExceeded = selection.budgetExceeded;
+    planned.refinedNodes=std::move(selection.refinedNodes);
     planned.ranges.reserve(selection.nodes.size());
 
     for (uint32_t index : selection.nodes) {
