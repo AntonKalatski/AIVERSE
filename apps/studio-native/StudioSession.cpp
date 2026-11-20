@@ -2,6 +2,7 @@
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
+#include "apps/studio-native/StudioFpsLightingDocument.h"
 #include <cctype>
 #include <cmath>
 #include <limits>
@@ -143,6 +144,22 @@ Json StudioSession::dispatch(const Json& request) {
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (ws_.project.isFps()) {
+                // FPS maps serialize MapData.fps, NOT MapData.extra. Apply to a copy,
+                // then validate/commit the full candidate through fps_set.
+                const Json currentDocument = ws_.map.toJson();
+                if (method != "studio.lighting") {
+                    const Json proposed = editFpsLighting(currentDocument,method,params);
+                    if (!(proposed == currentDocument)) {
+                        Json input=Json::object();
+                        input.set("map",proposed);
+                        const Json updated=ws_.call("fps_set",input,"studio");
+                        if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
+                    }
+                }
+                reply.set("result",fpsLightingView(ws_.map.toJson()));
+                return reply;
+            }
             if (method == "studio.lightingSet") {
                 const std::string key = params.getStr("key");
                 const Json& value = params["value"];
@@ -164,7 +181,10 @@ Json StudioSession::dispatch(const Json& request) {
                 const Json updated = ws_.call("light_add", input, "studio");
                 if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
             } else if (method == "studio.lightUpdate" || method == "studio.lightDelete") {
-                const int64_t index = params.getInt("index",-1);
+                const Json& rawIndex=params["index"];
+                if (!rawIndex.isNumber() || rawIndex.toDouble() != double(rawIndex.integer()))
+                    throw std::runtime_error("Light index must be an integer");
+                const int64_t index = rawIndex.integer(-1);
                 const Json& list = ws_.map.data.extra["lights"];
                 if (index < 0 || !list.isArray() || uint64_t(index) >= list.size())
                     throw std::runtime_error("Unknown light index");
