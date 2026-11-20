@@ -52,3 +52,17 @@ hosts must invoke the new hook before submissions. Public target access and
 asset/save formats unchanged. Files: these four camera headers plus target
 pool, GameClient.cpp and camera_rt_pool.cpp. Actual fake-RHI/GPU tests still
 NOT RUN for the fix; CI NOT RUN/no URL. Next: repeat native build/CTest.
+
+## Pass 3 — incompatible optional batching API
+
+Tested `149dcd8f7`: configure PASS, build FAIL, CTest NOT RUN.
+Report `20261120-142337-65530` in the same KINGSTON reports directory.
+Camera pool, scheduler, layout, rig, temporal, capture views/graph, scene asset,
+oblique, PNG, frustum and HDR-resolve executables now compile/link (not test
+execution). CameraRenderPipeline referenced CPU-MDI policy APIs absent from
+this renderer branch, which has no adaptive CPU-MDI implementation. Removed
+that orphan dependency; per-camera View LOD remains unchanged. Reintroduce
+scoped policy integration when merging a renderer that actually owns it.
+Fixed camera_client_adapter's check helper to accept its existing diagnostic
+argument. Commit `23679d5be4f6106e3e2d3989fda99824b0d7182b`; two paths above. No asset/save change; CI NOT RUN.
+Next: rerun full build; no camera runtime or GPU parity claim yet.
