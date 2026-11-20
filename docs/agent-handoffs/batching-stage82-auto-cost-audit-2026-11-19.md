@@ -1166,3 +1166,50 @@ At the end share the **new Stage104 `capture-*.tar.gz`**, or `stage104-summary.c
 ### Agent continuation
 
 Read this handoff and parse native owner archive. Check the 8 per-process CSVs for 81 measured frames, real Direct/MDI mode and screenshot parity. Compare CPU median/P95/worst and per-pass backend across 2K/4K; inspect Mach CPU vs wall for potential contention. If 4K direct mode causes performance or memory pressure, bound the test and document. Only propose low-level batching optimization after seeing actual scaling and preserving correct Metal pipeline states, uniforms, and resource residency.
+
+
+---
+
+## Stage 105 — correct 2K/4K analysis false rejection of submitted commands (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`, branch `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Change:** `5018b3810f81342b42aa9977ea4b046de08a4400` updates `tools/batching-stage104-analyze.py`; this handoff follows in its own commit. **No renderer, Metal, RHI or stress fixture C++ code changed.**
+
+### Owner's actual Stage 104 Mac output / blocker
+
+The owner ran the paired 2K/4K Stage104 test. The Direct vs MDI runner reached its analyzer successfully after executing its own run assertions and got:
+
+```text
+2048 direct1  wall=2.3557ms p95=2.4445ms mach=2.3410ms mdi_commands=0
+ValueError: .../2048-mdi1-frames.csv: forced MDI expected 4096 indirect commands and nonzero submissions, got 4086/18
+```
+
+The fixture authored 2048 unique primitives but the renderer actually submitted **4086 indirect commands in 18 MDI submissions** for that measured 2K frame, rather than 4096 commands. The cause of this ten-command difference is **not yet independently established**; possible pass-specific visibility/culling/filtering is a hypothesis, and raster pixel parity/shape of the other benchmark logs must be used to rule out incorrect omission. The analyzer's unconditional exact equality `commands == 2*items` was not a legitimate invariant because submitted draws represent processed eligible/visible work, not all authored pass candidates. The traceback originates from the **analyzer after native process runs**, not C++/Metal failure. Actual Mac 4K values and completed aggregate report have not yet been provided.
+
+### Fix
+
+- For forced MDI, require `mdi_submissions>0`, `mdi_commands>0`, `mdi_commands<=2*items` on **all 81** measured frames.
+- Reject anomalously low work coverage `mdi_commands < 90% * (2*items)` as a defensive heuristic, **not** a required engine invariant.
+- Require MDI submission and command counts **remain constant for all 81 measured frames** of this fixed static stress scene (no silent fallback/change in MDI groups). Direct still requires strictly 0 MDI commands/submissions for every frame.
+- Report median MDI submissions and actual commands, plus `authored_pass_commands=2*items` and `mdi_command_coverage_pct`. For the reported 2K case, `4086/4096 = 99.756% coverage`, with 18 actual MDI submissions. This count does not prove all visible geometry rendered, which is why byte-for-byte pixel parity must still be required by the runner.
+- Preserve all existing CPU `renderer.render()` wall/Mach/backend analysis, median/P95/max and two Direct vs two MDI comparisons per workload size.
+
+### Validation status
+
+**Performed:** inspected existing fixture and Stage104 analyzer via GitHub; identified faulty exact-count condition; updated source, wrote this handoff. **Not performed:** new native Mac run or rerun of fixed analyzer on owner's real Stage104 capture folder (Mac-only); complete 4K benchmark results, independent CPU/GPU scaling parity, or explanation of the ten omitted commands. The existing Stage104 runner has already finished its fixture passes if there are eight `*.log` and `*-frames.csv` artifacts in that capture directory; do **not** rerun expensive rendering just to fix a Python assertion. CPU MDI/AUTO flags remain opt-in, PR #39 stays Draft.
+
+### Owner: rerun only analyzer on existing output
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage98 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage104-analyze.py \
+  > /tmp/aiverse-stage105-analyze.py || exit 1
+python3 /tmp/aiverse-stage105-analyze.py \
+  build/batching-stage98/stage104/capture-20261120T071923Z-97395
+```
+
+This will output all four runs per size and write `stage104-summary.csv` to the existing capture folder, if all eight CSVs were generated. It will not rebuild, rerender or modify Git state. If the analysis succeeds, share `stage104-summary.csv` and the existing capture archive or CSV/logs for detailed follow-up. If a new `ValueError` appears, preserve the exact message and inspect the corresponding file rather than suppressing correctness checks.
+
+### Next stage
+
+Interpret actual 2K/4K Direct vs MDI process medians and P95, compare Mach thread time and per-pass backend, ensure parity logs show zero changed channels in both forced modes. Check whether 4086 vs 4096 is explained by filtering or an unexpected missing batch; only then consider altering batching limits/thresholds. No GPU execution time/FPS measured.
