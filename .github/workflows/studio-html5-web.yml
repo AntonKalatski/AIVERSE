@@ -64,6 +64,10 @@ jobs:
         run: c++ -std=c++17 -Wall -Wextra -Werror -I . apps/studio-native/tests/StudioViewportLayoutTests.cpp -o /tmp/aiverse_studio_viewport_layout
       - name: Run headless native viewport layout contract
         run: /tmp/aiverse_studio_viewport_layout
+      - name: Compile and run headless Lighting IPC validator
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . apps/studio-native/tests/StudioLightingValidationTests.cpp -o /tmp/aiverse_studio_lighting_validation
+          /tmp/aiverse_studio_lighting_validation
 
   macos-native:
     name: macOS HTML5 + Metal native compiler / contracts
@@ -94,7 +98,7 @@ jobs:
       - name: Compile Metal host and native contracts
         run: |
           cmake --build build/studio-native-ci \
-            --target aiverse_studio aiverse_studio_session_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
+            --target aiverse_studio aiverse_studio_session_tests aiverse_studio_lighting_validation_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
             --parallel 3
       - name: Run native contract tests
-        run: ctest --test-dir build/studio-native-ci --output-on-failure -R '^studio_(session|scene_nodes|document_visuals|viewport_layout|terrain_geometry)$'
+        run: ctest --test-dir build/studio-native-ci --output-on-failure -R '^studio_(session|lighting_validation|scene_nodes|document_visuals|viewport_layout|terrain_geometry)$'

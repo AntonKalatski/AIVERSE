@@ -1,6 +1,7 @@
 #include "StudioSession.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
+#include "apps/studio-native/StudioLightingValidation.h"
 #include <cctype>
 #include <cmath>
 #include <limits>
@@ -138,6 +139,58 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
+                   method == "studio.lightAdd" || method == "studio.lightUpdate" ||
+                   method == "studio.lightDelete") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.lightingSet") {
+                const std::string key = params.getStr("key");
+                const Json& value = params["value"];
+                if (!value.isNumber() || !validLightingScalar(key, value.toDouble()))
+                    throw std::runtime_error("Invalid lighting parameter");
+                Json input = Json::object();
+                input.set(key, value);
+                const Json updated = ws_.call("lighting_set", input, "studio");
+                if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
+            } else if (method == "studio.lightAdd") {
+                Json input = Json::object();
+                // New authored lights go to map center for flat maps; FPS origin otherwise.
+                const double x = ws_.project.isFps() ? 0.0 : double(ws_.map.data.w) * 0.5;
+                const double z = ws_.project.isFps() ? 0.0 : double(ws_.map.data.h) * 0.5;
+                if (!validLightScalar("x",x) || !validLightScalar("z",z))
+                    throw std::runtime_error("Map coordinates out of range");
+                input.set("x", Json::number(x,3));
+                input.set("z", Json::number(z,3));
+                const Json updated = ws_.call("light_add", input, "studio");
+                if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
+            } else if (method == "studio.lightUpdate" || method == "studio.lightDelete") {
+                const int64_t index = params.getInt("index",-1);
+                const Json& list = ws_.map.data.extra["lights"];
+                if (index < 0 || !list.isArray() || uint64_t(index) >= list.size())
+                    throw std::runtime_error("Unknown light index");
+                Json input = Json::object();
+                input.set("index", Json::number(index));
+                if (method == "studio.lightUpdate") {
+                    const std::string key = params.getStr("key");
+                    const Json& value = params["value"];
+                    if (value.isNumber()) {
+                        if (!validLightScalar(key,value.toDouble()))
+                            throw std::runtime_error("Invalid light numeric property");
+                    } else if (value.isString()) {
+                        if (!validLightText(key,value.str()))
+                            throw std::runtime_error("Invalid light string property");
+                    } else if (value.type() == Json::Type::Bool) {
+                        if (!validLightBoolean(key))
+                            throw std::runtime_error("Invalid light boolean property");
+                    } else throw std::runtime_error("Invalid light property type");
+                    input.set(key,value);
+                }
+                const Json updated = ws_.call(method == "studio.lightDelete" ? "light_delete" : "light_update",input,"studio");
+                if (updated.has("error")) throw std::runtime_error(updated.getStr("error"));
+            }
+            const Json current = ws_.call("light_list",Json::object(),"studio");
+            if (current.has("error")) throw std::runtime_error(current.getStr("error"));
+            reply.set("result",current);
         } else if (method == "studio.assets") {
             // Never accept a browser-selected directory. The existing Workspace
             // operation is called with an empty argument object, restricting this
