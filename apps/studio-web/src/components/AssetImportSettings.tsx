@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
 import {X, FileCog, ClipboardCopy, Lock, LockOpen} from 'lucide-react';
 import {invoke} from '../bridge';
-import type {StudioAsset,StudioAssetDetail} from '../types';
+import type {StudioAsset,StudioAssetDetail,StudioAssetReference} from '../types';
 
 const OPTIONS={
   compression:['auto','none','fast','high','lossless'],
@@ -37,6 +37,8 @@ export default function AssetImportSettings({asset,onClose,onSaved,onError,locke
   const [detail,setDetail]=useState<StudioAssetDetail|null>(null);
   const [busy,setBusy]=useState(false);
   const [loading,setLoading]=useState(true);
+  const [references,setReferences]=useState<StudioAssetReference[]>([]);
+  const [referenceError,setReferenceError]=useState('');
   const guid=asset.guid;
   useEffect(()=>{
     let disposed=false;
@@ -48,6 +50,17 @@ export default function AssetImportSettings({asset,onClose,onSaved,onError,locke
       .finally(()=>{if(!disposed)setLoading(false)});
     return ()=>{disposed=true};
   },[guid,onError]);
+  useEffect(()=>{
+    let cancelled=false;
+    setReferences([]);setReferenceError('');
+    void invoke('studio.assetReferences',{}).then(rows=>{
+      if(!cancelled)setReferences(rows.filter(row=>
+        (guid && row.guid===guid) || row.path==='content/'+asset.path));
+    }).catch(error=>{
+      if(!cancelled)setReferenceError(String(error instanceof Error?error.message:error));
+    });
+    return ()=>{cancelled=true};
+  },[guid,asset.path]);
   const save=async(key:string,value:string|number|boolean)=>{
     if(!guid||busy)return;
     setBusy(true);
@@ -125,5 +138,15 @@ export default function AssetImportSettings({asset,onClose,onSaved,onError,locke
           conversion and platform packaging remain separate build steps.
         </p>
       </div>}
+    <section className="studio-asset-references" aria-label="Asset usages">
+      <strong>Used by ({references.length})</strong>
+      {referenceError && <p role="alert">{referenceError}</p>}
+      {!referenceError && !references.length && <p>No indexed references in materials or model views.</p>}
+      {references.map((ref,index)=><div key={ref.document+ref.owner+ref.field+index}
+        className="studio-asset-usage">
+        <span>{ref.document} · {ref.owner}</span>
+        <small>{ref.field} · {ref.writable?'Material reference':'Read-only model reference'}</small>
+      </div>)}
+    </section>
   </aside>;
 }
