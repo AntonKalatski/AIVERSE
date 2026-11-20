@@ -22,3 +22,23 @@ PNG is an intermediate, not GPU compression. Color-space assignment, normal
 conventions, output semantic mapping, ORM packing, GPU compression, material
 publication and background editor scheduling remain subsequent stages.
 Actual SBSAR rendering has NOT been verified without Adobe SAT and fixtures.
+
+## Stage 2: explicit PBR packing
+
+Install `requirements.txt` into a tooling environment. Map actual output filenames
+in JSON: `{"baseColor":"graph_basecolor.png","normal":"graph_normal.png",
+"roughness":"graph_roughness.png","metallic":"graph_metallic.png"}`.
+Explicit mapping avoids guessing arbitrary authored output names.
+
+```sh
+python3 tools/substance/pack.py /path/to/bake --mapping maps.json --output /path/to/new-bundle
+```
+
+Add `--normal-directx` only for DirectX source normals (flips green to OpenGL).
+Scalar maps must be grayscale, 8-bit, and all dimensions must match (max 4096).
+ORM is R=AO, G=roughness, B=metallic, defaults 1/1/0. Base color alpha is
+preserved; opacity/alpha-mode authoring is not inferred. Outputs include a
+material field object and a bundle manifest with color spaces. The material
+object is not a complete materials.json library. Project import must rebase
+texture paths and insert it under a material name. PNG GPU compression and
+automatic Studio publication remain unimplemented.
