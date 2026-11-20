@@ -9,6 +9,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <string>
 #include <span>
 #include <utility>
 #include <vector>
@@ -40,6 +44,88 @@ inline ModelPoseRetarget makeNamedModelPoseRetarget(
     for(const auto& node:visual.nodes)
         map.sourceNodeForVisual.push_back(source.findNode(node.name));
     return map;
+}
+
+inline bool validModelPoseRetarget(const render::Model& source,
+                                  const render::Model& visual,
+                                  const ModelPoseRetarget& map);
+
+// Explicit semantic morph names authored by the import pipeline. Indexed by
+// Model node and then that node's *local* morph channel. Names are NOT inferred
+// from different meshes, arbitrary index orders, or a source animation state.
+using ModelMorphChannelNames=std::vector<std::vector<std::string>>;
+
+// One-time asset-publication helper. It compiles a name-based semantic map
+// into the existing compact integer channel indices consumed by the cached
+// CompiledModelPoseRetarget. Unknown target names preserve target bind weight.
+// Fail on ambiguous names, incomplete source/target descriptions or invalid
+// Model morph capacities instead of silently applying wrong expressions.
+// The caller must pass the complete per-node channel names for every
+// morph-bearing mapped source/target node; zero-channel nodes use {}.
+inline bool compileNamedModelMorphRetarget(
+        const render::Model& source,const render::Model& visual,
+        const ModelMorphChannelNames& sourceNames,
+        const ModelMorphChannelNames& visualNames,
+        ModelPoseRetarget& inOut,std::string* error=nullptr) {
+    if(error)error->clear();
+    try {
+        if(sourceNames.size()!=source.nodes.size() ||
+           visualNames.size()!=visual.nodes.size() ||
+           inOut.sourceNodeForVisual.size()!=visual.nodes.size())
+            throw std::invalid_argument("morph name table / rig mapping size mismatch");
+        const auto count=[](const render::Model& model,size_t node) {
+            int result=0;
+            const int mesh=model.nodes[node].mesh;
+            if(mesh>=0 && size_t(mesh)<model.meshes.size())
+                for(const auto& primitive:model.meshes[size_t(mesh)].primitives)
+                    result=std::max(result,primitive.morphTargets);
+            return result;
+        };
+        // Transactional: never corrupt the previously authored mapping.
+        std::vector<std::array<int,render::kMaxMorphTargets>> compiled(
+            visual.nodes.size());
+        for(auto& channels:compiled)channels.fill(-1);
+        for(size_t target=0;target<visual.nodes.size();++target) {
+            const int sourceIndex=inOut.sourceNodeForVisual[target];
+            if(sourceIndex< -1 ||
+               (sourceIndex>=0 && size_t(sourceIndex)>=source.nodes.size()))
+                throw std::invalid_argument("invalid mapped morph source node");
+            if(sourceIndex<0)continue;
+            const size_t src=size_t(sourceIndex);
+            const int sourceCount=count(source,src);
+            const int targetCount=count(visual,target);
+            if(sourceCount<0 || targetCount<0 ||
+               sourceCount>render::kMaxMorphTargets ||
+               targetCount>render::kMaxMorphTargets ||
+               sourceNames[src].size()!=size_t(sourceCount) ||
+               visualNames[target].size()!=size_t(targetCount))
+                throw std::invalid_argument("incomplete morph names or channel count exceeds limit");
+            std::map<std::string,int> sourceChannel;
+            for(size_t k=0;k<sourceNames[src].size();++k) {
+                const auto& name=sourceNames[src][k];
+                if(name.empty() || !sourceChannel.emplace(name,int(k)).second)
+                    throw std::invalid_argument("empty or ambiguous source morph name");
+            }
+            std::set<std::string> seenTarget;
+            for(size_t k=0;k<visualNames[target].size();++k) {
+                const auto& name=visualNames[target][k];
+                if(name.empty() || !seenTarget.insert(name).second)
+                    throw std::invalid_argument("empty or ambiguous target morph name");
+                const auto found=sourceChannel.find(name);
+                if(found!=sourceChannel.end())
+                    compiled[target][k]=found->second;
+            }
+        }
+        ModelPoseRetarget candidate=inOut;
+        candidate.sourceMorphForVisual=std::move(compiled);
+        if(!validModelPoseRetarget(source,visual,candidate))
+            throw std::invalid_argument("semantic morph channels incompatible with rig");
+        inOut=std::move(candidate);
+        return true;
+    }catch(const std::exception& ex) {
+        if(error)*error=ex.what();
+        return false;
+    }
 }
 
 inline bool validModelPoseRetarget(const render::Model& source,
