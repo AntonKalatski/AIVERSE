@@ -107,8 +107,20 @@ void VulkanDevice::setComputeBuffer(int slot, BufferHandle h) {
 
 void VulkanDevice::setComputeTexture(int slot, TextureHandle h) {
     if(!activeCompute_ || slot!=0)return;
+    // Switching output storage images inside one compute pass is legal, but
+    // the PREVIOUS image must return to sampled layout after its writes.
+    // Otherwise its next fragment reader sees GENERAL while the descriptor
+    // expects SHADER_READ_ONLY_OPTIMAL.
+    if(computeImageWriting_ && computeTexture_.id!=h.id) {
+        if(VTexture* previous=textures_.get(computeTexture_.id))
+            barrierImage(slots_[size_t(slot_)].main,previous->image,false,
+                         VK_IMAGE_LAYOUT_GENERAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        computeImageWriting_=false;
+    }
     const VTexture* t=textures_.get(h.id);
-    computeTexture_=(t && t->storage && t->format==PixelFormat::RGBA16F)?h:TextureHandle{};
+    computeTexture_=(t && t->storage && t->format==PixelFormat::RGBA16F)
+        ? h : TextureHandle{};
 }
 
 void VulkanDevice::setComputeUniforms(const void* data,size_t size) {
@@ -182,6 +194,16 @@ void VulkanDevice::dispatch(uint32_t logicalX,uint32_t logicalY) {
         barrierImage(command,texture->image,false,
                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_GENERAL);
         computeImageWriting_=true;
+    } else {
+        // A second dispatch may consume/overwrite the same atlas texels.
+        // Command submission order alone is NOT a shader-storage memory
+        // dependency. Make earlier compute writes visible before next work.
+        auto barrier=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+        barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,
+                             1,&barrier,0,nullptr,0,nullptr);
     }
     vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,c->pipeline);
     vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,
