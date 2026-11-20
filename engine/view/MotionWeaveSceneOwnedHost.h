@@ -205,8 +205,8 @@ public:
     uint64_t gpuShutdownFailures() const noexcept {
         return retirement_.shutdownFailures();
     }
-    uint64_t tokenApprovedProviderShutdowns() const noexcept {
-        return retirement_.tokenApprovedShutdowns();
+    uint64_t completionProvenProviderShutdowns() const noexcept {
+        return retirement_.completionProvenShutdowns();
     }
     uint64_t cpuLoaderShutdownFailures() const noexcept {
         return retirement_.cpuQueueShutdownFailures();
