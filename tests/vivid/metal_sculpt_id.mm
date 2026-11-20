@@ -131,8 +131,36 @@ void test() {
         const auto unobstructed=runSample(*device,pass,model,surface,32,32,behind);
         require(unobstructed==std::vector<std::uint8_t>({2,0,0,0}),
                 "VIVID Metal allowed a farther occluder to hide nearer face");
+        // 7AQ: real GPU baseTexture alpha is sampled per fragment. When
+        // the source texel is transparent, no masked triangle may write
+        // depth/ID; when opaque, the near triangle ID must be preserved.
+        const std::array<std::uint8_t,4> alphaHole{{255,255,255,0}};
+        gfx::TextureDesc maskDesc;
+        maskDesc.width=1;maskDesc.height=1;
+        maskDesc.format=gfx::PixelFormat::RGBA8;
+        maskDesc.filter=gfx::Filter::Nearest;
+        maskDesc.data=alphaHole.data();
+        maskDesc.label="VIVID alpha mask ID oracle";
+        auto alphaTexture=device->createTexture(maskDesc);
+        require(alphaTexture.valid(),"Metal test alpha texture unavailable");
+        model.images.emplace_back();
+        model.images[0].tex=alphaTexture;
+        model.materials.emplace_back();
+        model.materials[0].alpha=render::AlphaMode::Mask;
+        model.materials[0].baseTex=0;
+        model.materials[0].alphaCutoff=0.5f;
+        const auto hole=runSample(*device,pass,model,surface,32,32);
+        require(hole==std::vector<std::uint8_t>({0,0,0,0}),
+                "Metal alpha-tested GPU triangle failed to discard a hole");
+        const std::array<std::uint8_t,4> alphaSolid{{255,255,255,255}};
+        device->updateTexture(alphaTexture,0,0,1,1,alphaSolid.data(),4);
+        const auto solid=runSample(*device,pass,model,surface,32,32);
+        require(solid==std::vector<std::uint8_t>({2,0,0,0}),
+                "Metal alpha-tested GPU triangle lost opaque texel ID");
+
         require(pass.shutdownAfterIdle(),
                 "VIVID Metal ID resources did not pass GPU idle retirement");
+        device->destroyTexture(alphaTexture);
         std::cout<<"VIVID Metal sculpt ID depth/readback pass=1\n";
     }
 }
