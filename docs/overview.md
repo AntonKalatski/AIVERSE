@@ -146,14 +146,18 @@ reproducible: identical content gives a byte-identical file; the pack's "content
 
 For packaged client builds, `packaging.engineModules` can select optional native
 engine modules. Omitting the field keeps the historical defaults; an explicit
-empty array disables all three optional modules. The supported names are
+empty array disables all four selectable modules. The supported names are
 `strata` (virtual geometry staging), `runtime-autolod` (generate missing LODs
-at runtime), and `vulkan` (Windows, Linux, Android only). A target-specific
+at runtime), `vulkan` (Windows, Linux, Android only), and `spine` (Spine UI
+animation and its Lua API). A target-specific
 `packaging.targets.web.engineModules` or similar overrides the shared list.
 For example, `"packaging": {"engineModules": [], "targets":
 {"windows": {"engineModules": ["vulkan"]}}}` builds without these optional
 modules except for Vulkan on Windows. Declare `runtime-autolod` when the game
 relies on runtime LOD generation; otherwise prepare LODs before packaging.
+Declare `spine` if `game.json` defines Spine views or UI Lua scripts call the
+`spine` table. The packager rejects declared Spine views when this module is
+excluded; script-only use must be listed explicitly.
 This selection affects the executable, not the content pack. Core client,
 renderer, and gameplay modules still follow their C++ dependency graph.
 
