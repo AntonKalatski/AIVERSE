@@ -627,3 +627,62 @@ actual hardware performance and correct pixels are unknown.
 The next stage should add proper complete-scene occlusion,
 GPU-vertex-override parity and async GLES/Vulkan implementations
 on a separate, carefully reviewed shared-RHI integration path.
+
+
+## Stage 7AP — conservative scene-wide GPU ID occlusion
+
+The experimental Metal selection pass now covers the **geometry of the
+entire current VIVID Creator preview**, rather than only the selected
+imported mesh:
+
+- The selected mesh produces the normal 1-based RGBA8 triangle IDs
+  (only for fully opaque, selectable material primitives).
+- Other imported head/body/eye/groom meshes attached to nodes use the
+  exact current morph-before-skin CPU reference positions and write
+  **zero ID plus depth**. This supports different rigid or skinned mesh
+  owners and fails closed if a mesh/palette cannot be reconstructed.
+- The Creator's procedural floor is retained as CPU source triangles
+  when first built, then supplied to the depth pass in its existing world
+  coordinates.
+- Dynamic procedural hair cards are supplied from their current
+  `HumanGroomRuntime`-updated vertex stream using the same rigid head
+  transform as the normal Renderer3D hair draw.
+- Other-mesh, floor and hair occluders are appended to the same
+  `SculptGpuIdVertex` stream as the selectable mesh; each has all four
+  ID bytes set to zero. Invalid indices/non-finite positions or a
+  1-million-total-triangle overflow reject the GPU confirmation and
+  retain CPU BVH selection. No new GPU draw/texture owner is introduced.
+
+**Alpha/transparent policy is conservative, not pixel-exact:**
+`AlphaMode::Mask`, `AlphaMode::Blend`, non-opaque baseColor alpha or
+explicit `Material::transparent` cannot emit a selectable ID.
+For all occluder meshes (including cards and cornea), *entire triangles*
+write zero-ID depth, regardless of the source alpha map. A partially
+transparent card can therefore suppress an otherwise valid GPU ID,
+even though a source texture has a visible hole. This is a conservative
+false-negative in the GPU *confirmation* and preserves the existing
+CPU result; it never claims a hidden vertex was GPU-confirmed.
+Actual shader-side alpha testing and transparency/depth-after ordering
+must eventually be aligned to `Renderer3D`.
+
+Other limits also remain: the pass is CPU-assembled from one frame's
+morph/skin geometry instead of reusing the GPU vertex override; the
+normal renderer's precise LOD/culling decisions and custom renderer
+objects are not yet shared; Metal is the only implemented async pixel
+readback backend. The current Creator preview consists of the model,
+floor and optional generated hair, all now represented. A game with
+arbitrary external scene geometry must pass those extra occluders to
+the same depth stage before claiming scene-wide visibility.
+
+The Stage 7AP source fixtures check selected opaque versus masked or
+blended material IDs, another skinned/rigid mesh's world-space zero-ID
+occluder, and floor/hair transformation. The real Metal
+`vivid_metal_sculpt_id` test additionally records a closer independent
+zero-ID triangle and a farther independent triangle, expecting the
+closer one to block the ID and the farther one not to block it.
+They are **added test cases, not recorded passing results**: native
+compilation, CTest, real GPU pixels and timing remain NOT RUN.
+
+The experimental option remains off by default. Ordinary picking
+still uses the CPU BVH and can proceed if GPU readback is unsupported,
+invalid, occluded or conservatively blocked.
