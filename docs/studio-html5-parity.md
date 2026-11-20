@@ -14,7 +14,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `animation_assets` | `apps/editor/windows/AnimationAssetsWindow.cpp` | Missing functional HTML5 implementation |
 | `animation_graph` | `apps/editor/windows/AnimationGraphWindow.cpp` | Missing functional HTML5 implementation |
 | `animation_rig` | `apps/editor/windows/AnimationRigWindow.cpp` | Missing functional HTML5 implementation |
-| `assets` | `apps/editor/windows/AssetsWindow.cpp` | Partial; native visual parity pending |
+| `assets` | `apps/editor/windows/AssetsWindow.cpp` | Partial: GUID catalog/import/moves/conflict handling/import settings merged and native-tested (78–79); visual and full legacy parity pending |
 | `animation_attachments` | `apps/editor/windows/AttachmentAuthoringWindow.cpp` | Missing functional HTML5 implementation |
 | `branding` | `apps/editor/windows/BrandingWindow.cpp` | Missing functional HTML5 implementation |
 | `build` | `apps/editor/windows/BuildWindow.cpp` | Missing functional HTML5 implementation |
@@ -43,7 +43,7 @@ Derived from actual AIVERSE_EDITOR_WINDOW registrations in apps/editor/windows. 
 | `raid` | `apps/editor/windows/RaidWindow.cpp` | Missing functional HTML5 implementation |
 | `roads` | `apps/editor/windows/RoadsWindow.cpp` | Missing functional HTML5 implementation |
 | `rules` | `apps/editor/windows/RulesWindow.cpp` | Missing functional HTML5 implementation |
-| `scene` | `apps/editor/windows/SceneWindow.cpp` | Partial; native visual parity pending |
+| `scene` | `apps/editor/windows/SceneWindow.cpp` | Partial: native rigid-model render/picking/hot reload merged, cache release corrected (78–79); gizmos, broader authoring/model formats and visual parity pending |
 | `scripts` | `apps/editor/windows/ScriptsWindow.cpp` | Missing functional HTML5 implementation |
 | `shader_graph` | `apps/editor/windows/ShaderGraphWindow.cpp` | Partial; native visual parity pending |
 | `spectrafx_gpu_assets` | `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp` | Missing functional HTML5 implementation |
@@ -77,4 +77,4 @@ Record implementation commit, frontend panel, explicit native methods, normal/er
 
 ## Next bounded stage
 
-Entity CRUD (69), incremental packaging (70) and map lifecycle (71) have native automated evidence. Next: real game lifecycle using shared runtime ownership, then continue remaining matrix. Native interactive QA remains blocked by the locked Mac; no full-parity or main-merge claim is justified yet.
+Entity CRUD (69), packaging (70), map lifecycle (71), shared game host extraction (72) and remote asset/model/facial-rig convergence (78–79) have scoped automated evidence. Latest combined suite: native 25/25, web 85/85, Python 41/41; targeted recovery/picking follow-up 4/4. New Facial Rig panel is a partial authoring addition, not animation parity. Next: native interactive QA after Mac unlock, real game lifecycle using shared runtime ownership, then remaining matrix. No full-parity or main-merge claim is justified yet.
