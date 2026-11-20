@@ -1028,3 +1028,44 @@ These medians and the 14-column schema match the **previously analyzed Stage 98 
 **Verification truth:** 3 CSV files read and parsed directly, numbers cross-checked against prior Stage98/99 owner evidence. **Not verified:** a new Stage100 native run, native build in this turn, slow-process system trace, GPU execution timing or performance stability at other loads. Existing Stage100 script remains the next diagnostic mechanism. Keep PR #39 Draft.
 
 **Next required artifact:** run the bounded Stage100 script using the already-built Stage98 fixture and share `build/batching-stage98/slow-capture/summary.csv`; if `slow_frames>=10` in any process, share that run's `mdi-N-frames.csv`. Do not infer cause from three old fast runs.
+
+
+---
+
+## Stage 102 — unique archived native CPU MDI capture workflow (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`, **branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Source commit:** `c48187535d52d2b01fa5932b36bf8e154576ae3c` adds `tools/batching-stage102-repro.sh`. This handoff is a separate commit. No renderer/Metal/RHI/AUTO code changed; new script invokes existing Stage98 opt-in fixture.
+
+### Why this stage
+
+The most recent user-uploaded files `mdi-1-frames(2).csv`, `mdi-2-frames(2).csv`, `mdi-3-frames(2).csv` have 106 rows, fixed 81 MDI frames at 10 submissions/2048 commands, all <1.2ms, and medians precisely matching prior Stage98 fast three runs: 0.79654/0.81258/0.86083ms. They are **not verified** as newly generated Stage100 output; repeat uploads alone cannot establish new slow-run evidence. A unique run directory and manifest/archive prevent confusion.
+
+### New capture tool
+
+- Script runs from `tools/` using repository-relative project root, default up to 8 independent forced MDI process executions; integer run limit 1..20.
+- Each invocation creates unique `build/batching-stage98/stage102/capture-YYYYMMDDTHHMMSSZ-PID/`; never overwrites previous CSV. A manifest records start/end UTC, detached Git HEAD, binary path, input scene, threshold and status.
+- Each process runs 1,024 unique primitives, 81 measured frames, opt-in `AIVERSE_BATCH_THREAD_CPU_TIMING=1` and deferred per-frame CSV. It explicitly suppresses inherited AUTO/GPU ICB and per-submission trace env flags.
+- Performs source-level log assertions for 38 CPU invariant pass, real-MDI capture parity zero, final parity zero, all 81 MDI frames with exactly 810 submitted MDI groups, 106 captured frames, and nonempty CSV. Data validation checks exact frame 90..195 sequence, each measured frame having 10 submissions and 2048 commands, finite nonnegative wall/Mach/backend columns.
+- Writes `summary.csv` with run number, slow count (>1.2ms CPU `render()` wall), median wall, median validated Mach thread CPU, wall-minus-Mach and backend CPU; stops as soon as 10+ slow measured frames appear in one process. If not, prints inconclusive rather than declaring fixed.
+- Captures unmodified `mdi-N.log` and `mdi-N-frames.csv` for each run. Produces **one `capture-....tar.gz` file** containing summary, manifest, all logs and CSV for easy transfer. No need to upload unrelated stale same-name files.
+- Runner is diagnostic, CPU wall only, no GPU timestamp/FPS or OS state trace. The cross-run 10+ slow threshold is exploratory and **not** a production SLA.
+
+### Validation performed vs pending
+
+**Performed:** GitHub repository source read to locate Stage100 runner contract, GitHub creation of Stage102 script, handoff update. **NOT performed:** exact Stage102 script `bash -n` on Mac or native execution, 8-run experiment, metal GPU timer, cross-platform GPU test. Prior Stage98 owner native test and Stage99 analyzer **PASS**, but those do not validate this new shell script.
+
+### Exact safe Mac Studio invocation without rebuild or rebase
+
+Use existing detached Stage98 worktree and compiled benchmark; do not switch/reset any existing branch or rebase state. Fetch the script as an untracked script under `tools/` so its path-relative `cd` resolves correctly:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage98 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage102-repro.sh \
+  > tools/batching-stage102-repro-local.sh || exit 1
+bash -n tools/batching-stage102-repro-local.sh || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage98/aiverse_material_batches \
+  bash tools/batching-stage102-repro-local.sh 8
+```
+
+The console prints the unique `Stage 102 summary:` and `Stage 102 archive:` paths plus whether a slow run reproduced. Ask for the **generated archive** and/or its summary. If the benchmark or Python assertions fail, share its current unique run `mdi-N.log`; never claim a successful trial. Upon receiving a confirmed slow CSV, compare medians of fast vs slow **Mach CPU vs wall CPU**, and backend wall vs other CPU. If Mach grows with wall, likely more CPU work or frequency/driver cost; if wall rises without Mach, investigate thread blocking and Instruments System Trace. Do not infer GPU cause without GPU timestamps. Maintain Draft PR #39.
