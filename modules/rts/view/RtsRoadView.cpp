@@ -2431,15 +2431,47 @@ void RtsRoadView::buildUnpublished(gfx::Device& dev,
     }
 }
 
-void RtsRoadView::rebuild(gfx::Device& dev,
-        const std::function<float(float,float)>& heightAt) {
+struct RtsRoadView::PreparedRebuild {
+    gfx::Device* device=nullptr;
+    std::unique_ptr<RtsRoadView> staged;
+    size_t priorImageCount=0;
+    // The candidate is never submitted by a camera. It owns new Models and
+    // generated images only; the previous kit's textures are borrowed.
+    ~PreparedRebuild() noexcept {
+        if(!device || !staged)return;
+        auto& owner=*staged;
+        for(auto& chunk:owner.chunks_)
+            if(chunk.model)releaseModel(*device,*chunk.model);
+        for(auto& prop:owner.propModels_)
+            if(prop.model)releaseModel(*device,*prop.model);
+        if(owner.ghostModel_)releaseModel(*device,*owner.ghostModel_);
+        for(auto* mesh:{&owner.decalMesh_,&owner.vergeMesh_,
+                        &owner.filmMesh_,&owner.puddleMesh_}) {
+            if(mesh->vb.valid()) {
+                device->destroyBuffer(mesh->vb);
+                *mesh={};
+            }
+        }
+        for(size_t i=priorImageCount;i<owner.images_.size();++i) {
+            auto& img=owner.images_[i];
+            if(img.tex.valid() && !img.borrowedTexture) {
+                device->destroyTexture(img.tex);
+                img.tex={};
+            }
+        }
+    }
+};
+
+std::unique_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt) {
     if(dev_!=&dev)
-        throw std::logic_error("RtsRoadView rebuild: GPU owner mismatch");
-    // Stage all coupled road presentation state, including the road surface
-    // used by wheel placement, decals, material images and rain meshes.
-    // The candidate borrows the existing kit textures and owns only its
-    // newly created images, models and standalone sprite buffers.
-    RtsRoadView staged;
+        throw std::logic_error("RtsRoadView prepare: GPU owner mismatch");
+    if(!needsVisualPreparation())return {};
+    auto candidate=std::make_unique<PreparedRebuild>();
+    candidate->device=&dev;
+    candidate->priorImageCount=images_.size();
+    candidate->staged=std::make_unique<RtsRoadView>();
+    RtsRoadView& staged=*candidate->staged;
     staged.dev_=&dev;
     staged.strictStaging_=true;
     staged.read_=read_;
@@ -2458,47 +2490,25 @@ void RtsRoadView::rebuild(gfx::Device& dev,
     staged.materials_=materials_;
     staged.painted_=painted_;
     staged.warnings_=warnings_;
-    const size_t existingImageCount=images_.size();
-    // Old handles belong only to the live owner; destroying a candidate
-    // must never release these shared textures.
-    for(size_t i=0;i<existingImageCount;++i)
-        staged.images_[i].borrowedTexture=true;
-    auto discard=[&]() noexcept {
-        for(auto& c:staged.chunks_)
-            if(c.model)releaseModel(dev,*c.model);
-        for(auto& p:staged.propModels_)
-            if(p.model)releaseModel(dev,*p.model);
-        if(staged.ghostModel_)releaseModel(dev,*staged.ghostModel_);
-        for(auto* m:{&staged.decalMesh_,&staged.vergeMesh_,
-                      &staged.filmMesh_,&staged.puddleMesh_}) {
-            if(m->vb.valid()){dev.destroyBuffer(m->vb);*m={};}
-        }
-        for(size_t i=existingImageCount;i<staged.images_.size();++i) {
-            auto& img=staged.images_[i];
-            if(img.tex.valid() && !img.borrowedTexture) {
-                dev.destroyTexture(img.tex);
-                img.tex={};
-            }
-        }
-    };
-    try {
-        staged.buildUnpublished(dev,heightAt);
-        staged.buildWeather(dev);
-        if(staged.ghost_.on)staged.buildGhost(dev,heightAt);
-    }catch(...) {
-        // New candidate resources have never been rendered by any camera.
-        // Published resources and its wheel-surface sample tiles are intact.
-        discard();
-        throw;
-    }
-    // Transfer the kit texture ownership flags back to the active owner.
-    // Candidate copies were borrowed solely for failure cleanup.
-    for(size_t i=0;i<existingImageCount;++i)
+    // An exception from any of the CPU copies above still leaves the old
+    // GPU kit in the original owner; the candidate destructor only releases
+    // resources that it subsequently generated.
+    for(auto& img:staged.images_)img.borrowedTexture=true;
+    staged.buildUnpublished(dev,heightAt);
+    staged.buildWeather(dev);
+    if(staged.ghost_.on)staged.buildGhost(dev,heightAt);
+    return candidate;
+}
+
+void RtsRoadView::commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept {
+    if(!candidate)return;
+    RtsRoadView& staged=*candidate->staged;
+    // The candidate copied old kit handles with borrowed flags. Transfer
+    // their original ownership policy back to the live owner at publication.
+    for(size_t i=0;i<candidate->priorImageCount;++i)
         staged.images_[i].borrowedTexture=images_[i].borrowedTexture;
-    // All RHI allocations have succeeded. Keep previous images alive for
-    // retired models, and publish only the already-prepared new handles.
-    release(dev);
-    for(auto& p:propModels_)retirement_.retireModel(dev,p.model);
+    release(*dev_);
+    for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
     propModels_.clear();
     chunks_.swap(staged.chunks_);
     props_.swap(staged.props_);
@@ -2511,7 +2521,7 @@ void RtsRoadView::rebuild(gfx::Device& dev,
     surface_.swap(staged.surface_);
     film_.swap(staged.film_);
     spots_.swap(staged.spots_);
-    std::swap(batchStats_,staged.batchStats_);
+    swap(batchStats_,staged.batchStats_);
     decalMesh_=std::exchange(staged.decalMesh_,SpriteMesh{});
     vergeMesh_=std::exchange(staged.vergeMesh_,SpriteMesh{});
     filmMesh_=std::exchange(staged.filmMesh_,SpriteMesh{});
@@ -2523,6 +2533,14 @@ void RtsRoadView::rebuild(gfx::Device& dev,
     warnings_.swap(staged.warnings_);
     dirty_=false;
     ++surfaceGeneration_;
+}
+
+void RtsRoadView::rebuild(gfx::Device& dev,
+        const std::function<float(float,float)>& heightAt) {
+    // Legacy direct draw path remains supported outside RtsView's global
+    // prepare/commit frame phase.
+    auto prepared=prepareRebuild(dev,heightAt);
+    commitRebuild(std::move(prepared));
 }
 
 void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
