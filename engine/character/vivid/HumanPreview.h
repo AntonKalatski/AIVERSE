@@ -27,4 +27,7 @@ HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
                                         GroomQuality quality=GroomQuality::High);
 HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality,
                                        HumanMaterialQuality materialQuality);
+struct VividPresentationSettings;
+HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,
+                                       const VividPresentationSettings& settings);
 } // namespace aiverse::vivid
