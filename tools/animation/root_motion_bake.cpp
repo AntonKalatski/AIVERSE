@@ -1,5 +1,6 @@
 // aiverse_root_motion_bake MODEL CLIP ROOT --id INTEGER --rate INTEGER [--loop] [--out FILE]
 #include <aiverselib/animation/RootMotionBaker.h>
+#include "engine/render/ModelClips.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>
