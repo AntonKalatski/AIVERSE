@@ -654,3 +654,17 @@ Detailed evidence, exact scope and unverified platforms are in
 No save/asset format change; no production performance-default change.
 Working tree/diff check clean. Next: authorized fast-forward push to main,
 verify remote SHA and record the publication receipt.
+
+
+## Main publication receipt — 2026-11-20
+Authorized ordinary push succeeded: origin/main advanced from
+`291908eb95054b1a331b1b7c54c8147d0330ef2f` to
+`dcf1fb2c4da3f7a210785ff53d7782fa1418d069`. git ls-remote independently
+confirmed that exact main SHA. No force push, no source-template changes,
+no changes to the primary user checkout. This receipt is documentation-only
+and follows the tested code/QA commits in the same branch.
+Local build/CTest/Metal/client/editor results and limits remain as reported
+above; CI was not manually dispatched or represented as passing.
+Next agent: start from current main and this QA report; do not repeat completed
+preparation/rollback implementation. Any further paint/field transaction work,
+Vulkan/GLES/ARM64 acceptance or P2 features are separate explicitly scoped work.
