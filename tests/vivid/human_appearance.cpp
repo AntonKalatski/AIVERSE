@@ -167,6 +167,58 @@ void test() {
                guides[1].position[0].x==0.001f,
                "groom contact correction moved roots or failed separation");
     }
+    // Particle broadphase must reuse owner scratch and preserve the exact
+    // standalone pair-order/contact result on repeated identical input.
+    {
+        std::array<GroomGuide,3> fixture{};
+        for(std::size_t i=0;i<fixture.size();++i) {
+            const float x=0.008f*float(i);
+            fixture[i].root={x,1.f,0.f};
+            fixture[i].rest=fixture[i].position={{x,1.f,0.f},
+                                                   {x,1.12f,0.f}};
+            fixture[i].previous=fixture[i].position;
+        }
+        GroomSelfCollisionConfig cfg;
+        cfg.enabled=true;
+        cfg.separation=0.02f;
+        cfg.response=1.f;
+        auto reference=fixture;
+        GroomSelfCollisionStats referenceStats;
+        expect(GroomSelfCollision::resolve(reference,cfg,referenceStats),
+               "reference particle broadphase failed");
+        GroomParticleWorkspace scratch;
+        auto first=fixture;
+        GroomSelfCollisionStats stats;
+        expect(GroomSelfCollision::resolve(first,cfg,stats,scratch),
+               "persistent particle broadphase failed");
+        expect(stats.contacts==referenceStats.contacts &&
+               stats.pairChecks==referenceStats.pairChecks &&
+               stats.budgetHit==referenceStats.budgetHit,
+               "persistent particle broadphase changed collision counts");
+        for(std::size_t i=0;i<fixture.size();++i) {
+            expect(render::length(first[i].position[1]-
+                                  reference[i].position[1])<1.e-7f &&
+                   render::length(first[i].position[0]-
+                                  fixture[i].position[0])<1.e-7f,
+                   "particle broadphase changed corrections or moved roots");
+        }
+        const auto particleCap=scratch.particles.capacity();
+        const auto entryCap=scratch.entries.capacity();
+        const auto correctionCap=scratch.corrections.capacity();
+        auto second=fixture;
+        GroomSelfCollisionStats again;
+        expect(GroomSelfCollision::resolve(second,cfg,again,scratch) &&
+               scratch.particles.capacity()==particleCap &&
+               scratch.entries.capacity()==entryCap &&
+               scratch.corrections.capacity()==correctionCap &&
+               again.contacts==stats.contacts &&
+               again.pairChecks==stats.pairChecks,
+               "particle broadphase did not reuse capacity deterministically");
+        scratch.reset();
+        expect(scratch.entries.empty() && scratch.particles.empty() &&
+               scratch.entries.capacity()==entryCap,
+               "particle workspace reset released capacity");
+    }
     // The owner-held scratch must retain its capacity while frames reuse
     // the same model. Equal snapshots must yield identical ordered contacts.
     {
