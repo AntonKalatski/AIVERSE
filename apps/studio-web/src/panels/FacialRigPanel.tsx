@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
+import { FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
 import { invoke, nativeConnected } from '../bridge';
 import {
   StudioPanel, StudioSection, StudioButton, StudioIconButton,
@@ -11,6 +11,7 @@ import {
 } from './facialRigSchema';
 import type { FacialRigDocument, FacialMorphBinding, FacialIkUnit } from './facialRigSchema';
 import './FacialRigPanel.css';
+import FacialLivePreview from './FacialLivePreview';
 
 type Tab='morphs'|'ik';
 const clone=(doc:FacialRigDocument):FacialRigDocument=>structuredClone(doc);
@@ -37,6 +38,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   const [info,setInfo]=useState('');
   const [nonce,setNonce]=useState(0);
   const [validated,setValidated]=useState(false);
+  const [liveActive,setLiveActive]=useState(false);
 
   const dirty=!!draft && (!saved || JSON.stringify(draft)!==JSON.stringify(saved));
   const issues=useMemo(()=>draft?validateFacialRigDraft(draft):[],[draft]);
@@ -59,6 +61,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   },[projectPath,connected,nonce]);
 
   const load=async(name:string)=>{
+    if(liveActive){setError('Stop the real GPU preview before changing presets.');return;}
     if(dirty){setError('Unsaved changes: save or discard your draft before changing presets.');return;}
     if(!connected||!projectPath)return;
     setBusy(true);setError('');setInfo('');
@@ -69,6 +72,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     }catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const startNew=(use52:boolean)=>{
+    if(liveActive){setError('Stop the GPU preview before creating a new rig.');return;}
     if(dirty){setError('Save or discard changes before creating a new rig.');return;}
     if(!validRigFileName(newName)){setError('Use 1–64 letters, digits, _ or - for the preset filename.');return;}
     if(names.includes(newName)){setError('A rig with this name already exists.');return;}
@@ -79,6 +83,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   };
   const mutate=(fn:(d:FacialRigDocument)=>FacialRigDocument)=>{
     if(!draft)return;
+    if(liveActive){setError('Stop the GPU preview before changing rig definitions.');return;}
     setDraft(fn(clone(draft)));setError('');setInfo('');setValidated(false);
   };
   const changeMorph=(index:number,change:Partial<FacialMorphBinding>)=>
@@ -102,7 +107,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     mutate(d=>{if(d.rig)d.rig[index]={...d.rig[index],...update};return d;});
 
   const validate=async()=>{
-    if(!draft||busy)return;
+    if(!draft||busy||liveActive)return;
     if(issues.length){setError(issues[0]);return;}
     if(!editable){setError('Native validation needs an open project in the macOS Studio host.');return;}
     setBusy(true);setError('');setInfo('');
@@ -114,7 +119,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     finally{setBusy(false);}
   };
   const save=async()=>{
-    if(!draft||!selected||busy)return;
+    if(!draft||!selected||busy||liveActive)return;
     if(issues.length){setError(issues[0]);return;}
     if(!editable)return;
     setBusy(true);setError('');setInfo('');
@@ -127,6 +132,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     }catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const discard=()=>{
+    if(liveActive){setError('Stop the GPU preview before discarding edits.');return;}
     if(saved)setDraft(clone(saved));
     else {setDraft(null);setSelected('');}
     setError('');setInfo('Draft discarded.');setValidated(false);setActive(0);
@@ -136,17 +142,17 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     subtitle={selected||'Semantic morph and IK authoring'}
     actions={<StudioIconButton aria-label="Refresh facial rigs"
       icon={<RotateCcw size={15}/>} onClick={()=>setNonce(x=>x+1)}
-      disabled={busy||dirty||loading}/>}
+      disabled={busy||dirty||loading||liveActive}/>}
     footer={<div className="au-row facial-footer">
       <StudioBadge tone={dirty?'warning':validated?'success':'neutral'}>
         {dirty?'Unsaved draft':validated?'Schema valid':'Authoring'}
       </StudioBadge>
-      <StudioButton onClick={discard} size="sm" disabled={!draft||!dirty}>Discard</StudioButton>
-      <StudioButton size="sm" onClick={()=>void validate()} disabled={!draft||busy||issues.length>0}>
+      <StudioButton onClick={discard} size="sm" disabled={!draft||!dirty||liveActive}>Discard</StudioButton>
+      <StudioButton size="sm" onClick={()=>void validate()} disabled={!draft||busy||issues.length>0||liveActive}>
         Validate
       </StudioButton>
       <StudioButton size="sm" variant="primary" onClick={()=>void save()}
-        loading={busy} disabled={!editable||!draft||!dirty||issues.length>0}>
+        loading={busy} disabled={!editable||!draft||!dirty||issues.length>0||liveActive}>
         <Save size={14}/> Save
       </StudioButton>
     </div>}>
@@ -158,11 +164,9 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
       {connected&&!projectPath&&<StudioEmptyState title="Open a project"
         icon={<FolderOpen size={22}/>}
         description="Facial presets belong to your AIVERSE project, not a global library."/>}
-      <StudioAlert title="Preview integration">
-        <span className="facial-preview-note"><Eye size={14}/>
-          Live GPU facial preview becomes available when MotionWeave Stage 180 is
-          integrated with the Studio native host. No synthetic face is displayed.</span>
-      </StudioAlert>
+      <FacialLivePreview projectPath={projectPath}
+        rigName={selected} saved={saved} dirty={dirty}
+        onActiveChange={setLiveActive}/>
       {error&&<StudioAlert tone="danger" title="Cannot complete action">{error}</StudioAlert>}
       {info&&<StudioAlert tone="success">{info}</StudioAlert>}
       {issues.length>0&&draft&&<StudioAlert tone="warning" title="Draft needs attention">
@@ -181,7 +185,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
         </div>
         <div className="au-row facial-actions">
           <StudioButton size="sm" onClick={()=>startNew(true)}
-            disabled={busy||dirty||!validRigFileName(newName)}>
+            disabled={busy||dirty||liveActive||!validRigFileName(newName)}>
             <FilePlus2 size={14}/> New 52-channel template
           </StudioButton>
           <StudioButton size="sm" variant="ghost" onClick={()=>startNew(false)}
@@ -190,7 +194,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
         <div className="facial-preset-list">
           {loading?<p>Loading presets…</p>:!names.length?<p>No saved facial presets.</p>:
            names.map(name=><StudioButton key={name} variant={name===selected?'primary':'ghost'}
-             size="sm" disabled={busy||dirty||!editable} onClick={()=>void load(name)}>
+             size="sm" disabled={busy||dirty||liveActive||!editable} onClick={()=>void load(name)}>
              {name}
            </StudioButton>)}
         </div>
@@ -205,7 +209,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
           <div className="au-row facial-actions">
             <StudioInput aria-label="Search morph mappings" placeholder="Search morphs…"
               value={query} onChange={e=>setQuery(e.target.value)}/>
-            <StudioButton size="sm" onClick={addMorph} disabled={busy||draft.morphs.length>=256}>
+            <StudioButton size="sm" onClick={addMorph} disabled={busy||liveActive||draft.morphs.length>=256}>
               <Plus size={14}/> Add
             </StudioButton>
           </div>
@@ -219,7 +223,8 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
                 <StudioInput className="facial-gain-slider" type="range"
                   aria-label={'Gain: '+m.parameter} min={0} max={4} step={0.05}
                   value={m.gain??1} onChange={e=>
-                    changeMorph(m.index,{gain:Number(e.target.value)})}/>
+                    changeMorph(m.index,{gain:Number(e.target.value)})}
+                  disabled={liveActive}/>
               </div>)}
               {!filtered.length&&<p>No matching morph channels.</p>}
             </div>
@@ -227,7 +232,8 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
               {selectedMorph?<>
                 <div className="au-row facial-actions">
                   <strong>Channel {active+1}</strong>
-                  <StudioButton variant="ghost" size="sm" onClick={()=>removeMorph(active)}>
+                  <StudioButton variant="ghost" size="sm" disabled={liveActive}
+                    onClick={()=>removeMorph(active)}>
                     <Trash2 size={14}/> Remove
                   </StudioButton>
                 </div>
@@ -235,6 +241,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
                   <StudioField key={key} label={key==='parameter'?'Parameter':key==='node'?'Model node':'Imported morph name'}
                     htmlFor={'facial-'+key}>
                     <StudioInput id={'facial-'+key} maxLength={128} value={selectedMorph[key]}
+                      disabled={liveActive}
                       onChange={e=>changeMorph(active,{[key]:e.target.value})}/>
                   </StudioField>)}
                 <div className="au-row facial-new">
@@ -243,6 +250,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
                       htmlFor={'facial-'+key}>
                       <StudioInput id={'facial-'+key} type="number" step="0.01"
                         min={key==='bias'?-1:0} max={key==='gain'?4:key==='halfLife'?10:1}
+                        disabled={liveActive}
                         value={selectedMorph[key]??(key==='gain'?1:0)}
                         onChange={e=>{
                           const n=Number(e.target.value);
@@ -253,6 +261,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
                 </div>
                 <StudioField label="Blending" htmlFor="facial-blend">
                   <StudioSelect id="facial-blend" value={selectedMorph.blend??'override'}
+                    disabled={liveActive}
                     onChange={e=>changeMorph(active,{blend:e.target.value as 'override'|'additive'})}>
                     <option value="override">Override</option>
                     <option value="additive">Additive</option>
@@ -265,24 +274,24 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
         </>:<>
           <StudioAlert>IK uses the compiled native AnimationRig when MotionWeave is integrated.
             Node/parameter names must match the imported model and runtime control profile.</StudioAlert>
-          <StudioButton size="sm" onClick={addAim}><Plus size={14}/> Add eye aim</StudioButton>
+          <StudioButton size="sm" disabled={liveActive} onClick={addAim}><Plus size={14}/> Add eye aim</StudioButton>
           {(draft.rig??[]).map((ik,index)=><div key={index} className="au-card facial-ik-card">
             <div className="au-row facial-actions">
               <strong>{ik.op} · {index+1}</strong>
-              <StudioButton size="sm" variant="ghost" onClick={()=>mutate(d=>{
+              <StudioButton size="sm" variant="ghost" disabled={liveActive} onClick={()=>mutate(d=>{
                 d.rig?.splice(index,1);return d;
               })}><Trash2 size={14}/> Remove</StudioButton>
             </div>
             <StudioField label="Bone" htmlFor={'facial-ik-bone-'+index}>
-              <StudioInput id={'facial-ik-bone-'+index} value={ik.bone} maxLength={128}
+              <StudioInput id={'facial-ik-bone-'+index} value={ik.bone} maxLength={128} disabled={liveActive}
                 onChange={e=>changeIk(index,{bone:e.target.value})}/>
             </StudioField>
             <StudioField label="Target parameter" htmlFor={'facial-ik-target-'+index}>
-              <StudioInput id={'facial-ik-target-'+index} value={ik.target??''} maxLength={128}
+              <StudioInput id={'facial-ik-target-'+index} value={ik.target??''} maxLength={128} disabled={liveActive}
                 onChange={e=>changeIk(index,{target:e.target.value})}/>
             </StudioField>
             <StudioField label="Weight" htmlFor={'facial-ik-weight-'+index}>
-              <StudioInput type="number" min={0} max={1} step={0.05}
+              <StudioInput type="number" min={0} max={1} step={0.05} disabled={liveActive}
                 id={'facial-ik-weight-'+index} value={ik.weight??1}
                 onChange={e=>{const n=Number(e.target.value);
                   if(e.target.value!==''&&Number.isFinite(n))changeIk(index,{weight:n});}}/>
