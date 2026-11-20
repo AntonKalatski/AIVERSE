@@ -83,6 +83,10 @@ export async function mockInvoke(method: StudioMethod, params: StudioParams[Stud
       method === 'studio.assetTransferCommit') {
     throw Error('Project asset operations require the native AIVERSE host');
   }
+  if (method === 'studio.assetReferences') {
+    // Demo cannot inspect an actual project's materials/rules.
+    return [];
+  }
   if (method === 'studio.assets') {
     // Empty DEMO catalog: never imply that mock file names exist in the user project.
     return { files: [], folders: [], root: 'content' };
