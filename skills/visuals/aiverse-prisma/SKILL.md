@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (current GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md` (latest real Mac compiler fix), `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` (GPU validation extension), `docs/handoffs/prisma-stage-96-main-acceptance-runner.md` (runner baseline), and `docs/handoffs/prisma-stage-74-metal-high-detail-validation.md` (older verified native Metal baseline).
 
 ## Choose the right owner
 
@@ -1350,7 +1350,7 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit a NEW `docs/handoffs/prisma-stage-<number>-<topic>.md` handoff on the same branch with exact SHA, architecture/API, all changed paths, real executed tests/results, limitations and next step. Current latest is `docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md`; do not overwrite an older handoff. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
 
 ## Stage 96 — integrated main native acceptance
 
@@ -1391,3 +1391,19 @@ and process exit code on native hardware. **This Stage97 code has not
 yet been C++-compiled or run on the user's Mac**; do not mark it green.
 Read `docs/handoffs/prisma-stage-97-multiview-gpu-lifecycle.md` before
 any further edits, plus the Stage96 baseline.
+
+## Stage97 follow-up — MetalDevice scope and frame ownership
+
+Real Apple Mac Studio Stage97 Release build FAILED in
+`engine/gfx/metal/GfxMetal.mm`: `completedFrameSerial()` was missing
+its closing `}`, causing a cascade of abstract-class and missing-member
+errors for `MetalDevice`. The feature-branch fix inserts exactly
+one brace before `gpuSubmissionFence()`, with GPU fence semantics unchanged.
+Additionally, Stage97's `HdrScene::drawPrismaMultiView` uses
+`beginFrame/endFrame` only in the offscreen GL runner where
+`ownsFrame=true`; the real Metal platform runner owns those calls.
+These changes are SOURCE-VERIFIED ONLY, NOT NATIVELY COMPILED OR TESTED
+by the assistant. Refer to
+`docs/handoffs/prisma-stage-97-metal-device-scope-build-fix.md`.
+Do not reinterpret the user's preceding failed build as a PASS; rebuild
+the focused two HDR targets and then run native Metal/GL multiview.
