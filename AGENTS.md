@@ -3975,3 +3975,7 @@ VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
 workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
 renderer ABI without a staged GPU parity test. Every completed stage MUST have
 a separate committed handoff with SHA, executed tests, risks, and next step.
+
+## MotionWeave + VIVID combined Studio checkpoint (2026-11-20)
+
+Integration branch `integration/motionweave-studio-facial-stage184`; durable status: `docs/agent-handoffs/motionweave-vivid-integration-2026-11-20.md`. Code `4a719af8c1c5a97b381c768155e28fd858877903` closes Studio facial preview shared-owner adoption: ModelAssetProvider takePrepared/publishPrepared allows pre-GPU rig validation; one Animator, async CPU import, frame ModelReadLease, renderer cache invalidation and fenced retirement. Keep project texture caches isolated and stale CPU revisions unpublished. Do not regress to direct per-bind upload/release or claim all backend/visual parity from scoped Metal tests. User requires all builds/logs/artifacts on `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/`. See Studio handoff 84 and actual passing commands in the joint log.
