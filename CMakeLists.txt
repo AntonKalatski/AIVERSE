@@ -1094,6 +1094,21 @@ if(AIVERSE_VULKAN)
     endif()
 endif()
 
+# Native GLES3 VIVID GPU-ID + PBO/fence readback acceptance. Does not link a
+# game client or platform window; skips on systems without EGL/GLES3 driver.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux")
+    add_executable(aiverse_vivid_gles_sculpt_id_tests
+        tests/vivid/gles_sculpt_id.cpp
+        engine/gfx/gl/GfxGL.cpp)
+    target_link_libraries(aiverse_vivid_gles_sculpt_id_tests PRIVATE
+        aiverse_models EGL GLESv2)
+    target_compile_features(aiverse_vivid_gles_sculpt_id_tests
+        PRIVATE cxx_std_20)
+    add_test(NAME vivid_gles_sculpt_id
+        COMMAND aiverse_vivid_gles_sculpt_id_tests)
+    set_tests_properties(vivid_gles_sculpt_id PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # The platform files define main(); they are compiled into each executable through an OBJECT
 # library so that the entry point lands in the final binary on every toolchain.
 # Native plugins bridge + store/ads/analytics/privacy services (engine/platform/Plugins.h, engine/services). No window
