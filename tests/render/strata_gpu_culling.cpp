@@ -426,6 +426,18 @@ int main() {
     assert(computeTelemetry.peakSubmissionsPerFrameSlot >= 2);
     assert(computeTelemetry.peakRetainedBytes >= computeTelemetry.retainedBytes);
     assert(computeTelemetry.peakHistories >= computeTelemetry.histories);
+    assert(computeTelemetry.computeBeginAttempts >=
+           computeTelemetry.computeEncodersOpened);
+    assert(computeTelemetry.computeBeginAttempts ==
+           computeTelemetry.computeEncodersOpened+
+           computeTelemetry.computeBeginFailures);
+    assert(computeTelemetry.computeDispatchAttempts ==
+           computeTelemetry.computeDispatchAccepted+
+           computeTelemetry.computeDispatchFailures);
+    assert(computeTelemetry.computeDispatchAttempts <=
+           computeTelemetry.computeEncodersOpened);
+    assert(computeTelemetry.selectionDispatches >=
+           computeTelemetry.successfulDispatches);
     compute.shutdown(dev);
     assert(dev.buffers.empty());
 
@@ -496,6 +508,16 @@ int main() {
     const auto vkTelemetry=gpuVk.temporalStats();
     assert(vkTelemetry.successfulDispatches==3); // rejected 4th is excluded
     assert(vkTelemetry.peakSubmissionsPerFrameSlot==3);
+    assert(vkTelemetry.computeBeginAttempts==vk.computeCalls);
+    assert(vkTelemetry.computeEncodersOpened==vk.computeCalls);
+    assert(vkTelemetry.computeDispatchAttempts==
+           vkTelemetry.computeDispatchAccepted);
+    assert(vkTelemetry.computeDispatchAttempts==vk.computeCalls);
+    assert(vkTelemetry.indirectClearDispatches==3);
+    assert(vkTelemetry.selectionDispatches==3);
+    assert(vkTelemetry.safetyDispatches==3);
+    assert(vkTelemetry.computeGroupsRequested==
+           uint64_t(vk.dispatchCount));
     gpuVk.shutdown(vk);
     assert(vk.buffers.empty());
     return 0;
