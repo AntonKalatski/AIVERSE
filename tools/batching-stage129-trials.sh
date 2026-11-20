@@ -92,33 +92,7 @@ for entry in off:direct:1 off:mdi:1 on:direct:1 on:mdi:1 on:mdi:2 on:direct:2 of
       "$BIN" unused.obj "$name" > "$name.log" 2>&1
   grep -Eq '^material palette CPU checks=[0-9]+ result=passed$' "$name.log"
   grep -Fqx "stress diagnostic mesh subdivisions=$subdivisions triangles_per_primitive=$((subdivisions * subdivisions)) vertices_per_primitive=$((3 * subdivisions * subdivisions))" "$name.log"
-  grep -Eq '^stress diagnostic geometry pooled=1 vertex_bytes=[0-9]+ index_bytes=[0-9]+
-  grep -Fqx 'stress diagnostic model pass=full mask=3' "$name.log"
-  grep -qx 'changed_channels=0' "$name.log"
-  grep -Eq '^GPU command-buffer timeline samples=66 path=' "$name.log"
-  grep -Eq '^stress frame timeline samples=106 path=' "$name.log"
-  test -s "$name-gpu-frames.csv"
-  test -s "$name-frames.csv"
-  if [[ "$mode" == mdi ]]; then
-    grep -Eq '^actual MDI pixel parity frame=[0-9]+ changed_channels=0$' "$name.log"
-    grep -Eq '^stress benchmark policy=mdi measured_mdi_frames=81 measured_direct_frames=0 measured_mdi_submissions=1458$' "$name.log"
-  else
-    grep -Eq '^stress benchmark policy=direct measured_mdi_frames=0 measured_direct_frames=81 measured_mdi_submissions=0$' "$name.log"
-  fi
-  echo "PASS: mesh=$subdivisions $quality $mode #$rep"
-  CURRENT_LOG=""
-  done
-  caseIndex=$((caseIndex + 1))
-done
-for subdivisions in 1 4; do
-  python3 tools/batching-stage127-analyze.py "$OUT/mesh$subdivisions"
-done
-python3 tools/batching-stage129-analyze.py "$OUT"
-echo "result=PASS" >> "$OUT/manifest.txt"
-echo "utc_end=$(date -u +%Y%m%dT%H%M%SZ)" >> "$OUT/manifest.txt"
-tar -czf "$OUT.tar.gz" -C "$BASE" "$(basename "$OUT")"
-echo "Stage129 archive: $OUT.tar.gz"
- "$name.log"
+  grep -Eq '^stress diagnostic geometry pooled=1 vertex_bytes=[0-9]+ index_bytes=[0-9]+$' "$name.log"
   grep -Fqx 'stress diagnostic CPU MDI group cap=0' "$name.log"
   grep -Fqx 'stress diagnostic model pass=full mask=3' "$name.log"
   grep -qx 'changed_channels=0' "$name.log"
