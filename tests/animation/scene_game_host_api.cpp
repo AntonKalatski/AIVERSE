@@ -61,6 +61,9 @@ int main() {
     const auto ids=
         view::MotionWeaveSceneCoordinatorAdapter::
             canonicalActiveSceneIds(&states);
-    assert((ids==std::vector<uint64_t>{12,14}));
+    if(ids!=std::vector<uint64_t>{12,14}) {
+        std::fputs("MotionWeave SceneState ACTIVE filter mismatch\n",stderr);
+        return 1;
+    }
     std::puts("MotionWeave typed scene host contract OK");
 }
