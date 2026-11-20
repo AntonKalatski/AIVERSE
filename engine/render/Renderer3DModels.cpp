@@ -870,9 +870,10 @@ Renderer3D::ModelSubmissionProvenance Renderer3D::modelSubmissionProvenance(
         const Model& source) const {
     ModelSubmissionProvenance result;
     result.frameSerial=dev_?dev_->frameSerial():0;
-    if((&source!=modelSubmissionTarget_ &&
-        &source!=modelSubmissionSecondary_) || !result.frameSerial)
-        return result;
+    bool tracked=false;
+    for(std::size_t i=0;i<trackedModelCount_;++i)
+        tracked |= trackedModels_[i]==&source;
+    if(!tracked || !result.frameSerial)return result;
     result.mainPassEncoded=modelSubmissionMainEncoded_;
     result.truncated=modelSubmissionTruncated_;
     for(const auto& command:modelSubmitted_)
