@@ -59,6 +59,24 @@ int main() {
     assert(triangles(grassLods->meshes[0])>triangles(grassLods->meshes[1]));
     assert(triangles(grassLods->meshes[1])>triangles(grassLods->meshes[2]));
     assert(grassLods->batching.independentShadowLod&&!grassLods->materials[0].castShadow);
+    // Every coarse root is a surviving high-detail root, including capped populations.
+    for(auto population:{2048u,8192u}) {
+        patch.maximumBlades=population;
+        const auto chain=makeGrassPatchLodModel(patch,[](auto,auto){return 123;},quality);
+        const auto& high=chain->meshes[0].primitives[0];
+        for(size_t tier=1;tier<chain->meshes.size();++tier) {
+            const auto& coarse=chain->meshes[tier].primitives[0];
+            for(uint32_t v=coarse.firstVertex;v<coarse.firstVertex+coarse.vertexCount;v+=3) {
+                const auto root=(chain->vertices[v].pos+chain->vertices[v+1].pos)*.5f;
+                bool found=false;
+                for(uint32_t h=high.firstVertex;h<high.firstVertex+high.vertexCount;h+=7) {
+                    const auto original=(chain->vertices[h].pos+chain->vertices[h+1].pos)*.5f;
+                    if(std::abs(root.x-original.x)<.0001f&&std::abs(root.z-original.z)<.0001f){found=true;break;}
+                }
+                assert(found);
+            }
+        }
+    }
     quality.bladeSegments=5;bool badGrass=false;
     try{(void)makeGrassPatchModel(patch,[](auto,auto){return 0;},quality);}catch(const std::invalid_argument&){badGrass=true;}
     assert(badGrass);

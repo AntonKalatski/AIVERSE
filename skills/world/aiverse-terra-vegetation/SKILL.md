@@ -15,7 +15,7 @@ Reuse `engine/world/TerraWeaveArbor.h`, `engine/world/TerraWeaveArborMesh.h` and
 seeds/profile dimensions; do not generate a unique mesh for every instance or frame.
 
 For the supplied 2x2 conifer spray atlas, opt into ArborMeshSettings naturalConifer
-and choose sprayPairs (2..12). It places sprays along curved structural branches,
+and choose sprayPairs (1..12). It places sprays along curved structural branches,
 with stem ends toward their owner. Use doubleSidedLeaves=false with a double-sided
 alpha-masked material to avoid duplicated back-face triangles. Supply shared bark
 and foliage PBR maps; the adapter's opaque fallback is not finished foliage.
@@ -34,7 +34,11 @@ Choose patch area AND maxBladesPerPatch: a cap of 1024 over a large field is spa
 regardless of the logical population. bladeSegments (1..4), bladeHeightCm (4..150)
 and bladeHalfWidthCm (1..12) control bounded bent ribbons. Density must be evaluated
 per square metre and visually at the gameplay camera. Include bare paths and varied
-patch coverage rather than a uniform carpet. No per-blade ECS entities or draw calls.
+patch coverage rather than a uniform carpet. Use makeGrassPatchLodModel for resident/exported chains: it preserves tuft centres,
+reduces blades within each tuft and compensates width, rather than re-scattering
+all roots at each level. Exporter patch fields can tune bladeHeightCm,
+bladeHalfWidthCm, bladesPerTuft, tuftRadiusCm and heightVariationPermille.
+No per-blade ECS entities or draw calls.
 
 Use the optional GrassPlacementFilter in CPU generation for water/road exclusions;
 the live GrassPatchRenderer still requires the host to supply suitable patch state.

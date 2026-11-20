@@ -42,7 +42,7 @@ int main(int argc,char** argv){try{
         uint64_t key=1;
         for(const auto& entry:doc["patches"].items()){
             GrassPatch p;p.key=key++;p.seed=seed;p.bounds={entry.getInt("minX"),entry.getInt("minZ"),entry.getInt("maxX"),entry.getInt("maxZ")};p.maximumBlades=uint32_t(std::clamp<int64_t>(entry.getInt("blades",2048),1,8192));
-            GrassRenderQuality q;q.maxBladesPerPatch=p.maximumBlades;q.crossedBlades=false;q.bladeSegments=3;q.bladeHeightCm=38;q.bladeHalfWidthCm=2;q.bladesPerTuft=16;q.tuftRadiusCm=15;
+            GrassRenderQuality q;q.maxBladesPerPatch=p.maximumBlades;q.crossedBlades=false;q.bladeSegments=3;q.bladeHeightCm=uint32_t(entry.getInt("bladeHeightCm",65));q.bladeHalfWidthCm=uint32_t(entry.getInt("bladeHalfWidthCm",3));q.bladesPerTuft=uint32_t(entry.getInt("bladesPerTuft",16));q.tuftRadiusCm=uint32_t(entry.getInt("tuftRadiusCm",24));q.heightVariationPermille=uint32_t(entry.getInt("heightVariationPermille",450));validateGrassRenderQuality(q);
             const auto ground=[&](int64_t x,int64_t z){return sample("heightCm",x,z);};
             const auto allows=[&](int64_t x,int64_t z){if(doc.has("waterHeightCm")&&sample("heightCm",x,z)-sample("waterHeightCm",x,z)<270)return false;return int64_t(detail::mix64(uint64_t(x)^detail::mix64(uint64_t(z)))%1000)<sample("coverPermille",x,z);};
             auto model=makeGrassPatchLodModel(p,ground,q,allows);

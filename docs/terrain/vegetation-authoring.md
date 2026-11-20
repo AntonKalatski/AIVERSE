@@ -81,3 +81,20 @@ Native editor diagnostics can be enabled with AIVERSE_LOD_DIAGNOSTICS=1;
 geometry_stats returns cameraLodNodes, lodChains, lodBlocked and shadowLimitedLod.
 Renderbench reports the same main-view counters. Counts describe source mesh
 nodes, not draw calls, triangles, GPU time or measured performance improvement.
+
+
+## Dense clump presentation and stable sampling
+
+The exporter now defaults to65cm blades,45% height variation and24cm tuft radius;
+per-patch bladeHeightCm, bladeHalfWidthCm, bladesPerTuft, tuftRadiusCm and
+heightVariationPermille can override these within GrassRenderQuality bounds.
+Coverage and water exclusion remain supplied by the ground snapshot. Increasing
+height does not populate empty coverage or replace a missing host grass patch.
+
+Native grass LOD retains the same seeded roots and tuft centres, including when
+the presentation budget is below the logical population. Medium/far retain fewer
+blades inside every tuft, widen those blades by sqrt(sample stride), and simplify
+ribbon segments. This conserves approximate projected cover, not exact pixels.
+sourceSamples/sampleStride are presentation-only sampling controls used by the
+shared LOD builder; legacy full-detail placement with bladesPerTuft1 is preserved.
+Visual transitions and grass shadows/wind/species need separate acceptance.

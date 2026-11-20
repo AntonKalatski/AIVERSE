@@ -33,6 +33,9 @@ struct GrassRenderQuality {
     uint32_t bladeHalfWidthCm=3;    // 1..12
     uint32_t bladesPerTuft=1;      // 1..32, stable shared centre
     uint32_t tuftRadiusCm=18;      // 1..100
+    uint32_t sourceSamples=0;      // 0=own cap; LOD source sampling budget, <=8192
+    uint32_t sampleStride=1;      // 1..8; LOD keeps seeded tuft centres
+    uint32_t heightVariationPermille=250; // 0..600, symmetric size variation
 };
 
 inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
@@ -42,7 +45,8 @@ inline void validateGrassRenderQuality(const GrassRenderQuality& q) {
        q.bladeSegments<1 || q.bladeSegments>4 ||
        q.bladeHeightCm<4 || q.bladeHeightCm>150 ||
        q.bladeHalfWidthCm<1 || q.bladeHalfWidthCm>12 ||
-       q.bladesPerTuft<1 || q.bladesPerTuft>32 || q.tuftRadiusCm<1 || q.tuftRadiusCm>100)
+       q.bladesPerTuft<1 || q.bladesPerTuft>32 || q.tuftRadiusCm<1 || q.tuftRadiusCm>100 ||
+       q.sourceSamples>8192 || q.sampleStride<1 || q.sampleStride>8 || q.heightVariationPermille>600)
         throw std::invalid_argument("TerraWeave grass RHI quality");
 }
 
@@ -109,8 +113,13 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     for(uint32_t slot=0;slot<candidates;++slot) {
         // Stable stratification of a large logical grass population:
         // changing coverage does not move the survivors.
-        const uint32_t logicalIndex=uint32_t(
-            uint64_t(slot)*patch.maximumBlades/candidates);
+        const uint32_t perTuft=(quality.bladesPerTuft+quality.sampleStride-1)/quality.sampleStride;
+        const uint32_t sampleIndex=quality.bladesPerTuft==1
+            ? slot*quality.sampleStride
+            : (slot/perTuft)*quality.bladesPerTuft+(slot%perTuft)*quality.sampleStride;
+        const uint32_t sourceSamples=quality.sourceSamples?quality.sourceSamples:candidates;
+        if(sampleIndex>=sourceSamples)continue;
+        const uint32_t logicalIndex=uint32_t(uint64_t(sampleIndex)*patch.maximumBlades/sourceSamples);
         const uint64_t h=detail::mix64(
             patch.seed^patch.key^
             (uint64_t(logicalIndex)*0x9e3779b97f4a7c15ULL));
@@ -120,7 +129,7 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
         int64_t z=patch.bounds.minZ+
             int64_t((h>>35)%uint64_t(spanZ));
         if(quality.bladesPerTuft>1){
-            const auto centre=detail::mix64(patch.seed^patch.key^(uint64_t(logicalIndex/quality.bladesPerTuft)*0x9e3779b97f4a7c15ULL));
+            const auto centre=detail::mix64(patch.seed^patch.key^(uint64_t(sampleIndex/quality.bladesPerTuft)*0x9e3779b97f4a7c15ULL));
             const int64_t radius=std::min<int64_t>(quality.tuftRadiusCm,std::min(spanX,spanZ)/4);
             x=patch.bounds.minX+radius+int64_t((centre>>13)%uint64_t(std::max<int64_t>(1,spanX-2*radius)));
             z=patch.bounds.minZ+radius+int64_t((centre>>35)%uint64_t(std::max<int64_t>(1,spanZ-2*radius)));
@@ -133,7 +142,7 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
             throw std::out_of_range("TerraWeave grass soil height");
         const int32_t visualSize=std::max<int32_t>(
             1,int32_t(appearance.sizePermille)*
-            (750+int32_t((h>>20)%501u))/1000);
+            (1000-int32_t(quality.heightVariationPermille)+int32_t((h>>20)%(2*quality.heightVariationPermille+1)))/1000);
         const float bladeHeight=float(baseHeightCm)*visualSize*0.00001f;
         const float bladeWidth=float(baseWidthCm)*
             (850+float((h>>46)%301u))/100000.f;
@@ -195,7 +204,12 @@ inline std::unique_ptr<render::Model> makeGrassPatchLodModel(
     if(!model)return {};
     const auto maximum=std::min(quality.maxBladesPerPatch,patch.maximumBlades);
     for(uint32_t divisor:{3u,8u}) {
-        auto tier=quality;tier.maxBladesPerPatch=std::max(1u,maximum/divisor);
+        auto tier=quality;
+        tier.sampleStride=divisor;tier.sourceSamples=maximum;
+        const auto tuftCount=(maximum+quality.bladesPerTuft-1)/quality.bladesPerTuft;
+        tier.maxBladesPerPatch=std::min(maximum,tuftCount*((quality.bladesPerTuft+divisor-1)/divisor));
+        tier.bladeSegments=std::max(1u,quality.bladeSegments/(divisor==3?2u:3u));
+        tier.bladeHalfWidthCm=std::min(12u,uint32_t(std::ceil(quality.bladeHalfWidthCm*std::sqrt(float(divisor)))));
         auto lod=makeGrassPatchModel(patch,ground,tier,allows);
         if(!lod)continue;
         const auto vo=uint32_t(model->vertices.size()),io=uint32_t(model->indices.size());
@@ -224,6 +238,7 @@ public:
         if(quality.maxBladesPerPatch!=quality_.maxBladesPerPatch ||
            quality.crossedBlades!=quality_.crossedBlades ||
            quality.bladesPerTuft!=quality_.bladesPerTuft || quality.tuftRadiusCm!=quality_.tuftRadiusCm ||
+           quality.sourceSamples!=quality_.sourceSamples || quality.sampleStride!=quality_.sampleStride || quality.heightVariationPermille!=quality_.heightVariationPermille ||
            quality.bladeSegments!=quality_.bladeSegments ||
            quality.bladeHeightCm!=quality_.bladeHeightCm ||
            quality.bladeHalfWidthCm!=quality_.bladeHalfWidthCm)
