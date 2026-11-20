@@ -320,6 +320,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             stats_.strataNodes = st.clusterNodes;
             stats_.strataMeshlets = st.meshlets;
             stats_.strataIndexBytes = st.indexBytes;
+            stats_.strataSeamCertifiedPrimitives=st.seamCertifiedPrimitives;
+            stats_.strataSeamRejectedParents=st.seamRejectedParents;
             for (const auto& warning : strataStaging_->warnings())
                 warnings_.push_back(warning);
         }
@@ -379,6 +381,15 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 if (!model) continue;
                 const auto* asset = strataStaging_->find(key);
                 if (!asset) { ++stats_.strataPortableDeclined; continue; }
+                if(!std::all_of(asset->primitives.begin(),
+                       asset->primitives.end(),
+                       [](const strata::ModelPrimitiveAsset& entry){
+                           return entry.geometry.seamCertified;
+                       })) {
+                    ++stats_.strataPortableDeclined;
+                    ++stats_.strataSeamUnsafeDeclined;
+                    continue; // no unverified parent LOD enters Renderer3D
+                }
                 if(!globalBudgetConfigured){
                     ++stats_.strataPortableDeclined;
                     ++stats_.strataGlobalBudgetDeclined;
@@ -519,8 +530,17 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             strataGpuMetadata_ = std::make_shared<strata::GpuMetadataScene>();
             for (const auto& [key, model] : models_)
                 if (model)
-                    if (const auto* asset = strataStaging_->find(key))
-                        strataGpuMetadata_->stage(dev, key, *model, *asset);
+                    if (const auto* asset = strataStaging_->find(key)) {
+                        const bool seamSafe=std::all_of(
+                            asset->primitives.begin(),asset->primitives.end(),
+                            [](const strata::ModelPrimitiveAsset& entry){
+                                return entry.geometry.seamCertified;
+                            });
+                        if(seamSafe)
+                            strataGpuMetadata_->stage(dev,key,*model,*asset);
+                        else
+                            ++stats_.strataSeamUnsafeDeclined;
+                    }
             const auto& gpuStats = strataGpuMetadata_->stats();
             stats_.strataGpuMetadataSources = gpuStats.sources;
             stats_.strataGpuMetadataDeclined = gpuStats.declined;
@@ -796,6 +816,11 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
         if(model.get()!=instance.model)continue;
         const auto* staged=strataStaging_->find(key);
         if(!staged || staged->primitives.empty() ||
+           !std::all_of(staged->primitives.begin(),
+                        staged->primitives.end(),
+                        [](const strata::ModelPrimitiveAsset& primitive){
+                            return primitive.geometry.seamCertified;
+                        }) ||
            staged->primitives.size()>16 ||
            instance.model->bindWorld.size()!=1 ||
            instance.model->nodes.size()!=1)break;
