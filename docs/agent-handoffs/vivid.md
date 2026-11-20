@@ -2432,3 +2432,33 @@ behind +Z-facing character and fixed in world; rig yaw rotates sources only.
 No scene export or persistent project light-preset file. Next: unlocked Studio
 controls QA, orbit/rotation acceptance and existing close-up eye material fix.
 Build/launch remains KINGSTON/Open-VIVID-Look-Lab.command. No source assets staged.
+
+
+## 2026-11-20 — Visual QA: hair and eyelashes FAIL
+
+Report commit `23df5d50b490d6926d5a0e0228827c12d17c475c` on
+`integration/motionweave-studio-facial-stage184`; no product/source asset changes.
+Read docs/qa/vivid-hair-lashes-2026-11-20.md before further appearance work.
+Actual existing Creator binary hash/version and asset hash captured in
+KINGSTON/full-character/hair-lashes-qa-20261120/environment.json.
+Three new actual Metal portraits: catalog, neutral, rim; all renderer logs
+pipelineFailures=0/pass=1, but eyelashes visually FAIL3/3 (dark jagged bands),
+hair silhouette FAIL especially against light background (hard card fragments).
+Critical new evidence: source Ada/baseColor_8.png AND assembled GLB eyelash
+baseColor texture each contain1048576 alpha255 pixels, zero transparent/partial.
+BLEND mode survives, but meaningful lash coverage is ALREADY LOST IN SOURCE
+companion texture. Do not claim alpha correctness from material mode alone.
+Hair alpha DOES survive:676354 alpha0,306724 partial,65498 alpha255 (1024²)
+for both BLEND fringe and MASK core. Hair defects therefore need separate
+coverage/filter/sorting investigation; not established as alpha loss.
+Eye shell/edge grey artifacts also seen; origin not isolated.
+
+Executed:3 CLI captures + sips PNG conversion + read-only GLB/PNG alpha analysis
+using standard-library PNG unfilter/zlib. No build/tests/CI/push. Pillow missing
+in default Python3.8 and3.12; no dependencies installed. Report2 PASS technical
+checks,3 FAIL,3 NOT RUN. Animation/blink/orbit/Studio UI NOT RUN (user authorized
+without locked UI). No retouching, UI simulation or fabricated screenshots.
+Evidence/report under /Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/
+full-character/hair-lashes-qa-20261120/. Next: investigate companion eyelash
+opacity extraction first; restore texture coverage, then isolate eyeshell/edge
+and hair core/fringe quality with matched A/B and actual blink/orbit validation.
