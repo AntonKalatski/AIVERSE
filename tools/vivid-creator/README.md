@@ -1241,3 +1241,52 @@ Metal (GUI support) during the deferred consolidated acceptance.
 Full renderer colour-depth numerical parity, final GPU-deformed
 unrelated occluders, Blend/cornea/ShaderGraph, indirect/conditional
 LOD and Vulkan/GLES actor-stream support remain separate work.
+
+
+### Stage 7AY — native Metal depth sample and independently GPU-sourced Mask blocker
+
+`gfx::Device::readTextureDepthPixelAsync(depth,x,y,callback)` is an
+optional RHI diagnostic. A valid Depth handle reads an offscreen
+Depth32Float attachment; an invalid handle explicitly reads the current
+Metal screen depth buffer. Coordinates are top-left and the callback
+is asynchronous on the device owner thread. `valid=false` means no
+usable GPU sample. Vulkan/GLES/GL33 backends still return unsupported;
+do not fabricate a CPU-projected depth fallback.
+
+`SculptGpuIdPass::record` adds two trailing optional arguments:
+`captureDepth=false`, and
+`const SculptGpuVertexSource* gpuMaskOccluder=nullptr`. Existing
+Creator callers remain source-compatible. With captureDepth, the
+completed ID callback has `depthValid` and `depth01`, only after
+both native RGBA8 and native Depth32Float readbacks finish. With an
+independent GPU-sourced Mask blocker, the pass borrows a *second*
+current-frame 60-byte actor vertex stream, runs the Mask compute
+expansion and samples the object's original texture/UV/cutoff. It
+forces every blocker triangle's ID to zero but uses the object's
+true GPU positions to write hardware depth for opaque texels.
+Malformed GPU input or a source handle identical to the selected
+actor fails closed. The **host** must still verify the other
+object's current Renderer3D submit/LOD/material provenance before
+passing it to this API; this stage does not enable arbitrary
+automatic GPU occluder harvesting in Creator.
+
+The one-actor Metal renderer preview now verifies the native
+Renderer3D screen depth against independent VIVID ID depth at a
+matching GPU frame and pixel, with bounded numeric difference.
+For exact-frame colour it requests `copyColor` from the readable
+screen drawable and an asynchronous RGBA8 pixel readback, instead
+of relying on delayed full-frame screenshot callbacks. The normal
+PPM screenshots remain valid for visual A/B. The ID pass and the
+colour snapshot retain all in-flight GPU resources until callback
+completion or a genuine native idle barrier.
+
+The Metal `vivid_metal_sculpt_id` CTest fixture additionally checks
+actual GPU depth z values for near selected geometry, front opaque
+and sampled-alpha blockers, plus a distinct occluder GPU vertex
+buffer moved out of view while its CPU source is unchanged.
+All cases are native test **definitions only**: CMake, CTest, Metal
+shader compilation, device-side pixels, and the full validation
+runner have **NOT RUN** in this development session. Renderer3D
+colour-pass identity for the *other* GPU-deformed Mask actor remains
+a next-stage integration task; GPU shader provenance and final
+Blend/cornea/ShaderGraph/ICB/LOD parity remain unproven.
