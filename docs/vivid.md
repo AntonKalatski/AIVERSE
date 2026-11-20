@@ -1042,3 +1042,51 @@ selection/culling, arbitrary external scene geometry outside Creator,
 and cross-platform Vulkan/GLES async pixel readback. This stage does
 not merge with Texture RHI or claim complete GPU-visible parity.
 Handoff: `docs/agent-handoffs/vivid.md` Stage 7AP.
+
+
+## Stage 7AQ — sampled GPU alpha masks and LOD safety (2026-11-20)
+
+The experimental Metal ID/depth pass now supports per-fragment
+alpha-cutout geometry for representable ordinary `AlphaMode::Mask`
+materials. `SculptGpuAlphaMask.h` supplies paired GLSL ES300/MSL
+fragment shaders which sample the **same GPU base-color texture**
+and respect the existing material's UV scale, signed rotation and
+offset, vertex-color alpha, `baseColor.w` and `alphaCutoff`.
+The pass first renders opaque and zero-ID conservative occluders,
+then renders supported mask batches against the **same hardware
+depth target** with a fragment-level alpha discard. This permits a
+source triangle behind a hole in a representable mask to survive,
+while solid texels in nearer masks block it correctly.
+
+ShaderGraph custom alpha, team blending, missing GPU base textures,
+vertex-occlusion encoded alpha, partially blended cornea and other
+unknown shader semantics still emit conservative whole-polygon
+zero-ID blockers. The real model's exact ShaderGraph, all LOD and
+custom GPU vertex streams cannot be inferred by a VIVID-specific
+mask shader. `SculptGpuPickEligibility.h` returns a documented
+rejection for authored LOD chains, missing or multi-owned selected
+mesh and invalid node references, and the Creator only attempts GPU
+confirmation for eligible scenes. Regardless of eligibility the
+existing CPU BVH picking workflow remains active.
+
+Native GLES3/GL33 now provide an opt-in `readTexturePixelAsync`
+implementation through one-pixel PBO, GPU fence and polling on
+subsequent device-owner frames, preserving GL FBO/pixel-pack state
+and mapping top-left coordinates to native bottom-left GL pixels.
+WebGL2 and the Windows GL loader return explicit unsupported;
+Vulkan still has no offscreen pixel readback. Importantly, the
+VIVID ID pass itself is still gated to Metal because the existing
+native GLES Device does not expose the completed-slot-safe
+`frameSerial` required by the Stage 7AN actor/pose response token
+contract. No fake serial or synchronous fallback was introduced.
+
+New source fixtures in `tests/vivid/human_creator.cpp` validate
+mask material eligibility, geometry batching, shader/pipeline
+attributes, UV and alpha factors, conservative fallback for
+unknown inputs and authored-LOD rejection. The native
+`vivid_metal_sculpt_id` regression fixture adds transparent and
+opaque single-texel GPU mask samples to the original depth and
+scene-occlusion checks. **These checks have not been compiled or
+run in this stage.** No shader result, timing, GPU parity, Vulkan
+or GLES native execution is claimed. See the detailed Stage 7AQ
+handoff for changed files, commits and remaining requirements.
