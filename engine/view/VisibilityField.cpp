@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <stdexcept>
 
 namespace aiverse::view {
 
@@ -177,24 +178,53 @@ VisibilityLook parseVisibilityLook(const Json& baseConfig, const Json& overrides
 }
 
 bool VisibilityField::init(gfx::Device& dev) {
+    if (dev_ && dev_ != &dev)
+        throw std::logic_error("VisibilityField init: GPU device mismatch");
+    if (ready()) return true;
+
+    // These resources have never been published to a renderer. A failed
+    // allocation can be destroyed immediately without waiting for old draws:
+    // no in-flight frame can reference either temporary handle.
+    gfx::ShaderHandle shader{};
+    gfx::PipelineHandle pipe{};
+    try {
+        gfx::ShaderDesc sd;
+        sd.glslVertex = kFogVS; sd.glslFragment = kFogFS; sd.msl = kFogMSL;
+        sd.textureSlots = 1; sd.uniformSlots = 1; sd.label = "fog of war";
+        shader = dev.createShader(sd);
+        if (!shader.valid()) return false;
+
+        gfx::PipelineDesc pd;
+        pd.shader = shader;
+        pd.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+        pd.attrCount = 1; pd.stride = 12;
+        pd.indexType = gfx::IndexType::UInt32;
+        pd.cull = gfx::CullMode::None;
+        pd.blend = gfx::BlendMode::Alpha;
+        pd.depthTest = true;
+        pd.depthWrite = false;
+        pd.label = "fog of war";
+        pipe = dev.createPipeline(pd);
+        if (!pipe.valid()) {
+            dev.destroyShader(shader);
+            return false;
+        }
+    } catch (...) {
+        if (pipe.valid()) dev.destroyPipeline(pipe);
+        if (shader.valid()) dev.destroyShader(shader);
+        throw;
+    }
+    shader_ = shader;
+    pipe_ = pipe;
     dev_ = &dev;
-    gfx::ShaderDesc sd;
-    sd.glslVertex = kFogVS; sd.glslFragment = kFogFS; sd.msl = kFogMSL;
-    sd.textureSlots = 1; sd.uniformSlots = 1; sd.label = "fog of war";
-    shader_ = dev.createShader(sd);
-    if (!shader_.valid()) return false;
-    gfx::PipelineDesc pd;
-    pd.shader = shader_;
-    pd.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    pd.attrCount = 1; pd.stride = 12;
-    pd.indexType = gfx::IndexType::UInt32;
-    pd.cull = gfx::CullMode::None;
-    pd.blend = gfx::BlendMode::Alpha;
-    pd.depthTest = true;
-    pd.depthWrite = false;
-    pd.label = "fog of war";
-    pipe_ = dev.createPipeline(pd);
-    return pipe_.valid();
+    return true;
+}
+
+bool VisibilityField::shutdownAfterGpuIdle() {
+    if (!dev_) return true;
+    if (!dev_->waitForResourceIdle()) return false;
+    shutdown();
+    return true;
 }
 
 void VisibilityField::shutdown() {
