@@ -747,16 +747,36 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         ++temporalStats_.refused;
         return false; // caller uses unchanged CPU/Legacy draw route
     }
+    // Stage18.3 records RHI submission overhead without GPU readbacks,
+    // CPU clocks or changes to queue ordering. Count partial attempts too.
+    const auto trackedBegin=[&](gfx::ComputeHandle pipeline) {
+        ++temporalStats_.computeBeginAttempts;
+        if(!dev.beginCompute(pipeline)){
+            ++temporalStats_.computeBeginFailures;
+            return false;
+        }
+        ++temporalStats_.computeEncodersOpened;
+        return true;
+    };
+    const auto trackedDispatch=[&](uint32_t groups,uint64_t& stageCount) {
+        ++temporalStats_.computeDispatchAttempts;
+        temporalStats_.computeGroupsRequested+=groups;
+        ++stageCount;
+        const bool ok=dev.dispatchChecked(groups);
+        if(ok)++temporalStats_.computeDispatchAccepted;
+        else ++temporalStats_.computeDispatchFailures;
+        return ok;
+    };
     const GpuSelectionCounters zero{};
     dev.updateBuffer(slot.instances, instances.data(), inputBytes);
     // GPU-only temporal mask reset; the previous frame's buffer is
     // strictly read-only and kept alive by the bounded triple ring.
     if(temporal){
-        if(!dev.beginCompute(temporalResetPipeline_))return false;
+        if(!trackedBegin(temporalResetPipeline_))return false;
         dev.setComputeBuffer(0,nextTemporal);
         const uint32_t count=config.temporalNodeCount;
         dev.setComputeUniforms(&count,sizeof(count));
-        const bool cleared=dev.dispatchChecked(count);
+        const bool cleared=trackedDispatch(count,temporalStats_.temporalResetDispatches);
         dev.endCompute();
         if(!cleared)return false;
     }
@@ -764,15 +784,15 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if(vulkan){
         // First GPU pass clears all packet slots. It never requires
         // a CPU readback or uploads a full zero-argument array.
-        if(!dev.beginCompute(indirectClearPipeline_))return false;
+        if(!trackedBegin(indirectClearPipeline_))return false;
         dev.setComputeBuffer(0,slot.indirect);
         const uint32_t capacity=config.maxOutputClusters;
         dev.setComputeUniforms(&capacity,sizeof(capacity));
-        const bool cleared=dev.dispatchChecked(capacity);
+        const bool cleared=trackedDispatch(capacity,temporalStats_.indirectClearDispatches);
         dev.endCompute();
         if(!cleared)return false;
     }
-    if (!dev.beginCompute(pipeline_)) return false;
+    if (!trackedBegin(pipeline_)) return false;
     dev.setComputeBuffer(0, gpuMetadataV2);
     dev.setComputeBuffer(1, slot.instances);
     dev.setComputeBuffer(2, slot.ranges);
@@ -803,18 +823,18 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     uniforms.temporalHasPrevious=warmTemporal?1u:0u;
     uniforms.hysteresisFraction=temporal?config.hysteresisFraction:0.f;
     dev.setComputeUniforms(&uniforms, sizeof(uniforms));
-    const bool encoded=dev.dispatchChecked(uint32_t(instances.size()));
+    const bool encoded=trackedDispatch(uint32_t(instances.size()),temporalStats_.selectionDispatches);
     dev.endCompute();
     if(!encoded) return false;
     if(temporal && !vulkan){
-        if(!dev.beginCompute(temporalSafetyPipeline_))return false;
+        if(!trackedBegin(temporalSafetyPipeline_))return false;
         dev.setComputeBuffer(0,slot.counters);
         dev.setComputeBuffer(1,previousTemporal);
         dev.setComputeBuffer(2,nextTemporal);
         const uint32_t control[2]{
             config.temporalNodeCount,warmTemporal?1u:0u};
         dev.setComputeUniforms(control,sizeof(control));
-        const bool safe=dev.dispatchChecked(config.temporalNodeCount);
+        const bool safe=trackedDispatch(config.temporalNodeCount,temporalStats_.safetyDispatches);
         dev.endCompute();
         if(!safe)return false;
     }
@@ -823,7 +843,7 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         // pass; invalid metadata/stack traversal or overflow zeroes ALL
         // GPU indirect indexCount fields. An incomplete packet can never
         // silently become partially visible geometry.
-        if(!dev.beginCompute(indirectSafetyPipeline_))return false;
+        if(!trackedBegin(indirectSafetyPipeline_))return false;
         dev.setComputeBuffer(0,slot.indirect);
         dev.setComputeBuffer(1,slot.counters);
         struct SafetyUniforms {
@@ -849,8 +869,8 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
             dev.setComputeBuffer(3,slot.counters);
         }
         dev.setComputeUniforms(&safety,sizeof(safety));
-        const bool safe=dev.dispatchChecked(std::max(
-            safety.capacity,safety.temporalNodeCount));
+        const bool safe=trackedDispatch(std::max(
+            safety.capacity,safety.temporalNodeCount),temporalStats_.safetyDispatches);
         dev.endCompute();
         if(!safe)return false;
     }
