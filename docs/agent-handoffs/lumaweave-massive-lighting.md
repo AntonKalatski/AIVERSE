@@ -457,3 +457,14 @@ Source commits:
 - `d8698d8f0b5a6eb202c34d8b9a83cdaa024748a2` — `engine/render/LumaWeavePostProcess.h`: require all enabled HDR/source/scene prerequisites before allocating compositor depth; disabled/mobile/incomplete views no longer allocate unneeded HDR depth.
 
 No public ABI or ECS persistence changes; one direct-light owner and opt-in default are preserved. **NOT RUN:** Clang/GCC build, CTest, Metal/GLES/Vulkan hardware visual, shader compilation, GPU-fence safety or full benchmark. The known per-view resized target in-flight lifetime audit remains open. Next: complete lifetime audit and cross-branch integration, then native consolidated acceptance only after code freeze.
+
+
+## Stage 26 — 2026-11-20 — bounded, GPU-fence-aware Luma target replacement (SOURCE; NOT RUN)
+
+Separate per-stage handoff: `docs/agent-handoffs/lumaweave-stage26-gpu-target-retirement-2026-11-20.md`.
+
+Source commits: `75072cc30f721717e7c98755b6d98779a0ed658a` (bounded GPU texture retirement helper), `c21f28e2f6da2970a13b244540574f9f52b2ca67` (compute output/history resize), `d2db1d262980465620e9db37346c42644a02780e` (material/surface/compose-depth resize) and `77fb0916791735dc1b2160d0cf23974083abac1f` (regression source for ordered completed, unfenced GPU-idle-only retirement and optional RHI fence detection).
+
+Old branch lacks `Device::gpuSubmissionFence/gpuCompletedFence`: zero-token images stay quarantined, never freed based on CPU-frame count or compute readback completion. Bounds cap at 48 retired texture handles per owner; further resize fails closed. Host must establish actual full graphics queue idle then call `post.drainRetiredAfterGpuIdle()` before shutdown; remaining active pipelines/targets still require a host GPU-idle precondition. Current-main RHI fence API can supply genuine tokens after integration. Direct/indirect lighting ownership and no-default-on behavior are unchanged.
+
+Native CMake, CTest, Metal, Vulkan and GLES GPU execution: **NOT RUN**. More work: current-main reconciliation, strict ACTIVE owner teardown and actual GPU/compile/screenshot/performance acceptance.
