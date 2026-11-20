@@ -3332,7 +3332,10 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_lighting_composition
             lighting_gles_admission
             gi_chunked_geometry
-            lumaweave_direct_reference)
+            lumaweave_direct_reference
+            gi_dynamic_probe_reference
+            gi_cpu_trace_budget
+            lighting_gi_cpu_sampling)
         add_executable(aiverse_lighting_${lighting_fixture}_test
                        tests/render/${lighting_fixture}.cpp)
         target_include_directories(aiverse_lighting_${lighting_fixture}_test
