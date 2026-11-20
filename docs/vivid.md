@@ -1485,3 +1485,88 @@ shared-depth ID target. Final Blend/cornea/ShaderGraph/LOD/ICB parity,
 Vulkan/GLES actor GPU vertex expansion, and complete MetaHuman-grade
 authoring/appearance are separate incomplete milestones. See the
 dedicated Stage 7AX handoff for exact files and next steps.
+
+
+## Stage 7AY — native Metal Depth32Float parity and independent GPU-sourced Mask blocker (2026-11-20)
+
+Stage 7AX compared a real presented Renderer3D colour pixel against a
+source-GPU-vertex ID pixel, but could not read actual depth. Stage 7AY
+adds an optional `gfx::Device::readTextureDepthPixelAsync` RHI method:
+with a valid Depth texture handle it reads that actual offscreen
+attachment; with an invalid handle it explicitly selects current
+framebuffer screen depth. Metal implements asynchronous single-pixel
+`MTLPixelFormatDepth32Float` blit to a 256-byte-aligned shared staging
+buffer. Its callback is delivered on the gfx owner thread at a later
+`beginFrame`, with a failure boolean and an actual finite [0,1] GPU
+depth sample. Other backends use the default unsupported/fail-closed
+implementation, never CPU-projected depth masquerading as a GPU result.
+
+`SculptGpuIdPass::record` accepts optional `captureDepth=false`
+without breaking existing callers. `Completed` exposes
+`depthValid` and `depth01` only after both asynchronous colour
+RGBA8 and depth callbacks have arrived. GPU scratch buffers are
+retained until those callbacks or a verified GPU-idle barrier on
+failed submission/shutdown. The one-actor Metal
+`aiverse_vivid_renderer_preview` now gets **both** the native
+Renderer3D main-screen Depth32Float and the independent GPU ID
+depth for the same source frame and projected head-centre pixel.
+Normal colour is also copied **during the exact source frame**
+through Metal `copyColor(screen, RGBA8 target)` and asynchronous
+single-pixel RHI readback; its older full-frame
+`captureNextFrame` is retained only for visual screenshot A/B
+and is not used as evidence of same-frame pixel parity.
+`SculptGpuColorPixelOracle.h` adds a pure depth comparison that
+rejects NaN/Inf, out-of-range/clear values, and depth differences
+larger than the current test tolerance of 0.003. GUI acceptance
+requires real `depth_scene`, `depth_id` and delta fields, not
+just a claimed draw submission.
+
+A second optional
+`SculptGpuIdPass::record(..., captureDepth, gpuMaskOccluder)`
+input permits one **independent sampled Mask object** to use
+its own borrowed current-frame 60-byte GPU vertex stream for
+occlusion in the ID pass. The separate Metal compute dispatch reads
+that object's actual GPU positions, original topology/skin palette
+and immutable UV/alpha, then zeroes every editable triangle ID
+before emitting 32-byte Mask output. Native sampled alpha discard
+and hardware depth testing now determine whether that second
+object obscures the first. GPU scratch and borrowed source lifetime
+follow the existing asynchronous retirement policy. The pure
+`sculptGpuMaskedOccluderInputsValid` gate rejects identical actor
+source handles, invalid indices, masks, palettes, UVs and ranges.
+
+The existing `vivid_metal_sculpt_id` fixture now defines real
+Depth32Float numeric assertions for the nearest selected triangle,
+a front opaque blocker, sampled-alpha hole and solid-mask blocker.
+It additionally defines a **two-distinct-GPU-vertex-buffer**
+scenario with the masked object's GPU positions first displaced
+outside the click while its CPU bind triangle remains in view,
+then restored under opaque/hole texels. The test input buffers
+are CPU-uploaded 60-byte GPU-resident vertices to isolate the GPU
+gather behaviour; the fixture does not yet prove that the second
+buffer was written by an actual deformation compute kernel.
+The production path can borrow a GPU-written actor buffer.
+
+Two existing GPU Mask bugs were also corrected: (1) selected Mask
+index-count validation now includes mask triangles rather than
+comparing only against opaque triangles, and (2) the GPU-selected
+Mask output counts toward the non-empty/bounded scene when its
+old CPU geometry was intentionally omitted.
+
+**Validation status:** 22 static source-contract inspections matched
+the expected code. **Native CMake, C++/ObjC++ compile, Metal shader
+compilation, actual GPU depth/pixel comparisons, GUI smoke, CTest,
+Vulkan/GLES driver tests, VRAM/performance and full
+`bash tools/vivid-validate.sh --full` were NOT RUN.** In particular,
+the native RHI depth blit behaviour and real pixel tolerance are
+still awaiting macOS hardware acceptance.
+
+**Remaining boundary:** A true end-to-end test must draw the
+independent moving alpha-mask object through the **normal Renderer3D
+colour/depth pass as well as VIVID ID**, using the same validated
+current-frame renderer-source provenance and GPU deform output. The
+current two-actor alpha test exercises the actual Metal ID/depth pass
+only. Do not infer final Renderer3D occluder parity, Blend/cornea,
+ShaderGraph displacement, ICB/MDI, alternative LOD, Vulkan/GLES3
+GPU-source expansion or MetaHuman-grade realism from it. See the
+Stage 7AY dedicated handoff.
