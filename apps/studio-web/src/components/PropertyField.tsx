@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StudioProperty } from '../types';
+import AssetReferencePicker from './AssetReferencePicker';
 import { isSameFieldValue, parseFieldDraft, validateBooleanChange } from '../propertyLogic';
 
 interface PropertyFieldProps {
@@ -26,6 +27,16 @@ export default function PropertyField({ property, disabled, onChange }: Property
     setError('');
     if (!isSameFieldValue(property.value, parsed.value)) onChange(parsed.value);
   };
+
+  if (property.type === 'asset') {
+    return <div className="property-row">
+      <span>{property.label}</span>
+      <AssetReferencePicker label={property.label} value={String(property.value)}
+        kinds={property.assetKinds} disabled={locked}
+        onChange={value => { if (value !== property.value) onChange(value); }}/>
+      {property.description && <small className="property-description">{property.description}</small>}
+    </div>;
+  }
 
   if (property.type === 'boolean') {
     return <label className="property-row">
