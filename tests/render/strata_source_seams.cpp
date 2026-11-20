@@ -116,6 +116,35 @@ static void rejectNearButDifferentMaterialCoordinates() {
     assert(!buildModelAsset(model,{},asset,&error));
     assert(!error.empty());
 }
+static void sameMaterialDisconnectedUvIslands() {
+    Model model=twoQuads();
+    // Merge the two material draws into one primitive, but leave duplicate
+    // physical boundary IDs: two independent triangle-edge components
+    // inside the SAME original material must still be checked.
+    model.meshes[0].primitives.resize(1);
+    model.meshes[0].primitives[0].indexCount=12;
+    model.meshes[0].primitives[0].vertexCount=8;
+    model.finalize();
+    ModelAsset source;
+    std::string error;
+    assert(buildModelAsset(model,{},source,&error));
+    assert(source.primitives.size()==1);
+    assert(source.sourceSeamsCertified);
+    assert(source.sharedGeometricBoundarySegments==1);
+    SourceSeamAudit report{};
+    assert(auditModelSourceSeams(model,source,report,&error));
+    assert(report.examinedPartitions==2);
+    assert(report.matchedSegments==1);
+    // A tiny crack in that otherwise matching duplicate-ID source seam
+    // must be rejected even though the *material ID is unchanged*.
+    model.vertices[4].pos.x+=.00001f;
+    model.vertices[6].pos.x+=.00001f;
+    model.finalize();
+    const auto previousCount=source.primitives.size();
+    assert(!buildModelAsset(model,{},source,&error));
+    assert(source.primitives.size()==previousCount);
+}
+
 static void differentMeshesAndNodeTransforms() {
     Model model=twoQuads(true);
     // Shift the right mesh's LOCAL geometry to [0,1], then restore the
@@ -139,6 +168,7 @@ int main() {
     validDuplicatedMaterialIds();
     rejectSplitBoundaryTjunction();
     rejectNearButDifferentMaterialCoordinates();
+    sameMaterialDisconnectedUvIslands();
     differentMeshesAndNodeTransforms();
     return 0;
 }
