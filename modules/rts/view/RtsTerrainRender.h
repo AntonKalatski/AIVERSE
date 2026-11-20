@@ -83,7 +83,12 @@ public:
         return retiredMeshes_.pending();
     }
     // Optional per-cell material layer painted on the map (0..3, 255 = by cell kind). Next build().
-    void setMaterialLayer(std::vector<uint8_t> layer) { materialLayer_ = std::move(layer); }
+    void setMaterialLayer(std::vector<uint8_t> layer) {
+        if (materialLayer_ != layer) {
+            materialLayer_ = std::move(layer);
+            materialLayerChanged_ = true;
+        }
+    }
     // (Re)builds the chunks whose inputs changed. Returns true when any geometry changed.
     bool build(gfx::Device& dev, const MapGrid& g, bool flatDig);
     // Queues the terrain (opaque, main pass) and water. vision: fog of war per cell (heightfield maps
@@ -176,6 +181,7 @@ private:
     int texW_ = 0, texH_ = 0, dynRow_ = 0;
     bool visionInit_ = false;
     std::vector<uint8_t> materialLayer_;
+    bool materialLayerChanged_ = false; // detail splat depends on painted cell layers
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;
     bool texturesLoaded_ = false;
 
