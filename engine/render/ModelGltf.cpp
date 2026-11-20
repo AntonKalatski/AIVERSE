@@ -473,7 +473,12 @@ private:
         for (auto& n : model_->nodes) if (n.mesh >= 0 && n.skin >= 0) skinOfMesh[n.mesh] = n.skin;
         // LOD meshes are not scene nodes; inherit the base skin so they retain palettes.
         for (const auto& n : model_->nodes) if (n.mesh >= 0 && n.mesh < int(meshes.size()) && n.skin >= 0) {
-            for (const auto& level : meshes[size_t(n.mesh)]["extras"]["rtsLods"].items()) {
+            const Json& meta=meshes[size_t(n.mesh)]["extras"];
+            // Preferred genre-neutral format: extras.aiverseLods.
+            // Legacy extras.rtsLods remains readable for old assets.
+            const Json& levels=meta.has("aiverseLods")
+                ?meta["aiverseLods"]:meta["rtsLods"];
+            for (const auto& level : levels.items()) {
                 const int target = inum(level["mesh"], -1);
                 if (target >= 0 && target < int(meshes.size())) skinOfMesh[target] = n.skin;
             }
@@ -512,7 +517,10 @@ private:
                 fail("mesh '"+md.name+"': default morph weights exceed 64-channel limit");
             for (const auto& w : jm["weights"].items()) md.weights.push_back(float(num(w, 0)));
             float previousPixels = 1e30f;
-            for (const auto& level : jm["extras"]["rtsLods"].items()) {
+            const Json& lodMeta=jm["extras"];
+            const Json& authoredLods=lodMeta.has("aiverseLods")
+                ?lodMeta["aiverseLods"]:lodMeta["rtsLods"];
+            for (const auto& level : authoredLods.items()) {
                 if (!level["mesh"].isNumber() || !level["maxPixels"].isNumber()) fail("LOD requires mesh and maxPixels numbers");
                 ModelLod lod; lod.mesh = inum(level["mesh"]); lod.maxPixels = float(num(level["maxPixels"], 0));
                 if (num(level["mesh"],-1) != double(lod.mesh) || lod.mesh < 0 || lod.mesh >= int(meshes.size()) || lod.mesh == int(mi) || !std::isfinite(lod.maxPixels) || lod.maxPixels <= 0 || lod.maxPixels >= previousPixels)
