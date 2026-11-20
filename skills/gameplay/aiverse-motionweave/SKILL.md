@@ -75,3 +75,30 @@ a revision/generation and arbitrary named counters and flags. FPS-only
 Use a different host adapter for every other game's own data layout,
 without duplicating generic event/animation algorithms.
 
+## Stage 180: semantic facial rig and existing IK (source-only)
+
+Use `<aiverselib/animation/FacialControlRig.h>` and
+`FacialControlRig::compile(model, authoredV1, declaredParameters)`.
+This compiles explicit importer-authored **mesh-local morph names** and
+optional existing native `render::AnimationRig` `rig` operators
+(`aim`, `angularLimit`, `twoBoneIK`, `fullBodyIK`,
+`transform`). Never infer a morph channel from its index on a different
+mesh. Bind per-actor `FacialControlState`; call `apply()` AFTER the
+single Graph/Animator pose evaluation and BEFORE final matrices.
+Failure leaves source pose and facial state unchanged. On asset reimport,
+recompile and reset state; the runtime rejects stale node/bind/morph
+signatures. See `docs/motionweave-facial-control-rig.md`.
+
+For ECS projects add the optional
+`AnimationFacialControlComponent{rig,controls,state,weight,enabled}`
+to the **presentation World**. `MotionWeave::update()` integrates it
+after Graph/Montage/physics/recovery; controls need not be declared by
+the parent Graph. The scheduler allows worker-safe **morph-only** rigs;
+any facial rig with native IK or a host environment runs on the **owner
+thread** alongside other callback-sensitive Graphs. No duplicate
+Animator, gameplay authority or network checksums.
+
+Deferred executable/CTest:
+`aiverse_animation_facial_control_rig_tests` /
+`animation_facial_control_rig`. **NOT RUN**; no native compile/Metal/
+Vulkan/GLES, QA or crowd benchmark pass was claimed.
