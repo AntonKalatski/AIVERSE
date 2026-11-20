@@ -182,7 +182,7 @@ void Editor::init(gfx::Device& dev) {
     gpuRetirementRing_=std::make_shared<render::RetirementDiagnosticRing>(128);
     const auto gpuTrace=render::RetirementDiagnosticRing::observe(
         gpuRetirementRing_);
-    view_.modelResources().setRetirementDiagnosticObserver(
+    view_.setModelRetirementDiagnosticObserver(
         [gpuTrace](render::RetirementDiagnosticEvent event) {
             event.resource=render::RetirementResourceKind::Model;
             gpuTrace(event);
@@ -271,7 +271,7 @@ void Editor::shutdown() {
         throw std::runtime_error("Editor preview Models: GPU retirement barrier failed");
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
-    view_.modelResources().setRetirementDiagnosticObserver({});
+    view_.setModelRetirementDiagnosticObserver({});
     view_.setImageRetirementDiagnosticObserver({});
     gpuRetirementRing_.reset();
     prisma_.shutdown();

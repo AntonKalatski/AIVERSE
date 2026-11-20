@@ -332,6 +332,13 @@ public:
     const view_adapter::RtsModelResourceCache& modelResources() const noexcept {
         return resources_;
     }
+    // The editor may subscribe to cache GPU-retirement diagnostics without
+    // gaining mutable access to the model owner or its resident assets.
+    // The underlying cache enforces owner-thread and detach-callback guards.
+    void setModelRetirementDiagnosticObserver(
+            render::ModelResourceCache::RetirementDiagnosticObserver observer) {
+        resources_.setRetirementDiagnosticObserver(std::move(observer));
+    }
     // Host frame-boundary retirement: call before beginning render submissions
     // for this frame. No draw happens here; previous GPU work must complete.
     // Includes road/shore Models AND SpriteMesh buffers so existing client/
