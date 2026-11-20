@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <map>
 #include <cstring>
 #include <cstdio>
@@ -851,6 +852,20 @@ public:
         deliverBufferReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
+        if (modelCounterEnabled_) {
+            std::fill(std::begin(modelCounterMarked_), std::end(modelCounterMarked_), false);
+            modelCounterCurrent_ = nil;
+            if (@available(macOS 11.0, iOS 14.0, *)) {
+                MTLCounterSampleBufferDescriptor* descriptor =
+                    [MTLCounterSampleBufferDescriptor new];
+                descriptor.counterSet = modelTimestampCounterSet_;
+                descriptor.sampleCount = 4;
+                descriptor.storageMode = MTLStorageModeShared;
+                NSError* counterError = nil;
+                modelCounterCurrent_ = [device_ newCounterSampleBufferWithDescriptor:descriptor
+                                                                              error:&counterError];
+            }
+        }
         // The semaphore guarantees this slot is no longer in flight.
         // Reuse its ICB and uniform allocations, but never reuse one twice
         // within the same frame (different draws need different snapshots).
@@ -893,6 +908,58 @@ public:
             }
         }];
         firstPass_ = true;
+    }
+    // Shared lifetime across completed-handler callbacks: no blocking wait
+    // and no callbacks dereferencing a destroyed MetalDevice.
+    struct ModelGpuCounterResults {
+        std::mutex lock;
+        std::vector<ModelGpuCounter> ready;
+    };
+    std::shared_ptr<ModelGpuCounterResults> modelCounterResults_ =
+        std::make_shared<ModelGpuCounterResults>();
+    bool modelCounterEnabled_ = false;
+    id<MTLCounterSet> modelTimestampCounterSet_ = nil;
+    id<MTLCounterSampleBuffer> modelCounterCurrent_ = nil;
+    bool modelCounterMarked_[4] = {};
+    bool enableModelGpuCounters(bool enabled) override {
+        modelCounterEnabled_ = false;
+        modelCounterCurrent_ = nil;
+        modelTimestampCounterSet_ = nil;
+        if (!enabled) return true;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            if (![device_ supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary])
+                return false;
+            for (id<MTLCounterSet> counterSet in device_.counterSets) {
+                if ([counterSet.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+                    for (id<MTLCounter> counter in counterSet.counters)
+                        if ([counter.name isEqualToString:MTLCommonCounterTimestamp]) {
+                            modelTimestampCounterSet_ = counterSet;
+                            modelCounterEnabled_ = true;
+                            return true;
+                        }
+                }
+            }
+        }
+        return false;
+    }
+    bool sampleModelGpuCounter(int phase, bool start) override {
+        if (!modelCounterEnabled_ || !modelCounterCurrent_ || !enc_ ||
+            (phase != 0 && phase != 1)) return false;
+        const NSUInteger index = NSUInteger(phase * 2 + (start ? 0 : 1));
+        if (modelCounterMarked_[index]) return false;
+        // Draw-boundary samples are diagnostics; barrier=NO avoids an
+        // intrusive GPU synchronization point that distorts the benchmark.
+        [enc_ sampleCountersInBuffer:modelCounterCurrent_
+                       atSampleIndex:index withBarrier:NO];
+        modelCounterMarked_[index] = true;
+        return true;
+    }
+    std::vector<ModelGpuCounter> takeModelGpuCounters() override {
+        auto results = modelCounterResults_;
+        std::lock_guard<std::mutex> hold(results->lock);
+        std::vector<ModelGpuCounter> out;
+        out.swap(results->ready);
+        return out;
     }
     struct TimedCommand { uint64_t tag; id<MTLCommandBuffer> command; };
     std::vector<TimedCommand> timedCommands_;
@@ -939,6 +1006,38 @@ public:
                 c->ready = true; // read on the main thread in the next beginFrame (after the semaphore)
             }];
         }
+        if (modelCounterEnabled_ && modelCounterCurrent_) {
+            // Counter buffers are resolved only after the GPU has finished
+            // the command buffer; retain the sample buffer via the block.
+            id<MTLCounterSampleBuffer> sampleBuffer = modelCounterCurrent_;
+            auto resultQueue = modelCounterResults_;
+            const uint64_t serial = frame_;
+            const bool completeSet = std::all_of(
+                std::begin(modelCounterMarked_), std::end(modelCounterMarked_),
+                [](bool value) { return value; });
+            [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+                ModelGpuCounter output{};
+                output.frame = serial;
+                if (completeSet && completed.status == MTLCommandBufferStatusCompleted) {
+                    NSData* resolved = [sampleBuffer resolveCounterRange:NSMakeRange(0, 4)];
+                    if (resolved && resolved.length >= 4 * sizeof(MTLCounterResultTimestamp)) {
+                        auto* times = static_cast<const MTLCounterResultTimestamp*>(resolved.bytes);
+                        const uint64_t a = times[0].timestamp, b = times[1].timestamp;
+                        const uint64_t c = times[2].timestamp, d = times[3].timestamp;
+                        if (a && c && b > a && d > c &&
+                            a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
+                            c != MTLCounterErrorValue && d != MTLCounterErrorValue) {
+                            output.shadowTicks = b - a;
+                            output.opaqueTicks = d - c;
+                            output.valid = true;
+                        }
+                    }
+                }
+                std::lock_guard<std::mutex> hold(resultQueue->lock);
+                resultQueue->ready.push_back(output);
+            }];
+            modelCounterCurrent_ = nil;
+        }
         if (drawable_) [cmd_ presentDrawable:drawable_];
         [cmd_ commit];
         cmd_ = nil;
@@ -961,6 +1060,10 @@ public:
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         if (!cmd_) return;
         MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        if (modelCounterEnabled_ && modelCounterCurrent_) {
+            if (@available(macOS 11.0, iOS 14.0, *))
+                rp.sampleBufferAttachments[0].sampleBuffer = modelCounterCurrent_;
+        }
         const bool offscreen = d.colorTarget.valid() || d.depthTarget.valid();
         passW_ = fbW_; passH_ = fbH_;
         if (offscreen) {
