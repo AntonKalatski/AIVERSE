@@ -4,14 +4,14 @@ This change extends the existing PCSS improvement in PR #6. It **does not** intr
 
 ## How it works
 
-- High/Medium PCF disks have 24/12 taps respectively (low stays at four). Both GLSL and Metal use the same expanded sampling disk.
+- With TAA, High/Medium PCF disks have 24/12 taps respectively (low stays at four). Both GLSL and Metal use the same sampling disk. Without TAA, both use a fixed golden-angle disk with 64/32 taps (High/Medium) and smoothly tapered squared radial weights.
 - A fractional `quality.x` bit (0.5) enables a per-frame golden-angle rotation of the Poisson disk. The integer tap count is unchanged, so there is no U1 buffer-layout change.
 - `PostProcess::temporalShadowResolve()` defaults to false. `ScreenLighting` returns true only after its HDR/TAA target has been allocated and `running_` is true. The forward renderer enables sample rotation only in Medium/High and when the active postprocess reports temporal history support.
 - Existing `ScreenLightingShaders.h` history validation now tests previous-camera distance for the exact receiver on depth edges, reducing trails from foreground silhouettes and maintaining the weight of nearby soft shadows on continuous surfaces.
 
 ## Quality / limitations
 
-- The temporal sample rotation is only effective when `ScreenLighting::setEnabled(true)`, HDR post quality High, and an active post chain are present. Without TAA, the disk orientation is fixed across pixels as well as frames. Screen-space random rotation must also be disabled: a static noise pattern still produces visible stipple.
+- The temporal sample rotation is only effective when `ScreenLighting::setEnabled(true)`, HDR post quality High, and an active post chain are present. Without TAA, the denser weighted disk replaces the sparse equal-weight disk: merely fixing the old disk orientation removes grain but exposes individual sample bands. The authored/PCSS penumbra radius is preserved; the squared radial taper smoothly attenuates outer samples. This costs up to 64/32 bilinear comparisons instead of 24/12 and still requires a foliage/performance check on target hardware.
 - Temporal **color** accumulation may also smooth material/specular variation; this is not a separate shadow-only denoiser. Further improvements would require dedicated screen-space shadow-mask and receiver-normal history textures.
 - Sample budget increases PCF shading cost; benchmark Metal GPU frame time, especially on wide penumbrae and leaf silhouettes.
 - A per-frame time seed derives from `camPos.w` / `graphTime_` quantized to 60 Hz. It is only a sample decorrelation seed, not motion reprojection.

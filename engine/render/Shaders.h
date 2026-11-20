@@ -254,6 +254,23 @@ namespace aiverse::render::shaders {
     "    vec2(-0.025, 0.919), vec2(-0.389, -0.144), vec2(0.733, -0.627), vec2(0.282, 0.512),\n" \
     "    vec2(-0.900, 0.160), vec2(0.880, 0.250), vec2(-0.480, -0.860), vec2(0.490, 0.860),\n" \
     "    vec2(-0.080, -0.980), vec2(0.970, -0.360), vec2(-0.960, -0.360), vec2(0.410, -0.730));\n" \
+    "const vec2 kStableDisk[64] = vec2[64](\n" \
+    "    vec2(0.08838835, 0.00000000), vec2(-0.11288609, 0.10341291), vec2(0.01727903, -0.19688559), vec2(0.14228561, 0.18558638),\n" \
+    "    vec2(-0.26111159, -0.04618696), vec2(0.24734770, -0.15734236), vec2(-0.08273296, 0.30776250), vec2(-0.15778073, -0.30379720),\n" \
+    "    vec2(0.34232108, 0.12501511), vec2(-0.35612804, 0.14700448), vec2(0.17167725, -0.36686431), vec2(0.12686512, 0.40446600),\n" \
+    "    vec2(-0.38237295, -0.22159294), vec2(0.44856699, -0.09861619), vec2(-0.27375345, 0.38938612), vec2(-0.06324339, -0.48804485),\n" \
+    "    vec2(0.38825236, 0.32721950), vec2(-0.52246598, 0.02160561), vec2(0.38109882, -0.37924423), vec2(-0.02549699, 0.55139587),\n" \
+    "    vec2(-0.36261675, -0.43453606), vec2(0.57442498, 0.07728807), vec2(-0.48670912, 0.33863953), vec2(0.13299693, -0.59118467),\n" \
+    "    vec2(0.30761497, 0.53682914), vec2(-0.60135784, -0.19184955), vec2(0.58414261, -0.26988870), vec2(-0.25306517, 0.60468630),\n" \
+    "    vec2(-0.22585509, -0.62793469), vec2(0.60097616, 0.31585623), vec2(-0.66753330, 0.17595964), vec2(0.37943053, -0.59010166),\n" \
+    "    vec2(0.12069909, 0.70231348), vec2(-0.57200781, -0.44299500), vec2(0.73170193, -0.06062001), vec2(-0.50576027, 0.54671203),\n" \
+    "    vec2(0.00368403, -0.75518139), vec2(0.51430495, 0.56694614), vec2(-0.77229487, -0.07157611), vec2(0.62578731, -0.47495026),\n" \
+    "    vec2(-0.14238057, 0.78264952), vec2(-0.42888394, -0.68153948), vec2(0.78592013, 0.21538813), vec2(-0.73348552, 0.37641266),\n" \
+    "    vec2(0.28986168, -0.78185210), vec2(0.31791147, 0.78094161), vec2(-0.77026392, -0.36504245), vec2(0.82326330, -0.25382087),\n" \
+    "    vec2(-0.44015653, 0.75104909), vec2(-0.18464324, -0.85985137), vec2(0.72417736, 0.51442167), vec2(-0.89015736, 0.11093860),\n" \
+    "    vec2(0.58705426, -0.68969544), vec2(0.03331990, 0.91368883), vec2(-0.64772696, -0.65727642), vec2(0.93001413, 0.04755225),\n" \
+    "    vec2(-0.72432311, 0.59847183), vec2(0.13097532, -0.93876673), vec2(0.54220489, 0.78744927), vec2(-0.93964902, -0.21621104),\n" \
+    "    vec2(0.84593675, -0.47927395), vec2(-0.30249190, 0.93243560), vec2(-0.41009709, -0.89910115), vec2(0.91697587, 0.38902797));\n" \
     "float shadowAt(vec3 wpos, vec3 n) {\n" \
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
@@ -292,8 +309,24 @@ namespace aiverse::render::shaders {
     "        r = clamp(penumbra, min(r, u_shadow.w * 0.5), r);\n" \
     "    }\n" \
     "    // Per-pixel rotation requires temporal resolve; without it the noise remains visible as stipple.\n" \
-    "    // Keep the spatial disk fixed without TAA, and for small bilinear-filtered kernels.\n" \
+    "    // Without TAA use a denser tapered disk; small temporal kernels keep a fixed disk.\n" \
     "    // Temporal sampling rotates the PCSS disk between frames only when HDR TAA is active.\n" \
+    "    // Dense, smoothly weighted disk for hosts without temporal accumulation.\n" \
+    "    // A tapered kernel avoids visible bands from equally weighted sparse samples.\n" \
+    "    if (fract(u_quality.x) <= 0.25) {\n" \
+    "        int count = u_quality.x > 16.0 ? 64 : 32;\n" \
+    "        int stride = count == 64 ? 1 : 2;\n" \
+    "        float total = 0.0, weight = 0.0;\n" \
+    "        for (int i = 0; i < 64; ++i) {\n" \
+    "            if (i >= count) break;\n" \
+    "            vec2 o = kStableDisk[i * stride];\n" \
+    "            float w = 1.0 - dot(o, o);\n" \
+    "            w *= w;\n" \
+    "            total += sunCompare(uv + o * r, d + dot(gradient, o * r)) * w;\n" \
+    "            weight += w;\n" \
+    "        }\n" \
+    "        return total / weight;\n" \
+    "    }\n" \
     "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
     "    float a = fract(u_quality.x) <= 0.25 || r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
@@ -317,6 +350,23 @@ namespace aiverse::render::shaders {
     "    float2(-0.025, 0.919), float2(-0.389, -0.144), float2(0.733, -0.627), float2(0.282, 0.512),\n" \
     "    float2(-0.900, 0.160), float2(0.880, 0.250), float2(-0.480, -0.860), float2(0.490, 0.860),\n" \
     "    float2(-0.080, -0.980), float2(0.970, -0.360), float2(-0.960, -0.360), float2(0.410, -0.730)};\n" \
+    "constant float2 kStableDisk[64] = {\n" \
+    "    float2(0.08838835, 0.00000000), float2(-0.11288609, 0.10341291), float2(0.01727903, -0.19688559), float2(0.14228561, 0.18558638),\n" \
+    "    float2(-0.26111159, -0.04618696), float2(0.24734770, -0.15734236), float2(-0.08273296, 0.30776250), float2(-0.15778073, -0.30379720),\n" \
+    "    float2(0.34232108, 0.12501511), float2(-0.35612804, 0.14700448), float2(0.17167725, -0.36686431), float2(0.12686512, 0.40446600),\n" \
+    "    float2(-0.38237295, -0.22159294), float2(0.44856699, -0.09861619), float2(-0.27375345, 0.38938612), float2(-0.06324339, -0.48804485),\n" \
+    "    float2(0.38825236, 0.32721950), float2(-0.52246598, 0.02160561), float2(0.38109882, -0.37924423), float2(-0.02549699, 0.55139587),\n" \
+    "    float2(-0.36261675, -0.43453606), float2(0.57442498, 0.07728807), float2(-0.48670912, 0.33863953), float2(0.13299693, -0.59118467),\n" \
+    "    float2(0.30761497, 0.53682914), float2(-0.60135784, -0.19184955), float2(0.58414261, -0.26988870), float2(-0.25306517, 0.60468630),\n" \
+    "    float2(-0.22585509, -0.62793469), float2(0.60097616, 0.31585623), float2(-0.66753330, 0.17595964), float2(0.37943053, -0.59010166),\n" \
+    "    float2(0.12069909, 0.70231348), float2(-0.57200781, -0.44299500), float2(0.73170193, -0.06062001), float2(-0.50576027, 0.54671203),\n" \
+    "    float2(0.00368403, -0.75518139), float2(0.51430495, 0.56694614), float2(-0.77229487, -0.07157611), float2(0.62578731, -0.47495026),\n" \
+    "    float2(-0.14238057, 0.78264952), float2(-0.42888394, -0.68153948), float2(0.78592013, 0.21538813), float2(-0.73348552, 0.37641266),\n" \
+    "    float2(0.28986168, -0.78185210), float2(0.31791147, 0.78094161), float2(-0.77026392, -0.36504245), float2(0.82326330, -0.25382087),\n" \
+    "    float2(-0.44015653, 0.75104909), float2(-0.18464324, -0.85985137), float2(0.72417736, 0.51442167), float2(-0.89015736, 0.11093860),\n" \
+    "    float2(0.58705426, -0.68969544), float2(0.03331990, 0.91368883), float2(-0.64772696, -0.65727642), float2(0.93001413, 0.04755225),\n" \
+    "    float2(-0.72432311, 0.59847183), float2(0.13097532, -0.93876673), float2(0.54220489, 0.78744927), float2(-0.93964902, -0.21621104),\n" \
+    "    float2(0.84593675, -0.47927395), float2(-0.30249190, 0.93243560), float2(-0.41009709, -0.89910115), float2(0.91697587, 0.38902797)};\n" \
     "static float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) {\n" \
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
@@ -353,6 +403,22 @@ namespace aiverse::render::shaders {
     "        float uvPerWorld = 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
     "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, f.shadow.w * 0.5), r);\n" \
+    "    }\n" \
+    "    // Dense, smoothly weighted disk for hosts without temporal accumulation.\n" \
+    "    // A tapered kernel avoids visible bands from equally weighted sparse samples.\n" \
+    "    if (fract(f.quality.x) <= 0.25) {\n" \
+    "        int count = f.quality.x > 16.0 ? 64 : 32;\n" \
+    "        int stride = count == 64 ? 1 : 2;\n" \
+    "        float total = 0.0, weight = 0.0;\n" \
+    "        for (int i = 0; i < 64; ++i) {\n" \
+    "            if (i >= count) break;\n" \
+    "            float2 o = kStableDisk[i * stride];\n" \
+    "            float w = 1.0 - dot(o, o);\n" \
+    "            w *= w;\n" \
+    "            total += sunCompare(sm, uv + o * r, d + dot(gradient, o * r)) * w;\n" \
+    "            weight += w;\n" \
+    "        }\n" \
+    "        return total / weight;\n" \
     "    }\n" \
     "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
     "    float a = fract(f.quality.x) <= 0.25 || r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
