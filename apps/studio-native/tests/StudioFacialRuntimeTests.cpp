@@ -6,7 +6,9 @@
 #include "engine/render/Model.h"
 #include "tests/AlwaysCheck.h"
 #include <cmath>
+#include <cstring>
 #include <limits>
+#include <vector>
 #include <string>
 
 using namespace aiverse;
@@ -54,7 +56,71 @@ static Json authored() {
     doc.set("rig",std::move(rig));
     return doc;
 }
+
+static std::string gltf52(int channelCount) {
+    // Same authored POSITION delta accessor reused per target; intentionally
+    // simple but it exercises the REAL glTF 52/65-channel import contracts.
+    std::string doc=R"({"asset":{"version":"2.0"},
+      "buffers":[{"uri":"face.bin","byteLength":72}],
+      "bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},
+                     {"buffer":0,"byteOffset":36,"byteLength":36}],
+      "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
+                   {"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"}],
+      "meshes":[{"name":"Face","primitives":[{"attributes":{"POSITION":0},
+      "targets":[)";
+    for(int i=0;i<channelCount;++i) {
+        if(i)doc+=",";
+        doc+=R"({"POSITION":1})";
+    }
+    doc+=R"(]}],"extras":{"targetNames":[)";
+    for(int i=0;i<channelCount;++i) {
+        if(i)doc+=",";
+        doc+="\"expression"+std::to_string(i)+"\"";
+    }
+    doc+=R"(]}}],
+      "nodes":[{"name":"Face","mesh":0}],
+      "scenes":[{"nodes":[0]}],"scene":0})";
+    return doc;
+}
+static void testGltfImport52() {
+    std::string bytes(72,'\0');
+    const float positions[9]={0,0,0,1,0,0,0,1,0};
+    std::memcpy(bytes.data(),positions,sizeof positions);
+    const FileReader read=[bytes](const std::string& key,std::string& out) {
+        if(key!="face.bin")return false;
+        out=bytes;
+        return true;
+    };
+    std::vector<std::string> warnings;
+    auto model=loadGltf("face.gltf",gltf52(52),read,&warnings);
+    AIVERSE_TEST_CHECK(bool(model));
+    AIVERSE_TEST_CHECK(model->nodes.size()==1);
+    AIVERSE_TEST_CHECK(model->meshes[0].morphTargetNames.size()==52);
+    AIVERSE_TEST_CHECK(model->meshes[0].morphTargetNames[51]=="expression51");
+    AIVERSE_TEST_CHECK(model->meshes[0].primitives[0].morphTargets==52);
+    AIVERSE_TEST_CHECK(model->meshes[0].primitives[0].morphDeltas.size()
+                       ==size_t(52*3*6));
+    const Json document=Json::parse(R"({"version":1,"morphs":[
+      {"parameter":"expression51","node":"Face","target":"expression51"}
+    ],"rig":[]})");
+    FacialPreviewSession session;
+    FacialPreviewSession::Scalars scalars{{"expression51",0.75f}};
+    std::string error;
+    AIVERSE_TEST_CHECK(session.configure(*model,document,scalars,{},error));
+    Animator animator;animator.setModel(model.get());
+    Pose pose;animator.evaluate(pose);
+    AIVERSE_TEST_CHECK(session.apply(*model,pose,.016f,error));
+    AIVERSE_TEST_CHECK(std::abs(pose[0].w[51]-.75f)<.001f);
+
+    // 65 is rejected at import, never silently truncated to 64.
+    bool rejected=false;
+    try {(void)loadGltf("face.gltf",gltf52(65),read,&warnings);}
+    catch(const std::exception&){rejected=true;}
+    AIVERSE_TEST_CHECK(rejected);
+}
+
 int main() {
+    testGltfImport52();
     static_assert(kMaxMorphTargets==64,
                   "Studio native Renderer3D must share 64-channel MotionWeave ABI");
     auto model=makeFace();
