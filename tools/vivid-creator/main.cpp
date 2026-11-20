@@ -111,12 +111,13 @@ struct CreatorApp {
     std::vector<MorphVec3> morphSourcePositions;
     std::vector<std::uint32_t> sculptSourceIds; // candidate-published source IDs
     DeformedSculptWorkspace sculptPicker; // persistent per-creator CPU scratch/BVH
-    SculptGpuIdPass gpuSculptPass; // Metal-only experimental offscreen checker
+    SculptGpuIdPass gpuSculptPass; // native multi-backend optional ID checker
     SculptGpuPickProtocol gpuSculptToken;
     SculptGpuPickRequest gpuSculptToRecord{};
     float3 gpuSculptRayOrigin{},gpuSculptRayDirection{};
     std::uint64_t gpuSculptPublication=1;
     int gpuSculptExpectedSourceVertex=-1;
+    bool gpuSculptRendererUsedOverride=false;
     bool gpuSculptEnabled=false;
     float morphBrushRadius=0.1f;
     bool sculptMirrorX=false;
@@ -734,6 +735,7 @@ struct CreatorApp {
             gpuSculptToken.cancel();
             gpuSculptToRecord={};
             gpuSculptExpectedSourceVertex=-1;
+            gpuSculptRendererUsedOverride=false;
             if(++gpuSculptPublication==0)gpuSculptPublication=1;
             sculptPicker.reset(); // published Model owns new mesh topology
             sculptPickMarkerValid=false;
@@ -1702,7 +1704,9 @@ struct CreatorApp {
                     pixel.idRgba[i]=gpuReply.rgba[i];
             }
             std::uint32_t selectedTriangle=0;
-            const bool tokenWasPending=gpuSculptToken.pending();
+            // An obsolete asynchronous reply must never change a newer
+            // CPU source selection or even overwrite its status message.
+            const bool replyForActive=gpuSculptToken.pendingIs(gpuReply.request);
             const bool valid=gpuSculptToken.consume(
                 gpuReply.request,pixel,gpuSculptPublication,
                 dev.frameSerial(),std::uint32_t(dev.framebufferWidth()),
@@ -1720,14 +1724,17 @@ struct CreatorApp {
                     // Do NOT replace the CPU vertex: this experimental GPU
                     // pass draws a CPU-expanded morph/skin snapshot, not the
                     // actual Renderer3D GPU vertex-override stream/LOD.
-                    status="GPU ID confirmed CPU snapshot / vertex "+
+                    status="GPU ID confirmed Renderer3D-selected CPU snapshot / vertex "+
                         std::to_string(gpuSculptExpectedSourceVertex);
+                    if(gpuSculptRendererUsedOverride)
+                        status+=" (renderer GPU vertexOverride remains unverified)";
                 }else status="GPU/CPU ID mismatch; CPU BVH selection retained";
-            }else if(gpuReply.rgba.empty()) {
+            }else if(replyForActive && !valid && gpuReply.rgba.empty()) {
                 gpuSculptToken.cancel();
                 status="GPU ID readback failed; CPU BVH retained";
-            }else if(tokenWasPending && !gpuSculptToken.pending() &&
-                     gpuReply.rgba.size()==4) {
+            }else if(replyForActive && !valid &&
+                     gpuReply.rgba.size()==4 &&
+                     !gpuSculptToken.pending()) {
                 // Zero means background, unselectable LOD/alpha material,
                 // or another scene mesh covering the selected triangle.
                 // Preserve the CPU selection, but do not claim GPU success.
@@ -2093,6 +2100,8 @@ struct CreatorApp {
                 morphSourceVertices,sculptSourceIds,
                 renderer.viewProj(),gpuSculptToRecord,
                 occluders,maskedOccluders);
+            gpuSculptRendererUsedOverride=submitted &&
+                viewCheck.gpuVertexOverridePresent;
             gpuSculptToRecord={};
             if(!submitted) {
                 gpuSculptToken.cancel();
