@@ -207,7 +207,7 @@ Jede Vorlage ist ein vollständig spielbares Spiel mit Bots. Im Editor öffnen u
 
 **Grafik und Audio**
 - Eigenes RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, optional)
-- PBR, glTF/OBJ, Skelett- und prozedurale Animation, prozedurale Kabel, Rendering hierarchischer Entitäten
+- PBR, glTF/OBJ, Skelett- und prozedurale Animation, prozedurale Kabel, Rendering hierarchischer Entitäten, physikalischer Himmel, volumetrische Wolken und Sonnenstrahlen, lokaler volumetrischer Nebel in Kugeln/OBBs mit Freilegung zur Laufzeit
 - Schatten, dynamische Lichter, Nacht, Post-Effekte, Shader Graph
 - Partikel mit den Modulen von Unitys ParticleSystem und Importer aus Unity
 - 2D: Sprites, Tilemaps mit Autotiling

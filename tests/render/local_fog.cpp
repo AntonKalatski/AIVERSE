@@ -1,0 +1,66 @@
+#include "engine/render/LocalFog.h"
+#include "engine/render/Renderer3D.h"
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <limits>
+using namespace aiverse;
+using namespace aiverse::render;
+using namespace aiverse::gfx;
+#define CHECK(c) do{if(!(c)){std::fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#c);std::exit(1);}}while(0)
+struct DeviceProbe final:Device {
+    DeviceInfo deviceInfo;std::string error="injected failure",vs,fs,msl;
+    float weatherX=0,weatherZ=0;
+    int draws=0,shaders=0,destroyed=0;bool fail=false,open=false;
+    TextureHandle attachment,depthAttachment;
+    const DeviceInfo& info()const override{return deviceInfo;}
+    const std::string& lastError()const override{return error;}
+    BufferHandle createBuffer(const BufferDesc&)override{return {1};}
+    void updateBuffer(BufferHandle,const void*,size_t,size_t)override{}
+    void destroyBuffer(BufferHandle)override{}
+    TextureHandle createTexture(const TextureDesc&)override{return {1};}
+    void updateTexture(TextureHandle,int,int,int,int,const void*,int)override{}
+    void destroyTexture(TextureHandle)override{}
+    ShaderHandle createShader(const ShaderDesc& s)override{++shaders;vs=s.glslVertex;fs=s.glslFragment;msl=s.msl;return fail?ShaderHandle{}:ShaderHandle{1};}
+    void destroyShader(ShaderHandle)override{++destroyed;}
+    PipelineHandle createPipeline(const PipelineDesc& p)override{CHECK(p.colorFormat==PixelFormat::RGBA16F);CHECK(!p.depthWrite);return {1};}
+    void destroyPipeline(PipelineHandle)override{++destroyed;}
+    void beginFrame(int,int)override{}
+    void endFrame()override{}
+    void beginPass(const PassDesc& p)override{CHECK(!open);open=true;attachment=p.colorTarget;depthAttachment=p.depthTarget;}
+    void endPass()override{CHECK(open);open=false;}
+    void setViewport(const Rect&)override{}
+    void setScissor(const Rect&)override{}
+    void setPipeline(PipelineHandle)override{}
+    void setVertexBuffer(BufferHandle,size_t)override{}
+    void setIndexBuffer(BufferHandle,size_t)override{}
+    void setTexture(int,TextureHandle t)override{CHECK(t.valid()&&t!=attachment&&t!=depthAttachment);}
+    void setUniforms(int,const void* ptr,size_t bytes)override{CHECK(bytes==1728);const auto* f=static_cast<const float*>(ptr);for(size_t i=0;i<bytes/4;++i)CHECK(std::isfinite(f[i]));weatherX=f[56];weatherZ=f[57];}
+    void draw(uint32_t count,uint32_t)override{CHECK(count==3&&open);++draws;}
+    void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t)override{}
+};
+int main(int argc,char** argv){
+    LocalFogScene scene;FogVolume v;v.id=1;v.region.radius=4;v.region.feather=1;v.density=.2f;
+    CHECK(scene.upsert(v));CHECK(std::abs(scene.densityAt({0,0,0})-.2f)<1e-6);CHECK(scene.densityAt({5,0,0})==0);
+    CHECK(std::abs(scene.densityAt({3.5f,0,0})-.1f)<1e-6);
+    FogReveal r;r.id=1;r.region.radius=2;r.region.feather=.5f;CHECK(scene.upsert(r));CHECK(scene.densityAt({0,0,0})==0);
+    r.strength=.5f;CHECK(scene.upsert(r));CHECK(std::abs(scene.densityAt({0,0,0})-.1f)<1e-6);
+    FogReveal duplicate=r;duplicate.id=2;CHECK(scene.upsert(duplicate));CHECK(std::abs(scene.densityAt({0,0,0})-.1f)<1e-6);
+    CHECK(scene.removeReveal(2));r.region.center={10,0,0};CHECK(scene.upsert(r));CHECK(std::abs(scene.densityAt({0,0,0})-.2f)<1e-6);
+    CHECK(scene.removeReveal(1));CHECK(!scene.removeReveal(0));
+    v.region.shape=FogShape::Obb;v.region.halfExtents={3,1,1};v.region.feather=0;
+    v.region.orientation={0,0,.70710678f,.70710678f};CHECK(scene.upsert(v));CHECK(scene.densityAt({0,2,0})>.19f);CHECK(scene.densityAt({2,0,0})==0);
+    auto bad=v;bad.region.orientation={0,0,0,0};CHECK(!scene.upsert(bad));CHECK(scene.densityAt({0,2,0})>.19f);
+    bad=v;bad.region.center.x=std::numeric_limits<float>::quiet_NaN();CHECK(!scene.upsert(bad));
+    for(uint32_t id=2;id<=8;++id){v.id=id;CHECK(scene.upsert(v));}v.id=9;CHECK(!scene.upsert(v));
+    CHECK(scene.removeVolume(4));CHECK(scene.upsert(v));scene.clear();CHECK(scene.densityAt({0,0,0})==0);
+    DeviceProbe device;LocalFog fog;PostFrame frame;frame.width=640;frame.height=360;LocalFogSettings settings;settings.enabled=true;
+    auto render=[&](TextureHandle dst,int quality=3){return fog.draw(device,frame,settings,scene,quality,{1},{2},dst,{4},{1});};
+    CHECK(!render({3}));v.id=1;CHECK(scene.upsert(v));CHECK(!render({1}));CHECK(!render({3},1));CHECK(device.shaders==0);
+    CHECK(render({3}));CHECK(render({3}));CHECK(device.shaders==1&&device.draws==2);
+    if(argc==2){const std::string base=argv[1];std::ofstream(base+".vert")<<"#version 330 core\n"<<device.vs;std::ofstream(base+".frag")<<"#version 330 core\n"<<device.fs;std::ofstream(base+".metal")<<device.msl;}
+    fog.shutdown(device);CHECK(device.destroyed==2);device.fail=true;CHECK(!render({3}));CHECK(!fog.lastError().empty());
+    const int attempts=device.shaders;CHECK(!render({3}));CHECK(device.shaders==attempts);
+    fog.shutdown(device);device.fail=false;CHECK(render({3}));fog.shutdown(device);
+    std::puts("Local fog regions, runtime reveal, bounds and GPU lifetime checks passed");
+}
