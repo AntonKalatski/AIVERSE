@@ -43,6 +43,13 @@ public:
         }
     }
 
+    // A rejected host manifest/prewarm may already have GPU buffers
+    // allocated in a provider BEFORE a stageScene() call. Never destroy
+    // such a provider from the adapter's local unique_ptr destructor.
+    void retireUnstaged(gfx::Device& device,Owner& owner) noexcept {
+        retirement_.retire(device,owner);
+    }
+
     // Full CPU+GPU Model owner for exactly ONE scene. All parent, static
     // child and independent child Model pointers in objects MUST belong to
     // incoming->resources(); the bridge performs read-lease validation.
@@ -197,6 +204,9 @@ public:
     }
     uint64_t gpuShutdownFailures() const noexcept {
         return retirement_.shutdownFailures();
+    }
+    uint64_t tokenApprovedProviderShutdowns() const noexcept {
+        return retirement_.tokenApprovedShutdowns();
     }
     uint64_t cpuLoaderShutdownFailures() const noexcept {
         return retirement_.cpuQueueShutdownFailures();
