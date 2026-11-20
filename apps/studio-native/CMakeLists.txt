@@ -11,10 +11,15 @@ set_target_properties(aiverse_studio PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER com.aiverse.studio.html5)
 set(AIVERSE_STUDIO_WEB_DIST "${PROJECT_SOURCE_DIR}/apps/studio-web/dist" CACHE PATH "Built Studio web assets")
 if(EXISTS "${AIVERSE_STUDIO_WEB_DIST}/index.html")
-    add_custom_command(TARGET aiverse_studio POST_BUILD
+    # Run even when only frontend assets changed. CMake 3.22 uses CMP0112
+    # NEW, so TARGET_BUNDLE_CONTENT_DIR does not introduce a reverse dependency.
+    add_custom_target(aiverse_studio_web_assets
+        DEPENDS "${AIVERSE_STUDIO_WEB_DIST}/index.html"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory
             "${AIVERSE_STUDIO_WEB_DIST}"
-            "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web")
+            "$<TARGET_BUNDLE_CONTENT_DIR:aiverse_studio>/Resources/studio-web"
+        VERBATIM)
+    add_dependencies(aiverse_studio aiverse_studio_web_assets)
 else()
     message(FATAL_ERROR "HTML5 dist missing: first run npm install && npm run build in apps/studio-web")
 endif()
