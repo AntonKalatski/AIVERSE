@@ -281,7 +281,14 @@ inline bool sculptGpuMaskedOccluderInputsValid(
        source.params.jointMatrices!=source.jointMatrices.size() ||
        source.params.skinned!=(source.jointMatrices.empty()?0u:1u) ||
        (source.params.skinned &&
-        source.influences.size()!=source.sourceVertexCount))
+        source.influences.size()!=source.sourceVertexCount) ||
+       (!source.params.skinned && !source.influences.empty()) ||
+       !std::isfinite(source.maskUniform.alpha[0]) ||
+       source.maskUniform.alpha[0]<0.f ||
+       source.maskUniform.alpha[0]>1.f ||
+       !std::isfinite(source.maskUniform.alpha[1]) ||
+       source.maskUniform.alpha[1]<0.f ||
+       source.maskUniform.alpha[1]>1.f)
         return false;
     for(float x:source.params.rigidWorld.m)
         if(!std::isfinite(x))return false;
