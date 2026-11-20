@@ -116,6 +116,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         // Failed bind never displays stale model from a different GUID.
         // The ordinary map remains visible while a diagnostic is returned.
         facialError_=reason;
+        cameraInitialized_=false;
     }else if(!facialBinding.bound()) {
         if(!facialGpu_.clear(*device_))
             facialError_="Previous facial Model retirement lacks GPU completion";

@@ -40,6 +40,8 @@ private:
     std::vector<render::mat4> nodeWorld_;
     std::string projectRoot_,guid_;
     uint64_t revision_=0;
+    uint64_t rejectedRevision_=0;
+    std::string rejectedGuid_,rejectedProject_,rejectedError_;
 };
 
 } // namespace aiverse::studio

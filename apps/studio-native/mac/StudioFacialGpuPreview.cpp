@@ -63,6 +63,10 @@ bool StudioFacialGpuPreview::clear(gfx::Device& device) noexcept {
     guid_.clear();
     projectRoot_.clear();
     revision_=0;
+    rejectedRevision_=0;
+    rejectedGuid_.clear();
+    rejectedProject_.clear();
+    rejectedError_.clear();
     return true;
 }
 
@@ -79,6 +83,14 @@ bool StudioFacialGpuPreview::sync(
     if(model_ && revision_==binding.revision() &&
        guid_==binding.guid() && projectRoot_==projectRoot)
         return true;
+    // Bad external GLBs/rigs are not re-imported 60 times/sec while the
+    // Studio viewport is visible. Explicit Bind increments the revision.
+    if(rejectedRevision_==binding.revision() &&
+       rejectedGuid_==binding.guid() &&
+       rejectedProject_==projectRoot && !rejectedError_.empty()) {
+        error=rejectedError_;
+        return false;
+    }
     if(model_ && !device.waitForResourceIdle()) {
         error="Cannot switch facial model: previous GPU frame is still active";
         return false;
@@ -128,9 +140,16 @@ bool StudioFacialGpuPreview::sync(
         projectRoot_=projectRoot;
         guid_=binding.guid();
         revision_=binding.revision();
+        rejectedRevision_=0;
+        rejectedGuid_.clear();
+        rejectedProject_.clear();
+        rejectedError_.clear();
         return true;
     }catch(const std::exception& ex) {
         error=ex.what();
+        rejectedRevision_=binding.revision();
+        rejectedGuid_=binding.guid();
+        rejectedProject_=projectRoot;
         if(candidate && gpuUploadStarted) {
             // A candidate is not published until ALL GPU allocations succeed.
             // Never let CPU destructor release possibly submitted GPU objects.
@@ -146,6 +165,7 @@ bool StudioFacialGpuPreview::sync(
                 error+=" (partial GPU Model quarantined: cleanup failed)";
             }
         }
+        rejectedError_=error;
         return false;
     }
 }
