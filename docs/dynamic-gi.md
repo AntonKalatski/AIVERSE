@@ -95,3 +95,19 @@ This is bounded first-bounce L1 interpolation, not multi-bounce path tracing,
 reflection GI, infinite-world streaming, probe relocation or a proof against
 all thin-wall light leaks. Performance and mobile/Vulkan hardware acceptance are
 separate gates; no production quality defaults were changed.
+
+## Posed geometry snapshots
+
+`giModelGeometry(model, objectTransform, &pose)` in `GiModelGeometry.h` captures
+opaque casters with rigid node animation, morph positions and normalized byte
+skin weights. It reuses `worldMatrices` / `paletteMatrices`; skin joint transforms
+are model-space, so the mesh node transform is not applied twice. Morph precedes
+skinning. Retain CPU vertices, indices, morph deltas and image samples through
+`uploadModel(..., true)` for models whose snapshots will be rebuilt after upload.
+Missing pose/morph data rejects instead of silently freezing the bind pose.
+
+Publish the result as a replacement chunk in `GiChunkedGeometryBuilder`; old
+snapshots retain their previous geometry for in-flight tracing. This adapter
+provides the snapshot, not scheduling or automatic host tracking. Alpha masks,
+transparent surfaces and Shader Graph vertex displacement are not represented by
+this opaque triangle approximation. Texture albedo uses bounded average sampling.

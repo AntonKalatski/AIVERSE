@@ -3444,3 +3444,11 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_renderbench AND AIVERSE_PLATFORM STREQ
         set_tests_properties(lighting_luma_host_gl PROPERTIES LABELS "Lighting;GPU" RUN_SERIAL TRUE TIMEOUT 240)
     endif()
 endif()
+
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_models)
+    add_executable(aiverse_lighting_model_geometry_test tests/render/lighting_model_geometry.cpp)
+    target_include_directories(aiverse_lighting_model_geometry_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_lighting_model_geometry_test PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME lighting_model_geometry COMMAND aiverse_lighting_model_geometry_test)
+    set_tests_properties(lighting_model_geometry PROPERTIES LABELS "Lighting")
+endif()
