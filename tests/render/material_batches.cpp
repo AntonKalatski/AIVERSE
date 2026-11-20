@@ -21,14 +21,16 @@ using namespace aiverse;
 // CPU consumed by this calling thread, not whole-process CPU. Wall time
 // includes descheduling/waits; their delta is diagnostic, not proof of a GPU
 // stall or scheduler fault. Unsupported platforms report unavailable.
-static bool cpuClockNs(clockid_t id, uint64_t& result) {
+static bool cpuClockNs(bool processClock, uint64_t& result) {
 #if defined(__APPLE__) || defined(__linux__)
     timespec ts{};
+    const clockid_t id = processClock ? CLOCK_PROCESS_CPUTIME_ID
+                                       : CLOCK_THREAD_CPUTIME_ID;
     if (clock_gettime(id, &ts) != 0) return false;
     result = uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
     return true;
 #else
-    (void)id;
+    (void)processClock;
     (void)result;
     return false;
 #endif
@@ -449,9 +451,9 @@ int aiverseMain(int argc, char** argv) {
         uint64_t processCpuStartNs = 0, processCpuEndNs = 0;
         uint64_t machCpuStartNs = 0, machCpuEndNs = 0;
         const bool threadStartOk = threadCpuTiming &&
-            cpuClockNs(CLOCK_THREAD_CPUTIME_ID, threadCpuStartNs);
+            cpuClockNs(false, threadCpuStartNs);
         const bool processStartOk = threadCpuTiming &&
-            cpuClockNs(CLOCK_PROCESS_CPUTIME_ID, processCpuStartNs);
+            cpuClockNs(true, processCpuStartNs);
 #if defined(__APPLE__)
         const bool machStartOk = threadCpuTiming &&
             machCurrentThreadCpuNs(machCpuStartNs);
@@ -460,9 +462,9 @@ int aiverseMain(int argc, char** argv) {
 #endif
         renderer.render(pass);
         const bool threadEndOk = threadStartOk &&
-            cpuClockNs(CLOCK_THREAD_CPUTIME_ID, threadCpuEndNs);
+            cpuClockNs(false, threadCpuEndNs);
         const bool processEndOk = processStartOk &&
-            cpuClockNs(CLOCK_PROCESS_CPUTIME_ID, processCpuEndNs);
+            cpuClockNs(true, processCpuEndNs);
 #if defined(__APPLE__)
         const bool machEndOk = machStartOk &&
             machCurrentThreadCpuNs(machCpuEndNs);
