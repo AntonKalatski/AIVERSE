@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 native acceptance gate hardened (2026-11-20):**
+> Source `62d0566853d5a37a233fcf18d3325247ecc9d1fc` now refuses
+> dirty/stale/unexpected-HEAD checkouts and fails if any of the four
+> mandatory native CTests is absent before the one full unfiltered CTest.
+> [Exact implementation, status and Mac command](qa-2026-11-20-stage70-acceptance-fail-closed-handoff.md).
+> **NOT RUN on this new source**. The 191/191 historical Mac PASS remains
+> tied to `346dc66a`. Do not mark Draft PR #53 ready without fresh
+> full-suite and GPU/live-owner acceptance.
+>
+>
+
 > **Stage70 latest main sync, GCC ARM64 fix (2026-11-20):**
 > Real two-parent merge `3db80ef62fe` incorporates `main`
 > `d6c8fa4646cf` over Terra `3d657d976670`, changing only
