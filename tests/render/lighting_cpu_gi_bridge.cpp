@@ -4,8 +4,16 @@
 #include <memory>
 #include <vector>
 using namespace aiverse::render;
+struct FaultDevice final : FakeDevice {
+    bool failUploads=false;
+    void updateTexture(gfx::TextureHandle t,int x,int y,int w,int h,
+                       const void* pixels,int pitch) override {
+        if(failUploads)throw std::runtime_error("injected GI texture upload failure");
+        FakeDevice::updateTexture(t,x,y,w,h,pixels,pitch);
+    }
+};
 int main() {
-    FakeDevice device;
+    FaultDevice device;
     GiMainCpuBridge bridge;
     GiMainCpuConfig cfg;
     cfg.origin={-1,-1,-1}; cfg.spacing=1;
@@ -27,6 +35,20 @@ int main() {
     AIVERSE_TEST_CHECK(frame.canPresent);
     AIVERSE_TEST_CHECK(frame.traced<=2 && frame.published<=frame.traced);
     AIVERSE_TEST_CHECK(frame.uploaded==frame.published);
+    // Source changes create new dirty probes. A failed GPU upload after CPU
+    // tracing MUST close the presentation gate until a full atlas flush.
+    AIVERSE_TEST_CHECK(bridge.publishLights({
+        GiMovingLight{5,{0,0,0},{1,0,0},4,30}}));
+    device.failUploads=true;
+    bool uploadFailed=false;
+    try { (void)bridge.updateFrame({0,0,0}); }
+    catch(const std::runtime_error&) {uploadFailed=true;}
+    AIVERSE_TEST_CHECK(uploadFailed);
+    AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());
+    AIVERSE_TEST_CHECK(!bridge.updateFrame({0,0,0}).canPresent);
+    device.failUploads=false;
+    AIVERSE_TEST_CHECK(bridge.flushAll());
+    AIVERSE_TEST_CHECK(bridge.borrowedAtlas().valid());
     // A failed newer geometry publication may not expose stale GI.
     AIVERSE_TEST_CHECK(!bridge.publishGeometry(nullptr,2));
     AIVERSE_TEST_CHECK(!bridge.borrowedAtlas().valid());

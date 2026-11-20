@@ -103,6 +103,10 @@ public:
     FrameStats updateFrame(float3 focus) {
         FrameStats result;
         if(!ready()||!geometry_||!safe_||!device_->gpuHealthy())return result;
+        // Fail closed before tracing and uploading. A failed/partial RHI
+        // upload must never leave older incident light eligible to sample.
+        // flushAll() is the only recovery after an interrupted publication.
+        safe_=false;
         const auto start=std::chrono::steady_clock::now();
         std::vector<uint32_t> changed;
         const auto budget=budget_.choose(cpu_.scheduler().pending());
@@ -115,6 +119,7 @@ public:
             std::chrono::steady_clock::now()-start).count();
         budget_.observe(stats.claimed,result.cpuMilliseconds);
         result.pending=cpu_.scheduler().pending();
+        safe_=true;
         result.canPresent=true;
         return result;
     }
