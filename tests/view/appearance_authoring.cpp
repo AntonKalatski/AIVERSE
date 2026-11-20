@@ -1,7 +1,7 @@
 // Stage 108 deferred: generic material inheritance and animated graph
 // source policy are not defined in RTS or FPS gameplay code.
 #include "engine/view/AppearanceAuthoringService.h"
-#include <cassert>
+#include "../AlwaysCheck.h"
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -25,29 +25,29 @@ int main() {
     variant.set("texture",Json::string("textures/paint.png"));
     const auto flat=AppearanceAuthoringService::resolveMaterial(
         library,variant,warn);
-    assert(flat.getStr("team")=="tint");
-    assert(flat["metallic"].toDouble()==0.4);
-    assert(flat["roughness"].toDouble()==0.5);
+    AIVERSE_TEST_CHECK(flat.getStr("team")=="tint");
+    AIVERSE_TEST_CHECK(flat["metallic"].toDouble()==0.4);
+    AIVERSE_TEST_CHECK(flat["roughness"].toDouble()==0.5);
     render::Material material;
     material.name="body";
     int textureCalls=0;
     AppearanceAuthoringService::applyMaterial(
         material,library,variant,
         [&](const std::string& path) {
-            assert(path=="textures/paint.png");
+            AIVERSE_TEST_CHECK(path=="textures/paint.png");
             ++textureCalls;
             return 7;
         },warn);
-    assert(material.name=="body");
-    assert(material.baseTex==7);
-    assert(textureCalls==1);
-    assert(material.roughness==0.5f);
-    assert(material.team==render::TeamMode::Tint);
-    assert(warnings.empty());
+    AIVERSE_TEST_CHECK(material.name=="body");
+    AIVERSE_TEST_CHECK(material.baseTex==7);
+    AIVERSE_TEST_CHECK(textureCalls==1);
+    AIVERSE_TEST_CHECK(material.roughness==0.5f);
+    AIVERSE_TEST_CHECK(material.team==render::TeamMode::Tint);
+    AIVERSE_TEST_CHECK(warnings.empty());
     const auto missing=AppearanceAuthoringService::resolveMaterial(
         library,Json::string("not_found"),warn);
-    assert(missing.isObject());
-    assert(!warnings.empty());
+    AIVERSE_TEST_CHECK(missing.isObject());
+    AIVERSE_TEST_CHECK(!warnings.empty());
 
     render::Model model;
     bool failed=false;
@@ -56,5 +56,5 @@ int main() {
             Json::string("graphs/missing.json"),
             [](const std::string&,std::string&) {return false;});
     }catch(const std::runtime_error&) {failed=true;}
-    assert(failed);
+    AIVERSE_TEST_CHECK(failed);
 }
