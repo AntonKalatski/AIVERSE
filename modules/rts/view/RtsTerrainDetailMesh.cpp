@@ -197,7 +197,12 @@ void TerrainRenderer::updateDetailTextures(gfx::Device& dev, int i0, int j0, int
         dsplatPx_.assign(size_t(TW) * size_t(TH) * 4, 0);
         gfx::TextureDesc td; td.width = TW; td.height = TH; td.filter = gfx::Filter::Linear; td.mipmaps = true;
         td.data = nrmPx_.data(); td.label = "terrain detail normals"; detailNrmTex_ = dev.createTexture(td);
+        if (!detailNrmTex_.valid())
+            throw std::runtime_error("TerrainRenderer: detail normal texture allocation failed");
         td.data = dsplatPx_.data(); td.label = "terrain detail splat"; detailSplatTex_ = dev.createTexture(td);
+        if (!detailSplatTex_.valid())
+            throw std::runtime_error("TerrainRenderer: detail splat texture allocation failed");
+        dsplatW_ = TW; dsplatH_ = TH;
         i0 = 0; j0 = 0; i1 = SW; j1 = SH;
     }
     // texel t <-> sample t * (S - 1) / (T - 1)
