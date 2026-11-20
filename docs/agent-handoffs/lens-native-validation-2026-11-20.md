@@ -174,3 +174,14 @@ No save format change, no GPU lifetime relaxation. Branch codex/lens-completion.
 Focused animation rerun report `20261120-144641-22436`: budget_policy,
 humanoid_retarget and repaired ragdoll_asset **3/3 PASS**. CI NOT RUN.
 Next: repeat full keep-going quick runner, then terrain fault coverage.
+
+### Pass 12 correction — interrupted edit script
+
+The preceding entry overstates commit 71a852469: the edit script stopped on
+an assertion (AnimationOps uses the motionweave namespace alias, not literal
+lib::animation). Only packets.cpp, RtsView.cpp and RtsOverlaysDraw.cpp were
+changed in that commit. Commit `02fcb8ceac1fef646bab0b7c1cd9c23ebd0016b3` completes the other three files:
+AnimationOps, sprite fixture entrypoint, CMake linkage. No tests yet for these
+three fixes. The full build already started at 6b211f13a (report
+20261120-144953-27551); source changed during it, so treat it as a mixed-source
+diagnostic build only. Next: rerun from this fixed HEAD for reproducible results.
