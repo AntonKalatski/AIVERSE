@@ -88,10 +88,24 @@ const {createRequire} = require('node:module');
   const hair = root.listMaterials().filter(m => /hair_s_coil|eyebrows_m_thin/.test(m.getName()));
   if (!hair.length) throw Error('Missing authored groom materials');
   const manifest = {version:1,model:'model.gltf',dna:'vivid-dna.json',
+    appearance:sourceMaps?'appearance.json':undefined,
     materials:Object.fromEntries(hair.map(m=>[m.getName(),'hair']))};
   const dna={version:1,id:'ada-full-companion-export',displayName:'Ada — full character export',
     groom:{color:[0.03676008,0.02233289,0.01274758],roughness:0.55},
     rig:{rootBone:'vivid_full_root',headBone:'vivid_face_head',jawBone:'unused_jaw',leftEyeBone:'unused_eye_l',rightEyeBone:'unused_eye_r'}};
+  if(sourceMaps) {
+    const mapping=JSON.parse(fs.readFileSync(materialPath,'utf8'));
+    const materials={};
+    for(const mat of root.listMaterials()) {
+      const original=mat.getName().replace(/__coverage_core$/,'');
+      const spec=mapping.materials.find(m=>m.material_name===original);
+      if(!spec)continue;
+      const role=spec.kind==='skin'?'skin':spec.kind==='hair'?'hair':spec.kind==='cloth'?'cloth':
+        spec.face_slot==='eyelashes'?'lashes':spec.params.eye_pole_uv?'eyes':null;
+      if(role)materials[mat.getName()]=role;
+    }
+    fs.writeFileSync(path.join(destination,'appearance.json'),JSON.stringify({version:1,values:{},materials},null,2));
+  }
   const provenance={source:path.basename(source),sha256:crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex'),
     sourceKind:'published MetaHuman companion GLB; not body reconstructed from legacy Ada.dna',vertices,
     meshes:root.listMeshes().map(m=>m.getName()),sourceBounds:{min,max},previewScale:scale,previewYaw:yaw,

@@ -1,4 +1,5 @@
 #include "HumanMaterials.h"
+#include "HumanAppearance.h"
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -375,5 +376,131 @@ HumanSurfaceMaterials humanMaterials(const HumanDNA& dna,
 }
 HumanSurfaceMaterials humanMaterials(const HumanDNA& dna) {
     return humanMaterials(dna,HumanMaterialQuality::High);
+}
+
+void applyHumanAppearance(render::Model& model,const HumanAppearance& look) {
+    // Validate the entire recipe and all mappings before modifying the candidate.
+    (void)HumanAppearance::fromJson(look.toJson());
+    for(const auto& [name,role]:look.materials)
+        if(model.findMaterial(name)<0)throw std::invalid_argument("Appearance material missing: "+name);
+    auto materials=model.materials;
+    for(const auto& [name,role]:look.materials) {
+        auto& m=materials[std::size_t(model.findMaterial(name))];
+        const auto value=[&](const char* key){return look.get(key);};
+        Nodes g;
+        const auto input=g.add("input"),uv=g.add("uv");
+        auto alpha=g.scalarOp("alpha",input),color=input;
+        float rough=.65f;
+        auto c=[&](float x){return g.constant(x);};
+        auto mul=[&](std::string a,std::string b){return g.binary("multiply",a,b);};
+        auto add=[&](std::string a,std::string b){return g.binary("add",a,b);};
+        auto sub=[&](std::string a,std::string b){return g.binary("subtract",a,b);};
+        auto mix=[&](std::string a,std::string b,std::string t){return g.ternary("mix",a,b,t);};
+        auto rgb=[&](const char* a,const char* b,const char* d){return g.color({value(a),value(b),value(d)});};
+        auto smooth=[&](float a,float b,std::string x){return g.ternary("smoothstep",c(a),c(b),x);};
+        m.shading=render::ShadingModel::Pbr; // imported PBR, no extra fixed glint lobes
+        m.metallic=0;
+        if(role=="skin" || role=="cloth") {
+            const bool skin=role=="skin";
+            const std::string group=skin?"skin.":"cloth.";
+            rough=look.get(group+"roughness");
+            if(skin)rough=std::clamp(rough-value("skin.oiliness")*.2f-value("skin.wetness")*.3f,.15f,1.f);
+            m.normalScale=look.get(group+"normal");
+            auto luminance=g.binary("dot3",input,g.color({.2126f,.7152f,.0722f}));
+            color=mix(luminance,input,c(look.get(group+"saturation")));
+            color=mul(color,c(std::exp2(look.get(group+"exposure"))));
+            if(!skin)color=mul(color,rgb("cloth.tintR","cloth.tintG","cloth.tintB"));
+            if(skin) {
+                m.occlusionStrength=value("skin.cavity");
+                color=mix(g.color({.45f,.3f,.22f}),color,c(value("skin.texture")));
+                color=add(mul(sub(color,c(.18f)),c(value("skin.contrast"))),c(.18f));
+                color=mul(color,rgb("skin.tintR","skin.tintG","skin.tintB"));
+                color=mul(color,g.color({1.f+value("skin.redness")*.4f,1.f-value("skin.redness")*.18f,1.f-value("skin.redness")*.2f}));
+                const auto noise=g.scalarOp("gradientNoise",mul(uv,c(value("skin.freckleScale"))));
+                const auto freckles=smooth(1.f-value("skin.freckleDensity")*.45f,1.f,noise);
+                color=mul(color,sub(c(1),mul(freckles,c(value("skin.freckles")*value("skin.freckleTone")))));
+                const auto pores=g.scalarOp("gradientNoise",mul(uv,c(value("skin.poreScale"))));
+                color=mul(color,add(c(1),mul(sub(pores,c(.5f)),c(.12f*value("skin.pores")))));
+            }
+        } else if(role=="hair") {
+            rough=value("hair.roughness");
+            // Prepared companion atlas stores linear root position and strand seed
+            // in sRGB-encoded R/G, coverage in A. No arbitrary UV-root guess.
+            m.baseColor={1,1,1,m.baseColor.w};
+            const auto root=g.scalarOp("red",input),seed=g.scalarOp("green",input);
+            const float mel=value("hair.melanin"),red=value("hair.redness");
+            const auto pigment=g.color({std::exp(-4.6f*mel),std::exp(-6.f*mel)*(1-.55f*red),std::exp(-7.f*mel)*(1-.75f*red)});
+            color=mul(pigment,rgb("hair.dyeR","hair.dyeG","hair.dyeB"));
+            color=mul(color,add(c(1.f-value("hair.variation")*.5f),mul(seed,c(value("hair.variation")))));
+            const auto gray=g.binary("step",c(1.00001f-value("hair.gray")),seed);
+            color=mix(color,c(value("hair.grayLightness")),gray);
+            color=mul(color,sub(c(1),mul(sub(c(1),root),c(value("hair.rootDarkening")))));
+            const auto tips=mul(smooth(value("hair.ombreStart"),value("hair.ombreStart")+value("hair.ombreSoftness"),root),c(value("hair.ombre")));
+            color=mix(color,rgb("hair.tipR","hair.tipG","hair.tipB"),tips);
+            const auto strands=g.binary("step",c(1.00001f-value("hair.highlights")),g.scalarOp("fract",mul(seed,c(7.13f))));
+            color=mix(color,rgb("hair.tipR","hair.tipG","hair.tipB"),mul(strands,c(value("hair.highlightStrength"))));
+            alpha=g.scalarOp("clamp",mul(alpha,c(value("hair.coverage"))));
+            if(m.alpha==render::AlphaMode::Mask)m.alphaCutoff=value("hair.cutoff");
+        } else if(role=="lashes") {
+            rough=value("lashes.roughness");
+            alpha=g.scalarOp("clamp",mul(alpha,c(value("lashes.coverage"))));
+        } else if(role=="eyes") {
+            rough=value("eyes.roughness");
+            const bool right=name.find("Right")!=std::string::npos || name.find("right")!=std::string::npos;
+            const auto center=g.add("constant",{},vector4(value(right?"eyes.rightU":"eyes.leftU"),value("eyes.centerV"),0,1));
+            const auto radius=g.scalarOp("length3",sub(uv,center));
+            const float ir=value("eyes.irisSize"),pr=value("eyes.pupilSize");
+            const auto iris=smooth(ir-.006f,ir+.006f,radius);
+            const auto pupil=smooth(pr-.004f,pr+.004f,radius);
+            const auto detail=g.binary("dot3",input,g.color({.2126f,.7152f,.0722f}));
+            const auto texture=mix(c(1),g.ternary("clampRange",mul(detail,c(9)),c(.5f),c(1.5f)),c(value("eyes.irisTexture")));
+            color=mul(rgb("eyes.irisR","eyes.irisG","eyes.irisB"),texture);
+            color=mul(color,sub(c(1),mul(smooth(ir-value("eyes.limbusWidth"),ir,radius),c(value("eyes.limbus")))));
+            const float light=value("eyes.scleraLightness"),red=value("eyes.redness");
+            color=mix(color,g.color({light,light*(1-.3f*red),light*(1-.4f*red)}),iris);
+            color=mix(c(.003f),color,pupil);
+        }
+        m.roughness=rough;
+        m.shaderGraph=g.finish(g.binary("setAlpha",g.scalarOp("clamp",color),alpha),c(rough));
+    }
+    model.materials=std::move(materials);
+    model.markMaterialChanged();
+}
+
+void applyHumanBody(const render::Model& model,const HumanAppearance& look,
+                    std::span<render::mat4> world) {
+    if(world.size()!=model.nodes.size())throw std::invalid_argument("Body pose size mismatch");
+    bool changed=false;
+    for(const auto& f:appearanceFields)if(std::string_view(f.key).starts_with("body.")&&look.get(f.key)!=1.f)changed=true;
+    if(!changed)return;
+    const auto a=model.boundsMin,b=model.boundsMax;
+    const float h=b.y-a.y;if(!(h>1e-5f))throw std::invalid_argument("Body bounds have no height");
+    const float cx=(a.x+b.x)*.5f,cz=(a.z+b.z)*.5f;
+    auto field=[&](render::float3 p) {
+        const float y=std::clamp((p.y-a.y)/h,0.f,1.f);
+        auto bell=[&](float center,float width){const float d=(y-center)/width;return std::exp(-d*d);};
+        const float width=look.get("body.width")*(1+(look.get("body.hips")-1)*bell(.49f,.10f)
+          +(look.get("body.waist")-1)*bell(.61f,.07f)+(look.get("body.chest")-1)*bell(.73f,.08f)
+          +(look.get("body.shoulders")-1)*bell(.82f,.06f)+(look.get("body.head")-1)*bell(.94f,.06f));
+        const float yp=(p.y-a.y)/h;
+        const float shapedY=yp+(look.get("body.legs")-1)*std::min(yp,.52f)
+          +(look.get("body.torso")-1)*std::clamp(yp-.52f,0.f,.34f);
+        return render::float3{cx+(p.x-cx)*width,a.y+h*shapedY*look.get("body.height"),
+          cz+(p.z-cz)*look.get("body.depth")*(1+(look.get("body.head")-1)*bell(.94f,.06f))};
+    };
+    // Warp only actual skin joints (not mesh owner nodes as well: that would
+    // apply deformation twice). All duplicate clothing skeletons are included.
+    std::vector<bool> joint(world.size(),false);
+    for(const auto& skin:model.skins)for(int j:skin.joints)if(j>=0&&size_t(j)<joint.size())joint[size_t(j)]=true;
+    const float eps=h*.0001f;
+    for(size_t i=0;i<world.size();++i)if(joint[i]) {
+        auto& m=world[i];const render::float3 p{m.m[12],m.m[13],m.m[14]};const auto q=field(p);
+        for(int axis=0;axis<3;++axis) {
+            const render::float3 d{m.m[axis*4],m.m[axis*4+1],m.m[axis*4+2]};
+            const auto r=field({p.x+d.x*eps,p.y+d.y*eps,p.z+d.z*eps});
+            m.m[axis*4]=(r.x-q.x)/eps;m.m[axis*4+1]=(r.y-q.y)/eps;m.m[axis*4+2]=(r.z-q.z)/eps;
+        }
+        m.m[12]=q.x;m.m[13]=q.y;m.m[14]=q.z;
+    }
 }
 } // namespace aiverse::vivid

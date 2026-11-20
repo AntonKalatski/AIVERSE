@@ -109,6 +109,7 @@ struct CreatorApp {
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
     HumanImportManifest importedPackage;
+    std::optional<HumanAppearance> appearance, appearanceOverride;
     std::unique_ptr<MorphAuthoring> morphDraft;
     std::size_t morphSourceVertices=0;
     std::vector<MorphVec3> morphSourcePositions;
@@ -488,6 +489,7 @@ struct CreatorApp {
             if(externalMode) {
                 const auto& manifest=importedPackage;
                 auto imported=importHumanAsset(manifest,readerFor(importedManifest));
+                appearance=appearanceOverride?appearanceOverride:imported.appearance;
                 proposed.head=std::move(imported.model);
                 proposed.rig=imported.rig;
                 proposed.facialShapes=morphDraft
@@ -520,6 +522,7 @@ struct CreatorApp {
                             proposed.head->materials[std::size_t(index)],
                             presentation.materialQuality);
                 }
+                if(appearance)applyHumanAppearance(*proposed.head,*appearance);
                 const bool hasAuthoredHair=std::any_of(
                     manifest.materials.begin(),manifest.materials.end(),
                     [](const auto& pair) {
@@ -1801,6 +1804,7 @@ struct CreatorApp {
                 status="VIVID rig correction invalid: last-good pose retained";
             else facePose.swap(rigPoseScratch);
         }
+        if(appearance)applyHumanBody(*human.head,*appearance,facePose);
         if(actor) {
             if(!actor->dispatch(controller.frame(),human.facialBinding))
                 status=actor->lastError();
@@ -2276,6 +2280,14 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--appearance")==0 && i+1<argc) {
+            try {
+                std::ifstream file(argv[++i],std::ios::binary);
+                if(!file)throw std::runtime_error("Cannot open appearance recipe");
+                std::string bytes((std::istreambuf_iterator<char>(file)),{});
+                if(bytes.size()>128*1024)throw std::runtime_error("Appearance recipe too large");
+                application->appearanceOverride=HumanAppearance::fromJson(Json::parse(bytes));
+            }catch(const std::exception& e){std::fprintf(stderr,"VIVID appearance: %s\n",e.what());return 2;}
         }else if(std::strcmp(argv[i],"--portrait")==0) {
             application->portraitCapture=true;
         }else if(std::strcmp(argv[i],"--still")==0) {

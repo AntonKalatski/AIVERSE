@@ -23,10 +23,10 @@ const {bakeMaterials,linear,srgb}=require('./bake_materials.cjs');
   {material_name:'cloth',kind:'cloth',textures:{mask:'mask.png'},params:{mask_channel:'r',diffuse_color_1:[.1,.2,.3,1],diffuse_color_2:[.8,.7,.6,1],roughness:.7,metallic:0}}
  ]},dir,sharp);
  const h=await sharp(hair.getBaseColorTexture().getImage()).raw().toBuffer();
- assert.deepEqual([...h],[255,255,255,0,255,255,255,128]);
+ assert.deepEqual([...h],[Math.round(srgb(70/255)*255),Math.round(srgb(80/255)*255),255,0,Math.round(srgb(90/255)*255),Math.round(srgb(100/255)*255),255,128]);
  assert.equal(hair.getAlphaMode(),'BLEND');
  assert.equal(lash.getAlphaMode(),'BLEND');
- assert.deepEqual([...await sharp(lash.getBaseColorTexture().getImage()).raw().toBuffer()],[...h]);
+ assert.deepEqual([...await sharp(lash.getBaseColorTexture().getImage()).raw().toBuffer()],[255,255,255,0,255,255,255,128]);
  assert.equal(mesh.listPrimitives().length,2);
  const core=mesh.listPrimitives()[1];
  assert.equal(core.getAttribute('POSITION'),positions);

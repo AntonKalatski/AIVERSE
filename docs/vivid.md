@@ -6,6 +6,22 @@ Handoff log: [docs/agent-handoffs/vivid.md](agent-handoffs/vivid.md).
 Code ownership: `engine/character/vivid/`, `tests/vivid/`, `docs/vivid.md`, `skills/visuals/aiverse-vivid/`.
 Cross-cutting render, animation and build changes must be small and coordinated with their owners; avoid editing their in-progress features.
 
+## Imported appearance controls — 2026-11-20
+
+`HumanAppearance.h` defines a separate version-1 recipe with 72 bounded controls,
+explicit material roles and a shared native application path. Companion packages
+carry `appearance.json`; Creator applies it automatically. Matte fabric and skin
+use explicit roughness instead of the low values in packed source maps. Hair
+retains coverage and now carries source root/seed attributes for colour effects.
+Y-up body proportions affect presentation skin-joint matrices only, including
+clothing rigs. This stage provides native controls/serialization; Studio UI is
+tracked in the following handoff, not implied by the old Creator sliders.
+
+Reference controls: [Epic hair overrides](https://dev.epicgames.com/documentation/metahuman/hair-overrides)
+and [skin tools](https://dev.epicgames.com/documentation/metahuman/skin-material-tools).
+The implemented subset has no bundled MetaHuman texture library, authored regional
+accent masks, advanced hair geometry grooming or full UE shading parity.
+
 ## Companion texture checkpoint — 2026-11-20
 
 Ada's external companion package now uses decoded material textures instead of

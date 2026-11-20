@@ -138,8 +138,9 @@ argument the former uniform-cloth fallback is replaced by `bake_materials.cjs`:
 - Cloth: source mask channel blends authored linear colours, available textile
   detail/macro maps and AO. High-frequency detail is prefiltered for the bake's
   texel footprint to avoid moiré. The result is encoded to an sRGB colour texture.
-- Hair, eyebrows and eyelashes: source coverage is packed into alpha; RGB is
-  neutral so attribute channels cannot tint the hair. Eyelashes use BLEND with
+- Hair, eyebrows and eyelashes: source coverage is packed into alpha. Hair R/G
+  now store sRGB-encoded root position/strand seed for the appearance recipe;
+  lash RGB remains neutral. Eyelashes use BLEND with
   no depth write. Hair/brows use a BLEND fringe plus a MASK core (cutoff 0.5),
   sharing glTF accessors/textures. Native import currently duplicates core
   vertices, so this adds geometry memory and draws. The preview groom uses a
@@ -170,3 +171,24 @@ all material quality budgets after the alpha fix. Real Metal full/portrait captu
 are recorded in the feature handoff. Cloth/iris baking remains an approximation:
 no view-dependent eye refraction, procedural sclera veins, tangent-atlas hair
 anisotropy or complete UE skin/scattering parity is claimed.
+
+
+## Imported appearance profiles
+
+New packages include `appearance.json` and an optional manifest `appearance`
+relative path. The recipe is separate from binary MetaHuman DNA and VIVID DNA.
+72 bounded controls cover skin texture/tone/freckles/roughness, hair pigment,
+melanin/redness/gray/ombre/highlights/coverage, eyes/limbus/pupil/sclera,
+fabric finish/normal/tint, and 10 presentation body proportions. Material roles
+are explicit; unknown materials reject before publication. Creator reads the
+manifest profile automatically, or accepts `--appearance profile.json`.
+
+The shared PBR shader graph overrides roughness explicitly, so imported packed
+maps cannot silently reduce the chosen matte finish. No extra fixed Skin/Eye/Hair
+highlight lobe is applied to these imported materials. This is a bounded portable
+approximation, not Epic's skin scattering, anisotropic hair or corneal refraction.
+Facial texture libraries and authored wrinkle/mole masks are not bundled.
+
+Body shaping is a Y-up post-animation field over skin joints, including separate
+clothing rigs. It does not alter source skeletons, gameplay, physics or DNA. It
+requires a full skinned character; extreme shapes need garment collision checks.

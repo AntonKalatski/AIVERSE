@@ -3,6 +3,8 @@
 // Epic MetaHuman DNA parser is required for the public interchange format.
 #pragma once
 #include "HumanPreview.h"
+#include "HumanAppearance.h"
+#include <optional>
 #include <map>
 #include <memory>
 #include <string>
@@ -18,6 +20,7 @@ struct HumanImportManifest {
     std::uint32_t version=1;
     std::string modelPath;
     std::string dnaPath;
+    std::string appearancePath; // optional versioned imported-surface recipe
     std::string morphPath; // optional; rig-only face is supported
     // Optional named closed proxy mesh, authored directly in groom-local space.
     // It must have no skin and must not require a node transform.
@@ -31,6 +34,7 @@ struct HumanImportManifest {
 };
 struct HumanImportedAsset {
     HumanDNA dna;
+    std::optional<HumanAppearance> appearance;
     std::size_t sourceVertexCount=0;
     std::unique_ptr<render::Model> model;
     SparseMorphLibrary facialShapes;

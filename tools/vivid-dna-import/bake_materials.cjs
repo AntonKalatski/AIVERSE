@@ -95,6 +95,11 @@ async function bakeMaterials(doc,mapping,directory,sharp) {
    if(channel===undefined)throw Error('Unknown coverage channel');
    for(let k=0;k<output.length;k+=4) {
     output[k]=output[k+1]=output[k+2]=255;
+    if(spec.kind==='hair') {
+     const rootChannel=channel===3?0:1;
+     output[k]=Math.round(srgb(source.data[k+rootChannel]/255)*255);
+     output[k+1]=Math.round(srgb(source.data[k+2]/255)*255);
+    }
     output[k+3]=source.data[k+channel];
    }
    material.setBaseColorFactor(spec.kind==='hair'?[1,1,1,1]:[...p.base_color.slice(0,3),1])

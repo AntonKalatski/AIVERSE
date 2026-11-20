@@ -110,6 +110,7 @@ void HumanImportManifest::validate() const {
     require(version==1,"VIVID import: manifest version unsupported");
     relativePath(modelPath,true);
     relativePath(dnaPath,false);
+    relativePath(appearancePath,false);
     relativePath(morphPath,false);
     require(scalpColliderMesh.size()<=128 &&
             scalpColliderMesh.find_first_of("\n\r") == std::string::npos,
@@ -146,12 +147,16 @@ void HumanImportManifest::validate() const {
     }
 }
 HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
-    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh","facialLods"});
+    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh","facialLods","appearance"});
     HumanImportManifest m;
     require(src.has("version"),"VIVID import: missing manifest version");
     m.version=integer(src["version"]);
     require(src["model"].isString(),"VIVID import: model path string required");
     m.modelPath=src["model"].str();
+    if(src.has("appearance")) {
+        require(src["appearance"].isString(),"VIVID import: invalid appearance path");
+        m.appearancePath=src["appearance"].str();
+    }
     if(src.has("dna")) {
         require(src["dna"].isString(),"VIVID import: invalid DNA path");
         m.dnaPath=src["dna"].str();
@@ -216,6 +221,7 @@ Json HumanImportManifest::toJson() const {
     auto j=Json::object();
     j.set("version",Json::number(std::int64_t(version)));
     j.set("model",Json::string(modelPath));
+    if(!appearancePath.empty())j.set("appearance",Json::string(appearancePath));
     if(!dnaPath.empty())j.set("dna",Json::string(dnaPath));
     if(!morphPath.empty())j.set("morphs",Json::string(morphPath));
     if(!scalpColliderMesh.empty())
@@ -339,6 +345,12 @@ HumanImportedAsset importHumanAsset(const HumanImportManifest& m,
             throw std::runtime_error("VIVID import: unknown material "+name);
         out.model->materials[std::size_t(match)]=humanMaterialFromSource(
             category,out.dna,out.model->materials[std::size_t(match)]);
+    }
+    if(!m.appearancePath.empty()) {
+        std::string bytes;
+        require(reader(m.appearancePath,bytes)&&bytes.size()<=128*1024,"VIVID appearance unavailable/too large");
+        out.appearance=HumanAppearance::fromJson(Json::parse(bytes));
+        applyHumanAppearance(*out.model,*out.appearance);
     }
     return out;
 }

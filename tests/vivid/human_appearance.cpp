@@ -1,4 +1,5 @@
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/HumanAppearance.h"
 #include "engine/character/vivid/VividPresentationSettings.h"
 #include "engine/character/vivid/VividRendererQuality.h"
 #include "tools/vivid-creator/OpticalCaptureCases.h"
@@ -23,6 +24,35 @@ namespace {
 void expect(bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);}
 bool finite(render::float3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
 void test() {
+    HumanAppearance look;
+    expect(HumanAppearance::fromJson(look.toJson()).toJson()==look.toJson(),"appearance roundtrip");
+    auto invalid=look.toJson();auto badValues=invalid["values"];badValues.set("skin.roughness",Json::number(-1.0));invalid.set("values",badValues);
+    bool rejected=false;try{(void)HumanAppearance::fromJson(invalid);}catch(...){rejected=true;}
+    expect(rejected,"negative roughness accepted");
+    render::Model source;
+    for(const auto* role:{"skin","hair","lashes","eyes","cloth"}) {
+        render::Material m;m.name=role;m.alpha=render::AlphaMode::Blend;m.baseTex=3;
+        source.materials.push_back(m);look.materials[role]=role;
+    }
+    applyHumanAppearance(source,look);
+    for(const auto& m:source.materials) {
+        expect(bool(m.shaderGraph)&&m.baseTex==3&&m.alpha==render::AlphaMode::Blend,"appearance lost textures/alpha");
+        expect(m.shaderGraph->nodes<=128,"appearance graph exceeds budget");
+    }
+    expect(source.materials[4].roughness>.8f,"cloth default still glossy");
+    const auto before=source.materials[0].shaderGraph;
+    look.values["skin.roughness"]=.3f;applyHumanAppearance(source,look);
+    expect(source.materials[0].roughness<.35f && source.materials[0].shaderGraph!=before,"roughness not applied");
+    source.boundsMin={-1,0,-1};source.boundsMax={1,2,1};source.nodes.resize(2);
+    render::Skin skin;skin.joints={1};source.skins.push_back(skin);
+    std::vector<render::mat4> world(2,render::mat4::translate({0,1,0}));
+    const auto original=world;
+    applyHumanBody(source,look,world);
+    expect(world[1].m[13]==original[1].m[13],"neutral body changes pose");
+    look.values["body.height"]=1.2f;applyHumanBody(source,look,world);
+    expect(std::abs(world[1].m[13]-1.2f)<.001f && world[0].m[13]==1.f,"body deformation double applied or absent");
+    expect(source.nodes[1].t.y==0,"body mutated source skeleton");
+
     for(auto name:{"neutral","warm","cool","stylized"}) {
         auto dna=HumanDNA::preset(name);
         auto mat=humanMaterials(dna);
