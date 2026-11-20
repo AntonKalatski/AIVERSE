@@ -322,6 +322,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             stats_.strataIndexBytes = st.indexBytes;
             stats_.strataSeamCertifiedPrimitives=st.seamCertifiedPrimitives;
             stats_.strataSeamRejectedParents=st.seamRejectedParents;
+            stats_.strataCrossMaterialCertifiedSources=
+                st.crossMaterialCertifiedSources;
+            stats_.strataCrossMaterialMatchedSeams=
+                st.crossMaterialMatchedSeams;
             for (const auto& warning : strataStaging_->warnings())
                 warnings_.push_back(warning);
         }
@@ -381,7 +385,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 if (!model) continue;
                 const auto* asset = strataStaging_->find(key);
                 if (!asset) { ++stats_.strataPortableDeclined; continue; }
-                if(!std::all_of(asset->primitives.begin(),
+                if(!asset->sourceSeamsCertified ||
+                   !std::all_of(asset->primitives.begin(),
                        asset->primitives.end(),
                        [](const strata::ModelPrimitiveAsset& entry){
                            return entry.geometry.seamCertified;
@@ -536,7 +541,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                             [](const strata::ModelPrimitiveAsset& entry){
                                 return entry.geometry.seamCertified;
                             });
-                        if(seamSafe)
+                        if(seamSafe && asset->sourceSeamsCertified)
                             strataGpuMetadata_->stage(dev,key,*model,*asset);
                         else
                             ++stats_.strataSeamUnsafeDeclined;
@@ -815,7 +820,8 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
     for(const auto& [key,model]:models_){
         if(model.get()!=instance.model)continue;
         const auto* staged=strataStaging_->find(key);
-        if(!staged || staged->primitives.empty() ||
+        if(!staged || !staged->sourceSeamsCertified ||
+           staged->primitives.empty() ||
            !std::all_of(staged->primitives.begin(),
                         staged->primitives.end(),
                         [](const strata::ModelPrimitiveAsset& primitive){
