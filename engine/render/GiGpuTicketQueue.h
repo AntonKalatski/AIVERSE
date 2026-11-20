@@ -157,9 +157,17 @@ public:
         PollStats stats;
         for(size_t i=0;i<pending_.size();) {
             auto& batch=pending_[i];
-            if(batch.gpuFrameSerial && dev_ &&
-               dev_->completedFrameSerial()>=batch.gpuFrameSerial) {
-                batch.fence->successful.store(dev_->gpuHealthy(),std::memory_order_release);
+            // Device loss is a terminal failure, not a successful GPU fence.
+            // Vulkan may never signal the submitted frame's VkFence after a
+            // device loss; Metal's completion callback may also be absent.
+            // Abort scheduler tickets now, leaving their probe cells DIRTY,
+            // so shutdown/reinitialization cannot hang on an impossible ACK.
+            if(dev_ && !dev_->gpuHealthy()) {
+                batch.fence->successful.store(false,std::memory_order_release);
+                batch.fence->ready.store(true,std::memory_order_release);
+            } else if(batch.gpuFrameSerial && dev_ &&
+                      dev_->completedFrameSerial()>=batch.gpuFrameSerial) {
+                batch.fence->successful.store(true,std::memory_order_release);
                 batch.fence->ready.store(true,std::memory_order_release);
             }
             if(!batch.fence->ready.load(std::memory_order_acquire)) {++i;continue;}
