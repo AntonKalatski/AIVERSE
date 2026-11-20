@@ -195,7 +195,12 @@ Json StudioSession::dispatch(const Json& request) {
                 } else {
                     StudioAssetCatalog catalog(ws_.project.dir);
                     catalog.rebuild();
-                    reply.set("result",facialPreview_.bind(catalog,guid,params["rig"]));
+                    // Facial mode takes precedence over a previously opened
+                    // material sphere, without mutating map/gameplay data.
+                    Json result=facialPreview_.bind(catalog,guid,params["rig"]);
+                    previewMaterialName_.clear();
+                    refreshMaterialPreview();
+                    reply.set("result",std::move(result));
                 }
             } else if(method=="studio.facialPreviewControls") {
                 const Json& revision=params["revision"];

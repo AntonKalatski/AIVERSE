@@ -46,6 +46,37 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   const [inputVectors,setInputVectors]=useState<Record<string,[number,number,number]>>({});
   const [previewBusy,setPreviewBusy]=useState(false);
   const [previewStatus,setPreviewStatus]=useState('');
+  // Poll actual native renderer status, not a client-generated preview image.
+  useEffect(()=>{
+    if(!connected || !projectPath || !binding?.bound)return;
+    let alive=true;
+    const refresh=()=>{
+      void invoke('studio.facialPreviewInfo',{}).then(next=>{
+        if(alive && next.guid===modelGuid &&
+           next.revision===binding.revision)setBinding(next);
+      }).catch(()=>{});
+    };
+    refresh();
+    const interval=window.setInterval(refresh,700);
+    return ()=>{alive=false;window.clearInterval(interval);};
+  },[connected,projectPath,modelGuid,binding?.bound,binding?.revision]);
+
+  // Short debounce keeps sliders interactive while streaming only typed,
+  // validated scalar/IK values into the device-owner native session.
+  useEffect(()=>{
+    if(!connected || !projectPath || !binding?.bound)return;
+    const handle=window.setTimeout(()=>{
+      void invoke('studio.facialPreviewControls',{
+        revision:binding.revision,
+        values:inputValues,vectors:inputVectors
+      }).then(next=>{
+        if(next.guid===modelGuid && next.revision===binding.revision)
+          setBinding(next);
+      }).catch(e=>setError(message(e)));
+    },75);
+    return ()=>window.clearTimeout(handle);
+  },[connected,projectPath,modelGuid,binding?.bound,
+     binding?.revision,inputValues,inputVectors]);
 
   const dirty=!!draft && (!saved || JSON.stringify(draft)!==JSON.stringify(saved));
   const issues=useMemo(()=>draft?validateFacialRigDraft(draft):[],[draft]);
@@ -160,7 +191,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
       const result=await invoke('studio.facialPreviewBind',{guid:modelGuid,rig:draft});
       setBinding(result);setInputValues({...result.values});
       setInputVectors({...result.vectors});
-      setPreviewStatus('Model GUID and authoring inputs validated by native Studio. No GPU pose has been generated.');
+      setPreviewStatus('Binding accepted. The native viewport will load the imported model and compile its facial rig.');
     }catch(e){setError(message(e));setBinding(null);}
     finally{setPreviewBusy(false);}
   };
@@ -173,7 +204,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
       });
       setBinding(result);setInputValues({...result.values});
       setInputVectors({...result.vectors});
-      setPreviewStatus('Inputs accepted and stored by native Studio; GPU preview still unavailable.');
+      setPreviewStatus('Inputs accepted; the next native Metal frame uses these values.');
     }catch(e){setError(message(e));}
     finally{setPreviewBusy(false);}
   };
@@ -266,13 +297,19 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
             disabled={previewBusy}>Send native inputs</StudioButton>
         </>}
         {previewStatus&&<p className="facial-footnote" role="status">{previewStatus}</p>}
-        <StudioAlert tone="warning" title="GPU preview not integrated yet">
-          The Studio branch currently supports {binding?.rendererChannelCapacity??8} morph slots,
-          while MotionWeave requires 64 for ARKit 52.
-          Binding verifies the asset GUID and input schema, not the actual mesh channels,
-          IK bones or a rendered pose. Native ModelView preview exists on the
-          separate MotionWeave branch; the renderer branches must be integrated first.
-        </StudioAlert>
+        {binding?.runtimeReady?
+          <StudioAlert tone="success" title="Native facial frame submitted">
+            <span className="facial-preview-note"><Eye size={14}/>
+              The actual imported model is rendered through Studio's Metal Renderer3D
+              using MotionWeave's facial rig and one Animator pose.
+              This is not yet a passed pixel, Vulkan/GLES or performance test.
+            </span>
+          </StudioAlert>:
+          <StudioAlert tone="warning" title="Native facial preview">
+            {binding?.reason??'Choose a model, then bind the facial draft.'}
+            The renderer reports readiness only after a real Metal frame;
+            no synthetic browser character is displayed.
+          </StudioAlert>}
       </StudioSection>
       {error&&<StudioAlert tone="danger" title="Cannot complete action">{error}</StudioAlert>}
       {info&&<StudioAlert tone="success">{info}</StudioAlert>}

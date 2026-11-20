@@ -9,8 +9,8 @@ export interface StudioFacialPreviewBinding {
   revision: number; // binding epoch, must match control updates
   values: Record<string,number>;
   vectors: Record<string,[number,number,number]>;
-  runtimeReady: false; // this integration branch still has 8-slot Renderer3D
-  runtimeVerified: false;
+  runtimeReady: boolean; // set only after an actual native Metal Renderer3D frame
+  runtimeVerified: false; // GPU pixels/backends have not passed native QA
   rendererChannelCapacity: number;
   reason: string;
 }
