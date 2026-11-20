@@ -99,6 +99,45 @@ int main(){
         assert(read(project/"content"/"Models"/"Textures"/"Rocks"/"Stone.png")=="pixels");
         db.rebuild();
         assert(db.byPath("Models/Textures/Rocks/Stone.png"));
+        // A failing dependent document write must revert all internal file
+        // and metadata moves, not leave a partially committed project.
+        write(project/"content"/"Models"/"Rollback.png","rollback-pixels");
+        db.rebuild();
+        const auto rollbackGuid=db.byPath("Models/Rollback.png")->guid;
+        auto failMove=StudioTransferPlan::internal(project,"Other",{"Models/Rollback.png"});
+        bool hookFailed=false;
+        try {
+            (void)failMove.apply(failMove.token(),{},[] {
+                throw std::runtime_error("injected material write failure");
+            });
+        } catch (const std::runtime_error&) { hookFailed=true; }
+        assert(hookFailed);
+        assert(read(project/"content"/"Models"/"Rollback.png")=="rollback-pixels");
+        assert(fs::exists(project/"content"/"Models"/"Rollback.png.meta"));
+        assert(!fs::exists(project/"content"/"Other"/"Rollback.png"));
+        assert(!fs::exists(project/".aiverse-cache"/"studio-move-journal"));
+        db.rebuild();
+        assert(db.byGuid(rollbackGuid)->path=="Models/Rollback.png");
+
+        // Successful follow-up proves a failed move leaves the project usable.
+        auto retryMove=StudioTransferPlan::internal(project,"Other",{"Models/Rollback.png"});
+        const auto retry=retryMove.apply(retryMove.token(),{});
+        assert(retry["issues"].size()==0);
+        db.rebuild();
+        assert(db.byGuid(rollbackGuid)->path=="Other/Rollback.png");
+
+        // Destructive internal replace remains forbidden until it has
+        // a complete backup protocol, even if the UI is bypassed.
+        write(project/"content"/"Models"/"Rollback.png","collision");
+        db.rebuild();
+        auto unsafe=StudioTransferPlan::internal(project,"Other",{"Models/Rollback.png"});
+        bool replaceRejected=false;
+        try { (void)unsafe.apply(unsafe.token(),{{0,"replace"}}); }
+        catch (const std::runtime_error&) { replaceRejected=true; }
+        assert(replaceRejected);
+        assert(read(project/"content"/"Models"/"Rollback.png")=="collision");
+        assert(read(project/"content"/"Other"/"Rollback.png")=="rollback-pixels");
+
         std::cout<<"PASS studio conflict resolution and GUID-preserving asset transfers\n";
     }catch(...){fs::remove_all(temp);throw;}
     fs::remove_all(temp);
