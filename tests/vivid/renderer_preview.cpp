@@ -8,6 +8,7 @@
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/ModelVertexStreamOverride.h"
 #include "engine/character/vivid/GpuActorStream.h"
+#include "engine/character/vivid/SculptGpuSubmittedView.h"
 #include "engine/character/vivid/GpuActorRetirement.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/character/vivid/FaceShapeBinding.h"
@@ -369,6 +370,11 @@ struct Preview {
                 });
             require(direct,
                 "VIVID colour-pass command did not submit the GPU actor");
+            const auto staged=renderer.modelViewProvenance(*model);
+            const auto matched=vivid::validateSculptGpuSubmittedView(
+                staged,submission,*model,0,device->frameSerial());
+            require(matched.accepted,
+                "VIVID renderer staged and accepted model source disagree");
         }
         const auto& profile=renderer.profile();
         // A newly compiled Metal model pipeline can be Pending for several
