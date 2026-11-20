@@ -594,6 +594,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // Graph sends negative or >1 weights, stay at LOD0 rather than
         // choosing a coarse LOD with unbounded screen-size estimates.
         bool morphWeightsBounded=true;
+        bool morphMappingsReady=true;
         if(baseHasMorph) {
             int maxChannels=0;
             for(const auto& p:baseMesh.primitives)
@@ -605,9 +606,32 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                    weights[k]<0.f || weights[k]>1.f) {
                     morphWeightsBounded=false;break;
                 }
+            // Native hosts may author ModelLod directly. If their morph
+            // remap is absent/incomplete, fall back to LOD0 instead of
+            // displaying a bind-face or mismatched expression on LOD1.
+            for(const auto& lod:baseMesh.lods) {
+                if(lod.mesh<0 || size_t(lod.mesh)>=m->meshes.size()) {
+                    morphMappingsReady=false;break;
+                }
+                int targetCount=0;
+                for(const auto& p:m->meshes[size_t(lod.mesh)].primitives)
+                    targetCount=std::max(targetCount,p.morphTargets);
+                if(targetCount<=0 ||
+                   lod.morphSourceForTarget.size()<size_t(targetCount)) {
+                    morphMappingsReady=false;break;
+                }
+                for(int k=0;k<targetCount;++k) {
+                    const int src=lod.morphSourceForTarget[size_t(k)];
+                    if(src<0 || src>=maxChannels) {
+                        morphMappingsReady=false;break;
+                    }
+                }
+                if(!morphMappingsReady)break;
+            }
         }
         const bool morphLod=node.skin<0 && !displaced &&
-                            baseHasMorph && morphWeightsBounded;
+                            baseHasMorph && morphWeightsBounded &&
+                            morphMappingsReady;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -621,7 +645,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
         const bool skinLod = node.skin >= 0 && !displaced && usePose &&
             !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size() &&
-            (!baseHasMorph || morphWeightsBounded);
+            (!baseHasMorph || (morphWeightsBounded && morphMappingsReady));
         const bool lodEligible = (rigid || skinLod || morphLod) &&
                                  !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
