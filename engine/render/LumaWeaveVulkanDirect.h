@@ -135,7 +135,7 @@ public:
     // False means no handles have been destroyed; host must call poll()
     // after a later beginFrame and retry.
     bool shutdown() {
-        if(pendingFrame_)return false;
+        if(busy())return false;
         if(dev_) {
             for(auto handle:{receiverBuffer_,lightBuffer_,triangleBuffer_,nodeBuffer_})
                 if(handle.valid())dev_->destroyBuffer(handle);
