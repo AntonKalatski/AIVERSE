@@ -1,4 +1,5 @@
 #include "StrataModelAdapter.h"
+#include "StrataSourceSeams.h"
 
 #include <array>
 #include <cstddef>
@@ -122,6 +123,16 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
             next.primitives.push_back(std::move(prepared));
         }
     }
+    if(!next.primitives.empty()){
+        SourceSeamAudit seamReport{};
+        std::string seamError;
+        if(!auditModelSourceSeams(model,next,seamReport,&seamError)){
+            if(error)*error="source-wide seam validation: "+seamError;
+            return false; // preserve the caller's previous asset on failure
+        }
+        next.sourceSeamsCertified=true;
+        next.sharedGeometricBoundarySegments=seamReport.matchedSegments;
+    }
     out = std::move(next);
     return true;
 }
@@ -155,6 +166,12 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
         ++stats_.skippedSources;
         return false;
     }
+    if(!built.sourceSeamsCertified){
+        ++stats_.failedSources;
+        warnings_.push_back("Strata staging '" + key +
+            "': cross-material/source seam topology is not certified");
+        return false;
+    }
     for (const auto& primitive : built.primitives) {
         // A new builder is REQUIRED to supply exact seam certification
         // before this asset is ever used by production STRATA. Raw legacy
@@ -174,6 +191,9 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
         ++stats_.seamCertifiedPrimitives;
         stats_.seamRejectedParents += primitive.geometry.seamRejectedParents;
     }
+    stats_.crossMaterialMatchedSeams+=
+        built.sharedGeometricBoundarySegments;
+    ++stats_.crossMaterialCertifiedSources;
     assets_.emplace(key, std::move(built));
     ++stats_.stagedSources;
     return true;
