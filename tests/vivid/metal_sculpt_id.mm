@@ -262,6 +262,54 @@ void test() {
                 "GPU ModelVertex ID pass ignored actual skinned joint pose");
         device->destroyBuffer(skinStream);
 
+        // 7AV: two unequal UNORM8 skin influences follow Renderer3D's
+        // 3x4 row-blend order. A following model-world transform MUST
+        // apply after skinning; the original GPU source positions are
+        // still borrowed and never reconstructed on the CPU.
+        model.nodes.resize(3);
+        model.skins[0].joints={1,2};
+        model.skins[0].inverseBind={
+            render::mat4::identity(),render::mat4::identity()};
+        model.meshes[0].primitives[0].jointPalette={0,1};
+        for(auto& vertex:model.vertices) {
+            vertex.joints[0]=0;vertex.weights[0]=128;
+            vertex.joints[1]=1;vertex.weights[1]=64;
+        }
+        gpuDesc.data=model.vertices.data();
+        auto parityStream=device->createBuffer(gpuDesc);
+        require(parityStream.valid(),
+                "Metal renderer 3x4 palette parity actor source missing");
+        const std::array<render::mat4,3> twoJointPose{{
+            render::mat4::identity(),
+            render::mat4::translate({ 2.0f,0,0}),
+            render::mat4::translate({-2.0f,0,0})
+        }};
+        require(prepareSculptGpuVertexSource(
+                    model,0,twoJointPose,render::mat4::identity(),
+                    parityStream,std::uint32_t(model.vertices.size()),
+                    {},model.vertices.size(),source) &&
+                source.params.skinned==1,
+                "Metal two-joint Renderer3D parity preparation failed");
+        usedOverride=false;
+        const auto shiftedBySkin=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                shiftedBySkin==std::vector<std::uint8_t>({0,0,0,0}),
+                "Metal native renderer row-order weighted skin did not move pixel");
+        require(prepareSculptGpuVertexSource(
+                    model,0,twoJointPose,
+                    render::mat4::translate({-2.0f/3.0f,0,0}),
+                    parityStream,std::uint32_t(model.vertices.size()),
+                    {},model.vertices.size(),source),
+                "Metal GPU parity post-skin world transform preparation failed");
+        usedOverride=false;
+        const auto restoredByWorld=runSample(
+            *device,pass,model,surface,32,32,{},&source,&usedOverride);
+        require(usedOverride &&
+                restoredByWorld==std::vector<std::uint8_t>({2,0,0,0}),
+                "Metal post-skin model world transform broke renderer algebra");
+        device->destroyBuffer(parityStream);
+
         require(pass.shutdownAfterIdle(),
                 "VIVID Metal ID resources did not pass GPU idle retirement");
         device->destroyTexture(alphaTexture);
