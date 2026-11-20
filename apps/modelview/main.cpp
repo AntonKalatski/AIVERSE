@@ -708,15 +708,43 @@ struct Viewer {
         // All graphics-visible borrowed models must stay pinned until
         // Renderer3D::render, not just until View::submitOne returns.
         attachmentView.beginPreparedFrame();
+        animatedChildView.beginPreparedFrame();
         std::vector<Imported::Prepared> attachmentPackets;
         attachmentPackets.reserve(inst.size());
+        std::vector<::aiverse::view::AnimatedSceneAttachmentSources::Prepared>
+            childPackets;
+        // Parent Animators write their own poses before child graph updates.
+        for(auto& actor:inst) {
+            if(!actor.model)continue;
+            if(!paused && seek<0)actor.anim.update(float(dt));
+            actor.anim.evaluate(actor.pose);
+            worldMatrices(*actor.model,actor.pose,actor.world);
+        }
+        bool childReady=false;
+        if(attachmentGeneration) {
+            std::vector<::aiverse::view::AnimatedSceneAttachmentSources::Input> inputs;
+            for(size_t i=0;i<attachmentGeneration->childGraphs.size();++i)
+                for(const auto& [id,published]:attachmentGeneration->childGraphs[i])
+                    inputs.push_back({
+                        {1,"actor-"+std::to_string(i),id},
+                        published,published->parameters});
+            childPackets.reserve(inputs.size());
+            ::aiverse::view::AnimatedSceneAttachmentSources::Statistics stats;
+            std::string error;
+            childReady=attachmentGeneration->animations.sync(
+                *attachmentGeneration->scenes,nativeModels->resources(),
+                inputs,(paused || seek>=0)?0.f:float(std::max(0.,dt)),
+                stats,&error);
+            if(!childReady && error!=nativeReloadError) {
+                nativeReloadError=error;
+                log.push_back("child Graph sync: "+error);
+            }
+        }
         if (gallery) { gallery->update(time); gallery->draw(r3d, time); }
         else r3d.drawMesh(ground, mat4{}, {1, 1, 1, 1}, kDrawNoCastShadow, 0.05f);
         for (auto& in : inst) {
             if (!in.model) continue;
-            if (!paused && seek < 0) in.anim.update(float(dt));
-            in.anim.evaluate(in.pose);
-            worldMatrices(*in.model, in.pose, in.world);
+            // Pre-evaluated before the independent child graph sync.
             ModelDraw md;
             md.model = in.model;
             md.world = in.fix;
@@ -752,6 +780,28 @@ struct Viewer {
                     // not every visible instance using that resource.
                     prepared.object.id=uint64_t(&in-inst.data())+1;
                     attachmentView.submitOne(r3d,prepared.object);
+                    if(childReady && attachmentGeneration) {
+                        const size_t actorIndex=size_t(&in-inst.data());
+                        for(const auto& [childId,published]:
+                            attachmentGeneration->childGraphs[actorIndex]) {
+                            (void)published;
+                            ::aiverse::view::AnimatedSceneAttachmentSources::Prepared child;
+                            std::string childError;
+                            if(attachmentGeneration->animations.prepare(
+                                    *attachmentGeneration->scenes,
+                                    nativeModels->resources(),
+                                    {1,"actor-"+std::to_string(actorIndex),childId},
+                                    prepared.object.draw,
+                                    std::span<const mat4>(in.world.data(),in.world.size()),
+                                    child,&childError)) {
+                                animatedChildView.submitOne(r3d,child.object);
+                                childPackets.push_back(std::move(child));
+                            } else if(childError!=nativeReloadError) {
+                                nativeReloadError=childError;
+                                log.push_back("child Graph draw: "+childError);
+                            }
+                        }
+                    }
                     attachmentPackets.push_back(std::move(prepared));
                     presented=true;
                     in.lastAttachmentError.clear();
@@ -768,6 +818,7 @@ struct Viewer {
         r3d.render(pass);
         // All submitted GPU input has now been synchronously encoded;
         // ModelResourceCache retains ownership for actual GPU completion.
+        childPackets.clear();
         attachmentPackets.clear();
         ImGui::SetNextWindowPos(ImVec2(8, 8));
         ImGui::SetNextWindowBgAlpha(0.55f);
