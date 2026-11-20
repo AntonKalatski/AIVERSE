@@ -54,3 +54,13 @@
 .graph-summary{background:var(--au-panel-raised);border-color:var(--au-line)}
 .statusbar{background:var(--au-panel-raised);border-color:var(--au-line);color:var(--au-text-faint)}
 @media(prefers-reduced-motion:reduce){.nested-tab,.tool-button{transition:none}}
+
+/* Global UI scale is applied at document root; settings surface follows the shell. */
+.studio-editor-settings{position:fixed;right:14px;top:55px;z-index:5000;
+  width:290px;padding:16px;display:flex;flex-direction:column;gap:12px;
+  background:var(--au-overlay);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-md);box-shadow:var(--au-shadow-md);color:var(--au-text)}
+.studio-editor-settings label{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
+.studio-editor-settings input[type=range]{width:100%;accent-color:var(--au-accent)}
+.studio-editor-settings button{background:var(--au-field);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-sm);padding:8px;color:var(--au-text);cursor:pointer}
