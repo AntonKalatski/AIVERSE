@@ -4,6 +4,17 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Dynamic indirect GI (lighting integration branch, 2026-11-20)
+
+Reuse `engine/render/GiMainCpuBridge.h` / `GiMainGpuBridge.h` and
+`Renderer3D::setDynamicGiOverlay`; do not create genre-specific GI engines.
+Native host: `apps/renderbench/DynamicGiHost.h`; contracts: `docs/dynamic-gi.md`.
+Read `docs/agent-handoffs/lighting-main-stage19-native-host-2026-11-20.md`.
+Compute is bounded and fence-backed; larger scenes use explicit CPU fallback.
+Metal/desktop GL pixels and native glTF host are checked. Vulkan SPIR-V compiles;
+Vulkan/mobile GPU acceptance and production performance remain separate gates.
+All builds for this task must stay on KINGSTON, as required by the owner.
+
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
 **Never implement the same screen effect in both systems.** PRISMA and SpectraFX are distinct genre-independent engines:
