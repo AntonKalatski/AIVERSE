@@ -161,6 +161,9 @@
     [[NSRunLoop mainRunLoop] addTimer:timer_ forMode:NSRunLoopCommonModes];
 }
 - (void)tick {
+    // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
+    // Never render that provisional map as if it belonged to the user.
+    if (session_->workspace().project.dir.empty()) return;
     if (!placement_.visible || viewport_.hidden || window_.isMiniaturized || !window_.visible) return;
     @autoreleasepool {
         try {

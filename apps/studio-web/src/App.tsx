@@ -115,7 +115,8 @@ export default function App() {
   const selected = snapshot?.scene.entities.find(entity => entity.id === snapshot.selectedId);
   const consoleOpen = panelStack(dock, 'console') !== null;
   const renderPanel = (panel: StudioPanel) => renderStudioPanel(panel, {
-    snapshot, busy, search, setSearch, rows, selected, select, changeProperty
+    snapshot, busy, connected, search, setSearch, rows, selected,
+    select, changeProperty, openProject
   });
 
   return <div className="studio">

@@ -3,7 +3,7 @@
 // then insert one render case below. All data mutations still use Studio Bridge.
 import type { ReactNode } from 'react';
 import {
-  Activity, Box, ChevronDown, FolderTree, Lightbulb, MonitorPlay,
+  Activity, Box, ChevronDown, FolderOpen, FolderTree, Lightbulb, MonitorPlay,
   MoreHorizontal, Plus, Search, SlidersHorizontal
 } from 'lucide-react';
 import type { StudioEntity, StudioSnapshot } from '../types';
@@ -15,10 +15,13 @@ import AssetsPanel from '../components/AssetsPanel';
 import LightingPanel from './LightingPanel';
 import MaterialsPanel from './MaterialsPanel';
 import ShaderGraphPanel from './ShaderGraphPanel';
+import { studioSceneMode } from './sceneState';
 
 export interface StudioPanelContext {
   snapshot: StudioSnapshot | null;
   busy: boolean;
+  connected: boolean;
+  openProject: () => Promise<void>;
   search: string;
   setSearch: (value: string) => void;
   rows: Array<{node: StudioEntity; depth: number}>;
@@ -28,7 +31,8 @@ export interface StudioPanelContext {
 }
 
 export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): ReactNode {
-  const {snapshot,busy,search,setSearch,rows,selected,select,changeProperty}=ctx;
+  const {snapshot,busy,connected,openProject,search,setSearch,rows,selected,select,changeProperty}=ctx;
+  const sceneMode=studioSceneMode(connected,snapshot?.project.path);
     switch (panel) {
       case 'hierarchy':
         return <>
@@ -42,7 +46,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
             <kbd>⌘ K</kbd>
           </label>
           <div className="tree-label"><ChevronDown size={14}/><FolderTree size={15}/>
-            <span>{snapshot?.scene.name ?? 'Scene'}</span>
+            <span>{connected && !snapshot?.project.path ? 'No project' : snapshot?.scene.name ?? 'Scene'}</span>
           </div>
           <div className="tree-list">
             {rows.filter(({ node }) => node.name.toLowerCase().includes(search.toLowerCase()))
@@ -89,9 +93,21 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
               <span className="toolbar-divider"/>
               <span className="viewport-label">Perspective</span>
             </div>
-            <span className="render-badge"><Activity size={13}/> Native Renderer3D (experimental)</span>
+            <span className="render-badge"><Activity size={13}/>
+              {sceneMode === 'welcome' ? 'Open project to render' : 'Native Renderer3D (experimental)'}
+            </span>
           </div>
-          <ViewportPlaceholder title="Scene viewport" active/>
+          {sceneMode === 'welcome' ?
+            <div className="studio-no-project" role="status">
+              <div className="studio-no-project-symbol"><FolderOpen size={32} strokeWidth={1.25}/></div>
+              <h2>No project open</h2>
+              <p>Open an AIVERSE project to inspect its scene, edit objects,
+                and render the world using the native engine.</p>
+              <button className="studio-no-project-action"
+                disabled={busy}
+                onClick={() => void openProject()}><FolderOpen size={15}/> Open Project</button>
+            </div> :
+            <ViewportPlaceholder title="Scene viewport" active/>}
         </>;
       case 'console':
         return <div className="log-list">

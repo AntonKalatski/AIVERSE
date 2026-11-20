@@ -676,3 +676,20 @@ html.native-composite .viewport { touch-action: none; }
 .dock-body .log-list{flex:1;min-height:0}
 .dock-body .search-box{flex:none}
 .dock-body .inspector-section{flex:1;min-height:0}
+
+/* Welcome view when the native bridge is connected but no project is open.
+   Do not draw a fake terrain map or start the GPU renderer in this state. */
+.studio-no-project{display:flex;flex:1;min-height:0;min-width:0;
+  flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:24px;background:radial-gradient(ellipse at 50% 35%,#1a2b44 0%,#101b2b 54%,#0d1623 100%);
+  color:var(--studio-muted)}
+.studio-no-project-symbol{width:78px;height:78px;display:grid;place-items:center;
+  border:1px solid #375477;border-radius:21px;color:#a7c9f8;
+  background:linear-gradient(145deg,#253e5e,#152338);box-shadow:0 16px 50px #080f1ca0}
+.studio-no-project h2{font-size:18px;font-weight:650;color:var(--studio-foreground);
+  margin:23px 0 8px}
+.studio-no-project p{font-size:12px;line-height:1.7;max-width:390px;margin:0 0 22px}
+.studio-no-project-action{display:flex;align-items:center;gap:8px;border-radius:8px;
+  padding:10px 16px;border:1px solid #5075a5;background:#294b77;color:#e4f1ff;
+  font-size:12px;font-weight:600}
+.studio-no-project-action:hover:not(:disabled){background:#385c8c}
