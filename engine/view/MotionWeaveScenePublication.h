@@ -285,7 +285,11 @@ public:
     // GPU completion; CPU ModelReadLease is NOT a GPU fence.
     bool unload(uint64_t sceneId) {
         pending_.erase(sceneId);
-        return scenes_.erase(sceneId)!=0;
+        const auto it=scenes_.find(sceneId);
+        if(it==scenes_.end())return false;
+        const bool published=bool(it->second);
+        scenes_.erase(it);
+        return published;
     }
 
     // After a SUCCESSFUL authoritative scene Replace/commit, the caller
@@ -308,8 +312,9 @@ public:
         size_t removed=0;
         for(auto it=scenes_.begin();it!=scenes_.end();) {
             if(keep.count(it->first)) {++it;continue;}
+            const bool wasPublished=bool(it->second);
             it=scenes_.erase(it);
-            ++removed;
+            removed+=wasPublished;
         }
         return removed;
     }
