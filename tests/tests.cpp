@@ -14030,6 +14030,50 @@ TEST(owner_prepare_commit_rolls_back_earlier_gpu_owners_on_late_prepare_failure)
     CHECK(a.committed==1 && b.committed==1 && c.committed==1);
 }
 
+TEST(lens_stage48b3b2_resized_map_prewarms_all_five_owners) {
+    fogfaulttest::Device dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    game::Rules rules=skirmishRules();
+    const render::FileReader missing=[](const std::string&,std::string&){
+        return false;
+    };
+    game::RtsView view;
+    CHECK(view.init(dev,rules,missing));
+    game::MapGrid oldMap;oldMap.init(6,5);
+    for(auto& flag:oldMap.flags)flag=game::kCellGround;
+    view.buildTerrain(dev,oldMap);
+    game::RtsScene scene;
+    render::RTSCamera camera;
+    camera.target={4,0,3};camera.distance=25;camera.pitch=1.0f;
+    std::vector<uint8_t> oldVisibility(
+        size_t(oldMap.w)*size_t(oldMap.h),2);
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,1.0,&oldVisibility,oldMap);
+    renderer.render(gfx::PassDesc{});
+
+    game::MapGrid replacement;replacement.init(10,7);
+    for(auto& flag:replacement.flags)flag=game::kCellGround;
+    replacement.corner.assign(
+        size_t(replacement.w+1)*size_t(replacement.h+1),32);
+    std::vector<uint8_t> vision(
+        size_t(replacement.w)*size_t(replacement.h),2);
+    renderer.beginScene(camera,640,480);
+    CHECK(view.prepareTerrainAtomicFrame(
+        dev,replacement,renderer,scene,2.0,&vision));
+    CHECK(!view.surfacePresentationMapReady(replacement));
+    CHECK(view.surfacePresentationMapReady(oldMap));
+    renderer.beginScene(camera,640,480);
+    view.draw(renderer,scene,2.0,&vision,replacement);
+    CHECK(view.surfacePresentationMapReady(replacement));
+    CHECK(std::fabs(view.heightAt(replacement,3.5f,2.5f)-
+                    2.0f)<1e-4f);
+    CHECK(view.visualFrameReadyFor(replacement,2.0));
+    renderer.render(gfx::PassDesc{});
+    view.shutdown(dev);
+    renderer.shutdown();
+}
+
 TEST(lens_stage48b3b2_unpublished_map_lease_consumes_with_primary) {
     fogfaulttest::Device dev;
     render::Renderer3D renderer;

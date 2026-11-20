@@ -15,12 +15,13 @@ Previous: `docs/agent-handoffs/lens-motionweave-integration-stage48b3b1-scene-ma
 - `prepareMapFrame` directly recognizes an existing topology lease, returning its validity without repeating old-map prewarm. At the start of `draw()`, before `FramePublicationEpoch::begin`, hierarchy resolution or model height lookup, a valid topology lease publishes once and performs terrain change notifications. The normal primary `publishSurfaceFrame` then prepares only the published-map dynamic visibility/LOD resources. No duplicate full Terrain/Road/Shore/ Fog Sheet upload, and GroundFX visible meshes built in the topology candidate are not invalidated a second time.
 - Preserve existing `buildTerrain()`, `buildTerrainAtomic()`, and `buildTerrainAtomicScene()` synchronous APIs. Initial unprimed GPU terrain, planet, hierarchy and 2D tile paths explicitly return false from the new opt-in prewarm rather than advertise unsupported behavior. Renderer must be configured with `beginScene()`.
 - No changes to the genre-independent OwnerPrepareCommit or Metal/Vulkan/GLES backend code.
+- Hardening: full topology prewarm always forces a private GroundFX map reset rather than using Terrain dimension equality as the proxy for GroundFX revision. The resize regression verifies the new map remains unpublished until draw and then all five owners agree on the new dimensions.
 
 ## Changed source
 
 - `modules/rts/view/RtsView.h`: public topology prewarm API, private draw-time lease publication declaration.
 - `modules/rts/view/RtsView.cpp`: extends existing one-shot lease and shared source validation, prepares unpublished full map/scene, consumes before draw with stale fallback, reuses normal `prepareMapFrame` protocol.
-- `tests/tests.cpp`: `lens_stage48b3b2_unpublished_map_lease_consumes_with_primary`, `lens_stage48b3b2_stale_map_lease_discards_and_rebuilds`, `lens_stage48b3b2_failed_prewarm_preserves_live_map`.
+- `tests/tests.cpp`: `lens_stage48b3b2_unpublished_map_lease_consumes_with_primary`, `lens_stage48b3b2_stale_map_lease_discards_and_rebuilds`, `lens_stage48b3b2_failed_prewarm_preserves_live_map`, `lens_stage48b3b2_resized_map_prewarms_all_five_owners`.
 - This handoff.
 
 ## Verification genuinely performed

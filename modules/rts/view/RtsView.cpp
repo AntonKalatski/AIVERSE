@@ -649,7 +649,9 @@ bool RtsView::prepareTerrainAtomicFrame(
         fog_.sheetMatches(grid.w,grid.h);
     const bool flatDig=groundFx_.drawsDig() &&
         grid.dig.size()==grid.flags.size();
-    const bool sculpt=terrain_.mapMatches(grid.w,grid.h);
+    // Full topology prewarm always needs a fresh GroundFX grid. The
+    // published GroundFX dimensions may already match an incoming map
+    // even when the Terrain owner is still on the previous map.
     const std::vector<uint8_t> unexplored(
         size_t(grid.w)*size_t(grid.h),uint8_t(0));
     const std::function<float(float,float)> nextHeight=
@@ -696,7 +698,7 @@ bool RtsView::prepareTerrainAtomicFrame(
         },
         [next] {next->shoreCandidate.reset();});
     add(
-        [this,next,&renderer,&scene,time,vision,&grid,&nextHeight,sculpt] {
+        [this,next,&renderer,&scene,time,vision,&grid,&nextHeight] {
             if(stagedHeightGrid_ || stagedHeightFn_)
                 throw std::logic_error(
                     "RtsView: nested unpublished height staging");
@@ -704,7 +706,7 @@ bool RtsView::prepareTerrainAtomicFrame(
             stagedHeightFn_=&nextHeight;
             try {
                 next->groundCandidate=groundFx_.prepareMapSceneFrame(
-                    renderer,scene,time,vision,grid,*this,sculpt);
+                    renderer,scene,time,vision,grid,*this,true);
             }catch(...) {
                 stagedHeightGrid_=nullptr;
                 stagedHeightFn_=nullptr;
