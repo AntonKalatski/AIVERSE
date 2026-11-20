@@ -43,6 +43,18 @@ public:
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt);
     bool active() const { return hasNet_ && !net_.empty(); }
     bool needsRebuild() const { return dirty_; }
+    // Prepared presentation state can be joined to a multi-owner frame
+    // transaction. A candidate owns only unpublished GPU allocations.
+    // commitRebuild performs retirement/moves without new GPU uploads.
+    struct PreparedRebuild;
+    bool needsVisualPreparation() const noexcept {
+        return dirty_ || ghostDirty_ ||
+            int(std::lround(wet_*32.f))!=wetStep_ ||
+            int(std::lround(puddles_*32.f))!=puddleStep_;
+    }
+    std::unique_ptr<PreparedRebuild> prepareRebuild(
+        gfx::Device& dev,const std::function<float(float,float)>& heightAt);
+    void commitRebuild(std::unique_ptr<PreparedRebuild> candidate) noexcept;
     // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
     // baked road surfaces): the view does not draw those while the network is shown
     const std::vector<std::string>& replaces() const { return replaces_; }
