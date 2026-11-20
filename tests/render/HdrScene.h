@@ -167,6 +167,9 @@ struct HdrScene {
     void drawPrismaMultiView(gfx::Device& d,int w,int h) {
         constexpr uint64_t a=1001,b=2002;
         const int step=frame;
+        // The offscreen GL runner owns its frames. On macOS Metal the
+        // Platform host owns beginFrame/endFrame for the callback.
+        if (ownsFrame) d.beginFrame(w,h);
         auto fail=[this](const char* msg) {
             std::fprintf(stderr,"PRISMA multiview FAIL step=%d: %s\n",frame,msg);
             failed=true;
@@ -275,8 +278,8 @@ struct HdrScene {
         } else {
             fail("unexpected frame beyond test completion");
         }
+        if (ownsFrame) d.endFrame();
         ++frame;
-        (void)d;(void)w;(void)h;
     }
 
     void drawTemporal(gfx::Device& d,int w,int h) {
