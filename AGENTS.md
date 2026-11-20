@@ -1591,3 +1591,17 @@ TLAS/BLAS packet and exact logical triangle/node counts. This is NOT
 true individual GPU BLAS pages or unbounded GPU world streaming. All
 writes remain behind real Metal/Vulkan ticket fences. No native
 CMake/CTest or GPU performance/pixel PASS in this stage; source only.
+
+
+## GI Stage 55 — no atlas destruction while Renderer3D borrows GI (2026-11-20)
+
+See `docs/agent-handoffs/gi-stage55-renderer-atlas-borrow-safety-2026-11-20.md`.
+`GiLightingController::bind(Renderer3D&)` registers a borrowed GI atlas
+reader until the matching `controller.unbind(renderer)`. Shutdown and
+the Stage53 GPU→CPU fallback now REFUSE/defer while ANY renderer is
+bound; the old GPU atlas must not be released while a queued render
+pass could still sample it. Duplicate binding of one renderer is
+idempotent; `borrowedRendererCount()` is diagnostic. Callers MUST
+still explicitly unbind before destroying renderer/controller; this
+registry has RHI owner-thread semantics, not arbitrary thread safety.
+Code and regression CTest sources committed, NATIVE/GPU TESTS NOT RUN.
