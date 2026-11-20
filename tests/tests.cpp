@@ -12840,6 +12840,10 @@ TEST(road_view_staged_rebuild_preserves_old_gpu_and_wheel_surface_on_failure) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
+    int asphalt=0;
+    for(size_t i=0;i<roads.types().size();++i)
+        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+           roads.types()[i].drivable()) {asphalt=int(i);break;}
     game::RoadNetwork network;
     game::RoadNode a,b;
     a.id=1;b.id=2;
@@ -12848,8 +12852,8 @@ TEST(road_view_staged_rebuild_preserves_old_gpu_and_wheel_surface_on_failure) {
     network.nodes={a,b};
     game::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
-    edge.typeIndex=0;
-    edge.type=roads.types()[0].id;
+    edge.typeIndex=asphalt;
+    edge.type=roads.types()[size_t(asphalt)].id;
     network.edges.push_back(edge);
     roads.setNetwork(network);
     render::RTSCamera cam;
@@ -12903,6 +12907,10 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
     const render::FileReader missing=[](const std::string&,std::string&){return false;};
     roads.init(dev,Json(),missing);
     CHECK(!roads.types().empty());
+    int asphalt=0;
+    for(size_t i=0;i<roads.types().size();++i)
+        if(roads.types()[i].surface==game::RoadSurface::Asphalt &&
+           roads.types()[i].drivable()) {asphalt=int(i);break;}
     game::RoadNetwork network;
     game::RoadNode a,b;
     a.id=1;b.id=2;
@@ -12911,7 +12919,7 @@ TEST(road_view_weather_upload_failure_keeps_previous_generation) {
     network.nodes={a,b};
     game::RoadEdge edge;
     edge.id=1;edge.a=1;edge.b=2;
-    edge.typeIndex=0;edge.type=roads.types()[0].id;
+    edge.typeIndex=asphalt;edge.type=roads.types()[size_t(asphalt)].id;
     network.edges.push_back(edge);
     roads.setNetwork(network);
     render::RTSCamera cam;
