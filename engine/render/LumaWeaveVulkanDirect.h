@@ -88,7 +88,8 @@ public:
         dev_=nullptr;shader_={};output_={};
         receiverBuffer_={};lightBuffer_={};triangleBuffer_={};nodeBuffer_={};
         sourcesReady_=geometryReady_=outputValid_=false;
-        sourceRevision_=geometryRevision_=0;
+        sourceRevision_=geometryRevision_=geometryHash_=0;
+        acceptedLights_.clear();
         sourceCount_=nodeCount_=triangleCount_=completedReceivers_=0;
         return true;
     }
@@ -117,7 +118,14 @@ public:
 
     bool setSources(const LumaWeaveRegistry& registry) {
         if(!ready() || busy() || !dev_->canUpdateSharedBuffers())return false;
-        if(sourcesReady_ && sourceRevision_==registry.revision())return true;
+        if(sourcesReady_ && sourceRevision_==registry.revision()) {
+            // Two different worlds may each have revision 1. Equal revision
+            // alone must NOT silently retain another world's light energy.
+            const auto& current=registry.lights();
+            return current.size()==acceptedLights_.size() &&
+                   std::equal(current.begin(),current.end(),
+                              acceptedLights_.begin(),lumaSameLight);
+        }
         if(sourcesReady_ && registry.revision()<=sourceRevision_)return false;
         if(registry.lights().size()>LumaWeaveRegistry::kMaxSources)return false;
         std::vector<LumaGpuLight> packed;
@@ -137,12 +145,15 @@ public:
                  uint32_t(light.kind),light.contributesToGi?1u:0u}
             });
         }
+        // Stage an independent CPU identity snapshot before any GPU mutation.
+        std::vector<LumaLight> accepted=registry.lights();
         const auto next=allocate(std::max<size_t>(1,packed.size())*
                                  sizeof(LumaGpuLight),
                                  packed.empty()?nullptr:packed.data());
         if(!next.valid())return false;
         dev_->destroyBuffer(lightBuffer_);
         lightBuffer_=next;
+        acceptedLights_=std::move(accepted);
         sourceCount_=uint32_t(packed.size());
         sourceRevision_=registry.revision();
         sourcesReady_=true;
@@ -153,7 +164,9 @@ public:
     bool setGeometry(const GiGpuBvh& bvh,uint64_t revision) {
         if(!ready() || busy() || !dev_->canUpdateSharedBuffers() ||
            !revision)return false;
-        if(geometryReady_ && revision==geometryRevision_)return true;
+        const uint64_t contentHash=geometryFingerprint(bvh);
+        if(geometryReady_ && revision==geometryRevision_)
+            return contentHash==geometryHash_;
         if(geometryReady_ && revision<geometryRevision_)return false;
         // Require strict root-reachable geometry containment and bounded
         // traversal BEFORE any storage-buffer writes; Stage62 float-ULP fix.
@@ -173,6 +186,7 @@ public:
         nodeCount_=uint32_t(bvh.nodes.size());
         triangleCount_=uint32_t(bvh.triangles.size());
         geometryRevision_=revision;
+        geometryHash_=contentHash;
         geometryReady_=true;
         outputValid_=false;
         return true;
@@ -240,6 +254,23 @@ public:
     }
 
 private:
+    static uint64_t geometryFingerprint(const GiGpuBvh& bvh) {
+        uint64_t h=1469598103934665603ull;
+        const auto hashBytes=[&](const void* data,size_t size) {
+            auto* bytes=static_cast<const unsigned char*>(data);
+            for(size_t i=0;i<size;++i) {
+                h^=bytes[i];h*=1099511628211ull;
+            }
+        };
+        const uint64_t sizes[2]={uint64_t(bvh.triangles.size()),
+                                 uint64_t(bvh.nodes.size())};
+        hashBytes(sizes,sizeof(sizes));
+        if(!bvh.triangles.empty())
+            hashBytes(bvh.triangles.data(),bvh.triangles.size()*sizeof(GiGpuBvhTri));
+        if(!bvh.nodes.empty())
+            hashBytes(bvh.nodes.data(),bvh.nodes.size()*sizeof(GiGpuBvhNode));
+        return h;
+    }
     static bool finite(float3 v) {
         return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);
     }
@@ -260,7 +291,8 @@ private:
     gfx::BufferHandle receiverBuffer_{},lightBuffer_{},triangleBuffer_{},nodeBuffer_{};
     uint32_t sourceCount_=0,nodeCount_=0,triangleCount_=0;
     uint32_t pendingReceivers_=0,completedReceivers_=0;
-    uint64_t sourceRevision_=0,geometryRevision_=0,pendingFrame_=0;
+    uint64_t sourceRevision_=0,geometryRevision_=0,geometryHash_=0,pendingFrame_=0;
+    std::vector<LumaLight> acceptedLights_;
     bool sourcesReady_=false,geometryReady_=false,outputValid_=false;
 };
 
