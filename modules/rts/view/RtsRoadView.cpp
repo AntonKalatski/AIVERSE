@@ -2539,10 +2539,11 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
         mesh.build();
         std::map<std::string, std::vector<roadkit::Tri>> shapes;
         for (auto& p : mesh.props) if (p.model.empty()) addShapes(mesh.chunks[0], p.shape, p.xf, 1.0f / cm, shapes);
-        if (mesh.chunks.empty()) return;
-        next = toModel("road-ghost", mesh.chunks[0], images_, materials_);
-        if (next && !uploadModel(dev,*next))
-            throw std::runtime_error("road ghost GPU upload returned false");
+        if (!mesh.chunks.empty()) {
+            next = toModel("road-ghost", mesh.chunks[0], images_, materials_);
+            if (next && !uploadModel(dev,*next))
+                throw std::runtime_error("road ghost GPU upload returned false");
+        }
     } catch (const std::exception& e) {
         const auto status=abortFailedModelUpload(dev,next);
         if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
