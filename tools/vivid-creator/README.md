@@ -1290,3 +1290,58 @@ runner have **NOT RUN** in this development session. Renderer3D
 colour-pass identity for the *other* GPU-deformed Mask actor remains
 a next-stage integration task; GPU shader provenance and final
 Blend/cornea/ShaderGraph/ICB/LOD parity remain unproven.
+
+
+### Stage 7AZ — one true second GPU-produced alpha Mask actor in Renderer3D and ID
+
+Use the existing `aiverse_vivid_renderer_preview` with
+`AIVERSE_VIVID_MASK_PARITY=1` to enable an **additional native
+Metal two-model parity fixture**. It does not change Creator's
+normal GPU sculpt algorithm, the 12-actor crowd preview or
+the standalone human materials.
+
+In that fixture:
+
+- The original selected VIVID actor uses its existing live 60-byte
+  morph GPU source. A second `render::Model` has an ordinary
+  double-sided `AlphaMode::Mask` material, alpha cutoff 0.5 and
+  two immutable identical-RGB/alpha-hole-or-solid 1×1 textures.
+- A separate native Metal compute kernel copies the whole second
+  actor's 15×uint32 (`ModelVertex` 60B) source vertex and **writes
+  the actual GPU position delta** on every frame. Its CPU bind
+  mesh is left unchanged. The normal Renderer3D colour pass
+  receives this exact buffer in `ModelDraw::vertexOverride`.
+- `Renderer3D::trackModelSubmissions(selected, occluder)` opts
+  into tracking both normal main-camera draw sources. Each
+  `modelSubmissionProvenance(model)` result is filtered to that
+  source. VIVID's `sculptGpuPairedRendererViewsAccepted`
+  enforces same-frame, distinct GPU buffers and successful,
+  unbatched direct main-colour submission for both before
+  passing the masked source to the ID pass.
+- For alpha-hole the normal selected-human colour and nonzero
+  VIVID GPU triangle ID must agree. For alpha-solid the
+  second GPU-producer actor must cover the selected head
+  pixel, which yields zero selected ID, visible normal colour
+  and the **same true GPU depth** in normal Renderer3D and
+  independent ID pass. Both probes use exact-frame RHI
+  `copyColor` and async native Depth32Float, not a delayed
+  screenshot or CPU-projected depth.
+- The optional native GUI runner now checks the separate
+  three-screenshot process and two matching alpha-hole/solid
+  status lines. The normal single-human and crowd tests
+  continue unchanged. All new GPU resources are freed
+  only after a verified owner-thread Metal idle barrier.
+
+**Execution status:** C++/Metal source and test definitions have
+been committed; source-level checks completed. Native compilation,
+GPU pixels, real depth, timing and CTest **NOT RUN** in this session.
+Do not report true pixel PASS before a macOS Metal run logs the
+exact frame, 60B handles, alpha case and depth difference.
+
+The target remains **narrow**: one independent Mask model in
+one camera, no conditional LOD, mixed alpha blend, ShaderGraph
+vertex displacement, indirect draw, late Prisma/postfx or
+fully animated cross-model visibility. Production Creator does
+not automatically enumerate every other GPU object; extending
+that requires renderer-owned provenance, backend fences,
+and real hardware colour+ID acceptance.
