@@ -1,5 +1,26 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage71 open-world editor terrain + flat single quad (2026-11-20):**
+> New shared `SparseTerrainAuthoring` gives mouse-click auto-chunks at
+> arbitrary signed world coordinates, cross-chunk paint from ONE
+> Earthworks height source, nested camera LOD 33/17/9/5, seam stitching
+> and **flat chunk = 4 indexed vertices / 2 triangles at any distance**.
+> Runtime adaptive visual-only model swaps preserve fixed-resolution
+> SpatialWorld collision/navmesh; Editor Scene previews streamed sparse
+> chunks via Renderer3D + existing GPU-safe model retirement.
+> The Terrain panel now exposes Create/Raise/Lower brushes and
+> `Workspace::call("terraweave_sparse_paint")` for native/MCP/HTML5.
+> Sparse saved data round-trips through both RTS and FPS map documents.
+> Two NEW tests: `terraweave_sparse_authoring_lod`,
+> `terraweave_sparse_editor`.
+> [**Full standalone agent handoff: changed code, APIs, tests and next steps**](stage-71-sparse-editor-auto-chunks-camera-lod-flat-quad-handoff-2026-11-20.md).
+> **NEW AppleClang compile, CTest, Editor GPU preview NOT RUN**;
+> previous full 271/271 and Metal hardware checks are tied to older
+> SHAs. Production runtime must opt into adaptive plan and sparse map
+> data explicitly. Linux Vulkan/GLES and sustained four-owner test
+> still open. PR #53 remains Draft.
+>
+>
 > **Stage70 postmerge Stage116 Mac Release CTest 2/2 PASS (2026-11-20):**
 > User confirms `model_resource_owner_contract` PASS 0.43 sec
 > and `render_retirement_pressure` PASS 0.31 sec;
