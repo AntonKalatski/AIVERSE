@@ -185,6 +185,10 @@ static void testMultiMaterialGpuPackets() {
         packet.vertex=contract.vertex;
         packet.index=contract.index;
         packet.selectedWorld=mat4::identity();
+        packet.viewProjection=camera.viewProjection;
+        packet.viewWidth=camera.width;
+        packet.viewHeight=camera.height;
+        packet.pass=GpuIndexedPass::MainOpaque;
         packet.frameSerial=contract.expectedFrameSerial;
         packet.geometryRevision=contract.geometryRevision;
         packet.materialRevision=contract.materialRevision;
@@ -199,6 +203,31 @@ static void testMultiMaterialGpuPackets() {
         draw.gpuIndexedPrimitives.push_back(packet);
     }
     assert(draw.gpuIndexedPrimitives.size()==2);
+    // A sun-shadow camera has its OWN projection and GPU slots. It must
+    // never alias the main-camera indirect buffer or be reused in spot
+    // shadow/planar reflection passes.
+    GpuPassConfig sun=camera;
+    sun.viewProjection=mat4::scale({.5f,.75f,1.f});
+    sun.width=1024;
+    sun.height=1024;
+    for(uint32_t ordinal=0;ordinal<2;++ordinal){
+        VulkanIndirectContract shadowContract{};
+        GpuPassConfig guarded{};
+        assert(prepareVulkanIndirectPrimitiveContract(device,model,asset,
+            binding,ordinal,sun,false,shadowContract,guarded,&error));
+        auto shadow=draw.gpuIndexedPrimitives[ordinal];
+        shadow.commands={300+ordinal};
+        shadow.pass=GpuIndexedPass::SunShadow;
+        shadow.viewProjection=guarded.viewProjection;
+        shadow.viewWidth=guarded.width;
+        shadow.viewHeight=guarded.height;
+        draw.gpuShadowPrimitives.push_back(shadow);
+    }
+    assert(draw.gpuShadowPrimitives.size()==2);
+    assert(draw.gpuShadowPrimitives[0].commands!=
+           draw.gpuIndexedPrimitives[0].commands);
+    assert(draw.gpuShadowPrimitives[0].viewWidth==1024);
+    assert(draw.gpuShadowPrimitives[0].pass==GpuIndexedPass::SunShadow);
     assert(draw.gpuIndexedPrimitives[0].commands!=
            draw.gpuIndexedPrimitives[1].commands);
     ModelDraw anotherInstance=draw;
@@ -348,6 +377,9 @@ int main() {
     gpuDraw.gpuIndexed.commands=authored.indirect;
     gpuDraw.gpuIndexed.vertex=contract.vertex;
     gpuDraw.gpuIndexed.index=contract.index;
+    gpuDraw.gpuIndexed.viewProjection=gpuView.viewProjection;
+    gpuDraw.gpuIndexed.viewWidth=gpuView.width;
+    gpuDraw.gpuIndexed.viewHeight=gpuView.height;
     gpuDraw.gpuIndexed.frameSerial=contract.expectedFrameSerial;
     gpuDraw.gpuIndexed.geometryRevision=contract.geometryRevision;
     gpuDraw.gpuIndexed.materialRevision=contract.materialRevision;
