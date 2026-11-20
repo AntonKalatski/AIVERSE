@@ -1,11 +1,11 @@
 # Completely separate, opt-in executable, no ImGui editor source files.
 # OBJCXX was enabled by the root CMakeLists before creating targets.
-add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioMetalScene.cpp StudioSession.cpp)
+add_executable(aiverse_studio MACOSX_BUNDLE mac/Main.mm mac/StudioAssetSchemeHandler.mm mac/StudioMetalScene.cpp StudioSession.cpp)
 target_include_directories(aiverse_studio PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_studio PRIVATE aiverse_editor_core aiverse_runtime aiverse_game_view "-framework Cocoa" "-framework WebKit")
 target_sources(aiverse_studio PRIVATE $<TARGET_OBJECTS:aiverse_runtime>)
 target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
-set_source_files_properties(mac/Main.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 set_target_properties(aiverse_studio PROPERTIES
     OUTPUT_NAME AiverseStudioHTML5
     MACOSX_BUNDLE_GUI_IDENTIFIER com.aiverse.studio.html5)

@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
@@ -39,6 +40,7 @@
     NSTimer* timer_;
     NSString* dist_;
     NSURL* devURL_;
+    StudioAssetSchemeHandler* assets_;
     std::unique_ptr<aiverse::studio::StudioSession> session_;
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
     aiverse::studio::NativeViewportPlacement placement_;
@@ -108,6 +110,9 @@
         NSString* path=[url.path stringByStandardizingPath];
         return [path hasPrefix:[dist_ stringByAppendingString:@"/"]];
     }
+    if ([url.scheme isEqualToString:@"aiverse-studio"] &&
+        [url.host isEqualToString:@"shell"])
+        return [url.path isEqualToString:@"/index.html"] || [url.path isEqualToString:@"/"];
     return devURL_ && [url.scheme isEqualToString:@"http"] &&
            [url.host isEqualToString:@"127.0.0.1"] && url.port.integerValue==4173;
 }
@@ -121,6 +126,13 @@
 
     WKWebViewConfiguration* cfg=[[WKWebViewConfiguration alloc] init];
     [cfg.userContentController addScriptMessageHandler:self name:@"aiverse"];
+    // Built React/Vite uses ES modules. file:// has an opaque origin on WebKit,
+    // so load it through a local WKURLSchemeHandler instead of loadFileURL.
+    // The handler reads ONLY the immutable bundled studio-web folder.
+    if (!devURL_) {
+        assets_=[[StudioAssetSchemeHandler alloc] initWithRoot:dist_];
+        [cfg setURLSchemeHandler:assets_ forURLScheme:@"aiverse-studio"];
+    }
     if (htmlComposite_) {
         web_=[[StudioTransparentWebView alloc] initWithFrame:window_.contentView.bounds configuration:cfg];
         if (@available(macOS 12.0, *)) web_.underPageBackgroundColor=[NSColor clearColor];
@@ -138,8 +150,14 @@
     [NSApp activateIgnoringOtherApps:YES];
     if (devURL_) [web_ loadRequest:[NSURLRequest requestWithURL:devURL_]];
     else {
-        NSURL* root=[NSURL fileURLWithPath:dist_ isDirectory:YES];
-        [web_ loadFileURL:[root URLByAppendingPathComponent:@"index.html"] allowingReadAccessToURL:root];
+        NSString* entry=[dist_ stringByAppendingPathComponent:@"index.html"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:entry]) {
+            NSLog(@"[studio-web] FATAL: expected bundled HTML5 entry at %@",entry);
+        } else {
+            NSLog(@"[studio-web] loading from bundled scheme, root=%@",dist_);
+        }
+        NSURL* url=[NSURL URLWithString:@"aiverse-studio://shell/index.html"];
+        [web_ loadRequest:[NSURLRequest requestWithURL:url]];
     }
     timer_=[NSTimer timerWithTimeInterval:1.0/60 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:timer_ forMode:NSRunLoopCommonModes];
@@ -278,8 +296,21 @@
         layer.drawableSize=CGSizeMake(placement_.pixelsW,placement_.pixelsH);
     }
 }
+- (void)webView:(WKWebView*)view didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
+    (void)view; (void)navigation;
+    NSLog(@"[studio-web] navigation failed: %@",error);
+}
+- (void)webView:(WKWebView*)view didFailNavigation:(WKNavigation*)navigation withError:(NSError*)error {
+    (void)view; (void)navigation;
+    NSLog(@"[studio-web] navigation error: %@",error);
+}
+- (void)webViewWebContentProcessDidTerminate:(WKWebView*)view {
+    (void)view;
+    NSLog(@"[studio-web] WebKit content process terminated");
+}
 - (void)webView:(WKWebView*)view didFinishNavigation:(WKNavigation*)navigation {
     (void)navigation;
+    NSLog(@"[studio-web] top-level navigation finished: %@",view.URL);
     if (htmlComposite_) [view evaluateJavaScript:@"document.documentElement.classList.add('native-composite');" completionHandler:nil];
 }
 - (void)webView:(WKWebView*)view decidePolicyForNavigationAction:(WKNavigationAction*)action decisionHandler:(void (^)(WKNavigationActionPolicy))done {
@@ -296,6 +327,11 @@
     try {
         std::string bytes((const char*)data.bytes,(size_t)data.length);
         const aiverse::Json req=aiverse::Json::parse(bytes);
+        if (req.getStr("method")=="studio.webDiagnostic") {
+            const std::string note=req["params"].getStr("message");
+            if (note.size()<=1200) NSLog(@"[studio-web] JS: %s",note.c_str());
+            return; // diagnostics never touch Workspace or the filesystem
+        }
         if (req.getStr("method")=="studio.viewportInput" && req["id"].isNumber()) {
             aiverse::Json reply=aiverse::Json::object();
             reply.set("id",req["id"]);
