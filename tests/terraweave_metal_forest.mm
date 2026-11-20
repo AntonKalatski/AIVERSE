@@ -201,9 +201,22 @@ int aiverseMain(int,char**) {
         auto cameraB=cameraA;
         cameraB.yaw=1.65f;
 
+        std::vector<float> azimuths;
         const auto draw=[&](const render::RTSCamera& camera,Target target,
                              const std::vector<terra::FloraBatch>* batches) {
             renderer.beginScene(camera,target.width,target.height);
+            if(batches==&farBatches) {
+                // Query material overrides from the SAME live camera and
+                // frame used for the real Renderer3D submission below.
+                forest.forEachDraw(*batches,{},[&](const render::ModelDraw& d) {
+                    check(d.materials && d.materials->size()==2,
+                          "impostor material overrides missing");
+                    if(d.materials)azimuths.push_back(
+                        (*d.materials)[0].uvOffset.x);
+                },terra::ForestCameraCm{
+                    int64_t(std::llround(renderer.cameraPos().x*100.0f)),
+                    int64_t(std::llround(renderer.cameraPos().z*100.0f))});
+            }
             if(batches)forest.submit(renderer,*batches);
             renderer.render(pass(target));
             device->endPass();
@@ -237,20 +250,6 @@ int aiverseMain(int,char**) {
         check(resized.changed>30,
               "resized offscreen forest RT lost visible geometry");
 
-        std::vector<float> azimuths;
-        for(const auto camera : {cameraA,cameraB}) {
-            // Render-origin here is 0 cm. Use independent camera world
-            // positions through real Renderer3D::beginScene above.
-            // The 8-view UV overrides should vary with viewing azimuth.
-            renderer.beginScene(camera,256,256);
-            forest.forEachDraw(farBatches,{},[&](const render::ModelDraw& d) {
-                check(d.materials && d.materials->size()==2,
-                      "impostor material overrides missing");
-                if(d.materials)azimuths.push_back((*d.materials)[0].uvOffset.x);
-            },terra::ForestCameraCm{
-                int64_t(std::llround(renderer.cameraPos().x*100.0f)),
-                int64_t(std::llround(renderer.cameraPos().z*100.0f))});
-        }
         check(azimuths.size()==2 && azimuths[0]!=azimuths[1],
               "impostor azimuth selection ignored camera orientation");
 
