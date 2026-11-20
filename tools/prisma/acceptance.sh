@@ -60,9 +60,11 @@ skip_gpu() {
 scene_variant() {
   local name="$1" backend="$2" flag="$3" variant="$4" executable="$5"
   local capture="$LOG/$name.ppm"
+  rm -f "$capture" # reject a stale image from a previous run
   if stage "$name" env AIVERSE_AUDIO=off "$flag=$variant" \
       "AIVERSE_HDR_CAPTURE=$capture" "$executable"; then
     if grep -q "^GPU: $backend " "$LOG/$name.log" \
+        && grep -Fq "capture: $capture" "$LOG/$name.log" \
         && [[ -s "$capture" ]] \
         && [[ "$(head -c 2 "$capture")" == P6 ]]; then
       record "${name}_evidence" PASS "$backend $flag=$variant P6 capture"
