@@ -876,3 +876,18 @@ into the existing adaptive CPU reference; never silently clip relevant
 GPU occluders. One-way until reinitialize, default OFF to avoid surprise
 CPU cost. `gi_gpu_residency_planner` regression source extended.
 Native CMake/CTest and GPU/CPU performance NOT RUN.
+
+
+## Stage 54 — 2026-11-20 — active per-chunk GPU BVH cache and grow-only GPU streams (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage54-persistent-bvh-streams-2026-11-20.md`.
+Normal GPU geometry publication now calls the existing per-chunk
+`GiGpuChunkBvhCache::refresh/pack`; immutable CPU chunk BLAS allocations
+are reused, and `GiGpuSmallScene` keeps existing Metal/Vulkan storage
+handles across chunk count changes until capacity must grow. A new
+`GiGpuSparsePatch` plans bounded changed-range uploads with whole-upload
+fallback on fragmentation; no semantic clipping. Added CTest source
+`gi_gpu_sparse_patch` and expanded chunk cache tests.
+This remains flat GPU BVH packet streaming, not independent GPU
+BLAS pages; 8192 local triangle cap and optional CPU fallback remain.
+Native compiler, CTest, GPU memory/performance, device visuals NOT RUN.
