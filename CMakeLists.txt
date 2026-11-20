@@ -3338,6 +3338,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             lighting_gi_cpu_sampling
             gi_dynamic_probe_texture
             lighting_cpu_gi_bridge
+            lighting_gpu_bridge
             lighting_luma_mobile_fallback
             lighting_model_gi_shader_contract
             lighting_terrain_gi_shader_contract)
@@ -3356,11 +3357,24 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
     add_test(NAME lighting_dynamic_gi_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_dynamic_gi_gpu PROPERTIES
         ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
-        TIMEOUT 120 RUN_SERIAL TRUE)
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
     if(TARGET aiverse_hdr_gl)
         add_test(NAME lighting_dynamic_gi_gl COMMAND aiverse_hdr_gl)
         set_tests_properties(lighting_dynamic_gi_gl PROPERTIES
             ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1" LABELS "Lighting;GPU"
-            TIMEOUT 120 RUN_SERIAL TRUE)
+            TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
     endif()
+endif()
+
+if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_test(NAME lighting_compute_gi_gpu COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
 endif()

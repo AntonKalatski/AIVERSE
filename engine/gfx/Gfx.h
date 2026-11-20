@@ -352,6 +352,8 @@ public:
     // 64 threads per X group; dispatch provides total logical threads. Bounds-check in shader.
     virtual void dispatch(uint32_t,uint32_t=1) {}
     virtual void endCompute() {}
+    // True only when the latest dispatch was successfully encoded; not GPU completion.
+    virtual bool computeDispatchSucceeded() const { return false; }
     // Debug/readback only, between frames. Never used in normal simulation/rendering.
     virtual bool readBuffer(BufferHandle,void*,size_t) { return false; }
     // Small asynchronous status readback, inside a frame and outside encoders. Callback on

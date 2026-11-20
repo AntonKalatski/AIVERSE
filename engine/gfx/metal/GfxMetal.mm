@@ -468,6 +468,7 @@ public:
     }
     void destroyCompute(ComputeHandle h) override { computes_.remove(h.id); }
     bool beginCompute(ComputeHandle h) override {
+        computeDispatchSucceeded_=false;
         auto* state=computes_.get(h.id);
         if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !state) return false;
         compute_=[cmd_ computeCommandEncoder];[compute_ setComputePipelineState:*state];return compute_!=nil;
@@ -480,10 +481,13 @@ public:
     }
     void setComputeUniforms(const void* data,size_t size) override { if(size<=4096)[compute_ setBytes:data length:size atIndex:8]; }
     void dispatch(uint32_t x,uint32_t y) override {
+        computeDispatchSucceeded_=false;
         if (!compute_ || !x || !y) return;
         [compute_ dispatchThreadgroups:MTLSizeMake((x+63)/64,y,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];
         if (@available(macOS 10.14, iOS 12.0, *)) [compute_ memoryBarrierWithScope:MTLBarrierScopeBuffers|MTLBarrierScopeTextures];
+        computeDispatchSucceeded_=true;
     }
+    bool computeDispatchSucceeded() const override { return computeDispatchSucceeded_; }
     void endCompute() override { if(compute_){[compute_ endEncoding];compute_=nil;} }
     bool readBuffer(BufferHandle h,void* data,size_t size) override {
         auto* b=buffers_.get(h.id);if(cmd_||!b||!data||size>b->size)return false;
@@ -2007,6 +2011,7 @@ private:
     uint64_t lastCommittedGpuFrame_ = 0;
     id<MTLRenderCommandEncoder> enc_;
     id<MTLComputeCommandEncoder> compute_;
+    bool computeDispatchSucceeded_=false;
     Pool<id<MTLComputePipelineState>> computes_;
     std::shared_ptr<std::atomic<bool>> gpuHealthy_=std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<double>> gpuMs_=std::make_shared<std::atomic<double>>(0);

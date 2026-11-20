@@ -3,6 +3,8 @@
 namespace aiverse::test {
 inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     const int test=s.probeIndex;
+    if(s.ownsFrame)d.beginFrame(w,h);
+    const auto waitFrame=[&]{s.frame=0;if(s.ownsFrame)d.endFrame();};
     if(!s.dynamicGi.ready()) {
         GiMainCpuConfig cfg;
         cfg.origin={-2,-2,-2};cfg.nx=cfg.ny=cfg.nz=4;
@@ -12,14 +14,19 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
         GiChunkedGeometryBuilder builder;
         builder.replace(1,{{{-8,-8,2},{8,-8,2},{8,8,2},0},
                            {{-8,-8,2},{8,8,2},{-8,8,2},0}},{{1,1,1}});
-        if(!s.dynamicGi.publishGeometry(
-            std::make_shared<GiChunkedGeometrySnapshot>(builder.publish()),1)) {
+        auto scene=std::make_shared<GiChunkedGeometrySnapshot>(builder.publish());
+        if(s.computeGiVerify && (!s.computeGi.initialize(d,cfg) ||
+           !s.computeGi.publishGeometry(scene,1))) {
+            std::fprintf(stderr,"GI compute setup FAIL: %s / %s\n",d.lastError().c_str(),s.computeGi.diagnostic());
+            s.failed=true;return;}
+        if(!s.dynamicGi.publishGeometry(scene,1)) {
             s.failed=true;return;
         }
     }
     if(s.gridProbe!=test && (test==0 || test==4 || test==5)) {
         std::vector<GiMovingLight> sources;
         if(test!=4)sources.push_back({1,{0,0,0},{1,.5f,.25f},5,4});
+        if(s.computeGiVerify && !s.computeGi.publishLights(sources)){waitFrame();return;}
         if(!s.dynamicGi.publishLights(std::move(sources))){s.failed=true;return;}
         // Small synthetic fixture only: production hosts retain bounded per-frame updates.
         for(int attempt=0;s.dynamicGi.reference().scheduler().pending() && attempt<64;++attempt)
@@ -39,10 +46,13 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     material.occlusionTex=test==3?1:-1;
     PrismaSettings settings;settings.hdr=HdrMode::On;
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
-    if(s.ownsFrame)d.beginFrame(w,h);
     r.beginScene(s.camera,w,h);
+    if(s.computeGiVerify) {
+        s.computeGi.updateFrame({0,0,0});
+        if(!s.computeGi.canPresent()){waitFrame();return;}
+    }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
-    if(test!=1 && !r.setDynamicGiOverlay(s.dynamicGi)){s.failed=true;return;}
+    if(test!=1 && !(s.computeGiVerify?r.setDynamicGiOverlay(s.computeGi):r.setDynamicGiOverlay(s.dynamicGi))){s.failed=true;return;}
     ModelDraw draw;draw.model=s.probeBg.get();r.drawModel(draw);
     r.render(s.output,s.pipeline());r.resolvePrisma();
     if(s.frame==5) {

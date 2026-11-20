@@ -11,6 +11,7 @@
 #include "StaticModelCachePolicy.h"
 #include "StaticCrossModelBatchPolicy.h"
 #include "GiMainCpuBridge.h"
+#include "GiMainGpuBridge.h"
 #include "GiTextureBudget.h"
 
 #include <algorithm>
@@ -67,6 +68,26 @@ bool Renderer3D::setDynamicGiOverlay(const GiMainCpuBridge& bridge) {
         !giFragmentTextureBudgetAllows(16,false,false,false))
         return false;
     const auto atlas=bridge.borrowedAtlas();
+    if (!atlas.valid()) return false;
+    const auto& config=bridge.config();
+    if (!std::isfinite(config.spacing) || config.spacing<=0 ||
+        config.nx<1 || config.ny<1 || config.nz<1)
+        return false;
+    dynamicGiUniforms_={
+        config.origin.x,config.origin.y,config.origin.z,1.0f/config.spacing,
+        float(config.nx),float(config.ny),float(config.nz),0.0f,
+        0.0f,0.0f,0.0f,0.0f
+    };
+    dynamicGiAtlas_=atlas;
+    return true;
+}
+
+bool Renderer3D::setDynamicGiOverlay(const GiMainGpuBridge& bridge) {
+    dynamicGiAtlas_={};
+    if (!dev_ || bridge.device()!=dev_ ||
+        !giFragmentTextureBudgetAllows(16,false,false,false))
+        return false;
+    const auto atlas=bridge.borrowForFrame();
     if (!atlas.valid()) return false;
     const auto& config=bridge.config();
     if (!std::isfinite(config.spacing) || config.spacing<=0 ||

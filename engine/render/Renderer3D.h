@@ -36,6 +36,7 @@
 
 namespace aiverse::render {
 
+class GiMainGpuBridge;
 class GiMainCpuBridge; // optional per-scene CPU-bounced-light producer
 
 struct Mesh {
@@ -405,6 +406,7 @@ public:
     // remain excluded; runtime never enables this for a view automatically.
     // The host retains the GI owner and its atlas until GPU completion.
     bool setDynamicGiOverlay(const GiMainCpuBridge& bridge);
+    bool setDynamicGiOverlay(const GiMainGpuBridge& bridge);
     void clearDynamicGiOverlay() noexcept { dynamicGiAtlas_={}; }
     bool dynamicGiOverlayEnabled() const noexcept { return dynamicGiAtlas_.valid(); }
     // Generic custom terrain/foliage/mesh hook: call ONLY inside a valid
