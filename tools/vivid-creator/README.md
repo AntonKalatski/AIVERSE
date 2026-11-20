@@ -1201,3 +1201,43 @@ translucent cornea, ICB/MDI, other GPU-deformed occluders or
 ShaderGraph displacement. Preserve the CPU source picker and
 defer native Metal/Vulkan/GLES acceptance until the project
 performs its consolidated tests. See Stage 7AW handoff.
+
+
+### Stage 7AX — actual Metal colour screenshot vs GPU ID coverage acceptance
+
+The normal one-actor `aiverse_vivid_renderer_preview` now verifies two
+same-frame, actual-RHI pixel pairs: (1) GPU-morphed human and
+(2) MotionWeave-animated human. For each pair the preview records the
+current Renderer3D accepted direct main-colour command, samples the
+projected centre of the visible human from the **presented
+Renderer3D screen screenshot**, and records one GPU-generated,
+source-60B-actor-vertex ID pixel at identical top-left coordinates.
+
+`SculptGpuIdPass::record` is called **after** the regular colour pass
+is closed. The two readbacks are asynchronous, correlated by frame
+serial, stage, source model revision and pixel coordinates, and
+cannot complete the GUI acceptance until both results arrive.
+The original renderer screen colour screenshot remains a real
+presented frame; the additional ID render does not substitute a
+second colour renderer. Metal-owned buffers remain live through
+asynchronous completion or a real owner-thread GPU idle barrier.
+
+The pure helper `SculptGpuColorPixelOracle.h` reports
+`Covered`, `Mismatch`, `ClearBackground` or
+`Inconclusive` for **coverage**, not numerical colour/depth equality:
+unrelated occluders can write colour while a selected ID stays zero.
+The existing `vivid_metal_sculpt_id` Metal fixture adds a closer
+sampled Mask zero-ID occluder; hole vs solid GPU texels must cause
+different hardware depth/ID results. It is an isolated ID pass
+negative oracle; that occluder's source positions are still
+CPU-staged and are not yet proven identical to a separate, moving
+Renderer3D colour draw.
+
+The normal `bash tools/vivid-validate.sh` GUI run checks two
+`GPU colour/ID coverage stage=...` log entries. The 12-actor crowd
+run continues without a single-actor ID probe. Run on macOS with
+Metal (GUI support) during the deferred consolidated acceptance.
+**No native test has been run on this Stage 7AX source yet.**
+Full renderer colour-depth numerical parity, final GPU-deformed
+unrelated occluders, Blend/cornea/ShaderGraph, indirect/conditional
+LOD and Vulkan/GLES actor-stream support remain separate work.
