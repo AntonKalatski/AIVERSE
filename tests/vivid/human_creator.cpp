@@ -9,6 +9,7 @@
 #include "engine/character/vivid/SculptGpuAlphaMask.h"
 #include "engine/character/vivid/SculptGpuPickEligibility.h"
 #include "engine/character/vivid/SculptGpuRendererView.h"
+#include "engine/character/vivid/SculptGpuVertexSource.h"
 #include <string_view>
 #include <limits>
 #include "engine/character/vivid/MorphLodTransfer.h"
@@ -505,6 +506,115 @@ void test() {
             opaque.size()==3 && masks.empty() &&
             opaque[0].rgba[0]==0,
             "unknown custom ShaderGraph alpha must remain conservative");
+    }
+    // 7AT: the ID compute index source addresses the SAME published 60B
+    // ModelVertex GPU buffer Renderer3D borrowed. Only palette/triangle
+    // metadata are authored on CPU; morphed positions are GPU-resident.
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(4);
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.vertices[3]=model.vertices[0]; // seam-cloned source vertex
+        model.indices={3,1,2};
+        MeshDef mesh;
+        Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=3;
+        mesh.primitives.push_back(primitive);
+        model.meshes.push_back(mesh);
+        model.nodes.resize(1);
+        model.nodes[0].mesh=0;
+        const std::array<mat4,1> pose{{mat4::identity()}};
+        const std::array<std::uint32_t,4> authorIds{{0,1,2,0}};
+        SculptGpuVertexSource built;
+        const mat4 world=mat4::translate({0,0,2});
+        req(prepareSculptGpuVertexSource(
+                model,0,pose,world,{71},4,authorIds,3,built) &&
+            built.actualVertexOverride==aiverse::gfx::BufferHandle{71} &&
+            built.params.count==3 &&
+            built.params.vertices==4 &&
+            built.params.skinned==0 &&
+            built.indices.size()==3 &&
+            built.indices[0].vertex==3 &&
+            built.indices[0].triangleId==1 &&
+            built.indices[1].vertex==1 &&
+            built.indices[2].vertex==2 &&
+            built.influences.empty() &&
+            built.jointMatrices.empty() &&
+            std::fabs(built.params.rigidWorld.at(2,3)-2.f)<1.e-6f,
+            "actual GPU-source ID requests lost source clone/topology/rigid world");
+        const auto goodCount=built.indices.size();
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,world,{71},3,authorIds,3,built) &&
+            built.indices.size()==goodCount && built.params.vertices==4,
+            "invalid override size replaced last-good indexed GPU source");
+        const std::array<std::uint32_t,4> nonauthorable{{
+            0,1,2,std::numeric_limits<std::uint32_t>::max()
+        }};
+        req(prepareSculptGpuVertexSource(
+                model,0,pose,world,{71},4,nonauthorable,3,built) &&
+            built.indices[0].triangleId==0 &&
+            built.indices[1].triangleId==0,
+            "non-authorable seam/LOD triangle incorrectly got a selectable ID");
+        const auto shader=std::string_view(kSculptGpuSourceExpandMSL);
+        req(shader.find("source[offset]")!=std::string_view::npos &&
+            shader.find("influences[request.vertex]")!=std::string_view::npos &&
+            shader.find("output[thread].world")!=std::string_view::npos,
+            "GPU actor stream gather MSL did not reference actual 60B positions");
+    }
+    {
+        using namespace aiverse::render;
+        Model model;
+        model.vertices.resize(3);
+        for(auto& vertex:model.vertices) {
+            vertex.joints[0]=0;vertex.weights[0]=128;
+            vertex.joints[1]=1;vertex.weights[1]=64;
+        }
+        model.vertices[0].pos={0,0,0};
+        model.vertices[1].pos={1,0,0};
+        model.vertices[2].pos={0,1,0};
+        model.indices={0,1,2};
+        MeshDef mesh;
+        Primitive p;
+        p.firstIndex=0;p.indexCount=3;
+        p.jointPalette={0,1};
+        mesh.primitives.push_back(p);
+        model.meshes.push_back(mesh);
+        model.nodes.resize(3);
+        model.nodes[0].mesh=0;
+        model.nodes[0].skin=0;
+        model.skins.resize(1);
+        model.skins[0].joints={1,2};
+        model.skins[0].inverseBind={mat4::identity(),mat4::identity()};
+        const std::array<mat4,3> pose{{
+            mat4::identity(),mat4::translate({0,0,2}),
+            mat4::translate({0,0,4})
+        }};
+        SculptGpuVertexSource source;
+        req(prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{11},3,{},3,source) &&
+            source.params.skinned==1 &&
+            source.params.jointMatrices==2 &&
+            source.influences.size()==3 &&
+            source.influences[0].joints[0]==0 &&
+            source.influences[0].joints[1]==1 &&
+            std::fabs(source.influences[0].weights[0]-
+                      128.f/192.f)<1.e-6f &&
+            std::fabs(source.influences[0].weights[1]-
+                      64.f/192.f)<1.e-6f &&
+            std::fabs(source.jointMatrices[0].at(2,3)-2.f)<1.e-6f &&
+            std::fabs(source.jointMatrices[1].at(2,3)-4.f)<1.e-6f,
+            "GPU source skin palette differs from Renderer3D normalized weights");
+        const auto good=source.indices;
+        model.meshes[0].primitives[0].jointPalette={999};
+        req(!prepareSculptGpuVertexSource(
+                model,0,pose,mat4::identity(),{11},3,{},3,source) &&
+            source.indices.size()==good.size() &&
+            source.indices[0].triangleId==good[0].triangleId,
+            "invalid skinned GPU joint palette overwrote published inputs");
     }
     // 7AS: confirm that an *actual Renderer3D-selected* ModelItem view
     // is required before our independent CPU-fed GPU ID pass can run.
