@@ -50,3 +50,7 @@ During validation main advanced to `1dc657128` through Texture RHI PR86/95. Read
 ## 2026-11-20 — GCC test compile blockers
 
 Code `62b295196a0e5c600bdf59cf3a781b391c169d8f`, same integration branch: tests/physis_admin_journal_test.cpp and tests/physis_journal_crash_recovery_test.cpp check one-byte pipe reads/writes, retry EINTR, reject short/failed results; child fails before waiting if status delivery fails. Removed unused anonymous EXR u64 fixture helper reported by Clang. No engine/public API/save changes. Evidence: ARM64 CI job136335497364 errors -Werror=unused-result; KINGSTON texture-build.log unused-function warning. Rebuild/tests pending, NOT yet passing. Next: full KINGSTON build, affected PHYSIS/EXR tests and merged renderer acceptance.
+
+## 2026-11-20 — pending Vulkan readback lifetime
+
+Code `3b212557766e7afd37234feb02d60aa57085fd71`: avoid self-move of PendingComputeRead when no completed entries precede a still-pending read. A self-moved std::function need not preserve its callback; retain unchanged entries in place. Resource ownership, serial completion and public API unchanged. Existing/new Vulkan parity fixtures require actual callback delivery after repeated frames; runtime GPU check pending CI, native compilation underway on KINGSTON. Next step unchanged: full integration acceptance and Linux Vulkan CI.
