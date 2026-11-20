@@ -232,3 +232,12 @@ the queued source-tested SHA. Do not interpret tests
 in source or queued runners as a native PASS. Next
 action remains: inspect exact run job statuses,
 logs and artifact outputs, then fix actual blockers.
+
+## 2026-11-20 — physical sky/fog main integration checkpoint
+
+User-authorized integration code `1397dfb52f163bb234b10692411bfe6d3311c8aa` on
+`codex/physical-sky-main` adds opt-in atmosphere/fog to canonical PRISMA, preserving
+legacy shims. See [dedicated handoff](prisma-stage-physical-sky-main-2026-11-20.md)
+for exact source scope, main Metal brace repair, 7/7 targeted CTests, 54/54 Metal
+HDR probes and real Metal/GL captures. These local results do not assert outcomes
+for the historical CI runs above or the complete repository suite.

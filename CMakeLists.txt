@@ -1046,7 +1046,7 @@ set(AIVERSE_RUNTIME_SRC
     engine/render/Renderer3DTrace.cpp
     engine/render/ImGuiLayer.cpp)
 # PRISMA post-processing: runtime / independent GPU-free policy and catalog
-list(APPEND AIVERSE_RUNTIME_SRC engine/render/Prisma.cpp engine/render/PrismaScreenLighting.cpp)
+list(APPEND AIVERSE_RUNTIME_SRC engine/render/Prisma.cpp engine/render/PhysicalSky.cpp engine/render/LocalFog.cpp engine/render/PrismaScreenLighting.cpp)
 # baked lighting on the GPU (agent-lightbake): lightmaps / probes in the model shaders
 list(APPEND AIVERSE_RUNTIME_SRC engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)
 add_library(aiverse_shader_graph STATIC engine/render/graph/ShaderGraph.cpp)
@@ -1581,7 +1581,7 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_tests PRIVATE aiverse_game_view)   # fog of war look parsing (view, no GPU)
     # view.entity_fx draw tests: the 3D renderer against a recording gfx::Device (no GPU; platform stubs in tests.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/Renderer3D.cpp engine/render/Renderer3DModels.cpp engine/render/Lights.cpp
-        engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/Prisma.cpp engine/render/GeometryScene.cpp)
+        engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/Prisma.cpp engine/render/PhysicalSky.cpp engine/render/LocalFog.cpp engine/render/GeometryScene.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)   # agent-lightbake
     target_sources(aiverse_tests PRIVATE engine/ui/UiLua.cpp)    # UI Lua sandbox (no RmlUi)
     target_link_libraries(aiverse_tests PRIVATE aiverse_lua)
@@ -3515,4 +3515,23 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vfx_graph_runtime_tests PRIVATE aiverse_fx)
     add_test(NAME vfx_graph_runtime COMMAND aiverse_vfx_graph_runtime_tests)
     set_tests_properties(vfx_graph_runtime PROPERTIES LABELS "SpectraFX")
+endif()
+
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physical_sky_tests tests/render/physical_sky.cpp engine/render/PhysicalSky.cpp)
+    target_link_libraries(aiverse_physical_sky_tests PRIVATE aiverse_engine)
+    add_test(NAME physical_sky COMMAND aiverse_physical_sky_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_sky_tests tests/render/physis_sky.cpp)
+    target_link_libraries(aiverse_physis_sky_tests PRIVATE aiverse_engine)
+    add_test(NAME physis_sky COMMAND aiverse_physis_sky_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_local_fog_tests tests/render/local_fog.cpp engine/render/LocalFog.cpp)
+    target_link_libraries(aiverse_local_fog_tests PRIVATE aiverse_engine)
+    add_test(NAME local_fog COMMAND aiverse_local_fog_tests)
 endif()

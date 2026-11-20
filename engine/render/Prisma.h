@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 #include "PrismaData.h"
+#include "PhysicalSky.h"
+#include "LocalFog.h"
 #include "PostFxData.h" // legacy aliases used by existing clients and editor
 #include "PrismaVolumes.h"
 #include "PrismaRenderGraph.h" // GPU-free post-pass graph planner; executor follows later
@@ -259,6 +261,17 @@ public:
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
+    void setLocalFog(LocalFogSettings s) { fogSettings_=s; }
+    LocalFogScene& localFog() { return fogScene_; }
+    const LocalFogScene& localFog() const { return fogScene_; }
+    void setPhysicalSky(PhysicalSkySettings s) { skySettings_=sanitizePhysicalSky(s); }
+    // Positive displacement moves clouds along positive world X/Z (metres).
+    void setPhysicalSkyAdvection(float2 meters) { skyDisplacement_=meters;skyAdvection_=true; }
+    void clearPhysicalSkyAdvection() { skyDisplacement_={};skyAdvection_=false; }
+    const PhysicalSkySettings& physicalSky() const { return skySettings_; }
+    // Explicit time permits paused/reproducible captures; negative resumes the host clock.
+    void setPhysicalSkyTime(double seconds) { skyTime_=seconds; }
+
     void setSettings(PrismaSettings s);
     const PrismaSettings& settings() const { return settings_; }
     const PrismaSettings& baseSettings() const { return baseSettings_; }
@@ -483,6 +496,15 @@ private:
     PrismaUnderwaterState underwater_{};
     gfx::Device* dev_ = nullptr;
     PrismaSettings settings_;
+    LocalFog fog_;
+    LocalFogSettings fogSettings_;
+    LocalFogScene fogScene_;
+    PhysicalSky sky_;
+    PhysicalSkySettings skySettings_;
+    double skyTime_=-1,skyEpoch_=-1;
+    float2 skyDisplacement_{};
+    bool skyAdvection_=false;
+
     PrismaSettings baseSettings_;
     PrismaQuality quality_ = PrismaQuality::Medium;
     bool enabled_ = true;

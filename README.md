@@ -205,7 +205,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 
 **Graphics and audio**
 - Own RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opt-in)
-- PBR, glTF/OBJ, skeletal and procedural animation, procedural cables, parented entity rendering
+- PBR, glTF/OBJ, skeletal and procedural animation, procedural cables, parented entity rendering, physical sky, volumetric clouds and god rays, local sphere/OBB volumetric fog with runtime reveal
 - Shadows, dynamic lights, night, post-effects, Shader Graph
 - Particles with Unity ParticleSystem modules and an importer from Unity
 - 2D: sprites, tile maps with autotiling

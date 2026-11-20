@@ -29,7 +29,7 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
                           "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131, kPhysicalSky = 200, kLocalFog = 201 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 // Only the HDR luminance prefilter needs the camera-authored region.
@@ -514,6 +514,8 @@ void Prisma::shutdown() {
         throw std::runtime_error("Prisma shutdown: GPU retirement barrier failed");
     // Existing host teardown must synchronize the GPU before shutdown.
     // Unlike per-frame resize, shutdown is a full GPU idle safe point.
+    fog_.shutdown(*dev_);fogSettings_={};fogScene_.clear();
+    sky_.shutdown(*dev_);skySettings_={};skyTime_=skyEpoch_=-1;clearPhysicalSkyAdvection();
     releaseRetiredSizesAfterGpuIdle();
     for (auto& s : sizes_) destroySized(s);
     sizes_.clear();
@@ -583,6 +585,9 @@ void Prisma::setImageLoader(ImageLoader fn) {
 void Prisma::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
     std::vector<std::string> local;
     setSettings(parsePrisma(game, map, issues ? issues : &local));
+    fogSettings_={};fogScene_.clear();
+    skySettings_=parsePhysicalSky(game,map,issues?issues:&local);
+    skyEpoch_=-1;skyTime_=-1;clearPhysicalSkyAdvection();
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
 }
 
@@ -1478,7 +1483,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     stats_.width=w;stats_.height=h;
     stats_.outputWidth=outW;stats_.outputHeight=outH;
     Sized& set = sized(w, h);
-    const Target scene = target(set, kScene, w, h);
+    Target scene = target(set, kScene, w, h);
     const float flip = dev.info().renderTargetFlipY ? 1.0f : 0.0f;
     const auto active = settings_.activeAt(quality_);
     stats_.effects = int(active.size());
@@ -1487,6 +1492,25 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         return nullptr;
     };
     const float seed = float(frame_ % 61) * 0.173f;
+
+    // Atmosphere contributes to the HDR scene before exposure, motion and temporal resolve.
+    if(skySettings_.enabled&&hdrFrame_) {
+        const double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if(skyEpoch_<0)skyEpoch_=now;
+        const Target skyTarget=target(set,kPhysicalSky,w,h);
+        if(sky_.draw(dev,f,skySettings_,int(quality_),skyTime_>=0?skyTime_:now-skyEpoch_,
+                     scene.tex,depthFor(set,w,h),skyTarget.tex,depthFor(set,w,h,true),triangle_,
+                     skyAdvection_?&skyDisplacement_:nullptr)) {
+            scene=skyTarget;++stats_.passes;++stats_.effects;
+        } else if(!sky_.lastError().empty())error_=sky_.lastError();
+    }
+    if(fogSettings_.enabled&&hdrFrame_) {
+        const Target fogTarget=target(set,kLocalFog,w,h);
+        if(fog_.draw(dev,f,fogSettings_,fogScene_,int(quality_),scene.tex,depthFor(set,w,h),
+                     fogTarget.tex,depthFor(set,w,h,true),triangle_)) {
+            scene=fogTarget;++stats_.passes;++stats_.effects;
+        } else if(!fog_.lastError().empty())error_=fog_.lastError();
+    }
 
     // Invalidate per-camera HDR exposure BEFORE the current-frame meter.
     // Otherwise a camera jump can present one frame of stale adaptation.
