@@ -9,7 +9,7 @@ using namespace aiverse::render;
 int main() {
     LumaWeaveRegistry registry;
     LumaLight a; a.key=1;a.position={0,0,0};a.radius=8;
-    a.color={1,0,0};a.intensity=8;a.contributesToGi=true;
+    a.color={1,0,0};a.intensity=16;a.contributesToGi=true;
     LumaLight b=a;b.key=2;b.position={2,0,0};
     b.color={0,1,0};b.intensity=4;b.kind=LumaLightKind::Spot;
     b.direction={0,-1,0};b.cosInner=.8f;b.cosOuter=.6f;
