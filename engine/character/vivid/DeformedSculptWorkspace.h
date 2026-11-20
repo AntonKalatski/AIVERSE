@@ -16,6 +16,7 @@ class DeformedSculptWorkspace final {
     SkinnedWeightScratch skinScratch_; // retained for legacy skin picker compatibility
     SculptSkinningPlan skinPlan_;
     SculptPickBvh bvh_;
+    std::uint64_t preparedFrame_=0, preparedPublication_=0;
 public:
     DeformedSculptWorkspace()=default;
     DeformedSculptWorkspace(const DeformedSculptWorkspace&)=delete;
@@ -23,6 +24,7 @@ public:
 
     void reset() noexcept {
         model_=nullptr;
+        preparedFrame_=preparedPublication_=0;
         bvh_.clear();
         skinPlan_.clear();
         surface_.ready=false;
@@ -47,8 +49,13 @@ public:
                                   render::float3 origin,
                                   render::float3 direction,
                                   std::size_t sourceVertexCount,
-                                  std::span<const std::uint32_t> authorIds={}) const noexcept {
-        if(model_!=&model || !skinPlan_.ready() || !surface_.ready ||
+                                  std::span<const std::uint32_t> authorIds={},
+                                  std::uint64_t capturedFrame=0,
+                                  std::uint64_t publicationSerial=0) const noexcept {
+        if(!capturedFrame || !publicationSerial ||
+           capturedFrame!=preparedFrame_ ||
+           publicationSerial!=preparedPublication_ ||
+           model_!=&model || !skinPlan_.ready() || !surface_.ready ||
            surface_.mesh!=meshId || bvh_.mesh()!=meshId)
             return {};
         return resolveSculptGpuTriangle(model,surface_,triangleOrdinal,
@@ -64,8 +71,12 @@ public:
                     render::float3 origin,
                     render::float3 direction,
                     std::size_t sourceVertexCount,
-                    std::span<const std::uint32_t> sourceVertexIds={}) {
+                    std::span<const std::uint32_t> sourceVertexIds={},
+                    std::uint64_t preparedFrame=0,
+                    std::uint64_t publicationSerial=0) {
         SculptPick noHit;
+        if((preparedFrame==0)!=(publicationSerial==0))
+            return noHit;
         if(sourceVertexCount==0 ||
            sourceVertexCount>model.vertices.size() ||
            binding.targets()!=morphs.targets() ||
@@ -92,6 +103,8 @@ public:
         if(!skinPlan_.evaluate(model,nodeWorld,morphBind_,
                                surface_,skinScratch_.staging))return noHit;
         if(!bvh_.refit(surface_))return noHit;
+        preparedFrame_=preparedFrame;
+        preparedPublication_=publicationSerial;
         return bvh_.pick(surface_,origin,direction,
                          sourceVertexCount,sourceVertexIds);
     }
