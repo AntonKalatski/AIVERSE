@@ -73,6 +73,7 @@ public:
         LumaVulkanDenoiseSettings settings{};
         gfx::TextureHandle motionVectors{}; // real current-frame PRISMA RGBA16F
         uint64_t motionFrameSerial=0;         // must equal current GPU frame
+        uint64_t motionViewKey=0,motionViewEpoch=0;
         bool requireValidMotion=false;       // animated surfaces fail spatial-only
 
     };
@@ -594,7 +595,10 @@ private:
                            request.settings.historyWeight,
                            request.settings.historyClamp};
         const bool motionBound=request.motionVectors.valid() &&
-            request.motionFrameSerial==frame;
+            request.motionFrameSerial==frame &&
+            request.viewKey!=0 &&
+            request.motionViewKey==request.viewKey &&
+            request.motionViewEpoch==request.viewEpoch;
         uniforms.flags={usePrevious?1.f:0.f,
                         request.settings.reprojectionDepthTolerance,
                         motionBound?1.f:0.f,
