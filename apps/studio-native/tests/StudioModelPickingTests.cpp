@@ -61,5 +61,17 @@ int main() {
     assert(!studioPickModelSurface(model,mat4::identity(),origin,direction,0));
     const float inf=std::numeric_limits<float>::infinity();
     assert(!studioPickModelSurface(model,mat4::identity(),{inf,0,0},direction));
+    // The closer model wins, even when instance ordering is reversed.
+    model=oneTriangle();
+    auto front=oneTriangle(), back=oneTriangle();
+    const auto nearest=studioPickModelInstances({
+        {"back",&back,mat4::translate({0,0,-5})},
+        {"front",&front,mat4::translate({0,0,-1})}
+    },origin,direction);
+    assert(nearest.id=="front");
+    assert(std::abs(nearest.surface.distance-6)<1e-4f);
+    assert(studioPickModelInstances({
+        {"hidden",nullptr,mat4::identity()}
+    },origin,direction).id.empty());
     std::cout<<"PASS studio CPU model triangle picking\n";
 }
