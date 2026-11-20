@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainRender.h"
 #include "RtsTerrainSurface.h"
