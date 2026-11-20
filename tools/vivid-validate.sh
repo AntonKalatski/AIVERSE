@@ -118,6 +118,30 @@ if [[ "$GUI" -eq 1 ]]; then
         fi
     done
 
+    # Stage 7AZ: separate native Renderer3D scene with TWO independently
+    # GPU-written actor sources. One selected VIVID head + one sampled
+    # alpha-mask occluder are both submitted through normal colour/depth
+    # and are then observed in the independent zero-ID mask/depth pass.
+    MASK_PREFIX="$LOGDIR/vivid-mask-parity"
+    run_logged renderer-mask-parity env \
+        AIVERSE_VIVID_MASK_PARITY=1 \
+        AIVERSE_VIVID_PREVIEW_PREFIX="$MASK_PREFIX" "$PREVIEW"
+    for stage in baseline morph motionweave; do
+        if [[ ! -s "$MASK_PREFIX-$stage.ppm" ]]; then
+            printf 'VIVID 7AZ real colour screenshot missing: %s\n' \
+                "$stage" >&2
+            exit 1
+        fi
+    done
+    if ! grep -q 'pass=1' "$LOGDIR/renderer-mask-parity.log" || \
+       ! grep -q 'GPU colour/ID coverage stage=1 .*mask=alpha-hole PASS' \
+            "$LOGDIR/renderer-mask-parity.log" || \
+       ! grep -q 'GPU colour/ID coverage stage=2 .*mask=solid-occlusion PASS' \
+            "$LOGDIR/renderer-mask-parity.log"; then
+        printf 'VIVID 7AZ same-frame two-actor GPU Mask scene-depth parity failed.\n' >&2
+        exit 1
+    fi
+
     # A second REAL scene validates 12 GPU actors sharing the same immutable
     # morph data and shader pipelines while producing distinct face streams.
     CROWD="${AIVERSE_VIVID_CROWD_ACTORS:-12}"
