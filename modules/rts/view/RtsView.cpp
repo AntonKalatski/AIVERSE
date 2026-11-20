@@ -583,7 +583,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         RtsRoadView& view;
         gfx::Device& device;
         const std::function<float(float,float)>& height;
-        std::unique_ptr<RtsRoadView::PreparedRebuild> pending;
+        std::shared_ptr<RtsRoadView::PreparedRebuild> pending;
         PreparedRoad(RtsRoadView& v,gfx::Device& d,
                      const std::function<float(float,float)>& h)
             :view(v),device(d),height(h){}
@@ -597,7 +597,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const std::function<float(float,float)>& height;
         float waterY;
         int width,heightCells;
-        std::unique_ptr<RtsShoreView::PreparedRebuild> pending;
+        std::shared_ptr<RtsShoreView::PreparedRebuild> pending;
         PreparedShore(RtsShoreView& v,gfx::Device& d,
                       const std::function<float(float,float)>& h,
                       float y,int w,int hc)
