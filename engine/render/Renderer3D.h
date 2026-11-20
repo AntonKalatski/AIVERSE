@@ -977,6 +977,26 @@ public:
     // set's mode (indirect / shadowmask / subtractive). Null = realtime only. The set must outlive its use.
     void setBakedLighting(const BakedLighting* b) { baked_ = b; }
     const BakedLighting* bakedLighting() const { return baked_; }
+    // Stage22 preserves MAIN's existing GI shader and baked/indirect source
+    // ownership: no fake L1 probe binding may report success. The older
+    // LumaWeave Metal/CPU GI clipmap atlas route is NOT yet integrated with
+    // this newer shader/MDI backend. Return false explicitly until its
+    // shader/resource/texture contract has been ported and verified.
+    bool setDynamicGiOverlay(const GiDynamicProbeTexture*,float3,float,
+                             int,int,int,int=0,int=0,int=0,
+                             const GiClipmapValidityTexture* =nullptr) {
+        return false;
+    }
+    bool setDynamicGiCascadeOverlay(const GiDynamicProbeTexture*,float3,float,
+                                    int,int,int,int=0,int=0,int=0) {
+        return false;
+    }
+    bool setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture*,float3,float,
+                                         int,int,int,int=0,int=0,int=0) {
+        return false;
+    }
+    void clearDynamicGiOverlay() {} // no atlas was attached
+    bool dynamicGiOverlayActive() const {return false;}
     void setBakedQuality(BakedQuality q);
     BakedQuality bakedQuality() const { return bakedQuality_; }
     static BakedQuality defaultBakedQualityFor(const gfx::Device& dev, bool mobile);
