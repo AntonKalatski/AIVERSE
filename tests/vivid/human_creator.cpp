@@ -695,6 +695,11 @@ void test() {
                 SculptGpuRendererViewReason::RendererUnsupportedView,
             "GPU-selected indirect LOD cannot be guessed in VIVID");
         view.primitives[0].gpuLodConditional=false;
+        view.primitives[0].translucent=true;
+        req(validateSculptGpuRendererView(view,model,0,77).reason==
+                SculptGpuRendererViewReason::RendererUnsupportedView,
+            "translucent/depth-after source must not claim opaque GPU ID parity");
+        view.primitives[0].translucent=false;
         view.primitives[1].nodeIndex=0;
         req(validateSculptGpuRendererView(view,model,0,77).reason==
                 SculptGpuRendererViewReason::RendererUnsupportedView,
