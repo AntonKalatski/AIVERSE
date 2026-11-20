@@ -2436,6 +2436,7 @@ struct RtsRoadView::PreparedRebuild {
     std::unique_ptr<RtsRoadView> staged;
     size_t priorImageCount=0;
     bool replaceGeometry=false,replaceFilm=false,replacePuddles=false,replaceGhost=false;
+    bool committed=false;
     // The candidate is never submitted by a camera. It owns new Models and
     // generated images only; the previous kit's textures are borrowed.
     ~PreparedRebuild() noexcept {
@@ -2516,7 +2517,8 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
 }
 
 void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noexcept {
-    if(!candidate)return;
+    if(!candidate || candidate->committed)return;
+    candidate->committed=true;
     RtsRoadView& staged=*candidate->staged;
     // The candidate copied old kit handles with borrowed flags. Transfer
     // their original ownership policy back to the live owner at publication.
