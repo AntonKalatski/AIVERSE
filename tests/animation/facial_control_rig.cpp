@@ -184,9 +184,10 @@ void testEcsComposition() {
     // Without native IK, the SAME actor/Graph becomes worker-eligible.
     auto onlyMorph=authored();
     onlyMorph.erase("rig");
-    current.rig=std::make_shared<const FacialControlRig>(
+    auto& morphOnly=presentation.get<AnimationFacialControlComponent>(e);
+    morphOnly.rig=std::make_shared<const FacialControlRig>(
         FacialControlRig::compile(model,onlyMorph,faceParams));
-    current.state.reset();
+    morphOnly.state.reset();
     const auto parallel=scheduler.update(presentation,.016f);
     AIVERSE_TEST_CHECK(parallel.serialEntities==0 && parallel.parallelEntities==1);
 }
