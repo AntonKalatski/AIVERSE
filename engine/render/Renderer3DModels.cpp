@@ -10,6 +10,7 @@
 #include "GpuIcbPolicy.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -743,13 +744,37 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             } else {
                 it.world = cache?cache->transforms[size_t(n)]:d.world * world[size_t(n)];
             }
-            if (p.morphTargets > 0 && m->morphTex.valid()) {
-                const float* w = usePose ? (*d.pose)[size_t(n)].w : node.weights;
-                bool any = false;
-                for (int k = 0; k < p.morphTargets; ++k) any |= w[k] != 0;
-                if (any) {
-                    it.morph = int32_t(morphData_.size());
-                    morphData_.insert(morphData_.end(), w, w + kMaxMorphTargets);
+            if (p.morphTargets > 0 &&
+                p.morphTargets <= kMaxMorphTargets && m->morphTex.valid()) {
+                const float* weights = usePose
+                    ? (*d.pose)[size_t(n)].w : node.weights;
+                // Sparse palette: compact all nonzero weights and their
+                // original mesh-local source channel indices, no dropping
+                // active expressions. Dirty/NaN poses fail closed.
+                bool valid = true;
+                for(int channel=0;channel<p.morphTargets;++channel)
+                    if(!std::isfinite(weights[channel])) {
+                        valid=false; break;
+                    }
+                if(valid) {
+                    int active=0;
+                    for(int channel=0;channel<p.morphTargets;++channel)
+                        active+=weights[channel]!=0.f;
+                    if(active>0) {
+                        it.morph=int32_t(morphData_.size());
+                        const size_t off=morphData_.size();
+                        morphData_.resize(
+                            off+2u*size_t(kMaxMorphTargets)+1u,0.f);
+                        int slot=0;
+                        for(int channel=0;channel<p.morphTargets;++channel) {
+                            if(weights[channel]==0.f)continue;
+                            morphData_[off+size_t(slot)]=weights[channel];
+                            morphData_[off+size_t(kMaxMorphTargets)+size_t(slot)]=
+                                float(channel);
+                            ++slot;
+                        }
+                        morphData_[off+2u*size_t(kMaxMorphTargets)]=float(slot);
+                    }
                 }
             }
             float3 wc = it.world.transformPoint((p.boundsMin + p.boundsMax) * 0.5f);
@@ -930,18 +955,20 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(3, pal, sizeof pal);
     }
     if (it.morph >= 0) {
-        // U4: 16 morph weights + two vec4 metadata entries.
-        // Keep exactly the GLSL std140 and MSL MU4 member order.
-        static_assert(kMaxMorphTargets==16,
-            "Update Metal and GLSL morph U4 layouts together with CPU capacity");
-        float mo[kMaxMorphTargets + 8] = {};
+        // U4 std140/MSL: 64 sparse weights, 64 source channel IDs,
+        // then two vec4 metadata records (136 floats / 544 bytes).
+        static_assert(kMaxMorphTargets==64,
+            "Update Metal/GLSL morph palette when changing CPU capacity");
+        constexpr size_t kSlots=size_t(kMaxMorphTargets);
+        float mo[2*kMaxMorphTargets+8] = {};
         std::memcpy(mo,morphData_.data()+it.morph,
-                    size_t(kMaxMorphTargets)*sizeof(float));
-        mo[kMaxMorphTargets+0]=float(it.prim->morphTexel);
-        mo[kMaxMorphTargets+1]=float(it.prim->firstVertex);
-        mo[kMaxMorphTargets+2]=float(it.prim->vertexCount);
-        mo[kMaxMorphTargets+3]=float(it.prim->morphTargets);
-        mo[kMaxMorphTargets+4]=float(it.model->morphTexWidth);
+                    2*kSlots*sizeof(float));
+        mo[2*kSlots+0]=float(it.prim->morphTexel);
+        mo[2*kSlots+1]=float(it.prim->firstVertex);
+        mo[2*kSlots+2]=float(it.prim->vertexCount);
+        mo[2*kSlots+3]=float(it.prim->morphTargets);
+        mo[2*kSlots+4]=float(it.model->morphTexWidth);
+        mo[2*kSlots+5]=morphData_[size_t(it.morph)+2*kSlots];
         dev_->setUniforms(4,mo,sizeof mo);
     }
     dev_->setVertexBuffer(it.model->vb);
