@@ -42,8 +42,33 @@ void GeometryScene::retireResident(gfx::Device& dev) {
     stats_={};
     proxyVertices_=0;
 }
+size_t GeometryScene::pendingGpuRetirements() const noexcept {
+    size_t count=retirement_.pending();
+    for(const auto& stage:failedStages_)
+        count+=stage->retirement_.pending();
+    return count;
+}
+bool GeometryScene::collectRetired(gfx::Device& dev) {
+    // Called at the render-owner frame boundary, never inside a draw pass.
+    bool ok=retirement_.collect(dev);
+    for(auto it=failedStages_.begin();it!=failedStages_.end();) {
+        auto& stage=**it;
+        if(!stage.retirement_.collect(dev))ok=false;
+        if(stage.retirement_.pending()==0)
+            it=failedStages_.erase(it);
+        else ++it;
+    }
+    return ok;
+}
 void GeometryScene::shutdown(gfx::Device& dev) {
     retireResident(dev);
+    // Failed staging owners retain GPU-live models until a proven idle.
+    // Keep ownership intact when a barrier cannot be established.
+    for(auto it=failedStages_.begin();it!=failedStages_.end();) {
+        if(!(*it)->retirement_.completeForShutdown(dev))
+            throw std::runtime_error("geometry scene: failed-stage GPU shutdown barrier failed");
+        it=failedStages_.erase(it);
+    }
     // Unlike source reload, final teardown is allowed to block until all
     // recorded GPU submissions and the retirement queue have completed.
     if(!retirement_.completeForShutdown(dev))
@@ -51,35 +76,37 @@ void GeometryScene::shutdown(gfx::Device& dev) {
 }
 void GeometryScene::load(gfx::Device& dev,const Json& json,const FileReader& read){loadImpl(dev,json,read,{},2000000);}
 void GeometryScene::loadTransactional(gfx::Device& dev,const Json& json,const FileReader& read) {
-    GeometryScene staged;
+    // Reserve recovery ownership *before* any new GPU allocation. The
+    // catch path can then retain the failed staging scene without allocating.
+    failedStages_.reserve(failedStages_.size()+1);
+    auto staged=std::make_unique<GeometryScene>();
     try {
-        staged.loadImpl(dev,json,read,{},2000000);
+        staged->loadImpl(dev,json,read,{},2000000);
     } catch (...) {
-        // loadImpl has already enqueued any partially uploaded models.
-        // A staged instance has no live host, so drain it only with GPU
-        // completion proof. If idle is unavailable, its retirement queue
-        // deliberately retains GPU-owned model data beyond destruction.
-        (void)staged.retirement_.completeForShutdown(dev);
+        // loadImpl enqueues partial GPU uploads in this staging owner.
+        // Never drop its retirement queue on a refused device-idle barrier.
+        if(!staged->retirement_.completeForShutdown(dev))
+            failedStages_.push_back(std::move(staged));
         throw;
     }
     // Staged CPU containers own the newly uploaded resources. Moving them
     // into the live instance is noexcept; enqueue old resident models first.
     // Keep the live retirement queue (which tracks older in-flight frames).
     retireResident(dev);
-    models_=std::move(staged.models_);
-    instances_=std::move(staged.instances_);
-    groups_=std::move(staged.groups_);
-    warnings_=std::move(staged.warnings_);
-    stats_=staged.stats_;
-    hlod_=staged.hlod_;
-    geometryEnabled_=staged.geometryEnabled_;
-    surfacesEnabled_=staged.surfacesEnabled_;
-    cacheEnabled_=staged.cacheEnabled_;
-    errorPixels_=staged.errorPixels_;
-    maxPixels_=staged.maxPixels_;
-    proxyVertices_=staged.proxyVertices_;
-    staged.stats_={};
-    staged.proxyVertices_=0;
+    models_=std::move(staged->models_);
+    instances_=std::move(staged->instances_);
+    groups_=std::move(staged->groups_);
+    warnings_=std::move(staged->warnings_);
+    stats_=staged->stats_;
+    hlod_=staged->hlod_;
+    geometryEnabled_=staged->geometryEnabled_;
+    surfacesEnabled_=staged->surfacesEnabled_;
+    cacheEnabled_=staged->cacheEnabled_;
+    errorPixels_=staged->errorPixels_;
+    maxPixels_=staged->maxPixels_;
+    proxyVertices_=staged->proxyVertices_;
+    staged->stats_={};
+    staged->proxyVertices_=0;
 }
 
 void GeometryScene::loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget){if(!vertexBudget||vertexBudget>16000000)throw std::runtime_error("geometry scene: prepared vertex budget must be 1..16000000");loadImpl(dev,json,{},std::move(models),vertexBudget);}
