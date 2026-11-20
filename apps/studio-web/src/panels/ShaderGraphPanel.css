@@ -21,3 +21,9 @@
 .graph-message{padding:7px 12px;background:#1a3b31;color:#b5e4c8;font-size:11px;margin:0}
 .graph-summary button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid #496588;background:#223e59;color:#d4e6ff;border-radius:5px;font-size:10px}
 .graph-summary button:disabled{opacity:.45;cursor:not-allowed}
+
+.graph-add-select{min-width:94px;max-width:150px;padding:5px;background:#1e3850;
+  color:#cbe1f9;border:1px solid #4e7097;border-radius:4px;font-size:10px}
+.graph-pending{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#463425;color:#f5d39d;font-size:11px;flex-wrap:wrap}
+.graph-pending span{margin-right:auto}
+.graph-pending button{background:#5b4632;border:1px solid #927451;color:#f4dfa9;padding:5px 8px;border-radius:4px;font-size:11px}
