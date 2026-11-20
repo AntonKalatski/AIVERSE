@@ -27,12 +27,24 @@ struct IndexedCommand {
 layout(std430,set=0,binding=4) buffer IndexedIndirect {
     IndexedCommand draws[];
 } indirect;
+// Temporal buffers are bound ONLY for the opt-in path. Each global node
+// occupies exactly one uint. Previous and next must be different GPU
+// buffers; history is never updated in place while an older frame reads it.
+layout(std430,set=0,binding=5) readonly buffer PreviousRefinement {
+    uint refined[];
+} temporalPrevious;
+layout(std430,set=0,binding=6) buffer NextRefinement {
+    uint refined[];
+} temporalNext;
 
 layout(push_constant) uniform Params {
     mat4 viewProjection;
     uint instanceCount, outputCapacity, width, height;
     float thresholdPixels;
     uint clipDepthZeroToOne, frustumCull, reserved;
+    uint temporalNodeCount, temporalHasPrevious;
+    float hysteresisFraction;
+    uint temporalReserved;
 } params;
 
 uint wordAt(uint byteOffset) {return metadata.words[byteOffset>>2];}
@@ -150,8 +162,17 @@ void main(){
             Node node=getNode(nodesOffset,id);
             atomicAdd(counts.c[2],1u);
             if(node.resident==0u){invalid();return;}
+            float threshold=params.thresholdPixels;
+            if(params.hysteresisFraction>0.0 &&
+               params.temporalHasPrevious!=0u &&
+               id<params.temporalNodeCount){
+                const bool wasFine=temporalPrevious.refined[id]!=0u;
+                threshold*=wasFine
+                    ? (1.0-params.hysteresisFraction)
+                    : (1.0+params.hysteresisFraction);
+            }
             bool refine=node.children!=0u &&
-                projectedError(clip,node)>params.thresholdPixels;
+                projectedError(clip,node)>threshold;
             if(refine){
                 if(node.child<nodeBase||node.child>=nodeBase+nodeLength ||
                    node.children>nodeBase+nodeLength-node.child){
@@ -164,6 +185,9 @@ void main(){
                     }
                 if(refine && top+node.children>128u){invalid();return;}
             }
+            if(params.hysteresisFraction>0.0 &&
+               id<params.temporalNodeCount)
+                temporalNext.refined[id]=refine?1u:0u;
             if(refine){
                 for(uint c=node.children;c>0u;--c)
                     stack[top++]=node.child+c-1u;
@@ -191,6 +215,20 @@ void main(){
             indirect.draws[at].firstInstance=0u;
         }
     }
+}
+)GLSL";
+
+// Zero NEXT temporal state on GPU before traversal. Unvisited nodes must
+// be coarse (0), matching CPU SelectionOutput::refinedNodes behavior.
+inline constexpr const char* kVulkanTemporalReset=R"GLSL(#version 450
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+layout(std430,set=0,binding=0) buffer NextRefinement {
+    uint refined[];
+} nextState;
+layout(push_constant) uniform Params { uint count; } params;
+void main(){
+    uint id=gl_GlobalInvocationID.x;
+    if(id<params.count)nextState.refined[id]=0u;
 }
 )GLSL";
 
@@ -240,15 +278,29 @@ layout(std430,set=0,binding=0) buffer Indirect {
 layout(std430,set=0,binding=1) readonly buffer Counters {
     uint produced, overflow, examined, invalid;
 } counters;
+layout(std430,set=0,binding=2) readonly buffer PreviousRefinement {
+    uint refined[];
+} temporalPrevious;
+layout(std430,set=0,binding=3) buffer NextRefinement {
+    uint refined[];
+} temporalNext;
 layout(push_constant) uniform Params {
     uint capacity, fallbackEnabled, fallbackFirstIndex, fallbackIndexCount;
     int fallbackBaseVertex;
+    uint temporalNodeCount, temporalHasPrevious;
 } settings;
 void main(){
     const uint id=gl_GlobalInvocationID.x;
+    bool invalidSelection=counters.overflow!=0u ||
+        counters.invalid!=0u || counters.produced>settings.capacity;
+    if(id<settings.temporalNodeCount && invalidSelection){
+        // A failed selected frontier MUST NOT advance temporal history.
+        // No synchronous counter readback is necessary.
+        temporalNext.refined[id]=settings.temporalHasPrevious!=0u
+            ? temporalPrevious.refined[id] : 0u;
+    }
     if(id>=settings.capacity)return;
-    if(counters.overflow!=0u || counters.invalid!=0u ||
-       counters.produced>settings.capacity){
+    if(invalidSelection){
         // A validated one-material source can render its ORIGINAL indexed
         // primitive instead of disappearing on GPU selection failure.
         // Without that strict host contract all commands are disabled and
