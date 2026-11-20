@@ -59,6 +59,9 @@ public:
     // Returns false and keeps all GPU resources owned when idle cannot
     // be established; never call shutdown() on an in-flight device.
     bool shutdownAfterGpuIdle(gfx::Device& dev);
+    // Used by the owning host to retain failed staged instances until an idle
+    // barrier permits teardown. Does not prove that the device is still alive.
+    bool ownsGpuResources() const noexcept { return resourceDevice_ != nullptr; }
     bool hasSprite(uint16_t type) const { return type < looks_.size() && looks_[type].valid; }
     const SpriteLook& look(uint16_t type) const { return looks_[type]; }
 
