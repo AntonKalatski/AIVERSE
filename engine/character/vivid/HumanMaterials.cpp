@@ -98,9 +98,14 @@ std::shared_ptr<const render::graph::Program> skinGraph(const HumanSkin& d) {
     const auto fresnel=g.ternary("fresnel",normal,view,g.constant(2.4f));
     const auto blood=g.color({0.17f*d.hemoglobin,
                              0.035f*d.hemoglobin,0.023f*d.hemoglobin});
+    // Broad hemoglobin tint at grazing angles plus shallow diffuse warmth.
+    // This is an artist-controlled surface approximation, not screen-space SSS.
     const auto scatter=g.binary("multiply",fresnel,
                     g.binary("multiply",blood,g.constant(d.scatteringMm/6.0f)));
-    const auto skinColor=g.scalarOp("clamp",g.binary("add",skinNoise,scatter));
+    const auto shallow=g.binary("multiply",blood,
+        g.constant(std::clamp(d.scatteringMm/6.0f,0.0f,1.0f)*0.12f));
+    const auto skinColor=g.scalarOp("clamp",g.binary("add",skinNoise,
+                                    g.binary("add",scatter,shallow)));
     const auto finalRoughness=g.constant(std::clamp(
             d.roughness*(1.0f-0.55f*d.oiliness-0.22f*d.wetness),0.04f,1.0f));
     return g.finish(skinColor,finalRoughness);
@@ -123,9 +128,20 @@ std::shared_ptr<const render::graph::Program> irisGraph(const HumanEyes& d) {
                               0.86f-d.scleraRedness*0.18f});
     const auto fibreNoise=g.scalarOp("gradientNoise",
                        g.binary("multiply",uv,g.constant(85.0f)));
-    const auto irisColor=g.binary("multiply",g.color(d.irisColor),
-                       g.binary("add",g.constant(0.82f),
-                            g.binary("multiply",fibreNoise,g.constant(0.28f))));
+    // Layered iris: fine radial fibers plus a lower-frequency crypt band.
+    // The radial term is centered on the actual pupil UV rather than
+    // absolute UV, preventing the texture from drifting with iris scaling.
+    const auto radialUv=g.binary("subtract",uv,origin);
+    const auto radialNoise=g.scalarOp("gradientNoise",
+        g.binary("multiply",radialUv,
+                 g.add("constant",{},vector4(108.0f,108.0f,0,0))));
+    const auto cryptNoise=g.scalarOp("gradientNoise",
+        g.binary("multiply",radialUv,g.constant(24.0f)));
+    const auto fiberVariation=g.binary("add",g.constant(0.72f),
+        g.binary("add",g.binary("multiply",fibreNoise,g.constant(0.20f)),
+            g.binary("add",g.binary("multiply",radialNoise,g.constant(0.14f)),
+                          g.binary("multiply",cryptNoise,g.constant(0.10f)))));
+    const auto irisColor=g.binary("multiply",g.color(d.irisColor),fiberVariation);
     const auto iris=g.ternary("mix",sclera,irisColor,irisMask);
     const auto eye=g.ternary("mix",iris,pupil,pupilMask);
     const auto limbalOuter=g.scalarOp("oneMinus",
@@ -149,7 +165,14 @@ std::shared_ptr<const render::graph::Program> hairGraph(const HumanGroom& d) {
         g.binary("multiply",strands,g.constant(0.45f)));
     const auto facing=g.ternary("fresnel",g.add("normal"),
                         g.add("viewDirection"),g.constant(4.0f));
-    const auto glint=g.binary("multiply",facing,g.constant(0.2f));
+    // A second longitudinal low-frequency modulation softens the repeated
+    // glints on cards while retaining the dedicated renderer Hair BRDF.
+    const auto longitudinal=g.scalarOp("gradientNoise",
+        g.binary("multiply",uv,
+                 g.add("constant",{},vector4(3.0f,17.0f,0,0))));
+    const auto glint=g.binary("multiply",facing,
+        g.binary("add",g.constant(0.10f),
+            g.binary("multiply",longitudinal,g.constant(0.16f))));
     const auto highlight=g.binary("add",variation,glint);
     const auto melaninDarkening=g.constant(1.0f-0.38f*d.melanin);
     const auto color=g.scalarOp("clamp",g.binary("multiply",
