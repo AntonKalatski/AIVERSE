@@ -203,7 +203,8 @@ Json StudioSession::dispatch(const Json& request) {
                    revision.toDouble()!=double(revision.integer()))
                     throw std::runtime_error("Invalid facial selection revision");
                 reply.set("result",facialPreview_.controls(
-                    uint64_t(revision.integer()),params["values"]));
+                    uint64_t(revision.integer()),params["values"],
+                    params["vectors"]));
             } else {
                 reply.set("result",facialPreview_.describe());
             }

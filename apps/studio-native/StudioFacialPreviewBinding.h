@@ -6,6 +6,7 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioFacialRigDocument.h"
 #include "engine/render/Model.h"
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -24,6 +25,7 @@ public:
         path_.clear();
         draft_=Json();
         values_.clear();
+        vectors_.clear();
         ++revision_;
     }
     bool bound() const {return !guid_.empty();}
@@ -68,6 +70,7 @@ public:
             throw std::invalid_argument("Invalid facial rig: "+diagnostic);
         const std::string path=checkedModelPath(catalog,guid);
         std::map<std::string,float> defaults;
+        std::map<std::string,std::array<float,3>> vectors;
         for(const auto& morph:draft["morphs"].items()) {
             const std::string name=morph.getStr("parameter");
             defaults.try_emplace(name,0.f);
@@ -75,23 +78,37 @@ public:
         for(const auto& op:draft["rig"].items()) {
             const auto name=op.getStr("weightParameter");
             if(!name.empty())defaults.try_emplace(name,1.f);
+            for(const char* key:{"target","pole","translationParameter",
+                                 "rotationParameter","scaleParameter"}) {
+                const auto param=op.getStr(key);
+                if(!param.empty())vectors.try_emplace(param,
+                    std::array<float,3>{0.f,0.f,0.f});
+            }
         }
+        for(const auto& [name,_]:vectors)
+            if(defaults.contains(name))
+                throw std::invalid_argument("Facial input declared as both scalar and vector: "+name);
         // Publish the COMPLETE new binding only after native GUID and
         // authoring schema checks. This is NOT a Model/Graph/GPU compile.
         guid_=guid;
         path_=path;
         draft_=draft;
         values_=std::move(defaults);
+        vectors_=std::move(vectors);
         ++revision_;
         return describe();
     }
 
-    Json controls(uint64_t expectedRevision,const Json& values) {
+    Json controls(uint64_t expectedRevision,const Json& values,
+                  const Json& vectors) {
         if(!bound() || revision_!=expectedRevision)
             throw std::runtime_error("Stale facial preview selection; bind model again");
-        if(!values.isObject() || values.size()>256)
-            throw std::invalid_argument("Facial inputs must be a bounded object");
+        if(!values.isObject() || values.size()>256 ||
+           (!vectors.isNull() && !vectors.isObject()) ||
+           vectors.size()>256)
+            throw std::invalid_argument("Facial inputs must be bounded typed objects");
         auto candidate=values_;
+        auto vectorCandidate=vectors_;
         for(const auto& [name,value]:values.members()) {
             const auto it=candidate.find(name);
             if(it==candidate.end() || !value.isNumber())
@@ -101,7 +118,23 @@ public:
                 throw std::invalid_argument("Facial preview input must be 0..1");
             it->second=float(number);
         }
+        for(const auto& [name,entry]:vectors.members()) {
+            auto it=vectorCandidate.find(name);
+            if(it==vectorCandidate.end() || !entry.isArray() ||
+               entry.size()!=3)
+                throw std::invalid_argument("Unknown/non-vector facial IK input: "+name);
+            std::array<float,3> next{};
+            for(size_t axis=0;axis<3;++axis) {
+                const auto& coord=entry[axis];
+                if(!coord.isNumber() || !std::isfinite(coord.toDouble()) ||
+                   std::abs(coord.toDouble())>1000000.)
+                    throw std::invalid_argument("Nonfinite/out-of-range facial IK vector");
+                next[axis]=float(coord.toDouble());
+            }
+            it->second=next;
+        }
         values_=std::move(candidate);
+        vectors_=std::move(vectorCandidate);
         return describe();
     }
     Json describe() const {
@@ -114,6 +147,14 @@ public:
         for(const auto& [name,value]:values_)
             values.set(name,Json::number(double(value),6));
         result.set("values",std::move(values));
+        Json vectors=Json::object();
+        for(const auto& [name,value]:vectors_) {
+            Json coords=Json::array();
+            for(float component:value)
+                coords.push(Json::number(double(component),6));
+            vectors.set(name,std::move(coords));
+        }
+        result.set("vectors",std::move(vectors));
         result.set("runtimeReady",Json::fromBool(false));
         result.set("runtimeVerified",Json::fromBool(false));
         result.set("rendererChannelCapacity",
@@ -126,6 +167,7 @@ private:
     std::string guid_,path_;
     Json draft_;
     std::map<std::string,float> values_;
+    std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;
 };
 

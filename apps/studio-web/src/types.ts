@@ -8,6 +8,7 @@ export interface StudioFacialPreviewBinding {
   path: string; // content-relative path, resolved by native AssetCatalog
   revision: number; // binding epoch, must match control updates
   values: Record<string,number>;
+  vectors: Record<string,[number,number,number]>;
   runtimeReady: false; // this integration branch still has 8-slot Renderer3D
   runtimeVerified: false;
   rendererChannelCapacity: number;
@@ -90,7 +91,7 @@ export interface StudioParams {
   'studio.facialRigValidate': { rig: import('./panels/facialRigSchema').FacialRigDocument };
   'studio.facialRigSave': { name: string; rig: import('./panels/facialRigSchema').FacialRigDocument };
   'studio.facialPreviewBind': { guid: string; rig: import('./panels/facialRigSchema').FacialRigDocument } | { guid: '' };
-  'studio.facialPreviewControls': { revision: number; values: Record<string,number> };
+  'studio.facialPreviewControls': { revision: number; values: Record<string,number>; vectors?: Record<string,[number,number,number]> };
   'studio.facialPreviewInfo': Record<string,never>;
   'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
   'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };

@@ -43,6 +43,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   const [modelLocked,setModelLocked]=useState(false);
   const [binding,setBinding]=useState<StudioFacialPreviewBinding|null>(null);
   const [inputValues,setInputValues]=useState<Record<string,number>>({});
+  const [inputVectors,setInputVectors]=useState<Record<string,[number,number,number]>>({});
   const [previewBusy,setPreviewBusy]=useState(false);
   const [previewStatus,setPreviewStatus]=useState('');
 
@@ -58,7 +59,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     setSelected('');setSaved(null);setDraft(null);setNames([]);
     setError('');setInfo('');setValidated(false);setActive(0);
     setModelGuid('');setModelLocked(false);setBinding(null);
-    setInputValues({});setPreviewStatus('');
+    setInputValues({});setInputVectors({});setPreviewStatus('');
     if(connected && !projectPath)return;
     setLoading(true);
     void invoke('studio.facialRigList',{}).then(response=>{
@@ -149,7 +150,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   // Assets picker. The native host independently resolves and checks its path.
   const chooseModel=(guid:string)=>{
     if(modelLocked)return;
-    setModelGuid(guid);setBinding(null);setInputValues({});
+    setModelGuid(guid);setBinding(null);setInputValues({});setInputVectors({});
     setPreviewStatus(guid?'Model selected; bind the draft to inspect native inputs.':'');
   };
   const bindNative=async()=>{
@@ -158,6 +159,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     try {
       const result=await invoke('studio.facialPreviewBind',{guid:modelGuid,rig:draft});
       setBinding(result);setInputValues({...result.values});
+      setInputVectors({...result.vectors});
       setPreviewStatus('Model GUID and authoring inputs validated by native Studio. No GPU pose has been generated.');
     }catch(e){setError(message(e));setBinding(null);}
     finally{setPreviewBusy(false);}
@@ -167,9 +169,10 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     setPreviewBusy(true);setError('');setPreviewStatus('');
     try {
       const result=await invoke('studio.facialPreviewControls',{
-        revision:binding.revision,values:inputValues
+        revision:binding.revision,values:inputValues,vectors:inputVectors
       });
       setBinding(result);setInputValues({...result.values});
+      setInputVectors({...result.vectors});
       setPreviewStatus('Inputs accepted and stored by native Studio; GPU preview still unavailable.');
     }catch(e){setError(message(e));}
     finally{setPreviewBusy(false);}
@@ -235,6 +238,30 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
                 </div>
               </StudioField>)}
           </div>
+          {Object.entries(inputVectors).map(([name,vector])=>
+            <div key={name} className="facial-ik-vector">
+              <strong>{name} (IK vector)</strong>
+              <div className="au-row facial-vector-coordinates">
+                {vector.map((value,axis)=>
+                  <StudioField key={axis} label={['X','Y','Z'][axis]}
+                    htmlFor={'facial-vector-'+name+'-'+axis}>
+                    <StudioInput id={'facial-vector-'+name+'-'+axis}
+                      type="number" step={0.1} value={value}
+                      disabled={previewBusy}
+                      onChange={e=>{
+                        const number=Number(e.target.value);
+                        if(e.target.value===''||!Number.isFinite(number))return;
+                        setInputVectors(old=>{
+                          const previous=old[name];
+                          if(!previous)return old;
+                          const next=[...previous] as [number,number,number];
+                          next[axis]=number;
+                          return {...old,[name]:next};
+                        });
+                      }}/>
+                  </StudioField>)}
+              </div>
+            </div>)}
           <StudioButton size="sm" onClick={()=>void sendInputs()}
             disabled={previewBusy}>Send native inputs</StudioButton>
         </>}

@@ -41,3 +41,9 @@
 .facial-native-controls .au-field {min-width:0}
 .facial-native-controls .au-input[type=range]{flex:1;min-width:60px;padding:0;accent-color:var(--au-accent)}
 .facial-native-controls .au-row span{font-variant-numeric:tabular-nums;color:var(--au-text-muted);min-width:40px}
+
+.facial-ik-vector{padding:var(--au-space-2) 0;border-top:1px solid var(--au-line)}
+.facial-vector-coordinates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:var(--au-space-2)}
+.facial-vector-coordinates .au-field{min-width:0}
+.facial-vector-coordinates .au-input{width:100%;min-width:0}
