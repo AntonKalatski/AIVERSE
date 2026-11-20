@@ -371,7 +371,14 @@ void main() {
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
-    vec3 dd,ds;float ambientVisibility;dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+    vec3 dd,ds;float ambientVisibility;
+#if defined(DYNAMIC_GI)
+    // L1 atlas owns bounced light. Preserve direct point/spot but suppress
+    // the legacy grid-indirect approximation to avoid duplicate transport.
+    dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,0.0);
+#else
+    dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+#endif
     sky*=ambientVisibility;ground*=ambientVisibility;
     vec3 amb = mix(ground, sky, n.y * 0.5 + 0.5);
     float giOcc = 1.0;   // specular occlusion from the baked light
@@ -870,7 +877,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     sh *= cloudShade(lu, in.wpos);
     float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
     float3 sky = rtsDecodeScene(f.skyColor.rgb), ground = rtsDecodeScene(f.groundColor.rgb);
-    float3 dd,ds;float ambientVisibility;dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+    float3 dd,ds;float ambientVisibility;
+#if defined(DYNAMIC_GI)
+    dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,0.0);
+#else
+    dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+#endif
     sky*=ambientVisibility;ground*=ambientVisibility;
     float3 amb = mix(ground, sky, n.y * 0.5 + 0.5);
     float giOcc = 1.0;
