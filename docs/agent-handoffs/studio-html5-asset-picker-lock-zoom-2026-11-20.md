@@ -98,3 +98,29 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 - **Not run:** `npm run typecheck`, `npm run test:web`, `npm run build`, Python tests, native CMake/CTest, Metal screenshot QA. Container's git network fails DNS; cannot honestly mark green.
 ### Next step
 - Typecheck and compile on Mac; test successful texture selection/apply, unsupported GUID, dropped non-texture, clear field, cross-project GUID, absent .meta, undo limitations. Then implement a durable GUID reference format or safe remapping/rewrite when assets move, preserving compatibility with the runtime's project-relative path loader. Only then extend actual model/VFX reference schemas.
+
+## Stage 6 — repair path-backed material references on asset move (2026-11-20)
+
+### Implementation
+- Existing `StudioTransferPlan::apply` preserves .meta GUIDs when files and directories move, but runtime material JSON persists project-relative strings. A stable GUID alone did not protect those references after move.
+- `apps/studio-native/StudioSession.cpp` now snapshots native catalog `GUID -> content-relative path` immediately before `studio.assetTransferCommit`, applies the existing validated transfer, rebuilds catalog after, and derives old->new path mappings only for GUIDs still present at a different location. This includes descendants of moved directories.
+- For each library material, only six known texture fields are remapped when their exact old path matches. All other fields stay unchanged. Changes are accumulated before mutating the JSON object, avoiding invalidated member iterators. The existing engine `saveMaterialLibrary` path persists the rewritten library; it also notifies dependent views.
+- `StudioAssetTransferResult.repairedMaterialReferences` (optional) reports how many texture fields changed. Assets UI includes this number after commit. Failure repairing `materials.json` is surfaced in `issues`; asset transfers are already applied and cannot be treated as rolled back.
+- `tools/studio/test_reference_pin_zoom.py` adds a static source-contract regression case for the GUID mapping, exact texture field rewrites, and visible feedback.
+
+### Files and commits
+- `apps/studio-native/StudioSession.cpp` — `c85dd3351a4ce28a049eb0ebbbe4f6bcdbf8b03c`, `3972e2a6387d423b41176a45a7bffb333033783d`.
+- `apps/studio-web/src/types.ts` — `baf064525544d674e3e6d3c4b395858d5ba301f3`.
+- `apps/studio-web/src/components/AssetsPanel.tsx` — `6e262510ad0c3edcc6346285b1f2578fb3e30c93`.
+- `tools/studio/test_reference_pin_zoom.py` — `154472ac730078f3ef21b5b9296617539a965e92`.
+
+### QA status and remaining limitations
+- **Performed:** inspected GitHub source for the asset transfer mechanics, existing asset catalog GUID preservation, `loadMaterialLibrary`/`saveMaterialLibrary`, Studio bridge and TS result model. Submitted remote source changes and a source contract test.
+- **Not performed:** actual C++ compilation, Python/JS tests execution, move/folder/keep-both/replace integration tests, WebKit + Metal QA. These are mandatory before declaring feature production-ready.
+- This stage repairs **library material texture fields only**, not arbitrary model paths, rules `view` inline materials, VFX, animation, saved shader nodes, or externally modified files. The rewrite occurs *after* a transfer and is not atomic with it. For rigorous atomicity: build a move-impact plan, stage material JSON rewrites and rollback/repair operations together, and reject preflight on validation/IO failure.
+- Do not assume a stable GUID reference is natively persisted: materials still store paths, which the move process repairs. External raw filesystem moves bypass Studio and are not automatically repaired.
+
+### Next
+1. Execute `npm ci && npm run typecheck && npm run test:web && npm run build` in `apps/studio-web`; run `python3 -m unittest discover -s tools/studio -p 'test_*.py'`; compile Studio native and CTest on Mac.
+2. Add live integration tests for moving single texture, directory subtree, keep-both and replace collision, unrelated assets, corrupt `materials.json`, missing GUID, and partial move with issue handling.
+3. Extend the reference graph beyond material library into `rules.json` and actual model/VFX/animation asset fields with explicit schema; build a preflight report and durable atomic move/repair transaction. Do not merge until tests pass.
