@@ -269,6 +269,7 @@ public:
                 // No second Animator/Graph evaluation: only the existing
                 // post-pose AnimationRig solve, reusing its Aim/IK/limits.
                 std::vector<render::mat4> scratch;
+                next.ik.pendingTime=dt;
                 ik_->execute(model,parameters,candidate,scratch,&next.ik);
                 if(globalWeight<1.f) {
                     for(std::size_t i=0;i<candidate.size();++i) {
