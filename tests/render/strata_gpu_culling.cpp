@@ -341,6 +341,25 @@ int main() {
     assert(delivered && vulkanRead.valid());
     assert(compareGpuSelection(reference,{ia,ib},referencePass,400,
                                vulkanRead,&error));
+    // Stage16.4c: dispatch different pass cameras before their respective
+    // graphics encoders. GPU pools must not reuse another camera's slot
+    // in the SAME RHI frame; each dispatch retains its own projection.
+    GpuPassConfig sun=referencePass;
+    sun.viewProjection=mat4::scale({.5f,.6f,1.f});
+    sun.width=sun.height=1024;
+    GpuPassConfig reflected=referencePass;
+    reflected.viewProjection=mat4::scale({-1.f,1.f,1.f});
+    GpuSelectionSubmission sunOutput{},reflectionOutput{};
+    assert(gpuVk.dispatch(vk,{99},{ia},sun,201,sunOutput));
+    assert(sunOutput.gpuIndirectPrepared());
+    assert(vk.lastUniforms.viewProjection[0]==.5f);
+    assert(gpuVk.dispatch(vk,{99},{ia},reflected,201,reflectionOutput));
+    assert(reflectionOutput.gpuIndirectPrepared());
+    assert(vk.lastUniforms.viewProjection[0]==-1.f);
+    assert(sunOutput.indirect!=reflectionOutput.indirect);
+    assert(sunOutput.indirect!=vkResult.indirect);
+    assert(reflectionOutput.indirect!=vkResult.indirect);
+    assert(sunOutput.frameSerial==reflectionOutput.frameSerial);
     // Fail-closed if the checked RHI rejects compute encoding.
     vk.supported=false;
     GpuSelectionSubmission unchanged=vkResult;
