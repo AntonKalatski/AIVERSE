@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
+import { Eye, FilePlus2, FolderOpen, RotateCcw, Save, SlidersHorizontal, Plus, Trash2, Lock, LockOpen } from 'lucide-react';
 import { invoke, nativeConnected } from '../bridge';
 import {
   StudioPanel, StudioSection, StudioButton, StudioIconButton,
@@ -10,6 +10,8 @@ import {
   ARKIT52, arkitFaceMapping, newFacialRig, validateFacialRigDraft, validRigFileName
 } from './facialRigSchema';
 import type { FacialRigDocument, FacialMorphBinding, FacialIkUnit } from './facialRigSchema';
+import AssetReferencePicker from '../components/AssetReferencePicker';
+import type { StudioFacialPreviewBinding } from '../types';
 import './FacialRigPanel.css';
 
 type Tab='morphs'|'ik';
@@ -37,6 +39,12 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
   const [info,setInfo]=useState('');
   const [nonce,setNonce]=useState(0);
   const [validated,setValidated]=useState(false);
+  const [modelGuid,setModelGuid]=useState('');
+  const [modelLocked,setModelLocked]=useState(false);
+  const [binding,setBinding]=useState<StudioFacialPreviewBinding|null>(null);
+  const [inputValues,setInputValues]=useState<Record<string,number>>({});
+  const [previewBusy,setPreviewBusy]=useState(false);
+  const [previewStatus,setPreviewStatus]=useState('');
 
   const dirty=!!draft && (!saved || JSON.stringify(draft)!==JSON.stringify(saved));
   const issues=useMemo(()=>draft?validateFacialRigDraft(draft):[],[draft]);
@@ -49,6 +57,8 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     let cancelled=false;
     setSelected('');setSaved(null);setDraft(null);setNames([]);
     setError('');setInfo('');setValidated(false);setActive(0);
+    setModelGuid('');setModelLocked(false);setBinding(null);
+    setInputValues({});setPreviewStatus('');
     if(connected && !projectPath)return;
     setLoading(true);
     void invoke('studio.facialRigList',{}).then(response=>{
@@ -65,7 +75,7 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     try {
       const response=await invoke('studio.facialRigGet',{name});
       setSelected(name);setSaved(clone(response.rig));setDraft(clone(response.rig));
-      setActive(0);setValidated(false);
+      setActive(0);setValidated(false);setBinding(null);setPreviewStatus('');
     }catch(e){setError(message(e));}finally{setBusy(false);}
   };
   const startNew=(use52:boolean)=>{
@@ -75,11 +85,12 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     const rig=use52?arkitFaceMapping(faceNode.trim()||'Face'):newFacialRig();
     setSelected(newName);setDraft(rig);setSaved(null);
     setActive(0);setTab('morphs');setError('');setInfo('');
-    setValidated(false);setNewName('');
+    setValidated(false);setNewName('');setBinding(null);setPreviewStatus('');
   };
   const mutate=(fn:(d:FacialRigDocument)=>FacialRigDocument)=>{
     if(!draft)return;
     setDraft(fn(clone(draft)));setError('');setInfo('');setValidated(false);
+    setBinding(null);setPreviewStatus('Draft changed; bind again to validate native selection.');
   };
   const changeMorph=(index:number,change:Partial<FacialMorphBinding>)=>
     mutate(d=>{d.morphs[index]={...d.morphs[index],...change};return d;});
@@ -130,6 +141,38 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
     if(saved)setDraft(clone(saved));
     else {setDraft(null);setSelected('');}
     setError('');setInfo('Draft discarded.');setValidated(false);setActive(0);
+    setBinding(null);setPreviewStatus('');
+  };
+
+
+  // A model is selected by immutable content/.meta GUID through the shared
+  // Assets picker. The native host independently resolves and checks its path.
+  const chooseModel=(guid:string)=>{
+    if(modelLocked)return;
+    setModelGuid(guid);setBinding(null);setInputValues({});
+    setPreviewStatus(guid?'Model selected; bind the draft to inspect native inputs.':'');
+  };
+  const bindNative=async()=>{
+    if(!draft||!modelGuid||issues.length||!editable||previewBusy)return;
+    setPreviewBusy(true);setError('');setPreviewStatus('');
+    try {
+      const result=await invoke('studio.facialPreviewBind',{guid:modelGuid,rig:draft});
+      setBinding(result);setInputValues({...result.values});
+      setPreviewStatus('Model GUID and authoring inputs validated by native Studio. No GPU pose has been generated.');
+    }catch(e){setError(message(e));setBinding(null);}
+    finally{setPreviewBusy(false);}
+  };
+  const sendInputs=async()=>{
+    if(!binding||!binding.bound||previewBusy)return;
+    setPreviewBusy(true);setError('');setPreviewStatus('');
+    try {
+      const result=await invoke('studio.facialPreviewControls',{
+        revision:binding.revision,values:inputValues
+      });
+      setBinding(result);setInputValues({...result.values});
+      setPreviewStatus('Inputs accepted and stored by native Studio; GPU preview still unavailable.');
+    }catch(e){setError(message(e));}
+    finally{setPreviewBusy(false);}
   };
 
   return <StudioPanel title="Facial Rig" eyebrow="MOTIONWEAVE / CHARACTER"
@@ -158,11 +201,52 @@ export default function FacialRigPanel({projectPath}:{projectPath:string}) {
       {connected&&!projectPath&&<StudioEmptyState title="Open a project"
         icon={<FolderOpen size={22}/>}
         description="Facial presets belong to your AIVERSE project, not a global library."/>}
-      <StudioAlert title="Preview integration">
-        <span className="facial-preview-note"><Eye size={14}/>
-          Live GPU facial preview becomes available when MotionWeave Stage 180 is
-          integrated with the Studio native host. No synthetic face is displayed.</span>
-      </StudioAlert>
+      <StudioSection title="Facial model binding"
+        actions={<StudioIconButton aria-label={modelLocked?'Unlock facial model':'Lock facial model'}
+          icon={modelLocked?<Lock size={15}/>:<LockOpen size={15}/>}
+          onClick={()=>setModelLocked(v=>!v)} disabled={!modelGuid}
+          title={modelLocked?'Unlock from asset selection':'Lock model reference'}/>}>
+        <StudioField label="Model from Assets" htmlFor="facial-model-guid">
+          <AssetReferencePicker value={modelGuid} label="facial model asset"
+            kinds={['model']} onChange={chooseModel}
+            disabled={!editable||modelLocked||previewBusy}/>
+        </StudioField>
+        {modelLocked&&<p className="facial-footnote">Model reference locked: Assets selection and drag-and-drop cannot replace it.</p>}
+        <div className="au-row facial-actions">
+          <StudioButton size="sm" onClick={()=>void bindNative()}
+            disabled={!editable||!draft||!modelGuid||issues.length>0||previewBusy}>
+            <Eye size={14}/> Bind model &amp; controls
+          </StudioButton>
+          {binding?.bound&&<StudioBadge>{binding.path}</StudioBadge>}
+        </div>
+        {binding?.bound&&<>
+          <p className="facial-footnote">Native binding revision {binding.revision}.
+            Input changes are staged until explicitly sent.</p>
+          <div className="facial-native-controls">
+            {Object.entries(inputValues).map(([name,value])=>
+              <StudioField key={name} label={name} htmlFor={'facial-input-'+name}>
+                <div className="au-row">
+                  <StudioInput id={'facial-input-'+name} type="range"
+                    min={0} max={1} step={0.01} value={value}
+                    disabled={previewBusy} onChange={e=>setInputValues(current=>({
+                      ...current,[name]:Number(e.target.value)
+                    }))}/>
+                  <span>{value.toFixed(2)}</span>
+                </div>
+              </StudioField>)}
+          </div>
+          <StudioButton size="sm" onClick={()=>void sendInputs()}
+            disabled={previewBusy}>Send native inputs</StudioButton>
+        </>}
+        {previewStatus&&<p className="facial-footnote" role="status">{previewStatus}</p>}
+        <StudioAlert tone="warning" title="GPU preview not integrated yet">
+          The Studio branch currently supports {binding?.rendererChannelCapacity??8} morph slots,
+          while MotionWeave requires 64 for ARKit 52.
+          Binding verifies the asset GUID and input schema, not the actual mesh channels,
+          IK bones or a rendered pose. Native ModelView preview exists on the
+          separate MotionWeave branch; the renderer branches must be integrated first.
+        </StudioAlert>
+      </StudioSection>
       {error&&<StudioAlert tone="danger" title="Cannot complete action">{error}</StudioAlert>}
       {info&&<StudioAlert tone="success">{info}</StudioAlert>}
       {issues.length>0&&draft&&<StudioAlert tone="warning" title="Draft needs attention">
