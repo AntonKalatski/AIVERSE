@@ -143,6 +143,22 @@ if [[ "$GUI" -eq 1 ]]; then
         exit 1
     fi
 
+    # Stage 7AF: source-compatible lower-cost material presets still build
+    # and render on the native Metal Creator path. Hardware GPU comparisons
+    # and Vulkan/GLES acceptance remain separate checks.
+    for material_tier in low medium; do
+        material_ppm="$LOGDIR/vivid-material-$material_tier.ppm"
+        rm -f "$material_ppm"
+        run_logged "creator-material-$material_tier" env \
+            AIVERSE_VIVID_CREATOR_CAPTURE="$material_ppm" \
+            "$CREATOR" --smoke --material-quality "$material_tier"
+        if [[ ! -s "$material_ppm" ]] || \
+           ! grep -q 'pass=1' "$LOGDIR/creator-material-$material_tier.log"; then
+            printf 'VIVID material quality capture failed: %s\\n' "$material_tier" >&2
+            exit 1
+        fi
+    done
+
     # Check that changing Skin/Eye DNA affects actual 3D viewport pixels,
     # not just Inspector text. Use a separate GUI run with the warm preset.
     WARM_PPM="$LOGDIR/vivid-creator-warm.ppm"
@@ -238,7 +254,8 @@ fi
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
         printf 'VIVID Creator neutral-vs-warm actual material pixel A/B=PASS\n'
         printf 'VIVID Creator quantitative optical A/B report=PASS\n'
-        printf 'VIVID isolated optical DNA captures and regional A/B=PASS\n'
+        printf 'VIVID isolated optical DNA captures and regional A/B=PASS\n'        printf 'VIVID Low/Medium native material quality preview=PASS\n'
+
         printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
