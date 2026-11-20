@@ -875,3 +875,47 @@ candidate filtering, capacity reuse, invalid pose rollback, recovery and
 seam-clone/LOD source-ID behavior after topology reset. **Native compiler,
 CTest, Metal/GLES/Vulkan capture and performance tests NOT RUN.** Exact
 source commits and handoff: `docs/agent-handoffs/vivid.md` Stage 7AL.
+
+
+## Stage 7AM — cached palette plan and opt-in CPU sculpt benchmark (2026-11-20)
+
+The Stage 7AL authoring-time BVH/CPU picker now caches the selected mesh's
+validated joint-palette and influence mapping in `SculptSkinningPlan`.
+A single plan is built on the first click after a published imported model
+or mesh selection, and invalidated by `DeformedSculptWorkspace::reset()`
+when the Creator publishes a new character. Unlike the original
+`prepareSkinnedWeightSurface` reference, subsequent picks skip
+revisiting all triangle indices to discover each included vertex's
+primitive palette and skip rebuilding global skin joint indices. Each
+click recomputes the actual MotionWeave `jointWorld * inverseBind` matrix
+**once per skin joint**, then evaluates each included model vertex using
+the cached U8-normalized weights. The GPU morph-before-skin ordering, BVH
+raycast and Stage 7AK original-source seam-clone mapping remain unchanged.
+
+Invalid pose/skin/vertex data fails closed and never publishes an
+incomplete CPU world surface. The cache is **not** a new animation
+scheduler or deterministic ECS state, nor a renderer-wide material or
+texture cache. In-place edits to model topology, skin weights, skin
+palettes or inverse bind matrices require an explicit workspace
+`reset()` by the owning editor.
+
+`tools/vivid-creator/sculpt_pick_bench.cpp` is an optional standalone
+CMake target (`AIVERSE_VIVID_SCULPT_BENCH=ON`), **not a CTest**, with
+three synthetic rigid-mesh sizes (10,000 / 100,489 / 1,000,000 model
+vertices). It captures cold + median warm click time, one legacy linear
+reference time, BVH node/triangle counts and true hit-source/ray-distance
+parity in JSON. The synthetic 1M-vertex case uses a checkerboard mesh
+with fewer than 1M triangles to fit the existing editing budget.
+New `human_creator` regression source compares one- and two-joint
+skinning to the baseline across changed poses, checks transactional
+failure/recovery and ensures changed palettes require a new plan.
+Creator also reports measured CPU click milliseconds and narrowed
+triangle count in its selection status.
+
+**No new Stage 7AM build, CTest, GPU/Metal/Vulkan/GLES execution, or
+CPU benchmark results have actually been run.** These are committed
+source changes and a way to produce evidence on the target Mac, not
+observed speedups. Correctness across actual imported scanned heads,
+nonlinear/cloth deformation, renderer visibility and high-density
+morphs remains to be validated. See the Stage 7AM handoff in
+`docs/agent-handoffs/vivid.md`.
