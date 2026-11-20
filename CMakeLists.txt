@@ -3339,7 +3339,8 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_dynamic_probe_texture
             lighting_cpu_gi_bridge
             lighting_luma_mobile_fallback
-            lighting_model_gi_shader_contract)
+            lighting_model_gi_shader_contract
+            lighting_terrain_gi_shader_contract)
         add_executable(aiverse_lighting_${lighting_fixture}_test
                        tests/render/${lighting_fixture}.cpp)
         target_include_directories(aiverse_lighting_${lighting_fixture}_test
