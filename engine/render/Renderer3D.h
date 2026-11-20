@@ -471,6 +471,19 @@ public:
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
     // Call after everything that belongs to the 3D scene (particles), before UI.
     void resolvePostFx();
+    // Compatibility seam for the separate PRISMA/Renderer3D motion producer.
+    // The current MAIN renderer has its native rigid/skinned/animated object
+    // pass and uses PostProcess hooks directly. This older renderer branch
+    // can install that existing producer (or a native equivalent) ONCE,
+    // without manually passing velocity on every LumaWeave frame.
+    // Callback runs OUTSIDE the HDR scene pass, immediately BEFORE resolve.
+    // It must publish real MotionTextureInput with accurate metadata; never
+    // fabricate motion. Do not install simultaneously with MAIN's built-in
+    // renderObjectMotionVectors after conflict-aware reconciliation.
+    using ObjectMotionProducer=std::function<void(Renderer3D&,PostProcess&)>;
+    void setObjectMotionProducer(ObjectMotionProducer fn) {
+        objectMotionProducer_=std::move(fn);
+    }
     // Extra renderers (sprites, tiles) that draw with their own pipelines inside the main pass: run
     // after opaque and translucent meshes, before overlays (fog of war stays on top).
     // Cleared by beginScene.
@@ -946,6 +959,7 @@ private:
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<CustomDraw> customMaterialReceiver_, customSurfaceReceiver_;
+    ObjectMotionProducer objectMotionProducer_; // optional PRISMA producer bridge
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
