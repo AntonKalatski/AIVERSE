@@ -36,6 +36,26 @@ All builds for this task must stay on KINGSTON, as required by the owner.
 
 **Agent handoff:** Every PRISMA implementation stage MUST have a **separate, committed** `docs/handoffs/prisma-stage-XX.md` on its working branch, naming code changes, public APIs, real test commands/results, untested paths, current SHA and precise next step. Never mark unrun tests PASS. SpectraFX has a separate living handoff `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`; do not overwrite it with PRISMA changes. Any shared-render integration must be documented in both systems' design docs and note the exact common interface.
 
+## Все объекты сцены — Entity (обязательное правило, 2026-11-20)
+
+Любой объект сцены/мира должен быть entity с устойчивой идентичностью и
+компонентами. Это относится в том числе к источникам света, камерам, мешам,
+коллайдерам, точкам появления, VFX, звуковым источникам и триггерам. Нельзя
+создавать отдельную модель объектов для каждого типа или жанра.
+
+- Hierarchy, Inspector, выбор во viewport, transform, Undo/Redo и сохранение
+  должны обращаться к одной entity и её компонентам.
+- Свет — компонент entity; панель Lighting является представлением/редактором
+  этих же данных, а не владельцем отдельного списка независимых объектов.
+- При миграции старых форматов разрешены совместимые адаптеры с явно указанным
+  каноническим владельцем; запрещены две независимо изменяемые копии состояния.
+  Не объявлять миграцию завершённой, пока старые объекты лишь отображаются как
+  строки Hierarchy без единой идентичности, компонентов и операций.
+- Presentation-компоненты и GPU-ресурсы не переносить в авторитетную
+  детерминированную симуляцию; сохранять существующие ECS-контракты проекта.
+- Общее окружение/настройки сцены и определения ресурсов сами по себе не являются
+  размещёнными объектами. Любой их экземпляр в мире подчиняется правилу entity.
+
 ## HTML5 Studio UI design system (all future editor windows)
 For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
 **Studio UI v1** style library, not a panel-specific visual language:
