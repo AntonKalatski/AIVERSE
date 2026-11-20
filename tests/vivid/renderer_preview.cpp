@@ -114,6 +114,7 @@ struct Preview {
     // frame. Callbacks can arrive in either order; never compare them with
     // a later MotionWeave pose.
     vivid::SculptGpuIdPass pixelIdPass;
+    gfx::TextureHandle colourPixelSnapshot_{};
     bool pixelIdReady=false, imageDiffPassed=false;
     struct PixelProbe {
         bool requested=false, colourReady=false, idReady=false, checked=false;
@@ -174,9 +175,23 @@ struct Preview {
             actorCount=std::clamp(requested,1,32);
         }
         if(actorCount==1) {
+            // readTexturePixelAsync needs an offscreen RGBA8 target.
+            // copyColor from this exact screen frame requires a readable
+            // Metal drawable rather than captureNextFrame (may lag).
+            dev.setScreenReadable(true);
+            gfx::TextureDesc snapshot{};
+            snapshot.width=kWidth;
+            snapshot.height=kHeight;
+            snapshot.format=gfx::PixelFormat::RGBA8;
+            snapshot.renderTarget=true;
+            snapshot.filter=gfx::Filter::Nearest;
+            snapshot.label="VIVID same-frame Renderer3D colour sample";
+            colourPixelSnapshot_=dev.createTexture(snapshot);
+            require(colourPixelSnapshot_.valid(),
+                    "VIVID same-frame colour sample target unavailable");
             pixelIdReady=pixelIdPass.initialize(dev);
             require(pixelIdReady && pixelIdPass.supportsActualGpuVertexStream(),
-                    "VIVID Stage 7AX requires native Metal GPU-source ID shader");
+                    "VIVID Stage 7AY requires native Metal GPU-source ID shader");
         }
         require(render::uploadModel(dev,*model,true), "model GPU upload failed");
         require(!model->geometryPoolPage && !model->gpuBaseVertex &&
@@ -239,20 +254,9 @@ struct Preview {
                 std::fprintf(stderr,"VIVID preview capture: %s\n",e.what());
                 return;
             }
-            if(actorCount==1 && number>0) {
-                auto& probe=pixelProbes[std::size_t(number)];
-                if(!probe.requested || probe.colourReady ||
-                   probe.x>=uint32_t(w) || probe.y>=uint32_t(h)) {
-                    failed=true;
-                    std::fprintf(stderr,
-                        "VIVID parity: colour callback missing/mismatched GPU frame token\n");
-                    platform::requestQuit();
-                    return;
-                }
-                const auto offset=(size_t(probe.y)*size_t(w)+probe.x)*4u;
-                for(int c=0;c<4;++c)probe.colour[std::size_t(c)]=pixels[offset+size_t(c)];
-                probe.colourReady=true;
-            }
+            // Full-frame screenshot is only an A/B visual artifact. A
+            // copyColor->RGBA8 async readback below owns strict same-frame
+            // pixel parity; screenshot callbacks may lag by several frames.
             captures.push_back({number,std::move(pixels)});
             std::printf("VIVID preview captured %s\n",capturePath(suffix.c_str()).c_str());
             // Keep a capture's visual state until the asynchronous callback:
@@ -557,6 +561,28 @@ struct Preview {
             probe.requested=true;
             const int probeStage=stage;
             const uint64_t snapshotFrame=request.frameSerial;
+            require(colourPixelSnapshot_.valid() &&
+                    dev.copyColor({},colourPixelSnapshot_),
+                    "VIVID current presented framebuffer could not be copied");
+            require(dev.readTexturePixelAsync(
+                        colourPixelSnapshot_,int(request.x),int(request.y),
+                        [this,probeStage,snapshotFrame](
+                                std::vector<std::uint8_t> bytes) {
+                            auto& target=pixelProbes[std::size_t(probeStage)];
+                            if(!target.requested ||
+                               target.frameSerial!=snapshotFrame ||
+                               target.colourReady || bytes.size()!=4u) {
+                                failed=true;
+                                std::fprintf(stderr,
+                                    "VIVID exact-frame colour GPU callback invalid\n");
+                                platform::requestQuit();
+                                return;
+                            }
+                            for(std::size_t i=0;i<4u;++i)
+                                target.colour[i]=bytes[i];
+                            target.colourReady=true;
+                        }),
+                    "VIVID exact-frame native RHI colour readback failed");
             require(dev.readTextureDepthPixelAsync(
                         {},int(request.x),int(request.y),
                         [this,probeStage,snapshotFrame](bool valid,float depth) {
@@ -593,6 +619,12 @@ struct Preview {
             return;
         }
         pixelIdReady=false;
+        // No in-flight read/copy can survive the successful GPU idle proof.
+        if(colourPixelSnapshot_.valid()) {
+            device->destroyTexture(colourPixelSnapshot_);
+            colourPixelSnapshot_={};
+        }
+        device->setScreenReadable(false);
         // Frame-retirement correctness is more important than teardown speed:
         // all compute outputs may still be referenced by shadow/colour draws.
         if(actorRetirement) {
