@@ -348,7 +348,8 @@ struct Preview {
         // 7AW: staging a GPU morph vertexOverride is NOT a submission.
         // After the real colour pass, inspect the actual accepted renderer
         // indexed command; never count pending pipeline-warm preflight.
-        if(actorCount==1 && !renderer.hasPendingModelPipelineJobs()) {
+        if(actorCount==1 && renderer.profile().draws[1]>0 &&
+           !renderer.hasPendingModelPipelineJobs()) {
             const auto submission=renderer.modelSubmissionProvenance(*model);
             require(submission.frameSerial==device->frameSerial() &&
                     submission.mainPassEncoded && !submission.truncated,
