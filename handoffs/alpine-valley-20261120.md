@@ -1,0 +1,3 @@
+# Alpine Valley — 2026-11-20
+
+Code 7230cdfab8193f0ab0eed2f97d9bc8284bd29e40 on gh-pages. Replaced hero with actual native Metal forest/river/mountain scene, added second riverbank capture and truthful scope card. PhysicalSky is native, no generated sky image. Two 1600x1000 captures inspected; local HTML asset links and seven-card count PASS; git diff --check PASS. No layout/CSS redesign. Water remains static PBR, terrain authored glTF, native age/season/LOD acceptance unfinished. Project: /Users/aleksandrfeer/Projects/AIVERSE-AlpineValley. Engine host code d9c9ab1ec; CTest physical_sky 1/1 PASS, zero Metal pipeline failures. Publication/Pages CI not verified at this checkpoint.
