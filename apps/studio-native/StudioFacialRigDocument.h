@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/data/Json.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -71,9 +72,9 @@ inline bool validStudioFacialRigDraft(const Json& doc,std::string* error=nullptr
             if(value!="override" && value!="additive")
                 return reject("Unknown facial morph blend");
         }
-        for(const auto& [name,min,max]: {
-            std::tuple<const char*,double,double>{"gain",0.,4.},
-            {"bias",-1.,1.},{"halfLife",0.,10.}}) {
+        static constexpr std::array<std::tuple<const char*,double,double>,3>
+            ranges{{{"gain",0.,4.},{"bias",-1.,1.},{"halfLife",0.,10.}}};
+        for(const auto& [name,min,max]:ranges) {
             if(!m.has(name))continue;
             const Json& value=m[name];
             if(!value.isNumber() || !std::isfinite(value.toDouble()) ||
