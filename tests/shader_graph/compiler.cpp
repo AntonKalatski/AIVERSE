@@ -32,6 +32,12 @@ int main(){try {
     for(int i=0;i<128;++i){Json n=Json::object();n.set("id",Json::string("extra"+std::to_string(i)));n.set("op",Json::string("input"));bad.find("nodes")->push(n);}rejects(bad);
     bad=makeDefault("postfx");
     for(int i=0;i<9;++i){Json n=Json::object();n.set("id",Json::string("tex"+std::to_string(i)));n.set("op",Json::string("texture"));n.set("inputs",Json::parse("[\"input\"]"));bad.find("nodes")->push(n);}rejects(bad);
+    auto layered=bad;layered.set("domain",Json::string("material"));
+    rejects(layered); // default budget remains eight even for materials
+    layered.set("sampleBudget",Json::number(int64_t(16)));
+    require(compile(layered).samples==9,"explicit material sample budget ignored");
+    for(auto invalidBudget:{0.0,16.5,17.0}) {auto invalid=layered;invalid.set("sampleBudget",Json::number(invalidBudget));rejects(invalid);}
+    layered.set("domain",Json::string("postfx"));rejects(layered);
     bad=g;bad.find("nodes")->at(0).set("position",Json::parse("[1]"));rejects(bad);
     auto stage=makeDefault("material");
     auto displacement=Json::parse(R"({"id":"offset","op":"constant","value":[0,0.2,0,0]})");

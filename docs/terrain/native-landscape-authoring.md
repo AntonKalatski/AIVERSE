@@ -71,3 +71,34 @@ before importing; an unbaked output has unresolved atlas paths.
 Riverbed shoreline endpoints rise 8cm above the NEREID surface so the water
 perimeter is buried in the bank. The visible edge follows the terrain/water
 intersection instead of exposing a rectangular cut of the water mesh.
+
+
+## Native 1K/4m detail material (opt-in)
+
+For separate continuous macro weights and shared native-resolution PBR detail:
+
+```
+python3 tools/terrain/bake_landscape_pbr.py NEW_DIR --size 1024 --detail
+python3 tools/terrain/build_detail_materials.py NEW_DIR --asset-root content/models/native-terra --metres 4 --noise-transparency 0.12
+```
+
+Apply the per-file `detail-materials.json` materials through the existing view
+material override API (`view.materials`, wildcard `*`), rather than changing
+geometry UVs or enlarging each tile texture. Legacy PBR atlases remain fallback.
+Grass/sand/rock/snow source texels remain 1024 per4m; three shared2176px atlases
+contain four1024px cells and32px periodic gutters. Continuous tile RGB stores
+weights; snow is the normalized remainder. Alpha packs grayscale world-space
+noise, never surface alpha. The opt-in underlay transparency0..0.2 mixes a gray
+layer below the opaque texture;0 disables its influence. Actual surface alpha1.
+No height/erosion authority changes. World-space lattice noise replaces broad
+sinusoidal cosmetic bands in the offline bake.
+
+Generated material uses existing native Shader Graph: four independent texture
+bindings and13 samples, <=128nodes. New explicit material-only sampleBudget1..16
+keeps the default limit8 unchanged; postfx/particle cannot opt into this budget.
+Weighted PBR normal is reconstructed in the projected world basis; dominant-axis
+mapping covers steep slopes but is not smooth triplanar projection. Explicit LOD
+uses unwrapped derivatives; mip is capped4 to keep atlas gutters isolated. This
+can shimmer at very long distance; distant-detail fading/anisotropic validation
+and full terrain performance remain pending. Per-tile normal/ORM/AO fallback
+still exists. Do not claim the offline installer enables live Terra ecology.

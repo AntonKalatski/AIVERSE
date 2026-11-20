@@ -1,0 +1,102 @@
+"""Bounded native Shader Graph for continuous Terra PBR detail layers.
+
+Four shared 1024px materials cover 4m each; the tile texture only owns weights.
+No height generation, renderer fork or surface transparency.
+"""
+import math
+import json
+
+
+def material_graph(weights_path, atlas_paths, metres=4.0, transparency=0.12,
+                   noise_underlay=True, resolution=1024, gutter=32, mask_resolution=1024):
+    if not math.isfinite(metres) or not 0.25 <= metres <= 64:
+        raise ValueError('detail metres 0.25..64')
+    if not math.isfinite(transparency) or not 0 <= transparency <= .2:
+        raise ValueError('underlay transparency 0..0.2')
+    if not 256 <= mask_resolution <= 4096:
+        raise ValueError('weight mask resolution 256..4096')
+    nodes = []
+    memo = {}
+
+    def n(op, *inputs, **properties):
+        signature = json.dumps([op, inputs, properties], sort_keys=True)
+        if signature in memo:
+            return memo[signature]
+        key = 'n' + str(len(nodes))
+        memo[signature] = key
+        node = dict(id=key, op=op, **properties)
+        if inputs:
+            node['inputs'] = list(inputs)
+        nodes.append(node)
+        return key
+
+    def c(value):
+        return n('constant', value=value)
+
+    def add_many(values):
+        result = values[0]
+        for value in values[1:]:
+            result = n('add', result, value)
+        return result
+
+    uv = n('uv')
+    mask_uv = n('clampRange', uv, c(.5 / mask_resolution), c(1 - .5 / mask_resolution))
+    mask = n('sampleTexture', mask_uv, texture=weights_path)
+    weights = [n(channel, mask) for channel in ('red', 'green', 'blue')]
+    weights.append(n('clamp', n('oneMinus', add_many(weights))))
+    # Quantized RGB may total slightly over one; keep energy normalized.
+    total = add_many(weights)
+    weights = [n('divide', weight, total) for weight in weights]
+    world = n('worldPosition')
+    normal = n('normal')
+    # Dominant-axis projection also covers steep cliffs. Base normal is world
+    # space, so detail is reconstructed in the corresponding projected basis.
+    abs_normal = n('abs', normal)
+    nx, ny, nz = [n(channel, abs_normal) for channel in ('red', 'green', 'blue')]
+    on_x = n('greaterThan', nx, n('max', ny, nz))
+    on_z = n('multiply', n('oneMinus', on_x), n('greaterThan', nz, ny))
+    top_uv = n('swizzle', world, mask='rbra')
+    side_x_uv = n('swizzle', world, mask='bgra')
+    side_z_uv = n('swizzle', world, mask='rgra')
+    projected = n('mix', n('mix', top_uv, side_x_uv, on_x), side_z_uv, on_z)
+    tiled = n('multiply', projected, c(1 / metres))
+    # Explicit LOD uses derivatives BEFORE fract(), avoiding atlas seam blur.
+    footprint = n('max', n('abs', n('ddx', tiled)), n('abs', n('ddy', tiled)))
+    footprint = n('max', n('red', footprint), n('green', footprint))
+    lod = n('clampRange', n('log2', n('multiply', footprint, c(resolution))), c(0), c(4))
+    wrapped = n('fract', tiled)
+    cell = resolution + 2 * gutter
+    atlas_size = 2 * cell
+    colors, normals, roughness = [], [], []
+    for i, weight in enumerate(weights):
+        offset = [(i % 2 * cell + gutter) / atlas_size,
+                  (i // 2 * cell + gutter) / atlas_size, 0, 0]
+        coordinate = n('add', n('multiply', wrapped, c(resolution / atlas_size)), c(offset))
+        color = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['basecolor'], srgb=True)
+        detail_normal = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['normal'])
+        orm = n('sampleTextureLod', coordinate, lod, texture=atlas_paths['orm'])
+        colors.append(n('multiply', color, weight))
+        normals.append(n('multiply', detail_normal, weight))
+        roughness.append(n('multiply', orm, weight))
+    color = add_many(colors)
+    if noise_underlay:
+        # Grayscale texture is packed in mask alpha, independent of PBR alpha.
+        gray = n('alpha', mask)
+        underlay = n('mix', c(.06), c(.30), gray)
+        color = n('mix', color, underlay, c(transparency))
+    color = n('setAlpha', color, c(1))
+    detail = n('normalUnpack', add_many(normals))
+    # Projected UV basis vectors; remove the component along the geometric N.
+    tangent = n('mix', c([1, 0, 0, 0]), c([0, 0, 1, 0]), on_x)
+    bitangent = n('mix', c([0, 0, 1, 0]), c([0, 1, 0, 0]), n('max', on_x, on_z))
+    tangent = n('normalize3', n('subtract', tangent, n('multiply', normal, n('dot3', tangent, normal))))
+    bitangent = n('normalize3', n('subtract', bitangent, n('multiply', normal, n('dot3', bitangent, normal))))
+    perturb = n('add', n('multiply', tangent, n('red', detail)), n('multiply', bitangent, n('green', detail)))
+    final_normal = n('normalize3', n('add', n('multiply', normal, n('blue', detail)), perturb))
+    roughness_output = n('green', add_many(roughness))
+    metallic_output = c(0)
+    if len(nodes) > 128:
+        raise ValueError('terrain graph exceeds native node budget')
+    return dict(version=1, domain='material', minQuality='low', sampleBudget=16,
+                nodes=nodes, outputs=dict(color=color, normal=final_normal,
+                                         roughness=roughness_output, metallic=metallic_output))

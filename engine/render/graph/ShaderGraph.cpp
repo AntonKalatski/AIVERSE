@@ -165,7 +165,15 @@ Program compile(const Json& g, const std::string& expected) {
             const auto& v=n["value"];if(v.isNumber())number(v);else {if(!v.isArray()||v.size()!=4)fail("constant/parameter value must be RGBA");for(auto& c:v.items())number(c);}
         }
     }
-    if(p.samples>8) fail("at most 8 texture samples are allowed");
+    int sampleBudget=8;
+    if(g.has("sampleBudget")) {
+        const auto& budget=g["sampleBudget"];
+        if(p.domain!="material" || !budget.isNumber() ||
+           budget.toDouble()!=budget.integer() || budget.integer()<1 || budget.integer()>16)
+            fail("sampleBudget must be an integer 1..16 for material graphs only");
+        sampleBudget=int(budget.integer());
+    }
+    if(p.samples>sampleBudget) fail("texture sample budget exceeded");
     return p;
 }
 std::string statements(const Program& p,bool metal) { return metal?p.msl:p.glsl; }
