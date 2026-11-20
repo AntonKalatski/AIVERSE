@@ -120,9 +120,28 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
            primitive.indexCount<3 || primitive.indexCount%3 ||
            primitive.indexCount>model.indices.size()-primitive.firstIndex)
             return fail(error,"source seam audit has invalid original index span");
-        std::map<Edge,std::array<uint8_t,2>> edges;
-        for(size_t i=0;i<primitive.indexCount;i+=3){
-            const size_t base=primitive.firstIndex+i;
+        // Topological islands may share only a vertex, or even have
+        // DUPLICATE physical UV-seam vertices inside ONE material. Group
+        // triangles by shared manifold EDGES, never merely by material ID.
+        // A seam between two components of one primitive must be checked
+        // by the same cross-boundary BVH as two different materials.
+        struct EdgeIncidence {
+            std::array<uint8_t,2> direction{};
+            uint32_t firstTriangle=UINT32_MAX;
+        };
+        std::map<Edge,EdgeIncidence> edges;
+        const uint32_t triangles=primitive.indexCount/3;
+        std::vector<uint32_t> components(triangles);
+        std::iota(components.begin(),components.end(),0);
+        const auto componentOf=[&](uint32_t id)->uint32_t {
+            while(components[id]!=id){
+                components[id]=components[components[id]];
+                id=components[id];
+            }
+            return id;
+        };
+        for(uint32_t t=0;t<triangles;++t){
+            const size_t base=primitive.firstIndex+size_t(t)*3;
             const uint32_t tri[3]{model.indices[base],
                                   model.indices[base+1],
                                   model.indices[base+2]};
@@ -133,17 +152,30 @@ bool auditModelSourceSeams(const Model& model,const ModelAsset& asset,
                 const uint32_t a=tri[k],b=tri[(k+1)%3];
                 if(a==b)return fail(error,"source seam audit degenerate triangle");
                 auto& incidence=edges[{std::min(a,b),std::max(a,b)}];
-                uint8_t& count=incidence[a<b?0:1];
+                uint8_t& count=incidence.direction[a<b?0:1];
                 if(++count>1)
                     return fail(error,"source seam audit has nonmanifold material border");
+                if(incidence.firstTriangle==UINT32_MAX)
+                    incidence.firstTriangle=t;
+                else
+                    components[componentOf(t)]=
+                        componentOf(incidence.firstTriangle);
             }
         }
         for(const auto& transform:meshTransforms[staged.mesh]) {
-            const uint32_t partition=next.examinedPartitions++;
-            for(const auto& [edge,counts]:edges){
-                if(counts[0] && counts[1])continue;
+            std::map<uint32_t,uint32_t> componentPartitions;
+            for(const auto& [edge,incidence]:edges){
+                if(incidence.direction[0] && incidence.direction[1])
+                    continue;
+                const uint32_t component=componentOf(
+                    incidence.firstTriangle);
+                auto it=componentPartitions.find(component);
+                if(it==componentPartitions.end()){
+                    it=componentPartitions.emplace(
+                        component,next.examinedPartitions++).first;
+                }
                 Segment s{point(model,edge.first,transform),
-                          point(model,edge.second,transform),partition};
+                          point(model,edge.second,transform),it->second};
                 if(!finite(s.a)||!finite(s.b)||s.a==s.b)
                     return fail(error,"source seam audit encountered invalid transformed edge");
                 if(segments.size()>=kMaximumSourceBoundarySegments)
