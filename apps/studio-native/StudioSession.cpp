@@ -5,6 +5,8 @@
 #include "apps/studio-native/StudioFpsLightingDocument.h"
 #include "apps/studio-native/StudioMaterialValidation.h"
 #include "apps/studio-native/StudioShaderGraphValidation.h"
+#include "apps/studio-native/StudioShaderGraphDraft.h"
+#include <algorithm>
 #include "apps/editor/core/MaterialOps.h"
 #include <cctype>
 #include <cmath>
@@ -161,7 +163,8 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
-        } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet") {
+        } else if (method == "studio.shaderGraphs" || method == "studio.shaderGraphGet" ||
+                   method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             if (method == "studio.shaderGraphs") {
                 const Json raw=ws_.call("shader_graph_list",Json::object(),"studio");
@@ -176,6 +179,27 @@ Json StudioSession::dispatch(const Json& request) {
                 }
                 Json result=Json::object();
                 result.set("graphs",std::move(names));
+                reply.set("result",std::move(result));
+            } else if (method == "studio.shaderGraphValidate" || method == "studio.shaderGraphSave") {
+                const Json& draft=params["graph"];
+                if (!validStudioShaderGraphDraft(draft))
+                    throw std::runtime_error("Invalid or oversized Shader Graph draft");
+                Json request=Json::object();
+                request.set("graph",draft);
+                if(method=="studio.shaderGraphSave") {
+                    const std::string name=params.getStr("name");
+                    if(!validStudioShaderGraphName(name))
+                        throw std::runtime_error("Invalid Shader Graph filename");
+                    request.set("name",str(name));
+                }
+                const Json raw=ws_.call(method=="studio.shaderGraphSave"?
+                    "shader_graph_set":"shader_graph_validate",request,"studio");
+                if(raw.has("error")) throw std::runtime_error(raw.getStr("error"));
+                Json result=Json::object();
+                result.set("graph",raw["graph"]);
+                result.set("nodes",raw["nodes"]);
+                result.set("samples",raw["samples"]);
+                // Shader source output is deliberately NOT passed to browser.
                 reply.set("result",std::move(result));
             } else {
                 const std::string name=params.getStr("name");

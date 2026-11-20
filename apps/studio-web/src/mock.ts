@@ -33,7 +33,9 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
     return { library: {} } as StudioResult[M];
   }
   if (method === 'studio.shaderGraphs') return {graphs:[]} as StudioResult[M];
-  if (method === 'studio.shaderGraphGet') throw Error('Shader Graph documents require a native project');
+  if (method === 'studio.shaderGraphGet' || method === 'studio.shaderGraphValidate' ||
+      method === 'studio.shaderGraphSave')
+    throw Error('Shader Graph documents require a native project');
   if (method === 'studio.materialPreview') {
     throw Error('GPU material preview requires the native AIVERSE host');
   }

@@ -25,6 +25,8 @@ int main() {
     assert(call(R"({"id":25,"method":"studio.shaderGraphs","params":{}})").has("error"));
     assert(call(R"({"id":26,"method":"studio.shaderGraphGet","params":{"name":"../escape"}})").has("error"));
     assert(session.previewMaterialName().empty());
+    assert(call(R"({"id":27,"method":"studio.shaderGraphValidate","params":{"graph":{"domain":"material","nodes":[]}}})").has("error"));
+    assert(call(R"({"id":28,"method":"studio.shaderGraphSave","params":{"name":"test","graph":{"domain":"material","nodes":[]}}})").has("error"));
     assert(call(R"({"id":12,"method":"studio.lighting","params":{}})").has("error"));
     assert(call(R"({"id":13,"method":"studio.lightAdd","params":{}})").has("error"));
     assert(call(R"({"id":14,"method":"studio.lightUpdate","params":{"index":0,"key":"intensity","value":-5}})").has("error"));

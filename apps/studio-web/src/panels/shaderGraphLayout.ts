@@ -26,3 +26,11 @@ export function layoutShaderGraph(source:GraphSource):{nodes:PositionedNode[];ed
   width:Math.max(520,...nodes.map(n=>n.x+150)),
   height:Math.max(320,...nodes.map(n=>n.y+90))};
 }
+
+/** Immutable node coordinate editing. Does not rewrite connections or operations. */
+export function moveShaderGraphNode(source:GraphSource,id:string,x:number,y:number):GraphSource {
+ if(!Number.isFinite(x)||!Number.isFinite(y)||!Array.isArray(source.nodes))return source;
+ const clamped:[number,number]=[clamp(x),clamp(y)];
+ return {...source,nodes:source.nodes.map(node=>node.id===id?
+  {...node,position:clamped}:node)};
+}

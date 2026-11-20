@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, RefreshCw, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { GitBranch, RefreshCw, Save, Search, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import type { StudioShaderGraphDocument } from '../types';
-import { layoutShaderGraph } from './shaderGraphLayout';
+import { layoutShaderGraph, moveShaderGraphNode } from './shaderGraphLayout';
 import './ShaderGraphPanel.css';
 
 export default function ShaderGraphPanel({projectPath}:{projectPath:string}) {
  const [names,setNames]=useState<string[]>([]);
  const [selected,setSelected]=useState('');
  const [document,setDocument]=useState<StudioShaderGraphDocument|null>(null);
+ const [draft,setDraft]=useState<StudioShaderGraphDocument['graph']|null>(null);
+ const drag=useRef<{id:string; x:number; y:number; originalX:number; originalY:number}|null>(null);
+ const [message,setMessage]=useState('');
  const [search,setSearch]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -17,7 +20,7 @@ export default function ShaderGraphPanel({projectPath}:{projectPath:string}) {
  useEffect(()=>onNativeEvent(event=>{if(event==='workspace.changed')setNonce(n=>n+1)}),[]);
  useEffect(()=>{
   let closed=false;
-  setSelected('');setDocument(null);setError('');
+  setSelected('');setDocument(null);setDraft(null);setError('');setMessage('');
   if(connected&&!projectPath){setNames([]);return;}
   setBusy(true);
   void invoke('studio.shaderGraphs',{})
@@ -28,23 +31,46 @@ export default function ShaderGraphPanel({projectPath}:{projectPath:string}) {
  },[connected,projectPath,nonce]);
  useEffect(()=>{
   let closed=false;
-  setDocument(null);
+  setDocument(null);setDraft(null);setMessage('');
   if(!selected)return;
   setBusy(true);setError('');
   void invoke('studio.shaderGraphGet',{name:selected})
-    .then(result=>{if(!closed)setDocument(result)})
+    .then(result=>{if(!closed){setDocument(result);setDraft(structuredClone(result.graph));}})
     .catch(e=>{if(!closed)setError(String(e))})
     .finally(()=>{if(!closed)setBusy(false)});
   return ()=>{closed=true};
  },[selected]);
- const diagram=useMemo(()=>layoutShaderGraph(document?.graph??{}),[document]);
+ const diagram=useMemo(()=>layoutShaderGraph(draft??document?.graph??{}),[draft,document]);
+ const dirty=!!document&&!!draft&&JSON.stringify(draft)!==JSON.stringify(document.graph);
+ const validate=async()=>{
+  if(!draft||busy)return;
+  setBusy(true);setError('');setMessage('');
+  try{
+   const result=await invoke('studio.shaderGraphValidate',{graph:draft});
+   setMessage('Compiled: '+result.nodes+' nodes, '+result.samples+' samples. No file written.');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
+ const save=async()=>{
+  if(!draft||!selected||busy||!dirty)return;
+  setBusy(true);setError('');setMessage('');
+  try{
+   const result=await invoke('studio.shaderGraphSave',{name:selected,graph:draft});
+   setDocument(result);setDraft(structuredClone(result.graph));
+   setMessage('Graph saved to shaders/'+selected+'.json. MapDoc Undo does not apply.');
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
+ const discard=()=>{if(document){setDraft(structuredClone(document.graph));setMessage('Draft discarded.');setError('');}};
  return <section className="studio-shader-graphs">
   <header className="graph-heading"><span><GitBranch size={16}/> Shader Graphs</span>
    <button className="icon-button" aria-label="Reload Shader Graphs"
     disabled={busy} onClick={()=>setNonce(n=>n+1)}><RefreshCw size={15}/></button>
   </header>
-  <p className="graph-readonly">Read-only graph inspection. Node editing, saving and shader application remain in the legacy editor.</p>
+  <p className="graph-readonly">Drag nodes to arrange the graph. Validate before explicit Save.
+    Wiring, shaders and GPU graph preview still require the legacy editor.</p>
   {error&&<p className="graph-error" role="alert">{error}</p>}
+  {message&&<p className="graph-message" role="status">{message}</p>}
   <div className="graph-columns">
    <aside className="graph-library">
     <label className="graph-search"><Search size={14}/>
@@ -61,14 +87,38 @@ export default function ShaderGraphPanel({projectPath}:{projectPath:string}) {
      document ? <>
       <div className="graph-summary"><strong>{selected}</strong><span>{document.graph.domain??'Unknown domain'}</span>
        <span>{document.nodes} nodes · {document.samples} texture samples</span>
+       <span>{dirty?'● Unsaved node positions':'Saved'}</span>
+       <button disabled={!draft||busy} onClick={()=>void validate()}><CheckCircle2 size={13}/> Validate</button>
+       <button disabled={!dirty||busy} onClick={discard}><RotateCcw size={13}/> Discard</button>
+       <button disabled={!dirty||busy} onClick={()=>void save()}><Save size={13}/> Save positions</button>
       </div>
       <div className="graph-canvas-scroll">
        <svg width={diagram.width} height={diagram.height} viewBox={'0 0 '+diagram.width+' '+diagram.height}
-        role="img" aria-label={'Read-only node diagram of '+selected}>
+        role="group" aria-label={'Editable node layout for '+selected}
+        onPointerMove={event=>{
+          if(!drag.current||!draft)return;
+          const current=drag.current;
+          const x=current.originalX+event.clientX-current.x;
+          const y=current.originalY+event.clientY-current.y;
+          setDraft(previous=>previous?moveShaderGraphNode(previous,current.id,x,y):previous);
+        }}
+        onPointerUp={()=>{drag.current=null;}}
+        onPointerCancel={()=>{drag.current=null;}}>
         {diagram.edges.map(edge=><path key={edge.key} d={'M '+edge.x1+' '+edge.y1+
           ' C '+(edge.x1+55)+' '+edge.y1+', '+(edge.x2-55)+' '+edge.y2+', '+edge.x2+' '+edge.y2}
           fill="none" stroke="#7aa3d2" strokeWidth="2"/>)}
-        {diagram.nodes.map(node=><g key={node.id} transform={'translate('+node.x+' '+node.y+')'}>
+        {diagram.nodes.map(node=><g key={node.id} className="graph-draggable" transform={'translate('+node.x+' '+node.y+')'}
+          onPointerDown={event=>{
+            if(!draft||busy)return;
+            event.preventDefault();
+            drag.current={id:node.id,x:event.clientX,y:event.clientY,originalX:node.x,originalY:node.y};
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={event=>{
+            drag.current=null;
+            if(event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+          }}>
          <rect width="130" height="54" rx="7" fill="#233751" stroke="#6581a8"/>
          <text x="10" y="20" fill="#eef5ff" fontSize="11">{node.id}</text>
          <text x="10" y="39" fill="#a6bad5" fontSize="10">{node.op}</text>

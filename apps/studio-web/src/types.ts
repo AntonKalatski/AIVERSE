@@ -21,7 +21,7 @@ export interface StudioSnapshot {
   previewMaterial?: string | null;
   history: { canUndo: boolean; canRedo: boolean };
 }
-export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet';
+export type StudioMethod = 'studio.snapshot' | 'studio.select' | 'studio.setProperty' | 'studio.save' | 'studio.undo' | 'studio.redo' | 'studio.viewportRect' | 'studio.viewportInput' | 'studio.openProject' | 'studio.assets' | 'studio.lighting' | 'studio.lightingSet' | 'studio.lightAdd' | 'studio.lightUpdate' | 'studio.lightDelete' | 'studio.materials' | 'studio.materialPatch' | 'studio.materialCreate' | 'studio.materialPreview' | 'studio.shaderGraphs' | 'studio.shaderGraphGet' | 'studio.shaderGraphValidate' | 'studio.shaderGraphSave';
 export interface StudioParams {
   'studio.snapshot': Record<string, never>;
   'studio.save': Record<string, never>;
@@ -35,6 +35,8 @@ export interface StudioParams {
   'studio.materialPreview': { name: string };
   'studio.shaderGraphs': Record<string, never>;
   'studio.shaderGraphGet': { name: string };
+  'studio.shaderGraphValidate': { graph: StudioShaderGraphDocument['graph'] };
+  'studio.shaderGraphSave': { name: string; graph: StudioShaderGraphDocument['graph'] };
   'studio.lighting': Record<string, never>;
   'studio.lightingSet': { key: import('./panels/lightingSchema').LightingScalarKey; value: number };
   'studio.lightAdd': Record<string, never>;
@@ -58,6 +60,8 @@ export interface StudioResult {
   'studio.materialPreview': { active: boolean; name: string };
   'studio.shaderGraphs': StudioShaderGraphList;
   'studio.shaderGraphGet': StudioShaderGraphDocument;
+  'studio.shaderGraphValidate': StudioShaderGraphDocument;
+  'studio.shaderGraphSave': StudioShaderGraphDocument;
   'studio.lighting': StudioLightingState;
   'studio.lightingSet': StudioLightingState;
   'studio.lightAdd': StudioLightingState;

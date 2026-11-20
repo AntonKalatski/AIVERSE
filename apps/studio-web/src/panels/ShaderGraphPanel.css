@@ -16,3 +16,8 @@
 .graph-summary strong{color:#ebf5ff;font-size:13px}
 .graph-canvas-scroll{flex:1;min-height:0;overflow:auto;background-color:#0e1a2b;background-image:linear-gradient(#27384c45 1px,transparent 1px),linear-gradient(90deg,#27384c45 1px,transparent 1px);background-size:24px 24px}
 .graph-outputs{flex:none;padding:10px 13px;color:#91abc9;border-top:1px solid #314259;font-size:11px}
+
+.graph-draggable{cursor:grab;touch-action:none}.graph-draggable:active{cursor:grabbing}
+.graph-message{padding:7px 12px;background:#1a3b31;color:#b5e4c8;font-size:11px;margin:0}
+.graph-summary button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid #496588;background:#223e59;color:#d4e6ff;border-radius:5px;font-size:10px}
+.graph-summary button:disabled{opacity:.45;cursor:not-allowed}
