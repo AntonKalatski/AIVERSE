@@ -807,3 +807,49 @@ If writing an untracked file to this worktree is undesirable, use a new clean de
 ### Next agent step
 
 Inspect actual Stage 95 `stage95-thread-summary.csv` after Mac native run. Compare fast vs slow groups: if thread CPU stays constant while wall increases, investigate CPU blocking or descheduling; if thread CPU doubles, profile CPU execution/frequency with Instruments; if both, investigate both. Record results with a new handoff before any performance change.
+
+
+---
+
+## Stage 97 — Stage 95 thread CPU clock anomaly; independent macOS clock control (2026-11-20)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, Draft PR #39.
+**Code commit:** `ad261a6c45fc06c25fb048a6ad1a6112a9187dc2` introduces `tools/batching-thread-clock-sanity.cpp`. This handoff is a separate commit. **No renderer code, policy or Metal bindings changed in this stage.**
+
+### Exact owner uploads and observations
+
+Owner uploaded `mdi-1-frames(1).csv`, `mdi-2-frames(1).csv`, `mdi-3-frames(1).csv` and `stage95-thread-summary.csv`. Python parsed all three raw 106-row, 12-column files. Frame 115..195 in each: 81 frames with fixed 10 CPU MDI submissions, 2048 indirect commands. The owner's analyzer reported:
+
+```text
+           mdi-1       mdi-2       mdi-3
+wall med    0.854208    0.843959    0.934708  ms
+thread med  0.020464    0.020225    0.022390  ms
+offcpu med  0.833746    0.823734    0.912318  ms
+backend med 0.500458    0.481290    0.558415  ms
+```
+
+All three Stage 95 runs were relatively fast (no frames exceeding the 1.2ms slow cutoff). The unusually tiny *reported* calling-thread CPU time is suspicious: across all 243 measured frames, `render_thread_cpu_ms/render_cpu_ms` is almost a constant **~0.02396**; per-run median 0.023959 / 0.023961 / 0.023958, variation of the ratio within each run on the order of 4e-5 to 5e-5. Correlation of thread and wall readings across frames per run ~0.9983 / 0.9988 / 0.9986. A nearly constant ratio of 1:41.7 over different process runs is unlikely to be direct evidence of random descheduling. It strongly motivates checking clock scaling/units/platform implementation **before interpreting Stage 95 `render_offcpu_ms`** as actual off-CPU. It might also reflect unusual threading/wait behavior, but root cause is not known.
+
+**Do not claim macOS descheduled the renderer for 97.6% of its wall time.** Stage 95 thread CPU measurements are **provisionally unvalidated** pending independent control. The `render_cpu_ms` wall readings and existing per-stage CPU wall samples remain valid as such. No GPU execution/FPS data collected.
+
+### New independent diagnostic
+
+`tools/batching-thread-clock-sanity.cpp` is a standalone CPU-only macOS C++ program: measures a ~30ms non-sleeping xorshift arithmetic loop with `steady_clock`, `CLOCK_THREAD_CPUTIME_ID`, `CLOCK_PROCESS_CPUTIME_ID`, plus Darwin Mach `THREAD_BASIC_INFO` user+system CPU times. It prints all the deltas and ratios to wall, and returns nonzero if the busy-loop thread CPU clock is implausibly small (<50%) or large (>120%) relative to wall. No Metal dependencies or benchmarking code touched; standalone compile and actual hardware execution still **not performed** by assistant.
+
+### Next Mac Studio step (no rebase or engine rebuild)
+
+Existing Stage 95 detached worktree already compiled `aiverse_material_batches`. Fetch and extract just this new file without switching branches, compile a standalone tiny diagnostic with AppleClang, then run:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage95 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-thread-clock-sanity.cpp > /tmp/aiverse-clock-sanity.cpp || exit 1
+clang++ -std=c++17 -O2 -Wall -Wextra -Werror /tmp/aiverse-clock-sanity.cpp -o /tmp/aiverse-clock-sanity || exit 1
+/tmp/aiverse-clock-sanity
+```
+
+Send both printed `Clock sanity` and `Mach THREAD_BASIC_INFO` lines and return code. If this busy-loop thread clock also reads ~2.4% of wall, investigate clock semantics/scaling and calibrate with native Mach/thread info before trusting Stage 95 off-CPU. If busy-loop clock agrees with wall, then explore whether renderer intentionally blocks, submits work on a separate worker, or enters Metal driver APIs that wait; corroborate with Instruments/System Trace to avoid mistaking a clock path artifact. Also capture a *slow* Stage 95 run in addition to fast ones before causal performance claims. Do not silently multiply observed CPU time by 41.7 without validating the source of the ratio.
+
+### Validation truth
+
+**Performed:** raw owner CSV numeric analysis; GitHub standalone diagnostic committed; handoff updated. **Not performed:** macOS native compilation and running the standalone control, GPU timing, Mach/System Trace, full CTest or Vulkan. PR #39 remains Draft, all diagnostic flags default off.
