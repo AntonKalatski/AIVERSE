@@ -82,3 +82,10 @@ After source feature closure, the owner's one coordinated full native Mac accept
 Implement genuine shared Model provider and residency **without replacing Studio's divergent Model/Renderer3D source wholesale**. Compare peer `ModelAssetProvider`, `ModelResourceCache`, `ModelReadLease`, `AsyncModelCpuQueue`, `ModelStagingTransaction`, `ModelTextureCache`, `GlobalGeometryPool`, uploadModel signature and RHI fences. Stage adoption should first establish a type-safe transient read lease that spans synchronous Renderer3D frame submission, then async CPU decode with owner-thread-only GPU publish, rollback-safe texture cache and generation-checked GPU retirement. Do not copy the provider without its texture and transaction dependencies. Before switching owners, protect the last-good Model on failed import/compile/GPU upload; bind project-specific asset GUID/revision to source and invalidate stale resolved paths. Verify safe project change, active frame, reimport and failed completion. Keep explicit fallback to conservative GPU idle barrier where token completion is unknown.
 
 **Update this handoff after actual source work**, keep PR #89 and #22 DRAFT, resolve the continuously moving Studio base conflict-aware and do NOT merge into main until native tests succeed.
+
+
+## Stage 186 final owner-frame selection correction
+
+- `0c333331f0d6b47d0ed42f7d1293bf8fd4aed2bc` — `apps/studio-native/mac/StudioMetalScene.cpp`: while facial (or material) preview is visible, native viewport clicks are not forwarded to unrelated MapDoc entity picking behind the imported Model. Existing Scene selection remains unchanged outside the preview.
+- **ACTUAL:** GitHub source commit/readback and exact final remote HEAD verification, including `kMaxMorphTargets=64`, FBX named/in-between import, morph AutoLOD source aliases and Renderer3D target morph remapping.
+- **NOT RUN:** native compile/CTest, Metal pixels, Vulkan/GLES parity or full GPU-lifetime checks. Next Stage 187 and full acceptance remain unchanged.
