@@ -2,6 +2,8 @@
 // No ImGui, no CPU texture readback, no dependency on UI component hierarchy.
 #pragma once
 #include <memory>
+#include <cstdint>
+#include <limits>
 #include "apps/editor/core/MapDoc.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
@@ -13,15 +15,18 @@ public:
     ~StudioMetalScene();
     StudioMetalScene(const StudioMetalScene&) = delete;
     StudioMetalScene& operator=(const StudioMetalScene&) = delete;
-    void frame(int framebufferWidth, int framebufferHeight, const editor::MapData& map, int selectedIndex);
+    void frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc, int selectedIndex, float levelHeight = 1.5f);
     int pick(float x, float y, float width, float height, const editor::MapData& map) const;
     void orbit(float dx, float dy);
     void zoom(float wheel);
-    void resetCamera() { cameraInitialized_ = false; }
+    void resetCamera() { cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); }
 private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;
     render::Mesh cube_;
+    render::Mesh terrain_;
+    uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();
+    float terrainLevelHeight_ = 1.5f;
     render::RTSCamera camera_;
     bool cameraInitialized_ = false;
     int lastMapWidth_ = 0;
