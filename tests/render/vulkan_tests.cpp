@@ -61,6 +61,33 @@ out vec4 o_color;
 void main() { float lit = texture(tex1, vec3(v_uv, u_color.x)); o_color = vec4(lit, lit, lit, 1.0); }
 )";
 
+// A tiny *real* compute -> storage RGBA16F -> fragment sampler path.
+// Unlike source-only shader-string tests this is exercised on any Vulkan
+// offscreen driver whose graphics queue reports compute+storage availability.
+// Its resource descriptor shape matches GiGpuSmallScene: four SSBOs, one
+// storage atlas, 80-byte push constants, 64 logical threads.
+const char* kGiStorageCompute = R"GLSL(
+#version 450
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+layout(set=0,binding=0,std430) readonly buffer Triangles { vec4 tris[]; };
+layout(set=0,binding=1,std430) readonly buffer Lamps { vec4 lamps[]; };
+layout(set=0,binding=2,std430) readonly buffer Jobs { vec4 jobs[]; };
+layout(set=0,binding=3,std430) readonly buffer Nodes { vec4 nodes[]; };
+layout(set=0,binding=4,rgba16f) uniform writeonly image2D giAtlas;
+layout(push_constant) uniform GIParams {
+    uvec4 counts;
+    vec4 misc;
+    vec4 sun;
+    vec4 sky;
+    vec4 color;
+} parameters;
+void main() {
+    uint index=gl_GlobalInvocationID.x;
+    if(index>=64u)return;
+    imageStore(giAtlas,ivec2(int(index%8u),int(index/8u)),parameters.color);
+}
+)GLSL";
+
 struct Vtx { float x, y, z, u, v; };
 BufferDesc bufferDesc(Usage usage, size_t size, const void* data) { BufferDesc b; b.usage = usage; b.size = size; b.data = data; return b; }
 std::vector<Vtx> quad(float x0, float y0, float x1, float y1, float z) {
@@ -233,6 +260,62 @@ int main() {
         CHECK(near(img.at(4, H / 2), 200, 0, 0));
         CHECK(near(img.at(W - 4, H / 2), 100, 0, 0));
         d.destroyTexture(t); d.destroyTexture(tr);
+    }
+    {   // Actual Vulkan compute to sampleable RGBA16F GI atlas, not just GLSL source.
+        if (d.supportsCompute()) {
+            TextureDesc td;
+            td.width=8;td.height=8;td.format=PixelFormat::RGBA16F;
+            td.storage=true;td.filter=Filter::Nearest;
+            const TextureHandle atlas=d.createTexture(td);
+            CHECK(atlas.valid());
+            const ComputeHandle compute=d.createCompute({nullptr,kGiStorageCompute,
+                                                          "offscreen GI storage parity"});
+            CHECK(compute.valid());
+            const uint32_t storageData[4]={0,0,0,0};
+            BufferHandle storage[4]{};
+            for(auto& h:storage) {
+                BufferDesc bd;
+                bd.type=BufferType::Storage;
+                bd.usage=Usage::Immutable;
+                bd.size=sizeof(storageData);
+                bd.data=storageData;
+                h=d.createBuffer(bd);
+                CHECK(h.valid());
+            }
+            if(atlas.valid() && compute.valid() &&
+               storage[0].valid() && storage[1].valid() &&
+               storage[2].valid() && storage[3].valid()) {
+                struct Parameters {
+                    uint32_t counts[4]{};
+                    float misc[4]{},sun[4]{},sky[4]{};
+                    float color[4]{.25f,.5f,.75f,1.0f};
+                } params;
+                static_assert(sizeof(Parameters)==80);
+                Image img=frame(d,[&] {
+                    const bool begun=d.beginCompute(compute);
+                    CHECK(begun);
+                    if(begun) {
+                        for(int i=0;i<4;++i)d.setComputeBuffer(i,storage[i]);
+                        d.setComputeTexture(0,atlas);
+                        d.setComputeUniforms(&params,sizeof(params));
+                        d.dispatch(64);
+                        d.endCompute();
+                        CHECK(d.computeDispatchSucceeded());
+                    }
+                    d.beginPass(screen);
+                    d.setPipeline(pTex);d.setVertexBuffer(vbFull);
+                    d.setTexture(0,atlas);
+                    d.draw(6);
+                    d.endPass();
+                });
+                CHECK(img.w==W && img.h==H);
+                if(img.w==W && img.h==H)
+                    CHECK(near(img.at(W/2,H/2),64,128,191));
+            }
+            for(auto h:storage)if(h.valid())d.destroyBuffer(h);
+            if(compute.valid())d.destroyCompute(compute);
+            if(atlas.valid())d.destroyTexture(atlas);
+        }
     }
     {   // shadow map: depth-only pass, compare sampler (LEQUAL), GL depth values
         TextureDesc sd2; sd2.width = W; sd2.height = H; sd2.format = PixelFormat::Depth; sd2.renderTarget = true; sd2.compare = true;
