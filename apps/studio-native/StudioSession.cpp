@@ -549,7 +549,8 @@ Json StudioSession::dispatch(const Json& request) {
                 try {
                     Json library=editor::loadMaterialLibrary(ws_);
                     size_t updates=0;
-                    for (auto& [materialName,material]:library.members()) {
+                    std::vector<std::pair<std::string,Json>> pendingMaterialUpdates;
+                    for (const auto& [materialName,material]:library.members()) {
                         if (!material.isObject()) continue;
                         Json changed=material;
                         bool modified=false;
@@ -562,8 +563,10 @@ Json StudioSession::dispatch(const Json& request) {
                             ++updates;
                             modified=true;
                         }
-                        if (modified) library.set(materialName,std::move(changed));
+                        if (modified) pendingMaterialUpdates.emplace_back(materialName,std::move(changed));
                     }
+                    for (auto& update:pendingMaterialUpdates)
+                        library.set(update.first,std::move(update.second));
                     if (updates) {
                         // Reuse the engine's validated material library write.
                         // Preserve all unrelated material fields and names.
