@@ -231,6 +231,14 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // Small, true asynchronous offscreen RGBA8 *linear* pixel readback.
+    // x/y are top-left source pixel coordinates, unlike native GL readPixels.
+    // Call on the owner thread after endPass and before endFrame. Completion
+    // is delivered on a later owner beginFrame, never inside a GPU encoder.
+    // Returns false on unsupported backends; callers must use CPU fallback.
+    // No colour-space conversion, tone mapping or depth values in this API.
+    using PixelReadFn=std::function<void(std::vector<uint8_t>)>; // 4 RGBA8 bytes; empty on failure
+    virtual bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
