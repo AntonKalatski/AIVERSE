@@ -40,6 +40,7 @@ struct SceneAttachmentChildComponent {
     // Stable authored prefab child key (may be empty in legacy layouts).
     std::string authoredId;
     bool animated=false;
+    std::string animationGraph; // authored key, no Graph pointer
 };
 
 // One explicit presentation World source/root instance. It retains
@@ -140,7 +141,7 @@ public:
                         parent,candidate.revision,uint32_t(i),
                         child.model,child.socket,child.enabled,
                         child.local,child.childWorld,child.id,
-                        child.animated});
+                        child.animated,child.animationGraph});
                 candidate.children.push_back(entity);
             }
             // The source Entity is externally owned and is NEVER destroyed.
@@ -221,6 +222,7 @@ public:
                child->socketName!=authored.socket ||
                child->authoredId!=authored.id ||
                child->animated!=authored.animated ||
+               child->animationGraph!=authored.animationGraph ||
                child->enabled!=authored.enabled ||
                !sameMatrix(child->local,authored.local) ||
                !sameMatrix(child->childWorld,authored.childWorld))
