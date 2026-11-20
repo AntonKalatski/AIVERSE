@@ -151,3 +151,8 @@ Run typecheck and resolve failures, then implement native explicit asset referen
 - **Scope:** broad dependency inventory is a foundation, NOT complete graph for VFX, animation, audio, shader graph and arbitrary project files. No speculative string-key parsing and no blind rewrite of composed `rules.json`.
 - **Next:** build & fix actual compiler/type errors; add integration tests for move/collisions/folder/undo and preview impact on registered references. Implement a safe transactional rules project writer, including origins/includes and a rollback journal, before repairing model references. Extend owner adapters only after native DTOs are confirmed.
 
+
+### Stage 7 follow-up: empty texture clearing guard
+- Real `material_set` in `apps/editor/core/MaterialOps.cpp` previously called `gameFile(..., "")` while collecting missing texture warnings. `gameFile` intentionally rejects empty paths, so clearing a material texture slot via the HTML5 picker would throw. The warning check now skips empty texture paths; empty string remains valid for clearing slots.
+- Commit `d57b8d3b768e23ff751b9db078371ee0612db8ad`, regression source contract `22f76a14d88836385bac7161b2fce62bd1f7b386`.
+- Native runtime behavior remains untested; exercise empty texture slots on Mac native QA.
