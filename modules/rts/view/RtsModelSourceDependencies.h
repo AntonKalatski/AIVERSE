@@ -105,6 +105,10 @@ private:
         const auto path=std::filesystem::path(source).lexically_normal().generic_string();
         return path=="."?std::string{}:path;
     }
+    // A direct choice string names a library material, while property
+    // strings *inside* a material definition (texture, team, alpha, ...)
+    // are literal authored settings and must not cause library-wide
+    // dependencies. Explicit 'use'/'base' references are recursive.
     static bool usesLibrary(const Json& value) {
         if(value.isString())return true;
         if(value.isObject()) {
@@ -112,13 +116,26 @@ private:
                 return true;
             for(const auto& [name,child]:value.members()) {
                 (void)name;
-                if(usesLibrary(child))return true;
+                if((child.isObject() || child.isArray()) &&
+                   usesLibrary(child))return true;
             }
         }
         if(value.isArray())
             for(const auto& child:value.items())
                 if(usesLibrary(child))return true;
         return false;
+    }
+    static bool choicesUseLibrary(const Json& choices) {
+        if(choices.isObject()) {
+            if(choices["use"].isString() || choices["base"].isString())
+                return true;
+            for(const auto& [name,choice]:choices.members()) {
+                (void)name;
+                if(usesLibrary(choice))return true;
+            }
+            return false;
+        }
+        return usesLibrary(choices);
     }
     void add(const std::string& source,ModelSourceKind kind,size_t type) {
         const std::string path=normalize(source);
@@ -173,7 +190,8 @@ private:
         // Index every authored graph path, without interpreting graph nodes.
         collectGraphFiles(view,type);
         collectTextures(view,type);
-        if(usesLibrary(view["materials"]) || usesLibrary(view["assign"]))
+        if(choicesUseLibrary(view["materials"]) ||
+           choicesUseLibrary(view["assign"]))
             libraryUsers_.insert(type);
     }
 
