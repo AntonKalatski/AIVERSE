@@ -11,6 +11,7 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <stdexcept>
 #include <utility>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainShaders.h"
@@ -229,8 +230,14 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
         throw std::logic_error("TerrainRenderer shutdown: GPU device owner mismatch");
     for (auto& c : chunks_) freeChunk(dev, c);
     chunks_.clear();
-    for (auto* l : {&apron_}) { dev.destroyBuffer(l->vb); dev.destroyBuffer(l->ib); *l = {}; }
-    dev.destroyBuffer(water_.vb); dev.destroyBuffer(water_.ib); water_ = {};
+    retiredMeshes_.retireBuffer(dev,apron_.vb);
+    retiredMeshes_.retireBuffer(dev,apron_.ib);
+    apron_={};
+    retiredMeshes_.retireBuffer(dev,water_.vb);
+    retiredMeshes_.retireBuffer(dev,water_.ib);
+    water_={};
+    if(!retiredMeshes_.completeForShutdown(dev))
+        throw std::runtime_error("TerrainRenderer: pending GPU mesh retirement could not reach idle");
     for (auto t : {cellTex_, dynTex_, splatTex_, visionTex_, white_, flatN_, gray_, heightField_.tex}) if (t.valid()) dev.destroyTexture(t);
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
@@ -249,20 +256,48 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
 }
 
 void TerrainRenderer::freeChunk(gfx::Device& dev, Chunk& c) {
-    for (auto& l : c.lods) { dev.destroyBuffer(l.vb); dev.destroyBuffer(l.ib); }
+    for(auto& l:c.lods) {
+        retiredMeshes_.retireBuffer(dev,l.vb);
+        retiredMeshes_.retireBuffer(dev,l.ib);
+    }
     c.lods.clear();
-    c.valid = false;
+    c.valid=false;
 }
 
-void TerrainRenderer::upload(gfx::Device& dev, const std::vector<TV>& v, const std::vector<uint32_t>& idx, Lod& out) {
-    dev.destroyBuffer(out.vb); dev.destroyBuffer(out.ib);
-    out = {};
-    if (idx.empty()) return;
-    gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = v.size() * sizeof(TV); vb.data = v.data(); vb.label = "terrain";
-    out.vb = dev.createBuffer(vb);
-    gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = idx.size() * sizeof(uint32_t); ib.data = idx.data(); ib.label = "terrain";
-    out.ib = dev.createBuffer(ib);
-    out.indexCount = uint32_t(idx.size());
+void TerrainRenderer::upload(gfx::Device& dev, const std::vector<TV>& v,
+                             const std::vector<uint32_t>& idx, Lod& out) {
+    checkGpuDevice(dev);
+    if(dev_!=&dev)
+        throw std::logic_error("TerrainRenderer upload: GPU device owner mismatch");
+    Lod next{};
+    if(!idx.empty()) {
+        try {
+            gfx::BufferDesc vb;
+            vb.type=gfx::BufferType::Vertex;
+            vb.size=v.size()*sizeof(TV);
+            vb.data=v.data(); vb.label="terrain";
+            next.vb=dev.createBuffer(vb);
+            if(!next.vb.valid())
+                throw std::runtime_error("TerrainRenderer: vertex upload failed");
+            gfx::BufferDesc ib;
+            ib.type=gfx::BufferType::Index;
+            ib.size=idx.size()*sizeof(uint32_t);
+            ib.data=idx.data(); ib.label="terrain";
+            next.ib=dev.createBuffer(ib);
+            if(!next.ib.valid())
+                throw std::runtime_error("TerrainRenderer: index upload failed");
+            next.indexCount=uint32_t(idx.size());
+            next.vertexCount=uint32_t(v.size());
+        }catch(...) {
+            // Unpublished handles have not been submitted to any frame.
+            if(next.ib.valid())dev.destroyBuffer(next.ib);
+            if(next.vb.valid())dev.destroyBuffer(next.vb);
+            throw;
+        }
+    }
+    retiredMeshes_.retireBuffer(dev,out.vb);
+    retiredMeshes_.retireBuffer(dev,out.ib);
+    out=next;
 }
 
 // ------------------------------------------------------------------ cell look
@@ -930,7 +965,9 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
                 Lod& l = c.lods[L];
                 if (!l.indexCount || c.lastUse[L] + 120 > frame_) continue;
                 geoBytes_ -= std::min<size_t>(geoBytes_, size_t(l.indexCount) * 4 + size_t(l.vertexCount) * sizeof(TV));
-                dev.destroyBuffer(l.vb); dev.destroyBuffer(l.ib); l = {};
+                retiredMeshes_.retireBuffer(dev,l.vb);
+                retiredMeshes_.retireBuffer(dev,l.ib);
+                l={};
             }
     }
     if(!preparedOnly)stats_.geometryBytes = geoBytes_;
