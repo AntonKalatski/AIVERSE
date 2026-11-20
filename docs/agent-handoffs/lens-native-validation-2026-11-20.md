@@ -218,3 +218,16 @@ Camera client adapter and sprite GPU fault tests **2/2 PASS**, report
 `20261120-145907-44577`. All paths under KINGSTON build root. CI and real GPU
 visual validation NOT RUN. Next: finish full CTest, rebuild affected targets,
 retest; transient topology budget and complete frame-owner rollback still open.
+
+## Skill catalog/audit regression
+
+The ongoing 74f076f42 full CTest run also failed skill_catalog, skill_routing
+and skill_audit. Commit `e9e70b0c8e3ee802d1e4b7c9c3e5d34fd6ed87b6` registers three existing animation/View
+workflows in tools/skills/catalog.py, regenerates skills/catalog.json, and
+teaches audit.py to recognize literal CTest names plus the animation_assets
+window ID rather than flagging these as unknown MCP operations. No skill
+instructions or runtime API changed. Branch codex/lens-completion.
+Actually executed: catalog.py generate/check PASS (222 entries),
+audit.py --strict PASS (0 errors/warnings), tests/skills/catalog_test.py PASS,
+git diff --check PASS. CI NOT RUN. Full CTest remains in progress at checkpoint.
+Next: finish full run; rebuild/retest the preceding native regression fixes.
