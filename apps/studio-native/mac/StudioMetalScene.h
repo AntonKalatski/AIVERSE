@@ -53,6 +53,7 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    void releasePreviewModel(render::Model& model);
     void clearDocumentModels();
     void syncDocumentModels(const editor::MapDoc& doc, const std::string& projectPath,
                             const Json& rules, const std::vector<StudioDocumentProxy>& proxies);

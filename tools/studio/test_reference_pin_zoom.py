@@ -100,8 +100,10 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("materials.backup", journal)
         self.assertIn("committed.json", journal)
         self.assertIn("pending.json", journal)
-        self.assertIn("StudioMoveJournal::recover(project)", native)
-        self.assertIn("StudioMoveJournal::recover(path)", native)
+        self.assertIn("recoveredProjectDir(ws_,project)", native)
+        self.assertIn("recoveredProjectDir(ws_,path)", native)
+        self.assertIn("editor::resolveProjectDir(input,&error)", native)
+        self.assertIn("StudioMoveJournal::recover(directory)", native)
         self.assertIn("std::rethrow_exception(failure)", transfer)
         self.assertIn("StudioAssetCatalog catalog(project_); catalog.rebuild();", transfer)
         self.assertIn("Internal move only supports import, keep-both or skip", transfer)
@@ -168,6 +170,12 @@ class StudioReferencePinZoomTests(unittest.TestCase):
         self.assertIn("Studio recovery collision", (ROOT/"apps/studio-native/StudioMoveJournal.h").read_text(encoding="utf-8"))
         self.assertIn("injected material write failure",transfer)
         self.assertIn("AIVERSE_TEST_CHECK(replaceRejected)",transfer)
+
+    def test_model_release_invalidates_renderer_caches_first(self):
+        scene=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")
+        self.assertEqual(scene.count("render::releaseModel("),1)
+        release=scene[scene.index("void StudioMetalScene::releasePreviewModel"):scene.index("void StudioMetalScene::clearDocumentModels")]
+        self.assertLess(release.index("invalidateModelCachesFor(&model)"),release.index("render::releaseModel"))
 
     def test_real_scene_model_render_and_pick_share_instances(self):
         scene=(ROOT/"apps/studio-native/mac/StudioMetalScene.cpp").read_text(encoding="utf-8")

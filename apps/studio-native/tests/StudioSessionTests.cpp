@@ -1,11 +1,45 @@
 #include "apps/studio-native/StudioSession.h"
 #include "tests/TestCheck.h"
+#include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
 
 namespace {
+void projectFileRecoveryWorkflow() {
+    using namespace aiverse;
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/("studio-open-recovery-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto project=root/"templates"/"fixture";
+    fs::create_directories(project/"content"/"A");
+    fs::create_directories(project/"content"/"B");
+    fs::create_directories(project/".aiverse-cache");
+    std::ofstream(project/"game.json") << R"({"name":"Recovery fixture","module":"rts","rules":"rules.json"})";
+    std::ofstream(project/"rules.json") << R"({"types":{}})";
+    std::ofstream(project/"Fixture.aiverse") << R"({"format":1,"name":"Recovery fixture","manifest":"game.json"})";
+    const auto original=project/"content"/"A"/"sample.txt";
+    const auto moved=project/"content"/"B"/"sample.txt";
+    std::ofstream(original) << "persistent bytes";
+    auto simulateCrash=[&] {
+        studio::StudioMoveJournal journal(project);
+        journal.begin({{"A/sample.txt","B/sample.txt"}});
+        fs::rename(original,moved);
+    };
+    const std::vector<std::string> inputs={project.string(),(project/"game.json").string(),
+        (project/"Fixture.aiverse").string(),"fixture"};
+    for (const auto& input:inputs) {
+        simulateCrash();
+        studio::StudioSession session(root.string(),input);
+        AIVERSE_TEST_CHECK(fs::exists(original) && !fs::exists(moved));
+        AIVERSE_TEST_CHECK(!fs::exists(project/".aiverse-cache"/"studio-move-journal"));
+        simulateCrash();
+        session.openProject(input);
+        AIVERSE_TEST_CHECK(fs::exists(original) && !fs::exists(moved));
+        AIVERSE_TEST_CHECK(!fs::exists(project/".aiverse-cache"/"studio-move-journal"));
+    }
+    fs::remove_all(root);
+}
 void entityWorkflow() {
     using namespace aiverse;
     namespace fs=std::filesystem;
@@ -128,5 +162,6 @@ int main() {
     catch (const std::exception&) { openRejected = true; }
     AIVERSE_TEST_CHECK(openRejected);
     entityWorkflow();
+    projectFileRecoveryWorkflow();
     std::cout << "studio session contract PASS\n";
 }

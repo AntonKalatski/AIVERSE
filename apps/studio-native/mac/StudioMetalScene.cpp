@@ -28,9 +28,14 @@ StudioMetalScene::StudioMetalScene(void* metalLayer)
     camera_.pitch = 0.85f;
     camera_.yaw = 0.55f;
 }
+void StudioMetalScene::releasePreviewModel(render::Model& model) {
+    // Retire CPU packets/layouts before the Model and its geometry disappear.
+    renderer_.invalidateModelCachesFor(&model);
+    render::releaseModel(*device_,model);
+}
 void StudioMetalScene::clearDocumentModels() {
     if (device_) for (auto& [path,model]:documentModels_)
-        if (model) render::releaseModel(*device_,*model);
+        if (model) releasePreviewModel(*model);
     modelInstances_.clear();
     documentModels_.clear();
     rejectedDocumentModels_.clear();
@@ -91,7 +96,7 @@ void StudioMetalScene::syncDocumentModels(
             previousTime->second!=modified) {
             auto old=documentModels_.find(path);
             if (old!=documentModels_.end()) {
-                render::releaseModel(*device_,*old->second);
+                releasePreviewModel(*old->second);
                 documentModels_.erase(old);
             }
             rejectedDocumentModels_.erase(path);
@@ -150,7 +155,7 @@ void StudioMetalScene::syncDocumentModels(
                 model->batching.allowGeometryPool=false;
                 render::prepareModelUpload(*model);
                 if (!render::uploadModel(*device_,*model,true)) {
-                    render::releaseModel(*device_,*model);
+                    releasePreviewModel(*model);
                     rejectedDocumentModels_.insert(path);
                     continue;
                 }
@@ -180,7 +185,7 @@ void StudioMetalScene::syncDocumentModels(
     }
     for (auto it=documentModels_.begin();it!=documentModels_.end();) {
         if (!active.count(it->first)) {
-            render::releaseModel(*device_,*it->second);
+            releasePreviewModel(*it->second);
             it=documentModels_.erase(it);
         } else ++it;
     }
@@ -192,7 +197,7 @@ StudioMetalScene::~StudioMetalScene() {
         if (cube_.vb.valid()) device_->destroyBuffer(cube_.vb);
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         if (materialSphere_) {
-            render::releaseModel(*device_,*materialSphere_);
+            releasePreviewModel(*materialSphere_);
             materialSphere_.reset();
         }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
