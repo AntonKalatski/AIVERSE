@@ -18,6 +18,8 @@ int main() {
     assert(call(R"({"id":7,"method":"studio.undo","params":{}})").has("error"));
     assert(call(R"({"id":8,"method":"studio.redo","params":{}})").has("error"));
     assert(session.selectedEntityIndex() == -1);
+    assert(call(R"({"id":21,"method":"studio.materials","params":{}})").has("error"));
+    assert(call(R"({"id":22,"method":"studio.materialPatch","params":{"name":"steel","patch":{"metallic":0.5}}})").has("error"));
     assert(call(R"({"id":12,"method":"studio.lighting","params":{}})").has("error"));
     assert(call(R"({"id":13,"method":"studio.lightAdd","params":{}})").has("error"));
     assert(call(R"({"id":14,"method":"studio.lightUpdate","params":{"index":0,"key":"intensity","value":-5}})").has("error"));

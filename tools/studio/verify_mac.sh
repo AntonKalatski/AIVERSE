@@ -37,11 +37,11 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
 
 echo "==== Step 3: native target and tests ===="
 cmake --build "$BUILD_DIR" \
-  --target aiverse_studio aiverse_studio_session_tests aiverse_studio_lighting_validation_tests aiverse_studio_light_preview_math_tests aiverse_studio_authored_lights_tests aiverse_studio_fps_lighting_contract_tests aiverse_studio_fps_lighting_document_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
+  --target aiverse_studio aiverse_studio_session_tests aiverse_studio_lighting_validation_tests aiverse_studio_material_validation_tests aiverse_studio_light_preview_math_tests aiverse_studio_authored_lights_tests aiverse_studio_fps_lighting_contract_tests aiverse_studio_fps_lighting_document_tests aiverse_studio_scene_nodes_tests aiverse_studio_document_visuals_tests aiverse_studio_viewport_layout_tests aiverse_studio_terrain_tests \
   --parallel 4
 
 echo "==== Step 4: studio contracts ===="
-ctest --test-dir "$BUILD_DIR" --output-on-failure -R '^studio_(session|lighting_validation|light_preview_math|authored_lights|fps_lighting_contract|fps_lighting_document|scene_nodes|document_visuals|viewport_layout|terrain_geometry)
+ctest --test-dir "$BUILD_DIR" --output-on-failure -R '^studio_(session|material_validation|lighting_validation|light_preview_math|authored_lights|fps_lighting_contract|fps_lighting_document|scene_nodes|document_visuals|viewport_layout|terrain_geometry)
 
 echo "==== Automated verification finished; macOS visual testing still required ===="
 echo "Open the generated AiverseStudioHTML5.app with --project /path/to/project."

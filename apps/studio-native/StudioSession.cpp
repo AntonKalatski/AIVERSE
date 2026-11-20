@@ -3,6 +3,8 @@
 #include "apps/studio-native/StudioDocumentIds.h"
 #include "apps/studio-native/StudioLightingValidation.h"
 #include "apps/studio-native/StudioFpsLightingDocument.h"
+#include "apps/studio-native/StudioMaterialValidation.h"
+#include "apps/editor/core/MaterialOps.h"
 #include <cctype>
 #include <cmath>
 #include <limits>
@@ -140,6 +142,44 @@ Json StudioSession::dispatch(const Json& request) {
         const Json& params = request["params"];
         if (method == "studio.snapshot") {
             reply.set("result", snapshot());
+        } else if (method == "studio.materials" || method == "studio.materialPatch") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            if (method == "studio.materialPatch") {
+                const std::string name=params.getStr("name");
+                if (!validStudioMaterialName(name))
+                    throw std::runtime_error("Invalid material name");
+                const Json& patch=params["patch"];
+                if (!patch.isObject() || patch.size()==0 || patch.size()>15)
+                    throw std::runtime_error("Material patch requires 1..15 safe fields");
+                const Json library=editor::loadMaterialLibrary(ws_);
+                if (!library[name].isObject())
+                    throw std::runtime_error("Only existing library materials can be edited");
+                for(const auto& [key,value]:patch.members()) {
+                    if (value.isNumber()) {
+                        if (!validStudioMaterialNumber(key,value.toDouble()))
+                            throw std::runtime_error("Unsupported material number: "+key);
+                    } else if (value.isString()) {
+                        if (!validStudioMaterialText(key,value.str()))
+                            throw std::runtime_error("Unsupported material text: "+key);
+                    } else if (value.type()==Json::Type::Bool) {
+                        if (!validStudioMaterialBoolean(key))
+                            throw std::runtime_error("Unsupported material boolean: "+key);
+                    } else throw std::runtime_error("Unsupported material value type: "+key);
+                }
+                Json request=Json::object();
+                request.set("name",str(name));
+                request.set("material",patch);
+                request.set("merge",Json::fromBool(true));
+                // material_set validates keys/base and writes materials.json atomically.
+                // Unlike MapDoc edits this is immediate disk save without Undo:
+                // explicit Apply is required in the frontend.
+                const Json result=ws_.call("material_set",request,"studio");
+                if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+            }
+            const Json library=editor::loadMaterialLibrary(ws_);
+            Json result=Json::object();
+            result.set("library",library);
+            reply.set("result",std::move(result));
         } else if (method == "studio.lighting" || method == "studio.lightingSet" ||
                    method == "studio.lightAdd" || method == "studio.lightUpdate" ||
                    method == "studio.lightDelete") {
