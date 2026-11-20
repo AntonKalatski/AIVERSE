@@ -50,13 +50,23 @@ inline bool prepareSculptGpuRendererMaskOccluder(
     }
     if(!first)return false;
     SculptGpuVertexSource proposed;
-    if(!prepareSculptGpuVertexSource(
+    if(!first->maskedMaterial || !first->maskBaseTexture.valid() ||
+       !prepareSculptGpuVertexSource(
             *candidate.model,candidate.mesh,candidate.nodeWorld,
             first->world,first->vertexOverride,
             first->vertexOverrideCount,{},candidate.model->vertices.size(),
-            proposed) || !sculptGpuMaskedOccluderInputsValid(
-                proposed,selectedGpuBuffer) ||
-       first->skinning!=(proposed.params.skinned!=0u))
+            proposed) ||
+       !sculptGpuMaskedOccluderInputsValid(
+           proposed,selectedGpuBuffer) ||
+       first->skinning!=(proposed.params.skinned!=0u) ||
+       proposed.maskBaseTexture!=first->maskBaseTexture ||
+       proposed.maskUniform.alpha[0]!=first->maskAlpha ||
+       proposed.maskUniform.alpha[1]!=first->maskCutoff ||
+       proposed.maskUniform.uv0[0]!=first->maskUvOffset.x ||
+       proposed.maskUniform.uv0[1]!=first->maskUvOffset.y ||
+       proposed.maskUniform.uv0[2]!=first->maskUvScale.x ||
+       proposed.maskUniform.uv0[3]!=first->maskUvScale.y ||
+       proposed.maskUniform.uv1[0]!=first->maskUvRotation)
         return false;
     output=std::move(proposed);
     return true;
