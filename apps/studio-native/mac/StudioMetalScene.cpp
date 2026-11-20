@@ -57,10 +57,46 @@ std::string StudioMetalScene::pick(float x, float y, float width, float height,
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
-    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, 0.18f, 1.45f);
+    camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
 }
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
+}
+void StudioMetalScene::pan(float dx, float dy) {
+    // Editor navigation follows camera orientation, not RTS ground-plane input.
+    const float speed=std::max(0.005f,camera_.distance*0.0018f);
+    const float yaw=camera_.yaw;
+    const float3 right{std::cos(yaw),0,-std::sin(yaw)};
+    const float3 up{-std::sin(yaw)*std::sin(camera_.pitch),
+                    std::cos(camera_.pitch),
+                    -std::cos(yaw)*std::sin(camera_.pitch)};
+    camera_.target += right*(-dx*speed) + up*(dy*speed);
+}
+void StudioMetalScene::move(float right, float up, float forward) {
+    const float speed=std::max(0.025f,camera_.distance*0.045f);
+    const float yaw=camera_.yaw;
+    const float3 side{std::cos(yaw),0,-std::sin(yaw)};
+    const float3 ahead{-std::sin(yaw)*std::cos(camera_.pitch),
+                       -std::sin(camera_.pitch),
+                       -std::cos(yaw)*std::cos(camera_.pitch)};
+    camera_.target += (side*right + float3{0,1,0}*up + ahead*forward)*speed;
+}
+void StudioMetalScene::focusSelected(const editor::MapDoc& map,bool fpsProject,
+                                      const std::string& selectedId) {
+    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    for (const auto& proxy:proxies) {
+        if (proxy.id != selectedId) continue;
+        camera_.target=(proxy.boundsMin+proxy.boundsMax)*0.5f;
+        const float3 extent=proxy.boundsMax-proxy.boundsMin;
+        const float size=std::max({extent.x,extent.y,extent.z,0.5f});
+        camera_.distance=std::clamp(size*3.0f,2.0f,100000.0f);
+        return;
+    }
+}
+void StudioMetalScene::resetView() {
+    cameraInitialized_=false;
+    camera_.pitch=0.85f;
+    camera_.yaw=0.55f;
 }
 void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapDoc& doc,
                              bool fpsProject, const std::string& selectedId,
