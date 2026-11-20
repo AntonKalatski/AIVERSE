@@ -1213,3 +1213,46 @@ This will output all four runs per size and write `stage104-summary.csv` to the 
 ### Next stage
 
 Interpret actual 2K/4K Direct vs MDI process medians and P95, compare Mach thread time and per-pass backend, ensure parity logs show zero changed channels in both forced modes. Check whether 4086 vs 4096 is explained by filtering or an unexpected missing batch; only then consider altering batching limits/thresholds. No GPU execution time/FPS measured.
+
+
+---
+
+## Stage 106 — owner's complete Stage 104 2K/4K native CPU Direct/MDI results (2026-11-20)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/auto-batch-cost-metrics-20261119`; **PR #39 remains Draft**. **Changes this stage:** handoff/documentation only, no renderer, CPU batching policy, Metal backend, benchmark fixture or analysis scripts touched. Previous analyzer fix: `5018b3810f81342b42aa9977ea4b046de08a4400` (Stage105).
+
+### Actual Mac Studio owner test and evidence
+
+The owner successfully ran eight Stage 104 native fixture processes (`2048/4096` authored unique primitives, Direct1/MDI1/MDI2/Direct2 order for each load). Each process printed `PASS` from the runner's assertions before the initial analyzer rejected valid `4086/18` MDI counts. Then the owner fetched the Stage105 revised Python analyzer from GitHub and executed it **against the already-created eight frame CSVs** in `build/batching-stage98/stage104/capture-20261120T071923Z-97395/`. Revised analyzer completed, printed all per-process CPU wall and Mach medians, and created `stage104-summary.csv`. No new native render test was required after the assertion fix.
+
+Owner-supplied analyzer stdout (CPU synchronous `renderer.render()`, all ms):
+
+```text
+2048 direct1 wall=2.3557 p95=2.4445 mach=2.3410 mdi_submissions=0 mdi_commands=0
+2048 mdi1    wall=1.5882 p95=1.7063 mach=1.5780 mdi_submissions=18 mdi_commands=4086 coverage=99.76%
+2048 mdi2    wall=1.6063 p95=1.7189 mach=1.5930 mdi_submissions=18 mdi_commands=4086 coverage=99.76%
+2048 direct2 wall=2.3506 p95=2.4334 mach=2.3400 mdi_submissions=0 mdi_commands=0
+2048 paired process-median Direct=2.3531ms MDI=1.5972ms change=-32.12%
+4096 direct1 wall=4.5474 p95=4.6783 mach=4.5350 mdi_submissions=0 mdi_commands=0
+4096 mdi1    wall=2.9151 p95=3.0731 mach=2.8930 mdi_submissions=36 mdi_commands=8172 coverage=99.76%
+4096 mdi2    wall=2.9801 p95=3.1285 mach=2.9640 mdi_submissions=36 mdi_commands=8172 coverage=99.76%
+4096 direct2 wall=4.6848 p95=4.8395 mach=4.6510 mdi_submissions=0 mdi_commands=0
+4096 paired process-median Direct=4.6161ms MDI=2.9476ms change=-36.14%
+Saved: .../capture-20261120T071923Z-97395/stage104-summary.csv
+```
+
+For both loads, Direct/MDI process medians are internally fairly close and Mach thread CPU tracks wall, suggesting relatively little measured off-CPU during these particular runs. **Important:** the comparison is process-interleaved but not per-frame randomized, and remains CPU-only. Never translate these percentages to FPS or GPU speedup.
+
+### Functional interpretation / remaining discrepancy
+
+- CPU MDI lowers observed CPU `render()` medians by **32.12%** at 2K and **36.14%** at 4K vs direct median across two separate processes each.
+- Both 2K MDI trials consistently use 18 submissions and 4086 commands vs upper bound 4096; both 4K MDI trials use 36 submissions and 8172 vs upper bound 8192; coverage is **99.75586%** in both. These counts are stable across all 81 sampled frames of each process (the updated analyzer requires it).
+- The 10-command (2K) and 20-command (4K) differences scale exactly with workload size but their **source has not been established**. Potential visibility culling or eligibility filtering is a *hypothesis*, not proven. Inspect renderModels batching and frustum/shadow visibility counters plus image parity and/or CPU direct draw counts before accepting this difference as intentional.
+- Stage104 runner requires the fixture's CPU invariant PASS, terminal image parity `changed_channels=0`, for MDI the *actual submitted MDI frame* raster parity `changed_channels=0`, and 81 measured MDI/Direct frames with no MDI in forced-Direct. The owner's run passed those runner assertions, but the full eight native logs/PPM images were not independently inspected in this turn; trust only what the reported runner PASS verifies.
+- Previous separate 1K experiment yielded Direct 1.2233ms, MDI 0.7739ms (~36.7% lower CPU wall), but it came from different process conditions and is not directly matched with current 2K/4K values.
+
+### Validation truth / next agent action
+
+**Actually performed:** analyzed user-provided full Stage105 output; verified head of PR #39 through GitHub connector; recorded owner-observed native checks and paired CPU timings in this handoff. **Not performed:** own native Mac build/renderer run, independent inspect of eight Stage104 CSVs/logs, GPU timestamps, Vulkan/GLES parity, real content performance, 10K stress, proof of cause for the small MDI command delta, full CTest. Do not change AUTO threshold or default-enable MDI based only on these synthetic CPU results; keep Draft PR #39.
+
+Next: obtain owner's `stage104-summary.csv` or `capture-20261120T071923Z-97395.tar.gz` and examine per-frame counters and parity. Specifically trace why 2K loses 10 and 4K loses 20 commands relative to 2*items (e.g., pass-specific visibility and grouping rules); verify model visibility, culling and direct raster coverage before treating the gap as normal. After correctness explanation, add opt-in GPU timing/Metal frame capture and representative scene tests. Avoid touching shared or rebasing worktrees; keep detailed handoffs after every change.
