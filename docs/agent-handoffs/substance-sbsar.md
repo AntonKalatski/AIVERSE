@@ -57,3 +57,30 @@ Risks: only scalar numeric bake params and 8-bit maps; no opacity inference,
 Next actionable step: validate with real SAT plus a licensed SBSAR fixture,
 then connect bundle path rebasing/publication and existing texture compression
 through native asset authoring before adding shared-UI background preview.
+
+## 2026-11-21 — stage 3: offline project publication
+
+Branch `feature/studio-html5`; starting HEAD `7ace9b33a75f2e329a24543d72a3941f3b363627`;
+implementation `40797a290`. Paths: tools/substance/import_bundle.py,
+test_import_bundle.py, README.md. Unrelated dirty work preserved.
+
+Added validated bundle-local PNG import to content-addressed assets/substance,
+project-relative texture references and atomic materials.json replacement.
+Existing names are refused; unrelated entries/top-level metadata retained.
+Uses existing Studio material fields and library shape, no format migration,
+runtime API, ECS, renderer or browser-side writes. Explicit offline CLI only.
+Color-space metadata is checked but not installed as separate loader metadata;
+existing native field semantics must still be verified visually.
+
+Executed `PYTHONDONTWRITEBYTECODE=1 /tmp/aiverse-substance-venv/bin/python -m unittest discover -s tools/substance -p 'test_*.py'`:
+PASS, 4 tests, including exact packed pixels, invalid dimensions, library
+preservation/duplicate-name refusal and traversal refusal with no project changes.
+Actual SAT bake, native Studio reload/preview, GPU compression/performance and
+CI: NOT RUN. No CI URL. Adobe SAT and licensed fixture still missing.
+
+Risks: Studio must be closed; exclusive CLI lock is not shared by native Studio.
+Final content comparison detects changes but cannot provide a full transaction
+with an uncooperating writer. Crash may leave stale lock or unused immutable
+texture folder. No overwrite/reimport UI or asset garbage collection yet.
+Next: real fixture end-to-end bake/pack/import plus Studio visual acceptance,
+then existing build texture compression and native background import integration.
