@@ -11,7 +11,7 @@ This change extends the existing PCSS improvement in PR #6. It **does not** intr
 
 ## Quality / limitations
 
-- The temporal sample rotation is only effective when `ScreenLighting::setEnabled(true)`, HDR post quality High, and an active post chain are present. Without TAA, samples remain screen-space deterministic, so there is no additional flicker.
+- The temporal sample rotation is only effective when `ScreenLighting::setEnabled(true)`, HDR post quality High, and an active post chain are present. Without TAA, the disk orientation is fixed across pixels as well as frames. Screen-space random rotation must also be disabled: a static noise pattern still produces visible stipple.
 - Temporal **color** accumulation may also smooth material/specular variation; this is not a separate shadow-only denoiser. Further improvements would require dedicated screen-space shadow-mask and receiver-normal history textures.
 - Sample budget increases PCF shading cost; benchmark Metal GPU frame time, especially on wide penumbrae and leaf silhouettes.
 - A per-frame time seed derives from `camPos.w` / `graphTime_` quantized to 60 Hz. It is only a sample decorrelation seed, not motion reprojection.
