@@ -124,3 +124,10 @@ reject the view; actors are never silently omitted to fit the GPU budget.
 `bake:false` preserves the asset's explicit caster exclusion. This fixed-workload
 host holds the selected pose while compute/convergence is pending, then renders
 that same pose; a game host must choose and measure its own update cadence.
+
+## Native Studio authoring
+The optional map `renderLighting` v1 block is validated by RenderLightingSettings.
+Studio Lighting controls support native save/undo/redo. RenderLightingRuntime uses
+the shared DynamicGiHost and LumaHost owners; the viewport renders its existing
+terrain/document proxies as PBR geometry. This is not full game-asset preview
+parity. The panel reports actual backend, convergence and fallback.
