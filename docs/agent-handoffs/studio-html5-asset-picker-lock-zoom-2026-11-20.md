@@ -55,3 +55,14 @@ Manual QA: select an asset by search, drag image/model from Assets, clear asset,
 
 ## Next step for an agent
 Run typecheck and resolve failures, then implement native explicit asset reference descriptors and adopt the picker panel-by-panel. Document each stage with actual checks, affected files and an immutable SHA. Do not merge to main before native QA.
+
+## Stage 3: refresh pinned properties by ID
+- Added `StudioSession::propertiesFor(entityId)` and `studio.propertiesFor` bridge API: read-only, validates the entity against current map/FPS nodes, returns schema fields without mutating global selection.
+- `snapshot()` now shares `propertiesFor` as its property field source, eliminating drift between pinned/unpinned schemas.
+- Added typed `studio.propertiesFor` request/response to `apps/studio-web/src/types.ts`.
+- `App.tsx` re-reads pinned values after native snapshot changes (including undo and other editor updates) and unpins if target was deleted. Project switches still clear pins.
+- Browser demo mock now supports per-entity property data and the read API, so pinned inspector doesn't disappear on demo refresh and edits target the pinned entity.
+- Files: `apps/studio-native/StudioSession.cpp`, `apps/studio-native/StudioSession.h`, `apps/studio-web/src/App.tsx`, `apps/studio-web/src/types.ts`, `apps/studio-web/src/mock.ts`, `tools/studio/test_reference_pin_zoom.py`.
+- Implementation commits: `ff2b2888f10d102b5387b07f0c4c4091239da659`, `645401bd960601eb02f897f5dae65eac48f1c54a`, `dc3aed3348737eb8986f86c940e5fa3230bd6462`, `04d2091a162333ecd282d018e62e93290fa0a24d`, `c06c55db74700cfb38c37d04e026f7a17837dafb`, `269630cec650391dbc868a1b57b3f8d1bab53c5b`.
+- Actual validation remains **source inspection only**, not compilation/test execution. GitHub connector can read/write but container DNS cannot resolve GitHub for checkout; no local AIVERSE repository is mounted.
+- Follow-up: verify native build and pin refresh behavior with undo/redo; consider explicit selection-independent target ownership policies for multi-user/remote editing before exposing these native APIs outside trusted Studio bridge.
