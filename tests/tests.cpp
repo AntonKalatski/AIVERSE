@@ -13426,9 +13426,12 @@ TEST(visibility_field_gpu_build_rolls_back_buffers_texture_and_idle_refusal) {
     CHECK(fog.init(dev));
     const auto height=[](float,float){return 0.0f;};
     fog.build(dev,2,2,height);
-    const auto previousTexture=fog.texture();
-    CHECK(previousTexture.valid());
+    const auto initialTexture=fog.texture();
+    CHECK(initialTexture.valid());
     CHECK(fog.update(std::vector<uint8_t>{2,2,2,2},2,2,0.0));
+    const auto previousTexture=fog.texture();
+    CHECK(previousTexture.valid() && previousTexture.id!=initialTexture.id);
+    CHECK(fog.pendingGpuRetirements()==1);
     const auto originalField=fog.field();
     CHECK(dev.destroyedBuffers==0);
     CHECK(dev.destroyedTextures==0);
