@@ -38,6 +38,10 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
         // still match the single-lattice CPU reference.
         auto gpuCfg=cfg;
         if(const char* c=std::getenv("AIVERSE_COMPUTE_GI_CASCADES"))gpuCfg.cascades=std::atoi(c);
+        // AIVERSE_COMPUTE_GI_SCROLL: scrolling cascades; the focus first moves
+        // away (every probe recycled, zeroed) and comes back, so the checked
+        // pixel needs the re-traced probes at the original cells.
+        if(std::getenv("AIVERSE_COMPUTE_GI_SCROLL"))gpuCfg.scroll=true;
         if(s.computeGiVerify && (!s.computeGi.initialize(d,gpuCfg) ||
            !s.computeGi.publishGeometry(gpuScene,1))) {
             std::fprintf(stderr,"GI compute setup FAIL: %s / %s\n",d.lastError().c_str(),s.computeGi.diagnostic());
@@ -112,8 +116,18 @@ inline void drawDynamicGiScene(HdrScene& s,gfx::Device& d,int w,int h) {
     s.post.setSettings(settings);s.post.setQuality(PrismaQuality::High);
     r.beginScene(s.camera,w,h);
     if(s.computeGiVerify) {
-        s.computeGi.updateFrame({0,0,0});
-        if(!s.computeGi.canPresent()){waitFrame();return;}
+        static int scrollAway=0;
+        float3 focus{0,0,0};
+        if(s.computeGi.config().scroll && scrollAway<40){focus={6,0,0};++scrollAway;}
+        s.computeGi.updateFrame(focus);
+        // Scrolling presents while probes update; the pixel check needs them traced.
+        if(!s.computeGi.canPresent() || s.computeGi.pendingProbes() || (scrollAway<40 && s.computeGi.config().scroll)){
+            waitFrame();return;}
+        if(s.computeGi.config().scroll && s.gridProbe==test && s.frame==0) {
+            const auto st=s.computeGi.scrollStats();
+            std::printf("GI scroll: %zu scrolls, %zu probes recycled\n",st.scrolls,st.recycledProbes);
+            if(st.scrolls<2){std::fprintf(stderr,"GI scroll FAIL\n");s.failed=true;return;}
+        }
     }
     // Case 1 intentionally does not reattach: beginScene must clear the previous view.
     if(test!=1 && !(s.computeGiVerify?r.setDynamicGiOverlay(s.computeGi):r.setDynamicGiOverlay(s.dynamicGi))){s.failed=true;return;}

@@ -2846,14 +2846,16 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
     add_executable(aiverse_hdr_vulkan tests/render/hdr_vulkan.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_hdr_vulkan PRIVATE aiverse_runtime)
     if(AIVERSE_BUILD_TESTS)
-        foreach(_case dynamic_gi compute_gi compute_gi_cascades)
+        foreach(_case dynamic_gi compute_gi compute_gi_cascades compute_gi_scroll)
             add_test(NAME lighting_${_case}_vulkan COMMAND aiverse_hdr_vulkan)
         endforeach()
         set_tests_properties(lighting_dynamic_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1")
         set_tests_properties(lighting_compute_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1")
         set_tests_properties(lighting_compute_gi_cascades_vulkan PROPERTIES
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
-        set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan
+        set_tests_properties(lighting_compute_gi_scroll_vulkan PROPERTIES
+            ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1")
+        set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan lighting_compute_gi_scroll_vulkan
             PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
     endif()
@@ -4554,6 +4556,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             lighting_cpu_gi_bridge
             lighting_gpu_bridge
             lighting_gi_cascades
+            lighting_gi_scrolling
             lighting_luma_mobile_fallback
             lighting_model_gi_shader_contract
             lighting_terrain_gi_shader_contract)
@@ -4614,6 +4617,14 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
     add_test(NAME lighting_compute_gi_gpu_far_world COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_compute_gi_gpu_far_world PROPERTIES
         ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_FAR_WORLD=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
+    # Scrolling cascades: the focus walks away (all probes recycled and zeroed)
+    # and back; the re-traced probes must match the CPU reference again.
+    add_test(NAME lighting_compute_gi_gpu_scroll COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu_scroll PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1" LABELS "Lighting;GPU"
         TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
         FAIL_REGULAR_EXPRESSION "FAIL")

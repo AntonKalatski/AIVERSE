@@ -42,6 +42,8 @@ struct DynamicGiHost {
         if(!std::isfinite(cascades)||cascades<1||cascades>GiMainGpuBridge::kMaxCascades||cascades!=std::floor(cascades))
             throw std::runtime_error("dynamicGI cascades must be integer 1..3");
         cfg.cascades=int(cascades);
+        // "scroll": the GPU cascades follow the update focus (camera).
+        cfg.scroll=settings.getBool("scroll",false);
         // Spatial chunks (one per occupied cell of about one trace distance):
         // the GPU bridge keeps only cells a GI ray can reach resident, so a
         // world larger than the GPU triangle budget can still run on the GPU.
@@ -86,7 +88,8 @@ struct DynamicGiHost {
         }
         if(!useGpu) {
             if(cfg.cascades!=1)fallback+=(fallback.empty()?"":"; ")+std::string("CPU GI uses one cascade");
-            cfg.cascades=1;
+            if(cfg.scroll)fallback+=(fallback.empty()?"":"; ")+std::string("CPU GI does not scroll");
+            cfg.cascades=1;cfg.scroll=false;
             if(!cpu.initialize(d,cfg))throw std::runtime_error("dynamicGI CPU initialization failed");
         }
         enabled=true;

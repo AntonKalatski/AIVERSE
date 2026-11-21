@@ -42,9 +42,9 @@ int main() {
     const auto baseline=gpu.lastGeometryUpload();
     AIVERSE_TEST_CHECK(baseline.full && baseline.bytes>0);
     const size_t originalHandles=device.buffers.size();
-    // triangles, nodes, lights, jobs + the two grown-out dummy buffers, which
+    // triangles, nodes, lights, jobs, probe clears + the two grown-out dummy buffers, which
     // main retires through GPU fences instead of freeing them immediately.
-    AIVERSE_TEST_CHECK(originalHandles==6);
+    AIVERSE_TEST_CHECK(originalHandles==7);
 
     source.replace(7,wall(84,4),{{1,0,0}});
     auto second=source.publish();
