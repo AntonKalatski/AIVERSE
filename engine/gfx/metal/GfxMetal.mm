@@ -1158,15 +1158,28 @@ public:
         if (u.rowPitchBytes < u.width * bpp) return false;
         const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
         if (imagePitch < u.rowPitchBytes * u.height) return false;
-        // Texture2DArray is the physical Virtual Texture atlas. CPU-side
-        // replaceRegion may race older GPU frames sampling the reused slice.
-        // Encode the write as a blit on the SAME Metal queue instead, so
-        // previous readers retire before the new bytes become visible.
-        if (t->dimension == TextureDimension::Texture2DArray && !t->mips) {
-            if (enc_ || compute_ || gpuIcbEncoder_) {
+        // CPU-side replaceRegion may race older in-flight GPU frames that
+        // still sample the overwritten texels (VT atlas slices, streamed
+        // 2D/cube/3D mips). Encode the write as a blit on the SAME Metal
+        // queue instead, so previous readers retire before the new bytes
+        // become visible. Auto-mip textures keep replaceRegion: their mip
+        // regeneration runs on a separate, immediately committed buffer.
+        // Texture2DArray (VT atlas) requires the ordered path; the other
+        // dimensions keep the legacy replaceRegion when an encoder is open.
+        const bool arrayUpload = t->dimension == TextureDimension::Texture2DArray;
+        const bool encoderOpen = enc_ || compute_ || gpuIcbEncoder_;
+        const bool orderedUpload = !t->mips &&
+            (arrayUpload ||
+             ((t->dimension == TextureDimension::Texture2D ||
+               t->dimension == TextureDimension::Cube ||
+               t->dimension == TextureDimension::CubeArray ||
+               t->dimension == TextureDimension::Texture3D) && !encoderOpen));
+        if (orderedUpload) {
+            if (encoderOpen) {
                 error_ = "Metal array texture upload requires no active GPU encoder";
                 return false;
             }
+            const bool volume = t->dimension == TextureDimension::Texture3D;
             const NSUInteger align = 256;
             const NSUInteger sourceRow = NSUInteger(u.width) * NSUInteger(bpp);
             if (sourceRow > NSUInteger(-1) - (align-1)) {
@@ -1178,7 +1191,12 @@ public:
                 error_ = "Metal array upload buffer overflow";
                 return false;
             }
-            const NSUInteger total = gpuRow * NSUInteger(u.height);
+            const NSUInteger gpuImage = gpuRow * NSUInteger(u.height);
+            if (NSUInteger(u.depth) > NSUInteger(-1) / gpuImage) {
+                error_ = "Metal array upload buffer overflow";
+                return false;
+            }
+            const NSUInteger total = gpuImage * NSUInteger(u.depth);
             id<MTLBuffer> staging = [device_ newBufferWithLength:total
                                      options:MTLResourceStorageModeShared];
             if (!staging) {
@@ -1187,10 +1205,12 @@ public:
             }
             auto* dst = static_cast<uint8_t*>(staging.contents);
             const auto* src = static_cast<const uint8_t*>(u.data);
-            for (int row = 0; row < u.height; ++row)
-                std::memcpy(dst + size_t(row)*size_t(gpuRow),
-                            src + size_t(row)*size_t(u.rowPitchBytes),
-                            size_t(sourceRow));
+            for (int z = 0; z < u.depth; ++z)
+                for (int row = 0; row < u.height; ++row)
+                    std::memcpy(dst + size_t(z)*size_t(gpuImage) + size_t(row)*size_t(gpuRow),
+                                src + size_t(z)*size_t(imagePitch) +
+                                      size_t(row)*size_t(u.rowPitchBytes),
+                                size_t(sourceRow));
             id<MTLCommandBuffer> uploadCmd = cmd_ ? cmd_ : [queue_ commandBuffer];
             if (!uploadCmd) {
                 error_ = "Metal array texture upload command allocation failed";
@@ -1201,12 +1221,18 @@ public:
                 error_ = "Metal array texture upload blit encoder failed";
                 return false;
             }
+            // sourceBytesPerImage: image stride for 3D/array, 0 otherwise.
+            // Cube faces / cube-array face-layers are destination slices.
             [blit copyFromBuffer:staging sourceOffset:0
-                sourceBytesPerRow:gpuRow sourceBytesPerImage:total
-                sourceSize:MTLSizeMake(NSUInteger(u.width),NSUInteger(u.height),1)
-                toTexture:t->tex destinationSlice:NSUInteger(u.arrayLayer)
+                sourceBytesPerRow:gpuRow
+                sourceBytesPerImage:(volume || arrayUpload) ? gpuImage : 0
+                sourceSize:MTLSizeMake(NSUInteger(u.width),NSUInteger(u.height),
+                                       NSUInteger(u.depth))
+                toTexture:t->tex
+                destinationSlice:volume ? 0 : NSUInteger(u.arrayLayer)
                 destinationLevel:NSUInteger(u.mipLevel)
-                destinationOrigin:MTLOriginMake(NSUInteger(u.x),NSUInteger(u.y),0)];
+                destinationOrigin:MTLOriginMake(NSUInteger(u.x),NSUInteger(u.y),
+                                                NSUInteger(volume ? u.z : 0))];
             [blit endEncoding];
             // The completion block keeps staging alive until the queued
             // transfer has retired, including for standalone command buffers.
