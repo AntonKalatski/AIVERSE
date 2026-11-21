@@ -126,6 +126,31 @@
    ]
   }
  },
+ "roadTypes": {
+  "cellMeters": 1,
+  "oval": {
+   "name": "Oval",
+   "category": "highway",
+   "surface": "asphalt",
+   "speed": 200,
+   "centre": "dashed",
+   "laneLines": false,
+   "crossings": false,
+   "lanes": {
+    "forward": 1,
+    "backward": 1,
+    "width": 6.0
+   },
+   "props": [],
+   "sides": {
+    "curb": "low",
+    "sidewalk": 0,
+    "shoulder": 1,
+    "shoulderSurface": "grass",
+    "barrier": "none"
+   }
+  }
+ },
  "race": {
   "countdownTicks": 180,
   "finishGraceTicks": 900,

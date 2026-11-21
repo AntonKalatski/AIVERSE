@@ -47,9 +47,13 @@ settings section: `wrongWayTicks`, `respawnWrongWayTicks`, `stuckTicks`, `stuckS
 | Metre maps with box colliders (`modules/fps`) | typed map vehicles (`fps.vehicleTypes`) | `modules/fps/FpsRace.cpp` |
 | Grid maps with heroes (`modules/rts`) | vehicles of rules `driving` | `Driving::loadRace` / `raceBefore` / `raceAfter` in `modules/rts/RtsDriving.cpp` |
 
-The two hosts still own their cars separately (`FpsVehicles.cpp`, `RtsDriving.cpp`); merging them into one shared
-vehicle system is the next step of `docs/agent-handoffs/racing-2026-11-21.md`, as is drawing spline roads in every
-client.
+Shared between the hosts: the race (above), the controls -> pedals mapping (`genre/VehicleDrive.h`: axes for keyboard /
+gamepad, screen stick "tank" / "steer" for top-down and touch), the controller step and collision response
+(`genre/VehicleControllers.h`), the HUD, the chase camera and the spline roads (`engine/roads`, drawn by both
+clients). Still separate, recorded as debt in `docs/agent-handoffs/racing-2026-11-21.md`: getting in and out (the
+metre-map host uses the library seats, the grid-map host its own enter / exit), the collision worlds themselves (box
+colliders vs the map grid: host adapters by design) and the car's look (models with rolling / steering wheels are
+drawn by the grid-map view; the metre-map client still draws boxes).
 
 Samples: `templates/racing` (Oval Sprint: a metre map with walls, `templates/_tools/racegen.py`) and
 `templates/road_race` (Road Circuit: a grid map, the circuit is a spline road — `roadNetwork` + road type `circuit` —

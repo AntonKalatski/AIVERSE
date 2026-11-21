@@ -5,6 +5,7 @@
 #include "RoyaleHud.h"
 #include "engine/render/ChaseCamera.h"
 #include "engine/ui/RaceHud.h"
+#include "engine/roads/RoadView.h"
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
@@ -62,6 +63,7 @@ struct App {
     terraweave::HorizonFrameTimingBridge horizonFrameTiming; // optional, native stream QoS
     platform::ContentReader contentReader;
     render::GeometryScene staticGeometry;
+    roads::RoadView roads;bool hasRoads=false;   // map "roadNetwork": the shared spline road view (engine/roads, docs/roads.md)
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
     fx::SpectraFxSceneHost fxScene;
     world::Cell fxOrigin{};
@@ -242,6 +244,10 @@ struct App {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
             std::string text;if(!reader(file,text))throw std::runtime_error("geometryScene: file not found: "+file);
             staticGeometry.load(device,Json::parse(text),reader);
+        }
+        if(map["roadNetwork"].isObject()) {   // the same spline roads as every other client (rules "roadTypes": cellMeters 1 on a metre map)
+            roads.init(device,rules["roadTypes"],[this](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);});
+            roads.setMap(map);hasRoads=true;
         }
         gui.init(device,"engine/assets/fonts/ui.ttf",17);
         render::MeshBuilder builder;builder.color(render::rgba(255,255,255)).box({0,0.5f,0},{1,1,1});cube=builder.upload(device);
@@ -908,6 +914,7 @@ struct App {
                                device.framebufferWidth(),device.framebufferHeight());
         if(streamedScene)streamedScene->draw(renderer,origin,32);
         staticGeometry.draw(renderer);
+        if(hasRoads){roads.collectRetired(device);roads.setWorldShift(visual(world::relativeTo(Vec3{},origin,32)));roads.draw(renderer,[](float,float){return 0.f;});}
         chunks.update(actor.pos,2,2,[&](const auto& file,auto& data){return platform::readContentFile(projectRoot+"/"+file,data);});
         for(const auto& [cell,boxes]:chunks.chunks())for(const auto& b:boxes) {
             (void)cell;
@@ -1157,6 +1164,7 @@ struct App {
         if(streamedScene)streamedScene->shutdown(device);
         server.reset();client.reset();
         staticGeometry.shutdown(device);
+        if(hasRoads)roads.shutdown(device);
         platform::setPointerLock(false);
         audio.shutdown();gui.shutdown();renderer.shutdown();
         device.destroyBuffer(cube.vb);

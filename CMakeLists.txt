@@ -1233,8 +1233,17 @@ add_library(AIVERSE::view_visibility ALIAS aiverse_view_visibility)
 target_include_directories(aiverse_view_visibility PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(aiverse_view_visibility PUBLIC aiverse_models)
 
+# Spline roads, shared by every project and client (docs/roads.md): data + geometry (Fixed, no GPU) and the view.
+add_library(aiverse_roads STATIC engine/roads/RoadNet.cpp engine/roads/RoadTypes.cpp)
+add_library(AIVERSE::roads ALIAS aiverse_roads)
+target_include_directories(aiverse_roads PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_roads PUBLIC aiverse_engine)
+add_library(aiverse_roads_view STATIC engine/roads/RoadView.cpp engine/roads/RoadKit.cpp)
+add_library(AIVERSE::roads_view ALIAS aiverse_roads_view)
+target_link_libraries(aiverse_roads_view PUBLIC aiverse_roads aiverse_models aiverse_render2d)
+
 add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
-    modules/rts/view/RtsRoadView.cpp modules/rts/view/RtsRoadKit.cpp modules/rts/view/RtsShoreView.cpp
+    modules/rts/view/RtsShoreView.cpp
     modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
     modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
     modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
@@ -1246,7 +1255,7 @@ add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/vi
 # + the planet surface maths (RtsPlanet*: float cube-sphere surface, detail grid synthesis; editor planet detail ops)
 add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp modules/rts/view/RtsPlanet.cpp modules/rts/view/RtsPlanetDetail.cpp)
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
-target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui aiverse_roads_view)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
 # Transitional host adapter consumes the engine View. The dependency points
@@ -2021,7 +2030,8 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
 # spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
-target_sources(aiverse_game PRIVATE modules/rts/RtsRoadNet.cpp modules/rts/RtsRoadTypes.cpp modules/rts/RtsTrafficRoads.cpp)
+target_sources(aiverse_game PRIVATE modules/rts/RtsTrafficRoads.cpp)
+target_link_libraries(aiverse_game PUBLIC aiverse_roads)
 # water from splines: editor-time / presentation data (never read by the simulation; the editor bakes it into cells)
 target_sources(aiverse_game PRIVATE modules/rts/view/RtsWater.cpp)
 # the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua

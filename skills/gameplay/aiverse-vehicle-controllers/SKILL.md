@@ -22,7 +22,9 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
    its parameter object, `zones`, `seats`) and `tracks` (`checkpoints`, `grid`, racing `line`). Milli-units, rpm,
    ticks; errors `vehicles.vehicles[0].wheeled.gearsMilli[1]: ...`. Scalars: optional generated `vehicles` settings
    section (`vehicleRaceConfig`, `vehicleSeatLimits`, `vehicleRaceLaps`, `bots::raceBotConfig`, `vehicleSettingsErrors`).
-4. Per authoritative tick, ascending vehicle id: seats (`stepVehicleSeats` with the owner's `clear(point, actor)`
+4. Player controls -> pedals: always `genre/VehicleDrive.h` (`vehicleInputFromAxes` for keyboard / gamepad axes,
+   `vehicleInputFromStick` Tank / Steer for a top-down screen stick); never a host-specific mapping.
+   Per authoritative tick, ascending vehicle id: seats (`stepVehicleSeats` with the owner's `clear(point, actor)`
    exit query) -> driver input (player or `bots::stepRaceBot`, only for `vehicleDriver`) -> `stepVehicle(def, state,
    tick, dt, input, contacts, vehiclePerformance(damageDef, damage))` -> owner sweep/collisions -> `stepVehicleDamage`
    with id-ordered `VehicleDamageInput` (zone 0 = locate by `vehicleLocalPoint`) -> `stepRace` with every racer's

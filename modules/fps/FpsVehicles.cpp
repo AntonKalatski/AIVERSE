@@ -5,6 +5,7 @@
 // Passengers and gunners may shoot; the driver steers. A destroyed vehicle kills its occupants.
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/genre/VehiclePersistence.h"
+#include "libraries/include/aiverselib/genre/VehicleDrive.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 namespace aiverse::fps {
@@ -52,13 +53,11 @@ bool Module::vehicleInteract(Simulation& sim,Actor& a) {
     r.id=best->seats.lastRequest+1+int64_t(best->requests.size());r.action=VehicleSeatAction::Enter;r.preferred=VehicleSeatRole::Driver;
     best->requests.push_back(r);return true;
 }
-// The driver's held pedals (released after the input timeout): forward / back -> throttle / brake, right steers,
-// Jump is the handbrake, pitch drives flight.
+// The driver's held controls (released after the input timeout) through the shared axes mapping (genre/VehicleDrive.h):
+// forward / back -> throttle / brake, right steers, Jump is the handbrake, pitch drives flight.
 VehicleInput Module::driverInput(const Actor& a,uint32_t now) const {
-    VehicleInput in;if(now-a.lastInputTick>config_.inputTimeout)return in;
-    auto f=Fixed::fromRatio(a.input.forward,1000);in.throttle=fxMax(Fixed{},f);in.brake=fxMax(Fixed{},-f);
-    in.steer=fxClamp(Fixed::fromRatio(a.input.right,1000),-1_fx,1_fx);in.handbrake=(a.input.buttons&Jump)!=0;
-    in.pitch=fxClamp(-a.input.pitch*4,-1_fx,1_fx);in.yaw=in.steer;return in;
+    if(now-a.lastInputTick>config_.inputTimeout)return {};
+    return vehicleInputFromAxes({Fixed::fromRatio(a.input.forward,1000),Fixed::fromRatio(a.input.right,1000),a.input.pitch,(a.input.buttons&Jump)!=0});
 }
 // drive: pedals that replace the driver's own for these vehicle ids this tick (race countdown, race bots).
 void Module::tickVehicles(Simulation& sim,std::span<const std::pair<uint32_t,VehicleInput>> drive) {

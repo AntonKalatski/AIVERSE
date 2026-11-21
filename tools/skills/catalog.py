@@ -264,7 +264,7 @@ def generate():
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='tools/skills/catalog.py'))
     entries.append(dict(id='aiverse-roads',package=None,path='skills/world/aiverse-roads/SKILL.md',domain='gameplay',
         summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
-        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
+        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='engine/roads/RoadNet.cpp'))
     # Native ECS opt-in engine feature, not a separately installed library.
     # Register it as a gameplay recipe (runtime=none) so skill routing reads
     # its native headers without inventing a duplicate CMake library target.

@@ -2,9 +2,10 @@
 """Generate an oval race track for a metre map with box colliders (docs/races.md: rules "race" + map "race").
 
 Writes into --out (default: templates/racing next to this script):
-  rules/race.json   the car (fps.vehicleTypes: one wheeled car with a driver seat) and the race knobs (rules "race")
-  maps/start.json   ground, inner / outer walls (straights as boxes, bends as rotated boxes), one car per racer, and
-                    the track (map "race": checkpoints, grid, racing line)
+  rules/race.json   the car (fps.vehicleTypes: one wheeled car with a driver seat), the race knobs (rules "race") and
+                    the road type of the track surface (rules "roadTypes", cellMeters 1)
+  maps/start.json   ground, inner / outer walls (straights as boxes, bends as rotated boxes), one car per racer, the
+                    track surface as a spline road (map "roadNetwork") and the race (map "race": checkpoints, grid, line)
 Units: metres in the map, milli-units in the vehicle-controllers JSON. Track: two straights along Z joined by
 half circles; racers drive up the right straight (+Z) first; the finish line lies on the right straight.
 
@@ -80,7 +81,11 @@ def main():
                                {"offsetMilli": [800, 0, -1300], "driven": True, "handbrake": True}]},
         "seats": [{"id": 1, "role": "driver", "entryMilli": [-400, 0, 200], "enterRadiusMilli": 1500, "exitsMilli": [[-2000, 0, 200], [2000, 0, 200]]}],
     }
+    lane = round((W - 2) / 2, 3)
     race = {"fps": {"vehicleTypes": {"vehicles": [car]}},
+            "roadTypes": {"cellMeters": 1, "oval": {"name": "Oval", "category": "highway", "surface": "asphalt", "speed": 200,
+                          "centre": "dashed", "laneLines": False, "crossings": False, "lanes": {"forward": 1, "backward": 1, "width": lane},
+                          "props": [], "sides": {"curb": "low", "sidewalk": 0, "shoulder": 1, "shoulderSurface": "grass", "barrier": "none"}}},
             "race": {"countdownTicks": 180, "finishGraceTicks": 900,
                      "vehicles": {"wrongWayTicks": 60, "respawnWrongWayTicks": 240, "stuckSpeedMilli": 500, "stuckTicks": 300,
                                   "botMaxSpeedMilli": 38000, "botCornerAccelMilli": 8400, "botBrakeDecelMilli": 8000,
@@ -93,7 +98,21 @@ def main():
         players.append(p)
     spawns = [[round(-6 + 4 * i, 3), 0.01, 0] for i in range(n)]                  # infield; racers start in their cars
     vehicles = [{"pos": [g["x"], 0.05, g["z"]], "type": 1} for g in grid]
+    # The track surface: a spline road along the centre line (map "roadNetwork", the shared road view of every
+    # client; road type "oval" in rules.json, cellMeters 1 on this metre map). Quarter arcs: cubic Beziers, k = 0.5523.
+    k = 0.5523 * R
+    pts = [(R, -L), (R, L), (0, L + R), (-R, L), (-R, -L), (0, -L - R)]
+    nodes = [{"id": i + 1, "x": r3(x), "z": r3(z)} for i, (x, z) in enumerate(pts)]
+    ctrl = [None, ((R, L + k), (k, L + R)), ((-k, L + R), (-R, L + k)), None, ((-R, -L - k), (-k, -L - R)), ((k, -L - R), (R, -L - k))]
+    edges = []
+    for i in range(6):
+        e = {"id": i + 1, "a": i + 1, "b": (i + 1) % 6 + 1, "type": "oval"}
+        if ctrl[i]:
+            (c1x, c1z), (c2x, c2z) = ctrl[i]
+            e["c1"], e["c2"] = [r3(c1x), r3(c1z), 0], [r3(c2x), r3(c2z), 0]
+        edges.append(e)
     world = {"players": players, "spawns": spawns, "colliders": [ground] + walls(L, R, W), "vehicles": vehicles, "name": "Oval",
+             "roadNetwork": {"nodes": nodes, "edges": edges, "signals": False},
              "race": {"laps": a.laps, "checkpoints": checkpoints, "grid": grid, "line": line}}
     os.makedirs(os.path.join(a.out, "rules"), exist_ok=True); os.makedirs(os.path.join(a.out, "maps"), exist_ok=True)
     with open(os.path.join(a.out, "rules", "race.json"), "w") as f: json.dump(race, f, indent=1); f.write("\n")

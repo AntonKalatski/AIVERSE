@@ -158,7 +158,10 @@ struct ViewEffect {
     float intensity = 1;
 };
 
-class RtsRoadView;
+}  // namespace aiverse::game
+namespace aiverse::roads { class RoadView; }
+namespace aiverse::game {
+using RtsRoadView = aiverse::roads::RoadView;   // shared engine road view (engine/roads/RoadView.h)
 class RtsShoreView;
 
 class RtsView : public view_adapter::ModelResourceProvider {

@@ -11,6 +11,7 @@
 #include "../../libraries/include/aiverselib/genre/VehicleData.h"
 #include "../../libraries/include/aiverselib/genre/VehiclePersistence.h"
 #include "../../libraries/include/aiverselib/genre/RaceSessionData.h"
+#include "../../libraries/include/aiverselib/genre/VehicleDrive.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -24,11 +25,6 @@ const Fixed kGap = Fixed::fromRatio(1, 64);
 
 Vec3 forwardOf(Fixed yaw) { return {fxSinTurns(yaw), Fixed{}, fxCosTurns(yaw)}; }   // yaw 0 = +z, a quarter turn = +x
 Vec3 rightOf(Vec3 f) { return {f.z, Fixed{}, -f.x}; }
-Fixed wrapTurns(Fixed t) {
-    int64_t r = t.raw % Fixed::kOne;
-    if (r > Fixed::kOne / 2) r -= Fixed::kOne; else if (r <= -Fixed::kOne / 2) r += Fixed::kOne;
-    return Fixed::fromRaw(r);
-}
 Fixed number(const Json& j, const char* key, Fixed def, const std::string& where, bool positive) {
     Fixed v = j.getFx(key, def);
     if (v.raw < 0 || (positive && v.raw == 0))
@@ -505,26 +501,10 @@ vl::VehicleInput Driving::ownInput(Simulation& sim, const DrivingCar& c) const {
         return in;
     }
     if (!td || c.player >= td->pilots.size()) { in.handbrake = true; return in; }   // parked
+    // the shared screen-stick mapping (genre/VehicleDrive.h): "tank" or "stick" (steer toward the stick)
     const topdown::Input& s = td->pilots[c.player].input;
-    const Fixed mag = Fixed::fromRatio(s.moveMag, topdown::kMagMax), ang = Fixed::fromRaw(s.moveAngle);
-    in.handbrake = s.fire;
-    if (rules_.controls == DriveControls::Tank) {
-        // stick up the screen (-z) = throttle, down = brake / reverse, sideways = steering; diagonals count in full
-        const Fixed boost = Fixed::fromRatio(3, 2);
-        // the map is seen with +x to the right and +z down the screen, so a turn to the right on screen is a negative
-        // library yaw (the library turns from +z toward +x for a positive steer)
-        const Fixed t = -fxCosTurns(ang) * mag * boost, st = -fxSinTurns(ang) * mag * boost;
-        in.throttle = fxClamp(t, Fixed{}, kUnit);
-        in.brake = fxClamp(-t, Fixed{}, kUnit);
-        in.steer = fxClamp(st, -kUnit, kUnit);
-        return in;
-    }
-    const Fixed v = vl::vehicleForwardSpeed(c.st);
-    if (s.moveMag <= 0) { if (v > kHalf) in.brake = Fixed::fromRatio(3, 10); return in; }   // let go: roll to a stop
-    const Fixed diff = wrapTurns(ang - c.st.yaw);
-    in.steer = fxClamp(diff * 6, -kUnit, kUnit);
-    in.throttle = fxAbs(diff) > Fixed::fromRatio(1, 4) ? mag / 2 : mag;
-    return in;
+    const vl::DriveScreenStick stick{Fixed::fromRaw(s.moveAngle), Fixed::fromRatio(s.moveMag, topdown::kMagMax), s.fire};
+    return vl::vehicleInputFromStick(rules_.controls == DriveControls::Tank ? vl::DriveStick::Tank : vl::DriveStick::Steer, stick, c.st);
 }
 
 void Driving::tick(Simulation& sim) {
