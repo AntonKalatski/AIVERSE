@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T15:05:58+00:00",
+ "generated": "2026-11-21T15:14:37+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -194,11 +194,11 @@
     "Rails use centripetal Catmull-Rom with constant speed along the arc and eased start and stop; shake is seeded deterministic noise with a fade. The old linear rails and sine shake behave as before. CameraHdrFrameRecorder writes linear RGBA16F frames to OpenEXR and refuses an 8-bit result.",
     "The frame was rendered by tools/site/lens_showcase.cpp: the main camera with a 35 mm f/1.4 lens focused at 4 m on the red curtain, and a second camera of the same scene in the inset through CameraCompositor."
    ],
-   "status": "in-progress",
-   "verified": "Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC).",
-   "limits": "The feature/aiv20261121_lens_p2 branch is not merged into main yet. HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric.",
-   "branch": "feature/aiv20261121_lens_p2",
-   "commit": "2f202370b",
+   "status": "done",
+   "verified": "Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC). Before the merge into main the whole branch was built on a Mac: 365 of 367 tests passed; the two failures (skill_audit, rts_authored_pose_test) also fail on plain main.",
+   "limits": "HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric.",
+   "branch": "main",
+   "commit": "cd6633caf",
    "media": [
     {
      "src": "../media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg",

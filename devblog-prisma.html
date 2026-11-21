@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дневник разработки: PRISMA · AIVERSE</title>
+<meta name="description" content="Каждый этап PRISMA — со скриншотами, что проверено и что ещё нет. Записи добавляют агенты, которые этот этап сделали.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="en" href="en/devblog-prisma.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="devlog.html" data-nav="devlog" aria-current="page">Ход разработки</a>
+<a href="docs.html" data-nav="docs">Документация</a>
+</div>
+<a class="lang-switch" href="en/devblog-prisma.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">Системы движка</a> / <a href="system-prisma.html">PRISMA</a> / Дневник</p><h1>Дневник разработки: PRISMA</h1><p>Каждый этап PRISMA — со скриншотами, что проверено и что ещё нет. Записи добавляют агенты, которые этот этап сделали.</p></div><div class="dl-stats"><div><strong>1</strong><span>этапов</span></div><div><strong class="blog-stat-date">12.11.2026</strong><span>последняя</span></div></div></section><ol class="blog-list"><li class="blog-post" id="2026-11-12-prisma-light-shafts"><time class="blog-date mono" datetime="2026-11-12">12.11.2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-done">Готово</span><span>main · b9c9be65d</span></div><h2>Лучи света сквозь дымку</h2><p class="summary">Объёмные лучи солнца в дымке на сцене Sponza: сравнение выключено / включено.</p><div class="blog-media n2"><figure><a href="media/docs/images/readme/sponza-light-shafts.png" data-cap="Выключено / включено"><img src="media/docs/images/readme/sponza-light-shafts.png" alt="Выключено / включено" loading="lazy"></a><figcaption>Выключено / включено</figcaption></figure><figure><a href="media/docs/benchmarks/sponza-2026-11-12/haze-shafts-crop.png" data-cap="Лучи крупно"><img src="media/docs/benchmarks/sponza-2026-11-12/haze-shafts-crop.png" alt="Лучи крупно" loading="lazy"></a><figcaption>Лучи крупно</figcaption></figure></div><p>Снимки из бенчмарка Sponza 2026-11-12. Настройки сцены лежат рядом со снимками в docs/benchmarks/sponza-2026-11-12.</p><dl class="facts-list"><div><dt>Проверено</dt><dd>Снимки сняты движком на сцене Sponza.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/prisma.md">docs/prisma.md</a></div></article></li></ol><p class="blog-first mono">первая запись: 12.11.2026</p><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · данные: docs/devlog в репозитории</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>

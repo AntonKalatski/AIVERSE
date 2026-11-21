@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development diary: LENS · AIVERSE</title>
+<meta name="description" content="Every stage of LENS with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../devblog-lens.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="devlog.html" data-nav="devlog" aria-current="page">Devlog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="../devblog-lens.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">Engine systems</a> / <a href="system-lens.html">LENS</a> / Diary</p><h1>Development diary: LENS</h1><p>Every stage of LENS with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.</p></div><div class="dl-stats"><div><strong>1</strong><span>stages</span></div><div><strong class="blog-stat-date">Nov 21, 2026</strong><span>latest</span></div></div></section><ol class="blog-list"><li class="blog-post" id="2026-11-21-lens-physical-lens"><time class="blog-date mono" datetime="2026-11-21">Nov 21, 2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-done">Done</span><span>main · cd6633caf</span></div><h2>LENS: physical lens, depth of field and EXR</h2><p class="summary">A LENS camera now drives exposure and depth of field from its lens: focal length, aperture, shutter, ISO and focus distance. Spline rails, noise shake and HDR frame recording to EXR were added.</p><div class="blog-media n1"><figure><a href="../media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg" data-cap="35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera"><img src="../media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg" alt="35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera" loading="lazy"></a><figcaption>35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera</figcaption></figure></div><p>CameraLensComponent gained driveExposure and driveDepthOfField. CameraPostFxPool turns the lens into EV100 and PRISMA manual exposure, and uses thin-lens formulas for the near and far sharp limits, which it passes to PRISMA depth of field per camera. Global PRISMA settings are left alone.</p><p>Rails use centripetal Catmull-Rom with constant speed along the arc and eased start and stop; shake is seeded deterministic noise with a fade. The old linear rails and sine shake behave as before. CameraHdrFrameRecorder writes linear RGBA16F frames to OpenEXR and refuses an 8-bit result.</p><p>The frame was rendered by tools/site/lens_showcase.cpp: the main camera with a 35 mm f/1.4 lens focused at 4 m on the red curtain, and a second camera of the same scene in the inset through CameraCompositor.</p><dl class="facts-list"><div><dt>Verified</dt><dd>Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC). Before the merge into main the whole branch was built on a Mac: 365 of 367 tests passed; the two failures (skill_audit, rts_authored_pose_test) also fail on plain main.</dd></div><div><dt>Limitations</dt><dd>HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md">docs/camera-system.md</a></div></article></li></ol><p class="blog-first mono">first entry: Nov 21, 2026</p><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>

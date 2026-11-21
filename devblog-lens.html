@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дневник разработки: LENS · AIVERSE</title>
+<meta name="description" content="Каждый этап LENS — со скриншотами, что проверено и что ещё нет. Записи добавляют агенты, которые этот этап сделали.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="en" href="en/devblog-lens.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Главное меню">
+<a class="brand" href="./"><img src="favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Системы</a>
+<a href="./#genres">Жанры</a>
+<a href="roadmap.html" data-nav="roadmap">Роадмап</a>
+<a href="releases.html" data-nav="releases">Релизы</a>
+<a href="devlog.html" data-nav="devlog" aria-current="page">Ход разработки</a>
+<a href="docs.html" data-nav="docs">Документация</a>
+</div>
+<a class="lang-switch" href="en/devblog-lens.html" hreflang="en" lang="en">EN</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">Системы движка</a> / <a href="system-lens.html">LENS</a> / Дневник</p><h1>Дневник разработки: LENS</h1><p>Каждый этап LENS — со скриншотами, что проверено и что ещё нет. Записи добавляют агенты, которые этот этап сделали.</p></div><div class="dl-stats"><div><strong>1</strong><span>этапов</span></div><div><strong class="blog-stat-date">21.11.2026</strong><span>последняя</span></div></div></section><ol class="blog-list"><li class="blog-post" id="2026-11-21-lens-physical-lens"><time class="blog-date mono" datetime="2026-11-21">21.11.2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-done">Готово</span><span>main · cd6633caf</span></div><h2>LENS: физическая линза, глубина резкости и EXR</h2><p class="summary">Камера LENS теперь сама задаёт экспозицию и глубину резкости по параметрам объектива: фокусное расстояние, диафрагма, выдержка, ISO и дистанция фокуса. Добавлены сплайновые рельсы, шумовая тряска и запись HDR-кадров в EXR.</p><div class="blog-media n1"><figure><a href="media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg" data-cap="Объектив 35 мм f/1.4, фокус 4 м: занавес и колонна резкие, аркада вдали размыта; во врезке вторая камера"><img src="media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg" alt="Объектив 35 мм f/1.4, фокус 4 м: занавес и колонна резкие, аркада вдали размыта; во врезке вторая камера" loading="lazy"></a><figcaption>Объектив 35 мм f/1.4, фокус 4 м: занавес и колонна резкие, аркада вдали размыта; во врезке вторая камера</figcaption></figure></div><p>Компонент CameraLensComponent получил флаги driveExposure и driveDepthOfField. CameraPostFxPool переводит объектив в EV100 и в ручную экспозицию PRISMA, а по формулам тонкой линзы считает ближнюю и дальнюю границы резкости и передаёт их в DoF PRISMA отдельно для каждой камеры. Глобальные настройки PRISMA при этом не меняются.</p><p>Рельсы камеры строятся по centripetal Catmull-Rom с равномерной скоростью по длине дуги и сглаживанием старта и остановки; тряска — детерминированный шум с сидом и затуханием. Старые линейные рельсы и синусная тряска работают как раньше. CameraHdrFrameRecorder пишет линейные кадры RGBA16F в OpenEXR и отказывается записывать 8-битный результат.</p><p>Кадр снят хостом tools/site/lens_showcase.cpp: главная камера с объективом 35 мм f/1.4 и фокусом 4 м на красном занавесе, вторая камера той же сцены во врезке через CameraCompositor.</p><dl class="facts-list"><div><dt>Проверено</dt><dd>Кадр снят на Mac (Metal), 1920×1080, сцена Sponza (Khronos glTF Sample). Хост печатает фактическое состояние PRISMA: EV +1.24, DoF включён, фокус 4.08 м, зона резкости 1.11 м, размытие 5 px; без DoF кадр снят отдельно для сравнения. Юнит-тесты линзы, рельсов и EXR (camera_lens_physics, camera_rail_path, camera_exr) и тесты в aiverse_tests прошли на Linux (GCC). Перед заливкой в main ветка собрана на Mac целиком: 365 из 367 тестов прошли; два упавших (skill_audit, rts_authored_pose_test) падают и на чистом main.</dd></div><div><dt>Ограничения</dt><dd>HDR-захват через readTextureAsync RGBA16F есть только на Metal; на OpenGL доступна лишь 8-битная запись. Кубмапы, панорамы, зеркала, порталы и стерео — не сделаны. Экспозиция относительна объектива по умолчанию, а не фотометрическая.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md">docs/camera-system.md</a></div></article></li></ol><p class="blog-first mono">первая запись: 21.11.2026</p><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Сайт</span><a href="./">Главная</a><a href="roadmap.html">Роадмап</a><a href="releases.html">Релизы</a><a href="devlog.html">Ход разработки</a><a href="docs.html">Документация</a></div>
+<div><span>Сообщество</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · данные: docs/devlog в репозитории</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>

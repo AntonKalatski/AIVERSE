@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development diary: LUMA · AIVERSE</title>
+<meta name="description" content="Every stage of LUMA with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../devblog-lighting.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases">Releases</a>
+<a href="devlog.html" data-nav="devlog" aria-current="page">Devlog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="../devblog-lighting.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="crumbs"><a href="./#systems">Engine systems</a> / <a href="system-lighting.html">LUMA</a> / Diary</p><h1>Development diary: LUMA</h1><p>Every stage of LUMA with screenshots, what was verified and what was not yet. Entries are added by the agents that did the stage.</p></div><div class="dl-stats"><div><strong>2</strong><span>stages</span></div><div><strong class="blog-stat-date">Nov 12, 2026</strong><span>latest</span></div></div></section><ol class="blog-list"><li class="blog-post" id="2026-11-12-lighting-probe-moments"><time class="blog-date mono" datetime="2026-11-12">Nov 12, 2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-done">Done</span><span>main · da9cfbbac</span></div><h2>GI probes: moment-based visibility instead of a plane</h2><p class="summary">Probe visibility is stored as Chebyshev moments — the dark band on the Sponza arches is gone.</p><div class="blog-media n2"><figure><a href="../media/docs/benchmarks/sponza-2026-11-12/moments-high-before-after.png" data-cap="Full frame: plane above, moments below"><img src="../media/docs/benchmarks/sponza-2026-11-12/moments-high-before-after.png" alt="Full frame: plane above, moments below" loading="lazy"></a><figcaption>Full frame: plane above, moments below</figcaption></figure><figure><a href="../media/docs/benchmarks/sponza-2026-11-12/moments-arch-before-after.png" data-cap="Right arch close-up"><img src="../media/docs/benchmarks/sponza-2026-11-12/moments-arch-before-after.png" alt="Right arch close-up" loading="lazy"></a><figcaption>Right arch close-up</figcaption></figure></div><p>A rebake replaces only the 96 visibility texels per probe; sun, sky and point-light transport stay the same. Sponza — 10,710 probes and 10.8 M triangles — rebakes in about 18 seconds on two cores.</p><p>An old plane-visibility cache renders bit-identically to before the change (maximum channel difference 0).</p><dl class="facts-list"><div><dt>Verified</dt><dd>Cloud Linux, llvmpipe GLES 3.2: High before/after captures, HDR GPU checks 1–53 pass on Linux GL.</dd></div><div><dt>Limitations</dt><dd>Moments still leak slightly through thin geometry; probes inside geometry are not relocated. MSL, Metal captures and Android are unverified.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/probe-gi.md">docs/probe-gi.md</a></div></article></li><li class="blog-post" id="2026-11-12-lighting-lightbake"><time class="blog-date mono" datetime="2026-11-12">Nov 12, 2026</time><span class="blog-dot" aria-hidden="true"></span><article class="blog-card"><div class="entry-meta"><span class="st st-done">Done</span><span>main · 91bb89d95</span></div><h2>Light baking: lightmaps and probes</h2><p class="summary">The engine&#x27;s own offline CPU path tracer writes lightmaps for static objects and terrain and a probe grid for everything that moves.</p><div class="blog-media n3"><figure><a href="../media/docs/images/lightbake_before_realtime.png" data-cap="Before: realtime only"><img src="../media/docs/images/lightbake_before_realtime.png" alt="Before: realtime only" loading="lazy"></a><figcaption>Before: realtime only</figcaption></figure><figure><a href="../media/docs/images/lightbake_after_baked.png" data-cap="After baking"><img src="../media/docs/images/lightbake_after_baked.png" alt="After baking" loading="lazy"></a><figcaption>After baking</figcaption></figure><figure><a href="../media/docs/images/lightbake_lightmap.png" data-cap="Lightmap"><img src="../media/docs/images/lightbake_lightmap.png" alt="Lightmap" loading="lazy"></a><figcaption>Lightmap</figcaption></figure></div><p>Map lights are marked mixed (stay realtime, their bounce is baked) or baked (lightmap and probes only). The runtime blends baked light with the realtime sun, like mixed lighting in Unity.</p><p>Rebakes are skipped when nothing changed: the bake stores a 64-bit hash of geometry, materials, textures, transforms, lights and settings. Available in the editor (Graphics → Light baking) and through MCP: lightbake_set, lightbake_bake, lightbake_status.</p><dl class="facts-list"><div><dt>Verified</dt><dd>Before and after frames captured by the engine.</dd></div></dl><div class=entry-links><a href="https://github.com/chromealex/AIVERSE/blob/main/docs/lightbake.md">docs/lightbake.md</a></div></article></li></ol><p class="blog-first mono">first entry: Nov 12, 2026</p><div class="lightbox" id="lightbox" role="dialog" aria-modal="true"><button type="button" id="lb-close" aria-label="×">×</button><img id="lb-img" alt=""><p id="lb-cap"></p></div>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+<script>
+(function(){var lb=document.getElementById('lightbox');if(!lb)return;var im=document.getElementById('lb-img'),cp=document.getElementById('lb-cap');
+function close(){lb.classList.remove('open');im.removeAttribute('src');}
+document.querySelectorAll('.fp-gallery a, .blog-media a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();
+im.src=a.getAttribute('href');cp.textContent=a.dataset.cap||'';lb.classList.add('open');});});
+document.getElementById('lb-close').addEventListener('click',close);lb.addEventListener('click',function(e){if(e.target===lb)close();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});})();
+</script>
+</body>
+</html>
