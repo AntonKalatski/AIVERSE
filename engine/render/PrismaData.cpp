@@ -1,4 +1,5 @@
 #include "PrismaData.h"
+#include "PrismaStylePresets.h"
 #include "graph/ShaderGraph.h"
 #include <algorithm>
 #include <cmath>
@@ -118,7 +119,13 @@ std::vector<PrismaTypeDef> buildCatalog() {
         // Stage 59 metering shapes. The old circular region remains default.
         flag("meterBox", false, "use a feathered rectangular metering region instead of the default circle", "Прямоугольная область замера"),
         num("meterHalfWidth", 0.25f, 0.01f, 0.5f, "meter rectangle half width as a fraction of viewport width", "Полуширина области"),
-        num("meterHalfHeight", 0.25f, 0.01f, 0.5f, "meter rectangle half height as a fraction of viewport height", "Полувысота области")}});
+        num("meterHalfHeight", 0.25f, 0.01f, 0.5f, "meter rectangle half height as a fraction of viewport height", "Полувысота области"),
+        // 2026-11-22: histogram percentile metering. Off keeps the weighted
+        // log-average estimator; on averages only the luminance between the
+        // two percentiles of a 64-bin histogram (ignores dark corners / sun).
+        flag("histogram", false, "meter with a 64-bin log-luminance histogram and average only between histogramLow and histogramHigh", "Замер по гистограмме"),
+        num("histogramLow", 0.5f, 0.0f, 0.99f, "fraction of darkest histogram weight ignored", "Отбросить тёмные (доля)"),
+        num("histogramHigh", 0.95f, 0.01f, 1.0f, "fraction of histogram weight below the bright cut (1 = keep the brightest)", "Верхняя граница (доля)")}});
     c.push_back({T::MotionBlur, "motionBlur", "Размытие движения", "Camera reprojection velocity and optional native object velocity texture; screen-space shutter blur.", C::Heavy, kHigh, {
         num("intensity", 0.65f, 0, 1, "shutter blend strength", "Сила"),
         num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
@@ -169,6 +176,83 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("waveLength",.8f,.1f,10,"waterline wave length, metres","Длина волн, м"),
         num("waveSpeed",1.2f,0,10,"waterline wave speed, metres per second","Скорость волн, м/с"),
         num("lensDistance",.25f,.02f,2,"distance from the camera to the lens surface the waterline is tested at, metres","Расстояние до линзы, м")}});
+    c.push_back({T::AmbientOcclusion, "ambientOcclusion", "Затенение в углах (AO)",
+        "Screen-space horizon ambient occlusion from the depth buffer (normals reconstructed from depth), "
+        "depth-aware blur, darkens creases, corners and contact areas.", C::Heavy, kMed, {
+        num("intensity", 1.0f, 0, 4, "occlusion strength", "Сила"),
+        num("radius", 1.0f, 0.05f, 20, "world-space sampling radius (metres in metre-scaled worlds)", "Радиус, м"),
+        num("power", 1.5f, 0.5f, 4, "contrast of the occlusion curve", "Контраст"),
+        num("bias", 0.03f, 0, 0.5f, "ignore nearly flat neighbours (removes self-occlusion acne)", "Смещение"),
+        num("maxDistance", 300.0f, 1, 10000, "fade AO out beyond this camera distance", "Дальность"),
+        num("maxPixels", 48.0f, 4, 128, "cap of the screen radius in pixels (close-up cost limit)", "Предел радиуса, пикс."),
+        col("color", 0, 0, 0, 0, 1, "colour of occluded areas (0 = darken)", "Цвет тени")}});
+    c.push_back({T::ScreenSpaceReflections, "screenSpaceReflections", "Отражения (SSR)",
+        "Screen-space reflections ray-marched through the depth buffer. Surfaces are chosen by their reconstructed "
+        "normal (minNormalY: floors, water, wet roads), Schlick fresnel, edge and distance fade.", C::Heavy, kHigh, {
+        num("intensity", 0.6f, 0, 1, "reflection strength", "Сила"),
+        num("maxDistance", 40.0f, 1, 1000, "maximum reflected ray length in world units", "Длина луча"),
+        num("thickness", 0.6f, 0.01f, 20, "depth thickness assumed behind the depth buffer", "Толщина"),
+        num("steps", 32.0f, 8, 96, "ray-march steps (capped per quality tier)", "Шагов"),
+        num("minNormalY", 0.6f, -1, 1, "only surfaces whose world normal Y is at least this reflect (-1 = all)", "Мин. наклон (normal.y)"),
+        num("fresnel", 0.8f, 0, 1, "0 = uniform reflection, 1 = physical Schlick fresnel (grazing angles reflect more)", "Френель"),
+        num("edgeFade", 0.12f, 0.001f, 0.5f, "fade near screen edges, share of the screen", "Затухание у краёв"),
+        num("roughness", 0.0f, 0, 1, "blur of the reflection (cheap cone approximation)", "Шероховатость")}});
+    c.push_back({T::LensFlare, "lensFlare", "Блики линзы и грязь",
+        "Lens flare ghosts and halo from bright pixels (sun, lamps, explosions) with chromatic fringe, plus lens dirt "
+        "that brightens flare and bloom (dirt texture or procedural smudges).", C::Heavy, kMed, {
+        num("intensity", 0.6f, 0, 4, "flare strength", "Сила"),
+        num("threshold", 1.0f, 0, 64, "brightness that makes ghosts (HDR radiance; LDR display brightness)", "Порог"),
+        num("ghosts", 4.0f, 1, 8, "number of ghosts", "Призраков"),
+        num("ghostSpacing", 0.35f, 0, 1, "distance between ghosts", "Шаг призраков"),
+        num("halo", 0.4f, 0, 2, "halo ring strength", "Ореол"),
+        num("haloWidth", 0.45f, 0, 1, "halo ring radius", "Радиус ореола"),
+        num("chromatic", 0.5f, 0, 1, "colour fringe of ghosts", "Цветная кайма"),
+        col("tint", 1, 0.95f, 0.9f, 0, 2, "flare colour", "Цвет"),
+        num("dirt", 0.6f, 0, 4, "lens dirt strength (multiplies flare and bloom)", "Грязь на линзе"),
+        {"dirtTexture", K::Text, {0, 0, 0}, 0, 0, "optional dirt image in the game folder (PNG); empty = procedural smudges", "Текстура грязи"}}});
+    c.push_back({T::Smaa, "smaa", "Сглаживание SMAA",
+        "SMAA 1x morphological anti-aliasing (luma edges, area-texture blending, corner rounding). Sharper than FXAA; "
+        "runs on the final image, replaces FXAA when both are listed.", C::Heavy, kMed, {
+        num("threshold", 0.1f, 0.02f, 0.5f, "edge detection threshold (lower = more edges)", "Порог краёв"),
+        num("searchSteps", 16.0f, 4, 32, "maximum edge search steps (capped per tier)", "Шагов поиска"),
+        num("cornerRounding", 0.25f, 0, 1, "rounding of sharp corners", "Скругление углов")}});
+    c.push_back({T::LensDistortion, "lensDistortion", "Искажение линзы",
+        "Barrel / pincushion lens distortion and Panini projection (keeps verticals straight, reduces wide-FOV "
+        "stretching at the edges).", C::Cheap, kLow, {
+        num("distortion", 0.0f, -1, 1, "+ barrel, - pincushion", "Бочка / подушка"),
+        num("panini", 0.0f, 0, 1, "Panini projection amount (0 = rectilinear, 1 = full cylindrical)", "Panini"),
+        num("scale", 1.0f, 0.5f, 2, "zoom to hide the black edges", "Масштаб"),
+        num("chromatic", 0.0f, 0, 1, "colour fringe that grows with distortion", "Цветная кайма")}});
+    c.push_back({T::AnamorphicStreaks, "anamorphicStreaks", "Анаморфные блики",
+        "Long horizontal light streaks from bright pixels (anamorphic lens look).", C::Heavy, kMed, {
+        num("intensity", 0.5f, 0, 4, "streak strength", "Сила"),
+        num("threshold", 1.0f, 0, 64, "brightness that makes streaks", "Порог"),
+        num("length", 0.6f, 0, 1, "streak length", "Длина"),
+        col("tint", 0.45f, 0.65f, 1.3f, 0, 2, "streak colour", "Цвет")}});
+    c.push_back({T::Halation, "halation", "Халация (плёнка)",
+        "Film halation: a warm red-orange glow bleeding around bright edges.", C::Medium, kMed, {
+        num("intensity", 0.4f, 0, 2, "glow strength", "Сила"),
+        num("threshold", 0.6f, 0, 64, "brightness that halates", "Порог"),
+        num("radius", 0.5f, 0, 1, "glow radius", "Радиус"),
+        col("tint", 1.0f, 0.32f, 0.12f, 0, 2, "glow colour", "Цвет")}});
+    c.push_back({T::HeatHaze, "heatHaze", "Марево и ударные волны",
+        "Shimmering heat haze (animated refraction, optionally only in the lower part of the screen) and screen "
+        "distortion of explosion shockwaves sent by the game (Prisma::setShockwaves).", C::Medium, kLow, {
+        num("amplitude", 2.5f, 0, 16, "haze displacement in output pixels (0 = only shockwaves)", "Амплитуда, пикс."),
+        num("scale", 40.0f, 1, 200, "haze ripple frequency across the screen", "Частота"),
+        num("speed", 1.0f, 0, 10, "haze animation speed", "Скорость"),
+        num("screenTop", 1.0f, 0, 1, "haze only below this screen height (1 = whole screen, 0.4 = lower 40%)", "Верх области"),
+        num("shockwaveStrength", 1.0f, 0, 4, "multiplier of shockwave distortion", "Сила ударных волн")}});
+    c.push_back({T::Fsr, "fsr", "Апскейл FSR 1",
+        "AMD FidelityFX Super Resolution 1: 3D renders at renderScale, EASU edge-adaptive upscale + RCAS sharpening "
+        "to the output size. Spatial (no history); TemporalResolve upscaling takes priority when active.", C::Medium, kMed, {
+        num("renderScale", 0.67f, 0.5f, 1.0f, "internal 3D resolution share (0.67 = Quality, 0.59 = Balanced, 0.5 = Performance)", "Масштаб 3D-рендера"),
+        num("sharpness", 0.8f, 0, 1, "RCAS sharpening (1 = maximum)", "Резкость")}});
+    c.push_back({T::Dlss, "dlss", "Апскейл DLSS",
+        "NVIDIA DLSS through an external upscaler registered by the host (Prisma::setExternalUpscaler; needs the "
+        "NVIDIA NGX SDK, Windows + Vulkan, RTX GPU). Without it the effect reports why and FSR / TemporalResolve are used.", C::Heavy, kHigh, {
+        num("renderScale", 0.67f, 0.33f, 1.0f, "internal 3D resolution share (0.67 Quality, 0.58 Balanced, 0.5 Performance, 0.33 Ultra Performance)", "Масштаб 3D-рендера"),
+        num("sharpness", 0.0f, 0, 1, "DLSS sharpening", "Резкость")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -459,8 +543,20 @@ const std::vector<PrismaPreset>& prismaPresets() {
          R"([{"type":"colorGrade","saturation":0,"exposure":0.8,"filter":[0.35,1.0,0.35]},{"type":"grain","intensity":0.22},{"type":"vignette","intensity":0.6,"softness":0.3}])"},
         {"clean", "Чистая картинка", "anti-aliasing and light sharpening",
          R"([{"type":"fxaa"},{"type":"sharpen","amount":0.25}])"},
+        {"lens", "Объектив", "cinematic lens: flare ghosts with lens dirt, anamorphic streaks, film halation, light barrel distortion",
+         R"([{"type":"bloom","intensity":0.6,"threshold":0.8},{"type":"lensFlare","intensity":0.5,"dirt":0.8},
+             {"type":"anamorphicStreaks","intensity":0.35},{"type":"halation","intensity":0.3},
+             {"type":"lensDistortion","distortion":0.08,"scale":1.04,"chromatic":0.3},{"type":"vignette","intensity":0.3}])"},
+        {"realistic", "Реализм", "screen-space AO and reflections, SMAA, soft bloom (desktop)",
+         R"([{"type":"ambientOcclusion","intensity":1.0},{"type":"screenSpaceReflections","intensity":0.5},
+             {"type":"smaa"},{"type":"bloom","intensity":0.45,"threshold":0.9}])"},
     };
-    return p;
+    static const std::vector<PrismaPreset> all = [] {
+        std::vector<PrismaPreset> v = p;
+        for (const auto& style : prisma::kStylePresets) v.push_back({style.id, style.label, style.help, style.effectsJson});
+        return v;
+    }();
+    return all;
 }
 const PrismaPreset* prismaPreset(const std::string& id) {
     for (auto& p : prismaPresets()) if (id == p.id) return &p;
@@ -490,6 +586,29 @@ ShaftsPlan shaftsPlan(PrismaQuality t) {
     if (t == PrismaQuality::High) return {2, 32};
     if (t == PrismaQuality::Medium) return {4, 24};
     return {4, 16};
+}
+
+AoPlan aoPlan(PrismaQuality t) {
+    if (t == PrismaQuality::High) return {2, 4, 6};
+    if (t == PrismaQuality::Medium) return {2, 3, 4};
+    return {2, 2, 3};
+}
+SsrPlan ssrPlan(PrismaQuality t) {
+    if (t == PrismaQuality::High) return {1, 96, 5};
+    if (t == PrismaQuality::Medium) return {2, 32, 3};
+    return {2, 16, 2};
+}
+FlarePlan flarePlan(PrismaQuality t) { return t == PrismaQuality::High ? FlarePlan{2, 2} : FlarePlan{4, 1}; }
+StreakPlan streakPlan(PrismaQuality t) { return t == PrismaQuality::High ? StreakPlan{4, 4} : StreakPlan{4, 3}; }
+int smaaSearchSteps(PrismaQuality t) { return t == PrismaQuality::High ? 32 : t == PrismaQuality::Medium ? 16 : 8; }
+std::pair<int, int> prismaScaledRenderSize(int w, int h, float scale) {
+    w = std::max(w, 1); h = std::max(h, 1);
+    if (!std::isfinite(scale)) scale = 1.0f;
+    scale = std::clamp(std::round(std::clamp(scale, 0.25f, 1.0f) * 16.0f) / 16.0f, 0.25f, 1.0f);
+    if (scale >= 0.999f) return {w, h};
+    const int rw = std::clamp(int(std::lround(double(w) * scale)), std::min(w, 32), w);
+    const int rh = std::clamp(int(std::lround(double(h) * scale)), std::min(h, 32), h);
+    return {rw, rh};
 }
 
 PrismaWork prismaBaseWork() { return {1.6f, 1}; }
@@ -522,6 +641,44 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
         const float scale=std::clamp(e.get("renderScale"),0.5f,1.0f);
         return {12.0f+4.0f*scale*scale,2};
     }
+    case T::AmbientOcclusion: {
+        // AO buffer (directions x steps depth taps + 5 for the normal) at size/div^2,
+        // then a 9-tap depth-aware blur + apply at full size.
+        const AoPlan a = aoPlan(tier);
+        const float q = 1.0f / float(a.div * a.div);
+        return {q * float(5 + a.directions * a.steps) + 12.0f, 2};
+    }
+    case T::ScreenSpaceReflections: {
+        const SsrPlan r = ssrPlan(tier);
+        const float steps = std::min(e.get("steps"), float(r.maxSteps));
+        const float q = 1.0f / float(r.div * r.div);
+        // Marching usually ends early (no hit / off screen): count half the steps.
+        return {q * (6.0f + steps * 0.5f + float(r.refine)) + (r.div > 1 ? 3.0f : 0.0f), r.div > 1 ? 2 : 1};
+    }
+    case T::LensFlare: {
+        const FlarePlan f = flarePlan(tier);
+        const float q = 1.0f / float(f.div * f.div);
+        return {q * (4.0f + 3.0f * std::max(1.0f, e.get("ghosts")) + 5.0f * float(f.blurPasses) * 2.0f) + 1.2f,
+                2 + 2 * f.blurPasses};
+    }
+    case T::Smaa: return {14.0f, 3};
+    case T::LensDistortion: return {0.1f, 0};
+    case T::AnamorphicStreaks: {
+        const StreakPlan p = streakPlan(tier);
+        const float q = 1.0f / float(p.div * p.div * 2);
+        return {q * (4.0f + 5.0f * float(p.passes)) + 1.0f, 1 + p.passes};
+    }
+    case T::Halation: {
+        const float q = 0.25f;
+        return {q * (4.0f + 10.0f) + 1.0f, 3};
+    }
+    case T::HeatHaze: return {1.0f, 0};
+    case T::Fsr: {
+        // EASU: 12 taps per OUTPUT pixel, RCAS: 5 taps. Saves the 3D scene cost,
+        // which this model does not count; see note in the report.
+        return {17.0f, 2};
+    }
+    case T::Dlss: return {8.0f, 2}; // placeholder: external upscaler cost is not modelled
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel

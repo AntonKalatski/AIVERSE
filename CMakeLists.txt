@@ -1313,6 +1313,19 @@ if(AIVERSE_MOCK_PLUGINS)
     target_compile_definitions(aiverse_plugins PUBLIC AIVERSE_WITH_MOCK_PLUGINS=1)
 endif()
 
+# NVIDIA DLSS for the PRISMA "dlss" effect (engine/render/PrismaDlss.h): only with the user's
+# own NGX SDK, never vendored (proprietary). Windows + Vulkan backend.
+set(AIVERSE_DLSS_SDK_DIR "" CACHE PATH "NVIDIA DLSS SDK folder (include/, lib/Windows_x86_64/); empty = no DLSS")
+set(AIVERSE_WITH_DLSS OFF)
+if(AIVERSE_DLSS_SDK_DIR AND WIN32 AND AIVERSE_VULKAN)
+    list(APPEND AIVERSE_RUNTIME_SRC engine/render/PrismaDlssNgx.cpp)
+    set(AIVERSE_WITH_DLSS ON)
+else()
+    if(AIVERSE_DLSS_SDK_DIR)
+        message(WARNING "AIVERSE_DLSS_SDK_DIR is set, but DLSS needs Windows and AIVERSE_VULKAN=ON; building without it")
+    endif()
+    list(APPEND AIVERSE_RUNTIME_SRC engine/render/PrismaDlssStub.cpp)
+endif()
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
 # Packaged clients link an archive of the runtime objects. The linker extracts
 # only translation units needed by the client, while editor and test targets
@@ -1336,6 +1349,17 @@ if(AIVERSE_VULKAN)
 endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
+if(AIVERSE_WITH_DLSS)
+    find_library(AIVERSE_NGX_LIBRARY NAMES nvsdk_ngx_d nvsdk_ngx_s
+        PATHS "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/x64" "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/x86_64"
+        NO_DEFAULT_PATH)
+    if(NOT AIVERSE_NGX_LIBRARY)
+        message(FATAL_ERROR "AIVERSE_DLSS_SDK_DIR: nvsdk_ngx_d.lib not found under ${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64")
+    endif()
+    target_include_directories(aiverse_runtime PUBLIC "${AIVERSE_DLSS_SDK_DIR}/include")
+    target_compile_definitions(aiverse_runtime PUBLIC AIVERSE_HAS_DLSS=1)
+    target_link_libraries(aiverse_runtime PUBLIC "${AIVERSE_NGX_LIBRARY}")
+endif()
 if(AIVERSE_TEXTURE_WITH_LIBKTX)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_texture_libktx)
 endif()
@@ -2844,6 +2868,17 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_prisma_volume_tests tests/render/prisma_volume.cpp)
     target_link_libraries(aiverse_prisma_volume_tests PRIVATE aiverse_postfx_data)
     add_test(NAME prisma_volume COMMAND aiverse_prisma_volume_tests)
+    # 2026-11-22 effects (AO, SSR, lens flare, SMAA, distortion, streaks, halation, haze,
+    # FSR 1, DLSS route, histogram metering, stylization graphs): GPU-free contract test.
+    add_executable(aiverse_prisma_new_effects_tests tests/render/prisma_new_effects.cpp)
+    target_link_libraries(aiverse_prisma_new_effects_tests PRIVATE aiverse_postfx_data)
+    add_test(NAME prisma_new_effects COMMAND aiverse_prisma_new_effects_tests)
+    set_tests_properties(prisma_new_effects PROPERTIES LABELS "Prisma")
+    if(Python3_EXECUTABLE)
+        add_test(NAME prisma_style_presets_fresh COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/prisma/make_style_presets.py --check)
+        set_tests_properties(prisma_style_presets_fresh PROPERTIES LABELS "Prisma")
+    endif()
 endif()
 
 if(AIVERSE_BUILD_TESTS)
@@ -2884,7 +2919,7 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(li
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
         set_tests_properties(lighting_compute_gi_scroll_vulkan PROPERTIES
             ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1")
-        foreach(_fx dof motion)
+        foreach(_fx dof motion ao ssr flare smaa distort streaks halation haze fsr histogram)
             add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
             set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
                 LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
@@ -4716,7 +4751,9 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
     # PRISMA Depth of Field and Motion Blur: regular effects (no opt-in flag).
-    foreach(_fx dof motion)
+    # 2026-11-22: AO, SSR, lens flare, SMAA, lens distortion, streaks, halation, heat haze,
+    # FSR 1 and histogram metering (tests/render/PrismaEffectsScene.h, prismaNewEffect).
+    foreach(_fx dof motion ao ssr flare smaa distort streaks halation haze fsr histogram)
         add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
         set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
             LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
@@ -4803,4 +4840,12 @@ option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
 if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
     add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
+endif()
+
+# DLSS runtime library next to the client (the SDK ships it as lib/Windows_x86_64/rel/nvngx_dlss.dll).
+if(AIVERSE_WITH_DLSS AND TARGET aiverse_client)
+    add_custom_command(TARGET aiverse_client POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${AIVERSE_DLSS_SDK_DIR}/lib/Windows_x86_64/rel/nvngx_dlss.dll" "$<TARGET_FILE_DIR:aiverse_client>"
+        COMMENT "Copying nvngx_dlss.dll")
 endif()
