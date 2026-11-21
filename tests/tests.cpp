@@ -3,6 +3,7 @@
 #include "engine/render/NativeMeshBatch.h"
 #include "engine/render/FramePublicationEpoch.h"
 #include "engine/render/CameraModelSnapshot.h"
+#include "engine/render/CameraPostFxPool.h"
 #include "engine/render/OwnerPrepareCommit.h"
 #include <cstdlib>
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
@@ -16609,6 +16610,66 @@ TEST(lens_topology_preparation_budget_rejects_before_gpu_and_recovers) {
         renderer.render(gfx::PassDesc{});
         terrain.shutdown(dev);renderer.shutdown();
     }
+}
+
+// LENS P2: a CameraLensComponent with driveExposure / driveDepthOfField pushes
+// that camera's PRISMA manual EV and defocus override; values change only when
+// the lens changes and are cleared when the drive is switched off.
+TEST(lens_physical_lens_drives_prisma_exposure_and_dof) {
+    {   // PRISMA per-view override API on its own (no device needed).
+        render::Prisma post;
+        render::Prisma::DepthOfFieldOverride in{};
+        in.focusDistance=5000.f;in.focusRangeMeters=NAN;in.maxBlur=-3.f;
+        post.setViewDepthOfField(9,in);
+        render::Prisma::DepthOfFieldOverride got{};
+        CHECK(post.viewDepthOfField(9,got));
+        CHECK(got.focusDistance==2000.f && got.focusRangeMeters==4.f && got.maxBlur==0.f);
+        CHECK(!post.viewDepthOfField(10,got));
+        post.retireView(9);
+        CHECK(!post.viewDepthOfField(9,got));
+        post.setViewDepthOfField(3,render::Prisma::DepthOfFieldOverride{false,10.f,2.f,4.f});
+        CHECK(post.viewDepthOfField(3,got) && !got.enabled);
+        post.clearViewDepthOfField(3);
+        CHECK(!post.viewDepthOfField(3,got));
+    }
+    entityfxtest::RecordingDevice dev;
+    World world;
+    const Entity cam=world.create();
+    world.add<WorldTransform>(cam,hierarchy_detail::root({}));
+    world.add<CameraComponent>(cam,CameraComponent{});
+    CameraLensComponent lens;lens.driveExposure=true;lens.driveDepthOfField=true;
+    lens.shutterSeconds=lens.shutterSeconds*2_fx;   // +1 stop vs the default lens
+    world.add<CameraLensComponent>(cam,lens);
+    render::CameraPostFxPool pool;
+    CHECK(pool.init(dev));
+    pool.configure(render::PostFxSettings{},render::PostFxQuality::High,false);
+    pool.bindWorld(world);
+    render::EcsCameraView view;
+    CHECK(render::resolveEcsCamera(world,cam,view));
+    pool.prepare(view,1920,1080);
+    auto state=pool.lensState(cam);
+    CHECK(state.exposure && std::fabs(state.ev-1.f)<0.01f);
+    CHECK(state.depthOfField && state.dof.enabled);
+    auto* post=static_cast<render::Prisma*>(pool.get(cam));
+    CHECK(post!=nullptr);
+    render::Prisma::DepthOfFieldOverride dof{};
+    CHECK(post->viewDepthOfField(post->viewId(),dof));
+    const auto plan=render::cameraLensDofPass(render::cameraLensDepthOfField(
+        render::cameraLensValues(lens),1080));
+    CHECK(plan.valid && std::fabs(dof.focusDistance-plan.focusDistance)<1e-4f &&
+          std::fabs(dof.maxBlur-plan.maxBlurPx)<1e-4f);
+    // Invalid lens: no stale focus is kept, defocus is switched off.
+    world.get<CameraLensComponent>(cam).focusDistance=Fixed::fromRatio(1,100);
+    pool.prepare(view,1920,1080);
+    CHECK(post->viewDepthOfField(post->viewId(),dof) && !dof.enabled);
+    // Drives off: both overrides cleared, authored PRISMA settings apply again.
+    world.get<CameraLensComponent>(cam).driveExposure=false;
+    world.get<CameraLensComponent>(cam).driveDepthOfField=false;
+    pool.prepare(view,1920,1080);
+    state=pool.lensState(cam);
+    CHECK(!state.exposure && !state.depthOfField);
+    CHECK(!post->viewDepthOfField(post->viewId(),dof));
+    pool.shutdownAfterGpuIdle();
 }
 
 int main(int argc, char** argv) {

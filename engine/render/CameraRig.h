@@ -3,6 +3,7 @@
 #pragma once
 #include "EcsCameraRender.h"
 #include "../sim/CameraRigComponents.h"
+#include "CameraRailPath.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -25,6 +26,7 @@ inline float3 cameraEcsPos(Vec3 value,Vec3 origin={}) {
             float((value.z-origin.z).toDouble())};
 }
 inline float3 cameraRailPosition(const CameraRailComponent& rail,double seconds) {
+    if(!cameraRailIsLegacy(rail))return cameraRailSample(rail,seconds).position;
     const int count=std::min<int>(rail.count,int(rail.points.size()));
     if (count<=0) return {};
     if (count==1) return cameraEcsPos(rail.points[0]);
@@ -104,12 +106,17 @@ public:
                 if(const auto* rail=world.tryGetConst<CameraRailComponent>(view.entity);
                    rail && rail->count) {
                     desired=cameraRailPosition(*rail,seconds)-cameraEcsPos(renderOrigin);
-                    const float3 next=cameraRailPosition(*rail,seconds+.016);
                     if(rig->trackTarget && rig->target.valid()) {
                         if (const auto* xf=world.tryGetConst<WorldTransform>(rig->target))
                             orientation=cameraLookRotation(desired,cameraEcsPos(xf->position,renderOrigin));
-                    } else if(length(next-(desired+cameraEcsPos(renderOrigin)))>1.e-4f)
-                        orientation=cameraLookRotation(desired,next-cameraEcsPos(renderOrigin));
+                    } else if(cameraRailIsLegacy(*rail)) {
+                        const float3 next=cameraRailPosition(*rail,seconds+.016);
+                        if(length(next-(desired+cameraEcsPos(renderOrigin)))>1.e-4f)
+                            orientation=cameraLookRotation(desired,next-cameraEcsPos(renderOrigin));
+                    } else if(const auto sample=cameraRailSample(*rail,seconds);
+                              length(sample.tangent)>0.5f) {
+                        orientation=cameraLookRotation(desired,desired+sample.tangent);
+                    }
                 }
             }
         }
@@ -122,15 +129,12 @@ public:
         float3 position=s.pos;
         quat rotation=s.rotation;
         if (const auto* shake=world.tryGetConst<CameraShakeComponent>(view.entity)) {
-            const double age=seconds-shake->startTime.toDouble();
-            const double duration=shake->duration.toDouble();
-            if (age>=0 && age<duration && duration>0) {
-                const float fade=float(1.0-age/duration);
-                const float phase=float(age*shake->frequency.toDouble()*6.28318530718);
-                const float move=float(shake->positionAmplitude.toDouble())*fade;
-                const float turn=float(shake->rotationAmplitude.toDouble())*fade;
-                position+=float3{std::sin(phase),std::sin(phase*.83f),std::cos(phase*1.23f)}*move;
-                rotation=qnormalize(rotation*quat::axisAngle({0,0,1},std::sin(phase*.71f)*turn));
+            if (const auto offset=cameraShakeOffset(*shake,seconds); offset.active) {
+                position+=offset.position;
+                // Local yaw (Y), pitch (X), roll (Z); the sine style only rolls.
+                rotation=qnormalize(rotation*quat::axisAngle({0,1,0},offset.rotation.y)*
+                                    quat::axisAngle({1,0,0},offset.rotation.x)*
+                                    quat::axisAngle({0,0,1},offset.rotation.z));
             }
         }
         view.camera.setPose(position,rotation);

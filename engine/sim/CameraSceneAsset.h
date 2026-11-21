@@ -109,7 +109,37 @@ inline Json cameraSceneToJson(const World& world) {
             j.set("fNumber",Json::number(lens->fNumber));
             j.set("focusDistance",Json::number(lens->focusDistance));
             j.set("shutterSeconds",Json::number(lens->shutterSeconds));
-            j.set("iso",Json::number(lens->iso));item.set("lens",std::move(j));
+            j.set("iso",Json::number(lens->iso));
+            j.set("driveExposure",Json::fromBool(lens->driveExposure));
+            j.set("driveDepthOfField",Json::fromBool(lens->driveDepthOfField));
+            j.set("exposureCompensation",Json::number(lens->exposureCompensation));
+            j.set("circleOfConfusionMm",Json::number(lens->circleOfConfusionMm));
+            item.set("lens",std::move(j));
+        }
+        if(const auto* rail=world.tryGetConst<CameraRailComponent>(entity)){
+            Json j=Json::object(),points=Json::array();
+            const int count=std::min<int>(rail->count,int(rail->points.size()));
+            for(int i=0;i<count;++i)points.push(cameraVecJson(rail->points[size_t(i)]));
+            j.set("points",std::move(points));
+            j.set("duration",Json::number(rail->duration));
+            j.set("loop",Json::fromBool(rail->loop));
+            j.set("interpolation",Json::string(
+                rail->interpolation==CameraRailInterpolation::CatmullRom?"catmullRom":"linear"));
+            j.set("constantSpeed",Json::fromBool(rail->constantSpeed));
+            j.set("ease",Json::string(rail->ease==CameraRailEase::InOut?"inOut":"none"));
+            item.set("rail",std::move(j));
+        }
+        if(const auto* shake=world.tryGetConst<CameraShakeComponent>(entity)){
+            Json j=Json::object();
+            j.set("positionAmplitude",Json::number(shake->positionAmplitude));
+            j.set("rotationAmplitude",Json::number(shake->rotationAmplitude));
+            j.set("frequency",Json::number(shake->frequency));
+            j.set("startTime",Json::number(shake->startTime));
+            j.set("duration",Json::number(shake->duration));
+            j.set("style",Json::string(shake->style==CameraShakeStyle::Noise?"noise":"sine"));
+            j.set("seed",Json::number(int64_t(shake->seed)));
+            j.set("fadeExponent",Json::number(shake->fadeExponent));
+            item.set("shake",std::move(j));
         }
         cameras.push(std::move(item));
     });
@@ -135,6 +165,9 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         CameraRigComponent rig{};
         CameraLensComponent lens{};
         CameraNameComponent name{};
+        bool hasRail=false, hasShake=false;
+        CameraRailComponent rail{};
+        CameraShakeComponent shake{};
     };
     std::vector<Item> items;
     std::unordered_set<uint64_t> ids;
@@ -209,6 +242,53 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
             it.lens.focusDistance=lens.getFx("focusDistance",it.lens.focusDistance);
             it.lens.shutterSeconds=lens.getFx("shutterSeconds",it.lens.shutterSeconds);
             it.lens.iso=lens.getFx("iso",it.lens.iso);
+            it.lens.driveExposure=lens.getBool("driveExposure");
+            it.lens.driveDepthOfField=lens.getBool("driveDepthOfField");
+            it.lens.exposureCompensation=lens.getFx("exposureCompensation");
+            it.lens.circleOfConfusionMm=lens.getFx("circleOfConfusionMm");
+            if(it.lens.circleOfConfusionMm<0_fx)return fail("Invalid lens circle of confusion");
+        }
+        const Json& rail=input["rail"];
+        if(rail.isObject()) {
+            const Json& points=rail["points"];
+            if(!points.isArray()||points.size()>it.rail.points.size())
+                return fail("Camera rail needs at most 8 points");
+            for(size_t i=0;i<points.size();++i) {
+                if(!points[i].isArray()||points[i].size()!=3)return fail("Invalid camera rail point");
+                it.rail.points[i]=cameraVecFromJson(points[i]);
+            }
+            it.rail.count=uint8_t(points.size());
+            it.rail.duration=rail.getFx("duration",it.rail.duration);
+            if(it.rail.duration<=0_fx)return fail("Camera rail duration must be positive");
+            it.rail.loop=rail.getBool("loop");
+            const std::string interp=rail.getStr("interpolation","linear");
+            if(interp!="linear"&&interp!="catmullRom")return fail("Unknown camera rail interpolation");
+            it.rail.interpolation=interp=="catmullRom"?CameraRailInterpolation::CatmullRom:
+                                                       CameraRailInterpolation::Linear;
+            it.rail.constantSpeed=rail.getBool("constantSpeed");
+            const std::string ease=rail.getStr("ease","none");
+            if(ease!="none"&&ease!="inOut")return fail("Unknown camera rail ease");
+            it.rail.ease=ease=="inOut"?CameraRailEase::InOut:CameraRailEase::None;
+            it.hasRail=true;
+        }
+        const Json& shake=input["shake"];
+        if(shake.isObject()) {
+            it.shake.positionAmplitude=shake.getFx("positionAmplitude");
+            it.shake.rotationAmplitude=shake.getFx("rotationAmplitude");
+            it.shake.frequency=shake.getFx("frequency",it.shake.frequency);
+            it.shake.startTime=shake.getFx("startTime");
+            it.shake.duration=shake.getFx("duration");
+            it.shake.fadeExponent=shake.getFx("fadeExponent",it.shake.fadeExponent);
+            const std::string style=shake.getStr("style","sine");
+            if(style!="sine"&&style!="noise")return fail("Unknown camera shake style");
+            it.shake.style=style=="noise"?CameraShakeStyle::Noise:CameraShakeStyle::Sine;
+            const int64_t seed=shake.getInt("seed");
+            if(seed<0||seed>int64_t(UINT32_MAX))return fail("Invalid camera shake seed");
+            it.shake.seed=uint32_t(seed);
+            if(it.shake.positionAmplitude<0_fx||it.shake.rotationAmplitude<0_fx||
+               it.shake.frequency<0_fx||it.shake.duration<0_fx||it.shake.fadeExponent<0_fx)
+                return fail("Invalid camera shake values");
+            it.hasShake=true;
         }
         items.push_back(std::move(it));
     }
@@ -225,6 +305,8 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         world.add<CameraStackComponent>(entity,c.stack);
         world.add<CameraRigComponent>(entity,c.rig);
         world.add<CameraLensComponent>(entity,c.lens);
+        if(c.hasRail)world.add<CameraRailComponent>(entity,c.rail);
+        if(c.hasShake)world.add<CameraShakeComponent>(entity,c.shake);
         if(created)created->push_back(entity);
     }
     hierarchy.update(world);

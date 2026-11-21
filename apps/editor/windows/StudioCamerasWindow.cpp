@@ -7,6 +7,7 @@
 #include "engine/render/CameraCaptureViews.h"
 #include "engine/render/EcsCameraRender.h"
 #include "engine/render/CameraRig.h"
+#include "engine/render/CameraLensPhysics.h"
 #include "engine/render/CameraFrameRecorder.h"
 #include <algorithm>
 #include <cmath>
@@ -176,6 +177,29 @@ public:
             editPositive("Focus Distance",lens->focusDistance,.05f,.01f,100000.f);
             editPositive("Shutter (s)",lens->shutterSeconds,.0001f,.00001f,60.f);
             editPositive("ISO",lens->iso,1.f,1.f,204800.f);
+            ImGui::Checkbox("Lens Drives Exposure",&lens->driveExposure);
+            float comp=float(lens->exposureCompensation.toDouble());
+            if(ImGui::DragFloat("Exposure Compensation (EV)",&comp,.05f,-8.f,8.f))
+                lens->exposureCompensation=fixedFromUi(std::clamp(comp,-8.f,8.f));
+            ImGui::Checkbox("Lens Drives Depth of Field",&lens->driveDepthOfField);
+            float coc=float(lens->circleOfConfusionMm.toDouble());
+            if(ImGui::DragFloat("Circle of Confusion (mm, 0 = auto)",&coc,.001f,0.f,1.f,"%.3f"))
+                lens->circleOfConfusionMm=fixedFromUi(std::clamp(coc,0.f,1.f));
+            const auto values=render::cameraLensValues(*lens);
+            if(render::cameraLensValuesValid(values)) {
+                ImGui::TextDisabled("EV100 %.2f, exposure %+.2f stops",
+                    render::cameraLensEV100(values),
+                    render::cameraLensExposureStops(values,lens->exposureCompensation.toDouble()));
+                const auto dof=render::cameraLensDepthOfField(values,1080);
+                if(dof.valid) {
+                    if(dof.farInfinite)
+                        ImGui::TextDisabled("Sharp %.2f m .. infinity (hyperfocal %.2f m)",
+                            dof.nearMetres,dof.hyperfocalMetres);
+                    else
+                        ImGui::TextDisabled("Sharp %.2f .. %.2f m (hyperfocal %.2f m)",
+                            dof.nearMetres,dof.farMetres,dof.hyperfocalMetres);
+                }
+            }
         }
         if(output->kind==CameraOutputKind::Texture) {
             ImGui::Separator();
