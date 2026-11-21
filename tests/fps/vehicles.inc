@@ -1,6 +1,6 @@
 // fps.vehicleTypes: typed vehicles over vehicle-controllers (controller, seats, collision, passengers firing, saves).
 void typedVehicles(const std::string& root) {
-    auto types=Json::parseFile(root+"/../../libraries/genre/vehicles-sports/vehicles.json");
+    auto types=Json::parseFile(root+"/../../libraries/mechanics/vehicles-sports/vehicles.json");
     auto rules=Json::parse(R"({"fps":{"tickRate":20,"mode":"deathmatch","mechanics":{"enabled":true}}})");
     Json only=Json::object();Json list=Json::array();list.push(types["vehicles"][0]);only.set("vehicles",list);
     rules.member("fps").set("vehicleTypes",only);

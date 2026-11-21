@@ -4,7 +4,7 @@
 // driver plus passengers / gunners through the package's seats. Legacy vehicles (no type) are untouched.
 // Passengers and gunners may shoot; the driver steers. A destroyed vehicle kills its occupants.
 #include "FpsModule.h"
-#include "libraries/include/aiverselib/genre/VehiclePersistence.h"
+#include "libraries/include/aiverselib/mechanics/VehiclePersistence.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
 namespace aiverse::fps {

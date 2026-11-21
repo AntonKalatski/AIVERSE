@@ -4,7 +4,7 @@
 // No GPU handle or renderer state is stored in the authoritative ECS World.
 #pragma once
 
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 #include <string>
 #include <utility>
 #include <vector>

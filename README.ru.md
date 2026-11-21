@@ -107,7 +107,7 @@ MCP-сервер, через которые с проектом работает
 | **Любая мобильная игра** | `aiverse::meta` и LiveOps, обучение, экраны интерфейса, плагины сторов и рекламы |
 
 Гонки, спорт и транспорт пока в [плане](docs/genre-mechanics-roadmap.md). Полный список библиотек —
-[`libraries/catalog.json`](libraries/catalog.json) и [жанровые пакеты](docs/genre-packages.md).
+[`libraries/catalog.json`](libraries/catalog.json) и [жанровые пакеты](docs/mechanics-packages.md).
 
 ---
 
@@ -295,7 +295,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 |---|---|
 | [**Подробный обзор**](docs/ru/overview.md) | все подсистемы, сборка, платформы, CI, релизы |
 | [Формат игры](docs/game-format.md) | `game.json`, `rules.json`, карты и все блоки данных |
-| [Жанровые пакеты](docs/genre-packages.md) · [Библиотеки](docs/libraries.md) | механики для любого жанра |
+| [Жанровые пакеты](docs/mechanics-packages.md) · [Библиотеки](docs/libraries.md) | механики для любого жанра |
 | [Мастер «Сделать игру»](docs/ru/game-wizard.md) | как из идеи и арта получается готовый проект |
 | [Скриптинг](docs/scripting.md) · [C++-модули](docs/native-modules.md) | когда данных не хватает |
 | [Ландшафт](docs/terrain.md) · [Планеты](docs/planets.md) · [Поиск пути](docs/pathfinding.md) | мир и движение |

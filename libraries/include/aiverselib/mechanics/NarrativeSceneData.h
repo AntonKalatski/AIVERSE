@@ -4,7 +4,7 @@
 // wrong types, duplicate IDs, unknown characters/facts/flags/chapters/nodes/consequences, broken edges and lines
 // that cannot reach an ending throw JsonError("narrative.<path>: reason"). JSON paths use array indexes
 // (nodes[0].choices[1]); definition checks after parsing use IDs (nodes[id=4].choices[id=2]).
-// The legacy story format (examples/libraries/genre/story.json: nodes with {key,minimum,maximum} conditions and
+// The legacy story format (examples/libraries/mechanics/story.json: nodes with {key,minimum,maximum} conditions and
 // {key,value,add} changes) is accepted unchanged: without a "facts" section every referenced key becomes a
 // persistent int fact over the full int64 range starting at 0, and without "scenes" scene 1 enters the first node.
 #include "NarrativeScenes.h"

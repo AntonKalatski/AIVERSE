@@ -1,7 +1,7 @@
 // Driving (agent-gta2): the top-down hero gets into a vehicle and drives it. rules "driving" (docs/driving.md).
 //
 // Vehicles are ordinary units of the types listed in driving.vehicles. Each one owns a kinematic VehicleState of the
-// vehicle-controllers library (libraries/include/aiverselib/genre/VehicleControllers.h, wheeled arcade-sim: torque
+// vehicle-controllers library (libraries/include/aiverselib/mechanics/VehicleControllers.h, wheeled arcade-sim: torque
 // curve, gears, tyre grip, handbrake, drift) in metres; this file is the collision owner the library asks for: it
 // reports the ground, sweeps the body (three circles along the car) over the map grid and other units, resolves the
 // hits (vehicleResolveCollision), turns impact speed into damage and runs pedestrians over.
@@ -20,7 +20,7 @@
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
 #include "../../engine/data/Json.h"
-#include "../../libraries/include/aiverselib/genre/VehicleControllers.h"
+#include "../../libraries/include/aiverselib/mechanics/VehicleControllers.h"
 
 namespace aiverse { class Simulation; class Hasher; class Archive; struct Command; }
 

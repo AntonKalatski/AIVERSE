@@ -7,7 +7,7 @@ a `gfx::Device`, viewport, scene rendering, and committed `World`.
 
 ## Native project integration
 
-1. Include `<aiverselib/genre/SpectraFX.h>` from your project's native
+1. Include `<aiverselib/mechanics/SpectraFX.h>` from your project's native
    renderer module; link `AIVERSE::spectrafx`.
 2. Define an effect in `GpuPoolWorld` (the sample uses `"demo_flame"`
    and passes a compiled `fx::EffectDef`). `PreferGpu` uses Metal
@@ -73,7 +73,7 @@ GPU/CPU fallback. No build or test has been run for this Stage 36 handoff.
 ## Stage 38 — interpolated poses and Device reconstruction
 
 The sample now uses `spectra::GpuEcsPoseInterpolator`, exported by
-`<aiverselib/genre/SpectraFX.h>`. The presentation thread captures fixed
+`<aiverselib/mechanics/SpectraFX.h>`. The presentation thread captures fixed
 `DemoPose` coordinates from the **committed** ECS World once per tick.
 Its `prepare(...,dt,alpha)` accepts render interpolation
 `alpha` from 0 to 1, keeps up to two committed render-pose snapshots

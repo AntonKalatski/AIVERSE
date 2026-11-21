@@ -109,7 +109,7 @@ validierbarer Konfiguration.
 | **Jedes Mobile-Spiel** | `aiverse::meta` und LiveOps, Tutorials, UI-Bildschirme, Store- und Werbe-Plugins |
 
 Rennspiele, Sport und Fahrzeuge stehen noch auf der [Roadmap](docs/genre-mechanics-roadmap.md). Vollständige
-Liste der Bibliotheken: [`libraries/catalog.json`](libraries/catalog.json) und [Genre-Pakete](docs/genre-packages.md).
+Liste der Bibliotheken: [`libraries/catalog.json`](libraries/catalog.json) und [Genre-Pakete](docs/mechanics-packages.md).
 
 ---
 
@@ -299,7 +299,7 @@ Die Referenzdokumente sind auf Englisch. Die Übersicht, der Spiel-Assistent, de
 |---|---|
 | [**Vollständige Übersicht**](docs/de/overview.md) | alle Subsysteme, Build, Plattformen, CI, Releases |
 | [Spielformat](docs/game-format.md) | `game.json`, `rules.json`, Karten und alle Datenblöcke |
-| [Genre-Pakete](docs/genre-packages.md) · [Bibliotheken](docs/libraries.md) | Mechaniken für jedes Genre |
+| [Genre-Pakete](docs/mechanics-packages.md) · [Bibliotheken](docs/libraries.md) | Mechaniken für jedes Genre |
 | [Assistent Spiel erstellen](docs/de/game-wizard.md) | wie aus Idee und Grafik ein fertiges Projekt wird |
 | [Scripting](docs/scripting.md) · [C++-Module](docs/native-modules.md) | wenn Daten nicht ausreichen |
 | [Terrain](docs/terrain.md) · [Planeten](docs/planets.md) · [Wegfindung](docs/pathfinding.md) | Welt und Bewegung |

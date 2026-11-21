@@ -147,7 +147,7 @@ layered collision navmesh, region/agent limits, the mesh exporter and actual-mat
 
 ## First cross-genre action/narrative batch
 
-See [genre-packages.md](genre-packages.md) for locomotion policies, melee combos, recoil/projectiles, round/capture
+See [mechanics-packages.md](mechanics-packages.md) for locomotion policies, melee combos, recoil/projectiles, round/capture
 rules and narrative graphs, with validated settings and native state codecs.
 
 ## Strategy runtime batch
@@ -155,7 +155,7 @@ rules and narrative graphs, with validated settings and native state codecs.
 See [strategy-libraries.md](strategy-libraries.md) for initiative/reactions, card zones/priority, Sokoban/undo/solver,
 exact big integers, affine offline progress and production networks. All six packages provide agent skills and share
 `AIVERSE::strategy`. `examples/native/strategy` and `tests/libraries/strategy_native.py` exercise real native commands,
-save/restore and a relocated source-export build. [genre-implementation.json](genre-implementation.json) tracks the
+save/restore and a relocated source-export build. [capability-status.json](capability-status.json) tracks the
 remaining audit scope.
 
 The subsequent strategy extension adds zone softlock proofs, rhythm timing, seeded runs and a bounded puzzle machine,

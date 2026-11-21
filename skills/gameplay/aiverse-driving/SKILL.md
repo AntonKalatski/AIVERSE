@@ -5,7 +5,7 @@ description: Let directly controlled characters of any AIVERSE project get into 
 
 # driving
 
-Behaviour and format: `docs/driving.md`. Simulation: `modules/rts/RtsDriving.*` (dynamics: `libraries/include/aiverselib/genre/VehicleControllers.h`, `skills/gameplay/aiverse-vehicle-controllers`). Client camera: `apps/client/ClientTopDown.cpp`. Tests: `aiverse_tests driving_`.
+Behaviour and format: `docs/driving.md`. Simulation: `modules/rts/RtsDriving.*` (dynamics: `libraries/include/aiverselib/mechanics/VehicleControllers.h`, `skills/gameplay/aiverse-vehicle-controllers`). Client camera: `apps/client/ClientTopDown.cpp`. Tests: `aiverse_tests driving_`.
 
 1. Needs directly controlled characters (rules `topDown`, legacy block name; `docs/topdown.md`). Current host: legacy
    `modules/rts` (`RtsDriving`); `modules/fps` has a second vehicle host (`FpsVehicles`, rules `fps.vehicleTypes`). Both

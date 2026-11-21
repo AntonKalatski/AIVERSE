@@ -1,7 +1,7 @@
 // FPS projectile collision/damage adapter with a single deterministic solver
 // invoked from either direct ProjectileRuntime ECS ownership or legacy vectors.
 #include "FpsModule.h"
-#include "libraries/include/aiverselib/genre/EcsSweepQuerySystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsSweepQuerySystems.h"
 #include <algorithm>
 #include <stdexcept>
 #include <utility>

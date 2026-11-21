@@ -10,11 +10,11 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 
 ## Sources of truth, in this order
 
-1. `docs/genre-implementation.json` - status of every capability area (legacy file name) (`planned` / partial / done) with
+1. `docs/capability-status.json` - status of every capability area  (`planned` / partial / done) with
    `scope`, `acceptance` and `remaining`. Quote area ids (W1, W2, S2...) in the answer.
 2. Skill catalog: `python3 tools/skills/catalog.py search <words>` (English and Russian keywords), then read
    the matching `skills/<category>/<id>/SKILL.md`. Library packages: `python3 tools/libraries/catalog.py search
-   <words>`, `libraries/catalog.json`, `docs/genre-packages.md`, `docs/libraries.md`.
+   <words>`, `libraries/catalog.json`, `docs/mechanics-packages.md`, `docs/libraries.md`.
 3. Module and subsystem docs: `docs/overview.md`, then the specific doc (table below). Each states its own
    limits ("Not added", "Limits (known)", "remaining") - copy those, do not invent them.
 4. Code when a doc is silent: `git log -1 --format=%cd` on the main checkout, then grep the module.
@@ -43,12 +43,12 @@ Use before any feasibility estimate, gap list, plan for a game or claim such as 
 
 1. Restate the target game as concrete capabilities (world, player, rules, AI, network, content, tools).
 2. For each capability run step 1-3 lookups above; record `exists` (path), `partial` (path + its stated limit)
-   or `missing` (genre-implementation id or "not tracked").
+   or `missing` (capability-status id or "not tracked").
 3. Pick the network model explicitly from the three above; justify it by player count, hidden information and
    persistence, not by habit.
 4. Report: one table capability -> status -> source path; then the real gaps ordered by risk; then what was
    not verified (platforms, performance). State the repository commit you read.
-5. If a gap is real and untracked, propose adding it to `docs/genre-implementation.json` (owner per AGENTS.md
+5. If a gap is real and untracked, propose adding it to `docs/capability-status.json` (owner per AGENTS.md
    area table) instead of only mentioning it in chat.
 
 ## Worked example: voxel sandbox (Minecraft-like), main at 2026-11-16

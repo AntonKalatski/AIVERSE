@@ -15,14 +15,14 @@ Projects on the data-driven `modules/rts` host get the whole package on real uni
 on-hit payloads, summon circles, battle deck from the map's `players[i].deck`, Lua `progression`); do not rewire it
 in game scripts.
 
-1. Read `docs/genre-packages.md` (match-progression) and the catalog entry; inspect `genre/Perks.h`,
+1. Read `docs/mechanics-packages.md` (match-progression) and the catalog entry; inspect `genre/Perks.h`,
    `genre/XpPickups.h`, `genre/Summons.h`, `genre/BattleDeck.h` for exact behaviour.
 2. Data: definitions JSON (`readPerkDefinitions`, `readSummonPoints` from `genre/PerksData.h`; example
-   `examples/libraries/genre/perks.json`): stats with clamps, perks (scope player|slot, effects stat/op/value/stage,
+   `examples/libraries/mechanics/perks.json`): stats with clamps, perks (scope player|slot, effects stat/op/value/stage,
    maxSelections, minLevel, weight, requires/excludes/units, upgrades, hook, aiPriority), units (cost, hero, initial
    perks), deck rules (maxSlots, maxSameUnit, budget, heroSlot0, choice count by tech level), xp table/curve and kill
    rewards, offer variants per level, summon points. Match start payload per player: `readBattleDeck`
-   (`examples/libraries/genre/perks-deck.json`; slot recruitable = opened && inTeam unless enforceUnlocks=false).
+   (`examples/libraries/mechanics/perks-deck.json`; slot recruitable = opened && inTeam unless enforceUnlocks=false).
    Scalars: optional `perks` section of `libraries/spec/gameplay.json` -> `perkConfig`, `pickupConfig`,
    `summonConfig`, `perkSettingsErrors` (`genre/PerksConfigured.h`). Errors are path-qualified.
 3. Start: `seedPerks(state, matchSeed)` once, `addPlayer(defs, state, deck)` per player (validates the deck and

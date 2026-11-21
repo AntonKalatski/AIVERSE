@@ -99,9 +99,9 @@ See [projectile programs](projectile-programs.md) for the JSON schema and trajec
 
 ## Battle royale (opt-in)
 
-`fps.royale` (mode `battleRoyale`) runs the [battle-royale package](genre-packages.md#battle-royale-battle-royale-010)
+`fps.royale` (mode `battleRoyale`) runs the [battle-royale package](mechanics-packages.md#battle-royale-battle-royale-010)
 on the FPS actors; a map's own `royale` block replaces the rules block. The JSON is the package format
-(`examples/libraries/genre/royale/royale.json`): `bounds`, `zone` phases, optional `flight`, `drop`, `bombardment`,
+(`examples/libraries/mechanics/royale/royale.json`): `bounds`, `zone` phases, optional `flight`, `drop`, `bombardment`,
 `supplyDrops`, `standings`. `fps.crate` lists the items a landed supply drop spawns (item IDs as in `loot`; default
 armor, two medkits, magazine, ammo). Without the block the legacy linear `zone` keeps working. `templates/fps_survival`
 uses it (`rules/royale.json`).
@@ -129,7 +129,7 @@ software GL); the zone wall and the banner have not been looked at on screen yet
 ## Typed vehicles (opt-in)
 
 `fps.vehicleTypes` (requires `mechanics.enabled`) holds [vehicle-controllers](../skills/gameplay/aiverse-vehicle-controllers/SKILL.md)
-definitions (`examples/libraries/genre/vehicles-sports/vehicles.json` format: wheeled / tracked / hover / flight
+definitions (`examples/libraries/mechanics/vehicles-sports/vehicles.json` format: wheeled / tracked / hover / flight
 controller, damage zones, seats). A map vehicle with `"type": id` (and optional `"yaw"` in turns) drives with that
 controller: the driver's forward / back become throttle / brake (reverse when stopped), right steers, Jump is the
 handbrake, pitch drives flight; the ground height under it comes from collision, static walls stop it through the
@@ -185,7 +185,7 @@ backpack levels (`rules/gear.json`) spread near the spawns and in supply crates.
 `fps.melee.enabled: true` adds an authoritative melee strike, guard, parry and lock-on.
 It is independent of `fps.mechanics`; rules without the block behave as before.
 Swing timing, input buffering, chaining and one-hit-per-target-per-swing come from the
-shared `melee-combat` library (`libraries/include/aiverselib/genre/Melee.h`).
+shared `melee-combat` library (`libraries/include/aiverselib/mechanics/Melee.h`).
 
 | Behavior | Implementation | Current limits |
 |---|---|---|

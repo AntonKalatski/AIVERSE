@@ -78,7 +78,7 @@ both violate the rule and must be reworked before merge (race rules as a shared 
 host; the skill goes to `skills/gameplay/` because the `genres` category no longer exists).
 
 ### G7. Genre names in shared code and docs (no behaviour, rename with compatibility)
-`libraries/include/aiverselib/genre/` (135 headers), namespace `aiverse::lib::genre`, target `AIVERSE::genre`,
+`libraries/include/aiverselib/mechanics/` (135 headers), namespace `aiverse::lib::genre`, target `AIVERSE::genre`,
 CMake `aiverse_native_use_genre`, `aiverse_native_use_bots(... RTS FPS)`, packages `bots-rts`, `bots-fps`,
 `genre-bots`, `genre-kits`, `lib_bots_rts`/`lib_bots_fps`, `docs/genre-packages.md`,
 `docs/genre-implementation.json`, test names `genre_*`, `ecs_cross_genre_*`.

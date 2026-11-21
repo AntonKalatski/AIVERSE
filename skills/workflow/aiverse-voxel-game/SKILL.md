@@ -34,7 +34,7 @@ Steps:
 4. Check: tests, a dedicated server run (`aiverse_voxel_server --ticks N` prints the checksum), screenshots on
    desktop and a phone profile (`skills/verification/aiverse-visual-qa`, `skills/verification/aiverse-mobile-perf`).
 
-Still missing (W1/W2 in `docs/genre-implementation.json`, list in `docs/voxel.md` "Not done"): block textures,
+Still missing (W1/W2 in `docs/capability-status.json`, list in `docs/voxel.md` "Not done"): block textures,
 models for mobs and players, dropped items, crafting UI, touch and gamepad mapping, editor template entry,
 structures generation (W3), snapshot compression.
 

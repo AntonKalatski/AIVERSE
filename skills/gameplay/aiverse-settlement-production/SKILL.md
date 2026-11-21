@@ -13,7 +13,7 @@ Not a pathfinder, renderer, inventory UI or building placement system; instant f
 fast-forward stay with `production-networks` / `offline-production`. Body temperature, weather, animals and
 renewable nodes are `survival-ecology`.
 
-1. Read `docs/genre-packages.md` (settlement-production section) and the catalog entry. Headers:
+1. Read `docs/mechanics-packages.md` (settlement-production section) and the catalog entry. Headers:
    `genre/ColonyTypes.h` (definitions, state, commands, validation), `genre/ColonyRunner.h` (`stepColony`, setup
    helpers), `genre/ColonyPower.h` (`stepPower`), `genre/ColonyData.h` (JSON), `genre/ColonyConfigured.h`,
    `genre/ColonyPersistence.h`, umbrella `genre/Colony.h`; bot: `bots/ColonyPlanner.h`, `bots/ColonyPlannerData.h`.
@@ -36,7 +36,7 @@ renewable nodes are `survival-ecology`.
 6. Persist `ColonyState` (104), `PowerGridState` (105), `bots::ColonyPlannerState` (110) with `genre::save/load`
    in dedicated NativeState keys; hash with `colonyHash`, `powerHash`, `bots::colonyPlannerHash`; bind
    `colonyDefsHash(defs)` in the save envelope. Kinds 104..111 are shared with survival-ecology.
-7. Examples: `examples/libraries/genre/production-survival` (10 colonists, 20 days, CTest
+7. Examples: `examples/libraries/mechanics/production-survival` (10 colonists, 20 days, CTest
    `library_production_survival_example`), `examples/native/libraries/ProductionSurvivalConsumer.cpp`.
    Run `tests/libraries/genre_production_survival_tests.cpp` (CTest `library_genre_production_survival`),
    `python3 tools/libraries/catalog.py check`, `generate_gameplay.py --check`.

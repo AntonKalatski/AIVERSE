@@ -12,10 +12,10 @@ partial/full mulligan), legal action lists for UI and bots, response stacks with
 It composes `card-runtime`'s zone vocabulary (`cardRuntimeZone`); keep `strategy/Cards.h` for the existing
 five-effect duel. Not a deck builder, collection, trigger/replacement language or network transport.
 
-1. Read `docs/genre-packages.md` (Cards and turn strategy section) and `libraries/include/aiverselib/genre/CardGame.h`
+1. Read `docs/mechanics-packages.md` (Cards and turn strategy section) and `libraries/include/aiverselib/mechanics/CardGame.h`
    (+ `CardGameRunner.h`).
 2. Data: `readCardLibrary(json, cardRulesFromSettings(settings))` and `readCardDecks(json, lib)`
-   (`genre/CardGameData.h`, example `examples/libraries/genre/cards-turns/duel.json`). Errors are path-qualified
+   (`genre/CardGameData.h`, example `examples/libraries/mechanics/cards-turns/duel.json`). Errors are path-qualified
    `JsonError`s (`cards.cards[3].kind: ...`, cross-field `cards.card 7.effects[0]: ...`). The optional generated
    `cardGame` settings section supplies default hand/health/turn limit and bot budget.
 3. Setup: `cardGameSetup(lib, decks, firstPlayer, sim.rng())` shuffles each deck, assigns stable instance ids in
@@ -33,7 +33,7 @@ five-effect duel. Not a deck builder, collection, trigger/replacement language o
    cards+turns range) in its own NativeState key; feed `cardGameHash(state)` into the checksum and bind
    `cardLibraryHash(lib)` in the save envelope.
 7. Example: `examples/native/libraries/CardsTurnsConsumer.cpp`, executable duel in
-   `examples/libraries/genre/cards-turns/main.cpp`. Run `tests/libraries/genre_cards_turns_tests.cpp`
+   `examples/libraries/mechanics/cards-turns/main.cpp`. Run `tests/libraries/genre_cards_turns_tests.cpp`
    (CTest `library_cards_turns`, `library_cards_turns_example`), `catalog.py check`, `generate_gameplay.py --check`.
 
 Build selection: `AIVERSE::lib_card_games` (depends on `lib_card_runtime`, `aiverse_engine`); native OBJECT

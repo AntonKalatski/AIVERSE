@@ -12,9 +12,9 @@ telegraphs as unit abilities, rules statuses, schedule, Lua events, decals); the
 owners and for planning the same mechanics as data. The rules block currently runs only on the legacy
 `modules/rts` host (debt G3 in `docs/no-genre-split-audit.md`).
 
-1. Read `docs/genre-packages.md` (boss-encounters section) and the catalog entry; inspect
-   `libraries/include/aiverselib/genre/{Telegraphs,StatusEffects,BossEncounter,BossSchedule,MobBehaviour}.h`.
-2. Data first: write one encounter JSON (`examples/libraries/genre/boss-encounter.json` is the template: statuses,
+1. Read `docs/mechanics-packages.md` (boss-encounters section) and the catalog entry; inspect
+   `libraries/include/aiverselib/mechanics/{Telegraphs,StatusEffects,BossEncounter,BossSchedule,MobBehaviour}.h`.
+2. Data first: write one encounter JSON (`examples/libraries/mechanics/boss-encounter.json` is the template: statuses,
    attacks, bosses, schedule, mob). Integers only: `...Milli` lengths/angles/multipliers, times in ticks. Validate with
    `aiverse_encounter validate <file> --json`; errors name the path (`attack 4.statuses: unknown status 9`).
 3. Tick order per owner tick: `stepStatuses` for each actor (burn damage, speed/stun) -> `stepBoss` (input HP, XZ

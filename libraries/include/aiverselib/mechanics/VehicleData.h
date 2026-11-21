@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// JSON definitions for vehicle-controllers (example: examples/libraries/genre/vehicles-sports/vehicles.json).
+// JSON definitions for vehicle-controllers (example: examples/libraries/mechanics/vehicles-sports/vehicles.json).
 // Top level: "vehicles" (id, kind wheeled|tracked|hover|flight, the kind's parameter object, zones, seats) and
 // "tracks" (id, laps, checkpoints, grid, racing line). Lengths/speeds/forces/masses are integer milli-units
 // (metres, m/s, N, kg), angles milli-turns, rpm and ticks literal integers. Omitted parameters keep the C++

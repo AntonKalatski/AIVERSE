@@ -9,7 +9,7 @@ Use when a project needs bot opponents for melee or ranged mechanics, squad/team
 Whole-side economy/army decisions are `aiverse-bots-commander`; the command-driven single-agent bot is
 `aiverse-bots-combatant`; all three may run in the same project. These policies are genre-independent and compose `combat-actions` and `weapon-policies`.
 
-1. Read `docs/genre-packages.md` (genre-bots section) and the catalog entry; inspect
+1. Read `docs/mechanics-packages.md` (genre-bots section) and the catalog entry; inspect
    `libraries/include/aiverselib/bots/{MeleeBot,ShooterBot,SquadRoles,ObjectivePolicy}.h` for exact behavior.
 2. Responsibility: decisions only. `stepMeleeBot` returns `MeleeInput` (move wish, face yaw, attack request,
    dodge + direction, guard held, lock command); `stepShooterBot` returns `ShooterInput` (view yaw/pitch, move wish,
@@ -27,7 +27,7 @@ Whole-side economy/army decisions are `aiverse-bots-commander`; the command-driv
 5. Data: optional `genreBots` section of `libraries/spec/gameplay.json` (lead uses `aimSolver`). Load with
    `readGameplaySettings`, then `bots/GenreBotConfig.h`: `meleeBotConfig`, `shooterBotConfig`, `squadConfig`,
    `objectiveWeights`, `botDifficulty`; check `genreBotSettingsErrors`. Presets: `difficultyPreset(0|1|2)`.
-   Example: `examples/libraries/genre/bot-settings.json`. Edit the spec and run
+   Example: `examples/libraries/mechanics/bot-settings.json`. Edit the spec and run
    `python3 tools/libraries/generate_gameplay.py`; never hand-edit generated files.
 6. Persist `MeleeBotState`, `ShooterBotState`, `SquadState` with `genre::save/load` (record kinds 56..58, 59..63
    reserved) via `storeBytes/loadBytes` in their own NativeState keys; fold `genreBotHash` into the simulation

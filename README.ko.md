@@ -105,7 +105,7 @@
 | **모든 모바일 게임** | `aiverse::meta`와 LiveOps, 튜토리얼, UI 화면, 스토어와 광고 플러그인 |
 
 레이싱, 스포츠, 탈것은 아직 [로드맵](docs/genre-mechanics-roadmap.md)에 있습니다. 전체 라이브러리 목록:
-[`libraries/catalog.json`](libraries/catalog.json) 및 [장르 패키지](docs/genre-packages.md).
+[`libraries/catalog.json`](libraries/catalog.json) 및 [장르 패키지](docs/mechanics-packages.md).
 
 ---
 
@@ -294,7 +294,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 |---|---|
 | [**전체 개요**](docs/ko/overview.md) | 모든 서브시스템, 빌드, 플랫폼, CI, 릴리스 |
 | [게임 포맷](docs/game-format.md) | `game.json`, `rules.json`, 맵과 모든 데이터 블록 |
-| [장르 패키지](docs/genre-packages.md) · [라이브러리](docs/libraries.md) | 모든 장르를 위한 메커닉 |
+| [장르 패키지](docs/mechanics-packages.md) · [라이브러리](docs/libraries.md) | 모든 장르를 위한 메커닉 |
 | ["게임 만들기" 마법사](docs/ko/game-wizard.md) | 아이디어와 아트가 완성된 프로젝트가 되는 과정 |
 | [스크립팅](docs/scripting.md) · [C++ 모듈](docs/native-modules.md) | 데이터로 부족할 때 |
 | [지형](docs/terrain.md) · [행성](docs/planets.md) · [길찾기](docs/pathfinding.md) | 월드와 이동 |

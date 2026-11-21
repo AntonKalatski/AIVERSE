@@ -1,6 +1,6 @@
 #pragma once
 #include <aiverselib/mechanics/Namespace.h>
-// Validated JSON level data for puzzle-solvers (example: examples/libraries/genre/puzzles/levels.json). Grids are
+// Validated JSON level data for puzzle-solvers (example: examples/libraries/mechanics/puzzles/levels.json). Grids are
 // arrays of equal-length row strings. Unknown keys, wrong types, out-of-range integers and inconsistent boards throw
 // JsonError("puzzle.<path>: ..."), where <path> starts with the caller's prefix (e.g. "puzzle.match3").
 //  match3:   {"rows":["12312","#...."], "colors":5, "specials":[{"shape":"line4|line5|corner","special":"stripe|stripeRow|

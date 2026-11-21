@@ -10,12 +10,12 @@ tackles, passes, shots, goals, throw-ins/corners/goal kicks/free kicks/penalties
 formations. Not a body controller: player movement, animation and collision belong to the owner (or
 `character-locomotion`); the scoreboard UI is presentation; ball height/spin and offside are not modelled.
 
-1. Read `docs/genre-packages.md` (sports-rules) and the catalog entry. Inspect `genre/SportsRules.h`,
+1. Read `docs/mechanics-packages.md` (sports-rules) and the catalog entry. Inspect `genre/SportsRules.h`,
    `genre/SportsFormation.h` and `bots/SportsBot.h` for exact behaviour.
 2. Field frame `Vec2{x along the length, y across}`, goals at x = +-halfLength; team index 0 attacks +x in odd
    periods (`swapEnds`). `sportsAttackDirection(rules, state, team)` gives the current direction.
 3. Data: `readSportsDefinitions(json)` (`genre/SportsData.h`, example
-   `examples/libraries/genre/vehicles-sports/sports.json`): `field` (boundary lines|walls|faceoff, penalty area,
+   `examples/libraries/mechanics/vehicles-sports/sports.json`): `field` (boundary lines|walls|faceoff, penalty area,
    face-off spots) and `formations` (slots with role keeper|defender|midfielder|forward, base/attack/defend
    fractions, ball pull). Scalar rules: optional generated `sports` settings section (`sportsRulesConfig`,
    `bots::sportsBotConfig`, `sportsSettingsErrors`); `clockMode` 0 running, 1 stopped, 2 added stoppage.
@@ -32,7 +32,7 @@ formations. Not a body controller: player movement, animation and collision belo
    with vehicle-controllers) plus the RNG state; fold `sportsHash` into the checksum and bind
    `sportsDefinitionsHash(field, rules, formations)` in the save envelope.
 7. Examples: `examples/native/libraries/VehiclesSportsConsumer.cpp` and the executable 3v3 match in
-   `examples/libraries/genre/vehicles-sports`. Run `catalog.py check`, `generate_gameplay.py --check`,
+   `examples/libraries/mechanics/vehicles-sports`. Run `catalog.py check`, `generate_gameplay.py --check`,
    `aiverse_library_vehicles_sports_tests` and the `library_vehicles_sports_example` CTest.
 
 Build selection: `AIVERSE::lib_sports_rules` (depends on `configuration`, `aiverse_engine`); native OBJECT

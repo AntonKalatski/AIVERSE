@@ -1,7 +1,7 @@
 #pragma once
 #include <aiverselib/Graphs.h>
 #include "FireResponseDetour.h"
-#include "libraries/include/aiverselib/genre/Traffic.h"
+#include "libraries/include/aiverselib/mechanics/Traffic.h"
 namespace kingston {
 // Keep station/address access, but avoid narrow connecting streets when a wide
 // route exists. Reuse the engine BFS; all choices depend only on the immutable road net.

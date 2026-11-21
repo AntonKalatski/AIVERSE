@@ -1,6 +1,6 @@
 // Ordered projectile programs on flat maps and planetary surfaces. All structural ECS edits occur outside world.each.
 #include "RtsInternal.h"
-#include "../../libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+#include "../../libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
 #include "KingstonRocketCollision.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>

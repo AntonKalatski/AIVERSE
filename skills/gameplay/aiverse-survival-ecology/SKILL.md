@@ -11,7 +11,7 @@ and regrow. Not a weather simulator, health/damage owner, inventory, navigation 
 supplies weather state, shelter, clothing and food actually eaten; fire/heat fields stay in `docs/fields.md` (G5).
 Colony jobs, power graphs and the planner bot are `settlement-production`.
 
-1. Read `docs/genre-packages.md` (survival-ecology section). Headers: `genre/Survival.h` (`stepSurvival`,
+1. Read `docs/mechanics-packages.md` (survival-ecology section). Headers: `genre/Survival.h` (`stepSurvival`,
    `survivalWeatherEffects`, `survivalMood`), `genre/Ecology.h` (`stepEcology`), `genre/EcologyAnimals.h`
    (`stepEcologyAnimals`), `genre/EcologyResources.h` (`stepEcologyResources`), `genre/EcologyData.h`,
    `genre/SurvivalConfigured.h`, `genre/SurvivalPersistence.h`, umbrella `genre/SurvivalEcology.h`.
@@ -30,7 +30,7 @@ Colony jobs, power graphs and the planner bot are `settlement-production`.
 6. Persist `SurvivalState` 106, `EcologyState` 107, `EcologyAnimalState` 108, `EcologyResourceState` 109 with
    `genre::save/load`; hash with `survivalHash`; bind `survivalConfigHash`, `ecologyDefsHash`,
    `ecologyAnimalDefsHash`. Save the RNG state with the simulation.
-7. Examples: `examples/libraries/genre/production-survival` and `examples/native/libraries/ProductionSurvivalConsumer.cpp`;
+7. Examples: `examples/libraries/mechanics/production-survival` and `examples/native/libraries/ProductionSurvivalConsumer.cpp`;
    tests in `tests/libraries/genre_production_survival_tests.cpp`.
 
 Build selection: `AIVERSE::lib_survival_ecology` (depends on stealth-senses, configuration and `aiverse_engine`);

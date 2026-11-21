@@ -11,8 +11,8 @@ Sokoban, sudoku, nonograms or other small-grid constraint puzzles. Sokoban movem
 stay owned by `grid-puzzles` (`strategy/Puzzles.h`); this package adds sessions, move numbers and the bot on top.
 Programming puzzles use `puzzle-machine`. Not a renderer, input mapper, level editor or procedural generator.
 
-1. Read `docs/genre-packages.md` (Puzzle solvers) and the catalog entry. Headers:
-   `libraries/include/aiverselib/genre/Puzzle*.h` (entry `PuzzleSolvers.h`) and `bots/PuzzleBot.h`.
+1. Read `docs/mechanics-packages.md` (Puzzle solvers) and the catalog entry. Headers:
+   `libraries/include/aiverselib/mechanics/Puzzle*.h` (entry `PuzzleSolvers.h`) and `bots/PuzzleBot.h`.
 2. Commands: every family has one command struct (`Match3Swap`, `PuzzleFloodPick`, `PuzzlePipeRotate`,
    `PuzzleTilesSlide`, `PuzzleBlocksMove`, `PuzzlePackCommand`, `PuzzleCspAssign`, `PuzzleSokobanCommand`) with a
    `move` number that must exceed `state.lastMove`. Route player input and bot output through the same `*Apply`
@@ -28,7 +28,7 @@ Programming puzzles use `puzzle-machine`. Not a renderer, input mapper, level ed
    `PuzzleMatch3.h`; hints: `Match3HintMode::First` or `Best` (refill-free preview, earlier swap on ties).
 6. Data: `genre/PuzzleData.h` readers (`readMatch3Level`, `readSokobanLevel`, `readSudoku`, `readNonogram`,
    `readCsp`, `readFloodLevel`, `readPipeLevel`, `readTilesLevel`, `readBlocksLevel`, `readPackLevel`) throw
-   path-qualified `JsonError`s (`puzzle.match3.rows[2][4]: ...`). Example: `examples/libraries/genre/puzzles/levels.json`.
+   path-qualified `JsonError`s (`puzzle.match3.rows[2][4]: ...`). Example: `examples/libraries/mechanics/puzzles/levels.json`.
 7. Bot: `bots::puzzleBot*(level, state, PuzzleBotSkill, rng)` returns the next command (`lastMove + 1`);
    difficulty = `budget` + `mistakeMilli` (random legal move; Sokoban bots undo out of deadlocks, CSP bots guess a
    value and repair it later). Presets: `puzzleBotSkillPreset(0..2)`. A perfect bot never draws from the RNG.

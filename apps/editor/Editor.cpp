@@ -12,8 +12,8 @@
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/fx/SpectraGpuPoolWorld.h"
 #include "engine/fx/SpectraDiagnosticBundle.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
-#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/mechanics/SpectraGpuRecoveryHost.h"
 #include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder

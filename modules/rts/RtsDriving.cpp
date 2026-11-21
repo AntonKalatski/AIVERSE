@@ -7,7 +7,7 @@
 #include "RtsInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
-#include "../../libraries/include/aiverselib/genre/VehicleData.h"
+#include "../../libraries/include/aiverselib/mechanics/VehicleData.h"
 #include <algorithm>
 #include <stdexcept>
 

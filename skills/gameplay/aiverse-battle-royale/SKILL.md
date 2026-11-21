@@ -11,9 +11,9 @@ placement table with knockdowns). The legacy `modules/fps` host wires it from ru
 other hosts is debt G4/G6 in `docs/no-genre-split-audit.md`. The steps below are for native/host owners.
 
 1. Read the catalog entry (`python3 tools/libraries/catalog.py search royale`) and the headers in
-   `libraries/include/aiverselib/genre/royale/`: `SafeZone.h`, `Bombardment.h`, `SupplyDrops.h`, `Insertion.h`,
+   `libraries/include/aiverselib/mechanics/royale/`: `SafeZone.h`, `Bombardment.h`, `SupplyDrops.h`, `Insertion.h`,
    `Standings.h`, `Lobby.h`; `Data.h` reads the JSON, `Persistence.h` saves and hashes; `BattleRoyale.h` includes all.
-2. Data first: copy `examples/libraries/genre/royale/royale.json` (bounds, zone phases, flight, drop, bombardment,
+2. Data first: copy `examples/libraries/mechanics/royale/royale.json` (bounds, zone phases, flight, drop, bombardment,
    supplyDrops, standings, lobby). Distances are metres (decimal literals, parsed as Fixed), times are ticks. Only
    `bounds` and `zone` are required; `readRoyale(json, "path")` throws `JsonError("royale.zone.phases[2].radius: ...")`.
 3. Seed every policy once per match from the simulation seed (`beginSafeZone(seed)`, `beginBombardment(def, seed)`,

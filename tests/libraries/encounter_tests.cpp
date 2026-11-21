@@ -1,9 +1,9 @@
 // boss-encounters: telegraph areas and lifecycle, statuses, boss phases / patterns / enrage / adds, schedule and
 // rotation, mob behaviour states, persistence, JSON data and the headless hero-vs-boss reference fight.
-#include <aiverselib/genre/EncounterData.h>
-#include <aiverselib/genre/EncounterPersistence.h>
-#include <aiverselib/genre/EncounterScenario.h>
-#include <aiverselib/genre/TelegraphDecals.h>
+#include <aiverselib/mechanics/EncounterData.h>
+#include <aiverselib/mechanics/EncounterPersistence.h>
+#include <aiverselib/mechanics/EncounterScenario.h>
+#include <aiverselib/mechanics/TelegraphDecals.h>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -250,11 +250,11 @@ void mobs(){
     std::array<MobCandidate,2> dupes{{{10,v(0,1)},{10,v(0,2)}}};auto keep=save(crowd);CHECK(!stepMob(c,crowd,1,a,dupes,{},rng,yes)&&save(crowd)==keep);
 }
 void data(const std::string& root){
-    auto source=Json::parseFile(root+"/examples/libraries/genre/boss-encounter.json");auto d=readEncounterData(source);
+    auto source=Json::parseFile(root+"/examples/libraries/mechanics/boss-encounter.json");auto d=readEncounterData(source);
     CHECK(d.ticksPerSecond==20&&d.statuses.size()==3&&d.attacks.size()==8&&d.bosses.size()==3&&d.schedule.windows.size()==3&&d.schedule.rotation);
     CHECK(d.attacks.at(1).area.shape==AreaShape::Cone&&d.attacks.at(1).area.halfAngle==Fixed::fromRatio(167,1000)&&d.attacks.at(5).sweep&&d.bosses.at(1).phases.size()==3);
     CHECK(d.statuses.at(1).stacking==StatusStacking::Reject&&d.statuses.at(2).stacking==StatusStacking::Independent&&d.mob.aggroRange==30_fx);
-    CHECK(encounterDataHash(source)==encounterDataHash(Json::parseFile(root+"/examples/libraries/genre/boss-encounter.json")));
+    CHECK(encounterDataHash(source)==encounterDataHash(Json::parseFile(root+"/examples/libraries/mechanics/boss-encounter.json")));
     auto expectError=[](const char* text,const std::string& needle){
         try{readEncounterData(Json::parse(text));}catch(const JsonError& e){if(std::string(e.what()).find(needle)!=std::string::npos)return;throw std::runtime_error(std::string("wrong error: ")+e.what());}
         throw std::runtime_error("no error for "+needle);
@@ -269,7 +269,7 @@ void data(const std::string& root){
     expectError(R"({"attacks":[{"id":1,"shape":"circle","radiusMilli":1000}],"schedule":{"windows":[{"id":1,"start":10,"end":5,"variants":[{"boss":1}]}]}})","end: must be after start");
 }
 void scenario(const std::string& root){
-    auto d=readEncounterData(Json::parseFile(root+"/examples/libraries/genre/boss-encounter.json"));
+    auto d=readEncounterData(Json::parseFile(root+"/examples/libraries/mechanics/boss-encounter.json"));
     ScenarioConfig c;c.addAttack=7;c.log=false;
     auto a=runBossScenario(d,c,1),b=runBossScenario(d,c,1);
     CHECK(a.hash==b.hash&&a.ticks==b.ticks&&a.heroHp==b.heroHp);

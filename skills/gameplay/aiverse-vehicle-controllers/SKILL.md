@@ -10,15 +10,15 @@ planes, vehicle damage that degrades handling, getting in and out of seats, lap 
 Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D authority. Mounted weapons use
 `weapon-policies`; on-foot movement uses `character-locomotion`; generic objectives stay in `match-rules`.
 
-1. Read `docs/genre-packages.md` (vehicle-controllers: determinism/network model) and the catalog entry. Inspect
-   `libraries/include/aiverselib/genre/Vehicle*.h`, `RaceCourse.h` and `bots/RaceBot.h` for exact behaviour.
+1. Read `docs/mechanics-packages.md` (vehicle-controllers: determinism/network model) and the catalog entry. Inspect
+   `libraries/include/aiverselib/mechanics/Vehicle*.h`, `RaceCourse.h` and `bots/RaceBot.h` for exact behaviour.
 2. Authority split. Authoritative (save, hash, identical on every peer): `VehicleState`, `VehicleDamageState`,
    `VehicleSeatState`, `RaceState`, `RaceBotState`. Owner: collision/ground queries reported as `VehicleContacts`
    (grounded, ground height/normal, surface grip, optional per-wheel contacts), collision resolution after the step
    (`vehicleResolveCollision(state, position, normal, restitution)` returns the impulse for damage), teleports on
    respawn (`respawnVehicle`). A Box3D world may mirror poses for presentation but is never read back.
 3. Data: `readVehicleDefinitions(json)` (`genre/VehicleData.h`, example
-   `examples/libraries/genre/vehicles-sports/vehicles.json`): `vehicles` (kind wheeled|tracked|hover|flight with
+   `examples/libraries/mechanics/vehicles-sports/vehicles.json`): `vehicles` (kind wheeled|tracked|hover|flight with
    its parameter object, `zones`, `seats`) and `tracks` (`checkpoints`, `grid`, racing `line`). Milli-units, rpm,
    ticks; errors `vehicles.vehicles[0].wheeled.gearsMilli[1]: ...`. Scalars: optional generated `vehicles` settings
    section (`vehicleRaceConfig`, `vehicleSeatLimits`, `vehicleRaceLaps`, `bots::raceBotConfig`, `vehicleSettingsErrors`).
@@ -37,7 +37,7 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
    (`genre/VehiclePersistence.h`; 88..95 shared with sports-rules) in dedicated NativeState keys; fold
    `vehicleHash(state)` into the checksum and bind `vehicleDefinitionHash`, `raceCourseHash`, `bots::raceLineHash`.
 8. Examples: `examples/native/libraries/VehiclesSportsConsumer.cpp` and the executable 4-car race in
-   `examples/libraries/genre/vehicles-sports`. Run `catalog.py check`, `generate_gameplay.py --check`,
+   `examples/libraries/mechanics/vehicles-sports`. Run `catalog.py check`, `generate_gameplay.py --check`,
    `aiverse_library_vehicles_sports_tests` and the `library_vehicles_sports_example` CTest.
 
 Build selection: `AIVERSE::lib_vehicle_controllers` (depends on `match-rules`, `configuration`, `aiverse_engine`);

@@ -17,7 +17,7 @@ for legacy mechanics requiring immediately applied damage between projectiles.
 
 ## Public API
 
-Header: `<aiverselib/genre/EcsImpactQueueSystems.h>`
+Header: `<aiverselib/mechanics/EcsImpactQueueSystems.h>`
 Target: `AIVERSE::lib_ecs_impact_queue` (depends on
 `AIVERSE::lib_ecs_ordered_impact`).
 

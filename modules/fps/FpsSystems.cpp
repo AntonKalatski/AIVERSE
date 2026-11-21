@@ -1,9 +1,9 @@
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
-#include "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h"
-#include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
-#include "libraries/include/aiverselib/genre/EcsProjectileSystems.h"
-#include "libraries/include/aiverselib/genre/EcsDamageSystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsHitscanResolutionSystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsProjectileSystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsDamageSystems.h"
 #include <algorithm>
 #include <optional>
 namespace aiverse::fps {

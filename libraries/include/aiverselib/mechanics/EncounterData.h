@@ -4,7 +4,7 @@
 // JSON encounter data (boss-encounters). Integers only: lengths in milli-metres ("radiusMilli"), angles in
 // milli-turns ("halfAngleMilli": 167 = 60 degrees each side), times in ticks, multipliers in milli (1000 = x1).
 // {"ticksPerSecond":20,"statuses":[...],"attacks":[...],"bosses":[...],"schedule":{...},"mob":{...}}; see
-// examples/libraries/genre/boss-encounter.json and docs/genre-packages.md (boss-encounters). Errors name the path.
+// examples/libraries/mechanics/boss-encounter.json and docs/mechanics-packages.md (boss-encounters). Errors name the path.
 #include "BossEncounter.h"
 #include "BossSchedule.h"
 #include "CombatData.h"

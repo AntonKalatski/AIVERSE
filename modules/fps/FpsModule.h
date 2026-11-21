@@ -6,11 +6,11 @@
 #include <map>
 #include "FpsSystems.h"
 #include "engine/world/CollisionStream.h"
-#include "libraries/include/aiverselib/genre/Melee.h"
-#include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
+#include "libraries/include/aiverselib/mechanics/Melee.h"
+#include "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h"
 #include "libraries/include/aiverselib/systems/Gear.h"
 #include "libraries/include/aiverselib/systems/BuildingGen.h"
-#include "libraries/include/aiverselib/genre/VehicleData.h"
+#include "libraries/include/aiverselib/mechanics/VehicleData.h"
 #include <optional>
 
 namespace aiverse::fps {

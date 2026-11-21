@@ -1,10 +1,10 @@
 #include "FpsModule.h"
-#include "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h"
+#include "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h"
 #include "engine/experiments/EcsExperiments.h"
 #include <algorithm>
 #include <set>
 #include "engine/core/FixedMath.h"
-#include "libraries/include/aiverselib/genre/EcsTimedMechanics.h"
+#include "libraries/include/aiverselib/mechanics/EcsTimedMechanics.h"
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
 

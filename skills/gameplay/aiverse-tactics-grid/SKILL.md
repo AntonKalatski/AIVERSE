@@ -11,10 +11,10 @@ alternating turns; use `turn-scheduler` (`strategy/Turns.h`) when you only need 
 nested LIFO reactions and host-applied effects. This package owns its own dynamic order (speed modifiers, delay).
 Not a navmesh, campaign layer, animation or UI.
 
-1. Read `docs/genre-packages.md` (Cards and turn strategy section) and `genre/TacticsGrid.h`, `genre/TacticsTurns.h`,
+1. Read `docs/mechanics-packages.md` (Cards and turn strategy section) and `genre/TacticsGrid.h`, `genre/TacticsTurns.h`,
    `genre/TacticsWeGo.h`.
 2. Data: `readTacticsScenario(json, tacticsRulesFromSettings(settings))` (`genre/TacticsData.h`, example
-   `examples/libraries/genre/cards-turns/skirmish.json`): `grid` (`square`|`hex`, ASCII rows, optional legend: cost,
+   `examples/libraries/mechanics/cards-turns/skirmish.json`): `grid` (`square`|`hex`, ASCII rows, optional legend: cost,
    cover none/half/full, blocksSight), `rules`, `unitTypes`, `units`. Errors: `tactics.grid.rows[1][3]: ...`.
    Optional generated `tactics` settings section (cover/flank/range/overwatch modifiers, round limit, bot budget).
 3. Geometry: `tacticsReachable(grid, start, budget, occupancy)` (Dijkstra, ties by (cost, cell) so paths never
@@ -34,7 +34,7 @@ Not a navmesh, campaign layer, animation or UI.
 7. Persist `TacticsState` (record kind 98) and pending `TacticsOrders` (99) via `genre::save/load`
    (`genre/TacticsPersistence.h`); hash with `tacticsHash`, bind `tacticsScenarioHash`.
 8. Example: `examples/native/libraries/CardsTurnsConsumer.cpp`, executable skirmish in
-   `examples/libraries/genre/cards-turns/main.cpp`; tests `tests/libraries/genre_cards_turns_tests.cpp`.
+   `examples/libraries/mechanics/cards-turns/main.cpp`; tests `tests/libraries/genre_cards_turns_tests.cpp`.
 
 Build selection: `AIVERSE::lib_tactics_grid` (depends on `aiverse_engine`); native OBJECT modules call
 `aiverse_native_use_libraries(target tactics-grid)`. Bots: `aiverse-cards-turns-bots`.

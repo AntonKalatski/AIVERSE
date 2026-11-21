@@ -108,7 +108,7 @@ AIVERSE はメカニクスそのものを提供し、エージェントがゲー
 | **あらゆるモバイルゲーム** | `aiverse::meta` と LiveOps、チュートリアル、UI 画面、ストアと広告のプラグイン |
 
 レース、スポーツ、乗り物はまだ[ロードマップ](docs/genre-mechanics-roadmap.md)上にあります。ライブラリの全一覧：
-[`libraries/catalog.json`](libraries/catalog.json) と[ジャンルパッケージ](docs/genre-packages.md)。
+[`libraries/catalog.json`](libraries/catalog.json) と[ジャンルパッケージ](docs/mechanics-packages.md)。
 
 ---
 
@@ -297,7 +297,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 |---|---|
 | [**詳細な概要**](docs/ja/overview.md) | 全サブシステム、ビルド、プラットフォーム、CI、リリース |
 | [ゲームフォーマット](docs/game-format.md) | `game.json`、`rules.json`、マップと全データブロック |
-| [ジャンルパッケージ](docs/genre-packages.md) · [ライブラリ](docs/libraries.md) | あらゆるジャンルのメカニクス |
+| [ジャンルパッケージ](docs/mechanics-packages.md) · [ライブラリ](docs/libraries.md) | あらゆるジャンルのメカニクス |
 | [「ゲームを作る」ウィザード](docs/ja/game-wizard.md) | アイデアとアートが完成プロジェクトになるまで |
 | [スクリプト](docs/scripting.md) · [C++ モジュール](docs/native-modules.md) | データで足りないとき |
 | [地形](docs/terrain.md) · [惑星](docs/planets.md) · [経路探索](docs/pathfinding.md) | 世界と移動 |

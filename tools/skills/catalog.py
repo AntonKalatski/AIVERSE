@@ -128,7 +128,7 @@ WORKFLOWS=[
  ('aiverse-online-battles','Online PvP and PvE: rollback, tick rate, simulated mobile links, reconnect','docs/battle-net.md'),
  ('aiverse-determinism-triage','Checksum mismatches: first differing tick and field, causes, fix and proof','docs/native-toolkit.md'),
  ('aiverse-docs-upkeep','README and translations, translated docs, format sections, readme check','tools/readme/check.py'),
- ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/genre-implementation.json'),
+ ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/capability-status.json'),
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
  ('aiverse-terra-first','TerraWeave-first world capability selection for every new game; custom only for verified gaps','skills/workflow/aiverse-terra-first/SKILL.md'),
  ('aiverse-terra-vegetation','Native Arbor trees, dense grass patches, rocks, PBR and LOD authoring','skills/world/aiverse-terra-vegetation/SKILL.md'),
@@ -294,7 +294,7 @@ def validate(data):
             if not e['target'] or e['target'] in targets:raise ValueError('missing or shared library target: '+e['id'])
             targets.add(e['target'])
             if e['target'] not in path.read_text(encoding='utf-8'):raise ValueError('skill missing library contract: '+e['id'])
-            if any(d in ('aiverse::meta','AIVERSE::libraries','AIVERSE::genre') for d in e['backendDependencies']):raise ValueError('aggregate dependency: '+e['id'])
+            if any(d in ('aiverse::meta','AIVERSE::libraries','AIVERSE::mechanics','AIVERSE::genre') for d in e['backendDependencies']):raise ValueError('aggregate dependency: '+e['id'])
         elif e['target'] is not None:raise ValueError('non-code skill has C++ target')
         for dep in e['dependencies']:
             if dep not in by_id:raise ValueError('unknown dependency: '+dep)

@@ -277,7 +277,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/royale/BattleRoyale.h",
+      "source": "libraries/include/aiverselib/mechanics/royale/BattleRoyale.h",
       "keywords": [
         "battle",
         "royale",
@@ -375,7 +375,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Telegraphs.h",
+      "source": "libraries/include/aiverselib/mechanics/Telegraphs.h",
       "keywords": [
         "boss",
         "telegraph",
@@ -723,7 +723,7 @@
       "target": null,
       "dependencies": [],
       "backendDependencies": [],
-      "source": "docs/genre-implementation.json",
+      "source": "docs/capability-status.json",
       "keywords": [
         "capability",
         "audit",
@@ -771,7 +771,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/CardGame.h",
+      "source": "libraries/include/aiverselib/mechanics/CardGame.h",
       "keywords": [
         "card",
         "deck",
@@ -885,7 +885,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Locomotion.h",
+      "source": "libraries/include/aiverselib/mechanics/Locomotion.h",
       "keywords": []
     },
     {
@@ -902,7 +902,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Cinematic.h",
+      "source": "libraries/include/aiverselib/mechanics/Cinematic.h",
       "keywords": [
         "cinematic",
         "cutscene",
@@ -1062,7 +1062,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Traffic.h",
+      "source": "libraries/include/aiverselib/mechanics/Traffic.h",
       "keywords": [
         "traffic",
         "cars",
@@ -1148,7 +1148,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/CombatActions.h",
+      "source": "libraries/include/aiverselib/mechanics/CombatActions.h",
       "keywords": [
         "hitbox",
         "hurtbox",
@@ -1405,7 +1405,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsHitscanSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsHitscanSystems.h",
       "keywords": []
     },
     {
@@ -1422,7 +1422,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsHitscanResolutionSystems.h",
       "keywords": []
     },
     {
@@ -1439,7 +1439,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsDamageSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsDamageSystems.h",
       "keywords": []
     },
     {
@@ -1456,7 +1456,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsImpactQueueSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsImpactQueueSystems.h",
       "keywords": []
     },
     {
@@ -1473,7 +1473,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsInventorySystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsInventorySystems.h",
       "keywords": []
     },
     {
@@ -1490,7 +1490,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsKinematicProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1507,7 +1507,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsLocomotionSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsLocomotionSystems.h",
       "keywords": []
     },
     {
@@ -1524,7 +1524,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsOrderedImpactSystems.h",
       "keywords": []
     },
     {
@@ -1543,7 +1543,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsProjectileSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsProjectileSystems.h",
       "keywords": []
     },
     {
@@ -1604,7 +1604,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsTimedMechanics.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsTimedMechanics.h",
       "keywords": []
     },
     {
@@ -1621,7 +1621,7 @@
       ],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h",
+      "source": "libraries/include/aiverselib/mechanics/EcsWeaponLaunchSystems.h",
       "keywords": []
     },
     {
@@ -2266,7 +2266,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Perks.h",
+      "source": "libraries/include/aiverselib/mechanics/Perks.h",
       "keywords": [
         "perk",
         "modifier",
@@ -2308,7 +2308,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Match.h",
+      "source": "libraries/include/aiverselib/mechanics/Match.h",
       "keywords": []
     },
     {
@@ -2338,7 +2338,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Melee.h",
+      "source": "libraries/include/aiverselib/mechanics/Melee.h",
       "keywords": []
     },
     {
@@ -2438,7 +2438,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Narrative.h",
+      "source": "libraries/include/aiverselib/mechanics/Narrative.h",
       "keywords": [
         "story",
         "narrative",
@@ -2891,7 +2891,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/PhysicalInteractions.h",
+      "source": "libraries/include/aiverselib/mechanics/PhysicalInteractions.h",
       "keywords": [
         "carry",
         "pickup",
@@ -3323,7 +3323,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/PuzzleSolvers.h",
+      "source": "libraries/include/aiverselib/mechanics/PuzzleSolvers.h",
       "keywords": [
         "puzzle",
         "match3",
@@ -3678,7 +3678,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Colony.h",
+      "source": "libraries/include/aiverselib/mechanics/Colony.h",
       "keywords": [
         "colony",
         "settlement",
@@ -3895,7 +3895,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Sports.h",
+      "source": "libraries/include/aiverselib/mechanics/Sports.h",
       "keywords": [
         "sport",
         "football",
@@ -3987,7 +3987,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Senses.h",
+      "source": "libraries/include/aiverselib/mechanics/Senses.h",
       "keywords": [
         "stealth",
         "sight",
@@ -4078,7 +4078,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/SurvivalEcology.h",
+      "source": "libraries/include/aiverselib/mechanics/SurvivalEcology.h",
       "keywords": [
         "survival",
         "temperature",
@@ -4168,7 +4168,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/TacticsTurns.h",
+      "source": "libraries/include/aiverselib/mechanics/TacticsTurns.h",
       "keywords": [
         "tactics",
         "tactical",
@@ -4564,7 +4564,7 @@
         "aiverse_engine"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Vehicles.h",
+      "source": "libraries/include/aiverselib/mechanics/Vehicles.h",
       "keywords": [
         "vehicle",
         "car",
@@ -4606,7 +4606,7 @@
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h",
+      "source": "libraries/include/aiverselib/mechanics/vehicle-fx/VehicleLights.h",
       "keywords": [
         "headlight",
         "brake",
@@ -5004,7 +5004,7 @@
         "aiverse_world"
       ],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/genre/Weapons.h",
+      "source": "libraries/include/aiverselib/mechanics/Weapons.h",
       "keywords": []
     },
     {

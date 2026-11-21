@@ -25,7 +25,7 @@ repository skills" and §9 "Where library code goes".
 
 ## 2. The library
 
-1. Folder by what the code is (AGENTS.md §9): a mechanics package gets its own `libraries/include/aiverselib/genre/<name>/`
+1. Folder by what the code is (AGENTS.md §9): a mechanics package gets its own `libraries/include/aiverselib/mechanics/<name>/`
    (legacy folder name; policy headers, `Data.h` JSON reader, `Persistence.h` records, optional umbrella header); small
    building blocks go to `systems/`, infrastructure to `runtime/`, networking to `net/`, bots to `bots/`. Never a new flat file in `genre/`,
    never an aggregate header that includes other packages.
@@ -37,7 +37,7 @@ repository skills" and §9 "Where library code goes".
    `Random&`, deterministic iteration, one step per strictly increasing tick; invalid input / repeated ticks return
    `std::nullopt` and leave the state untouched (work on a copy, commit at the end). Bound every container.
 4. Persistence: `io` / `valid` / a record kind per state; reserve a free block of eight kinds in
-   `docs/genre-packages.md` § Save record kinds; save / load reject other kinds, versions, truncated or trailing bytes;
+   `docs/mechanics-packages.md` § Save record kinds; save / load reject other kinds, versions, truncated or trailing bytes;
    a hash function folds the canonical bytes into checksums.
 5. JSON: unknown keys and out-of-range values throw `JsonError("<root>.<path>: ...")`; times in ticks, distances in
    metres or milli-units as the neighbouring packages do; ship an example file under `examples/libraries/...`.
@@ -78,7 +78,7 @@ repository skills" and §9 "Where library code goes".
    `python3 tests/skills/catalog_test.py`; `python3 tools/skills/audit.py --strict` (backticked paths and MCP tool
    names must exist); `python3 tests/libraries/run.py` (use `CXX=clang++` where gcc 13 trips the existing
    `-Wdangling-reference` in older headers); `python3 tests/skills/isolation.py` when linking changes.
-2. Docs: a section in `docs/genre-packages.md` (or the matching docs file) and a row in its package table; module
+2. Docs: a section in `docs/mechanics-packages.md` (or the matching docs file) and a row in its package table; module
    docs when wired into a module. README: the package in the «Any genre» row and the skill count in `README.md` and
    all eight translations (`skills/workflow/aiverse-docs-upkeep`), then `python3 tools/readme/check.py`.
 3. AGENTS.md: one row in the area table for your branch (paths and additive hooks).

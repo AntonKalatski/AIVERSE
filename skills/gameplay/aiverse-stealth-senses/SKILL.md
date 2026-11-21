@@ -10,8 +10,8 @@ whom, how suspicious they are, who gets alerted, where they search. Side-wide fo
 owner (`modules/rts` vision, `aiverse::view::VisibilityField`); do not run both for the same question. Bounded long-term memory/threat ranking can additionally use `ai-perception`
 (`systems/Perception.h`): feed it from `PerceivedTarget` records, never from omniscient queries.
 
-1. Read `docs/genre-packages.md` (stealth-senses section) and the catalog entry. Inspect
-   `libraries/include/aiverselib/genre/Senses.h` for exact behaviour.
+1. Read `docs/mechanics-packages.md` (stealth-senses section) and the catalog entry. Inspect
+   `libraries/include/aiverselib/mechanics/Senses.h` for exact behaviour.
 2. Responsibility: perception records and events only. No movement, pathing, damage or animation. The owner
    supplies observer poses (`SenseAgent`), target data (`SenseTarget`: light/cover/stance/visibility multipliers,
    zone, actions, disguise equip, hiding enter/exit, trail deposit), noise events and search candidates
@@ -21,7 +21,7 @@ owner (`modules/rts` vision, `aiverse::view::VisibilityField`); do not run both 
 3. Data: scalar knobs live in the generated optional `senses` section of `libraries/spec/gameplay.json`
    (milli-metres, milli-turns, milli strengths, ticks). Load with `readGameplaySettings`, check
    `sensesSettingsErrors`, convert with `sensesConfig` (`genre/SensesConfigured.h`). Disguises and hiding spots:
-   `readSenseDefinitions(json)` from `genre/SensesData.h` (example `examples/libraries/genre/senses.json`);
+   `readSenseDefinitions(json)` from `genre/SensesData.h` (example `examples/libraries/mechanics/senses.json`);
    errors are path-qualified `JsonError`s. Edit the spec and run `python3 tools/libraries/generate_gameplay.py`.
 4. Per authoritative tick call `stepSenses(config, defs, state, tick, input, los, occlusion)` exactly once
    (strictly increasing ticks; invalid input or repeated ticks return nullopt and leave state untouched).

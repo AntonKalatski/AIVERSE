@@ -2,7 +2,7 @@
 // queues (units, research, sidebar structures, larva charges, in-place upgrades), construction,
 // squads reinforcement and Mushroom Wars style garrisons.
 #include "RtsInternal.h"
-#include "libraries/include/aiverselib/genre/FixedRegeneration.h"
+#include "libraries/include/aiverselib/mechanics/FixedRegeneration.h"
 #include <algorithm>
 
 namespace aiverse::game {

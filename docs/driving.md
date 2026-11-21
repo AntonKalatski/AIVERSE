@@ -2,7 +2,7 @@
 
 The hero of a top-down game (docs/topdown.md) gets into vehicles and drives them. Simulation:
 `modules/rts/RtsDriving.{h,cpp}`; the vehicle dynamics are the wheeled controller of the vehicle-controllers
-library (`libraries/include/aiverselib/genre/VehicleControllers.h`, docs/genre-packages.md § Vehicles).
+library (`libraries/include/aiverselib/mechanics/VehicleControllers.h`, docs/mechanics-packages.md § Vehicles).
 Tests: `aiverse_tests driving_`.
 
 ## How it works
