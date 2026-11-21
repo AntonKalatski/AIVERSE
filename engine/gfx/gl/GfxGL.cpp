@@ -1973,7 +1973,6 @@ public:
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
         glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
-        } else glBufferSubData(GL_UNIFORM_BUFFER, GLintptr(off), GLsizeiptr(size), data);
         glBindBufferRange(GL_UNIFORM_BUFFER, GLuint(slot), ubo_, GLintptr(off), GLsizeiptr(size));
         uboOffset_ = off + size;
     }
