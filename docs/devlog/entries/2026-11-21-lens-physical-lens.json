@@ -1,0 +1,40 @@
+{
+  "id": "2026-11-21-lens-physical-lens",
+  "date": "2026-11-21",
+  "system": "lens",
+  "title": "LENS: физическая линза, глубина резкости и EXR",
+  "summary": "Камера LENS теперь сама задаёт экспозицию и глубину резкости по параметрам объектива: фокусное расстояние, диафрагма, выдержка, ISO и дистанция фокуса. Добавлены сплайновые рельсы, шумовая тряска и запись HDR-кадров в EXR.",
+  "body": [
+    "Компонент CameraLensComponent получил флаги driveExposure и driveDepthOfField. CameraPostFxPool переводит объектив в EV100 и в ручную экспозицию PRISMA, а по формулам тонкой линзы считает ближнюю и дальнюю границы резкости и передаёт их в DoF PRISMA отдельно для каждой камеры. Глобальные настройки PRISMA при этом не меняются.",
+    "Рельсы камеры строятся по centripetal Catmull-Rom с равномерной скоростью по длине дуги и сглаживанием старта и остановки; тряска — детерминированный шум с сидом и затуханием. Старые линейные рельсы и синусная тряска работают как раньше. CameraHdrFrameRecorder пишет линейные кадры RGBA16F в OpenEXR и отказывается записывать 8-битный результат.",
+    "Кадр снят хостом tools/site/lens_showcase.cpp: главная камера с объективом 35 мм f/1.4 и фокусом 4 м на красном занавесе, вторая камера той же сцены во врезке через CameraCompositor."
+  ],
+  "status": "in-progress",
+  "verified": "Кадр снят на Mac (Metal), 1920×1080, сцена Sponza (Khronos glTF Sample). Хост печатает фактическое состояние PRISMA: EV +1.24, DoF включён, фокус 4.08 м, зона резкости 1.11 м, размытие 5 px; без DoF кадр снят отдельно для сравнения. Юнит-тесты линзы, рельсов и EXR (camera_lens_physics, camera_rail_path, camera_exr) и тесты в aiverse_tests прошли на Linux (GCC).",
+  "limits": "Ветка feature/aiv20261121_lens_p2 ещё не влита в main. HDR-захват через readTextureAsync RGBA16F есть только на Metal; на OpenGL доступна лишь 8-битная запись. Кубмапы, панорамы, зеркала, порталы и стерео — не сделаны. Экспозиция относительна объектива по умолчанию, а не фотометрическая.",
+  "branch": "feature/aiv20261121_lens_p2",
+  "commit": "2f202370b",
+  "media": [
+    {
+      "src": "docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg",
+      "caption": "Объектив 35 мм f/1.4, фокус 4 м: занавес и колонна резкие, аркада вдали размыта; во врезке вторая камера",
+      "captionEn": "35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera"
+    }
+  ],
+  "links": [
+    {
+      "title": "docs/camera-system.md",
+      "href": "docs/camera-system.md"
+    }
+  ],
+  "author": "lens",
+  "titleEn": "LENS: physical lens, depth of field and EXR",
+  "summaryEn": "A LENS camera now drives exposure and depth of field from its lens: focal length, aperture, shutter, ISO and focus distance. Spline rails, noise shake and HDR frame recording to EXR were added.",
+  "bodyEn": [
+    "CameraLensComponent gained driveExposure and driveDepthOfField. CameraPostFxPool turns the lens into EV100 and PRISMA manual exposure, and uses thin-lens formulas for the near and far sharp limits, which it passes to PRISMA depth of field per camera. Global PRISMA settings are left alone.",
+    "Rails use centripetal Catmull-Rom with constant speed along the arc and eased start and stop; shake is seeded deterministic noise with a fade. The old linear rails and sine shake behave as before. CameraHdrFrameRecorder writes linear RGBA16F frames to OpenEXR and refuses an 8-bit result.",
+    "The frame was rendered by tools/site/lens_showcase.cpp: the main camera with a 35 mm f/1.4 lens focused at 4 m on the red curtain, and a second camera of the same scene in the inset through CameraCompositor."
+  ],
+  "verifiedEn": "Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC).",
+  "limitsEn": "The feature/aiv20261121_lens_p2 branch is not merged into main yet. HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric."
+}

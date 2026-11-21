@@ -563,7 +563,12 @@
       "where": "main",
       "tagline": "Камеры и кинематографичный кадр",
       "essence": "Сцены камер как данные: несколько камер, расписание кадров, захват изображения и авторинг через MCP и Studio.",
-      "cover": null,
+      "cover": {
+        "src": "docs/devlog/media/systems/lens-sponza-dof.jpg",
+        "caption": "LENS: объектив 35 мм f/1.4, фокус 4 м на занавесе; во врезке вторая камера той же сцены",
+        "captionEn": "LENS: 35 mm f/1.4 lens focused at 4 m on the curtain; the inset is a second camera on the same scene",
+        "approved": true
+      },
       "coverBrief": "Кинематографичный кадр, снятый LENS: глубина резкости, выверенная композиция, видно, что это работа камеры, а не скриншот редактора.",
       "article": "docs/camera-system.md",
       "started": "2026-11-20",
@@ -642,20 +647,20 @@
           "textEn": "P1."
         },
         {
-          "status": "planned",
+          "status": "in-progress",
           "target": null,
-          "title": "Физическая линза и глубина резкости, кубмапы и панорамы",
-          "text": "P2.",
-          "titleEn": "Physical lens and depth of field, cubemaps and panoramas",
-          "textEn": "P2."
+          "title": "Физическая линза и глубина резкости",
+          "text": "Экспозиция и DoF из параметров объектива для каждой камеры в PRISMA; проверено на Mac (Metal). Кубмапы и панорамы — позже.",
+          "titleEn": "Physical lens and depth of field",
+          "textEn": "Per-camera exposure and DoF from lens parameters through PRISMA; checked on Mac (Metal). Cubemaps and panoramas later."
         },
         {
-          "status": "planned",
+          "status": "in-progress",
           "target": null,
-          "title": "HDR/EXR-последовательности, зеркала и порталы, тряска и рельсы камеры",
-          "text": "P2.",
-          "titleEn": "HDR/EXR sequences, mirrors and portals, camera shake and rails",
-          "textEn": "P2."
+          "title": "HDR/EXR-последовательности, тряска и рельсы камеры",
+          "text": "EXR-запись, сплайновые рельсы и шумовая тряска в ветке P2; зеркала и порталы — позже.",
+          "titleEn": "HDR/EXR sequences, camera shake and rails",
+          "textEn": "EXR recording, spline rails and noise shake on the P2 branch; mirrors and portals later."
         },
         {
           "status": "planned",
