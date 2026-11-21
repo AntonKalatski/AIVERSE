@@ -3522,3 +3522,11 @@ verify remote SHA and record the publication receipt.
 - The new reusable `aiverse::lib::animation::FacialPreviewSession` compiles Stage 180's **actual** `FacialControlRig` with typed Studio JSON v1 morph/IK parameters against a real imported Model; applies into the **single existing** Animator-evaluated Pose; retains old rig/smoothing on rejected recompilation and rejects undeclared controls. ModelView loads `--facial-rig path/to/project/facial-rigs/name.json`, optional `--face name=0..1` / `--face-vector name=x,y,z`, and polls saved JSON before GPU submission; no new native ImGui authoring panel.
 - **ACTUAL:** authenticated source audit of both GitHub branches, animation/renderer/Studio document APIs, SHA-checked implementation commits/readback. **NOT RUN:** CMake, compiler/link, facial test, actual native ModelView/model pixels, live saved-JSON reload, Metal/Vulkan/GLES/ASan-TSan/GPU lifetime and crowd. **No PASS claim.** PR #22 remains DRAFT/unmerged; concurrent Studio branch untouched.
 - **Important boundary:** this supplies a **real separate ModelView GPU preview path**, NOT the embedded browser HTML5 Studio facial preview. Next Stage 184 must explicitly integrate the shared public session with native StudioSession IPC/Scene viewport on a conflict-aware integration branch, then close skinned morph LOD and run one coordinated Mac acceptance.
+## Review fixes (prisma-view) — 2026-11-21
+Branch feature/aiv20261121_fix_prisma_view. RtsView::trimTypes / loadType(replacing) now detach
+MotionWeave sources (forgetSources / forgetSourcesForReimport) before Models are released (UAF in
+MotionWeaveSourceBridge::sync snapshotPlayback). View clones share the MotionWeaveScheduler;
+View::update validates before mutating frame state; MotionWeaveWorkerPool nested parallelFor runs
+inline instead of deadlocking. Targeted view_* / motionweave_* tests PASS in a scratch Release build;
+motionweave_backend_phase_transfer fails pre-existing (unrelated). Full build/CTest NOT RUN.
+Details: docs/agent-handoffs/review-fixes-prisma-view-2026-11-21.md.

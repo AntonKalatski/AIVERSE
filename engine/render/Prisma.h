@@ -341,7 +341,10 @@ public:
     void setMotionReactiveMask(uint64_t view, MotionTextureInput mask);
 
     void setQuality(PrismaQuality q) {
-        if (quality_ != q) { quality_ = q; resetAutoExposure(); resetMotionHistory(); }
+        if (quality_ != q) {
+            quality_ = q; resetAutoExposure(); resetMotionHistory();
+            hdrFailed_ = false; hdrFailedSizes_.clear(); // fresh HDR attempt per tier
+        }
     }
     PrismaQuality quality() const { return quality_; }
     static PrismaQuality defaultQualityFor(const gfx::Device& dev, bool mobile);   // AIVERSE_POSTFX overrides
@@ -484,7 +487,9 @@ private:
     bool preflightUpscale(int outputW, int outputH, int renderW, int renderH);
     void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
-    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
+    // graphKey: optional precomputed graph->dump(-1) (one dump per frame).
+    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr,
+                                  const std::string* graphKey = nullptr);
     void draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
               std::initializer_list<std::pair<int, gfx::TextureHandle>> tex);
     const Lut* lut(const std::string& path);
@@ -514,7 +519,15 @@ private:
     PrismaQuality quality_ = PrismaQuality::Medium;
     bool enabled_ = true;
     bool hdrFrame_ = false, sceneReady_ = false;
-    bool hdrFailed_ = false; // allocation failure: stay on the low-cost path
+    // HDR target allocation failure: stay on the low-cost path for the
+    // failed target sizes (bounded; several views may alternate sizes).
+    // hdrFailed_ reflects the size of the current scenePass; a new size,
+    // quality change or init() gets a fresh attempt.
+    bool hdrFailed_ = false;
+    std::vector<std::pair<int,int>> hdrFailedSizes_;
+    std::string hdrFailedError_;
+    // Authored HDR mode with the AIVERSE_HDR override (off/0, on/1, auto).
+    static HdrMode hdrModeWithEnv(HdrMode authored);
     gfx::BufferHandle triangle_;
     gfx::TextureHandle black_;
     gfx::TextureHandle sceneDepthForMotion_;

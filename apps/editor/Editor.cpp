@@ -1533,13 +1533,19 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     if(!spectraPreviewGpu_ || spectraPreviewInGame_!=game || w<=0 || h<=0)
         return;
     if(spectraPreviewRestart_) {
-        spectraPreviewRestart_=false;
+        // resetForRollback is a restartable transaction: keep the request
+        // until it is accepted (retried next frame) and log only when the
+        // failure text changes, instead of a dead preview + per-frame log.
         if(!spectraPreviewGpu_->resetForRollback()) {
-            spectraPreviewLastError_="Metal preview restart rejected: "+
+            const std::string error="Metal preview restart rejected: "+
                                     spectraPreviewGpu_->reason();
-            ws_.log("spectrafx",spectraPreviewLastError_,true);
+            if(error!=spectraPreviewLastError_) {
+                spectraPreviewLastError_=error;
+                ws_.log("spectrafx",spectraPreviewLastError_,true);
+            }
             return;
         }
+        spectraPreviewRestart_=false;
         spectraPreviewVisualSeconds_=0;
         spectraPreviewHistory_.clear();
         spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
@@ -1551,7 +1557,11 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     const auto viewProjection=cam.proj(float(w)/float(h),
         dev_->info().clipDepthZeroToOne)*cam.view();
     if(!spectraPreviewGpu_->beginPresentationFrame(cam,viewProjection,w,h)) {
-        ws_.log("spectrafx","Metal preview begin: "+spectraPreviewGpu_->reason(),true);
+        const std::string error="Metal preview begin: "+spectraPreviewGpu_->reason();
+        if(error!=spectraPreviewLastError_) { // once per state change, not per frame
+            spectraPreviewLastError_=error;
+            ws_.log("spectrafx",spectraPreviewLastError_,true);
+        }
         return;
     }
     spectraPreviewFrameOpen_=true;

@@ -3610,8 +3610,10 @@ void Renderer3D::renderModels(int phase) {
         (phase == 0 || gpuEncodedBatches_.empty()) &&
         modelMultiDrawEnabled_ &&
         order_.size() >= autoCpuMdiMinimum;
-    const bool autoCpuPermit = !autoBatchCpu ||
-        (autoCpuLearn && autoCpuBatch_.useMdi(size_t(phase), order_.size()));
+    // Non-learning passes (auxiliary/non-main views, opaque next to GPU
+    // ICB) must not lose CPU MDI; only the small-workload gate forces direct.
+    const bool autoCpuPermit = autoCpuMdiPermit(autoCpuBatch_, autoBatchCpu,
+        autoCpuLearn, size_t(phase), order_.size(), autoCpuMdiMinimum);
     const uint64_t cpuMdiBefore = modelStats_.multiDrawSubmissions;
     const bool allowIndirect = autoCpuPermit && modelMultiDrawEnabled_ &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
