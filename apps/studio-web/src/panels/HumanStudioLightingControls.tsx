@@ -1,20 +1,48 @@
-import {useEffect,useState} from 'react';
-import {invoke} from '../bridge';
-import type {HumanStudioLightingSettings,HumanStudioLightingInfo} from '../types';
-import {StudioSection,StudioField,StudioInput,StudioSelect,StudioButton,StudioAlert} from '../ui';
-const defaults:HumanStudioLightingSettings={preset:'neutral',rotation:0,gain:1,backdrop:true};
-export default function HumanStudioLightingControls(){
- const [info,setInfo]=useState<HumanStudioLightingInfo|null>(null),[draft,setDraft]=useState(defaults);
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[status,setStatus]=useState('');
- useEffect(()=>{let live=true;void invoke('studio.humanStudioLighting',{}).then(i=>{if(live){setInfo(i);setDraft(i.settings);}}).catch(e=>{if(live)setError(String(e));});return ()=>{live=false;};},[]);
- const apply=async(settings:HumanStudioLightingSettings)=>{setBusy(true);setError('');try{const i=await invoke('studio.humanStudioLighting',{settings});setInfo(i);setDraft(i.settings);setStatus('Свет применён к нативному предпросмотру');}catch(e){setError(String(e));}finally{setBusy(false);}};
- return <StudioSection title="Студийное освещение">
-  {error&&<StudioAlert tone="danger">{error}</StudioAlert>}{status&&<StudioAlert>{status}</StudioAlert>}
-  <StudioField label="Световой пресет" htmlFor="human-studio-preset"><StudioSelect id="human-studio-preset" disabled={busy||!info} value={draft.preset} onChange={e=>{setDraft({...draft,preset:e.target.value});setStatus('Пресет выбран — примените свет');}}>{info?.presets.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</StudioSelect></StudioField>
-  <StudioField label={'Поворот света · '+draft.rotation+'°'} htmlFor="human-studio-rotation"><StudioInput id="human-studio-rotation" type="range" min={-180} max={180} step={1} value={draft.rotation} disabled={busy} onChange={e=>setDraft({...draft,rotation:Number(e.target.value)})}/></StudioField>
-  <StudioField label={'Яркость · '+draft.gain.toFixed(2)} htmlFor="human-studio-gain"><StudioInput id="human-studio-gain" type="range" min={.25} max={2} step={.01} value={draft.gain} disabled={busy} onChange={e=>setDraft({...draft,gain:Number(e.target.value)})}/></StudioField>
-  <StudioField label="Циклорама · плавный переход пола в стену" htmlFor="human-studio-backdrop"><StudioInput id="human-studio-backdrop" type="checkbox" checked={draft.backdrop} disabled={busy} onChange={e=>setDraft({...draft,backdrop:e.target.checked})}/></StudioField>
-  <div className="au-row"><StudioButton variant="primary" disabled={busy||!info} onClick={()=>void apply(draft)}>Применить свет</StudioButton><StudioButton disabled={busy||!info} onClick={()=>void apply(defaults)}>Сбросить свет</StudioButton></div>
-  <StudioAlert>4 источника: основной, заполняющий, контровой и дополнительный. Настройки действуют в предпросмотре персонажа и не запекаются в его текстуры. Сохраняются до закрытия проекта.</StudioAlert>
- </StudioSection>;
+// Studio light for the Character Creator: preset cards apply on click,
+// rotation and brightness apply on release. Preview only, never baked.
+import { useEffect, useState } from 'react';
+import { invoke } from '../bridge';
+import type { HumanStudioLightingInfo, HumanStudioLightingSettings } from '../types';
+import { HcCard, HcNote, HcSlider, HcSwitch } from './HumanCreatorUi';
+
+const defaults: HumanStudioLightingSettings = { preset: 'neutral', rotation: 0, gain: 1, backdrop: true };
+// Swatch per preset id (key/fill tint), so the cards read at a glance.
+const SWATCH: Record<string, string> = {
+  neutral: 'linear-gradient(135deg,#f3efe8,#8c98a8)', portrait: 'linear-gradient(135deg,#ffe2c8,#b9a4a0)',
+  warm: 'linear-gradient(135deg,#ffb066,#4a2a2a)', cool: 'linear-gradient(135deg,#d9ecff,#6d86a8)',
+  dramatic: 'linear-gradient(135deg,#ffffff,#111318 60%)', rim: 'radial-gradient(circle at 80% 30%,#fff,#1b2230 55%)',
+  gel: 'linear-gradient(135deg,#ff4fa3,#3c7bff)', catalog: 'linear-gradient(135deg,#ffffff,#dfe5ec)' };
+
+export default function HumanStudioLightingControls() {
+  const [info, setInfo] = useState<HumanStudioLightingInfo | null>(null), [draft, setDraft] = useState(defaults);
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  useEffect(() => {
+    let live = true;
+    void invoke('studio.humanStudioLighting', {}).then(i => { if (live) { setInfo(i); setDraft(i.settings); } })
+      .catch(e => { if (live) setError(String(e)); });
+    return () => { live = false; };
+  }, []);
+  const apply = async (settings: HumanStudioLightingSettings) => {
+    setDraft(settings); setBusy(true); setError('');
+    try { const i = await invoke('studio.humanStudioLighting', { settings }); setInfo(i); setDraft(i.settings); }
+    catch (e) { setError(String(e)); } finally { setBusy(false); }
+  };
+  const off = busy || !info;
+  return <>
+    {error && <HcNote tone="error">{error}</HcNote>}
+    <HcCard title="Свет" hint="Клик применяет пресет. Свет действует только в превью и не запекается в текстуры"
+      actions={<button type="button" className="hc-reset" title="Сбросить свет" disabled={off} onClick={() => void apply(defaults)}>↺</button>}>
+      <div className="hc-light-grid">{info?.presets.map(p => <button key={p.id} type="button" className="hc-light"
+        aria-pressed={draft.preset === p.id} disabled={off} onClick={() => void apply({ ...draft, preset: p.id })}>
+        <span className="hc-light__swatch" style={{ background: SWATCH[p.id] ?? '#556' }}/>
+        <span>{p.label.replace(/^\d+\s*·\s*/, '')}</span></button>)}</div>
+    </HcCard>
+    <HcCard title="Настройка">
+      <HcSlider id="hc-light-rot" label="Поворот света" min={-180} max={180} step={1} value={draft.rotation} disabled={off}
+        format={v => Math.round(v) + '°'} onChange={v => setDraft({ ...draft, rotation: v })} onCommit={() => void apply(draft)}/>
+      <HcSlider id="hc-light-gain" label="Яркость" min={.25} max={2} step={.01} value={draft.gain} disabled={off}
+        format={v => '×' + v.toFixed(2)} onChange={v => setDraft({ ...draft, gain: v })} onCommit={() => void apply(draft)}/>
+      <HcSwitch label="Циклорама" hint="Плавный переход пола в стену" checked={draft.backdrop} disabled={off} onChange={v => void apply({ ...draft, backdrop: v })}/>
+    </HcCard>
+  </>;
 }

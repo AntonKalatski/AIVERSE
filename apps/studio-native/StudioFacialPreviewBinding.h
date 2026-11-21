@@ -48,6 +48,12 @@ public:
     const std::optional<vivid::HumanAppearance>& appearance() const {return appearance_;}
     const std::optional<vivid::HumanFaceShape>& face() const {return face_;}
     bool appearanceOnly() const {return appearanceOnly_;}
+    // Before/after: draw the untouched source model while held.
+    bool compareOriginal() const {return compare_;}
+    Json setCompareOriginal(bool on) {
+        if(compare_!=on){compare_=on;gpuReady_=false;++revision_;}
+        return describe();
+    }
     Json bindAppearance(const StudioAssetCatalog& catalog,const std::string& guid,
                         uint64_t expected,const Json& look,const Json* face=nullptr) {
         if(expected!=revision_)throw std::runtime_error("Stale character selection; refresh first");
@@ -56,7 +62,7 @@ public:
         auto candidateFace=guid_==guid?face_:std::optional<vivid::HumanFaceShape>{};
         if(face){candidateFace.reset();if(!face->isNull())candidateFace=vivid::HumanFaceShape::fromJson(*face); }
         if(guid_!=guid || !bound()) {
-            draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;
+            draft_=Json();values_.clear();vectors_.clear();appearanceOnly_=true;compare_=false;
         }
         creator_=Json();
         guid_=guid;path_=path;appearance_=candidate;face_=candidateFace;
@@ -234,6 +240,7 @@ public:
     Json describe() const {
         Json result=Json::object();
         result.set("appearanceOnly",Json::fromBool(appearanceOnly_));
+        result.set("compare",Json::fromBool(compare_));
         result.set("appearance",appearance_?appearance_->toJson():Json());
         result.set("creator",Json::fromBool(creatorMode()));
         result.set("bound",Json::fromBool(bound()));
@@ -270,6 +277,7 @@ private:
     std::optional<vivid::HumanAppearance> appearance_;
     std::optional<vivid::HumanFaceShape> face_;
     bool appearanceOnly_=false;
+    bool compare_=false;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;

@@ -70,6 +70,7 @@ private:
     // face/look currently baked into the published Model.
     std::unique_ptr<render::Model> pristine_;
     Json appliedFace_,appliedLook_;
+    float expressionTime_=0; // test-expression clock (talk visemes)
     bool editInPlace(gfx::Device& device,render::Renderer3D& renderer,const StudioFacialPreviewBinding& binding);
     render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)
     std::string hairKey_;

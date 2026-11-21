@@ -567,6 +567,17 @@ Json StudioSession::dispatch(const Json& request) {
                     auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
                 }
             }
+        } else if(method=="studio.humanFacePick") {
+            // Face-region picking in the viewport (Face → Blend): the next
+            // clicks report the head point instead of sculpting.
+            const bool on=params.getBool("enabled");
+            if(on && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
+                throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
+            sculpt_.regionPick=on;if(on)sculpt_.armed=false;
+            auto result=Json::object();result.set("enabled",Json::fromBool(on));reply.set("result",std::move(result));
+        } else if(method=="studio.humanCompare") {
+            // Before/after: show the untouched source model while held.
+            reply.set("result",facialPreview_.setCompareOriginal(params.getBool("original")));
         } else if(method=="studio.humanCamera") {
             const auto view=params.getStr("view");
             if(view!="face"&&view!="torso"&&view!="full")throw std::invalid_argument("Camera view is face, torso or full");
@@ -583,6 +594,7 @@ Json StudioSession::dispatch(const Json& request) {
                 if(params.has("symmetry"))next.symmetry=params.getBool("symmetry");
                 if(next.armed && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
                     throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
+                if(next.armed)next.regionPick=false;
                 sculpt_=next;
             } else if(method=="studio.humanSculptStroke") {
                 // Sent by the native viewport after a hit test on the face meshes.
@@ -669,7 +681,8 @@ Json StudioSession::dispatch(const Json& request) {
             reply.set("result",std::move(info));
         } else if(method=="studio.humanAppearanceInfo" || method=="studio.humanAppearanceApply" ||
                   method=="studio.humanAppearanceSave" || method=="studio.humanAppearanceLoad" ||
-                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset") {
+                  method=="studio.humanAppearanceList" || method=="studio.humanAppearanceFromAsset" ||
+                  method=="studio.humanAppearanceThumbnails") {
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             if(method=="studio.humanAppearanceFromAsset") {
                 StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();
@@ -683,6 +696,8 @@ Json StudioSession::dispatch(const Json& request) {
                 std::string bytes((std::istreambuf_iterator<char>(in)),{});
                 const auto look=vivid::HumanAppearance::fromJson(Json::parse(bytes));
                 auto result=Json::object();result.set("name",Json::string("model profile"));result.set("look",look.toJson());reply.set("result",std::move(result));
+            } else if(method=="studio.humanAppearanceThumbnails") {
+                reply.set("result",readStudioHumanLookThumbnails(ws_.project.dir));
             } else if(method=="studio.humanAppearanceSave") {
                 reply.set("result",saveStudioHumanLook(ws_.project.dir,params.getStr("name"),params["look"]));
             } else if(method=="studio.humanAppearanceLoad") {

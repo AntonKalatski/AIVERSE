@@ -5,7 +5,7 @@
 // an allowlisted native StudioSession call; React never touches files.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Brush, Eye, Lightbulb, PersonStanding, Redo2, ScanFace, Scissors, Shirt, Sparkles, Undo2,
-  UserRound, LayoutDashboard, Palette } from 'lucide-react';
+  UserRound, LayoutDashboard, Palette, SplitSquareHorizontal } from 'lucide-react';
 import type { HumanFaceShape, HumanLook, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
 import { StudioPanel, StudioAlert, StudioEmptyState, StudioButton,
@@ -62,6 +62,9 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
   const [profileName, setProfileName] = useState('character');
   const [blendA, setBlendA] = useState(''), [blendB, setBlendB] = useState('');
   const [looks, setLooks] = useState<Record<string, HumanLook>>({});
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const loadThumbs = useCallback(() => { void invoke('studio.humanAppearanceThumbnails', {}).then(setThumbs).catch(() => {}); }, []);
+  useEffect(() => { if (project) loadThumbs(); }, [project, loadThumbs]);
   const [blend, setBlend] = useState(.5);
   const [faceTab, setFaceTab] = useState<'blend' | 'shape'>('blend');
   const pv = h.info?.preview;
@@ -72,6 +75,8 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
     setCamera(view); void invoke('studio.humanCamera', { view }).catch(() => {});
   }, []);
   const pick = (c: typeof CATEGORIES[number]) => { setCategory(c.id); if (bound) frame(c.camera); };
+  const [comparing, setComparing] = useState(false);
+  const compare = (original: boolean) => { setComparing(original); void invoke('studio.humanCompare', { original }).catch(() => {}); };
   const applyNow = () => void h.apply(h.face, h.draft);
   const commit = () => { if (autoApply && bound) applyNow(); };
 
@@ -106,13 +111,21 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
         <HcCard title="Образы" hint="Клик применяет образ к персонажу">
           <div className="hc-cards">{h.saved.map(n => <button key={n} type="button" className="hc-card" disabled={h.busy}
             onClick={() => void h.run(async () => { const r = await invoke('studio.humanAppearanceLoad', { name: n }); h.edit(r.look); setProfileName(n); if (autoApply && bound) await h.apply(h.face, r.look); })}>
-            <UserRound size={22}/><span>{n}</span></button>)}
+            {thumbs[n] ? <img className="hc-card__thumb" src={thumbs[n]} alt=""/> : <UserRound size={22}/>}<span>{n}</span></button>)}
             {!h.saved.length && <span className="hc-hint">Сохраните первый пресет ниже.</span>}</div>
           <div className="hc-row">
             <StudioInput aria-label="Имя пресета" value={profileName} onChange={e => setProfileName(e.target.value)}/>
             <StudioButton disabled={h.busy || !/^[A-Za-z0-9_-]{1,64}$/.test(profileName)} onClick={() => void h.run(async () => {
               await invoke('studio.humanAppearanceSave', { name: profileName, look: h.draft });
               h.setSaved((await invoke('studio.humanAppearanceList', {})).looks); h.setStatus('Сохранён пресет ' + profileName);
+              if (bound) {
+                // Picture for the preset card: face camera, one frame, back.
+                const back = camera; frame('face');
+                await new Promise(r => setTimeout(r, 450));
+                await invoke('studio.humanLookCapture', { name: profileName }).catch(() => {});
+                await new Promise(r => setTimeout(r, 900));
+                frame(back); loadThumbs();
+              }
             })}>Сохранить</StudioButton>
           </div>
         </HcCard>
@@ -157,7 +170,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
       case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
         <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}/>;
-      case 'pose': return <><HcHeader title="Поза и свет" hint="Поза и мимика превью, студийный свет и роли материалов модели."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
+      case 'pose': return <><HcHeader title="Поза и свет" hint="Мимика и поза для проверки лица в движении, студийный свет превью."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
         <details><summary>Роли материалов ({Object.keys(h.draft.materials).length})</summary><div className="hc-grid">
           {Object.entries(h.draft.materials).map(([m, role]) => <StudioField key={m} label={m} htmlFor={'role-' + m}>
             <StudioSelect id={'role-' + m} value={role} disabled={h.busy} onChange={e => h.edit({ ...h.draft, materials: { ...h.draft.materials, [m]: e.target.value } })}>
@@ -184,6 +197,9 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
           <StudioTabs label="Камера" items={[{ id: 'face', label: 'Лицо' }, { id: 'torso', label: 'Торс' }, { id: 'full', label: 'Рост' }]}
             selected={camera} onChange={v => frame(v)}/>
           <span className="hc-spacer"/>
+          <StudioButton size="sm" title="Удерживайте, чтобы увидеть исходную модель" aria-pressed={comparing} disabled={!ready}
+            onPointerDown={() => compare(true)} onPointerUp={() => compare(false)} onPointerLeave={() => { if (comparing) compare(false); }}>
+            <SplitSquareHorizontal size={14}/> До/после</StudioButton>
           <StudioButton size="sm" aria-label="Отменить" disabled={h.busy || !h.undo.length} onClick={h.undoLook}><Undo2 size={14}/></StudioButton>
           <StudioButton size="sm" aria-label="Повторить" disabled={h.busy || !h.redo.length} onClick={h.redoLook}><Redo2 size={14}/></StudioButton>
         </div>

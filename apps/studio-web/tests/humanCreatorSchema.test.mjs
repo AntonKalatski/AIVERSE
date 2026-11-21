@@ -53,3 +53,16 @@ test('sculpt zones name strokes the way the artist reads the face',async()=>{
  assert.equal(sculptZone([.5,.5,1]),'Нос');assert.equal(sculptZone([.3,.5,.9]),'Скула слева');
  assert.equal(sculptZone([.7,.6,.9]),'Глаза справа');assert.equal(sculptZone([.5,.15,.9]),'Подбородок');
 });
+test('viewport pick maps head points to face-blend parts',async()=>{
+ const {faceRegionAt}=await import('../src/panels/humanCreatorSchema.ts');
+ assert.equal(faceRegionAt([.5,.5,1]),'Нос');assert.equal(faceRegionAt([.3,.5,.9]),'Скулы и овал');
+ assert.equal(faceRegionAt([.5,.28,1]),'Рот');assert.equal(faceRegionAt([.5,.15,.9]),'Челюсть');assert.equal(faceRegionAt([.5,.02,.9]),null);
+});
+test('a part with its own handle blends independently of the rest',async()=>{
+ const {blendFace,FACE_ARCHETYPES,archetypePoint}=await import('../src/panels/humanCreatorSchema.ts');
+ const schema=[{key:'noseWidth',min:-1,max:1},{key:'jawWidth',min:-1,max:1}];
+ const all=Object.fromEntries(['Нос','Глаза','Рот','Челюсть','Брови','Скулы и овал'].map(k=>[k,1]));
+ const base=archetypePoint(0),wide=archetypePoint(FACE_ARCHETYPES.findIndex(a=>a.values.noseWidth>0));
+ const plain=blendFace(base,all,schema),solo=blendFace(base,all,schema,FACE_ARCHETYPES,{'Нос':wide});
+ assert.equal(solo.jawWidth??0,plain.jawWidth??0);assert.notEqual(solo.noseWidth??0,plain.noseWidth??0);
+});

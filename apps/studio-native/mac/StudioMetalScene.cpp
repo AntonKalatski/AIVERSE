@@ -1,5 +1,6 @@
 #include "apps/editor/AuthoringWater.h"
 #include "StudioMetalScene.h"
+#include "engine/render/CameraPng.h"
 #include "apps/studio-native/StudioLightingPreview.h"
 #include "engine/render/GiModelGeometry.h"
 #include "apps/editor/SceneRenderable.h"
@@ -656,6 +657,26 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             renderer_.render(pass,&antialiasing_);
             renderer_.resolvePostFx();
             device_->endPass();
+            if(!thumbnailPath_.empty() && submitted && synced) {
+                // Square crop of the upper middle (the head in the face
+                // camera), box-filtered down to 256 px.
+                device_->captureNextFrame([path=std::move(thumbnailPath_)](int w,int h,std::vector<uint8_t> rgba) {
+                    if(w<=0||h<=0||rgba.size()<size_t(w)*size_t(h)*4)return;
+                    const int side=std::max(1,std::min(w,h)*3/4),x0=(w-side)/2,y0=std::max(0,(h-side)/2-h/10);
+                    const int out=256;std::vector<uint8_t> px(size_t(out)*out*4);
+                    for(int y=0;y<out;++y)for(int x=0;x<out;++x){
+                        const int sx0=x0+x*side/out,sx1=std::max(sx0+1,x0+(x+1)*side/out);
+                        const int sy0=y0+y*side/out,sy1=std::max(sy0+1,y0+(y+1)*side/out);
+                        unsigned acc[4]{};unsigned n=0;
+                        for(int sy=sy0;sy<std::min(sy1,h);++sy)for(int sx=sx0;sx<std::min(sx1,w);++sx){
+                            const auto* p=&rgba[(size_t(sy)*w+sx)*4];for(int c=0;c<4;++c)acc[c]+=p[c];++n;}
+                        auto* d=&px[(size_t(y)*out+x)*4];
+                        for(int c=0;c<3;++c)d[c]=uint8_t(n?acc[c]/n:0);d[3]=255;
+                    }
+                    (void)render::cameraWritePngRgba8(path,out,out,px);
+                });
+                thumbnailPath_.clear();
+            }
             device_->endFrame();
             facialReady_=submitted && synced;
             facialError_=!submitted?reason:loading;

@@ -28,7 +28,9 @@ public:
     }
     // Viewport sculpt brush (Human Creator "Sculpt" tab). While armed, a
     // viewport click on the character is a stroke, not a selection.
-    struct SculptBrush { bool armed=false; float radius=.12f, strength=.012f; bool pull=false; bool symmetry=true; };
+    // regionPick: viewport clicks only report the face point (region choice
+    // for the face blend) instead of sculpting.
+    struct SculptBrush { bool armed=false; float radius=.12f, strength=.012f; bool pull=false; bool symmetry=true; bool regionPick=false; };
     const SculptBrush& sculptBrush() const noexcept {return sculpt_;}
     void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
         facialPreview_.setGpuStatus(rendered,reason);

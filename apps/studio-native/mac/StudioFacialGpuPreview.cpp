@@ -271,8 +271,11 @@ bool StudioFacialGpuPreview::sync(
 bool StudioFacialGpuPreview::editInPlace(gfx::Device& device,render::Renderer3D& renderer,
                                          const StudioFacialPreviewBinding& binding) {
     try {
-        const Json face=binding.face()?binding.face()->toJson():Json();
-        const Json look=binding.appearance()?binding.appearance()->toJson():Json();
+        const bool original=binding.compareOriginal();
+        const vivid::HumanFaceShape* shape=!original&&binding.face()?&*binding.face():nullptr;
+        const vivid::HumanAppearance* appearance=!original&&binding.appearance()?&*binding.appearance():nullptr;
+        const Json face=original?Json::string("original"):shape?shape->toJson():Json();
+        const Json look=original?Json::string("original"):appearance?appearance->toJson():Json();
         const bool faceChanged=!(face==appliedFace_);
         const bool lookChanged=!(look==appliedLook_);
         // Material roles (which source material is skin/hair/...) can change
@@ -280,7 +283,7 @@ bool StudioFacialGpuPreview::editInPlace(gfx::Device& device,render::Renderer3D&
         if(faceChanged) {
             if(!model_->vb.valid() || model_->geometryPoolPage)return false; // pooled: full reload
             render::Model work=*pristine_;
-            if(binding.face())vivid::applyHumanFaceShape(work,*binding.face());
+            if(shape)vivid::applyHumanFaceShape(work,*shape);
             if(work.vertices.size()*sizeof(render::ModelVertex)==0 ||
                work.vertices.size()!=pristine_->vertices.size())return false;
             vivid::HumanFacePickSurface nextPick;
@@ -297,7 +300,7 @@ bool StudioFacialGpuPreview::editInPlace(gfx::Device& device,render::Renderer3D&
         }
         if(lookChanged) {
             model_->materials=pristine_->materials;
-            if(binding.appearance())vivid::applyHumanAppearance(*model_,*binding.appearance());
+            if(appearance)vivid::applyHumanAppearance(*model_,*appearance);
             model_->markMaterialChanged();
             renderer.invalidateModelCachesFor(model_);
             appliedLook_=look;
@@ -346,6 +349,8 @@ bool StudioFacialGpuPreview::submit(
     animator_.evaluate(pose_); // one parent writer, bind/clip pose once
     if(!appearanceOnly_ && !facial_.apply(*model_,pose_,frameDt,error))
         return false; // FacialControlRig is transactional on failure
+    expressionTime_+=animation.playing?frameDt*animation.speed:0.f;
+    (void)vivid::applyHumanPreviewExpression(*model_,pose_,animation.expression,expressionTime_);
     render::worldMatrices(*model_,pose_,nodeWorld_);
     if(binding.creatorMode() && !creatorRig_.edits().empty()) {
         // Presentation-only rig correction overlay (Creator section 8).

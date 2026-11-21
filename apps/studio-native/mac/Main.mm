@@ -5,6 +5,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
+#include "apps/studio-native/StudioHumanLookDocument.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
 #include "apps/studio-native/mac/StudioGameSurface.h"
@@ -502,6 +503,23 @@
 }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
+    if (session_->sculptBrush().regionPick) {
+        // Face blend region choice: report where on the head the click landed.
+        const auto& face=session_->facialPreviewBinding().face();
+        aiverse::vivid::HumanFaceHit hit;
+        aiverse::Json payload=aiverse::Json::object();
+        std::string pickError;
+        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+            aiverse::Json p=aiverse::Json::array();
+            for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),5));
+            payload.set("hit",aiverse::Json::fromBool(true));payload.set("point",std::move(p));
+        } else {
+            payload.set("hit",aiverse::Json::fromBool(false));
+            if (!pickError.empty()) payload.set("error",aiverse::Json::string(pickError));
+        }
+        [self sendStudioEventPayload:"human.facePick" payload:payload];
+        return;
+    }
     if (session_->sculptBrush().armed) {
         // Human Creator sculpt: a click on the character is a brush stroke.
         const auto& face=session_->facialPreviewBinding().face();
@@ -814,6 +832,26 @@
             const std::string note=req["params"].getStr("message");
             if (note.size()<=1200) NSLog(@"[studio-web] JS: %s",note.c_str());
             return; // diagnostics never touch Workspace or the filesystem
+        }
+        if (req.getStr("method")=="studio.humanLookCapture" && req["id"].isNumber()) {
+            // Preset card picture: the next character frame is cropped around
+            // the head and written beside the look as <name>.png.
+            aiverse::Json reply=aiverse::Json::object();
+            reply.set("id",req["id"]);
+            try {
+                if (!preview_ || !session_->facialPreviewBinding().bound())
+                    throw std::runtime_error("Покажите персонажа во вьюпорте, чтобы снять превью");
+                const auto path=aiverse::studio::studioHumanLookThumbnailFile(
+                    session_->workspace().project.dir,req["params"].getStr("name"),true);
+                preview_->captureFacialThumbnail(path.string());
+                aiverse::Json result=aiverse::Json::object();
+                result.set("ok",aiverse::Json::fromBool(true));
+                reply.set("result",std::move(result));
+            } catch (const std::exception& ex) {
+                reply.set("error",aiverse::Json::string(ex.what()));
+            }
+            [self sendStudioReply:reply];
+            return;
         }
         if (req.getStr("method")=="studio.viewportInput" && req["id"].isNumber()) {
             aiverse::Json reply=aiverse::Json::object();

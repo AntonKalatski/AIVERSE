@@ -107,11 +107,15 @@ export function blendWeights(handle: [number, number], n = FACE_ARCHETYPES.lengt
   return inv.map(v => v / sum);
 }
 export function blendFace(handle: [number, number], regions: Record<string, number>,
-  schema: { key: string; min: number; max: number }[], archetypes = FACE_ARCHETYPES): Record<string, number> {
+  schema: { key: string; min: number; max: number }[], archetypes = FACE_ARCHETYPES,
+  perRegion: Record<string, [number, number]> = {}): Record<string, number> {
+  // perRegion: MetaHuman-style independent blend of one face part (picked in
+  // the viewport); parts without their own handle follow the main one.
   const w = blendWeights(handle, archetypes.length); const out: Record<string, number> = {};
   for (const f of schema) {
-    let v = 0; archetypes.forEach((a, i) => { v += (a.values[f.key] ?? 0) * w[i]; });
     const region = Object.entries(FACE_REGIONS).find(([, keys]) => keys.includes(f.key))?.[0];
+    const rw = region && perRegion[region] ? blendWeights(perRegion[region], archetypes.length) : w;
+    let v = 0; archetypes.forEach((a, i) => { v += (a.values[f.key] ?? 0) * rw[i]; });
     const scale = region ? Math.min(1, Math.max(0, regions[region] ?? 1)) : 1;
     v = Math.min(f.max, Math.max(f.min, v * scale));
     if (Math.abs(v) > 1e-5) out[f.key] = Math.round(v * 1e4) / 1e4;
@@ -124,4 +128,12 @@ export function sculptZone(p: [number, number, number]): string {
   const [x, y] = p; const side = x < .44 ? ' слева' : x > .56 ? ' справа' : '';
   const zone = y > .78 ? 'Лоб' : y > .66 ? 'Брови' : y > .56 ? 'Глаза' : y > .45 ? (side ? 'Скула' : 'Нос') : y > .34 ? (side ? 'Щека' : 'Нос') : y > .22 ? 'Рот' : y > .1 ? 'Подбородок' : 'Шея';
   return zone + side;
+}
+
+/** Face-blend region under a head point (viewport pick), or null off-face. */
+export function faceRegionAt(p: [number, number, number]): string | null {
+  const zone = sculptZone(p).replace(/ (слева|справа)$/, '');
+  const map: Record<string, string> = { 'Лоб': 'Брови', 'Брови': 'Брови', 'Глаза': 'Глаза', 'Нос': 'Нос', 'Скула': 'Скулы и овал',
+    'Щека': 'Скулы и овал', 'Рот': 'Рот', 'Подбородок': 'Челюсть' };
+  return map[zone] ?? null;
 }
