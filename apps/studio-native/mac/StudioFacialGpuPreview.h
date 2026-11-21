@@ -4,6 +4,7 @@
 #pragma once
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
 #include "engine/character/vivid/HumanCreatorWorkbench.h"
+#include "engine/character/vivid/MetaHumanAdapter.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/ModelAssetProvider.h"
 #include "engine/render/Animation.h"
@@ -83,6 +84,7 @@ private:
     std::vector<std::future<std::unique_ptr<render::Model>>> staleTryOn_;
     uint64_t tryOnRevision_=0;std::string tryOnGuid_;
     Json appliedWardrobe_;
+    vivid::MetaHumanRig metaRig_; // MetaHuman corrective / facial joint drivers (empty for other rigs)
     uint64_t appliedReload_=0;
     bool editInPlace(gfx::Device& device,render::Renderer3D& renderer,const StudioFacialPreviewBinding& binding);
     render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)

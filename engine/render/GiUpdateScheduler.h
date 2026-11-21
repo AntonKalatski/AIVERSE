@@ -42,6 +42,7 @@ public:
         origin_ = origin;
         spacing_ = spacing;
         nx_ = nx; ny_ = ny; nz_ = nz;
+        ring_[0] = ring_[1] = ring_[2] = 0;
         slots_.assign(size_t(nx_) * size_t(ny_) * size_t(nz_), Slot{});
         serial_ = 0;
         batches_ = 0;
@@ -173,11 +174,45 @@ public:
 
     float3 position(uint32_t i) const {
         if (i >= slots_.size()) throw std::out_of_range("GI probe index");
-        const int x = int(i % uint32_t(nx_));
-        const int y = int((i / uint32_t(nx_)) % uint32_t(ny_));
-        const int z = int(i / uint32_t(nx_ * ny_));
+        // Slot -> logical lattice cell: undo the toroidal ring offset.
+        const int x = wrap(int(i % uint32_t(nx_)) - ring_[0], nx_);
+        const int y = wrap(int((i / uint32_t(nx_)) % uint32_t(ny_)) - ring_[1], ny_);
+        const int z = wrap(int(i / uint32_t(nx_ * ny_)) - ring_[2], nz_);
         return origin_ + float3{float(x) + .5f, float(y) + .5f, float(z) + .5f} * spacing_;
     }
+
+    // Scrolling lattice: move the origin by whole cells. Slots keep their world
+    // cell (toroidal addressing, slot = (cell + ring) % dims), so only cells
+    // that newly entered the volume are recycled. Returns their slot indices,
+    // each marked dirty with `reason`; any in-flight ticket of such a slot
+    // becomes stale. A shift of a full lattice width or more recycles all.
+    std::vector<uint32_t> scroll(int dx, int dy, int dz, GiDirtyReason reason) {
+        std::vector<uint32_t> recycled;
+        if (!configured() || (dx == 0 && dy == 0 && dz == 0)) return recycled;
+        const int d[3] = {dx, dy, dz};
+        const int dims[3] = {nx_, ny_, nz_};
+        bool all = false;
+        for (int a = 0; a < 3; ++a) all |= d[a] >= dims[a] || d[a] <= -dims[a];
+        origin_ = origin_ + float3{float(dx), float(dy), float(dz)} * spacing_;
+        for (int a = 0; a < 3; ++a) ring_[a] = wrap(ring_[a] + d[a] % dims[a], dims[a]);
+        const uint8_t bit = giDirtyBit(reason);
+        for (int z = 0; z < nz_; ++z)
+            for (int y = 0; y < ny_; ++y)
+                for (int x = 0; x < nx_; ++x) {
+                    // New cell (x,y,z) was old cell (x,y,z)+d.
+                    const bool fresh = all || x + dx < 0 || x + dx >= nx_ ||
+                                       y + dy < 0 || y + dy >= ny_ || z + dz < 0 || z + dz >= nz_;
+                    if (!fresh) continue;
+                    const auto id = uint32_t(index(x, y, z));
+                    mark(slots_[id], bit);
+                    recycled.push_back(id);
+                }
+        std::sort(recycled.begin(), recycled.end());
+        return recycled;
+    }
+    float3 origin() const { return origin_; }
+    // Toroidal offset per axis (0 for a lattice that never scrolled).
+    int ring(int axis) const { return ring_[axis]; }
 
 private:
     struct Slot { uint64_t revision = 0; uint8_t reasons = 0; bool inFlight = false; };
@@ -188,13 +223,17 @@ private:
         slot.reasons = uint8_t(slot.reasons | bit);
         slot.revision = ++serial_;
     }
+    static int wrap(int v, int n) { v %= n; return v < 0 ? v + n : v; }
+    // Logical lattice cell -> slot (atlas probe index within this lattice).
     size_t index(int x, int y, int z) const {
-        return size_t(x) + size_t(nx_) * (size_t(y) + size_t(ny_) * size_t(z));
+        const int px = wrap(x + ring_[0], nx_), py = wrap(y + ring_[1], ny_), pz = wrap(z + ring_[2], nz_);
+        return size_t(px) + size_t(nx_) * (size_t(py) + size_t(ny_) * size_t(pz));
     }
 
     float3 origin_{};
     float spacing_ = 1;
     int nx_ = 0, ny_ = 0, nz_ = 0;
+    int ring_[3] = {0, 0, 0};
     uint64_t serial_ = 0, batches_ = 0;
     std::vector<Slot> slots_;
 };

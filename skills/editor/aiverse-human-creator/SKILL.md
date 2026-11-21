@@ -50,6 +50,8 @@ Agent draft from a text description ("пожилой рыбак, обветре�
 4. See the result: once the look is shown in Studio, `studio_character_snapshot {view: face|torso|full}` returns a PNG
    path of the Character Creator viewport (Studio must be running with this game). Open the PNG before you describe
    the result; if Studio does not answer, say that you could not see it.
+MetaHuman exports: run `human_metahuman_check {path, save_look}` first — it detects the MetaHuman, assigns material
+roles and face meshes, reports ARKit coverage and lists unsupported parts; quote those notes, do not claim parity.
 The Presets tab can copy this request for you ("Запрос агенту"). Makeup is part of the look: `makeup.*` keys
 (lips, blush, shadow, stubble with colour, position and size in skin UV).
 

@@ -318,7 +318,7 @@ public:
     // Per-view physical-lens defocus (LENS). Replaces metric focus distance,
     // sharp interval and max blur of the AUTHORED depthOfField effect; keeps
     // its intensity and silhouette tolerance. enabled=false switches DoF off
-    // for this view. Still requires the effect and AIVERSE_PRISMA_DOF=1.
+    // for this view. Still requires the authored effect.
     struct DepthOfFieldOverride {
         bool enabled = true;
         float focusDistance = 12.0f, focusRangeMeters = 4.0f, maxBlur = 8.0f;

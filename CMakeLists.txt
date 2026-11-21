@@ -2093,8 +2093,10 @@ if(AIVERSE_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
         add_test(NAME unity_vfx_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_vfx/test_import.py)
-        add_test(NAME unity_anim_importer COMMAND ${CMAKE_COMMAND} -E env AIVERSE_CLIPINFO=$<TARGET_FILE:aiverse_clipinfo>
-                 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_anim/test_unity_anim.py)
+        if(TARGET aiverse_clipinfo)   # host tool: not built for Android / iOS / web
+            add_test(NAME unity_anim_importer COMMAND ${CMAKE_COMMAND} -E env AIVERSE_CLIPINFO=$<TARGET_FILE:aiverse_clipinfo>
+                     ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/unity_anim/test_unity_anim.py)
+        endif()
     endif()
 endif()
 if(TARGET aiverse_editor_core)
@@ -2865,6 +2867,36 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
         add_executable(aiverse_hdr_gl tests/render/hdr_gl.mm engine/gfx/gl/GfxGL.cpp $<TARGET_OBJECTS:aiverse_runtime>)
         target_link_libraries(aiverse_hdr_gl PRIVATE aiverse_runtime "-framework OpenGL")
         set_source_files_properties(tests/render/hdr_gl.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Wno-deprecated-declarations")
+    endif()
+endif()
+
+# Headless Vulkan host of the same HDR / GI scene (Linux, Android device push).
+if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_VULKAN AND AIVERSE_PLATFORM MATCHES "^(linux|android)$")
+    add_executable(aiverse_hdr_vulkan tests/render/hdr_vulkan.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_hdr_vulkan PRIVATE aiverse_runtime)
+    if(AIVERSE_BUILD_TESTS)
+        foreach(_case dynamic_gi compute_gi compute_gi_cascades compute_gi_scroll)
+            add_test(NAME lighting_${_case}_vulkan COMMAND aiverse_hdr_vulkan)
+        endforeach()
+        set_tests_properties(lighting_dynamic_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_DYNAMIC_GI_VERIFY=1")
+        set_tests_properties(lighting_compute_gi_vulkan PROPERTIES ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1")
+        set_tests_properties(lighting_compute_gi_cascades_vulkan PROPERTIES
+            ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=3")
+        set_tests_properties(lighting_compute_gi_scroll_vulkan PROPERTIES
+            ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1")
+        foreach(_fx dof motion)
+            add_test(NAME prisma_${_fx}_vulkan COMMAND aiverse_hdr_vulkan)
+            set_tests_properties(prisma_${_fx}_vulkan PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+                LABELS "Lighting;GPU;Vulkan;Prisma" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+        endforeach()
+        add_test(NAME lighting_luma_vulkan COMMAND aiverse_hdr_vulkan)
+        set_tests_properties(lighting_luma_vulkan PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
+            LABELS "Lighting;GPU;Vulkan" TIMEOUT 180 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Luma GPU 8:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
+        set_tests_properties(lighting_dynamic_gi_vulkan lighting_compute_gi_vulkan lighting_compute_gi_cascades_vulkan lighting_compute_gi_scroll_vulkan
+            PROPERTIES LABELS "Lighting;GPU;Vulkan" TIMEOUT 120 RUN_SERIAL TRUE SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS|HDR Vulkan: skipped" FAIL_REGULAR_EXPRESSION "FAIL")
     endif()
 endif()
 
@@ -4398,8 +4430,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_ops_test PRIVATE aiverse_engine)
     aiverse_keep_test_asserts(aiverse_terraweave_ops_test)
     add_test(NAME terraweave_ops COMMAND aiverse_terraweave_ops_test)
-    add_executable(aiverse_terraweave_preview_test tests/terraweave_preview_test.cpp engine/world/AsyncChunkStream.cpp engine/world/ChunkStreamer.cpp)
-    target_link_libraries(aiverse_terraweave_preview_test PRIVATE aiverse_models aiverse_zstd_dec)
+    add_executable(aiverse_terraweave_preview_test tests/terraweave_preview_test.cpp)
+    # TerraWeaveHorizonScene owns a world::AsyncChunkStream (aiverse_world).
+    target_link_libraries(aiverse_terraweave_preview_test PRIVATE aiverse_models aiverse_world aiverse_zstd_dec)
     aiverse_keep_test_asserts(aiverse_terraweave_preview_test)
     add_test(NAME terraweave_preview COMMAND aiverse_terraweave_preview_test)
     add_executable(aiverse_terraweave_erosion_zones_test tests/terraweave_erosion_zones_test.cpp)
@@ -4553,6 +4586,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             gi_gpu_paged_bvh
             gi_gpu_residency_planner
             gi_world_dirty_accumulator
+            model_vt_shader_injection
             gi_geometry_scene
             gi_world_geometry_bridge
             gi_terraweave_resident_bridge
@@ -4564,6 +4598,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             lighting_cpu_gi_bridge
             lighting_gpu_bridge
             lighting_gi_cascades
+            lighting_gi_scrolling
             lighting_luma_mobile_fallback
             lighting_model_gi_shader_contract
             lighting_terrain_gi_shader_contract)
@@ -4627,6 +4662,14 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL
         TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
         FAIL_REGULAR_EXPRESSION "FAIL")
+    # Scrolling cascades: the focus walks away (all probes recycled and zeroed)
+    # and back; the re-traced probes must match the CPU reference again.
+    add_test(NAME lighting_compute_gi_gpu_scroll COMMAND aiverse_hdr_scene)
+    set_tests_properties(lighting_compute_gi_gpu_scroll PROPERTIES
+        ENVIRONMENT "AIVERSE_COMPUTE_GI_VERIFY=1;AIVERSE_COMPUTE_GI_CASCADES=2;AIVERSE_COMPUTE_GI_SCROLL=1" LABELS "Lighting;GPU"
+        TIMEOUT 120 RUN_SERIAL TRUE
+        PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS"
+        FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
 
 if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
@@ -4672,6 +4715,19 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
 endif()
 
 if(AIVERSE_BUILD_TESTS AND AIVERSE_BUILD_HDR_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    # PRISMA Depth of Field and Motion Blur: regular effects (no opt-in flag).
+    foreach(_fx dof motion)
+        add_test(NAME prisma_${_fx}_gpu COMMAND aiverse_hdr_scene)
+        set_tests_properties(prisma_${_fx}_gpu PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+            LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
+            PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        if(TARGET aiverse_hdr_gl)
+            add_test(NAME prisma_${_fx}_gl COMMAND aiverse_hdr_gl)
+            set_tests_properties(prisma_${_fx}_gl PROPERTIES ENVIRONMENT "AIVERSE_PRISMA_EFFECT_TEST=${_fx}"
+                LABELS "Lighting;GPU;Prisma" TIMEOUT 120 RUN_SERIAL TRUE
+                PASS_REGULAR_EXPRESSION "PRISMA ${_fx}: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+        endif()
+    endforeach()
     add_test(NAME lighting_luma_gpu COMMAND aiverse_hdr_scene)
     set_tests_properties(lighting_luma_gpu PROPERTIES ENVIRONMENT "AIVERSE_LUMA_VERIFY=1"
         LABELS "Lighting;GPU" TIMEOUT 180 RUN_SERIAL TRUE

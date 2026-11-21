@@ -34,9 +34,9 @@
 | Grain | Final composite | Animated vs static determinism |
 | Fade | Final composite | Черный/белый/full amount |
 | Letterbox | Final composite | Кинорамка до UI/оверлеев |
-| DepthOfField | Full-screen depth defocus | По умолчанию device depth; opt-in metric focus/ortho/silhouette rejection; `AIVERSE_PRISMA_DOF=1` |
+| DepthOfField | Full-screen depth defocus | По умолчанию device depth; opt-in metric focus/ortho/silhouette rejection; regular effect (2026-11-21), `AIVERSE_PRISMA_DOF=0` kill switch |
 | AutoExposure | HDR log meter/reduction/adapt + final | Opt-in HDR AE, highlight rejection, frozen/ROI/manual EV и cut reset; `AIVERSE_PRISMA_AUTO_EXPOSURE=1` для автоматического варианта |
-| MotionBlur | Camera/object velocity + HDR shutter | Opt-in `AIVERSE_PRISMA_MOTION_BLUR=1`, depth-edge/reactive-alpha guards |
+| MotionBlur | Camera/object velocity + HDR shutter | Regular HDR effect (2026-11-21), `AIVERSE_PRISMA_MOTION_BLUR=0` kill switch; depth-edge/reactive-alpha guards |
 | TemporalResolve | Per-camera native-output HDR history | Opt-in `AIVERSE_PRISMA_TEMPORAL=1`, history depth, reactive, jitter, optional upscaling/adaptive quality |
 | ShaderGraph | Bounded final composite | До 4 текстур, graceful fixed-effect fallback, autoexposure slot 8/9 |
 

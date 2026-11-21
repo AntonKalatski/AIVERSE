@@ -751,7 +751,7 @@ DoF estimate from 10 to 18 pixel-read units when `metricFocus`
 is authored. This is not a GPU timing. The editor exposes new
 catalog fields through its generic effect/volume editors, explains
 their meaning and shows `degraded fallback` when relevant.
-`AIVERSE_PRISMA_DOF=1` remains necessary, normal
+Since 2026-11-21 DoF needs no opt-in flag (`AIVERSE_PRISMA_DOF=0` is a kill switch); normal
 `minQuality=High` remains the default; explicit project tier
 overrides can run DoF in SDR, and the status report should match
 actual runtime execution rather than falsely requiring HDR.

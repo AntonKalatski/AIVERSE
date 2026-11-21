@@ -398,6 +398,7 @@ void Renderer3D::setPresentationTime(float seconds) {
 
 void Renderer3D::beginScene(const Camera& cam, int fbW, int fbH) {
     customMaterialReceiver_.clear();customSurfaceReceiver_.clear();
+    visibilityMask_ = ~0u;
     if(dev_)checkGpuDevice(*dev_);
     // Atlas identity is per VIEW, never inherited by a different camera.
     dynamicGiAtlas_={};

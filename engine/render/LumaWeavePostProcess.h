@@ -45,6 +45,7 @@ public:
             return false;
         gfx::ShaderDesc sd;
         sd.msl=AIVERSE_MSL_LUMAWEAVE_HDR_COMPOSITE;
+        sd.glslVertex=luma_vk::kComposeVS;sd.glslFragment=luma_vk::kComposeFS;
         sd.textureSlots=4;sd.uniformSlots=1;
         sd.linearTarget=true;
         sd.label="LumaWeave explicit HDR direct compositor";

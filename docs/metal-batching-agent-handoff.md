@@ -555,9 +555,10 @@ work above never reached them. Not compiled or measured on a Mac by the assistan
   culled count with `AIVERSE_FRAME_TRACE=1`. Known limits: FX emitted from attachment anchors of
   culled objects (e.g. smoke rising into view from an object just off screen) are not spawned;
   planar reflections of objects outside the camera are not drawn.
-- **Late drawable acquisition** in `GfxMetal` (`AIVERSE_METAL_EARLY_DRAWABLE=1` restores): the
-  drawable is taken at the first screen pass (or a screen `copyColor`), after offscreen passes and
-  the game's CPU work; a frame without a screen pass presents nothing.
+- **Late drawable acquisition** in `GfxMetal`, opt-in `AIVERSE_METAL_LATE_DRAWABLE=1`: the
+  drawable is taken at the first screen pass (or a screen `copyColor`). Default stays early: on the
+  owner's Mac (qa-lua-lab, uncapped) one run showed equal frames (~9.3 ms), another ~8 ms late vs
+  ~4 ms early; no gain was measured, so it is not the default until a repeated A/B says otherwise.
 - **`aiversebuild --precompile-metal`** (macOS): `-DAIVERSE_PRECOMPILE_METAL=ON` with loose
   bundled content (no `content.rpak`), so `tools/metal/precompile.py` ships offline `.metallib`s and
   the host-GPU pipeline archive. Needs the Xcode Metal Toolchain and a GUI session; default off.

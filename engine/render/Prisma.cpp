@@ -18,6 +18,18 @@ namespace aiverse::render {
 
 namespace {
 
+// Depth of Field and Motion Blur are regular effects: they run whenever a
+// profile lists them (enabled, quality tier). Their environment variables
+// remain only as kill switches ("0"). The other runtime opt-ins
+// (temporal resolve, auto exposure, graph passes) still need "1".
+bool prismaOptIn(const char* key) {
+    const char* flag = std::getenv(key);
+    if (std::strcmp(key, "AIVERSE_PRISMA_DOF") == 0 ||
+        std::strcmp(key, "AIVERSE_PRISMA_MOTION_BLUR") == 0)
+        return !(flag && std::strcmp(flag, "0") == 0);
+    return flag && std::strcmp(flag, "1") == 0;
+}
+
 // Composite feature bits (also the shader cache key).
 enum : uint32_t {
     kPfPixelate = 1u << 0, kPfCa = 1u << 1, kPfSharpen = 1u << 2, kPfTilt = 1u << 3, kPfBloom = 1u << 4,
@@ -981,10 +993,8 @@ bool Prisma::wantsObjectMotionVectors() const {
     if (!enabled_ || !settings_.enabled || !hdrFrame_) return false;
     const auto activeEffect = [this](PrismaType type, const char* flag) {
         const PrismaEffect* effect = settings_.find(type);
-        const char* env = std::getenv(flag);
         return effect && effect->enabled &&
-            int(quality_) >= int(effect->minQuality) &&
-            env && std::strcmp(env, "1") == 0;
+            int(quality_) >= int(effect->minQuality) && prismaOptIn(flag);
     };
     const bool blur = activeEffect(PrismaType::MotionBlur, "AIVERSE_PRISMA_MOTION_BLUR") &&
         settings_.find(PrismaType::MotionBlur)->get("intensity") > 0 &&
@@ -1788,10 +1798,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     bool fxaaEncoded = false;
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const PrismaEffect* temporalEffect = find(PrismaType::TemporalResolve);
-    const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
+
     const char* temporalFlag = std::getenv("AIVERSE_PRISMA_TEMPORAL");
-    const bool motionRequested = hdrFrame_ && motionEffect && motionFlag &&
-        std::strcmp(motionFlag,"1")==0 && motionEffect->get("intensity")>0 &&
+    const bool motionRequested = hdrFrame_ && motionEffect &&
+        prismaOptIn("AIVERSE_PRISMA_MOTION_BLUR") && motionEffect->get("intensity")>0 &&
         motionEffect->get("maxPixels")>0;
     const bool rejectedHistory = viewHistoryAdmissionRejected_.count(viewId_) != 0 ||
         (temporalViews_.count(viewId_) != 0 &&
@@ -1883,17 +1893,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 motionEffect->get("reactiveTapRejection") > 0.001f;
         }
     }
-    // ---- experimental Depth of Field: opt-in camera-linear focus plane
+    // ---- Depth of Field: camera-linear focus plane (metricFocus)
     // while preserving the existing device-depth result for old profiles.
     // The scene depth texture must NEVER be attached for depth writes while
     // sampled, so a separate scratch depth attachment is used for this pass.
     if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
-        const char* flag = std::getenv("AIVERSE_PRISMA_DOF");
         const auto lensDof = viewDepthOfField_.find(viewId_);
         const bool lensOverride = lensDof != viewDepthOfField_.end();
         const float dofMaxBlur = lensOverride ? lensDof->second.maxBlur
                                               : dof->get("maxBlur");
-        if (flag && std::strcmp(flag, "1") == 0 &&
+        if (prismaOptIn("AIVERSE_PRISMA_DOF") &&
             (!lensOverride || lensDof->second.enabled) &&
             dof->get("intensity") > 0.0f && dofMaxBlur > 0.0f &&
             program(kDepthOfField).valid()) {
@@ -2834,10 +2843,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // resolve for this stable view, not a hypothetical prepared shader or a
     // result from another viewport. GPU completion/pixel validity is unknown.
     const bool compositeEncoded = pipe.valid();
-    const auto optIn = [](const char* key) {
-        const char* flag = std::getenv(key);
-        return flag && std::strcmp(flag, "1") == 0;
-    };
+    const auto optIn = [](const char* key) { return prismaOptIn(key); };
     for (const auto& authored : settings_.effects) {
         EffectExecution state{};
         state.type = authored.type;
@@ -2930,7 +2936,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 // runtime gate, not the stricter HDR rule of Temporal AA.
                 if (!optIn("AIVERSE_PRISMA_DOF")) {
                     state.requested = false;
-                    state.reason = "opt-in disabled: AIVERSE_PRISMA_DOF";
+                    state.reason = "disabled by AIVERSE_PRISMA_DOF=0";
                 } else {
                     if (authored.get("intensity") <= 0 ||
                         authored.get("maxBlur") <= 0) {
