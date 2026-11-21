@@ -80,6 +80,11 @@ public:
     bool localSpace() const { return localSpace_; }
     void setSnap(bool enabled, float move, float rotate, float scale);
     void setGizmosVisible(bool visible) { gizmosVisible_ = visible; }
+    // Hold V while moving: the object's pivot snaps to the nearest other object's pivot on screen.
+    void setPivotSnap(bool on) { pivotSnap_ = on; }
+    // ⇧F: fit every document object into the view.
+    void frameAll(const editor::MapDoc& map, bool fpsProject);
+    void tweenCamera(render::float3 target, float distance, float yaw, float pitch) { startTween(target, distance, yaw, pitch); }
     // -1 none, 0..2 axis, 3 centre (uniform scale), 4..6 Move plane (normal X, Y, Z: YZ, XZ, XY).
     int transformGizmoHit(float x, float y, float width, float height) const;
     bool beginTransformDrag(float x, float y, float width, float height);
@@ -148,6 +153,8 @@ private:
     std::set<std::string> rejectedDocumentModels_;
     std::map<std::string,std::filesystem::file_time_type> documentModelTimes_;
     std::vector<StudioModelPickInstance> modelInstances_;
+    bool pivotSnap_ = false;
+    std::vector<std::pair<std::string,render::float3>> snapPivots_; // proxy centres of the last frame
     // RTS built-in procedural shapes ("view": {"shape": …}) for types without a model file,
     // built once and shared; team-coloured parts take the owner colour.
     std::map<std::string,std::unique_ptr<render::Model>> shapeModels_;

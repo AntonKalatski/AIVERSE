@@ -1,5 +1,5 @@
 /** Persistable nested docking geometry; no React, renderer or genre dependencies. */
-export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance','build','wind'] as const;
+export const STUDIO_PANELS = ['hierarchy','assets','scene','game','materials','animation','facial_rig','inspector','console','lighting','shader_graph','project','runtime','nereid_flow','rules','human_appearance','build','wind','history'] as const;
 export type StudioPanel = typeof STUDIO_PANELS[number];
 /** Single metadata source for the UI shell and AI-authored panel integrations. */
 export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
@@ -10,7 +10,8 @@ export const STUDIO_PANEL_TITLES: Record<StudioPanel,string> = {
   rules: "Rules",
   human_appearance: "VIVID Appearance",
   build: "Build",
-  wind: "Ветер"
+  wind: "Ветер",
+  history: "History"
 };
 export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   hierarchy: 'dock-left', assets: 'dock-bottom', scene: 'dock-center', game: 'dock-center',
@@ -20,7 +21,8 @@ export const STUDIO_PANEL_HOME: Record<StudioPanel,string> = {
   rules: "dock-center",
   human_appearance: "dock-right",
   build: "dock-center",
-  wind: "dock-right"
+  wind: "dock-right",
+  history: "dock-right"
 };
 
 export type DockAxis = 'horizontal' | 'vertical';
@@ -54,7 +56,7 @@ export function defaultDockTree(): DockTree {
       stack('dock-left',['hierarchy','project'],'hierarchy'),
       split('split-body-right','horizontal',.72,
         stack('dock-center',['scene','game','materials','animation','facial_rig','shader_graph','rules','build'],'scene'),
-        stack('dock-right',['inspector','lighting','runtime','nereid_flow','human_appearance','wind'],'inspector'))),
+        stack('dock-right',['inspector','lighting','runtime','nereid_flow','human_appearance','wind','history'],'inspector'))),
     stack('dock-bottom',['assets','console'],'assets')) };
 }
 function traverse(node: DockNode, visitor: (n: DockNode)=>void): void {

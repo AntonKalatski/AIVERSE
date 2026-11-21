@@ -534,6 +534,15 @@ bool StudioMetalScene::groundPoint(float x,float y,float width,float height,floa
     const float t=-o.y/d.y; if(!(t>0)||!std::isfinite(t))return false;
     out=o+d*t; return true;
 }
+void StudioMetalScene::frameAll(const editor::MapDoc& map,bool fpsProject) {
+    const auto proxies=studioDocumentProxies(map,fpsProject,terrainLevelHeight_);
+    float3 lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};
+    for(const auto& p:proxies){lo={std::min(lo.x,p.boundsMin.x),std::min(lo.y,p.boundsMin.y),std::min(lo.z,p.boundsMin.z)};
+                               hi={std::max(hi.x,p.boundsMax.x),std::max(hi.y,p.boundsMax.y),std::max(hi.z,p.boundsMax.z)};}
+    if(proxies.empty()){lo={0,0,0};hi={float(map.data.w),1.0f,float(map.data.h)};}
+    const float3 size=hi-lo;
+    startTween((lo+hi)*.5f,std::clamp(std::max({size.x,size.y,size.z,1.0f})*1.2f,2.0f,100000.0f),camera_.yaw,camera_.pitch);
+}
 render::RTSCamera StudioMetalScene::viewCamera() const {
     render::RTSCamera view=camera_;
     view.zNear=std::clamp(camera_.distance*0.002f,0.05f,0.5f);
@@ -700,6 +709,21 @@ void StudioMetalScene::updateTransformDrag(float x,float y,float width,float hei
         drag_.moveOffset=l>100000.0f?delta*(100000.0f/l):delta;
         drag_.value=l;
         return;
+    }
+    if(drag_.tool==TransformTool::Move && pivotSnap_) {
+        // V held: jump to the nearest other object's pivot within 28 px of the cursor.
+        const auto view=viewCamera();float best=28.0f*28.0f;const float3* target=nullptr;
+        for(const auto& [id,p]:snapPivots_) {
+            if(id==drag_.id)continue;
+            float2 s;if(!view.worldToScreen(p,width,height,s))continue;
+            const float dd=(s.x-x)*(s.x-x)+(s.y-y)*(s.y-y);
+            if(dd<best){best=dd;target=&p;}
+        }
+        if(target) {
+            drag_.moveOffset=*target-drag_.pivot;
+            drag_.value=std::sqrt(dot(drag_.moveOffset,drag_.moveOffset));
+            return;
+        }
     }
     float t=0;if(!axisParameter(drag_.pivot,drag_.dir,o,d,t))return;
     float delta=std::clamp(t-drag_.startT,-100000.0f,100000.0f);
@@ -1238,6 +1262,10 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     const auto& map = doc.data;
     const bool showTerrain=rules["terrain"].getBool("render",true)&&map.extra.getStr("terrainPresentation","legacy")!="entities";
     const auto proxies=studioDocumentProxies(doc,fpsProject,levelHeight);
+    snapPivots_.clear();
+    // Same pivot as the Move gizmo: bottom centre (lights: centre).
+    for (const auto& proxy:proxies) if (!hidden_.count(proxy.id))
+        snapPivots_.push_back({proxy.id,proxy.light?proxy.center:float3{proxy.center.x,proxy.boundsMin.y,proxy.center.z}});
     syncDocumentModels(doc,projectPath,rules,proxies);
 
     if (terrainRevision_ != doc.revision || terrainLevelHeight_ != levelHeight || (showTerrain && !terrain_.vb.valid())) {

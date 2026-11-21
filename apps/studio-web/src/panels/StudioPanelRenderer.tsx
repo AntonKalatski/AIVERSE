@@ -27,6 +27,7 @@ import ProjectPanel from './generated/ProjectPanel';
 import RuntimePanel from './generated/RuntimePanel';
 import BuildPanel from './BuildPanel';
 import ConsolePanel from './ConsolePanel';
+import HistoryPanel from './HistoryPanel';
 import { LiveHierarchy, LiveInspector, LiveSwitch } from './LivePanels';
 import { useLivePlay } from './livePlay';
 
@@ -81,6 +82,8 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <AssetsPanel projectPath={snapshot?.project.path ?? ''}/>;
       case 'inspector':
         return ctx.playing ? <PlayInspector ctx={ctx}/> : <InspectorPanel {...ctx}/>;
+      case 'history':
+        return <HistoryPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'build':
         return <BuildPanel snapshot={snapshot} commitSnapshot={ctx.commitSnapshot}/>;
       case 'rules':
@@ -89,7 +92,7 @@ export function renderStudioPanel(panel: StudioPanel, ctx: StudioPanelContext): 
         return <>
           <div className="viewport-toolbar">
             <div className="viewport-tools">
-              <SceneToolbar enabled={connected && sceneMode !== 'welcome'}/>
+              <SceneToolbar enabled={connected && sceneMode !== 'welcome'} projectPath={snapshot?.project.path ?? ''}/>
               <span className="toolbar-divider"/>
               <button type="button" className="viewport-control" title="Focus selected object (F)"
                 aria-label="Focus selected Scene object" disabled={!connected || !selected}

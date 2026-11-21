@@ -136,6 +136,7 @@
     BOOL closingFloats_;            // main window closes: keep the float list for next launch
     NSTimer* dockWatch_;            // a floating window is being dragged: dock it when dropped over the main window
     BOOL dockHover_;
+    BOOL surfaceSnap_;              // Move drops objects onto the terrain
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -151,6 +152,8 @@
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap;
 - (void)sceneMoveEnd;
+- (void)frameAllScene;
+- (void)setScenePivotSnap:(BOOL)on;
 - (void)setSceneTool:(int)tool;
 - (int)sceneTool;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
@@ -314,6 +317,10 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     else [self.host lookX:event.deltaX y:event.deltaY];
 }
 - (void)otherMouseDragged:(NSEvent*)event { [self.host panX:event.deltaX y:event.deltaY]; }
+- (void)keyUp:(NSEvent*)event {
+    if (event.keyCode==9) { [self.host setScenePivotSnap:NO]; return; }
+    [super keyUp:event];
+}
 - (void)keyDown:(NSEvent*)event {
     // Physical key codes (ANSI positions): shortcuts work with any keyboard layout.
     enum : unsigned short { kA=0,kS=1,kD=2,kF=3,kQ=12,kW=13,kE=14,kR=15,kLeft=123,kRight=124,kDown=125,kUp=126,kHome=115 };
@@ -323,6 +330,8 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     const NSEventModifierFlags mods=event.modifierFlags&(NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption|NSEventModifierFlagShift);
     if ((code==51 || code==117) && !(mods&~NSEventModifierFlagShift)) { [self.host sceneSelectionAction:"studio.entitiesDelete"]; return; }
     if (code==kD && mods==NSEventModifierFlagCommand) { [self.host sceneSelectionAction:"studio.entitiesDuplicate"]; return; }
+    if (code==kF && mods==NSEventModifierFlagShift) { [self.host frameAllScene]; return; }   // ⇧F: frame everything
+    if (code==9 && !mods) { [self.host setScenePivotSnap:YES]; return; }                       // hold V: snap to pivots
     if (event.modifierFlags & (NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) {
         [super keyDown:event]; return;
     }
@@ -944,6 +953,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     [self sendStudioEvent:"viewport.tool" message:names[tool]];
 }
 - (int)sceneTool { return preview_ ? int(preview_->transformTool()) : 1; }
+- (void)frameAllScene {
+    if (projectLoading_ || !preview_ || !session_) return;
+    preview_->frameAll(session_->workspace().map,session_->workspace().project.isFps());
+}
+- (void)setScenePivotSnap:(BOOL)on { if (preview_) preview_->setPivotSnap(on); }
 - (void)sceneMoveEnd {
     if (projectLoading_) { if (preview_) preview_->clearTransformPreview(); return; }
     if (!preview_ || !session_) return;
@@ -980,6 +994,13 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         if (std::abs(d[0])>1e-5f) add({"x"},[&](double v){return v+d[0];},4);
         if (std::abs(d[1])>1e-5f) add({"y","height"},[&](double v){return v+d[1];},4);
         if (std::abs(d[2])>1e-5f) add({"z"},[&](double v){return v+d[2];},4);
+        // Surface snap: the moved object rests on the terrain at its new spot.
+        if (surfaceSnap_ && commit->id.rfind("entity:",0)==0 && current.count("x") && current.count("z") && current.count("y")) {
+            const auto& ws=session_->workspace();
+            const float nx=float(current["x"]+d[0]),nz=float(current["z"]+d[2]);
+            values.set("y",aiverse::Json::number(double(aiverse::studio::terrainPreviewHeight(ws.map.data,nx,nz,
+                float(ws.project.rules.levelHeight.toDouble()))),4));
+        }
     } else if (commit->tool==Tool::Rotate && commit->axis>=0 && commit->axis<3) {
         static const char* keys[3]={"rotationX","rotationY","rotationZ"};
         add({keys[commit->axis]},[&](double v){return std::remainder(v+double(commit->degrees),360.0);},3);
@@ -1550,7 +1571,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             aiverse::Json result=aiverse::Json::object();
             // Pointer/keyboard navigation comes from HTML only in composite mode (the
             // Metal NSView handles it otherwise); toolbar commands work in both.
-            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection" || kind=="tool" || kind=="hover";
+            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection" || kind=="tool" || kind=="hover" ||
+                kind=="frameAll" || kind=="camera";
             if ((!htmlComposite_ && !toolbarCommand) || !placement_.visible || !preview_ || viewport_.hidden) {
                 reply.set("error",aiverse::Json::string("Viewport input unavailable"));
             } else if (kind=="orbit" && input["dx"].isNumber() && input["dy"].isNumber()) {
@@ -1602,6 +1624,23 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 const std::string id=input["id"].isString()?input["id"].str():"";
                 if (id.size()>256) reply.set("error",aiverse::Json::string("Invalid hover id"));
                 else { hoverId_=id; result.set("ok",aiverse::Json::fromBool(true)); }
+            } else if (kind=="frameAll") {
+                [self frameAllScene];result.set("ok",aiverse::Json::fromBool(true));
+            } else if (kind=="camera") {
+                // Camera bookmarks: read the Scene camera, or tween to a stored one.
+                const auto& set=input["set"];
+                if (set.isObject()) {
+                    const double x=set["x"].toDouble(),y=set["y"].toDouble(),z=set["z"].toDouble(),dist=set["distance"].toDouble(),
+                                 yaw=set["yaw"].toDouble(),pitch=set["pitch"].toDouble();
+                    for (double v:{x,y,z,dist,yaw,pitch}) if (!std::isfinite(v) || std::abs(v)>1e6) throw std::runtime_error("Invalid camera");
+                    preview_->setOrthographic(set.getBool("ortho"));
+                    preview_->tweenCamera({float(x),float(y),float(z)},float(std::clamp(dist,0.5,100000.0)),float(yaw),float(pitch));
+                }
+                const auto cam=preview_->cameraState();
+                result.set("x",aiverse::Json::number(double(cam.target.x),3));result.set("y",aiverse::Json::number(double(cam.target.y),3));
+                result.set("z",aiverse::Json::number(double(cam.target.z),3));result.set("distance",aiverse::Json::number(double(cam.distance),3));
+                result.set("yaw",aiverse::Json::number(double(cam.yaw),5));result.set("pitch",aiverse::Json::number(double(cam.pitch),5));
+                result.set("ortho",aiverse::Json::fromBool(cam.ortho));
             } else if (kind=="tool") {
                 // Scene toolbar: tool, Global/Local, snapping, gizmo visibility.
                 static const char* names[4]={"view","move","rotate","scale"};
@@ -1609,6 +1648,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 for (int i=0;i<4;++i) if (tool==names[i]) preview_->setTransformTool(aiverse::studio::StudioMetalScene::TransformTool(i));
                 if (input["local"].boolean(false)==input["local"].boolean(true)) preview_->setLocalSpace(input["local"].boolean());
                 if (input["gizmos"].boolean(false)==input["gizmos"].boolean(true)) preview_->setGizmosVisible(input["gizmos"].boolean());
+                if (input["surface"].boolean(false)==input["surface"].boolean(true)) surfaceSnap_=input["surface"].boolean();
                 if (input["snap"].boolean(false)==input["snap"].boolean(true))
                     preview_->setSnap(input["snap"].boolean(),float(input["snapMove"].toDouble(0)),
                         float(input["snapRotate"].toDouble(0)),float(input["snapScale"].toDouble(0)));
@@ -1758,7 +1798,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
              method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove" ||
-             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet")) {
+             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet" || method=="studio.entitiesAlign" || method=="studio.historyJump")) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

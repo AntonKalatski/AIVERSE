@@ -392,6 +392,16 @@ export default function App() {
         onSelect: () => entityAction('studio.entityDelete') },
       { id: 'frame', label: 'Frame Selected', shortcut: 'F', disabled: !selectedEntity || !connected,
         onSelect: () => void invoke('studio.viewportInput', { kind: 'focus' }).catch(console.warn) },
+      { id: 'frameAll', label: 'Frame All', shortcut: '⇧F', disabled: !connected || !project,
+        onSelect: () => void invoke('studio.viewportInput', { kind: 'frameAll' }).catch(console.warn) },
+      { id: 'align', label: 'Align', caption: true, separator: true, onSelect: () => {} },
+      ...([['minX', 'Align Left (min X)', 2], ['centerX', 'Align Centre X', 2], ['maxX', 'Align Right (max X)', 2],
+           ['minZ', 'Align Back (min Z)', 2], ['centerZ', 'Align Centre Z', 2], ['maxZ', 'Align Front (max Z)', 2],
+           ['distributeX', 'Distribute Along X', 3], ['distributeZ', 'Distribute Along Z', 3], ['ground', 'Drop to Ground', 1]] as const)
+        .map(([mode, label, min]) => ({ id: 'align-' + mode, label, disabled: busy || selection.length < min,
+          onSelect: () => void invoke('studio.entitiesAlign', { entityIds: selection, mode })
+            .then(next => { setInspectorPin(null); setSnapshot(next); setError(''); })
+            .catch(e => setError(e instanceof Error ? e.message : String(e))) })),
       { id: 'prefs', label: 'Preferences…', separator: true, onSelect: () => setSettingsOpen(true) },
     ] },
     { id: 'window', label: 'Window', items: () => [
