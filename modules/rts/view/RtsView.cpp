@@ -155,6 +155,9 @@ struct RtsView::PreparedSurfaceLease final {
     // Topology and ordinary scene-frame leases share the same one-shot
     // owner transaction and source-revision checks; only one can be pending.
     bool topology=false,preserveFogHistory=false;
+    // False for a lease staged and published in the same call: its content
+    // fingerprints were never computed, so it can never match later.
+    bool fingerprinted=true;
     std::shared_ptr<TerrainRenderer::PreparedMap> topologyCandidate;
     std::shared_ptr<RtsGroundFx::PreparedFrame> groundCandidate;
     std::shared_ptr<RtsRoadView::PreparedRebuild> roadCandidate;
@@ -169,7 +172,7 @@ struct RtsView::PreparedSurfaceLease final {
     bool matches(const RtsView& view,const Renderer3D& r,
                  const RtsScene& s,double seconds,
                  const std::vector<uint8_t>* field,const MapGrid& g, bool advanced=false) const {
-        return owner==&view && device==view.dev_ &&
+        return fingerprinted && owner==&view && device==view.dev_ &&
             renderer==&r && scene==&s && map==&g && vision==field &&
             time==seconds && frameStamp+uint64_t(advanced)==view.frame_ &&
             terrainGeneration==view.terrainGeneration_ &&
@@ -856,7 +859,8 @@ std::optional<bool> RtsView::publishPendingTerrainFrame(
 // their candidate/commit/rollback closures after preparation.
 std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
         Renderer3D& r,const RtsScene& s,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid) {
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        bool fingerprint) {
     if(!dev_ || (hasTerrain_ && !terrain_.mapMatches(grid.w,grid.h)))
         throw std::logic_error("RtsView: build Terrain before surface preflight");
     auto lease=std::make_unique<PreparedSurfaceLease>();
@@ -875,10 +879,15 @@ std::unique_ptr<RtsView::PreparedSurfaceLease> RtsView::stageSurfaceFrame(
     next->groundRevision=groundFx_.stateRevision();
     next->fogRevision=fog_.stateRevision();
     next->terrainRevision=terrain_.stateRevision();
-    next->gridSignature=mapLeaseFingerprint(grid);
-    next->sceneSignature=sceneLeaseFingerprint(s);
-    next->cameraSignature=cameraLeaseFingerprint(r);
-    next->visibilitySignature=visibilityLeaseFingerprint(vision);
+    // Full-content FNV passes over the map / scene / vision are needed only
+    // when the lease is matched again later (prewarm, LENS capture guard).
+    next->fingerprinted=fingerprint;
+    if(fingerprint) {
+        next->gridSignature=mapLeaseFingerprint(grid);
+        next->sceneSignature=sceneLeaseFingerprint(s);
+        next->cameraSignature=cameraLeaseFingerprint(r);
+        next->visibilitySignature=visibilityLeaseFingerprint(vision);
+    }
     next->tiles=bool(twoD_ && twoD_->hasTiles());
     next->transaction=std::make_unique<render::OwnerPrepareCommit>();
     const std::function<float(float,float)> groundHeight=
@@ -974,7 +983,8 @@ bool RtsView::publishSurfaceFrame(Renderer3D& r,const RtsScene& s,
         ++surfacePrewarmStats_.discarded;
     }
     if(lease)++surfacePrewarmStats_.consumed;
-    else lease=stageSurfaceFrame(r,s,time,vision,grid);
+    // Published right below and never matched again: skip fingerprints.
+    else lease=stageSurfaceFrame(r,s,time,vision,grid,false);
     if(!lease->transaction->publish())
         throw std::logic_error("RtsView: surface owner cohort publish failed");
     return lease->fogChanged;

@@ -954,9 +954,12 @@ private:
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;
+    // fingerprint=false: the lease is published immediately and never
+    // matched again, so the full-content source fingerprints are skipped.
     std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
         render::Renderer3D& renderer,const RtsScene& scene,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid);
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        bool fingerprint=true);
     // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
     // This completes only the surface owner cohort, NOT FramePublicationEpoch.
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,

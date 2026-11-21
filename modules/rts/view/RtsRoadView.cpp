@@ -2181,10 +2181,20 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
 }
 
 int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
-    for (size_t i = 0; i < propModels_.size(); ++i) if (propModels_[i].path == path) return propModels_[i].model ? int(i) : -1;
+    for (size_t i = 0; i < propModels_.size(); ++i) if (propModels_[i].path == path) return propModels_[i].get() ? int(i) : -1;
     // Reserve before GPU allocation so inserting the successful prop cannot
     // throw and discard a Model that now owns native resources.
     propModels_.reserve(propModels_.size()+1);
+    // A staged rebuild reuses the published owner's already uploaded prop.
+    if (propSource_)
+        for (const auto& source : *propSource_)
+            if (source.path == path && source.model) {
+                PropModel pm;
+                pm.path = path;
+                pm.borrowed = source.model.get();
+                propModels_.push_back(std::move(pm));
+                return int(propModels_.size() - 1);
+            }
     PropModel pm;
     pm.path = path;
     bool uploadStarted=false;
@@ -2509,6 +2519,11 @@ std::shared_ptr<RtsRoadView::PreparedRebuild> RtsRoadView::prepareRebuild(
     // resources that it subsequently generated.
     for(auto& img:staged.images_)img.borrowedTexture=true;
     if(candidate->replaceGeometry) {
+        staged.propSource_=&propModels_;
+        struct ClearSource {
+            RtsRoadView& view;
+            ~ClearSource(){view.propSource_=nullptr;}
+        } clearSource{staged};
         staged.buildUnpublished(dev,heightAt);
     }else {
         // Weather/preview edits do not change lane geometry, wheel-surface
@@ -2556,6 +2571,16 @@ void RtsRoadView::commitRebuild(std::shared_ptr<PreparedRebuild> candidate) noex
         return; // unchanged road geometry/surface generation
     }
     release(*dev_);
+    // Borrowed props change owner (no GPU work); the rest retire as before.
+    for(auto& p:staged.propModels_) {
+        if(!p.borrowed)continue;
+        for(auto& owned:propModels_)
+            if(owned.model && owned.model.get()==p.borrowed) {
+                p.model=std::move(owned.model);
+                break;
+            }
+        p.borrowed=nullptr; // never publish a pointer the owner no longer holds
+    }
     for(auto& p:propModels_)retirement_.retireModel(*dev_,p.model);
     propModels_.clear();
     chunks_.swap(staged.chunks_);
@@ -2778,7 +2803,8 @@ void RtsRoadView::drawPrepared(Renderer3D& r) {
     }
     for (auto& p : props_) {
         ModelDraw d;
-        d.model = propModels_[size_t(p.model)].model.get();
+        d.model = propModels_[size_t(p.model)].get();
+        if (!d.model) continue;
         d.world = p.xf;
         d.flags = kDrawStatic;
         r.drawModel(d);

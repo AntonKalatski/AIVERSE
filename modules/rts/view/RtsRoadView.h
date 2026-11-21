@@ -144,7 +144,14 @@ public:
 
 private:
     struct Chunk { std::unique_ptr<render::Model> model; };
-    struct PropModel { std::string path; std::unique_ptr<render::Model> model; };
+    // A staged rebuild borrows the published owner's prop Models (raw
+    // pointer, no ownership) instead of reloading and re-uploading them;
+    // ownership moves to the candidate at commitRebuild().
+    struct PropModel {
+        std::string path; std::unique_ptr<render::Model> model;
+        render::Model* borrowed = nullptr;
+        render::Model* get() const noexcept { return model ? model.get() : borrowed; }
+    };
     struct PropInstance { int model = -1; render::mat4 xf; };
     void rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     // Candidate-only build; never invoke on the published owner. The caller
@@ -186,6 +193,8 @@ private:
     void rasterSurface(const std::vector<render::float3>& tris, const std::function<float(float, float)>& heightAt);
     float surfaceSample(int sx, int sz, bool& ok) const;
     std::vector<PropModel> propModels_;
+    // Candidate only, during prepareRebuild(): the published owner's props.
+    const std::vector<PropModel>* propSource_ = nullptr;
     std::vector<PropInstance> props_;
     std::vector<render::Image> images_;          // the kit's textures (copied into every chunk model, shared GPU handles)
     std::vector<render::Material> materials_;
