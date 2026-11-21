@@ -63,6 +63,7 @@ templates/
   showcase/  Iron and Gold rules with imported models (glTF, OBJ, animations)
 platform/    packaging templates (Info.plist, Gradle project, HTML shell)</code></pre>
 <h2 id="quick-start-macos">Quick start (macOS)<a class="anchor" href="#quick-start-macos" aria-label="#">#</a></h2>
+<p>The editor on macOS is <strong>AIVERSE Studio</strong> (HTML5 UI over the native engine, <code>apps/studio-native</code> + <code>apps/studio-web</code>): <code>./studio_mac.command [project]</code> builds and opens it. Workspaces Scene / World / Look / Animate / Character / Logic / Publish hold every former editor window as a panel; the Scene has transform tools and brushes (terrain, paint, tiles, fields, objects, roads, rivers), Play runs the game in place, the Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux / Windows and as a fallback.</p>
 <pre><code class="lang-bash">cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release      # requires Xcode and CMake
 cmake --build build/mac -j 8
 open build/mac/AiverseEditor.app                              # editor (project templates/skirmish)
