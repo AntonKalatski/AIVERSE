@@ -58,6 +58,9 @@ public:
         if(!(recipe==wardrobe_)){wardrobe_=recipe;gpuReady_=false;++revision_;}
         return describe();
     }
+    // Forces a full re-import of the shown model (e.g. its clip sidecar changed).
+    uint64_t reloadSerial() const {return reloadSerial_;}
+    Json reload(){++reloadSerial_;gpuReady_=false;++revision_;return describe();}
     // Before/after: draw the untouched source model while held.
     bool compareOriginal() const {return compare_;}
     Json setCompareOriginal(bool on) {
@@ -299,6 +302,7 @@ private:
     Json wardrobe_;
     std::vector<std::string> clips_;
     float baseHeight_=0;
+    uint64_t reloadSerial_=0;
     std::map<std::string,float> values_;
     std::map<std::string,std::array<float,3>> vectors_;
     uint64_t revision_=0;

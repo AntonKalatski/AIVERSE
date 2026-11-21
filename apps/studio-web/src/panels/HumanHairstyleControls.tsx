@@ -15,24 +15,32 @@ const label = (path: string) => path.split('/').pop()!.replace(/\.(gltf|glb|fbx)
 export default function HumanHairstyleControls({ guid, outfit }: { guid: string; outfit: Outfit }) {
   const [styles, setStyles] = useState<StudioAsset[]>([]);
   const [ownHair, setOwnHair] = useState<string[]>([]);
+  const [bones, setBones] = useState<string[]>([]);
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     void invoke('studio.assets', {}).then(r => { if (live) setStyles(r.files.filter(f => f.guid && assetKind(f.path) === 'model' && HAIR.test(f.path))); }).catch(() => {});
-    if (guid) void invoke('studio.humanWardrobeInfo', { guid }).then(i => { if (live) setOwnHair(i.meshes.filter(m => /hair|scalp|groom/i.test(m) && !/brow|lash/i.test(m))); }).catch(() => {});
+    if (guid) void invoke('studio.humanWardrobeInfo', { guid }).then(i => { if (live) { setOwnHair(i.meshes.filter(m => /hair|scalp|groom/i.test(m) && !/brow|lash/i.test(m))); setBones(i.bones); } }).catch(() => {});
     return () => { live = false; };
   }, [guid]);
   const current = outfit.recipe.items.find(i => i.slot === 'hair');
-  const choose = (asset: string | null) => {
+  const choose = (asset: string | null) => void (async () => {
     setError('');
     if (!guid) { setError('Сначала выберите персонажа в «Пресетах»'); return; }
     const items = outfit.recipe.items.filter(i => i.slot !== 'hair');
     const hidden = outfit.recipe.hiddenMeshes.filter(m => !ownHair.includes(m));
     if (!asset) { outfit.setRecipe({ ...outfit.recipe, items, hiddenMeshes: hidden }); return; }
+    // Same skeleton (all hair bones exist on the character): skin to it.
+    // Otherwise (static or foreign rig) attach to the head bone, keeping the
+    // authored placement.
+    let shared = false;
+    try { const hb = (await invoke('studio.humanWardrobeInfo', { guid: asset })).bones; shared = hb.length > 0 && hb.every(b => bones.includes(b)); } catch { /* static mesh */ }
+    const head = bones.find(b => /^(head|Head)$/.test(b)) ?? bones.find(b => /head/i.test(b) && !/end|top|nub/i.test(b)) ?? '';
+    if (!shared && !head) { setError('У персонажа не найдена кость головы — настройте крепление во вкладке «Одежда»'); }
     outfit.setRecipe({ ...outfit.recipe, hiddenMeshes: [...hidden, ...ownHair], items: [...items, {
-      id: 'hairstyle', asset, slot: 'hair', enabled: true, bone: '', translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
-      finish: 'source', hideMeshes: [], masks: [] }] });
-  };
+      id: 'hairstyle', asset, slot: 'hair', enabled: true, bone: shared ? '' : head, translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      finish: 'source', hideMeshes: [], masks: [], ...(shared ? {} : { independentRig: true, attachmentRule: 'keep_world' as const }) }] });
+  })();
   return <HcCard title="Причёска" hint={outfit.trying ? 'Обновляю примерку…' : 'Причёски из проекта: модели с hair / hairstyle в пути'}>
     {(error || outfit.error) && <HcNote tone="error">{error || outfit.error}</HcNote>}
     <div className="hc-cards">

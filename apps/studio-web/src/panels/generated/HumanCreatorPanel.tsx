@@ -217,7 +217,7 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
               schema={h.info?.faceSchema ?? []} onChange={f => { h.editFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
               onImported={g => { h.setGuid(g); h.setFace(null); }}/>}</>;
       case 'makeup': return <HumanMakeupControls info={h.info} draft={h.draft}
-          onChange={(look, live) => { h.edit(look); if (live && autoApply && bound) h.live(look, h.face); }}/>;
+          onChange={(look, live) => { h.edit(look); if (autoApply && bound) { if (live) h.live(look, h.face); else void h.apply(h.face, look); } }}/>;
       case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}
           prepare={async () => {
             // A freshly shown (e.g. assembled) model has no face selection yet:

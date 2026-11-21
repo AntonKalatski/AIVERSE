@@ -110,7 +110,7 @@ bool StudioFacialGpuPreview::sync(
         // and only the dedicated vertex buffer is rewritten.
         if(model_ && pristine_ && guid_==binding.guid() && projectRoot_==projectRoot &&
            !binding.creatorMode() && appearanceOnly_ && binding.appearanceOnly() &&
-           binding.wardrobe()==appliedWardrobe_ &&
+           binding.wardrobe()==appliedWardrobe_ && binding.reloadSerial()==appliedReload_ &&
            editInPlace(device,renderer,binding)) {
             revision_=binding.revision();
             rejectedRevision_=0;rejectedError_.clear();
@@ -275,6 +275,7 @@ bool StudioFacialGpuPreview::sync(
         appliedFace_=binding.face()?binding.face()->toJson():Json();
         appliedLook_=binding.appearance()?binding.appearance()->toJson():Json();
         appliedWardrobe_=binding.wardrobe();
+        appliedReload_=binding.reloadSerial();
         model_=published;
         modelKey_=key;
         facial_=std::move(newSession);
@@ -416,4 +417,29 @@ bool StudioFacialGpuPreview::submit(
     return true;
 }
 
+
+Json StudioFacialGpuPreview::alignMakeup(const StudioFacialPreviewBinding& binding) const {
+    if(!pristine_ || !binding.face() || binding.face()->meshes.empty())
+        throw std::runtime_error("Покажите персонажа и выберите меши лица (Лицо → Пропорции и импорт)");
+    std::vector<std::string> skin;
+    if(binding.appearance())for(const auto& [name,role]:binding.appearance()->materials)if(role=="skin")skin.push_back(name);
+    const auto& face=*binding.face();
+    auto at=[&](float x,float y){float u=0,v=0;
+        if(!vivid::humanFaceUvAt(*pristine_,face,skin,x,y,u,v))throw std::runtime_error("На лице не найдена кожа — назначьте материалу роль «skin»");
+        return std::array<float,2>{u,v};};
+    auto clamp=[](float x,float lo,float hi){return std::clamp(std::isfinite(x)?x:lo,lo,hi);};
+    const auto c=at(.5f,.5f),lips=at(.5f,.27f),lipL=at(.43f,.27f),lipR=at(.57f,.27f),lipT=at(.5f,.31f),lipB=at(.5f,.23f);
+    const auto cheek=at(.3f,.45f),cheekOut=at(.22f,.45f),lid=at(.36f,.62f),lidL=at(.30f,.62f),lidR=at(.42f,.62f),lidT=at(.36f,.65f),lidB=at(.36f,.59f);
+    const auto chin=at(.5f,.14f),chinTop=at(.5f,.30f);
+    auto r=Json::object();
+    auto set=[&](const char* k,float v,float lo,float hi){r.set(k,Json::number(double(clamp(v,lo,hi)),4));};
+    set("makeup.faceU",c[0],0,1);
+    set("makeup.lipV",lips[1],0,1);set("makeup.lipW",std::fabs(lipR[0]-lipL[0])*.6f,.005f,.3f);set("makeup.lipH",std::fabs(lipT[1]-lipB[1])*.55f,.005f,.2f);
+    set("makeup.blushOffset",std::fabs(cheek[0]-c[0]),0,.4f);set("makeup.blushV",cheek[1],0,1);
+    set("makeup.blushSize",std::hypot(cheek[0]-cheekOut[0],cheek[1]-cheekOut[1])*1.1f,.005f,.3f);
+    set("makeup.shadowOffset",std::fabs(lid[0]-c[0]),0,.4f);set("makeup.shadowV",lid[1],0,1);
+    set("makeup.shadowW",std::fabs(lidR[0]-lidL[0])*.6f,.005f,.2f);set("makeup.shadowH",std::fabs(lidT[1]-lidB[1])*.6f,.005f,.2f);
+    set("makeup.stubbleV",(chin[1]+chinTop[1])*.5f,0,1);set("makeup.stubbleSize",std::fabs(chinTop[1]-chin[1])*.8f,.01f,.4f);
+    return r;
+}
 } // namespace aiverse::studio

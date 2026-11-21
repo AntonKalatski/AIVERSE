@@ -2,6 +2,8 @@
 // once, so a sculpted or blended face can be checked in motion.
 import { useEffect, useState } from 'react';
 import { invoke } from '../bridge';
+import AssetReferencePicker from '../components/AssetReferencePicker';
+import { StudioButton, StudioInput } from '../ui';
 import type { HumanPreviewAnimationSettings } from '../types';
 import { HcCard, HcNote, HcSegment, HcSwitch } from './HumanCreatorUi';
 
@@ -33,6 +35,11 @@ export default function HumanPreviewAnimationControls() {
     load(); const timer = setInterval(load, 3000);
     return () => { live = false; clearInterval(timer); };
   }, []);
+  const [external, setExternal] = useState<{ name: string; file: string }[]>([]);
+  const [file, setFile] = useState(''), [clipName, setClipName] = useState(''), [clipError, setClipError] = useState('');
+  useEffect(() => { void invoke('studio.humanClipList', {}).then(r => setExternal(r.external)).catch(() => {}); }, []);
+  const clipCall = (p: Promise<{ external: { name: string; file: string }[] }>) => { setClipError('');
+    void p.then(r => { setExternal(r.external); setFile(''); setClipName(''); }).catch(e => setClipError(String(e).replace(/^Error: /, ''))); };
   const off = busy || !ready;
   return <>
     {error && <HcNote tone="error">{error}</HcNote>}
@@ -47,6 +54,15 @@ export default function HumanPreviewAnimationControls() {
         <button type="button" className="hc-chip" aria-pressed={!draft.clip} disabled={off} onClick={() => void apply({ ...draft, clip: '' })}>Поза превью</button>
         {clips.map(c => <button key={c} type="button" className="hc-chip" aria-pressed={draft.clip === c} disabled={off}
           onClick={() => void apply({ ...draft, clip: c, playing: true })}>▶ {c}</button>)}</div>}
+      <details className="hc-item__more"><summary>Добавить анимацию из файла ({external.length})</summary>
+        {clipError && <HcNote tone="error">{clipError}</HcNote>}
+        {external.map(x => <div key={x.name} className="hc-row"><span className="hc-hint">{x.name} · {x.file}</span>
+          <button type="button" className="hc-reset" title="Убрать" onClick={() => clipCall(invoke('studio.humanClipRemove', { name: x.name }))}>✕</button></div>)}
+        <AssetReferencePicker value={file} kinds={['model']} label="Файл с анимацией (glb / gltf / fbx)" onChange={v => setFile(v)}/>
+        <div className="hc-row"><StudioInput aria-label="Имя клипа" placeholder="Имя клипа" value={clipName} onChange={e => setClipName(e.target.value)}/>
+          <StudioButton disabled={!file || !clipName.trim()} onClick={() => clipCall(invoke('studio.humanClipAdd', { file: file.replace(/^content\//, ''), name: clipName.trim() }))}>Добавить</StudioButton></div>
+        <p className="hc-hint">Кости анимации должны называться как у персонажа (тот же скелет: Mixamo, UE и т.п.). Клип записывается в {'<модель>'}.clips.json, модель перезагружается.</p>
+      </details>
     </HcCard>
     <HcCard title="Поза">
       <HcSegment label="Поза" value={draft.pose} options={POSES} disabled={off} onChange={pose => void apply({ ...draft, pose })}/>

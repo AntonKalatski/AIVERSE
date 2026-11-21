@@ -768,6 +768,42 @@ Json StudioSession::dispatch(const Json& request) {
             // Live wardrobe try-on in the preview; null takes everything off.
             if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
             reply.set("result",facialPreview_.setWardrobe(params["wardrobe"]));
+        } else if(method=="studio.humanClipList" || method=="studio.humanClipAdd" || method=="studio.humanClipRemove") {
+            // External animation clips of the shown character, kept in the
+            // engine's clip sidecar "<model>.clips.json" (bound by bone path).
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(!facialPreview_.bound()||facialPreview_.creatorMode())throw std::runtime_error("Покажите персонажа во вьюпорте");
+            namespace fs=std::filesystem;
+            const fs::path content=studioContentRoot(ws_.project.dir);
+            const fs::path model=content/facialPreview_.path();
+            const fs::path sidecar=model.string()+".clips.json";
+            if(fs::is_symlink(fs::symlink_status(sidecar)))throw std::runtime_error("Clip sidecar cannot be a symlink");
+            Json doc=Json::object();
+            if(fs::is_regular_file(sidecar)){std::ifstream in(sidecar,std::ios::binary);std::string b((std::istreambuf_iterator<char>(in)),{});if(b.size()>256*1024)throw std::runtime_error("Clip sidecar too large");doc=Json::parse(b);}
+            if(!doc.has("format")){doc.set("format",Json::string("aiverse-clips"));doc.set("version",Json::number(int64_t(1)));doc.set("keepSource",Json::fromBool(true));doc.set("clips",Json::array());}
+            auto write=[&]{{std::ofstream out(sidecar.string()+".pending",std::ios::binary|std::ios::trunc);out<<doc.dump(2)<<"\n";if(!out)throw std::runtime_error("Cannot write clip sidecar");}fs::rename(sidecar.string()+".pending",sidecar);facialPreview_.reload();};
+            if(method=="studio.humanClipAdd") {
+                std::string file=params.getStr("file");const std::string name=params.getStr("name");
+                if(!file.empty()&&file.find('/')==std::string::npos&&!fs::is_regular_file(content/file)){ // a GUID from the asset picker
+                    StudioAssetCatalog catalog(ws_.project.dir);catalog.rebuild();file=StudioFacialPreviewBinding::checkedModelPath(catalog,file);}
+                const fs::path rel(file);
+                if(file.empty()||rel.is_absolute()||file.find("..")!=std::string::npos||!fs::is_regular_file(content/rel))throw std::invalid_argument("Выберите файл анимации из content");
+                if(name.empty()||name.size()>64)throw std::invalid_argument("Имя клипа: 1..64 символа");
+                if(doc["clips"].size()>=64)throw std::runtime_error("Не больше 64 клипов");
+                for(const auto& c:doc["clips"].items())if(c.getStr("name")==name)throw std::runtime_error("Клип «"+name+"» уже есть");
+                auto c=Json::object();c.set("name",Json::string(name));
+                c.set("file",Json::string(fs::relative(content/rel,model.parent_path()).generic_string()));
+                if(!params.getStr("clip").empty())c.set("clip",Json::string(params.getStr("clip")));
+                doc.member("clips").push(c);write();
+            } else if(method=="studio.humanClipRemove") {
+                auto& list=doc.member("clips").itemsMut();const auto before=list.size();
+                std::erase_if(list,[&](const Json& c){return c.getStr("name")==params.getStr("name")&&c.has("file");});
+                if(list.size()==before)throw std::runtime_error("Нет такого внешнего клипа");
+                write();
+            }
+            auto result=Json::object();auto ext=Json::array();
+            for(const auto& c:doc["clips"].items())if(c.has("file")){auto e=Json::object();e.set("name",c["name"]);e.set("file",c["file"]);ext.push(e);}
+            result.set("external",ext);reply.set("result",std::move(result));
         } else if(method=="studio.humanRuler") {
             facialPreview_.showRuler=params.getBool("enabled");
             auto result=Json::object();result.set("enabled",Json::fromBool(facialPreview_.showRuler));reply.set("result",std::move(result));

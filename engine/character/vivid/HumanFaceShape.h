@@ -25,6 +25,11 @@ struct HumanFaceHit {render::float3 point,normal;float distance=0;};
 // built while the Model still has CPU geometry (before GPU publication).
 struct HumanFacePickSurface {std::vector<render::float3> triangles;render::float3 lo{},hi{};bool empty() const noexcept{return triangles.empty();}};
 HumanFacePickSurface humanFacePickSurface(const render::Model& model,const HumanFaceShape& selection);
+// Skin texture UV at a point of the normalized head box (x,y in 0..1, front
+// face preferred): finds the nearest front vertex of the selected meshes whose
+// material is one of skinMaterials (empty = any). Used to place makeup layers.
+bool humanFaceUvAt(const render::Model& model,const HumanFaceShape& selection,
+                   const std::vector<std::string>& skinMaterials,float x,float y,float& u,float& v);
 bool raycastHumanFace(const HumanFacePickSurface& surface,render::float3 origin,render::float3 direction,HumanFaceHit& hit);
 bool raycastHumanFace(const render::Model& model,const HumanFaceShape& selection,
  render::float3 origin,render::float3 direction,HumanFaceHit& hit);

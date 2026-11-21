@@ -83,6 +83,26 @@ HumanFacePickSurface humanFacePickSurface(const Model& m,const HumanFaceShape& s
   }}
  require(!out.triangles.empty(),"Selected face meshes have no triangles");return out;
 }
+bool humanFaceUvAt(const Model& m,const HumanFaceShape& selection,const std::vector<std::string>& skinMaterials,float x,float y,float& u,float& v){
+ require(!selection.meshes.empty(),"Select the face meshes first");
+ const auto s=surface(m,selection.meshes);const auto extent=s.hi-s.lo;require(extent.x>1e-5f&&extent.y>1e-5f&&extent.z>1e-5f,"Facial mesh has degenerate bounds");
+ std::set<uint32_t> skin;
+ for(const auto& n:m.nodes){if(n.mesh<0)continue;const auto& mesh=m.meshes.at(size_t(n.mesh));
+  if(std::find(selection.meshes.begin(),selection.meshes.end(),mesh.name)==selection.meshes.end())continue;
+  for(const auto& p:mesh.primitives){
+   if(!skinMaterials.empty()){if(p.material<0||size_t(p.material)>=m.materials.size())continue;
+    if(std::find(skinMaterials.begin(),skinMaterials.end(),m.materials[size_t(p.material)].name)==skinMaterials.end())continue;}
+   for(uint32_t i=0;i<p.vertexCount;++i)skin.insert(p.firstVertex+i);}}
+ float best=1e30f;bool found=false;
+ for(const auto& point:s.points){
+  if(!skin.contains(point.vertex))continue;
+  const auto q=normalized(point.bind.transformPoint(m.vertices.at(point.vertex).pos),s);
+  const float dx=q.x-x,dy=q.y-y,back=std::max(0.f,.75f-q.z);
+  const float score=dx*dx+dy*dy+back*back*.5f;
+  if(score<best){best=score;found=true;u=m.vertices[point.vertex].uv.x;v=m.vertices[point.vertex].uv.y;}
+ }
+ return found;
+}
 bool raycastHumanFace(const HumanFacePickSurface& s,float3 origin,float3 direction,HumanFaceHit& hit){
  const float dl=length(direction);require(std::isfinite(dl)&&dl>1e-12f&&std::isfinite(origin.x)&&std::isfinite(origin.y)&&std::isfinite(origin.z),"Invalid sculpt ray");
  direction=direction*(1.f/dl);const auto extent=s.hi-s.lo;

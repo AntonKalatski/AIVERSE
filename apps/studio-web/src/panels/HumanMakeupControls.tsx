@@ -1,6 +1,10 @@
 // Makeup & skin detail layers (lipstick, blush, eyeshadow, stubble): each is a
 // soft UV ellipse on the skin texture with strength, colour and position.
 // Position is aligned once per model ("Положение"), then saved with the look.
+import { useState } from 'react';
+import { Wand2 } from 'lucide-react';
+import { invoke } from '../bridge';
+import { StudioButton } from '../ui';
 import type { HumanLook, HumanLookInfo } from '../types';
 import { HcCard, HcHeader, HcNote, HcSlider } from './HumanCreatorUi';
 import { hexToRgb, rgbToHex } from './humanCreatorSchema';
@@ -18,13 +22,21 @@ const LAYERS: Layer[] = [
 
 export default function HumanMakeupControls({ info, draft, onChange }:
   { info: HumanLookInfo | null; draft: HumanLook; onChange: (look: HumanLook, live: boolean) => void }) {
+  const [aligning, setAligning] = useState(false), [alignError, setAlignError] = useState(''), [aligned, setAligned] = useState(false);
+  const align = () => { setAligning(true); setAlignError('');
+    void invoke('studio.humanMakeupAlign', {}).then(r => { onChange({ ...draft, values: { ...draft.values, ...r.values } }, false); setAligned(true); })
+      .catch(e => setAlignError(String(e).replace(/^Error: /, ''))).finally(() => setAligning(false)); };
   const field = (key: string) => info?.schema.find(f => f.key === key);
   const value = (key: string) => draft.values[key] ?? field(key)?.initial ?? 0;
   const set = (patch: Record<string, number>, live = true) => onChange({ ...draft, values: { ...draft.values, ...patch } }, live);
   if (!info) return <><HcHeader title="Макияж" hint="Помада, румяна, тени и щетина поверх кожи."/><p className="hc-empty">Выберите персонажа в «Пресетах» и загрузите его профиль.</p></>;
   if (!field('makeup.lips')) return <HcNote tone="warn">Эта сборка Studio не знает слоёв макияжа — пересоберите её.</HcNote>;
   return <>
-    <HcHeader title="Макияж" hint="Слои поверх кожи. Если пятно легло мимо, поправьте «Положение» — один раз для модели, оно сохраняется в образе."/>
+    <HcHeader title="Макияж" hint="Слои поверх кожи. Сначала разместите их по лицу персонажа — положение сохраняется в образе."/>
+    <HcCard title="Положение слоёв" hint={aligned ? 'Размещено по лицу — подправьте вручную в «Положении», если нужно' : 'Губы, щёки, веки и подбородок находятся по геометрии лица'}>
+      {alignError && <HcNote tone="error">{alignError}</HcNote>}
+      <StudioButton variant="primary" disabled={aligning} onClick={align}><Wand2 size={14}/> {aligning ? 'Ищу…' : 'Разместить по лицу'}</StudioButton>
+    </HcCard>
     {LAYERS.map(l => {
       const f = field(l.strength)!;
       return <HcCard key={l.id} title={l.title} hint={l.hint}

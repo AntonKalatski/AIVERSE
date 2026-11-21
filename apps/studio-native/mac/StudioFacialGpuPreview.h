@@ -59,6 +59,9 @@ public:
     }
     bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
     uint64_t sourceRevision() const noexcept {return revision_;}
+    // Makeup placement in skin UV from the shown character's face geometry
+    // (lips, cheeks, eyelids, chin); throws when no face/skin is available.
+    Json alignMakeup(const StudioFacialPreviewBinding& binding) const;
     // Bind-pose height of the shown character in model units (metres for glTF).
     float baseHeight() const {return model_?model_->boundsMax.y-model_->boundsMin.y:0.f;}
     std::vector<std::string> clipNames() const {std::vector<std::string> out;if(model_)for(const auto& c:model_->clips)if(!c.name.starts_with("__vivid_preview_"))out.push_back(c.name);return out;}
@@ -80,6 +83,7 @@ private:
     std::vector<std::future<std::unique_ptr<render::Model>>> staleTryOn_;
     uint64_t tryOnRevision_=0;std::string tryOnGuid_;
     Json appliedWardrobe_;
+    uint64_t appliedReload_=0;
     bool editInPlace(gfx::Device& device,render::Renderer3D& renderer,const StudioFacialPreviewBinding& binding);
     render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)
     std::string hairKey_;

@@ -2035,4 +2035,9 @@ baked with the character build. Each stroke re-imports the preview model (second
   shares LOD0 vertices, skips morph meshes); reference photo overlay over the viewport; character packages
   `packages/<look>.aivchar` (`studio.humanPackage{List,Export,Import}`, import never overwrites); height in cm and a
   10 cm ruler (`studio.humanRuler`).
+- Gap fixes: `studio.humanMakeupAlign` places makeup from the face geometry (`vivid::humanFaceUvAt`: nearest front skin
+  vertex at lips/cheeks/eyelids/chin of the normalized head box -> UV); hairstyles skin to the character when every
+  hair bone exists on it, otherwise attach to the head bone (`keep_world`); external animation files are added to the
+  engine clip sidecar `<model>.clips.json` (`studio.humanClip{List,Add,Remove}`, bound by bone path like
+  `applyClipSidecar`), and the preview re-imports through `StudioFacialPreviewBinding::reload()`.
 

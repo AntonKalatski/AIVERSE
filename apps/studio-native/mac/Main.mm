@@ -1596,6 +1596,19 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             if (note.size()<=1200) NSLog(@"[studio-web] JS: %s",note.c_str());
             return; // diagnostics never touch Workspace or the filesystem
         }
+        if (req.getStr("method")=="studio.humanMakeupAlign" && req["id"].isNumber()) {
+            // Makeup layers placed from the shown face (needs the GPU preview's CPU copy).
+            aiverse::Json reply=aiverse::Json::object();
+            reply.set("id",req["id"]);
+            try {
+                if (!preview_) throw std::runtime_error("Покажите персонажа во вьюпорте");
+                aiverse::Json result=aiverse::Json::object();
+                result.set("values",preview_->alignMakeup(session_->facialPreviewBinding()));
+                reply.set("result",std::move(result));
+            } catch (const std::exception& ex) { reply.set("error",aiverse::Json::string(ex.what())); }
+            [self sendStudioReply:reply];
+            return;
+        }
         if (req.getStr("method")=="studio.humanLookCapture" && req["id"].isNumber()) {
             // Preset card picture: the next character frame is cropped around
             // the head and written beside the look as <name>.png.

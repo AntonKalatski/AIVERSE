@@ -49,6 +49,7 @@ public:
     bool facialReady() const noexcept{return facialReady_;}
     std::vector<std::string> facialClips() const {return facialGpu_.clipNames();}
     float facialBaseHeight() const {return facialGpu_.baseHeight();}
+    Json alignMakeup(const StudioFacialPreviewBinding& b) const {return facialGpu_.alignMakeup(b);}
     const std::string& facialError() const noexcept{return facialError_;}
     // Facial preview sculpt pick (normalized head coordinates); false = miss.
     // Never throws: a rejected pick returns false with the reason in error.

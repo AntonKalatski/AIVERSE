@@ -3148,3 +3148,7 @@ meshoptimizer and RUN — passes; g++ -fsyntax-only of StudioSession.cpp, Studio
 HumanMaterials.cpp, HumanCreatorOps.cpp, StudioHumanLookSessionTests.cpp. Not run: Mac build, ctest, Studio visuals.
 Known gaps: makeup positions are UV estimates (artist aligns once per model); hairstyles need models skinned to the
 same head bone; no retargeting of external animation files (only clips inside the character glTF).
+Follow-up (same day): makeup auto-placement from face geometry, hairstyle rig detection (shared skeleton vs head-bone
+attach), external animation clips via `<model>.clips.json`. Verified: tsc clean, g++ -fsyntax-only of the touched C++.
+Still needs the Mac build + ctest + visual check. External clips need the same bone names as the character.
+
