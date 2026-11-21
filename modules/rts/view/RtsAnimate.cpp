@@ -258,10 +258,11 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     // A finished, stationary visual without clips, graph, procedural effects,
     // pose, or programmable overrides has no animation work to evaluate.
     // Keep hit/spawn/death event clocks advancing for the normal colour path.
-    // This is opt-in until its contribution to large RTS scenes is measured.
     static const bool staticFastPath = [] {
+        // On by default (owner run, 14,772 objects: ~13,956 fast-path objects/frame);
+        // AIVERSE_RTS_STATIC_ANIMATE_FAST=0 restores the full path.
         const char* flag = std::getenv("AIVERSE_RTS_STATIC_ANIMATE_FAST");
-        return flag && std::strcmp(flag, "1") == 0;
+        return !(flag && std::strcmp(flag, "0") == 0);
     }();
     if (staticFastPath && ch.model &&
         (L.structure || rules_->types[o.type].speed <= Fixed{}) &&

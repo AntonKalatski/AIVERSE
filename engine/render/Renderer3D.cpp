@@ -1,4 +1,5 @@
 #include "Renderer3D.h"
+#include "../gfx/GpuTier.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
 #include "Renderer3DMotionShaders.h"
@@ -40,9 +41,7 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return ShadowQuality::Low;
     if (mobile) {
-        // Old/weak mobile GPUs get the cheapest shadows; everything else medium.
-        for (const char* weak : {"Mali-4", "Mali-T", "Adreno (TM) 3", "Adreno (TM) 4", "Adreno (TM) 50", "PowerVR SGX", "PowerVR Rogue GE"})
-            if (n.find(weak) != std::string::npos) return ShadowQuality::Low;
+        if (gfx::isWeakMobileGpu(n)) return ShadowQuality::Low;   // GpuTier.h
         return ShadowQuality::Medium;
     }
     return ShadowQuality::High;
@@ -188,6 +187,8 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
     int size=q==ShadowQuality::High?highShadowSize_:
              q==ShadowQuality::Medium?1536:1024;
     if(q==ShadowQuality::Off)size=0;
+    static const int sizeOverride=[]{const char* e=std::getenv("AIVERSE_SHADOW_SIZE");return e?std::atoi(e):0;}();
+    if(size>0 && sizeOverride>=256)size=std::min(sizeOverride,4096);   // testing
     if(size==shadowSize_ && shadowMap_.valid()) {
         quality_=q;return;
     }
@@ -793,6 +794,12 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
     // This flag is active only for the HDR ScreenLighting TAA path; static PCF stays stable elsewhere.
     if (!forShadow && quality_ >= ShadowQuality::Medium && post_ && post_->temporalShadowResolve())
         f.quality[0] += 0.5f;
+    else if (mobileShadowFilter_ && quality_ >= ShadowQuality::Medium)
+        f.quality[0] = (quality_ == ShadowQuality::High ? 12.0f : 8.0f) + 0.75f;   // Shaders.h: fixed disk
+    else if (mobileShadowFilter_ && quality_ == ShadowQuality::Low)
+        f.quality[0] = 1.0f;   // one bilinear compare: Adreno 610 at 720p 65 -> 50 ms a frame against 4 taps
+    static const float tapsOverride = [] { const char* e = std::getenv("AIVERSE_SHADOW_TAPS"); return e ? float(std::atof(e)) : 0.0f; }();
+    if (tapsOverride > 0) f.quality[0] = tapsOverride;   // testing: 1 = one bilinear compare, 4 = fixed 4 taps, 8.75 = fixed 8-tap disk
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
     dev_->setUniforms(1, &f, sizeof f);
 }
