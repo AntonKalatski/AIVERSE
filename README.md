@@ -251,6 +251,9 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 ./studio_mac.command templates/mushrooms   # ...on another project
 ```
 
+Windows: `studio_windows.cmd [project]` builds and opens `AiverseStudio.exe` (needs Visual Studio 2022,
+CMake, Node.js; runs on the WebView2 Runtime and Vulkan).
+
 `studio_mac.command` builds the web UI and the native Studio and opens it. The engine alone:
 `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac -j 8`. The previous
 ImGui editor (`build/mac/AiverseEditor.app`) is still built and works on Linux and Windows.
