@@ -784,9 +784,9 @@
           "status": "done",
           "date": "2026-11-22",
           "title": "Совместимость с MetaHuman через проверенный адаптер",
-          "text": "Без Unreal в рантайме: экспорт MetaHuman распознаётся и настраивается в Creator, проверено на Ada и Bruce. Корректоры RigLogic и strand-грум пока не поддерживаются.",
+          "text": "Без Unreal в рантайме: экспорт MetaHuman распознаётся и настраивается в Creator, проверено на Ada и Bruce. Суставы-корректоры, челюсть и глаза ведутся по ARKit-каналам; GLB с Draco распаковывается офлайн. Полный RigLogic и strand-грум пока не поддерживаются.",
           "titleEn": "MetaHuman compatibility through an audited adapter",
-          "textEn": "No Unreal at runtime: MetaHuman exports are detected and set up in Creator, verified on Ada and Bruce. RigLogic correctives and strand groom are not supported yet."
+          "textEn": "No Unreal at runtime: MetaHuman exports are detected and set up in Creator, verified on Ada and Bruce. Corrective joints, jaw and eyes follow ARKit channels; Draco GLB is decoded offline. Full RigLogic and strand groom are not supported yet."
         },
         {
           "status": "done",
