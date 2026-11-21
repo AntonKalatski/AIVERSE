@@ -1,10 +1,10 @@
 # Stage 90 — thickness-limited backlit SSS (2026-11-21)
 
-Branch: `feature/studio-html5`. Implementation landed in
-`ee253af43`. A concurrent agent committed the already staged SSS files
-together with its own AGENTS.md change before this stage could make its own
-code commit. Do not rewrite or cherry-pick that mixed commit without reviewing
-the concurrent work. This separate handoff records the precise SSS subset.
+Branch: `feature/studio-html5`. Final implementation commit:
+`607f7b958`. An earlier concurrent Git operation temporarily moved the
+branch after SSS files were staged, so the initial handoff commit
+`5f2a94ead` preceded this final implementation commit. This correction
+records the durable code SHA; no peer history was rewritten.
 
 ## SSS code and behavior
 
