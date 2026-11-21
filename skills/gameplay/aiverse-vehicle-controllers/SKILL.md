@@ -40,7 +40,7 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
    finished racers hold the brakes, bots get `stepRaceBot`, players keep their pedals) and `stepRaceSession(course,
    config, session, tick, samples, respawnRequests)` after the collisions (stepRace + phase Countdown -> Running ->
    Finished; `finishGraceTicks`, `timeoutTicks`); `raceSessionWinner`. Projects use it through rules / map `"race"` (docs/races.md)
-   (`skills/gameplay/aiverse-racing`, `modules/fps/FpsRace.cpp`).
+   (`skills/gameplay/aiverse-racing`; engine adapter `engine/vehicles/VehicleRace.h`).
 8. Persist kinds 88 VehicleState, 89 VehicleDamageState, 90 VehicleSeatState, 91 RaceState, 94 RaceBotState, 128 RaceSessionState
    (`mechanics/VehiclePersistence.h`; 88..95 shared with sports-rules) in dedicated NativeState keys; fold
    `vehicleHash(state)` into the checksum and bind `vehicleDefinitionHash`, `raceCourseHash`, `bots::raceLineHash`.
@@ -51,7 +51,9 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
 Build selection: `AIVERSE::lib_vehicle_controllers` (depends on `match-rules`, `configuration`, `aiverse_engine`);
 native OBJECT modules call `aiverse_native_use_libraries(target vehicle-controllers)`. See `skills/catalog.json`.
 
-Legacy hosts already wire it: `modules/rts` through rules `driving` (`skills/gameplay/aiverse-driving`) and `modules/fps`
-through rules `vehicleTypes` (top level, or legacy `fps.vehicleTypes`) + map vehicles with `"type"` (two hosts of one capability - debt G5 in
-`docs/no-genre-split-audit.md`; extend the shared system, never a third host). The FPS host runs these controllers and seats on its actors (`modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
-`tests/fps/tests.cpp`).
+Engine projects use it through the one vehicle system `engine/vehicles` (`AIVERSE::vehicles`, docs/driving.md):
+components `vehicles::VehicleDrive` / `VehicleOccupant`, `vehicles::stepVehicles` (the per-tick order above, with the
+host's `VehicleHost` world query) and the race adapter `vehicles::VehicleRace`. Rules `driving` (grid maps,
+`skills/gameplay/aiverse-driving`) and `vehicleTypes` (top level, or legacy `fps.vehicleTypes`) + map vehicles with
+`"type"` (metre maps, `modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
+`tests/fps/tests.cpp`) both become `vehicles::VehicleType`s. Extend the shared system, never add a host-side copy.

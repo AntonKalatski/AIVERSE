@@ -18,15 +18,16 @@ bot: `skills/gameplay/aiverse-vehicle-controllers`). Presentation: `engine/ui/Ra
    (generated settings: `wrongWayTicks`, `respawnWrongWayTicks`, `stuckTicks`, `stuckSpeedMilli`, `bot*`).
 4. A ready oval for a metre map: `python3 templates/_tools/racegen.py --out <game> [--racers N --bots B --straight M
    --radius M --width M --laps N]` (walls, cars, the map race block, the car and the knobs); sample `templates/racing`.
-5. A new host for cars: `readRaceRules` / `readRaceTrack` at setup, `makeRaceSession` at the start, per tick
-   `raceSessionInputs` before the vehicles step and `stepRaceSession` after the collisions, teleport
-   `report.race.respawns` with `respawnVehicle`, `raceView` for the HUD, persist the session (record kind 128) and hash
-   it. Keep the host a thin adapter: no rules of its own (`docs/races.md` § Hosts).
+5. The race adapter is shared engine code: `vehicles::VehicleRace` (`engine/vehicles/VehicleRace.h`; state
+   `vehicles::RaceState`). A new host for cars runs its cars on the vehicle system (`engine/vehicles`,
+   `vehicles::VehicleHost`) and implements only `vehicles::RaceHost` (grid placement, seating a player / bot, the
+   racer's own pedals, respawn request and sync, the match result): `VehicleRace::read` at setup, `start`, per tick
+   `pedals` -> `vehicles::stepVehicles` -> `after`, `view` for the HUD, `hash` / `io`. No rules of its own
+   (`docs/races.md` § One adapter, two hosts).
 6. Check: `aiverse_headless --project <game> --seed 3 --verify-restore-at 30 --verify-restore-ticks 600` ends with a
    winner; `aiverse_fps_tests` (`raceMode`), `aiverse_tests driving_race_`, the vehicle library tests (`raceSession`);
    a screenshot at the wheel under Xvfb. Tune bot pace until bots finish without respawns.
 
-Not available yet: car-to-car collisions on metre maps, one shared vehicle system for both hosts, spline roads drawn
-by every client, pits, penalties, flags, ghosts, a track editor.
+Not available yet: car-to-car collisions on metre maps, pits, penalties, flags, ghosts, a track editor.
 
 Runtime library: none of its own (hosts + `AIVERSE::lib_vehicle_controllers`).

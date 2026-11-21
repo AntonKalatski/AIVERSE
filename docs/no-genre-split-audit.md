@@ -49,7 +49,7 @@ authoring, TerraWeave and earthworks, overlays, FX preview, map creation, rules 
 
 ### G3. Capabilities hosted only by `modules/rts` (data-enabled, unavailable to other hosts)
 Direct-control heroes (`RtsTopDown`, rules `topDown`), driving (`RtsDriving`), road traffic and population
-(`RtsTraffic*`), spline roads model + view (`RtsRoadNet`, `RtsRoadTypes`, `view/RtsRoadView`), raids
+(`RtsTraffic*`), spline roads model + view (moved to `engine/roads` by main; forwarders deleted in stage B), raids
 (`RtsRaid*`), commerce, careers, arsenal, encounters, in-match progression, campaigns (`RtsCampaign`),
 side commander bot (`RtsAI*`, `RtsBwAI*`), sensors / flow economy (`RtsSensors`, `RtsFieldOps`), grid fields,
 skill objects, settlers, dungeon, planets, fog/vision (`RtsVision`), map generator incl. city planner
@@ -64,7 +64,7 @@ streaming (`FpsStreaming`), animation modes (`fps.visual.*`), ECS authority swit
 `tools/libraries/navmesh_main.cpp:10` refuses non-FPS projects.
 
 ### G5. One capability implemented twice
-- Vehicles: `RtsDriving` and `FpsVehicles` (both over `vehicle-controllers`).
+- Vehicles: `RtsDriving` and `FpsVehicles` (both over `vehicle-controllers`). Stage B: one system `engine/vehicles`; the two files are host world queries.
 - Bots: `RtsAI` (side commander), `FpsBots` (combatant), `bots/` action bots.
 - Match end: RTS victory, FPS rounds (`fps.mode`), `match-rules` objectives.
 - Movement / combat: FPS `moveActor` and RTS `sysMovement`, RTS `sysProjectiles` vs FPS projectiles — partly
@@ -99,7 +99,7 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 | 2a Capability queries (G2) | built + tested (stage 02): `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
 | E One scene document (G2) | not started |
 | A FPS host on ECS only | built + tested (stage 03): `modules/fps` ECS only, races ported |
-| B One vehicle system (G5) | not started |
+| B One vehicle system (G5) | written, not built (stage 04): `engine/vehicles` (`AIVERSE::vehicles`: `VehicleDrive` / `VehicleOccupant` components, `stepVehicles` over a `VehicleHost` world query, autopilot / lock API, one race adapter `VehicleRace` + `RaceState`); `RtsDriving` = grid-map world query + enter key + race seats, `FpsVehicles` = metre-map world query + seat-list glue + race seats; `DrivingStore`, `RtsRace.h`, `FpsRace.cpp`, `fps::VehicleDrive`, `CharacterRacer`, `State::race` and the road forwarders deleted. Left: rules `driving` and `vehicleTypes` are still two blocks (one parser each, one `DriveRules` result); getting in on foot keeps two seat models (driver's door vs seat list) inside the shared components |
 | C Shared systems out of `modules/rts` (G3) | not started |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
 | D One simulation (G1) | not started |

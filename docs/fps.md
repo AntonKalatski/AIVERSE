@@ -145,17 +145,22 @@ package's collision response, and a hard crash damages it. Interact enters the n
 (driver seat first, then the next free seat) and leaves it at the first clear exit point when it is slow enough.
 Passengers and gunners keep Fire / Aim / Reload / weapon keys; the driver does not shoot. Knocked, killed or
 thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Vehicles without `type` keep the
-legacy car. FPS save version 9 stores controller and seat state. `templates/fps_survival` has ten four-seat cars
+legacy car. Typed vehicles run on the one vehicle system of every host (`engine/vehicles`, docs/driving.md): the
+entity carries `vehicles::VehicleDrive`, `fps.vehicleTypes` become shared vehicle types (metres, seat lists; a hard
+crash costs (impact - 8 m/s) x 10 health), and `modules/fps/FpsVehicles.cpp` is only the metre-map world query
+(ground cast, box sweep against the triangle world, seat-list glue). An empty typed vehicle at rest sleeps (not
+stepped) like every parked vehicle. FPS save version 10 stores the shared VehicleDrive record. `templates/fps_survival` has ten four-seat cars
 (`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
 
 ## Races
 
 A map `"race"` block makes the typed map vehicles race: the shared race capability of every project, documented in
-[races.md](races.md) (data, behaviour, HUD). This module's adapter is `modules/fps/FpsRace.cpp`: player `i` is seated
-as the driver of the `i`-th typed map vehicle (ascending vehicle id); the race decides the round. ECS shape: the
-session is match-level data (`State::race`), every character entity carries `CharacterRacer{vehicle}`, the cars are
-the `Vehicle` + `VehicleDrive` entities. FPS save version 10 appends the race block (session + each racer's vehicle id)
-only on maps with a race; snapshots carry the player's `lib::mechanics::RaceView` (authority protocol 6). The client
+[races.md](races.md) (data, behaviour, HUD). The adapter is the shared `vehicles::VehicleRace` (engine/vehicles);
+this module only seats the racers (`RaceSeats` in `modules/fps/FpsVehicles.cpp`): player `i` is seated as the driver
+of the `i`-th typed map vehicle (ascending vehicle id); the race decides the round (at the round limit the leader
+wins). ECS shape: the `vehicles::RaceState` world resource (racer `i` = slot `i`, `racers[i - 1]` = its car), the
+cars are `Vehicle` + `vehicles::VehicleDrive` entities. FPS save version 10 appends the RaceState record only on
+maps with a race; snapshots carry the player's `lib::mechanics::RaceView` (authority protocol 6). The client
 shows the chase camera and the race HUD at the wheel and hides the weapon UI.
 
 ## Generated buildings (opt-in)
@@ -195,7 +200,7 @@ pieces with `id` 1..55, `slot`, `tier`, `durability`, `reduction` / `wear` (mill
 (map `loot`, `fps.crate`); Interact equips it and the replaced piece takes its place on the ground with its
 durability. With a catalog the gear replaces the legacy flat armor absorption. Broken pieces emit SimEvent 9
 (`player` = wearer, `value` = slot); dying drops every worn piece. The own loadout travels in snapshots
-(`Snapshot::gear`); FPS save version 9 stores loadouts. `templates/fps_survival` ships three helmet, vest and
+(`Snapshot::gear`); FPS save version 10 stores loadouts. `templates/fps_survival` ships three helmet, vest and
 backpack levels (`rules/gear.json`) spread near the spawns and in supply crates.
 
 ## Close combat (opt-in)
