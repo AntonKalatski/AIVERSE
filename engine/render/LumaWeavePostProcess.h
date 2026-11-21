@@ -416,6 +416,7 @@ public:
                     materialSurface,objectVelocity_);
                 last_.objectVelocity=last_.submission.encoded && objectVelocity_.valid();
                 if(last_.submission.encoded) {
+                    encodedWithVelocity_=objectVelocity_.valid();
                     direct=producer_.encodedOutput(last_.submission.serial);
                     shaded=last_.submission.materialShaded;
                 }
@@ -428,6 +429,8 @@ public:
                     direct=producer_.confirmedOutput();
                     shaded=producer_.confirmedShaded();
                     last_.reusedPrevious=direct.valid();
+                    // The reused result carries the history of its own dispatch.
+                    last_.objectVelocity=last_.reusedPrevious && encodedWithVelocity_;
                 }
             }
             if(direct.valid()) {
@@ -562,6 +565,7 @@ private:
     gfx::PassDesc scene_{};
     gfx::TextureHandle material_{},receiverDepth_{};
     gfx::TextureHandle objectVelocity_{}; // borrowed for the current frame only
+    bool encodedWithVelocity_=false;       // the last encoded dispatch had object velocity
     gfx::TextureHandle surface_{},surfaceReceiverDepth_{};
     uint32_t materialWidth_=0,materialHeight_=0;
     uint32_t surfaceMaterialWidth_=0,surfaceMaterialHeight_=0;
