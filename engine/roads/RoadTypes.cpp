@@ -1,11 +1,11 @@
 // Road types: the built-in library and rules "roadTypes" (docs/roads.md § Road types). Widths in the data are metres,
 // turned into cells with "cellMeters" (rules roadTypes.cellMeters, default 4); heights stay metres.
-#include "RtsRoadNet.h"
+#include "RoadNet.h"
 #include <algorithm>
 #include <map>
 #include <stdexcept>
 
-namespace aiverse::game {
+namespace aiverse::roads {
 
 namespace {
 
@@ -351,4 +351,4 @@ Json roadTypeToJson(const RoadTypeDef& t) {
     return j;
 }
 
-} // namespace aiverse::game
+} // namespace aiverse::roads

@@ -1,11 +1,11 @@
 // Spline road network: map "roadNetwork" parsing and the shared geometry (RtsRoadNet.h, docs/roads.md).
-#include "RtsRoadNet.h"
+#include "RoadNet.h"
 #include <algorithm>
 #include <map>
 #include <stdexcept>
-#include "../../engine/core/FixedMath.h"
+#include "engine/core/FixedMath.h"
 
-namespace aiverse::game {
+namespace aiverse::roads {
 
 namespace {
 
@@ -975,4 +975,4 @@ Json roadDecks(const RoadNetwork& n, const std::vector<RoadTypeDef>& types, cons
     return list;
 }
 
-} // namespace aiverse::game
+} // namespace aiverse::roads
