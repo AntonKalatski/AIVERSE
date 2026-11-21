@@ -331,6 +331,8 @@ StudioMetalScene::~StudioMetalScene() {
             releasePreviewModel(*materialSphere_);
             materialSphere_.reset();
         }
+        for (auto* primitive:{&builtinCube_,&builtinSphere_})
+            if (*primitive) { releasePreviewModel(**primitive); primitive->reset(); }
         if (terrain_.vb.valid()) device_->destroyBuffer(terrain_.vb);
         if (terrain_.ib.valid()) device_->destroyBuffer(terrain_.ib);
         nereid_.shutdown(*device_);
@@ -465,6 +467,21 @@ void StudioMetalScene::drawMoveGizmo(const render::RTSCamera& view,int width,int
     const float c=3*u;
     o.tri(h.px-c,h.py-c,h.px+c,h.py-c,h.px+c,h.py+c,rgba(235,240,250));
     o.tri(h.px-c,h.py-c,h.px+c,h.py+c,h.px-c,h.py+c,rgba(235,240,250));
+}
+render::Model* StudioMetalScene::builtinPrimitive(bool sphere) {
+    auto& slot=sphere?builtinSphere_:builtinCube_;
+    if(slot)return slot.get();
+    render::MeshBuilder mesh;
+    mesh.color(render::rgba(255,255,255));
+    if(sphere) mesh.sphere({0,0,0},0.5f,24,32); else mesh.box({0,0,0},{1,1,1});
+    render::Material base;base.vertexColors=false;base.name="Default";
+    slot=render::modelFromParts(sphere?"builtin:sphere":"builtin:cube",
+        {{sphere?"Sphere":"Cube",&mesh,base,render::mat4{}}});
+    if(!slot)return nullptr;
+    slot->batching.autoLod=false;
+    render::prepareModelUpload(*slot);
+    if(!render::uploadModel(*device_,*slot)){releasePreviewModel(*slot);slot.reset();return nullptr;}
+    return slot.get();
 }
 std::vector<std::string> StudioMetalScene::modelMaterialSlots(const std::string& asset) const {
     std::vector<std::string> names;
@@ -844,6 +861,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     selectedId_=selectedId;
     selectedPivotValid_=false;
     selectedBoxValid_=false;
+    primitiveMaterials_.clear();
     for(const auto& entity:proxies) {
         const int sourceIndex=studioMapEntityIndex(entity.id,doc);
         const bool dragged=!moveDrag_.id.empty() && entity.id==moveDrag_.id;
@@ -865,6 +883,30 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             } catch(const std::exception&) {}
         }
         if(entity.id==selectedId && !entity.light) captureSelectedBox(world,{-.5f,-.5f,-.5f},{.5f,.5f,.5f});
+        // Mesh Renderer with a built-in primitive: sphere, or an assigned material,
+        // draws a PBR primitive Model; plain default cubes keep the cheap proxy path.
+        const auto* sourceEntity=sourceIndex>=0?&doc.data.entities[size_t(sourceIndex)]:nullptr;
+        const Json staticModel=sourceEntity?sourceEntity->extra["components"]["StaticModel"]:Json::object();
+        const bool sphere=staticModel.getStr("asset")=="builtin:sphere";
+        const Json& materialRef=staticModel["materials"]["*"];
+        if(!lightingModel_ && !entity.light && (sphere || materialRef.isString())) {
+            if(auto* primitive=builtinPrimitive(sphere)) {
+                auto& materials=primitiveMaterials_[entity.id];
+                Json resolved=Json::object();
+                if(materialRef.isString())
+                    resolved=view::AppearanceAuthoringService::resolveMaterial(materialLibrary_,materialRef);
+                if(!resolved["color"].isArray()){
+                    Json color=Json::array();
+                    for(float c:{entity.color.x,entity.color.y,entity.color.z})color.push(Json::number(double(c),3));
+                    resolved.set("color",color);
+                }
+                materials={studioPbrPreviewMaterial(resolved,materialRef.isString()?materialRef.str():"Default")};
+                render::ModelDraw draw;draw.model=primitive;draw.world=world;draw.materials=&materials;
+                if(entity.id==selectedId)draw.outline={.25f,.62f,1.0f,.035f};
+                renderer_.drawModel(draw);
+                continue;
+            }
+        }
         if(!lightingModel_ && !entity.light) {
             if(entity.id==selectedId) renderer_.drawSelectionMesh(cube_,world,entity.color,{.25f,.62f,1.0f,1.0f});
             else renderer_.drawMesh(cube_,world,entity.color,kDrawNoCastShadow);

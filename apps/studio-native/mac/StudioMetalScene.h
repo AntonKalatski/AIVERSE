@@ -81,6 +81,10 @@ private:
     render::Mesh cube_;
     render::Mesh terrain_;
     std::unique_ptr<render::Model> materialSphere_;
+    // Built-in Mesh Renderer primitives (StaticModel.asset "" / builtin:cube / builtin:sphere).
+    std::unique_ptr<render::Model> builtinCube_, builtinSphere_;
+    std::map<std::string,std::vector<render::Material>> primitiveMaterials_; // per frame, per entity
+    render::Model* builtinPrimitive(bool sphere);
     uint64_t materialRevision_ = std::numeric_limits<uint64_t>::max();
     bool materialMode_ = false;
     uint64_t terrainRevision_ = std::numeric_limits<uint64_t>::max();

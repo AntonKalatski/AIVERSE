@@ -128,7 +128,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [pinnedAssetGuid,setPinnedAssetGuid]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [mode,setMode]=useState<'grid'|'list'>('grid');
-  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean}|null>(null);
+  const [menu,setMenu]=useState<{x:number;y:number;path:string;directory:boolean;background?:boolean}|null>(null);
+  const [creatingMaterial,setCreatingMaterial]=useState(false);
+  const [materialName,setMaterialName]=useState('');
+  const [materialPreset,setMaterialPreset]=useState<'matte'|'metal'|'glass'>('matte');
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
   const [loading,setLoading]=useState(true);
@@ -250,6 +253,26 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     const text='content/'+path;
     void navigator.clipboard?.writeText(text).then(()=>setMessage('Copied '+text),()=>setError('Clipboard unavailable'));
   };
+  const createMaterial=async()=>{
+    const name=materialName.trim();
+    if(!native||!projectPath||!name||busy)return;
+    setBusy(true);setError('');setMessage('');
+    try{
+      await invoke('studio.materialCreate',{name,preset:materialPreset});
+      setCreatingMaterial(false);setMaterialName('');
+      setMessage('Created material "'+name+'" in materials.json');
+    }catch(e){setError(String(e instanceof Error?e.message:e))}
+    finally{setBusy(false)}
+  };
+  // Right-click on empty space: create/import into the current folder.
+  const backgroundItems=():StudioMenuItem[]=>[
+    {id:'folder',label:'Create Folder',icon:<FolderPlus size={13}/>,disabled:!native||!projectPath||busy,onSelect:()=>setAddingFolder(true)},
+    {id:'material',label:'Create Material…',icon:<Library size={13}/>,disabled:!native||!projectPath||busy,
+      onSelect:()=>{setCreatingMaterial(true);setMaterialName('')}},
+    {id:'import',label:'Import Assets…',icon:<Upload size={13}/>,separator:true,disabled:!native||!projectPath||busy,onSelect:()=>void externalImport()},
+    {id:'copy',label:'Copy Folder Path',icon:<Search size={13}/>,separator:true,onSelect:()=>copyPath(folder)},
+    {id:'reload',label:'Reload',icon:<RefreshCw size={13}/>,onSelect:reload},
+  ];
   const menuItems=(target:{path:string;directory:boolean}):StudioMenuItem[]=>[
     target.directory
       ?{id:'open',label:'Open Folder',icon:<FolderOpen size={13}/>,onSelect:()=>goTo(target.path)}
@@ -309,6 +332,19 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
       <button type="submit" disabled={!folderName.trim()||busy}>Create</button>
       <button type="button" onClick={()=>{setAddingFolder(false);setFolderName('')}}>Cancel</button>
     </form>}
+    {creatingMaterial&&<form className="studio-assets-create-folder" onSubmit={event=>{
+      event.preventDefault();void createMaterial();
+    }}>
+      <Library size={13}/><span>New material in materials.json</span>
+      <input autoFocus aria-label="New material name" value={materialName}
+        onChange={event=>setMaterialName(event.target.value)} placeholder="Material name"/>
+      <select aria-label="Material preset" value={materialPreset}
+        onChange={event=>setMaterialPreset(event.target.value as 'matte'|'metal'|'glass')}>
+        <option value="matte">Matte</option><option value="metal">Metal</option><option value="glass">Glass</option>
+      </select>
+      <button type="submit" disabled={!materialName.trim()||busy}>Create</button>
+      <button type="button" onClick={()=>setCreatingMaterial(false)}>Cancel</button>
+    </form>}
     {message&&<div className="studio-assets-status" role="status">{message}</div>}
     {error&&<div className="studio-assets-status studio-assets-error" role="alert">{error}</div>}
     <div className="studio-assets-layout">
@@ -330,7 +366,8 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             <span>{entry.name}</span><small>{entry.count}</small>
           </button>)}
       </nav>
-      <div className="studio-assets-content" {...folderDropProps(folder)}>
+      <div className="studio-assets-content" {...folderDropProps(folder)}
+        onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,path:folder,directory:true,background:true})}}>
         {loading?<div className="studio-assets-state">Loading content/…</div>:
           shownFiles.length===0&&shownFolders.length===0?
             <div className="studio-assets-empty">
@@ -377,7 +414,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
         'content/'+selected:search?'Search in content/':folder?'content/'+folder:'content/'}</span>
     </footer>
     {menu&&<StudioContextMenu x={menu.x} y={menu.y} label="Asset actions"
-      items={menuItems(menu)} onClose={()=>setMenu(null)}/>}
+      items={menu.background?backgroundItems():menuItems(menu)} onClose={()=>setMenu(null)}/>}
     {plan&&<PreviewDialog key={plan.token} plan={plan} busy={busy}
       onCancel={()=>setPlan(null)} onCommit={decisions=>void applyTransfer(decisions)}/>}
   </section>;

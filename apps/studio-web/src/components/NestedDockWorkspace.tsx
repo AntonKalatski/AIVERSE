@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { Columns2, MoreVertical, Rows2, X } from 'lucide-react';
+import { StudioContextMenu, type StudioMenuItem } from '../ui';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
 import {
   STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, activateTab, closeTab, defaultDockTree, dockStacks,
@@ -29,8 +30,27 @@ function draggedPanel(event: DragEvent<HTMLElement>, dragging: StudioPanel | nul
   return validPanel(data) ? data : dragging;
 }
 function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
-                    actionsPanel, showActions }: BranchProperties & { node: DockStack }) {
+                    stacks }: BranchProperties & { node: DockStack }) {
   const [hover, setHover] = useState<DockEdge | 'center' | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; panel: StudioPanel } | null>(null);
+  // Unity-style dock menu (also on tab right-click): close, split, move to another area.
+  const dockMenu = (panel: StudioPanel): StudioMenuItem[] => {
+    const many = node.tabs.length > 1;
+    const split = (edge: DockEdge, label: string, icon: ReactNode, separator = false): StudioMenuItem =>
+      ({ id: 'split-' + edge, label, icon, separator, disabled: !many,
+         onSelect: () => setTree(t => splitDockStack(t, panel, node.id, edge)) });
+    return [
+      { id: 'close', label: 'Close ' + STUDIO_PANEL_TITLES[panel], icon: <X size={13}/>, onSelect: () => setTree(t => closeTab(t, panel)) },
+      split('right', 'Split Right', <Columns2 size={13}/>, true),
+      split('left', 'Split Left', <Columns2 size={13}/>),
+      split('bottom', 'Split Down', <Rows2 size={13}/>),
+      split('top', 'Split Up', <Rows2 size={13}/>),
+      ...stacks.filter(stack => stack.id !== node.id).map((stack, index) => ({
+        id: 'move-' + stack.id, separator: index === 0,
+        label: 'Move to ' + (stack.tabs[0] ? STUDIO_PANEL_TITLES[stack.tabs[0]] + ' area' : 'empty area'),
+        onSelect: () => setTree(t => moveTab(t, panel, stack.id)) })),
+    ];
+  };
   const transfer = (event: DragEvent<HTMLElement>, edge?: DockEdge, before?: StudioPanel) => {
     event.preventDefault();
     event.stopPropagation();
@@ -50,19 +70,21 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
         onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.effectAllowed='move';setDragging(panel);}}
         onDragEnd={()=>{setDragging(null);setHover(null);}}
         onDragOver={event=>{event.preventDefault();event.stopPropagation();}}
-        onDrop={event=>transfer(event,undefined,panel)}>
+        onDrop={event=>transfer(event,undefined,panel)}
+        onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,panel});}}>
         <button role="tab" aria-selected={node.active===panel}
           onClick={()=>setTree(t=>activateTab(t,node.id,panel))}>{STUDIO_PANEL_TITLES[panel]}</button>
         <button className="nested-tab-close" title={'Close '+STUDIO_PANEL_TITLES[panel]}
           aria-label={'Close '+STUDIO_PANEL_TITLES[panel]} onClick={()=>setTree(t=>closeTab(t,panel))}>×</button>
-        {node.active===panel && <button type="button"
-          className="nested-panel-actions-button" draggable={false}
-          aria-label={'Panel actions for '+STUDIO_PANEL_TITLES[panel]}
-          aria-expanded={actionsPanel===panel}
-          title="Move, split or close this panel"
-          onClick={()=>showActions(panel)}><MoreHorizontal size={14}/></button>}
       </div>)}
+      <span className="nested-tabs-fill"/>
+      {node.active && <button type="button" className="nested-stack-menu" draggable={false}
+        aria-label="Dock area menu" title="Dock area menu"
+        onClick={event=>{const r=event.currentTarget.getBoundingClientRect();
+          setMenu({x:r.right-180,y:r.bottom+2,panel:node.active!});}}><MoreVertical size={13}/></button>}
     </div>
+    {menu && <StudioContextMenu x={menu.x} y={menu.y} label="Dock actions"
+      items={dockMenu(menu.panel)} onClose={()=>setMenu(null)}/>}
     <div className="nested-stack-body" role="tabpanel" aria-label={node.active ? STUDIO_PANEL_TITLES[node.active] : 'Empty dock'}>
       {node.active ? renderPanel(node.active) : <div className="nested-empty">Drop a panel here</div>}
       {showEdges && <div className="nested-drop-zones">
@@ -177,7 +199,7 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Prop
           </div>
         </details>
         <button onClick={()=>setTree(defaultDockTree())}>Reset layout</button>
-        <span>Drag tabs to rearrange, or use … for panel actions</span>
+        <span>Drag tabs to rearrange, or use ⋮ for dock actions</span>
       </>}
     </div>
     <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel}

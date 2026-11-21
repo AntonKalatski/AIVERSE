@@ -87,6 +87,17 @@ void authoredEntityWorkflow() {
    }
    AIVERSE_TEST_CHECK(!call("studio.undo").has("error"));
    AIVERSE_TEST_CHECK(!session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))].extra["components"]["StaticModel"].has("materials"));
+   // Built-in primitives: builtin:sphere is stored, builtin:cube clears to the default cube.
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"builtin:sphere"})").has("error"));
+   AIVERSE_TEST_CHECK(session.workspace().map.data.entities[size_t(session.workspace().map.findEntity("second"))].extra["components"]["StaticModel"].getStr("asset")=="builtin:sphere");
+   AIVERSE_TEST_CHECK(!call("studio.setProperty",R"({"entityId":"entity:@second","componentId":"MeshRenderer","key":"asset","value":"builtin:cube"})").has("error"));
+   {
+       auto mesh=call("studio.inspect",R"({"entityId":"entity:@second"})");
+       std::string shown;
+       for(const auto& c:mesh["result"]["components"].items())if(c.getStr("id")=="MeshRenderer")
+           for(const auto& f:c["properties"].items())if(f.getStr("key")=="asset")shown=f.getStr("value");
+       AIVERSE_TEST_CHECK(shown=="builtin:cube");
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

@@ -215,16 +215,17 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
             Json mesh=Json::array();
             const Json library=editor::loadMaterialLibrary(ws_);
             Json options=Json::array();
-            {Json none=Json::object();none.set("label",str("(model default)"));none.set("value",str(""));options.push(none);}
+            {Json none=Json::object();none.set("label",str("Default (owner colour)"));none.set("value",str(""));options.push(none);}
             for(const auto& [name,value]:library.members()){(void)value;Json o=Json::object();o.set("label",str(name));o.set("value",str(name));options.push(o);}
             if(comps.has("StaticModel") || authored) {
                 const std::string asset=editor::authoredModelAsset(e);
-                Json field=prop("asset","Mesh","asset",str(asset),authored);
+                // No mesh = the built-in cube the Scene actually draws.
+                Json field=prop("asset","Mesh","asset",str(asset.empty()?"builtin:cube":asset),authored);
                 Json kinds=Json::array();kinds.push(str("model"));field.set("assetKinds",kinds);
                 mesh.push(field);
                 const Json& overrides=comps["StaticModel"]["materials"];
                 std::vector<std::string> slots;
-                if(materialSlots_ && !asset.empty())slots=materialSlots_(asset);
+                if(materialSlots_ && asset.rfind("content/",0)==0)slots=materialSlots_(asset);
                 if(slots.empty())slots.push_back("*");
                 for(const auto& [name,value]:overrides.members())
                     if(std::find(slots.begin(),slots.end(),name)==slots.end())slots.push_back(name);
@@ -234,13 +235,12 @@ Json StudioSession::inspectorFor(const std::string& entityId) const {
                     Json f=prop(key.c_str(),label.c_str(),"text",str(overrides[slot].isString()?overrides[slot].str():""),authored);
                     f.set("options",options);mesh.push(f);
                 }
-                components.push(component("MeshRenderer","Mesh Renderer",mesh,
-                    asset.empty()?"No mesh assigned: the Scene shows a proxy box.":""));
+                components.push(component("MeshRenderer","Mesh Renderer",mesh));
             } else {
                 const Json& model=view["model"];
                 std::string path=model.isString()?model.str():model.isArray()&&model.size()?
                     (model[size_t(0)].isString()?model[size_t(0)].str():model[size_t(0)].getStr("file")):"";
-                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"(none)":path))));
+                mesh.push(readOnly(prop("asset","Mesh","text",str(path.empty()?"Cube (built-in)":path))));
                 for(const auto& [slot,ref]:view["materials"].members())
                     mesh.push(readOnly(prop(("material:"+slot).c_str(),(slot=="*"?std::string("Material (all slots)"):"Material · "+slot).c_str(),
                         "text",str(ref.isString()?ref.str():ref.dump(-1)))));
@@ -291,7 +291,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
     Json model=components["StaticModel"].isObject()?components["StaticModel"]:Json::object();
     if(key=="asset") {
         std::string path=value.str();
-        if(!path.empty() && path.rfind("content/",0)!=0) {
+        if(path=="builtin:cube")path.clear(); // default primitive: no explicit asset
+        if(!path.empty() && path!="builtin:sphere" && path.rfind("content/",0)!=0) {
             // The shared asset picker returns stable GUIDs; documents keep content paths.
             if(!studioValidGuid(path))throw std::runtime_error("Mesh must be a content/ path or asset GUID");
             StudioAssetCatalog catalog(ws_.project.dir);
@@ -299,7 +300,8 @@ Json StudioSession::setMeshRenderer(int index,const std::string& key,const Json&
             if(!entry || entry->directory)throw std::runtime_error("Asset GUID not found; refresh Assets");
             path="content/"+entry->path;
         }
-        if(!path.empty()) {
+        if(path=="builtin:sphere") model.set("asset",str(path));
+        else if(!path.empty()) {
             if(!studioModelAssetPath(path))throw std::runtime_error("Mesh must be a .glb, .gltf or .obj file in content/");
             if(!std::filesystem::is_regular_file(std::filesystem::path(ws_.project.dir)/path))
                 throw std::runtime_error("Mesh file does not exist: "+path);

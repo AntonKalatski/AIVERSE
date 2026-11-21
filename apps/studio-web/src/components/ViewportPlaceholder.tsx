@@ -3,6 +3,7 @@ import { shortcutKey } from '../keyboard';
 import { Box } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 import SceneAxisGizmo from './SceneAxisGizmo';
+import { overlayBlocks, watchOverlays } from '../nativeOverlay';
 import {
   DEFAULT_SCENE_CAMERA, dragZoomAmount, flyStep, isSceneCameraState, navigationFor, stepFlySpeed,
   type SceneCameraState, type SceneNavigation
@@ -65,11 +66,13 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
           x: bounds.left, y: bounds.top,
           width: bounds.width, height: bounds.height,
           dpr: window.devicePixelRatio || 1,
+          // Hidden while an HTML dialog/menu overlaps it: the Metal view would cover it.
           visible: active && document.visibilityState === 'visible' &&
-                   bounds.width > 16 && bounds.height > 16
+                   bounds.width > 16 && bounds.height > 16 && !overlayBlocks(bounds)
         }).catch(error => console.warn('AIVERSE viewport layout:', error));
       });
     };
+    const stopOverlays = watchOverlays(update);
     const observer = new ResizeObserver(update);
     observer.observe(host);
     window.addEventListener('resize', update);
@@ -80,6 +83,7 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
       closed = true;
       if (frame) cancelAnimationFrame(frame);
       observer.disconnect();
+      stopOverlays();
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       document.removeEventListener('visibilitychange', update);

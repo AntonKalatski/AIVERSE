@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shortcutKey } from './keyboard';
 import {
-  ChevronDown, CheckCircle2, FileCode2, FolderOpen,
+  ChevronDown, CheckCircle2, FileCode2,
   PanelBottom, Redo2, RefreshCw, Save, Settings2, Terminal, Undo2
 } from 'lucide-react';
 import { invoke, nativeConnected, nativeWindowAction, onNativeEvent } from './bridge';
@@ -13,6 +13,8 @@ import type { StudioEntity, StudioInspector, StudioSnapshot } from './types';
 import HeaderGameControls from './components/HeaderGameControls';
 import engineLogo from '../../../engine/assets/branding/mark.png';
 import NestedDockWorkspace from './components/NestedDockWorkspace';
+import StudioMenuBar, { type StudioMenu } from './components/StudioMenuBar';
+import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows';
 import { renderStudioPanel } from './panels/StudioPanelRenderer';
 
 function hierarchyRows(nodes: StudioEntity[], parentId?: string, depth = 0):
@@ -106,7 +108,11 @@ export default function App() {
       const target = event.target;
       const editable = target instanceof HTMLElement &&
         !!target.closest('input,textarea,[contenteditable="true"]');
-      if (key === 's' && connected && snapshot?.project.path) {
+      if (key === 'o' && connected) { event.preventDefault(); void openProject(); }
+      else if (key === 's' && event.shiftKey && connected && snapshot?.project.path) {
+        event.preventDefault();
+        void invoke('studio.saveAs', {}).then(setSnapshot).catch(e => setError(e instanceof Error ? e.message : String(e)));
+      } else if (key === 's' && connected && snapshot?.project.path) {
         event.preventDefault();
         if (snapshot.project.dirty) void historyAction('studio.save');
       } else if (key === 'z' && !editable && !event.shiftKey && snapshot?.history.canUndo) {
@@ -173,6 +179,46 @@ export default function App() {
     }, setBusy
   });
 
+  const project = connected && !!snapshot?.project.path;
+  const selectedEntity = snapshot?.selectedId ?? null;
+  const entityAction = (method: 'studio.entityDuplicate' | 'studio.entityDelete') => {
+    if (!selectedEntity) return;
+    setBusy(true);
+    void invoke(method, { entityId: selectedEntity }).then(next => { setInspectorPin(null); setSnapshot(next); setError(''); })
+      .catch(e => setError(e instanceof Error ? e.message : String(e))).finally(() => setBusy(false));
+  };
+  const showPanel = (panel: StudioPanel) => setDock(t => reopenTab(t, panel, STUDIO_PANEL_HOME[panel]));
+  const menus: StudioMenu[] = [
+    { id: 'file', label: 'File', items: () => [
+      { id: 'open', label: 'Open Project…', shortcut: '⌘O', disabled: !connected || busy, onSelect: () => void openProject() },
+      { id: 'maps', label: 'New / Open Map…', separator: true, disabled: !project, onSelect: () => showPanel('project') },
+      { id: 'save', label: 'Save', shortcut: '⌘S', disabled: !project || busy || !snapshot?.project.dirty,
+        onSelect: () => void historyAction('studio.save') },
+      { id: 'saveas', label: 'Save As…', shortcut: '⇧⌘S', disabled: !project || busy,
+        onSelect: () => { setBusy(true); void invoke('studio.saveAs', {}).then(next => { if (next && 'project' in next) setSnapshot(next); })
+          .catch(e => setError(e instanceof Error ? e.message : String(e))).finally(() => setBusy(false)); } },
+    ] },
+    { id: 'edit', label: 'Edit', items: () => [
+      { id: 'undo', label: 'Undo', shortcut: '⌘Z', disabled: busy || !snapshot?.history.canUndo, onSelect: () => void historyAction('studio.undo') },
+      { id: 'redo', label: 'Redo', shortcut: '⇧⌘Z', disabled: busy || !snapshot?.history.canRedo, onSelect: () => void historyAction('studio.redo') },
+      { id: 'dup', label: 'Duplicate', shortcut: '⌘D', separator: true, disabled: busy || !selectedEntity?.startsWith('entity:'),
+        onSelect: () => entityAction('studio.entityDuplicate') },
+      { id: 'del', label: 'Delete', shortcut: '⌫', disabled: busy || !selectedEntity?.startsWith('entity:'),
+        onSelect: () => entityAction('studio.entityDelete') },
+      { id: 'frame', label: 'Frame Selected', shortcut: 'F', disabled: !selectedEntity || !connected,
+        onSelect: () => void invoke('studio.viewportInput', { kind: 'focus' }).catch(console.warn) },
+      { id: 'prefs', label: 'Preferences…', separator: true, onSelect: () => setSettingsOpen(true) },
+    ] },
+    { id: 'window', label: 'Window', items: () => [
+      ...STUDIO_PANELS.map(panel => ({ id: 'panel-' + panel, label: STUDIO_PANEL_TITLES[panel],
+        checked: panelStack(dock, panel) !== null,
+        onSelect: () => setDock(t => panelStack(t, panel) !== null ? closeTab(t, panel) : reopenTab(t, panel, STUDIO_PANEL_HOME[panel])) })),
+      { id: 'reset', label: 'Reset Layout', separator: true, onSelect: () => setDock(defaultDockTree()) },
+      { id: 'legacy', label: 'Legacy editor — not migrated yet', caption: true, separator: true, onSelect: () => {} },
+      ...LEGACY_WINDOWS_NOT_MIGRATED.map(w => ({ id: 'legacy-' + w.id, label: w.title, disabled: true, onSelect: () => {} })),
+    ] },
+  ];
+
   return <div className={'studio compact-shell'+(connected?' compact-shell--native':'')}>
     <header className="titlebar"
       onMouseDown={event => {
@@ -183,6 +229,7 @@ export default function App() {
       }}>
       <div className="wordmark"><img className="engine-mark" src={engineLogo} alt=""/>
         <strong>AIVERSE</strong></div>
+      <StudioMenuBar menus={menus}/>
       <button className="project-breadcrumb tool-button" onClick={() => void openProject()}
         disabled={!connected || busy} title="Open project">
         <b>{snapshot?.project.name ?? 'Loading…'}</b><ChevronDown size={13}/>
@@ -202,18 +249,6 @@ export default function App() {
         onPlay={()=>setDock(current=>reopenTab(current,'game','dock-center'))} onError={setError}/>
       <div className="header-drag-space"/>
       <div className="title-actions">
-        <button className="icon-button" onClick={() => void openProject()} disabled={!connected || busy}
-          aria-label="Open Project" title="Open Project"><FolderOpen size={17}/></button>
-        <details className="nested-panels-list">
-          <summary>Panels <ChevronDown size={12}/></summary>
-          <div className="nested-panels-popover">
-            {STUDIO_PANELS.map(panel=><label key={panel}>
-              <input type="checkbox" checked={panelStack(dock,panel)!==null}
-                onChange={event=>setDock(t=>event.target.checked
-                  ?reopenTab(t,panel,STUDIO_PANEL_HOME[panel]):closeTab(t,panel))}/>
-              {STUDIO_PANEL_TITLES[panel]}</label>)}
-          </div>
-        </details>
         <button className="icon-button" title="Refresh from engine" aria-label="Refresh from engine" onClick={() => void refresh()}>
           <RefreshCw size={15}/></button>
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
