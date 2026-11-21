@@ -3986,6 +3986,23 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# CPU/GPU linkage: one asset on the Metal compute kernel and on its CPU twin
+# (kernel state parity, emitter image parity, particles/ms perf print).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_cpu_gpu_parity_test
+        tests/spectrafx_cpu_gpu_parity.mm $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_spectrafx_cpu_gpu_parity_test PRIVATE
+        aiverse_runtime aiverse_fx aiverse_render2d)
+    add_test(NAME spectrafx_cpu_gpu_parity
+        COMMAND aiverse_spectrafx_cpu_gpu_parity_test)
+    set_tests_properties(spectrafx_cpu_gpu_parity PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)

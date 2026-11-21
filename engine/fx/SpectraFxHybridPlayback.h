@@ -223,8 +223,11 @@ public:
         if(!route->second.sharedPool.empty()) {
             const auto group=pools_.find(route->second.sharedPool);
             if(group!=pools_.end() && group->second.failurePending) {
+                // The CPU twin needs no cpuEffect: same asset on the CPU.
                 if(!selected.backend.allowCpuFallback ||
-                   selected.cpuEffect.empty()) {
+                   (selected.cpuFallback==
+                        SpectraFxHybridEmitter::Config::CpuFallback::Effect &&
+                    selected.cpuEffect.empty())) {
                     ++stats_.gpuBudgetRefusals;
                     return false;
                 }
@@ -236,15 +239,19 @@ public:
                           preference.backend==SpectraFxExecutionBackend::Gpu;
         if(gpuRequested &&
            usedGpuSlots()+selected.backend.particles>kMaxPlaybackGpuSlots) {
+            // The slot budget also bounds CPU twin work, so only a
+            // separately authored cpuEffect can absorb the overflow.
             if(!selected.backend.allowCpuFallback || selected.cpuEffect.empty()) {
                 ++stats_.gpuBudgetRefusals;
                 return false;
             }
             selected.backend.preference=SpectraFxExecutionPreference::Cpu;
+            selected.cpuFallback=SpectraFxHybridEmitter::Config::CpuFallback::Effect;
             ++stats_.gpuBudgetCpuFallbacks;
             gpuRequested=false;
         }
-        if(gpuRequested && !sharedRendererAttempted_) {
+        // GPU emitters and CPU twins draw through the same billboard pipeline.
+        if(!sharedRendererAttempted_) {
             sharedRendererAttempted_=true;
             sharedRenderer_.init(device_);
         }
@@ -264,8 +271,7 @@ public:
         // per-emitter renderer path from being attempted. Only lend a
         // resource that actually initialized successfully.
         if(!next->begin(device_,cpu_,std::move(selected),cue.position,cue.direction,
-                        gpuRequested && sharedRenderer_.ready()
-                            ? &sharedRenderer_ : nullptr,
+                        sharedRenderer_.ready() ? &sharedRenderer_ : nullptr,
                         sharedCompute,sharedSort,sharedCompact)) {
             ++stats_.failed;return false;
         }
@@ -558,6 +564,7 @@ public:
     size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
     struct BackendSnapshot {
         size_t dedicatedGpu=0, dedicatedCpu=0, suspendedGpu=0;
+        size_t dedicatedCpuTwin=0; // same asset on the CPU twin kernel
         size_t pooledSources=0, pooledGroups=0;
         uint64_t activeGpuSlots=0, retiredGpuSlots=0;
         uint64_t nominalGpuBytes=0;
@@ -570,7 +577,8 @@ public:
             if(emitter.gpuActive()) {
                 ++out.dedicatedGpu;
                 if(emitter.suspended()) ++out.suspendedGpu;
-            } else if(emitter.cpuActive()) ++out.dedicatedCpu;
+            } else if(emitter.cpuTwinActive()) ++out.dedicatedCpuTwin;
+            else if(emitter.cpuActive()) ++out.dedicatedCpu;
             if(emitter.gpuResourcesHeld())
                 out.activeGpuSlots+=emitter.config().backend.particles;
         };
@@ -683,12 +691,15 @@ private:
     std::unique_ptr<SpectraFxHybridEmitter> makePooledCpuFallback(
             const PooledRef& source) {
         if(!source.config.backend.allowCpuFallback ||
-           source.config.cpuEffect.empty()) return {};
+           (source.config.cpuFallback==
+                SpectraFxHybridEmitter::Config::CpuFallback::Effect &&
+            source.config.cpuEffect.empty())) return {};
         auto config=source.config;
         config.backend.preference=SpectraFxExecutionPreference::Cpu;
         auto cpu=std::make_unique<SpectraFxHybridEmitter>();
         if(!cpu->begin(device_,cpu_,std::move(config),
-                       source.position,source.direction)) return {};
+                       source.position,source.direction,
+                       sharedRenderer_.ready()?&sharedRenderer_:nullptr)) return {};
         return cpu;
     }
 
@@ -900,7 +911,7 @@ private:
         return true;
     }
     void advanceGpu(SpectraFxHybridEmitter& emitter,float dt) {
-        if(!emitter.gpuActive() || emitter.suspended()) return;
+        if(!emitter.slotsActive() || emitter.suspended()) return;
         const bool ok=emitter.updateGpu(dt);
         if(emitter.cpuActive()) ++stats_.gpuRuntimeCpuFallbacks;
         if(!ok) ++stats_.failed;
@@ -908,7 +919,7 @@ private:
     void drawGpu(SpectraFxHybridEmitter& emitter,
                  const render::mat4& viewProj,render::float3 right,
                  render::float3 up) {
-        if(emitter.gpuActive()&&!emitter.suspended()&&
+        if(emitter.slotsActive()&&!emitter.suspended()&&
            !emitter.renderGpu(viewProj,right,up)) ++stats_.failed;
     }
     gfx::Device& device_;

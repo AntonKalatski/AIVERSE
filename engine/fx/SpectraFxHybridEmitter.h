@@ -41,6 +41,12 @@ public:
         bool allowUnsortedAlpha=false;
         // Explicit Metal GPU back-to-front alpha sort. CPU remains default.
         bool gpuSortAlpha=false;
+        // How the emitter runs when the GPU backend is not selected:
+        // Twin   = the SAME asset on the CPU twin of the compute kernel,
+        //          drawn by the same billboard renderer (default);
+        // Effect = legacy: play the separately authored cpuEffect.
+        enum class CpuFallback : uint8_t { Twin, Effect };
+        CpuFallback cpuFallback=CpuFallback::Twin;
     };
 
     static SpectraFxBackendRequest effectiveRequest(const Config& config) {
@@ -123,8 +129,25 @@ public:
                 return false;
             }
         }
-        if(config_.cpuEffect.empty()) {
-            status_="CPU fallback requires an authored effect name";
+        if(config_.cpuFallback==Config::CpuFallback::Twin ||
+           config_.cpuEffect.empty()) {
+            // Same authored asset, CPU twin of the compute kernel.
+            if(slots_.init(device,config_.backend.particles,
+                           config_.environment.reportImpacts,{},true) &&
+               (sharedRenderer && sharedRenderer->ready() ? true : renderer_.init(device))) {
+                rendererOwner_=sharedRenderer && sharedRenderer->ready()
+                    ? sharedRenderer : &renderer_;
+                gpuDevice_=&device;
+                twin_=true;
+                backend_=SpectraFxExecutionBackend::Cpu;
+                status_=std::string("CPU twin selected: ")+
+                        (decision_.reason?decision_.reason:"CPU");
+                return true;
+            }
+            status_="CPU twin unavailable (RGBA32F texture/pipeline): "+
+                    slots_.evolution().lastError()+renderer_.lastError();
+            slots_.shutdown();
+            renderer_.release();
             cpu_=nullptr;
             return false;
         }
@@ -142,22 +165,22 @@ public:
     // GPU only: emits into dormant slots, safe update point outside passes.
     // The CPU path has its own authored spawning logic in ParticleSystem.
     SpectraFxGpuParticleHandle emitGpu(const SpectraFxGpuSeed& seed) {
-        if(!gpuActive() || suspended_) return {};
+        if(!slotsActive() || suspended_) return {};
         return slots_.emit(seed);
     }
     bool killGpu(SpectraFxGpuParticleHandle handle) {
-        return gpuActive() && slots_.kill(handle);
+        return slotsActive() && slots_.kill(handle);
     }
 
     // GPU only, between beginFrame/endFrame and outside rendering passes.
     // For CPU selection, caller must update the shared ParticleSystem once
     // for the entire scene; no CPU update is performed by this adapter.
     bool updateGpu(float dt) {
-        if(!gpuActive() || suspended_) return false;
+        if(!slotsActive() || suspended_) return false;
         // A GPU error detected on an earlier completed frame is never
         // replayed into this frame. Select the authored CPU visual path
         // before touching GPU storage or issuing another compute command.
-        if(gpuDevice_ && !gpuDevice_->gpuHealthy()) {
+        if(!twin_ && gpuDevice_ && !gpuDevice_->gpuHealthy()) {
             if(switchToCpuFallback("RHI GPU unhealthy")) return true;
             status_="RHI GPU unhealthy; no CPU fallback";
             suspended_=true;
@@ -171,6 +194,18 @@ public:
                     return slots_.emit({pos,vel,0,life}).valid();
                 });
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
+        }
+        if(twin_) {
+            if(!config_.appearance.additive && sortCameraValid_)
+                slots_.evolution().setTwinSortView(sortCameraEye_,sortCameraForward_);
+            if(slots_.step(dt,config_.environment)) {
+                if(config_.environment.reportImpacts && gpuDevice_)
+                    impactFeedback_.request(*gpuDevice_,slots_);
+                return true;
+            }
+            status_="CPU twin step failed";
+            suspended_=true;
+            return false;
         }
         if(slots_.step(dt,config_.environment)) {
             // A single visible alpha particle needs no ordering. Culling
@@ -213,7 +248,7 @@ public:
     // Rebuilds depth ordering for each camera rather than reusing camera A's
     // sort texture in camera B's offscreen pass.
     bool prepareRenderView(render::float3 eye,render::float3 forward) {
-        if(!gpuActive() || suspended_) return true;
+        if(!slotsActive() || suspended_) return true;
         const auto finite=[](render::float3 value) {
             return std::isfinite(value.x)&&std::isfinite(value.y)&&
                    std::isfinite(value.z);
@@ -221,6 +256,14 @@ public:
         if(!finite(eye)||!finite(forward)||!gpuDevice_ ||
            !gpuDevice_->canUpdateSharedBuffers()) return false;
         updateLod(eye);
+        if(twin_) {
+            if(config_.appearance.additive || !lodVisible_) return true;
+            const float tl=render::length(forward);
+            if(!std::isfinite(tl)||tl<=1e-6f) return false;
+            setSortView(eye,forward*(1.0f/tl));
+            slots_.evolution().setTwinSortView(sortCameraEye_,sortCameraForward_);
+            return slots_.evolution().repackTwin();
+        }
         if(!config_.gpuSortAlpha || !lodVisible_ ||
            slots_.activeCount()<=1) return true;
         const float fLength=render::length(forward);
@@ -267,7 +310,7 @@ public:
     // generations never produce a callback after particle-slot reuse.
     template<class Callback>
     void drainGpuImpacts(Callback&& callback,size_t maxEvents=128) {
-        if(gpuActive())
+        if(slotsActive())
             impactFeedback_.drain(slots_,std::forward<Callback>(callback),maxEvents);
     }
     const SpectraFxGpuImpactFeedback::Stats& impactStats() const {
@@ -282,9 +325,9 @@ public:
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
-        if(gpuActive() && !suspended_ &&
+        if(slotsActive() && !suspended_ &&
            (!lodVisible_ || slots_.activeCount()==0)) return true;
-        return gpuActive() && !suspended_ && rendererOwner_ &&
+        return slotsActive() && !suspended_ && rendererOwner_ &&
                rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
                                     cameraUp,config_.appearance,
                                     compaction_.ready()?&compaction_:nullptr,
@@ -315,13 +358,19 @@ public:
         externalSpawnScale_=1;
         lodVisible_=true;
         sortCameraValid_=false;
+        twin_=false;
         backend_=SpectraFxExecutionBackend::Cpu;
     }
 
-    bool gpuActive() const {
-        return cpu_ && backend_==SpectraFxExecutionBackend::Gpu &&
+    // Slot path (GPU compute OR its CPU twin) owns the particles.
+    bool slotsActive() const {
+        return cpu_ && (backend_==SpectraFxExecutionBackend::Gpu || twin_) &&
                slots_.evolution().ready();
     }
+    // Simulated by the GPU compute kernel.
+    bool gpuActive() const {return slotsActive() && !twin_;}
+    // Same asset simulated by the CPU twin of the kernel (no cpuEffect).
+    bool cpuTwinActive() const {return slotsActive() && twin_;}
     bool cpuActive() const {
         return cpu_ && backend_==SpectraFxExecutionBackend::Cpu &&
                cpuHandle_.valid();
@@ -421,6 +470,7 @@ private:
     bool lodVisible_=true;
     uint64_t sortedFrames_=0;
     uint64_t runtimeFallbacks_=0;
+    bool twin_=false;
     bool deferredGpuRelease_=false;
     uint64_t deferredGpuSince_=0;
     uint64_t deferredGpuReleases_=0;

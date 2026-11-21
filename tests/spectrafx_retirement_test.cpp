@@ -32,7 +32,8 @@ public:
     void completeThrough(uint64_t serial) {completed_=serial;}
     void setCompletionLag(uint64_t frames) {lag_=frames;}
     bool gpuHealthy() const override {return true;}
-    bool supportsCompute() const override {return true;}
+    bool supportsCompute() const override {return compute_;}
+    void setCompute(bool enabled) {compute_=enabled;} // GL/GLES/WebGL-like RHI
     bool supports(gfx::PixelFormat format) const override {
         return format==gfx::PixelFormat::RGBA32F ||
                format==gfx::PixelFormat::RGBA8 ||
@@ -116,6 +117,7 @@ private:
     uint64_t serial_=0, completed_=0, lag_=0;
     uint32_t nextId_=0;
     bool inFrame_=false,inPass_=false,inCompute_=false;
+    bool compute_=true;
     std::unordered_set<uint32_t> live_;
     size_t peakLive_=0;
     uint64_t created_=0;
@@ -257,6 +259,58 @@ int main() {
     }
     check(device.liveResources()==0,
           "playback destructors release all shared GPU resources exactly once");
+
+    // CPU twin: the SAME asset (no cpuEffect) on a compute-less RHI runs on
+    // the CPU twin of the kernel and draws through the shared billboard
+    // renderer; its textures follow the same completed-frame retirement.
+    FakeMetal noCompute;
+    noCompute.setCompute(false);
+    noCompute.setCompletionLag(1);
+    {
+        ParticleSystem cpu;
+        const std::string asset=R"JSON({
+            "version":1,"preference":"auto","particles":64,
+            "appearance":{"additive":true,"radius":0.2},
+            "spawn":{"burst":8,"rate":60,"life":0.5,"speed":2,"seed":3}
+        })JSON";
+        SpectraFxGpuEmitterLibrary assets([&](const std::string& path,
+                                              std::string& text) {
+            if(path!="fx/gpu/twin.gpu.json")return false;
+            text=asset;return true;
+        });
+        SpectraFxHybridPlayback playback(noCompute,cpu,assets);
+        SpectraFxHybridPlayback::Route route{};
+        route.asset="twin";
+        playback.route(42,route);
+        noCompute.beginFrame(128,128);
+        check(playback.dispatch(cue(5,SpectraFxCue::Action::Play)),
+              "compute-less RHI plays the GPU asset without cpuEffect");
+        const auto snap=playback.backendSnapshot();
+        check(snap.dedicatedCpuTwin==1 && snap.dedicatedGpu==0 && snap.dedicatedCpu==0,
+              "compute-less RHI selects the CPU twin automatically");
+        noCompute.endFrame();
+        for(int i=0;i<30;++i) {
+            noCompute.beginFrame(128,128);
+            playback.updateGpu(1.0f/60,{0,0,5},{0,0,-1});
+            noCompute.beginPass({});
+            playback.renderGpu(render::mat4::identity(),{1,0,0},{0,1,0});
+            noCompute.endPass();
+            noCompute.endFrame();
+        }
+        check(playback.stats().failed==0,"CPU twin updates and draws without failures");
+        noCompute.beginFrame(128,128);
+        check(playback.dispatch(cue(5,SpectraFxCue::Action::Stop)),
+              "CPU twin emitter stops");
+        noCompute.endFrame();
+        for(int i=0;i<4;++i) {
+            noCompute.beginFrame(128,128);
+            playback.updateGpu(1.0f/60,{0,0,5},{0,0,-1});
+            noCompute.endFrame();
+        }
+        check(playback.retiringGpuResourceCount()==0 && playback.usedGpuSlots()==0,
+              "CPU twin textures retired after GPU completion");
+    }
+    check(noCompute.liveResources()==0,"CPU twin releases every RHI resource");
     std::printf("[spectrafx-retirement] serial=%llu live=%zu errors=%d\n",
         static_cast<unsigned long long>(device.serial()),
         device.liveResources(),failures);
