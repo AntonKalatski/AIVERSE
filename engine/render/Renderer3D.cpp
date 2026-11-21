@@ -801,6 +801,8 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
     static const float tapsOverride = [] { const char* e = std::getenv("AIVERSE_SHADOW_TAPS"); return e ? float(std::atof(e)) : 0.0f; }();
     if (tapsOverride > 0) f.quality[0] = tapsOverride;   // testing: 1 = one bilinear compare, 4 = fixed 4 taps, 8.75 = fixed 8-tap disk
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
+    static const bool noSample = [] { const char* e = std::getenv("AIVERSE_SHADOW_SAMPLE"); return e && *e == '0'; }();
+    if (noSample) f.quality[1] = 0.0f;   // testing: the shadow pass runs, the lit shaders do not read it
     dev_->setUniforms(1, &f, sizeof f);
 }
 

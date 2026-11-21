@@ -206,6 +206,11 @@ cases_gles() {
 }
 # weak-GPU unit shadows: contact blobs (default) vs casting into the shadow map
 cases_units() { run blobs gl $U; run cast gl $U AIVERSE_UNIT_SHADOWS=1; run blobs_vsync gl; }
+# where the Low shadow cost is: the pass, the sampling, or the off-tier differences
+cases_shsplit() {
+  run base gl $U; run nosample gl $U AIVERSE_SHADOW_SAMPLE=0; run nearest gl $U AIVERSE_SHADOW_TAPS=0.5
+  run off gl $U AIVERSE_SHADOWS=off
+}
 cases_features() {
   cases_quick
   for c in "shadows_off AIVERSE_SHADOWS=off" "shadows_high AIVERSE_SHADOWS=high" "postfx_off AIVERSE_POSTFX=off" "postfx_high AIVERSE_POSTFX=high" \

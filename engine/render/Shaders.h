@@ -312,6 +312,7 @@ namespace aiverse::render::shaders {
     "#endif\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = u_quality.z;\n" \
+    "    if (u_quality.x < 0.9) return step(d, sunDepth(uv));   // one nearest fetch (weak mobile GPUs)\n" \
     "    if (u_quality.x < 2.0) return sunCompare(uv, d);\n" \
     "    if (u_quality.x < 5.0) { // weak GPUs: fixed 4 taps, no blocker search\n" \
     "        float s = sunCompare(uv + vec2(-0.5, -0.5) * r, d + dot(gradient, vec2(-0.5, -0.5) * r));\n" \
@@ -437,6 +438,7 @@ namespace aiverse::render::shaders {
     "#endif\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = f.quality.z;\n" \
+    "    if (f.quality.x < 0.9) return step(d, sunDepth(sm, uv));\n" \
     "    if (f.quality.x < 2.0) return sunCompare(sm, uv, d);\n" \
     "    if (f.quality.x < 5.0) {\n" \
     "        float s = sunCompare(sm, uv + float2(-0.5, -0.5) * r, d + dot(gradient, float2(-0.5, -0.5) * r));\n" \
