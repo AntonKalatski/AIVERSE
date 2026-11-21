@@ -53,7 +53,10 @@ River Valley review-project-v24 (приёмка шла через AiverseTerraQA
 Цель: кинематографичный кадр работы камеры: глубина резкости, композиция; хорошо — кадр с
 картинкой-в-картинке из вторичной камеры.
 Есть: камеры в ECS, риги, захват PNG, окно камер в Studio, навыки `aiverse-lens`, `aiverse-lens-native`.
-Физической линзы/DOF в LENS ещё нет (P2) — DOF брать из PRISMA.
+Сделано 2026-11-21: `docs/devlog/media/systems/lens-sponza-dof.jpg` — хост `tools/site/lens_showcase.cpp`
+(ветка `feature/aiv20261121_lens_p2`, сборка `-DAIVERSE_BUILD_SITE_SHOWCASE=ON`) на Mac (Metal):
+объектив 35 мм f/1.4, фокус 4 м, DoF и экспозиция из линзы через PRISMA, PiP второй камеры.
+Запись `2026-11-21-lens-physical-lens`. Одобрено пользователем 2026-11-21.
 
 ### SpectraFX — эффекты
 Цель: взрыв, магия или огонь с дымом и светом в игровой сцене, не пустой тестовый эмиттер.
