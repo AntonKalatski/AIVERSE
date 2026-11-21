@@ -35,3 +35,10 @@ Expose a toggle in a host: e.g. an editor/MCP op `strata_debug_view_set`
 once a viewport renders a `GeometryScene` with portable STRATA, or an env
 switch in `tests/render/strata_metal_portable_parity.cpp` to capture an
 overlay screenshot on KINGSTON builds.
+
+## Publication to main
+Merged origin/main `2d034dd6b` into the branch (clean, no conflicts),
+rebuilt all `aiverse_strata_*_tests` and `GeometryScene.cpp.o` on the
+merged tree (Linux VM, Release): `ctest -R ^strata_` 15 passed,
+`strata_vulkan_kernel` skipped (no device); skills catalog check OK.
+Fast-forward pushed to origin/main at the user's request.
