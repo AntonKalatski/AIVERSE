@@ -218,6 +218,23 @@ static void cascadeMeshAddressSurvivesSetCascades(){
     AIVERSE_TEST_CHECK(scene.meshFor(7)==nullptr && scene.count()==1);
 }
 
+static void reAddedSurfaceGetsFreshRevision(){
+    world::NereidWaterScene scene;
+    world::NereidSceneSurface lake;
+    lake.id=10;lake.body.center.x=4_fx;
+    std::vector<uint64_t> seen;
+    scene.setSurfaces({lake});
+    seen.push_back(scene.surfaceRevision(10));
+    lake.body.center.x=8_fx;          // changed: new revision
+    scene.setSurfaces({lake});
+    seen.push_back(scene.surfaceRevision(10));
+    scene.setSurfaces({});            // removed (a job could be pending)
+    scene.setSurfaces({lake});        // re-added
+    const uint64_t again=scene.surfaceRevision(10);
+    for(const uint64_t old:seen)AIVERSE_TEST_CHECK(again!=old);
+    AIVERSE_TEST_CHECK(seen[0]!=seen[1] && again!=0);
+}
+
 int main(){
     rockIsNotErodible();
     partialObstructionPassesWater();
@@ -226,5 +243,6 @@ int main(){
     obstructionIndexMatchesScan();
     wakeTileCullMatchesShaderEllipse();
     cascadeMeshAddressSurvivesSetCascades();
-    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh)\n";
+    reAddedSurfaceGetsFreshRevision();
+    std::cout<<"PASS: NEREID review fixes (rock, flood carry/flow/ports/index, wake cull, cascade mesh, surface revision)\n";
 }
