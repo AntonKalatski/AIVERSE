@@ -32,6 +32,7 @@ inline std::unique_ptr<render::Model> makeArborModel(
     foliage.baseColor = {0.21f, 0.43f, 0.16f, 1.0f};
     foliage.roughness = 0.85f;
     foliage.doubleSided = true;
+    if(meshSettings.organicBranches)foliage.thinTransmission=.35f;
     // Opaque fallback until a project assigns an alpha-masked leaf texture.
     // The crossed cards are visible (green rectangles), not fake alpha masks.
     foliage.alpha = render::AlphaMode::Opaque;
@@ -166,6 +167,7 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
     foliage.baseColor = {0.21f, 0.43f, 0.16f, 1.0f};
     foliage.roughness = 0.85f;
     foliage.doubleSided = true;
+    if(settings.mesh.organicBranches)foliage.thinTransmission=.35f;
     foliage.alpha = render::AlphaMode::Opaque; // project can supply cutout texture
     // Leaf vertex alpha carries GPU crown-wind height weight. Ignore it in
     // fragment shading; the base RGB texture/material still controls opacity.

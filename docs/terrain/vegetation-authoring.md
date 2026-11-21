@@ -242,3 +242,19 @@ poses need separate acceptance checks. Six samples/two textures remain unchanged
 Organic branch geometry is opt-in through botanicalArborMeshSettings; wood, cards,
 LOD attachments and native wind pivots share the rendered centreline. Collars
 intersect beneath bark; this is not a welded mesh or slope-fitted root system.
+
+
+### Thin PBR surfaces
+
+Material.thinTransmission defaults to0. Native botanical mesh recipes and bundled
+leaf libraries opt into.35. The generic material-library key is thinTransmission
+(clamped0..1); modeling documents validate0..1. Native glTF/GLB roundtrip stores
+extras.aiverseThinTransmission; standard viewers may ignore this native extra.
+It divides directional diffuse energy into reflected and opposite-hemisphere
+transmitted fractions, keeps PBR specular/alpha masks, and samples normal shadow
+visibility from the light-facing side. It does not emit light with the sun off.
+This is a thin diffuse-sheet approximation, not volumetric SSS, a thickness map,
+point-light BTDF or refraction. Texture translucency maps are still author data.
+PBR U2 reuses uv1.w (otherwise only unlit fixedShade diffuse); uniform size is
+unchanged and unlit behavior remains intact. Material equality/hash/cache/merge
+keys include the value; revision-controlled owners must bump revisions on edits.

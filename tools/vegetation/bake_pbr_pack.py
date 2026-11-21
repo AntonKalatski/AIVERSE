@@ -42,6 +42,7 @@ def bake(names=None):
             png(out/(name+'_opacity.png'),alpha);png(out/(name+'_translucency.png'),trans)
         prefix='materials/vegetation/textures/'+name
         materials[name]={'description':'Authored PBR vegetation: '+name,'texture':prefix+'_basecolor.png','normalMap':prefix+'_normal.png','metallicRoughnessMap':prefix+'_orm.png','occlusionMap':prefix+'_ao.png','color':[1,1,1,1],'metallic':0,'roughness':1,'normalScale':1,'vertexColors':False,'team':'none','doubleSided':leaf,'alpha':'mask' if leaf else 'opaque','cutoff':.5}
+        if leaf: materials[name]['thinTransmission']=.35
         entries.append({'id':name,'layout':'2x2 sprig atlas' if leaf else 'repeat','normalConvention':'+Y','repeatMeters':meters,'heightMeters':height_m,'optionalTranslucencyMap':prefix+'_translucency.png' if leaf else None})
     (OUT/'materials.json').write_text(json.dumps(materials,indent=2)+'\n')
     (OUT/'catalog.json').write_text(json.dumps({'version':1,'basecolorSpace':'sRGB','dataSpace':'linear','materials':entries},indent=2)+'\n')

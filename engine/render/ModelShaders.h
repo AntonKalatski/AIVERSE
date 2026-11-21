@@ -381,7 +381,12 @@ void main() {
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
+    // Optional thin diffuse sheet: split incident diffuse energy between
+    // reflection and opposite-hemisphere transmission. No emissive shortcut.
+    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(m_uv1.w,0.0,1.0)*(1.0-metallic);
+    float backNdl = max(-dot(n,L),0.0);
+    if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
+    float sh = ((ndl > 0.0 || thin*backNdl>0.0) && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
@@ -431,6 +436,7 @@ void main() {
     vec3 ambSpec = env * (F0 * AB.x + AB.y);
 #endif
     vec3 direct = sun * ndl * sh;
+    if(thin>0.0) direct = sun * ((1.0-thin)*ndl+thin*backNdl) * sh;
 #if defined(LIGHTMAP)
     if (giMode == 3) { amb = max(lm - sun * ndl * (1.0 - sh), min(lm, u_gi[3].rgb)); direct = vec3(0.0); }   // subtractive
 #endif
@@ -950,7 +956,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float3 V = normalize(f.camPos.xyz - in.wpos);
     float ndl = max(dot(n, L), 0.0);
     float ndv = max(dot(n, V), 1e-4);
-    float sh = (ndl > 0.0 && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
+    // Optional thin diffuse sheet: split incident diffuse energy between
+    // reflection and opposite-hemisphere transmission. No emissive shortcut.
+    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(m.uv1.w,0.0,1.0)*(1.0-metallic);
+    float backNdl = max(-dot(n,L),0.0);
+    if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
+    float sh = ((ndl > 0.0 || thin*backNdl>0.0) && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
     sh *= cloudShade(lu, in.wpos);
     float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
     float3 sky = rtsDecodeScene(f.skyColor.rgb), ground = rtsDecodeScene(f.groundColor.rgb);
@@ -1000,6 +1011,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float3 ambSpec = env * (F0 * AB.x + AB.y);
 #endif
     float3 direct = sun * ndl * sh;
+    if(thin>0.0) direct = sun * ((1.0-thin)*ndl+thin*backNdl) * sh;
 #if defined(LIGHTMAP)
     if (giMode == 3) { amb = max(lm - sun * ndl * (1.0 - sh), min(lm, gi.gi[3].rgb)); direct = float3(0.0); }
 #endif

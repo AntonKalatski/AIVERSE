@@ -102,7 +102,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "shrub_leaves": {
     "description": "Authored PBR vegetation: shrub_leaves",
@@ -123,7 +124,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "spruce_leaves": {
     "description": "Authored PBR vegetation: spruce_leaves",
@@ -144,7 +146,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "pine_leaves": {
     "description": "Authored PBR vegetation: pine_leaves",
@@ -165,7 +168,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "birch_leaves": {
     "description": "Authored PBR vegetation: birch_leaves",
@@ -186,7 +190,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "maple_leaves": {
     "description": "Authored PBR vegetation: maple_leaves",
@@ -207,7 +212,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "apple_leaves": {
     "description": "Authored PBR vegetation: apple_leaves",
@@ -228,7 +234,8 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   },
   "willow_leaves": {
     "description": "Authored PBR vegetation: willow_leaves",
@@ -249,6 +256,7 @@
     "team": "none",
     "doubleSided": true,
     "alpha": "mask",
-    "cutoff": 0.5
+    "cutoff": 0.5,
+    "thinTransmission": 0.35
   }
 }
