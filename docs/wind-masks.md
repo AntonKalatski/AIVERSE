@@ -73,3 +73,7 @@ Games: call `Renderer3D::setSceneWind` with PHYSIS or gameplay wind.
 - Rigged materials ignore vertex colours; not for skinned/animated nodes.
 - Shadow pass uses the same graph; verify on Metal that shadows sway too.
 - GL ES: graph samplers default to the driver's vertex sampler precision.
+
+## Editor showcase on a TerraWeave landscape
+
+The editor's TerraWeave forest overlay uses hierarchical wind masks by default and the botanical catalog (oak, birch, maple, spruce, pine) with the PBR maps of `engine/assets/materials/vegetation/textures`. Agent tool `view_wind` switches the forest, PHYSIS nature-preview grass and wind (`windSpeed`, `windDirection`), the forest LOD distance (`lodScale`) and the debug view (`debug: off|parts|depth|weight|skeleton`). `tools/editor/terra_wind_shots_mac.command` builds the editor, generates a 192x192 TerraWeave map from `templates/wildfire` and writes calm, wind and debug shots to `.wind-qa/terra/`. Known gap: debug views ignore leaf alpha, so leaf cards show as full quads.
