@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Releases — AIVERSE</title>
+<meta name="description" content="Every release is a tag in the repository plus ready-to-run editor and tool builds for Windows and macOS. Below is what went into each version and what is already done for the next one.">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ru" href="../releases.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+<nav class="wrap" aria-label="Main menu">
+<a class="brand" href="./"><img src="../favicon.svg" width="34" height="32" alt=""><span>AIVERSE</span></a>
+<div class="menu">
+<a href="./#systems" data-nav="systems">Systems</a>
+<a href="./#genres">Genres</a>
+<a href="roadmap.html" data-nav="roadmap">Roadmap</a>
+<a href="releases.html" data-nav="releases" aria-current="page">Releases</a>
+<a href="devlog.html" data-nav="devlog">Devlog</a>
+<a href="docs.html" data-nav="docs">Docs</a>
+</div>
+<a class="lang-switch" href="../releases.html" hreflang="ru" lang="ru">RU</a>
+<a class="btn btn-ink btn-sm" href="https://github.com/chromealex/AIVERSE">GitHub</a>
+</nav>
+</header>
+
+<main class="wrap">
+<section class="dl-hero"><div><p class="eyebrow">Releases</p><h1>Engine versions</h1><p>Every release is a tag in the repository plus ready-to-run editor and tool builds for Windows and macOS. Below is what went into each version and what is already done for the next one.</p></div><div class="dl-stats"><div><strong>2.1.0</strong><span>latest version</span></div><div><strong>3</strong><span>releases</span></div></div></section><section class="rel-next"><div class="rel-next-head"><h2>In the next release</h2><p>Devlog stages after 2.1.0 (Nov 16, 2026). They are in progress or in main but not tagged yet.</p></div><ul class="rel-next-list"><li><span class="rm-meta"><span>Nov 21, 2026</span><a class="rm-sys" href="system-vivid.html">VIVID</a></span><a href="devlog.html#2026-11-21-vivid-adaptive-soft-shadows">Digital humans: soft facial shadows with adaptive resolution</a></li><li><span class="rm-meta"><span>Nov 21, 2026</span><a class="rm-sys" href="system-strata.html">STRATA</a></span><a href="devlog.html#2026-11-21-strata-debug-view">STRATA: Nanite-style cluster visualization</a></li><li><span class="rm-meta"><span>Nov 21, 2026</span><a class="rm-sys" href="system-spectrafx.html">SpectraFX VFX</a></span><a href="devlog.html#2026-11-21-spectrafx-scenes">SpectraFX: campfires, a portal and fireflies in two scenes</a></li></ul></section><div class="rel-list"><article class="rel-card rel-latest" id="v2.1.0"><div class="rel-side"><span class="rel-ver">2.1.0</span><span class="rel-date">Nov 16, 2026</span><span class="rel-badge">latest</span><a class="rel-commit" href="https://github.com/chromealex/AIVERSE/commit/082f4d631"><code>082f4d631</code></a></div><div class="rel-main"><h2>Battle royale, voxels, an authoritative server and Vulkan</h2><p class="rel-summary">The first feature release after 2.0.0: new genre packages, a server-authoritative network model, physics characters and a Vulkan backend.</p><ul class="rel-hl"><li><h3>Battle royale</h3><p>The battle-royale package: safe zone phases, bombardment, supply drops, air insertion, standings and a lobby. Wired into the FPS module together with tiered gear, typed vehicles, generated buildings, rotated colliders, bots that navigate inside buildings and a HUD.</p></li><li><h3>Voxel worlds</h3><p>Mutable block worlds for Minecraft-like games: 7 libraries, 8 skills and a playable sandbox with session, client, server and template.</p></li><li><h3>Server-authoritative networking</h3><p>engine/net/replica: change versions, incremental relevance, 3D interest, delta-coded snapshots, a render clock with jitter and loss estimates. The aiverse_place sandbox shows it with physics, ticket admission, reconnect and client prediction. FPS authority snapshots are now deltas (protocol 5).</p></li><li><h3>Physics</h3><p>A Box3D runtime Scene (handles, queries, events, JSON) and a kinematic character controller: step-up, moving and rotating ground, pushes, client prediction against bodies.</p></li><li><h3>Navigation</h3><p>A genre-independent navigation mesh for RTS and FPS and hybrid pathfinding: one portal graph with a solver per area.</p></li><li><h3>Rendering</h3><p>An opt-in Vulkan backend for Windows, Linux and Android with a GL fallback. Atlases: convex sprite meshes, tighter packing, framed sprite sheets.</p></li><li><h3>RTS and city</h3><p>Radar, sonar, jammers and field operations for flow-economy wars; a Total Annihilation importer and HPI unpacker; StarCraft II mechanics. City libraries: calendar, weather, vehicle effects, traffic.</p></li><li><h3>Agent tooling</h3><p>New and extended skills (replica, place server, physics, flow war, capability audit and more): 195 in the catalog.</p></li></ul><div class="rel-dl" data-version="2.1.0"><span class="rel-dl-title">Download</span><div class="rel-dl-list"><a class="btn btn-line btn-sm" href="https://github.com/chromealex/AIVERSE/tree/builds">All builds on the builds branch</a></div></div><a class="rel-notes" href="https://github.com/chromealex/AIVERSE/releases/tag/v2.1.0">Release notes on GitHub →</a></div></article><article class="rel-card" id="v2.0.0"><div class="rel-side"><span class="rel-ver">2.0.0</span><span class="rel-date">Nov 16, 2026</span><a class="rel-commit" href="https://github.com/chromealex/AIVERSE/commit/ad6025b50"><code>ad6025b50</code></a></div><div class="rel-main"><h2>RTSEngine becomes AIVERSE</h2><p class="rel-summary">The engine formerly known as RTSEngine is now AIVERSE: a C++20 engine for games of any genre, where an AI agent builds the game from data, not code. Around 990 commits since 1.0.</p><ul class="rel-hl"><li><h3>New name everywhere</h3><p>Binaries, CMake targets, bundle ids, the MCP server, environment variables and docs. Old .rtsproj projects still open.</p></li><li><h3>Beyond RTS</h3><p>An FPS module (client and server), top-down hero, driving and vehicles, city traffic with pedestrians and buses, genre packages, encounters and progression.</p></li><li><h3>Cities</h3><p>Spline roads with junctions, crossings, parking and bridges; spline water with straits, rivers, sea, embankments, cliffs and beaches; city block generation.</p></li><li><h3>Rendering</h3><p>An HDR pipeline, light baking, probe GI, TAA, cloth, shader graph, terrain textures, render-to-texture, LOD.</p></li><li><h3>Import from Unity</h3><p>Materials and ShaderGraph, animations, UI and localisation, VFX Graph, on top of the particle importer.</p></li><li><h3>Online and meta</h3><p>Battle networking with rollback and prediction, a gRPC and protobuf client, meta service, live-ops and commerce.</p></li><li><h3>Agent tooling</h3><p>About 190 MCP tools, skills for gameplay areas and a game wizard that turns an idea and your art into a starting project.</p></li></ul><p class="rel-verified"><b>Verified:</b> Linux x86-64 (GCC): aiverse_tests 272,105 checks, 0 failed; templates skirmish and mushrooms (seed 3) play to a winner. Windows: cross-compiled with MinGW-w64.</p><div class="rel-dl" data-version="2.0.0"><span class="rel-dl-title">Download</span><div class="rel-dl-list"><a class="btn btn-line btn-sm" href="https://github.com/chromealex/AIVERSE/tree/builds">All builds on the builds branch</a></div></div><a class="rel-notes" href="https://github.com/chromealex/AIVERSE/releases/tag/v2.0.0">Release notes on GitHub →</a></div></article><article class="rel-card" id="v1.0"><div class="rel-side"><span class="rel-ver">1.0</span><span class="rel-date">Nov 3, 2026</span><a class="rel-commit" href="https://github.com/chromealex/AIVERSE/commit/58abbded8"><code>58abbded8</code></a></div><div class="rel-main"><h2>First release</h2><p class="rel-summary">The first published release of the engine, then called RTSEngine.</p><div class="rel-dl" data-version="1.0"><span class="rel-dl-title">Download</span><div class="rel-dl-list"><a class="btn btn-line btn-sm" href="https://github.com/chromealex/AIVERSE/tree/builds">All builds on the builds branch</a></div></div><a class="rel-notes" href="https://github.com/chromealex/AIVERSE/releases/tag/1.0">Release notes on GitHub →</a></div></article></div><section class="rel-other" hidden><h2>Intermediate builds</h2><p>Builds on the builds branch without a release: the version and the commit they were built from.</p><div class="rel-other-list"></div></section>
+</main>
+
+<footer class="dark">
+<div class="wrap foot">
+<a class="brand" href="./" style="color:var(--on-ink)"><span>AIVERSE</span></a>
+<div class="foot-cols">
+<div><span>Site</span><a href="./">Home</a><a href="roadmap.html">Roadmap</a><a href="releases.html">Releases</a><a href="devlog.html">Devlog</a><a href="docs.html">Docs</a></div>
+<div><span>Community</span><a href="https://github.com/chromealex/AIVERSE">GitHub</a><a href="https://t.me/aiverseengine">Telegram</a></div>
+</div>
+<small>MIT License · AIVERSE · data: docs/devlog in the repository</small>
+</div>
+</footer>
+<script>window.REL_CFG={"index": "https://raw.githubusercontent.com/chromealex/aiverse/builds/index.json", "none": "The builds branch no longer keeps packages of this version — build it from the tag.", "os": {"windows": "Windows", "macos": "macOS", "linux": "Linux"}};</script><script>
+(function(){var cfg=window.REL_CFG;if(!cfg)return;
+function mb(n){return (n/1048576).toFixed(0)+' MB';}
+function btn(p){var a=document.createElement('a');a.className='btn btn-ink btn-sm rel-pkg';a.href=p.url;
+a.textContent=(cfg.os[p.platform]||p.platform)+' · '+mb(p.size);a.title='sha256 '+p.sha256+' · '+p.commit;return a;}
+fetch(cfg.index,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
+var pk=d.packages||[],known={},other=[];
+document.querySelectorAll('.rel-dl').forEach(function(el){known[el.dataset.version]=el;});
+var used={};pk.forEach(function(p){var el=known[p.version];
+if(el&&!used[p.version+p.platform]){used[p.version+p.platform]=1;var l=el.querySelector('.rel-dl-list');
+if(!el.dataset.filled){l.textContent='';el.dataset.filled='1';}l.appendChild(btn(p));}else if(!el)other.push(p);});
+document.querySelectorAll('.rel-dl:not([data-filled])').forEach(function(el){var s=document.createElement('span');
+s.className='rel-dl-none';s.textContent=cfg.none;el.querySelector('.rel-dl-list').prepend(s);});
+if(other.length){var box=document.querySelector('.rel-other'),list=box.querySelector('.rel-other-list'),g={};
+other.forEach(function(p){var k=p.version+' · '+p.commit;(g[k]=g[k]||[]).push(p);});
+Object.keys(g).forEach(function(k){var row=document.createElement('div');row.className='rel-other-row';
+var c=document.createElement('code');c.textContent=k;row.appendChild(c);g[k].forEach(function(p){row.appendChild(btn(p));});list.appendChild(row);});
+box.hidden=false;}}).catch(function(){});})();
+</script>
+</body>
+</html>
