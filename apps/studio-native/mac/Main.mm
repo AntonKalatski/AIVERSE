@@ -59,6 +59,7 @@
     NSPoint press_;
     BOOL dragged_;
     BOOL moveDrag_;
+    BOOL terrainStroke_; // Terrain brush stroke in progress
     BOOL marquee_;             // plain LMB drag on empty space: rectangle selection
     NSTrackingArea* hoverTracking_;
     NSTimeInterval lastHover_;
@@ -124,6 +125,7 @@ struct StudioSceneFrameOutputs {
     bool facialReady=false;
     aiverse::studio::StudioMetalScene::LoadProgress load;
     aiverse::studio::StudioMetalScene::CameraState camera;
+    std::vector<std::string> thumbnails; // Assets panel thumbnails finished this frame
 };
 // Explicit Core Animation transaction for layer changes made on the render thread.
 struct StudioCaTransaction {
@@ -172,6 +174,8 @@ static auto studioOnScene(aiverse::studio::StudioRenderThread* thread, F&& fn) -
     aiverse::studio::NativeViewportPlacement placement_;
     BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
     BOOL htmlComposite_;
+    BOOL agentShotInFlight_; // agent view_screenshot capture on its way
+    CFTimeInterval lastSceneFrame_; double sceneFrameMs_; uint64_t sceneFrameCount_;
     BOOL closeApproved_;
     unsigned lightingStatusTicks_;
     // Last Scene camera state pushed to the HTML orientation gizmo.
@@ -213,6 +217,10 @@ static auto studioOnScene(aiverse::studio::StudioRenderThread* thread, F&& fn) -
 - (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap;
 - (void)sceneMoveEnd;
 - (void)frameAllScene;
+- (BOOL)terrainBrushArmed;
+- (BOOL)terrainStroke:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (BOOL)placeType:(const std::string&)type atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (aiverse::Json)assetThumbnail:(const std::string&)path;
 - (void)setScenePivotSnap:(BOOL)on;
 - (void)setSceneTool:(int)tool;
 - (int)sceneTool;
@@ -309,9 +317,12 @@ static NSEvent* gStudioLastWebMouseDown=nil;
 }
 - (void)mouseExited:(NSEvent*)event { (void)event; [self.host sceneHoverAtX:-1 y:-1 width:self.bounds.size.width height:self.bounds.size.height]; }
 static NSString* const kStudioAssetDragPrefix=@"aiverse-asset:";
+// Rules panel drags carry "aiverse-type:<type id>": a new entity of that type (prefab-like).
+static NSString* const kStudioTypeDragPrefix=@"aiverse-type:";
 static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     NSString* text=[[sender draggingPasteboard] stringForType:NSPasteboardTypeString];
-    return [text hasPrefix:kStudioAssetDragPrefix] ? [text substringFromIndex:kStudioAssetDragPrefix.length] : nil;
+    return [text hasPrefix:kStudioAssetDragPrefix] ? [text substringFromIndex:kStudioAssetDragPrefix.length] :
+           [text hasPrefix:kStudioTypeDragPrefix] ? text : nil;
 }
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender { return studioDraggedAsset(sender) ? NSDragOperationCopy : NSDragOperationNone; }
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender { return studioDraggedAsset(sender) ? NSDragOperationCopy : NSDragOperationNone; }
@@ -319,12 +330,20 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     NSString* asset=studioDraggedAsset(sender);
     if (!asset.length || asset.length>1024) return NO;
     const NSPoint point=[self convertPoint:sender.draggingLocation fromView:nil];
+    if ([asset hasPrefix:kStudioTypeDragPrefix])
+        return [self.host placeType:[asset substringFromIndex:kStudioTypeDragPrefix.length].UTF8String atX:point.x y:point.y
+            width:self.bounds.size.width height:self.bounds.size.height];
     return [self.host placeAsset:asset.UTF8String atX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
 - (void)mouseDown:(NSEvent*)event {
     press_=[self convertPoint:event.locationInWindow fromView:nil];
-    dragged_=NO;marquee_=NO;
+    dragged_=NO;marquee_=NO;terrainStroke_=NO;
     [self.window makeFirstResponder:self];
+    // Terrain brush armed (Terrain panel): plain LMB sculpts; Alt still orbits.
+    if (!(event.modifierFlags & NSEventModifierFlagOption) && [self.host terrainBrushArmed]) {
+        terrainStroke_=[self.host terrainStroke:0 atX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
+        if (terrainStroke_) return;
+    }
     // Plain LMB on a handle starts a Move / Rotate / Scale drag (Unity W/E/R tools).
     moveDrag_=!(event.modifierFlags & NSEventModifierFlagOption) &&
         [self.host sceneMoveBeginAtX:press_.x y:press_.y width:self.bounds.size.width height:self.bounds.size.height];
@@ -333,6 +352,11 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
 // (apps/studio-web/src/panels/sceneCamera.ts): LMB select, Alt+LMB orbit,
 // Alt+Cmd+LMB / MMB pan, RMB flythrough (WASD/QE), Alt+RMB zoom.
 - (void)mouseDragged:(NSEvent*)event {
+    if (terrainStroke_) {
+        const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+        [self.host terrainStroke:1 atX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+        return;
+    }
     if (moveDrag_) {
         const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
         dragged_=YES;
@@ -357,6 +381,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     else [self.host orbitX:event.deltaX y:event.deltaY];
 }
 - (void)mouseUp:(NSEvent*)event {
+    if (terrainStroke_) { terrainStroke_=NO; [self.host terrainStroke:2 atX:0 y:0 width:self.bounds.size.width height:self.bounds.size.height]; return; }
     if (moveDrag_) { moveDrag_=NO; [self.host sceneMoveEnd]; return; }
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
     // Shift adds to the selection, Cmd toggles (Unity / Finder convention).
@@ -576,6 +601,11 @@ struct WindShotRunner {
 #else
         session_->setBuildTool(aiverse::editor::findBuildTool(
             [[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent].UTF8String,root));
+#endif
+#ifdef AIVERSE_STUDIO_MCP_TOOL
+        session_->setMcpTool(AIVERSE_STUDIO_MCP_TOOL);
+#else
+        session_->setMcpTool(std::string([[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent].UTF8String)+"/aiversemcp");
 #endif
         pendingProject_=project;
         __unsafe_unretained StudioHost* host=self;
@@ -835,6 +865,47 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
+    // Agent panel: tool calls from aiversemcp run here, on the main thread, between frames.
+    if (session_->pollAgentLink()) {
+        [self sendStudioEvent:"document.changed" message:""];
+        [self sendStudioEvent:"agent.changed" message:""];
+    }
+    if (session_->agentScreenshotPending() && !agentShotInFlight_) {
+        if (!preview_ || !placement_.visible) session_->finishAgentScreenshot("",0,0,"The Scene panel is not visible in Studio; ask the user to show it");
+        else {
+            agentShotInFlight_=YES;
+            __unsafe_unretained StudioHost* host=self;
+            // Registered on the render thread; the callback runs there and hands results to main.
+            studioOnScene(renderThread_.get(),[&]{ preview_->captureNextFrame([host](int w,int h,std::vector<uint8_t> rgba) {
+                std::string encoded;
+                if (w>0 && h>0 && rgba.size()>=size_t(w)*size_t(h)*4) {
+                    // At most 1280 px wide: enough for the agent, small for the MCP answer.
+                    const int ow=std::min(w,1280), oh=std::max(1,int(int64_t(h)*ow/w));
+                    @autoreleasepool {
+                        NSBitmapImageRep* rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr pixelsWide:ow pixelsHigh:oh bitsPerSample:8
+                            samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+                        uint8_t* dst=rep.bitmapData;const NSInteger stride=rep.bytesPerRow;
+                        for (int y=0;y<oh;++y) for (int x=0;x<ow;++x) {
+                            const size_t sx=size_t(x)*size_t(w)/size_t(ow),sy=size_t(y)*size_t(h)/size_t(oh);
+                            const uint8_t* p=&rgba[(sy*size_t(w)+sx)*4];
+                            uint8_t* q=dst+y*stride+x*4;q[0]=p[0];q[1]=p[1];q[2]=p[2];q[3]=255;
+                        }
+                        NSData* png=[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                        if (png) encoded=[png base64EncodedStringWithOptions:0].UTF8String;
+                    }
+                    dispatch_async(dispatch_get_main_queue(),^{
+                        host->session_->finishAgentScreenshot(encoded,ow,oh,"");
+                        host->agentShotInFlight_=NO;
+                    });
+                    return;
+                }
+                dispatch_async(dispatch_get_main_queue(),^{
+                    host->session_->finishAgentScreenshot("",0,0,"Scene capture failed");
+                    host->agentShotInFlight_=NO;
+                }); });
+            });
+        }
+    }
     [self runWindShots];
     [self pollAgentRequests];
     NSWindow* sceneWindow=viewport_.window ?: window_;
@@ -902,6 +973,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 out.lightingStatus=preview_->lightingStatus();
                 out.load=preview_->modelLoadProgress();
                 out.camera=preview_->cameraState();
+                out.thumbnails=preview_->takeFinishedThumbnails();
             });
             {
                 // A map frame that finished before this one is superseded.
@@ -918,6 +990,17 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 // Events of a finished Scene frame (main thread): GPU status, lighting status,
 // model streaming toast, viewport.ready and the HTML gizmo camera.
 - (void)publishSceneFrame:(const StudioSceneFrameOutputs&)out {
+    {
+        // Stats panel: smoothed time between published Scene frames.
+        const CFTimeInterval now=CACurrentMediaTime();
+        if (lastSceneFrame_>0) sceneFrameMs_=sceneFrameMs_<=0 ? (now-lastSceneFrame_)*1000.0 : sceneFrameMs_*0.95+(now-lastSceneFrame_)*1000.0*0.05;
+        lastSceneFrame_=now;
+        session_->setSceneFrameStats(sceneFrameMs_,++sceneFrameCount_);
+    }
+    for (const auto& asset:out.thumbnails) {
+        aiverse::Json payload=aiverse::Json::object();payload.set("path",aiverse::Json::string(asset));
+        [self sendStudioEventPayload:"asset.thumbnail" payload:payload];
+    }
     session_->setFacialPreviewGpuStatus(out.facialReady,out.facialError);
     if((lightingStatusTicks_++ % 60)==0)
         [self sendStudioEvent:"lighting.status" message:out.lightingStatus.c_str()];
@@ -1022,6 +1105,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             out.lightingStatus=preview_->lightingStatus();
             out.load=preview_->modelLoadProgress();
             out.camera=preview_->cameraState();
+            out.thumbnails=preview_->takeFinishedThumbnails();
         } catch (const std::exception& e) {
             out.error=e.what();
             if (out.error.empty()) out.error="Scene render failed";
@@ -1180,6 +1264,62 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     [self sendStudioEvent:"viewport.tool" message:names[tool]];
 }
 - (int)sceneTool { return preview_ ? int(studioOnScene(renderThread_.get(),[&]{ return preview_->transformTool(); })) : 1; }
+// Assets panel thumbnails, cached outside the project (~/Library/Caches/AIVERSE/thumbnails):
+// images are scaled by AppKit, models are rendered offscreen by the Scene (asset.thumbnail event).
+- (aiverse::Json)assetThumbnail:(const std::string&)path {
+    namespace fs=std::filesystem;
+    const auto& ws=session_->workspace();
+    if (ws.project.dir.empty()) throw std::runtime_error("Open a project first");
+    static const std::regex valid(R"(^content/[^\\]{1,500}$)");
+    if (!std::regex_match(path,valid) || path.find("..")!=std::string::npos) throw std::runtime_error("Invalid asset path");
+    const fs::path source=fs::path(ws.project.dir)/path;
+    std::error_code ec;
+    if (fs::is_symlink(fs::symlink_status(source,ec)) || !fs::is_regular_file(source,ec)) throw std::runtime_error("Asset not found");
+    const auto size=fs::file_size(source,ec);
+    const auto stamp=fs::last_write_time(source,ec).time_since_epoch().count();
+    uint64_t hash=1469598103934665603ull;
+    for (char c:(ws.project.dir+"|"+path+"|"+std::to_string(size)+"|"+std::to_string(static_cast<long long>(stamp)))) { hash^=uint8_t(c); hash*=1099511628211ull; }
+    NSString* caches=NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask,YES).firstObject ?: NSTemporaryDirectory();
+    const fs::path dir=fs::path(caches.UTF8String)/"AIVERSE"/"thumbnails";
+    fs::create_directories(dir,ec);
+    char name[32];std::snprintf(name,sizeof name,"%016llx.png",(unsigned long long)hash);
+    const fs::path file=dir/name;
+    aiverse::Json out=aiverse::Json::object();
+    auto dataUrl=[&](const fs::path& png)->bool {
+        NSData* data=[NSData dataWithContentsOfFile:[NSString stringWithUTF8String:png.string().c_str()]];
+        if (!data || data.length==0 || data.length>2*1024*1024) return false;
+        out.set("url",aiverse::Json::string(std::string("data:image/png;base64,")+[data base64EncodedStringWithOptions:0].UTF8String));
+        return true;
+    };
+    if (fs::is_regular_file(file,ec) && dataUrl(file)) return out;
+    std::string ext=source.extension().string();
+    for (auto& c:ext) c=char(std::tolower(static_cast<unsigned char>(c)));
+    if (ext==".png" || ext==".jpg" || ext==".jpeg" || ext==".tga" || ext==".bmp" || ext==".gif" || ext==".tif" || ext==".tiff" || ext==".webp") {
+        if (size>64ull*1024*1024) throw std::runtime_error("Image too large to preview");
+        NSImage* image=[[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:source.string().c_str()]];
+        if (!image || image.size.width<1 || image.size.height<1) throw std::runtime_error("Image cannot be read");
+        const CGFloat side=160,k=std::min(side/image.size.width,side/image.size.height);
+        const NSInteger w=std::max<NSInteger>(1,NSInteger(image.size.width*k)),h=std::max<NSInteger>(1,NSInteger(image.size.height*k));
+        NSBitmapImageRep* rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr pixelsWide:w pixelsHigh:h bitsPerSample:8
+            samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+        [image drawInRect:NSMakeRect(0,0,w,h) fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1.0];
+        [NSGraphicsContext restoreGraphicsState];
+        NSData* png=[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        if (!png || ![png writeToFile:[NSString stringWithUTF8String:file.string().c_str()] atomically:YES]) throw std::runtime_error("Thumbnail write failed");
+        if (!dataUrl(file)) throw std::runtime_error("Thumbnail read failed");
+        return out;
+    }
+    if (ext==".glb" || ext==".gltf" || ext==".obj" || ext==".fbx" || ext==".dae" || ext==".ply" || ext==".stl") {
+        if (!preview_) { out.set("pending",aiverse::Json::fromBool(false)); return out; }
+        studioOnScene(renderThread_.get(),[&]{ preview_->requestThumbnail(ws.project.dir,path,file.string()); });
+        out.set("pending",aiverse::Json::fromBool(true));
+        return out;
+    }
+    out.set("none",aiverse::Json::fromBool(true));
+    return out;
+}
 - (void)frameAllScene {
     if (projectLoading_ || !preview_ || !session_) return;
     studioOnScene(renderThread_.get(),[&]{ return preview_->frameAll(session_->workspace().map,session_->workspace().project.isFps()); });
@@ -1370,6 +1510,26 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     [self sendStudioEvent:"document.changed" message:""];
     [self sendStudioEvent:"selection.changed" message:""];
 }
+- (BOOL)terrainBrushArmed { return !projectLoading_ && session_ && preview_ && session_->terrainBrush().armed; }
+// phase 0 begin, 1 drag, 2 end. Map coordinates: world x, world z (the terrain ops' x, y).
+- (BOOL)terrainStroke:(int)phase atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_ || !preview_ || !session_) return NO;
+    if (phase==2) {
+        session_->terrainStrokeEnd();
+        [self sendStudioEvent:"document.changed" message:""];
+        return YES;
+    }
+    aiverse::render::float3 at{};
+    if (!studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) return phase!=0 ? YES : NO;
+    std::string error;
+    const bool ok=phase==0 ? session_->terrainStrokeBegin(at.x,at.z,&error) : session_->terrainStrokeDab(at.x,at.z,&error);
+    if (!ok && !error.empty()) {
+        aiverse::Json payload=aiverse::Json::object();
+        payload.set("message",aiverse::Json::string("Terrain brush: "+error));
+        [self sendStudioEventPayload:"assets.importError" payload:payload];
+    }
+    return ok;
+}
 - (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (projectLoading_) return NO;
     if (!preview_ || !session_) return NO;
@@ -1383,6 +1543,28 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     if (outcome.has("error")) {
         aiverse::Json payload=aiverse::Json::object();
         payload.set("message",aiverse::Json::string("Place in Scene: "+outcome.getStr("error")));
+        [self sendStudioEventPayload:"assets.importError" payload:payload];
+        return NO;
+    }
+    [self sendStudioEvent:"document.changed" message:""];
+    [self sendStudioEvent:"selection.changed" message:""];
+    return YES;
+}
+- (BOOL)placeType:(const std::string&)type atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_ || !preview_ || !session_ || type.empty() || type.size()>128) return NO;
+    aiverse::render::float3 at{};
+    if (!studioOnScene(renderThread_.get(),[&]{ return preview_->groundPoint(float(x),float(y),float(width),float(height),at); })) return NO;
+    // Resources and scenery start neutral, everything else belongs to player 1.
+    const auto& t=session_->workspace().project.rulesJson["types"][type];
+    const int owner=(t.has("resourceNode") || t.getBool("invulnerable")) ? 0 : 1;
+    aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object();
+    params.set("type",aiverse::Json::string(type));params.set("owner",aiverse::Json::number(int64_t(owner)));
+    params.set("x",aiverse::Json::number(double(at.x),3));params.set("z",aiverse::Json::number(double(at.z),3));
+    request.set("id",aiverse::Json::number(int64_t(0)));request.set("method",aiverse::Json::string("studio.entityCreate"));request.set("params",params);
+    const auto outcome=session_->dispatch(request);
+    if (outcome.has("error")) {
+        aiverse::Json payload=aiverse::Json::object();
+        payload.set("message",aiverse::Json::string("Place "+type+": "+outcome.getStr("error")));
         [self sendStudioEventPayload:"assets.importError" payload:payload];
         return NO;
     }
@@ -2078,7 +2260,11 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             [self sendStudioReply:busy];
             return;
         }
-        if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
+        if (req.getStr("method")=="studio.assetThumbnail" && req["id"].isNumber()) {
+            reply=aiverse::Json::object();reply.set("id",req["id"]);
+            try { reply.set("result",[self assetThumbnail:req["params"].getStr("path")]); }
+            catch (const std::exception& e) { reply.set("error",aiverse::Json::string(e.what())); }
+        } else if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
             reply=aiverse::Json::object();
             reply.set("id",req["id"]);
@@ -2108,7 +2294,8 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
              method=="studio.lightUpdate" || method=="studio.lightDelete" ||
              method=="studio.materialPatch" || method=="studio.materialCreate" || method=="studio.setProperties" ||
              method=="studio.componentAdd" || method=="studio.componentRemove" || method=="studio.entityMove" ||
-             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet" || method=="studio.entitiesAlign" || method=="studio.historyJump")) {
+             method=="studio.entitiesDelete" || method=="studio.entitiesDuplicate" || method=="studio.assetPlace" || method=="studio.entityFlags" || method=="studio.rulesSet" || method=="studio.entitiesAlign" || method=="studio.historyJump" ||
+             (method=="studio.op" && reply["result"].getBool("changed")))) {
             [self sendStudioEvent:"document.changed" message:""];
         }
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }

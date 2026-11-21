@@ -1,4 +1,5 @@
 #include <regex>
+#include <fstream>
 #include "apps/editor/AuthoringWater.h"
 #include "StudioHumanCharacterBuild.h"
 #include "StudioSession.h"
@@ -9,6 +10,8 @@
 #include "apps/studio-native/StudioContentDirectory.h"
 #include "apps/studio-native/StudioAssetCatalog.h"
 #include "apps/studio-native/StudioAssetReferences.h"
+#include "apps/studio-native/StudioAssetUsage.h"
+#include "apps/studio-native/StudioTools.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include "apps/editor/EditorSceneNodes.h"
 #include "apps/studio-native/StudioDocumentIds.h"
@@ -537,6 +540,189 @@ bool knownBuildTarget(const std::string& target) {
 }
 // Publish / Build: aiversebuild runs in the background through the Workspace build runner (the same
 // one the legacy Build window and the MCP build_start use); the panel polls the log by offset.
+namespace {
+std::string shellQuote(const std::string& s) {
+    std::string o="'";
+    for(char c:s){if(c=='\'')o+="'\\''";else o+=c;}
+    return o+"'";
+}
+std::string clipText(const std::string& s,size_t n){return s.size()<=n?s:s.substr(0,n)+"…";}
+}
+// Agent link, protocol 2 (docs/mcp-agent-link.md): hello + token, then {"method":"call"} lines from
+// aiversemcp. Every call runs through ws_.call with source "agent": validated, logged, undoable; each
+// MapDoc snapshot it adds becomes a History step "Agent · <op>" and an entry of the panel's change list.
+bool StudioSession::pollAgentLink() {
+    if(!agentServer_.listening())return false;
+    bool changed=false;
+    auto reply=[](const Json& id,Json result){Json r=Json::object();r.set("id",id);r.set("result",std::move(result));return r;};
+    auto error=[](const std::string& why){Json e=Json::object();e.set("error",str(why));return e;};
+    std::vector<int> dropped;
+    for(auto& m:agentServer_.poll()){
+        if(std::find(dropped.begin(),dropped.end(),m.client)!=dropped.end())continue;
+        Json msg;
+        try{msg=Json::parse(m.line);}catch(...){agentServer_.drop(m.client);dropped.push_back(m.client);continue;}
+        if(!msg.isObject()){agentServer_.drop(m.client);dropped.push_back(m.client);continue;}
+        const Json& id=msg["id"];
+        const std::string method=msg.getStr("method");
+        if(method=="hello"){
+            if(!agentServer_.tokenPublished()||!editor::net::tokenEquals(msg.getStr("token"),agentServer_.token())){
+                agentServer_.send(m.client,reply(id,error("agent link: wrong token")).dump(-1));
+                agentServer_.drop(m.client);dropped.push_back(m.client);continue;
+            }
+            agentServer_.setAuthenticated(m.client);
+            Json ok=Json::object();ok.set("ok",Json::fromBool(true));ok.set("protocol",num(int64_t(2)));
+            agentServer_.send(m.client,reply(id,ok).dump(-1));
+            continue;
+        }
+        if(!agentServer_.authenticated(m.client)){
+            agentServer_.send(m.client,reply(id,error("agent link: send hello with the token first")).dump(-1));
+            agentServer_.drop(m.client);dropped.push_back(m.client);continue;
+        }
+        if(method!="call"){agentServer_.send(m.client,reply(id,error("unknown method")).dump(-1));continue;}
+        const std::string name=msg["params"].getStr("name");
+        const Json args=msg["params"]["arguments"].isObject()?msg["params"]["arguments"]:Json::object();
+        if(name=="view_screenshot"){
+            // Answered by the host with the Scene's next frame (finishAgentScreenshot).
+            if(!agentShots_.empty()){agentServer_.send(m.client,reply(id,error("another screenshot is pending; retry after its reply")).dump(-1));continue;}
+            agentShots_.push_back({m.client,id});
+            agentLines_.push_back("→ view_screenshot");
+            continue;
+        }
+        syncHistoryLabels();
+        const size_t before=ws_.map.undoDepth(),entities=ws_.map.data.entities.size();
+        const bool wasDirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+        const Json result=ws_.call(name,args,"agent");
+        const bool failed=result.has("error");
+        const bool undoable=ws_.map.undoDepth()>before;
+        if(undoable){
+            for(size_t i=before;i<ws_.map.undoDepth();++i)undoLabels_.push_back("Agent · "+studioToolLabel(name));
+            redoLabels_.clear();
+        }
+        syncHistoryLabels();
+        if(ws_.map.data.entities.size()!=entities){clearSelection();dropOrdinalFlags();}
+        const bool dirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+        const bool edit=!failed&&(undoable||dirty!=wasDirty||!studioToolReadOnly(name));
+        if(edit)changed=true;
+        if(edit||failed){
+            Json c=Json::object();
+            c.set("op",str(name));c.set("args",str(clipText(args.dump(-1),160)));
+            c.set("ok",Json::fromBool(!failed));c.set("undoable",Json::fromBool(undoable));
+            c.set("position",num(int64_t(undoLabels_.size())));
+            if(failed)c.set("error",str(clipText(result.getStr("error"),300)));
+            agentChanges_.push(std::move(c));
+        }
+        agentServer_.send(m.client,reply(id,result).dump(-1));
+    }
+    for(auto& line:agentRun_.takeLines())agentLines_.push_back(line);
+    if(agentLines_.size()>3000)agentLines_.erase(agentLines_.begin(),agentLines_.begin()+1000);
+    return changed;
+}
+bool StudioSession::terrainStrokeDab(double x, double y, std::string* error) {
+    if(!stroking_)return false;
+    // Dabs closer than a third of the radius add little but cost a full map snapshot each.
+    if(std::hypot(x-strokeX_,y-strokeY_)<terrainBrush_.radius*0.33 && ws_.map.undoDepth()>strokeDepth_)return true;
+    Json p=Json::object();
+    p.set("op",str(terrainBrush_.op));p.set("x",Json::number(x,3));p.set("y",Json::number(y,3));
+    p.set("radius",Json::number(terrainBrush_.radius,3));p.set("strength",Json::number(terrainBrush_.strength,3));
+    const Json r=ws_.call("terrain_sculpt",p,"studio");
+    if(r.has("error")){if(error)*error=r.getStr("error");return false;}
+    strokeX_=x;strokeY_=y;
+    return true;
+}
+bool StudioSession::terrainStrokeBegin(double x, double y, std::string* error) {
+    if(!terrainBrush_.armed||ws_.project.dir.empty())return false;
+    syncHistoryLabels();
+    strokeDepth_=ws_.map.undoDepth();stroking_=true;
+    strokeX_=x+1e9;   // the first dab always applies
+    if(!terrainStrokeDab(x,y,error)){stroking_=false;return false;}
+    return true;
+}
+void StudioSession::terrainStrokeEnd() {
+    if(!stroking_)return;
+    stroking_=false;
+    if(ws_.map.undoDepth()<=strokeDepth_)return;
+    ws_.map.mergeUndoSince(strokeDepth_);
+    while(undoLabels_.size()>strokeDepth_)undoLabels_.pop_back();
+    undoLabels_.push_back("Terrain brush");redoLabels_.clear();
+    syncHistoryLabels();
+}
+void StudioSession::finishAgentScreenshot(const std::string& pngBase64, int width, int height, const std::string& why) {
+    for(const auto& shot:agentShots_){
+        Json r=Json::object(),result=Json::object();
+        if(pngBase64.empty())result.set("error",str(why.empty()?std::string("nothing to capture"):why));
+        else {
+            result.set("png_base64",str(pngBase64));
+            result.set("width",num(int64_t(width)));result.set("height",num(int64_t(height)));
+            result.set("view",str("Studio Scene panel as the user sees it (camera unchanged)"));
+        }
+        r.set("id",shot.id);r.set("result",std::move(result));
+        agentServer_.send(shot.client,r.dump(-1));
+    }
+    agentShots_.clear();
+}
+Json StudioSession::agentRequest(const std::string& method, const Json& params) {
+    namespace fs=std::filesystem;
+    if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+    if(!agentServer_.listening()&&!agentServer_.listenAvailable())
+        throw std::runtime_error("Could not open a local port for the agent link");
+    if(method=="studio.agentStop"){agentRun_.stop();}
+    else if(method=="studio.agentReset"){
+        if(agentRun_.running())throw std::runtime_error("Stop the agent first");
+        agentSession_.clear();agentLines_.clear();agentChanges_=Json::array();agentRunStart_=-1;
+    } else if(method=="studio.agentStart"){
+        const std::string prompt=params.getStr("prompt");
+        if(prompt.empty()||prompt.size()>20000)throw std::runtime_error("Write a request for the agent (up to 20000 characters)");
+        if(agentRun_.running())throw std::runtime_error("The agent is still working");
+        if(mcpTool_.empty()||!fs::exists(mcpTool_))throw std::runtime_error("aiversemcp was not found next to Studio (build the aiversemcp target)");
+        if(editor::agentCliPath("claude-code").empty())throw std::runtime_error("Claude Code CLI (claude) was not found: install it and sign in, then try again");
+        if(!agentRun_.sessionId().empty())agentSession_=agentRun_.sessionId();
+        syncHistoryLabels();
+        if(agentSession_.empty()||agentRunStart_<0)agentRunStart_=int64_t(undoLabels_.size());
+        const fs::path dir=fs::path(ws_.logsDir())/"studio-agent";
+        std::error_code ec;fs::create_directories(dir,ec);
+        // aiversemcp of this build, pointed at this Studio's port; strict: the user's global "aiverse" entry
+        // (the ImGui editor's port) is not loaded for this run.
+        Json server=Json::object(),argv=Json::array(),servers=Json::object(),config=Json::object();
+        server.set("command",str(mcpTool_));
+        for(const std::string& a:{std::string("--engine"),ws_.engineDir,std::string("--port"),std::to_string(agentServer_.port())})argv.push(str(a));
+        server.set("args",argv);servers.set("aiverse",server);config.set("mcpServers",servers);
+        const fs::path configFile=dir/"mcp.json",taskFile=dir/"task.md",logFile=dir/"run.log";
+        {std::ofstream(configFile)<<config.dump(2);}
+        {
+            std::ofstream task(taskFile);
+            if(agentSession_.empty())
+                task<<"You are the agent inside AIVERSE Studio. The user is looking at the open project and map.\n"
+                      "Project: "<<ws_.project.dir<<"\nMap: "<<(ws_.map.path.empty()?std::string("(unsaved)"):ws_.map.path)<<"\n"
+                      "Change the game only through the aiverse MCP tools (mcp__aiverse__*): they act on this Studio session, "
+                      "every map edit is one undo step in the History panel and shows in the Scene at once. The project is "
+                      "already open: do not call open_game, map_open or map_new unless asked. Do not save the map; the user "
+                      "decides. Keep edits small and say at the end, in two or three sentences, what you changed.\n\n";
+            task<<"Request:\n"<<prompt<<"\n";
+        }
+        std::string extra="--mcp-config "+shellQuote(configFile.string())+" --strict-mcp-config";
+        if(!agentSession_.empty())extra+=" --resume "+shellQuote(agentSession_);
+        std::string err;
+        if(!agentRun_.start("claude-code",ws_.project.dir,taskFile.string(),logFile.string(),&err,extra))throw std::runtime_error(err);
+        agentLines_.push_back("› "+clipText(prompt,2000));
+        ws_.log("agent","Агент: "+clipText(prompt,120));
+    }
+    for(auto& line:agentRun_.takeLines())agentLines_.push_back(line);
+    Json out=Json::object(),lines=Json::array();
+    const int64_t from=std::max<int64_t>(0,params["from"].integer(0));
+    for(size_t i=size_t(std::min<int64_t>(from,int64_t(agentLines_.size())));i<agentLines_.size();++i)lines.push(str(agentLines_[i]));
+    out.set("lines",lines);out.set("total",num(int64_t(agentLines_.size())));
+    out.set("running",Json::fromBool(agentRun_.running()));
+    out.set("port",num(int64_t(agentServer_.port())));
+    out.set("clients",num(int64_t(agentServer_.clients())));
+    out.set("changes",agentChanges_);
+    out.set("startPosition",num(agentRunStart_));
+    static const std::string cli=editor::agentCliPath("claude-code");   // a login-shell lookup: once per run of Studio
+    out.set("cli",str(cli));
+    out.set("mcp",Json::fromBool(!mcpTool_.empty()));
+    out.set("conversation",Json::fromBool(!agentSession_.empty()||!agentRun_.sessionId().empty()));
+    if(agentRun_.finished())out.set("result",str(agentRun_.result()));
+    return out;
+}
 Json StudioSession::buildRequest(const std::string& method, const Json& params) {
     namespace fs = std::filesystem;
     if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
@@ -644,6 +830,7 @@ std::string StudioSession::historyLabel(const std::string& method, const Json& p
         {"studio.lightingSet","Edit lighting"},{"studio.renderLightingSet","Edit render lighting"},
         {"studio.nereidFlowSet","Edit water"},{"studio.entitiesAlign","Align"},{"studio.newMap","New map"}};
     for(const auto& [m,label]:names)if(method==m)return label;
+    if(method=="studio.op")return studioToolLabel(params.getStr("op"));
     return "Edit";
 }
 void StudioSession::syncHistoryLabels() {
@@ -1388,6 +1575,85 @@ Json StudioSession::dispatchImpl(const Json& request) {
             const Json current = ws_.call("light_list",Json::object(),"studio");
             if (current.has("error")) throw std::runtime_error(current.getStr("error"));
             reply.set("result",current);
+        } else if (method == "studio.ops") {
+            // Tool panel (Terrain, Roads, PostFX, ...): its Workspace ops with their JSON schemas.
+            const StudioToolGroup* group=studioToolGroup(params.getStr("panel"));
+            if (!group) throw std::runtime_error("Unknown tool panel");
+            Json ops=Json::array();
+            for (const char* name:group->ops)
+                for (const auto& op:ws_.ops())
+                    if (op.name==name) {
+                        Json o=Json::object();
+                        o.set("name",str(op.name));o.set("description",str(op.description));
+                        o.set("schema",op.schema);o.set("readOnly",Json::fromBool(studioToolReadOnly(op.name)));
+                        ops.push(std::move(o));
+                    }
+            Json out=Json::object();out.set("panel",str(group->panel));out.set("ops",ops);
+            reply.set("result",std::move(out));
+        } else if (method == "studio.op") {
+            const std::string op=params.getStr("op");
+            if (!studioToolAllowed(op)) throw std::runtime_error("This operation is not available in Studio panels: "+op);
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const Json input=params["params"].isObject()?params["params"]:Json::object();
+            const bool wasDirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+            const size_t depth=ws_.map.undoDepth(),entityCount=ws_.map.data.entities.size();
+            const Json result=ws_.call(op,input,"studio");
+            if (result.has("error")) throw std::runtime_error(result.getStr("error"));
+            const bool dirty=ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty;
+            const bool changed=!studioToolReadOnly(op)||ws_.map.undoDepth()!=depth||dirty!=wasDirty;
+            if (ws_.map.data.entities.size()!=entityCount) { clearSelection(); dropOrdinalFlags(); }
+            Json out=Json::object();
+            out.set("op",str(op));out.set("result",result);out.set("changed",Json::fromBool(changed));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.inputGet" || method == "studio.inputSet") {
+            // Input actions and contexts (input/actions.json, InputFlow asset); presentation only, never the simulation.
+            namespace ecfg=platform::enhanced_config;
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const std::filesystem::path file=std::filesystem::path(ws_.project.dir)/"input"/"actions.json";
+            std::string error;
+            if (method=="studio.inputSet") {
+                ecfg::Asset asset;
+                if (!ecfg::readAsset(params["asset"],asset,&error)) throw std::runtime_error(error);
+                if (!ecfg::saveAssetFile(file,asset,&error)) throw std::runtime_error(error);
+            }
+            Json out=studioInputNames();
+            std::error_code ec;
+            const bool exists=std::filesystem::exists(file,ec);
+            ecfg::Asset asset;
+            if (exists && !ecfg::loadAssetFile(file,asset,&error)) out.set("error",str(error));
+            out.set("asset",ecfg::writeAsset(asset));
+            out.set("exists",Json::fromBool(exists));out.set("path",str("input/actions.json"));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.assetAudit") {
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto audit=studioAssetAudit(ws_.project.dir,ws_.engineDir);
+            Json rows=Json::array();
+            for (const auto& r:audit.rows){Json o=Json::object();o.set("source",str(r.source));o.set("reference",str(r.reference));rows.push(std::move(o));}
+            Json out=Json::object();
+            out.set("missing",rows);out.set("scanned",num(int64_t(audit.scanned)));out.set("truncated",Json::fromBool(audit.truncated));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.assetUsage") {
+            // Find References (path) or every content file no project file names (no path).
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto files=studioProjectTextFiles(ws_.project.dir);
+            Json out=Json::object();
+            const std::string path=params.getStr("path");
+            if (!path.empty()) {
+                if (path.size()>500 || path.find("..")!=std::string::npos) throw std::runtime_error("Invalid asset path");
+                out.set("path",str(path));out.set("mentions",studioAssetMentions(files,path));
+            } else {
+                StudioAssetCatalog catalog(ws_.project.dir);
+                catalog.rebuild();
+                const auto named=studioNamedContent(files);
+                Json unused=Json::array();
+                for (const auto& entry:catalog.all()) {
+                    if (entry.directory || named.count(entry.path)) continue;
+                    if (entry.path.size()>5 && entry.path.compare(entry.path.size()-5,5,".meta")==0) continue;
+                    unused.push(str(entry.path));
+                }
+                out.set("unused",unused);out.set("scannedFiles",num(int64_t(files.size())));
+            }
+            reply.set("result",std::move(out));
         } else if (method == "studio.assetReferences") {
             if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
             StudioAssetCatalog catalog(ws_.project.dir);
@@ -1803,6 +2069,46 @@ Json StudioSession::dispatchImpl(const Json& request) {
             out.set("resources",list["resources"]);out.set("summary",list["types"]);
             out.set("dirty",Json::fromBool(ws_.project.rulesDirty));
             reply.set("result",std::move(out));
+        } else if (method == "studio.stats") {
+            // Statistics: map contents and Scene timing (the legacy Stats window's editor part).
+            if (ws_.project.dir.empty()) throw std::runtime_error("Open a project first");
+            const auto& d=ws_.map.data;
+            std::map<std::string,int64_t> byType;std::map<int,int64_t> byOwner;
+            for (const auto& e:d.entities){++byType[e.type];++byOwner[e.owner];}
+            Json types=Json::array();
+            std::vector<std::pair<std::string,int64_t>> sorted(byType.begin(),byType.end());
+            std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second>b.second||(a.second==b.second&&a.first<b.first);});
+            for (const auto& [t,n]:sorted){Json o=Json::object();o.set("type",str(t));o.set("count",num(n));types.push(std::move(o));}
+            Json owners=Json::array();
+            for (const auto& [o,n]:byOwner){
+                Json j=Json::object();j.set("owner",num(int64_t(o)));j.set("count",num(n));
+                j.set("name",str(o==0?std::string("Neutral"):o<0?std::string("Hostile"):o<=int(d.players.size())?d.players[size_t(o-1)].name:"Player "+std::to_string(o)));
+                owners.push(std::move(j));
+            }
+            Json out=Json::object();
+            out.set("map",str(ws_.map.path.empty()?std::string("(unsaved)"):ws_.relative(ws_.map.path)));
+            out.set("width",num(int64_t(d.w)));out.set("height",num(int64_t(d.h)));
+            out.set("entities",num(int64_t(d.entities.size())));out.set("players",num(int64_t(d.players.size())));
+            out.set("roads",num(int64_t(d.roads.size())));
+            out.set("types",types);out.set("owners",owners);
+            out.set("ruleTypes",num(int64_t(ws_.project.rules.types.size())));
+            out.set("undoSteps",num(int64_t(ws_.map.undoDepth())));
+            out.set("dirty",Json::fromBool(ws_.map.dirty||ws_.project.rulesDirty||ws_.project.manifestDirty));
+            out.set("sceneFrameMs",Json::number(sceneFrameMs_,2));out.set("sceneFrames",num(int64_t(sceneFrames_)));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.terrainBrush") {
+            // Arm / disarm the Scene brush and set its op, radius and strength (session only).
+            static const std::set<std::string> ops={"raise","lower","smooth","flatten","noise","erode"};
+            if (params.has("op")) { const std::string op=params.getStr("op"); if(!ops.count(op))throw std::runtime_error("Unknown brush op"); terrainBrush_.op=op; }
+            if (params.has("radius")) { const double r=params["radius"].toDouble(); if(!std::isfinite(r)||r<0.25||r>64)throw std::runtime_error("Radius 0.25..64"); terrainBrush_.radius=r; }
+            if (params.has("strength")) { const double v=params["strength"].toDouble(); if(!std::isfinite(v)||v<0||v>20)throw std::runtime_error("Strength 0..20"); terrainBrush_.strength=v; }
+            if (params.has("armed")) terrainBrush_.armed=params.getBool("armed")&&!ws_.project.dir.empty();
+            Json out=Json::object();
+            out.set("armed",Json::fromBool(terrainBrush_.armed));out.set("op",str(terrainBrush_.op));
+            out.set("radius",Json::number(terrainBrush_.radius,3));out.set("strength",Json::number(terrainBrush_.strength,3));
+            reply.set("result",std::move(out));
+        } else if (method == "studio.agentInfo" || method == "studio.agentStart" || method == "studio.agentStop" || method == "studio.agentReset") {
+            reply.set("result", agentRequest(method, params));
         } else if (method == "studio.buildInfo" || method == "studio.buildToolchain" || method == "studio.buildStart" ||
                    method == "studio.buildLog" || method == "studio.buildEstimate") {
             reply.set("result", buildRequest(method, params));

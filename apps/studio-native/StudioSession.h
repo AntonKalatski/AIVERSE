@@ -13,6 +13,8 @@
 #include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "apps/editor/core/Workspace.h"
 #include "apps/studio-native/StudioWindPreview.h"
+#include "apps/editor/core/Net.h"
+#include "apps/editor/core/WizardAgent.h"
 namespace aiverse::studio {
 class StudioSession {
 public:
@@ -49,6 +51,24 @@ public:
     Json openProject(const std::string& path); // only call with path returned by a trusted native picker
     // aiversebuild used by the Build panel (resolved by the native host next to Studio).
     void setBuildTool(const std::string& path) { ws_.buildTool = path; }
+    // Agent panel: aiversemcp built next to Studio (the in-editor agent reaches this session through it).
+    void setMcpTool(const std::string& path) { mcpTool_ = path; }
+    // Agent link (docs/mcp-agent-link.md): serves MCP tool calls from aiversemcp; call every frame.
+    // True when an agent edit changed the document (the host then refreshes the Scene and panels).
+    bool pollAgentLink();
+    // view_screenshot from the agent: the host captures the Scene's next frame and answers here
+    // (png "" + error when there is nothing to capture).
+    // Terrain brush (Terrain panel → Scene): while armed, a Scene drag sculpts. Dabs apply live and the
+    // whole stroke is merged into one History step "Terrain brush".
+    struct TerrainBrush { bool armed=false; std::string op="raise"; double radius=4, strength=1; };
+    const TerrainBrush& terrainBrush() const noexcept { return terrainBrush_; }
+    bool terrainStrokeBegin(double x, double y, std::string* error);
+    bool terrainStrokeDab(double x, double y, std::string* error);
+    void terrainStrokeEnd();
+    // Stats panel: the host reports the Scene's frame time (ms, smoothed) and its frame count.
+    void setSceneFrameStats(double ms, uint64_t frames) { sceneFrameMs_=ms; sceneFrames_=frames; }
+    bool agentScreenshotPending() const { return !agentShots_.empty(); }
+    void finishAgentScreenshot(const std::string& pngBase64, int width, int height, const std::string& error);
     // Host-provided material slot names of a loaded content model (the native
     // Scene owns model loading). Without it, slots come from authored overrides.
     using MaterialSlotProvider=std::function<std::vector<std::string>(const std::string& asset)>;
@@ -93,5 +113,18 @@ private:
     std::optional<StudioTransferPlan> pendingAssetTransfer_;
     StudioWindState wind_;
     Json windSceneStats_;
+    // Agent panel (studio.agent*): link server, the Claude Code run, its transcript and change list.
+    editor::net::LineServer agentServer_{editor::net::LineServer::Token::Publish};
+    editor::AgentRun agentRun_;
+    std::string mcpTool_, agentSession_;
+    std::vector<std::string> agentLines_;
+    Json agentChanges_=Json::array();
+    int64_t agentRunStart_=-1;
+    struct AgentShot { int client; Json id; };
+    std::vector<AgentShot> agentShots_;
+    TerrainBrush terrainBrush_;
+    double sceneFrameMs_=0; uint64_t sceneFrames_=0;
+    size_t strokeDepth_=0; bool stroking_=false; double strokeX_=0, strokeY_=0;   // History position when the current conversation started (Undo all)
+    Json agentRequest(const std::string& method, const Json& params);
 };
 }

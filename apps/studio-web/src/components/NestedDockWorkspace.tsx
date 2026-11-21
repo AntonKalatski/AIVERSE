@@ -90,8 +90,10 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
   return <section className="nested-stack" aria-label={'Dock '+node.id}
     onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect='move';}}
     onDrop={event => transfer(event)}>
-    <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}>
+    <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}
+      onWheel={event=>{if(Math.abs(event.deltaY)>Math.abs(event.deltaX))event.currentTarget.scrollLeft+=event.deltaY;}}>
       {node.tabs.map(panel => <div key={panel} draggable className={'nested-tab'+(node.active===panel?' nested-active':'')}
+        ref={node.active===panel ? revealTab : undefined}
         onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.setData('text/plain',TEXT_PREFIX+panel);
           event.dataTransfer.effectAllowed='move';setDragging(panel);}}
         onDragEnd={event=>{setDragging(null);setHover(null);
@@ -176,6 +178,9 @@ function DockBranch(props: BranchProperties) {
   return props.node.kind==='stack' ? <DockTabs {...props} node={props.node}/>
     : <DockSplitNode {...props} node={props.node}/>;
 }
+/** Keep the active tab visible in an overflowing tab strip (a panel opened from the palette or Window menu). */
+function revealTab(el: HTMLDivElement | null) { el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+
 export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloat, onAdopt, onDockBack, compact }: Properties) {
   const [dragging,setDragging]=useState<StudioPanel|null>(null);
   const [foreign,setForeign]=useState(false);

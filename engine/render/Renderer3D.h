@@ -531,6 +531,10 @@ public:
                (shadowMap_.valid() && shadowSize_==size);
     }
     ShadowQuality shadowQuality() const { return quality_; }
+    // Mobile GPUs: Medium / High filter the sun shadow with a fixed 8 / 12-tap disk instead of the
+    // 64 / 128-tap stable disk (4 fetches each); the blocker search stays. Set by touch-device hosts.
+    void setMobileShadowFilter(bool on) { mobileShadowFilter_ = on; }
+    bool mobileShadowFilter() const { return mobileShadowFilter_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
     // Shader presentation clock only; never changes simulation/current velocity.
@@ -1750,6 +1754,7 @@ private:
     bool hasShadowBounds_ = false;
     float3 shadowBoundsMin_{}, shadowBoundsMax_{};
     ShadowQuality quality_ = ShadowQuality::Medium;
+    bool mobileShadowFilter_ = false;
     std::vector<DrawItem> items_;
     std::deque<Mesh> meshSnapshots_;
     std::vector<ColorVertex> lines_, tris_;

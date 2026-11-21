@@ -4,6 +4,7 @@
 #include "GLApi.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <cstring>
 #include <cstdlib>
@@ -187,6 +188,8 @@ public:
         glGenBuffers(1, &ubo_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
         glBufferData(GL_UNIFORM_BUFFER, kUniformRingSize, nullptr, GL_STREAM_DRAW);
+        uboPool_ = flavor == Backend::GLES3;
+        if (const char* m = std::getenv("AIVERSE_GL_UBO"); m && *m) uboPool_ = std::strcmp(m, "pool") == 0;
 #endif
         // compressed formats: ETC2 is core in ES 3.0 (not in desktop GL 3.3, not guaranteed on WebGL2)
         std::string ext;
@@ -312,6 +315,10 @@ public:
         glDeleteBuffers(kMaxUniformSlots, slotUbos_);
 #else
         glDeleteBuffers(1, &ubo_);
+        for (auto& P : uboPools_) {
+            if (!P.bufs.empty()) glDeleteBuffers(GLsizei(P.bufs.size()), P.bufs.data());
+            if (P.fence) glDeleteSync(P.fence);
+        }
 #endif
         glDeleteVertexArrays(1, &vao_);
     }
@@ -1265,6 +1272,7 @@ public:
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
         invalidateGlState();
+        if (uboPool_) poolBeginFrame();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
         glBufferData(GL_UNIFORM_BUFFER, kUniformRingSize, nullptr, GL_STREAM_DRAW); // orphan the ring
@@ -1276,6 +1284,7 @@ public:
         if (scopeActive_) endGpuScope();
         if (queryActive_) {glEndQuery(GL_TIME_ELAPSED);queryActive_=false;glFlush();}
 #endif
+        if (uboPool_) poolEndFrame();
         if (frameActive_) {
             GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
             if (sync) {
@@ -2084,6 +2093,11 @@ public:
         last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
         return;
 #endif
+        if (uboPool_) {   // GLES: fenced per-draw blocks (Adreno copies a busy ring even for mapped writes)
+            poolUniforms(slot, data, size);
+            last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
+            return;
+        }
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
         if (off + size > kUniformRingSize) { // ring exhausted: orphan and restart
             glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
@@ -2097,6 +2111,39 @@ public:
         slotData_[slot].assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
         uboOffset_ = off;
         writeUniforms(slot, data, size);
+    }
+    // GLES (Android) uniform pool: glBufferSubData into the 1 MB ring that queued draws of the same frame
+    // still reference makes Adreno copy the whole ring on every draw (simpleperf, Adreno 610: 65 % of the
+    // game thread in kgsl_sharedmem_alloc under setUniforms). Every setUniforms gets its own small buffer
+    // instead, from one of three per-frame pools; a pool is reused only after its frame's fence, so the
+    // buffer is never busy and SubData neither copies nor allocates. AIVERSE_GL_UBO=ring restores the ring.
+    struct UboPool { std::vector<GLuint> bufs; std::vector<size_t> caps; size_t next = 0; GLsync fence = nullptr; };
+    static constexpr int kUboPools = 3;
+    void poolUniforms(int slot, const void* data, size_t size) {
+        UboPool& P = uboPools_[uboPoolIndex_];
+        if (P.next == P.bufs.size()) { GLuint b = 0; glGenBuffers(1, &b); P.bufs.push_back(b); P.caps.push_back(0); }
+        const GLuint b = P.bufs[P.next];
+        size_t& cap = P.caps[P.next];
+        ++P.next;
+        glBindBuffer(GL_UNIFORM_BUFFER, b);
+        if (cap < size) { cap = std::max<size_t>(size, 256); glBufferData(GL_UNIFORM_BUFFER, GLsizeiptr(cap), nullptr, GL_DYNAMIC_DRAW); }
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, GLsizeiptr(size), data);
+        glBindBufferRange(GL_UNIFORM_BUFFER, GLuint(slot), b, 0, GLsizeiptr(size));
+    }
+    void poolBeginFrame() {
+        uboPoolIndex_ = (uboPoolIndex_ + 1) % kUboPools;
+        UboPool& P = uboPools_[uboPoolIndex_];
+        if (P.fence) {   // normally long signaled (two frames ago)
+            glClientWaitSync(P.fence, GL_SYNC_FLUSH_COMMANDS_BIT, GLuint64(1000000000));
+            glDeleteSync(P.fence);
+            P.fence = nullptr;
+        }
+        P.next = 0;
+    }
+    void poolEndFrame() {
+        UboPool& P = uboPools_[uboPoolIndex_];
+        if (P.fence) glDeleteSync(P.fence);
+        P.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     }
     void writeUniforms(int slot, const void* data, size_t size) {
         size_t off = (uboOffset_ + uboAlign_ - 1) / uboAlign_ * uboAlign_;
@@ -2208,6 +2255,9 @@ private:
     float maxAnisotropy_ = 1.0f;
     bool srgbWrite_ = false;   // GL33: GL_FRAMEBUFFER_SRGB enabled for the current pass
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
+    UboPool uboPools_[kUboPools];
+    int uboPoolIndex_ = 0;
+    bool uboPool_ = false;   // GLES: per-draw buffers from fenced pools (poolUniforms)
     int passW_ = 0, passH_ = 0;
     uint64_t frameSerial_=0; // native owner-frame identity (inPass_/frameActive_ declared above/below)
     std::vector<GLFramebuffer> fbos_;

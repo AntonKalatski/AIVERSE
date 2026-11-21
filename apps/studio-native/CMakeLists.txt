@@ -13,6 +13,11 @@ if(TARGET aiversebuild)
     add_dependencies(aiverse_studio aiversebuild)
     target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_BUILD_TOOL="$<TARGET_FILE:aiversebuild>")
 endif()
+# Agent panel: the MCP server the in-editor Claude Code run talks to (forwards to this Studio's port).
+if(TARGET aiversemcp)
+    add_dependencies(aiverse_studio aiversemcp)
+    target_compile_definitions(aiverse_studio PRIVATE AIVERSE_STUDIO_MCP_TOOL="$<TARGET_FILE:aiversemcp>")
+endif()
 set_source_files_properties(mac/Main.mm mac/StudioAssetSchemeHandler.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 set_target_properties(aiverse_studio PROPERTIES
     OUTPUT_NAME AiverseStudioHTML5

@@ -4,6 +4,7 @@
 #include "../Plugins.h"
 #include "../GraphicsSettings.h"
 #include "../../gfx/Gfx.h"
+#include "../../gfx/GpuTier.h"
 #if defined(AIVERSE_WITH_VULKAN)
 #include "../../gfx/vulkan/Vulkan.h"
 #endif
@@ -15,10 +16,16 @@
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/log.h>
+#include <sched.h>
+#include <sys/system_properties.h>
+#include <unistd.h>
 #include <android_native_app_glue.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <thread>
 #include <cstring>
 #include <cstdlib>
 #include <memory>
@@ -39,6 +46,79 @@ EGLConfig g_cfg = nullptr;
 std::unique_ptr<gfx::Device> g_device;
 bool g_inited = false;
 bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
+float g_density = 1.0f;       // physical px per point (touches, insets and the keyboard arrive in physical px)
+float g_renderScale = 1.0f;   // window buffer / physical size; the display hardware scales the buffer up
+bool g_weakGpu = false;       // gfx::isWeakMobileGpu: a lower render resolution (540 instead of 720 lines)
+
+// Render resolution: the window's buffers are made smaller than the screen and the compositor / display
+// controller scales them up for free (both GLES and Vulkan, no extra pass). A 2400x1080 phone drew
+// 2.6 Mpx per frame, which entry-level GPUs can't fill at 60 fps. Default: the short side at most
+// 720 px, 540 px on weak GPUs (GpuTier.h; Adreno 610: 65 -> 40 ms a frame);
+// AIVERSE_RENDER_SCALE=<0.25..1> overrides (1 = native).
+void applyRenderScale(ANativeWindow* win) {
+    ANativeWindow_setBuffersGeometry(win, 0, 0, 0);   // back to the native size to measure it
+    const int w = ANativeWindow_getWidth(win), h = ANativeWindow_getHeight(win);
+    if (w <= 0 || h <= 0) return;
+    float s = std::min(1.0f, (g_weakGpu ? 540.0f : 720.0f) / float(std::min(w, h)));
+    if (const char* e = std::getenv("AIVERSE_RENDER_SCALE"); e && *e) s = std::clamp(float(std::atof(e)), 0.25f, 1.0f);
+    const int bw = std::max(1, int(float(w) * s + 0.5f)), bh = std::max(1, int(float(h) * s + 0.5f));
+    if (s < 1.0f) ANativeWindow_setBuffersGeometry(win, bw, bh, 0);
+    g_renderScale = s < 1.0f ? float(bw) / float(w) : 1.0f;
+    state().scale = g_density * g_renderScale;   // framebuffer px per point
+    static int logged = -1;
+    if (logged != int(g_weakGpu)) { logged = int(g_weakGpu); __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[gfx] screen %dx%d, render %dx%d (scale %.3f)", w, h, s < 1.0f ? bw : w, s < 1.0f ? bh : h, double(g_renderScale)); }
+}
+
+// ---- benchmarks over adb (AIVERSE_PERF_LOG=<seconds>): frame-time windows printed to logcat as
+// "[perf] ..." lines. wall = time between frame starts (what the player sees), cpu = time spent in the
+// frame callback + endFrame + swap on the game thread (GPU-bound frames show wall >> cpu).
+struct PerfLog {
+    double window = 0;          // seconds per printed window; 0 = off
+    long exitAfter = 0;         // AIVERSE_EXIT_AFTER_FRAMES
+    long frames = 0, windows = 0;
+    double windowStart = -1, last = -1;
+    std::vector<float> wall, cpu, allWall, allCpu;
+    static float pct(std::vector<float> v, double q) {
+        if (v.empty()) return 0;
+        size_t i = std::min(v.size() - 1, size_t(q * double(v.size() - 1) + 0.5));
+        std::nth_element(v.begin(), v.begin() + long(i), v.end());
+        return v[i];
+    }
+    static void print(const char* what, const std::vector<float>& w, const std::vector<float>& c, double seconds) {
+        if (w.empty()) return;
+        double sum = 0, csum = 0; float mx = 0;
+        for (float x : w) { sum += x; mx = std::max(mx, x); }
+        for (float x : c) csum += x;
+        long jank = 0; for (float x : w) if (x > 1000.0f / 30.0f) ++jank;
+        __android_log_print(ANDROID_LOG_INFO, "AIVERSE",
+            "[perf] %s backend=%s frames=%zu fps=%.1f wall_ms avg=%.2f p50=%.2f p95=%.2f p99=%.2f max=%.2f cpu_ms avg=%.2f p95=%.2f jank33=%ld",
+            what, g_vulkan ? "vulkan" : "gles", w.size(), seconds > 0 ? double(w.size()) / seconds : 0.0,
+            sum / double(w.size()), double(pct(w, 0.5)), double(pct(w, 0.95)), double(pct(w, 0.99)), double(mx),
+            c.empty() ? 0.0 : csum / double(c.size()), double(pct(c, 0.95)), jank);
+    }
+    // true when the run should end (AIVERSE_EXIT_AFTER_FRAMES reached)
+    bool frame(double start, double cpuMs) {
+        if (window <= 0 && exitAfter <= 0) return false;
+        ++frames;
+        if (last >= 0 && frames > 30) {   // the first frames load the map: not part of the numbers
+            float ms = float((start - last) * 1000.0);
+            wall.push_back(ms); cpu.push_back(float(cpuMs));
+            if (windows > 0) { allWall.push_back(ms); allCpu.push_back(float(cpuMs)); }   // summary: after the first window (splash, map load)
+            if (windowStart < 0) windowStart = last;
+        }
+        last = start;
+        if (window > 0 && windowStart >= 0 && start - windowStart >= window) {
+            print("window", wall, cpu, start - windowStart); wall.clear(); cpu.clear(); windowStart = start; ++windows;
+        }
+        // with windows on, count the frames after the first one (splash / loading frames are ~1 ms)
+        if (exitAfter > 0 && (window > 0 ? long(allWall.size()) : frames) >= exitAfter) {
+            double total = 0; for (float x : allWall) total += double(x);
+            print("summary", allWall, allCpu, total / 1000.0);
+            return true;
+        }
+        return false;
+    }
+} g_perf;
 
 // ---- on-screen keyboard (AiverseActivity.java). Java calls arrive on the UI thread; they are queued
 // and dispatched on the game thread, which owns the UI and the sim.
@@ -55,10 +135,10 @@ void drainTextQueue() {
         case TextMsg::Text: detail::dispatchText(m.text); break;
         case TextMsg::Backspace: detail::dispatchKeyPress(Key::Backspace); break;
         case TextMsg::Enter: detail::dispatchKeyPress(Key::Enter); break;
-        case TextMsg::Keyboard: detail::setKeyboardHeight(float(m.px) / state().scale); break;
+        case TextMsg::Keyboard: detail::setKeyboardHeight(float(m.px) / g_density); break;
         case TextMsg::Ended: detail::textInputEndedByUser(); break;
         case TextMsg::SafeArea: {
-            const float s = state().scale;
+            const float s = g_density;
             detail::setSafeArea({float(m.inset[0]) / s, float(m.inset[1]) / s, float(m.inset[2]) / s, float(m.inset[3]) / s});
             break;
         }
@@ -97,6 +177,17 @@ JNIEnv* gameThreadEnv() {
 }
 detail::FrameClock g_clock;
 
+// The GPU name is known only once the device exists: a weak one gets the lower resolution right away
+// (before the renderer allocates its targets). True when the window buffers changed.
+bool lowerResolutionForWeakGpu(ANativeWindow* win) {
+    if (g_weakGpu || !g_device || !win) return false;
+    if (const char* e = std::getenv("AIVERSE_RENDER_SCALE"); e && *e) return false;   // explicit choice
+    if (!gfx::isWeakMobileGpu(g_device->info().name)) return false;
+    g_weakGpu = true;
+    applyRenderScale(win);
+    return true;
+}
+
 bool initEGL() {
     if (g_dpy == EGL_NO_DISPLAY) {
         g_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -110,6 +201,7 @@ bool initEGL() {
     }
     g_surf = eglCreateWindowSurface(g_dpy, g_cfg, g_app->window, nullptr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx)) return false;
+    if (const char* u = std::getenv("AIVERSE_BENCH_UNCAPPED"); u && *u == '1') eglSwapInterval(g_dpy, 0);   // benchmarks
     EGLint w = 0, h = 0;
     eglQuerySurface(g_dpy, g_surf, EGL_WIDTH, &w);
     eglQuerySurface(g_dpy, g_surf, EGL_HEIGHT, &h);
@@ -131,16 +223,22 @@ void onCmd(android_app* app, int32_t cmd) {
     auto& S = state();
     switch (cmd) {
     case APP_CMD_INIT_WINDOW:
+        if (app->window) applyRenderScale(app->window);   // before the EGL surface / swapchain exist
 #if defined(AIVERSE_WITH_VULKAN)
         if (app->window && (g_vulkan || (!g_device && wantVulkan(S.cfg)))) {   // GraphicsSettings.h
             gfx::VulkanWindow vw;
             vw.kind = gfx::VulkanWindow::Kind::Android;
             vw.window = uint64_t(reinterpret_cast<uintptr_t>(app->window));
+            if (const char* u = std::getenv("AIVERSE_BENCH_UNCAPPED"); u && *u == '1') vw.vsync = false;   // benchmarks: MAILBOX / IMMEDIATE when offered
             if (g_device) gfx::vulkanSetWindow(*g_device, &vw);
             else {
                 std::string err;
                 g_device = gfx::createVulkanDevice(vw, &err);
-                if (g_device) { g_vulkan = true; if (S.cb.init) S.cb.init(*g_device); }
+                if (g_device) {
+                    g_vulkan = true;
+                    if (lowerResolutionForWeakGpu(app->window)) gfx::vulkanSetWindow(*g_device, &vw);   // new swapchain size
+                    if (S.cb.init) S.cb.init(*g_device);
+                }
                 else __android_log_print(ANDROID_LOG_WARN, "AIVERSE", "[gfx] %s, using OpenGL ES", err.c_str());
             }
             if (g_vulkan) {
@@ -155,6 +253,7 @@ void onCmd(android_app* app, int32_t cmd) {
         if (app->window && initEGL()) {
             if (!g_device) {
                 g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+                if (lowerResolutionForWeakGpu(app->window)) { termSurface(); initEGL(); }   // a surface of the new size
                 if (S.cb.init) S.cb.init(*g_device);
             }
             g_inited = true;
@@ -271,7 +370,7 @@ int32_t onMouse(AInputEvent* ev) {
     auto& S = state();
     const int32_t code = AMotionEvent_getAction(ev) & AMOTION_EVENT_ACTION_MASK;
     Event e;
-    e.x = AMotionEvent_getX(ev, 0) / S.scale; e.y = AMotionEvent_getY(ev, 0) / S.scale;
+    e.x = AMotionEvent_getX(ev, 0) / g_density; e.y = AMotionEvent_getY(ev, 0) / g_density;
     e.mods = modsOf(AMotionEvent_getMetaState(ev));
     auto buttonOf = [](int32_t b) { return b == AMOTION_EVENT_BUTTON_SECONDARY ? 1 : b == AMOTION_EVENT_BUTTON_TERTIARY ? 2 : 0; };
     // The button of a press / release from the change of the button state (API 14): AMotionEvent_getActionButton
@@ -307,7 +406,7 @@ int32_t onInput(android_app*, AInputEvent* ev) {
     size_t idx = size_t((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
     auto emit = [&](EventType t, size_t i) {
         Event e; e.type = t;
-        e.x = AMotionEvent_getX(ev, i) / S.scale; e.y = AMotionEvent_getY(ev, i) / S.scale;
+        e.x = AMotionEvent_getX(ev, i) / g_density; e.y = AMotionEvent_getY(ev, i) / g_density;
         e.touchId = AMotionEvent_getPointerId(ev, i);
         detail::dispatch(e);
     };
@@ -504,9 +603,12 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     int32_t density = AConfiguration_getDensity(conf);
     AConfiguration_delete(conf);
     S.scale = density > 0 ? float(density) / 160.0f : 1.0f;
+    g_density = S.scale;
     // game data: only the RHI backend matters here (game.json "graphics"); the window is the whole screen
     if (S.cb.configure) { AppConfig c = S.cfg; S.cb.configure(c); S.cfg.graphics = c.graphics; }
 
+    if (const char* e = std::getenv("AIVERSE_PERF_LOG")) g_perf.window = std::atof(e);
+    if (const char* e = std::getenv("AIVERSE_EXIT_AFTER_FRAMES")) g_perf.exitAfter = std::atol(e);
     g_app->onAppCmd = onCmd;
     g_app->onInputEvent = onInput;
     plugins::detail::setBackend(&g_pluginBackend);
@@ -529,12 +631,15 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
             S.fbW = w; S.fbH = h; S.winW = float(w) / S.scale; S.winH = float(h) / S.scale;
             Event e; e.type = EventType::Resized; detail::dispatch(e);
         }
-        double dt = g_clock.tick(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        const double frameStart = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        double dt = g_clock.tick(frameStart);
         g_device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*g_device, dt);
         g_device->endFrame();
-        if (S.cb.afterFrame) S.cb.afterFrame(*device);
+        if (S.cb.afterFrame) S.cb.afterFrame(*g_device);
         if (!g_vulkan) eglSwapBuffers(g_dpy, g_surf);
+        const double frameEnd = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (g_perf.frame(frameStart, (frameEnd - frameStart) * 1000.0)) S.quit = true;
     }
     if (S.cb.shutdown) S.cb.shutdown();
     g_device.reset();
@@ -575,11 +680,80 @@ JNIEXPORT void JNICALL Java_com_aiverse_platform_AiverseActivity_nativeTextInput
 }
 }
 
+namespace {
+// stdout / stderr of the engine ("[gfx] Vulkan <GPU>", warnings) go to logcat under the AIVERSE tag
+void redirectStdioToLogcat() {
+    static int fds[2] = {-1, -1};
+    if (fds[0] >= 0 || pipe(fds) != 0) return;
+    setvbuf(stdout, nullptr, _IOLBF, 0); setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(fds[1], 1); dup2(fds[1], 2);
+    std::thread([] {
+        char buf[1024]; std::string line;
+        for (ssize_t n; (n = read(fds[0], buf, sizeof buf)) > 0;) {
+            line.append(buf, size_t(n));
+            for (size_t nl; (nl = line.find('\n')) != std::string::npos; line.erase(0, nl + 1))
+                __android_log_write(ANDROID_LOG_INFO, "AIVERSE", line.substr(0, nl).c_str());
+        }
+    }).detach();
+}
+// The game thread (simulation + view + RHI submission) on the fastest cores. big.LITTLE schedulers
+// often leave a busy thread on a little core for long stretches (Galaxy A05s: 4x A53 1.9 GHz +
+// 4x A73 2.4 GHz). AIVERSE_BIG_CORES=0 leaves the choice to the scheduler.
+void pinToBigCores() {
+    if (const char* e = std::getenv("AIVERSE_BIG_CORES"); e && *e == '0') return;
+    long best = 0, freq[64] = {};
+    int n = 0;
+    for (; n < 64; ++n) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", n);
+        FILE* f = std::fopen(path, "r");
+        if (!f) break;
+        if (std::fscanf(f, "%ld", &freq[n]) != 1) freq[n] = 0;
+        std::fclose(f);
+        best = std::max(best, freq[n]);
+    }
+    if (n < 2 || best <= 0) return;
+    cpu_set_t set; CPU_ZERO(&set);
+    int count = 0;
+    for (int i = 0; i < n; ++i) if (freq[i] == best) { CPU_SET(i, &set); ++count; }
+    if (count == n) return;   // all cores alike
+    const int r = sched_setaffinity(0, sizeof set, &set);
+    __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[cpu] game thread on %d of %d cores (max %ld kHz)%s", count, n, best, r == 0 ? "" : " - refused");
+}
+std::string systemProperty(const char* name) {
+    char v[PROP_VALUE_MAX] = {};
+    return __system_property_get(name, v) > 0 ? std::string(v) : std::string();
+}
+} // namespace
+
 void android_main(android_app* app) {
     aiverse::platform::g_app = app;
-    char arg0[] = "aiverse";
-    char* argv[] = {arg0, nullptr};
-    aiverseMain(1, argv);
+    redirectStdioToLogcat();
+    // Testing over adb without a rebuild (only the device's shell can set debug.* properties):
+    //   adb shell setprop debug.aiverse.args "--map 0 --spectate --gfx vulkan"
+    //   adb shell setprop debug.aiverse.env0 "AIVERSE_PERF_LOG=5"   (env0..env15, one AIVERSE_NAME=value each)
+    std::vector<std::string> args{"aiverse"};
+    {
+        std::string a = systemProperty("debug.aiverse.args");
+        for (size_t i = 0; i < a.size();) {
+            size_t j = a.find(' ', i); if (j == std::string::npos) j = a.size();
+            if (j > i) args.push_back(a.substr(i, j - i));
+            i = j + 1;
+        }
+        for (int i = 0; i < 16; ++i) {
+            std::string kv = systemProperty(("debug.aiverse.env" + std::to_string(i)).c_str());
+            size_t eq = kv.find('=');
+            if (eq == std::string::npos || kv.compare(0, 8, "AIVERSE_") != 0) continue;
+            setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+            __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[adb] %s", kv.c_str());
+        }
+        if (args.size() > 1) __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[adb] args: %s", a.c_str());
+    }
+    pinToBigCores();
+    std::vector<char*> argv;
+    for (auto& s : args) argv.push_back(s.data());
+    argv.push_back(nullptr);
+    aiverseMain(int(args.size()), argv.data());
     app->activity->vm->DetachCurrentThread();
     // NativeActivity may call android_main again in the same process when the activity is
     // recreated, but the engine and the app keep function-level statics (platform state with
