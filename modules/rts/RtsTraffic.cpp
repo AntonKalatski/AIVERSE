@@ -5,8 +5,7 @@
 #include "RtsTrafficRoads.h"
 #include "RtsInternal.h"
 #include "RtsTrafficPriority.h"
-#include "RtsTrafficWideRoute.h"
-#include "RtsTrafficDetour.h"
+#include <aiverselib/mechanics/traffic/TrafficRoutes.h>
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
@@ -937,7 +936,7 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
         }
         int exitSide = inSide;
         if (c.destPiece >= 0 && (c.task == kTaskGoing || c.task == kTaskHome || c.task == kTaskTrip || c.task == 250 || c.task == kTaskGang)) {   // on call, a citizen's trip: the way to the address
-            exitSide = exitToward(J, inSide, c.tailPiece, c.destPiece); if(c.kind==kTrafficEmergency && rules_.wideRoads(sim.world().get<Unit>(c.e).type))exitSide=wideRouteExit(net_,J,inSide,c.tailPiece,c.destPiece,exitSide);
+            exitSide = exitToward(J, inSide, c.tailPiece, c.destPiece); if(c.kind==kTrafficEmergency && rules_.wideRoads(sim.world().get<Unit>(c.e).type))exitSide=lib::mechanics::trafficWideExit(net_,J,inSide,c.tailPiece,c.destPiece,exitSide);
         } else if (c.kind == kTrafficBus && c.line >= 0 && size_t(c.line) < lines_.size()) {   // the line: on to its next point
             const auto& via = lines_[size_t(c.line)].via;
             for (size_t n = 0; n < via.size() && via[c.lineLeg % via.size()] == c.tailPiece; ++n) c.lineLeg = uint16_t((c.lineLeg + 1) % via.size());
@@ -1564,7 +1563,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
                     const Fixed radius=halfWid+Fixed::fromRatio(1,10);
                     auto clear=[&](Vec2 q){for(int x:{-1,1})for(int z:{-1,1}){auto sample=q+Vec2{radius*x,radius*z};if(!onRoad(sample)||!gs.grid.passableAt(v3(sample),kLayerGround))return false;}
                         for(const auto&o:obstacles){auto delta=q-o.pos;Fixed along=fxMax(fxAbs(delta.dot(o.axis))-o.length,Fixed{}),across=fxMax(fxAbs(tl::trafficDetail::cross(delta,o.axis))-o.width,Fixed{});if(along*along+across*across<radius*radius)return false;}return true;};
-                    auto points=localDetour(pos,bp+axis*Fixed::fromInt(3),clear);
+                    auto points=lib::mechanics::trafficLocalDetour(pos,bp+axis*Fixed::fromInt(3),clear);
                     if(points.size()>1){bool active=c.ignore.valid()&&sim.tick()<c.ignoreUntil;Vec2 end=points.back();while(c.wp<c.route.size()&&(c.route[c.wp].p-end).dot(axis)<Fixed{})++c.wp;
                         std::vector<TrafficWaypoint> route;for(auto p:points)route.push_back({p,-2,0,0});c.route.insert(c.route.begin()+c.wp,route.begin(),route.end());c.ignore=blocker;c.ignoreUntil=sim.tick()+sim.tickRate()*60;if(!active)c.reverseUntil=sim.tick()+sim.tickRate()*2;
                     }else c.reverseUntil=sim.tick()+sim.tickRate()*2;

@@ -45,6 +45,7 @@ struct TrafficService {
     uint16_t crew = UINT16_MAX;              // people who get out at the scene (medics, officers, firemen); none: the vehicle works
     int crewCount = 2;
     bool custody = false;                // police: officers detain an unarmed offender and take him to the station instead of fighting
+    std::vector<uint16_t> officers;          // custody: more types that count as officers besides the crew
     bool carry = false;                  // ambulance: the crew carries the patient to the vehicle and delivers him to a hospital
     uint32_t workTicks = 100, maxWorkTicks = 1200;
     int max = 1;                             // vehicles on call at a time
@@ -61,6 +62,8 @@ struct TrafficIncidentRules {
     uint32_t treatTicks = 1200;              // in hospital this long, then the person walks out of it
     uint32_t abandonTicks = 0;               // a car a hero left on a driving lane this long is towed (0: never)
     Fixed witness = Fixed::fromInt(7);       // a crime is reported when somebody is this close to it
+    uint16_t patient = UINT16_MAX;           // custody/carry: stand-in body a fallen hero leaves (none: his own type)
+    std::vector<std::string> unarmed;        // weapon ids that do not make an offender armed (custody)
     std::vector<uint16_t> lots;              // map object types: towed cars are put next to the nearest one
 };
 

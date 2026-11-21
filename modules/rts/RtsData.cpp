@@ -438,6 +438,10 @@ Rules loadRules(const Json& j) {
             t.armorType = armorIdx(h.getStr("armorType", "none"));
         }
         t.invulnerable = tj.getBool("invulnerable", false);
+        for (const Json& b : tj["walls"].items()) {
+            if (!b.isArray() || b.size() != 4) fail(where + " walls", "[x, z, w, d]");
+            t.walls.push_back({b[0].fx(), b[1].fx(), b[2].fx(), b[3].fx()});
+        }
         if (const Json& vj = tj["vision"]; vj.isObject()) {
             t.visionBlock = fxMax(Fixed{}, vj.getFx("blocks"));
             t.eyeHeight = fxMax(Fixed{}, vj.getFx("eye"));
@@ -484,6 +488,8 @@ Rules loadRules(const Json& j) {
                 if (w.projectileSpeed <= Fixed{} || w.projectileSpeed > Fixed::fromInt(1024)) fail(where, "flight requires projectileSpeed in (0,1024]");
             }
             w.splash = wj.getFx("splash");
+            w.hitsWalls = wj.getBool("hitsWalls", false);
+            w.wrecksTag = wj.getStr("wrecks", "");
             w.damageType = damageIdx(wj.getStr("damageType", "normal"));
             w.chargeTime = wj.getFx("chargeTime");
             w.rangeAspect = wj.getFx("rangeAspect", w.rangeAspect);

@@ -1,4 +1,4 @@
-    // Kingston pedestrian vehicle bodies: parked/possessed cars are not Mobile agents.
+    // Pedestrians and vehicle bodies: parked/possessed cars are not Mobile agents.
     struct VehicleBody { Entity e; Vec2 pos,axis,velocity; Fixed length,width; };
     std::vector<VehicleBody> vehicleBodies;
     if(driving_&&driving_->active()) w.each<Unit,Transform>([&](Entity e,const Unit&u,const Transform&t){
@@ -48,7 +48,7 @@
     };
 
     auto vehicleCrossingWait=[&](Entity person,Vec2 pos,Vec2 preferred,Fixed radius){
-        const auto key="resident_crossing_"+std::to_string(person.packed())+"_";
+        const auto key="crossing_"+std::to_string(person.packed())+"_";
         gs.trig.vars[key+"reason"]={};
         if(!preferred.lengthSq().raw)return false;
         bool danger=false,occluded=false;
@@ -58,7 +58,7 @@
             if(v.velocity.length()>Fixed::fromRatio(8,100)){
                 if(vehicleSegment(v,pos,pos,radius))continue; // let someone already exposed escape
                 const auto horizon=fxClamp((v.width*2+radius*2)/fxMax(preferred.length(),Fixed::fromRatio(1,5))+Fixed::fromRatio(1,2),Fixed::fromInt(1),Fixed::fromInt(3));
-                if(kingston::crossingDanger(relative,preferred-v.velocity,v.axis,v.length,v.width,radius+Fixed::fromRatio(1,5),horizon))danger=true;
+                if(lib::sweptBoxCircle(relative,preferred-v.velocity,v.axis,v.length,v.width,radius+Fixed::fromRatio(1,5),horizon).hit)danger=true;
             }else if(v.length>Fixed::fromRatio(3,2)){
                 const Vec2 side{-v.axis.y,v.axis.x};
                 occluded=occluded||(fxAbs(relative.dot(v.axis))<v.length+Fixed::fromRatio(3,5)&&fxAbs(relative.dot(side))<v.width+Fixed::fromRatio(4,5)&&fxAbs(preferred.dot(side))>preferred.length()/2);

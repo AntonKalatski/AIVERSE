@@ -7,7 +7,7 @@
 // Fixed maths only, entity-index order, randomness from sim.rng().
 #include "RtsTraffic.h"
 #include "RtsInternal.h"
-#include "KingstonPolicePolicy.h"
+#include "RtsServiceCustody.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
 #include <stdexcept>
@@ -80,6 +80,7 @@ void Traffic::parseCity(const Json& j, TrafficRules& r, const std::vector<std::s
             s.crewCount = int(std::clamp<int64_t>(v.getInt("crewCount", s.crewCount), 1, 8));
             s.custody = v.getBool("custody", false);
             s.carry = v.getBool("carry", false);
+            s.officers = typeList(v["officers"], where + ".officers");
             s.workTicks = std::max<uint32_t>(1, seconds(v, "work", ticksOf(Fixed::fromInt(5), rate), where));
             s.maxWorkTicks = std::max(s.workTicks, seconds(v, "maxWork", ticksOf(Fixed::fromInt(60), rate), where));
             s.max = int(std::clamp<int64_t>(v.getInt("max", 1), 1, 32));
@@ -112,6 +113,8 @@ void Traffic::parseCity(const Json& j, TrafficRules& r, const std::vector<std::s
     if (in.has("lethal")) ir.lethal = in.getFx("lethal");
     if (ir.fireDamage.raw < 0 || ir.fireRadius.raw < 0 || ir.witness.raw < 0) throw std::runtime_error(where + ": fireDamage, fireRadius and witness must not be negative");
     ir.lots = typeList(in["lots"], where + ".lots");
+    if (in.has("patient")) ir.patient = typeOf(in.getStr("patient"), where + ".patient");
+    for (const Json& e : in["unarmed"].items()) ir.unarmed.push_back(e.str());
 }
 
 bool Traffic::roadSpot(Vec2 p, int radius, int32_t& piece, Fixed& along) const {
@@ -255,8 +258,8 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
     for (auto& h : happened) {
         const Entity hero = heroBehind(h.by);
         if (h.ev == kEvAttack) { if (hero.valid()) report(sim, kIncidentCrime, h.pos, kNullEntity, hero); continue; }
-        if ((isCasualtyType(h.type) || kingston::policeHeroVictim(sim,h.who)) && kingston::policeOfficer(sim,h.by)) {
-            Entity body=kingston::policeBody(sim,h.who,h.type,kingston::policeVictimOwner(sim,h.who),v3(h.pos));
+        if ((isCasualtyType(h.type) || custodyVictim(sim,h.who)) && custodyOfficer(sim,h.by)) {
+            Entity body=custodyBody(sim,h.who,h.type,victimPilot(sim,h.who),v3(h.pos));
             if(body.valid()){
                 bool assigned=false;
                 for(auto& call:st.incidents)if(call.kind==kIncidentCrime&&call.offender==h.who){call.offender=body;call.subject=body;call.pos=h.pos;assigned=true;}
@@ -602,10 +605,10 @@ void Traffic::responders(Simulation& sim, TrafficStore& st) {
         };
         c.crew.erase(std::remove_if(c.crew.begin(), c.crew.end(), [&](Entity m) { return !living(w, m); }), c.crew.end());
         if (sv.carry) {     // rule traffic.services.<id>.carry: the crew carries the patient and delivers him
-        #include "KingstonAmbulance.inc"
+        #include "RtsServiceCarry.inc"
         }
         if (sv.custody) {   // rule traffic.services.<id>.custody: officers detain instead of fighting
-        #include "KingstonPoliceResponse.inc"
+        #include "RtsServiceCustody.inc"
         }
         switch (c.task) {
         case kTaskGoing: {

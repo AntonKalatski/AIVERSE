@@ -178,7 +178,5 @@ Generic pieces that a city game used to keep in its own `native/` are packages n
 | `rules-files` | `tools/rules/rules_io.py`, `split_rules.py` | Python read / write-back of split rules.json and a plan-driven splitter |
 
 Tests: `tests/libraries/city_tests.cpp` (CTest `library_city`), `tools/rules/test_rules.py` (CTest `rules_files`).
-Still game-shaped in the engine and meant to become data or project code: `modules/rts/Kingston*` and `modules/rts/kingston/`
-(type ids and trigger variable names of one game). `kingston/FireResponseRoute.h` / `FireResponseDetour.h` are now
-`trafficWideExit` / `trafficLocalDetour`, `KingstonPedestrianCrossingPolicy.h` is `sweptBoxCircle`, `kingston/DeckBroadphase.h`
-is `polylineBounds`; switching those call sites belongs to the traffic / driving owners.
+The traffic, pedestrian and driving code of `modules/rts` calls `trafficWideExit`, `trafficLocalDetour`,
+`sweptBoxCircle` and `polylineBounds` directly (no-genre stage C0a); the former Kingston copies are deleted.

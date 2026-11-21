@@ -2,7 +2,19 @@
 // vehicle adoption, getting in / out, the hero's stick as the driver's controls, the sweep of the body over the map
 // grid and other units, decks, damage and the race seats. Fixed maths only; every loop runs in entity-index order.
 #include "RtsDriving.h"
-#include "RtsDeckBroadphase.h"
+#include <aiverselib/SweptShapes.h>
+namespace {
+// Conservative rejection only: exact deckSpot, deck ordering and mouth rules still decide for nearby cars.
+// Q16 normalization can displace a projected endpoint by < segment-length raw units per axis.
+bool deckMayTouchBody(const aiverse::game::DrivingDeck& d, aiverse::Vec3 center, aiverse::Fixed halfBody) {
+    using namespace aiverse;
+    if (d.pts.size() < 2 || d.at.size() != d.pts.size()) return true;
+    int64_t projectionError = 4;
+    for (size_t i = 1; i < d.pts.size(); ++i) projectionError = std::max(projectionError, (d.at[i] - d.at[i - 1]).floorInt() + 4);
+    const Fixed margin = halfBody + d.width / 2 + Fixed::fromRatio(1, 16) + Fixed::fromRaw(projectionError);
+    return lib::mayTouch(lib::polylineBounds(std::span<const Vec3>(d.pts), margin), center.x, center.z);
+}
+}
 #include "RtsInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"

@@ -13,7 +13,7 @@ if(sv.answers==kIncidentCrime && inc && (c.task==kTaskCrewOut||c.task==kTaskWork
   for(unsigned pl=1;pl<gs.players.size();++pl){auto k="police_"+std::to_string(pl)+"_";if(vars[k+"car"].toInt()==int64_t(c.e.packed())+1)vars[k+"phase"]={};}
   vars[owned]={};phase(0);restoreCrew();};
  if(!alive(prisoner)||c.crew.empty()) {release();finish(sim,st,c,false);continue;}
- if(!state&&!dead&&kingston::policeArmed(sim,prisoner)){
+ if(!state&&!dead&&offenderArmed(sim,prisoner)){
   restoreCrew();
   // Armed suspects with ammunition cannot be handcuffed. Keep the combat call open.
   inc->assigned=sim.tick();inc->pos=v2(w.get<Transform>(prisoner).pos);c.taskUntil=sim.tick()+sim.tickRate()*3;
@@ -32,7 +32,7 @@ if(sv.answers==kIncidentCrime && inc && (c.task==kTaskCrewOut||c.task==kTaskWork
    c.task=kTaskCrewOut;
    if(!close(lead,at,Fixed::fromRatio(9,10))){move(lead,at);continue;}
    if(!dead&&drv->isDriving(sim,prisoner)&&!drv->policeExit(sim,prisoner)){restoreCrew();continue;}
-   if(!dead&&kingston::policeArmed(sim,prisoner)){restoreCrew();continue;}
+   if(!dead&&offenderArmed(sim,prisoner)){restoreCrew();continue;}
    vars[owned]=kOne;set("prisoner",prisoner.packed());set("was_disabled",(w.get<Unit>(prisoner).flags&kUnitDisabled)!=0);set("was_possessed",(w.get<Unit>(prisoner).flags&kUnitPossessed)!=0);
    vars["police_custody_"+suffix]=Fixed::fromInt(int64_t(c.e.packed())+1);vars["resident_transport_"+suffix]=Fixed::fromInt(6);
    w.get<Unit>(prisoner).flags=(w.get<Unit>(prisoner).flags|kUnitDisabled)&~kUnitPossessed;m_->stopMoving(sim,prisoner);m_->stopMoving(sim,lead);phase(1);playerPhase(1);continue;
