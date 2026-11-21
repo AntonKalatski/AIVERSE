@@ -15,10 +15,15 @@
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/log.h>
+#include <sys/system_properties.h>
+#include <unistd.h>
 #include <android_native_app_glue.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <thread>
 #include <cstring>
 #include <cstdlib>
 #include <memory>
@@ -39,6 +44,55 @@ EGLConfig g_cfg = nullptr;
 std::unique_ptr<gfx::Device> g_device;
 bool g_inited = false;
 bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
+
+// ---- benchmarks over adb (AIVERSE_PERF_LOG=<seconds>): frame-time windows printed to logcat as
+// "[perf] ..." lines. wall = time between frame starts (what the player sees), cpu = time spent in the
+// frame callback + endFrame + swap on the game thread (GPU-bound frames show wall >> cpu).
+struct PerfLog {
+    double window = 0;          // seconds per printed window; 0 = off
+    long exitAfter = 0;         // AIVERSE_EXIT_AFTER_FRAMES
+    long frames = 0;
+    double windowStart = -1, last = -1;
+    std::vector<float> wall, cpu, allWall, allCpu;
+    static float pct(std::vector<float> v, double q) {
+        if (v.empty()) return 0;
+        size_t i = std::min(v.size() - 1, size_t(q * double(v.size() - 1) + 0.5));
+        std::nth_element(v.begin(), v.begin() + long(i), v.end());
+        return v[i];
+    }
+    static void print(const char* what, const std::vector<float>& w, const std::vector<float>& c, double seconds) {
+        if (w.empty()) return;
+        double sum = 0, csum = 0; float mx = 0;
+        for (float x : w) { sum += x; mx = std::max(mx, x); }
+        for (float x : c) csum += x;
+        long jank = 0; for (float x : w) if (x > 1000.0f / 30.0f) ++jank;
+        __android_log_print(ANDROID_LOG_INFO, "AIVERSE",
+            "[perf] %s backend=%s frames=%zu fps=%.1f wall_ms avg=%.2f p50=%.2f p95=%.2f p99=%.2f max=%.2f cpu_ms avg=%.2f p95=%.2f jank33=%ld",
+            what, g_vulkan ? "vulkan" : "gles", w.size(), seconds > 0 ? double(w.size()) / seconds : 0.0,
+            sum / double(w.size()), double(pct(w, 0.5)), double(pct(w, 0.95)), double(pct(w, 0.99)), double(mx),
+            c.empty() ? 0.0 : csum / double(c.size()), double(pct(c, 0.95)), jank);
+    }
+    // true when the run should end (AIVERSE_EXIT_AFTER_FRAMES reached)
+    bool frame(double start, double cpuMs) {
+        if (window <= 0 && exitAfter <= 0) return false;
+        ++frames;
+        if (last >= 0 && frames > 30) {   // the first frames load the map: not part of the numbers
+            float ms = float((start - last) * 1000.0);
+            wall.push_back(ms); cpu.push_back(float(cpuMs)); allWall.push_back(ms); allCpu.push_back(float(cpuMs));
+            if (windowStart < 0) windowStart = last;
+        }
+        last = start;
+        if (window > 0 && windowStart >= 0 && start - windowStart >= window) {
+            print("window", wall, cpu, start - windowStart); wall.clear(); cpu.clear(); windowStart = start;
+        }
+        if (exitAfter > 0 && frames >= exitAfter) {
+            double total = 0; for (float x : allWall) total += double(x);
+            print("summary", allWall, allCpu, total / 1000.0);
+            return true;
+        }
+        return false;
+    }
+} g_perf;
 
 // ---- on-screen keyboard (AiverseActivity.java). Java calls arrive on the UI thread; they are queued
 // and dispatched on the game thread, which owns the UI and the sim.
@@ -110,6 +164,7 @@ bool initEGL() {
     }
     g_surf = eglCreateWindowSurface(g_dpy, g_cfg, g_app->window, nullptr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx)) return false;
+    if (const char* u = std::getenv("AIVERSE_BENCH_UNCAPPED"); u && *u == '1') eglSwapInterval(g_dpy, 0);   // benchmarks
     EGLint w = 0, h = 0;
     eglQuerySurface(g_dpy, g_surf, EGL_WIDTH, &w);
     eglQuerySurface(g_dpy, g_surf, EGL_HEIGHT, &h);
@@ -136,6 +191,7 @@ void onCmd(android_app* app, int32_t cmd) {
             gfx::VulkanWindow vw;
             vw.kind = gfx::VulkanWindow::Kind::Android;
             vw.window = uint64_t(reinterpret_cast<uintptr_t>(app->window));
+            if (const char* u = std::getenv("AIVERSE_BENCH_UNCAPPED"); u && *u == '1') vw.vsync = false;   // benchmarks: MAILBOX / IMMEDIATE when offered
             if (g_device) gfx::vulkanSetWindow(*g_device, &vw);
             else {
                 std::string err;
@@ -507,6 +563,8 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     // game data: only the RHI backend matters here (game.json "graphics"); the window is the whole screen
     if (S.cb.configure) { AppConfig c = S.cfg; S.cb.configure(c); S.cfg.graphics = c.graphics; }
 
+    if (const char* e = std::getenv("AIVERSE_PERF_LOG")) g_perf.window = std::atof(e);
+    if (const char* e = std::getenv("AIVERSE_EXIT_AFTER_FRAMES")) g_perf.exitAfter = std::atol(e);
     g_app->onAppCmd = onCmd;
     g_app->onInputEvent = onInput;
     plugins::detail::setBackend(&g_pluginBackend);
@@ -529,11 +587,14 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
             S.fbW = w; S.fbH = h; S.winW = float(w) / S.scale; S.winH = float(h) / S.scale;
             Event e; e.type = EventType::Resized; detail::dispatch(e);
         }
-        double dt = g_clock.tick(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        const double frameStart = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        double dt = g_clock.tick(frameStart);
         g_device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*g_device, dt);
         g_device->endFrame();
         if (!g_vulkan) eglSwapBuffers(g_dpy, g_surf);
+        const double frameEnd = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (g_perf.frame(frameStart, (frameEnd - frameStart) * 1000.0)) S.quit = true;
     }
     if (S.cb.shutdown) S.cb.shutdown();
     g_device.reset();
@@ -574,11 +635,55 @@ JNIEXPORT void JNICALL Java_com_aiverse_platform_AiverseActivity_nativeTextInput
 }
 }
 
+namespace {
+// stdout / stderr of the engine ("[gfx] Vulkan <GPU>", warnings) go to logcat under the AIVERSE tag
+void redirectStdioToLogcat() {
+    static int fds[2] = {-1, -1};
+    if (fds[0] >= 0 || pipe(fds) != 0) return;
+    setvbuf(stdout, nullptr, _IOLBF, 0); setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(fds[1], 1); dup2(fds[1], 2);
+    std::thread([] {
+        char buf[1024]; std::string line;
+        for (ssize_t n; (n = read(fds[0], buf, sizeof buf)) > 0;) {
+            line.append(buf, size_t(n));
+            for (size_t nl; (nl = line.find('\n')) != std::string::npos; line.erase(0, nl + 1))
+                __android_log_write(ANDROID_LOG_INFO, "AIVERSE", line.substr(0, nl).c_str());
+        }
+    }).detach();
+}
+std::string systemProperty(const char* name) {
+    char v[PROP_VALUE_MAX] = {};
+    return __system_property_get(name, v) > 0 ? std::string(v) : std::string();
+}
+} // namespace
+
 void android_main(android_app* app) {
     aiverse::platform::g_app = app;
-    char arg0[] = "aiverse";
-    char* argv[] = {arg0, nullptr};
-    aiverseMain(1, argv);
+    redirectStdioToLogcat();
+    // Testing over adb without a rebuild (only the device's shell can set debug.* properties):
+    //   adb shell setprop debug.aiverse.args "--map 0 --spectate --gfx vulkan"
+    //   adb shell setprop debug.aiverse.env0 "AIVERSE_PERF_LOG=5"   (env0..env15, one AIVERSE_NAME=value each)
+    std::vector<std::string> args{"aiverse"};
+    {
+        std::string a = systemProperty("debug.aiverse.args");
+        for (size_t i = 0; i < a.size();) {
+            size_t j = a.find(' ', i); if (j == std::string::npos) j = a.size();
+            if (j > i) args.push_back(a.substr(i, j - i));
+            i = j + 1;
+        }
+        for (int i = 0; i < 16; ++i) {
+            std::string kv = systemProperty(("debug.aiverse.env" + std::to_string(i)).c_str());
+            size_t eq = kv.find('=');
+            if (eq == std::string::npos || kv.compare(0, 8, "AIVERSE_") != 0) continue;
+            setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+            __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[adb] %s", kv.c_str());
+        }
+        if (args.size() > 1) __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[adb] args: %s", a.c_str());
+    }
+    std::vector<char*> argv;
+    for (auto& s : args) argv.push_back(s.data());
+    argv.push_back(nullptr);
+    aiverseMain(int(args.size()), argv.data());
     app->activity->vm->DetachCurrentThread();
     // NativeActivity may call android_main again in the same process when the activity is
     // recreated, but the engine and the app keep function-level statics (platform state with
