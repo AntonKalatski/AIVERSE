@@ -17,13 +17,13 @@ test('default tree has 4 nested stacks and exactly one copy of each panel',()=>{
 });
 test('move reorders within a tab stack',()=>{
   const t=moveTab(defaultDockTree(),'animation','dock-center','scene');
-  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','facial_rig','shader_graph']);
+  assert.deepEqual(findDockStack(t,'dock-center').tabs,['animation','scene','game','materials','facial_rig','shader_graph','rules','build']);
   assert.equal(findDockStack(t,'dock-center').active,'animation');
 });
 test('dragging panels across stacks retains identity',()=>{
   const t=moveTab(defaultDockTree(),'inspector','dock-bottom');
   assert.equal(panelStack(t,'inspector'),'dock-bottom');
-  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow','human_appearance']);
+  assert.deepEqual(findDockStack(t,'dock-right').tabs,['lighting','runtime','nereid_flow','human_appearance','wind']);
 });
 test('closing and reopening recreates a panel only once',()=>{
   let t=closeTab(defaultDockTree(),'scene');
@@ -96,12 +96,12 @@ test('closing last right panels removes their obsolete split',()=>{
   assert.ok(findDockStack(t,'dock-right'));
   t=closeTab(closeTab(closeTab(t,'lighting'),'runtime'),'nereid_flow');
   assert.ok(findDockStack(t,'dock-right'));
-  t=closeTab(t,'human_appearance');
+  t=closeTab(closeTab(t,'human_appearance'),'wind');
   assert.equal(findDockStack(t,'dock-right'),null);
   assert.equal(dockStacks(t).length,3);
 });
 test('reopening Inspector restores pruned right-hand dock',()=>{
-  let t=closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'human_appearance');
+  let t=closeTab(closeTab(closeTab(closeTab(closeTab(closeTab(defaultDockTree(),'inspector'),'lighting'),'runtime'),'nereid_flow'),'human_appearance'),'wind');
   t=reopenTab(t,'inspector','dock-right');
   assert.equal(panelStack(t,'inspector'),'dock-right');
   assert.equal(dockStacks(t).length,4);

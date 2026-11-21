@@ -34,6 +34,10 @@ int main(){try {
     bad=g;bad.set("version",Json::number(int64_t(2)));rejects(bad);
     bad=makeDefault("material");
     for(int i=0;i<128;++i){Json n=Json::object();n.set("id",Json::string("extra"+std::to_string(i)));n.set("op",Json::string("input"));bad.find("nodes")->push(n);}rejects(bad);
+    {auto wide=bad;wide.set("nodeBudget",Json::number(int64_t(192)));
+     require(compile(wide).domain=="material","explicit material node budget ignored");
+     auto over=wide;over.set("nodeBudget",Json::number(int64_t(193)));rejects(over);
+     auto post=wide;post.set("domain",Json::string("postfx"));rejects(post);}
     bad=makeDefault("postfx");
     for(int i=0;i<9;++i){Json n=Json::object();n.set("id",Json::string("tex"+std::to_string(i)));n.set("op",Json::string("texture"));n.set("inputs",Json::parse("[\"input\"]"));bad.find("nodes")->push(n);}rejects(bad);
     auto layered=bad;layered.set("domain",Json::string("material"));

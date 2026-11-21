@@ -795,7 +795,10 @@ void main() {
                     float thickness = v_wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         vec3 background = texture(tex4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u_color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(v_wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u_color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
@@ -835,6 +838,13 @@ void main() {
 #if AIVERSE_NEREID_DIAGNOSTIC == 5
     if(u_params.x < -0.5){ vec3 diagnostic=vec3((opticsResolved?1.0:albedo.a)*shoreCoverage); o_color=vec4(diagnostic,1.0); return; }
 #endif
+    // NEREID optics replace the fogged surface colour with depth tint,
+    // refraction, reflection and foam: fog the final water colour once more
+    // so distant water fades into the haze like the terrain around it.
+    if (opticsResolved) {
+        float waterFog = 1.0 - exp(-dist * u_fog.w);
+        outc = mix(outc, rtsEncodeScene(rtsToneScene(rtsDecodeScene(u_fog.rgb), u_skyColor.w > 0.5)), waterFog);
+    }
     o_color = vec4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";
@@ -1122,7 +1132,10 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     float thickness = in.wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         float3 background = tex4.sample(s4, sampleUV).rgb;
-                        float transmission = exp(-thickness * u.color.r * clamp(albedo.a,0.0,1.0));
+                        // Light reaches the bed through the full column and returns along the
+                        // slanted view ray: the same optical path PRISMA uses under water.
+                        float opticalPath = thickness + length(in.wpos - opaquePos);
+                        float transmission = exp(-opticalPath * u.color.r * clamp(albedo.a,0.0,1.0));
 #if AIVERSE_NEREID_DIAGNOSTIC == 4
                         diagnosticTransmission=transmission;
 #endif
@@ -1163,6 +1176,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
 #if AIVERSE_NEREID_DIAGNOSTIC == 5
     if(u.params.x < -0.5){ float3 diagnostic=float3((opticsResolved?1.0:albedo.a)*shoreCoverage); return float4(diagnostic,1.0); }
 #endif
+    // NEREID optics replace the fogged surface colour: fog the result too.
+    if (opticsResolved) {
+        float waterFog = 1.0 - exp(-dist * f.fog.w);
+        outc = mix(outc, rtsEncodeScene(rtsToneScene(rtsDecodeScene(f.fog.rgb), f.skyColor.w > 0.5)), waterFog);
+    }
     return float4(outc, (opticsResolved?1.0:albedo.a)*shoreCoverage);
 }
 )";

@@ -36,6 +36,8 @@ test('subsurface controls default off and retain linear RGB',()=>{
  assert.equal(fields.find(f=>f.key==='sssStrength')?.value,.6);
  assert.equal(fields.find(f=>f.key==='sssColor')?.value,'1,0.4,0.2');
  assert.equal(materialFields({}).find(f=>f.key==='sssStrength')?.value,0);
+ assert.equal(materialFields({}).find(f=>f.key==='sssThickness')?.value,0);
+ assert.equal(materialFields({sssThickness:.06}).find(f=>f.key==='sssThickness')?.value,.06);
  assert.deepEqual(editablePatch({sssScale:.4,sssColor:'1,0.4,0.2'}),{sssScale:.4,sssColor:'1,0.4,0.2'});
 });
 
