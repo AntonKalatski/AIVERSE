@@ -16,9 +16,6 @@
 #include <string>
 #include <vector>
 
-namespace aiverse::platform {
-bool readContentFile(const std::string&,std::string&){return false;}
-}
 using namespace aiverse;
 using namespace aiverse::terraweave;
 
