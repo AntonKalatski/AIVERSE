@@ -4445,3 +4445,10 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_hdr_scene AND AIVERSE_PLATFORM STREQUA
         LABELS "Lighting;GPU" TIMEOUT 120 RUN_SERIAL TRUE
         PASS_REGULAR_EXPRESSION "Dynamic GI GPU 5:.*PASS" FAIL_REGULAR_EXPRESSION "FAIL")
 endif()
+
+# Website capture host for LENS (tools/site/lens_showcase.cpp). Off by default; no engine behaviour.
+option(AIVERSE_BUILD_SITE_SHOWCASE "Build tools/site capture hosts" OFF)
+if(AIVERSE_BUILD_SITE_SHOWCASE AND AIVERSE_DESKTOP)
+    add_executable(aiverse_lens_showcase tools/site/lens_showcase.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_lens_showcase PRIVATE aiverse_runtime)
+endif()
