@@ -38,14 +38,14 @@ const CATEGORIES: { id: Category; label: string; icon: typeof Sparkles; camera: 
   { id: 'clothing', label: 'Одежда', icon: Shirt, camera: 'full' },
   { id: 'pose', label: 'Поза и свет', icon: Lightbulb, camera: 'full' }];
 
-function LookSliders({ groups, h }: { groups: string[]; h: ReturnType<typeof useHumanLook> }) {
+function LookSliders({ groups, h, live }: { groups: string[]; h: ReturnType<typeof useHumanLook>; live: boolean }) {
   const fields = h.info?.schema.filter(f => groups.some(g => f.key.startsWith(g + '.'))) ?? [];
   if (!fields.length) return <p className="hc-empty">Выберите персонажа в «Пресетах» и загрузите его профиль.</p>;
   return <div className="hc-vsliders">{fields.map(f => {
     const value = h.draft.values[f.key] ?? f.initial; const changed = Math.abs(value - f.initial) > 1e-6;
     return <div key={f.key} className={'hc-vrow' + (changed ? ' hc-vrow--changed' : '')}>
       <HcSlider id={'hl-' + f.key.replace('.', '-')} label={f.label} min={f.min} max={f.max} step={(f.max - f.min) > 10 ? 1 : .001}
-        value={value} disabled={h.busy} onChange={v => h.edit({ ...h.draft, values: { ...h.draft.values, [f.key]: v } })}/>
+        value={value} disabled={h.busy} onChange={v => { const next = { ...h.draft, values: { ...h.draft.values, [f.key]: v } }; h.edit(next); if (live) h.live(next, h.face); }}/>
       <button type="button" className="hc-reset" title="Сбросить к исходному" aria-label={'Сбросить ' + f.label} disabled={!changed || h.busy}
         onClick={() => { const v = { ...h.draft.values }; delete v[f.key]; h.edit({ ...h.draft, values: v }); }}>↺</button>
     </div>;
@@ -149,13 +149,13 @@ export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapsh
             h.setFace(f); await h.apply(f, h.draft);
           }}/>;
       case 'skin': return <><HcHeader title="Кожа" hint="Тон, текстура и блеск кожи. Изменения применяются, когда вы отпускаете ползунок."/>
-        <HcCard title="Тон и поверхность"><LookSliders groups={['skin']} h={h}/></HcCard></>;
+        <HcCard title="Тон и поверхность"><LookSliders groups={['skin']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'eyes': return <><HcHeader title="Глаза" hint="Цвет радужки, склера и блеск. Камера приближена к лицу."/>
-        <HcCard title="Радужка и склера"><LookSliders groups={['eyes']} h={h}/></HcCard></>;
+        <HcCard title="Радужка и склера"><LookSliders groups={['eyes']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'hair': return <><HcHeader title="Волосы" hint="Цвет и финиш прядей, бровей и ресниц. Форму причёски задаёт модель волос."/>
-        <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h}/></HcCard></>;
+        <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
-        <HcCard title="Пропорции"><LookSliders groups={['body']} h={h}/></HcCard></>;
+        <HcCard title="Пропорции"><LookSliders groups={['body']} h={h} live={autoApply && bound}/></HcCard></>;
       case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}/>;
       case 'pose': return <><HcHeader title="Поза и свет" hint="Поза и мимика превью, студийный свет и роли материалов модели."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
         <details><summary>Роли материалов ({Object.keys(h.draft.materials).length})</summary><div className="hc-grid">

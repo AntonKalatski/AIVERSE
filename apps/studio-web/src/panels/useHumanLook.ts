@@ -51,6 +51,26 @@ export function useHumanLook(project: string) {
     const result = await invoke('studio.humanAppearanceApply', { guid, revision: current.preview.revision, look, face: nextFace });
     setInfo(result); setDraft(result.look); setStatus('Применено');
   });
+  // Live preview while a slider is dragged: never toggles busy (that would
+  // disable the slider mid-drag) and coalesces to the latest value while the
+  // native side is still applying the previous one.
+  const liveJob = useRef<{ busy: boolean; next: { look: HumanLook; face: HumanFaceShape | null } | null }>({ busy: false, next: null });
+  const live = useCallback((look: HumanLook, nextFace: HumanFaceShape | null) => {
+    const job = liveJob.current;
+    if (job.busy) { job.next = { look, face: nextFace }; return; }
+    job.busy = true;
+    void (async () => {
+      let item: { look: HumanLook; face: HumanFaceShape | null } | null = { look, face: nextFace };
+      while (item) {
+        try {
+          const current = await invoke('studio.humanAppearanceInfo', {});
+          setInfo(await invoke('studio.humanAppearanceApply', { guid, revision: current.preview.revision, look: item.look, face: item.face }));
+        } catch { /* the committed apply reports errors */ }
+        item = job.next; job.next = null;
+      }
+      job.busy = false;
+    })();
+  }, [guid]);
   const refresh = useCallback(async () => {
     const next = await invoke('studio.humanAppearanceInfo', {});
     setInfo(next); setFace(next.face);
@@ -76,6 +96,6 @@ export function useHumanLook(project: string) {
   }), [refresh]);
 
   return { info, setInfo, face, setFace, draft, setDraft, edit, guid, setGuid, saved, setSaved, busy, error, setError,
-    status, setStatus, undo, redo, undoLook, redoLook, run, loadAsset, apply, refresh };
+    status, setStatus, undo, redo, undoLook, redoLook, run, loadAsset, apply, live, refresh };
 }
 export type HumanLookState = ReturnType<typeof useHumanLook>;

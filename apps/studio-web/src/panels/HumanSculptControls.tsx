@@ -7,6 +7,7 @@ import { invoke, onNativeEvent } from '../bridge';
 import type { HumanFaceShape, HumanSculptState } from '../types';
 import { StudioButton } from '../ui';
 import { sculptZone } from './humanCreatorSchema';
+import { setSculptBrush } from './sculptBrushStore';
 import { HcCard, HcHeader, HcNote, HcSegment, HcSlider, HcSwitch } from './HumanCreatorUi';
 
 type Brush = Pick<HumanSculptState, 'armed' | 'radius' | 'strength' | 'mode' | 'symmetry'>;
@@ -27,6 +28,9 @@ export default function HumanSculptControls({ face, ready, onChanged, prepare }:
     if (p.hit && !p.error) onChanged();
   }), [onChanged]);
   useEffect(() => () => { void invoke('studio.humanSculpt', { enabled: false }).catch(() => {}); }, []);
+  // The Scene viewport paints drag strokes and the brush circle from this.
+  useEffect(() => setSculptBrush({ armed: brush.armed, radius: brush.radius }), [brush.armed, brush.radius]);
+  useEffect(() => () => setSculptBrush({ armed: false, radius: .12 }), []);
   const strokes = face?.landmarks ?? [];
   const hasFace = (face?.meshes.length ?? 0) > 0;
   return <>
@@ -34,7 +38,7 @@ export default function HumanSculptControls({ face, ready, onChanged, prepare }:
     {error && <HcNote tone="error">{error}</HcNote>}
     {!hasFace && <HcNote tone="warn">Сначала задайте форму в «Лицо → Смешивание» — меш лица выберется автоматически.</HcNote>}
 
-    <HcCard title="Кисть" hint={brush.armed ? 'Кликайте по лицу во вьюпорте' : 'Включите, чтобы клики по лицу лепили форму'}>
+    <HcCard title="Кисть" hint={brush.armed ? 'Кликайте или ведите кистью по лицу во вьюпорте' : 'Включите, чтобы клики по лицу лепили форму'}>
       <button type="button" className={'hc-brush' + (brush.armed ? ' hc-brush--on' : '')} disabled={!hasFace && !prepare}
         aria-pressed={brush.armed} onClick={() => void call({ enabled: !brush.armed })}>
         <MousePointerClick size={18}/><span>{brush.armed ? 'Кисть включена' : 'Включить кисть'}</span>

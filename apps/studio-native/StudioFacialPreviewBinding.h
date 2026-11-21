@@ -86,7 +86,7 @@ public:
         if(!face_ || face_->meshes.empty())
             throw std::runtime_error("Сначала выберите меши лица: «Лицо → Пропорции и импорт»");
         auto next=*face_;
-        if(next.landmarks.size()>=256)throw std::runtime_error("Sculpt limit: 256 strokes; bake the character to continue");
+        if(next.landmarks.size()>=1024)throw std::runtime_error("Предел скульпта: 1024 штриха — соберите персонажа, чтобы продолжить");
         next.landmarks.push_back(stroke);
         face_=vivid::HumanFaceShape::fromJson(next.toJson());
         gpuReady_=false;gpuError_.clear();++revision_;return describe();
