@@ -43,6 +43,7 @@ Not a rigid-body simulator: no suspension geometry, tyre temperature or Box3D au
 Build selection: `AIVERSE::lib_vehicle_controllers` (depends on `match-rules`, `configuration`, `aiverse_engine`);
 native OBJECT modules call `aiverse_native_use_libraries(target vehicle-controllers)`. See `skills/catalog.json`.
 
-FPS projects do not wire it by hand: rules `fps.vehicleTypes` + map vehicles with `"type"` run these controllers and
-seats on FPS actors (`modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
+Legacy hosts already wire it: `modules/rts` through rules `driving` (`skills/gameplay/aiverse-driving`) and `modules/fps`
+through rules `fps.vehicleTypes` + map vehicles with `"type"` (two hosts of one capability - debt G5 in
+`docs/no-genre-split-audit.md`; extend the shared system, never a third host). The FPS host runs these controllers and seats on its actors (`modules/fps/FpsVehicles.cpp`, docs/fps.md § Typed vehicles, test `typedVehicles` in
 `tests/fps/tests.cpp`).

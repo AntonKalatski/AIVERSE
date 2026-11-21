@@ -6,7 +6,7 @@ description: Reuse AIVERSE turn-strategy policies (square/hex grids with weighte
 # tactics-grid
 
 Use when a native/host owner runs tactical turns on a grid: move previews and paths, cover/flanking, shot previews,
-AP spending, initiative order, overwatch, simultaneous turns. Prefer the built-in RTS `turns` block for plain
+AP spending, initiative order, overwatch, simultaneous turns. Prefer the rules `turns` block (data-driven host) for plain
 alternating turns; use `turn-scheduler` (`strategy/Turns.h`) when you only need a fixed initiative order with
 nested LIFO reactions and host-applied effects. This package owns its own dynamic order (speed modifiers, delay).
 Not a navmesh, campaign layer, animation or UI.

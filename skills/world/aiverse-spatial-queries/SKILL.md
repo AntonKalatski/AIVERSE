@@ -1,6 +1,6 @@
 ---
-name: rts-spatial
-description: Use AIVERSE C++ spatial capabilities for existing game spatial queries, including native modules of external game projects.
+name: aiverse-spatial-queries
+description: Use AIVERSE C++ spatial queries (current API on the legacy modules/rts host) from any project or native module.
 ---
 
 # AIVERSE spatial

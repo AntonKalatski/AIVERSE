@@ -32,7 +32,7 @@ Read `libraries/include/aiverselib/strategy/Puzzles.h` and
   `python3 tests/libraries/strategy_native.py`. Test row edges, blocked pushes,
   true deadlocks versus budget exhaustion, undo/redo and solution replay.
 
-Sessions with move numbers, the puzzle bot and other puzzle families: `skills/genres/aiverse-puzzle-solvers`.
+Sessions with move numbers, the puzzle bot and other puzzle families: `skills/gameplay/aiverse-puzzle-solvers`.
 Generator/editor/hint presentation remain separate.
 
 Build selection: `AIVERSE::lib_grid_puzzles`; native OBJECT modules call

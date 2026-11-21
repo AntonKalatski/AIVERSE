@@ -6,7 +6,7 @@ description: Move AIVERSE mobs through a changing voxel world with the `voxel-na
 # voxel-nav
 
 API: `libraries/include/aiverselib/bots/voxelnav/VoxelNav.h`; reference `docs/voxel.md`. Behaviour of a mob
-(wander, hunt, flee) comes from `skills/genres/aiverse-survival-ecology` or `skills/ai/aiverse-behavior`.
+(wander, hunt, flee) comes from `skills/gameplay/aiverse-survival-ecology` or `skills/ai/aiverse-behavior`.
 
 1. Describe the body: `VoxelAgent{height, maxStep, maxDrop, swim, diagonal, maxNodes}`.
 2. `voxelPath(world, registry, agent, startFeet, goalFeet, goalRadius)`; keep `maxNodes` small and spread

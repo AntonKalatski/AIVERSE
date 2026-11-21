@@ -7,8 +7,8 @@ description: Reuse AIVERSE battle-royale policies (phased safe zone with seeded 
 
 Use when a match is won by the last team standing in a shrinking play space, or when a game needs any one of the
 pieces alone (a timed shrinking circle, random area bombardment, scheduled crate drops, a skydive insertion, a
-placement table with knockdowns). FPS projects get it from rules (`fps.royale`, docs/fps.md); the steps below are for
-native/host owners and for other modules.
+placement table with knockdowns). The legacy `modules/fps` host wires it from rules (`fps.royale`, docs/fps.md); the same block on
+other hosts is debt G4/G6 in `docs/no-genre-split-audit.md`. The steps below are for native/host owners.
 
 1. Read the catalog entry (`python3 tools/libraries/catalog.py search royale`) and the headers in
    `libraries/include/aiverselib/genre/royale/`: `SafeZone.h`, `Bombardment.h`, `SupplyDrops.h`, `Insertion.h`,

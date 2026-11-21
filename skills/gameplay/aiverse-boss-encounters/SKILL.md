@@ -5,11 +5,12 @@ description: Reuse AIVERSE boss-encounters policies (telegraphed circle/cone/lin
 
 # boss-encounters
 
-Use for top-down action / extraction / survivor games (Drone Fall style) that need telegraphed boss attacks,
-boss fights with phases, timed boss windows or crowds of hunting mobs. RTS games don't wire it by hand: rules
+Use whenever a project needs telegraphed boss attacks, boss fights with phases, timed boss windows or crowds of
+hunting mobs, whatever the camera or game type. Projects on the data-driven simulation host don't wire it by hand: rules
 `encounters` (docs/encounters.md, `templates/boss_arena`) runs these policies on real units (bosses, mobs,
 telegraphs as unit abilities, rules statuses, schedule, Lua events, decals); the steps below are for native/host
-owners and for planning the same mechanics as data.
+owners and for planning the same mechanics as data. The rules block currently runs only on the legacy
+`modules/rts` host (debt G3 in `docs/no-genre-split-audit.md`).
 
 1. Read `docs/genre-packages.md` (boss-encounters section) and the catalog entry; inspect
    `libraries/include/aiverselib/genre/{Telegraphs,StatusEffects,BossEncounter,BossSchedule,MobBehaviour}.h`.

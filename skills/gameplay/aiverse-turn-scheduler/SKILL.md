@@ -29,7 +29,7 @@ players and movement/attack budgets suffice.
   actions, no double AP charge on repeated commands, and a rejected opponent order.
 
 Tactical grids, cover, overwatch, dynamic initiative, WeGo and a turn planner bot are `tactics-grid` /
-`cards-turns-bots` (`skills/genres/aiverse-tactics-grid`); this scheduler and its records are unchanged.
+`cards-turns-bots` (`skills/gameplay/aiverse-tactics-grid`); this scheduler and its records are unchanged.
 Reaction UI remains a separate integration. Do not describe this scheduler as full XCOM/D&D rules.
 
 Build selection: `AIVERSE::lib_turn_scheduler`; native OBJECT modules call

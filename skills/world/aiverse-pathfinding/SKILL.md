@@ -1,6 +1,6 @@
 ---
-name: rts-navigation
-description: Use AIVERSE C++ navigation capabilities for existing pathfinding and flow fields, including native modules of external game projects.
+name: aiverse-pathfinding
+description: Use AIVERSE pathfinding (grid A*/HPA*, flow fields, navmesh, hybrid) from any project or native module.
 ---
 
 # AIVERSE navigation

@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT/'skills/catalog.json'
 # Category folders: skills/<category>/<skill>/SKILL.md (AGENTS.md 'Adding and updating repository skills').
-CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow','editor')
+CATEGORIES = ('core','gameplay','ai','world','ui','visuals','network','verification','meta','workflow','editor')
 
 def load_meta():
     spec = importlib.util.spec_from_file_location('meta_catalog', ROOT/'tools/meta/catalog.py')
@@ -61,8 +61,8 @@ ALIASES = {
  'aiverse-card-runtime':'cards deck карточ колод', 'aiverse-turn-scheduler':'turn пошаг ход',
  'aiverse-grid-puzzles':'sokoban deadlock сокобан',
  'aiverse-puzzle-solvers':'puzzle match3 match-3 cascade shuffle hint flood pipes connectivity sliding 15-puzzle klotski packing polyomino sudoku nonogram constraint csp solver головолом три-в-ряд пятнашки судоку японский кроссворд', 'aiverse-rhythm-timing':'rhythm ритм',
- 'aiverse-narrative-graphs':'story narrative dialogue relationship knowledge bark visual novel backlog consequence сюжет диалог отношения реплик визуальная новелла', 'rts-bots-rts':'rts bot ртс бот',
- 'aiverse-bots-fps':'fps bot фпс бот', 'aiverse-camera':'camera камер',
+ 'aiverse-narrative-graphs':'story narrative dialogue relationship knowledge bark visual novel backlog consequence сюжет диалог отношения реплик визуальная новелла', 'aiverse-bots-commander':'rts bot ртс бот',
+ 'aiverse-bots-combatant':'fps bot фпс бот', 'aiverse-camera':'camera камер',
  'aiverse-orchestrator':'skill catalog orchestration скилл каталог оркестратор',
  'aiverse-combat-actions':'hitbox hurtbox dodge parry stagger poise lockon хитбокс уклон парир стаггер захват',
  'aiverse-stealth-senses':'stealth sight hearing noise footprint scent suspicion alert disguise hiding стелс зрение слух шум след подозрен тревог маскиров укрыт',
@@ -72,7 +72,7 @@ ALIASES = {
  'aiverse-card-games':'card deck hand mulligan stack priority counter ccg deckbuilder board game hidden reveal карт колод рука муллиган стек приоритет контр настольн скрыт',
  'aiverse-tactics-grid':'tactics tactical turn hex grid cover flank overwatch initiative action points wego line of fire тактик пошагов гекс сетк укрыт фланг дозор инициатив очки действ',
  'aiverse-cards-turns-bots':'card bot turn planner tactics ai opponent evaluator lookahead бот карт планировщ ход тактик противник',
- 'aiverse-genre-bots':'bot opponent squad role formation objective melee shooter бот противник отряд роль формаци цел',
+ 'aiverse-action-bots':'bot opponent squad role formation objective melee shooter бот противник отряд роль формаци цел',
  'aiverse-vehicle-controllers':'vehicle car kart truck tank hover plane flight drive gear drift traction seat race lap checkpoint racing машин авто танк самолет гонк круг чекпоинт сиден дрифт',
  'aiverse-sports-rules':'sport football soccer hockey basketball ball goal pass shot tackle foul penalty formation спорт футбол хоккей мяч гол пас удар отбор фол пенальти расстановк',
  'aiverse-match-progression':'perk modifier xp experience level levelup offer reroll summon ally deck loadout pickup magnet перк модификатор опыт уровень прокачк призыв союзник колод лут магнит',
@@ -147,8 +147,8 @@ WORKFLOWS=[
  ('aiverse-controls','Client gamepad and region swipe controls in game.json','docs/gamepad.md'),
  ('aiverse-editor-extension','New editor windows, MCP window control, Hierarchy and inspector grouping','docs/editor-windows.md'),
  ('aiverse-modeling','In-engine model, rig and animation authoring through MCP and editor windows','docs/modeling.md'),
- ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
- ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
+ ('aiverse-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
+ ('aiverse-flow-economy-warfare','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
  ('aiverse-strata','STRATA virtual geometry CPU authoring, MCP analysis, native routing and GPU verification','docs/strata.md'),
  ('aiverse-texture-rhi','Native texture dimensions, virtual pages, mip streaming, backend sampling and GPU acceptance','docs/texture-rhi.md'),
@@ -203,8 +203,8 @@ WORKFLOW_ALIASES={
  'aiverse-controls':'gamepad controller joystick swipe region controls геймпад джойстик свайп управлен',
  'aiverse-editor-extension':'editor window imgui hierarchy inspector details редактор окно иерарх инспектор',
  'aiverse-modeling':'modeling mesh model rig weights animation lod моделирован меш модел риг анимац',
- 'rts-bunkerwars-skills':'bunker wars mushroom energy skills converter бункер скилл энерг конвертер',
- 'rts-flow-war':'total annihilation ta flow radar sonar jammer stealth submarine reclaim repair assist patrol nuke anti-nuke stockpile intercept wind tidal geothermal bomber self-destruct hpi радар сонар глушилк стелс подлодк разбор ремонт помощь патрул ядерк противоракет накоплен перехват ветер прилив геотерм бомбардировщ самоуничтож',
+ 'aiverse-bunkerwars-skills':'bunker wars mushroom energy skills converter бункер скилл энерг конвертер',
+ 'aiverse-flow-economy-warfare':'total annihilation ta flow radar sonar jammer stealth submarine reclaim repair assist patrol nuke anti-nuke stockpile intercept wind tidal geothermal bomber self-destruct hpi радар сонар глушилк стелс подлодк разбор ремонт помощь патрул ядерк противоракет накоплен перехват ветер прилив геотерм бомбардировщ самоуничтож',
  'aiverse-voxel-game':'minecraft voxel block sandbox survival craft mining майнкрафт воксел блок песочниц выживан крафт шахт',
  'aiverse-skill-authoring':'skill skills author add catalog audit скилл скиллы добав каталог аудит',
  'aiverse-publish-builds':'publish builds branch release editor zip публикац сборк редактор',

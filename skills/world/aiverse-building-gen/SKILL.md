@@ -5,9 +5,9 @@ description: Generate enterable AIVERSE buildings from axis-aligned boxes - floo
 
 # building-gen
 
-Use when a map needs many enterable houses without hand-placed walls (battle royale towns, raid sites, cover
-for top-down shooters). FPS maps get it from data (`buildings`, docs/fps.md § Generated buildings); other owners
-call the library directly.
+Use when a map needs many enterable houses without hand-placed walls (towns, raid sites, cover). The legacy
+`modules/fps` map format wires it from data (`buildings`, docs/fps.md § Generated buildings); other hosts call the library
+directly until the map block is shared (debt G2/G4 in `docs/no-genre-split-audit.md`).
 
 1. Read `libraries/include/aiverselib/systems/BuildingGen.h` (namespace `aiverse::lib::systems`).
 2. Definition: `BuildingDef` or `readBuildingDef(json, "path")` - `width` / `depth` (6..200 m), `floors` 1..10,

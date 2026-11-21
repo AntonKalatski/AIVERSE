@@ -1,11 +1,12 @@
 ---
 name: aiverse-city-planner
-description: Generate an AIVERSE city map for top-down games with the map generator preset `city` / `metropolis` - street hierarchy, river and bridges, roundabouts, zoned blocks, parks, car parks, curb parking, props, parked cars, people and the hero.
+description: Generate an AIVERSE city map for any project with the map generator preset `city` / `metropolis` - street hierarchy, river and bridges, roundabouts, zoned blocks, parks, car parks, curb parking, props, parked cars, people and the hero.
 ---
 
 # City planner (generator preset `city`)
 
-Use when a top-down / GTA-like project needs a whole city laid out procedurally. Hand-made spline roads are
+Use when a project needs a whole city laid out procedurally. The generator writes the flat grid map format of the
+legacy `modules/rts` host (`modules/rts/gen`); other map formats are debt G2/G3 in `docs/no-genre-split-audit.md`. Hand-made spline roads are
 `skills/world/aiverse-roads`; spline water `skills/world/aiverse-water`; city systems on top (commerce, careers,
 arsenal) `skills/gameplay/aiverse-city-economy`; traffic and heroes `skills/gameplay/aiverse-special-modes`.
 

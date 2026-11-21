@@ -15,8 +15,8 @@ Use when the request is a block-building / mining / survival game. Packages and 
 | Inventory, drops, crafting, hotbar | `skills/gameplay/aiverse-inventory`, `skills/gameplay/aiverse-construction` |
 | Player and mob movement | `voxelMoveBox` + `skills/gameplay/aiverse-character-locomotion` |
 | Block updates (fluids, sand, growth) | `skills/world/aiverse-voxel-ticks` |
-| Mobs: spawn by light, path, behaviour | `skills/ai/aiverse-voxel-nav`, `skills/genres/aiverse-survival-ecology` |
-| Hunger, temperature, day and night | `skills/genres/aiverse-survival-ecology` |
+| Mobs: spawn by light, path, behaviour | `skills/ai/aiverse-voxel-nav`, `skills/gameplay/aiverse-survival-ecology` |
+| Hunger, temperature, day and night | `skills/gameplay/aiverse-survival-ecology` |
 | Server to clients | `skills/network/aiverse-voxel-replication` |
 | Client meshes | `skills/visuals/aiverse-voxel-mesh` |
 | Saves | voxel-world record 120, voxel-ticks record 121, plus the libraries' own records |

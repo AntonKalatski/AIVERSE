@@ -1,6 +1,6 @@
 ---
-name: rts-generation
-description: Use AIVERSE C++ generation capabilities for existing deterministic map generator, including native modules of external game projects.
+name: aiverse-map-generation
+description: Use the AIVERSE deterministic map generator (presets, seeds, fair starts) from any project or native module.
 ---
 
 # AIVERSE generation

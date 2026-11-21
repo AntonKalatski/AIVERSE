@@ -25,9 +25,9 @@ repository skills" and §9 "Where library code goes".
 
 ## 2. The library
 
-1. Folder by what the code is (AGENTS.md §9): a genre package gets its own `libraries/include/aiverselib/genre/<name>/`
-   (policy headers, `Data.h` JSON reader, `Persistence.h` records, optional umbrella header); cross-genre blocks go to
-   `systems/`, infrastructure to `runtime/`, networking to `net/`, bots to `bots/`. Never a new flat file in `genre/`,
+1. Folder by what the code is (AGENTS.md §9): a mechanics package gets its own `libraries/include/aiverselib/genre/<name>/`
+   (legacy folder name; policy headers, `Data.h` JSON reader, `Persistence.h` records, optional umbrella header); small
+   building blocks go to `systems/`, infrastructure to `runtime/`, networking to `net/`, bots to `bots/`. Never a new flat file in `genre/`,
    never an aggregate header that includes other packages.
 2. Header-only, C++20, namespace after the folder (`aiverse::lib::genre`, ...). Packages share namespaces: prefix
    generic names (`SafeZoneState`, not `ZoneState`; `RoyaleLobbyDef`, not `LobbyDef`) - check with the "together"
@@ -58,14 +58,14 @@ repository skills" and §9 "Where library code goes".
    it needs, `-Wall -Wextra -Werror -pedantic`).
 4. Pitfall: never `for(auto e:*step(...))` - in C++20 the temporary optional dies before the loop body; store the
    result first (tests use a `val(optional)` helper).
-5. Integration into a module (FPS, RTS): a test in that module's suite, a headless match on every affected template
+5. Integration into a legacy host (`modules/rts`, `modules/fps`) is an adapter over the shared code, never a second copy: a test in that module's suite, a headless match on every affected template
    with `--verify-restore-at`, and proof that templates without the new block keep their checksums.
 
 ## 4. The skill file
 
 1. `skills/<category>/<id>/SKILL.md` (categories: `CATEGORIES` in `tools/skills/catalog.py`); frontmatter
    `name` = folder; English only (Russian only in quoted UI strings).
-2. Content: when to use (genres, not game names), headers and the umbrella include, data first (the example file),
+2. Content: when to use (capabilities and the data that enables them - never genres, legacy modules or game names), headers and the umbrella include, data first (the example file),
    tick order for the owner, authority (what the owner reports and applies), determinism rules, persistence and
    hashing, checks (test name, tools), what is not implied, and the build selection line
    (`AIVERSE::lib_<id>`, `aiverse_native_use_libraries(target <id>)`). Only real paths in backticks.

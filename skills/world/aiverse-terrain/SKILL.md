@@ -6,7 +6,7 @@ description: Change AIVERSE terrain of a map - cliff levels, heightfield simulat
 # Terrain: levels, heightfield, detail, materials
 
 Use when a task sculpts or paints relief, switches a game to `model: "heightfield"`, adds a detail surface or
-imports a heightmap. Map generation from presets is `skills/world/rts-generation`; whole-map building is
+imports a heightmap. Map generation from presets is `skills/world/aiverse-map-generation`; whole-map building is
 `skills/world/aiverse-map-build`; spline water is `skills/world/aiverse-water`.
 
 Authority: `docs/terrain.md` (contract and branches), `docs/game-format.md` (keys), `docs/terrain-textures.md`.

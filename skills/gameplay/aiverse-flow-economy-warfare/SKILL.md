@@ -1,12 +1,13 @@
 ---
-name: rts-flow-war
-description: Build Total Annihilation-style flow-economy wars in AIVERSE RTS rules - radar, sonar, jammers, stealth and underwater units, radar targeting, repair / reclaim / assist / patrol builders, self-destruct, stockpiled weapons and interceptors, wind / tidal / geothermal income, bomber attack runs and air repair pads, and importing TA data.
+name: aiverse-flow-economy-warfare
+description: Add AIVERSE flow-economy warfare systems to any project's rules - radar, sonar, jammers, stealth and underwater units, radar targeting, repair / reclaim / assist / patrol builders, self-destruct, stockpiled weapons and interceptors, wind / tidal / geothermal income, bomber attack runs and air repair pads, and importing TA data.
 ---
 
 # Flow-economy wars (Total Annihilation style)
 
 Use when a game needs radar contacts, reclaim, nukes and anti-nukes, wind income or aircraft passes on top of the
-flow economy (`flow` resources, `costModel: "progressive"`). Data only: no game code in the engine.
+flow economy (`flow` resources, `costModel: "progressive"`). Data only: no game code in the engine. Current host: legacy
+`modules/rts` (debt G3 in `docs/no-genre-split-audit.md`).
 
 Authority: `docs/game-format.md` § Radar, sonar and jammers and § Field operations; engine code
 `modules/rts/RtsSensors.cpp`, `modules/rts/RtsFieldOps.cpp`; sample `templates/metaltide`.

@@ -11,7 +11,7 @@ Format: `docs/game-format.md` "Strategic map (Total War campaign, Company of Her
 2. Load and inspect: `strategic_load` -> `strategic_state`.
 3. Orders: `strategic_order` for each manual check (move, attack, recruit); advance turns and re-read the state.
 4. Bots: `strategic_bots` - which factions are bot-controlled and how; play several turns bot-only and confirm factions expand and fight.
-5. Battles: `strategic_battle_map` shows which RTS map and armies a battle produces; play it with `match_run` and confirm the result returns to the strategic state.
+5. Battles: `strategic_battle_map` shows which battle map and armies a battle produces; play it with `match_run` and confirm the result returns to the strategic state.
 6. Saves: `strategic_save` mid-campaign, reload, continue - same state.
 7. Mission-style story campaigns without a strategic map are `skills/workflow/aiverse-campaign`.
 

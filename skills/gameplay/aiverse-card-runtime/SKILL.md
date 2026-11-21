@@ -31,7 +31,7 @@ targets are not implemented.
   while the stack is nonempty. Production networking requires packet inspection.
 
 For data-defined cards, targets, rule variants, fizzling, reveals and bots use `card-games`
-(`skills/genres/aiverse-card-games`), which reuses these zones; this runtime and its records are unchanged.
+(`skills/gameplay/aiverse-card-games`), which reuses these zones; this runtime and its records are unchanged.
 
 Deck building, elimination/winner rules, UI, custom effects and actual transport
 remain game integration work. Use the existing meta collection/wallet owner.

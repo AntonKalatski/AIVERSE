@@ -1,13 +1,13 @@
 ---
-name: aiverse-genre-bots
-description: Reuse AIVERSE genre bot policies (melee spacing/attack timing/dodge-parry/lock-on, shooter aim/lead/burst/reload/overheat/cover, squad roles with formations, objective choice) when native C++ action, shooter or team games need deterministic computer opponents.
+name: aiverse-action-bots
+description: Reuse AIVERSE action bot policies (melee spacing/attack timing/dodge-parry/lock-on, ranged aim/lead/burst/reload/overheat/cover, squad roles with formations, objective choice) whenever a project needs deterministic computer opponents for melee, ranged or team play.
 ---
 
-# genre-bots
+# Action bots (package `genre-bots`, legacy id)
 
-Use when a native/host game needs bot opponents for custom melee or shooter mechanics, squad/team roles or
-objective selection. RTS economy/tactics stay with `rts-bots-rts` (RtsAI); the built-in FPS module bot stays with
-`aiverse-bots-fps`. These policies are genre-independent and compose `combat-actions` and `weapon-policies`.
+Use when a project needs bot opponents for melee or ranged mechanics, squad/team roles or objective selection.
+Whole-side economy/army decisions are `aiverse-bots-commander`; the command-driven single-agent bot is
+`aiverse-bots-combatant`; all three may run in the same project. These policies are genre-independent and compose `combat-actions` and `weapon-policies`.
 
 1. Read `docs/genre-packages.md` (genre-bots section) and the catalog entry; inspect
    `libraries/include/aiverselib/bots/{MeleeBot,ShooterBot,SquadRoles,ObjectivePolicy}.h` for exact behavior.

@@ -5,12 +5,12 @@ description: Answer "what is missing to make game X on AIVERSE", "can the engine
 
 # Capability audit: what exists, what is missing
 
-Use before any feasibility estimate, gap list, genre plan or claim such as "the engine cannot do X" or
+Use before any feasibility estimate, gap list, plan for a game or claim such as "the engine cannot do X" or
 "X is limited to N". The engine changes daily; dated notes and memory are wrong more often than not.
 
 ## Sources of truth, in this order
 
-1. `docs/genre-implementation.json` - status of every cross-genre area (`planned` / partial / done) with
+1. `docs/genre-implementation.json` - status of every capability area (legacy file name) (`planned` / partial / done) with
    `scope`, `acceptance` and `remaining`. Quote area ids (W1, W2, S2...) in the answer.
 2. Skill catalog: `python3 tools/skills/catalog.py search <words>` (English and Russian keywords), then read
    the matching `skills/<category>/<id>/SKILL.md`. Library packages: `python3 tools/libraries/catalog.py search
@@ -25,14 +25,14 @@ Use before any feasibility estimate, gap list, genre plan or claim such as "the 
 
 | Area | Where | Typical wrong assumption |
 |---|---|---|
-| Genres / modules | `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `docs/topdown.md` | "AIVERSE is only an RTS engine" |
+| Simulation hosts (legacy modules) | `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `modules/voxel`, `docs/topdown.md`, `docs/no-genre-split-audit.md` | "AIVERSE is only an RTS engine"; "feature X is for genre Y" - every capability must work in any project; a feature hosted by one legacy module is extraction debt (G1-G9), never a genre limit |
 | Large worlds | `docs/large-worlds.md`, `engine/world`, `examples/world/streamed`, `templates/fps_survival` | "maps are capped at 2048x2048" - streamed chunk worlds exist (static content; see W1/W2 for mutable) |
 | Networking | `docs/battle-net.md` (lockstep + rollback relay, `engine/net/server`), `docs/fps.md` (authoritative server: prediction/reconciliation, snapshots, interest filtering, hitscan rewind, `engine/net/authority`), `docs/city-server.md` (persistent authoritative world, clients run no sim, `engine/net/city`) | "networking is lockstep only" |
 | Physics | `docs/physics.md` (optional Box3D, `engine/physics`), `skills/gameplay/aiverse-physics` | "no rigid bodies" |
 | Grid fields (fire, water, gas) | `docs/fields.md` | "no cellular simulation" (fields are 2D map layers) |
 | Character movement | `skills/gameplay/aiverse-character-locomotion` (ladders, swim, climb, mantle), `docs/surface-locomotion.md` | "only RTS unit movement" |
 | Inventory, crafting, building | `skills/gameplay/aiverse-inventory`, `skills/gameplay/aiverse-construction`, `skills/gameplay/aiverse-loot-tables` | "items are RTS hero slots only" |
-| Survival, ecology, colony | `skills/genres/aiverse-survival-ecology`, `skills/genres/aiverse-settlement-production` | |
+| Survival, ecology, colony | `skills/gameplay/aiverse-survival-ecology`, `skills/gameplay/aiverse-settlement-production` | |
 | Bots and navigation | `docs/bots.md`, `skills/world/aiverse-navmesh` (layered AABB navmesh, rebuilt on change, not streamed) | "only 2D A*/HPA*" |
 | Geometry, LOD, models | `docs/geometry.md`, `docs/autolod.md`, `docs/models.md` (includes MagicaVoxel `.vox` models) | |
 | Saves | `skills/core/aiverse-save-migrations`, `docs/native-modules.md` | "no state serialization" |

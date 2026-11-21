@@ -1,11 +1,13 @@
 ---
 name: aiverse-city-economy
-description: Add the AIVERSE city-game systems - commerce (premises, businesses, bank loans), careers (rank ladders with perks) and the top-down hero arsenal (weapons, ammo, pickups, money for kills) - from rules data, Lua tables and the citygen helpers.
+description: Add AIVERSE economy systems to any project - commerce (premises, businesses, bank loans), careers (rank ladders with perks) and a character arsenal (weapons, ammo, pickups, money for kills) - from rules data, Lua tables and the citygen helpers.
 ---
 
 # City economy: commerce, careers, arsenal
 
-Use for GTA-like top-down projects (`rules.topDown`). Hero control, raids and traffic are
+Use when a project needs premises and businesses, rank ladders or a per-character arsenal. The systems are enabled by
+their rules blocks, not by a game type; they act on directly controlled characters (rules `topDown`, a legacy block
+name for direct control, not a camera). Current host: legacy `modules/rts` only (debt G3 in `docs/no-genre-split-audit.md`). Hero control, raids and traffic are
 `skills/gameplay/aiverse-special-modes`; the city map itself is `skills/world/aiverse-city-planner`; a persistent
 multiplayer city is `docs/city-server.md`.
 

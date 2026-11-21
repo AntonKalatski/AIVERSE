@@ -1,9 +1,13 @@
 ---
-name: aiverse-genre-kits
-description: Reuse AIVERSE C++ reusable capability and acceptance recipes for sixteen genres when implementing genre-kits in an external native game project or host tool.
+name: aiverse-template-kits
+description: Template-level kits - map a template or wizard genre label to the capability packages and acceptance scenarios it showcases; the only place where a genre name is allowed.
 ---
 
-# genre-kits
+# Template kits (package `genre-kits`, legacy id)
+
+A genre exists only as a template / wizard label. Kits only choose capability packages and acceptance scenarios for a
+template; no engine, library or editor code may branch on the returned genre. The kit's `module` field (rts/fps/racing
+host) is debt G1/G8 in `docs/no-genre-split-audit.md`: do not add new values, and do not read it outside the template wizard.
 
 Read `docs/application-packages.md`, `libraries/include/aiverselib/app/Genre.h` and the matching catalog entry.
 
@@ -22,7 +26,7 @@ Build selection: `AIVERSE::lib_genre_kits`; native OBJECT modules call
 declared dependencies are selected. See `skills/catalog.json` for dependency and responsibility routing.
 
 Use `allGenres`, `parseGenre(id)` and `genreInFamily(id, family)` for routing.
-Tower Defense and lane battlers belong to the RTS family. The CLI emits
+Families are template groupings only (Tower Defense and lane battlers are grouped with classic RTS templates). The CLI emits
 `coverage: "recipe"`; it does not install a simulation or certify a playable game.
 Recipe package IDs name current catalog owners (card-games, puzzle-solvers,
 character-locomotion, vehicle-controllers), not archived board/motion prototypes.

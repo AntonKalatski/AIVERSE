@@ -502,7 +502,7 @@ Headers under `bots/`: `GenreCommon.h` (difficulty, perception record, target pi
 `ObjectivePolicy.h`, `SquadRoles.h`, `GenreBotPersistence.h`, umbrella `GenreBots.h`, settings adapters
 `GenreBotConfig.h`. Target `AIVERSE::lib_genre_bots` (depends on `combat-actions`, `weapon-policies`,
 `configuration`); native OBJECT modules call `aiverse_native_use_libraries(target genre-bots)`. Skill:
-`skills/ai/aiverse-genre-bots`. Namespace `aiverse::lib::bots`; the policies are independent of genre labels.
+`skills/ai/aiverse-action-bots`. Namespace `aiverse::lib::bots`; the policies are independent of genre labels.
 
 **Contract.** Each policy is a pure decision step: one call per bot (or squad) per strictly increasing tick
 (repeated/backwards ticks and invalid input return nullopt with state untouched). It reads an owner-supplied
@@ -1247,7 +1247,7 @@ states and per-tick reports; bind `vehicleDefinitionHash`, `raceCourseHash` and 
 
 Headers `genre/SportsRules.h` (rules), `genre/SportsFormation.h` (formations), `bots/SportsBot.h` (positioning bot),
 umbrella `genre/Sports.h`, `genre/SportsData.h`, `genre/SportsConfigured.h`, `genre/SportsPersistence.h`. Target
-`AIVERSE::lib_sports_rules` (depends on `configuration`, `aiverse_engine`). Skill: `skills/genres/aiverse-sports-rules`.
+`AIVERSE::lib_sports_rules` (depends on `configuration`, `aiverse_engine`). Skill: `skills/gameplay/aiverse-sports-rules`.
 
 **Contract.** `stepSports(rules, field, state, tick, dt, players, actions, rng)` once per strictly increasing tick. The
 owner moves the bodies and reports every `SportsPlayer{id, team, position, velocity, tackle/control/accuracy skills,
@@ -1313,7 +1313,7 @@ helpers `colonyAddColonist/Stockpile/Workstation`, `colonySchedule`), `genre/Col
 `powerLink`, `powerComponents`), `genre/ColonyData.h` (JSON), `genre/ColonyConfigured.h` (`colony` settings),
 `genre/ColonyPersistence.h`, umbrella `genre/Colony.h`; bot `bots/ColonyPlanner.h` + `bots/ColonyPlannerData.h`.
 Target `AIVERSE::lib_settlement_production` (tasks, reservations, graphs, configuration, `aiverse_engine`); native OBJECT
-modules call `aiverse_native_use_libraries(target settlement-production)`. Skill: `skills/genres/aiverse-settlement-production`.
+modules call `aiverse_native_use_libraries(target settlement-production)`. Skill: `skills/gameplay/aiverse-settlement-production`.
 
 **Authority split.** Authoritative, saved and hashed: colonists (needs, mood, band, activity, job, schedule, priorities,
 skills), stockpiles with their reservation books, workstations and bills, jobs (lib::Task + progress), alerts, id
@@ -1376,7 +1376,7 @@ Headers `genre/Survival.h` (body model, `survivalWeatherEffects`, `survivalMood`
 `genre/EcologyAnimals.h` (behavior), `genre/EcologyResources.h` (renewal), `genre/EcologyData.h` (JSON),
 `genre/SurvivalConfigured.h` (`survival` settings), `genre/SurvivalPersistence.h`, umbrella `genre/SurvivalEcology.h`.
 Target `AIVERSE::lib_survival_ecology` (stealth-senses for `PerceivedTarget`, configuration, `aiverse_engine`); native OBJECT
-modules call `aiverse_native_use_libraries(target survival-ecology)`. Skill: `skills/genres/aiverse-survival-ecology`.
+modules call `aiverse_native_use_libraries(target survival-ecology)`. Skill: `skills/gameplay/aiverse-survival-ecology`.
 
 **Body model (`stepSurvival`).** Per body and tick: wetness (water sets it to full; precipitation on exposed bodies times
 (1 - waterproof); drying by `dryPerTick` plus warmth above comfort); felt temperature = air, shelter pulls it toward
