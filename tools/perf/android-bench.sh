@@ -205,6 +205,8 @@ profile() {
   A shell am force-stop "$PKG"
   A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,tid -n > "$P/threads.txt" 2>&1
   A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso -n > "$P/dso.txt" 2>&1
+  A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,cpu -n > "$P/cpu.txt" 2>&1
+  for c in $(seq 0 7); do echo "cpu$c $(A shell cat /sys/devices/system/cpu/cpu$c/cpufreq/cpuinfo_max_freq 2>/dev/null | tr -d '\r')"; done > "$P/cpufreq.txt"
   A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso,symbol -n --percent-limit 0.2 > "$P/symbols.txt" 2>&1
   A shell simpleperf report -i /data/local/tmp/perf.data --sort comm,dso,vaddr_in_file -n --percent-limit 0.01 > "$P/vaddr.txt" 2>&1
   A shell simpleperf report -i /data/local/tmp/perf.data -g --children --sort comm,dso,symbol -n --percent-limit 1 > "$P/children.txt" 2>&1
