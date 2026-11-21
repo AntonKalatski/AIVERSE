@@ -17,7 +17,7 @@ PROJECT="$ROOT/templates/skirmish"; MAP=0; FRAMES=1200; CASES=features; BUILD=1
 OUT=/Volumes/KINGSTON/AIVERSE-builds/android-bench
 while [ $# -gt 0 ]; do case "$1" in
   --no-build) BUILD=0;; --fast) BUILD=2;; --project) PROJECT="$2"; shift;; --map) MAP="$2"; shift;; --frames) FRAMES="$2"; shift;;
-  --cases) CASES="$2"; shift;; --env) XENV="${XENV:-} $2"; shift;; --profile) PROFILE="$2"; shift;; --seconds) PSEC="$2"; shift;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
+  --cases) CASES="$2"; shift;; --gfx) GFXLIST="$2"; shift;; --env) XENV="${XENV:-} $2"; shift;; --profile) PROFILE="$2"; shift;; --seconds) PSEC="$2"; shift;; --out) OUT="$2"; shift;; *) echo "unknown arg $1"; exit 2;; esac; shift; done
 case "$PROJECT" in /*) ;; *) PROJECT="$ROOT/$PROJECT";; esac
 NAME="$(basename "$PROJECT")"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -159,6 +159,16 @@ cases_scale() {
   for g in gl vulkan; do run uncapped $g $U; done
   for g in gl vulkan; do run native_res $g $U AIVERSE_RENDER_SCALE=1; done
   for g in gl vulkan; do run scale_050 $g $U AIVERSE_RENDER_SCALE=0.5; done
+}
+# GPU bisect on the default (mobile) tiers: what is left of the frame, one feature at a time
+cases_gpu() {
+  local G="${GFXLIST:-gl}"
+  for c in "base" "scale_050 AIVERSE_RENDER_SCALE=0.5" "scale_033 AIVERSE_RENDER_SCALE=0.333" "shadows_off AIVERSE_SHADOWS=off" \
+           "postfx_off AIVERSE_POSTFX=off" "particles_off AIVERSE_PARTICLES=off" "lights_off AIVERSE_LIGHTS=off" \
+           "groundfx_low AIVERSE_GROUNDFX=low" "fields_low AIVERSE_FIELDS=low" "overlays_low AIVERSE_OVERLAYS=low" "hdr_off AIVERSE_HDR=off"; do
+    set -- $c; local n="$1"; shift
+    for g in ${G//,/ }; do run "$n" $g $U "$@"; done
+  done
 }
 cases_features() {
   cases_quick
