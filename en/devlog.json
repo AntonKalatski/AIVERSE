@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T11:19:53+00:00",
+ "generated": "2026-11-21T13:23:18+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -142,6 +142,43 @@
     {
      "title": "docs/strata.md",
      "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/strata.md"
+    }
+   ],
+   "author": "site"
+  },
+  {
+   "id": "2026-11-21-spectrafx-scenes",
+   "date": "2026-11-21",
+   "system": "spectrafx",
+   "title": "SpectraFX: campfires, a portal and fireflies in two scenes",
+   "summary": "Two scenes for the SpectraFX page: night in Sponza with campfires and a portal, and a sunset with clouds and volumetric fog. Five effects in the ordinary JSON format; particles light the scene.",
+   "body": [
+    "The effects use the ordinary SpectraFX format and live in tools/site/fx_scene/fx. Campfire: a flame body, upright flame tongues, embers with trails, smoke and a warm light. Portal: two counter-rotating spark rings, a glowing rim, an inward swirl and a cold light. Plus rising motes at the portal, fireflies (some with small lights) and low mist.",
+    "The particle light module adds point lights to Renderer3D: 9 in the frame, lighting the arches, curtains and floor. PRISMA adds HDR, bloom, colour grading and a vignette; the sunset also uses the physical sky with clouds and god rays and volumetric fog (PRISMA local volumes)."
+   ],
+   "status": "done",
+   "verified": "Frames captured with the tools/site/fx_showcase.cpp host (branch feature/site-strata-showcase) on Linux, OpenGL through Mesa llvmpipe, 1920×1080. 6 s of simulation in 1/60 steps, then the frame is frozen. About 1,900 live particles, 9 particle lights. Recipe and commands: tools/site/fx_scene/README.md.",
+   "limits": "CPU particle backend only, no Metal GPU particles; not captured on Metal. Sponza is the Khronos glTF sample, not a game scene. Found while capturing: PRISMA draws the physical sky over particles seen against the sky, so they vanish — the sunset camera looks down. Trails of particles that only orbit render as vertical streaks.",
+   "branch": "feature/site-strata-showcase",
+   "commit": "43476d685",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-spectrafx-scenes/sponza-night.jpg",
+     "caption": "Night in Sponza: two campfires, a portal, fireflies and fog"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-spectrafx-scenes/sunset-portal.jpg",
+     "caption": "Sunset: a portal and campfires under the physical sky with clouds and volumetric fog"
+    }
+   ],
+   "links": [
+    {
+     "title": "tools/site/fx_scene/README.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/feature/site-strata-showcase/tools/site/fx_scene/README.md"
+    },
+    {
+     "title": "docs/spectrafx.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/spectrafx.md"
     }
    ],
    "author": "site"

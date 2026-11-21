@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T11:19:53+00:00",
+ "generated": "2026-11-21T13:23:18+00:00",
  "lang": "ru",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -142,6 +142,43 @@
     {
      "title": "docs/strata.md",
      "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/strata.md"
+    }
+   ],
+   "author": "site"
+  },
+  {
+   "id": "2026-11-21-spectrafx-scenes",
+   "date": "2026-11-21",
+   "system": "spectrafx",
+   "title": "SpectraFX: костры, портал и светлячки в двух сценах",
+   "summary": "Две сцены для страницы SpectraFX: ночь в Sponza с кострами и порталом и закат с облаками и объёмным туманом. Пять эффектов в обычном JSON-формате, освещение сцены от частиц.",
+   "body": [
+    "Эффекты собраны в обычном формате SpectraFX и лежат в tools/site/fx_scene/fx. Костёр: тело пламени, вертикальные языки, искры со шлейфами, дым и тёплый свет. Портал: два кольца искр, крутящихся навстречу, светящийся обод, закрученный внутрь вихрь и холодный свет. Ещё есть поднимающиеся огоньки у портала, светлячки (часть с маленькими источниками света) и стелющийся туман.",
+    "Модуль light частиц добавляет точечные источники в Renderer3D: в кадре 9 источников, они освещают арки, занавеси и пол. PRISMA даёт HDR, bloom, цветокоррекцию и виньетку; на закате к ним добавлены физическое небо с облаками и лучами и объёмный туман (локальные объёмы PRISMA)."
+   ],
+   "status": "done",
+   "verified": "Кадры сняты хостом tools/site/fx_showcase.cpp (ветка feature/site-strata-showcase) на Linux, OpenGL через Mesa llvmpipe, 1920×1080. Симуляция 6 с шагом 1/60, затем кадр заморожен. Около 1 900 живых частиц, 9 источников света от частиц. Рецепт и команды — tools/site/fx_scene/README.md.",
+   "limits": "Только CPU-бэкенд частиц, без GPU-частиц Metal; не снято на Metal. Sponza — Khronos glTF Sample, не игровая сцена. Найдено при съёмке: PRISMA рисует физическое небо поверх частиц на фоне неба, и они пропадают, поэтому на закате камера смотрит вниз. Шлейфы у частиц, которые движутся только по орбите, рисуются вертикальными полосами.",
+   "branch": "feature/site-strata-showcase",
+   "commit": "43476d685",
+   "media": [
+    {
+     "src": "media/docs/devlog/media/2026-11-21-spectrafx-scenes/sponza-night.jpg",
+     "caption": "Ночь в Sponza: два костра, портал, светлячки и туман"
+    },
+    {
+     "src": "media/docs/devlog/media/2026-11-21-spectrafx-scenes/sunset-portal.jpg",
+     "caption": "Закат: портал и костры под физическим небом с облаками и объёмным туманом"
+    }
+   ],
+   "links": [
+    {
+     "title": "tools/site/fx_scene/README.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/feature/site-strata-showcase/tools/site/fx_scene/README.md"
+    },
+    {
+     "title": "docs/spectrafx.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/spectrafx.md"
     }
    ],
    "author": "site"
