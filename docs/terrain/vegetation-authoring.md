@@ -196,3 +196,32 @@ packing three whole-tree LOD surfaces reduces texel density: close roots still
 look softer than shared repeating source maps. Do not bake40large unique atlases
 by default or claim1K/4m from the image dimensions alone. Prefer a bounded shared
 object-space material projection for close bark once visually verified.
+
+
+### Shared close-detail bark projection
+
+Bundled `materials/vegetation/bark_projection` contains oak/pine/birch/spruce
+PBR graphs and two shared1024px sources per family. Albedo alpha stores aligned
+height, never opacity; graph color stays opaque. Object-space smooth three-axis
+projection preserves local detail under rigid instance yaw/scale, with world-space
+surface-gradient bump, projected roughness and AO, metallic0. Six texture samples,
+two image slots,73nodes; fits the ordinary eight-sample budget and16-slot RHI
+admission even with dynamic GI (source slots14/15). Source repeat is1.5m, from
+the bark catalog; terrain's1K/4m setting is separate. Height remains authored, not
+a measured scan. Quality/cost on mobile needs device validation.
+
+Copy the complete vegetation folder, merge the existing vegetation material
+library and the additional `bark_projection/materials.json` into the project's
+root materials library without overwriting IDs. New opt-in IDs are
+`oak_bark_projected`, `pine_bark_projected`, `birch_bark_projected`,
+`spruce_bark_projected`; they inherit ordinary PBR fallback from the original
+family. Assign only the native `TerraWeave Bark` slot, preserving leaf masks.
+Shared texture resources must remain shared rather than copied per instance.
+
+Rebuild data with `tools/vegetation/bark_projection_graph.py --out NEW_DIR
+--asset-root materials/vegetation/bark_projection` (numpy/Pillow). The native
+renderbench accepts optional top-level `materialQuality: low|medium|high` for
+exact material-tier checks; its existing `low` profile otherwise chooses Medium.
+Rigid roots were checked on actual Metal at High/Low, macro range and yaw45;
+animated deformation, mobile GPU cost and whole-forest art acceptance remain
+separate checks.

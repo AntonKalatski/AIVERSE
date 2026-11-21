@@ -180,3 +180,15 @@ CPU-тест: `aiverse_shader_graph_tests`. GPU: `tests/shader_graph/editor_smok
 По-прежнему нет произвольного shader source, compute, geometry/tessellation,
 импорта Unity/Unreal-графов, scene-depth/scene-normal buffers, отдельного sampler
 state или автоматического tangent-space преобразования нормали графа.
+
+
+## Material ambient occlusion output (2026-11-21)
+
+Material graphs may also provide `outputs.occlusion`. The red channel replaces
+the ordinary PBR texture AO and is clamped to0..1. It affects the same ambient/
+indirect lighting paths as existing AO, without multiplying the albedo or direct
+light a second time. Old graphs keep their ordinary texture AO. Postfx/particle
+domains still expose color only. Native Renderer3D GLSL/MSL inject this after
+standard material sampling. The legacy ImGui output selector has not been
+extended; agent-authored graph snapshots can use the output through existing
+material assignment APIs. Do not claim editor GUI parity from compiler support.

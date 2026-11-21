@@ -257,7 +257,16 @@ struct Bench {
             renderer.setModelCullingEnabled(config["look"].getBool("culling",optim.getBool("culling",true)));
             renderer.setModelInstancingEnabled(optim.getBool("instancing",true));
             renderer.setShadowQuality(options.profile=="low"?ShadowQuality::Low:ShadowQuality::High);
-            renderer.setMaterialQuality(options.profile=="low"?MaterialQuality::Medium:MaterialQuality::High);
+            auto materialQuality=options.profile=="low"?MaterialQuality::Medium:MaterialQuality::High;
+            if(config.has("materialQuality")) {
+                const auto quality=config.getStr("materialQuality");
+                if(quality=="low")materialQuality=MaterialQuality::Low;
+                else if(quality=="medium")materialQuality=MaterialQuality::Medium;
+                else if(quality=="high")materialQuality=MaterialQuality::High;
+                else throw std::runtime_error("materialQuality requires low|medium|high");
+            }
+            renderer.setMaterialQuality(materialQuality);
+            report.set("materialQuality",Json::string(materialQuality==MaterialQuality::Low?"low":materialQuality==MaterialQuality::Medium?"medium":"high"));
             renderer.setTraceEnabled(options.profile=="full");renderer.setModelReflectionsEnabled(options.profile=="full");
             renderer.lights.setQuality(luma.enabled||options.profile=="low"||(additions.lights.empty()&&!config.has("probeGI"))?LightQuality::Off:LightQuality::High);
             // "look": presentation-only overrides applied after the light-cache key (sun/sky colours,

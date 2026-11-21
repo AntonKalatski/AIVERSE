@@ -114,7 +114,7 @@ Program compile(const Json& g, const std::string& expected) {
     auto order=lib::topological(edges); if (!order) fail("cycle in node connections");
     if (!g["outputs"].isObject() || !g["outputs"]["color"].isString()) fail("color output is required");
     for (const auto& [key,v]:g["outputs"].members()) {
-        if (key!="color" && (p.domain!="material" || (key!="roughness" && key!="metallic" && key!="emission" && key!="vertexOffset" && key!="vertexNormal" && key!="normal"))) fail("unsupported output '"+key+"'");
+        if (key!="color" && (p.domain!="material" || (key!="roughness" && key!="metallic" && key!="occlusion" && key!="emission" && key!="vertexOffset" && key!="vertexNormal" && key!="normal"))) fail("unsupported output '"+key+"'");
         auto it=ids.find(v.str()); if (!v.isString() || it==ids.end()) fail("output '"+key+"': missing node");
         p.outputs[key]="sg_n"+std::to_string(it->second);
     }

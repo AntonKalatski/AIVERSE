@@ -601,10 +601,11 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+="#undef SG_SAMPLE\n";
                     replace(source,"// SG_COLOR",code);
                     std::string surface;
-                    for(auto name:{"roughness","metallic","emission","normal"}) {
+                    for(auto name:{"roughness","metallic","occlusion","emission","normal"}) {
                         auto it=graph->outputs.find(name);if(it==graph->outputs.end())continue;
                         const std::string key=name;
                         if(key=="normal") surface+="n="+it->second+".xyz/max(length("+it->second+".xyz),0.00001);\n";
+                        else if(key=="occlusion") surface+="ao=clamp("+it->second+".r,0.0,1.0);\n";
                         else surface+=(key=="roughness"?"rough":key=="emission"?"emis":"metallic")+std::string(" = ")+it->second+(key=="emission"?".rgb;\n":".r;\n");
                     }
                     replace(source,"// SG_SURFACE",surface);

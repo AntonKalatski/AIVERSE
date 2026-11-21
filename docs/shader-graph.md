@@ -171,3 +171,15 @@ system does not expose arbitrary N-domain bindless textures
 inside one graph. Alpha-mask R8 reduction is still excluded
 for graph-backed assets. The new node and shaders have NOT
 been native-compiled or GPU-tested yet.
+
+
+## Material ambient occlusion output (2026-11-21)
+
+Material graphs may also provide `outputs.occlusion`. The red channel replaces
+the ordinary PBR texture AO and is clamped to0..1. It affects the same ambient/
+indirect lighting paths as existing AO, without multiplying the albedo or direct
+light a second time. Old graphs keep their ordinary texture AO. Postfx/particle
+domains still expose color only. Native Renderer3D GLSL/MSL inject this after
+standard material sampling. The legacy ImGui output selector has not been
+extended; agent-authored graph snapshots can use the output through existing
+material assignment APIs. Do not claim editor GUI parity from compiler support.

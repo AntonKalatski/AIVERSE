@@ -19,6 +19,10 @@ int main(){try {
     }
     Json g=Json::parse(R"({"version":1,"domain":"material","nodes":[{"id":"multiply","op":"multiply","inputs":["c","c"]},{"id":"c","op":"constant","value":[0.2,0.4,0.8,1]}],"outputs":{"color":"multiply","roughness":"c"}})");
     auto p=compile(g);require(p.glsl.find("sg_n1 =")<p.glsl.find("sg_n0 ="),"topological order");
+    auto ao=g;ao.find("outputs")->set("occlusion",Json::string("c"));
+    require(compile(ao).outputs.count("occlusion")==1,"material occlusion output missing");
+    auto wrongAo=makeDefault("postfx");wrongAo.find("outputs")->set("occlusion",Json::string("input"));rejects(wrongAo);
+    wrongAo=makeDefault("particle");wrongAo.find("outputs")->set("occlusion",Json::string("input"));rejects(wrongAo);
     auto bad=g;bad.find("nodes")->at(0).find("inputs")->at(0)=Json::string("multiply");rejects(bad);
     bad=g;bad.find("nodes")->at(1).set("id",Json::string("multiply"));rejects(bad);
     bad=g;bad.find("nodes")->at(0).find("inputs")->at(1)=Json::string("absent");rejects(bad);
