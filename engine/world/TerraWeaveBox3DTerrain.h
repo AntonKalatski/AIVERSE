@@ -114,6 +114,22 @@ public:
         if(scene.valid(it->second.body))scene.destroy(it->second.body);
         bodies_.erase(it);
     }
+    // Keeps this publisher in step with a TerrainMutationCoordinator: every
+    // committed tile (re)creates its collider, a retired tile drops it. Uses
+    // addPatchListener, so GI and other observers stay attached. The scene
+    // and this publisher must outlive the coordinator's tile updates.
+    template<class Coordinator>
+    void attach(Coordinator& terrain,physics::Scene& scene,uint32_t userData=0){
+        terrain.addPatchListener({
+            [this,&scene,userData](const auto&,const TerrainPatch& patch){
+                try {if(!publish(scene,patch,userData))++rejected_;}
+                catch(const std::exception&){++errors_;}
+            },
+            [this,&scene](world::Cell cell){unload(scene,cell);}
+        });
+    }
+    uint64_t rejectedPublishes()const{return rejected_;}   // stale or failed bodies
+    uint64_t listenerErrors()const{return errors_;}
     void shutdown(physics::Scene& scene){
         for(const auto& [cell,entry]:bodies_){
             (void)cell;
@@ -122,6 +138,7 @@ public:
         bodies_.clear();
     }
 private:
+    uint64_t rejected_=0,errors_=0;
     struct Entry {
         physics::BodyHandle body=physics::kNoBody;
         uint64_t revision=0;

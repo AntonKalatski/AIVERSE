@@ -173,6 +173,7 @@ public:
             // This renderer revision has no adaptive CPU-MDI policy owner.
             // Camera LOD state remains scoped by the prepared-frame adapter.
             renderer_.beginScene(view.camera,width,height);
+            renderer_.setVisibilityMask(view.visibilityMask);
             submit(view,renderer_); // renderer must be initialized by the host
             renderer_.render(pass,post);
             // Particle and other forward overlays draw into the live pass
@@ -314,9 +315,13 @@ public:
             gfx::PassDesc pass;
             pass.colorTarget=target->color;
             pass.depthTarget=target->depth;
+            const auto shadowState=renderer_.shadowBoundsState();
+            if(request.shadowBounds)
+                renderer_.setShadowBounds(request.shadowMin,request.shadowMax);
             renderer_.beginScene(request.camera,request.width,request.height);
             submit(request,renderer_);
             renderer_.render(pass);
+            renderer_.restoreShadowBounds(shadowState);
             device_.endPass();
             if(!device_.gpuHealthy()) {
                 targets_.markInvalid(request.targetAssetKey);

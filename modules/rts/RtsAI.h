@@ -3,6 +3,7 @@
 // It adapts to the data: economy-and-army play when the game has workers/producers,
 // garrison "send" play (Mushroom Wars) when the player owns growing garrisons.
 #pragma once
+#include "RtsAIControllers.h"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -32,17 +33,6 @@ struct AIConfig {
 // False for an unknown name (isAIPreset in RtsData.h lists the same names).
 bool applyAIPreset(AIConfig& c, const std::string& name);
 struct AITerrain;
-class BwAI;
-// Copyable owner of a Bunker Wars controller (rules ai.controller "bw", RtsBwAI.h): copies of a bot diverge.
-struct BwAIHolder {
-    std::unique_ptr<BwAI> p;
-    BwAIHolder();
-    BwAIHolder(const BwAIHolder& o);
-    BwAIHolder& operator=(const BwAIHolder& o);
-    BwAIHolder(BwAIHolder&&) noexcept;
-    BwAIHolder& operator=(BwAIHolder&&) noexcept;
-    ~BwAIHolder();
-};
 
 class RtsAI {
 public:
@@ -142,7 +132,8 @@ private:
     int invadeBody_ = -1, invasions_ = 0;
     uint32_t invadeTick_ = 0;
     bool enemyOffBody_ = false;              // no enemy structure shares our body: invasion is the only way
-    BwAIHolder bw_;                          // agent-bw-ai: rules ai.controller "bw" plays the slot (save state v4)
+    AIControllerHolder ctl_;                 // rules ai.controller of a registered kind plays the slot (save state v4)
+    std::string ctlKind_;                    // its kind name (saved with the controller state)
 };
 
 } // namespace aiverse::game

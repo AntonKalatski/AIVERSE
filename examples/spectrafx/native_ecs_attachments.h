@@ -4,7 +4,7 @@
 // No GPU handle or renderer state is stored in the authoritative ECS World.
 #pragma once
 
-#include <aiverselib/genre/SpectraFX.h>
+#include <aiverselib/mechanics/SpectraFX.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,7 +62,7 @@ public:
 
     // After Device.beginFrame and BEFORE host starts the scene pass.
     bool prepare(const World& committedWorld,uint64_t committedTick,
-                 const render::RTSCamera& camera,const render::mat4& viewProj,
+                 const render::Camera& camera,const render::mat4& viewProj,
                  int width,int height,float dt,float alpha=1.f) {
         if(frameOpen_)return false;
         ++ownerFrameOrdinal_;

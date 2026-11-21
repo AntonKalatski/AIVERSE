@@ -450,6 +450,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             Instance in;in.model=models_.at(file).get();in.policy=parseGeometryPolicy(i["geometry"]);
             auto rot=vector(i["rotation"],{});constexpr float deg=.0174532925199433f;
             in.world=mat4::translate(vector(i["position"],{}))*mat4::rotateY(rot.y*deg)*mat4::rotateX(rot.x*deg)*mat4::rotateZ(rot.z*deg)*mat4::scale(vector(i["scale"],{1,1,1}));
+            if(i.has("layers"))in.layers=uint32_t(i["layers"].toDouble());
             if(i.has("proxy")){
                 const auto proxyFile=i["proxy"].getStr("model");
                 if(!models_.count(proxyFile)){
@@ -1266,7 +1267,7 @@ bool GeometryScene::tryStrataVulkanGpuDraw(
 }
 
 void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
-    ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;
+    ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;d.layers=i.layers;
     if(i.surfaceProxy&&surfacesEnabled_){
         const auto mn=i.min,mx=i.max;
         if(geometryErrorPixels(r.viewProj(),mn,mx,length(mx-mn),r.sceneWidth(),r.sceneHeight(),r.clipDepthZeroToOne())<=i.proxyPixels){

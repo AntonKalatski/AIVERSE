@@ -766,7 +766,7 @@ private:
     gfx::Device* previewDevice_=nullptr;
     fx::SpectraFxSceneHost previewHost_{};
     Viewport previewViewport_{};
-    render::RTSCamera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
+    render::Camera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
     SpectraFxGpuPreviewPolicy previewPolicy_{};
     bool previewInitialized_=false;
     bool previewInvalidated_=false;

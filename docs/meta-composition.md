@@ -75,8 +75,8 @@ Real-money purchases still use Store providers and server-validated receipts.
 ## Skill migration
 
 The 83 library recipes formerly under documentation now live in `skills/`. General
-recipes use `aiverse-*`; `rts-spatial`, `rts-navigation`, `rts-generation` and
-`rts-bots-rts` retain their genre prefix. Catalog package IDs and implementations are
+recipes use `aiverse-*`; `aiverse-spatial-queries`, `aiverse-pathfinding`, `aiverse-map-generation` and
+`aiverse-bots-commander` retain their genre prefix. Catalog package IDs and implementations are
 unchanged. Old foundation lock hashes are unaffected by a recipe-only move; meta 0.4.0
 adds the native Client and requires explicit pin review. Historical patch artifacts are
 unchanged archives, not active skill paths. Catalog validators check the current paths.

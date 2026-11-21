@@ -97,7 +97,7 @@ void PrismaScreenLighting::shutdown() {
     if(triangle_.valid())dev_->destroyBuffer(triangle_);
     dev_=nullptr;post_=nullptr;
 }
-RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
+Camera PrismaScreenLighting::jittered(Camera c,int w,int h) {
     // Never apply two independent temporal jitters: canonical Prisma
     // Temporal Resolve exclusively owns reconstruction when enabled.
     if (post_ && post_->canonicalTemporalRequested()) {

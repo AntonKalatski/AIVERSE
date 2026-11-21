@@ -3,15 +3,15 @@
 // (doors, stairs, floors) plus straight steering in the open; outside a building a goal inside it is
 // replaced by its door. Goals besides fighting: the battle-royale zone (inside the controller), wanted
 // loot nearby (weapons not owned, better gear, medkits / ammo), healing when hurt and out of combat.
-// Bot state is saved and hashed (FpsState bytes); meshes are derived from collision at setup.
+// Bot state is the BotMemory component (FpsState bytes, saved and hashed); meshes are derived from collision at setup.
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/bots/Fps.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <algorithm>
 namespace aiverse::fps {
 struct BotHost { lib::bots::FpsConfig config;std::vector<lib::bots::NavMesh> meshes; };
-void Module::setupBots(Simulation&,const Json&,State& s) {
-    botHost_.reset();s.botStates.clear();if(config_.bots.isNull())return;
+void Module::setupBots(Simulation& sim,const Json&) {
+    botHost_.reset();if(config_.bots.isNull())return;
     auto host=std::make_shared<BotHost>();host->config=lib::bots::fpsConfig(config_.bots);
     for(const auto& region:buildingRegions_){
         lib::bots::NavBuildConfig c;c.bounds=region.bounds;c.cellSize=Fixed::fromRatio(1,2);
@@ -19,24 +19,26 @@ void Module::setupBots(Simulation&,const Json&,State& s) {
         auto built=lib::bots::buildNavMesh(collision_,c);if(!built.mesh)throw JsonError("fps.bots: "+built.error);
         host->meshes.push_back(std::move(*built.mesh));
     }
-    botHost_=host;s.botStates.assign(s.actors.size(),lib::bots::saveFps({}));
+    botHost_=host;
+    for(const Entity e:sim.world().resourceConst<CharacterIndex>()->bySlot)sim.world().add<BotMemory>(e,BotMemory{lib::bots::saveFps({})});
 }
 namespace {
 bool insideXZ(const world::Bounds& b,Vec3 p){return p.x>=b.min.x&&p.x<=b.max.x&&p.z>=b.min.z&&p.z<=b.max.z&&p.y>=b.min.y&&p.y<=b.max.y;}
 }
-bool Module::thinkBot(Simulation& sim,Actor& a) {
+bool Module::thinkBot(Simulation& sim,CharacterRef a) {
     if(!botHost_)return false;
-    auto& s=state(sim);auto now=sim.tick();const auto& host=*botHost_;
-    lib::bots::FpsState bot;if(!lib::bots::loadFps(s.botStates[a.slot-1],bot))bot={};
+    auto& s=state(sim);World& w=sim.world();auto now=sim.tick();const auto& host=*botHost_;
+    lib::bots::FpsState bot;if(const auto* memory=w.tryGet<BotMemory>(a.entity);!memory||!lib::bots::loadFps(memory->bytes,bot))bot={};
     // Objective: wanted loot within 25 m (closest), else a point inside the next circle (spread by slot).
-    std::optional<Vec3> objective;const Loot* want=nullptr;Fixed best=625_fx;
-    for(const auto& l:s.loot){
+    std::optional<Vec3> objective;std::optional<Loot> want;Fixed best=625_fx;
+    const auto* loadout=gear(sim,a.slot);
+    for(const auto& l:loot(sim)){
         auto d=(l.pos-a.pos).lengthSq();if(d>best)continue;bool useful=false;
-        if(l.type>=200){if(!s.gear.empty()){lib::systems::GearPiece piece{l.type-200,l.ammo};auto it=config_.gear.find(piece.def);
-            if(it!=config_.gear.end()){auto cur=s.gear[a.slot-1].slots.find(it->second.slot);useful=lib::systems::betterGear(config_.gear,piece,cur==s.gear[a.slot-1].slots.end()?nullptr:&cur->second);}}}
+        if(l.type>=200){if(loadout){lib::systems::GearPiece piece{l.type-200,l.ammo};auto it=config_.gear.find(piece.def);
+            if(it!=config_.gear.end()){auto cur=loadout->slots.find(it->second.slot);useful=lib::systems::betterGear(config_.gear,piece,cur==loadout->slots.end()?nullptr:&cur->second);}}}
         else if(l.type>=100)useful=!(a.owned&(1u<<uint32_t(l.type-100)));
         else useful=l.type==1||l.type==9||(l.type==2&&a.armor<50);
-        if(useful){best=d;want=&l;}
+        if(useful){best=d;want=l;}
     }
     if(want)objective=want->pos;
     else if(s.royale.enabled){auto t=lib::genre::safeZoneTarget(config_.royale->zone,s.royale.zone);
@@ -96,7 +98,7 @@ bool Module::thinkBot(Simulation& sim,Actor& a) {
     else if(config_.systems.enabled&&a.health<60&&bot.decision!=lib::bots::FpsDecision::Engage&&a.activeAction==Action::None)
         for(auto item:a.bag)if(item.type==1){input.action=Action::Heal;input.forward=input.right=0;break;}
     input.sequence=0;a.input=input;a.lastInputTick=now;
-    s.botStates[a.slot-1]=lib::bots::saveFps(bot);
+    if(auto* memory=w.tryGet<BotMemory>(a.entity))memory->bytes=lib::bots::saveFps(bot);
     return true;
 }
 }

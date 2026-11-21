@@ -1,0 +1,23 @@
+.hub{display:flex;flex-direction:column;gap:12px;padding:22px 26px;max-width:900px;width:100%;margin:0 auto;color:var(--au-text);font-size:var(--au-font-sm);overflow:auto;max-height:100%}
+.hub__head{display:flex;align-items:center;gap:12px}
+.hub__head h2{margin:0;font-size:18px;flex:1}
+.hub__error{color:#ff9a8a;font-size:var(--au-font-xs)}
+.hub__cols{display:grid;grid-template-columns:1fr 1.3fr;gap:20px}
+.hub h3{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-size:var(--au-font-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--au-text-faint)}
+.hub__muted{color:var(--au-text-faint);font-size:var(--au-font-xs);margin:6px 0 0;display:flex;align-items:center;gap:6px}
+.hub__item{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:8px;width:100%;text-align:left;padding:7px 9px;border-radius:var(--au-radius-md);border:1px solid transparent;background:none;color:var(--au-text);cursor:pointer}
+.hub__item:hover{background:var(--au-hover);border-color:var(--au-line)}
+.hub__item span{grid-column:1;color:var(--au-text-faint);font-size:var(--au-font-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.hub__item small{grid-column:2;grid-row:1;color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.hub__templates{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:320px;overflow:auto}
+.hub__tmpl{display:flex;flex-direction:column;gap:2px;text-align:left;padding:8px 10px;border-radius:var(--au-radius-md);border:1px solid var(--au-line);background:var(--au-panel-raised);color:var(--au-text);cursor:pointer}
+.hub__tmpl span{color:var(--au-text-faint);font-size:var(--au-font-xs)}
+.hub__tmpl:hover{border-color:var(--au-line-strong)}
+.hub__tmpl.is-on{border-color:var(--au-accent);box-shadow:0 0 0 1px var(--au-accent) inset}
+.hub__create{display:flex;gap:8px;margin-top:10px}
+.hub__create .au-input{flex:1}
+.hub__spin{animation:hub-spin 1s linear infinite}
+@keyframes hub-spin{to{transform:rotate(360deg)}}
+@media (max-width:760px){.hub__cols{grid-template-columns:1fr}}
+.hub-modal{position:fixed;inset:0;z-index:880;display:flex;align-items:center;justify-content:center;background:rgba(5,8,12,.55)}
+.hub-modal>.hub{background:var(--au-panel);border:1px solid var(--au-line-strong);border-radius:14px;max-height:80vh;box-shadow:0 20px 60px rgba(0,0,0,.45)}

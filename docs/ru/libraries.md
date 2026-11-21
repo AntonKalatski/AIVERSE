@@ -157,7 +157,7 @@ Use [genre-mechanics-roadmap.md](../genre-mechanics-roadmap.md) for the proposed
 
 ## First cross-genre action/narrative batch
 
-See [genre-packages.md](../genre-packages.md) for locomotion policies, melee combos, recoil/projectiles,
+See [mechanics-packages.md](../mechanics-packages.md) for locomotion policies, melee combos, recoil/projectiles,
 round/capture rules and narrative graphs, with validated settings and native state codecs.
 
 ## Strategy runtime batch
@@ -167,7 +167,7 @@ Sokoban/undo/solver, exact big integers, affine offline progress and production 
 All six packages provide agent skills and share `AIVERSE::strategy`.
 `examples/native/strategy` and `tests/libraries/strategy_native.py` exercise real native
 commands, save/restore and a relocated source-export build.
-[genre-implementation.json](../genre-implementation.json) tracks the remaining audit scope.
+[capability-status.json](../capability-status.json) tracks the remaining audit scope.
 
 The subsequent strategy extension adds zone softlock proofs, rhythm timing, seeded runs
 and a bounded puzzle machine, each with its catalog skill and native restore scenario.

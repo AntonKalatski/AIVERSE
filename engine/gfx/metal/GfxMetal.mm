@@ -2028,13 +2028,13 @@ public:
         uniformPage_=uniformOffset_=0;
         gpuIcbInstanceUploadedBytes_ = 0;
         layer_.drawableSize = CGSizeMake(w, h);
-        // Late drawable acquisition (as MTKView/Unity/Unreal do): the drawable is
-        // taken at the first screen pass, after shadow/offscreen passes and the
-        // game's CPU work, so a busy swapchain does not stall the whole frame.
-        // AIVERSE_METAL_EARLY_DRAWABLE=1 restores acquisition here.
+        // Opt-in late drawable acquisition (AIVERSE_METAL_LATE_DRAWABLE=1): the
+        // drawable is taken at the first screen pass, after offscreen passes and
+        // the game's CPU work. Default stays here: on the owner's Mac it showed no
+        // gain and one run measured ~8 ms vs ~4 ms frames (2026-11-21, unresolved).
         drawable_ = nil;
         drawablePending_ = true;
-        if (earlyDrawable_) acquireDrawable();
+        if (!lateDrawable_) acquireDrawable();
         if (!depth_ || int(depth_.width) != w || int(depth_.height) != h) {
             MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
                 width:NSUInteger(w) height:NSUInteger(h) mipmapped:NO];
@@ -3859,8 +3859,8 @@ private:
         std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
     bool drawablePending_ = false;   // beginFrame ran, nextDrawable not yet called
-    const bool earlyDrawable_ = [] {
-        const char* v = std::getenv("AIVERSE_METAL_EARLY_DRAWABLE");
+    const bool lateDrawable_ = [] {
+        const char* v = std::getenv("AIVERSE_METAL_LATE_DRAWABLE");
         return v && std::strcmp(v, "1") == 0;
     }();
     id<CAMetalDrawable> acquireDrawable() {

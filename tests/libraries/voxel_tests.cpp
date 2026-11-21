@@ -326,7 +326,7 @@ void replication(){
     bytes.push_back(1);CHECK(!net::decodeVoxelMessage(bytes,r.defs.size()));CHECK(!net::applyVoxelMessage(client,r,{'V','M',9}).ok);
 }
 
-// Acceptance W2 (docs/genre-implementation.json): digging a tunnel and building a floor update light, paths,
+// Acceptance W2 (docs/capability-status.json): digging a tunnel and building a floor update light, paths,
 // water and the save.
 void acceptanceW2(){
     TickRig t;auto& w=t.w;auto& r=t.r;bots::VoxelAgent mob;

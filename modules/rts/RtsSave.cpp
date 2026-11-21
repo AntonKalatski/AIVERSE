@@ -3,6 +3,7 @@
 // pathing caches come from setup on the loading side. Format rule: append fields at the end of a type's list
 // and bump kSaveVersion in Simulation.cpp; a component type missing from kPools makes saving fail loudly.
 #include "RtsInternal.h"
+#include "../../engine/vehicles/Vehicles.h"
 #include <algorithm>
 
 namespace aiverse {
@@ -221,8 +222,10 @@ using kPools = PoolList<Transform, Owner, Unit, Orders, Mobile, Combat, Cargo, P
                         Stance, Retreating, Transport, Boarded, Veteran, RallyPath, Shield, Eater, Formation, BridgeLaid, Ammo, Merging, Trader, ItemBag,
                         Suppression, Turret, GrowState, Morale,
                         Weathering, TrapState, TeleportBack, Belt, Crafter, TurnBudget, Altitude, ScriptData, ScriptStats,
-                        Pulled, Transfer>;   // save version 7 appended Pulled, 8 Transfer (keep new pools at the end)
-constexpr size_t kPoolsBefore7 = kPools::count - 2, kPoolsBefore8 = kPools::count - 1;
+                        Pulled, Transfer, vehicles::VehicleDrive, vehicles::VehicleOccupant>;
+// save version 7 appended Pulled, 8 Transfer; the vehicle system (engine/vehicles) appended VehicleDrive and
+// VehicleOccupant (keep new pools at the end; saves written before them do not load)
+constexpr size_t kPoolsBefore7 = kPools::count - 4, kPoolsBefore8 = kPools::count - 3;
 } // namespace
 
 bool RtsModule::serializeState(Simulation& sim, Archive& a) {

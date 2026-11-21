@@ -142,6 +142,10 @@ public:
     int effect(const std::string& name);
     // Adds or replaces an effect (editor live edit). Particles of a replaced effect are removed.
     int define(const std::string& name, const EffectDef& def);
+    // Drops a defined effect: its particles, trails and instances are removed
+    // and its definition is freed. The id stays reserved (never reused), so
+    // stale ids simply fail; the name becomes free for a later define().
+    bool undefine(int id);
     // Drop cached effects so the next effect() reloads them from files (editor: files changed).
     void reloadAll();
     const EffectDef* def(int id) const;

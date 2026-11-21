@@ -1,14 +1,14 @@
 #pragma once
 // The race HUD of every client (any project with a map "race", docs/races.md): start countdown, place, lap, the
-// standings, "wrong way" and the result. Reads only a lib::genre::RaceView (presentation never writes the sim).
+// standings, "wrong way" and the result. Reads only a lib::mechanics::RaceView (presentation never writes the sim).
 #include "engine/i18n/Localization.h"
-#include "libraries/include/aiverselib/genre/RaceSession.h"
+#include "libraries/include/aiverselib/mechanics/RaceSession.h"
 #include "third_party/imgui/imgui.h"
 #include <algorithm>
 #include <cfloat>
 #include <string>
 namespace aiverse::ui {
-inline void drawRaceHud(const i18n::Localization& lang,const lib::genre::RaceView& v,uint32_t tick,uint32_t tickRate){
+inline void drawRaceHud(const i18n::Localization& lang,const lib::mechanics::RaceView& v,uint32_t tick,uint32_t tickRate){
     if(!v.enabled)return;
     auto* draw=ImGui::GetForegroundDrawList();auto size=ImGui::GetIO().DisplaySize;float w=size.x,h=size.y;
     auto big=[&](const std::string& text,float y,ImU32 color,float scale){

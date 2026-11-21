@@ -1,6 +1,6 @@
 ---
 name: aiverse-bot-matches
-description: Run real RTS and FPS bot matches and verify fresh restoration or automatic navigation changes in AIVERSE.
+description: Run real AIVERSE bot matches on any project (side commanders, combatants, action bots) and verify fresh restoration or automatic navigation changes.
 ---
 
 # Bot match verification

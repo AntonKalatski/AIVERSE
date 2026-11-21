@@ -1,9 +1,9 @@
 # Races
 
 A race is a capability of any project, not a genre: a map with a `"race"` block makes the map's cars race, in
-whichever module hosts the cars. One data format, one simulation (`libraries/include/aiverselib/genre/RaceSession.h`,
-data `genre/RaceSessionData.h`), one HUD (`engine/ui/RaceHud.h`), one chase camera (`engine/render/ChaseCamera.h`).
-Skill: `skills/genres/aiverse-racing`.
+whichever module hosts the cars. One data format, one simulation (`libraries/include/aiverselib/mechanics/RaceSession.h`,
+data `mechanics/RaceSessionData.h`), one HUD (`engine/ui/RaceHud.h`), one chase camera (`engine/render/ChaseCamera.h`).
+Skill: `skills/gameplay/aiverse-racing`.
 
 ## Data
 
@@ -40,20 +40,29 @@ settings section: `wrongWayTicks`, `respawnWrongWayTicks`, `stuckTicks`, `stuckS
 - State is hashed and saved by the host (record kind 128 for the session). A map without `"race"` keeps its
   checksums and save layout.
 
-## Hosts today (adapters, no rules of their own)
+## One adapter, two hosts
 
-| Host | Cars | Adapter |
+The race adapter is shared engine code: `vehicles::VehicleRace` (`engine/vehicles/VehicleRace.{h,cpp}`, part of the
+one vehicle system, docs/driving.md). It reads rules + map (`VehicleRace::read`, map units -> metres), seats racer
+`i + 1` in the `i`-th car the host lists (`start`), gives the session's pedals before the vehicles step (`pedals` ->
+`vehicles::stepVehicles`), steps the session after them (`after`: checkpoints, laps, standings, respawns through
+`respawnVehicle`, the result) and keeps the state in the `vehicles::RaceState` world resource (started, racers =
+car entities, grid, session, winner team). A host implements only `vehicles::RaceHost` (put a car on its grid slot,
+seat a player or a bot, the racer's own pedals, ask for a respawn, sync its pose after one, decide its match):
+
+| Host | Cars | Race seats |
 |---|---|---|
-| Metre maps with box colliders (`modules/fps`) | typed map vehicles (`fps.vehicleTypes`) | `modules/fps/FpsRace.cpp` |
-| Grid maps with heroes (`modules/rts`) | vehicles of rules `driving` | `Driving::loadRace` / `raceBefore` / `raceAfter` in `modules/rts/RtsDriving.cpp` |
+| Metre maps with box colliders (`modules/fps`) | typed map vehicles (`fps.vehicleTypes`), ascending vehicle id | `fps::RaceSeats` in `modules/fps/FpsVehicles.cpp`; starts at setup |
+| Grid maps with heroes (`modules/rts`) | vehicles of rules `driving`, entity order | `Driving::Seats` in `modules/rts/RtsDriving.cpp`; starts on the first tick |
 
-Shared between the hosts: the race (above), the controls -> pedals mapping (`genre/VehicleDrive.h`: axes for keyboard /
-gamepad, screen stick "tank" / "steer" for top-down and touch), the controller step and collision response
-(`genre/VehicleControllers.h`), the HUD, the chase camera and the spline roads (`engine/roads`, drawn by both
-clients). Still separate, recorded as debt in `docs/agent-handoffs/racing-2026-11-21.md`: getting in and out (the
-metre-map host uses the library seats, the grid-map host its own enter / exit), the collision worlds themselves (box
-colliders vs the map grid: host adapters by design) and the car's look (models with rolling / steering wheels are
-drawn by the grid-map view; the metre-map client still draws boxes).
+Racers cannot get out while the race runs (`VehicleRace::holds`); crash damage to racers follows rules
+`race.crashDamage` (`VehicleRace::crashHurts`). Shared between the hosts as well: the controls -> pedals mapping
+(`mechanics/VehicleDrive.h`: axes for keyboard / gamepad, screen stick "tank" / "steer" for top-down and touch), the
+vehicle step (`vehicles::stepVehicles`), the HUD, the chase camera and the spline roads (`engine/roads`, drawn by both
+clients). Still host-specific: the collision worlds themselves (box colliders vs the map grid: `VehicleHost::sweep`
+by design), getting in on foot (seat list requests on metre maps, the driver's door on grid maps: both run inside
+the vehicle system's components) and the car's look (models with rolling / steering wheels are drawn by the grid-map
+view; the metre-map client still draws boxes).
 
 Samples: `templates/racing` (Oval Sprint: a metre map with walls, `templates/_tools/racegen.py`) and
 `templates/road_race` (Road Circuit: a grid map, the circuit is a spline road — `roadNetwork` + road type `circuit` —
