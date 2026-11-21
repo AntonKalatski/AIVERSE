@@ -82,7 +82,7 @@ AIVERSE ofrece las mecánicas en sí y hace que un agente pueda trabajar en el j
 | **El multijugador implica desincronizaciones sin fin.** Basta un `float` para que una partida entre un iPhone y un Android se desvíe. | La simulación es idéntica bit a bit en todas partes: punto fijo en lugar de flotantes, generador aleatorio propio, sumas de verificación. La CI compara partidas en Linux x64/ARM64, Windows y macOS en cada push. Por la red solo viajan comandos; hay lockstep con rollback y un servidor con emparejamiento y veredictos basados en repeticiones. |
 | **Las GPU móviles son débiles, pero el juego debe verse bien.** | Cada función costosa —sombras, partículas, terreno, posprocesado— tiene niveles de calidad y se adapta a la GPU, desde viejas Mali y Adreno hasta Apple Silicon. |
 | **Publicar en todas las plataformas es un proyecto en sí mismo.** Firmas, iconos, SDK de tiendas y anuncios. | `aiversebuild` genera con un solo comando un .app, un proyecto de Xcode, Gradle/APK, web y .exe. Los iconos y pantallas de carga se generan solos. Plugins para App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin y más; cada build incluye solo los que el juego elige. |
-| **Cada juego nuevo empieza de cero.** | Más de 30 plantillas jugables, kits de género con listas de aceptación y 236 habilidades para agentes. Un juego nuevo parte de uno que ya funciona. |
+| **Cada juego nuevo empieza de cero.** | Más de 30 plantillas jugables, kits de género con listas de aceptación y 237 habilidades para agentes. Un juego nuevo parte de uno que ya funciona. |
 | **La meta y el LiveOps se reescriben en cada proyecto.** | `aiverse::meta`: tienda, monedas, misiones, pases, recompensas diarias, energía, clanes, torneos, cofres con garantía, todo configurado en JSON. |
 
 ---
@@ -106,9 +106,10 @@ y tiene una configuración validable.
 | **Roguelikes** | `run-graph`: partidas con semilla y presupuestos de encuentros; `loot-tables` con objeto raro garantizado |
 | **Idle, fábricas, colonias** | `big-numbers`, `offline-production` (progreso offline exacto), `production-networks`, `logistics`, `tasks` |
 | **Juegos de ritmo** | `rhythm-timing`: mapas de tempo y evaluación de aciertos independiente de los fotogramas |
+| **Carreras, vehículos** | `vehicle-controllers`: coches (par motor, marchas, tracción, derrape), tanques, aerodeslizadores, aviones, asientos, zonas de daño; sesión de carrera: parrilla, cuenta atrás, puntos de control en orden, vueltas, posiciones, sentido contrario, bots de carreras; bloque `race` del mapa en cualquier proyecto, HUD común y cámara de persecución, 2 plantillas |
 | **Cualquier juego móvil** | `aiverse::meta` y LiveOps, tutoriales, pantallas de UI, plugins de tiendas y anuncios |
 
-Carreras, deportes y vehículos siguen en la [hoja de ruta](docs/genre-mechanics-roadmap.md). Lista completa
+Los juegos de deportes, los barcos, las paradas en boxes y las penalizaciones siguen en la [hoja de ruta](docs/genre-mechanics-roadmap.md). Lista completa
 de bibliotecas: [`libraries/catalog.json`](libraries/catalog.json) y [paquetes de género](docs/genre-packages.md).
 
 ---
@@ -185,6 +186,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 | Economía y construcción | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D y experimentos | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (sprites 2D sobre terreno 3D) · **Planets** (planetas esféricos y órbitas) · **Wildfire** (campos: incendios y creep) |
 | FPS | **Crossfire Arena** (5 contra 5) · **Breach Protocol** (rondas tácticas) · **Last Survivor** (battle royale de 100 jugadores) · **Aim Lab** (galería de tiro) |
+| Carreras | **Oval Sprint** (carrera por vueltas contra tres bots) · **Road Circuit** (carrera por una carretera spline) |
 
 ---
 
@@ -222,7 +224,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 - Editor acoplable al estilo de Unity: escena, inspector, terreno, efectos, iluminación, UI, prueba de juego y simulador de dispositivos
 - `aiversemcp`: servidor MCP para agentes — configuración PHYSIS de mapas, validación y Undo/Redo
 - Asistente **Crear un juego**
-- 236 habilidades para agentes y kits de género con listas de aceptación
+- 237 habilidades para agentes y kits de género con listas de aceptación
 - Importadores de recursos de juegos clásicos desde tu propia copia
 
 </td>

@@ -82,7 +82,7 @@ A AIVERSE entrega as próprias mecânicas — e permite que um agente trabalhe n
 | **Multiplayer significa dessincronização sem fim.** Basta um `float` para uma partida entre um iPhone e um Android sair de sincronia. | A simulação é idêntica bit a bit em todo lugar: ponto fixo em vez de ponto flutuante, gerador aleatório próprio, checksums. A CI compara partidas em Linux x64/ARM64, Windows e macOS a cada push. Só comandos trafegam pela rede; há lockstep com rollback e um servidor com matchmaking e veredito por replay. |
 | **GPUs móveis são fracas, mas o jogo precisa ser bonito.** | Todo recurso caro — sombras, partículas, terreno, pós-processamento — tem níveis de qualidade e se adapta à GPU, das antigas Mali e Adreno ao Apple Silicon. |
 | **Lançar em todas as plataformas é um projeto à parte.** Assinaturas, ícones, SDKs de lojas e anúncios. | O `aiversebuild` gera .app, projeto Xcode, Gradle/APK, web e .exe com um único comando. Ícones e telas de abertura são gerados automaticamente. Plugins para App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin e outros — o build leva só os que o jogo escolher. |
-| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 236 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
+| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 237 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
 | **Meta e LiveOps são reescritos em cada projeto.** | `aiverse::meta`: loja, moedas, missões, passes, recompensas diárias, energia, clãs, torneios, baús com garantia — configurados em JSON. |
 
 ---
@@ -106,9 +106,10 @@ validável.
 | **Roguelikes** | `run-graph`: runs com seed e orçamento de encontros; `loot-tables` com item raro garantido |
 | **Idle, fábricas, colônias** | `big-numbers`, `offline-production` (progresso offline exato), `production-networks`, `logistics`, `tasks` |
 | **Jogos de ritmo** | `rhythm-timing`: mapas de andamento e avaliação de acertos independente da taxa de quadros |
+| **Corrida, veículos** | `vehicle-controllers`: carros (torque, marchas, tração, drift), tanques, hovercrafts, aviões, assentos, zonas de dano; sessão de corrida: grid de largada, contagem regressiva, checkpoints em ordem, voltas, posições, contramão, bots de corrida; bloco `race` do mapa em qualquer projeto, HUD comum e câmera de perseguição, 2 templates |
 | **Qualquer jogo mobile** | `aiverse::meta` e LiveOps, tutoriais, telas de UI, plugins de lojas e anúncios |
 
-Corrida, esportes e veículos ainda estão no [roadmap](docs/genre-mechanics-roadmap.md). Lista completa de
+Jogos de esporte, barcos, pit stops e penalidades ainda estão no [roadmap](docs/genre-mechanics-roadmap.md). Lista completa de
 bibliotecas: [`libraries/catalog.json`](libraries/catalog.json) e [pacotes de gênero](docs/genre-packages.md).
 
 ---
@@ -185,6 +186,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 | Economia e construção | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
 | 2D e experimentos | **Crystal Dunes** (tiles, Dune II) · **Green Hills** (sprites 2D sobre terreno 3D) · **Planets** (planetas esféricos e órbitas) · **Wildfire** (campos: incêndios e creep) |
 | FPS | **Crossfire Arena** (5 contra 5) · **Breach Protocol** (rodadas táticas) · **Last Survivor** (battle royale com 100 jogadores) · **Aim Lab** (estande de tiro) |
+| Corrida | **Oval Sprint** (corrida de voltas contra três bots) · **Road Circuit** (corrida em uma estrada spline) |
 
 ---
 
@@ -222,7 +224,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 - Editor com janelas encaixáveis no estilo Unity: cena, inspetor, terreno, efeitos, iluminação, UI, teste de jogo e simulador de dispositivos
 - `aiversemcp` — servidor MCP para agentes — configuração PHYSIS de mapas, validação e Undo/Redo
 - Assistente **Criar um jogo**
-- 236 skills para agentes e kits de gênero com checklists de aceitação
+- 237 skills para agentes e kits de gênero com checklists de aceitação
 - Importadores de assets de jogos clássicos a partir da sua própria cópia
 
 </td>
