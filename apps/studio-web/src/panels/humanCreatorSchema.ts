@@ -54,11 +54,14 @@ export function activeExpressionCount(info: HumanCreatorInfo | null): number {
   return Array.isArray(rest) ? rest.filter(v => Number(v) > 0).length : 0;
 }
 
-/** Face/head skin meshes (LOD0 preferred), never eyes, brows, lashes, hair or teeth. */
+/** Every head part that must deform together with the face (skin, eyes,
+ *  brows, lashes, hair cards, teeth): otherwise hair and brows float off a
+ *  reshaped skull. LOD0 preferred; body and clothing never included. */
 export function guessFaceMeshes(meshes: string[]): string[] {
-  const skin = meshes.filter(m => /face|head/i.test(m) && !/eye|brow|lash|hair|teeth|tongue|cards/i.test(m));
-  const lod0 = skin.filter(m => /lod0/i.test(m));
-  return (lod0.length ? lod0 : skin).slice(0, 4);
+  const head = meshes.filter(m => /face|head|eye|brow|lash|hair|teeth|tongue|cornea|beard|mustache|cartilage/i.test(m)
+    && !/body|shirt|top|btm|slack|pant|shoe|feet|watch|chain|torso|neck_?wear/i.test(m));
+  const lod0 = head.filter(m => /lod0/i.test(m) || !/lod\d/i.test(m));
+  return (lod0.length ? lod0 : head).slice(0, 16);
 }
 
 /** MetaHuman-style blend of two appearance presets: t=0 -> a, t=1 -> b.
@@ -80,11 +83,11 @@ export function blendLooks(a: HumanLook, b: HumanLook, t: number, schema: HumanL
 export interface FaceArchetype { id: string; label: string; values: Record<string, number> }
 export const FACE_ARCHETYPES: FaceArchetype[] = [
   { id: 'base', label: 'Базовое', values: {} },
-  { id: 'narrow', label: 'Узкое', values: { width: -.18, jawWidth: -.15, cheekWidth: -.12, noseWidth: -.12, chinLength: .08, height: .08 } },
-  { id: 'broad', label: 'Широкое', values: { width: .2, jawWidth: .22, cheekWidth: .15, noseWidth: .15, mouthWidth: .1, height: -.05 } },
-  { id: 'sharp', label: 'Острое', values: { cheekForward: .1, chinForward: .12, noseForward: .1, noseLength: .1, jawWidth: -.08, browHeight: .06 } },
-  { id: 'soft', label: 'Мягкое', values: { cheekForward: -.08, lipVolume: .07, noseLength: -.08, chinForward: -.08, eyeSpacing: .05, width: .06 } },
-  { id: 'long', label: 'Вытянутое', values: { height: .2, chinLength: .15, noseLength: .12, eyeHeight: .06, mouthHeight: -.06, width: -.08 } }];
+  { id: 'narrow', label: 'Узкое', values: { width: -0.108, jawWidth: -0.09, cheekWidth: -0.072, noseWidth: -0.072, chinLength: 0.048, height: 0.048 } },
+  { id: 'broad', label: 'Широкое', values: { width: 0.12, jawWidth: 0.132, cheekWidth: 0.09, noseWidth: 0.09, mouthWidth: 0.06, height: -0.03 } },
+  { id: 'sharp', label: 'Острое', values: { cheekForward: 0.06, chinForward: 0.072, noseForward: 0.06, noseLength: 0.06, jawWidth: -0.048, browHeight: 0.036 } },
+  { id: 'soft', label: 'Мягкое', values: { cheekForward: -0.048, lipVolume: 0.042, noseLength: -0.048, chinForward: -0.048, eyeSpacing: 0.03, width: 0.036 } },
+  { id: 'long', label: 'Вытянутое', values: { height: 0.12, chinLength: 0.09, noseLength: 0.072, eyeHeight: 0.036, mouthHeight: -0.036, width: -0.048 } }];
 export const FACE_REGIONS: Record<string, string[]> = {
   'Нос': ['noseWidth', 'noseLength', 'noseForward'],
   'Глаза': ['eyeSpacing', 'eyeHeight'],

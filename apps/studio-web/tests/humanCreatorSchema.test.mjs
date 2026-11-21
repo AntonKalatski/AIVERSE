@@ -25,10 +25,11 @@ test('wire values reject what native validation would reject',()=>{
 test('counts active expression channels',()=>{
  assert.equal(activeExpressionCount({document:{dna}}),1);assert.equal(activeExpressionCount(null),0);
 });
-test('face mesh guess picks the skin mesh, never eyes/brows/hair',async()=>{
+test('face mesh guess takes every head part, never body or clothing',async()=>{
  const {guessFaceMeshes}=await import('../src/panels/humanCreatorSchema.ts');
- assert.deepEqual(guessFaceMeshes(['Ada_FaceMesh_LOD0','Ada_FaceMesh_LOD1','Eyebrows_M_Thin_CardsMesh_Group0_LOD0','f_med_nrw_body_LOD0','Ada_eyeLeft_LOD0']),['Ada_FaceMesh_LOD0']);
- assert.deepEqual(guessFaceMeshes(['body','Hair_S_Coil_CardsMesh_Group0_LOD0']),[]);
+ assert.deepEqual(guessFaceMeshes(['Ada_FaceMesh_LOD0','Ada_FaceMesh_LOD1','Eyebrows_M_Thin_CardsMesh_Group0_LOD0','Hair_S_Coil_CardsMesh_Group0_LOD0','f_med_nrw_body_LOD0','f_med_nrw_top_shirt_nrm_Cinematic_LOD0','Ada_eyeLeft_LOD0']),
+  ['Ada_FaceMesh_LOD0','Eyebrows_M_Thin_CardsMesh_Group0_LOD0','Hair_S_Coil_CardsMesh_Group0_LOD0','Ada_eyeLeft_LOD0']);
+ assert.deepEqual(guessFaceMeshes(['body','shirt_top']),[]);
 });
 test('blend of two looks interpolates within schema limits',async()=>{
  const {blendLooks}=await import('../src/panels/humanCreatorSchema.ts');
@@ -44,7 +45,7 @@ test('face blend circle: archetype weights, regions and limits',async()=>{
  const at=blendWeights(archetypePoint(2));assert.equal(at[2],1);
  const schema=[{key:'width',min:-.3,max:.3},{key:'noseWidth',min:-.3,max:.3},{key:'jawWidth',min:-.3,max:.3}];
  const broad=blendFace(archetypePoint(2),{},schema);assert.equal(broad.width,FACE_ARCHETYPES[2].values.width);
- const noNose=blendFace(archetypePoint(2),{'Нос':0},schema);assert.equal(noNose.noseWidth,undefined);assert.equal(noNose.jawWidth,.22);
+ const noNose=blendFace(archetypePoint(2),{'Нос':0},schema);assert.equal(noNose.noseWidth,undefined);assert.equal(noNose.jawWidth,FACE_ARCHETYPES[2].values.jawWidth);
  const tight=blendFace(archetypePoint(2),{},[{key:'width',min:-.1,max:.1}]);assert.equal(tight.width,.1);
 });
 test('sculpt zones name strokes the way the artist reads the face',async()=>{
