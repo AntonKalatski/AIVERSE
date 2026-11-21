@@ -206,6 +206,52 @@
       1
     ]
   },
+  "terrain_river_sand": {
+    "description": "Bundled terrain PBR: river_sand. Dielectric; 4 m repeat.",
+    "texture": "materials/terrain/textures/river_sand_basecolor_repeat.png",
+    "normalMap": "materials/terrain/textures/river_sand_normal_repeat.png",
+    "metallicRoughnessMap": "materials/terrain/textures/river_sand_orm_repeat.png",
+    "occlusionMap": "materials/terrain/textures/river_sand_ao_repeat.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "roughness": 1,
+    "metallic": 0,
+    "normalScale": 1,
+    "occlusionStrength": 1,
+    "vertexColors": false,
+    "team": "none",
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "terrain_pebble_sand": {
+    "description": "Bundled terrain PBR: pebble_sand. Dielectric; 4 m repeat.",
+    "texture": "materials/terrain/textures/pebble_sand_basecolor_repeat.png",
+    "normalMap": "materials/terrain/textures/pebble_sand_normal_repeat.png",
+    "metallicRoughnessMap": "materials/terrain/textures/pebble_sand_orm_repeat.png",
+    "occlusionMap": "materials/terrain/textures/pebble_sand_ao_repeat.png",
+    "color": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "roughness": 1,
+    "metallic": 0,
+    "normalScale": 1,
+    "occlusionStrength": 1,
+    "vertexColors": false,
+    "team": "none",
+    "uvScale": [
+      1,
+      1
+    ]
+  },
   "terrain_checkerboard": {
     "description": "Bundled terrain PBR: checkerboard. Dielectric; 4 m repeat.",
     "texture": "materials/terrain/textures/checkerboard_basecolor_repeat.png",

@@ -163,6 +163,40 @@
       }
     },
     {
+      "id": "river_sand",
+      "repeatMeters": 4.0,
+      "heightMeters": 0.002,
+      "heightMap": "materials/terrain/textures/river_sand_height_repeat.png",
+      "terrainLayer": {
+        "id": "river_sand",
+        "texture": "materials/terrain/textures/river_sand_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/river_sand_terrain_normal_repeat.png",
+        "scale": 4.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "pebble_sand",
+      "repeatMeters": 4.0,
+      "heightMeters": 0.012,
+      "heightMap": "materials/terrain/textures/pebble_sand_height_repeat.png",
+      "terrainLayer": {
+        "id": "pebble_sand",
+        "texture": "materials/terrain/textures/pebble_sand_terrain_color_repeat.png",
+        "normal": "materials/terrain/textures/pebble_sand_terrain_normal_repeat.png",
+        "scale": 4.0,
+        "tint": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
       "id": "checkerboard",
       "repeatMeters": 4.0,
       "heightMeters": 0,

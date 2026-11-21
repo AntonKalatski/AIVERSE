@@ -18,3 +18,18 @@ built-in OpenAI image generator. Original `*_source_pair.png` files are
 preserved; halves are extracted losslessly before deterministic runtime baking.
 These are authored approximations, not measured scans. Grass baking removes
 broad source colour drift before tiling to avoid repeated distant brightness bands.
+
+
+2026-11-21 river_sand and pebble_sand: built-in image_gen source pairs, not API
+CLI. Full original left-albedo/right-grayscale-height sheets are preserved as
+*_source_pair.png; halves extracted without resizing, runtime maps baked1K/4m.
+Prompt set: overhead orthographic4m square, seamless all edges of EACH aligned
+left/right square; unlit diffuse mineral sand/compact sand with sparse2–15mm
+quartz grit on left and matching grayscale height on right; subtle damp grey
+beige/brown, no waves/dunes/stripes/directional grooves, shadows, highlights,
+plants, footprints, text, borders or perspective. First pair fine sand, second
+sparse embedded pebble sand. Height alignment/roughness/AO are authored artistic
+approximations, not measured or scanned surface properties. Tool image output
+was1774x887; halves887px before deterministic1024px runtime resampling.
+Files generated with exec-32d50571-a834-44ab-bea7-17fab120447e and
+exec-bf64098b-cd88-4922-8178-6b093feb0a0c respectively.

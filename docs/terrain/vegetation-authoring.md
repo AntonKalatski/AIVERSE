@@ -279,3 +279,11 @@ NEW_DIR. Copy the complete vegetation folder, preserving all family paths.
 Weather/accumulation/melt, wind deformation, and runtime automatic selection of
 these materials require explicit host integration and are not provided by this
 authoring library. No physical snow load or displaced snow silhouette is implied.
+
+
+Terrain library includes river_sand and pebble_sand PBR at1K/4m (original dune
+sand remains available). Detail atlas builder --sand-layer sand|river_sand|
+pebble_sand chooses the family for the shore channel, retaining four layers,
+13samples/4textures, previous geometry/continuous masks and noise underlay.
+This explicit authoring selection does not claim world-space blending of
+multiple sand families in a single tile.

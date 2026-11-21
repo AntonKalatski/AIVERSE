@@ -12,13 +12,16 @@ from PIL import Image
 from terrain_detail_graph import material_graph
 
 
-def build(root, materials, asset_root, metres=4.0, transparency=.12):
+def build(root, materials, asset_root, metres=4.0, transparency=.12, sand_layer="sand"):
+    if sand_layer not in ("sand","river_sand","pebble_sand"):
+        raise ValueError("sand layer: sand|river_sand|pebble_sand")
+    layers=("grass",sand_layer,"rock","snow")
     size, gutter = 1024, 32
     cell = size + 2 * gutter
     paths = {}
     for channel in ('basecolor', 'normal', 'orm'):
         atlas = np.empty((2 * cell, 2 * cell, 3), np.uint8)
-        for i, name in enumerate(('grass', 'sand', 'rock', 'snow')):
+        for i, name in enumerate(layers):
             image = Image.open(materials / f'{name}_{channel}_repeat.png').convert('RGB')
             if image.size != (size, size):
                 raise ValueError(f'{name}/{channel}: expected native 1024px PBR source')
@@ -41,7 +44,7 @@ def build(root, materials, asset_root, metres=4.0, transparency=.12):
         overrides[tile['file']] = {'*': {'color': [1, 1, 1, 1], 'vertexColors': False,
                                        'shaderGraph': graph}}
     manifest = dict(version=1, metresPer1024=metres, noiseTransparency=transparency,
-                    layers=['grass', 'sand', 'rock', 'snow'], materials=overrides)
+                    layers=list(layers), materials=overrides)
     (root / 'detail-materials.json').write_text(json.dumps(manifest))
     return manifest
 
@@ -53,8 +56,9 @@ if __name__ == '__main__':
     parser.add_argument('--asset-root', required=True, help='project-relative path of installed pack')
     parser.add_argument('--metres', type=float, default=4)
     parser.add_argument('--noise-transparency', type=float, default=.12)
+    parser.add_argument('--sand-layer', choices=['sand','river_sand','pebble_sand'], default='sand')
     args = parser.parse_args()
     if args.asset_root.startswith('/') or '..' in args.asset_root or '\\' in args.asset_root:
         parser.error('asset-root must be project relative')
-    result = build(args.root, args.materials, args.asset_root, args.metres, args.noise_transparency)
+    result = build(args.root, args.materials, args.asset_root, args.metres, args.noise_transparency, args.sand_layer)
     print(f"Shared 1K/{args.metres}m PBR: {len(result['materials'])} tiles, four layers")
