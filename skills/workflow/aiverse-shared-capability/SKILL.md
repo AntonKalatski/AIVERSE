@@ -18,8 +18,9 @@ place a feature works.
 3. Move, do not copy. Simulation policies go to `libraries/include/aiverselib/<area>/` (header-only, registered in
    `libraries/catalog.json`); engine-owned code to `engine/<area>/` with its own target (`AIVERSE::<area>`); shared
    presentation to `engine/ui`, `engine/render` or `engine/<area>`. Use `git mv` so history follows, rename the
-   namespace (`aiverse::<area>`), and leave compatibility headers at the old paths (`using` aliases) so other agents'
-   branches keep compiling.
+   namespace (`aiverse::<area>`) and the types after the capability (not `Rts*` / `Fps*`), update every include and
+   user, and delete the old files: no compatibility headers, mirrors or dual legacy / new modes (owner rule,
+   claude.ai project doc `claude/no-genre-split.md`). Note broken old saves / replays in the handoff.
 4. Data instead of modes: a block's presence enables the capability (map `"race"`, map `"roadNetwork"`); never a
    `mode` string, an `isFps()` / `isRts()` gate or a genre id. Readers live next to the policy and throw readable errors
    (`readRaceRules`, `readRaceTrack` in `genre/RaceSessionData.h`).
@@ -35,7 +36,8 @@ place a feature works.
 
 Examples on main: races (`genre/RaceSession.h`, `RaceSessionData.h`, `docs/races.md`, adapters `FpsRace.cpp` and
 `RtsDriving.cpp`), controls -> pedals (`genre/VehicleDrive.h`), spline roads (`engine/roads`, drawn by both
-clients; `modules/rts/RtsRoadNet.h` is a compatibility header), the race HUD (`engine/ui/RaceHud.h`) and chase camera
+clients; the compatibility headers `modules/rts/RtsRoadNet.h`, `view/RtsRoadView.h`, `view/RtsRoadKit.h` left by that
+move are debt to delete), the race HUD (`engine/ui/RaceHud.h`) and chase camera
 (`engine/render/ChaseCamera.h`).
 
 Runtime library: none (workflow).
