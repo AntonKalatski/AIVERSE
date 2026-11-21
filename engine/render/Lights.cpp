@@ -1,5 +1,5 @@
 #include "Lights.h"
-#include "GpuTier.h"
+#include "../gfx/GpuTier.h"
 #include "LightShaders.h"
 #include <algorithm>
 #include <chrono>
@@ -21,7 +21,7 @@ LightQuality LightSystem::defaultQualityFor(const gfx::Device& dev, bool mobile)
     const std::string& n = dev.info().name;
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return LightQuality::Low;
     if (mobile) {
-        if (isWeakMobileGpu(n)) return LightQuality::Low;   // GpuTier.h
+        if (gfx::isWeakMobileGpu(n)) return LightQuality::Low;   // GpuTier.h
         return LightQuality::Medium;
     }
     return LightQuality::High;

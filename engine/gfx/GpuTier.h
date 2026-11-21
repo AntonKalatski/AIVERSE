@@ -4,7 +4,7 @@
 #pragma once
 #include <string>
 
-namespace aiverse::render {
+namespace aiverse::gfx {
 
 inline bool isWeakMobileGpu(const std::string& name) {
     for (const char* weak : {"Mali-4", "Mali-T", "Mali-G31", "Mali-G51", "Mali-G52",
@@ -15,4 +15,4 @@ inline bool isWeakMobileGpu(const std::string& name) {
     return false;
 }
 
-} // namespace aiverse::render
+} // namespace aiverse::gfx

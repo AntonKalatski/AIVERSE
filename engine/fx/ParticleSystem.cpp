@@ -1,5 +1,5 @@
 #include "ParticleSystem.h"
-#include "../render/GpuTier.h"
+#include "../gfx/GpuTier.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -56,7 +56,7 @@ FxQuality defaultQualityFor(const std::string& n, bool mobile) {
     }
     if (n.find("llvmpipe") != std::string::npos || n.find("SwiftShader") != std::string::npos) return FxQuality::Low;
     if (mobile) {
-        if (render::isWeakMobileGpu(n)) return FxQuality::Low;   // GpuTier.h
+        if (gfx::isWeakMobileGpu(n)) return FxQuality::Low;   // GpuTier.h
         return FxQuality::Medium;
     }
     return FxQuality::High;

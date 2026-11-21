@@ -4,6 +4,7 @@
 #include "../Plugins.h"
 #include "../GraphicsSettings.h"
 #include "../../gfx/Gfx.h"
+#include "../../gfx/GpuTier.h"
 #if defined(AIVERSE_WITH_VULKAN)
 #include "../../gfx/vulkan/Vulkan.h"
 #endif
@@ -47,23 +48,25 @@ bool g_inited = false;
 bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
 float g_density = 1.0f;       // physical px per point (touches, insets and the keyboard arrive in physical px)
 float g_renderScale = 1.0f;   // window buffer / physical size; the display hardware scales the buffer up
+bool g_weakGpu = false;       // gfx::isWeakMobileGpu: a lower render resolution (540 instead of 720 lines)
 
 // Render resolution: the window's buffers are made smaller than the screen and the compositor / display
 // controller scales them up for free (both GLES and Vulkan, no extra pass). A 2400x1080 phone drew
 // 2.6 Mpx per frame, which entry-level GPUs can't fill at 60 fps. Default: the short side at most
-// 720 px; AIVERSE_RENDER_SCALE=<0.25..1> overrides (1 = native).
+// 720 px, 540 px on weak GPUs (GpuTier.h; Adreno 610: 65 -> 40 ms a frame);
+// AIVERSE_RENDER_SCALE=<0.25..1> overrides (1 = native).
 void applyRenderScale(ANativeWindow* win) {
     ANativeWindow_setBuffersGeometry(win, 0, 0, 0);   // back to the native size to measure it
     const int w = ANativeWindow_getWidth(win), h = ANativeWindow_getHeight(win);
     if (w <= 0 || h <= 0) return;
-    float s = std::min(1.0f, 720.0f / float(std::min(w, h)));
+    float s = std::min(1.0f, (g_weakGpu ? 540.0f : 720.0f) / float(std::min(w, h)));
     if (const char* e = std::getenv("AIVERSE_RENDER_SCALE"); e && *e) s = std::clamp(float(std::atof(e)), 0.25f, 1.0f);
     const int bw = std::max(1, int(float(w) * s + 0.5f)), bh = std::max(1, int(float(h) * s + 0.5f));
     if (s < 1.0f) ANativeWindow_setBuffersGeometry(win, bw, bh, 0);
     g_renderScale = s < 1.0f ? float(bw) / float(w) : 1.0f;
     state().scale = g_density * g_renderScale;   // framebuffer px per point
-    static bool logged = false;
-    if (!logged) { logged = true; __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[gfx] screen %dx%d, render %dx%d (scale %.3f)", w, h, s < 1.0f ? bw : w, s < 1.0f ? bh : h, double(g_renderScale)); }
+    static int logged = -1;
+    if (logged != int(g_weakGpu)) { logged = int(g_weakGpu); __android_log_print(ANDROID_LOG_INFO, "AIVERSE", "[gfx] screen %dx%d, render %dx%d (scale %.3f)", w, h, s < 1.0f ? bw : w, s < 1.0f ? bh : h, double(g_renderScale)); }
 }
 
 // ---- benchmarks over adb (AIVERSE_PERF_LOG=<seconds>): frame-time windows printed to logcat as
@@ -174,6 +177,17 @@ JNIEnv* gameThreadEnv() {
 }
 detail::FrameClock g_clock;
 
+// The GPU name is known only once the device exists: a weak one gets the lower resolution right away
+// (before the renderer allocates its targets). True when the window buffers changed.
+bool lowerResolutionForWeakGpu(ANativeWindow* win) {
+    if (g_weakGpu || !g_device || !win) return false;
+    if (const char* e = std::getenv("AIVERSE_RENDER_SCALE"); e && *e) return false;   // explicit choice
+    if (!gfx::isWeakMobileGpu(g_device->info().name)) return false;
+    g_weakGpu = true;
+    applyRenderScale(win);
+    return true;
+}
+
 bool initEGL() {
     if (g_dpy == EGL_NO_DISPLAY) {
         g_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -220,7 +234,11 @@ void onCmd(android_app* app, int32_t cmd) {
             else {
                 std::string err;
                 g_device = gfx::createVulkanDevice(vw, &err);
-                if (g_device) { g_vulkan = true; if (S.cb.init) S.cb.init(*g_device); }
+                if (g_device) {
+                    g_vulkan = true;
+                    if (lowerResolutionForWeakGpu(app->window)) gfx::vulkanSetWindow(*g_device, &vw);   // new swapchain size
+                    if (S.cb.init) S.cb.init(*g_device);
+                }
                 else __android_log_print(ANDROID_LOG_WARN, "AIVERSE", "[gfx] %s, using OpenGL ES", err.c_str());
             }
             if (g_vulkan) {
@@ -235,6 +253,7 @@ void onCmd(android_app* app, int32_t cmd) {
         if (app->window && initEGL()) {
             if (!g_device) {
                 g_device = gfx::createGLDevice(gfx::Backend::GLES3);
+                if (lowerResolutionForWeakGpu(app->window)) { termSurface(); initEGL(); }   // a surface of the new size
                 if (S.cb.init) S.cb.init(*g_device);
             }
             g_inited = true;
