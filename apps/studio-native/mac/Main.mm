@@ -7,6 +7,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import "StudioAssetSchemeHandler.h"
 #include "apps/studio-native/StudioSession.h"
+#include "apps/studio-native/StudioHumanLookDocument.h"
 #include "apps/editor/core/BuildTool.h"
 #include "apps/studio-native/StudioViewportLayout.h"
 #include "apps/studio-native/mac/StudioMetalScene.h"
@@ -22,6 +23,8 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #ifndef AIVERSE_STUDIO_SOURCE_DIR
 #define AIVERSE_STUDIO_SOURCE_DIR "."
@@ -128,6 +131,7 @@
     BOOL projectLoading_;           // a project opens on a background thread: no session access
     std::string pendingProject_;    // --project, opened once the WebView can show progress
     int lastLoadDone_, lastLoadTotal_;
+    CFTimeInterval nextAgentPoll_;
     BOOL loadingShown_;
     // Floating panel windows (Unity-style undocked tabs), one panel per window.
     NSMutableDictionary<NSString*,NSWindow*>* floatWindows_;
@@ -176,6 +180,7 @@
 - (BOOL)confirmDiscardChanges;
 - (void)gameEvent:(const aiverse::platform::Event&)event;
 - (void)tickGame;
+- (void)pollAgentRequests;
 - (aiverse::Json)gameState;
 - (void)saveMapSheetForRequestId:(int64_t)requestId;
 - (void)openAssetImportForRequestId:(int64_t)requestId destination:(NSString*)destination;
@@ -739,6 +744,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
     // Never render that provisional map as if it belonged to the user.
     if (session_->workspace().project.dir.empty()) return;
     [self runWindShots];
+    [self pollAgentRequests];
     NSWindow* sceneWindow=viewport_.window ?: window_;
     if (!placement_.visible || viewport_.hidden || sceneWindow.isMiniaturized || !sceneWindow.visible) {
         session_->setFacialPreviewGpuStatus(
@@ -769,6 +775,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 &session_->facialPreviewBinding());
             session_->setFacialPreviewGpuStatus(
                 preview_->facialReady(),preview_->facialError());
+            if((lightingStatusTicks_ % 30)==0)session_->setFacialPreviewClips(preview_->facialClips(),preview_->facialBaseHeight());
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
             {
@@ -799,6 +806,38 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             preview_.reset();
         }
     }
+}
+// Agent snapshot handshake (MCP studio_character_snapshot): the tool writes
+// <project>/.aiverse/agent-requests/character-snapshot.json {id, view}; the
+// next shown character frame is saved as .aiverse/agent-snapshots/<id>.png.
+- (void)pollAgentRequests {
+    const CFTimeInterval now=CACurrentMediaTime();
+    if (now<nextAgentPoll_) return;
+    nextAgentPoll_=now+0.4;
+    namespace fs=std::filesystem;
+    const fs::path root=session_->workspace().project.dir;
+    const fs::path request=root/".aiverse"/"agent-requests"/"character-snapshot.json";
+    std::error_code ec;
+    if (!fs::is_regular_file(request,ec) || fs::file_size(request,ec)>4096) return;
+    std::string bytes;{std::ifstream in(request,std::ios::binary);bytes.assign(std::istreambuf_iterator<char>(in),{});}
+    fs::remove(request,ec);
+    try {
+        const auto req=aiverse::Json::parse(bytes);
+        const std::string id=req.getStr("id");
+        if (id.empty()||id.size()>40||id.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyz-")!=std::string::npos) return;
+        const fs::path out=root/".aiverse"/"agent-snapshots";
+        fs::create_directories(out,ec);
+        if (!preview_ || !session_->facialPreviewBinding().bound()) {
+            std::ofstream err(out/(id+".error"));err<<"Покажите персонажа во вьюпорте Character Creator";return;
+        }
+        const std::string view=req.getStr("view");
+        if (view=="face"||view=="torso"||view=="full") {
+            aiverse::Json r=aiverse::Json::object(),pr=aiverse::Json::object();pr.set("view",aiverse::Json::string(view));
+            r.set("id",aiverse::Json::number(int64_t(0)));r.set("method",aiverse::Json::string("studio.humanCamera"));r.set("params",pr);
+            (void)session_->dispatch(r);
+        }
+        preview_->captureFacialThumbnail((out/(id+".png")).string(),false);
+    } catch (const std::exception&) {}
 }
 - (void)runWindShots {
     auto& run=WindShotRunner::get();
@@ -1069,6 +1108,7 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
                 NSLog(@"AIVERSE open project failed: %s",error.c_str());
                 [host sendLoading:"error" message:error done:0 total:0];
             } else {
+                [[NSUserDefaults standardUserDefaults] setObject:[NSString stringWithUTF8String:projectPath.c_str()] forKey:@"AiverseLastProject"];
                 // Scene models stream in next; the tick reports their progress.
                 [host sendLoading:"scene" message:"Preparing scene" done:0 total:0];
                 host->loadingShown_=YES;
@@ -1113,6 +1153,47 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
     if (projectLoading_) return;
     if (!preview_) return;
+    if (session_->sculptBrush().regionPick) {
+        // Face blend region choice: report where on the head the click landed.
+        const auto& face=session_->facialPreviewBinding().face();
+        aiverse::vivid::HumanFaceHit hit;
+        aiverse::Json payload=aiverse::Json::object();
+        std::string pickError;
+        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+            aiverse::Json p=aiverse::Json::array();
+            for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),5));
+            payload.set("hit",aiverse::Json::fromBool(true));payload.set("point",std::move(p));
+        } else {
+            payload.set("hit",aiverse::Json::fromBool(false));
+            if (!pickError.empty()) payload.set("error",aiverse::Json::string(pickError));
+        }
+        [self sendStudioEventPayload:"human.facePick" payload:payload];
+        return;
+    }
+    if (session_->sculptBrush().armed) {
+        // Human Creator sculpt: a click on the character is a brush stroke.
+        const auto& face=session_->facialPreviewBinding().face();
+        aiverse::vivid::HumanFaceHit hit;
+        aiverse::Json payload=aiverse::Json::object();
+        std::string pickError;
+        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+            aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),p=aiverse::Json::array(),n=aiverse::Json::array();
+            for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),6));
+            for(float v:{hit.normal.x,hit.normal.y,hit.normal.z})n.push(aiverse::Json::number(double(v),6));
+            params.set("point",std::move(p));params.set("normal",std::move(n));
+            request.set("id",aiverse::Json::number(int64_t(0)));
+            request.set("method",aiverse::Json::string("studio.humanSculptStroke"));
+            request.set("params",std::move(params));
+            const aiverse::Json outcome=session_->dispatch(request);
+            payload.set("hit",aiverse::Json::fromBool(true));
+            if (outcome.has("error")) payload.set("error",outcome["error"]);
+        } else {
+            payload.set("hit",aiverse::Json::fromBool(false));
+            if (!pickError.empty()) payload.set("error",aiverse::Json::string(pickError));
+        }
+        [self sendStudioEventPayload:"human.sculpt" payload:payload];
+        return;
+    }
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
     // A modifier click on empty space keeps the current selection.
@@ -1515,6 +1596,39 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
             if (note.size()<=1200) NSLog(@"[studio-web] JS: %s",note.c_str());
             return; // diagnostics never touch Workspace or the filesystem
         }
+        if (req.getStr("method")=="studio.humanMakeupAlign" && req["id"].isNumber()) {
+            // Makeup layers placed from the shown face (needs the GPU preview's CPU copy).
+            aiverse::Json reply=aiverse::Json::object();
+            reply.set("id",req["id"]);
+            try {
+                if (!preview_) throw std::runtime_error("Покажите персонажа во вьюпорте");
+                aiverse::Json result=aiverse::Json::object();
+                result.set("values",preview_->alignMakeup(session_->facialPreviewBinding()));
+                reply.set("result",std::move(result));
+            } catch (const std::exception& ex) { reply.set("error",aiverse::Json::string(ex.what())); }
+            [self sendStudioReply:reply];
+            return;
+        }
+        if (req.getStr("method")=="studio.humanLookCapture" && req["id"].isNumber()) {
+            // Preset card picture: the next character frame is cropped around
+            // the head and written beside the look as <name>.png.
+            aiverse::Json reply=aiverse::Json::object();
+            reply.set("id",req["id"]);
+            try {
+                if (!preview_ || !session_->facialPreviewBinding().bound())
+                    throw std::runtime_error("Покажите персонажа во вьюпорте, чтобы снять превью");
+                const auto path=aiverse::studio::studioHumanLookThumbnailFile(
+                    session_->workspace().project.dir,req["params"].getStr("name"),true);
+                preview_->captureFacialThumbnail(path.string());
+                aiverse::Json result=aiverse::Json::object();
+                result.set("ok",aiverse::Json::fromBool(true));
+                reply.set("result",std::move(result));
+            } catch (const std::exception& ex) {
+                reply.set("error",aiverse::Json::string(ex.what()));
+            }
+            [self sendStudioReply:reply];
+            return;
+        }
         if (req.getStr("method")=="studio.viewportInput" && req["id"].isNumber()) {
             aiverse::Json reply=aiverse::Json::object();
             reply.set("id",req["id"]);
@@ -1753,6 +1867,15 @@ int aiverseMain(int argc,char** argv) {
             else if(arg=="--html-composite")composite=true;
             else if(arg=="--project"&&i+1<argc)project=argv[++i];
             else { std::fprintf(stderr,"Usage: AiverseStudioHTML5 [--dev] [--html-composite] [--project /path/to/project]\n"); return 2; }
+        }
+        // Without --project, reopen the last project chosen in the Open panel.
+        if(project.empty()) {
+            NSString* last=[[NSUserDefaults standardUserDefaults] stringForKey:@"AiverseLastProject"];
+            BOOL isDir=NO;
+            if(last.length && [[NSFileManager defaultManager] fileExistsAtPath:last isDirectory:&isDir] && isDir)
+                project=last.UTF8String;
+        } else {
+            [[NSUserDefaults standardUserDefaults] setObject:[NSString stringWithUTF8String:project.c_str()] forKey:@"AiverseLastProject"];
         }
         try {
             [NSApplication sharedApplication];

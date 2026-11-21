@@ -132,4 +132,49 @@ inline Json saveStudioHumanLook(const std::string& root,
     return result;
 }
 
+// Preset preview picture beside the look: human-looks/<name>.png, written by
+// the native viewport after a save and shown on the preset cards.
+inline std::filesystem::path studioHumanLookThumbnailFile(
+        const std::string& projectRoot,const std::string& name,bool createFolder=false) {
+    namespace fs=std::filesystem;
+    if(!validStudioHumanLookName(name))
+        throw std::invalid_argument("Invalid human look filename");
+    const fs::path path=studioHumanLookFolder(projectRoot,createFolder)/(name+".png");
+    if(fs::is_symlink(fs::symlink_status(path)))
+        throw std::runtime_error("Human look thumbnail cannot be a symlink");
+    return path;
+}
+inline std::string studioBase64(const std::string& bytes) {
+    static const char* t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;out.reserve((bytes.size()+2)/3*4);
+    std::size_t i=0;
+    for(;i+2<bytes.size();i+=3){
+        const unsigned v=(unsigned char)bytes[i]<<16|(unsigned char)bytes[i+1]<<8|(unsigned char)bytes[i+2];
+        out+=t[v>>18&63];out+=t[v>>12&63];out+=t[v>>6&63];out+=t[v&63];
+    }
+    if(i<bytes.size()){
+        unsigned v=(unsigned char)bytes[i]<<16;
+        if(i+1<bytes.size())v|=(unsigned char)bytes[i+1]<<8;
+        out+=t[v>>18&63];out+=t[v>>12&63];
+        out+=i+1<bytes.size()?t[v>>6&63]:'=';out+='=';
+    }
+    return out;
+}
+// {name: "data:image/png;base64,..."} for every look that has a picture.
+inline Json readStudioHumanLookThumbnails(const std::string& projectRoot) {
+    namespace fs=std::filesystem;
+    Json out=Json::object();
+    const auto list=listStudioHumanLooks(projectRoot);
+    for(const auto& n:list["looks"].items()) {
+        const auto path=studioHumanLookThumbnailFile(projectRoot,n.str());
+        std::error_code ec;
+        if(!fs::is_regular_file(path,ec) || fs::file_size(path,ec)>512*1024)continue;
+        std::ifstream in(path,std::ios::binary);
+        std::string bytes((std::istreambuf_iterator<char>(in)),{});
+        if(bytes.size()<8)continue;
+        out.set(n.str(),Json::string("data:image/png;base64,"+studioBase64(bytes)));
+    }
+    return out;
+}
+
 } // namespace aiverse::studio

@@ -3,12 +3,14 @@
 #include <string>
 #include <future>
 #include <optional>
+#include <map>
 #include <set>
 #include <vector>
 #include <filesystem>
 #include <functional>
 #include "apps/studio-native/StudioAssetTransfers.h"
 #include "apps/studio-native/StudioFacialPreviewBinding.h"
+#include "engine/character/vivid/HumanCreatorWorkbench.h"
 #include "apps/editor/core/Workspace.h"
 #include "apps/studio-native/StudioWindPreview.h"
 namespace aiverse::studio {
@@ -34,6 +36,13 @@ public:
     const StudioFacialPreviewBinding& facialPreviewBinding() const noexcept {
         return facialPreview_;
     }
+    // Viewport sculpt brush (Human Creator "Sculpt" tab). While armed, a
+    // viewport click on the character is a stroke, not a selection.
+    // regionPick: viewport clicks only report the face point (region choice
+    // for the face blend) instead of sculpting.
+    struct SculptBrush { bool armed=false; float radius=.12f, strength=.012f; bool pull=false; bool symmetry=true; bool regionPick=false; };
+    const SculptBrush& sculptBrush() const noexcept {return sculpt_;}
+    void setFacialPreviewClips(const std::vector<std::string>& names,float baseHeight){facialPreview_.setClips(names);facialPreview_.setBaseHeight(baseHeight);}
     void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
         facialPreview_.setGpuStatus(rendered,reason);
     }
@@ -65,6 +74,9 @@ private:
     bool documentHas(const std::string& id) const;
     void dropOrdinalFlags(); // positional ids shift after structural edits
     StudioFacialPreviewBinding facialPreview_;
+    vivid::HumanCreatorWorkbench humanCreator_;
+    SculptBrush sculpt_;
+    std::map<std::string,Json> wardrobeInfoCache_; // humanWardrobeInfo by path+mtime
     std::future<Json> humanBuild_;
     Json humanBuildResult_=Json::object();
     std::string humanBuildProject_;

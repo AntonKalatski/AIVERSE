@@ -1,3 +1,4 @@
+#include <map>
 #include "HumanMaterials.h"
 #include "HumanAppearance.h"
 #include <algorithm>
@@ -36,12 +37,16 @@ struct Nodes {
         list.push(std::move(item));
         return name;
     }
-    std::string constant(float scalar) {
-        return add("constant",{},Json::number(double(scalar),6));
+    // Identical constants share one node (graphs are capped at 128 nodes).
+    std::map<std::string,std::string> constants;
+    std::string cached(Json value) {
+        const auto key=value.dump();
+        if(auto it=constants.find(key);it!=constants.end())return it->second;
+        return constants[key]=add("constant",{},std::move(value));
     }
-    std::string color(const std::array<float,3>& rgb) {
-        return add("constant",{},vector4(rgb[0],rgb[1],rgb[2]));
-    }
+    std::string constant(float scalar) {return cached(Json::number(double(scalar),6));}
+    std::string color(const std::array<float,3>& rgb) {return cached(vector4(rgb[0],rgb[1],rgb[2]));}
+    std::string vec(float a,float b,float c,float d) {return cached(vector4(a,b,c,d));}
     std::string scalarOp(const char* op,std::string input) {
         return add(op,{std::move(input)});
     }
@@ -423,6 +428,28 @@ static void appearanceImpl(render::Model& model,const HumanAppearance& look,int 
                 color=mul(color,sub(c(1),mul(freckles,c(value("skin.freckles")*value("skin.freckleTone")))));
                 const auto pores=g.scalarOp("gradientNoise",mul(uv,c(value("skin.poreScale"))));
                 color=mul(color,add(c(1),mul(sub(pores,c(.5f)),c(.12f*value("skin.pores")))));
+                // Makeup layers: soft UV ellipses (mask 1 inside, 0 outside).
+                auto ellipse=[&](float u,float v,float w,float h){
+                    const auto d=g.scalarOp("length3",mul(sub(uv,g.vec(u,v,0,1)),g.vec(1.f/w,1.f/h,0,0)));
+                    return sub(c(1),smooth(.55f,1.f,d));};
+                const float fu=value("makeup.faceU");
+                if(value("makeup.stubble")>0) {
+                    const float sz=value("makeup.stubbleSize");
+                    const auto dots=g.binary("step",c(1.f-value("makeup.stubbleDensity")*.5f),g.scalarOp("gradientNoise",mul(uv,c(900))));
+                    color=mul(color,sub(c(1),mul(mul(dots,ellipse(fu,value("makeup.stubbleV"),sz*1.4f,sz)),c(value("makeup.stubble")*.65f))));
+                }
+                if(value("makeup.shadow")>0) {
+                    const float off=value("makeup.shadowOffset"),v=value("makeup.shadowV"),w=value("makeup.shadowW"),h=value("makeup.shadowH");
+                    const auto m2=g.scalarOp("clamp",add(ellipse(fu-off,v,w,h),ellipse(fu+off,v,w,h)));
+                    color=mix(color,mul(color,rgb("makeup.shadowR","makeup.shadowG","makeup.shadowB")),mul(m2,c(value("makeup.shadow"))));
+                }
+                if(value("makeup.blush")>0) {
+                    const float off=value("makeup.blushOffset"),v=value("makeup.blushV"),r=value("makeup.blushSize");
+                    const auto m2=g.scalarOp("clamp",add(ellipse(fu-off,v,r,r),ellipse(fu+off,v,r,r)));
+                    color=mix(color,mul(color,mul(rgb("makeup.blushR","makeup.blushG","makeup.blushB"),c(1.5f))),mul(m2,c(value("makeup.blush")*.6f)));
+                }
+                if(value("makeup.lips")>0)
+                    color=mix(color,rgb("makeup.lipR","makeup.lipG","makeup.lipB"),mul(ellipse(fu,value("makeup.lipV"),value("makeup.lipW"),value("makeup.lipH")),c(value("makeup.lips")*.85f)));
             }
         } else if(role=="hair") {
             rough=value("hair.roughness");

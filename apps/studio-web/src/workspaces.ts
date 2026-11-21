@@ -8,7 +8,7 @@
 import { STUDIO_PANEL_HOME, normalizeDockTree, panelStack, reopenTab, type DockNode, type DockTree, type StudioPanel } from './nestedDock.ts';
 import { LEGACY_WINDOWS_NOT_MIGRATED } from './legacyWindows.ts';
 
-export const WORKSPACES = ['scene', 'world', 'look', 'animate', 'logic', 'publish'] as const;
+export const WORKSPACES = ['scene', 'world', 'look', 'animate', 'character', 'logic', 'publish'] as const;
 export type StudioWorkspace = typeof WORKSPACES[number];
 
 export interface WorkspaceInfo {
@@ -30,6 +30,9 @@ export const WORKSPACE_INFO: Record<StudioWorkspace, WorkspaceInfo> = {
   animate: { id: 'animate', title: 'Animate', purpose: 'Rigs, clips, graphs', key: '4',
     left: ['hierarchy'], center: ['animation', 'facial_rig', 'scene'], right: ['inspector'], bottom: ['assets', 'console'],
     legacy: ['animation_assets', 'animation_graph', 'animation_rig', 'animation_attachments', 'AnimationWindow'] },
+  character: { id: 'character', title: 'Character', purpose: 'Digital humans', key: '7',
+    left: ['human_creator'], center: ['scene', 'facial_rig'], right: ['inspector', 'human_appearance'], bottom: ['assets', 'console'],
+    legacy: [] },
   logic: { id: 'logic', title: 'Logic', purpose: 'Rules, scripts, runtime', key: '5',
     left: ['hierarchy'], center: ['rules', 'game', 'scene'], right: ['runtime', 'inspector'], bottom: ['console', 'assets'],
     legacy: ['scripts', 'input', 'overlays', 'FpsWindow', 'raid', 'agent', 'stats'] },
