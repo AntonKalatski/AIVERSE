@@ -157,7 +157,10 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                 const uint32_t spray=plane/settings.leafPlanes;
                 const float at=std::clamp(leafT+(float(spray)-float(settings.sprayPairs-1)*.5f)*.10f,.25f,1.f);
                 const V3 anchor=branchStart+branchDelta*at;
-                const V3 forward=normalize(axis*.55f+side*(spray%2?.25f:-.25f)+V3{0,.8f-1.4f*settings.sprayDroop,0});
+                const uint64_t shoot=detail::mix64(uint64_t(leaf.variation)^uint64_t(spray+1)*7919u);
+                const float lateral=(float(shoot%1001)/1000.f-.5f)*1.3f;
+                const float rise=float((shoot>>16)%1001)/1000.f*.9f-.15f;
+                const V3 forward=normalize(axis*.65f+side*lateral+V3{0,rise-1.1f*settings.sprayDroop,0});
                 const V3 spraySide=normalize(cross(forward,std::abs(forward.y)<.9f?V3{0,1,0}:V3{1,0,0}));
                 const float angle=float(leaf.variation%6283)*.001f+plane*1.5707963f;
                 const V3 across=normalize(spraySide*std::cos(angle)+cross(forward,spraySide)*std::sin(angle));

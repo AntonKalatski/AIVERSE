@@ -109,7 +109,10 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
         int64_t dx = static_cast<int64_t>(h & 0xffffULL) - 32768;
         int64_t dz = static_cast<int64_t>((h >> 16) & 0xffffULL) - 32768;
         int64_t baseY = crownBase + available * (2 * i + 1) / (2 * count);
-        if(p.roundedBroadleafCrown)baseY=crownBase+available*(80+int64_t((h>>24)%841))/1000;
+        // Stratified growth heights fill the crown instead of concentrating
+        // scaffold limbs in one pollarded, umbrella-like layer.
+        if(p.roundedBroadleafCrown)baseY=crownBase+available*
+            (40+(int64_t(i)*880+int64_t((h>>24)%601))/count)/1000;
         if(p.whorlSize) {
             // Fixed integer directions/jitter keep generation replayable.
             static constexpr int32_t circle[16][2]={{32767,0},{30273,12539},{23170,23170},{12539,30273},{0,32767},{-12539,30273},{-23170,23170},{-30273,12539},{-32767,0},{-30273,-12539},{-23170,-23170},{-12539,-30273},{0,-32767},{12539,-30273},{23170,-23170},{30273,-12539}};
@@ -130,7 +133,8 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
         const int64_t denom = p.whorlSize?32768:std::max<int64_t>(1, std::max(ax, az));
         // Ordered trunk heights; azimuth jittered independently. All integer.
         const int64_t remain = height - baseY;
-        int64_t envelope=p.roundedConiferCrown && available>0 ? remain*(2*available-remain)/available : remain;
+        const int64_t crownT=baseY-crownBase;
+        int64_t envelope=p.roundedConiferCrown && available>0 ? 4*crownT*(available-crownT)/available : remain;
         if(p.roundedBroadleafCrown && available>0) {
             const int64_t t=baseY-crownBase;
             envelope=4*t*(available-t)/available;
@@ -145,7 +149,7 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
             std::min<int64_t>(height + p.leafRadiusCm,
                 baseY + length * (int64_t(p.branchRisePermille)-p.branchDroopPermille) / 1000));
         if(p.roundedBroadleafCrown) {
-            const int64_t rise=std::clamp(int64_t(p.branchRisePermille)+int64_t((h>>40)%701)-350,int64_t(-200),int64_t(900));
+            const int64_t rise=std::clamp(int64_t(p.branchRisePermille)+int64_t((h>>40)%701)-450,int64_t(-150),int64_t(550));
             endY=std::max(int32_t(p.leafRadiusCm*2),int32_t(baseY+remain*rise/1000));
         }
         if(p.branchDroopPermille&&!p.roundedBroadleafCrown)endY=std::max(endY,int32_t(p.leafRadiusCm*2));
@@ -190,7 +194,9 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
             const int64_t jitter=int64_t((h>>32)%1201)-600;
             const int64_t rise=int64_t(p.branchRisePermille/(p.branchDroopPermille?3u:1u))-p.branchDroopPermille+
                 (p.branchDroopPermille?jitter/2:jitter);
-            child.y1=child.y0+int32_t(horizontal*rise/1000);
+            // Carry the parent's vertical growth into its children as well as
+            // its azimuth. Ignoring dy flattened every fork into a leaf shelf.
+            child.y1=child.y0+int32_t(dy*650*reach/1000000+horizontal*rise/1000);
             child.y1=std::min(child.y1,height);
             child.y1=std::max(child.y1,int32_t(p.leafRadiusCm*2));
             child.startRadiusCm=std::max(1,int32_t((int64_t(b.startRadiusCm)*(1000-t)+int64_t(b.endRadiusCm)*t)*55/100000));

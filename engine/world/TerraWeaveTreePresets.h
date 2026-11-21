@@ -35,17 +35,17 @@ inline const std::array<TreePreset, 10>& botanicalTreePresets() {
         out[1].profile.roundedConiferCrown=true;
         add(2,"fir",CrownShape::Conifer,1400,2600,35,70,110,390,90,40,true,"spruce_bark","spruce_leaves",6);
         add(3,"larch",CrownShape::Conifer,1200,2200,26,220,75,430,50,38,false,"pine_bark","pine_leaves",4);
-        add(4,"oak",CrownShape::Broadleaf,900,1700,48,250,32,920,390,125,false,"oak_bark","oak_leaves");
-        add(5,"birch",CrownShape::Broadleaf,1000,1900,18,420,38,460,270,65,false,"birch_bark","birch_leaves");
-        add(6,"maple",CrownShape::Broadleaf,800,1600,32,260,38,760,530,105,false,"oak_bark","maple_leaves");
-        add(7,"apple",CrownShape::Broadleaf,320,650,24,180,24,1050,310,65,false,"oak_bark","apple_leaves");
-        add(8,"willow",CrownShape::Broadleaf,700,1400,38,220,44,980,500,120,false,"oak_bark","willow_leaves");
-        add(9,"poplar",CrownShape::Columnar,1600,2800,28,180,48,520,1150,70,false,"birch_bark","shrub_leaves");
+        add(4,"oak",CrownShape::Broadleaf,900,1700,48,220,32,650,390,125,false,"oak_bark","oak_leaves");
+        add(5,"birch",CrownShape::Broadleaf,1000,1900,18,250,38,350,270,65,false,"birch_bark","birch_leaves");
+        add(6,"maple",CrownShape::Broadleaf,800,1600,32,220,38,550,530,105,false,"oak_bark","maple_leaves");
+        add(7,"apple",CrownShape::Broadleaf,320,650,24,180,24,800,310,65,false,"oak_bark","apple_leaves");
+        add(8,"willow",CrownShape::Broadleaf,700,1400,38,220,44,750,500,120,false,"oak_bark","willow_leaves");
+        add(9,"poplar",CrownShape::Columnar,1600,2800,28,180,48,320,1150,70,false,"birch_bark","shrub_leaves");
         out[8].profile.branchDroopPermille=510;
         for(size_t i=4;i<out.size();++i) {
-            out[i].profile.primaryBranches=i==5?14u:i==9?16u:i==7?8u:12u;
-            out[i].profile.secondaryBranches=4;
-            out[i].profile.tertiaryBranches=3;
+            out[i].profile.primaryBranches=i==5?24u:i==9?26u:i==7?16u:22u;
+            out[i].profile.secondaryBranches=3;
+            out[i].profile.tertiaryBranches=2;
             out[i].profile.roundedBroadleafCrown=true;
             out[i].profile.leafRadiusCm=std::min(out[i].profile.leafRadiusCm,55u);
         }

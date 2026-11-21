@@ -135,6 +135,20 @@ void testInvalidProfiles() {
 }
 }
 int main() {
+    {
+        // A rounded pine crown widens above its base, then narrows at the
+        // leader. The former monotonic envelope was just another cone.
+        TreeProfile pine;
+        pine.shape=CrownShape::Conifer;pine.minHeightCm=pine.maxHeightCm=1800;
+        pine.crownStartPermille=400;pine.primaryBranches=21;
+        pine.roundedConiferCrown=true;
+        const auto tree=generateTree(pine,42);
+        const auto reach=[](const TreeBranch& b) {
+            return std::max(std::abs(b.x1-b.x0),std::abs(b.z1-b.z0));
+        };
+        assert(reach(tree.branches[11])>reach(tree.branches[1])*3);
+        assert(reach(tree.branches[11])>reach(tree.branches[21])*3);
+    }
     for(const auto& preset:botanicalTreePresets()) {
         const auto full=generateTree(preset.profile,42);
         sameTree(full,generateTree(preset.profile,42));validateGraph(full,preset.profile.roundedBroadleafCrown||preset.profile.branchDroopPermille>0);
