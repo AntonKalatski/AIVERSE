@@ -32,3 +32,10 @@ Two parallel efforts, split so they never edit the same thing:
 - **architecture-layers** (`feature/aiv20261121_arch-layers`): this layer check, L1 (engine/libraries cycle),
   stable ECS component ids (`engine/core/ECS.h`), splitting `engine/render` targets, and the AGENTS.md
   shrink (only after no-genre is merged, because both edit AGENTS.md).
+
+## AGENTS.md restructure (2026-11-21) — merge note for no-genre
+AGENTS.md now holds only cross-cutting rules; area sections live in `docs/agents/*.md` (verbatim).
+Commit 09c136ed6 already applied the whole `main...feature/aiv20261121_no-genre` AGENTS.md diff before the
+move. When no-genre merges after this branch: resolve AGENTS.md with this branch's version, then re-apply
+only no-genre AGENTS.md edits made after 2026-11-21 15:35 MSK to the file that now holds that section
+(`grep -rl '<heading>' AGENTS.md docs/agents`).
