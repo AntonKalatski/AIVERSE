@@ -83,6 +83,26 @@ stays within 400 units so the fixed ortho depth range does not clip.
 New typed bridge kinds: `studio.viewportInput {kind:'view',yaw,pitch}` and
 `{kind:'projection',ortho}`, validated in `Main.mm`.
 
+### Default (non-composite) host — native gizmo
+
+The app runs WITHOUT `--html-composite` by default: the Metal NSView covers the
+WebView, so HTML overlays over the Scene are invisible there. Therefore
+`StudioMetalScene::drawOrientationGizmo` draws the same gizmo with Renderer3D
+overlay triangles (flat screen-space layout unprojected just beyond the near
+plane, X/Y/Z stroke letters, Iso-highlighted centre) whenever
+`setOrientationGizmo(!htmlComposite_)`; the NSView hit-tests it
+(`orientationGizmoHit` / `activateOrientationGizmo`, auto Iso + return to Persp on
+orbit/look). Composite mode keeps the HTML gizmo.
+Also fixed (pre-existing): in the default host every `studio.viewportInput`
+was rejected, so toolbar Focus/Reset did nothing; toolbar kinds
+(focus/reset/view/projection) are now accepted in both modes.
+
+Interactive QA on the Mac (default host, project `qa-lua-lab`): gizmo visible,
+Y → Top/Iso, centre → Persp, X → Right/Iso, plain LMB drag does not orbit, wheel
+zooms in Iso, toolbar Focus frames the selected entity with animation.
+Not exercised (automation cannot hold modifiers / RMB): RMB fly, Alt orbit,
+Alt+RMB zoom, MMB pan.
+
 ## Checks actually run
 
 - `tsc --noEmit` (studio-web): OK.
