@@ -182,6 +182,21 @@ cases_cpu() {
   run big gl $U; run nobig gl $U AIVERSE_BIG_CORES=0; run big_s050 gl $U AIVERSE_RENDER_SCALE=0.5
   run big vulkan $U; run nobig vulkan $U AIVERSE_BIG_CORES=0
 }
+# a phone screenshot of the running match: shot name gfx env... -> $OUT/shots/<project>_<name>_<gfx>.png
+shot() {
+  local name="$1" gfx="$2"; shift 2
+  mkdir -p "$OUT/shots"
+  A shell am force-stop "$PKG"; clearprops
+  A shell setprop debug.aiverse.args "'--map $MAP --spectate --gfx $gfx'"
+  local i=0
+  for kv in AIVERSE_PERF_LOG=2 AIVERSE_SEED=3 AIVERSE_GFX=$gfx $XENV "$@"; do A shell setprop debug.aiverse.env$i "'$kv'"; i=$((i+1)); done
+  A logcat -c; A shell am start -W -n "$ACT" > /dev/null
+  local t=0; while [ $t -lt 120 ] && [ "$(A logcat -d -s AIVERSE:I | grep -c '\[perf\] window')" -lt 4 ]; do sleep 2; t=$((t+2)); done
+  A exec-out screencap -p > "$OUT/shots/${NAME}_${name}_${gfx}.png"
+  A shell am force-stop "$PKG"
+  say "shot $name $gfx -> shots/${NAME}_${name}_${gfx}.png"
+}
+cases_shots() { shot hw gl; shot manual gl AIVERSE_HW_SHADOW=0; shot off gl AIVERSE_SHADOWS=off; shot native gl AIVERSE_RENDER_SCALE=1 AIVERSE_SHADOWS=medium; }
 # one traced run: RtsView / client stage times in logcat (AIVERSE_FRAME_TRACE, AIVERSE_VIEW_PROFILE)
 cases_trace() { run trace gl $U AIVERSE_FRAME_TRACE=1 AIVERSE_VIEW_PROFILE=1 AIVERSE_CLIENT_PROFILE=1; }
 # what the remaining (Low) shadow cost is: sampling taps vs the shadow-map pass
