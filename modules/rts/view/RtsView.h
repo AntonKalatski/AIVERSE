@@ -465,6 +465,7 @@ public:
                          const MapGrid& grid);
     struct SurfacePrewarmStats {
         uint64_t staged=0,consumed=0,discarded=0;
+        uint64_t sourceSnapshots=0; // full dependency snapshots retained across calls
     };
     SurfacePrewarmStats surfacePrewarmStats() const noexcept {
         return surfacePrewarmStats_;
@@ -957,9 +958,11 @@ private:
     // RAII candidate bundle is defined in RtsView.cpp before the view's
     // out-of-line destructor. It never owns external scene/grid pointers.
     struct PreparedSurfaceLease;
+    enum class SurfaceLeaseUse { Immediate, Retained };
     std::unique_ptr<PreparedSurfaceLease> stageSurfaceFrame(
         render::Renderer3D& renderer,const RtsScene& scene,double time,
-        const std::vector<uint8_t>* vision,const MapGrid& grid);
+        const std::vector<uint8_t>* vision,const MapGrid& grid,
+        SurfaceLeaseUse use=SurfaceLeaseUse::Retained);
     // Commit a matching one-shot prewarm lease, or rebuild on a stale lease.
     // This completes only the surface owner cohort, NOT FramePublicationEpoch.
     bool publishSurfaceFrame(render::Renderer3D& renderer,const RtsScene& scene,

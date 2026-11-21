@@ -247,7 +247,7 @@ void Editor::registerGuiOps() {
         ws_.registerOp({name, desc, Json::parse(schema), std::move(fn), true});
     };
     auto okSummary = [](const std::string& s) { Json r = Json::object(); r.set("ok", Json::fromBool(true)); r.set("summary", Json::string(s)); return r; };
-    add("geometry_stats", "Counters for the last rendered editor view, reset each frame. Compare policy on/off at the same camera; counters are not GPU timing.", "{}", [this](const Json&) {
+    add("geometry_stats", "Geometry counters for the last rendered editor view, reset each frame. Optional completedGpuFrameMs and viewportGpuTimings are separate asynchronous completed GPU-query intervals, not derived from counters.", "{}", [this](const Json&) {
         const auto& s = r3d_.geometryStats(); Json r=Json::object();
         r.set("clustersTested",Json::number(int64_t(s.clustersTested)));
         r.set("clustersCulled",Json::number(int64_t(s.clustersCulled)));
@@ -261,6 +261,21 @@ void Editor::registerGuiOps() {
         r.set("ssrRaymarch",Json::fromBool(r3d_.ssrActive() && r3d_.traceActive()));
         r.set("nereidConfiguredSurfaces",Json::number(int64_t(nereidPreview_.configuredSurfaces())));
         r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
+        // Reuse completed host-owned queries only; do not poll, wait or add
+        // GPU timestamps from the agent callback. Keep viewport and whole
+        // frame scopes separate and omit unsupported/absent samples.
+        const double frameGpu=dev_?dev_->gpuFrameMs():0;
+        if(std::isfinite(frameGpu)&&frameGpu>0)
+            r.set("completedGpuFrameMs",Json::number(frameGpu,6));
+        auto viewportGpu=Json::array();
+        for(const auto& timing:prisma_.viewGpuTimings()) {
+            auto sample=Json::object();
+            sample.set("viewId",Json::number(int64_t(timing.viewId)));
+            sample.set("milliseconds",Json::number(timing.lastGpuMs,6));
+            sample.set("sampleSequence",Json::number(int64_t(timing.sampleSequence)));
+            viewportGpu.push(sample);
+        }
+        r.set("viewportGpuTimings",viewportGpu);
         const auto& model=r3d_.modelStats();auto levels=Json::array();for(auto count:model.cameraLodNodes)levels.push(Json::number(int64_t(count)));r.set("cameraLodNodes",levels);r.set("lodChains",Json::number(int64_t(model.cameraLodChains)));r.set("lodBlocked",Json::number(int64_t(model.cameraLodBlocked)));r.set("shadowLimitedLod",Json::number(int64_t(model.cameraShadowLimitedLod)));return r;
     });
     add("view_pick","Read-only visual mesh hit at normalized Scene coordinates u,v; uses the same picking path as mouse selection.",
