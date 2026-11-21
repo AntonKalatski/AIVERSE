@@ -53,3 +53,10 @@ Studio host around it:
 - Rendering still runs on the main thread from an `NSTimer`; a `CAMetalDisplayLink` or a
   render thread is a separate step.
 - `studioMapEntityIndex` for `entity:@id` is still a linear `findEntity`, now only on rebuild.
+
+## Merge note
+
+The `feature/studio-html5` working tree has uncommitted Assets thumbnails that call
+`renderThumbnail()` inside `StudioMetalScene::frame` after `beginFrame`. With idle frame
+skipping, thumbnails would wait for the next drawn frame: when merging, treat pending
+thumbnail jobs as "animated" (add `!thumbJobs_.empty()` to the `animated` condition).
