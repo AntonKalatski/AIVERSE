@@ -1,0 +1,62 @@
+// Native Studio facial preview owns one real imported Model and ONE Animator.
+// Reuses MotionWeave FacialPreviewSession for expression and IK postprocessing.
+// Only called on the Metal gfx::Device owner thread, never from browser code.
+#pragma once
+#include "apps/studio-native/StudioFacialPreviewBinding.h"
+#include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/ModelAssetProvider.h"
+#include "engine/render/Animation.h"
+#include "engine/render/Renderer3D.h"
+#include <aiverselib/animation/FacialPreviewSession.h>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace aiverse::studio {
+
+class StudioFacialGpuPreview final {
+public:
+    StudioFacialGpuPreview()=default;
+    StudioFacialGpuPreview(const StudioFacialGpuPreview&)=delete;
+    StudioFacialGpuPreview& operator=(const StudioFacialGpuPreview&)=delete;
+    void setDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        gpuLease_=std::move(lease);
+    }
+    // Discard GPU resources only after device completion; on failure leave
+    // the Model quarantined instead of destroying in-flight handles.
+    bool clear(gfx::Device& device,render::Renderer3D& renderer) noexcept;
+    bool sync(gfx::Device& device,render::Renderer3D& renderer,const std::string& projectRoot,
+              const StudioFacialPreviewBinding& binding,std::string& error);
+    bool submit(render::Renderer3D& renderer,
+                const StudioFacialPreviewBinding& binding,
+                float dt,std::string& error);
+    // Keep this lease alive through Animator evaluation AND renderer.render().
+    render::ModelReadLease acquireRead() const {
+        return provider_?provider_->resources().acquireModelRead(model_):render::ModelReadLease{};
+    }
+    const render::Model* model() const noexcept {return model_;}
+    bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
+    uint64_t sourceRevision() const noexcept {return revision_;}
+private:
+    static bool readProjectFile(const std::filesystem::path& projectRoot,
+                                const std::string& key,std::string& bytes);
+    render::RenderDeviceLifetime::Lease gpuLease_;
+    std::unique_ptr<render::ModelAssetProvider> provider_;
+    render::Model* model_=nullptr; // borrowed from provider, guarded per frame
+    lib::animation::FacialPreviewSession facial_;
+    render::Animator animator_; // ONLY parent pose evaluator in this preview
+    render::Pose pose_;
+    int previewClipBase_=-1,activePreviewClip_=-1;
+    std::vector<render::mat4> nodeWorld_;
+    std::string projectRoot_,guid_;
+    std::string readerProject_,pendingSource_,pendingProject_,pendingGuid_,modelKey_;
+    uint64_t pendingRevision_=0,publicationSerial_=0;
+    bool appearanceOnly_=false;
+    uint64_t revision_=0;
+    uint64_t rejectedRevision_=0;
+    std::string rejectedGuid_,rejectedProject_,rejectedError_;
+};
+
+} // namespace aiverse::studio

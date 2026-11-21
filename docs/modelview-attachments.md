@@ -130,3 +130,51 @@ file watching or safe graphics retirement on every backend. See
 
 
 A standalone `aiverse_modelview models/hero.glb --watch-model-files` invocation is also supported without any child attachments. It uses the same native provider-backed source reload, with an empty child socket layout.
+
+
+
+## Stage 158: shared layout, full affine transforms, parent inferred from JSON
+
+`aiverse_modelview --attachments-file assets/hero.attachments.json` now
+opens the saved document's `parent` Model without a separate parent command-line
+argument. Source files are still loaded by the normal native provider. The
+layout file is parsed by the same genre-neutral `AttachmentLayoutCodec` as
+AIVERSE Studio; each child can store optional complete 16-value column-major
+`local` and `childWorld` affine matrices. If absent, they are identity.
+**Socket offset** X/Y/Z is editable directly in the ModelView Attachments UI
+and survives a JSON Save/Load. Rotations, scales and shears may be authored
+through the full matrices; Studio exposes the full basis editor.
+See [the shared layout schema](attachment-layout.md). Runtime parent/child
+scene ECS instantiation and GPU-token provider shutdown are separate work.
+Full native compile/CTest/Metal-Vulkan-GLES validation **NOT RUN**.
+
+
+
+## Stage 160 — prefab child identity
+
+The Attachments UI now exposes a **Prefab child ID** field for each imported
+child. If set, it persists as `"id"` in the shared attachment layout JSON,
+is unique within that document (max 128 chars), and may be resolved into the
+CURRENT ECS child Entity when hosted in a presentation scene. Legacy entries
+without an ID are still accepted but cannot be referenced stably after
+reimport/reordering. Duplicate IDs fail layout compilation before importing
+Models and fail Save before opening/truncating a previously valid JSON file.
+See [SceneAttachmentHost](scene-attachment-host.md). Native GUI/CTest/GPU
+validation remains NOT RUN.
+
+
+
+## Stage 161 — animated child JSON compatibility
+
+ModelView now preserves the optional `animated` Boolean and
+`animationGraph` source key when loading or saving attachments. Enabling
+`animated=true` requires a stable child ID and a Graph asset reference.
+**Important:** this standalone viewer still has a parent-only Animator,
+so an enabled independent animated child is explicitly rejected during
+layout compilation instead of incorrectly being submitted as a static
+parent socket draw. Use the Studio child Graph preview or the native
+`AnimatedSceneAttachmentSources` integration API until ModelView
+receives its own child MotionWeave source host. See
+[animated child architecture](animated-scene-attachments.md) and
+[Stage 161 handoff](agent-handoffs/animation-stage161-independent-animated-child-graph-sources-2026-11-20.md).
+No native CMake/CTest/Metal/Vulkan/GLES runtime checks have been run.

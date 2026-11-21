@@ -209,6 +209,7 @@ void Prisma::retireView(uint64_t id) {
     viewExposureFreeze_.erase(id);
     viewExposureMeterRegions_.erase(id);
     viewManualExposure_.erase(id);
+    viewDepthOfField_.erase(id);
     if (auto it = temporalViews_.find(id); it != temporalViews_.end()) {
         for (auto& h : it->second.history) retireTarget(h);
         temporalViews_.erase(it);
@@ -655,6 +656,23 @@ void Prisma::setViewManualExposure(uint64_t id, bool enabled, float ev) {
 }
 void Prisma::clearViewManualExposure(uint64_t id) {
     if (viewManualExposure_.erase(id)) resetAutoExposure(id);
+}
+void Prisma::setViewDepthOfField(uint64_t id, DepthOfFieldOverride d) {
+    // Same bounds as the depthOfField catalog parameters.
+    const auto safe = [](float v, float lo, float hi, float fallback) {
+        return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
+    };
+    d.focusDistance = safe(d.focusDistance, 0.05f, 2000.0f, 12.0f);
+    d.focusRangeMeters = safe(d.focusRangeMeters, 0.01f, 500.0f, 4.0f);
+    d.maxBlur = safe(d.maxBlur, 0.0f, 16.0f, 8.0f);
+    viewDepthOfField_[id] = d;
+}
+void Prisma::clearViewDepthOfField(uint64_t id) { viewDepthOfField_.erase(id); }
+bool Prisma::viewDepthOfField(uint64_t id, DepthOfFieldOverride& out) const {
+    auto it = viewDepthOfField_.find(id);
+    if (it == viewDepthOfField_.end()) return false;
+    out = it->second;
+    return true;
 }
 
 // Allocate everything that an output-size temporal resolve requires BEFORE
@@ -1871,8 +1889,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // sampled, so a separate scratch depth attachment is used for this pass.
     if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
         const char* flag = std::getenv("AIVERSE_PRISMA_DOF");
+        const auto lensDof = viewDepthOfField_.find(viewId_);
+        const bool lensOverride = lensDof != viewDepthOfField_.end();
+        const float dofMaxBlur = lensOverride ? lensDof->second.maxBlur
+                                              : dof->get("maxBlur");
         if (flag && std::strcmp(flag, "1") == 0 &&
-            dof->get("intensity") > 0.0f && dof->get("maxBlur") > 0.0f &&
+            (!lensOverride || lensDof->second.enabled) &&
+            dof->get("intensity") > 0.0f && dofMaxBlur > 0.0f &&
             program(kDepthOfField).valid()) {
             const Target destination = target(set, kDof, w, h);
             const auto sceneDepth = depthFor(set, w, h);
@@ -1882,7 +1905,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 DepthOfFieldU dofU{};
                 put(dofU.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
                 put(dofU.p0, dof->get("focusDepth"),
-                    dof->get("focusRange"), dof->get("maxBlur"),
+                    dof->get("focusRange"), dofMaxBlur,
                     dof->get("intensity"));
                 // RHI depth uses non-reversed window [0,1] on GL/Metal.
                 // Orthographic bounds may be signed (e.g. -200..1000);
@@ -1891,13 +1914,17 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     std::isfinite(f.depthNear) && std::isfinite(f.depthFar) &&
                     f.depthFar > f.depthNear + 0.0001f &&
                     (f.orthographic || f.depthNear > 0.0f);
-                const bool metricRequested = dof->get("metricFocus") > 0.5f;
+                const bool metricRequested =
+                    lensOverride || dof->get("metricFocus") > 0.5f;
                 const bool useMetricFocus = metricRequested && projectionValid;
                 dofMetricRequested = metricRequested;
                 put(dofU.depthInfo, f.depthNear, f.depthFar,
                     f.orthographic ? 1.0f : 0.0f, 0.0f);
-                put(dofU.focusInfo, dof->get("focusDistance"),
-                    dof->get("focusRangeMeters"),
+                put(dofU.focusInfo,
+                    lensOverride ? lensDof->second.focusDistance
+                                 : dof->get("focusDistance"),
+                    lensOverride ? lensDof->second.focusRangeMeters
+                                 : dof->get("focusRangeMeters"),
                     dof->get("occlusionToleranceMeters"),
                     useMetricFocus ? 1.0f : 0.0f);
                 gfx::PassDesc pass;
