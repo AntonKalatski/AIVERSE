@@ -258,3 +258,24 @@ point-light BTDF or refraction. Texture translucency maps are still author data.
 PBR U2 reuses uv1.w (otherwise only unlit fixedShade diffuse); uniform size is
 unchanged and unlit behavior remains intact. Material equality/hash/cache/merge
 keys include the value; revision-controlled owners must bump revisions on edits.
+
+
+### Winter material library
+
+Merge vegetation/winter/materials.json after the ordinary and projected bark
+libraries. Opt-in IDs are <family>_bark_snow and <family>_leaves_snow. Bind Bark
+and Foliage separately; deciduous leaf removal still belongs to treeCanopyAtAge
+and CanopyPhenology. Coating does not create leaves on a bare winter tree.
+Bark coating is119nodes/6samples/2sources, foliage31nodes/0 extra samples or
+sources; the regular PBR leaf textures and alpha masks remain in use. Snow
+albedo/roughness/normal smoothing is procedural PBR on upward surfaces, not
+new geometry or simulated accumulation. Coverage is an authoring value in
+snow_coating_graph(base, coverage0..1); snow0 preserves an existing base graph
+exactly. Factory library uses bark1 and foliage.65. Generic foliage coating
+assumes dielectric rough base material; this is not a universal metal coating.
+
+Regenerate to a NEW directory with tools/vegetation/snow_coating_graph.py --out
+NEW_DIR. Copy the complete vegetation folder, preserving all family paths.
+Weather/accumulation/melt, wind deformation, and runtime automatic selection of
+these materials require explicit host integration and are not provided by this
+authoring library. No physical snow load or displaced snow silhouette is implied.

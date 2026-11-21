@@ -101,3 +101,13 @@ than3: seeded sweep/width variation, folded lighting normals, root-to-tip pigmen
 and8% dry-tuft palette. No additional vertices/textures/materials/draw calls;
 ordinary dielectric PBR and resident/exported shared LOD remain in use. Explicit
 width overrides still apply. This is not a textured species atlas or live wind.
+
+
+For winter visuals, merge the opt-in vegetation/winter material library AFTER
+the ordinary and projected libraries, then select *_bark_snow/*_leaves_snow
+on their respective slots. Retain native deciduous winter canopy removal.
+Read vegetation-authoring.md: this is a bounded PBR surface coating, not
+weather-driven accumulation, snow geometry or load simulation. The host owns
+season selection. Generic thinTransmission is direct diffuse-sheet sun
+transport, default0; native botanical leaf materials opt into.35, snow materials
+0. Do not call either shadowDiffusion or this thin-sheet approximation full SSS.
