@@ -35,8 +35,18 @@ export default function SceneToolbar({ enabled }: { enabled: boolean }) {
     try { window.localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* optional */ }
     if (enabled) void invoke('studio.viewportInput', { kind: 'tool', ...next }).catch(() => {});
   }, [enabled]);
-  // Push the saved state once the native Scene exists.
-  useEffect(() => { if (enabled) void invoke('studio.viewportInput', { kind: 'tool', ...state }).catch(() => {}); }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Push the saved state once the native Scene exists. The viewport accepts input
+  // only after its first layout, so retry until it answers (≤ 10 s).
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true, tries = 0, timer = 0;
+    const push = () => {
+      void invoke('studio.viewportInput', { kind: 'tool', ...readSceneTools() })
+        .catch(() => { if (live && ++tries < 20) timer = window.setTimeout(push, 500); });
+    };
+    push();
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [enabled]);
   // Q/W/E/R pressed in the native view, or in the HTML Scene (studio:scene-tool).
   useEffect(() => {
     const fromWeb = (event: Event) => {
