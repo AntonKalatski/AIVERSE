@@ -1271,8 +1271,8 @@ public:
         deliverPixelReads();
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
-        invalidateGlState();
         if (uboPool_) poolBeginFrame();
+        invalidateGlState();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
         glBufferData(GL_UNIFORM_BUFFER, kUniformRingSize, nullptr, GL_STREAM_DRAW); // orphan the ring
@@ -2093,7 +2093,7 @@ public:
         last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
         return;
 #endif
-        if (uboPool_) {   // GLES: fenced per-draw blocks (Adreno copies a busy ring even for mapped writes)
+        if (uboPool_) {
             poolUniforms(slot, data, size);
             last.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
             return;
@@ -2328,11 +2328,13 @@ private:
     // bound. Without it (WebGL2, GLES 3.0) attributes are re-pointed per offset.
     using DrawElementsBaseVertexFn = void (APIENTRY*)(GLenum, GLsizei, GLenum, const void*, GLint);
     using DrawElementsInstancedBaseVertexFn = void (APIENTRY*)(GLenum, GLsizei, GLenum, const void*, GLsizei, GLint);
-    // Uniform ring writes through glMapBufferRange(UNSYNCHRONIZED) (not on WebGL2,
-    // which has no mapping; Apple/ANGLE use per-slot blocks). AIVERSE_GL_UNIFORM_MAP=0 disables.
+    // Ring path only (desktop GL; GLES uses the fenced pools above): opt-in
+    // AIVERSE_GL_UNIFORM_MAP=1 writes through glMapBufferRange(UNSYNCHRONIZED).
+    // Off by default: on Adreno 610 the unsynchronized map measured slower than
+    // the pools (150 vs 79 ms), and no desktop driver measurement exists yet.
     const bool mapUniformsUnsynchronized_ = [] {
         const char* v = std::getenv("AIVERSE_GL_UNIFORM_MAP");
-        return !(v && std::strcmp(v, "0") == 0);
+        return v && std::strcmp(v, "1") == 0;
     }();
     DrawElementsBaseVertexFn drawElementsBaseVertex_ = nullptr;
     DrawElementsInstancedBaseVertexFn drawElementsInstancedBaseVertex_ = nullptr;
