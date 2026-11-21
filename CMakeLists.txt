@@ -1374,12 +1374,15 @@ function(aiverse_package_app target)
         set_target_properties(${target} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
         if(AIVERSE_CONTENT_PACK)
             target_link_options(${target} PRIVATE "--preload-file=${AIVERSE_CONTENT_PACK}@/content/content.rpak")
+            # index.data is written at link time: relink when only the content pack changed.
+            set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${AIVERSE_CONTENT_PACK}")
         else()
             target_link_options(${target} PRIVATE
                 "--preload-file=${AIVERSE_CONTENT_DIR}@/content"
                 "--preload-file=${AIVERSE_ENGINE_ASSETS}@/content/engine")
         endif()
         target_link_options(${target} PRIVATE "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/platform/web/shell.html")
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/web/shell.html")
     elseif(AIVERSE_PLATFORM STREQUAL "windows" OR AIVERSE_PLATFORM STREQUAL "linux")
         set_target_properties(${target} PROPERTIES OUTPUT_NAME "${AIVERSE_GAME_EXECUTABLE}")
         if(WIN32)
