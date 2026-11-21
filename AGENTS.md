@@ -24,6 +24,12 @@ data block must be usable by any project, whatever its genre or legacy module.
 - Plans, skills, docs and status files describe capabilities, not genre silos. If a plan or a skill says "in the
   X module only" or "for genre Y", stop and redesign it as a shared capability before writing code. When you find
   an existing genre split, record it in your handoff as debt to remove, do not extend it.
+- **Everything runs on ECS (owner rule, 2026-11-21).** Simulation state of every project is entities and components
+  in the shared ECS world - no parallel object models such as `fps::Actor`, `Projectile`, `Loot`, `Vehicle` vectors
+  or per-genre stores. `Rts*` and `Fps*` code is shared engine code that any project uses; it gets capability names as
+  it moves out of `modules/`. Old paths are deleted when replaced: no compatibility mirrors, dual "legacy / ECS"
+  modes or authority switches are kept (old saves and replays may break; record the break in the handoff and update
+  checksum baselines on purpose). Only templates are per genre; every skill and library works with any project.
 
 ## Terra-first game creation (user policy, 2026-11-20)
 

@@ -95,39 +95,42 @@ editor, server, headless; `tools/citygen` writes only the flat grid format.
 
 | Stage | State |
 |---|---|
-| 1 Naming (G7) | code written: `aiverselib/mechanics`, namespace `aiverse::lib::mechanics` (alias `genre`), forwarders, CMake aliases, docs renamed. Package ids `bots-rts`/`bots-fps`/`genre-bots`/`genre-kits` and test names still old |
-| 2a Capability queries (G2) | code written: `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
-| 2b One scene document (G2) | not started |
-| 3 One vehicle system (G5) | not started - needs build-driven work |
-| 4 Extract `modules/rts`-only capabilities (G3) | not started |
+| 1 Naming (G7) | built + tested (stage 02): `aiverselib/mechanics`, namespace `aiverse::lib::mechanics` (alias `genre`), forwarders, CMake aliases, docs renamed. Package ids `bots-rts`/`bots-fps`/`genre-bots`/`genre-kits` and test names still old |
+| 2a Capability queries (G2) | built + tested (stage 02): `Project::isFps()` removed, `worldSpaceMaps()` / `actorSessionPlay()` / `actorSessionRules()` / `hostId()` |
+| E One scene document (G2) | not started |
+| A FPS host on ECS only | not started |
+| B One vehicle system (G5) | not started |
+| C Shared systems out of `modules/rts` (G3) | not started |
 | 5 Shared blocks (G6) | partly: actor-session host reads `royale`, `gear`, `crate`, `vehicleTypes`, `bots`, `weapons`, `weapon` from the top level of rules |
-| 6 One simulation (G1) | not started |
+| D One simulation (G1) | not started |
 | 7 Template kits (G8) | nothing to do |
 
 Every stage above is unverified until the Mac build and tests in the latest `docs/handoffs/no-genre-split-stage-NN.md` pass.
 
-## Removal plan (each stage: own branch, merge main first, handoff, full tests)
+## Removal plan (revised 2026-11-21: everything on ECS, old code deleted)
 
-1. **Naming (G7).** `git mv genre/ mechanics/` with one-line forwarding headers, namespace alias
-   `lib::genre = lib::mechanics`, CMake alias targets, package ids `bots-rts` -> `bots-commander`,
-   `bots-fps` -> `bots-combatant`, `genre-bots` -> `action-bots` with old ids as aliases; docs renamed. No
-   behaviour change, checksums unchanged.
-2. **Capability queries instead of `isFps()` (G2).** `Workspace` exposes what the open document has
-   (`hasGridMap`, `hasWorldSpaceMap`, `hasHostPlay`...); every gate asks for the capability it needs. Then one
-   scene document: world-space entities with components for both formats, adapters reading old files.
-3. **One vehicle system (G5, G4).** Extract `RtsDriving` + `FpsVehicles` into `engine/` systems over
-   `vehicle-controllers`; both hosts become adapters; rules `driving` is the one block (`fps.vehicleTypes`
-   read as an alias). Rework the racing branch on top of it.
-4. **Extract `modules/rts`-only capabilities (G3)** one per stage, in dependency order: roads model+view ->
-   direct-control characters -> traffic -> raids / commerce / careers / arsenal -> encounters / progression ->
-   map generator and city planner -> campaign -> side commander bot. Each gets an engine system, a data block
-   without a genre name, adapters in old hosts, and a test on at least two hosts.
-5. **Shared rules blocks (G6).** `fps.royale`, `fps.gear`, `fps.mode` etc. become top-level blocks read by
-   shared systems; old keys load as aliases with a lint warning.
-6. **One simulation host (G1).** `game.json` lists systems / blocks instead of `module`; `module` stays as a
-   compatibility preset that expands to a system list. Server, headless, editor, navmesh tool and Studio Play run
-   any project.
-7. **Template kits (G8)**: verified, the kit carries only a label (`family`); no change needed.
+Owner rule: all simulation state is ECS entities + components in the shared world; `Rts*` / `Fps*` code becomes
+shared engine code; replaced paths are deleted, no compatibility modes. Each stage: merge main, one build on
+KINGSTON, full CTest, template checksums (baseline re-recorded on purpose when a stage changes simulation order),
+handoff `docs/handoffs/no-genre-split-stage-NN.md`, push.
+
+A. **FPS host on ECS only.** `fps::State::actors/projectiles/loot/vehicles/vehicleRuns` become entities with
+   components in `Simulation::world()`; delete the vectors, `fps.ecsAuthority`, `fps.ecsMirror`, compat stages and
+   parity fixtures. Consumers (authority session snapshots, bots, editor runtime view, client view, navmesh tool)
+   read components.
+B. **One vehicle system (G5).** `RtsDriving` + `FpsVehicles` -> one ECS driving system in `engine/` over
+   `vehicle-controllers` (seats, autopilot, decks, crash); rules `driving` / `vehicleTypes` one block.
+C. **Shared gameplay systems out of `modules/rts` (G3).** Move each `Rts*` system to `engine/game/<capability>` with a
+   capability name (roads, direct control, traffic, raids, commerce, careers, arsenal, encounters, progression,
+   sensors, campaign, side commander bot, map generator), one or a few per stage, deleting the module copy.
+D. **One simulation (G1).** `RtsModule` and `fps::Module` dissolve into one ECS simulation that runs the systems a
+   project's data enables; `game.json` `module` is removed; server, headless, editor, Studio and tools run any
+   project. `modules/rts`, `modules/fps`, `modules/genres`, `modules/strategic`, `modules/voxel` are emptied.
+E. **One scene document (G2b).** Grid and world-space maps become one entity document; `worldSpaceMaps()` /
+   `actorSessionPlay()` capability queries are deleted with the second format.
+F. **Names (G7 rest).** Package ids `bots-rts` -> `bots-commander`, `bots-fps` -> `bots-combatant`, `genre-bots` ->
+   `action-bots`, `genre-kits` -> `template-kits`; remove the `aiverselib/genre` forwarders and the `lib::genre`
+   alias once no code uses them.
 
 ## Rule for agents meanwhile
 
