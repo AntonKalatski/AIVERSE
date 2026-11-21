@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -120,6 +121,12 @@ void GameClient::initStep(gfx::Device& dev, int step) {
 #endif
         overlay_.init(dev, "fonts/ui.ttf", 17.0f);
         r3d_.setGpuDeviceLease(gpuDeviceLease_);
+        // Touch devices on GLES: hardware PCF for the sun shadow (Shaders.h AIVERSE_HW_SHADOW), set before any
+        // lit pipeline exists. Adreno 610: the manual bilinear filter cost ~6 ms a frame at 540p.
+        if (platform::isTouchDevice() && dev.info().backend == gfx::Backend::GLES3) {
+            const char* e = std::getenv("AIVERSE_HW_SHADOW");
+            if (!(e && *e == '0')) { dev.setGlslPrelude("#define AIVERSE_HW_SHADOW 1\n"); r3d_.setHardwareShadowCompare(true); }
+        }
         if (!r3d_.init(dev)) error_ = "renderer: " + dev.lastError();
         view_.setAppearancePipelineValidator(
             [this](const render::Model& model,
@@ -127,6 +134,7 @@ void GameClient::initStep(gfx::Device& dev, int step) {
                 return r3d_.warmModelPipelinesChecked(model,&materials);
             });
         r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, platform::isTouchDevice()));
+        r3d_.setMobileShadowFilter(platform::isTouchDevice());
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
@@ -449,6 +457,13 @@ void GameClient::fitCamera() {
         float v[5] = {c.x, c.z, cam_.distance, cam_.pitch * 57.2958f, cam_.yaw * 57.2958f};
         int n = std::sscanf(e, "%f,%f,%f,%f,%f", &v[0], &v[1], &v[2], &v[3], &v[4]);
         if (n >= 2) { cam_.target = {v[0], 0, v[1]}; cam_.distance = v[2]; cam_.pitch = v[3] / 57.2958f; cam_.yaw = v[4] / 57.2958f; cam_.minDistance = std::min(cam_.minDistance, v[2]); }
+    }
+    if (hasStartCamera_) {   // host "Play from here"
+        hasStartCamera_ = false;
+        const float* v = startCamera_;
+        cam_.target = {v[0], 0, v[1]}; cam_.distance = std::clamp(v[2], 2.0f, cam_.maxDistance);
+        cam_.pitch = std::clamp(v[3], 10.0f, 89.0f) / 57.2958f; cam_.yaw = v[4] / 57.2958f;
+        cam_.minDistance = std::min(cam_.minDistance, cam_.distance);
     }
     topDownConfigure();   // top-down heroes: follow camera on the own hero (ClientTopDown.cpp)
 }
@@ -1056,7 +1071,43 @@ bool GameClient::requestHostStep() {
     return true;
 }
 
+namespace {
+// AIVERSE_CLIENT_PROFILE=1: average time of the client frame stages, printed every 120 frames
+// ("[client-stages] ..."): sim, scene, ui (update), view (RtsView::draw), fx, render (scene + PRISMA),
+// hud (overlays, RmlUi), other. Used for the Android benchmarks (tools/perf/android-bench.sh).
+struct ClientStageProfile {
+    static constexpr int kStages = 8;
+    const char* names[kStages] = {"sim", "scene", "ui", "view", "fx", "render", "hud", "other"};
+    double total[kStages] = {};
+    int frames = 0;
+    bool on = false, checked = false;   // read on the first frame: Android sets the env from adb after load
+    std::chrono::steady_clock::time_point last;
+    void start() {
+        if (!checked) { checked = true; const char* e = std::getenv("AIVERSE_CLIENT_PROFILE"); on = e && *e == '1'; }
+        if (on) last = std::chrono::steady_clock::now();
+    }
+    void lap(int stage) {
+        if (!on) return;
+        const auto now = std::chrono::steady_clock::now();
+        total[stage] += std::chrono::duration<double, std::milli>(now - last).count();
+        last = now;
+    }
+    void endFrame() {
+        if (!on) return;
+        lap(kStages - 1);
+        if (++frames < 120) return;
+        char line[512]; int n = std::snprintf(line, sizeof line, "[client-stages] avg/%d", frames);
+        double sum = 0;
+        for (int i = 0; i < kStages; ++i) { n += std::snprintf(line + n, sizeof line - size_t(n), " %s=%.2f", names[i], total[i] / frames); sum += total[i]; total[i] = 0; }
+        std::snprintf(line + n, sizeof line - size_t(n), " total=%.2f ms", sum / frames);
+        std::fprintf(stderr, "%s\n", line);
+        frames = 0;
+    }
+} g_stages;
+} // namespace
+
 void GameClient::frame(gfx::Device& dev, double dt) {
+    g_stages.start();
     lensCameras_.collectRetiredTargets();
     const bool hostFrozen = hostCanControl() && hostPaused_;
     const bool singleStep = hostFrozen && hostCanStep() && hostStep_;
@@ -1196,6 +1247,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
     }
+    g_stages.lap(0);   // sim (and everything before it)
     if (sim_) {
         sceneFromSim(*sim_, scene_, alpha, spectator_ ? 0 : human_);
         scene_.paintLayers = viewScripts_.paintLayers();
@@ -1211,6 +1263,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing) { topDownPresent(dt, alpha); topDownCamera(dt); }
     }
 
+    g_stages.lap(1);   // scene
     if (sim_ && ensureLocalAssets()) {
         // Asset-loading output has no active 3D presentation camera.
         prisma_.retireUnregisteredViews({});
@@ -1233,6 +1286,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     }
     updateUi();
     spine_.render(float(dt));   // Spine views into their textures (outside the main pass)
+    g_stages.lap(2);   // ui update
     gfx::PassDesc pass;
     pass.colorTarget = hostColor_;
     pass.depthTarget = hostDepth_;
@@ -1317,7 +1371,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
             view_.setCameraPreparedCapture(&lensModelSnapshot_);
         }
+        g_stages.lap(7);
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
+        g_stages.lap(3);   // view
         for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
@@ -1346,6 +1402,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
+        g_stages.lap(4);   // fx, scripts, ground, ghosts
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         // GPU billboards share this scene depth/pass; no separate pass and no
@@ -1361,6 +1418,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             });
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
+        g_stages.lap(5);   // render
         prisma_.clearCameraVolumes();
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
@@ -1376,6 +1434,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    g_stages.lap(6);   // hud
+    g_stages.endFrame();
     // A separate offscreen path after the already presented scene/UI pass.
     // Never replay RtsView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.

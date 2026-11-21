@@ -608,6 +608,9 @@ public:
     RtsModule();
     explicit RtsModule(std::vector<NativeDefinition> nativeDefinitions);
     const std::vector<NativeDefinition>& nativeDefinitions() const { return nativeDefinitions_; }
+    // Entity spawned for each map "entities" item of the last setup (kNullEntity for static colliders). Editor
+    // tooling only (Studio "Keep play changes"); not part of the simulation state or its checksum.
+    const std::vector<Entity>& mapPlaced() const { return mapPlaced_; }
     ~RtsModule() override;
     std::string name() const override { return "rts"; }
     void setup(Simulation& sim, const Json& rules, const Json& map) override;
@@ -1094,6 +1097,7 @@ private:
     std::unique_ptr<Encounters> encounters_;   // rules "encounters" (state: EncounterStore resource)
     std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
+    std::vector<Entity> mapPlaced_;
     NativeModules native_;
     bool nativeFiltering_ = false;   // inside NativeModule::filterCommand's re-entry (never set between commands)
     Json matchMap_;                  // see matchMap()

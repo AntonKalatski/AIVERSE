@@ -7,6 +7,8 @@
 // down). Steps, cheapest loss first: lights High->Medium, shadows High->Medium, shadows ->Low,
 // lights ->Low; neither shadows nor lights go below Low. After a long fast period steps are given back (each
 // next one after twice as long).
+// Frames over 250 ms are loading / pauses only while they are isolated: from the third in a row they
+// count as slow (a weak phone that never gets under 250 ms must still step down).
 // A manual choice by the player (lock()) stops it. AIVERSE_ADAPTIVE=off disables it,
 // AIVERSE_ADAPTIVE_FAKE_MS=<ms> adds load to every frame (testing).
 #pragma once
@@ -33,7 +35,7 @@ private:
 
     int shadows_ = 2, lights_ = 2, startShadows_ = 2, startLights_ = 2;
     int down_ = 0, ups_ = 0;
-    int frames_ = 0, windowFrames_ = 0, windowSlow_ = 0, slowWindows_ = 0;
+    int frames_ = 0, windowFrames_ = 0, windowSlow_ = 0, slowWindows_ = 0, longRun_ = 0;
     double windowTime_ = 0, sinceChange_ = 0, fastTime_ = 0;
     float bestMs_ = 1e9f, fakeMs_ = 0;
     bool locked_ = false, disabled_ = false;

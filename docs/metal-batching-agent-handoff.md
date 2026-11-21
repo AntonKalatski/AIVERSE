@@ -534,3 +534,35 @@ Implementation `93fb42cbd79a4c3877bf6f460331d9733d907e33`, integration/motionwea
 ## 2026-11-21 — human studio backdrop receiver-only host flag
 
 Implementation `ba0f89312774dbd21ecafa52cc12f87f88ca578a` on integration/motionweave-studio-facial-stage184 sets existing kDrawNoCastShadow only for the VIVID cyclorama in Creator/Studio facial view. Background still receives character shadows. No common renderer, cache, RHI, batching or timing edits; no ICB default changes. Native eight-light and pose captures on Metal plus Creator/Studio builds verified; no performance/Vulkan claims. Evidence and limits: docs/qa/vivid-wardrobe-regression-2026-11-21.md.
+
+## 2026-11-21 — build defaults: RTS CPU caches on, camera culling, late drawable, Metal precompile option
+
+Branch `feature/aiv20261121_rts-view-perf`. Shipped builds use defaults, so the opt-in
+work above never reached them. Not compiled or measured on a Mac by the assistant
+(the C++ RTS files pass a Linux `g++ -fsyntax-only`; `GfxMetal.mm` is unverified).
+
+- **On by default**, each with a kill switch: `AIVERSE_RTS_PLACEMENT_CACHE=0`,
+  `AIVERSE_RTS_STATIC_ANIMATE_FAST=0`, `AIVERSE_RTS_GROUND_CACHE=0` (owner run with all
+  three on: ~14,205 placement hits / 0 misses, ~13,956 static fast-path objects of 14,772).
+- **Camera culling in `RtsView::draw`** (`AIVERSE_RTS_VIEW_CULL=0` disables): before ground
+  sampling, `animate` and `drawObject`, an object is skipped when the sphere around its last
+  submitted model bounds (radius ×1.25 + 1 m, following the current position) together with
+  its ground shadow away from the sun (shadow length capped at ~6.7× height) is outside the
+  camera's side planes. Skipped objects keep `stateFor` (so `seen` and corpse handling are
+  unchanged) and run `animate` with the accumulated time 4× a second. Never culled: selected or
+  hovered objects, objects never submitted yet, frames with a secondary camera capture
+  (`cameraPreparedCapture_` reuses these packets) and planets. `[rts-view-cull]` reports the
+  culled count with `AIVERSE_FRAME_TRACE=1`. Known limits: FX emitted from attachment anchors of
+  culled objects (e.g. smoke rising into view from an object just off screen) are not spawned;
+  planar reflections of objects outside the camera are not drawn.
+- **Late drawable acquisition** in `GfxMetal`, opt-in `AIVERSE_METAL_LATE_DRAWABLE=1`: the
+  drawable is taken at the first screen pass (or a screen `copyColor`). Default stays early: on the
+  owner's Mac (qa-lua-lab, uncapped) one run showed equal frames (~9.3 ms), another ~8 ms late vs
+  ~4 ms early; no gain was measured, so it is not the default until a repeated A/B says otherwise.
+- **`aiversebuild --precompile-metal`** (macOS): `-DAIVERSE_PRECOMPILE_METAL=ON` with loose
+  bundled content (no `content.rpak`), so `tools/metal/precompile.py` ships offline `.metallib`s and
+  the host-GPU pipeline archive. Needs the Xcode Metal Toolchain and a GUI session; default off.
+
+Check on the Mac: with `AIVERSE_FRAME_TRACE=1`, compare `[view-stages] objects`, `[view-objects]`
+and `[rts-view-cull]` against runs with the kill switches; pan the camera fast over shadows at a low
+sun, select/hover at screen edges, construction, deaths off screen, and secondary camera views.

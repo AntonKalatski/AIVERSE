@@ -78,8 +78,10 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     // transform. Exclude procedural animation, authored clips, hierarchy,
     // time/FX variants, planets, construction and LOD switches.
     static const bool cacheEnabled = [] {
+        // On by default (owner run: ~14,205 hits, 0 misses after warmup);
+        // AIVERSE_RTS_PLACEMENT_CACHE=0 rebuilds every placement.
         const char* setting = std::getenv("AIVERSE_RTS_PLACEMENT_CACHE");
-        return setting && std::strcmp(setting, "1") == 0;
+        return !(setting && std::strcmp(setting, "0") == 0);
     }();
     const mat4 identity{};
     const bool immutablePlacement = cacheEnabled &&
@@ -144,6 +146,24 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     d.nodeMaterial = assigned->empty() ? nullptr : assigned;
     d.variant = appearance ? appearance->variant : show->variant;
     st.drawn = reusePlacement ? cached.drawn : base * st.objXf * ch.fix;
+    if (d.model) {
+        // Culling sphere of this submission (model bounds through its world
+        // transform), kept relative to the ground point for the next frames.
+        const float3 lo = d.model->boundsMin, hi = d.model->boundsMax;
+        const float3 centre = d.world.transformPoint((lo + hi) * 0.5f);
+        const float3 half = (hi - lo) * 0.5f;
+        const auto axis = [&](int i) {
+            const float3 v = d.world.transformDir({i == 0 ? 1.f : 0.f, i == 1 ? 1.f : 0.f, i == 2 ? 1.f : 0.f});
+            return std::sqrt(dot(v, v));
+        };
+        const float scale = std::max({axis(0), axis(1), axis(2)});
+        const float radius = std::sqrt(dot(half, half)) * scale;
+        if (std::isfinite(radius) && std::isfinite(centre.x) && std::isfinite(centre.y) && std::isfinite(centre.z)) {
+            st.cullOffset = centre - float3{o.pos.x, ground, o.pos.z};
+            st.cullRadius = radius;
+            st.cullValid = true;
+        } else st.cullValid = false;
+    }
     if (immutablePlacement && !reusePlacement) {
         cached.pos = o.pos;
         cached.ground = ground;
@@ -258,6 +278,9 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         if (d.tint.w < 0.99f) d.flags |= kDrawFadeDepth;   // a faded solid: in front of the ground layers drawn later
     }
     if (L.transparent) d.flags |= kDrawTransparent;
+    // Weak mobile GPUs (Low + mobile filter): units ground with contact blobs (RtsLights) and skip the shadow
+    // map; only structures cast. Adreno 610: the shadow pass redrew ~500 skinned units, ~10 ms a frame.
+    if (!t.structure && !L.air && r.blobUnitShadows()) d.flags |= kDrawNoCastShadow;
     if (tintOverride) { d.tint = *tintOverride; d.flags = kDrawNoCastShadow; d.flash = 0; d.dissolve = 0; }
     // The editor explicitly enables mesh outlines for its selection, independent
     // of game overlay configuration. Hover remains controlled by game overlays.

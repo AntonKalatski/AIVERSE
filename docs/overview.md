@@ -39,6 +39,13 @@ platform/    packaging templates (Info.plist, Gradle project, HTML shell)
 
 ## Quick start (macOS)
 
+The editor on macOS is **AIVERSE Studio** (HTML5 UI over the native engine, `apps/studio-native` +
+`apps/studio-web`): `./studio_mac.command [project]` builds and opens it. Workspaces Scene / World / Look /
+Animate / Character / Logic / Publish hold every former editor window as a panel; the Scene has transform
+tools and brushes (terrain, paint, tiles, fields, objects, roads, rivers), Play runs the game in place, the
+Agent panel drives the project with Claude Code, Publish builds. The ImGui editor below stays for Linux /
+Windows and as a fallback.
+
 ```bash
 cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release      # requires Xcode and CMake
 cmake --build build/mac -j 8

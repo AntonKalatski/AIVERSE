@@ -7,6 +7,8 @@
 #include "apps/studio-native/StudioRuntimeInspect.h"
 #include "apps/studio-native/StudioMoveJournal.h"
 #include <iostream>
+#include <thread>
+#include <chrono>
 #include <set>
 #include <filesystem>
 #include <fstream>
@@ -189,6 +191,170 @@ void authoredEntityWorkflow() {
        const auto log=call("studio.buildLog",R"({"from":999999})");
        AIVERSE_TEST_CHECK(!log.has("error") && log["result"]["text"].str().empty());
        AIVERSE_TEST_CHECK(log["result"]["next"].integer()==log["result"]["size"].integer());
+   }
+   // Align: one undo step, labelled in History; History jump undoes/redoes to a position.
+   {
+       auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;
+       if(doc.data.entities.size()>=2) {
+           const std::string a="entity:"+std::to_string(0),b="entity:"+std::to_string(1);
+           const float bz=doc.data.entities[1].z;
+           auto params=Json::object(),ids=Json::array();ids.push(Json::string(a));ids.push(Json::string(b));
+           params.set("entityIds",ids);params.set("mode",Json::string("minX"));
+           auto request=Json::object();request.set("id",Json::number(int64_t(1)));request.set("method",Json::string("studio.entitiesAlign"));request.set("params",params);
+           const size_t depth=doc.undoDepth();
+           AIVERSE_TEST_CHECK(!session.dispatch(request).has("error"));
+           AIVERSE_TEST_CHECK(doc.undoDepth()==depth+1);
+           AIVERSE_TEST_CHECK(std::abs(doc.data.entities[0].x-doc.data.entities[1].x)<1e-3 && doc.data.entities[1].z==bz);
+           auto history=call("studio.history");
+           AIVERSE_TEST_CHECK(!history.has("error") && history["result"]["steps"].items().back().getStr("label")=="Align");
+           const int64_t pos=history["result"]["position"].integer();
+           auto jump=Json::parse(R"({"position":0})");jump.set("position",Json::number(pos-1));
+           AIVERSE_TEST_CHECK(!call("studio.historyJump",jump.dump(-1).c_str()).has("error") && doc.undoDepth()==depth);
+           jump.set("position",Json::number(pos));
+           AIVERSE_TEST_CHECK(!call("studio.historyJump",jump.dump(-1).c_str()).has("error") && doc.undoDepth()==depth+1);
+           params.set("mode",Json::string("sideways"));request.set("params",params);
+           AIVERSE_TEST_CHECK(session.dispatch(request).has("error"));
+       }
+   }
+   // Asset usage: named content files are used; a file no data names is listed as unused.
+   {
+       std::ofstream(project/"content"/"orphan.png")<<"png";
+       const auto all=call("studio.assetUsage");
+       AIVERSE_TEST_CHECK(!all.has("error"));
+       bool orphan=false,tree=false;
+       for(const auto& p:all["result"]["unused"].items()){orphan|=p.str()=="orphan.png";tree|=p.str()=="tree.gltf";}
+       AIVERSE_TEST_CHECK(orphan && !tree);
+       const auto refs=call("studio.assetUsage",R"({"path":"tree.gltf"})");
+       AIVERSE_TEST_CHECK(!refs.has("error") && refs["result"]["mentions"].size()>=1);
+       AIVERSE_TEST_CHECK(call("studio.assetUsage",R"({"path":"../x"})").has("error"));
+   }
+   // Tool panels: op lists carry schemas, only allowlisted ops run, edits count as History steps.
+   {
+       const auto ops=call("studio.ops",R"({"panel":"terrain"})");
+       AIVERSE_TEST_CHECK(!ops.has("error") && ops["result"]["ops"].size()>=5);
+       AIVERSE_TEST_CHECK(call("studio.ops",R"({"panel":"nope"})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.op",R"({"op":"map_new","params":{}})").has("error"));
+       const auto info=call("studio.op",R"({"op":"map_info","params":{}})");
+       AIVERSE_TEST_CHECK(!info.has("error") && !info["result"].getBool("changed"));
+       const auto merged=call("studio.op",R"({"op":"rules_merge","params":{"path":"fogOfWar","value":{"mode":"explored"}}})");
+       AIVERSE_TEST_CHECK(!merged.has("error") && merged["result"].getBool("changed"));
+       const auto fog=call("studio.op",R"({"op":"rules_get","params":{"path":"fogOfWar"}})");
+       AIVERSE_TEST_CHECK(fog["result"]["result"]["value"].getStr("mode")=="explored");
+       const auto input=call("studio.inputGet");
+       AIVERSE_TEST_CHECK(!input.has("error") && input["result"]["keys"].size()>20 && !input["result"].getBool("exists"));
+       const auto bad=call("studio.inputSet",R"({"asset":{"version":1,"actions":[{"name":"Jump","type":"nope"}],"contexts":[]}})");
+       AIVERSE_TEST_CHECK(bad.has("error"));
+       const auto saved=call("studio.inputSet",R"({"asset":{"version":1,"actions":[{"name":"Jump","type":"bool"}],
+           "contexts":[{"name":"Play","priority":0,"active":true,"mappings":[{"id":1,"action":"Jump","control":{"device":"keyboard","code":"Space"},"consume":false}]}]}})");
+       AIVERSE_TEST_CHECK(!saved.has("error") && saved["result"].getBool("exists") && saved["result"]["asset"]["contexts"].size()==1);
+       std::ofstream(project/"ui.json")<<R"({"icon":"content/missing_icon.png"})";
+       const auto audit=call("studio.assetAudit");
+       bool found=false;
+       for(const auto& r:audit["result"]["missing"].items())found|=r.getStr("reference")=="content/missing_icon.png";
+       AIVERSE_TEST_CHECK(!audit.has("error") && found);
+   }
+   // Agent link: aiversemcp's protocol (hello + token, then calls); an edit is a History step "Agent · …" and a change.
+   {
+       const auto info=call("studio.agentInfo");
+       AIVERSE_TEST_CHECK(!info.has("error") && info["result"]["port"].integer()>0);
+       const int port=int(info["result"]["port"].integer());
+       std::string token;
+       AIVERSE_TEST_CHECK(editor::net::readAgentToken(port,token));
+       editor::net::LineClient client;
+       AIVERSE_TEST_CHECK(client.connect(port,1000));
+       auto roundTrip=[&](const std::string& line){
+           client.send(line);std::string answer;
+           for(int i=0;i<200 && answer.empty();++i){session.pollAgentLink();client.recv(answer,10);}
+           return answer.empty()?Json():Json::parse(answer);
+       };
+       AIVERSE_TEST_CHECK(roundTrip(R"({"id":1,"method":"hello","token":")"+token+R"("})")["result"].getBool("ok"));
+       const size_t before=session.workspace().map.data.entities.size();
+       const auto placed=roundTrip(R"({"id":2,"method":"call","params":{"name":"entity_place","arguments":{"type":"tree","x":3,"y":3}}})");
+       AIVERSE_TEST_CHECK(placed.has("result"));
+       const auto after=call("studio.agentInfo");
+       const auto history=call("studio.history");
+       if(!placed["result"].has("error")) {
+           AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==before+1);
+           AIVERSE_TEST_CHECK(after["result"]["changes"].size()==1 && after["result"]["changes"][0].getBool("undoable"));
+           const auto& steps=history["result"]["steps"];
+           AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Agent · Entity place");
+           AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.data.entities.size()==before);
+       } else AIVERSE_TEST_CHECK(after["result"]["changes"].size()==1 && !after["result"]["changes"][0].getBool("ok"));
+       // view_screenshot waits for the host's capture; the host answers through finishAgentScreenshot.
+       client.send(R"({"id":3,"method":"call","params":{"name":"view_screenshot","arguments":{}}})");
+       for(int i=0;i<100 && !session.agentScreenshotPending();++i){session.pollAgentLink();std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+       AIVERSE_TEST_CHECK(session.agentScreenshotPending());
+       session.finishAgentScreenshot("iVBORw0KGgo=",2,2,"");
+       std::string shot;client.recv(shot,1000);
+       AIVERSE_TEST_CHECK(!shot.empty() && Json::parse(shot)["result"].getStr("png_base64")=="iVBORw0KGgo=" && !session.agentScreenshotPending());
+       client.close();
+       AIVERSE_TEST_CHECK(call("studio.agentStart",R"({"prompt":""})").has("error"));
+   }
+   // Terrain brush: a stroke of several dabs is one History step; Stats counts the map.
+   {
+       AIVERSE_TEST_CHECK(call("studio.sceneBrush",R"({"op":"nope"})").has("error"));
+       const auto armed=call("studio.sceneBrush",R"({"armed":true,"kind":"terrain","op":"raise","radius":3,"strength":1})");
+       AIVERSE_TEST_CHECK(armed["result"].getBool("armed"));
+       const size_t depth=session.workspace().map.undoDepth();
+       std::string err;
+       AIVERSE_TEST_CHECK(session.strokeBegin(4,4,&err));
+       AIVERSE_TEST_CHECK(session.strokeDab(8,4,&err) && session.strokeDab(12,4,&err));
+       AIVERSE_TEST_CHECK(session.strokeEnd(&err));
+       AIVERSE_TEST_CHECK(session.workspace().map.undoDepth()==depth+1);
+       const auto steps=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps.size()>0 && steps[steps.size()-1].getStr("label")=="Terrain brush");
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.undoDepth()==depth);
+       // Object scatter: three dabs far apart place three entities, one History step "Scatter objects".
+       const size_t entities=session.workspace().map.data.entities.size(),depth2=session.workspace().map.undoDepth();
+       AIVERSE_TEST_CHECK(call("studio.sceneBrush",R"({"kind":"objects","type":"tree","radius":2})")["result"].getStr("kind")=="objects");
+       AIVERSE_TEST_CHECK(session.strokeBegin(5,5,&err) && session.strokeDab(10,5,&err) && session.strokeDab(15,5,&err) && session.strokeEnd(&err));
+       AIVERSE_TEST_CHECK(session.workspace().map.data.entities.size()==entities+3 && session.workspace().map.undoDepth()==depth2+1);
+       const auto steps2=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps2[steps2.size()-1].getStr("label")=="Scatter objects");
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && session.workspace().map.data.entities.size()==entities);
+       // Path tool without a road type refuses to start.
+       call("studio.sceneBrush",R"({"kind":"road","roadType":""})");
+       AIVERSE_TEST_CHECK(!session.strokeBegin(5,5,&err) && !err.empty());
+       call("studio.sceneBrush",R"({"armed":false,"kind":"terrain"})");
+       const auto stats=call("studio.stats");
+       AIVERSE_TEST_CHECK(!stats.has("error") && stats["result"]["entities"].integer()==int64_t(session.workspace().map.data.entities.size()));
+   }
+   // Keep play changes: positions by index + type, wrong type skipped, dead removed only on request; one undo step.
+   {
+       const auto& doc=session.workspace().map;
+       const std::string type0=doc.data.entities[0].type;
+       const size_t count=doc.data.entities.size(),depth=doc.undoDepth();
+       const std::string body=std::string(R"({"entities":[{"index":0,"type":")")+type0+R"(","x":7.5,"z":9.25},{"index":999,"type":"__nope__","x":1,"z":1},{"index":0,"removed":false}]})";
+       const auto kept=call("studio.keepPlayChanges",body.c_str());
+       AIVERSE_TEST_CHECK(!kept.has("error") && kept["result"]["moved"].integer()==1 && kept["result"]["skipped"].integer()==1 && kept["result"]["removed"].integer()==0);
+       AIVERSE_TEST_CHECK(doc.data.entities[0].x==7.5f && doc.data.entities[0].z==9.25f && doc.data.entities.size()==count && doc.undoDepth()==depth+1);
+       const auto steps=call("studio.history")["result"]["steps"];
+       AIVERSE_TEST_CHECK(steps[steps.size()-1].getStr("label")=="Keep play changes");
+       if(count>=2){
+           const std::string last=std::string(R"({"entities":[{"index":)")+std::to_string(count-1)+R"(,"removed":true}],"removeDead":true})";
+           const auto removed=call("studio.keepPlayChanges",last.c_str());
+           AIVERSE_TEST_CHECK(removed["result"]["removed"].integer()==1 && doc.data.entities.size()==count-1);
+           AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && doc.data.entities.size()==count);
+       }
+       AIVERSE_TEST_CHECK(!call("studio.undo").has("error") && doc.undoDepth()==depth);
+   }
+   // Extensions: the example script gives widgets, an action command, a change command and a gizmo.
+   {
+       AIVERSE_TEST_CHECK(!call("studio.extensions")["result"].getBool("exists"));
+       const auto made=call("studio.extensionCreate");
+       AIVERSE_TEST_CHECK(!made.has("error") && made["result"]["widgets"].size()==4 && made["result"]["gizmos"].size()==1);
+       AIVERSE_TEST_CHECK(call("studio.extensionCreate").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"inspector"})")["result"]["command"].getStr("id")=="inspector");
+       AIVERSE_TEST_CHECK(call("studio.extensionAction",R"({"id":"radius","value":25})")["result"]["command"].getStr("command")=="status");
+       AIVERSE_TEST_CHECK(session.extensionGizmos()[0]["radius"].toDouble()==25);
+   }
+   // Attachments layout: invalid entries are refused, a valid one round-trips through the codec.
+   {
+       AIVERSE_TEST_CHECK(!call("studio.attachmentsGet")["result"].getBool("exists"));
+       AIVERSE_TEST_CHECK(call("studio.attachmentsSet",R"({"document":{"parent":"content/a.glb","attachments":[{"model":"content/b.glb"}]}})").has("error"));
+       AIVERSE_TEST_CHECK(call("studio.attachmentsGet",R"({"path":"../x.json"})").has("error"));
+       const auto saved=call("studio.attachmentsSet",R"({"document":{"parent":"content/a.glb","attachments":[{"model":"content/b.glb","socket":"hand_r","id":"sword"}]}})");
+       AIVERSE_TEST_CHECK(!saved.has("error") && saved["result"].getBool("exists") && saved["result"]["document"]["attachments"][0].getStr("socket")=="hand_r");
    }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
