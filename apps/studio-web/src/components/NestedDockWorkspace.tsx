@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Columns2, MoreVertical, Rows2, X } from 'lucide-react';
+import { AppWindow, Columns2, MoreVertical, Rows2, X } from 'lucide-react';
 import { StudioContextMenu, type StudioMenuItem } from '../ui';
 import type { Dispatch, DragEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, SetStateAction } from 'react';
 import {
@@ -15,6 +15,8 @@ interface Properties {
   tree: DockTree;
   setTree: DockUpdate;
   renderPanel: (panel: StudioPanel) => ReactNode;
+  /** Undock into an OS window. ifOutside: a tab drag ended outside every drop target. */
+  onFloat?: (panel: StudioPanel, ifOutside: boolean) => void;
 }
 interface BranchProperties extends Properties {
   node: DockNode;
@@ -30,7 +32,7 @@ function draggedPanel(event: DragEvent<HTMLElement>, dragging: StudioPanel | nul
   return validPanel(data) ? data : dragging;
 }
 function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
-                    stacks }: BranchProperties & { node: DockStack }) {
+                    stacks, onFloat }: BranchProperties & { node: DockStack }) {
   const [hover, setHover] = useState<DockEdge | 'center' | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; panel: StudioPanel } | null>(null);
   // Unity-style dock menu (also on tab right-click): close, split, move to another area.
@@ -40,6 +42,8 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
       ({ id: 'split-' + edge, label, icon, separator, disabled: !many,
          onSelect: () => setTree(t => splitDockStack(t, panel, node.id, edge)) });
     return [
+      ...(onFloat ? [{ id: 'float', label: 'Open in New Window', icon: <AppWindow size={13}/>,
+        onSelect: () => onFloat(panel, false) } as StudioMenuItem] : []),
       { id: 'close', label: 'Close ' + STUDIO_PANEL_TITLES[panel], icon: <X size={13}/>, onSelect: () => setTree(t => closeTab(t, panel)) },
       split('right', 'Split Right', <Columns2 size={13}/>, true),
       split('left', 'Split Left', <Columns2 size={13}/>),
@@ -68,7 +72,9 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
     <div className="nested-tabs" role="tablist" aria-label={'Tabs '+node.id}>
       {node.tabs.map(panel => <div key={panel} draggable className={'nested-tab'+(node.active===panel?' nested-active':'')}
         onDragStart={event=>{event.dataTransfer.setData(MIME,panel);event.dataTransfer.effectAllowed='move';setDragging(panel);}}
-        onDragEnd={()=>{setDragging(null);setHover(null);}}
+        onDragEnd={event=>{setDragging(null);setHover(null);
+          // Dropped on no dock target: the native host floats it if the mouse left the window.
+          if(event.dataTransfer.dropEffect==='none')onFloat?.(panel,true);}}
         onDragOver={event=>{event.preventDefault();event.stopPropagation();}}
         onDrop={event=>transfer(event,undefined,panel)}
         onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,panel});}}>
@@ -100,7 +106,7 @@ function DockTabs({ node, tree, setTree, renderPanel, dragging, setDragging,
   </section>;
 }
 function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging,
-                         stacks, actionsPanel, showActions }: BranchProperties & { node: DockSplit }) {
+                         stacks, actionsPanel, showActions, onFloat }: BranchProperties & { node: DockSplit }) {
   const horizontal=node.axis==='horizontal';
   const adjust=(ratio:number)=>setTree(t=>resizeDockSplit(t,node.id,ratio));
   const resize=(event: ReactPointerEvent<HTMLDivElement>)=>{
@@ -131,7 +137,7 @@ function DockSplitNode({ node, tree, setTree, renderPanel, dragging, setDragging
       event.preventDefault();adjust(event.key==='Home'?.12:.88);
     }
   };
-  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions};
+  const shared={tree,setTree,renderPanel,dragging,setDragging,stacks,actionsPanel,showActions,onFloat};
   return <div className={'nested-split '+(horizontal?'nested-horizontal':'nested-vertical')}>
     <div className="nested-child" style={{flex:node.ratio+' 1 0%'}}>
       <DockBranch node={node.first} {...shared}/>
@@ -148,7 +154,7 @@ function DockBranch(props: BranchProperties) {
   return props.node.kind==='stack' ? <DockTabs {...props} node={props.node}/>
     : <DockSplitNode {...props} node={props.node}/>;
 }
-export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Properties) {
+export default function NestedDockWorkspace({ tree, setTree, renderPanel, onFloat }: Properties) {
   const [dragging,setDragging]=useState<StudioPanel|null>(null);
   const [actionsPanel,setActionsPanel]=useState<StudioPanel|null>(null);
   const stacks=dockStacks(tree);
@@ -199,10 +205,10 @@ export default function NestedDockWorkspace({ tree, setTree, renderPanel }: Prop
           </div>
         </details>
         <button onClick={()=>setTree(defaultDockTree())}>Reset layout</button>
-        <span>Drag tabs to rearrange, or use ⋮ for dock actions</span>
+        <span>Drag tabs to rearrange or out of the window to float them; ⋮ for dock actions</span>
       </>}
     </div>
-    <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel}
+    <DockBranch node={tree.root} tree={tree} setTree={setTree} renderPanel={renderPanel} onFloat={onFloat}
       dragging={dragging} setDragging={setDragging} stacks={stacks}
       actionsPanel={actionsPanel} showActions={panel=>setActionsPanel(current=>
         current===panel?null:panel)}/>

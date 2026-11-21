@@ -17,7 +17,18 @@ const pending = new Map<number, {
   timer: ReturnType<typeof setTimeout> | null;
 }>();
 const listeners = new Set<(event: string, payload: unknown) => void>();
-let nextId = 1;
+// Floating panel windows share the native bridge, and asynchronous replies
+// reach every window, so each window draws request ids from its own range.
+function firstRequestId(): number {
+  try {
+    const panel = new URLSearchParams(window.location?.search ?? '').get('panel');
+    if (!panel) return 1;
+    let hash = 0;
+    for (const c of panel) hash = (hash * 31 + c.charCodeAt(0)) % 9000;
+    return (hash + 1) * 1_000_000 + 1;
+  } catch { return 1; }
+}
+let nextId = firstRequestId();
 
 window.__aiverseReceive = (message: NativeReply) => {
   if (message && typeof message.event === 'string') {
