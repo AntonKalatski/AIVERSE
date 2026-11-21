@@ -66,6 +66,9 @@ struct Material {
     float2 fixedShade{1, 0};                // ambient, diffuse
     float shadowDiffusion = 0;            // extra received sun-shadow radius in world units [0,1]; medium/high only
     float thinTransmission = 0;          // diffuse back-light fraction [0,1], 0 retains legacy PBR
+    float sssStrength = 0;                 // artistic diffuse wrap/backlight, 0 disables
+    float3 sssColor{1, 1, 1};             // linear scattering tint
+    float sssScale = 0.5f;                // wrap width and backlight falloff, [0,1]
 };
 
 struct Image {

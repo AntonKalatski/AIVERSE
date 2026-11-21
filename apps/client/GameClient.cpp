@@ -1016,7 +1016,7 @@ void GameClient::runViewScripts(float dt) {
     scriptUiFrame();
     for (auto& r : viewScripts_.takeRequests()) {
         if (r.kind == game::ViewRequest::Notice) notice(r.text);
-        else if (r.kind == game::ViewRequest::Effect) fx_.particles().play(r.text, {r.x, r.y, r.z});
+        else if (r.kind == game::ViewRequest::Effect) fx_.playEffect(r.text, r.x, r.y, r.z);
         else {
             audio::PlayParams pp;
             pp.positional = r.positioned; pp.x = r.x; pp.z = r.z;
@@ -1309,7 +1309,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setCameraPreparedCapture(&lensModelSnapshot_);
         }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
-        for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
+        for (auto& fe : view_.fieldView().takeEffects()) fx_.playEffect(fe.name, fe.pos.x, fe.pos.y + 0.2f, fe.pos.z);   // grid field particles
         fx_.update(*sim_, scene_, cam_, r3d_.viewProj(),renderW,renderH,
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
@@ -1345,10 +1345,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // PRISMA: current-frame particle alpha/depth coverage for MotionBlur.
         // Callback runs only when the HDR motion/reactive pass is active;
         // it reuses particle geometry already submitted by fx_.render().
-        if (fx_.particles().hasReactiveGeometry())
+        if (fx_.hasReactiveGeometry())
             r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
                     gfx::TextureHandle sceneDepth, int width, int height) {
-                fx_.particles().renderReactive(gpu,sceneDepth,width,height);
+                fx_.renderReactive(gpu,sceneDepth,width,height);
             });
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD

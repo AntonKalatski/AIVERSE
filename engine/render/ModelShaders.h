@@ -25,8 +25,8 @@
 //                 emissive.w: received sun-shadow diffusion radius in world units (0 = legacy).
 //                 vec4 pbr (metallic, roughness, normalScale, occlusionStrength);
 //                 vec4 misc (alphaCutoff, teamMode, teamStrength, flags: bit0 vertex RGB/alpha, bit1 alpha is local AO);
-//                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, fixed shade ambient, diffuse);
-//                 vec4 light (fixed light direction xyz, w 1 = on: unlit * (ambient + diffuse * saturate(N.L)))
+//                 vec4 uv0 (offset.xy, scale.xy); vec4 uv1 (rotation, unlit, SSS strength/scale for PBR or fixed shade ambient/diffuse for unlit);
+//                 vec4 light (PBR: SSS color.rgb, thin transmission.w; unlit: fixed light direction.xyz and enabled.w);
 //   U3 skin:      SKINNED vec4 joints[240] (3 rows of a 3x4 matrix per joint);
 //                 BAKED   vec4 palette[20] (palette slot -> skin joint, 4 per vec4)
 //   U4 morph:     vec4 w[2] (8 weights); vec4 info (first texel, first vertex, vertex count, targets);
@@ -383,7 +383,7 @@ void main() {
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(m_uv1.w,0.0,1.0)*(1.0-metallic);
+    float thin = m_uv1.y > 0.5 ? 0.0 : clamp(m_light.w,0.0,1.0)*(1.0-metallic);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && v_draw.x > 0.5) ? min(shadowAtSurface(v_wpos, shadowNormal, m_emissive.w), terrainShadow(v_wpos)) : 1.0;
@@ -446,6 +446,13 @@ void main() {
     // Add INDIRECT diffuse only: no extra sun, specular or baked base.
     col += diff * dynamicGiAt(v_wpos,n) * ao;
 #endif
+    if (m_uv1.z > 0.0 && m_uv1.y < 0.5) {
+        float wrap = clamp(m_uv1.w, 0.0, 1.0);
+        float wrapped = max((dot(n, L) + wrap) / (1.0 + wrap), 0.0);
+        float back = pow(max(dot(-n, L), 0.0), mix(8.0, 2.0, wrap));
+        float scatter = (max(wrapped - ndl, 0.0) * sh + back * wrap * 0.5) * m_uv1.z;
+        col += diff * m_light.rgb * sun * scatter * ao;
+    }
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (u_trace2.w > 1.5 && m_uv1.y < 0.5 && rough < 0.8) {
         float hit; vec3 reflected = ssrWater(v_wpos + n * 0.02, n, V, hit);
@@ -958,7 +965,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     float ndv = max(dot(n, V), 1e-4);
     // Optional thin diffuse sheet: split incident diffuse energy between
     // reflection and opposite-hemisphere transmission. No emissive shortcut.
-    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(m.uv1.w,0.0,1.0)*(1.0-metallic);
+    float thin = m.uv1.y > 0.5 ? 0.0 : clamp(m.light.w,0.0,1.0)*(1.0-metallic);
     float backNdl = max(-dot(n,L),0.0);
     if(thin>0.0 && dot(shadowNormal,L)<0.0) shadowNormal=-shadowNormal;
     float sh = ((ndl > 0.0 || thin*backNdl>0.0) && in.draw.x > 0.5) ? min(shadowAtSurface(f, in.wpos, shadowNormal, in.pos.xy, tex0, s0, m.emissive.w), terrainShadow(f, tex10, s10, in.wpos)) : 1.0;
@@ -1020,6 +1027,13 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #if defined(DYNAMIC_GI)
     col += diff * dynamicGiAt(DYNAMIC_GI_TEXTURE,dgi,in.wpos,n) * ao;
 #endif
+    if (m.uv1.z > 0.0 && m.uv1.y < 0.5) {
+        float wrap = clamp(m.uv1.w, 0.0f, 1.0f);
+        float wrapped = max((dot(n, L) + wrap) / (1.0f + wrap), 0.0f);
+        float back = pow(max(dot(-n, L), 0.0f), mix(8.0f, 2.0f, wrap));
+        float scatter = (max(wrapped - ndl, 0.0f) * sh + back * wrap * 0.5f) * m.uv1.z;
+        col += diff * m.light.rgb * sun * scatter * ao;
+    }
 #if AIVERSE_HDR && AIVERSE_Q > 0
     if (f.trace2.w > 1.5 && m.uv1.y < 0.5 && rough < 0.8) {
         float hit; float3 reflected = ssrWater(f, tex11, s11, tex12, s12, in.wpos + n * 0.02, n, V, hit);

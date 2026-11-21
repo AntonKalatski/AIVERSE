@@ -49,9 +49,13 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
         mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
         mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
-        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.shading == ShadingModel::Unlit ? mt.fixedShade.y :
+        mu.uv1[2] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssStrength, 0.0f, 1.0f) : mt.fixedShade.x;
+        mu.uv1[3] = mt.shading == ShadingModel::Pbr ? std::clamp(mt.sssScale, 0.0f, 1.0f) : mt.fixedShade.y;
+        mu.light[0] = mt.shading == ShadingModel::Pbr ? mt.sssColor.x : mt.fixedLight.x;
+        mu.light[1] = mt.shading == ShadingModel::Pbr ? mt.sssColor.y : mt.fixedLight.y;
+        mu.light[2] = mt.shading == ShadingModel::Pbr ? mt.sssColor.z : mt.fixedLight.z;
+        mu.light[3] = mt.shading == ShadingModel::Unlit ? mt.fixedLight.w :
             (std::isfinite(mt.thinTransmission) ? std::clamp(mt.thinTransmission,0.f,1.f) : 0.f);
-        mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
     return mu;
 }
 inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(

@@ -598,6 +598,13 @@ int main() {
     CHECK(!equivalentGpuMaterial(gpuA, withoutGpuPaletteFactors(gpuA.materials[0]),
                                 gpuB, withoutGpuPaletteFactors(gpuB.materials[0])));
     gpuB.materials[0].shadowDiffusion = 0;
+    gpuB.materials[0].sssStrength = .5f;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));
+    gpuB.materials[0].sssStrength = 0;
+    gpuB.materials[0].sssColor.y = .3f;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.materials[0].sssColor.y = 1;
     gpuA.images.resize(1); gpuB.images.resize(1);
     gpuA.images[0].tex.id = 101;
     gpuB.images[0].tex.id = 101;

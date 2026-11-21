@@ -449,6 +449,15 @@ Json StudioSession::dispatch(const Json& request) {
                 // The HTML5 picker sends immutable GUIDs; resolve/validate them
                 // at the native trust boundary, never accept an arbitrary path.
                 for(const auto& [key,value]:patch.members()) {
+                    if (key=="sssColor") {
+                        if(!value.isString())throw std::runtime_error("SSS color must be linear RGB");
+                        const auto rgb=parseStudioSssColor(value.str());
+                        if(!rgb)throw std::runtime_error("SSS color requires three values from 0 to 1");
+                        Json color=Json::array();
+                        for(double channel:*rgb)color.push(Json::number(channel));
+                        validatedPatch.set(key,std::move(color));
+                        continue;
+                    }
                     if (studioMaterialTextureKey(key)) {
                         if (!value.isString())
                             throw std::runtime_error("Texture reference must be an asset GUID");

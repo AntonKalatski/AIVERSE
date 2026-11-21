@@ -155,12 +155,17 @@ namespace {
 using Loader = std::unique_ptr<Model> (*)(const std::string&, const std::string&, const FileReader&, std::vector<std::string>*);
 struct Format { const char* ext; Loader load; };
 const Format kFormats[] = {
-    {".gltf", loadGltf}, {".glb", loadGltf}, {".obj", loadObj},
+    {".gltf", loadGltf}, {".glb", loadGltf},
+#if !defined(AIVERSE_NO_OBJ)
+    {".obj", loadObj},
+#endif
 #if !defined(AIVERSE_NO_FBX)
     {".fbx", loadFbx},
 #endif
+#if !defined(AIVERSE_NO_LEGACY_MODELS)
     {".vox", loadVox}, {".vxl", loadVxl}, {".ply", loadPly}, {".stl", loadStl}, {".3ds", load3ds}, {".dae", loadDae},
     {".mdx", loadMdx}, {".mdl", loadMdl}, {".3do", load3do}, {".w3d", loadW3d},
+#endif
 };
 std::string extOf(const std::string& path) {
     const size_t dot = path.find_last_of('.'), slash = path.find_last_of("/\\");
@@ -260,6 +265,14 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
 #if defined(AIVERSE_NO_FBX)
         if (ext == ".fbx") throw std::runtime_error(path + ": FBX import is disabled in this build (AIVERSE_FBX=OFF); convert to .glb");
 #endif
+#if defined(AIVERSE_NO_OBJ)
+        if (ext == ".obj") throw std::runtime_error(path + ": OBJ import is disabled in this build (AIVERSE_OBJ=OFF); convert to .glb");
+#endif
+#if defined(AIVERSE_NO_LEGACY_MODELS)
+        if (ext == ".vox" || ext == ".vxl" || ext == ".ply" || ext == ".stl" || ext == ".3ds" ||
+            ext == ".dae" || ext == ".mdx" || ext == ".mdl" || ext == ".3do" || ext == ".w3d")
+            throw std::runtime_error(path + ": legacy model import is disabled in this build (AIVERSE_LEGACY_MODELS=OFF); convert to .glb");
+#endif
         if (!read(path, bytes)) throw std::runtime_error(path + ": file not found");
         throw std::runtime_error(path + ": unsupported model format '" + ext + "' (convert it with tools/models/modelconv, "
                                  "or use .gltf, .glb, .obj, .fbx, .dae, .3ds, .ply, .stl, .vox, .vxl, .mdx, .mdl, .3do, .w3d)");
@@ -319,7 +332,13 @@ bool decodeImage(const std::string& bytes, Image& out) {
         out.compressed = std::move(ci);
         return true;
     }
-    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) return decodeBlp(bytes, out);
+    if (bytes.size() >= 4 && (bytes.compare(0, 4, "BLP1") == 0 || bytes.compare(0, 4, "BLP2") == 0)) {
+#if defined(AIVERSE_NO_BLP)
+        return false;
+#else
+        return decodeBlp(bytes, out);
+#endif
+    }
     if (bytes.size() >= 4 && bytes.compare(0, 4, "DDS ") == 0) return decodeDds(bytes, out);
     int w = 0, h = 0, n = 0;
     stbi_uc* px = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), int(bytes.size()), &w, &h, &n, 4);

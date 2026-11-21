@@ -488,21 +488,32 @@ add_library(aiverse_models STATIC
     engine/render/ModelMerge.cpp   # static batching of parts that share a material
     engine/render/GlobalGeometryPool.cpp
     engine/render/ModelGltf.cpp
-    engine/render/ModelObj.cpp
     engine/render/Animation.cpp
     engine/render/TextureCodec.cpp
-    # more formats (docs/models.md): voxels, interchange, classic RTS formats, their textures
-    engine/render/ModelVox.cpp
-    engine/render/ModelPly.cpp
-    engine/render/Model3ds.cpp
-    engine/render/ModelDae.cpp
-    engine/render/ModelMdx.cpp
-    engine/render/ModelMdl.cpp
-    engine/render/Model3do.cpp
-    engine/render/ModelW3d.cpp
-    engine/render/ImageBlp.cpp
     engine/render/ImageDds.cpp
     engine/render/TextureGen.cpp)
+option(AIVERSE_BLP "Runtime BLP1/BLP2 image decoding" ON)
+if(AIVERSE_BLP)
+    target_sources(aiverse_models PRIVATE engine/render/ImageBlp.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_BLP=1)
+endif()
+option(AIVERSE_OBJ "Runtime OBJ model import" ON)
+if(AIVERSE_OBJ)
+    target_sources(aiverse_models PRIVATE engine/render/ModelObj.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_OBJ=1)
+endif()
+option(AIVERSE_LEGACY_MODELS "Runtime VOX/VXL, PLY/STL, 3DS, DAE, MDX/MDL, 3DO and W3D import" ON)
+if(AIVERSE_LEGACY_MODELS)
+    target_sources(aiverse_models PRIVATE
+        engine/render/ModelVox.cpp engine/render/ModelPly.cpp
+        engine/render/Model3ds.cpp engine/render/ModelDae.cpp
+        engine/render/ModelMdx.cpp engine/render/ModelMdl.cpp
+        engine/render/Model3do.cpp engine/render/ModelW3d.cpp)
+else()
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_NO_LEGACY_MODELS=1)
+endif()
 # baked lighting, CPU side (agent-lightbake): lightmap UVs of models (+ .lmuv sidecars), bake folder reader
 target_sources(aiverse_models PRIVATE engine/render/LightmapUv.cpp engine/bake/LightmapData.cpp)
 # ufbx (MIT / public domain): FBX parser, compiled as its own C library without warnings.
@@ -1163,6 +1174,12 @@ if(AIVERSE_MOCK_PLUGINS)
 endif()
 
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
+# Packaged clients link an archive of the runtime objects. The linker extracts
+# only translation units needed by the client, while editor and test targets
+# keep the existing complete OBJECT runtime contract.
+add_library(aiverse_client_runtime STATIC $<TARGET_OBJECTS:aiverse_runtime>)
+target_link_libraries(aiverse_client_runtime PUBLIC
+    "$<TARGET_PROPERTY:aiverse_runtime,INTERFACE_LINK_LIBRARIES>")
 if(AIVERSE_VULKAN)
     target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
 endif()
@@ -1357,19 +1374,25 @@ endfunction()
 
 if(AIVERSE_BUILD_CLIENT)
     if(AIVERSE_PLATFORM STREQUAL "android")
-        add_library(main SHARED apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_library(main SHARED apps/client/main.cpp)
+        target_link_libraries(main PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(main PRIVATE aiverse_game_audio)
         # Keep ANativeActivity_onCreate from the glue library.
         set_target_properties(main PROPERTIES LINK_FLAGS "-u ANativeActivity_onCreate")
         aiverse_package_notices(main)
         set(AIVERSE_CLIENT_TARGET main)
     else()
-        add_executable(aiverse_client apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
-        target_link_libraries(aiverse_client PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
+        add_executable(aiverse_client apps/client/main.cpp)
+        target_link_libraries(aiverse_client PRIVATE aiverse_client_runtime aiverse_game_view aiverse_i18n AIVERSE::InputFlow)
+        target_link_libraries(aiverse_client PRIVATE aiverse_game_audio)
         aiverse_package_app(aiverse_client)
         set(AIVERSE_CLIENT_TARGET aiverse_client)
+    endif()
+    # Mach-O keeps otherwise unused functions from directly linked client
+    # objects unless dead stripping is requested explicitly. Static archives
+    # above select translation units; this also removes unreachable sections.
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        target_link_options(aiverse_client PRIVATE "LINKER:-dead_strip")
     endif()
     # Native plugins (platforms agent): C++ / Objective-C++ sources compiled into the game itself,
     # so AIVERSE_PLUGIN(...) static registration is never dropped by the linker.
@@ -1758,14 +1781,19 @@ add_library(aiverse_ui STATIC engine/ui/UiLayer.cpp engine/ui/UiRender.cpp engin
     engine/ui/UiLinear.cpp)   # linear UI blending (ui-linear)
 target_include_directories(aiverse_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE third_party/stb)
 target_link_libraries(aiverse_ui PUBLIC aiverse_rmlui aiverse_rmlui_lua aiverse_lua aiverse_engine)
-if(TARGET aiverse_client)
-    target_sources(aiverse_client PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
-    target_link_libraries(aiverse_client PRIVATE aiverse_ui aiverse_net aiverse_game_fx)
-endif()
-if(TARGET main)
-    target_sources(main PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
-    target_link_libraries(main PRIVATE aiverse_ui aiverse_net aiverse_game_fx)
-endif()
+option(AIVERSE_CLIENT_WITH_FX "Include SpectraFX particles in packaged clients" ON)
+foreach(t aiverse_client main)
+    if(TARGET ${t})
+        target_sources(${t} PRIVATE apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp)
+        target_link_libraries(${t} PRIVATE aiverse_ui aiverse_net)
+        if(AIVERSE_CLIENT_WITH_FX)
+            target_sources(${t} PRIVATE apps/client/ClientFx.cpp)
+            target_link_libraries(${t} PRIVATE aiverse_game_fx)
+        else()
+            target_compile_definitions(${t} PRIVATE AIVERSE_CLIENT_NO_FX=1)
+        endif()
+    endif()
+endforeach()
 
 # ---------------------------------------------------------------------------
 # 2D games (2D-mode agent): tile maps + autotiling (deterministic, part of the game library),
@@ -2014,13 +2042,18 @@ target_sources(aiverse_game_view PRIVATE modules/rts/view/RtsViewScript.cpp modu
 target_sources(aiverse_game_view PRIVATE engine/render/RenderTexture.cpp modules/rts/view/RtsPaintLayers.cpp modules/rts/view/RtsGroundCanvas.cpp)
 
 # Shared region gesture input; gameplay remains in project Lua ability effects.
+option(AIVERSE_CLIENT_WITH_CITY "Include persistent city server client in packaged clients" ON)
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_sources(${t} PRIVATE apps/client/ClientRegionInput.cpp)
         target_sources(${t} PRIVATE apps/client/ClientTopDown.cpp)   # top-down heroes (agent-topdown-control)
         target_sources(${t} PRIVATE apps/client/ClientCommerce.cpp)   # city economy (agent-gta2)
-        target_sources(${t} PRIVATE apps/client/ClientCity.cpp)       # a seat in a city on a server (agent-gta2)
-        target_link_libraries(${t} PRIVATE aiverse_net_city)
+        if(AIVERSE_CLIENT_WITH_CITY)
+            target_sources(${t} PRIVATE apps/client/ClientCity.cpp)   # a seat in a city on a server
+            target_link_libraries(${t} PRIVATE aiverse_net_city)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientCityStub.cpp)
+        endif()
     endif()
 endforeach()
 
@@ -2132,7 +2165,8 @@ set(AIVERSE_CLIENT_CORE_SOURCES apps/client/ClientLoading.cpp apps/client/GameCl
     apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp
     apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp apps/client/ClientRegionInput.cpp
     apps/client/ClientBaked.cpp   # ClientBaked: the map's baked lighting (agent-lightbake)
-    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp)   # top-down heroes (agent-topdown-control), city economy (agent-gta2)
+    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp
+    apps/client/ClientGameActionsLua.cpp)   # shared sendPercent/useAbility UI Lua; independent of gamepad
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_content_reader)   # streamed world: worker-thread project reader
@@ -3062,10 +3096,27 @@ endif()
 add_library(aiverse_spine STATIC engine/spine/SpineData.cpp engine/spine/SpineSkeleton.cpp)
 target_include_directories(aiverse_spine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_spine PUBLIC aiverse_engine)
+option(AIVERSE_CLIENT_WITH_SPINE "Include Spine UI animation in packaged clients" ON)
+option(AIVERSE_CLIENT_WITH_GAMEPAD "Include gamepad controls in packaged clients" ON)
 foreach(t aiverse_client main aiverse_hosted_client)
     if(TARGET ${t})
-        target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp apps/client/ClientServices.cpp apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
-        target_link_libraries(${t} PRIVATE aiverse_spine aiverse_render2d)
+        if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_SPINE)
+            target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp)
+            target_link_libraries(${t} PRIVATE aiverse_spine)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientSpineDisabled.cpp)
+            target_compile_definitions(${t} PRIVATE AIVERSE_CLIENT_NO_SPINE=1)
+        endif()
+        target_sources(${t} PRIVATE apps/client/ClientServices.cpp)
+        if(NOT t STREQUAL "aiverse_hosted_client")
+            target_sources(${t} PRIVATE apps/client/ClientGameActionsLua.cpp)
+        endif()
+        if(t STREQUAL "aiverse_hosted_client" OR AIVERSE_CLIENT_WITH_GAMEPAD)
+            target_sources(${t} PRIVATE apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
+        else()
+            target_sources(${t} PRIVATE apps/client/ClientGamepadDisabled.cpp)
+        endif()
+        target_link_libraries(${t} PRIVATE aiverse_render2d)
     endif()
 endforeach()
 if(TARGET aiverse_tests)
