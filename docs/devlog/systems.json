@@ -605,9 +605,9 @@
         },
         {
           "name": "Захват",
-          "text": "Чтение кадра с GPU и сохранение в PNG.",
+          "text": "Чтение кадра с GPU в PNG и EXR, панорамы 360°, виды зеркал и порталов.",
           "nameEn": "Capture",
-          "textEn": "GPU readback and PNG output."
+          "textEn": "GPU readback to PNG and EXR, 360° panoramas, mirror and portal views."
         },
         {
           "name": "Авторинг",
@@ -619,7 +619,8 @@
       "enables": [
         "Показывать несколько камер в одном кадре: мониторы, картинка в картинке, портреты.",
         "Снимать кадры игры в PNG — в том числе для сайта и тестов.",
-        "Перерисовывать подготовленный кадр во вторичные камеры без повторной симуляции."
+        "Перерисовывать подготовленный кадр во вторичные камеры без повторной симуляции.",
+        "Делить экран между игроками или камерами, у каждой — свои постэффекты и видимые слои."
       ],
       "roadmap": [
         {
@@ -647,16 +648,16 @@
           "title": "Планировщик, стек камер, режиссёр и split-screen",
           "titleEn": "Scheduler, camera stack, director and split-screen",
           "date": "2026-11-20",
-          "text": "Расписание камер по приоритетам и зависимостям, стек основной камеры и наложений, режиссёр с выбором и плавными переходами, сплит-скрин и картинка в картинке за один проход по экрану. Врезка показана в кадре Sponza на Metal; сплит-скрин и режиссёр пока проверены тестами без GPU.",
-          "textEn": "Camera scheduling by priority and dependencies, a base camera with overlays, a director that picks views and blends between them, split-screen and picture-in-picture in one screen pass. The inset is shown in the Sponza frame on Metal; split-screen and the director are covered by tests without a GPU so far."
+          "text": "Расписание камер по приоритетам и зависимостям, стек основной камеры и наложений, режиссёр с выбором и плавными переходами, сплит-скрин и картинка в картинке за один проход по экрану. Сплит-скрин и переход режиссёра показаны в кадре Sponza на Metal.",
+          "textEn": "Camera scheduling by priority and dependencies, a base camera with overlays, a director that picks views and blends between them, split-screen and picture-in-picture in one screen pass. Split-screen and a director blend are shown in the Sponza frame on Metal."
         },
         {
           "status": "done",
           "title": "PostFX и слои отдельно для каждой камеры",
           "titleEn": "Per-camera PostFX and layers",
-          "date": "2026-11-20",
-          "text": "У каждой камеры свои постэффекты PRISMA, история TAA и отражений, экспозиция и маска видимых слоёв. На Metal показано в кадре Sponza для основной камеры; две камеры с разной обработкой в одном кадре и маски слоёв в кадре ещё не показаны.",
-          "textEn": "Each camera has its own PRISMA post-processing, TAA and reflection history, exposure and visible-layer mask. Shown on Metal in the Sponza frame for the main camera; two differently processed cameras in one frame and layer masks are not shown in a frame yet."
+          "date": "2026-11-22",
+          "text": "Свои постэффекты PRISMA, история TAA и отражений, экспозиция и маска слоёв у каждой камеры. В кадре Sponza на Metal две камеры с разной обработкой, и одна не видит объект на скрытом слое. Слои пока фильтруют только модели.",
+          "textEn": "Per-camera PRISMA post-processing, TAA and reflection history, exposure and layer mask. In the Sponza frame on Metal two cameras are processed differently and one does not see an object on a hidden layer. Layers filter models only for now."
         },
         {
           "status": "done",
@@ -678,15 +679,16 @@
           "status": "in-progress",
           "title": "Стерео и OpenXR",
           "titleEn": "Stereo and OpenXR",
-          "text": "Готовы стереопары камер и виды глаз из данных XR-рантайма без привязки к SDK. Осталось подключить OpenXR: swapchain шлема, отправку кадра и репроекцию; на шлеме ещё не запускалось.",
-          "textEn": "Stereo camera pairs and eye views built from XR runtime data, independent of any SDK, are ready. OpenXR itself is still to be connected: headset swapchain, frame submission and reprojection; nothing has run on a headset yet."
+          "text": "Стерео-пары из одной камеры и глаза по данным XR-рантайма (поза и углы обзора) отрисованы на Metal. Осталось подключить OpenXR: swapchain шлема, отправку кадра и репроекцию; на шлеме ещё не запускалось.",
+          "textEn": "Stereo pairs from one camera and eyes from XR runtime data (pose and field-of-view angles) are rendered on Metal. OpenXR is still to be connected: headset swapchain, frame submission and reprojection; nothing has run on a headset yet."
         },
         {
-          "status": "in-progress",
+          "status": "done",
           "title": "Кубмапы, панорамы, зеркала и порталы",
-          "text": "Виды для шести граней кубмапы, сборка панорамы, плоские зеркала и связанные порталы есть в коде и покрыты тестами без GPU; в кадре на GPU ещё не показаны.",
+          "text": "Шесть граней куба и панорама 360°, камеры зеркала и портала с отсечением по плоскости — показаны в кадре Sponza на Metal; заодно исправлена перевёрнутая панорама.",
           "titleEn": "Cubemaps, panoramas, mirrors and portals",
-          "textEn": "Six cubemap face views, panorama assembly, planar mirrors and linked portals exist in code with tests that run without a GPU; not yet shown in a GPU frame."
+          "textEn": "Six cube faces and a 360° panorama, mirror and portal cameras clipped at their plane — shown in the Sponza frame on Metal; an upside-down panorama was fixed along the way.",
+          "date": "2026-11-22"
         }
       ],
       "taglineEn": "Cameras and cinematic frames",
@@ -695,7 +697,8 @@
       "enablesEn": [
         "Show several cameras in one frame: monitors, picture-in-picture, portraits.",
         "Capture game frames to PNG — including for the website and tests.",
-        "Replay a prepared frame into secondary cameras without simulating again."
+        "Replay a prepared frame into secondary cameras without simulating again.",
+        "Split the screen between players or cameras, each with its own post-processing and visible layers."
       ],
       "release": "2.2.0"
     },
