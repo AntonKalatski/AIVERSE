@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T21:24:57+00:00",
+ "generated": "2026-11-21T21:35:22+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -81,6 +81,81 @@
   }
  ],
  "entries": [
+  {
+   "id": "2026-11-22-prisma-dof-motion-blur",
+   "date": "2026-11-22",
+   "system": "prisma",
+   "title": "Depth of field and motion blur are regular effects",
+   "summary": "Depth of field and motion blur are no longer experimental: add the effect to a camera profile and it works on Metal, OpenGL and Vulkan.",
+   "body": [
+    "Both effects used to need an environment variable. Now `depthOfField` and `motionBlur` in a project's `postfx` or a camera profile work right away, like bloom or colour grading. They default to the High quality tier, motion blur needs an HDR frame. `AIVERSE_PRISMA_DOF=0` and `AIVERSE_PRISMA_MOTION_BLUR=0` remain to turn them off.",
+    "Depth of field works from hardware depth or from distance in metres along the camera (`metricFocus`); LENS sets the focus from lens parameters. Motion blur follows camera motion and the velocity of moving objects."
+   ],
+   "status": "done",
+   "verified": "The same HDR scene on Metal and OpenGL (Mac) and on Vulkan (Android, Adreno 610): focused on the scene the frame stays sharp, focused near the camera it blurs clearly; a turning camera with motion blur smears the frame, a still one is left alone. PRISMA's report marks each effect as drawn.",
+   "limits": "An approximation, not a physical lens model: no hexagonal bokeh or depth layer separation. On weak mobile GPUs both stay off by default below the High tier.",
+   "branch": "main",
+   "commit": "d677f8a2f",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-dof-motion-blur/01.jpg",
+     "caption": "Without depth of field, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-dof-motion-blur/02.jpg",
+     "caption": "Focus near the camera: the whole scene is soft, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-dof-motion-blur/03.jpg",
+     "caption": "Camera turning without motion blur, Metal"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-prisma-dof-motion-blur/04.jpg",
+     "caption": "The same turn with motion blur, Metal"
+    }
+   ],
+   "links": [
+    {
+     "title": "PRISMA documentation",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/prisma.md"
+    }
+   ],
+   "author": "prisma"
+  },
+  {
+   "id": "2026-11-22-lighting-vulkan-android",
+   "date": "2026-11-22",
+   "system": "lighting",
+   "title": "LUMA on Vulkan and Android: direct light, dynamic GI and camera-following cascades",
+   "summary": "Luma and dynamic GI now run on Vulkan and are checked on an Android phone, and GI cascades follow the camera through large worlds.",
+   "body": [
+    "Luma — direct lighting for thousands of point and spot lights with geometry shadows, GGX reflections and temporal denoising — used to run on Metal only. The same computation now runs on Vulkan, so Luma runs on Android, and on Windows and Linux when Vulkan is selected.",
+    "Dynamic GI has a `\"scroll\": true` mode: up to three probe cascades follow the camera in whole cells. Probes that stay keep their light, cells entering the volume are cleared and traced again — stale light from another place is never shown. The geometry around the camera is loaded as it moves. GI stays on screen while probes update.",
+    "TerraWeave terrain tiles feed dynamic GI as soon as they are built."
+   ],
+   "status": "done",
+   "verified": "Samsung Galaxy A05s phone (Adreno 610, Vulkan): Luma in 9 scenes (diffuse, metal, PBR, spot lights, shadows) and dynamic GI on CPU and GPU, with three cascades and with the camera moving away and back, match the CPU reference. The same scenes are checked on Metal.",
+   "limits": "On Android these are test scenes, not a game: performance on weak phones has not been measured. CPU GI cascades do not scroll.",
+   "branch": "main",
+   "commit": "d677f8a2f",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lighting-vulkan-android/01.jpg",
+     "caption": "128 Luma point lights on a floor, Vulkan on Android"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lighting-vulkan-android/02.jpg",
+     "caption": "The same light on a metal floor: GGX reflection, Vulkan on Android"
+    }
+   ],
+   "links": [
+    {
+     "title": "Dynamic GI",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/dynamic-gi.md"
+    }
+   ],
+   "author": "lighting"
+  },
   {
    "id": "2026-11-21-vivid-adaptive-soft-shadows",
    "date": "2026-11-21",
