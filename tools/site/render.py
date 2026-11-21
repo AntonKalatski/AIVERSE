@@ -474,6 +474,11 @@ def docs_nav(manifest, ctx, current=None):
 
 def doc_page(page, manifest, ctx, root, repo, doc_pages):
     src = page['source']
+    if ctx.lang != 'en' and src.startswith('docs/'):
+        # A translation in docs/<lang>/ replaces the English source on that language's site
+        alt = f'docs/{ctx.lang}/{src[5:]}'
+        if (root / alt).is_file():
+            src = alt
     text = (root / src).read_text(encoding='utf-8')
     base_dir = posixpath.dirname(src)
     raw = repo.replace('https://github.com/', 'https://raw.githubusercontent.com/') + '/main/'
@@ -483,6 +488,8 @@ def doc_page(page, manifest, ctx, root, repo, doc_pages):
             return href
         path, _, anchor = href.partition('#')
         target = posixpath.normpath(posixpath.join(base_dir, path)) if path else src
+        if target.startswith(f'docs/{ctx.lang}/') and 'docs/' + target[len(ctx.lang) + 6:] in doc_pages:
+            target = 'docs/' + target[len(ctx.lang) + 6:]
         if target in doc_pages:
             return f'docs-{doc_pages[target]}.html' + (f'#{anchor}' if anchor else '')
         kind = 'tree' if not posixpath.splitext(target)[1] else 'blob'

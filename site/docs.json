@@ -58,7 +58,7 @@
           "lead": "Эффекты частиц и графы эффектов.", "leadEn": "Particle effects and effect graphs." },
         { "id": "motionweave", "source": "docs/motionweave.md", "title": "MotionWeave", "titleEn": "MotionWeave",
           "lead": "Анимация персонажей.", "leadEn": "Character animation." },
-        { "id": "dynamic-gi", "source": "docs/dynamic-gi.md", "title": "Динамический GI", "titleEn": "Dynamic GI",
+        { "id": "dynamic-gi", "source": "docs/dynamic-gi.md", "title": "LUMA: динамический непрямой свет", "titleEn": "LUMA: dynamic indirect light",
           "lead": "Непрямой свет одним отскоком на CPU и GPU.", "leadEn": "One-bounce indirect light on CPU and GPU." },
         { "id": "lightbake", "source": "docs/lightbake.md", "title": "Запекание света", "titleEn": "Light baking",
           "lead": "Лайтмапы и пробы своим path tracer.", "leadEn": "Lightmaps and probes with the engine's path tracer." }
