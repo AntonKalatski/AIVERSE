@@ -9,17 +9,23 @@ Use the existing engine camera system; start with `docs/camera-system.md`.
 The shared editor/MCP implementation is `apps/editor/core/LensOps.cpp`.
 
 1. Open the intended project with `open_game`, then call `lens_scene_get`.
-   Keep its exact scene value for the next write's expectedScene. A missing file
-   returns an empty version-1 scene; malformed files report an error.
+   Keep its `revision` (an opaque string, `"missing"` when there is no file) for
+   the next write's `expectedRevision`. `expectedScene` (the returned scene) is
+   still accepted; it is compared by value, so member order and number spelling
+   do not matter. A missing file returns an empty version-1 scene; malformed files
+   report an error.
 2. Create or replace one complete record with `lens_camera_set`. For a partial
    edit, merge changes into the existing record locally first. Stable positive
    ids identify cameras; texture output keys identify render targets.
 3. Call `lens_scene_validate` with a scene before a bulk edit. Read normalizedScene:
    the native loader supplies defaults and clamps some fields; this is not strict
-   unknown-key validation. Invalid clips, duplicate ids and over 256 cameras fail.
+   unknown-key validation. Invalid clips, duplicate ids, duplicate texture output
+   keys, width xor height 0, texture outputs over 64 Mpix in total and over 256
+   cameras fail.
    clientCompatible only means texture-only outputs; it is not a GPU test.
 4. Use `lens_scene_set` for a complete scene replacement, or `lens_camera_delete`
-   with id. Every write requires expectedScene from the last read. On conflict,
+   with id. Every write requires expectedRevision (or expectedScene) from the last
+   read; a successful write returns the new `revision`. On conflict,
    re-read and merge your intended change; never blindly retry an old snapshot.
 5. Writes save immediately, without editor undo. The LENS window must Reload
    before editing or saving its in-memory copy. Restart a running client to load
@@ -29,7 +35,7 @@ Minimal lens_camera_set arguments after reading an absent cameras.json:
 
 ```json
 {
-  "expectedScene": {"version": 1, "cameras": []},
+  "expectedRevision": "missing",
   "camera": {
     "id": 1, "name": "Overview", "position": [0, 12, 18],
     "camera": {"projection": "perspective", "fov": 0.8, "near": 0.1, "far": 500},

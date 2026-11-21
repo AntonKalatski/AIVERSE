@@ -200,7 +200,7 @@ const char* kInstructions =
     "to make the same effect as a Unity one, tune with fx_get / fx_set, look with fx_preview {effect, advance, freeze} + view_screenshot, "
     "attach to events with fx_bind (died, hit, attack, ability, spawned per type / weapon / ability). "
     "LENS cameras: lens_scene_get -> lens_scene_validate -> lens_camera_set / lens_scene_set / lens_camera_delete. "
-    "Writes require expectedScene from the last read and save immediately without undo; Reload the native LENS window afterward. "
+    "Writes require expectedRevision (the revision from the last lens_scene_get; expectedScene is still accepted) and save immediately without undo; Reload the native LENS window afterward. "
     "Look of the game: own meshes / textures via asset_import, then the type's \"view\" block with rules_merge "
     "(model, materials overrides per material name, team colour, clips: docs/models.md; model_info lists nodes, clips, materials); "
     "custom materials: texture_generate (bricks, metal panels, wood, camo, scales, ... + normal maps, team masks) -> material_set "

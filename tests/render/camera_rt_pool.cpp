@@ -101,5 +101,34 @@ int main() {
     dev.idleAllowed=true;
     pool.shutdownAfterGpuIdle();
     check(dev.released.size()==5,"gpu-idle shutdown releases remaining resources");
+    // createTexture failure is not retried every frame for the same spec.
+    check(pool.init(dev),"re-init after shutdown");
+    dev.depthFail=true;
+    const size_t before=dev.requested.size();
+    check(!pool.acquire(7,64,64),"depth failure");
+    const size_t afterFirst=dev.requested.size();
+    check(afterFirst==before+2 && pool.failed(7),"failed spec recorded");
+    check(!pool.acquire(7,64,64) && dev.requested.size()==afterFirst,
+          "same failed spec does not call createTexture again");
+    dev.depthFail=false;
+    check(!pool.acquire(7,64,64),"still backed off until retry/spec change");
+    check(pool.acquire(7,64,32) && !pool.failed(7),"changed spec retries");
+    dev.depthFail=true;
+    check(!pool.acquire(7,32,32),"fail again");
+    dev.depthFail=false;
+    pool.retryFailedTargets();
+    check(pool.acquire(7,32,32),"explicit retry allocates");
+    // Total pixel budget across keys.
+    pool.setPixelBudget(64*64);
+    check(pool.livePixels()==32*32,"live pixels counted");
+    check(!pool.acquire(8,64,64),"over budget rejected");
+    check(pool.acquire(7,64,64),"replacing own target counts only the new size");
+    check(!pool.acquire(8,1,1),"budget full");
+    pool.setPixelBudget(render::CameraRenderTargetPool::kDefaultPixelBudget);
+    check(pool.acquire(8,8192,1024),"default budget allows large target");
+    // Stale keys are retired (fenced), kept keys stay.
+    check(pool.releaseExcept({8})==1 && pool.activeTargets()==1 && pool.find(8),
+          "releaseExcept retires stale keys only");
+    pool.shutdownAfterGpuIdle();
     std::cout<<"AIVERSE LENS RT pool CPU contract passed\\n";
 }

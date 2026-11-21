@@ -116,8 +116,15 @@ inline Json cameraSceneToJson(const World& world) {
     root.set("cameras",std::move(cameras));
     return root;
 }
+// Default bound on the summed explicit width*height of all texture outputs
+// (64 Mpix: one 8192x8192 target). Matches CameraRenderTargetPool's default.
+inline constexpr uint64_t kCameraSceneMaxTexturePixels=uint64_t(64)*1024*1024;
+// Validates everything CameraRenderScheduler would reject per camera
+// (width xor height 0, duplicate texture output keys) before creating any
+// Entity. On a late failure every Entity this call created is destroyed.
 inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& json,
-                            std::vector<Entity>* created=nullptr,std::string* error=nullptr) {
+                            std::vector<Entity>* created=nullptr,std::string* error=nullptr,
+                            uint64_t maxTotalTexturePixels=kCameraSceneMaxTexturePixels) {
     auto fail=[&](const char* message){
         if(error)*error=message;
         return false;
@@ -137,7 +144,8 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         CameraNameComponent name{};
     };
     std::vector<Item> items;
-    std::unordered_set<uint64_t> ids;
+    std::unordered_set<uint64_t> ids,textureKeys;
+    uint64_t texturePixels=0;
     for(const Json& input:json["cameras"].items()) {
         if(!input.isObject())return fail("Invalid camera object");
         Item it;
@@ -171,6 +179,15 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
             it.output.depth=out.getBool("depth",true);
             if(it.output.kind==CameraOutputKind::Texture&&!it.output.targetAssetKey)
                 return fail("Texture camera requires output key");
+            if((it.output.width==0)!=(it.output.height==0))
+                return fail("Camera output width and height must both be set or both be 0");
+            if(it.output.kind==CameraOutputKind::Texture) {
+                if(!textureKeys.insert(it.output.targetAssetKey).second)
+                    return fail("Duplicate camera texture output key");
+                texturePixels+=uint64_t(it.output.width)*uint64_t(it.output.height);
+                if(texturePixels>maxTotalTexturePixels)
+                    return fail("Camera texture outputs exceed the total pixel budget");
+            }
         }
         const Json& update=input["update"];
         if(update.isObject()) {
@@ -213,10 +230,23 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
         items.push_back(std::move(it));
     }
     // All validation above is complete before a single Entity is created.
+    std::vector<Entity> made;
+    made.reserve(items.size());
+    const size_t reported=created?created->size():0;
     for(const auto& c:items) {
         const Entity entity=world.create();
-        if(!hierarchy.attach(world,entity,c.transform))
+        if(!hierarchy.attach(world,entity,c.transform)) {
+            // Leave no partial scene behind: undo every Entity of this call.
+            world.destroy(entity);
+            for(auto i=made.rbegin();i!=made.rend();++i) {
+                hierarchy.detach(world,*i);
+                world.destroy(*i);
+            }
+            if(created)created->resize(reported);
+            hierarchy.update(world);
             return fail("Scene hierarchy rejected camera entity");
+        }
+        made.push_back(entity);
         world.add<CameraComponent>(entity,c.camera);
         world.add<CameraOutputComponent>(entity,c.output);
         world.add<CameraUpdateComponent>(entity,c.update);

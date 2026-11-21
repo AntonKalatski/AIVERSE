@@ -1,6 +1,6 @@
 // LENS final-ModelDraw snapshot: borrowed transient data must be owned.
 #include "engine/render/CameraModelSnapshot.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 using namespace aiverse::render;
 int main(){
     CameraModelSnapshot snapshot(1);
@@ -25,24 +25,24 @@ int main(){
     size_t visits=0;
     snapshot.forEach([&](const ModelDraw& captured){
         ++visits;
-        assert(captured.persistentId==73);
-        assert(captured.model==&model);
-        assert(captured.nodeWorld && captured.nodeWorld->size()==1);
-        assert(captured.pose && captured.pose->size()==1);
-        assert(captured.materials && captured.materials->size()==1);
-        assert(captured.nodeMaterial && captured.nodeMaterial->at(0)==3);
-        assert(captured.baked);
-        assert(!captured.staticCache);
+        AIVERSE_TEST_CHECK(captured.persistentId==73);
+        AIVERSE_TEST_CHECK(captured.model==&model);
+        AIVERSE_TEST_CHECK(captured.nodeWorld && captured.nodeWorld->size()==1);
+        AIVERSE_TEST_CHECK(captured.pose && captured.pose->size()==1);
+        AIVERSE_TEST_CHECK(captured.materials && captured.materials->size()==1);
+        AIVERSE_TEST_CHECK(captured.nodeMaterial && captured.nodeMaterial->at(0)==3);
+        AIVERSE_TEST_CHECK(captured.baked);
+        AIVERSE_TEST_CHECK(!captured.staticCache);
     });
     snapshot.forEach([&](const ModelDraw& captured){
         ++visits;
-        assert(captured.persistentId==73);
+        AIVERSE_TEST_CHECK(captured.persistentId==73);
     });
-    assert(visits==2 && snapshot.size()==1);
+    AIVERSE_TEST_CHECK(visits==2 && snapshot.size()==1);
     snapshot.record(draw);
-    assert(snapshot.dropped()==1 && snapshot.size()==1);
+    AIVERSE_TEST_CHECK(snapshot.dropped()==1 && snapshot.size()==1);
     snapshot.clear();
-    assert(snapshot.size()==0 && snapshot.dropped()==0);
+    AIVERSE_TEST_CHECK(snapshot.size()==0 && snapshot.dropped()==0);
 
     // A pre-LOD packet replaces only its matching finalized base draw;
     // unrelated attachments and legacy draws still replay exactly once.
@@ -61,23 +61,23 @@ int main(){
     attachment.persistentId=0;
     mixed.record(attachment);
     preparedMaterial.clear();
-    assert(mixed.size()==2 && mixed.preparedCount()==1);
-    assert(mixed.isPreparedDraw(73) && !mixed.isPreparedDraw(74));
+    AIVERSE_TEST_CHECK(mixed.size()==2 && mixed.preparedCount()==1);
+    AIVERSE_TEST_CHECK(mixed.isPreparedDraw(73) && !mixed.isPreparedDraw(74));
     int fallbacks=0,preparedCount=0;
     mixed.forEachFallback([&](const ModelDraw& retained){
         ++fallbacks;
-        assert(retained.persistentId==0);
+        AIVERSE_TEST_CHECK(retained.persistentId==0);
     });
     mixed.forEachPrepared([&](const aiverse::view::View& source,
                               const aiverse::view::Object& retained){
         ++preparedCount;
-        assert(&source==&visual);
-        assert(retained.id==43 && retained.draw.persistentId==73);
-        assert(retained.draw.materials && retained.draw.materials->size()==1);
+        AIVERSE_TEST_CHECK(&source==&visual);
+        AIVERSE_TEST_CHECK(retained.id==43 && retained.draw.persistentId==73);
+        AIVERSE_TEST_CHECK(retained.draw.materials && retained.draw.materials->size()==1);
     });
-    assert(fallbacks==1 && preparedCount==1);
+    AIVERSE_TEST_CHECK(fallbacks==1 && preparedCount==1);
     mixed.clear();
-    assert(mixed.size()==0 && mixed.preparedCount()==0);
+    AIVERSE_TEST_CHECK(mixed.size()==0 && mixed.preparedCount()==0);
 
     // Geometry packets are value-owned, except for the host-owned Mesh.
     // All primitive coordinates and draw parameters survive source mutation.
@@ -94,18 +94,18 @@ int main(){
     int geometryVisits=0;
     mixed.forEachGeometry([&](const CameraGeometryCommand& packet) {
         if(geometryVisits==0) {
-            assert(packet.kind==CameraGeometryCommand::Kind::Triangle);
-            assert(packet.a.x==1.f && packet.b.y==5.f);
-            assert(packet.rgba==0xff113355u);
+            AIVERSE_TEST_CHECK(packet.kind==CameraGeometryCommand::Kind::Triangle);
+            AIVERSE_TEST_CHECK(packet.a.x==1.f && packet.b.y==5.f);
+            AIVERSE_TEST_CHECK(packet.rgba==0xff113355u);
         } else {
-            assert(packet.kind==CameraGeometryCommand::Kind::Line);
-            assert(packet.a.y==1.f && packet.b.z==5.f);
+            AIVERSE_TEST_CHECK(packet.kind==CameraGeometryCommand::Kind::Line);
+            AIVERSE_TEST_CHECK(packet.a.y==1.f && packet.b.z==5.f);
         }
         ++geometryVisits;
     });
-    assert(mixed.geometryCount()==2 && geometryVisits==2);
+    AIVERSE_TEST_CHECK(mixed.geometryCount()==2 && geometryVisits==2);
     mixed.clear();
-    assert(mixed.geometryCount()==0);
+    AIVERSE_TEST_CHECK(mixed.geometryCount()==0);
 
     // Specialized water and selection packets retain shader and outline
     // parameters, rather than becoming incomplete ordinary Mesh commands.
@@ -124,18 +124,18 @@ int main(){
     int specials=0;
     mixed.forEachGeometry([&](const CameraGeometryCommand& packet) {
         if(specials==0) {
-            assert(packet.kind==CameraGeometryCommand::Kind::Water);
-            assert(packet.ripples[0].w==4.f);
-            assert(packet.wakes[2].z==7.f);
-            assert(packet.wind.x==9.f);
-            assert(packet.firstIndex==10&&packet.indexCount==22);
+            AIVERSE_TEST_CHECK(packet.kind==CameraGeometryCommand::Kind::Water);
+            AIVERSE_TEST_CHECK(packet.ripples[0].w==4.f);
+            AIVERSE_TEST_CHECK(packet.wakes[2].z==7.f);
+            AIVERSE_TEST_CHECK(packet.wind.x==9.f);
+            AIVERSE_TEST_CHECK(packet.firstIndex==10&&packet.indexCount==22);
         } else {
-            assert(packet.kind==CameraGeometryCommand::Kind::Selection);
-            assert(packet.selection.y==.5f);
+            AIVERSE_TEST_CHECK(packet.kind==CameraGeometryCommand::Kind::Selection);
+            AIVERSE_TEST_CHECK(packet.selection.y==.5f);
         }
         ++specials;
     });
-    assert(specials==2);
+    AIVERSE_TEST_CHECK(specials==2);
     mixed.clear();
     {
         Mesh temporary;temporary.vb={71};temporary.ib={72};temporary.indexCount=9;
@@ -146,6 +146,6 @@ int main(){
     auto retained=mixed;
     mixed.clear();
     retained.forEachGeometry([](const CameraGeometryCommand& packet){
-        assert(packet.mesh && packet.mesh->vb.id==71 && packet.mesh->indexCount==9);
+        AIVERSE_TEST_CHECK(packet.mesh && packet.mesh->vb.id==71 && packet.mesh->indexCount==9);
     });
 }

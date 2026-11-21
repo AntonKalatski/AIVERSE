@@ -210,6 +210,13 @@ public:
             if(!compositor_.init(device_) || !compositor_.composite(layers,fbW,fbH))
                 result.diagnostics.push_back({{},CameraExecutionIssue::CompositeFailed});
         }
+        // Isolated screen RTs are keyed by Entity::packed(): retire the ones of
+        // destroyed entities / cameras that left composition. release() is
+        // GPU-fenced (destroyed at a later collectRetiredTargets()).
+        std::unordered_set<uint64_t> liveScreens;
+        if(compositing)
+            for(const auto& view:screenViews)liveScreens.insert(view.entity.packed());
+        screenTargets_.releaseExcept(liveScreens);
         return result;
     }
     // Complete presentation workflow: ECS rig pose/lens/shake, independently
