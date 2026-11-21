@@ -1029,6 +1029,9 @@ void ParticleSystem::kill(FxHandle h) {
         I.freeInstance((h.id & 0xffff) - 1);
     }
 }
+bool ParticleSystem::alive(FxHandle h) const {
+    return findInstance(*impl_, h) != nullptr;
+}
 bool ParticleSystem::playing(FxHandle h) const {
     const auto* in = findInstance(*impl_, h);
     return in && in->emitting && !in->stopped;

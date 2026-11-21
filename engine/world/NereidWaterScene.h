@@ -222,7 +222,11 @@ public:
                 slot.preparedFlowMeshRevision=old.preparedFlowMeshRevision;
                 slot.preparedFlowResolverRevision=old.preparedFlowResolverRevision;
                 if(!sameNereidSceneMeshSource(source,old.source)) {
-                    ++slot.revision;
+                    // Revisions come from ONE scene-wide monotonic counter
+                    // (never a per-slot ++): a removed and re-added id can
+                    // then never reuse the revision of a pending async job
+                    // and adopt its stale mesh.
+                    slot.revision=++nextRevision_;
                     slot.prepared.reset();
                     slot.selectedLod.reset();
                 }

@@ -4492,3 +4492,11 @@ certification is distinct from real visual proof.
    Existing default OFF flags remain unchanged.
 
 **Do not describe Stage18.5 as proof of hardware image parity.**
+
+## 2026-11-21 — review fixes (branch feature/aiv20261121_fix_gfx_strata)
+
+STRATA part of the gfx-strata review pass; full detail in
+[review-fixes-gfx-strata-2026-11-21.md](review-fixes-gfx-strata-2026-11-21.md).
+- `8cd3603` `GeometryScene::loadTransactional` keeps STRATA config (copied into the staging owner) and moves STRATA resources into the live scene; new test `geometry_transactional_reload_keeps_strata_policy_and_resources` (NOT RUN, aiverse_tests not built here).
+- `bbb0847` `StrataDiskPages`: failed reads retried with request-count backoff, permanent after 5; verified read clears the failure; the in-flight job's memory wait aborts when its page is dropped. `strata_disk_pages`, `strata_index_pages`, `strata_streaming_coordinator` built standalone and PASS.
+- DEFERRED: Vulkan Storage+Dynamic arena whole-copy per upload frame (plan: Vulkan `updateStorageBufferChecked` + device-local arena); see the review handoff.

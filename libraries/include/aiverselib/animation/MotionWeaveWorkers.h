@@ -50,9 +50,16 @@ public:
     // frame thread. Concurrent callers are serialized. Waiting for return
     // is a barrier: no worker retains task references afterwards.
     // A worker exception is rethrown on the caller after ALL lanes join.
+    // A nested call from inside a task of this pool (caller lane or worker)
+    // runs inline on that thread: re-locking submission_ would deadlock.
     template<class F> void parallelFor(size_t tasks,F&& action) {
-        std::unique_lock submission(submission_);
         if(tasks==0)return;
+        if(dispatching()==this) {
+            for(size_t i=0;i<tasks;++i)action(i);
+            return;
+        }
+        std::unique_lock submission(submission_);
+        const DispatchScope scope(this);
         if(workers_.empty() || tasks==1) {
             for(size_t i=0;i<tasks;++i)action(i);
             return;
@@ -81,6 +88,19 @@ public:
         if(failure)std::rethrow_exception(failure);
     }
 private:
+    // Pool whose task is running on the current thread (nested-call guard).
+    static const MotionWeaveWorkerPool*& dispatching() noexcept {
+        thread_local const MotionWeaveWorkerPool* active=nullptr;
+        return active;
+    }
+    struct DispatchScope {
+        explicit DispatchScope(const MotionWeaveWorkerPool* pool) noexcept
+            :previous(dispatching()) {dispatching()=pool;}
+        ~DispatchScope() {dispatching()=previous;}
+        DispatchScope(const DispatchScope&)=delete;
+        DispatchScope& operator=(const DispatchScope&)=delete;
+        const MotionWeaveWorkerPool* previous;
+    };
     void consume(const std::function<void(size_t)>& job,size_t count) noexcept {
         for(;;) {
             const size_t i=next_.fetch_add(1,std::memory_order_relaxed);
@@ -106,7 +126,10 @@ private:
                 count=count_;
             }
             // The caller cannot clear *fn until outstanding_ reaches zero.
-            consume(*fn,count);
+            {
+                const DispatchScope scope(this);
+                consume(*fn,count);
+            }
             {
                 std::lock_guard lock(mutex_);
                 if(--outstanding_==0)done_.notify_one();

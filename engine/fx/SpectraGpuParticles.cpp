@@ -437,6 +437,13 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
         const fx::FxHandle h=cpu_.playWithProgramParameters(
             cpuEffect_,position,normal,1.f,tint,programParams_);
         if(!h.valid()) {stats_.dropped+=desc_.burst;return false;}
+        // Drop finished instances (amortized) before falling back to
+        // killing the oldest still-live handle at the hard cap.
+        if(cpuHandles_.size()>=cpuHandlePruneAt_) {
+            cpuHandles_.erase(std::remove_if(cpuHandles_.begin(),cpuHandles_.end(),
+                [&](fx::FxHandle old){return !cpu_.alive(old);}),cpuHandles_.end());
+            cpuHandlePruneAt_=std::max<size_t>(64,cpuHandles_.size()*2);
+        }
         if(cpuHandles_.size()>=65536) {
             cpu_.kill(cpuHandles_.front());
             cpuHandles_.erase(cpuHandles_.begin());
