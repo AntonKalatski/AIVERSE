@@ -567,7 +567,7 @@ struct TrapDef {
 struct ProgressionRules;   // RtsProgressionData.h
 struct Rules {
     bool scriptedAI = false;                  // external RtsAI must yield to the game's controller
-    bool bwAI = false;                        // ai.controller "bw": Bunker Wars bots (RtsBwAI.h, agent-bw-ai)
+    std::string aiController = "builtin";     // rules ai.controller: builtin, scripted or a registered kind (RtsAIControllers.h)
     MechRules mech;                           // agent-mech rules (RtsMechData.h)
     bool overkill = false;                    // targeting.overkill: auto-targeting skips enemies already doomed by shots in flight (StarCraft II)
     std::vector<ResourceDef> resources;

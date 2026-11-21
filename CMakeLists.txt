@@ -303,9 +303,8 @@ endfunction()
 
 # agent-bw-ai: Bunker Wars computer player (rules ai.controller "bw")
 file(GLOB AIVERSE_BWAI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsBwAI*.cpp)
-# RtsBwAISim.cpp is simulation code every game runs (hypnotised sends, per point counters).
-list(FILTER AIVERSE_BWAI_SOURCES EXCLUDE REGEX "RtsBwAISim\\.cpp$")
-target_sources(aiverse_game PRIVATE modules/rts/RtsBwAISim.cpp)
+# Every game: hypnotised sends, per point counters, the controller registry and the registration point.
+target_sources(aiverse_game PRIVATE modules/rts/RtsHypnosis.cpp modules/rts/RtsAIControllers.cpp modules/rts/RtsGameExtensions.cpp)
 aiverse_game_module(AIVERSE_GAME_WITH_BWAI "Include the Bunker Wars computer player (rules ai.controller \"bw\")"
     modules/rts/disabled/BwAI.cpp ${AIVERSE_BWAI_SOURCES})
 
