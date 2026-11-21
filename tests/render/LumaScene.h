@@ -70,7 +70,8 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
                         int(r.objectMotionStats().submitted)<<5|int(r.objectMotionStats().velocitySeedOnly)<<6|
                         int(r.objectMotionStats().rigidDraws>0)<<7|int(r.objectMotionStats().rejected>0)<<8|
                         int(s.post.wantsObjectMotionVectors())<<9|int(s.post.objectMotionSceneDepth().valid())<<10;
-        auto receive=[&s,test,expected,stateOk,flags](int cw,int ch,std::vector<uint8_t> px) {
+        const std::string lastError=d.lastError();
+        auto receive=[&s,test,expected,stateOk,flags,lastError](int cw,int ch,std::vector<uint8_t> px) {
             if(cw<4||ch<4||px.size()!=size_t(cw*ch*4)){s.failed=true;return;}
             // AIVERSE_HDR_CAPTURE set: keep each case frame as <path>.luma<case>.ppm.
             if(std::getenv("AIVERSE_HDR_CAPTURE")) {
@@ -84,6 +85,7 @@ inline void drawLumaScene(HdrScene& s,gfx::Device& d,int w,int h) {
             bool ok=stateOk;for(int c=0;c<3;++c)ok &= std::abs(actual[c]-target[c])<5/255.0f;
             std::printf("Luma GPU %d: RGB %.5f %.5f %.5f expected %.5f %.5f %.5f state=%d flags=%d %s\n",
                 test,actual[0],actual[1],actual[2],target[0],target[1],target[2],stateOk,flags,ok?"PASS":"FAIL");
+            if(!ok)std::printf("Luma GPU %d device error: %s\n",test,lastError.c_str());
             s.failed |= !ok;++s.probeIndex;s.frame=0;if(s.probeIndex==10)s.captured=true;
         };
         if(s.readOutput)s.readOutput(receive);else d.captureNextFrame(receive);
