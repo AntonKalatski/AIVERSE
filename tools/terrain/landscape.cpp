@@ -31,9 +31,9 @@ int main(int argc,char** argv){try{
     std::vector<AlpinePeak> peaks;
     for(const auto& p:doc["peaks"].items()) {
         const auto shape=p.getStr("morphology","legacy");
-        if(shape!="legacy"&&shape!="ridged_massif")throw std::invalid_argument("Alpine morphology legacy|ridged_massif");
+        if(shape!="legacy"&&shape!="ridged_massif"&&shape!="cragged_massif")throw std::invalid_argument("Alpine morphology legacy|ridged_massif|cragged_massif");
         auto peak=AlpinePeak{p.getInt("xCm"),p.getInt("zCm"),int32_t(p.getInt("radiusXcm",10000)),int32_t(p.getInt("radiusZcm",16000)),int32_t(p.getInt("heightCm",12000)),int32_t(p.getInt("shearPermille"))};
-        peak.morphology=shape=="ridged_massif"?AlpineMorphology::RidgedMassif:AlpineMorphology::LegacyCone;
+        peak.morphology=shape=="cragged_massif"?AlpineMorphology::CraggedMassif:shape=="ridged_massif"?AlpineMorphology::RidgedMassif:AlpineMorphology::LegacyCone;
         peaks.push_back(peak);
     }
     const auto water=world::parseNereidWaterManifest(doc);

@@ -147,3 +147,10 @@ variation. Invalid, nonfinite, unordered or unknown values fail before baking.
 All tiles in a pack must use the same recipe. Existing `--part`/`--parts`
 partitioning can bake disjoint tile subsets with the same settings; regenerate
 both fallback PBR and detail masks before rebuilding material overrides.
+
+`morphology: "cragged_massif"` opts a peak into shorter-scale rock ridges with
+a higher broad support and bounded octave amplitude (.42 per doubled frequency).
+It is procedural cosmetic relief, not hydraulic erosion or talus simulation.
+The existing `legacy` and `ridged_massif` sample sequences are preserved. The
+maximum terrain/profile height and support envelope still bound the new relief;
+a deliberately steep height/radius ratio can still create cliffs.

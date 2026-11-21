@@ -3,7 +3,7 @@
 #include "engine/world/TerraWeave.h"
 #include "engine/core/Fixed.h"
 namespace aiverse::terraweave {
-enum class AlpineMorphology : uint8_t { LegacyCone=0, RidgedMassif=1 };
+enum class AlpineMorphology : uint8_t { LegacyCone=0, RidgedMassif=1, CraggedMassif=2 };
 struct AlpinePeak {
     int64_t xCm=0,zCm=0;
     int32_t radiusXcm=10000,radiusZcm=16000,heightCm=12000;
@@ -18,23 +18,26 @@ inline int32_t alpineHeightCm(const TerrainSettings& terrain,
     if(peaks.size()>32)throw std::length_error("Terra alpine peak budget");
     for(const auto& p:peaks){
         if(p.xCm< -kWorldLimitCm||p.xCm>kWorldLimitCm||p.zCm< -kWorldLimitCm||p.zCm>kWorldLimitCm||p.radiusXcm<1000||p.radiusXcm>100000||p.radiusZcm<1000||p.radiusZcm>100000||p.heightCm<0||p.heightCm>100000||std::abs(int64_t(p.shearPermille))>1000||
-                (p.morphology!=AlpineMorphology::LegacyCone&&p.morphology!=AlpineMorphology::RidgedMassif))
+                (p.morphology!=AlpineMorphology::LegacyCone&&p.morphology!=AlpineMorphology::RidgedMassif&&p.morphology!=AlpineMorphology::CraggedMassif))
             throw std::invalid_argument("Terra alpine profile");
         const int64_t dx=x-p.xCm+(z-p.zCm)*p.shearPermille/1000,dz=z-p.zCm;
         if(std::abs(dx)>p.radiusXcm||std::abs(dz)>p.radiusZcm)continue;
         const int64_t nx=dx*65536/p.radiusXcm,nz=dz*65536/p.radiusZcm;
         const auto r=fxSqrt(Fixed::fromRaw(nx*nx/65536+nz*nz/65536)).raw;
         if(r>=65536)continue;
-        if(p.morphology==AlpineMorphology::RidgedMassif) {
+        if(p.morphology==AlpineMorphology::RidgedMassif||p.morphology==AlpineMorphology::CraggedMassif) {
+            const bool cragged=p.morphology==AlpineMorphology::CraggedMassif;
             // Broad connected rock masses: the support goes to zero with
             // zero slope, while ridged multifractal relief owns the crest.
             // A linear radial carrier would remain a cone at every seed.
             const int64_t envelope=65536-r*r/65536;
             const int64_t support=envelope*envelope/65536;
-            const int64_t period=std::max<int64_t>(1000,std::min(p.radiusXcm,p.radiusZcm));
+            // CraggedMassif moves modest relief to a third-radius scale. A high
+            // smooth carrier bounds cliffs instead of amplifying narrow spires.
+            const int64_t period=std::max<int64_t>(1000,std::min(p.radiusXcm,p.radiusZcm)/(cragged?3:1));
             const uint64_t seed=detail::mix64(terrain.seed^uint64_t(p.xCm)^detail::mix64(uint64_t(p.zCm)));
-            const int64_t warpX=detail::noise(x,z,period,seed)*period/65536/4;
-            const int64_t warpZ=detail::noise(x,z,period,seed+1)*period/65536/4;
+            const int64_t warpX=detail::noise(x,z,period,seed)*period/65536/(cragged?8:4);
+            const int64_t warpZ=detail::noise(x,z,period,seed+1)*period/65536/(cragged?8:4);
             // Each doubled frequency gets < half the height: gradients
             // decay instead of growing into needle-like towers.
             int64_t ridge=0,amplitude=32768,feedback=65536,total=0;
@@ -43,10 +46,11 @@ inline int32_t alpineHeightCm(const TerrainSettings& terrain,
                 int64_t signal=65536-n;signal=signal*signal/65536;
                 signal=signal*feedback/65536;
                 ridge+=signal*amplitude/65536;total+=amplitude;
-                feedback=std::min<int64_t>(65536,signal*2);amplitude=amplitude*7/20;
+                feedback=std::min<int64_t>(65536,signal*2);amplitude=cragged?amplitude*21/50:amplitude*7/20;
             }
             const int64_t crest=total?ridge*65536/total:0;
-            const int64_t relief=int64_t(p.heightCm)*support/65536*(16000+crest*49536/65536)/65536;
+            const int64_t carrier=cragged?52000:16000;
+            const int64_t relief=int64_t(p.heightCm)*support/65536*(carrier+crest*(65536-carrier)/65536)/65536;
             mountain=std::max(mountain,relief);continue;
         }
         // Narrow ridgelines, unequal flanks and nested gullies, not circular domes.

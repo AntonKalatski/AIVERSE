@@ -3125,7 +3125,11 @@ stateless generation profile, not a hydraulic erosion or rock-physics solver.
 Peak support, shear, height and valley protection retain their existing bounds.
 
 The native `aiverse_terraweave_landscape` exporter accepts each peak's
-`"morphology":"ridged_massif"` (or `"legacy"`). Unknown names reject.
+`"morphology":"ridged_massif"`, `"cragged_massif"` or `"legacy"`. Unknown names reject.
+`CraggedMassif` retains the same bounded support while moving modest relief to
+one-third-radius scales with .42 octave amplitude rolloff and a higher broad
+carrier. Existing legacy/ridged samples stay exact; it is cosmetic relief, not
+physical hydraulic erosion.
 [The alpine valley recipe](../../examples/terraweave/alpine-valley.json) places
 its broad mountain range behind the forest area, with 128 terrain tiles and an
 explicit NEREID river. Export to a new directory on the external build drive:

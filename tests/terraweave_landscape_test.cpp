@@ -59,6 +59,25 @@ int main(){
         assert(maximum>1&&maximum<16);
     }
 
+    {
+        TerrainSettings source;source.seed=2718;source.reliefCm=0;
+        AlpinePeak peak{0,0,26000,34000,32000,100};
+        peak.morphology=AlpineMorphology::CraggedMassif;
+        const std::vector<AlpinePeak> range{peak};auto alternate=source;alternate.seed+=1;
+        double maximum=0;bool changed=false;int highest=0;
+        for(int z=-30000;z<=30000;z+=500)for(int x=-24000;x<=24000;x+=500) {
+            const auto h=alpineHeightCm(source,range,x,z);assert(h==alpineHeightCm(source,range,x,z));
+            assert(h>=heightAtCm(source,x,z)&&h<=heightAtCm(source,x,z)+32000);
+            highest=std::max(highest,h-heightAtCm(source,x,z));changed|=h!=alpineHeightCm(alternate,range,x,z);
+            const double dx=(alpineHeightCm(source,range,x+50,z)-alpineHeightCm(source,range,x-50,z))/100.;
+            const double dz=(alpineHeightCm(source,range,x,z+50)-alpineHeightCm(source,range,x,z-50))/100.;
+            maximum=std::max(maximum,dx*dx+dz*dz);
+        }
+        assert(changed&&highest>20000&&maximum>1&&maximum<25);
+        peak.shearPermille=0;assert(alpineHeightCm(source,{peak},26000,0)==heightAtCm(source,26000,0));
+        assert(alpineHeightCm(source,{peak},25999,0)-heightAtCm(source,25999,0)<=1);
+    }
+
     lib::nereid::WaterBodyComponent body;body.surfaceY=0_fx;body.bottomY=-2_fx;
     lib::nereid::WaterGeometryComponent river;river.kind=lib::nereid::WaterGeometryKind::RiverSpline;
     river.points={{0_fx,-20_fx,3_fx},{0_fx,20_fx,3_fx}};
