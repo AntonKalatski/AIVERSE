@@ -515,6 +515,9 @@ public:
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
+    // Shader presentation clock only; never changes simulation/current velocity.
+    // Negative resumes the steady clock. Set before beginScene on the render thread.
+    void setPresentationTime(float seconds);
     void beginScene(const Camera3D& cam, int fbW, int fbH);
     // Before render only: drop borrowed packets/callbacks of a failed host
     // preparation before destroying its private CPU owners. No RHI work.
@@ -1647,6 +1650,7 @@ private:
     gfx::TextureHandle dummyDepth_, dummyHeight_;
     double graphEpoch_ = -1;
     float graphTime_ = 0;
+    float presentationTime_ = -1;
     uint64_t traceFrame_ = 0;
     gfx::ShaderHandle blitShader_;
     gfx::PipelineHandle blitPipe_;

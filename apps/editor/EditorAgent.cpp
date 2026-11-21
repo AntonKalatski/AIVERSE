@@ -194,6 +194,10 @@ void Editor::registerGuiOps() {
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
         r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls())));
         r.set("cameraModelTriangles",Json::number(int64_t(r3d_.profile().cameraModelTriangles)));
+        r.set("cameraMeshTriangles",Json::number(int64_t(r3d_.profile().cameraMeshTriangles)));
+        r.set("opaqueSceneCapture",Json::fromBool(r3d_.ssrActive()));
+        r.set("ssrRaymarch",Json::fromBool(r3d_.ssrActive() && r3d_.traceActive()));
+        r.set("nereidConfiguredSurfaces",Json::number(int64_t(nereidPreview_.configuredSurfaces())));
         r.set("sunShadowModelTriangles",Json::number(int64_t(r3d_.profile().triangles[0])));
         const auto& model=r3d_.modelStats();auto levels=Json::array();for(auto count:model.cameraLodNodes)levels.push(Json::number(int64_t(count)));r.set("cameraLodNodes",levels);r.set("lodChains",Json::number(int64_t(model.cameraLodChains)));r.set("lodBlocked",Json::number(int64_t(model.cameraLodBlocked)));r.set("shadowLimitedLod",Json::number(int64_t(model.cameraShadowLimitedLod)));return r;
     });

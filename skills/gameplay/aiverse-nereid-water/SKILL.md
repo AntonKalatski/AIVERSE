@@ -737,3 +737,11 @@ Use it with local graded height for terrain sand/wetness/grass masks, as Terra's
 native exporter does. It does not change authoritative footprint membership,
 current sampling or persistence. Tapered-river margins are not an exact SDF;
 do not replace contact tests or claim a live erosion solver from this helper.
+
+
+For NEREID optics, read docs/water.md current/contact section. Refraction and
+contact foam must not depend on enabling traced shadows/SSR. Preserve the
+optics-only capture flag and independent SSR guard. Diagnose foam with a real
+foreground obstacle and both flow directions; do not accept repeated sine
+ellipses or detached copies as a wake. --freeze-time in renderbench fixes the
+shader clock as well as sky/animation; current velocity remains authored data.

@@ -372,6 +372,11 @@ void Renderer3D::invalidateModelCachesFor(const Model* model) {
     retireIndirectLayoutsFor(model);
 }
 
+void Renderer3D::setPresentationTime(float seconds) {
+    if(!std::isfinite(seconds))throw std::invalid_argument("nonfinite presentation time");
+    presentationTime_=seconds;
+}
+
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     customMaterialReceiver_.clear();customSurfaceReceiver_.clear();
     if(dev_)checkGpuDevice(*dev_);
@@ -525,7 +530,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     bakedLightmapped_ = bakedCountLm_; bakedProbed_ = bakedCountPr_; bakedCountLm_ = bakedCountPr_ = 0;   // agent-lightbake
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_ < 0) graphEpoch_ = now;
-    graphTime_ = float(now - graphEpoch_);
+    graphTime_ = presentationTime_>=0?presentationTime_:float(now - graphEpoch_);
     sceneW_ = fbW; sceneH_ = fbH; // viewport of the main pass (screen or an offscreen target of this size)
     float aspect = fbH > 0 ? float(fbW) / float(fbH) : 1.0f;
     viewProj_ = cam.proj(aspect, dev_->info().clipDepthZeroToOne) * cam.view();
@@ -726,7 +731,10 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
         f.trace1[2] = std::max(lighting.terrainShadowDistance, 2.0f);
         f.trace1[3] = std::max(lighting.terrainShadowSoftness, 0.005f);
     }
-    put3(f.trace2, camFwd_, ssrThisFrame_ && !forShadow ? (modelReflections_ ? 2.0f : 1.0f) : 0.0f);
+    // .25 = captured opaque depth/colour for NEREID optics only;
+    // 1/2 additionally permit the existing water/model SSR ray march.
+    put3(f.trace2, camFwd_, ssrThisFrame_ && !forShadow ?
+         (traceActive() ? (modelReflections_ ? 2.0f : 1.0f) : 0.25f) : 0.0f);
     f.trace3[0] = 48.0f;    // SSR march distance (world)
     f.trace3[1] = 0.6f;     // thickness: a ray passing further behind a surface is a miss (thin objects)
     f.trace3[2] = 16.0f;    // steps (+4 refinement)
@@ -2209,14 +2217,16 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // Exclude shadow, probe and reflection passes from the visible-colour ID range.
     debugMainDrawId_ = 0;
     auxiliaryModelPass_=savedAuxiliary; profiling_=savedProfiling; drawCallDebug_=savedDrawDebug;
-    // trace tier + water: the opaque scene goes into colour + depth textures first (SSR reads them),
-    // then it is blitted (with depth) into the main pass and the rest is drawn on top
+    // NEREID refraction/contact foam needs opaque colour/depth at every
+    // shadow tier. Trace quality controls ray marching, not water optics.
     bool capture = modelReflections_ && hdrFrame_ && traceActive();
-    if (traceActive()) {
-        for (const auto& it : items_)
-            if (it.color.w < 0.99f && it.specular >= 0.85f && !(it.flags & kDrawUnlit)) { capture = true; break; }
-        if (capture) capture = beginSceneCapture(sw, sh);
+    for (const auto& it : items_) {
+        const bool nereidOptics=(it.flags & kDrawWaterSurface) &&
+            (it.emissive>0.001f || it.color.x>0.001f || it.color.y>0.001f || it.color.z>0.001f);
+        const bool legacySsr=traceActive() && it.specular>=0.85f && !(it.flags & kDrawUnlit);
+        if(it.color.w<0.99f && (nereidOptics || legacySsr)){capture=true;break;}
     }
+    if(capture)capture=beginSceneCapture(sw,sh);
     if (!capture) dev_->beginPass(mainPass);
     dev_->setViewport({0, 0, sw, sh});
     for (auto& fn : customOpaque_) fn(*dev_);
@@ -2281,7 +2291,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         // The blit binds scene color at slot 0; model shaders expect the sun depth map there.
         dev_->setTexture(0, shadowMap_);
         // Read the first opaque pass while shading into a different target (no feedback).
-        if (modelReflections_ && hdrFrame_) { uploadFrameUniforms(false); renderModels(1); }
+        if (modelReflections_ && hdrFrame_ && traceActive()) { uploadFrameUniforms(false); renderModels(1); }
     }
     // translucent meshes (water, ghosts) before overlays so that overlays (fog of war, markers) stay on top
     bool any = false;

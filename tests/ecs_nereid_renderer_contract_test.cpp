@@ -456,12 +456,12 @@ int main() {
     check(std::string(render::shaders::kLitFS).find(
           "thickness = v_wpos.y - opaquePos.y")!=std::string::npos &&
           std::string(render::shaders::kLitFS).find(
-          "u_params.x < -0.5 && u_trace2.w > 0.5")!=std::string::npos,
+          "u_params.x < -0.5 && u_trace2.w > 0.0")!=std::string::npos,
           "GLSL depth-gated NEREID optics missing");
     check(std::string(render::shaders::kLitMSL).find(
           "thickness = in.wpos.y - opaquePos.y")!=std::string::npos &&
           std::string(render::shaders::kLitMSL).find(
-          "u.params.x < -0.5 && f.trace2.w > 0.5")!=std::string::npos,
+          "u.params.x < -0.5 && f.trace2.w > 0.0")!=std::string::npos,
           "Metal depth-gated NEREID optics missing");
     // Stage 17 optics controls are opt-in and must invalidate cached visuals.
     auto opticalStyle=style;
@@ -493,12 +493,12 @@ int main() {
     check(std::string(render::shaders::kLitFS).find(
           "float transmission = exp(-thickness * u_color.r)")!=std::string::npos &&
           std::string(render::shaders::kLitFS).find(
-          "shallow = clamp(1.0 - thickness / u_color.g")!=std::string::npos,
+          "contactFoam=1.0-smoothstep(0.0,u_color.g,depth)")!=std::string::npos,
           "GLSL Beer-Lambert approximation or shore foam missing");
     check(std::string(render::shaders::kLitMSL).find(
           "float transmission = exp(-thickness * u.color.r)")!=std::string::npos &&
           std::string(render::shaders::kLitMSL).find(
-          "shallow = clamp(1.0 - thickness / u.color.g")!=std::string::npos,
+          "contactFoam=1.0-smoothstep(0.0,u.color.g,depth)")!=std::string::npos,
           "Metal Beer-Lambert approximation or shore foam missing");
     // Underwater visual state is derived from ECS/manifest snapshot only.
     // It neither mutates ECS nor requires a graphics or postfx backend.
@@ -553,11 +553,12 @@ int main() {
     // Foam and extinction happen *after* SSR to keep shore foam visible.
     const auto glShader=std::string(render::shaders::kLitFS);
     const auto metalShader=std::string(render::shaders::kLitMSL);
-    check(glShader.find("float foamWeight = shallow")>
-          glShader.find("vec3 rc = ssrWater") &&
-          metalShader.find("float foamWeight = shallow")>
-          metalShader.find("float3 rc = ssrWater"),
-          "depth optics must composite after SSR in both backends");
+    const auto glFoam=glShader.find("if(contactFoam>0.0)");
+    const auto metalFoam=metalShader.find("if(contactFoam>0.0)");
+    check(glFoam!=std::string::npos && metalFoam!=std::string::npos &&
+          glFoam>glShader.find("vec3 rc = ssrWater") &&
+          metalFoam>metalShader.find("float3 rc = ssrWater"),
+          "undistorted contact foam must composite after refraction and SSR");
     // Stage 18: Prisma's underwater shader is an opt-in composite variant.
     check(std::string(render::postfx::kComposite).find(
           "#ifdef PF_UNDERWATER")!=std::string::npos &&

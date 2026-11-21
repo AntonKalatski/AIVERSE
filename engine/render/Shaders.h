@@ -504,6 +504,14 @@ out vec4 o_color;
 
 float shadowFactor(vec3 n) { return u_params.z < 0.5 ? 1.0 : min(shadowAt(v_wpos, n), terrainShadow(v_wpos)); }
 
+float nereidNoise(vec2 p) {
+    vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    float a=fract(sin(dot(i,vec2(127.1,311.7)))*43758.5453);
+    float b=fract(sin(dot(i+vec2(1,0),vec2(127.1,311.7)))*43758.5453);
+    float c=fract(sin(dot(i+vec2(0,1),vec2(127.1,311.7)))*43758.5453);
+    float d=fract(sin(dot(i+vec2(1,1),vec2(127.1,311.7)))*43758.5453);
+    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
 void main() {
     // Studio draw-call visualizer bypasses all PBR, shadows and texture shading.
     if (u_params.x > 9.5) {
@@ -531,15 +539,20 @@ void main() {
         vec2 p = v_wpos.xz -
                  u_waterWind.xy * wt * (0.02 * windCoupling);
         if(u_params.x < -0.5)p-=u_waterHydraulics.xy*wt;
+        // Moving NEREID detail is transported by the authored current. Independent
+        // wave phases would send highlights sideways even when flow is fixed.
+        float intrinsicTime=(u_params.x < -0.5 && length(u_waterHydraulics.xy)>0.001)?0.0:wt;
+        float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
         float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
         const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
                                    vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
         vec2 g = vec2(0.0);
         for (int i = 0; i < 6; ++i) {
-            float ph = dot(p, wv[i].xy) * wv[i].z + wt * sqrt(wv[i].z) * 1.3;
+            float ph = dot(p, wv[i].xy) * wv[i].z + intrinsicTime * sqrt(wv[i].z) * 1.3 + (u_params.x < -0.5 ? phaseWarp : 0.0);
             g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
         }
-        vec2 q = p * 0.9 + vec2(wt * 0.11, -wt * 0.07);
+        vec2 q = p * 0.9 + vec2(intrinsicTime * 0.11, -intrinsicTime * 0.07);
+        if(u_params.x < -0.5)q+=vec2(sin(p.y*0.37+p.x*0.17),cos(p.x*0.43-p.y*0.23))*1.7;
         vec2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
         float h00 = fract(sin(dot(qi, vec2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5);
         float h01 = fract(sin(dot(qi + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5);
@@ -551,7 +564,7 @@ void main() {
         vec2 windDir=u_waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
         n = normalize(vec3(-g.x * fade, 1.0, -g.y * fade));
-        vec2 m = p * 0.021 + vec2(wt * 0.004, 0.0);
+        vec2 m = p * 0.021 + vec2(intrinsicTime * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
     }
@@ -574,44 +587,22 @@ void main() {
     if(u_params.x < -0.5 && u_waterHydraulics.z > 0.001 && n.y > 0.5) {
         vec2 flow=u_waterHydraulics.xy;
         float speed=length(flow);
-        vec2 dir=flow/max(speed,0.001);
-        vec2 side=vec2(-dir.y,dir.x);
+        vec2 dir=flow/max(speed,0.001),side=vec2(-dir.y,dir.x);
+        vec2 transported=v_wpos.xz-flow*u_camPos.w;
         float scale=u_waterHydraulics.w;
-        float time=u_camPos.w;
-        float along=dot(v_wpos.xz,dir)*scale;
-        float across=dot(v_wpos.xz,side)*scale;
-        // waterRapidColor.a: Low=0, Medium=1 (legacy), High=2.
-        float quality=u_waterRapidColor.a;
-        float eddies=0.0;
-        float foam=0.0;
-        if(quality<0.5) {
-            // Low: single coherent foam streak, no normal perturbation.
-            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
-            foam=smoothstep(0.22,0.82,abs(streak))*u_waterHydraulics.z;
-        } else {
-            // Medium: preserve the exact Stage 39 response.
-            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
-                             sin(across*4.2)*0.7);
-            eddies=sin(across*6.4+along*1.8-time*2.8);
-            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
-                 u_waterHydraulics.z;
-            if(quality>1.5) {
-                // High: secondary cross-flow filaments and micro-eddies.
-                float detail=sin(along*9.1+across*5.7-time*4.2)*
-                             sin(across*11.3-time*2.1);
-                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
-                eddies+=detail*0.35;
-            }
-        }
-        base=mix(base,u_waterRapidColor.rgb,
-                 clamp(foam*0.78,0.0,0.78));
-        if(quality>=0.5)
-            n=normalize(n+vec3(side.x*eddies*foam*0.17,
-                               0.0,side.y*eddies*foam*0.17));
+        float along=dot(transported,dir)*scale,across=dot(transported,side)*scale;
+        // Stretched domain-warped noise follows the current. Products of sine
+        // waves formed a visibly repeated grid of white ellipses on the river.
+        vec2 q=vec2(across*1.8,along*0.42);
+        float warp=nereidNoise(q*0.23+vec2(13.7,-5.1));
+        q+=vec2(warp*1.8,warp*0.7);
+        float field=nereidNoise(q);
+        if(u_waterRapidColor.a>0.5)field=field*0.65+0.35*nereidNoise(vec2(q.x*1.73-q.y*0.67,q.x*0.67+q.y*1.73)+17.3);
+        if(u_waterRapidColor.a>1.5)field=field*0.8+0.2*nereidNoise(vec2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
+        float foam=smoothstep(0.48,0.78,field)*u_waterHydraulics.z;
+        base=mix(base,u_waterRapidColor.rgb,clamp(foam*0.78,0.0,0.78));
+        if(u_waterRapidColor.a>0.5)n=normalize(n+vec3(side.x*(field-0.5)*foam*0.17,0.0,side.y*(field-0.5)*foam*0.17));
     }
-    // NEREID: up to four bounded ripple impulses per visible body. The
-    // parameters are render-origin-relative, matching v_wpos. A zero
-    // amplitude disables a slot; no extra texture reads or geometry upload.
     if(u_params.x < -0.5) {
         vec2 grad = vec2(0.0);
         float rippleFoam = 0.0;
@@ -670,19 +661,20 @@ void main() {
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V,
-                             u_params.x < -1.5 ? 0.0 : u_params.y);   // planar reflection (water, High)
+                             u_params.x < -1.5 ? 0.0 : u_params.y, u_params.x < -0.5);   // planar reflection (water, High)
     if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
-        vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
+        vec3 nn = u_params.x < -0.5 ? n : normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
         float hit;
         vec3 rc = ssrWater(v_wpos, nn, V, hit);
         float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
     float shoreCoverage=1.0;
+    float contactFoam=0.0;
     // NEREID optics: sample the existing opaque colour/depth capture only.
     // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     // Captured background depth must be below the water plane.
-    if (u_params.x < -0.5 && u_trace2.w > 0.5 &&
+    if (u_params.x < -0.5 && u_trace2.w > 0.0 &&
         (u_params.w > 0.001 || u_color.r > 0.001 ||
          u_color.g > 0.001 || u_color.b > 0.001)) {
         vec4 projected = u_viewProj * vec4(v_wpos, 1.0);
@@ -693,7 +685,42 @@ void main() {
             if(u_params.x > -2.5 && all(greaterThan(screen,vec2(0.001))) && all(lessThan(screen,vec2(0.999)))){
                 vec2 shoreUV=u_shadow.x>0.5?vec2(screen.x,1.0-screen.y):screen;
                 float shoreDepth=texture(tex5,shoreUV).r;
-                if(shoreDepth<0.9999){float depth=v_wpos.y-ssrUnproject(screen,shoreDepth).y;shoreCoverage=smoothstep(0.0,max(0.18,u_color.g),depth);}
+                if(shoreDepth<0.9999){
+                    float depth=v_wpos.y-ssrUnproject(screen,shoreDepth).y;
+                    shoreCoverage=smoothstep(0.0,0.18,depth);
+                    if(u_color.g>0.001 && depth>0.0 && depth<1000.0){
+                        contactFoam=1.0-smoothstep(0.0,u_color.g,depth);
+                        // Bounded overlapping upstream depth probes create a tapered downstream
+                        // tail. No contact wake exists ahead of the obstacle/current.
+                        float speed=length(u_waterHydraulics.xy);
+                        vec2 currentDir=u_waterHydraulics.xy/max(speed,0.001);
+                        float wakeFoam=0.0;
+                        int tapCount=u_waterRapidColor.a>1.5?16:(u_waterRapidColor.a>0.5?8:4);
+                        if(speed>0.01)for(int tap=0;tap<16;++tap){
+                            if(tap>=tapCount)break;
+                            float tail=float(tap)/float(tapCount-1);
+                            float reach=0.2+1.4*tail;
+                            vec3 probe=v_wpos-vec3(currentDir.x,0.0,currentDir.y)*reach;
+                            probe.y+=dot(v_nrm.xz,currentDir)/max(abs(v_nrm.y),0.1)*reach;
+                            vec4 clip=u_viewProj*vec4(probe,1.0);
+                            if(clip.w<=0.0)continue;
+                            vec2 probeScreen=clip.xy/clip.w*0.5+0.5;
+                            if(any(lessThan(probeScreen,vec2(0.001)))||any(greaterThan(probeScreen,vec2(0.999))))continue;
+                            vec2 probeUV=u_shadow.x>0.5?vec2(probeScreen.x,1.0-probeScreen.y):probeScreen;
+                            float probeDepth=texture(tex5,probeUV).r;
+                            if(probeDepth>=0.9999)continue;
+                            vec3 hit=ssrUnproject(probeScreen,probeDepth);
+                            float height=hit.y-probe.y;
+                            float nearby=1.0-smoothstep(0.35,0.8,length(hit.xz-probe.xz));
+                            float obstacle=smoothstep(0.01,0.10,height)*(1.0-smoothstep(2.0,3.0,height))*nearby;
+                            float crossDistance=abs(dot(hit.xz-v_wpos.xz,vec2(-currentDir.y,currentDir.x)));
+                            float tailWidth=0.55*(1.0-reach*0.4);
+                            float taper=1.0-smoothstep(tailWidth*0.3,tailWidth,crossDistance);
+                            wakeFoam+=obstacle*taper*(0.70-0.50*tail);
+                        }
+                        contactFoam=max(contactFoam,clamp(wakeFoam*1.2/float(tapCount),0.0,0.6));
+                    }
+                }
             }
             vec2 distorted = screen + n.xz * (0.009 * u_params.w);
             if (all(greaterThan(distorted, vec2(0.005))) &&
@@ -712,18 +739,15 @@ void main() {
                         float blendAmount = clamp(u_params.w * 0.85 +
                             u_color.b * (1.0-transmission), 0.0, 0.85);
                         outc = mix(outc, absorbed, blendAmount);
-                        // Depth-derived shore foam: shallow intersections only.
-                        // Vertex-tinted foam remains as the authored fallback.
-                        if (u_color.g > 0.001) {
-                            float shallow = clamp(1.0 - thickness / u_color.g, 0.0, 1.0);
-                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
-                            outc = mix(outc, vec3(0.82, 0.91, 0.92),
-                                       clamp(foamWeight * (0.10+0.10*pow(sin(dot(v_wpos.xz,vec2(3.7,5.1))+u_camPos.w),2.0)), 0.0, 0.2));
-                        }
                     }
                 }
             }
         }
+    }
+    if(contactFoam>0.0){
+        vec2 foamPoint=v_wpos.xz-u_waterHydraulics.xy*u_camPos.w;
+        float breakup=0.65+0.35*sin(dot(foamPoint,vec2(2.7,4.1))+sin(dot(foamPoint,vec2(-3.3,1.9))));
+        outc=mix(outc,vec3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72,0.0,0.72));
     }
     o_color = vec4(outc, albedo.a*shoreCoverage);
 }
@@ -746,6 +770,14 @@ vertex VOut vs_main(VIn in [[stage_in]], constant U0& u [[buffer(1)]], constant 
 static float shadowFactor(constant U0& u, constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss,
                           texture2d<float> hf, sampler hs) {
     return u.params.z < 0.5 ? 1.0 : min(shadowAt(f, wpos, n, fragCoord, sm, ss), terrainShadow(f, hf, hs, wpos));
+}
+static float nereidNoise(float2 p) {
+    float2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    float a=fract(sin(dot(i,float2(127.1,311.7)))*43758.5453);
+    float b=fract(sin(dot(i+float2(1,0),float2(127.1,311.7)))*43758.5453);
+    float c=fract(sin(dot(i+float2(0,1),float2(127.1,311.7)))*43758.5453);
+    float d=fract(sin(dot(i+float2(1,1),float2(127.1,311.7)))*43758.5453);
+    return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
 }
 fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], constant U1& f [[buffer(2)]],
                         depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
@@ -775,15 +807,20 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float2 p = in.wpos.xz -
                    u.waterWind.xy * wt * (0.02 * windCoupling);
         if(u.params.x < -0.5)p-=u.waterHydraulics.xy*wt;
+        // Moving NEREID detail is transported by the authored current. Independent
+        // wave phases would send highlights sideways even when flow is fixed.
+        float intrinsicTime=(u.params.x < -0.5 && length(u.waterHydraulics.xy)>0.001)?0.0:wt;
+        float phaseWarp=0.65*sin(p.x*0.37+sin(p.y*0.29))+0.4*sin(p.y*0.53-p.x*0.19);
         float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
         const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
                                    float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
         float2 g = float2(0.0);
         for (int i = 0; i < 6; ++i) {
-            float ph = dot(p, wv[i].xy) * wv[i].z + wt * sqrt(wv[i].z) * 1.3;
+            float ph = dot(p, wv[i].xy) * wv[i].z + intrinsicTime * sqrt(wv[i].z) * 1.3 + (u.params.x < -0.5 ? phaseWarp : 0.0);
             g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
         }
-        float2 q = p * 0.9 + float2(wt * 0.11, -wt * 0.07);
+        float2 q = p * 0.9 + float2(intrinsicTime * 0.11, -intrinsicTime * 0.07);
+        if(u.params.x < -0.5)q+=float2(sin(p.y*0.37+p.x*0.17),cos(p.x*0.43-p.y*0.23))*1.7;
         float2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
         float h00 = fract(sin(dot(qi, float2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + float2(1, 0), float2(127.1, 311.7))) * 43758.5);
         float h01 = fract(sin(dot(qi + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + float2(1, 1), float2(127.1, 311.7))) * 43758.5);
@@ -795,7 +832,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float2 windDir=u.waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
         n = normalize(float3(-g.x * fade, 1.0, -g.y * fade));
-        float2 m = p * 0.021 + float2(wt * 0.004, 0.0);
+        float2 m = p * 0.021 + float2(intrinsicTime * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
     }
@@ -812,36 +849,21 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     if(u.params.x < -0.5 && u.waterHydraulics.z > 0.001 && n.y > 0.5) {
         float2 flow=u.waterHydraulics.xy;
         float speed=length(flow);
-        float2 dir=flow/max(speed,0.001);
-        float2 side=float2(-dir.y,dir.x);
+        float2 dir=flow/max(speed,0.001),side=float2(-dir.y,dir.x);
+        float2 transported=in.wpos.xz-flow*f.camPos.w;
         float scale=u.waterHydraulics.w;
-        float time=f.camPos.w;
-        float along=dot(in.wpos.xz,dir)*scale;
-        float across=dot(in.wpos.xz,side)*scale;
-        float quality=u.waterRapidColor.a;
-        float eddies=0.0;
-        float foam=0.0;
-        if(quality<0.5) {
-            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
-            foam=smoothstep(0.22,0.82,abs(streak))*u.waterHydraulics.z;
-        } else {
-            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
-                             sin(across*4.2)*0.7);
-            eddies=sin(across*6.4+along*1.8-time*2.8);
-            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
-                 u.waterHydraulics.z;
-            if(quality>1.5) {
-                float detail=sin(along*9.1+across*5.7-time*4.2)*
-                             sin(across*11.3-time*2.1);
-                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
-                eddies+=detail*0.35;
-            }
-        }
-        base=mix(base,u.waterRapidColor.rgb,
-                 clamp(foam*0.78,0.0,0.78));
-        if(quality>=0.5)
-            n=normalize(n+float3(side.x*eddies*foam*0.17,
-                                 0.0,side.y*eddies*foam*0.17));
+        float along=dot(transported,dir)*scale,across=dot(transported,side)*scale;
+        // Stretched domain-warped noise follows the current. Products of sine
+        // waves formed a visibly repeated grid of white ellipses on the river.
+        float2 q=float2(across*1.8,along*0.42);
+        float warp=nereidNoise(q*0.23+float2(13.7,-5.1));
+        q+=float2(warp*1.8,warp*0.7);
+        float field=nereidNoise(q);
+        if(u.waterRapidColor.a>0.5)field=field*0.65+0.35*nereidNoise(float2(q.x*1.73-q.y*0.67,q.x*0.67+q.y*1.73)+17.3);
+        if(u.waterRapidColor.a>1.5)field=field*0.8+0.2*nereidNoise(float2(q.x*3.11+q.y*1.27,-q.x*1.27+q.y*3.11)-9.2);
+        float foam=smoothstep(0.48,0.78,field)*u.waterHydraulics.z;
+        base=mix(base,u.waterRapidColor.rgb,clamp(foam*0.78,0.0,0.78));
+        if(u.waterRapidColor.a>0.5)n=normalize(n+float3(side.x*(field-0.5)*foam*0.17,0.0,side.y*(field-0.5)*foam*0.17));
     }
     if(u.params.x < -0.5) {
         float2 grad=float2(0.0);
@@ -899,9 +921,9 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col),
-                               in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y);
+                               in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y, u.params.x < -0.5);
     if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
-        float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
+        float3 nn = u.params.x < -0.5 ? n : normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
         float hit;
         float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);
         float fres = (in.wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
@@ -910,7 +932,8 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     // NEREID optics: share captured opaque tex4/tex5 with SSR, no feedback.
     // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     float shoreCoverage=1.0;
-    if (u.params.x < -0.5 && f.trace2.w > 0.5 &&
+    float contactFoam=0.0;
+    if (u.params.x < -0.5 && f.trace2.w > 0.0 &&
         (u.params.w > 0.001 || u.color.r > 0.001 ||
          u.color.g > 0.001 || u.color.b > 0.001)) {
         float4 projected = f.viewProj * float4(in.wpos, 1.0);
@@ -919,7 +942,42 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
             if(u.params.x > -2.5 && all(screen>float2(0.001)) && all(screen<float2(0.999))){
                 float2 shoreUV=f.shadow.x>0.5?float2(screen.x,1.0-screen.y):screen;
                 float shoreDepth=tex5.sample(s5,shoreUV);
-                if(shoreDepth<0.9999){float depth=in.wpos.y-ssrUnproject(f,screen,shoreDepth).y;shoreCoverage=smoothstep(0.0,max(0.18,u.color.g),depth);}
+                if(shoreDepth<0.9999){
+                    float depth=in.wpos.y-ssrUnproject(f,screen,shoreDepth).y;
+                    shoreCoverage=smoothstep(0.0,0.18,depth);
+                    if(u.color.g>0.001 && depth>0.0 && depth<1000.0){
+                        contactFoam=1.0-smoothstep(0.0,u.color.g,depth);
+                        // Bounded overlapping upstream depth probes create a tapered downstream
+                        // tail. No contact wake exists ahead of the obstacle/current.
+                        float speed=length(u.waterHydraulics.xy);
+                        float2 currentDir=u.waterHydraulics.xy/max(speed,0.001);
+                        float wakeFoam=0.0;
+                        int tapCount=u.waterRapidColor.a>1.5?16:(u.waterRapidColor.a>0.5?8:4);
+                        if(speed>0.01)for(int tap=0;tap<16;++tap){
+                            if(tap>=tapCount)break;
+                            float tail=float(tap)/float(tapCount-1);
+                            float reach=0.2+1.4*tail;
+                            float3 probe=in.wpos-float3(currentDir.x,0.0,currentDir.y)*reach;
+                            probe.y+=dot(in.nrm.xz,currentDir)/max(abs(in.nrm.y),0.1)*reach;
+                            float4 clip=f.viewProj*float4(probe,1.0);
+                            if(clip.w<=0.0)continue;
+                            float2 probeScreen=clip.xy/clip.w*0.5+0.5;
+                            if(any(probeScreen<float2(0.001))||any(probeScreen>float2(0.999)))continue;
+                            float2 probeUV=f.shadow.x>0.5?float2(probeScreen.x,1.0-probeScreen.y):probeScreen;
+                            float probeDepth=tex5.sample(s5,probeUV);
+                            if(probeDepth>=0.9999)continue;
+                            float3 hit=ssrUnproject(f,probeScreen,probeDepth);
+                            float height=hit.y-probe.y;
+                            float nearby=1.0-smoothstep(0.35,0.8,length(hit.xz-probe.xz));
+                            float obstacle=smoothstep(0.01,0.10,height)*(1.0-smoothstep(2.0,3.0,height))*nearby;
+                            float crossDistance=abs(dot(hit.xz-in.wpos.xz,float2(-currentDir.y,currentDir.x)));
+                            float tailWidth=0.55*(1.0-reach*0.4);
+                            float taper=1.0-smoothstep(tailWidth*0.3,tailWidth,crossDistance);
+                            wakeFoam+=obstacle*taper*(0.70-0.50*tail);
+                        }
+                        contactFoam=max(contactFoam,clamp(wakeFoam*1.2/float(tapCount),0.0,0.6));
+                    }
+                }
             }
             float2 distorted = screen + n.xz * (0.009 * u.params.w);
             if (all(distorted > float2(0.005)) &&
@@ -938,16 +996,16 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                         float blendAmount = clamp(u.params.w * 0.85 +
                             u.color.b * (1.0-transmission), 0.0, 0.85);
                         outc = mix(outc, absorbed, blendAmount);
-                        if (u.color.g > 0.001) {
-                            float shallow = clamp(1.0 - thickness / u.color.g, 0.0, 1.0);
-                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
-                            outc = mix(outc, float3(0.82, 0.91, 0.92),
-                                       clamp(foamWeight * (0.10+0.10*pow(sin(dot(in.wpos.xz,float2(3.7,5.1))+f.camPos.w),2.0)), 0.0, 0.2));
-                        }
+
                     }
                 }
             }
         }
+    }
+    if(contactFoam>0.0){
+        float2 foamPoint=in.wpos.xz-u.waterHydraulics.xy*f.camPos.w;
+        float breakup=0.65+0.35*sin(dot(foamPoint,float2(2.7,4.1))+sin(dot(foamPoint,float2(-3.3,1.9))));
+        outc=mix(outc,float3(0.82,0.91,0.92),clamp(contactFoam*breakup*0.72,0.0,0.72));
     }
     return float4(outc, albedo.a*shoreCoverage);
 }

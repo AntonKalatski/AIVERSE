@@ -409,6 +409,7 @@ struct Bench {
             ?float(std::max(0.0,previewTime-previousWaterPreviewTime)):1.f/60.f;
         water.updateUnderwater(post,waterDelta);
         previousWaterPreviewTime=previewTime;
+        renderer.setPresentationTime(options.freezeTime);
         renderer.beginScene(screen.jittered(camera,width,height),width,height);
         if(!dynamicGi.attach(renderer)){fail("dynamicGI receiver admission failed");if(ownsFrame)d.endFrame();return;}
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
@@ -445,7 +446,7 @@ struct Bench {
             settings.set("lightAttenuation",Json::string(renderer.lights.staticPointLightsActive()?"3D finite-radius attenuation / (1 + distance squared); linear RGB; unshadowed":"RTS finite-radius approximation; not photometric glTF"));
             settings.set("staticPointLightGrid",Json::fromBool(renderer.lights.staticPointLightsActive()));
             settings.set("pointLightBudget",Json::number(int64_t(options.profile=="low"?0:renderer.lights.staticPointLightsActive()?additions.lights.size():std::min(additions.lights.size(),LightSystem::kMaxLights))));settings.set("rayTracing",Json::fromBool(false));
-            settings.set("ssr",Json::fromBool(renderer.ssrActive()));settings.set("dynamicResolution",Json::fromBool(false));
+            settings.set("opaqueSceneCapture",Json::fromBool(renderer.ssrActive()));settings.set("ssr",Json::fromBool(renderer.ssrActive() && renderer.traceActive()));settings.set("dynamicResolution",Json::fromBool(false));
             settings.set("modelOptimization",config["modelOptimization"]);
             settings.set("validationMotionYawPerFrame",Json::number(double(options.motionYaw),8));
             settings.set("validationFreezeTime",Json::number(double(options.freezeTime)));
