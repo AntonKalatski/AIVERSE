@@ -486,7 +486,9 @@ private:
     bool preflightUpscale(int outputW, int outputH, int renderW, int renderH);
     void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
-    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
+    // graphKey: optional precomputed graph->dump(-1) (one dump per frame).
+    gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr,
+                                  const std::string* graphKey = nullptr);
     void draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
               std::initializer_list<std::pair<int, gfx::TextureHandle>> tex);
     const Lut* lut(const std::string& path);

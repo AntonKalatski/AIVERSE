@@ -1252,8 +1252,11 @@ gfx::PipelineHandle Prisma::program(Prog p) {
     return pipes_[p];
 }
 
-gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
-    const std::string key = std::to_string(mask) + (graphData ? graphData->dump(-1) : "");
+gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData,
+                                      const std::string* graphKey) {
+    const std::string graphText = graphData ?
+        (graphKey ? *graphKey : graphData->dump(-1)) : std::string();
+    const std::string key = std::to_string(mask) + graphText;
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
@@ -1272,7 +1275,7 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (graphData) {
         try {
             graphProgram=graph::compile(*graphData,"postfx");
-            graphPaths_[graphData->dump(-1)]=graphProgram.textures;
+            graphPaths_[graphText]=graphProgram.textures;
             const std::string marker="    RETURN(vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0));";
             std::string macros="\n#define SG_SAMPLE(uv) TEX0(TUV(uv))\n";
             for(size_t i=0;i<graphProgram.textures.size();++i) {
@@ -2632,6 +2635,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
     }
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
+    // Serialize the graph once per frame; every composite() lookup below
+    // reuses this key instead of dumping the JSON again.
+    const std::string graphKey = graphData ? graphData->dump(-1) : std::string();
     std::vector<gfx::TextureHandle> graphImages;
     bool graphInputsReady = true;
     if (graphEffect) {
@@ -2640,8 +2646,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         // Bloom/Grade/LUT to fall all the way back to composite(0).
         // Compile the graph's variant once to populate its texture list;
         // the normal composite cache prevents a repeated GPU build.
-        composite(mask, graphData);
-        const auto it = graphPaths_.find(graphEffect->shaderGraph.dump(-1));
+        composite(mask, graphData, &graphKey);
+        const auto it = graphPaths_.find(graphKey);
         if (it != graphPaths_.end()) {
             for (const auto& path : it->second) {
                 graphImages.push_back(graphTexture(path));
@@ -2662,14 +2668,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         selectedGraph ? graphImages.size() : 0, automaticExposure.valid());
     if (automaticExposure.valid() && authoredLayout.valid)
         mask |= kPfAutoExposure;
-    gfx::PipelineHandle pipe = composite(mask, selectedGraph);
+    gfx::PipelineHandle pipe = composite(mask, selectedGraph, &graphKey);
     if (!pipe.valid() && (mask & kPfUnderwaterDepth)) {
         mask &= ~kPfUnderwaterDepth;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && (mask & kPfAutoExposure)) {
         mask &= ~kPfAutoExposure;
-        pipe = composite(mask, selectedGraph);
+        pipe = composite(mask, selectedGraph, &graphKey);
     }
     if (!pipe.valid() && selectedGraph) {
         selectedGraph = nullptr;
