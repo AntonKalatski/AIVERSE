@@ -414,3 +414,21 @@ has no state, RNG, persistence/schema or contact-selection changes. Existing
 their original algorithms; do not replace membership tests with rounded distance.
 Terra authoring combines clearance with graded height for one sand/wetness/grass
 snapshot. It does not install a live hydraulic or erosion solver.
+
+## Camera-independent flow presentation snapshot (CPU stage)
+
+`engine/world/NereidFlowMap.h` builds a bounded data-only world-space grid from
+`gradedWaterBody` + `waterCurrentWithVortices`. It samples the local graded water
+surface, preserves manual flow and existing current/vortex controls, and never
+writes to ECS. The default grid is 2m, at most256 per axis and16384 texels; larger
+footprints increase spacing by powers of two. Finite source bounds and sampling
+have no camera/mesh-LOD inputs. Infinite water requires an explicit bounded patch;
+overlapping same-scale patches retain one world lattice. RG stores X/Z m/s, B
+local rapid intensity, A validity. This rectangle is presentation coverage, not
+replacement authoritative water membership.
+
+CPU bilinear sampling and native bend/manual/vortex/overlap/budget tests are
+implemented. **GPU upload, shader sampling, native host connection and visual
+camera invariance are not implemented by this CPU stage.** The existing renderer
+still uses a per-draw current until that integration is completed. No component,
+persistence/checksum, simulation-clock or river-grade save format changes.
