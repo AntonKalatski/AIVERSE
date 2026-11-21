@@ -205,13 +205,30 @@ public:
             if(obj.graph && animationSourceModel(obj) && obj.id==0)
                 throw std::invalid_argument(
                     "View animation requires a stable nonzero object ID");
+        std::vector<lib::animation::AnimationSourceFrame> sources;
+        sources.reserve(objects.size());
+        for(const auto& obj:objects) {
+            const auto* animationModel=animationSourceModel(obj);
+            if(!obj.graph || !animationModel)continue;
+            lib::animation::AnimationSourceFrame input;
+            input.sourceId=obj.id;
+            input.generation=obj.generation;
+            input.model=animationModel;
+            input.graph=obj.graph;
+            input.inputs=obj.parameters;
+            input.modelPublicationGeneration=obj.animationModelGeneration;
+            sources.push_back(std::move(input));
+        }
+        // The bridge validates the whole batch (duplicate IDs, graph/model
+        // mismatch, epoch without recompile) before it mutates the World.
+        // Run it before touching stats, frame stamp or LOD hysteresis so a
+        // rejected batch leaves this View exactly as it was.
+        const auto sourceStats=bridge_.sync(presentation_,sources);
         stats_={};
         retargetStats_={};
         if(++frameStamp_==0) {
             frameStamp_=1; lodState_.clear();cameraLodState_.clear();
         }
-        std::vector<lib::animation::AnimationSourceFrame> sources;
-        sources.reserve(objects.size());
         for(const auto& obj:objects) {
             if(obj.visible)++stats_.visible;
             if(obj.draw.model && obj.visible)++stats_.drawable;
@@ -236,19 +253,9 @@ public:
                     selection.seen=frameStamp_;
                 }
             }
-            const auto* animationModel=animationSourceModel(obj);
-            if(!obj.graph || !animationModel)continue;
-            ++stats_.animated;
-            lib::animation::AnimationSourceFrame input;
-            input.sourceId=obj.id;
-            input.generation=obj.generation;
-            input.model=animationModel;
-            input.graph=obj.graph;
-            input.inputs=obj.parameters;
-            input.modelPublicationGeneration=obj.animationModelGeneration;
-            sources.push_back(std::move(input));
+            if(obj.graph && animationSourceModel(obj))++stats_.animated;
         }
-        stats_.source=bridge_.sync(presentation_,sources);
+        stats_.source=sourceStats;
         for(auto it=lodState_.begin();it!=lodState_.end();) {
             if(it->second.seen!=frameStamp_)it=lodState_.erase(it);
             else ++it;
