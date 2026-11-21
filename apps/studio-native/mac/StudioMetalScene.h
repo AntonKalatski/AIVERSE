@@ -55,6 +55,14 @@ public:
     void setOrthographic(bool ortho);
     struct CameraState { float yaw = 0, pitch = 0, distance = 0; bool ortho = false; };
     CameraState cameraState() const { return {camera_.yaw, camera_.pitch, camera_.distance, camera_.ortho}; }
+    // Corner orientation gizmo rendered by Renderer3D, for the default host where
+    // the Metal view covers the WebView (the HTML gizmo is used in composite mode).
+    void setOrientationGizmo(bool enabled) { orientationGizmo_ = enabled; }
+    // Hit test in the same units as width/height: -1 none, 0..5 arm
+    // (axis*2 + negative), 6 centre (projection toggle).
+    int orientationGizmoHit(float x, float y, float width, float height) const;
+    // Applies a hit: snaps to the axis view (auto Iso) or toggles the projection.
+    void activateOrientationGizmo(int hit);
     void resetCamera() { lightingRevision_ = std::numeric_limits<uint64_t>::max(); cameraInitialized_ = false; terrainRevision_ = std::numeric_limits<uint64_t>::max(); clearDocumentModels(); }
 private:
     std::unique_ptr<gfx::Device> device_;
@@ -105,6 +113,9 @@ private:
     // Camera actually submitted/picked: clip planes follow distance, ortho keeps
     // its framing from `distance` while the eye stays inside the depth range.
     render::RTSCamera viewCamera() const;
+    bool orientationGizmo_ = false;
+    bool autoIso_ = false; // Iso entered by an axis snap; orbit/look returns to Persp
+    void drawOrientationGizmo(const render::RTSCamera& view, int width, int height);
     bool lodDiagnostics_ = false;
     uint64_t diagnosticFrames_ = 0;
     int lastMapWidth_ = 0;

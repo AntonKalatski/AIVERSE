@@ -25,6 +25,27 @@ namespace { struct StudioFrameScope {
     gfx::Device& device;
     ~StudioFrameScope(){device.endPass();device.endFrame();}
 }; }
+namespace {
+// Shared layout of the native orientation gizmo (top-right corner).
+struct GizmoLayout { float cx, cy, r; };
+GizmoLayout gizmoLayout(float width,float height) {
+    const float r=std::clamp(std::min(width,height)*0.065f,24.0f,160.0f);
+    return {width-r*1.75f,r*1.75f,r};
+}
+struct GizmoBasis { float3 right, up, forward; };
+GizmoBasis gizmoBasis(float yaw,float pitch) {
+    const float cp=std::cos(pitch),sp=std::sin(pitch);
+    const float3 forward{-std::sin(yaw)*cp,-sp,-std::cos(yaw)*cp};
+    const float3 right{std::cos(yaw),0,-std::sin(yaw)};
+    return {right,cross(right,forward),forward};
+}
+float3 gizmoAxis(int arm) {
+    float3 a{0,0,0};
+    const float sign=(arm&1)?-1.0f:1.0f;
+    if(arm/2==0)a.x=sign; else if(arm/2==1)a.y=sign; else a.z=sign;
+    return a;
+}
+}
 StudioMetalScene::StudioMetalScene(void* metalLayer)
     : device_(gfx::createMetalDevice(metalLayer)) {
     if (!device_) throw std::runtime_error("Metal device unavailable");
@@ -293,9 +314,103 @@ void StudioMetalScene::setOrientation(float yaw,float pitch) {
     if(!std::isfinite(yaw)||!std::isfinite(pitch))return;
     startTween(camera_.target,camera_.distance,yaw,std::clamp(pitch,-1.5707963f,1.5707963f));
 }
-void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; }
+void StudioMetalScene::setOrthographic(bool ortho) { camera_.ortho=ortho; autoIso_=false; }
+int StudioMetalScene::orientationGizmoHit(float x,float y,float width,float height) const {
+    if(!orientationGizmo_ || materialMode_ || width<4 || height<4)return -1;
+    const auto g=gizmoLayout(width,height);
+    if(std::hypot(x-g.cx,y-g.cy)>g.r*1.45f)return -1;
+    if(std::hypot(x-g.cx,y-g.cy)<g.r*0.26f)return 6;
+    const auto b=gizmoBasis(camera_.yaw,camera_.pitch);
+    int best=-1;float bestScore=1e9f;
+    for(int arm=0;arm<6;++arm) {
+        const float3 a=gizmoAxis(arm);
+        const float tx=g.cx+dot(a,b.right)*g.r,ty=g.cy-dot(a,b.up)*g.r;
+        const float d=std::hypot(x-tx,y-ty);
+        // Prefer the arm nearer to the viewer when tips overlap.
+        const float score=d+dot(a,b.forward)*g.r*0.15f;
+        if(d<g.r*0.42f && score<bestScore){bestScore=score;best=arm;}
+    }
+    return best;
+}
+void StudioMetalScene::activateOrientationGizmo(int hit) {
+    if(hit==6){setOrthographic(!camera_.ortho);return;}
+    if(hit<0 || hit>5)return;
+    const float sign=(hit&1)?-1.0f:1.0f;
+    const int axis=hit/2;
+    const float half=1.5707963f;
+    if(axis==0)setOrientation(sign*half,0);
+    else if(axis==1)setOrientation(0,sign*half);
+    else setOrientation(sign>0?0.0f:3.14159265f,0);
+    if(!camera_.ortho){camera_.ortho=true;autoIso_=true;}
+}
+void StudioMetalScene::drawOrientationGizmo(const render::RTSCamera& view,int width,int height) {
+    // Drawn flat in screen space (like the HTML gizmo): every vertex is a pixel
+    // position unprojected onto a plane just beyond the near plane, so the corner
+    // placement never adds perspective skew. Overlays are depth-tested without
+    // depth writes; this plane is in front of every scene surface.
+    const float W=float(width),H=float(height);
+    const auto g=gizmoLayout(W,H);
+    const float depth=view.ortho?0.5f:view.zNear*1.5f;
+    bool ok=true;
+    auto at=[&](float x,float y)->float3 {
+        float3 o,d;
+        if(!view.screenRay(x,y,W,H,o,d)){ok=false;return {};}
+        return o+d*depth;
+    };
+    auto tri=[&](float ax,float ay,float bx,float by,float cx,float cy,uint32_t col){
+        const float3 p=at(ax,ay),q=at(bx,by),r=at(cx,cy);
+        if(ok)renderer_.triangle(p,q,r,col);
+    };
+    auto quad=[&](float ax,float ay,float bx,float by,float cx,float cy,float dx,float dy,uint32_t col){
+        tri(ax,ay,bx,by,cx,cy,col);tri(ax,ay,cx,cy,dx,dy,col);
+    };
+    auto segment=[&](float x0,float y0,float x1,float y1,float w,uint32_t col){
+        const float lx=x1-x0,ly=y1-y0,l=std::hypot(lx,ly);
+        if(l<1e-3f)return;
+        const float nx=-ly/l*w*.5f,ny=lx/l*w*.5f;
+        quad(x0+nx,y0+ny,x1+nx,y1+ny,x1-nx,y1-ny,x0-nx,y0-ny,col);
+    };
+    auto disc=[&](float cx,float cy,float radius,uint32_t col,int segments){
+        for(int i=0;i<segments;++i){
+            const float a0=6.2831853f*float(i)/segments,a1=6.2831853f*float(i+1)/segments;
+            tri(cx,cy,cx+std::cos(a0)*radius,cy+std::sin(a0)*radius,cx+std::cos(a1)*radius,cy+std::sin(a1)*radius,col);
+        }
+    };
+    const float r=g.r,u=r/31.0f; // u: one HTML-gizmo pixel
+    disc(g.cx,g.cy,r+11*u,rgba(27,43,65,150),32);
+    const auto b=gizmoBasis(view.yaw,view.pitch);
+    int order[6]={0,1,2,3,4,5};
+    std::sort(order,order+6,[&](int l,int rr){return dot(gizmoAxis(l),b.forward)>dot(gizmoAxis(rr),b.forward);});
+    const uint32_t colors[3]={rgba(232,102,95),rgba(134,207,108),rgba(95,151,238)};
+    for(const int arm:order) {
+        const float3 a=gizmoAxis(arm);
+        const bool negative=(arm&1)!=0;
+        const uint32_t col=negative?rgba(111,127,150):colors[arm/2];
+        const float ax=dot(a,b.right)*r,ay=-dot(a,b.up)*r;
+        const float len=std::hypot(ax,ay);
+        const float tx=g.cx+ax,ty=g.cy+ay;
+        if(len<=4*u){disc(tx,ty,7*u,col,16);continue;}
+        const float ux=ax/len,uy=ay/len;
+        const float cone=std::min(len,std::max(7*u,15*u*len/r));
+        const float bx=tx-ux*cone,by=ty-uy*cone,half=6*u;
+        segment(g.cx,g.cy,bx,by,2.4f*u,col);
+        tri(tx,ty,bx-uy*half,by+ux*half,bx+uy*half,by-ux*half,col);
+        if(negative)continue;
+        // Axis letter beyond the tip, drawn as strokes.
+        const float lx=tx+ux*9*u,ly=ty+uy*9*u,h=3.6f*u,w=2.4f*u,st=1.6f*u;
+        if(arm/2==0){segment(lx-w,ly-h,lx+w,ly+h,st,col);segment(lx+w,ly-h,lx-w,ly+h,st,col);}
+        else if(arm/2==1){segment(lx-w,ly-h,lx,ly,st,col);segment(lx+w,ly-h,lx,ly,st,col);segment(lx,ly,lx,ly+h,st,col);}
+        else{segment(lx-w,ly-h,lx+w,ly-h,st,col);segment(lx+w,ly-h,lx-w,ly+h,st,col);segment(lx-w,ly+h,lx+w,ly+h,st,col);}
+    }
+    // Centre square: click toggles Persp/Iso (highlighted while Iso).
+    const float c=6.5f*u;
+    quad(g.cx-c,g.cy-c,g.cx+c,g.cy-c,g.cx+c,g.cy+c,g.cx-c,g.cy+c,
+         view.ortho?rgba(130,181,255):rgba(214,224,240));
+}
+
 void StudioMetalScene::orbit(float dx, float dy) {
     tween_.active=false;
+    if(autoIso_){camera_.ortho=false;autoIso_=false;}
     camera_.yaw += dx * 0.007f;
     camera_.pitch = std::clamp(camera_.pitch - dy * 0.007f, -1.52f, 1.52f);
 }
@@ -318,6 +433,7 @@ void StudioMetalScene::look(float dx, float dy) {
     // First-person free look preserves the camera's world-space eye instead
     // of orbiting around its target. WASD movement then translates the eye.
     tween_.active=false;
+    if(autoIso_){camera_.ortho=false;autoIso_=false;}
     const float3 position=camera_.eye();
     camera_.yaw += dx*0.007f;
     camera_.pitch=std::clamp(camera_.pitch-dy*0.007f,-1.52f,1.52f);
@@ -695,6 +811,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         renderer_.line({at.x,at.y-extent,at.z},{at.x,at.y+extent,at.z},color);
         renderer_.line({at.x,at.y,at.z-extent},{at.x,at.y,at.z+extent},color);
     }
+    if(orientationGizmo_)drawOrientationGizmo(view,framebufferWidth,framebufferHeight);
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;
     pass.clearColor[2] = 0.098f; pass.clearColor[3] = 1.0f;

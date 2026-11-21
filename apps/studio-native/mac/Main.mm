@@ -85,6 +85,7 @@
 - (void)focusSceneSelection;
 - (void)resetSceneView;
 - (void)publishSceneCamera;
+- (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioEventPayload:(const char*)event payload:(const aiverse::Json&)payload;
@@ -157,8 +158,9 @@
 }
 - (void)mouseUp:(NSEvent*)event {
     const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
-    if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
-        [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+    if (dragged_ || std::hypot(double(point.x-press_.x), double(point.y-press_.y)) >= 5.0) return;
+    if ([self.host sceneGizmoAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height]) return;
+    [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
 }
 - (void)rightMouseDown:(NSEvent*)event { [self.window makeFirstResponder:self]; (void)event; }
 - (void)rightMouseDragged:(NSEvent*)event {
@@ -407,7 +409,12 @@
     }
     @autoreleasepool {
         try {
-            if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
+            if (!preview_) {
+                preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
+                // Default host: the Metal view covers HTML, so the renderer draws the
+                // orientation gizmo itself; composite mode uses the HTML gizmo.
+                preview_->setOrientationGizmo(!htmlComposite_);
+            }
             // StudioSession/renderer are owned and called on the main thread.
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map,
                 session_->workspace().project.isFps(), session_->selectedObjectId(),
@@ -462,6 +469,13 @@
         session_->workspace().project.isFps(),session_->selectedObjectId());
 }
 - (void)resetSceneView { if (preview_) preview_->resetView(); }
+- (BOOL)sceneGizmoAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_) return NO;
+    const int hit=preview_->orientationGizmoHit(float(x),float(y),float(width),float(height));
+    if (hit<0) return NO;
+    preview_->activateOrientationGizmo(hit);
+    return YES;
+}
 - (void)publishSceneCamera {
     if (!preview_ || !htmlComposite_) return;
     const auto camera=preview_->cameraState();
@@ -774,7 +788,10 @@
             const auto& input=req["params"];
             const std::string kind=input.getStr("kind");
             aiverse::Json result=aiverse::Json::object();
-            if (!htmlComposite_ || !placement_.visible || !preview_ || viewport_.hidden) {
+            // Pointer/keyboard navigation comes from HTML only in composite mode (the
+            // Metal NSView handles it otherwise); toolbar commands work in both.
+            const bool toolbarCommand=kind=="focus" || kind=="reset" || kind=="view" || kind=="projection";
+            if ((!htmlComposite_ && !toolbarCommand) || !placement_.visible || !preview_ || viewport_.hidden) {
                 reply.set("error",aiverse::Json::string("Viewport input unavailable"));
             } else if (kind=="orbit" && input["dx"].isNumber() && input["dy"].isNumber()) {
                 const double dx=input["dx"].toDouble(),dy=input["dy"].toDouble();
