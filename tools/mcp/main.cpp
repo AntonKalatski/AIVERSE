@@ -71,9 +71,40 @@ std::string findTool(const std::string& self, const char* name) {
 class EditorLink {
 public:
     EditorLink(Options o, std::string self) : opt_(std::move(o)), self_(std::move(self)) {}
+    // Connect and authenticate (agent-link protocol 2, docs/mcp-agent-link.md): the editor
+    // accepts tool calls only after {"method":"hello","token":...} with the token it wrote to
+    // net::agentTokenPath(port). The token is re-read on every connect (a restarted editor
+    // publishes a new one).
+    bool connectAndHello() {
+        if (!cli_.connect(opt_.port)) return false;
+        std::string token;
+        for (int i = 0; i < 20 && !net::readAgentToken(opt_.port, token); ++i)   // written right after listen()
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (token.empty()) {
+            lastError_ = "no agent-link token at " + net::agentTokenPath(opt_.port).string();
+            cli_.close();
+            return false;
+        }
+        Json hello = Json::object();
+        hello.set("id", Json::number(int64_t(++seq_)));
+        hello.set("method", Json::string("hello"));
+        hello.set("token", Json::string(token));
+        if (!cli_.send(hello.dump(-1))) return false;
+        std::string line;
+        while (cli_.recv(line, 5000)) {
+            Json resp;
+            try { resp = Json::parse(line); } catch (...) { break; }
+            if (resp["id"].integer() != int64_t(seq_)) continue;
+            if (resp["result"].getBool("ok")) { lastError_.clear(); return true; }
+            lastError_ = resp["result"].getStr("error", "agent link refused");
+            break;
+        }
+        cli_.close();
+        return false;
+    }
     bool ensure() {
         if (cli_.connected()) return true;
-        if (cli_.connect(opt_.port)) return true;
+        if (connectAndHello()) return true;
         if (opt_.noEditor || launched_) return false;
         launched_ = true;
         std::string ed = findEditor(opt_, self_);
@@ -88,10 +119,11 @@ public:
         if (std::system(cmd.c_str()) != 0) return false;
         for (int i = 0; i < 100; ++i) {          // up to 10 s for the window to come up
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            if (cli_.connect(opt_.port)) return true;
+            if (connectAndHello()) return true;
         }
         return false;
     }
+    const std::string& lastError() const { return lastError_; }
     // Returns false if the editor is gone (caller falls back to the local workspace).
     bool request(const std::string& method, const Json& params, Json& result) {
         if (!ensure()) return false;
@@ -103,7 +135,8 @@ public:
         std::string line;
         // builds and matches can take a while; the editor answers when the op is done
         while (cli_.recv(line, 600000)) {
-            Json resp = Json::parse(line);
+            Json resp;
+            try { resp = Json::parse(line); } catch (...) { break; }
             if (resp["id"].integer() != int64_t(seq_)) continue;
             result = resp["result"];
             return true;
@@ -117,6 +150,7 @@ private:
     Options opt_;
     std::string self_;
     net::LineClient cli_;
+    std::string lastError_;
     bool launched_ = false;
     uint64_t seq_ = 0;
 };
@@ -200,7 +234,7 @@ const char* kInstructions =
     "to make the same effect as a Unity one, tune with fx_get / fx_set, look with fx_preview {effect, advance, freeze} + view_screenshot, "
     "attach to events with fx_bind (died, hit, attack, ability, spawned per type / weapon / ability). "
     "LENS cameras: lens_scene_get -> lens_scene_validate -> lens_camera_set / lens_scene_set / lens_camera_delete. "
-    "Writes require expectedScene from the last read and save immediately without undo; Reload the native LENS window afterward. "
+    "Writes require expectedRevision (the revision from the last lens_scene_get; expectedScene is still accepted) and save immediately without undo; Reload the native LENS window afterward. "
     "Look of the game: own meshes / textures via asset_import, then the type's \"view\" block with rules_merge "
     "(model, materials overrides per material name, team colour, clips: docs/models.md; model_info lists nodes, clips, materials); "
     "custom materials: texture_generate (bricks, metal panels, wood, camo, scales, ... + normal maps, team masks) -> material_set "
@@ -283,6 +317,8 @@ int main(int argc, char** argv) {
                 fwd.set("name", Json::string(name));
                 fwd.set("arguments", args.isObject() ? args : Json::object());
                 bool viaEditor = link.request("call", fwd, result);
+                if (!viaEditor && !link.lastError().empty())
+                    std::fprintf(stderr, "aiversemcp: editor link: %s\n", link.lastError().c_str());
                 if (!viaEditor) result = local.call(name, args, "agent");
                 reply(id, toContent(result));
             } else if (method == "ping") {
