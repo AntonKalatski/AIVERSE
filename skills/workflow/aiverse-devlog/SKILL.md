@@ -1,0 +1,54 @@
+---
+name: aiverse-devlog
+description: Add a development-log entry with real engine screenshots to the AIVERSE website ("Ход разработки") after finishing a visible stage of any engine system, or propose a frame for the main-page showcase.
+---
+
+# Website development log
+
+Rules: AGENTS.md "Ход разработки на сайте". Format: `docs/devlog/README.md`.
+Tool: `tools/site/build.py` (stdlib). No runtime library: workflow-only skill.
+
+## When
+
+Every finished stage with a visible or user-facing result in any engine system: a new
+render feature, a lighting or VFX change, an editor window, a world tool, a network or
+meta capability, a new template. One entry per stage. Pure refactors, test-only work and
+fixes nobody can see get no entry.
+
+## Steps
+
+1. Merge `main` into your branch first (AGENTS.md §5).
+2. Capture real engine frames of the result: before/after when something changed. Use the
+   tools your area already uses (MCP screenshot tools, LENS capture, `tests/render` captures,
+   Studio screenshots). Never use reference images, mockups or generated pictures.
+3. Scaffold: `python3 tools/site/build.py add --system <id> --title "<Russian title>" --branch <branch> --author <area> --media <shots…>`.
+   Files outside the repository are copied to `docs/devlog/media/<id>/`; existing repository
+   images are referenced. Pick `--system` from `docs/devlog/systems.json`; a new engine system
+   gets a new line there.
+4. Fill every `TODO` in Russian: `summary` (what became possible), `body` (how and where),
+   `verified` (only commands and captures that really ran), `limits` (what is unverified),
+   `commit`, a caption for each frame, `links` to the handoff or doc.
+5. `python3 tools/site/build.py check` must print `0 errors`. Optionally
+   `python3 tools/site/build.py build && python3 -m http.server -d build/site 8000`.
+6. Commit the entry and media with the feature (or as the stage's handoff commit). Do not
+   push `gh-pages` and do not commit `build/site`: `.github/workflows/site.yml` publishes from `main`.
+
+## System cover (main page, "Системы движка")
+
+Flagship systems in `docs/devlog/systems.json` each have one cover frame and a `coverBrief`
+saying what it must show. If you own a flagship system whose `cover` is null, render a frame
+that follows the brief (real-time render, landscape, at least 1280 px wide, no editor UI or
+debug overlays), save it as `docs/devlog/media/systems/<system>-<slug>.jpg` and set `cover`
+with `"approved": false`. Replacing an existing cover needs the user's request.
+
+## Showcase frame (main page, "Кадр движка")
+
+Only for an exceptional frame that presents the whole engine: at least 1600 px wide, same
+rules. Save it under `docs/devlog/media/showcase/`, add it to `candidates` in
+`docs/devlog/showcase.json` with `"approved": false` and mention it in your report. Never edit
+`frames` and never set `approved` to true: only the user does.
+
+## Honesty
+
+Status `done` only when the feature is merged or verified as the handoff states. A frame
+from an unmerged branch is `in-progress`. Do not copy numbers you did not measure.

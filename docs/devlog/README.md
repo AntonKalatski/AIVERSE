@@ -1,0 +1,68 @@
+# Development log (website "Ход разработки")
+
+The site (`site/`, published to GitHub Pages from the `gh-pages` branch) has two data-driven parts:
+
+- **devlog page** — `devlog.html`, one card per entry in `docs/devlog/entries/*.json`, filterable by system;
+- **"Кадр движка" on the main page** — `frames[0]` in `docs/devlog/showcase.json`;
+- **"Системы движка" on the main page** — flagship systems with cover frames in `docs/devlog/systems.json`.
+
+Agents add entries themselves, in their own branch, in the same change as the feature
+(AGENTS.md "Ход разработки на сайте"; skill `skills/workflow/aiverse-devlog`). When the
+branch reaches `main`, `.github/workflows/site.yml` rebuilds the site and pushes `gh-pages`.
+
+## Entry: `docs/devlog/entries/<id>.json`
+
+```json
+{
+  "id": "2026-11-21-render-sss-backlit-thickness",
+  "date": "2026-11-21",
+  "system": "render",
+  "title": "Подповерхностное рассеяние: просвет с учётом толщины",
+  "summary": "One or two sentences (≤280 chars): what became possible.",
+  "body": ["Paragraph: how it works and where it lives.", "…"],
+  "status": "done | in-progress | experimental",
+  "verified": "What was actually run: tests, platforms, captures.",
+  "limits": "What is not verified or not supported (null if nothing).",
+  "branch": "feature/…",
+  "commit": "short SHA or null",
+  "media": [{ "src": "docs/devlog/media/<id>/01.jpg", "caption": "What the frame shows" }],
+  "links": [{ "title": "Handoff", "href": "docs/handoff/…" }],
+  "author": "agent or area id"
+}
+```
+
+- `id` = `<date>-<system>-<slug>` (lowercase latin), file name = `<id>.json`.
+- `system` is an id from `systems.json`. A new engine system gets a new line there (with its doc).
+- Site text is Russian (the site language). Code identifiers stay as they are.
+- `media`: 1–4 shown per card; repository-relative paths. New screenshots go to
+  `docs/devlog/media/<id>/`; existing ones (handoff assets, benchmarks) are referenced, not copied.
+  PNG/JPG/WebP/GIF ≤ 3 MB, MP4/WebM ≤ 15 MB, a caption for every file.
+- `links` point to repository files (rendered as GitHub links) or `https://` URLs.
+
+## Showcase: `docs/devlog/showcase.json`
+
+The main page shows `frames[0]` full-width as "Кадр движка". `approved` is `true` only after
+the user approved the frame; agents never edit `frames` and never set `approved`. An agent
+proposes a frame by adding it to `candidates` (`"approved": false`) and telling the user.
+A frame: a real engine render, landscape, ≥ 1600 px wide, no editor UI or debug overlays,
+PNG/JPG ≤ 6 MB, with `title`, `caption`, `system`, `date`, optional `entry` (devlog id).
+
+## Flagship systems: `docs/devlog/systems.json`
+
+Systems with `"flagship": true` are cards in "Системы движка" on the main page, in file order:
+`tagline`, `essence` (what the system is), `where` (`main` or `branch`), `cover` and `coverBrief`.
+`cover` is one real frame that shows the essence of the system (landscape, ≥ 1280 px,
+PNG/JPG ≤ 6 MB, `caption`, `approved`). Without a cover the card shows the system name.
+`coverBrief` says what the frame must show; the owning agent renders it and, if it has no cover
+yet, may set `cover` with `"approved": false`. Replacing an existing cover needs the user.
+
+## Commands
+
+```sh
+python3 tools/site/build.py add --system render --title "…" --media path/to/shot.png
+python3 tools/site/build.py check            # required before commit
+python3 tools/site/build.py build            # → build/site; open build/site/index.html via a local server
+python3 -m http.server -d build/site 8000
+```
+
+Never edit `gh-pages` by hand and never commit `build/site`.

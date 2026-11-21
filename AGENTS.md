@@ -4,6 +4,34 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Ход разработки на сайте — обязательная запись (2026-11-21, указание пользователя)
+
+Сайт движка (`site/`, GitHub Pages из ветки `gh-pages`) показывает страницу «Ход разработки»:
+скриншоты и описание по каждой системе. **Данные туда добавляют сами агенты.**
+
+- Каждый агент, закончивший этап с видимым результатом в любой системе (рендер, свет, VFX,
+  мир, анимация, физика, сеть, мета, редактор, шаблоны), в той же ветке добавляет запись
+  `docs/devlog/entries/<date>-<system>-<slug>.json` и реальные кадры движка в
+  `docs/devlog/media/<id>/`. Порядок и формат: навык
+  [skills/workflow/aiverse-devlog/SKILL.md](skills/workflow/aiverse-devlog/SKILL.md),
+  описание формата — [docs/devlog/README.md](docs/devlog/README.md).
+- Начало: `python3 tools/site/build.py add --system <id> --title "…" --media <снимки>`;
+  перед коммитом `python3 tools/site/build.py check` — 0 ошибок.
+- Текст записей — на русском. Скриншоты — только настоящие кадры движка, без референсов и
+  сгенерированных картинок. В `verified` — только реально запущенное, в `limits` — непроверенное.
+  Статус `done` — только после слияния или подтверждённой проверки, иначе `in-progress`.
+- Главная страница берёт из тех же данных блок «Кадр движка» (`docs/devlog/showcase.json`) и
+  карточки флагманских систем (`docs/devlog/systems.json`: TerraWeave, PHYSIS, NEREID, STRATA,
+  LENS, VIVID, LUMA, PRISMA, SpectraFX, MotionWeave). Агент, владеющий флагманской системой без
+  обложки, снимает кадр по её `coverBrief` и ставит `cover` с `"approved": false`. Кадр для
+  «Кадра движка» агент только предлагает в `candidates`. `approved: true` ставит только
+  пользователь; заменить одобренный кадр или обложку — только по его просьбе. Новая крупная
+  система получает строку в `systems.json` с `flagship`, `tagline`, `essence`, `coverBrief`.
+- Не редактировать `gh-pages` вручную и не коммитить `build/site`: после слияния в `main`
+  `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
+- Вёрстку сайта менять в `site/` в визуальном языке дизайна сайта (бумага #F3EFE8, чернила
+  #141210, ромб #E9C3A4; Unbounded / Onest / JetBrains Mono).
+
 ## Dynamic indirect GI (lighting integration branch, 2026-11-20)
 
 Reuse `engine/render/GiMainCpuBridge.h` / `GiMainGpuBridge.h` and

@@ -1,0 +1,197 @@
+{
+  "version": 2,
+  "note": "Flagship systems appear as cards on the main page in this order. cover = a real engine frame that shows the system's essence; approved stays false until the user approves it (agents never set it). coverBrief tells the owning agent what the frame must show.",
+  "systems": [
+    {
+      "id": "terraweave",
+      "name": "TerraWeave",
+      "nameEn": "TerraWeave",
+      "doc": "docs/terrain.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Процедурный ландшафт и природа",
+      "essence": "Рельеф, растительность и камни из правил и сида: генератор округлых камней, валунов, плит и обломков с тремя LOD и размещением по высоте, крутизне и маскам.",
+      "cover": {
+        "src": "docs/devlog/media/systems/terraweave-river-forest.jpg",
+        "caption": "TerraWeave: река в лесу, вид сверху",
+        "approved": true
+      },
+      "coverBrief": "Широкий вид на сгенерированный TerraWeave рельеф с лесом и камнями в мягком свете; видно, что всё выросло из правил, а не расставлено руками."
+    },
+    {
+      "id": "physis",
+      "name": "PHYSIS",
+      "nameEn": "PHYSIS",
+      "doc": "docs/physis.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Живая среда: ветер, огонь, земля",
+      "essence": "Жанронезависимые поля природы в ECS: ветер, огонь, землетрясения и нагрузки на конструкции, которые реагируют друг на друга.",
+      "cover": null,
+      "coverBrief": "Момент, где среда действует сама: пожар, который гонит ветер по траве, или постройка, ломающаяся от нагрузки. Видимые последствия, не тепловая карта отладки."
+    },
+    {
+      "id": "nereid",
+      "name": "NEREID",
+      "nameEn": "NEREID",
+      "doc": "docs/water.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Вода, которая ведёт себя как вода",
+      "essence": "Универсальная вода: реки, озёра и океан, плавучесть и сопротивление, брызги, волны и след от движения.",
+      "cover": null,
+      "coverBrief": "Реальная симуляция NEREID в нативном хосте: течение реки, предметы на плаву, брызги или след от лодки. Не статическая PBR-поверхность."
+    },
+    {
+      "id": "strata",
+      "name": "STRATA",
+      "nameEn": "STRATA",
+      "doc": "docs/strata.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Виртуализированная геометрия",
+      "essence": "Огромные меши без ручных LOD: страничный стриминг, кластеры с плавными переходами детализации без трещин и GPU-отбор на Metal и Vulkan.",
+      "cover": null,
+      "coverBrief": "Сцена с миллионами треугольников, где детали видны и вблизи, и до горизонта; можно парой: финальный кадр и визуализация кластеров."
+    },
+    {
+      "id": "lens",
+      "name": "LENS",
+      "nameEn": "LENS",
+      "doc": "docs/camera-system.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Камеры и кинематографичный кадр",
+      "essence": "Сцены камер как данные: несколько камер, расписание кадров, захват изображения и авторинг через MCP и Studio.",
+      "cover": null,
+      "coverBrief": "Кинематографичный кадр, снятый LENS: глубина резкости, выверенная композиция, видно, что это работа камеры, а не скриншот редактора."
+    },
+    {
+      "id": "vivid",
+      "name": "VIVID",
+      "nameEn": "VIVID",
+      "doc": null,
+      "flagship": true,
+      "where": "branch",
+      "tagline": "Цифровые люди",
+      "essence": "Лицевой контроллер и морфы на GPU поверх анимации MotionWeave: мимика, моргание, глаза, LOD для персонажей.",
+      "cover": {
+        "src": "docs/devlog/media/systems/vivid-portrait.jpg",
+        "caption": "VIVID: портрет в студийном свете, нативный кадр Metal",
+        "approved": false,
+        "video": "docs/devlog/media/2026-11-21-vivid-adaptive-soft-shadows/adaptive-soft-shadows.mp4"
+      },
+      "coverBrief": "Портрет цифрового человека крупным планом в студийном свете: кожа, глаза и живая мимика."
+    },
+    {
+      "id": "lighting",
+      "name": "LUMA",
+      "nameEn": "LUMA lighting",
+      "doc": "docs/lightbake.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Свет и глобальное освещение",
+      "essence": "Свет как компонент сущности, пробы GI, запекание лайтмапов своим path tracer и динамическое непрямое освещение.",
+      "cover": {
+        "src": "docs/images/readme/sponza.jpg",
+        "caption": "Sponza: PBR, тени и ambient occlusion",
+        "approved": false
+      },
+      "coverBrief": "Интерьер, где видно отражённый свет: солнце через проём, цветной отскок от ткани на камень, мягкие тени."
+    },
+    {
+      "id": "prisma",
+      "name": "PRISMA",
+      "nameEn": "PRISMA post-processing",
+      "doc": "docs/prisma.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Постобработка и атмосфера",
+      "essence": "HDR, экспозиция и тонмаппинг, bloom, DoF, motion blur, TAA, цветокоррекция и экранные атмосферные эффекты с профилями качества.",
+      "cover": {
+        "src": "docs/images/readme/sponza-light-shafts.png",
+        "caption": "Лучи света сквозь дымку: выключено / включено",
+        "approved": false
+      },
+      "coverBrief": "Один и тот же кадр с PRISMA и без, где разница — настроение: свет, цвет, атмосфера."
+    },
+    {
+      "id": "spectrafx",
+      "name": "SpectraFX",
+      "nameEn": "SpectraFX VFX",
+      "doc": "docs/spectrafx.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Эффекты частиц",
+      "essence": "Частицы, ленты, дым, огонь и взрывы из графов эффектов, с CPU- и GPU-эмиттерами и привязкой к событиям ECS.",
+      "cover": null,
+      "coverBrief": "Эффектный момент в игровой сцене: взрыв, магия или огонь с дымом и светом, а не тестовый эмиттер на пустом поле."
+    },
+    {
+      "id": "motionweave",
+      "name": "MotionWeave",
+      "nameEn": "MotionWeave animation",
+      "doc": "docs/motionweave.md",
+      "flagship": true,
+      "where": "main",
+      "tagline": "Анимация персонажей",
+      "essence": "Графы анимации, ретаргет между ригами, LOD скелетов и вложения — единая анимация для всех жанров.",
+      "cover": null,
+      "coverBrief": "Персонаж в движении: смешение анимаций, ретаргет на разные риги или толпа с LOD; стоп-кадр должен читаться как движение."
+    },
+    {
+      "id": "render",
+      "name": "Рендер и материалы",
+      "nameEn": "Rendering and materials",
+      "doc": "docs/models.md"
+    },
+    {
+      "id": "world",
+      "name": "Мир: дороги и города",
+      "nameEn": "World: roads and cities",
+      "doc": "docs/city-planner.md"
+    },
+    {
+      "id": "ecs",
+      "name": "ECS и сущности",
+      "nameEn": "ECS and entities",
+      "doc": "docs/ecs-scene-hierarchy.md"
+    },
+    {
+      "id": "studio",
+      "name": "Studio — редактор",
+      "nameEn": "Studio editor",
+      "doc": "docs/studio-design-system.md"
+    },
+    {
+      "id": "network",
+      "name": "Сеть и сервер",
+      "nameEn": "Networking and server",
+      "doc": "docs/battle-net.md"
+    },
+    {
+      "id": "meta",
+      "name": "Мета и LiveOps",
+      "nameEn": "Meta and LiveOps",
+      "doc": "docs/meta-service.md"
+    },
+    {
+      "id": "gameplay",
+      "name": "Жанры и механики",
+      "nameEn": "Genres and mechanics",
+      "doc": "docs/genre-packages.md"
+    },
+    {
+      "id": "agents",
+      "name": "MCP и навыки агентов",
+      "nameEn": "MCP and agent skills",
+      "doc": null
+    },
+    {
+      "id": "build",
+      "name": "Сборка и платформы",
+      "nameEn": "Builds and platforms",
+      "doc": null
+    }
+  ]
+}
