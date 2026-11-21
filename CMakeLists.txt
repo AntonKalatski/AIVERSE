@@ -1734,6 +1734,13 @@ if(AIVERSE_BUILD_TESTS)
         add_executable(aiverse_editor_scene_rotation_tests tests/editor/scene_rotation_tests.cpp)
         target_link_libraries(aiverse_editor_scene_rotation_tests PRIVATE aiverse_editor_core)
         add_test(NAME editor_scene_rotation COMMAND aiverse_editor_scene_rotation_tests)
+        # Review fixes 2026-11-21: agent-link handshake/token/line-cap and Lua inspector sandbox.
+        add_executable(aiverse_editor_agent_link_tests tests/editor/agent_link_tests.cpp)
+        target_link_libraries(aiverse_editor_agent_link_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_agent_link COMMAND aiverse_editor_agent_link_tests)
+        add_executable(aiverse_editor_lua_inspector_sandbox_tests tests/editor/lua_inspector_sandbox_tests.cpp)
+        target_link_libraries(aiverse_editor_lua_inspector_sandbox_tests PRIVATE aiverse_editor_core aiverse_lua aiverse_imgui)
+        add_test(NAME editor_lua_inspector_sandbox COMMAND aiverse_editor_lua_inspector_sandbox_tests)
     endif()
     add_executable(aiverse_build_tool_tests tests/editor/build_tool.cpp)
     target_include_directories(aiverse_build_tool_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -2388,6 +2395,18 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_confluence_contract_test
         COMMAND aiverse_ecs_nereid_confluence_contract_test)
+    # Review fixes 2026-11-21: rock erosion, flood carry/flow/ports, wake cull, cascades.
+    add_executable(aiverse_ecs_nereid_review_fixes_test
+        tests/ecs_nereid_review_fixes_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_review_fixes_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_review_fixes_test
+        COMMAND aiverse_ecs_nereid_review_fixes_test)
+    # Review fixes 2026-11-21: TerraWeave resident tile rebuilds, dirty records, wind patch uploads.
+    add_executable(aiverse_terraweave_review_fixes_test tests/terraweave_review_fixes_test.cpp)
+    target_link_libraries(aiverse_terraweave_review_fixes_test PRIVATE
+        aiverse_world aiverse_models aiverse_zstd_dec AIVERSE::lib_nereid_water)
+    add_test(NAME terraweave_review_fixes COMMAND aiverse_terraweave_review_fixes_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
