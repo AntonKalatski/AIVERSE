@@ -31,20 +31,22 @@ inline int32_t alpineHeightCm(const TerrainSettings& terrain,
             // A linear radial carrier would remain a cone at every seed.
             const int64_t envelope=65536-r*r/65536;
             const int64_t support=envelope*envelope/65536;
-            const int64_t period=std::max<int64_t>(1000,std::min(p.radiusXcm,p.radiusZcm)/2);
+            const int64_t period=std::max<int64_t>(1000,std::min(p.radiusXcm,p.radiusZcm));
             const uint64_t seed=detail::mix64(terrain.seed^uint64_t(p.xCm)^detail::mix64(uint64_t(p.zCm)));
             const int64_t warpX=detail::noise(x,z,period,seed)*period/65536/4;
             const int64_t warpZ=detail::noise(x,z,period,seed+1)*period/65536/4;
+            // Each doubled frequency gets < half the height: gradients
+            // decay instead of growing into needle-like towers.
             int64_t ridge=0,amplitude=32768,feedback=65536,total=0;
             for(int octave=0;octave<5;++octave) {
                 const auto n=std::abs(detail::noise(x+warpX,z+warpZ,std::max<int64_t>(150,period>>octave),seed+uint64_t(octave)*7919));
                 int64_t signal=65536-n;signal=signal*signal/65536;
                 signal=signal*feedback/65536;
                 ridge+=signal*amplitude/65536;total+=amplitude;
-                feedback=std::min<int64_t>(65536,signal*2);amplitude=amplitude*3/5;
+                feedback=std::min<int64_t>(65536,signal*2);amplitude=amplitude*7/20;
             }
             const int64_t crest=total?ridge*65536/total:0;
-            const int64_t relief=int64_t(p.heightCm)*support/65536*(8000+crest*57536/65536)/65536;
+            const int64_t relief=int64_t(p.heightCm)*support/65536*(16000+crest*49536/65536)/65536;
             mountain=std::max(mountain,relief);continue;
         }
         // Narrow ridgelines, unequal flanks and nested gullies, not circular domes.
