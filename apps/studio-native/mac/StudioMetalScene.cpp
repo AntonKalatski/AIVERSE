@@ -199,7 +199,11 @@ void StudioMetalScene::syncDocumentModels(
     const editor::MapDoc& doc,const std::string& projectPath,
     const Json& rules,const std::vector<StudioDocumentProxy>& proxies) {
     modelInstances_.clear();
-    if (projectPath.empty()) return;
+    if (projectPath.empty()) { loadProgress_={}; modelsPending_=false; return; }
+    // Streaming budget: always load at least one new model per frame, then stop
+    // after ~30 ms; the rest load on the following frames (progress is reported).
+    const auto loadStart=std::chrono::steady_clock::now();
+    int loadedThisFrame=0;bool pending=false;std::string lastLoaded;
     namespace fs=std::filesystem;
     const fs::path project=projectPath;
     const fs::path root=project/"content";
@@ -273,6 +277,8 @@ void StudioMetalScene::syncDocumentModels(
         documentModelTimes_[path]=modified;
         if (!documentModels_.count(path) && !rejectedDocumentModels_.count(path)) {
             if (documentModels_.size()>=512) continue;
+            if (loadedThisFrame>0 && std::chrono::steady_clock::now()-loadStart>std::chrono::milliseconds(30)) { pending=true; continue; }
+            ++loadedThisFrame;lastLoaded=path;
             // Model loaders may request .bin, textures, MTL beside the model.
             // Resolve each request with the same root/symlink checks.
             auto read=[root](const std::string& name,std::string& out)->bool {
@@ -359,6 +365,15 @@ void StudioMetalScene::syncDocumentModels(
            editor::authoredEntity(entity)?editor::authoredModelMatrix(entity):
            render::mat4::translate({proxy.center.x,proxy.center.y-proxy.half.y,proxy.center.z})*
            render::mat4::rotateY(proxy.yaw)});
+    }
+    {
+        int done=0;
+        for(const auto& path:active)done+=documentModels_.count(path)||rejectedDocumentModels_.count(path);
+        loadProgress_.done=done;loadProgress_.total=int(active.size());
+        if(!lastLoaded.empty())loadProgress_.current=lastLoaded;
+        // Lighting was built from the partial set: rebuild once everything is in.
+        if(modelsPending_ && !pending)lightingRevision_=std::numeric_limits<uint64_t>::max();
+        modelsPending_=pending;
     }
     for (auto it=instanceMaterials_.begin();it!=instanceMaterials_.end();) {
         if (!overridden.count(it->first)) it=instanceMaterials_.erase(it);

@@ -12,6 +12,7 @@ import {
 import type { CommandEntry } from './commandSearch';
 import CommandPalette from './components/CommandPalette';
 import PanelErrorBoundary from './components/PanelErrorBoundary';
+import { ProjectLoadingDialog, SceneLoadingStrip, sceneLoadingText, useProjectLoading } from './components/ProjectLoading';
 import StudioStatusBar from './components/StudioStatusBar';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import type { StudioPanel } from './nestedDock';
@@ -41,6 +42,9 @@ export default function App() {
   const [game, setGame] = useState<StudioGameState | null>(null);
   const [sceneAction, setSceneAction] = useState('');
   const [hoverId, setHoverId] = useState('');
+  const [loading, clearLoading] = useProjectLoading();
+  // Requests answered while the native side opens a project are expected, not errors.
+  useEffect(() => { if (error === 'Project is loading') setError(''); }, [error]);
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {
@@ -332,6 +336,7 @@ export default function App() {
       <button type="button" className="command-search-button" onClick={() => setPalette('')} aria-label="Search or run a command (⌘K)">
         <Search size={13}/><span>Search or run…</span><kbd>⌘K</kbd>
       </button>
+      <SceneLoadingStrip state={loading}/>
       <div className="title-actions">
         <button className="icon-button" aria-label="Editor settings" title="Editor settings"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Settings2 size={17}/></button>
@@ -351,7 +356,8 @@ export default function App() {
     {error && <div role="alert" className="error-banner">{error}
       <button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}
     <NestedDockWorkspace tree={dock} setTree={setDock} renderPanel={renderPanel}/>
-    <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction}
+    <ProjectLoadingDialog state={loading} onClose={clearLoading}/>
+    <StudioStatusBar snapshot={snapshot} connected={connected} game={game} action={sceneAction || sceneLoadingText(loading)}
       onOpenConsole={() => setDock(current => reopenTab(current, 'console', 'dock-bottom'))}/>
     {palette !== null && <CommandPalette entries={paletteEntries} initial={palette} onClose={() => setPalette(null)}/>}
   </div>;

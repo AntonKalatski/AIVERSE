@@ -83,6 +83,10 @@
     BOOL lastCameraOrtho_, cameraSent_;
     std::string lastActionCaption_; // last "viewport.action" caption sent to the web UI
     std::string hoverId_;           // Scene / Hierarchy hover highlight
+    BOOL projectLoading_;           // a project opens on a background thread: no session access
+    std::string pendingProject_;    // --project, opened once the WebView can show progress
+    int lastLoadDone_, lastLoadTotal_;
+    BOOL loadingShown_;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev composite:(BOOL)composite;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
@@ -106,6 +110,8 @@
 - (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode;
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sceneSelectionAction:(const char*)method;
+- (void)openProjectPath:(const std::string&)path requestId:(int64_t)requestId;
+- (void)sendLoading:(const char*)phase message:(const std::string&)message done:(int)done total:(int)total;
 - (void)placeMetalView:(NSView*)view x:(double)x y:(double)y width:(double)width height:(double)height pixelsW:(int)pixelsW pixelsH:(int)pixelsH;
 - (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
@@ -395,7 +401,9 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     if ((self=[super init])) {
         htmlComposite_=composite;
         std::string root=AIVERSE_STUDIO_SOURCE_DIR;
-        session_=std::make_unique<aiverse::studio::StudioSession>(root,project);
+        // The project opens asynchronously after the UI loads (progress dialog).
+        session_=std::make_unique<aiverse::studio::StudioSession>(root,std::string());
+        pendingProject_=project;
         __unsafe_unretained StudioHost* host=self;
         session_->setMaterialSlotProvider([host](const std::string& asset) {
             return [host materialSlotsFor:asset];
@@ -508,6 +516,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         window_.isKeyWindow && window_.firstResponder==gameViewport_);
 }
 - (void)tick {
+    if (projectLoading_) return; // the background thread owns the session right now
     [self tickGame];
     // An empty Workspace owns an internal default MapDoc, NOT a loaded project.
     // Never render that provisional map as if it belonged to the user.
@@ -535,6 +544,19 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
                 session_->workspace().project.rulesJson);
             if((lightingStatusTicks_++ % 60)==0)
                 [self sendStudioEvent:"lighting.status" message:preview_->lightingStatus().c_str()];
+            {
+                // Scene model streaming progress (Unreal-style toast / status bar).
+                const auto& load=preview_->modelLoadProgress();
+                if (load.total>0 && load.done<load.total) {
+                    if (load.done!=lastLoadDone_ || load.total!=lastLoadTotal_) {
+                        lastLoadDone_=load.done;lastLoadTotal_=load.total;loadingShown_=YES;
+                        [self sendLoading:"models" message:load.current done:load.done total:load.total];
+                    }
+                } else if (loadingShown_) {
+                    loadingShown_=NO;lastLoadDone_=lastLoadTotal_=-1;
+                    [self sendLoading:"done" message:"" done:load.total total:load.total];
+                }
+            }
             if (!readyEmitted_) {
                 [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
                 readyEmitted_=YES;
@@ -572,11 +594,13 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         preview_->move(float(right),float(up),float(forward));
 }
 - (void)focusSceneSelection {
+    if (projectLoading_) return;
     if (preview_ && session_) preview_->focusSelected(session_->workspace().map,
         session_->workspace().project.isFps(),session_->selectedObjectId());
 }
 - (void)resetSceneView { if (preview_) preview_->resetView(); }
 - (BOOL)sceneMoveBeginAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_) return NO;
     return preview_ && preview_->beginTransformDrag(float(x),float(y),float(width),float(height));
 }
 - (void)sceneMoveUpdateAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height invertSnap:(BOOL)invertSnap {
@@ -593,6 +617,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
 }
 - (int)sceneTool { return preview_ ? int(preview_->transformTool()) : 1; }
 - (void)sceneMoveEnd {
+    if (projectLoading_) { if (preview_) preview_->clearTransformPreview(); return; }
     if (!preview_ || !session_) return;
     const auto commit=preview_->endTransformDrag();
     lastActionCaption_.clear();
@@ -679,6 +704,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     preview_->setMarquee(true,float(a.x/width),float(a.y/height),float(b.x/width),float(b.y/height));
 }
 - (void)sceneMarqueeEndFrom:(NSPoint)a to:(NSPoint)b width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
+    if (projectLoading_) { if (preview_) preview_->setMarquee(false); return; }
     if (!preview_ || !session_) return;
     preview_->setMarquee(false);
     const auto ids=preview_->idsInRect(float(a.x),float(a.y),float(b.x),float(b.y),float(width),float(height),
@@ -690,6 +716,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     if (!session_->dispatch(request).has("error")) [self sendStudioEvent:"selection.changed" message:""];
 }
 - (void)sceneHoverAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_) return;
     if (!preview_ || !session_ || preview_->transformDragActive()) return;
     const std::string id=x<0||y<0?std::string():preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
@@ -697,7 +724,60 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     hoverId_=id;
     [self sendStudioEvent:"viewport.hover" message:id.c_str()];
 }
+- (void)sendLoading:(const char*)phase message:(const std::string&)message done:(int)done total:(int)total {
+    aiverse::Json payload=aiverse::Json::object();
+    payload.set("phase",aiverse::Json::string(phase));
+    payload.set("message",aiverse::Json::string(message));
+    payload.set("done",aiverse::Json::number(int64_t(done)));
+    payload.set("total",aiverse::Json::number(int64_t(total)));
+    payload.set("active",aiverse::Json::fromBool(std::string(phase)!="done"));
+    [self sendStudioEventPayload:"project.loading" payload:payload];
+}
+// Opens a project on a background queue (the UI shows progress), then resumes the
+// Scene, which streams models in with a per-frame budget. requestId<0: --project.
+- (void)openProjectPath:(const std::string&)path requestId:(int64_t)requestId {
+    if (projectLoading_) return;
+    projectLoading_=YES;
+    if (game_) game_->stop();
+    const std::string name=std::filesystem::path(path).filename().string();
+    [self sendLoading:"project" message:"Opening "+name done:0 total:0];
+    aiverse::studio::StudioSession* session=session_.get();
+    const std::string projectPath=path;
+    __unsafe_unretained StudioHost* host=self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        __block aiverse::Json snapshot;__block std::string error;
+        try { snapshot=session->openProject(projectPath); }
+        catch (const std::exception& e) { error=e.what(); }
+        dispatch_async(dispatch_get_main_queue(),^{
+            host->projectLoading_=NO;
+            if (host->preview_) host->preview_->resetCamera();
+            host->lastLoadDone_=host->lastLoadTotal_=-1;
+            if (requestId>=0) {
+                aiverse::Json reply=aiverse::Json::object();
+                reply.set("id",aiverse::Json::number(requestId));
+                if (!error.empty()) reply.set("error",aiverse::Json::string(error));
+                else {
+                    aiverse::Json payload=aiverse::Json::object();
+                    payload.set("cancelled",aiverse::Json::fromBool(false));
+                    payload.set("snapshot",snapshot);
+                    reply.set("result",payload);
+                }
+                [host sendStudioReply:reply];
+            }
+            if (!error.empty()) {
+                NSLog(@"AIVERSE open project failed: %s",error.c_str());
+                [host sendLoading:"error" message:error done:0 total:0];
+            } else {
+                // Scene models stream in next; the tick reports their progress.
+                [host sendLoading:"scene" message:"Preparing scene" done:0 total:0];
+                host->loadingShown_=YES;
+            }
+            [host sendStudioEvent:"workspace.changed" message:""];
+        });
+    });
+}
 - (void)sceneSelectionAction:(const char*)method {
+    if (projectLoading_) return;
     if (!session_) return;
     aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),list=aiverse::Json::array();
     for (const auto& id:session_->selectedObjectIds()) list.push(aiverse::Json::string(id));
@@ -710,6 +790,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     [self sendStudioEvent:"selection.changed" message:""];
 }
 - (BOOL)placeAsset:(const std::string&)asset atX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (projectLoading_) return NO;
     if (!preview_ || !session_) return NO;
     aiverse::render::float3 at{};
     if (!preview_->groundPoint(float(x),float(y),float(width),float(height),at)) return NO;
@@ -729,6 +810,7 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     return YES;
 }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height mode:(const char*)mode {
+    if (projectLoading_) return;
     if (!preview_) return;
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
@@ -834,15 +916,8 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         reply.set("id",aiverse::Json::number(requestId));
         aiverse::Json payload=aiverse::Json::object();
         if (result==NSModalResponseOK && panel.URL.path.length) {
-            try {
-                payload.set("cancelled",aiverse::Json::fromBool(false));
-                if(game_)game_->stop();
-                payload.set("snapshot",session_->openProject(panel.URL.path.UTF8String));
-                if (preview_) preview_->resetCamera();
-                [self sendStudioEvent:"workspace.changed" message:""];
-            } catch (const std::exception& ex) {
-                reply.set("error",aiverse::Json::string(ex.what()));
-            }
+            [self openProjectPath:panel.URL.path.UTF8String requestId:requestId];
+            return; // replies when the background load finishes
         } else {
             payload.set("cancelled",aiverse::Json::fromBool(true));
             payload.set("snapshot",aiverse::Json());
@@ -1004,6 +1079,10 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
     (void)navigation;
     NSLog(@"[studio-web] top-level navigation finished: %@",view.URL);
     if (htmlComposite_) [view evaluateJavaScript:@"document.documentElement.classList.add('native-composite');" completionHandler:nil];
+    if (!pendingProject_.empty()) {
+        const std::string project=pendingProject_;pendingProject_.clear();
+        [self openProjectPath:project requestId:-1];
+    }
 }
 - (void)webView:(WKWebView*)view decidePolicyForNavigationAction:(WKNavigationAction*)action decisionHandler:(void (^)(WKNavigationActionPolicy))done {
     (void)view;
@@ -1207,6 +1286,12 @@ static NSString* studioDraggedAsset(id<NSDraggingInfo> sender) {
         }
         if(game_ && (documentMethod=="studio.openMap" || documentMethod=="studio.newMap"))game_->stop();
         aiverse::Json reply;
+        if (projectLoading_ && req.getStr("method")!="studio.viewportRect") {
+            aiverse::Json busy=aiverse::Json::object();
+            busy.set("id",req["id"]);busy.set("error",aiverse::Json::string("Project is loading"));
+            [self sendStudioReply:busy];
+            return;
+        }
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
             reply=aiverse::Json::object();

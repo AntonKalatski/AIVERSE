@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import {
@@ -140,6 +141,24 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
   const [folderName,setFolderName]=useState('');
   const [plan,setPlan]=useState<StudioAssetTransferPlan|null>(null);
   const [refreshToken,setRefreshToken]=useState(0);
+  // Folder tree width: drag the divider (persisted), double-click resets.
+  const [treeWidth,setTreeWidth]=useState<number>(()=>{
+    try{const v=Number(window.localStorage.getItem('aiverse.studio.assets.treeWidth'));return Number.isFinite(v)&&v>=110&&v<=900?v:170;}catch{return 170;}
+  });
+  useEffect(()=>{try{window.localStorage.setItem('aiverse.studio.assets.treeWidth',String(Math.round(treeWidth)));}catch{/* optional */}},[treeWidth]);
+  const startTreeResize=(event:React.PointerEvent<HTMLDivElement>)=>{
+    if(event.button!==0)return;
+    event.preventDefault();
+    const handle=event.currentTarget;handle.setPointerCapture(event.pointerId);
+    const layout=handle.parentElement?.getBoundingClientRect();
+    const startX=event.clientX,start=treeWidth;
+    const move=(e:PointerEvent)=>{
+      const max=Math.max(160,(layout?.width??800)-160);
+      setTreeWidth(Math.min(max,Math.max(110,start+e.clientX-startX)));
+    };
+    const up=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);};
+    handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
+  };
   const native=nativeConnected();
   const reload=useCallback(()=>setRefreshToken(t=>t+1),[]);
   useEffect(()=>onNativeEvent((event,payload)=>{
@@ -361,7 +380,7 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
     {message&&<div className="studio-assets-status" role="status">{message}</div>}
     {error&&<div className="studio-assets-status studio-assets-error" role="alert">{error}</div>}
     <div className="studio-assets-layout">
-      <nav className="studio-assets-folders" aria-label="Project asset folders">
+      <nav className="studio-assets-folders" aria-label="Project asset folders" style={{width:treeWidth,maxWidth:'none',minWidth:0}}>
         <button type="button" className={'studio-assets-folder'+(folder===''?' active':'')}
           {...folderDropProps('')} onClick={()=>goTo('')}>
           <Library size={13}/><span>content</span>
@@ -379,6 +398,10 @@ export default function AssetsPanel({projectPath}:{projectPath:string}){
             <span>{entry.name}</span><small>{entry.count}</small>
           </button>)}
       </nav>
+      <div className="studio-assets-splitter" role="separator" aria-orientation="vertical" aria-label="Resize folder tree"
+        aria-valuenow={Math.round(treeWidth)} tabIndex={0} title="Drag to resize · double-click to reset"
+        onPointerDown={startTreeResize} onDoubleClick={()=>setTreeWidth(170)}
+        onKeyDown={event=>{if(event.key==='ArrowLeft')setTreeWidth(w=>Math.max(110,w-16));if(event.key==='ArrowRight')setTreeWidth(w=>Math.min(900,w+16));}}/>
       <div className="studio-assets-content" {...folderDropProps(folder)}
         onContextMenu={event=>{event.preventDefault();setMenu({x:event.clientX,y:event.clientY,path:folder,directory:true,background:true})}}>
         {loading?<div className="studio-assets-state">Loading content/…</div>:

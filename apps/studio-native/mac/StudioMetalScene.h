@@ -77,6 +77,10 @@ public:
     bool transformDragActive() const { return drag_.axis >= 0; }
     void clearTransformPreview() { drag_ = {}; }
     std::string transformCaption() const; // "Move X +1.25" while dragging, else empty
+    // Scene model streaming after a project/map opens: models load within a per-frame
+    // budget so the editor stays responsive; the host reports this as load progress.
+    struct LoadProgress { int done = 0, total = 0; std::string current; };
+    const LoadProgress& modelLoadProgress() const { return loadProgress_; }
     // Editor selection state supplied by the host before each frame: extra selected
     // ids (outlined), hidden ids (not drawn, not picked), locked ids (not picked), hover.
     void setEditorState(std::set<std::string> selection, std::set<std::string> hidden,
@@ -158,6 +162,8 @@ private:
     } drag_;
     bool selectedIsLight_ = false, selectedAxesValid_ = false;
     std::set<std::string> selection_, hidden_, locked_;
+    LoadProgress loadProgress_;
+    bool modelsPending_ = false;
     std::string hover_;
     struct Marquee { bool on = false; float x0 = 0, y0 = 0, x1 = 0, y1 = 0; } marquee_;
     render::float3 selectedAxes_[3]{{1,0,0},{0,1,0},{0,0,1}};
