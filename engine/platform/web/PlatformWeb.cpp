@@ -371,6 +371,7 @@ void frame(void*) {
 #if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
     ++g_testRenderedFrames;
 #endif
+    if (S.cb.afterFrame) S.cb.afterFrame(*g_device);
 }
 } // namespace
 

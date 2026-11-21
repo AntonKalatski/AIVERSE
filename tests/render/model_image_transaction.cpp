@@ -2,6 +2,7 @@
 #include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/render/ModelResourceCache.h"
 #include "engine/render/ModelStagingTransaction.h"
+#include "engine/render/ModelAssetProvider.h"
 #include "engine/render/OffscreenTargetLifetime.h"
 #include "tests/AlwaysCheck.h"
 #include <set>
@@ -347,6 +348,41 @@ int main(){
     device.idle=true;
     native.shutdown(device);
     AIVERSE_TEST_CHECK(device.live.empty());
+
+    // Authoring hosts publish a new validated generation before retiring
+    // last-good. A frame reader forbids publication and GPU release.
+    render::ModelAssetProvider provider;
+    provider.setGpuDeviceLease(epoch.lease());
+    auto oldModel=std::make_unique<render::Model>();
+    oldModel->images.push_back(makeImage("preview-old.png"));
+    auto* old=provider.publishPrepared(device,"preview/1",std::move(oldModel));
+    assert(old && old->images[0].tex.valid());
+    {
+        auto lease=provider.resources().acquireModelRead(old);
+        assert(lease);
+        bool rejected=false;
+        try {provider.publishPrepared(device,"preview/2",std::make_unique<render::Model>());}
+        catch(const std::logic_error&) {rejected=true;}
+        assert(rejected && provider.find("preview/1")==old);
+        assert(provider.find("preview/2")==nullptr);
+    }
+    auto nextModel=std::make_unique<render::Model>();
+    nextModel->images.push_back(makeImage("preview-next.png"));
+    auto* next=provider.publishPrepared(device,"preview/2",std::move(nextModel));
+    device.complete=false;device.idle=false;
+    const int beforeRetire=device.destroyed;
+    provider.invalidate(device,{"preview/1"},[&](const auto& affected) {
+        assert(affected.size()==1 && affected[0].model==old);
+    });
+    assert(provider.find("preview/2")==next);
+    assert(provider.find("preview/1")==nullptr);
+    assert(!provider.collectRetired(device) && device.destroyed==beforeRetire);
+    device.complete=true;
+    assert(provider.collectRetired(device));
+    assert(device.destroyed==beforeRetire+1);
+    device.idle=true;
+    provider.shutdown(device);
+    assert(device.live.empty());
 
     // Stage 114 offscreen targets use the same per-batch fence semantics.
     // A resize or window destruction must not immediately release GPU

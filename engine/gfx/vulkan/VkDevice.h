@@ -156,6 +156,7 @@ public:
     uint64_t frameSerial() const override { return healthy_ ? serial_ : 0; }
     uint64_t completedFrameSerial() const override { return healthy_ ? completed_ : 0; }
     const std::string& lastError() const override { return error_; }
+    uint64_t frameSerial() const override { return recording_ ? serial_ : 0; }
     bool supports(PixelFormat f) const override;
     std::vector<TextureResourceInfo> textureResources() const override;
     bool supportsCompute() const override { return device_ && healthy_ && computeQueue_ &&
@@ -224,6 +225,7 @@ public:
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
     bool captureTexture(TextureHandle source,CaptureFn callback) override;
+    bool readTexturePixelAsync(TextureHandle,int,int,PixelReadFn) override;
 
     void beginPass(const PassDesc& d) override;
     bool supportsRenderTargetPasses() const override { return true; }
@@ -256,6 +258,7 @@ private:
     void ensureBackBuffer(int w, int h);
     void prepareSlot();                          // waits for the slot's previous frame, resets its pools
     void collectGarbage();
+    void deliverPixelReads();  // called on owner thread at next beginFrame
     void present();
     void readBackBuffer();
     void completeTextureCaptures(FrameSlot& slot,bool succeeded);
@@ -347,6 +350,13 @@ private:
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
     CaptureFn capture_;
+    struct PixelRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc{};
+        uint64_t serial = 0;
+        PixelReadFn callback;
+    };
+    std::vector<PixelRead> pixelReads_;
 
     // resources
     Pool<VBuffer> buffers_;

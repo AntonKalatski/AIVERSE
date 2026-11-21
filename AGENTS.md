@@ -1920,6 +1920,19 @@ This overrides earlier local/worktree build examples and release paths in this f
 - Source repositories may stay in their existing locations. Existing build trees are not
   automatically relocated or deleted by this instruction; do not disrupt running builds.
 
+Older guidance carried over from the VIVID branch (where it conflicts, the KINGSTON rule above wins):
+
+**Never create builds in the shared engine checkout's `build/` folder** (the user's main
+checkout, `<repo>/build`). It is reserved for the user's own Mac build (`build/mac`), the
+integrator's release steps in §8 and the verify launchers. Everything else goes elsewhere:
+
+- Engine work: build inside your own worktree (`.worktrees/<branch>/build/...` or the
+  presets' `build/<preset>` relative to *that* worktree), or a temp dir outside the repo.
+- Game / project work (packaging, native modules, test runs of a game): the project's own
+  folder, `<project>/Builds/` with intermediates in `<project>/Builds/.temp/` (the editor
+  and `aiversebuild` already use this layout).
+- Logs, bundles, patches and scratch archives belong with the build that produced them,
+
 ## 5. Working in parallel
 
 **Per-stage continuation rule (multi-stage tasks):** after each stage, update the task's agent handoff document with APIs, files, tests/results, remaining risks and the next-agent entry point. For Enhanced Input use `docs/enhanced-input-agent-handoff.md`. Do this BEFORE starting the next stage; do not claim a stage verified without real build/test results.
@@ -5672,3 +5685,22 @@ Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping
 - The new `view::AnimatedSceneAttachmentSources` owns dedicated independent MotionWeave presentation ECS `World` and `MotionWeaveSourceBridge`. Call `sync` exactly ONCE on the presentation owner thread with full child source input span BEFORE any rendering, while parent/child models are cache-read-leased. Every child has monotonic source ID and current ECS Entity.packed() logical generation; reimport restarts the correct source. `prepare` verifies model epochs, named parent socket, current parent-child ECS identity and child's sole evaluated Pose; returns move-only parent/child ModelReadLease and a GRAPHLESS `View::Object`. NEVER call View::update on those prepared child objects or run the same child Graph a second time; use an isolated child render-only View to avoid shared visual-ID cache collision with parent.
 - Studio now publishes real animated child Model+Graph snapshots using `AppearanceAssetRegistry::Request.animationGraph`/graphReader; its `EditorWindow::update` steps all child players exactly once before ImGui draw, while 3D viewport only consumes graphless prepared child packets and the existing parent pose. Clear the child source bridge BEFORE replacing old Model/Graph provider generations. Missing/bad Graph fails staged publication and preserves last-good session.
 - ModelView only saves/loads new child fields and deliberately rejects enabled animated children rather than incorrectly drawing them static; it needs its own child source host in Stage 162. SceneLoadCoordinator direct binding on other branches, fully GPU-fenced provider shutdown, advanced morph/skeleton retarget and native validation remain incomplete. Keep shared animation genre-independent, one writer per animation source, independent stage handoff and user-visible readiness table after every stage.
+
+## VIVID universal digital humans (2026-11-19)
+
+**Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
+**Mandatory stage-by-stage handoff:** `docs/agent-handoffs/vivid.md`.
+**Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
+
+VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
+controller (`AIVERSE::vivid`), `AIVERSE::vivid_render` legacy morph binding
+and `AIVERSE::vivid_gpu` extended sparse morph compute.
+MotionWeave owns the final presentation skeleton pose and final graph/retarget output.
+VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
+workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
+renderer ABI without a staged GPU parity test. Every completed stage MUST have
+a separate committed handoff with SHA, executed tests, risks, and next step.
+
+## MotionWeave + VIVID combined Studio checkpoint (2026-11-20)
+
+Integration branch `integration/motionweave-studio-facial-stage184`; durable status: `docs/agent-handoffs/motionweave-vivid-integration-2026-11-20.md`. Code `4a719af8c1c5a97b381c768155e28fd858877903` closes Studio facial preview shared-owner adoption: ModelAssetProvider takePrepared/publishPrepared allows pre-GPU rig validation; one Animator, async CPU import, frame ModelReadLease, renderer cache invalidation and fenced retirement. Keep project texture caches isolated and stale CPU revisions unpublished. Do not regress to direct per-bind upload/release or claim all backend/visual parity from scoped Metal tests. User requires all builds/logs/artifacts on `/Volumes/KINGSTON/AIVERSE-builds/motionweave-vivid/`. See Studio handoff 84 and actual passing commands in the joint log.
