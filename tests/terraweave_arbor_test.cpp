@@ -1,4 +1,5 @@
 #include "engine/world/TerraWeaveArborMesh.h"
+#include "engine/world/TerraWeaveBranchLod.h"
 #include "engine/world/TerraWeaveTreePresets.h"
 #include <algorithm>
 #include <cassert>
@@ -136,8 +137,45 @@ void testInvalidProfiles() {
 }
 int main() {
     {
+        // A child starts halfway along a sagging parent. Check real ring
+        // centroids and leaf stems, not just the mathematical curve helper.
+        TreeSkeleton fixture;fixture.heightCm=1000;fixture.seed=2718;
+        fixture.branches={{0,0,0,0,1000,0,30,10,-1},
+            {0,600,0,600,650,0,18,4,0},{300,625,0,450,800,100,6,1,1}};
+        ArborMeshSettings q;q.naturalConifer=true;q.radialSegments=8;
+        q.longitudinalSegments=4;q.leafPlanes=1;q.sprayPairs=4;q.includeLeader=false;q.doubleSidedLeaves=false;
+        const auto centre=[](const ArborMesh& mesh,size_t first){
+            arbor_detail::V3 sum{};for(size_t j=0;j<8;++j){const auto& v=mesh.vertices[first+j];sum=sum+arbor_detail::V3{v.x,v.y,v.z};}return sum*(1.f/8.f);
+        };
+        const auto distance=[](arbor_detail::V3 a,arbor_detail::V3 b){const auto d=a-b;return std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);};
+        const auto legacy=buildArborMesh(fixture,q);
+        assert(distance(centre(legacy,45+2*9),centre(legacy,90))>50.f);
+        q.organicBranches=true;const auto joined=buildArborMesh(fixture,q);
+        assert(distance(centre(joined,45+2*9),centre(joined,90))<.002f);
+        const auto expected=centre(joined,90)*.2f+centre(joined,90+9)*.8f;
+        const auto& a=joined.vertices[135+32];const auto& b=joined.vertices[135+33];
+        const arbor_detail::V3 stem{(a.x+b.x)*.5f,(a.y+b.y)*.5f,(a.z+b.z)*.5f};
+        assert(distance(expected,stem)<.003f);
+        const auto full=buildArborBranchMesh(fixture,2,BranchDetail::Full,q);
+        const auto coarse=buildArborBranchMesh(fixture,2,BranchDetail::Minimal,q);
+        arbor_detail::V3 coarseRoot{};for(size_t j=0;j<3;++j){const auto& v=coarse.vertices[j];coarseRoot=coarseRoot+arbor_detail::V3{v.x,v.y,v.z};}coarseRoot=coarseRoot*(1.f/3.f);
+        assert(distance(centre(full,0),coarseRoot)<.003f);
+        auto broad=q;broad.naturalConifer=false;broad.naturalBroadleaf=true;
+        const auto collar=buildArborMesh(fixture,broad);
+        // The parent's radius at this height is18cm. Child foot vertices
+        // must remain hidden inside it, not form open shelves outside bark.
+        for(size_t j=0;j<8;++j){const auto& v=collar.vertices[45+j];assert(std::hypot(v.x,v.z)<15.f);}
+        const auto tip=centre(collar,45+4*9);
+        for(size_t j=0;j<8;++j){const auto& v=collar.vertices[45+4*9+j];assert(distance({v.x,v.y,v.z},tip)<.5f);}
+        // Source skeleton remains the same integer generation/save contract.
+        assert(fixture.branches[2].y0==625);
+        fixture.branches[2].parent=2;bool invalid=false;
+        try{(void)buildArborMesh(fixture,q);}catch(const std::invalid_argument&){invalid=true;}
+        assert(invalid);
+    }
+    for(bool organicBranches:{false,true}) {
         const auto& preset=botanicalTreePresets()[4];
-        ArborMeshSettings mesh;mesh.naturalBroadleaf=true;mesh.organicRootFlare=true;
+        ArborMeshSettings mesh;mesh.naturalBroadleaf=true;mesh.organicRootFlare=true;mesh.organicBranches=organicBranches;
         const auto tree=generateTree(preset.profile,2718);
         const auto geometry=buildArborMesh(tree,mesh);
         float shortest=1e9f,longest=0;

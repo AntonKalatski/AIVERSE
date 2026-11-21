@@ -2,6 +2,7 @@
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include "engine/world/TerraWeaveTreePresets.h"
+#include "engine/world/TerraWeaveBotanicalAppearance.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -50,6 +51,39 @@ int main() {
     bool invalidWhorl=false;conifer.whorlSize=1;
     try{(void)generateTree(conifer,909);}catch(const std::invalid_argument&){invalidWhorl=true;}
     assert(invalidWhorl);
+    for(const auto& preset:botanicalTreePresets()) {
+        const auto anatomy=botanicalArborMeshSettings(preset);
+        const auto curved=makeArborModel(preset.profile,2718,anatomy);
+        assert(curved->meshes.size()==3);
+        assert(triangles(curved->meshes[0])>triangles(curved->meshes[1]));
+        assert(triangles(curved->meshes[1])>triangles(curved->meshes[2]));
+        for(const auto& v:curved->vertices)assert(std::isfinite(v.pos.x)&&std::isfinite(v.pos.y)&&std::isfinite(v.pos.z));
+    }
+    {
+        const auto profile=botanicalTreePresets()[4].profile;
+        ArborMeshSettings appearance;appearance.naturalBroadleaf=true;
+        appearance.organicRootFlare=true;appearance.organicBranches=true;
+        ArborForestAdapter curvedForest;curvedForest.addPrototype(profile,2718,appearance);
+        ForestWindState wind;wind.xCmPerSec=4500;wind.branchFlexPermille=1000;wind.maxLeanMilliDegrees=3000;
+        curvedForest.setWind(wind);curvedForest.setPresentationTick(53);
+        const auto skeleton=generateTree(profile,2718);
+        const auto curves=arbor_detail::branchCurves(skeleton,appearance);
+        FloraBatch batch;batch.speciesId=profile.speciesId;batch.lod=TreeLOD::High;
+        batch.instances.push_back({11,profile.speciesId,0,0,0,0,1000});
+        bool checked=false;
+        curvedForest.forEachDraw({batch},{},[&](const auto& draw){
+            assert(draw.nodeWorld&&draw.nodeWorld->size()==curves.size());
+            for(size_t i=1;i<curves.size();++i){
+                const auto at=arbor_detail::curveSample(curves[i],0);
+                const aiverse::render::float3 pivot{at.x*.01f,at.y*.01f,at.z*.01f};
+                const auto own=(*draw.nodeWorld)[i].transformPoint(pivot);
+                const auto parent=(*draw.nodeWorld)[size_t(skeleton.branches[i].parent)].transformPoint(pivot);
+                assert(aiverse::render::length(own-parent)<.0001f);
+            }
+            checked=true;
+        });
+        assert(checked);
+    }
     // Bounded grass, exact terrain contact and a fully excluded patch.
     GrassPatch patch;patch.key=7;patch.seed=99;patch.bounds={-400,-400,400,400};patch.maximumBlades=2048;
     GrassRenderQuality quality;quality.maxBladesPerPatch=2048;quality.bladeSegments=3;quality.crossedBlades=false;

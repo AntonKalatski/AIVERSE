@@ -2,6 +2,7 @@
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveGrassRender.h"
 #include "engine/world/TerraWeaveTreePresets.h"
+#include "engine/world/TerraWeaveBotanicalAppearance.h"
 #include <set>
 #include "tools/terrain/ExportModel.h"
 #include <filesystem>
@@ -51,9 +52,10 @@ int main(int argc,char** argv){try{
             p.branchLengthPermille=pine?620:440;p.branchRisePermille=pine?90:35;p.leafRadiusCm=45;
             kind=pine?"pine":"spruce";bark=kind+"_bark";leaves=kind+"_leaves";
         }
-        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.organicRootFlare=botanical;
+        ArborMeshSettings mesh;mesh.radialSegments=8;mesh.doubleSidedLeaves=false;mesh.organicRootFlare=botanical;mesh.organicBranches=botanical;
         mesh.naturalConifer=p.shape==CrownShape::Conifer;mesh.naturalBroadleaf=!mesh.naturalConifer;
         mesh.compactConifer=mesh.naturalConifer;mesh.sprayDroop=mesh.naturalBroadleaf?(kind=="willow"?.85f:.12f):(kind=="pine"?.08f:kind=="larch"?.55f:.35f);mesh.sprayPairs=4;
+        if(botanical)mesh=botanicalArborMeshSettings(preset);
         CanopyPhenology phenology;if(season=="winter")phenology.broadleafCoverPermille=0;
         mesh.leafCoveragePermille=botanical?treeCanopyAtAge(preset,environment,phenology):1000;
         const uint64_t instanceSeed=detail::mix64(seed^i);
