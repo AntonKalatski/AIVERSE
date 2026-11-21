@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T15:32:31+00:00",
+ "generated": "2026-11-21T16:01:40+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -250,6 +250,80 @@
    "author": "site"
   },
   {
+   "id": "2026-11-21-prisma-waterline-lens",
+   "date": "2026-11-21",
+   "system": "prisma",
+   "title": "PRISMA: a camera at the water surface — waterline, film and drops",
+   "summary": "At the surface the frame splits along a waving waterline with a meniscus; after emerging, everything that was under water is covered by a refracting film that drains to the water level, leaving rivulets and drops.",
+   "body": [
+    "lensWater tests the lens point of every pixel against NEREID's waving water plane: underwater optics below the line, the dry image above it, a bright refracting meniscus along it. Nothing runs down the part of the lens that is under water.",
+    "After emerging the film clings for the first third of sheetTime, then its ragged edge drains down, leaving meandering rivulets with a head drop and round lens drops with glints that dry over dryTime. Every parameter is tunable and the effect can be disabled."
+   ],
+   "status": "in-progress",
+   "verified": "Mac (Metal), AlpineValley review copy: a real-time dive recording (a frame every ~0.35 s, video assembled at real speed); prisma_lens_water test.",
+   "limits": "The underside of the surface (total internal reflection) is not rendered separately yet; other backends are not visually verified.",
+   "branch": "agent-wind-masks",
+   "commit": "6f7652aae",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-waterline-lens/dive.mp4",
+     "caption": "Diving and emerging in real time"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-waterline-lens/01.jpg",
+     "caption": "Camera at the surface: waving waterline with a meniscus"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-waterline-lens/02.jpg",
+     "caption": "Right after emerging: the water film drains to the water level"
+    }
+   ],
+   "links": [
+    {
+     "title": "PRISMA lens water",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/prisma-lens-water.md"
+    }
+   ],
+   "author": "agent-wind-masks"
+  },
+  {
+   "id": "2026-11-21-prisma-dof-foreground-bleed",
+   "date": "2026-11-21",
+   "system": "prisma",
+   "title": "Depth of field: the blurred foreground is no longer cut out",
+   "summary": "Blurred foreground objects now spread over the background as in a real lens instead of ending on a hard line, as if cut out with scissors. The background still does not bleed onto a sharp foreground.",
+   "body": [
+    "Before, blur at a depth boundary threw away everything on the other side: a near curtain or ivy kept a crisp outline over a blurred background, with ghosted patches next to it. Now every point of the frame gathers light from neighbours whose blur disc reaches it. Near blurred objects cover the background and the sharp zone, and what is behind them shows through their edge.",
+    "The rule respects sharpness: the background cannot bleed onto an object sharper than itself, so a sharp object in focus keeps a clean edge. The change is in PRISMA's metric depth of field, used by the LENS lens and the metricFocus setting."
+   ],
+   "status": "done",
+   "verified": "A before/after pair was rendered on a Mac (Metal) in Sponza with the same frame: a 35 mm f/1.4 lens focused at 4 m.",
+   "limits": "The new shader has not been compiled on OpenGL, WebGL or Vulkan yet. The pass is more expensive (32 samples per pixel instead of 8); its cost on weak mobile GPUs has not been measured.",
+   "branch": "main",
+   "commit": "6f7e1861c",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/before.jpg",
+     "caption": "Before: the blurred ivy and column end on a hard outline, with a ghosted background next to it"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/after.jpg",
+     "caption": "After: the foreground softly spreads over the background, no ghosting"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-21-prisma-dof-foreground-bleed/full.jpg",
+     "caption": "The whole frame after the fix: focus at 4 m, the near blue curtain and the distance are blurred"
+    }
+   ],
+   "links": [
+    {
+     "title": "Handoff",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/handoffs/prisma-stage-dof-foreground-bleed-2026-11-21.md"
+    }
+   ],
+   "author": "lens"
+  },
+  {
    "id": "2026-11-21-nereid-turbidity",
    "date": "2026-11-21",
    "system": "nereid",
@@ -286,28 +360,66 @@
    "id": "2026-11-21-lens-physical-lens",
    "date": "2026-11-21",
    "system": "lens",
-   "title": "LENS: physical lens, depth of field and EXR",
-   "summary": "A LENS camera now drives exposure and depth of field from its lens: focal length, aperture, shutter, ISO and focus distance. Spline rails, noise shake and HDR frame recording to EXR were added.",
+   "title": "LENS: the lens sets exposure and depth of field",
+   "summary": "A camera can be described as a real lens — focal length, aperture, shutter, ISO and focus distance — and the frame gets its exposure and depth of field from them. Smooth camera rails for fly-throughs, camera shake and HDR frame recording to EXR were added.",
    "body": [
-    "CameraLensComponent gained driveExposure and driveDepthOfField. CameraPostFxPool turns the lens into EV100 and PRISMA manual exposure, and uses thin-lens formulas for the near and far sharp limits, which it passes to PRISMA depth of field per camera. Global PRISMA settings are left alone.",
-    "Rails use centripetal Catmull-Rom with constant speed along the arc and eased start and stop; shake is seeded deterministic noise with a fade. The old linear rails and sine shake behave as before. CameraHdrFrameRecorder writes linear RGBA16F frames to OpenEXR and refuses an 8-bit result.",
-    "The frame was rendered by tools/site/lens_showcase.cpp: the main camera with a 35 mm f/1.4 lens focused at 4 m on the red curtain, and a second camera of the same scene in the inset through CameraCompositor."
+    "Every camera in cameras.json now has a lens block. With driveExposure and driveDepthOfField on, the camera sets the frame brightness and the sharp zone itself: f/1.4 gives a short sharp zone and a strongly blurred background, f/8 keeps almost everything sharp. It is computed per camera, so the main view and the inset can use different lenses.",
+    "For fly-throughs the camera follows a rail through several points at an even speed, eases in and out, and the rail can loop. Shake is noise on six axes with a fade, identical on every run. The old linear rails and the previous shake behave as before.",
+    "Frames can be recorded as an OpenEXR sequence with the full HDR range, for editing, grading and render comparisons."
    ],
    "status": "done",
-   "verified": "Rendered on a Mac (Metal), 1920×1080, Sponza (Khronos glTF Sample). The host prints the actual PRISMA state: EV +1.24, DoF on, focus 4.08 m, sharp range 1.11 m, blur 5 px; a frame without DoF was rendered separately for comparison. Unit tests for the lens, rails and EXR (camera_lens_physics, camera_rail_path, camera_exr) and the aiverse_tests cases passed on Linux (GCC). Before the merge into main the whole branch was built on a Mac: 365 of 367 tests passed; the two failures (skill_audit, rts_authored_pose_test) also fail on plain main.",
-   "limits": "HDR capture via readTextureAsync RGBA16F exists only on Metal; OpenGL can only record 8-bit. Cubemaps, panoramas, mirrors, portals and stereo are not done. Exposure is relative to the default lens, not photometric.",
+   "verified": "Rendered on a Mac (Metal) in Sponza at 1920×1080: a 35 mm f/1.4 lens focused at 4 m, with a second camera of the same scene in the inset. Exposure, depth of field, rails and EXR maths are covered by tests on Linux and Mac.",
+   "limits": "HDR recording to EXR is Metal-only for now; OpenGL records an 8-bit frame. Exposure is relative to a default lens, not in physical light units. Cubemaps, panoramas, mirrors, portals and stereo are not done yet.",
    "branch": "main",
    "commit": "cd6633caf",
    "media": [
     {
-     "src": "../media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-dof.jpg",
-     "caption": "35 mm f/1.4 lens focused at 4 m: the curtain and column are sharp, the far arcade is blurred; the inset is a second camera"
+     "src": "../media/docs/devlog/media/2026-11-21-lens-physical-lens/sponza-arcade.jpg",
+     "caption": "35 mm f/1.4 lens focused at 4 m: the green curtain and column are sharp, the near blue curtain and the distance are blurred; the inset is a second camera"
     }
    ],
    "links": [
     {
      "title": "docs/camera-system.md",
      "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md"
+    }
+   ],
+   "author": "lens"
+  },
+  {
+   "id": "2026-11-20-lens-cameras-studio-mcp",
+   "date": "2026-11-20",
+   "system": "lens",
+   "title": "LENS: cameras as scene data, a Studio window and agent tools",
+   "summary": "A game's cameras are now described in one cameras.json file: several cameras, their draw order, their own render targets and frame capture. They can be created and edited in a Studio window or through the agent's MCP tools.",
+   "body": [
+    "Each camera is a scene entity with its own components: transform, lens, follow rig, render target. The engine orders the cameras itself when one shows the image of another and warns about cycles.",
+    "Secondary cameras — monitors, picture-in-picture, portraits — get the same prepared frame as the main view: the game is not simulated again and animation does not step twice.",
+    "Studio has a cameras window: list, create, save and reload. Agents do the same through MCP: lens_scene_get, lens_camera_set and the related operations validate a change before writing and leave the working file intact on error. Any camera's frame can be saved to PNG."
+   ],
+   "status": "done",
+   "verified": "The cameras window was opened in Studio on a Mac with a project and its camera loaded; the client with cameras enabled rendered the game scene on Metal. Replaying the frame into a secondary camera was compared pixel by pixel with the main frame on Metal.",
+   "limits": "The pixel comparison has only been run on Metal; Vulkan and mobile GPUs are not checked yet. Cost with many cameras has not been measured.",
+   "branch": "main",
+   "commit": null,
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-20-lens-cameras-studio-mcp/studio-cameras.png",
+     "caption": "Studio: the LENS cameras window bottom right with the project camera and New Camera, Save, Reload"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-20-lens-cameras-studio-mcp/client-metal.png",
+     "caption": "The game client on Metal with LENS cameras enabled"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/camera-system.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md"
+    },
+    {
+     "title": "skills/visuals/aiverse-lens/SKILL.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/skills/visuals/aiverse-lens/SKILL.md"
     }
    ],
    "author": "lens"
