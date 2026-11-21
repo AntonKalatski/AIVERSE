@@ -19,7 +19,7 @@ namespace aiverse::modelview {
 
 class NativeScenePreview final {
 public:
-    NativeScenePreview()=default;
+    NativeScenePreview(); // defined out of line: Actor is incomplete here
     NativeScenePreview(const NativeScenePreview&)=delete;
     NativeScenePreview& operator=(const NativeScenePreview&)=delete;
     ~NativeScenePreview();

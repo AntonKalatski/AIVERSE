@@ -53,6 +53,7 @@ struct NativeScenePreview::Actor {
     bool playing=false;
 };
 
+NativeScenePreview::NativeScenePreview()=default;
 NativeScenePreview::~NativeScenePreview()=default;
 
 bool NativeScenePreview::readFile(const std::string& path,

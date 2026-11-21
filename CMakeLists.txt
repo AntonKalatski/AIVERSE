@@ -729,7 +729,8 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_animation_scene_game_host_api_tests
         tests/animation/scene_game_host_api.cpp)
     target_link_libraries(aiverse_animation_scene_game_host_api_tests
-        PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine Threads::Threads)
+        PRIVATE aiverse_models aiverse_zstd_dec aiverse_engine AIVERSE::View
+                Threads::Threads)
     add_test(NAME animation_scene_game_host_api
         COMMAND aiverse_animation_scene_game_host_api_tests)
 

@@ -55,9 +55,9 @@ struct AttachmentSpec {
     bool enabled=true;
     render::mat4 local{};
     render::mat4 childWorld{};
-    std::string id; // optional scene/prefab-stable authored child identity
+    std::string id{}; // optional scene/prefab-stable authored child identity
     bool animated=false;
-    std::string animationGraph;
+    std::string animationGraph{};
 };
 struct Instance {
     Model* model = nullptr;
