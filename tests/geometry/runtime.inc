@@ -257,6 +257,40 @@ TEST(geometry_transactional_reload_preserves_live_scene_on_source_failure) {
     scene.shutdown(dev);
 }
 
+TEST(geometry_transactional_reload_keeps_strata_policy_and_resources) {
+    // Regression: the staging owner was default-constructed, so a
+    // transactional reload silently disabled every STRATA path.
+    using namespace render;
+    entityfxtest::RecordingDevice dev;
+    const auto json=Json::parse(R"({"version":1,"instances":[{"id":"a","model":"box.obj"}]})");
+    const auto good=[](const std::string&,std::string& out){
+        out=geometrytest::boxObj();return true;
+    };
+    // Reference: the direct (non-transactional) load path.
+    GeometryScene reference;
+    reference.setStrataStagingEnabled(true);
+    reference.load(dev,json,good);
+    const auto ref=reference.stats();
+    const bool refAsset=reference.strataAsset("box.obj")!=nullptr;
+    if(reference.strataStagingSupported())
+        CHECK(ref.strataSources+ref.strataSkippedSources+ref.strataFailures>0);
+    reference.shutdown(dev);
+
+    GeometryScene scene;
+    scene.setStrataStagingEnabled(true);
+    scene.setStrataStreamingIndexBudgetBytes(4096);
+    for(int pass=0;pass<2;++pass){
+        scene.loadTransactional(dev,json,good);
+        CHECK(scene.strataStagingEnabled());
+        CHECK(scene.strataStreamingIndexBudgetBytes()==4096);
+        CHECK(scene.stats().strataSources==ref.strataSources);
+        CHECK(scene.stats().strataSkippedSources==ref.strataSkippedSources);
+        CHECK(scene.stats().strataFailures==ref.strataFailures);
+        CHECK((scene.strataAsset("box.obj")!=nullptr)==refAsset);
+    }
+    scene.shutdown(dev);
+}
+
 TEST(geometry_transactional_reload_preserves_hlod_after_proxy_source_failure) {
     using namespace render;
     entityfxtest::RecordingDevice dev;

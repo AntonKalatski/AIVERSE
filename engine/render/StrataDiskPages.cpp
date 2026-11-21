@@ -130,6 +130,17 @@ bool sourceValid(const ModelAsset& asset) {
 }
 } // namespace
 
+// A failed read is retried after a request-count backoff (2,4,8,16
+// request() calls) and becomes permanent only after kMaxReadAttempts
+// consecutive failures; a verified read clears the record. Transient IO
+// errors therefore do not pin a page to its coarse parent forever.
+constexpr uint32_t kMaxReadAttempts=5;
+constexpr uint32_t kPermanentFailure=std::numeric_limits<uint32_t>::max();
+struct ReadFailure {
+    uint32_t attempts=0;
+    uint32_t cooldown=0; // remaining refused request() calls
+};
+
 struct DiskIndexPages::State {
     std::string path;
     std::map<Key,Entry> entries;
@@ -138,12 +149,25 @@ struct DiskIndexPages::State {
     std::deque<Key> queue;
     std::set<Key> pending;
     std::set<Key> desired;
-    std::set<Key> failures;
+    std::map<Key,ReadFailure> failures;
     std::map<Key,std::vector<uint32_t>> pages;
     size_t readyLimit=0, queuedLimit=0, readyBytes=0;
     std::atomic<bool> cancelled{false};
+    // Single flight per archive: the one executing job's key. abortActive
+    // is what the job's shared-memory wait observes; close() and a
+    // retainRequested() that drops activeKey set it.
+    std::atomic<bool> abortActive{false};
+    Key activeKey{};
+    bool hasActive=false;
     bool stop=false, scheduled=false;
     DiskPageStats counters;
+    void recordFailureLocked(const Key& key) {
+        auto& f=failures[key];
+        ++f.attempts;
+        f.cooldown=f.attempts>=kMaxReadAttempts ? kPermanentFailure :
+                   (2u<<std::min<uint32_t>(f.attempts-1,3u));
+        ++counters.failedReads;
+    }
 };
 
 // scheduleLocked is called only under State::mutex. A single shared-worker
@@ -186,14 +210,17 @@ void DiskIndexPages::serviceOne(const std::shared_ptr<State>& state) {
             state->scheduled=false;
             return;
         }
+        state->activeKey=key;
+        state->hasActive=true;
+        state->abortActive.store(false,std::memory_order_release);
     }
-    if(!acquireSharedDiskReady(bytes,state->cancelled)){
+    if(!acquireSharedDiskReady(bytes,state->abortActive)){
         std::lock_guard lock(state->mutex);
         state->pending.erase(key);
-        if(!state->stop){
-            state->failures.insert(key);
-            ++state->counters.failedReads;
-        }
+        state->hasActive=false;
+        // Closing or no longer wanted is a cancellation, not a read error.
+        if(!state->stop && state->desired.count(key))
+            state->recordFailureLocked(key);
         state->scheduled=false;
         (void)scheduleLocked(state);
         return;
@@ -206,18 +233,19 @@ void DiskIndexPages::serviceOne(const std::shared_ptr<State>& state) {
     {
         std::lock_guard lock(state->mutex);
         state->pending.erase(key);
+        state->hasActive=false;
         if(!state->stop){
             if(okay){
                 ++state->counters.completedReads;
                 state->counters.bytesRead+=bytes;
+                state->failures.erase(key); // verified: forget earlier errors
                 if(state->desired.count(key)){
                     state->readyBytes+=bytes;
                     state->pages[key]=std::move(payload);
                     keep=true;
                 }
             }else if(state->desired.count(key)){
-                state->failures.insert(key);
-                ++state->counters.failedReads;
+                state->recordFailureLocked(key);
             }
         }
         state->scheduled=false;
@@ -423,10 +451,15 @@ void DiskIndexPages::retainRequested(
                 it=shared->pages.erase(it);
             }else ++it;
         }
+        // The executing job may be waiting for shared CPU-ready memory for
+        // a page nobody wants any more: abort that wait (observed by the
+        // acquire predicate) instead of letting it occupy the worker.
+        if(shared->hasActive && !shared->desired.count(shared->activeKey))
+            shared->abortActive.store(true,std::memory_order_release);
         (void)scheduleLocked(shared);
     }
     if(released)releaseSharedDiskReady(released);
-    wakeSharedDiskIo(); // cancellation releases workers waiting on memory
+    wakeSharedDiskIo(); // wake waiters to re-check memory and abortActive
 }
 
 bool DiskIndexPages::request(uint32_t primitive,uint32_t node) {
@@ -435,10 +468,18 @@ bool DiskIndexPages::request(uint32_t primitive,uint32_t node) {
     const Key key{primitive,node};
     std::lock_guard lock(shared->mutex);
     const auto it=shared->entries.find(key);
-    if(shared->stop||it==shared->entries.end()||
-       shared->failures.count(key)||!shared->desired.count(key))
+    if(shared->stop||it==shared->entries.end()||!shared->desired.count(key))
         return false;
     if(shared->pages.count(key)||shared->pending.count(key))return true;
+    if(const auto failure=shared->failures.find(key);
+       failure!=shared->failures.end()){
+        // Backoff before retrying; permanent after kMaxReadAttempts.
+        if(failure->second.cooldown==kPermanentFailure)return false;
+        if(failure->second.cooldown){
+            --failure->second.cooldown;
+            return false;
+        }
+    }
     if(shared->pending.size()>=shared->queuedLimit){
         ++shared->counters.queueRefused;
         return false;
@@ -483,7 +524,10 @@ bool DiskIndexPages::failed(uint32_t primitive,uint32_t node) const {
     if(!state_)return true;
     auto& s=*state_;
     std::lock_guard lock(s.mutex);
-    return s.failures.count({primitive,node})!=0;
+    // True while the last read failed and no retry is in flight (backoff
+    // or permanent failure). A successful retry clears it.
+    const Key key{primitive,node};
+    return s.failures.count(key)!=0 && !s.pending.count(key);
 }
 DiskPageStats DiskIndexPages::stats() const {
     if(!state_)return {};
@@ -503,6 +547,7 @@ void DiskIndexPages::close() {
         std::lock_guard lock(shared->mutex);
         shared->stop=true;
         shared->cancelled.store(true,std::memory_order_release);
+        shared->abortActive.store(true,std::memory_order_release);
         shared->desired.clear();
         shared->queue.clear();
         shared->pending.clear();

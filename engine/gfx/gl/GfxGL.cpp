@@ -152,6 +152,9 @@ struct GLTextureRead {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
     Device::TextureReadFn callback;
+    // GL stores render targets bottom-up; uploaded textures keep the CPU row
+    // order. Only render targets are flipped to the top-left row contract.
+    bool flipRows = false;
 };
 
 constexpr size_t kUniformRingSize = 1 << 20;
@@ -325,7 +328,25 @@ public:
         return result;
     }
     const std::string& lastError() const override { return error_; }
+    // GL errors are sticky context state: a stale error raised by unrelated
+    // code (UI, plugins, an earlier frame) would otherwise be attributed to
+    // the next guarded section and fail an upload/allocation that succeeded.
+    // Drain the queue before each section that checks glGetError() so the
+    // check observes only the section's own calls. Bounded because a lost
+    // context may report GL_CONTEXT_LOST indefinitely.
+    void drainPendingGlErrors() {
+        for (int i = 0; i < 32; ++i) {
+            const GLenum e = glGetError();
+            if (e == GL_NO_ERROR) return;
+            if (!loggedStaleGlError_) {
+                loggedStaleGlError_ = true;
+                std::fprintf(stderr, "GL: discarded stale error 0x%04X raised outside the RHI\n",
+                             static_cast<unsigned>(e));
+            }
+        }
+    }
     bool waitIdle() override {
+        drainPendingGlErrors();
         glFinish();
         return glGetError()==GL_NO_ERROR;
     }
@@ -398,6 +419,7 @@ public:
         const GLenum internal = uncompressedInternal(d.format);
         const GLenum format = uncompressedExternal(d.format);
         const GLenum type = uncompressedType(d.format);
+        drainPendingGlErrors();
         const size_t bpp = size_t(uncompressedTexturePixelBytes(d.format));
         // GLES3/WebGL2 share pixel-unpack state across all upload paths.
         // GL_PIXEL_UNPACK_BUFFER changes host pointers into byte offsets;
@@ -515,6 +537,7 @@ public:
                 error_ = "GL: unsupported multisample attachment format";
                 return {};
             }
+            drainPendingGlErrors();
             GLint maxSamples = 0;
             glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
             if (d.sampleCount > maxSamples) {
@@ -553,6 +576,7 @@ public:
             error_ = "GL: requested compressed pixel format unsupported";
             return {};
         }
+        drainPendingGlErrors();
         // Legacy Texture2D and compressed uploads also consume CPU pointers.
         // Inherit no pixel-unpack/PBO state from previous render systems.
         struct Scoped2DUnpack {
@@ -733,6 +757,7 @@ public:
         GLint previousUnpackAlignment = 4, previousRowLength = 0;
         GLint previousImageHeight = 0, previousSkipPixels = 0;
         GLint previousSkipRows = 0, previousSkipImages = 0;
+        drainPendingGlErrors();
         glGetIntegerv(bindingQuery, &previousBinding);
         glGetIntegerv(kUnpackBufferBinding, &previousUnpackBuffer);
         glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
@@ -754,20 +779,42 @@ public:
         glPixelStorei(kSkipRows,0);
         glPixelStorei(kSkipImages,0);
         const auto* src = static_cast<const uint8_t*>(u.data);
+        // GL33/GLES3/WebGL2 all support UNPACK_ROW_LENGTH / IMAGE_HEIGHT:
+        // one call per region (or per slice) when pitches are whole pixels
+        // / whole rows; per-row uploads remain for odd byte pitches.
+        // Both values are restored below with the rest of the unpack state.
+        const bool wholePixelRows = u.rowPitchBytes % bpp == 0;
+        const bool wholeRowSlices = wholePixelRows && imagePitch % u.rowPitchBytes == 0;
+        if (wholePixelRows) glPixelStorei(kRowLength, u.rowPitchBytes / bpp);
         if (t->dimension == TextureDimension::Texture2D ||
             t->dimension == TextureDimension::Cube) {
             const GLenum target = t->dimension == TextureDimension::Cube ?
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(u.arrayLayer) : GL_TEXTURE_2D;
-            for (int y = 0; y < u.height; ++y)
-                glTexSubImage2D(target, u.mipLevel, u.x, u.y + y, u.width, 1, format, type,
-                                src + size_t(y) * size_t(u.rowPitchBytes));
+            if (wholePixelRows)
+                glTexSubImage2D(target, u.mipLevel, u.x, u.y, u.width, u.height,
+                                format, type, src);
+            else
+                for (int y = 0; y < u.height; ++y)
+                    glTexSubImage2D(target, u.mipLevel, u.x, u.y + y, u.width, 1, format, type,
+                                    src + size_t(y) * size_t(u.rowPitchBytes));
         } else {
             const int z = t->dimension == TextureDimension::Texture3D ? u.z : u.arrayLayer;
-            for (int zz = 0; zz < u.depth; ++zz)
-                for (int y = 0; y < u.height; ++y)
-                    glTexSubImage3D(t->target, u.mipLevel, u.x, u.y + y, z + zz,
-                      u.width, 1, 1, format, type,
-                      src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
+            if (wholeRowSlices) {
+                glPixelStorei(kImageHeight, imagePitch / u.rowPitchBytes);
+                glTexSubImage3D(t->target, u.mipLevel, u.x, u.y, z,
+                                u.width, u.height, u.depth, format, type, src);
+            } else if (wholePixelRows) {
+                for (int zz = 0; zz < u.depth; ++zz)
+                    glTexSubImage3D(t->target, u.mipLevel, u.x, u.y, z + zz,
+                                    u.width, u.height, 1, format, type,
+                                    src + size_t(zz) * size_t(imagePitch));
+            } else {
+                for (int zz = 0; zz < u.depth; ++zz)
+                    for (int y = 0; y < u.height; ++y)
+                        glTexSubImage3D(t->target, u.mipLevel, u.x, u.y + y, z + zz,
+                          u.width, 1, 1, format, type,
+                          src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
+            }
         }
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
         const GLenum uploadError = glGetError();
@@ -841,6 +888,7 @@ public:
             }
             return GL_LEQUAL;
         };
+        drainPendingGlErrors();
         GLuint sampler = 0;
         glGenSamplers(1, &sampler);
         if (!sampler) { error_ = "GL sampler allocation failed"; return {}; }
@@ -887,6 +935,7 @@ public:
             if (!s) return false;
             sampler = s->native;
         }
+        drainPendingGlErrors();
         glActiveTexture(GL_TEXTURE0 + GLenum(slot));
         glBindTexture(t->target, t->id);
         glBindSampler(GLuint(slot), sampler);
@@ -1117,6 +1166,7 @@ public:
 #endif
     bool waitForResourceIdle() override {
         // Fallback for unsupported/failed async sync objects.
+        drainPendingGlErrors();
         glFinish();
         return glGetError()==GL_NO_ERROR;
     }
@@ -1223,6 +1273,7 @@ public:
         if(!fn || !tex || (tex->fmt!=PixelFormat::RGBA8 &&
                            tex->fmt!=PixelFormat::RGBA8_sRGB) ||
            tex->w<=0 || tex->h<=0)return false;
+        drainPendingGlErrors();
         GLint oldFbo=0,oldPack=4;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING,&oldFbo);
         glGetIntegerv(GL_PACK_ALIGNMENT,&oldPack);
@@ -1272,6 +1323,7 @@ public:
         const int height=std::max(1,t->h>>request.mipLevel);
         const size_t bytes=size_t(width)*size_t(height)*4u;
         if (bytes > (size_t(256)<<10)) return false;
+        drainPendingGlErrors();
         GLint oldReadFbo=0,oldPackPbo=0,oldPackAlignment=4,oldReadBuffer=GL_BACK;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&oldReadFbo);
         glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&oldPackPbo);
@@ -1303,14 +1355,16 @@ public:
             glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
             glPixelStorei(GL_PACK_ALIGNMENT,1);
             const size_t row=size_t(width)*4u;
-            std::vector<uint8_t> bottomUp(bytes);
-            glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,bottomUp.data());
+            std::vector<uint8_t> glRows(bytes);
+            glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,glRows.data());
             if(glGetError()==GL_NO_ERROR) {
                 result.width=width;result.height=height;
                 result.pixels.resize(bytes);
+                // Render targets are bottom-up; uploaded rows are already
+                // in CPU (top-left) order and must not be flipped.
                 for(int y=0;y<height;++y)
                     std::memcpy(result.pixels.data()+size_t(y)*row,
-                                bottomUp.data()+size_t(height-1-y)*row,row);
+                                glRows.data()+size_t(t->renderTarget ? height-1-y : y)*row,row);
             }
         }
         glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(oldReadFbo));
@@ -1351,6 +1405,7 @@ public:
         const int height = std::max(1, t->h >> request.mipLevel);
         const size_t bytes = size_t(width) * size_t(height) * 4u;
         if (bytes > (size_t(256) << 20)) return false;
+        drainPendingGlErrors();
         GLint oldReadFbo = 0, oldPackPbo = 0, oldPackAlignment = 4;
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFbo);
         glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPackPbo);
@@ -1400,7 +1455,8 @@ public:
         }
         // A fence is not a CPU wait; flushing only submits pending commands.
         glFlush();
-        textureReads_.push_back({pbo, fence, width, height, t->fmt, std::move(callback)});
+        textureReads_.push_back({pbo, fence, width, height, t->fmt, std::move(callback),
+                                 t->renderTarget});
         return true;
 #endif
     }
@@ -1431,7 +1487,7 @@ public:
                     result.pixels.resize(bytes);
                     for (int y=0;y<read.height;++y)
                         std::memcpy(result.pixels.data()+size_t(y)*row,
-                                    p+size_t(read.height-1-y)*row, row);
+                                    p+size_t(read.flipRows ? read.height-1-y : y)*row, row);
                     if (glUnmapBuffer(GL_PIXEL_PACK_BUFFER) != GL_TRUE) {
                         result = {};
                         result.format = read.format;
@@ -1913,6 +1969,7 @@ private:
     bool hdrPass_ = false;
     DeviceInfo info_;
     std::string error_;
+    bool loggedStaleGlError_ = false;
     GLuint vao_ = 0, ubo_ = 0, currentProgram_ = 0;
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)   // same guard as every use (Android: unused private field)
     GLuint slotUbos_[kMaxUniformSlots] = {};
