@@ -791,6 +791,10 @@ static NSString* studioFloatPanel(NSWindow* window,NSDictionary<NSString*,NSWind
         try {
             if (!preview_) {
                 preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
+                // Interactive viewport: redraw on change only, debounce lighting rebuilds.
+                // AIVERSE_STUDIO_CONTINUOUS_REDRAW=1 restores drawing every tick.
+                const char* continuous=std::getenv("AIVERSE_STUDIO_CONTINUOUS_REDRAW");
+                preview_->setContinuousRedraw(continuous && std::string(continuous)=="1");
                 // Default host: the Metal view covers HTML, so the renderer draws the
                 // orientation gizmo itself; composite mode uses the HTML gizmo.
                 preview_->setOrientationGizmo(!htmlComposite_);

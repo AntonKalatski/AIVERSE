@@ -9,6 +9,10 @@ if [[ ! -d /Volumes/KINGSTON || ! -w /Volumes/KINGSTON ]]; then
   exit 2
 fi
 BUILD_DIR="$OUTPUT_ROOT/native"
+# The app launched from this folder is the working Studio, so it is optimized by
+# default (-O2 with debug symbols). A -O0 Debug Studio redraws the viewport
+# 5-20x slower. STUDIO_BUILD_TYPE=Debug ./verify_mac.sh for a debugger session.
+STUDIO_BUILD_TYPE="${STUDIO_BUILD_TYPE:-RelWithDebInfo}"
 WEB_DIST="$OUTPUT_ROOT/web"
 mkdir -p "$OUTPUT_ROOT/tmp"
 export TMPDIR="$OUTPUT_ROOT/tmp"
@@ -49,7 +53,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DAIVERSE_BUILD_STUDIO_HTML5=ON \
   -DAIVERSE_BUILD_TESTS=ON \
   -DAIVERSE_STUDIO_WEB_DIST="$WEB_DIST" \
-  -DCMAKE_BUILD_TYPE=Debug
+  -DCMAKE_BUILD_TYPE="$STUDIO_BUILD_TYPE"
 
 echo "==== Step 3: native target and tests ===="
 cmake --build "$BUILD_DIR" \
