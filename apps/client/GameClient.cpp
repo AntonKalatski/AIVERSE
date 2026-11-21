@@ -1,6 +1,7 @@
 #include "engine/ui/RaceHud.h"
 #include "engine/platform/WindowSettings.h"
 #include "engine/render/PrismaVolumeData.h"
+#include "engine/render/PrismaDlss.h"
 #include "modules/rts/RtsInitialVars.h"
 #include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
@@ -140,6 +141,10 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
         prisma_.setGpuDeviceLease(gpuDeviceLease_);
         prisma_.init(dev);
+        // PRISMA "dlss" effect: NVIDIA NGX provider when this build has the DLSS SDK
+        // (AIVERSE_DLSS_SDK_DIR) and runs on Vulkan; otherwise the effect reports why.
+        if (render::prismaDlssCompiled() && dev.info().backend == gfx::Backend::Vulkan)
+            prisma_.setExternalUpscaler(render::makePrismaDlss());
         prismaBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
         prisma_.setQuality(prismaBase_);
         prisma_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {

@@ -48,6 +48,7 @@ struct PrismaStats {
     double adaptiveGpuMs = 0;
     float requestedRenderScale = 1.0f;
     bool temporalResolved = false, temporalJittered = false;
+    bool externalUpscaled = false, spatialUpscaled = false;
     float jitterPixelX = 0, jitterPixelY = 0;
 };
 
@@ -133,6 +134,45 @@ inline PrismaUnderwaterBudget prismaUnderwaterBudget(PrismaQuality quality) {
 }
 
 class PrismaVolumeStack;
+
+// Screen distortion ring of an explosion / impact (heatHaze effect). Presentation only:
+// the game sends the live waves of a view every frame (radius grows, strength fades).
+struct PrismaShockwave {
+    float3 position{};       // world-space centre
+    float radius = 1.0f;     // current ring radius, world units
+    float thickness = 0.6f;  // ring width, world units
+    float strength = 1.0f;   // 0..1 (fade it out as the wave expands)
+};
+
+// Inputs of an external temporal upscaler (DLSS through the NVIDIA NGX SDK, or any other
+// vendor library a host registers). All textures belong to Prisma and are valid for this
+// call only. Velocity RG = current-minus-previous screen UV (y up), B > 0.5 = object motion.
+struct PrismaUpscaleInputs {
+    uint64_t viewId = 0;
+    gfx::TextureHandle color;      // HDR scene, render size (RGBA16F)
+    gfx::TextureHandle depth;      // device depth, render size
+    gfx::TextureHandle velocity;   // RGBA16F, render size; invalid on the first frame
+    gfx::TextureHandle output;     // RGBA16F, output size (render target + sampled)
+    int renderWidth = 0, renderHeight = 0, outputWidth = 0, outputHeight = 0;
+    float jitterPixelsX = 0, jitterPixelsY = 0; // sub-pixel jitter of this frame, render pixels
+    bool reset = false;            // camera cut / first frame / resize
+    bool depthZeroToOne = true;
+    float sharpness = 0;
+    float frameSeconds = 0;        // time since the previous evaluate of this view, 0 = first
+    float depthNear = 0.5f, depthFar = 1000.0f;
+    float verticalFov = 0;         // radians, 0 = orthographic / unknown
+};
+class PrismaExternalUpscaler {
+public:
+    virtual ~PrismaExternalUpscaler() = default;
+    virtual const char* id() const = 0;                 // "dlss"
+    // Can it run on this device now? `reason` explains a refusal (shown in reports).
+    virtual bool supported(gfx::Device& dev, std::string& reason) = 0;
+    // Called outside any render pass. Must write `output` completely or return false.
+    virtual bool evaluate(gfx::Device& dev, const PrismaUpscaleInputs& in, std::string& error) = 0;
+    virtual void releaseView(uint64_t viewId) { (void)viewId; }
+    virtual void shutdown(gfx::Device& dev) { (void)dev; }
+};
 
 class Prisma : public PostProcess {
 public:
@@ -265,6 +305,14 @@ public:
     // Negative resumes the steady presentation clock; nonnegative freezes fog advection.
     void setLocalFogTime(double seconds) { fogTime_=seconds; }
     void setLocalFog(LocalFogSettings s) { fogSettings_=s; }
+    // heatHaze shockwaves of one view (replaces the previous list; at most 4 are drawn, the
+    // strongest first). Empty clears. Only drawn when the view's profile has heatHaze.
+    void setShockwaves(uint64_t viewId, std::vector<PrismaShockwave> waves);
+    void clearShockwaves(uint64_t viewId) { shockwaves_.erase(viewId); }
+    // External temporal upscaler used by the "dlss" effect (nullptr removes it). Prisma keeps
+    // a shared reference; the host keeps the vendor SDK alive until shutdown().
+    void setExternalUpscaler(std::shared_ptr<PrismaExternalUpscaler> upscaler);
+    PrismaExternalUpscaler* externalUpscaler() const { return externalUpscaler_.get(); }
     LocalFogScene& localFog() { return fogScene_; }
     const LocalFogScene& localFog() const { return fogScene_; }
     void setPhysicalSky(PhysicalSkySettings s) { skySettings_=sanitizePhysicalSky(s); }
@@ -489,13 +537,28 @@ private:
         MotionTextureInput reactiveMask; // borrowed for this frame only
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
-    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kTemporalResolve, kProgCount };
+    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kTemporalResolve,
+                kAo, kAoApply, kSsr, kFlareGhost, kSmaaEdge, kSmaaWeight, kSmaaBlend, kFsrEasu, kFsrRcas, kHistogram, kHistogramResolve, kProgCount };
+    struct DlssView {
+        uint64_t jitterSequence = 0;
+        float jitterPixelsX = 0, jitterPixelsY = 0;
+        bool jitterActive = false, valid = false;
+        int outputWidth = 0, outputHeight = 0, renderWidth = 0, renderHeight = 0;
+        gfx::TextureHandle output;
+        double lastTime = 0;
+    };
+    bool dlssActive(std::string* reason = nullptr) const;
+    bool spatialUpscaleActive() const;
+    Target ldrTarget(Sized& s, int role, int w, int h);
+    gfx::TextureHandle imageTexture(const std::string& path);
+    bool smaaTextures();
 
     Target& target(Sized& s, int role, int w, int h);
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
     Sized& sized(int w, int h);
     void destroySized(Sized& s);
     bool preflightUpscale(int outputW, int outputH, int renderW, int renderH);
+    std::pair<int,int> temporalRenderSizeForOutput(int width, int height);
     void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
     // graphKey: optional precomputed graph->dump(-1) (one dump per frame).
@@ -583,6 +646,12 @@ private:
     std::map<uint64_t, std::pair<int,int>> requestedOutputSizes_;
     uint64_t viewId_ = 0;
     std::map<std::string, Lut> luts_;
+    std::map<std::string, gfx::TextureHandle> images_;   // lensFlare dirt (invalid = failed)
+    gfx::TextureHandle smaaArea_, smaaSearch_;
+    bool smaaFailed_ = false;
+    std::map<uint64_t, std::vector<PrismaShockwave>> shockwaves_;
+    std::shared_ptr<PrismaExternalUpscaler> externalUpscaler_;
+    std::map<uint64_t, DlssView> dlssViews_;
     ImageLoader loader_;
     std::map<std::string,gfx::TextureHandle> graphTextures_;
     std::map<std::string,std::vector<std::string>> graphPaths_;
