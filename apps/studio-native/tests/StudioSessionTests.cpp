@@ -190,6 +190,30 @@ void authoredEntityWorkflow() {
        AIVERSE_TEST_CHECK(!log.has("error") && log["result"]["text"].str().empty());
        AIVERSE_TEST_CHECK(log["result"]["next"].integer()==log["result"]["size"].integer());
    }
+   // Align: one undo step, labelled in History; History jump undoes/redoes to a position.
+   {
+       auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;
+       if(doc.data.entities.size()>=2) {
+           const std::string a="entity:"+std::to_string(0),b="entity:"+std::to_string(1);
+           const float bz=doc.data.entities[1].z;
+           auto params=Json::object(),ids=Json::array();ids.push(Json::string(a));ids.push(Json::string(b));
+           params.set("entityIds",ids);params.set("mode",Json::string("minX"));
+           auto request=Json::object();request.set("id",Json::number(int64_t(1)));request.set("method",Json::string("studio.entitiesAlign"));request.set("params",params);
+           const size_t depth=doc.undoDepth();
+           AIVERSE_TEST_CHECK(!session.dispatch(request).has("error"));
+           AIVERSE_TEST_CHECK(doc.undoDepth()==depth+1);
+           AIVERSE_TEST_CHECK(std::abs(doc.data.entities[0].x-doc.data.entities[1].x)<1e-3 && doc.data.entities[1].z==bz);
+           auto history=call("studio.history");
+           AIVERSE_TEST_CHECK(!history.has("error") && history["result"]["steps"].items().back().getStr("label")=="Align");
+           const int64_t pos=history["result"]["position"].integer();
+           auto jump=Json::parse(R"({"position":0})");jump.set("position",Json::number(pos-1));
+           AIVERSE_TEST_CHECK(!call("studio.historyJump",jump.dump(-1).c_str()).has("error") && doc.undoDepth()==depth);
+           jump.set("position",Json::number(pos));
+           AIVERSE_TEST_CHECK(!call("studio.historyJump",jump.dump(-1).c_str()).has("error") && doc.undoDepth()==depth+1);
+           params.set("mode",Json::string("sideways"));request.set("params",params);
+           AIVERSE_TEST_CHECK(session.dispatch(request).has("error"));
+       }
+   }
    // Hierarchy reorder keeps road endpoints attached to the same entities.
    {
        auto& doc=const_cast<editor::Workspace&>(session.workspace()).map;

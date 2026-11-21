@@ -17,7 +17,7 @@ namespace aiverse::studio {
 class StudioSession {
 public:
     explicit StudioSession(const std::string& engineRoot, const std::string& project = {});
-    Json dispatch(const Json& request);
+    Json dispatch(const Json& request);   // labels undo steps for the History panel, then dispatchImpl
     const editor::Workspace& workspace() const { return ws_; }
     int selectedEntityIndex() const;
     const std::string& selectedObjectId() const { return selected_; }
@@ -58,6 +58,12 @@ public:
 private:
     Json snapshot() const;
     Json buildRequest(const std::string& method, const Json& params);
+    Json dispatchImpl(const Json& request);
+    // History panel: a label per MapDoc undo / redo snapshot (MapDoc keeps only snapshots).
+    std::vector<std::string> undoLabels_, redoLabels_;
+    static std::string historyLabel(const std::string& method, const Json& params);
+    void syncHistoryLabels();
+    Json historyJson() const;
     Json propertiesFor(const std::string& entityId) const;
     Json componentCatalog(const std::string& entityId) const;
     editor::DocEntity promotedAuthored(int index) const;
