@@ -24,8 +24,26 @@ def world_noise(x,z,period=24.0):
   return ((n^(n>>16))&0xffff)/65535.0
  return (hashed(ix,iz)*(1-fx)+hashed(ix+1,iz)*fx)*(1-fz)+(hashed(ix,iz+1)*(1-fx)+hashed(ix+1,iz+1)*fx)*fz
 
+def snow_settings(recipe):
+ """Opt-in cosmetic snow cover; never changes native soil or climate authority."""
+ values=dict(lowMetres=100.,highMetres=155.,minNormalY=.52,fullNormalY=.88,variationMetres=8.)
+ authored=recipe.get('surfaceSnow',{})
+ if not isinstance(authored,dict):raise ValueError('surfaceSnow must be an object')
+ for key,value in authored.items():
+  if key not in values:raise ValueError('unknown surfaceSnow field: '+key)
+  if isinstance(value,bool) or not isinstance(value,(int,float)) or not np.isfinite(value):raise ValueError('finite surfaceSnow number required: '+key)
+  values[key]=float(value)
+ if not -10000<=values['lowMetres']<values['highMetres']<=10000:raise ValueError('ordered surfaceSnow altitude required')
+ if not 0<=values['minNormalY']<values['fullNormalY']<=1:raise ValueError('ordered surfaceSnow normal-Y required')
+ if not 0<=values['variationMetres']<=1000:raise ValueError('surfaceSnow variation 0..1000m')
+ return values
+
+def snow_weight(height,normal_y,variation,settings):
+ return smooth(settings['lowMetres'],settings['highMetres'],height+variation*settings['variationMetres'])*smooth(settings['minNormalY'],settings['fullNormalY'],normal_y)
+
 def bake(root,materials,size,part=0,parts=1,detail=False):
  if size<256 or size>4096:raise ValueError('size 256..4096')
+ snow=snow_settings(json.loads((root/'recipe.json').read_text()) if (root/'recipe.json').exists() else {})
  ground=json.loads((root/'ground.json').read_text());cat=json.loads((root/'catalog.json').read_text())
  h=np.array(ground['heightCm'],dtype=np.float32).reshape(ground['rows'],ground['columns'])*.01
  dz,dx=np.gradient(h,ground['stepCm']*.01)
@@ -73,8 +91,8 @@ def bake(root,materials,size,part=0,parts=1,detail=False):
      shore=np.zeros_like(H);wet=np.zeros_like(H)
    stone=np.maximum(1-smooth(.55,.91,ny),smooth(18,48,H))
    scree=smooth(.62,.9,ny)*(.3+.20*variation)
-   snow=smooth(100,155,H+variation*8)*smooth(.52,.88,ny)
-   weights={'grass':(1-shore)*(1-stone),'sand':shore*(1-stone),'rock':stone*(1-scree)*(1-snow),'gravel_soil':stone*scree*(1-snow),'soil':np.zeros_like(H),'snow':stone*snow}
+   snow_cover=snow_weight(H,ny,variation,snow)
+   weights={'grass':(1-shore)*(1-stone),'sand':shore*(1-stone),'rock':stone*(1-scree)*(1-snow_cover),'gravel_soil':stone*scree*(1-snow_cover),'soil':np.zeros_like(H),'snow':stone*snow_cover}
    total=sum(weights.values());weights={k:v/np.maximum(total,1e-6) for k,v in weights.items()}
    if detail:
     # Snow is the implicit fourth weight. Alpha is a grayscale noise underlay.

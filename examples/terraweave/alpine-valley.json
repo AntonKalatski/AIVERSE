@@ -1992,5 +1992,12 @@
   ],
   "valleyHalfWidthCm": 0,
   "valleyBlendCm": 14000,
-  "alignRiverGrade": true
+  "alignRiverGrade": true,
+  "surfaceSnow": {
+    "lowMetres": 220,
+    "highMetres": 320,
+    "minNormalY": 0.6,
+    "fullNormalY": 0.9,
+    "variationMetres": 18
+  }
 }

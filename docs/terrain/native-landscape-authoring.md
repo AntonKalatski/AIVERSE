@@ -128,3 +128,22 @@ Euclidean SDF. Existing authoritative membership/contact sampling is unchanged.
 Do not replace it with this rounded Fixed-distance result. Terrain mask math is
 shared in `engine/world/TerraWeaveShoreCover.h`. These are authoring/presentation
 masks, not live soil moisture, erosion or exposed-root physics integration.
+
+## Authored alpine snow cover
+
+An exported recipe can include `surfaceSnow` to tune the offline PBR bake:
+
+```json
+{"surfaceSnow":{"lowMetres":220,"highMetres":320,"minNormalY":0.6,"fullNormalY":0.9,"variationMetres":18}}
+```
+
+Altitude blends from `lowMetres` to `highMetres`; upward-facing surfaces blend
+from `minNormalY` to `fullNormalY`. Steep cliffs retain exposed rock. The existing
+continuous world noise perturbs the altitude by `variationMetres`, without
+changing soil heights, planting, collision or native climate. This is authored
+surface cover, not live accumulation/melting or a PHYSIS winter simulation.
+Absent settings preserve the previous exact 100–155m / normal-Y .52–.88 / 8m
+variation. Invalid, nonfinite, unordered or unknown values fail before baking.
+All tiles in a pack must use the same recipe. Existing `--part`/`--parts`
+partitioning can bake disjoint tile subsets with the same settings; regenerate
+both fallback PBR and detail masks before rebuilding material overrides.
