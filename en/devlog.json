@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-21T21:46:20+00:00",
+ "generated": "2026-11-21T22:31:28+00:00",
  "lang": "en",
  "repo": "https://github.com/chromealex/AIVERSE",
  "systems": [
@@ -155,6 +155,90 @@
     }
    ],
    "author": "lighting"
+  },
+  {
+   "id": "2026-11-22-lens-split-director-layers",
+   "date": "2026-11-22",
+   "system": "lens",
+   "title": "LENS: split-screen, director and visibility layers",
+   "summary": "Two cameras share the screen and each has its own processing — for example a colour main view next to a black-and-white one. A camera can skip whole layers of the scene. The director blends smoothly from one camera to another when priorities change.",
+   "body": [
+    "Split-screen, overlays and picture-in-picture are assembled in one screen pass. PRISMA post-processing can now be set per camera: grading, grain, vignette, depth of field. Lens exposure and focus are kept.",
+    "Scene objects have visibility layers, cameras have a layer mask; in a scene it is the layers key of a model instance. In the frame the left camera sees a sword on layer 2, the right camera with a mask without that layer does not draw it; without the mask the sword appears on the right too.",
+    "The director picks the highest-priority camera and, on a switch, blends position, rotation and field of view from the old camera to the new one. The strip shows frames before the switch, in the middle of the blend and after it."
+   ],
+   "status": "done",
+   "verified": "All frames rendered on a Mac (Metal) in Sponza at 1920×1080. The 1 s director blend was checked by its weights: 0.07 / 0.50 / 0.93 / 1.00 at frames 10 / 20 / 30 / 40.",
+   "limits": "Layers filter models only; meshes, sprites, terrain and particles ignore the mask, and layers are not available in HLOD scenes. Studio does not edit layers or per-camera post-processing yet. Backends other than Metal are not checked in a frame.",
+   "branch": "main",
+   "commit": "8daa28bad",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-split-director-layers/split-masked.jpg",
+     "caption": "Split-screen: left, a colour view with a sword on layer 2; right, another camera with its own black-and-white processing and a mask without that layer — no sword"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-split-director-layers/split-all-layers.jpg",
+     "caption": "The same pair without the mask: the right camera sees the sword too"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-split-director-layers/director-blend.jpg",
+     "caption": "Director: before the switch, the middle of the blend, the new camera"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/camera-system.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md"
+    }
+   ],
+   "author": "lens"
+  },
+  {
+   "id": "2026-11-22-lens-capture-views",
+   "date": "2026-11-22",
+   "system": "lens",
+   "title": "LENS: panoramas, mirrors, portals and stereo",
+   "summary": "A camera can capture six cube faces and assemble them into a 360° panorama, show the view of a mirror or a portal clipped at its plane, and render a pair of eyes for stereo — including from the eye poses and field-of-view angles an XR runtime provides.",
+   "body": [
+    "The panorama is built on the GPU from six 90° faces into an equirectangular projection, for reflections, previews and environment capture. A bug was found and fixed: the panorama used to come out upside down. The sun shadow in all six faces comes from one shared shadow map around the capture point, so lighting does not jump at the seams between faces.",
+    "Mirror and portal cameras reflect or carry over the main camera's view and clip everything behind the mirror plane or the portal exit. In the frames they are shown as an inset over the main view.",
+    "A stereo pair can come from one camera — by interpupillary distance and convergence distance — or from headset data: a pose per eye and four field-of-view tangents, asymmetric ones included."
+   ],
+   "status": "done",
+   "verified": "All frames rendered on a Mac (Metal) in Sponza at 1920×1080: a 360° panorama from 512×512 faces, mirror and portal cameras as insets, stereo pairs from one camera and from XR-runtime-style data.",
+   "limits": "OpenXR is not connected: headset output, swapchain, frame submission and reprojection stay with an XR host, and nothing has run on a headset. Mirrors and portals are shown as separate views, without a ready mirror surface in the scene. Backends other than Metal are not checked in a frame.",
+   "branch": "main",
+   "commit": "8daa28bad",
+   "media": [
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-capture-views/cube.jpg",
+     "caption": "A 360° panorama from six cube faces captured in the centre of the Sponza courtyard"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-capture-views/mirror.jpg",
+     "caption": "Inset: a mirror camera on a plane across the gallery shows its reflection"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-capture-views/portal.jpg",
+     "caption": "Inset: the view through a portal whose exit stands in the courtyard"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-capture-views/stereo.jpg",
+     "caption": "A stereo pair from one camera: 65 mm interpupillary distance, convergence at 4 m"
+    },
+    {
+     "src": "../media/docs/devlog/media/2026-11-22-lens-capture-views/xr.jpg",
+     "caption": "Eyes from XR-runtime-style data: a pose per eye and asymmetric field-of-view angles"
+    }
+   ],
+   "links": [
+    {
+     "title": "docs/camera-system.md",
+     "href": "https://github.com/chromealex/AIVERSE/blob/main/docs/camera-system.md"
+    }
+   ],
+   "author": "lens"
   },
   {
    "id": "2026-11-21-vivid-adaptive-soft-shadows",
