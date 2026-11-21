@@ -94,11 +94,16 @@ New typed bridge kinds: `studio.viewportInput {kind:'view',yaw,pitch}` and
 - Gizmo rendered in headless Chrome in 6 orientations (default, Front, Top,
   Right, low angle, disabled); click → `viewForAxis` and toggle callbacks fired.
 
-**Not run:** macOS native build, `verify_mac.sh`, CTests, `vite build` and
-interactive WKWebView QA (Linux environment, no Metal). `Main.mm` changes are
-not compiled yet. `aiverse_studio_metal_lighting_tests` now compiles the
-branch's `StudioMetalScene.cpp` (NEREID/models); its link libraries may need
-`aiverse_hosted_client`, check on the first Mac build.
+- **macOS (Mac Studio, 2026-11-21, commit `4cfbca5aa`):**
+  `bash tools/studio/verify_mac.sh` → EXIT 0: npm typecheck/test:web, vite
+  build, Python contracts, CMake build of `AiverseStudioHTML5.app` + all studio
+  test targets (incl. main's `studio_metal_lighting`, `studio_render_lighting`
+  now listed in the script), `ctest -R '^studio_'` 25/25 passed.
+  Log: `logs/studio-verify.log`. One warning (unused `nodeId` overload) fixed
+  afterwards.
+
+**Not run yet:** interactive WKWebView QA of the new navigation and gizmo
+(open the app with `--project`, check RMB fly, Alt orbit, axis snap, Iso).
 
 ## Known limits / next
 
