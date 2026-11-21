@@ -36,6 +36,26 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
   `.github/workflows/site.yml` проверяет записи, собирает сайт и публикует `gh-pages`.
 - Вёрстку сайта менять в `site/` в визуальном языке дизайна сайта (бумага #F3EFE8, чернила
   #141210, ромб #E9C3A4; Unbounded / Onest / JetBrains Mono).
+## Terra-first game creation (user policy, 2026-11-20)
+
+For every new game and environment task, read `skills/workflow/aiverse-terra-first/SKILL.md`.
+Use TerraWeave terrain/Arbor/Flora/rocks and existing companion owners first; write
+custom project code only for a verified missing capability. Configure or adapt existing
+native APIs before introducing a second procedural generator. This is capability routing,
+not a mandate to add terrain to UI-only/indoor/2D games or overwrite authored worlds.
+Vegetation recipes: `skills/world/aiverse-terra-vegetation/SKILL.md`. Distinguish exported
+assets from live native terrain/streaming/ecology/physics and record actual verification.
+
+## Water ownership for all new worlds (user policy, 2026-11-20)
+
+All new water uses NEREID: rivers, lakes, sea/ocean, flow and water interactions.
+Read `skills/gameplay/aiverse-nereid-water/SKILL.md`. Do not substitute static PBR
+planes or scene-local wave solvers. All terrain and vegetation use TerraWeave first.
+Together these are the required environment foundation for games and showcases.
+Add missing host adapters through the native shared systems. Preserve existing
+legacy gameplay/save compatibility until a deliberate, tested migration; do not
+claim source APIs or static exports prove live simulation. PRISMA/PHYSIS/SpectraFX
+retain sky/weather/VFX ownership rather than duplicating them in Terra or NEREID.
 
 ## Dynamic indirect GI (lighting integration branch, 2026-11-20)
 
@@ -49,6 +69,23 @@ Compute is bounded and fence-backed; larger scenes use explicit CPU fallback.
 Metal/desktop GL pixels and native glTF host are checked. Vulkan SPIR-V compiles;
 Vulkan/mobile GPU acceptance and production performance remain separate gates.
 All builds for this task must stay on KINGSTON, as required by the owner.
+
+
+## HTML5 Studio UI design system (all future editor windows)
+**Approved appearance (user decision 2026-11-20): FIRST Cinematic Concept, not the second stricter/minimalist mockup.** The portable visual specification is [docs/studio-visual-direction.md](docs/studio-visual-direction.md), and the exact path/API workflow is [docs/studio-ui-agent-guide.md](docs/studio-ui-agent-guide.md). Future agents MUST read both before creating editor UI; use the existing `src/ui` kit. A pretty reference screenshot is not evidence of implemented scene assets or ECS features.
+
+For any work under \`apps/studio-web\` or any new editor window, use the shared, genre-independent
+**Studio UI v1** style library, not a panel-specific visual language:
+- Handbook: \`docs/studio-design-system.md\`; implementation: \`apps/studio-web/src/ui/\`.
+- Colors, spacing, typography, control states: \`apps/studio-web/src/theme/tokens.css\` (\`--au-*\` tokens).
+- React components: \`StudioPanel\`, \`StudioSection\`, \`StudioButton\`, \`StudioIconButton\`,
+  \`StudioField\`, \`StudioInput\`, \`StudioSelect\`, \`StudioBadge\`, \`StudioAlert\`,
+  \`StudioEmptyState\`, \`StudioTabs\`, \`StudioListRow\`, etc. Import from \`src/ui\`.
+- Generate new panels via \`python3 tools/studio/new_panel.py --id world_stats --title "World Statistics" --area right\`; generated windows already use the UI library.
+- Agent skill: \`skills/editor/studio-ui/SKILL.md\`. Every change needs a new stage handoff under \`docs/handoff/studio-html5/\`.
+- No raw hard-coded palette/button/input styles in new panels, no ImGui additions and no browser-side project file writes. Preserve the native Renderer3D Metal viewport and \`src/bridge.ts\` allowlist.
+- Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
+
 
 ## Rendering ownership contract — PRISMA vs SpectraFX (MANDATORY)
 
@@ -110,6 +147,7 @@ For any work under \`apps/studio-web\` or any new editor window, use the shared,
 - Agent skill: \`skills/editor/studio-ui/SKILL.md\`. Every change needs a new stage handoff under \`docs/handoff/studio-html5/\`.
 - No raw hard-coded palette/button/input styles in new panels, no ImGui additions and no browser-side project file writes. Preserve the native Renderer3D Metal viewport and \`src/bridge.ts\` allowlist.
 - Work on \`feature/studio-html5\` for this migration, not \`main\`; verify \`npm run typecheck && npm run build\`, Python UI contracts, and macOS screenshots before claiming full parity.
+
 
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
@@ -5484,6 +5522,15 @@ PHYSIS bridge is read-only presentation; no gameplay visibility or simulation ch
 Preserve PostFx forwarding aliases, separate sampled/scratch depth, 8+8 fog limits,
 and per-stage handoffs. Fog regions reset on configure/load; hosts recreate them.
 
+## TerraWeave cosmetic rocks (2026-11-20)
+Use `TerraWeaveRocks.h` integer scatter and `TerraWeaveRockModel.h` seeded native
+model adapter for stones/boulders/slabs/shards; documentation `docs/terrain/rocks.md`.
+Reuse bounded shared prototypes and existing Renderer3D LOD; no plant-age ECS state,
+per-rock mesh generation in the render loop, or implied collision authority.
+Offline tool `aiverse_terraweave_rocks` exports the same model with shared PBR maps.
+The current API is opt-in, not automatically installed in WorldScene/Studio.
+Keep separate per-stage handoffs and distinguish visual geometry from physics.
+
 
 ## LENS captured-frame integration (2026-11-20)
 
@@ -5588,3 +5635,35 @@ when enabled, integrate all volumes AND reveal holes toward the sun with bounded
 4/6 light samples and `shadowDistance`. Do not substitute a 2D darkening overlay.
 Ambient fill stays separate. Keep zero-default compatibility, HDR depth clipping,
 8+8 volume caps and separate handoffs; no multiple-scattering or perf claim.
+## Размер клиентской сборки и выбор модулей движка
+
+Для задач уменьшения размера HTML5 и других клиентских сборок работайте с
+исполняемым движком отдельно от контентного `.rpak`: контент уже умеет
+разделяться. Перед добавлением функциональности в packaged client проверьте,
+нужна ли она каждому проекту. Не подключайте необязательный исходный файл или
+статическую библиотеку к клиенту без способа исключить их из линковки.
+
+- Настройка проекта — `packaging.engineModules` в `game.json`; допускается
+  переопределение `packaging.targets.<target>.engineModules`. Отсутствующее
+  поле сохраняет прежние настройки для совместимости. Явный `[]` выключает
+  необязательные модули. `["auto"]` выбирает обнаруживаемые модули по файлам и
+  настройкам проекта; дополнительные имена можно включить в тот же массив.
+- `auto` консервативен: неиспользуемые файлы могут оставить загрузчик в
+  сборке, а вызовы только из скриптов, динамические пути, `city-client`,
+  `strata` и `runtime-autolod` требуют явного имени. Не утверждайте, что
+  автоматический анализ доказывает полное отсутствие использования модуля.
+- Для нового необязательного модуля оставляйте историческое поведение по
+  умолчанию, проводите выбор через `tools/aiversebuild/main.cpp` на все
+  целевые платформы, включая Android, удаляйте из сборки его исходники и
+  зависимости, и обеспечивайте понятную ошибку или безопасный fallback при
+  попытке использовать отключённую возможность. Не ломайте hosted client
+  редактора и публичные форматы ради экономии packaged client.
+- Проверяйте `aiversebuild --check-engine-modules` на проекте с модулем и без
+  него, сборку обоих вариантов и фактический состав линковки. Сравнивайте
+  размеры только при одинаковой конфигурации. Экономию HTML5 заявляйте лишь
+  после реальной оптимизированной Web-сборки и измерения `wasm`; размеры
+  macOS не выдавайте за результат HTML5. Записывайте фактически выполненные
+  проверки и ограничения в отдельный handoff каждого этапа.
+
+Текущий контракт, список модулей и ограничения `auto`: `docs/overview.md`
+и `docs/agent-handoffs/client-binary-module-selection-2026-11-21.md`.

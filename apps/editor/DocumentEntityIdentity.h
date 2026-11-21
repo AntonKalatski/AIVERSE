@@ -23,6 +23,7 @@ inline std::string documentEntityId(const MapDoc& map,DocumentEntityRef ref) {
     if(const auto* light=documentLight(map,ref)) {
         const auto id=light->getStr("entityId");if(!id.empty())return "light:"+id;
     }
+    if(const auto* entity=documentMapEntity(map,ref);entity && authoredEntity(*entity) && !entity->id.empty())return "entity:@"+entity->id;
     return documentEntityId(ref);
 }
 } // namespace aiverse::editor

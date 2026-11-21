@@ -350,6 +350,9 @@ private:
             m.alpha = am == "MASK" ? AlphaMode::Mask : am == "BLEND" ? AlphaMode::Blend : AlphaMode::Opaque;
             m.alphaCutoff = float(num(j["alphaCutoff"], 0.5));
             m.doubleSided = j.getBool("doubleSided");
+            m.thinTransmission = float(num(j["extras"]["aiverseThinTransmission"],0));
+            if (!std::isfinite(m.thinTransmission) || m.thinTransmission<0 || m.thinTransmission>1)
+                fail("aiverseThinTransmission must be 0..1");
             const Json& ext = j["extensions"];
             if (ext.has("KHR_materials_unlit")) m.shading = ShadingModel::Unlit;
             m.emissiveStrength = float(num(ext["KHR_materials_emissive_strength"]["emissiveStrength"], 1));

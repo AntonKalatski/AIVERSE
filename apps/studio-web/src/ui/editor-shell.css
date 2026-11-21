@@ -25,7 +25,6 @@
 .nested-tab-close:hover{color:#ffd6de;background:#563745}
 .nested-divider{background:#0b1421}
 .nested-divider:hover,.nested-divider:focus-visible{background:var(--au-accent)}
-.nested-move{background:var(--au-field);color:var(--au-text-faint);border-color:var(--au-line)}
 .panel-heading{min-height:43px;padding-inline:var(--au-space-4);
   background:var(--au-panel-raised);color:var(--au-text-soft);border-color:var(--au-line)}
 .panel-footer{border-color:var(--au-line);background:var(--au-panel-raised);color:var(--au-text-faint)}
@@ -55,3 +54,21 @@
 .graph-summary{background:var(--au-panel-raised);border-color:var(--au-line)}
 .statusbar{background:var(--au-panel-raised);border-color:var(--au-line);color:var(--au-text-faint)}
 @media(prefers-reduced-motion:reduce){.nested-tab,.tool-button{transition:none}}
+
+/* Global UI scale is applied at document root; settings surface follows the shell. */
+.studio-editor-settings{position:fixed;right:14px;top:55px;z-index:5000;
+  width:290px;padding:16px;display:flex;flex-direction:column;gap:12px;
+  background:var(--au-overlay);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-md);box-shadow:var(--au-shadow-md);color:var(--au-text)}
+.studio-editor-settings label{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
+.studio-editor-settings input[type=range]{width:100%;accent-color:var(--au-accent)}
+.studio-editor-settings button{background:var(--au-field);border:1px solid var(--au-line-strong);
+  border-radius:var(--au-radius-sm);padding:8px;color:var(--au-text);cursor:pointer}
+
+/* Editor-only Scene camera controls; overlay must never intercept GPU gestures. */
+.studio-scene-nav-help{position:absolute;left:12px;bottom:12px;z-index:3;
+  pointer-events:none;max-width:calc(100% - 24px);padding:7px 10px;
+  border:1px solid var(--au-line-strong);border-radius:var(--au-radius-sm);
+  background:var(--au-overlay);color:var(--au-text-muted);
+  font-size:var(--au-font-xs);line-height:1.4}
+.viewport:focus-visible{outline:1px solid var(--au-accent);outline-offset:-1px}

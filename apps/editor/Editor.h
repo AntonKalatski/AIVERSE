@@ -22,6 +22,7 @@
 #include "modules/rts/view/RtsViewScript.h"
 #include "EditorWindow.h"
 #include "TerraWeaveForestPreview.h"
+#include "engine/world/NereidManifestHost.h"
 #include "core/FileAssoc.h"
 #include "core/Net.h"
 #include "core/Workspace.h"
@@ -266,7 +267,7 @@ public:
     Simulation* sim() { return sim_.get(); }
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
-    void enqueueFpsSceneGeometry(const render::RTSCamera&);
+    void enqueueFpsSceneGeometry(const render::RTSCamera&, bool editOverlays=true);
     const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
@@ -319,6 +320,8 @@ public:
 
     // rendering a map view into a Viewport (used by Scene and Game windows)
     void renderScene(Viewport& vp, const render::RTSCamera& cam, bool editOverlays);
+    bool cleanSceneCaptureRequested() const;
+    std::pair<int,int> sceneCaptureSize(int width,int height) const;
     void renderGame(Viewport& vp, const render::RTSCamera& cam, uint64_t prismaViewId = 2);
 
     // overlays (Overlays window / overlay_preview): ids drawn regardless of their conditions, and a
@@ -503,6 +506,20 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     TerraWeaveForestPreview terraWeaveForestPreview_;
+    world::NereidManifestHost nereidPreview_;
+    struct VisualPickModel {
+        const render::Model* model=nullptr; // identity only until cache read lease acquired
+        std::string entityId;
+        size_t documentIndex=0;
+        render::mat4 world;
+        std::vector<render::mat4> nodes;
+        std::vector<render::Material> materials;
+        std::vector<int> nodeMaterials;
+    };
+    std::vector<VisualPickModel> visualPickModels_;
+    size_t visualPickModelCount_=0;
+    uint64_t visualPickCacheGeneration_=0;
+
     render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;

@@ -91,6 +91,11 @@ forestSceneFromManifest(const Json& manifest) {
         else if (shape == "conifer") profile.shape = terraweave::CrownShape::Conifer;
         else if (shape == "columnar") profile.shape = terraweave::CrownShape::Columnar;
         else throw JsonError("world.terraweaveForest.species: invalid shape");
+        profile.whorlSize=uint32_t(worldInteger(def,"whorlSize",0,0,8));
+        if(profile.whorlSize==1 || (profile.whorlSize&&profile.shape!=terraweave::CrownShape::Conifer))throw JsonError("world.terraweaveForest.whorlSize requires conifer and 2..8");
+        if(def.has("roundedConiferCrown")&&def["roundedConiferCrown"].type()!=Json::Type::Bool)throw JsonError("world.terraweaveForest.roundedConiferCrown requires boolean");
+        profile.roundedConiferCrown=def.getBool("roundedConiferCrown",false);
+        if(profile.roundedConiferCrown&&profile.shape!=terraweave::CrownShape::Conifer)throw JsonError("world.terraweaveForest.roundedConiferCrown requires conifer");
         terraweave::FoliageSpecies placement;
         placement.id = profile.speciesId;
         placement.weight = static_cast<uint32_t>(worldInteger(

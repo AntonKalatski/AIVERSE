@@ -82,7 +82,7 @@ A AIVERSE entrega as próprias mecânicas — e permite que um agente trabalhe n
 | **Multiplayer significa dessincronização sem fim.** Basta um `float` para uma partida entre um iPhone e um Android sair de sincronia. | A simulação é idêntica bit a bit em todo lugar: ponto fixo em vez de ponto flutuante, gerador aleatório próprio, checksums. A CI compara partidas em Linux x64/ARM64, Windows e macOS a cada push. Só comandos trafegam pela rede; há lockstep com rollback e um servidor com matchmaking e veredito por replay. |
 | **GPUs móveis são fracas, mas o jogo precisa ser bonito.** | Todo recurso caro — sombras, partículas, terreno, pós-processamento — tem níveis de qualidade e se adapta à GPU, das antigas Mali e Adreno ao Apple Silicon. |
 | **Lançar em todas as plataformas é um projeto à parte.** Assinaturas, ícones, SDKs de lojas e anúncios. | O `aiversebuild` gera .app, projeto Xcode, Gradle/APK, web e .exe com um único comando. Ícones e telas de abertura são gerados automaticamente. Plugins para App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin e outros — o build leva só os que o jogo escolher. |
-| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 231 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
+| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 236 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
 | **Meta e LiveOps são reescritos em cada projeto.** | `aiverse::meta`: loja, moedas, missões, passes, recompensas diárias, energia, clãs, torneios, baús com garantia — configurados em JSON. |
 
 ---
@@ -222,7 +222,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 - Editor com janelas encaixáveis no estilo Unity: cena, inspetor, terreno, efeitos, iluminação, UI, teste de jogo e simulador de dispositivos
 - `aiversemcp` — servidor MCP para agentes — configuração PHYSIS de mapas, validação e Undo/Redo
 - Assistente **Criar um jogo**
-- 231 skills para agentes e kits de gênero com checklists de aceitação
+- 236 skills para agentes e kits de gênero com checklists de aceitação
 - Importadores de assets de jogos clássicos a partir da sua própria cópia
 
 </td>
@@ -316,5 +316,9 @@ Os documentos de referência estão em inglês. A visão completa, o assistente 
 os leem da sua própria cópia.
 
 As compilações incluem automaticamente `THIRD_PARTY_NOTICES.txt`; o projeto deve fornecer os avisos dos SDKs externos (veja os [detalhes](docs/third-party-notices.md)).
+
+- [TerraWeave Rocks](docs/terrain/rocks.md): Pedras, rochedos, lajes e fragmentos decorativos por seed; exportação PBR compartilhada e três LODs nativos (opcional).
+
+**Terra primeiro:** [árvores nativas, grama densa e fluxos de trabalho](docs/terrain/vegetation-authoring.md); geração própria apenas para recursos ausentes no TerraWeave.
 
 Câmeras LENS: [autoria e MCP](skills/visuals/aiverse-lens/SKILL.md), [integração nativa e captura](skills/visuals/aiverse-lens-native/SKILL.md).

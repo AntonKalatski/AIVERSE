@@ -73,7 +73,18 @@ struct SceneAssets {
                 program=std::make_shared<graph::Program>(graph::compile(Json::parse(bytes),"material"));
             }
             it->shaderGraph=program;
-            std::fprintf(stderr,"material graph: %s <- %s\n",name.c_str(),path.c_str());
+            for(size_t i=0;i<program->textures.size();++i) {
+                const auto& texturePath=program->textures[i];
+                auto image=std::find_if(model.images.begin(),model.images.end(),[&](const Image& value){return value.name==texturePath;});
+                if(image==model.images.end()) {
+                    std::string bytes;Image decoded;decoded.name=texturePath;
+                    if(!platform::readContentFile(texturePath,bytes)||!decodeImage(bytes,decoded))
+                        throw std::runtime_error("cannot read material graph texture: "+texturePath);
+                    model.images.push_back(std::move(decoded));
+                    it->graphTextures[i]=int(model.images.size()-1);
+                } else it->graphTextures[i]=int(image-model.images.begin());
+            }
+            std::fprintf(stderr,"material graph: %s <- %s (%zu textures, %d samples)\n",name.c_str(),path.c_str(),program->textures.size(),program->samples);
         }
     }
     void load(gfx::Device& d,const Json& config,Json& warnings,Json& notes,bool bakeShadows=false) {

@@ -2430,3 +2430,60 @@ are not GPU visual parity, draw-call counts, VRAM usage or measured speedups.
 Use the existing AIVERSE MCP connection. The stdio server can run these Workspace
 operations locally without an editor (`--no-editor`); when connected, calls use
 the live editor registry. Restart/rebuild both sides to avoid stale tool lists.
+
+## Debug visualisation of clusters and geometry (2026-11-21)
+
+`engine/render/StrataDebugView.{h,cpp}` (in `aiverse_strata_portable`) draws
+the **actually selected** portable frontier as an overlay. It is presentation
+only: it consumes `PortableSource::debugSelection()` — the exact clusters the
+last successful `prepareModel` wrote into the alias — and emits immediate
+`Renderer3D::line/triangle` primitives. It never selects LODs, changes
+routing, uploads GPU data or reads back GPU selections. Default OFF.
+
+```cpp
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataDebugGeometryCaptureEnabled(true); // BEFORE load: wireframe/fill
+scene.load(device, json, reader);
+strata::DebugViewOptions debug;
+debug.enabled = true;
+debug.clusterBounds = true;        // AABB of each selected cluster ("chunk")
+debug.clusterWireframe = true;     // triangle edges of each selected cluster
+debug.clusterFill = false;         // translucent per-cluster colour
+debug.instanceBounds = true;       // instance box coloured by route
+debug.color = strata::DebugColorMode::LodDepth; // Cluster | LodDepth | Error | Material
+scene.setStrataDebugView(debug);   // runtime toggle, false for invalid options
+// after scene.draw(renderer): scene.strataDebugStats()
+```
+
+| Colour mode | Meaning |
+| --- | --- |
+| `Cluster` | stable hash per (primitive, node); adjacent chunks differ |
+| `LodDepth` | hierarchy depth: red = coarse root … blue = finest leaf |
+| `Error` | log-normalised object-space `geometricError`: red = coarse, blue = fine |
+| `Material` | staged primitive / material partition |
+
+Instance boxes: green = STRATA portable, cyan = Vulkan GPU indirect (bounds
+only; no CPU frontier exists for that route), orange = staged STRATA source
+that fell back to legacy this frame, grey = non-STRATA instance
+(`includeLegacy=false` hides them).
+
+Limits and honesty rules:
+- Wireframe/fill need CPU positions, which `uploadModel` releases. The capture
+  copies `float3` positions of STRATA sources only
+  (`strataDebugGeometryBytes()`); without it, or after
+  `setStrataDropArchivedCpuIndicesEnabled` discarded CPU indices, only bounds
+  are drawn and `DebugDrawStats::wireframeUnavailable` counts the clusters.
+- Per-frame caps `maxLines` / `maxTriangles` (default 262144 / 131072) are
+  shared by all instances; dropped primitives are counted in `truncated`.
+- The overlay shows the single conservative frontier used for main + sun
+  shadow (+ finest for reflections), not a main-camera-only cut.
+- HLOD group proxies and surface proxies are not STRATA draws and are not
+  shown as clusters.
+- No game host or editor viewport currently enables portable STRATA, so the
+  overlay is reachable only from code that configures `GeometryScene`
+  (fixtures, custom hosts). No MCP/editor toggle exists yet.
+
+Verification: `strata_debug_view` CTest (recording RHI + recording sink:
+transactional capture, OFF by default, bounds/wireframe/fill counts, caps,
+archived-index and missing-position cases, colour/route determinism).
+On-screen pixels have not been checked on any backend.

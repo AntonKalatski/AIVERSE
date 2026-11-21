@@ -28,8 +28,7 @@ class StudioBuildConfigTests(unittest.TestCase):
     def test_single_studio_ctest_invocation_with_quoted_regex(self):
         text=(ROOT/"tools/studio/verify_mac.sh").read_text(encoding="utf-8")
         self.assertEqual(text.count('ctest --test-dir "$BUILD_DIR"'),1)
-        self.assertIn("studio_(session|shader_graph_name|shader_graph_draft",text)
-        self.assertIn("terrain_geometry)$'",text)
+        self.assertIn("-R '^studio_'",text)
 
 if __name__=="__main__":
     unittest.main()

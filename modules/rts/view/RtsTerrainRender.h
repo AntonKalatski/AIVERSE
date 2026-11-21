@@ -59,6 +59,10 @@ struct TerrainLook {
     double detailBudgetMB = 96;                 // detail LOD meshes kept on the GPU (LRU beyond)
     render::float3 rockColor{0.45f, 0.41f, 0.36f}; // steep slopes without a cliff texture
     bool hasRockColor = false;
+    // Opt-in dielectric PBR. Packed assets use albedo.a=AO, normal.a=roughness.
+    bool pbr = false, packedPbr = false;
+    float pbrRoughness = 0.85f;
+    bool render = true; // explicit authored/external ground disables only this legacy visual surface
     bool materials() const { return !layers.empty(); }
 };
 
@@ -157,6 +161,7 @@ public:
     void drawPrepared(render::Renderer3D& r,const MapGrid& g,
                       const std::vector<uint8_t>* vision);
     void drawWater(render::Renderer3D& r);
+    void setMapSurfaceEnabled(bool enabled){mapSurfaceEnabled_=enabled;}
     bool built() const { return built_; }
     bool shaderFog() const { return heightfield_; }
     // Explicit detail heightmap of the map (terrain.detail file, editor detail layer); null = none
@@ -308,6 +313,7 @@ private:
     Lod apron_;
     render::Mesh water_;
     bool waterSheet_ = false, hasWater_ = false;
+    bool mapSurfaceEnabled_=true;
     uint64_t waterHash_ = 0;
     render::HeightField heightField_;
     bool heightDirty_ = true;
