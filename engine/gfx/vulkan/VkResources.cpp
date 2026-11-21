@@ -1002,8 +1002,12 @@ SamplerHandle VulkanDevice::createSampler(const SamplerDesc& d) {
     ci.maxAnisotropy = std::max(1.0f, std::min(d.maxAnisotropy, gpuProps_.limits.maxSamplerAnisotropy));
     ci.compareEnable = d.compare ? VK_TRUE : VK_FALSE;
     ci.compareOp = vkCompare(d.comparison);
-    ci.minLod = d.minLod;
-    ci.maxLod = d.mipFilter == SamplerMipFilter::None ? 0.0f : d.maxLod;
+    // mipFilter None emulates a non-mipmapped GL/Metal filter: always the
+    // base level, i.e. minLod = maxLod = 0. Keeping a caller minLod > 0
+    // with maxLod = 0 violated maxLod >= minLod (invalid create info).
+    const bool noMips = d.mipFilter == SamplerMipFilter::None;
+    ci.minLod = noMips ? 0.0f : d.minLod;
+    ci.maxLod = noMips ? 0.0f : d.maxLod;
     ci.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     VkSampler native = VK_NULL_HANDLE;
     if (vkCreateSampler(device_, &ci, nullptr, &native) != VK_SUCCESS) {
