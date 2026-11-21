@@ -150,14 +150,25 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("minRenderScale", 0.5f, 0.5f, 1.0f, "minimum adaptive internal render scale; never exceed authored renderScale", "Минимальный масштаб"),
         num("maxPrismaMemoryMiB", 256.0f, 32.0f, 4096.0f, "known Prisma live + GPU-pending bytes pressure threshold, NOT actual total VRAM", "Бюджет Prisma, МиБ")}});
     c.push_back({T::LensWater,"lensWater","Вода на линзе",
-        "Optional draining lens droplets after the camera exits water; independent from underwater absorption.",C::Medium,kMed,{
+        "Water on the camera lens: draining droplets with trails and glints after the camera exits water, and the "
+        "split waterline when the camera is at the surface (underwater optics only below the line).",C::Medium,kMed,{
         num("amount",.75f,0,1,"wet-lens strength; zero disables and clears wetness","Сила"),
         num("dropSize",16,2,64,"drop radius in output pixels","Размер капель, пикс."),
         num("density",.55f,0,1,"fraction of cells containing droplets","Количество капель"),
         num("distortion",12,0,48,"maximum refraction offset in pixels","Искажение, пикс."),
         num("flowSpeed",24,0,240,"downward lens drainage in pixels per second","Скорость стекания"),
         num("dryTime",4,.1f,30,"seconds to dry completely after leaving water","Время высыхания, с"),
-        num("film",.2f,0,1,"strength of thin draining water film","Водяная плёнка")}});
+        num("film",.2f,0,1,"strength of thin draining water film","Водяная плёнка"),
+        num("streaks",.5f,0,1,"meandering rivulets with a head drop, left behind by the draining film","Стекающие ручейки"),
+        num("sheet",.9f,0,1,"just-emerged lens: a refracting water film that drains down to the water level","Плёнка после выныривания"),
+        num("sheetTime",1.2f,.05f,5,"seconds for the water film to drain off the lens","Время стекания плёнки, с"),
+        num("glint",.5f,0,1,"sun glints in droplets","Блики в каплях"),
+        flag("waterline",true,"camera at the water surface: frame split along a wavy waterline, underwater optics below it","Линия воды"),
+        num("meniscus",6,0,32,"bright refracting meniscus band along the waterline, output pixels","Мениск, пикс."),
+        num("waveHeight",.06f,0,.5f,"waterline wave amplitude at the lens, metres","Высота волн, м"),
+        num("waveLength",.8f,.1f,10,"waterline wave length, metres","Длина волн, м"),
+        num("waveSpeed",1.2f,0,10,"waterline wave speed, metres per second","Скорость волн, м/с"),
+        num("lensDistance",.25f,.02f,2,"distance from the camera to the lens surface the waterline is tested at, metres","Расстояние до линзы, м")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }

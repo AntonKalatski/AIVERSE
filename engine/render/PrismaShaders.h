@@ -556,6 +556,19 @@ PF_FN float pfLensHash(vec2 p) {
     q+=dot(q,q.yzx+33.33);
     return fract((q.x+q.y)*q.z);
 }
+// Waterline (lensWater "waterline"): world point on the view ray through
+// screen position sp at clip depth z, from four inverse view-projection columns.
+PF_FN vec3 pfUnprojectWater(vec4 c0, vec4 c1, vec4 c2, vec4 c3, vec2 sp, float z) {
+    vec4 h = c0 * (sp.x * 2.0 - 1.0) + c1 * (sp.y * 2.0 - 1.0) + c2 * z + c3;
+    return h.xyz / max(abs(h.w), 0.000001) * sign(h.w + 0.0000001);
+}
+// Three travelling waves; w = (surfaceOffset, height, length, speed).
+PF_FN float pfWaterWave(vec2 p, float t, vec4 w) {
+    float k = 6.2831853 / max(w.z, 0.05);
+    float c = t * w.w * k;
+    return w.y * (0.6 * sin(p.x * k + c) + 0.4 * sin(p.y * k * 0.71 - c * 1.3) +
+                  0.25 * sin((p.x + p.y) * k * 1.9 + c * 0.7));
+}
 )";
 inline const char* kComposite = R"(
     // When output-history reconstruction fails after a jittered scene frame,
@@ -652,6 +665,11 @@ inline const char* kComposite = R"(
         col += vec3((pfHash(g + px.w * vec2(17.0, 31.0)) - 0.5) * gain.w);
     }
 #endif
+    // Lens fraction that is out of the water; only that part carries drops.
+    float pfLensDry = 1.0;
+#ifdef PF_WATERLINE
+    vec3 pfAboveWater = col;
+#endif
 #ifdef PF_UNDERWATER
     {
         // Prisma owns the full-screen composite. All distortion samples use
@@ -724,10 +742,52 @@ inline const char* kComposite = R"(
         col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
     }
 #endif
+#ifdef PF_WATERLINE
+    {
+        // Camera at the surface: the lens is tested against the (waving) water
+        // plane, pixel by pixel. Below the line keeps the underwater optics,
+        // above it the dry image; a bright refracting meniscus follows the line.
+        float zNear = waterline1.w > 0.5 ? 0.0 : -1.0;
+        vec2 s1 = s + vec2(0.0, px.y);
+        vec3 n0 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s, zNear);
+        vec3 f0 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s, 1.0);
+        vec3 n1 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s1, zNear);
+        vec3 f1 = pfUnprojectWater(inverseViewProj0, inverseViewProj1, inverseViewProj2, inverseViewProj3, s1, 1.0);
+        vec3 d0 = normalize(f0 - n0), d1 = normalize(f1 - n1);
+        float lens = waterline1.y;
+        float t = graphFrame.x;
+        vec3 l0 = underwaterCamera.xyz + d0 * lens, l1 = underwaterCamera.xyz + d1 * lens;
+        // > 0: the water surface is above this lens point (submerged pixel).
+        float h0 = waterline0.x + pfWaterWave(l0.xz, t, waterline0) - d0.y * lens;
+        float h1 = waterline0.x + pfWaterWave(l1.xz, t, waterline0) - d1.y * lens;
+        float signedPx = h0 / max(abs(h1 - h0), 0.000001);
+        float wet = clamp(signedPx * 0.5 + 0.5, 0.0, 1.0);
+        col = mix(pfAboveWater, col, wet);
+        pfLensDry = 1.0 - wet;
+        float meniscus = waterline1.x;
+        if (meniscus > 0.01) {
+            float band = 1.0 - smoothstep(0.0, meniscus, abs(signedPx));
+            float side = signedPx > 0.0 ? 1.0 : -1.0;
+            vec2 bendUv = clamp(uv + TDIR(vec2(0.0, side * band * meniscus * px.y * 0.8)),
+                                vec2(0.002), vec2(0.998));
+            vec3 bent = TEX0(bendUv).rgb;
+            col = mix(col, bent * 1.08 + vec3(0.05), band * 0.7);
+            col += vec3(0.22) * pow(band, 6.0) * (0.4 + 0.6 * waterline1.z);
+        }
+    }
+#endif
 #ifdef PF_LENS_WATER
     {
         // Stable lens-space droplets: no water-world simulation or history texture.
         vec2 lensPixel=px.xy*vec2(1.0,lensWater1.w);
+        // Just emerged: everything that was under water is one refracting film
+        // whose ragged top edge drains down (gravity, ease-in) to the water level.
+        float lensAge=lensWater1.y;
+        float sheetT=lensWater2.z>0.001?clamp(lensAge/lensWater2.z,0.0,1.0):1.0;
+        float sheetEdge=0.035*sin(s.x*23.0+lensAge*3.0)+0.02*sin(s.x*57.0-lensAge*5.0)+
+                        0.05*(pfLensHash(vec2(floor(s.x*9.0),3.0))-0.5);
+        float sheetTop=1.08-1.25*pow(sheetT,1.6)+sheetEdge*(0.4+sheetT);
+        float inSheet=smoothstep(0.0,0.012,sheetTop-s.y)*clamp(lensWater2.w,0.0,1.0)*step(0.0001,lensWater2.w);
         vec2 cellSize=max(lensPixel*lensWater0.y*4.0,vec2(0.0001));
         vec2 moving=s/cellSize+vec2(0.0,lensWater1.y*lensWater1.x/max(lensWater0.y*4.0,1.0));
         vec2 cell=floor(moving),local=fract(moving);
@@ -752,13 +812,60 @@ inline const char* kComposite = R"(
                 glint=rim*max(0.0,-q.x+q.y);
             }
         }
+        // Meandering rivulets left by the draining film (lensWater "streaks"):
+        // a thin refracting tube, bright on one side, with a drop at its head.
+        if(lensWater2.x>0.001){
+            vec2 bigCell=max(lensPixel*lensWater0.y*vec2(10.0,30.0),vec2(0.0001));
+            vec2 slide=s/bigCell+vec2(0.0,lensAge*lensWater1.x*1.2/max(lensWater0.y*30.0,1.0));
+            vec2 bid=floor(slide),bl=fract(slide);
+            if(pfLensHash(bid+vec2(5.3,91.1))<lensWater2.x*0.55){
+                float ph=pfLensHash(bid)*6.2831;
+                float centre=0.5+0.26*sin(bl.y*5.0+ph)+0.09*sin(bl.y*13.0+ph*1.7);
+                float width=0.05*(0.6+0.8*pfLensHash(bid+vec2(2.0,7.0)));
+                float headY=0.12;
+                float along=clamp((bl.y-headY)/0.8,0.0,1.0);
+                float w=width*mix(1.0,0.45,along);
+                float d=bl.x-centre;
+                float tube=(1.0-smoothstep(w*0.5,w,abs(d)))*step(headY,bl.y)*(1.0-smoothstep(0.75,0.95,bl.y));
+                float hr=width*1.8;
+                vec2 hq=vec2((bl.x-(0.5+0.26*sin(headY*5.0+ph)+0.09*sin(headY*13.0+ph*1.7)))/hr,
+                             (bl.y-headY)/(hr*bigCell.x/bigCell.y));
+                float hd=dot(hq,hq);
+                float head=1.0-smoothstep(0.55,1.0,hd);
+                float c2=max(tube,head);
+                if(c2>coverage){
+                    coverage=c2;
+                    float nx=clamp(d/max(w,0.0001),-1.0,1.0);
+                    refractOffset=tube>head?vec2(nx*1.3*(1.0-0.5*nx*nx),0.0):hq*(1.0-clamp(hd,0.0,1.0));
+                    rim=tube>head?tube*smoothstep(0.35,1.0,abs(nx))*0.9:head*smoothstep(0.5,0.95,hd);
+                    glint=max(glint,tube>head?tube*smoothstep(0.1,0.8,-nx)*0.9:head*smoothstep(0.2,0.8,max(0.0,-hq.x+hq.y)*0.6));
+                }
+            }
+        }
         float film=pow(max(0.0,sin(s.x*53.0+sin(s.y*11.0+lensWater1.y*lensWater1.x/max(lensWater0.y,1.0)))),12.0)*lensWater1.z;
         vec2 offset=(refractOffset*coverage+vec2(film*0.25,film*0.08))*lensWater0.w*lensPixel;
+        // Water-covered lens (below the waterline) has no drops, trails or film.
+        float lensAmount=lensWater0.x*pfLensDry*(1.0-inSheet);
         vec3 original=TEX0(uv).rgb;
         vec3 bent=TEX0(clamp(uv+TDIR(offset),vec2(0.002),vec2(0.998))).rgb;
-        col+=(bent-original)*lensWater0.x;
-        col*=1.0-0.055*rim*lensWater0.x;
-        col+=vec3(0.035)*glint*lensWater0.x;
+        col+=(bent-original)*lensAmount;
+        col*=1.0-0.055*rim*lensAmount;
+        col+=vec3(0.035)*glint*lensAmount;
+        col+=vec3(1.0,0.96,0.86)*pow(glint,3.0)*lensWater2.y*0.8*lensAmount;
+        if(inSheet>0.001){
+            // Fine flowing ripples (draining downward), moderate refraction.
+            float fy=s.y*lensWater1.w;
+            vec2 flowN=0.6*vec2(sin(fy*90.0+lensAge*16.0+sin(s.x*41.0)*1.5),cos(s.x*83.0-fy*37.0+lensAge*9.0))+
+                       0.4*vec2(sin(s.x*173.0+fy*121.0+lensAge*21.0),sin(fy*157.0-s.x*61.0+lensAge*17.0));
+            float edgeBand=1.0-smoothstep(0.0,0.03,abs(sheetTop-s.y));
+            vec2 sheetOffset=(flowN*0.55+vec2(0.0,-1.6*edgeBand))*lensPixel*lensWater0.w;
+            vec3 sheetCol=TEX0(clamp(uv+TDIR(sheetOffset),vec2(0.002),vec2(0.998))).rgb*0.96+vec3(0.015,0.022,0.028);
+            float ridge=pow(clamp(0.5+0.5*flowN.x*flowN.y*2.0,0.0,1.0),8.0);
+            sheetCol+=vec3(0.16,0.17,0.17)*ridge*(0.4+0.6*lensWater2.y);
+            sheetCol+=vec3(0.38)*pow(edgeBand,3.0)*(0.5+0.5*lensWater2.y);
+            sheetCol*=1.0-0.22*smoothstep(0.03,0.0,abs(sheetTop-0.04-s.y));
+            col=mix(col,sheetCol,inSheet*pfLensDry*clamp(lensWater0.x*1.4,0.0,1.0));
+        }
     }
 #endif
 #ifdef PF_FADE

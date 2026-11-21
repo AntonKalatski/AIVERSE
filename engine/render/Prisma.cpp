@@ -23,10 +23,10 @@ enum : uint32_t {
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
     kPfAutoExposure = 1u << 13,
-    kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15, kPfLensWater = 1u << 16,
+    kPfUnderwater = 1u << 14, kPfUnderwaterDepth = 1u << 15, kPfLensWater = 1u << 16, kPfWaterline = 1u << 17,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH", "PF_LENS_WATER"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH", "PF_LENS_WATER", "PF_WATERLINE"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131, kPhysicalSky = 200, kLocalFog = 201 };
@@ -71,10 +71,10 @@ const char* kTemporalFields[] = {
     "prev0", "prev1", "prev2", "prev3", "jitter", "inputPx"
 };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4], lensWater0[4], lensWater1[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4], lensWater0[4], lensWater1[4], lensWater2[4], waterline0[4], waterline1[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera", "lensWater0", "lensWater1"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera", "lensWater0", "lensWater1", "lensWater2", "waterline0", "waterline1"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -2600,10 +2600,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // No exposure history, sampled texture, extra sampler or pipeline
     // variant is needed. ColorGrade's artistic exposure composes with it.
     if (manualSelected) u.filt[2] *= std::exp2(manualEV);
+    // Camera at the surface: split frame along the waterline (lensWater
+    // "waterline"). Underwater optics then apply at full strength below the
+    // line only, instead of tinting the whole screen by the soft blend.
+    const auto* lensEffect=find(PrismaType::LensWater);
+    const bool waterline=lensEffect && lensEffect->get("waterline")>.5f &&
+        underwater_.blend>0.001f && quality_!=PrismaQuality::Off;
     if(underwater_.blend>0.001f && quality_!=PrismaQuality::Off) {
         mask|=kPfUnderwater;
         put(u.underwater0,underwater_.tintR,underwater_.tintG,
-            underwater_.tintB,underwater_.blend);
+            underwater_.tintB,waterline?1.f:underwater_.blend);
         const auto budget=prismaUnderwaterBudget(quality_);
         put(u.underwater1,underwater_.absorption,
             underwater_.depthMetres,
@@ -2614,13 +2620,32 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         u.graphFrame[1]=underwater_.crossing*budget.crossing;
         ++stats_.effects;
     }
+    if(waterline) {
+        mask|=kPfWaterline;
+        const float lensScale=float(w)/std::max(1,outW);
+        put(u.waterline0,underwater_.surfaceOffset,lensEffect->get("waveHeight"),
+            lensEffect->get("waveLength"),lensEffect->get("waveSpeed"));
+        put(u.waterline1,lensEffect->get("meniscus")*lensScale,lensEffect->get("lensDistance"),
+            lensEffect->get("glint"),dev.info().clipDepthZeroToOne?1.f:0.f);
+        const auto inv=f.viewProj.inverse();
+        for(int n=0;n<4;++n) {
+            float* dst=n==0?u.inverseViewProj0:n==1?u.inverseViewProj1:
+                       n==2?u.inverseViewProj2:u.inverseViewProj3;
+            for(int j=0;j<4;++j)dst[j]=inv.m[n*4+j];
+        }
+        put(u.underwaterCamera,f.cameraPos.x,f.cameraPos.y,
+            f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
+    }
     if(const auto* effect=find(PrismaType::LensWater)) {
         const auto it=lensWaterViews_.find(viewId_);
-        if(it!=lensWaterViews_.end()&&!it->second.submerged&&it->second.wetness>0&&effect->get("amount")>0){
+        // Dry camera: whole lens wet. At the surface (waterline) the emerged
+        // part already carries drops; the shader masks the covered part.
+        if(it!=lensWaterViews_.end()&&(!it->second.submerged||waterline)&&it->second.wetness>0&&effect->get("amount")>0){
             mask|=kPfLensWater;
             const float lensScale=float(w)/std::max(1,outW);
             put(u.lensWater0,effect->get("amount")*it->second.wetness,effect->get("dropSize")*lensScale,effect->get("density"),effect->get("distortion")*lensScale);
             put(u.lensWater1,effect->get("flowSpeed")*lensScale,it->second.age,effect->get("film"),float(h)*outW/(float(std::max(1,outH))*std::max(1,w)));
+            put(u.lensWater2,effect->get("streaks"),effect->get("glint"),effect->get("sheetTime"),effect->get("sheet"));
             ++stats_.effects;
         }
     }

@@ -35,3 +35,37 @@ heuristic, not a measured performance claim. It is a first screen-space lens
 approximation, not physical wetting/contact-angle simulation or full reference
 video parity. Surface waves/meniscus still belong to NEREID geometry plus PRISMA
 optical transition, and need separate visual acceptance.
+
+## Waterline, streaks and glints (camera at the surface)
+
+`lensWater` also owns the half-submerged lens shown in reference footage:
+the frame splits along a waving line, the lower part keeps underwater optics,
+the upper part is the dry image, and a bright refracting meniscus follows the
+line. Every pixel tests its own lens point (`lensDistance` metres along the
+view ray) against the local water plane plus a two-wave height field, so the
+line tilts and bends with the camera. Feature bit `PF_WATERLINE`; uniforms
+`waterline0/1` reuse the existing underwater depth unprojection. Active only
+within ~0.8 m of the surface (NEREID `surfaceBlend`); deep or dry cameras pay
+nothing.
+
+| param | default | meaning |
+|---|---|---|
+| `waterline` | true | split frame at the surface; `false` keeps the old binary crossing |
+| `meniscus` | 6 | meniscus band width, output pixels |
+| `waveHeight` | 0.06 | wave amplitude at the lens, metres |
+| `waveLength` | 0.8 | wavelength, metres |
+| `waveSpeed` | 1.2 | wave phase speed, metres/second |
+| `lensDistance` | 0.25 | metres from camera to the virtual lens surface |
+| `streaks` | 0.5 | meandering refracting rivulets with a head drop, left by the draining film |
+| `sheet` | 0.9 | just-emerged lens: one refracting water film over everything that was under water |
+| `sheetTime` | 1.2 | seconds for the film's ragged top edge to drain down to the water level |
+| `glint` | 0.5 | sun-facing specular glints on drops |
+
+Droplets appear only after a real submerged → dry transition. The part of the lens
+that is still under the waterline never shows drops, rivulets or film (`pfLensDry`);
+while the camera centre is under water the emerged part already carries the film.
+Order after surfacing (as in the reference): film → film drains down → rivulets and
+round lens drops remain above it → everything dries over `dryTime`.
+Check: `tools/editor/alpine_review.py` (AlpineValley review copy) records a
+48-frame bob through the river surface; test `prisma_lens_water` covers
+defaults, parse and round-trip.
