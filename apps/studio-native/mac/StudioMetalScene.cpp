@@ -303,6 +303,22 @@ StudioMetalScene::~StudioMetalScene() {
         if(deviceLifetime_)deviceLifetime_->retire();
     }
 }
+bool StudioMetalScene::sculptPick(float x,float y,float width,float height,
+        const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit,std::string* error) const noexcept {
+    try {
+    float3 origin{},direction{};
+    // The facial preview renders with camera_ (no tween/ortho view override).
+    if(!facialMode_ || !cameraInitialized_ ||
+       !camera_.screenRay(x,y,width,height,origin,direction))return false;
+    return facialGpu_.sculptRaycast(origin,direction,selection,hit);
+    } catch(const std::exception& ex) {
+        if(error)*error=ex.what();
+        return false;
+    } catch(...) {
+        if(error)*error="Sculpt pick failed";
+        return false;
+    }
+}
 std::string StudioMetalScene::pick(float x, float y, float width, float height,
                                    const editor::MapDoc& map, bool fpsProject) const {
     float3 origin{}, direction{};
@@ -573,6 +589,7 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
         shadowResolution_={};
         if(facialRequested)renderer_.setShadowQuality(ShadowQuality::High);
         cameraInitialized_=false;
+        facialFramedGuid_.clear();
         // Facial preview overwrites renderer_.lighting; re-apply map lighting after it.
         lightingRevision_=std::numeric_limits<uint64_t>::max();
     }
@@ -584,19 +601,36 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
     if(facialRequested) {
         renderer_.setModelLodEnabled(facialBinding.previewAnimation.automaticLod);
         std::string reason;
-        if(facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason)) {
+        const bool synced=facialGpu_.sync(*device_,renderer_,projectRoot,facialBinding,reason);
+        const std::string loading=synced?std::string{}:reason;
+        if(synced || facialGpu_.showsCharacter(facialBinding)) {
             // Spans both pose evaluation and the deferred renderer draw list.
             const auto modelRead=facialGpu_.acquireRead();
             if(!modelRead) {
                 facialError_="Facial Model read lease unavailable";
                 return;
             }
-            if(!cameraInitialized_) {
+            // Frame every newly shown character once; later edits of the
+            // same character keep the artist's camera.
+            if(!cameraInitialized_ || facialFramedGuid_!=facialBinding.guid()) {
                 camera_.target={0,0,0};
                 camera_.distance=4.2f;
-                camera_.pitch=.4f;
-                camera_.yaw=.25f;
+                camera_.pitch=.15f;
+                camera_.yaw=.0f;
+                camera_.ortho=false;
+                tween_.active=false;
                 cameraInitialized_=true;
+                facialFramedGuid_=facialBinding.guid();
+                facialCameraSerial_=facialBinding.cameraSerial;
+            }
+            if(facialCameraSerial_!=facialBinding.cameraSerial) {
+                // The preview normalizes the character to 2 units tall around
+                // the origin: head near +0.85, chest near +0.4.
+                facialCameraSerial_=facialBinding.cameraSerial;
+                const auto& v=facialBinding.cameraView;
+                camera_.target=v=="face"?float3{0,.82f,0}:v=="torso"?float3{0,.4f,0}:float3{0,0,0};
+                camera_.distance=v=="face"?.85f:v=="torso"?2.f:4.2f;
+                camera_.pitch=v=="face"?.05f:.15f;camera_.yaw=0;camera_.ortho=false;tween_.active=false;
             }
             device_->beginFrame(framebufferWidth,framebufferHeight);
             renderer_.beginScene(camera_,framebufferWidth,framebufferHeight);
@@ -623,8 +657,8 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
             renderer_.resolvePostFx();
             device_->endPass();
             device_->endFrame();
-            facialReady_=submitted;
-            facialError_=submitted?std::string{}:reason;
+            facialReady_=submitted && synced;
+            facialError_=!submitted?reason:loading;
             return;
         }
         // Failed bind never displays stale model from a different GUID.

@@ -533,8 +533,19 @@ Json StudioSession::dispatch(const Json& request) {
                     for(size_t i=0;i<recipe["items"].size();++i){auto& item=recipe.member("items").at(i);for(const auto* field:{"translation","rotation","scale"})if(!item.has(field))item.set(field,Json::parse(std::string(field)=="scale"?"[1,1,1]":"[0,0,0]"));if(!item.has("finish"))item.set("finish",Json::string("source"));auto asset=catalog.byPath(item.getStr("asset"));if(!asset||asset->importer!="model")throw std::runtime_error("Wardrobe model not found in project");item.set("asset",Json::string(asset->guid));for(size_t j=0;j<item["masks"].size();++j){auto& mask=item.member("masks").at(j);auto texture=catalog.byPath(mask.getStr("texture"));if(!texture||texture->importer!="texture")throw std::runtime_error("Wardrobe mask not found in project");mask.set("texture",Json::string(texture->guid));}}
                     reply.set("result",recipe);
                 } else if(method=="studio.humanWardrobeInfo") {
-                    auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
-                    if(!model)throw std::runtime_error("Cannot inspect character model");reply.set("result",vivid::inspectHumanWardrobe(*model));
+                    // Importing a full character takes seconds: answer repeat
+                    // questions from a cache keyed by path + file time.
+                    std::error_code ec;const auto file=studioContentRoot(ws_.project.dir)/source;
+                    const auto stamp=std::to_string(static_cast<long long>(std::filesystem::last_write_time(file,ec).time_since_epoch().count()));
+                    const auto key=ws_.project.dir+"|"+source+"|"+stamp;
+                    auto cached=wardrobeInfoCache_.find(key);
+                    if(cached==wardrobeInfoCache_.end()) {
+                        auto model=render::loadModel(source,humanCharacterReader(studioContentRoot(ws_.project.dir)));
+                        if(!model)throw std::runtime_error("Cannot inspect character model");
+                        if(wardrobeInfoCache_.size()>16)wardrobeInfoCache_.clear();
+                        cached=wardrobeInfoCache_.emplace(key,vivid::inspectHumanWardrobe(*model)).first;
+                    }
+                    reply.set("result",cached->second);
                 } else {
                     if(humanBuild_.valid())throw std::runtime_error("A character build is already running; check its status");
                     const auto look=vivid::HumanAppearance::fromJson(params["look"]);auto wardrobe=params["wardrobe"];vivid::validateHumanWardrobe(wardrobe);
@@ -556,6 +567,44 @@ Json StudioSession::dispatch(const Json& request) {
                     auto result=Json::object();result.set("running",Json::fromBool(true));reply.set("result",result);
                 }
             }
+        } else if(method=="studio.humanCamera") {
+            const auto view=params.getStr("view");
+            if(view!="face"&&view!="torso"&&view!="full")throw std::invalid_argument("Camera view is face, torso or full");
+            facialPreview_.cameraView=view;++facialPreview_.cameraSerial;
+            auto result=Json::object();result.set("view",Json::string(view));reply.set("result",std::move(result));
+        } else if(method=="studio.humanSculpt" || method=="studio.humanSculptStroke" || method=="studio.humanSculptUndo") {
+            if(ws_.project.dir.empty())throw std::runtime_error("Open a project first");
+            if(method=="studio.humanSculpt") {
+                auto next=sculpt_;
+                if(params.has("enabled"))next.armed=params.getBool("enabled");
+                if(params.has("radius")){const double r=params["radius"].toDouble(-1);if(!(r>=.01&&r<=1))throw std::invalid_argument("Brush radius must be 0.01..1");next.radius=float(r);}
+                if(params.has("strength")){const double v=params["strength"].toDouble(-1);if(!(v>0&&v<=.25))throw std::invalid_argument("Brush strength must be 0..0.25");next.strength=float(v);}
+                if(params.has("mode")){const auto m=params.getStr("mode");if(m!="push"&&m!="pull")throw std::invalid_argument("Brush mode is push or pull");next.pull=m=="pull";}
+                if(params.has("symmetry"))next.symmetry=params.getBool("symmetry");
+                if(next.armed && (!facialPreview_.face() || facialPreview_.face()->meshes.empty()))
+                    throw std::runtime_error("Choose the face meshes in the Face tab before sculpting");
+                sculpt_=next;
+            } else if(method=="studio.humanSculptStroke") {
+                // Sent by the native viewport after a hit test on the face meshes.
+                auto vec=[&](const char* key){const auto& a=params[key];
+                    if(!a.isArray()||a.size()!=3||!a[0].isNumber()||!a[1].isNumber()||!a[2].isNumber())throw std::invalid_argument(std::string("Sculpt ")+key+" must be [x,y,z]");
+                    return render::float3{float(a[0].toDouble()),float(a[1].toDouble()),float(a[2].toDouble())};};
+                vivid::HumanFaceHit hit;hit.point=vec("point");hit.normal=vec("normal");
+                const auto stroke=vivid::humanSculptLandmark(hit,sculpt_.radius,sculpt_.pull?-sculpt_.strength:sculpt_.strength);
+                facialPreview_.sculptStroke(stroke);
+                // Symmetric sculpt: the mirrored stroke lands on the other half
+                // (skipped on the centre line, where it would double the push).
+                if(sculpt_.symmetry && std::abs(stroke.from.x-.5f)>.02f)
+                    facialPreview_.sculptStroke(StudioFacialPreviewBinding::mirrored(stroke));
+            } else if(params.getBool("all")) facialPreview_.sculptClear();
+            else facialPreview_.sculptUndo();
+            auto result=Json::object();
+            result.set("armed",Json::fromBool(sculpt_.armed));result.set("radius",Json::number(double(sculpt_.radius),4));
+            result.set("strength",Json::number(double(sculpt_.strength),4));result.set("mode",Json::string(sculpt_.pull?"pull":"push"));
+            result.set("symmetry",Json::fromBool(sculpt_.symmetry));
+            result.set("strokes",Json::number(int64_t(facialPreview_.face()?facialPreview_.face()->landmarks.size():0)));
+            result.set("preview",facialPreview_.describe());
+            reply.set("result",std::move(result));
         } else if(method.rfind("studio.humanCreator",0)==0) {
             // Digital Human Creator window (docs/vivid.md § Studio Human Creator).
             // Every mutation is validated all-or-nothing; the result is always

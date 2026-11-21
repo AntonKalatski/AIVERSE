@@ -1989,3 +1989,19 @@ animated scalp); viewport brush painting, scalp collision meshes and imported gl
 Tests: `studio_human_creator` (workbench: schema, validated edits, routes, rig/skin, rest bake moves vertices,
 document round trip, atomic storage, traversal rejection) and new `studio.humanCreator*` checks in
 `studio_human_appearance_session`; web `tests/humanCreatorSchema.test.mjs`.
+
+### Character editor (model source) and viewport sculpt — 2026-11-21
+
+The Human Creator window is the single character editor. Source "Модель проекта" edits an imported character
+(e.g. `Ada/model.gltf`) through the existing `studio.humanAppearance*` / face / wardrobe methods, in tabs:
+Тело (body proportions), Лицо (face meshes, jaw/nose/eyes sliders, photo fit, 3D-scan fit, separate head + body
+import), Скульпт, Кожа и волосы (skin, hair, lashes, eyes, material roles), Одежда (wardrobe recipe and bake),
+Поза и свет, Профили (`human-looks/`). Source "VIVID DNA" is the procedural workbench above. Shared state lives in
+`apps/studio-web/src/panels/useHumanLook.ts` (also used by the VIVID Appearance window).
+
+Viewport sculpt: `studio.humanSculpt {enabled, radius 0.01..1, strength 0..0.25, mode push|pull}`,
+`studio.humanSculptStroke {point, normal}` (normalized head coordinates), `studio.humanSculptUndo`. While armed, a Scene
+click in facial mode is a stroke, not a selection: `StudioMetalScene::sculptPick` -> `StudioFacialGpuPreview::sculptRaycast`
+-> `vivid::raycastHumanFace` (selected face meshes, bind pose) -> `vivid::humanSculptLandmark` -> a `HumanFaceShape`
+landmark on the bound character; the native event `human.sculpt` refreshes the window. Strokes are landmarks (max 256),
+baked with the character build. Each stroke re-imports the preview model (seconds on large characters).

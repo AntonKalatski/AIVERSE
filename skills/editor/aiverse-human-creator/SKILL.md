@@ -34,6 +34,12 @@ One document, two editors:
 5. Visual check: the user opens Studio > Human Creator > Load `<name>` > "Show in viewport". Say plainly that you did not
    see pixels: `aiversemcp` has no Studio screenshot tool yet.
 
+## Project characters (body, face, sculpt, wardrobe)
+The same window, source "Модель проекта", edits an imported character: tabs Тело, Лицо (face meshes, sliders, photo,
+scan fit, head + body import), Скульпт (viewport brush: studio.humanSculpt / studio.humanSculptStroke / studio.humanSculptUndo),
+Кожа и волосы, Одежда (wardrobe + bake), Поза и свет, Профили. Those edits have no MCP tools yet: describe the steps
+to the user or drive the Studio window.
+
 ## Sections (Studio window = tools/vivid-creator)
 Skin, Eyes, Hair/groom, Face and body proportions, Facial morph / 52 channels (baked into the preview through the
 routes), Facial morph bindings (channel -> target, gain 0..4), Rig bone names, Rig correction authoring

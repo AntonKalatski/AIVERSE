@@ -97,6 +97,22 @@ int main() {
   auto parts=Json::object();parts.set("guid",Json::string(person->guid));parts.set("headGuid",Json::string(person->guid));parts.set("bone",Json::string(""));parts.set("hiddenMeshes",Json::array());parts.set("name",Json::string("parts_imported"));
   AIVERSE_TEST_CHECK(call("studio.humanHeadBodyImport",parts)["result"].getBool("running"));AIVERSE_TEST_CHECK(!poll().has("error"));
   build.set("guid",Json::string("../../outside"));AIVERSE_TEST_CHECK(call("studio.humanCharacterBuild",build).has("error"));
+  // Viewport sculpt brush: needs face meshes; a stroke becomes one face landmark.
+  {auto arm=Json::object();arm.set("enabled",Json::fromBool(true));
+   auto stroke=Json::object();stroke.set("point",Json::parse("[0.5,0.6,0.9]"));stroke.set("normal",Json::parse("[0,0,1]"));
+   auto badBrush=Json::object();badBrush.set("radius",Json::number(5.0));AIVERSE_TEST_CHECK(call("studio.humanSculpt",badBrush).has("error"));
+   auto faced=Json::object();faced.set("guid",Json::string(person->guid));faced.set("look",Json::parse(R"({"version":1,"values":{},"materials":{}})"));
+   auto shape=Json::parse(R"({"version":1,"meshes":[],"values":{},"landmarks":[]})");shape.member("meshes").push(Json::string(model.model->meshes[0].name));faced.set("face",shape);
+   faced.set("revision",call("studio.humanAppearanceInfo")["result"]["preview"]["revision"]);
+   AIVERSE_TEST_CHECK(!call("studio.humanAppearanceApply",faced).has("error"));
+   const auto armed=call("studio.humanSculpt",arm);AIVERSE_TEST_CHECK(!armed.has("error")&&armed["result"]["armed"].boolean());
+   const auto stroked=call("studio.humanSculptStroke",stroke);
+   AIVERSE_TEST_CHECK(!stroked.has("error")&&stroked["result"].getInt("strokes")==1);
+   AIVERSE_TEST_CHECK(call("studio.humanAppearanceInfo")["result"]["face"]["landmarks"].size()==1);
+   AIVERSE_TEST_CHECK(call("studio.humanSculptUndo")["result"].getInt("strokes")==0);
+   AIVERSE_TEST_CHECK(call("studio.humanSculptUndo").has("error"));
+   stroke.set("normal",Json::parse("[0,0]"));AIVERSE_TEST_CHECK(call("studio.humanSculptStroke",stroke).has("error"));
+   arm.set("enabled",Json::fromBool(false));AIVERSE_TEST_CHECK(!call("studio.humanSculpt",arm)["result"]["armed"].boolean());}
   // Digital Human Creator window methods (studio.humanCreator*).
   const auto creator=call("studio.humanCreatorInfo");
   AIVERSE_TEST_CHECK(!creator.has("error")&&creator["result"]["schema"].size()==10&&creator["result"]["catalog"]["nodes"].size()>0);

@@ -1,5 +1,8 @@
 #include "HumanFaceShape.h"
 #include <set>
+#include <map>
+#include <algorithm>
+#include <cmath>
 #include <limits>
 namespace aiverse::vivid {
 using namespace render;
@@ -43,7 +46,7 @@ Json HumanFaceShape::schema(){auto a=Json::array();for(auto f:fields){auto j=Jso
 void applyHumanFaceShape(Model& model,const HumanFaceShape& recipe){(void)HumanFaceShape::fromJson(recipe.toJson());bool active=false;for(const auto& [k,v]:recipe.values)active|=v!=0;for(const auto& l:recipe.landmarks)active|=l.weight>0&&length(l.to-l.from)>0;if(!active)return;const auto s=surface(model,recipe.meshes,true);const auto extent=s.hi-s.lo;require(extent.x>1e-5f&&extent.y>1e-5f&&extent.z>1e-5f,"Facial mesh has degenerate bounds");
  auto value=[&](const char* key){auto i=recipe.values.find(key);return i==recipe.values.end()?0.f:i->second;};
  auto field=[&](float3 p){const auto q=normalized(p,s);auto r=q;const float x=q.x-.5f,y=q.y;auto bell=[](float v,float c,float w){const float t=(v-c)/w;return std::exp(-t*t);};
-  const float front=std::clamp((q.z-.25f)*2,0.f,1.f),face=std::clamp((y-.15f)*5,0.f,1.f);
+  const float front=std::clamp((q.z-.25f)*2,0.f,1.f),face=[&]{const float t=std::clamp((y-.15f)/.30f,0.f,1.f);return t*t*(3-2*t);}(); // smooth neck falloff: no kink above the collar seam
   const float jaw=bell(y,.30f,.15f),cheek=bell(y,.55f,.13f),nose=bell(x,0,.12f)*bell(y,.53f,.15f)*front,mouth=bell(x,0,.20f)*bell(y,.37f,.07f)*front,eye=bell(std::abs(x),.19f,.10f)*bell(y,.65f,.10f)*front;
   r.x+=face*x*(value("width")+value("jawWidth")*jaw+value("cheekWidth")*cheek+value("noseWidth")*nose+value("mouthWidth")*mouth+value("earWidth")*bell(std::abs(x),.44f,.10f));
   r.y+=face*((y-.5f)*value("height")-value("chinLength")*bell(y,.23f,.09f)+value("noseLength")*nose+value("mouthHeight")*mouth+value("eyeHeight")*eye+value("browHeight")*bell(y,.74f,.07f)*front);
@@ -64,5 +67,44 @@ HumanFaceShape faceShapeFromScan(const Model& head,const Model& scan,const Human
  // Bounded coarse landmark fitting. Sources must already share alignment/units.
  for(size_t i=0;i<h.points.size();i+=step){const auto& point=h.points[i];const auto p=point.bind.transformPoint(head.vertices.at(point.vertex).pos);float best=maximumDistance*maximumDistance;float3 target=p;bool found=false;for(const auto& candidate:s.points){const auto q=candidate.bind.transformPoint(scan.vertices.at(candidate.vertex).pos);const auto d=q-p;const float distance=dot(d,d);if(distance<best){best=distance;target=q;found=true;}}if(found)out.landmarks.push_back({normalized(p,h),normalized(target,h),.18f,strength});}
  require(out.landmarks.size()>=4,"Scan has insufficient nearby correspondences; align it first");return out;
+}
+
+HumanFacePickSurface humanFacePickSurface(const Model& m,const HumanFaceShape& selection){
+ require(!selection.meshes.empty(),"Select the face meshes first");
+ const auto s=surface(m,selection.meshes);const auto extent=s.hi-s.lo;require(extent.x>1e-5f&&extent.y>1e-5f&&extent.z>1e-5f,"Facial mesh has degenerate bounds");
+ std::map<uint32_t,float3> world;for(const auto& p:s.points)world.emplace(p.vertex,p.bind.transformPoint(m.vertices.at(p.vertex).pos));
+ HumanFacePickSurface out;out.lo=s.lo;out.hi=s.hi;
+ for(size_t ni=0;ni<m.nodes.size();++ni){const auto& n=m.nodes[ni];if(n.mesh<0)continue;const auto& mesh=m.meshes.at(size_t(n.mesh));
+  if(std::find(selection.meshes.begin(),selection.meshes.end(),mesh.name)==selection.meshes.end())continue;
+  for(const auto& p:mesh.primitives)for(uint32_t i=0;i+2<p.indexCount;i+=3){
+   const auto a=world.find(m.indices.at(p.firstIndex+i)),b=world.find(m.indices.at(p.firstIndex+i+1)),c=world.find(m.indices.at(p.firstIndex+i+2));
+   if(a==world.end()||b==world.end()||c==world.end())continue;
+   out.triangles.push_back(a->second);out.triangles.push_back(b->second);out.triangles.push_back(c->second);
+  }}
+ require(!out.triangles.empty(),"Selected face meshes have no triangles");return out;
+}
+bool raycastHumanFace(const HumanFacePickSurface& s,float3 origin,float3 direction,HumanFaceHit& hit){
+ const float dl=length(direction);require(std::isfinite(dl)&&dl>1e-12f&&std::isfinite(origin.x)&&std::isfinite(origin.y)&&std::isfinite(origin.z),"Invalid sculpt ray");
+ direction=direction*(1.f/dl);const auto extent=s.hi-s.lo;
+ bool found=false;float best=1e30f;float3 bestPoint{},bestNormal{};
+ for(size_t i=0;i+2<s.triangles.size();i+=3){
+  const float3 a=s.triangles[i],e1=s.triangles[i+1]-a,e2=s.triangles[i+2]-a,q=cross(direction,e2);const float det=dot(e1,q);
+  if(std::fabs(det)<1e-12f)continue;const float inv=1.f/det;const float3 t=origin-a;const float u=dot(t,q)*inv;if(u<0||u>1)continue;
+  const float3 r=cross(t,e1);const float v=dot(direction,r)*inv;if(v<0||u+v>1)continue;const float d=dot(e2,r)*inv;
+  if(d>0&&d<best){best=d;found=true;bestPoint=origin+direction*d;float3 nrm=cross(e1,e2);if(dot(nrm,direction)>0)nrm=nrm*-1.f;bestNormal=nrm;}
+ }
+ if(!found)return false;
+ // Normals transform with the inverse-transpose of the per-axis normalization.
+ float3 nn{bestNormal.x*extent.x,bestNormal.y*extent.y,bestNormal.z*extent.z};const float nl=length(nn);
+ hit.point={(bestPoint.x-s.lo.x)/extent.x,(bestPoint.y-s.lo.y)/extent.y,(bestPoint.z-s.lo.z)/extent.z};
+ hit.normal=nl>1e-12f?nn*(1.f/nl):float3{0,0,1};hit.distance=best;return true;
+}
+bool raycastHumanFace(const Model& m,const HumanFaceShape& selection,float3 origin,float3 direction,HumanFaceHit& hit){
+ return raycastHumanFace(humanFacePickSurface(m,selection),origin,direction,hit);
+}
+HumanFaceShape::Landmark humanSculptLandmark(const HumanFaceHit& hit,float radius,float strength){
+ require(std::isfinite(radius)&&radius>=.01f&&radius<=1&&std::isfinite(strength)&&std::fabs(strength)<=.25f,"Sculpt brush radius 0.01..1, strength -0.25..0.25");
+ const auto clamp=[](float3 p){return float3{std::clamp(p.x,-1.f,2.f),std::clamp(p.y,-1.f,2.f),std::clamp(p.z,-1.f,2.f)};};
+ return {clamp(hit.point),clamp(hit.point+hit.normal*strength),radius,1.f};
 }
 }

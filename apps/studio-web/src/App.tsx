@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import {
-  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, panelStack, reopenTab, readNestedDock, saveNestedDock
+  STUDIO_PANELS, STUDIO_PANEL_TITLES, STUDIO_PANEL_HOME, closeTab, defaultDockTree, characterDockTree, DOCK_PRESET_EVENT, panelStack, reopenTab, readNestedDock, saveNestedDock
 } from './nestedDock';
 import type { StudioPanel } from './nestedDock';
 import type { StudioEntity, StudioInspector, StudioSnapshot } from './types';
@@ -26,6 +26,14 @@ export default function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [dock, setDock] = useState(readNestedDock);
+  useEffect(() => {
+    const preset = (event: Event) => {
+      const which = (event as CustomEvent<string>).detail;
+      setDock(which === 'character' ? characterDockTree() : defaultDockTree());
+    };
+    window.addEventListener(DOCK_PRESET_EVENT, preset);
+    return () => window.removeEventListener(DOCK_PRESET_EVENT, preset);
+  }, []);
   const [connected] = useState(nativeConnected);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiScale, setUiScale] = useState<number>(() => {

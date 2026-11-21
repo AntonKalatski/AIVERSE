@@ -502,6 +502,30 @@
 }
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
     if (!preview_) return;
+    if (session_->sculptBrush().armed) {
+        // Human Creator sculpt: a click on the character is a brush stroke.
+        const auto& face=session_->facialPreviewBinding().face();
+        aiverse::vivid::HumanFaceHit hit;
+        aiverse::Json payload=aiverse::Json::object();
+        std::string pickError;
+        if (face && preview_->sculptPick(float(x),float(y),float(width),float(height),*face,hit,&pickError)) {
+            aiverse::Json request=aiverse::Json::object(),params=aiverse::Json::object(),p=aiverse::Json::array(),n=aiverse::Json::array();
+            for(float v:{hit.point.x,hit.point.y,hit.point.z})p.push(aiverse::Json::number(double(v),6));
+            for(float v:{hit.normal.x,hit.normal.y,hit.normal.z})n.push(aiverse::Json::number(double(v),6));
+            params.set("point",std::move(p));params.set("normal",std::move(n));
+            request.set("id",aiverse::Json::number(int64_t(0)));
+            request.set("method",aiverse::Json::string("studio.humanSculptStroke"));
+            request.set("params",std::move(params));
+            const aiverse::Json outcome=session_->dispatch(request);
+            payload.set("hit",aiverse::Json::fromBool(true));
+            if (outcome.has("error")) payload.set("error",outcome["error"]);
+        } else {
+            payload.set("hit",aiverse::Json::fromBool(false));
+            if (!pickError.empty()) payload.set("error",aiverse::Json::string(pickError));
+        }
+        [self sendStudioEventPayload:"human.sculpt" payload:payload];
+        return;
+    }
     const std::string objectId=preview_->pick(float(x),float(y),float(width),float(height),
         session_->workspace().map,session_->workspace().project.isFps());
     aiverse::Json request=aiverse::Json::object();

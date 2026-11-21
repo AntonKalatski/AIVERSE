@@ -38,6 +38,22 @@ public:
         return provider_?provider_->resources().acquireModelRead(model_):render::ModelReadLease{};
     }
     const render::Model* model() const noexcept {return model_;}
+    // Viewport sculpt: world-space ray against the selected face meshes of
+    // the displayed character (bind pose, normalized head coordinates).
+    bool sculptRaycast(render::float3 origin,render::float3 direction,
+                       const vivid::HumanFaceShape& selection,vivid::HumanFaceHit& hit) const {
+        (void)selection; // the pick surface was built for the bound selection
+        if(!model_ || !framed_ || pickSurface_.empty())return false;
+        const auto toModel=drawWorld_.inverse();
+        const auto o=toModel.transformPoint(origin);
+        const auto d=toModel.transformPoint(origin+direction)-o;
+        return vivid::raycastHumanFace(pickSurface_,o,d,hit);
+    }
+    // The last published character still matches the selection while a new
+    // revision (edit) imports: keep drawing it instead of flashing the map.
+    bool showsCharacter(const StudioFacialPreviewBinding& binding) const noexcept {
+        return model_ && !guid_.empty() && guid_==binding.guid() && binding.bound();
+    }
     bool ready() const noexcept {return bool(model_) && (appearanceOnly_ || facial_.ready());}
     uint64_t sourceRevision() const noexcept {return revision_;}
 private:
@@ -46,6 +62,13 @@ private:
     render::RenderDeviceLifetime::Lease gpuLease_;
     std::unique_ptr<render::ModelAssetProvider> provider_;
     render::Model* model_=nullptr; // borrowed from provider, guarded per frame
+    render::mat4 drawWorld_{};bool framed_=false; // last head framing (sculpt rays)
+    vivid::HumanFacePickSurface pickSurface_; // CPU face triangles kept for sculpt picking
+    // Fast interactive edits: pristine CPU model (no texture pixels) and the
+    // face/look currently baked into the published Model.
+    std::unique_ptr<render::Model> pristine_;
+    Json appliedFace_,appliedLook_;
+    bool editInPlace(gfx::Device& device,render::Renderer3D& renderer,const StudioFacialPreviewBinding& binding);
     render::Model* hair_=nullptr;  // Human Creator groom cards (borrowed)
     std::string hairKey_;
     vivid::RigAuthoring creatorRig_; // Human Creator presentation overlay

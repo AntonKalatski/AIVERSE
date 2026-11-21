@@ -37,6 +37,20 @@ export default function AssetReferencePicker({
     if (event === 'workspace.changed' || event === 'document.changed') setVersion(n => n + 1);
   }), []);
 
+  // A GUID reference is shown by its content path (GUID stays in the tooltip).
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!value || names[value] !== undefined || !/^[0-9a-f]{16,64}$/i.test(value)) return;
+    let alive = true;
+    void invoke('studio.assets', {}).then(result => {
+      if (!alive) return;
+      const found = result.files.find(item => item.guid === value);
+      setNames(old => ({ ...old, [value]: found ? found.path : '' }));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [value, names]);
+  const shown = (value && names[value]) || value;
+
   useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -99,7 +113,7 @@ export default function AssetReferencePicker({
 
   return <div className="studio-asset-reference" onDragOver={dragOver} onDrop={drop}>
     <div className="studio-asset-reference__control">
-      <input className="au-input" value={value} readOnly aria-label={label}
+      <input className="au-input" value={shown} readOnly aria-label={label}
         placeholder="None (drop an asset)" title={value} disabled={disabled}/>
       <button type="button" disabled={disabled} title="Choose from Assets" aria-label={'Choose '+label}
         onClick={() => { setSearch(''); setOpen(true); }}><FolderSearch size={16}/></button>

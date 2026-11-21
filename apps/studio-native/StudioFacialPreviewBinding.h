@@ -28,6 +28,10 @@ class StudioFacialPreviewBinding final {
 public:
     vivid::HumanStudioLighting studioLighting;
     vivid::HumanPreviewAnimation previewAnimation;
+    // Character-editor camera framing request (face | torso | full); the
+    // native scene applies it once per serial, then the artist orbits freely.
+    std::string cameraView="full";
+    uint64_t cameraSerial=0;
     void reset() {
         studioLighting={};previewAnimation={};
         appearance_.reset();face_.reset();appearanceOnly_=false;
@@ -72,6 +76,33 @@ public:
         }
         appearanceOnly_=true;creator_=document;
         guid_=kCreatorGuid;path_.clear();
+        gpuReady_=false;gpuError_.clear();++revision_;return describe();
+    }
+    // Viewport sculpt: one brush stroke becomes one face landmark on the
+    // bound character (requires face meshes chosen in the Face tab).
+    Json sculptStroke(const vivid::HumanFaceShape::Landmark& stroke) {
+        if(!bound() || creatorMode())
+            throw std::runtime_error("Sculpt needs a project character model in the preview");
+        if(!face_ || face_->meshes.empty())
+            throw std::runtime_error("Choose the face meshes in the Face tab before sculpting");
+        auto next=*face_;
+        if(next.landmarks.size()>=256)throw std::runtime_error("Sculpt limit: 256 strokes; bake the character to continue");
+        next.landmarks.push_back(stroke);
+        face_=vivid::HumanFaceShape::fromJson(next.toJson());
+        gpuReady_=false;gpuError_.clear();++revision_;return describe();
+    }
+    // Mirror stroke across the face's X=0.5 plane (symmetric sculpt).
+    static vivid::HumanFaceShape::Landmark mirrored(vivid::HumanFaceShape::Landmark l) {
+        l.from.x=1-l.from.x;l.to.x=1-l.to.x;return l;
+    }
+    Json sculptClear() {
+        if(!face_ || face_->landmarks.empty())throw std::runtime_error("No sculpt strokes to reset");
+        face_->landmarks.clear();
+        gpuReady_=false;gpuError_.clear();++revision_;return describe();
+    }
+    Json sculptUndo() {
+        if(!face_ || face_->landmarks.empty())throw std::runtime_error("No sculpt stroke to undo");
+        face_->landmarks.pop_back();
         gpuReady_=false;gpuError_.clear();++revision_;return describe();
     }
     bool creatorMode() const noexcept {return guid_==kCreatorGuid && creator_.isObject();}

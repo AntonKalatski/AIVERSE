@@ -25,3 +25,30 @@ test('wire values reject what native validation would reject',()=>{
 test('counts active expression channels',()=>{
  assert.equal(activeExpressionCount({document:{dna}}),1);assert.equal(activeExpressionCount(null),0);
 });
+test('face mesh guess picks the skin mesh, never eyes/brows/hair',async()=>{
+ const {guessFaceMeshes}=await import('../src/panels/humanCreatorSchema.ts');
+ assert.deepEqual(guessFaceMeshes(['Ada_FaceMesh_LOD0','Ada_FaceMesh_LOD1','Eyebrows_M_Thin_CardsMesh_Group0_LOD0','f_med_nrw_body_LOD0','Ada_eyeLeft_LOD0']),['Ada_FaceMesh_LOD0']);
+ assert.deepEqual(guessFaceMeshes(['body','Hair_S_Coil_CardsMesh_Group0_LOD0']),[]);
+});
+test('blend of two looks interpolates within schema limits',async()=>{
+ const {blendLooks}=await import('../src/panels/humanCreatorSchema.ts');
+ const schema=[{key:'skin.melanin',label:'',min:0,max:1,initial:.4},{key:'body.height',label:'',min:.8,max:1.2,initial:1}];
+ const a={version:1,values:{'skin.melanin':.2},materials:{Face:'skin'}},b={version:1,values:{'skin.melanin':.8,'body.height':1.2},materials:{Face:'cloth'}};
+ const mid=blendLooks(a,b,.5,schema);
+ assert.ok(Math.abs(mid.values['skin.melanin']-.5)<1e-9);assert.ok(Math.abs(mid.values['body.height']-1.1)<1e-9);assert.equal(mid.materials.Face,'cloth');
+ assert.deepEqual(blendLooks(a,b,0,schema).values,{'skin.melanin':.2});assert.equal(blendLooks(a,b,-3,schema).materials.Face,'skin');
+});
+test('face blend circle: archetype weights, regions and limits',async()=>{
+ const {blendWeights,blendFace,archetypePoint,FACE_ARCHETYPES}=await import('../src/panels/humanCreatorSchema.ts');
+ const w=blendWeights([0,0]);assert.ok(Math.abs(w.reduce((a,b)=>a+b,0)-1)<1e-9);assert.ok(w.every(v=>Math.abs(v-w[0])<1e-9),'centre = equal mix');
+ const at=blendWeights(archetypePoint(2));assert.equal(at[2],1);
+ const schema=[{key:'width',min:-.3,max:.3},{key:'noseWidth',min:-.3,max:.3},{key:'jawWidth',min:-.3,max:.3}];
+ const broad=blendFace(archetypePoint(2),{},schema);assert.equal(broad.width,FACE_ARCHETYPES[2].values.width);
+ const noNose=blendFace(archetypePoint(2),{'Нос':0},schema);assert.equal(noNose.noseWidth,undefined);assert.equal(noNose.jawWidth,.22);
+ const tight=blendFace(archetypePoint(2),{},[{key:'width',min:-.1,max:.1}]);assert.equal(tight.width,.1);
+});
+test('sculpt zones name strokes the way the artist reads the face',async()=>{
+ const {sculptZone}=await import('../src/panels/humanCreatorSchema.ts');
+ assert.equal(sculptZone([.5,.5,1]),'Нос');assert.equal(sculptZone([.3,.5,.9]),'Скула слева');
+ assert.equal(sculptZone([.7,.6,.9]),'Глаза справа');assert.equal(sculptZone([.5,.15,.9]),'Подбородок');
+});

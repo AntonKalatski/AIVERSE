@@ -48,7 +48,7 @@ bool StudioFacialGpuPreview::clear(
     animator_.setModel(nullptr);
     pose_.clear();
     nodeWorld_.clear();
-    model_=nullptr;hair_=nullptr;hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
+    model_=nullptr;hair_=nullptr;framed_=false;pickSurface_={};pristine_.reset();appliedFace_=Json();appliedLook_=Json();hairKey_.clear();creatorRig_=vivid::RigAuthoring{};
     guid_.clear();projectRoot_.clear();modelKey_.clear();
     pendingSource_.clear();pendingProject_.clear();pendingGuid_.clear();
     pendingRevision_=revision_=rejectedRevision_=0;
@@ -102,6 +102,17 @@ bool StudioFacialGpuPreview::sync(
         provider_->collectRetired(device);
         if(model_ && revision_==binding.revision() &&
            guid_==binding.guid() && projectRoot_==projectRoot)return true;
+        // Interactive edits of the SAME character (look sliders, face blend,
+        // sculpt strokes) never re-import the asset: materials are rebuilt
+        // from the pristine copy, face geometry is re-deformed on the CPU
+        // and only the dedicated vertex buffer is rewritten.
+        if(model_ && pristine_ && guid_==binding.guid() && projectRoot_==projectRoot &&
+           !binding.creatorMode() && appearanceOnly_ && binding.appearanceOnly() &&
+           editInPlace(device,renderer,binding)) {
+            revision_=binding.revision();
+            rejectedRevision_=0;rejectedError_.clear();
+            return true;
+        }
         if(rejectedRevision_==binding.revision() &&
            rejectedGuid_==binding.guid() && rejectedProject_==projectRoot &&
            !rejectedError_.empty()) {
@@ -202,7 +213,20 @@ bool StudioFacialGpuPreview::sync(
         lib::animation::FacialPreviewSession::Vectors ikTargets;
         for(const auto& [name,v]:binding.vectors())
             ikTargets.emplace(name,render::float3{v[0],v[1],v[2]});
+        // Pristine CPU copy (no texture pixels) for fast in-place edits.
+        std::unique_ptr<render::Model> pristine;
+        {
+            auto images=std::move(prepared.model->images);
+            pristine=std::make_unique<render::Model>(*prepared.model);
+            prepared.model->images=std::move(images);
+        }
         if(binding.face())vivid::applyHumanFaceShape(*prepared.model,*binding.face());
+        // Sculpt picking needs CPU triangles; GPU publication may drop them.
+        vivid::HumanFacePickSurface nextPick;
+        if(binding.face() && !binding.face()->meshes.empty()) {
+            try {nextPick=vivid::humanFacePickSurface(*prepared.model,*binding.face());}
+            catch(const std::exception&) {} // sculpt reports "pick a face mesh"; preview still shows
+        }
         if(binding.appearance())vivid::applyHumanAppearance(*prepared.model,*binding.appearance());
         if(!binding.appearanceOnly() && !newSession.configure(*prepared.model,binding.document(),
                                  binding.scalars(),ikTargets,error))
@@ -223,6 +247,10 @@ bool StudioFacialGpuPreview::sync(
             });
         }
         appearanceOnly_=binding.appearanceOnly();
+        pickSurface_=std::move(nextPick);
+        pristine_=std::move(pristine);
+        appliedFace_=binding.face()?binding.face()->toJson():Json();
+        appliedLook_=binding.appearance()?binding.appearance()->toJson():Json();
         model_=published;
         modelKey_=key;
         facial_=std::move(newSession);
@@ -240,6 +268,46 @@ bool StudioFacialGpuPreview::sync(
     }
 }
 
+bool StudioFacialGpuPreview::editInPlace(gfx::Device& device,render::Renderer3D& renderer,
+                                         const StudioFacialPreviewBinding& binding) {
+    try {
+        const Json face=binding.face()?binding.face()->toJson():Json();
+        const Json look=binding.appearance()?binding.appearance()->toJson():Json();
+        const bool faceChanged=!(face==appliedFace_);
+        const bool lookChanged=!(look==appliedLook_);
+        // Material roles (which source material is skin/hair/...) can change
+        // the shader graph set; looks only change factors. Both are in-place.
+        if(faceChanged) {
+            if(!model_->vb.valid() || model_->geometryPoolPage)return false; // pooled: full reload
+            render::Model work=*pristine_;
+            if(binding.face())vivid::applyHumanFaceShape(work,*binding.face());
+            if(work.vertices.size()*sizeof(render::ModelVertex)==0 ||
+               work.vertices.size()!=pristine_->vertices.size())return false;
+            vivid::HumanFacePickSurface nextPick;
+            if(binding.face() && !binding.face()->meshes.empty())
+                nextPick=vivid::humanFacePickSurface(work,*binding.face());
+            // The previous frame may still read this buffer on the GPU.
+            if(!device.waitForResourceIdle())device.waitIdle();
+            device.updateBuffer(model_->vb,work.vertices.data(),work.vertices.size()*sizeof(render::ModelVertex));
+            model_->boundsMin=work.boundsMin;model_->boundsMax=work.boundsMax;
+            model_->markGeometryChanged();
+            renderer.invalidateModelCachesFor(model_);
+            pickSurface_=std::move(nextPick);
+            appliedFace_=face;
+        }
+        if(lookChanged) {
+            model_->materials=pristine_->materials;
+            if(binding.appearance())vivid::applyHumanAppearance(*model_,*binding.appearance());
+            model_->markMaterialChanged();
+            renderer.invalidateModelCachesFor(model_);
+            appliedLook_=look;
+        }
+        return true;
+    } catch(const std::exception&) {
+        return false; // fall back to the transactional full re-import
+    }
+}
+
 bool StudioFacialGpuPreview::submit(
         render::Renderer3D& renderer,
         const StudioFacialPreviewBinding& binding,
@@ -250,7 +318,7 @@ bool StudioFacialGpuPreview::submit(
         error="Facial GPU submission outside current device epoch";
         return false;
     }
-    if(!ready() || !binding.bound() || binding.revision()!=revision_) {
+    if(!ready() || !showsCharacter(binding)) {
         error="Facial render has no matching GPU Model generation";
         return false;
     }
@@ -303,6 +371,7 @@ bool StudioFacialGpuPreview::submit(
     draw.nodeWorld=&nodeWorld_;
     draw.world=render::mat4::scale({scale,scale,scale}) *
                render::mat4::translate({-center.x,-center.y,-center.z});
+    drawWorld_=draw.world;framed_=true;
     renderer.drawModel(draw); // same native Renderer3D, no fake browser face
     if(binding.creatorMode() && hair_) {
         // Groom cards are authored in head space at bind pose; drawn with

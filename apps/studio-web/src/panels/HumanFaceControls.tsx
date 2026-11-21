@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import type {HumanFaceShape,HumanLookInfo,HumanBuildStatus} from '../types';
 import {invoke} from '../bridge';
 import AssetReferencePicker from '../components/AssetReferencePicker';
+import {guessFaceMeshes} from './humanCreatorSchema';
 import {StudioSection,StudioField,StudioInput,StudioSelect,StudioButton,StudioAlert} from '../ui';
 const neutral=():HumanFaceShape=>({version:1,meshes:[],values:{},landmarks:[]});
 const markers:[number,number,number][]=[[.3,.62,.65],[.7,.62,.65],[.5,.48,.9],[.35,.32,.7],[.65,.32,.7],[.5,.08,.55]];
@@ -22,7 +23,7 @@ export default function HumanFaceControls({guid,face,schema,onChange,onImported}
  return <StudioSection title="Форма лица · скан / фото / импорт">
   {error&&<StudioAlert tone="danger">{error}</StudioAlert>}
   <StudioAlert>Шаблон: Y вверх, лицо направлено по +Z. Выберите меши головы и связанных деталей. Изменения применяются кнопкой Apply to preview и запекаются при сборке. Кости лица анатомически не перестраиваются.</StudioAlert>
-  <StudioButton disabled={disabled||!guid} onClick={()=>void run(async()=>{const i=await invoke('studio.humanWardrobeInfo',{guid});if(live.current){setMeshes(i.meshes);setBones(i.bones);}})}>Загрузить меши головы и кости</StudioButton>
+  <StudioButton disabled={disabled||!guid} onClick={()=>void run(async()=>{const i=await invoke('studio.humanWardrobeInfo',{guid});if(live.current){setMeshes(i.meshes);setBones(i.bones);if(!face?.meshes.length){const auto=guessFaceMeshes(i.meshes);if(auto.length)edit({...draft,meshes:auto});}}})}>Загрузить меши головы и кости</StudioButton>
   {meshes.map((mesh,i)=><StudioField key={mesh} htmlFor={'face-mesh-'+i} label={mesh}><StudioInput id={'face-mesh-'+i} type="checkbox" disabled={disabled} checked={draft.meshes.includes(mesh)} onChange={()=>{const selected=draft.meshes.includes(mesh)?draft.meshes.filter(m=>m!==mesh):[...draft.meshes,mesh];edit(selected.length?{...draft,meshes:selected}:null);}}/></StudioField>)}
   <StudioButton disabled={disabled||!history.length} onClick={()=>{onChange(history[history.length-1]);setHistory(history.slice(0,-1));}}>Отменить форму</StudioButton>
   <StudioButton disabled={disabled||!face} onClick={()=>edit({...draft,values:{},landmarks:[]})}>Сбросить деформацию</StudioButton>

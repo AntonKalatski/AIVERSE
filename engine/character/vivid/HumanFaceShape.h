@@ -17,4 +17,18 @@ void applyHumanFaceShape(render::Model&,const HumanFaceShape&);
 // This is bounded template fitting, not topology/rig generation from a scan.
 HumanFaceShape faceShapeFromScan(const render::Model& head,const render::Model& scan,
  const HumanFaceShape& selection,float maximumDistance,float strength);
+// Viewport sculpt: intersect a model-space ray with the selected face meshes
+// in bind pose (same space as the landmarks) and return the hit and surface
+// normal in normalized head coordinates (0..1 box of the selected meshes).
+struct HumanFaceHit {render::float3 point,normal;float distance=0;};
+// CPU triangles of the selected face meshes in bind pose plus their bounds:
+// built while the Model still has CPU geometry (before GPU publication).
+struct HumanFacePickSurface {std::vector<render::float3> triangles;render::float3 lo{},hi{};bool empty() const noexcept{return triangles.empty();}};
+HumanFacePickSurface humanFacePickSurface(const render::Model& model,const HumanFaceShape& selection);
+bool raycastHumanFace(const HumanFacePickSurface& surface,render::float3 origin,render::float3 direction,HumanFaceHit& hit);
+bool raycastHumanFace(const render::Model& model,const HumanFaceShape& selection,
+ render::float3 origin,render::float3 direction,HumanFaceHit& hit);
+// One brush stroke: a landmark pushing (strength>0) or pulling (<0) the
+// surface along its normal. radius is in normalized head units (0.01..1).
+HumanFaceShape::Landmark humanSculptLandmark(const HumanFaceHit& hit,float radius,float strength);
 }

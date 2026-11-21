@@ -1,231 +1,185 @@
-// Digital Human Creator window: all tools/vivid-creator authoring sections in
-// Studio. Every edit is a validated native call (studio.humanCreator*); the
-// native StudioSession owns the document, undo history and project files, and
-// the Metal viewport regenerates the VIVID human from it. React never writes
-// project files and never decides that GPU output is correct.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Redo2, Undo2, UserRound } from 'lucide-react';
-import type { HumanCreatorDocument, HumanCreatorField, HumanCreatorInfo, HumanCreatorSection, HumanCreatorUndoTarget, StudioSnapshot } from '../../types';
+// Character Creator (MetaHuman-style): a category rail (Presets & Blend, Face,
+// Sculpt, Skin, Eyes, Hair, Body, Clothing, Pose & Light), camera framing
+// (face / torso / full), a one-click "character studio" layout with the Scene
+// viewport as the stage, and the procedural VIVID DNA source. Every write is
+// an allowlisted native StudioSession call; React never touches files.
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Brush, Eye, Lightbulb, PersonStanding, Redo2, ScanFace, Scissors, Shirt, Sparkles, Undo2,
+  UserRound, LayoutDashboard, Palette } from 'lucide-react';
+import type { HumanLook, StudioSnapshot } from '../../types';
 import { invoke, nativeConnected } from '../../bridge';
-import { StudioPanel, StudioSection, StudioBadge, StudioAlert, StudioEmptyState, StudioButton,
-  StudioField, StudioInput, StudioSelect, StudioTabs, StudioCheckbox } from '../../ui';
-import { activeExpressionCount, creatorWireValue, hexToRgb, readCreatorValue, rgbToHex } from '../humanCreatorSchema';
+import { StudioPanel, StudioAlert, StudioEmptyState, StudioButton,
+  StudioField, StudioInput, StudioSelect, StudioTabs, StudioCheckbox, StudioBadge } from '../../ui';
+import AssetReferencePicker from '../../components/AssetReferencePicker';
+import HumanFaceControls from '../HumanFaceControls';
+import HumanWardrobeControls from '../HumanWardrobeControls';
+import HumanPreviewAnimationControls from '../HumanPreviewAnimationControls';
+import HumanStudioLightingControls from '../HumanStudioLightingControls';
+import HumanSculptControls from '../HumanSculptControls';
+import HumanFaceBlend from '../HumanFaceBlend';
+import { HcCard, HcHeader, HcSlider } from '../HumanCreatorUi';
+import HumanDnaCreator from '../HumanDnaCreator';
+import { useHumanLook } from '../useHumanLook';
+import { blendLooks } from '../humanCreatorSchema';
+import { DOCK_PRESET_EVENT } from '../../nestedDock';
 import './HumanCreatorPanel.css';
 
-type Info = Required<HumanCreatorInfo>;
-type Doc = Partial<HumanCreatorDocument> & { dna: Record<string, any> };
+type Source = 'model' | 'dna';
+type Camera = 'face' | 'torso' | 'full';
+type Category = 'presets' | 'face' | 'sculpt' | 'skin' | 'eyes' | 'hair' | 'body' | 'clothing' | 'pose';
+const CATEGORIES: { id: Category; label: string; icon: typeof Sparkles; camera: Camera }[] = [
+  { id: 'presets', label: 'Пресеты', icon: Sparkles, camera: 'full' },
+  { id: 'face', label: 'Лицо', icon: ScanFace, camera: 'face' },
+  { id: 'sculpt', label: 'Скульпт', icon: Brush, camera: 'face' },
+  { id: 'skin', label: 'Кожа', icon: Palette, camera: 'face' },
+  { id: 'eyes', label: 'Глаза', icon: Eye, camera: 'face' },
+  { id: 'hair', label: 'Волосы', icon: Scissors, camera: 'face' },
+  { id: 'body', label: 'Тело', icon: PersonStanding, camera: 'full' },
+  { id: 'clothing', label: 'Одежда', icon: Shirt, camera: 'full' },
+  { id: 'pose', label: 'Поза и свет', icon: Lightbulb, camera: 'full' }];
 
-function NumberField({ field, value, disabled, commit }: { field: HumanCreatorField; value: number; disabled: boolean; commit: (v: unknown) => void }) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => setLocal(value), [value]);
-  const send = (v: number) => { const wire = creatorWireValue(field, v); if (wire !== null && wire !== value) commit(wire); };
-  return <StudioField label={field.label} htmlFor={'hc-' + field.key}>
-    <div className="hc-number">
-      <input type="range" aria-label={field.label} min={field.min} max={field.max} step={field.step} value={local} disabled={disabled}
-        onChange={e => setLocal(Number(e.target.value))} onPointerUp={() => send(local)} onKeyUp={() => send(local)}/>
-      <StudioInput id={'hc-' + field.key} type="number" min={field.min} max={field.max} step={field.step} value={local} disabled={disabled}
-        onChange={e => setLocal(Number(e.target.value))} onBlur={() => send(local)}
-        onKeyDown={e => { if (e.key === 'Enter') send(local); }}/>
-    </div>
-  </StudioField>;
-}
-
-function TextField({ field, value, disabled, commit }: { field: HumanCreatorField; value: string; disabled: boolean; commit: (v: unknown) => void }) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => setLocal(value), [value]);
-  const send = () => { const wire = creatorWireValue(field, local); if (wire !== null && local !== value) commit(wire); };
-  return <StudioField label={field.label} htmlFor={'hc-' + field.key}
-    hint={field.kind === 'bones' ? 'Comma separated bone names' : undefined}>
-    <StudioInput id={'hc-' + field.key} value={local} disabled={disabled} onChange={e => setLocal(e.target.value)}
-      onBlur={send} onKeyDown={e => { if (e.key === 'Enter') send(); }}/>
-  </StudioField>;
-}
-
-function SchemaField({ field, dna, disabled, commit }: { field: HumanCreatorField; dna: Record<string, unknown>; disabled: boolean; commit: (key: string, v: unknown) => void }) {
-  const raw = readCreatorValue(dna, field.key);
-  const send = (v: unknown) => commit(field.key, v);
-  if (field.kind === 'color') {
-    const rgb = Array.isArray(raw) ? raw.map(Number) : [0, 0, 0];
-    return <StudioField label={field.label} htmlFor={'hc-' + field.key}>
-      <input id={'hc-' + field.key} type="color" className="hc-color" value={rgbToHex(rgb)} disabled={disabled}
-        onChange={e => { const next = hexToRgb(e.target.value); if (next) send(next); }}/>
-    </StudioField>;
-  }
-  if (field.kind === 'number' || field.kind === 'integer')
-    return <NumberField field={field.kind === 'integer' ? { ...field, min: 0, step: 1 } : field} value={Number(raw ?? 0)} disabled={disabled} commit={send}/>;
-  const text = Array.isArray(raw) ? raw.join(', ') : String(raw ?? '');
-  return <TextField field={field} value={text} disabled={disabled} commit={send}/>;
+function LookSliders({ groups, h }: { groups: string[]; h: ReturnType<typeof useHumanLook> }) {
+  const fields = h.info?.schema.filter(f => groups.some(g => f.key.startsWith(g + '.'))) ?? [];
+  if (!fields.length) return <p className="hc-empty">Выберите персонажа в «Пресетах» и загрузите его профиль.</p>;
+  return <div className="hc-vsliders">{fields.map(f => {
+    const value = h.draft.values[f.key] ?? f.initial; const changed = Math.abs(value - f.initial) > 1e-6;
+    return <div key={f.key} className={'hc-vrow' + (changed ? ' hc-vrow--changed' : '')}>
+      <HcSlider id={'hl-' + f.key.replace('.', '-')} label={f.label} min={f.min} max={f.max} step={(f.max - f.min) > 10 ? 1 : .001}
+        value={value} disabled={h.busy} onChange={v => h.edit({ ...h.draft, values: { ...h.draft.values, [f.key]: v } })}/>
+      <button type="button" className="hc-reset" title="Сбросить к исходному" aria-label={'Сбросить ' + f.label} disabled={!changed || h.busy}
+        onClick={() => { const v = { ...h.draft.values }; delete v[f.key]; h.edit({ ...h.draft, values: v }); }}>↺</button>
+    </div>;
+  })}</div>;
 }
 
 export default function HumanCreatorPanel({ snapshot }: { snapshot: StudioSnapshot | null }) {
   const project = snapshot?.project.path ?? '';
-  const [info, setInfo] = useState<Info | null>(null);
-  const [tab, setTab] = useState('skin');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [status, setStatus] = useState('');
-  const [name, setName] = useState('character');
-  const [saved, setSaved] = useState<string[]>([]);
-  const [filter, setFilter] = useState('');
-  const [activeOnly, setActiveOnly] = useState(false);
-  const [rigNode, setRigNode] = useState('');
-  const [rigOffset, setRigOffset] = useState<[number, number, number]>([0, 0, 0]);
-  const [skinVertex, setSkinVertex] = useState(0);
-  const [skinJoint, setSkinJoint] = useState('');
-  const [skinWeight, setSkinWeight] = useState(1);
-  const generation = useRef(0);
-
-  const run = useCallback(async (action: () => Promise<Info | void>, done?: string) => {
-    const gen = generation.current;
-    setBusy(true); setError('');
-    try {
-      const next = await action();
-      if (gen !== generation.current) return;
-      if (next) setInfo(next);
-      if (done) setStatus(done);
-    } catch (e) { if (gen === generation.current) setError(String(e)); }
-    finally { if (gen === generation.current) setBusy(false); }
+  const h = useHumanLook(project);
+  const [source, setSource] = useState<Source>('model');
+  const [category, setCategory] = useState<Category>('presets');
+  const [camera, setCamera] = useState<Camera>('full');
+  const [autoApply, setAutoApply] = useState(true);
+  const [profileName, setProfileName] = useState('character');
+  const [blendA, setBlendA] = useState(''), [blendB, setBlendB] = useState('');
+  const [looks, setLooks] = useState<Record<string, HumanLook>>({});
+  const [blend, setBlend] = useState(.5);
+  const [faceTab, setFaceTab] = useState<'blend' | 'shape'>('blend');
+  const pv = h.info?.preview;
+  const bound = Boolean(pv?.bound) && pv?.guid === h.guid && Boolean(h.guid);
+  const ready = Boolean(pv?.runtimeReady) && bound;
+  const refresh = useCallback(() => { void h.refresh().catch(() => {}); }, [h]);
+  const frame = useCallback((view: Camera) => {
+    setCamera(view); void invoke('studio.humanCamera', { view }).catch(() => {});
   }, []);
-  const refreshList = useCallback(() => {
-    if (!project) return;
-    void invoke('studio.humanCreatorList', {}).then(r => setSaved(r.humans)).catch(() => {});
-  }, [project]);
+  const pick = (c: typeof CATEGORIES[number]) => { setCategory(c.id); if (bound) frame(c.camera); };
+  const applyNow = () => void h.apply(h.face, h.draft);
+  const commit = () => { if (autoApply && bound) applyNow(); };
 
+  // Saved presets for the Blend view.
   useEffect(() => {
-    ++generation.current;
-    setInfo(null); setError(''); setStatus('');
-    if (!nativeConnected()) return;
-    void run(() => invoke('studio.humanCreatorInfo', {}));
-    refreshList();
-    return () => { ++generation.current; };
-  }, [project, run, refreshList]);
+    let live = true;
+    for (const name of [blendA, blendB]) if (name && !looks[name])
+      void invoke('studio.humanAppearanceLoad', { name }).then(r => { if (live) setLooks(l => ({ ...l, [name]: r.look })); }).catch(() => {});
+    return () => { live = false; };
+  }, [blendA, blendB, looks]);
+  const blended = useMemo(() => blendA && blendB && looks[blendA] && looks[blendB] && h.info
+    ? blendLooks(looks[blendA], looks[blendB], blend, h.info.schema) : null, [blendA, blendB, looks, blend, h.info]);
 
-  const sections: HumanCreatorSection[] = info?.schema ?? [];
-  const doc = (info?.document ?? { dna: {} }) as Doc;
-  const dna = doc.dna ?? {};
-  const catalog = info?.catalog;
-  const previewOn = Boolean(info?.preview?.creator);
-  const set = (key: string, value: unknown) => run(() => invoke('studio.humanCreatorSet', { key, value }));
-  const history = (target: HumanCreatorUndoTarget, undo: boolean) =>
-    run(() => invoke(undo ? 'studio.humanCreatorUndo' : 'studio.humanCreatorRedo', { target }));
-  const validName = /^[A-Za-z0-9_-]{1,64}$/.test(name);
-  const current = sections.find(s => s.id === tab) ?? sections[0];
-  const expressionFields = useMemo(() => {
-    const section = sections.find(s => s.id === 'expression');
-    if (!section) return [];
-    const q = filter.trim().toLowerCase();
-    return section.fields.filter(f => (!q || f.label.toLowerCase().includes(q)) &&
-      (!activeOnly || Number(readCreatorValue(dna, f.key) ?? 0) > 0));
-  }, [sections, filter, activeOnly, dna]);
+  if (!project) return <StudioPanel title="Character Creator">
+    <StudioEmptyState icon={<UserRound size={22}/>} title="Откройте проект" description="Персонажи, одежда и пресеты хранятся в проекте."/></StudioPanel>;
+  if (!nativeConnected()) return <StudioPanel title="Character Creator">
+    <StudioAlert>Откройте нативный Studio: персонаж рендерится в Metal-вьюпорте.</StudioAlert></StudioPanel>;
 
-  if (!nativeConnected())
-    return <StudioPanel title="Human Creator"><StudioAlert>Open native Studio to author a digital human. The browser demo does not run VIVID.</StudioAlert></StudioPanel>;
-  if (!info)
-    return <StudioPanel title="Human Creator">{error ? <StudioAlert tone="danger">{error}</StudioAlert> :
-      <StudioEmptyState icon={<UserRound size={22}/>} title="Loading Human Creator" description="Reading the VIVID DNA schema from native Studio."/>}</StudioPanel>;
-
-  const historyButtons = (target: HumanCreatorUndoTarget, canUndo: boolean, canRedo: boolean) => <>
-    <StudioButton size="sm" disabled={busy || !canUndo} onClick={() => void history(target, true)} aria-label="Undo"><Undo2 size={14}/></StudioButton>
-    <StudioButton size="sm" disabled={busy || !canRedo} onClick={() => void history(target, false)} aria-label="Redo"><Redo2 size={14}/></StudioButton>
-  </>;
-
-  const body = () => {
-    if (!current) return null;
-    if (current.id === 'expression') return <StudioSection title={current.title}
-      actions={<StudioBadge>{activeExpressionCount(info)} active</StudioBadge>}>
-      <p className="hc-hint">{current.hint}</p>
-      <div className="hc-row">
-        <StudioInput placeholder="Filter channels (jaw, eye, mouth…)" value={filter} onChange={e => setFilter(e.target.value)}/>
-        <StudioCheckbox label="Only active" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}/>
-      </div>
-      <div className="hc-grid">{expressionFields.map(f => <SchemaField key={f.key} field={f} dna={dna} disabled={busy} commit={set}/>)}</div>
-    </StudioSection>;
-    if (current.id === 'routes') return <StudioSection title={current.title}>
-      <p className="hc-hint">{current.hint}</p>
-      {(doc.routes ?? []).map((r, i) => <div className="hc-row" key={i + ':' + r.channel + ':' + r.target}>
-        <StudioSelect aria-label="Channel" value={r.channel} disabled={busy}
-          onChange={e => void run(() => invoke('studio.humanCreatorRoute', { index: i, channel: e.target.value, target: r.target, gain: r.gain }))}>
-          {(catalog?.channels ?? []).map(c => <option key={c}>{c}</option>)}</StudioSelect>
-        <StudioSelect aria-label="Morph target" value={r.target} disabled={busy}
-          onChange={e => void run(() => invoke('studio.humanCreatorRoute', { index: i, channel: r.channel, target: e.target.value, gain: r.gain }))}>
-          {[...new Set([r.target, ...(catalog?.targets ?? [])])].map(t => <option key={t}>{t}</option>)}</StudioSelect>
-        <StudioInput type="number" aria-label="Gain" min={0} max={4} step={0.05} defaultValue={r.gain} disabled={busy}
-          onBlur={e => { const g = Number(e.target.value); if (Number.isFinite(g) && g !== r.gain) void run(() => invoke('studio.humanCreatorRoute', { index: i, channel: r.channel, target: r.target, gain: g })); }}/>
-        <StudioButton size="sm" disabled={busy} onClick={() => void run(() => invoke('studio.humanCreatorRoute', { index: i, remove: true }))}>Remove</StudioButton>
-      </div>)}
-      <StudioButton disabled={busy || !catalog?.channels.length || !catalog?.targets.length}
-        onClick={() => void run(() => invoke('studio.humanCreatorRoute', { index: doc.routes?.length ?? 0, channel: catalog!.channels[0], target: catalog!.targets[0], gain: 1 }))}>Add route</StudioButton>
-    </StudioSection>;
-    if (current.id === 'rigCorrections') return <StudioSection title={current.title}
-      actions={historyButtons('rig', info.rigCanUndo, info.rigCanRedo)}>
-      <p className="hc-hint">{current.hint}</p>
-      <div className="hc-row">
-        <StudioSelect aria-label="Rig node" value={rigNode} onChange={e => setRigNode(e.target.value)}>
-          <option value="">Choose node…</option>{(catalog?.nodes ?? []).map(n => <option key={n}>{n}</option>)}</StudioSelect>
-        {(['X', 'Y', 'Z'] as const).map((axis, k) => <StudioInput key={axis} type="number" aria-label={axis} min={-1} max={1} step={0.001}
-          value={rigOffset[k]} onChange={e => { const v = [...rigOffset] as [number, number, number]; v[k] = Number(e.target.value); setRigOffset(v); }}/>)}
-        <StudioButton variant="primary" disabled={busy || !rigNode || rigOffset.some(v => !Number.isFinite(v) || Math.abs(v) > 1)}
-          onClick={() => void run(() => invoke('studio.humanCreatorRig', { node: rigNode, translation: rigOffset }), 'Rig correction applied')}>Apply</StudioButton>
-      </div>
-      {(doc.rigCorrections?.offsets ?? []).map(o => <div className="hc-row hc-list" key={o.node}>
-        <span>{o.node}</span><span className="hc-mono">{o.translation.map(v => v.toFixed(3)).join(', ')}</span>
-        <StudioButton size="sm" disabled={busy} onClick={() => void run(() => invoke('studio.humanCreatorRig', { node: o.node, translation: [0, 0, 0] }))}>Reset</StudioButton>
-      </div>)}
-    </StudioSection>;
-    if (current.id === 'skinWeights') return <StudioSection title={current.title}
-      actions={historyButtons('skin', info.skinCanUndo, info.skinCanRedo)}>
-      <p className="hc-hint">{current.hint}. Head has {catalog?.vertices ?? 0} vertices. Brush painting on the viewport stays in tools/vivid-creator.</p>
-      <div className="hc-row">
-        <StudioInput type="number" aria-label="Vertex" min={0} max={Math.max(0, (catalog?.vertices ?? 1) - 1)} step={1} value={skinVertex}
-          onChange={e => setSkinVertex(Math.trunc(Number(e.target.value)))}/>
-        <StudioSelect aria-label="Bone" value={skinJoint} onChange={e => setSkinJoint(e.target.value)}>
-          <option value="">Choose bone…</option>{(catalog?.nodes ?? []).map(n => <option key={n}>{n}</option>)}</StudioSelect>
-        <StudioInput type="number" aria-label="Weight" min={0} max={1} step={0.01} value={skinWeight} onChange={e => setSkinWeight(Number(e.target.value))}/>
-        <StudioButton variant="primary" disabled={busy || !skinJoint || skinVertex < 0 || skinVertex >= (catalog?.vertices ?? 0) || !(skinWeight >= 0 && skinWeight <= 1)}
-          onClick={() => void run(() => invoke('studio.humanCreatorSkin', { vertex: skinVertex, joint: skinJoint, weight: skinWeight }), 'Skin weight set')}>Set weight</StudioButton>
-      </div>
-      {(doc.skinWeights?.edits ?? []).slice(0, 200).map(w => <div className="hc-row hc-list" key={w.vertex}>
-        <span className="hc-mono">#{w.vertex}</span><span>{w.joint}</span><span className="hc-mono">{w.weight.toFixed(2)}</span>
-        <StudioButton size="sm" disabled={busy} onClick={() => void run(() => invoke('studio.humanCreatorSkin', { vertex: w.vertex, erase: true }))}>Erase</StudioButton>
-      </div>)}
-    </StudioSection>;
-    return <StudioSection title={current.title}>
-      <p className="hc-hint">{current.hint}</p>
-      <div className="hc-grid">{current.fields.map(f => <SchemaField key={f.key} field={f} dna={dna} disabled={busy} commit={set}/>)}</div>
-    </StudioSection>;
+  const content = () => {
+    switch (category) {
+      case 'presets': return <>
+        <HcHeader title="Пресеты" hint="Выберите модель персонажа, затем применяйте и смешивайте сохранённые образы."/>
+        <HcCard title="Персонаж" hint={bound ? 'Показан во вьюпорте' : 'Выберите модель и нажмите «Показать»'}>
+          <AssetReferencePicker value={h.guid} onChange={v => { h.setGuid(v); h.setFace(null); h.setStatus('Загрузите профиль модели'); }}
+            kinds={['model']} label="Модель персонажа" disabled={h.busy}/>
+          <div className="hc-row">
+            <StudioButton disabled={h.busy || !h.guid} onClick={() => void h.loadAsset()}>Загрузить профиль</StudioButton>
+            <StudioButton variant="primary" disabled={h.busy || !h.guid || !h.info} onClick={applyNow}>Показать</StudioButton>
+          </div>
+          <StudioCheckbox label="Применять изменения сразу" checked={autoApply} onChange={e => setAutoApply(e.target.checked)}/>
+        </HcCard>
+        <HcCard title="Образы" hint="Клик применяет образ к персонажу">
+          <div className="hc-cards">{h.saved.map(n => <button key={n} type="button" className="hc-card" disabled={h.busy}
+            onClick={() => void h.run(async () => { const r = await invoke('studio.humanAppearanceLoad', { name: n }); h.edit(r.look); setProfileName(n); if (autoApply && bound) await h.apply(h.face, r.look); })}>
+            <UserRound size={22}/><span>{n}</span></button>)}
+            {!h.saved.length && <span className="hc-hint">Сохраните первый пресет ниже.</span>}</div>
+          <div className="hc-row">
+            <StudioInput aria-label="Имя пресета" value={profileName} onChange={e => setProfileName(e.target.value)}/>
+            <StudioButton disabled={h.busy || !/^[A-Za-z0-9_-]{1,64}$/.test(profileName)} onClick={() => void h.run(async () => {
+              await invoke('studio.humanAppearanceSave', { name: profileName, look: h.draft });
+              h.setSaved((await invoke('studio.humanAppearanceList', {})).looks); h.setStatus('Сохранён пресет ' + profileName);
+            })}>Сохранить</StudioButton>
+          </div>
+        </HcCard>
+        <HcCard title="Смешать два образа" hint="Выберите A и B, затем ведите ползунок">
+          <div className="hc-row">
+            <StudioSelect aria-label="Пресет A" value={blendA} onChange={e => setBlendA(e.target.value)}><option value="">Пресет A…</option>{h.saved.map(n => <option key={n}>{n}</option>)}</StudioSelect>
+            <StudioSelect aria-label="Пресет B" value={blendB} onChange={e => setBlendB(e.target.value)}><option value="">Пресет B…</option>{h.saved.map(n => <option key={n}>{n}</option>)}</StudioSelect>
+          </div>
+          <div className="hc-slider"><label htmlFor="hc-blend">A ↔ B</label>
+            <input id="hc-blend" type="range" min={0} max={1} step={.01} value={blend} disabled={!blended}
+              onChange={e => { setBlend(Number(e.target.value)); }}
+              onPointerUp={() => { if (blended) { h.edit(blended); if (autoApply && bound) void h.apply(h.face, blended); } }}/>
+            <output className="hc-mono">{Math.round(blend * 100)}%</output><span/></div>
+        </HcCard>
+      </>;
+      case 'face': return <>
+        <HcHeader title="Лицо" hint="Смешивайте архетипы или задавайте пропорции точно; импортируйте лицо из скана, фото или отдельной головы."/>
+        <StudioTabs className="hc-subtabs" label="Лицо" items={[{ id: 'blend', label: 'Смешивание' }, { id: 'shape', label: 'Пропорции и импорт' }]}
+          selected={faceTab} onChange={setFaceTab}/>
+        {faceTab === 'blend'
+          ? <HumanFaceBlend guid={h.guid} face={h.face} schema={h.info?.faceSchema ?? []} disabled={h.busy || !h.guid}
+              onCommit={f => { h.setFace(f); if (bound) void h.apply(f, h.draft); else h.setStatus('Форма готова — нажмите «Показать»'); }}/>
+          : <HumanFaceControls key={'face' + project + h.guid} guid={h.guid} face={h.face}
+              schema={h.info?.faceSchema ?? []} onChange={f => { h.setFace(f); if (autoApply && bound) void h.apply(f, h.draft); }}
+              onImported={g => { h.setGuid(g); h.setFace(null); }}/>}</>;
+      case 'sculpt': return <HumanSculptControls face={h.info?.face ?? h.face} ready={ready} onChanged={refresh}/>;
+      case 'skin': return <><HcHeader title="Кожа" hint="Тон, текстура и блеск кожи. Изменения применяются, когда вы отпускаете ползунок."/>
+        <HcCard title="Тон и поверхность"><LookSliders groups={['skin']} h={h}/></HcCard></>;
+      case 'eyes': return <><HcHeader title="Глаза" hint="Цвет радужки, склера и блеск. Камера приближена к лицу."/>
+        <HcCard title="Радужка и склера"><LookSliders groups={['eyes']} h={h}/></HcCard></>;
+      case 'hair': return <><HcHeader title="Волосы" hint="Цвет и финиш прядей, бровей и ресниц. Форму причёски задаёт модель волос."/>
+        <HcCard title="Волосы и ресницы"><LookSliders groups={['hair', 'lashes']} h={h}/></HcCard></>;
+      case 'body': return <><HcHeader title="Тело" hint="Рост и пропорции. Одежда следует за скелетом — при крайних значениях проверьте пересечения."/>
+        <HcCard title="Пропорции"><LookSliders groups={['body']} h={h}/></HcCard></>;
+      case 'clothing': return <HumanWardrobeControls key={project + h.guid} guid={h.guid} look={h.draft} face={h.face}/>;
+      case 'pose': return <><HcHeader title="Поза и свет" hint="Поза и мимика превью, студийный свет и роли материалов модели."/><HumanPreviewAnimationControls key={'anim' + project}/><HumanStudioLightingControls key={'light' + project}/>
+        <details><summary>Роли материалов ({Object.keys(h.draft.materials).length})</summary><div className="hc-grid">
+          {Object.entries(h.draft.materials).map(([m, role]) => <StudioField key={m} label={m} htmlFor={'role-' + m}>
+            <StudioSelect id={'role-' + m} value={role} disabled={h.busy} onChange={e => h.edit({ ...h.draft, materials: { ...h.draft.materials, [m]: e.target.value } })}>
+              {['skin', 'hair', 'lashes', 'eyes', 'cloth'].map(r => <option key={r}>{r}</option>)}</StudioSelect></StudioField>)}
+        </div></details></>;
+    }
   };
 
-  return <StudioPanel className="studio-panel-human_creator" title="Human Creator" eyebrow="CHARACTER / VIVID DNA"
-    subtitle={String(dna.displayName ?? 'VIVID Human')}
-    actions={<>
-      <StudioBadge tone={info.dirty ? 'warning' : 'neutral'}>{info.dirty ? 'Unsaved' : 'Saved'}</StudioBadge>
-      {historyButtons('dna', info.canUndo, info.canRedo)}
-    </>}
-    footer={<StudioBadge tone={info.preview?.runtimeReady ? 'success' : 'neutral'}>
-      {previewOn ? (info.preview?.runtimeReady ? 'Viewport shows this human' : (info.preview?.reason ?? 'Preview pending')) : 'Viewport preview off'}</StudioBadge>}>
-    <div className="au-stack">
-      {error && <StudioAlert tone="danger">{error}</StudioAlert>}
-      {status && !error && <StudioAlert>{status}</StudioAlert>}
-      {catalog?.error && <StudioAlert tone="warning">{catalog.error}</StudioAlert>}
-      <div className="hc-row">
-        <StudioCheckbox label="Show in viewport" checked={previewOn} disabled={busy}
-          onChange={e => void run(() => invoke('studio.humanCreatorPreview', { enabled: e.target.checked }))}/>
-        <StudioSelect aria-label="Preset" value="" disabled={busy}
-          onChange={e => { const id = e.target.value; if (id) void run(() => invoke('studio.humanCreatorPreset', { id }), 'Preset ' + id + ' applied'); }}>
-          <option value="">Preset…</option>{(info.presets ?? []).map(p => <option key={p}>{p}</option>)}</StudioSelect>
-        <StudioButton disabled={busy} onClick={() => void run(() => invoke('studio.humanCreatorNew', {}), 'New human')}>New</StudioButton>
+  return <StudioPanel className="studio-panel-human_creator" title="Character Creator" eyebrow="VIVID"
+    actions={<div className="hc-row">
+      <StudioTabs label="Источник" items={[{ id: 'model', label: 'Модель' }, { id: 'dna', label: 'VIVID DNA' }]} selected={source} onChange={setSource}/>
+      <StudioButton size="sm" title="Студия персонажа: редактор слева, вьюпорт по центру"
+        onClick={() => window.dispatchEvent(new CustomEvent(DOCK_PRESET_EVENT, { detail: 'character' }))}><LayoutDashboard size={14}/></StudioButton>
+    </div>}
+    footer={source === 'model' ? <div className={'hc-status' + (h.error ? ' hc-status--error' : '')} role="status" title={h.error || h.status || pv?.reason || ''}>
+      <StudioBadge tone={ready ? 'success' : bound ? 'warning' : 'neutral'}>{ready ? 'Во вьюпорте' : bound ? 'Загрузка' : 'Не показан'}</StudioBadge>
+      <span>{h.error || (bound && !ready ? (pv?.reason ?? 'Загрузка персонажа…') : h.status) || 'Готово'}</span></div> : undefined}>
+    {source === 'dna' ? <HumanDnaCreator snapshot={snapshot}/> : <div className="hc-shell">
+      <nav className="hc-rail" aria-label="Категории персонажа">{CATEGORIES.map(c => { const Icon = c.icon;
+        return <button key={c.id} type="button" className="hc-rail__item" aria-current={category === c.id ? 'page' : undefined}
+          onClick={() => pick(c)} title={c.label}><Icon size={18}/><span>{c.label}</span></button>; })}</nav>
+      <div className="hc-main">
+        <div className="hc-row hc-toolbar">
+          <StudioTabs label="Камера" items={[{ id: 'face', label: 'Лицо' }, { id: 'torso', label: 'Торс' }, { id: 'full', label: 'Рост' }]}
+            selected={camera} onChange={v => frame(v)}/>
+          <span className="hc-spacer"/>
+          <StudioButton size="sm" aria-label="Отменить" disabled={h.busy || !h.undo.length} onClick={h.undoLook}><Undo2 size={14}/></StudioButton>
+          <StudioButton size="sm" aria-label="Повторить" disabled={h.busy || !h.redo.length} onClick={h.redoLook}><Redo2 size={14}/></StudioButton>
+        </div>
+        <div className="hc-content" onPointerUp={() => { if (['skin', 'eyes', 'hair', 'body'].includes(category)) commit(); }}>{content()}</div>
       </div>
-      {project ? <div className="hc-row">
-        <StudioInput aria-label="Human name" value={name} onChange={e => setName(e.target.value)}/>
-        <StudioButton variant="primary" disabled={busy || !validName}
-          onClick={() => void run(async () => { const r = await invoke('studio.humanCreatorSave', { name }); refreshList(); return r; }, 'Saved humans/' + name + '.json')}>Save</StudioButton>
-        <StudioSelect aria-label="Saved humans" value="" disabled={busy || !saved.length}
-          onChange={e => { const n = e.target.value; if (n) { setName(n); void run(() => invoke('studio.humanCreatorLoad', { name: n }), 'Loaded ' + n); } }}>
-          <option value="">{saved.length ? 'Load…' : 'No saved humans'}</option>{saved.map(n => <option key={n}>{n}</option>)}</StudioSelect>
-      </div> : <StudioAlert>Open a project to save humans into its humans/ folder.</StudioAlert>}
-      <StudioTabs label="Creator sections" items={sections.map(s => ({ id: s.id, label: s.title.split(' / ')[0] }))}
-        selected={current?.id ?? 'skin'} onChange={setTab}/>
-      {body()}
-    </div>
+    </div>}
   </StudioPanel>;
 }

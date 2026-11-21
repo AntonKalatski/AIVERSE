@@ -3,6 +3,7 @@
 #include <string>
 #include <future>
 #include <optional>
+#include <map>
 #include <vector>
 #include <filesystem>
 #include <functional>
@@ -25,6 +26,10 @@ public:
     const StudioFacialPreviewBinding& facialPreviewBinding() const noexcept {
         return facialPreview_;
     }
+    // Viewport sculpt brush (Human Creator "Sculpt" tab). While armed, a
+    // viewport click on the character is a stroke, not a selection.
+    struct SculptBrush { bool armed=false; float radius=.12f, strength=.012f; bool pull=false; bool symmetry=true; };
+    const SculptBrush& sculptBrush() const noexcept {return sculpt_;}
     void setFacialPreviewGpuStatus(bool rendered,const std::string& reason) {
         facialPreview_.setGpuStatus(rendered,reason);
     }
@@ -46,6 +51,8 @@ private:
     std::string selected_;
     StudioFacialPreviewBinding facialPreview_;
     vivid::HumanCreatorWorkbench humanCreator_;
+    SculptBrush sculpt_;
+    std::map<std::string,Json> wardrobeInfoCache_; // humanWardrobeInfo by path+mtime
     std::future<Json> humanBuild_;
     Json humanBuildResult_=Json::object();
     std::string humanBuildProject_;
