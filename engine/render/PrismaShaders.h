@@ -137,8 +137,9 @@ inline const char* kDepthOfField = R"(
     // its own blur circle reaches this pixel. Taps nearer than this pixel
     // use their own circle, so an out-of-focus foreground spreads over the
     // background and over the sharp zone (no hard cutout on its outline).
-    // Taps at the same depth or behind are limited by this pixel's circle,
-    // so the background never bleeds onto a sharper foreground.
+    // Taps at the same depth or behind are limited by the smaller of the two
+    // circles, so the background never bleeds onto a sharper foreground; in
+    // the near field the background shows through the blurred edge.
     // Depth 1 is background/sky (non-reversed RHI depth): treated as far.
     vec4 center = TEX0(uv);
     float maxPx = p0.z*p0.w;
@@ -148,6 +149,10 @@ inline const char* kDepthOfField = R"(
                          : prismaDofViewDepth(rawDepth,depthInfo);
     float centerPx = prismaDofCoc(centerDistance,focusInfo,p0.w)*p0.z;
     float tolerance = max(focusInfo.z,0.001);
+    // A pixel in front of the sharp zone is a blurred foreground edge: the
+    // background shows through it, so taps behind use this pixel's circle.
+    float nearField = step(centerDistance,
+                           focusInfo.x-max(focusInfo.y,0.01)*0.5);
     vec3 sum = center.rgb;
     float weight = 1.0;
     for (int i=0; i<24; ++i) {
@@ -164,7 +169,8 @@ inline const char* kDepthOfField = R"(
         float nearer = 1.0-smoothstep(0.0,tolerance,centerDistance-tapDistance);
         // nearer: 0 when the tap is clearly in front of this pixel.
         float w = mix(prismaDofReach(tapPx,offsetPx),
-                      prismaDofReach(min(tapPx,centerPx),offsetPx),nearer);
+                      prismaDofReach(mix(min(tapPx,centerPx),centerPx,nearField),
+                                     offsetPx),nearer);
         if (w <= 0.00001) continue;
         sum += TEX0(sampleUv).rgb*w;
         weight += w;
