@@ -646,15 +646,15 @@ record: `docs/agent-handoffs/review-fixes-ecs-scene-2026-11-21.md`.
   snapshot is NOT A BUG: the non-const `poolIfExists<T>()` already clones a
   shared pool (`use_count()!=1`) and `Pool::prepareParallelWrite` detaches
   pages. Regression block added to `tests/ecs_cow_exception_test.cpp`
-  (`abb8983`). Note: the comment in `engine/world/TerraWeaveShorelineRaster.h`
+  (`259d655`). Note: the comment in `engine/world/TerraWeaveShorelineRaster.h`
   ("prepareExistingWrite ALONE does not detach pool ownership") is stale.
 - Scene residency/rollback (`SceneLoadCoordinator`, `SceneResourceBackend`):
   rollback now diffs resident leases instead of releasing all; restored
   Loading records get full jobs; Cancelled backend entries are resurrected
-  by `pin`; terminal jobs are pruned (`21d763a`, `238d57d`).
+  by `pin`; terminal jobs are pruned (`c4eeb92`, `9f04792`).
 - New generic persistence hook: `PersistentEcsRegistry::addLoadValidator` /
   `Simulation::addPersistentLoadValidator` (setup-only, staged-World check,
-  no save-format/hash change); used by `registerSharedPersistence` (`7fbb192`).
+  no save-format/hash change); used by `registerSharedPersistence` (`e35cdf5`).
 - Verification actually run: standalone g++ builds of the ECS/scene tests
   listed in the handoff, all PASS (plus ASan/UBSan for the two scene tests).
   Full CMake build, CTest, RTS/FPS headless matches: **NOT RUN** (builds only
